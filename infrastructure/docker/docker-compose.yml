@@ -1,0 +1,225 @@
+name: llamatrade
+
+services:
+  # ===================
+  # Database Migrations
+  # ===================
+  db-migrate:
+    build:
+      context: ../../libs/db
+      dockerfile: Dockerfile
+    container_name: llamatrade-db-migrate
+    environment:
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/llamatrade
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  # ===================
+  # Infrastructure
+  # ===================
+  postgres:
+    image: postgres:16-alpine
+    container_name: llamatrade-postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: llamatrade
+    volumes:
+      - llamatrade_postgres_data:/var/lib/postgresql/data
+    ports:
+      - "${LT_POSTGRES_PORT:-47532}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: llamatrade-redis
+    command: redis-server --appendonly yes
+    volumes:
+      - llamatrade_redis_data:/data
+    ports:
+      - "${LT_REDIS_PORT:-47379}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ===================
+  # API Gateway
+  # ===================
+  gateway:
+    build:
+      context: ../../services/gateway
+      dockerfile: Dockerfile
+    container_name: llamatrade-gateway
+    ports:
+      - "${LT_GATEWAY_PORT:-47800}:8000"
+      - "${LT_GATEWAY_ADMIN_PORT:-47801}:8001"
+    depends_on:
+      - auth
+      - strategy
+      - backtest
+      - market-data
+      - trading
+      - portfolio
+      - notification
+      - billing
+
+  # ===================
+  # Backend Services
+  # ===================
+  auth:
+    build:
+      context: ../../services/auth
+      dockerfile: Dockerfile
+    container_name: llamatrade-auth
+    environment:
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/llamatrade
+      REDIS_URL: redis://redis:6379
+      JWT_SECRET: ${JWT_SECRET:-dev-secret-change-in-production}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-dev-encryption-key-change-me}
+    depends_on:
+      db-migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    ports:
+      - "${LT_AUTH_PORT:-47810}:8001"
+
+  strategy:
+    build:
+      context: ../../services/strategy
+      dockerfile: Dockerfile
+    container_name: llamatrade-strategy
+    environment:
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/llamatrade
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      db-migrate:
+        condition: service_completed_successfully
+    ports:
+      - "${LT_STRATEGY_PORT:-47820}:8002"
+
+  backtest:
+    build:
+      context: ../../services/backtest
+      dockerfile: Dockerfile
+    container_name: llamatrade-backtest
+    environment:
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/llamatrade
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      db-migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    ports:
+      - "${LT_BACKTEST_PORT:-47830}:8003"
+
+  market-data:
+    build:
+      context: ../../services/market-data
+      dockerfile: Dockerfile
+    container_name: llamatrade-market-data
+    environment:
+      ALPACA_API_KEY: ${ALPACA_API_KEY:-}
+      ALPACA_API_SECRET: ${ALPACA_API_SECRET:-}
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      redis:
+        condition: service_healthy
+    ports:
+      - "${LT_MARKET_DATA_PORT:-47840}:8004"
+
+  trading:
+    build:
+      context: ../../services/trading
+      dockerfile: Dockerfile
+    container_name: llamatrade-trading
+    environment:
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/llamatrade
+      ALPACA_API_KEY: ${ALPACA_API_KEY:-}
+      ALPACA_API_SECRET: ${ALPACA_API_SECRET:-}
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      db-migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    ports:
+      - "${LT_TRADING_PORT:-47850}:8005"
+
+  portfolio:
+    build:
+      context: ../../services/portfolio
+      dockerfile: Dockerfile
+    container_name: llamatrade-portfolio
+    environment:
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/llamatrade
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      db-migrate:
+        condition: service_completed_successfully
+    ports:
+      - "${LT_PORTFOLIO_PORT:-47860}:8006"
+
+  notification:
+    build:
+      context: ../../services/notification
+      dockerfile: Dockerfile
+    container_name: llamatrade-notification
+    environment:
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/llamatrade
+      REDIS_URL: redis://redis:6379
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+    depends_on:
+      db-migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    ports:
+      - "${LT_NOTIFICATION_PORT:-47870}:8007"
+
+  billing:
+    build:
+      context: ../../services/billing
+      dockerfile: Dockerfile
+    container_name: llamatrade-billing
+    environment:
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/llamatrade
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
+    depends_on:
+      db-migrate:
+        condition: service_completed_successfully
+    ports:
+      - "${LT_BILLING_PORT:-47880}:8008"
+
+  # ===================
+  # Frontend
+  # ===================
+  web:
+    build:
+      context: ../../apps/web
+      dockerfile: Dockerfile
+    container_name: llamatrade-web
+    ports:
+      - "${LT_WEB_PORT:-47300}:80"
+    depends_on:
+      - gateway
+
+volumes:
+  llamatrade_postgres_data:
+  llamatrade_redis_data:
+
+networks:
+  default:
+    name: llamatrade-network

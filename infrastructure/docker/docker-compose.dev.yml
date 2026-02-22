@@ -1,0 +1,107 @@
+# Development overrides with hot-reload
+# Usage: docker compose -f docker-compose.yml -f docker-compose.dev.yml up
+
+services:
+  # ===================
+  # Database Migrations (dev override to mount source)
+  # ===================
+  db-migrate:
+    volumes:
+      - ../../libs/db/llamatrade_db:/app/llamatrade_db:cached
+
+  # ===================
+  # Backend Services with hot-reload
+  # ===================
+  auth:
+    build:
+      context: ../..
+      dockerfile: services/auth/Dockerfile.dev
+    volumes:
+      - ../../services/auth/src:/app/src:cached
+      - ../../libs/common/llamatrade_common:/app/libs/common/llamatrade_common:cached
+      - ../../libs/db/llamatrade_db:/app/libs/db/llamatrade_db:cached
+    command: uvicorn src.main:app --host 0.0.0.0 --port 8001 --reload --reload-dir /app/src
+
+  strategy:
+    build:
+      context: ../..
+      dockerfile: services/strategy/Dockerfile.dev
+    volumes:
+      - ../../services/strategy/src:/app/src:cached
+      - ../../libs/common/llamatrade_common:/app/libs/common/llamatrade_common:cached
+      - ../../libs/db/llamatrade_db:/app/libs/db/llamatrade_db:cached
+    command: uvicorn src.main:app --host 0.0.0.0 --port 8002 --reload --reload-dir /app/src
+
+  backtest:
+    build:
+      context: ../..
+      dockerfile: services/backtest/Dockerfile.dev
+    volumes:
+      - ../../services/backtest/src:/app/src:cached
+      - ../../libs/common/llamatrade_common:/app/libs/common/llamatrade_common:cached
+      - ../../libs/db/llamatrade_db:/app/libs/db/llamatrade_db:cached
+    command: uvicorn src.main:app --host 0.0.0.0 --port 8003 --reload --reload-dir /app/src
+
+  market-data:
+    build:
+      context: ../..
+      dockerfile: services/market-data/Dockerfile.dev
+    volumes:
+      - ../../services/market-data/src:/app/src:cached
+      - ../../libs/common/llamatrade_common:/app/libs/common/llamatrade_common:cached
+      - ../../libs/db/llamatrade_db:/app/libs/db/llamatrade_db:cached
+    command: uvicorn src.main:app --host 0.0.0.0 --port 8004 --reload --reload-dir /app/src
+
+  trading:
+    build:
+      context: ../..
+      dockerfile: services/trading/Dockerfile.dev
+    volumes:
+      - ../../services/trading/src:/app/src:cached
+      - ../../libs/common/llamatrade_common:/app/libs/common/llamatrade_common:cached
+      - ../../libs/db/llamatrade_db:/app/libs/db/llamatrade_db:cached
+    command: uvicorn src.main:app --host 0.0.0.0 --port 8005 --reload --reload-dir /app/src
+
+  portfolio:
+    build:
+      context: ../..
+      dockerfile: services/portfolio/Dockerfile.dev
+    volumes:
+      - ../../services/portfolio/src:/app/src:cached
+      - ../../libs/common/llamatrade_common:/app/libs/common/llamatrade_common:cached
+      - ../../libs/db/llamatrade_db:/app/libs/db/llamatrade_db:cached
+    command: uvicorn src.main:app --host 0.0.0.0 --port 8006 --reload --reload-dir /app/src
+
+  notification:
+    build:
+      context: ../..
+      dockerfile: services/notification/Dockerfile.dev
+    volumes:
+      - ../../services/notification/src:/app/src:cached
+      - ../../libs/common/llamatrade_common:/app/libs/common/llamatrade_common:cached
+      - ../../libs/db/llamatrade_db:/app/libs/db/llamatrade_db:cached
+    command: uvicorn src.main:app --host 0.0.0.0 --port 8007 --reload --reload-dir /app/src
+
+  billing:
+    build:
+      context: ../..
+      dockerfile: services/billing/Dockerfile.dev
+    volumes:
+      - ../../services/billing/src:/app/src:cached
+      - ../../libs/common/llamatrade_common:/app/libs/common/llamatrade_common:cached
+      - ../../libs/db/llamatrade_db:/app/libs/db/llamatrade_db:cached
+    command: uvicorn src.main:app --host 0.0.0.0 --port 8008 --reload --reload-dir /app/src
+
+  # ===================
+  # Frontend with Vite HMR
+  # ===================
+  web:
+    build:
+      context: ../../apps/web
+      dockerfile: Dockerfile.dev
+    volumes:
+      - ../../apps/web/src:/app/src:cached
+      - ../../apps/web/public:/app/public:cached
+    ports:
+      - "${LT_WEB_PORT:-47300}:3000"
+    command: npm run dev -- --host 0.0.0.0

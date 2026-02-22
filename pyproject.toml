@@ -1,0 +1,43 @@
+[project]
+name = "llamatrade"
+version = "0.1.0"
+description = "LlamaTrade - Algorithmic Trading Platform"
+readme = "README.md"
+requires-python = ">=3.12"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W", "UP"]
+ignore = ["E501"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = false
+ignore_missing_imports = true
+disallow_untyped_defs = false
+warn_return_any = true
+warn_unused_ignores = true
+show_error_codes = true
+exclude = ["tests", "venv", ".venv"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["services/*/tests"]
+
+[tool.uv.workspace]
+members = [
+    "libs/common",
+    "libs/db",
+    "libs/grpc",
+    "services/auth",
+    "services/strategy",
+    "services/backtest",
+    "services/market-data",
+    "services/trading",
+    "services/portfolio",
+    "services/notification",
+    "services/billing",
+]
