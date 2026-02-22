@@ -1,0 +1,29 @@
+# LlamaTrade Terraform Variables
+# Copy this file to terraform.tfvars and fill in your values
+
+# Required
+project_id = "your-gcp-project-id"
+
+# Optional - Environment settings
+environment = "staging"  # or "production"
+region      = "us-central1"
+
+# Database configuration
+db_tier       = "db-f1-micro"  # For production: "db-custom-2-7680" or higher
+db_ha_enabled = false          # Enable for production
+
+# Redis configuration
+redis_memory_size_gb = 1       # GB of memory
+redis_ha_enabled     = false   # Enable for production
+
+# Monitoring
+alert_email = "your-email@example.com"
+
+# Domain
+domain = "llamatrade.com"
+
+# CDN
+enable_cdn = true
+
+# GKE
+gke_release_channel = "REGULAR"  # RAPID, REGULAR, or STABLE
