@@ -1,0 +1,14 @@
+FROM node:20-alpine
+
+WORKDIR /app
+
+# Copy package files
+COPY package.json package-lock.json* ./
+
+# Install dependencies (use npm install if no lock file exists)
+RUN if [ -f package-lock.json ]; then npm ci; else npm install; fi
+
+# Source code is mounted via volume
+EXPOSE 3000
+
+CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0"]
