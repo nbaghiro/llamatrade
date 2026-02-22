@@ -1,0 +1,80 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: billing
+  namespace: llamatrade
+  labels:
+    app: billing
+    tier: backend
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: billing
+  template:
+    metadata:
+      labels:
+        app: billing
+        tier: backend
+    spec:
+      containers:
+        - name: billing
+          image: gcr.io/llamatrade/billing:latest
+          ports:
+            - containerPort: 8008
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: db-credentials
+                  key: url
+            - name: STRIPE_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: stripe-credentials
+                  key: secret_key
+            - name: STRIPE_WEBHOOK_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: stripe-credentials
+                  key: webhook_secret
+            - name: LOG_LEVEL
+              valueFrom:
+                configMapKeyRef:
+                  name: llamatrade-config
+                  key: LOG_LEVEL
+          envFrom:
+            - configMapRef:
+                name: llamatrade-config
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "256Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8008
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8008
+            initialDelaySeconds: 5
+            periodSeconds: 5
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: billing
+  namespace: llamatrade
+spec:
+  selector:
+    app: billing
+  ports:
+    - port: 8008
+      targetPort: 8008
+  type: ClusterIP

@@ -1,0 +1,26 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: llamatrade-config
+  namespace: llamatrade
+data:
+  # Service URLs (internal K8s DNS)
+  AUTH_SERVICE_URL: "http://auth:8001"
+  STRATEGY_SERVICE_URL: "http://strategy:8002"
+  BACKTEST_SERVICE_URL: "http://backtest:8003"
+  MARKET_DATA_SERVICE_URL: "http://market-data:8004"
+  TRADING_SERVICE_URL: "http://trading:8005"
+  PORTFOLIO_SERVICE_URL: "http://portfolio:8006"
+  NOTIFICATION_SERVICE_URL: "http://notification:8007"
+  BILLING_SERVICE_URL: "http://billing:8008"
+  # Common settings
+  LOG_LEVEL: "INFO"
+  ENVIRONMENT: "production"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: redis-config
+  namespace: llamatrade
+data:
+  REDIS_URL: "redis://redis:6379"

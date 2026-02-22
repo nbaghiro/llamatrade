@@ -1,0 +1,27 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: frontend
+  namespace: llamatrade-staging
+  annotations:
+    kubernetes.io/ingress.global-static-ip-name: llamatrade-staging-ip
+    networking.gke.io/managed-certificates: llamatrade-staging-cert
+spec:
+  rules:
+    - host: staging.llamatrade.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: staging-frontend
+                port:
+                  number: 80
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: staging-gateway
+                port:
+                  number: 8000

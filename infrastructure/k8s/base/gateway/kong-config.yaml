@@ -1,0 +1,218 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kong-config
+  namespace: llamatrade
+data:
+  kong.yaml: |
+    _format_version: "3.0"
+    _transform: true
+
+    services:
+      # Auth Service
+      - name: auth-service
+        url: http://auth:8001
+        routes:
+          - name: auth-routes
+            paths:
+              - /api/auth
+              - /api/users
+              - /api/tenants
+              - /api/api-keys
+            strip_path: false
+        plugins:
+          - name: rate-limiting
+            config:
+              minute: 100
+              policy: local
+          - name: cors
+            config:
+              origins:
+                - "*"
+              methods:
+                - GET
+                - POST
+                - PUT
+                - DELETE
+                - OPTIONS
+              headers:
+                - Authorization
+                - Content-Type
+              credentials: true
+              max_age: 3600
+
+      # Strategy Service
+      - name: strategy-service
+        url: http://strategy:8002
+        routes:
+          - name: strategy-routes
+            paths:
+              - /api/strategies
+              - /api/templates
+              - /api/indicators
+            strip_path: false
+        plugins:
+          - name: rate-limiting
+            config:
+              minute: 200
+              policy: local
+          - name: jwt
+            config:
+              secret_is_base64: false
+              claims_to_verify:
+                - exp
+
+      # Backtest Service
+      - name: backtest-service
+        url: http://backtest:8003
+        routes:
+          - name: backtest-routes
+            paths:
+              - /api/backtests
+            strip_path: false
+        plugins:
+          - name: rate-limiting
+            config:
+              minute: 50
+              policy: local
+          - name: jwt
+            config:
+              secret_is_base64: false
+              claims_to_verify:
+                - exp
+
+      # Market Data Service
+      - name: market-data-service
+        url: http://market-data:8004
+        routes:
+          - name: market-data-routes
+            paths:
+              - /api/market-data
+              - /api/bars
+              - /api/quotes
+              - /api/trades
+            strip_path: false
+        plugins:
+          - name: rate-limiting
+            config:
+              minute: 1000
+              policy: local
+          - name: jwt
+            config:
+              secret_is_base64: false
+              claims_to_verify:
+                - exp
+
+      # Trading Service
+      - name: trading-service
+        url: http://trading:8005
+        routes:
+          - name: trading-routes
+            paths:
+              - /api/orders
+              - /api/trading
+              - /api/sessions
+            strip_path: false
+        plugins:
+          - name: rate-limiting
+            config:
+              minute: 100
+              policy: local
+          - name: jwt
+            config:
+              secret_is_base64: false
+              claims_to_verify:
+                - exp
+
+      # Portfolio Service
+      - name: portfolio-service
+        url: http://portfolio:8006
+        routes:
+          - name: portfolio-routes
+            paths:
+              - /api/portfolio
+              - /api/positions
+              - /api/performance
+            strip_path: false
+        plugins:
+          - name: rate-limiting
+            config:
+              minute: 300
+              policy: local
+          - name: jwt
+            config:
+              secret_is_base64: false
+              claims_to_verify:
+                - exp
+
+      # Notification Service
+      - name: notification-service
+        url: http://notification:8007
+        routes:
+          - name: notification-routes
+            paths:
+              - /api/notifications
+              - /api/alerts
+              - /api/webhooks
+            strip_path: false
+        plugins:
+          - name: rate-limiting
+            config:
+              minute: 100
+              policy: local
+          - name: jwt
+            config:
+              secret_is_base64: false
+              claims_to_verify:
+                - exp
+
+      # Billing Service
+      - name: billing-service
+        url: http://billing:8008
+        routes:
+          - name: billing-routes
+            paths:
+              - /api/billing
+              - /api/subscriptions
+              - /api/invoices
+            strip_path: false
+        plugins:
+          - name: rate-limiting
+            config:
+              minute: 50
+              policy: local
+          - name: jwt
+            config:
+              secret_is_base64: false
+              claims_to_verify:
+                - exp
+
+      # Stripe Webhook (no auth required)
+      - name: stripe-webhook
+        url: http://billing:8008
+        routes:
+          - name: stripe-webhook-route
+            paths:
+              - /api/billing/webhook
+            methods:
+              - POST
+            strip_path: false
+
+    # Global plugins
+    plugins:
+      - name: correlation-id
+        config:
+          header_name: X-Request-ID
+          generator: uuid
+          echo_downstream: true
+
+      - name: request-transformer
+        config:
+          add:
+            headers:
+              - X-Gateway-Version:1.0
+
+    # Consumer for internal services (optional)
+    consumers:
+      - username: internal-services
+        custom_id: internal

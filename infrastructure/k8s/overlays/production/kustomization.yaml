@@ -1,0 +1,98 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: llamatrade
+
+resources:
+  - ../../base/namespace.yaml
+  - ../../base/configmap.yaml
+  - ../../base/secrets.yaml
+  - ../../base/network-policy.yaml
+  - ../../base/redis/deployment.yaml
+  - ../../base/gateway/deployment.yaml
+  - ../../base/gateway/kong-config.yaml
+  - ../../base/auth/deployment.yaml
+  - ../../base/strategy/deployment.yaml
+  - ../../base/backtest/deployment.yaml
+  - ../../base/market-data/deployment.yaml
+  - ../../base/trading/deployment.yaml
+  - ../../base/portfolio/deployment.yaml
+  - ../../base/notification/deployment.yaml
+  - ../../base/billing/deployment.yaml
+  - ../../base/frontend/deployment.yaml
+
+commonLabels:
+  environment: production
+  app.kubernetes.io/part-of: llamatrade
+
+patches:
+  # Production replicas
+  - patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 3
+    target:
+      kind: Deployment
+      name: gateway
+
+  - patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 3
+    target:
+      kind: Deployment
+      name: trading
+
+  - patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 3
+    target:
+      kind: Deployment
+      name: frontend
+
+  # Higher resource limits for production
+  - patch: |-
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/requests/cpu
+        value: "200m"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/requests/memory
+        value: "512Mi"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/cpu
+        value: "1000m"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/memory
+        value: "1Gi"
+    target:
+      kind: Deployment
+      name: trading
+
+  - patch: |-
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/requests/cpu
+        value: "500m"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/requests/memory
+        value: "1Gi"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/cpu
+        value: "4000m"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/memory
+        value: "4Gi"
+    target:
+      kind: Deployment
+      name: backtest
+
+configMapGenerator:
+  - name: llamatrade-config
+    behavior: merge
+    literals:
+      - ENVIRONMENT=production
+      - LOG_LEVEL=INFO
+
+# Pod Disruption Budgets for high availability
+generatorOptions:
+  disableNameSuffixHash: true

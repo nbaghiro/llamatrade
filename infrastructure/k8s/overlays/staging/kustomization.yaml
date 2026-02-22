@@ -1,0 +1,133 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: llamatrade-staging
+
+resources:
+  - ../../base/namespace.yaml
+  - ../../base/configmap.yaml
+  - ../../base/secrets.yaml
+  - ../../base/redis/deployment.yaml
+  - ../../base/gateway/deployment.yaml
+  - ../../base/gateway/kong-config.yaml
+  - ../../base/auth/deployment.yaml
+  - ../../base/strategy/deployment.yaml
+  - ../../base/backtest/deployment.yaml
+  - ../../base/market-data/deployment.yaml
+  - ../../base/trading/deployment.yaml
+  - ../../base/portfolio/deployment.yaml
+  - ../../base/notification/deployment.yaml
+  - ../../base/billing/deployment.yaml
+  - ../../base/frontend/deployment.yaml
+
+namePrefix: staging-
+
+commonLabels:
+  environment: staging
+  app.kubernetes.io/part-of: llamatrade
+
+patches:
+  # Reduce replicas for staging
+  - patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 1
+    target:
+      kind: Deployment
+      labelSelector: "tier=backend"
+
+  # Reduce resource limits for staging
+  - patch: |-
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/cpu
+        value: "250m"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/memory
+        value: "256Mi"
+    target:
+      kind: Deployment
+      labelSelector: "tier=backend"
+
+  # Update image tags for staging
+  - patch: |-
+      - op: replace
+        path: /spec/template/spec/containers/0/image
+        value: gcr.io/llamatrade/auth:staging
+    target:
+      kind: Deployment
+      name: auth
+
+  - patch: |-
+      - op: replace
+        path: /spec/template/spec/containers/0/image
+        value: gcr.io/llamatrade/strategy:staging
+    target:
+      kind: Deployment
+      name: strategy
+
+  - patch: |-
+      - op: replace
+        path: /spec/template/spec/containers/0/image
+        value: gcr.io/llamatrade/backtest:staging
+    target:
+      kind: Deployment
+      name: backtest
+
+  - patch: |-
+      - op: replace
+        path: /spec/template/spec/containers/0/image
+        value: gcr.io/llamatrade/market-data:staging
+    target:
+      kind: Deployment
+      name: market-data
+
+  - patch: |-
+      - op: replace
+        path: /spec/template/spec/containers/0/image
+        value: gcr.io/llamatrade/trading:staging
+    target:
+      kind: Deployment
+      name: trading
+
+  - patch: |-
+      - op: replace
+        path: /spec/template/spec/containers/0/image
+        value: gcr.io/llamatrade/portfolio:staging
+    target:
+      kind: Deployment
+      name: portfolio
+
+  - patch: |-
+      - op: replace
+        path: /spec/template/spec/containers/0/image
+        value: gcr.io/llamatrade/notification:staging
+    target:
+      kind: Deployment
+      name: notification
+
+  - patch: |-
+      - op: replace
+        path: /spec/template/spec/containers/0/image
+        value: gcr.io/llamatrade/billing:staging
+    target:
+      kind: Deployment
+      name: billing
+
+  - patch: |-
+      - op: replace
+        path: /spec/template/spec/containers/0/image
+        value: gcr.io/llamatrade/web:staging
+    target:
+      kind: Deployment
+      name: frontend
+
+configMapGenerator:
+  - name: llamatrade-config
+    behavior: merge
+    literals:
+      - ENVIRONMENT=staging
+      - LOG_LEVEL=DEBUG
+
+# Staging ingress with different hostname
+patchesStrategicMerge:
+  - ingress-patch.yaml
