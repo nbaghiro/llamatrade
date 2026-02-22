@@ -1,0 +1,544 @@
+_format_version: "3.0"
+_transform: true
+
+# =============================================================================
+# CONSUMERS (API Keys and JWT Consumers)
+# =============================================================================
+consumers:
+  - username: internal-services
+    custom_id: internal
+    tags:
+      - internal
+      - service-mesh
+
+# JWT credentials for internal services
+jwt_secrets:
+  - consumer: internal-services
+    key: internal-service-key
+    algorithm: HS256
+
+# =============================================================================
+# UPSTREAMS (Load Balancing Configuration)
+# =============================================================================
+upstreams:
+  - name: auth-upstream
+    targets:
+      - target: auth:8001
+        weight: 100
+    healthchecks:
+      active:
+        healthy:
+          interval: 10
+          successes: 2
+        unhealthy:
+          interval: 5
+          http_failures: 3
+        http_path: /health
+        timeout: 5
+
+  - name: strategy-upstream
+    targets:
+      - target: strategy:8002
+        weight: 100
+    healthchecks:
+      active:
+        healthy:
+          interval: 10
+          successes: 2
+        unhealthy:
+          interval: 5
+          http_failures: 3
+        http_path: /health
+        timeout: 5
+
+  - name: backtest-upstream
+    targets:
+      - target: backtest:8003
+        weight: 100
+    healthchecks:
+      active:
+        healthy:
+          interval: 10
+          successes: 2
+        unhealthy:
+          interval: 5
+          http_failures: 3
+        http_path: /health
+        timeout: 5
+
+  - name: market-data-upstream
+    targets:
+      - target: market-data:8004
+        weight: 100
+    healthchecks:
+      active:
+        healthy:
+          interval: 10
+          successes: 2
+        unhealthy:
+          interval: 5
+          http_failures: 3
+        http_path: /health
+        timeout: 5
+
+  - name: trading-upstream
+    targets:
+      - target: trading:8005
+        weight: 100
+    healthchecks:
+      active:
+        healthy:
+          interval: 10
+          successes: 2
+        unhealthy:
+          interval: 5
+          http_failures: 3
+        http_path: /health
+        timeout: 5
+
+  - name: portfolio-upstream
+    targets:
+      - target: portfolio:8006
+        weight: 100
+    healthchecks:
+      active:
+        healthy:
+          interval: 10
+          successes: 2
+        unhealthy:
+          interval: 5
+          http_failures: 3
+        http_path: /health
+        timeout: 5
+
+  - name: notification-upstream
+    targets:
+      - target: notification:8007
+        weight: 100
+    healthchecks:
+      active:
+        healthy:
+          interval: 10
+          successes: 2
+        unhealthy:
+          interval: 5
+          http_failures: 3
+        http_path: /health
+        timeout: 5
+
+  - name: billing-upstream
+    targets:
+      - target: billing:8008
+        weight: 100
+    healthchecks:
+      active:
+        healthy:
+          interval: 10
+          successes: 2
+        unhealthy:
+          interval: 5
+          http_failures: 3
+        http_path: /health
+        timeout: 5
+
+# =============================================================================
+# SERVICES
+# =============================================================================
+services:
+  # ---------------------------------------------------------------------------
+  # Auth Service (Public endpoints for login/register)
+  # ---------------------------------------------------------------------------
+  - name: auth-service
+    host: auth-upstream
+    port: 8001
+    protocol: http
+    retries: 3
+    connect_timeout: 5000
+    write_timeout: 60000
+    read_timeout: 60000
+    routes:
+      - name: auth-public-routes
+        paths:
+          - /api/auth/login
+          - /api/auth/register
+          - /api/auth/refresh
+          - /api/auth/forgot-password
+          - /api/auth/reset-password
+        strip_path: false
+        methods:
+          - POST
+          - OPTIONS
+        tags:
+          - public
+          - auth
+      - name: auth-protected-routes
+        paths:
+          - /api/auth/me
+          - /api/auth/logout
+          - /api/auth/change-password
+          - /api/users
+          - /api/tenants
+          - /api/api-keys
+        strip_path: false
+        tags:
+          - protected
+          - auth
+    plugins:
+      - name: rate-limiting
+        config:
+          minute: 60
+          hour: 1000
+          policy: local
+          fault_tolerant: true
+          hide_client_headers: false
+
+  # ---------------------------------------------------------------------------
+  # Strategy Service (All protected)
+  # ---------------------------------------------------------------------------
+  - name: strategy-service
+    host: strategy-upstream
+    port: 8002
+    protocol: http
+    retries: 3
+    connect_timeout: 5000
+    write_timeout: 60000
+    read_timeout: 60000
+    routes:
+      - name: strategy-routes
+        paths:
+          - /api/strategies
+          - /api/templates
+          - /api/indicators
+        strip_path: false
+        tags:
+          - protected
+          - strategy
+    plugins:
+      - name: rate-limiting
+        config:
+          minute: 200
+          hour: 5000
+          policy: local
+      - name: jwt
+        config:
+          secret_is_base64: false
+          claims_to_verify:
+            - exp
+          run_on_preflight: false
+
+  # ---------------------------------------------------------------------------
+  # Backtest Service (Protected, higher timeout for long runs)
+  # ---------------------------------------------------------------------------
+  - name: backtest-service
+    host: backtest-upstream
+    port: 8003
+    protocol: http
+    retries: 2
+    connect_timeout: 5000
+    write_timeout: 300000
+    read_timeout: 300000
+    routes:
+      - name: backtest-routes
+        paths:
+          - /api/backtests
+        strip_path: false
+        tags:
+          - protected
+          - backtest
+    plugins:
+      - name: rate-limiting
+        config:
+          minute: 20
+          hour: 200
+          policy: local
+      - name: jwt
+        config:
+          secret_is_base64: false
+          claims_to_verify:
+            - exp
+      - name: request-size-limiting
+        config:
+          allowed_payload_size: 10
+          size_unit: megabytes
+
+  # ---------------------------------------------------------------------------
+  # Market Data Service (Protected)
+  # ---------------------------------------------------------------------------
+  - name: market-data-service
+    host: market-data-upstream
+    port: 8004
+    protocol: http
+    retries: 3
+    connect_timeout: 5000
+    write_timeout: 60000
+    read_timeout: 60000
+    routes:
+      - name: market-data-routes
+        paths:
+          - /api/market-data
+          - /api/bars
+          - /api/quotes
+          - /api/trades
+        strip_path: false
+        tags:
+          - protected
+          - market-data
+    plugins:
+      - name: rate-limiting
+        config:
+          minute: 500
+          hour: 10000
+          policy: local
+      - name: jwt
+        config:
+          secret_is_base64: false
+          claims_to_verify:
+            - exp
+      - name: proxy-cache
+        config:
+          response_code:
+            - 200
+          request_method:
+            - GET
+          content_type:
+            - application/json
+          cache_ttl: 60
+          strategy: memory
+
+  # ---------------------------------------------------------------------------
+  # Trading Service (Protected, critical service)
+  # ---------------------------------------------------------------------------
+  - name: trading-service
+    host: trading-upstream
+    port: 8005
+    protocol: http
+    retries: 1
+    connect_timeout: 5000
+    write_timeout: 30000
+    read_timeout: 30000
+    routes:
+      - name: trading-routes
+        paths:
+          - /api/orders
+          - /api/trading
+          - /api/sessions
+          - /api/positions
+        strip_path: false
+        tags:
+          - protected
+          - trading
+          - critical
+    plugins:
+      - name: rate-limiting
+        config:
+          minute: 100
+          hour: 2000
+          policy: local
+      - name: jwt
+        config:
+          secret_is_base64: false
+          claims_to_verify:
+            - exp
+
+  # ---------------------------------------------------------------------------
+  # Portfolio Service (Protected)
+  # ---------------------------------------------------------------------------
+  - name: portfolio-service
+    host: portfolio-upstream
+    port: 8006
+    protocol: http
+    retries: 3
+    connect_timeout: 5000
+    write_timeout: 60000
+    read_timeout: 60000
+    routes:
+      - name: portfolio-routes
+        paths:
+          - /api/portfolio
+          - /api/performance
+          - /api/transactions
+        strip_path: false
+        tags:
+          - protected
+          - portfolio
+    plugins:
+      - name: rate-limiting
+        config:
+          minute: 300
+          hour: 5000
+          policy: local
+      - name: jwt
+        config:
+          secret_is_base64: false
+          claims_to_verify:
+            - exp
+
+  # ---------------------------------------------------------------------------
+  # Notification Service (Protected)
+  # ---------------------------------------------------------------------------
+  - name: notification-service
+    host: notification-upstream
+    port: 8007
+    protocol: http
+    retries: 3
+    connect_timeout: 5000
+    write_timeout: 60000
+    read_timeout: 60000
+    routes:
+      - name: notification-routes
+        paths:
+          - /api/notifications
+          - /api/alerts
+          - /api/channels
+        strip_path: false
+        tags:
+          - protected
+          - notification
+    plugins:
+      - name: rate-limiting
+        config:
+          minute: 100
+          hour: 2000
+          policy: local
+      - name: jwt
+        config:
+          secret_is_base64: false
+          claims_to_verify:
+            - exp
+
+  # ---------------------------------------------------------------------------
+  # Billing Service (Protected + Stripe Webhook)
+  # ---------------------------------------------------------------------------
+  - name: billing-service
+    host: billing-upstream
+    port: 8008
+    protocol: http
+    retries: 3
+    connect_timeout: 5000
+    write_timeout: 60000
+    read_timeout: 60000
+    routes:
+      - name: billing-protected-routes
+        paths:
+          - /api/billing
+          - /api/subscriptions
+          - /api/invoices
+          - /api/usage
+        strip_path: false
+        tags:
+          - protected
+          - billing
+      - name: stripe-webhook-route
+        paths:
+          - /api/billing/webhook
+          - /api/webhooks/stripe
+        strip_path: false
+        methods:
+          - POST
+        tags:
+          - webhook
+          - billing
+    plugins:
+      - name: rate-limiting
+        config:
+          minute: 50
+          hour: 500
+          policy: local
+
+# =============================================================================
+# GLOBAL PLUGINS
+# =============================================================================
+plugins:
+  # ---------------------------------------------------------------------------
+  # CORS (Global)
+  # ---------------------------------------------------------------------------
+  - name: cors
+    config:
+      origins:
+        - http://localhost:3000
+        - http://localhost:47300
+        - https://llamatrade.com
+        - https://staging.llamatrade.com
+        - https://*.llamatrade.com
+      methods:
+        - GET
+        - POST
+        - PUT
+        - PATCH
+        - DELETE
+        - OPTIONS
+        - HEAD
+      headers:
+        - Accept
+        - Accept-Version
+        - Authorization
+        - Content-Length
+        - Content-Type
+        - X-Request-ID
+        - X-Tenant-ID
+      exposed_headers:
+        - X-Request-ID
+        - X-RateLimit-Limit-Minute
+        - X-RateLimit-Remaining-Minute
+      credentials: true
+      max_age: 3600
+      preflight_continue: false
+
+  # ---------------------------------------------------------------------------
+  # Request ID / Correlation ID
+  # ---------------------------------------------------------------------------
+  - name: correlation-id
+    config:
+      header_name: X-Request-ID
+      generator: uuid
+      echo_downstream: true
+
+  # ---------------------------------------------------------------------------
+  # Request Transformer (Add headers)
+  # ---------------------------------------------------------------------------
+  - name: request-transformer
+    config:
+      add:
+        headers:
+          - X-Gateway-Version:1.0.0
+          - X-Forwarded-By:kong
+
+  # ---------------------------------------------------------------------------
+  # Response Transformer
+  # ---------------------------------------------------------------------------
+  - name: response-transformer
+    config:
+      add:
+        headers:
+          - X-Served-By:llamatrade-gateway
+      remove:
+        headers:
+          - Server
+
+  # ---------------------------------------------------------------------------
+  # Logging (stdout for container logs)
+  # ---------------------------------------------------------------------------
+  - name: file-log
+    config:
+      path: /dev/stdout
+      reopen: true
+
+  # ---------------------------------------------------------------------------
+  # Prometheus metrics
+  # ---------------------------------------------------------------------------
+  - name: prometheus
+    config:
+      status_code_metrics: true
+      latency_metrics: true
+      bandwidth_metrics: true
+      upstream_health_metrics: true
+
+  # ---------------------------------------------------------------------------
+  # IP Restriction (for admin endpoints - optional)
+  # ---------------------------------------------------------------------------
+  # - name: ip-restriction
+  #   config:
+  #     allow:
+  #       - 10.0.0.0/8
+  #       - 172.16.0.0/12
+  #       - 192.168.0.0/16
