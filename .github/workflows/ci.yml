@@ -1,0 +1,164 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+env:
+  PYTHON_VERSION: "3.12"
+  NODE_VERSION: "20"
+
+jobs:
+  lint-python:
+    name: Lint Python
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install tools
+        run: pip install ruff mypy pydantic fastapi types-redis prometheus-client
+
+      - name: Run ruff (lint)
+        run: ruff check --config pyproject.toml services/ libs/
+
+      - name: Run ruff (format check)
+        run: ruff format --config pyproject.toml --check services/ libs/
+
+      - name: Run mypy (type check)
+        run: |
+          # Run mypy per-service to avoid "Duplicate module named src" error
+          mypy libs/common --ignore-missing-imports
+          mypy libs/db --ignore-missing-imports
+          mypy services/auth --ignore-missing-imports
+          mypy services/strategy --ignore-missing-imports
+          mypy services/backtest --ignore-missing-imports
+          mypy services/market-data --ignore-missing-imports
+          mypy services/trading --ignore-missing-imports
+          mypy services/portfolio --ignore-missing-imports
+          mypy services/notification --ignore-missing-imports
+          mypy services/billing --ignore-missing-imports
+
+  test-backend:
+    name: Test Backend
+    runs-on: ubuntu-latest
+    needs: lint-python
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install shared libs
+        run: |
+          pip install -e libs/common[dev]
+          pip install -e libs/db[dev]
+
+      - name: Run auth tests
+        env:
+          DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/test
+          REDIS_URL: redis://localhost:6379
+        run: |
+          pip install -e services/auth[dev]
+          cd services/auth && pytest tests -v
+          pip uninstall -y llamatrade-auth
+
+      - name: Run strategy tests
+        env:
+          DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/test
+          REDIS_URL: redis://localhost:6379
+        run: |
+          pip install -e services/strategy[dev]
+          cd services/strategy && pytest tests -v
+
+  lint-frontend:
+    name: Lint & Type Check Frontend
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/web
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies
+        run: cd ../.. && npm ci
+
+      - name: Lint (ESLint)
+        run: npm run lint
+
+      - name: Type Check (TypeScript)
+        run: npx tsc --noEmit
+
+  test-frontend:
+    name: Test Frontend
+    runs-on: ubuntu-latest
+    needs: lint-frontend
+    defaults:
+      run:
+        working-directory: apps/web
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies
+        run: cd ../.. && npm ci
+
+      - name: Run tests
+        run: npm test -- --run --passWithNoTests
+
+  build:
+    name: Build Images
+    runs-on: ubuntu-latest
+    needs: [test-backend, test-frontend]
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build images
+        run: |
+          docker build -f services/auth/Dockerfile -t auth:latest .
+          docker build -f services/strategy/Dockerfile -t strategy:latest .
+          docker build -f apps/web/Dockerfile -t web:latest .

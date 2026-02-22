@@ -1,0 +1,65 @@
+name: Deploy to Production
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to deploy (git SHA or tag)'
+        required: true
+
+env:
+  PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+  GKE_CLUSTER: llamatrade-production
+  GKE_ZONE: us-central1
+  REGISTRY: us-central1-docker.pkg.dev
+
+jobs:
+  deploy:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    environment: production
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.version }}
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker
+        run: gcloud auth configure-docker ${{ env.REGISTRY }}
+
+      - name: Get GKE credentials
+        uses: google-github-actions/get-gke-credentials@v2
+        with:
+          cluster_name: ${{ env.GKE_CLUSTER }}
+          location: ${{ env.GKE_ZONE }}
+
+      - name: Deploy to GKE
+        run: |
+          REGISTRY_PATH="${REGISTRY}/${PROJECT_ID}/llamatrade"
+          VERSION="${{ github.event.inputs.version }}"
+
+          kubectl apply -k infrastructure/k8s/overlays/production
+
+          # Update all deployments
+          for service in auth strategy backtest market-data trading portfolio notification billing; do
+            kubectl set image deployment/${service} ${service}=${REGISTRY_PATH}/${service}:${VERSION} -n llamatrade
+          done
+
+          kubectl set image deployment/frontend frontend=${REGISTRY_PATH}/web:${VERSION} -n llamatrade
+
+          # Wait for rollouts
+          kubectl rollout status deployment/auth -n llamatrade --timeout=300s
+          kubectl rollout status deployment/frontend -n llamatrade --timeout=300s
+
+      - name: Notify deployment
+        if: success()
+        run: |
+          echo "Deployed version ${{ github.event.inputs.version }} to production"

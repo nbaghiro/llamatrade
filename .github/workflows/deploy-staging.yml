@@ -1,0 +1,63 @@
+name: Deploy to Staging
+
+on:
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: 'Reason for deployment'
+        required: false
+        default: 'Manual deployment'
+
+env:
+  PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+  GKE_CLUSTER: llamatrade-staging
+  GKE_ZONE: us-central1
+  REGISTRY: us-central1-docker.pkg.dev
+
+jobs:
+  deploy:
+    name: Deploy to Staging
+    runs-on: ubuntu-latest
+    environment: staging
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker
+        run: gcloud auth configure-docker ${{ env.REGISTRY }}
+
+      - name: Get GKE credentials
+        uses: google-github-actions/get-gke-credentials@v2
+        with:
+          cluster_name: ${{ env.GKE_CLUSTER }}
+          location: ${{ env.GKE_ZONE }}
+
+      - name: Build and push images
+        run: |
+          REGISTRY_PATH="${REGISTRY}/${PROJECT_ID}/llamatrade"
+
+          # Build and push each service
+          for service in auth strategy backtest market-data trading portfolio notification billing; do
+            docker build -t ${REGISTRY_PATH}/${service}:${{ github.sha }} services/${service}
+            docker push ${REGISTRY_PATH}/${service}:${{ github.sha }}
+          done
+
+          # Build and push frontend
+          docker build -t ${REGISTRY_PATH}/web:${{ github.sha }} apps/web
+          docker push ${REGISTRY_PATH}/web:${{ github.sha }}
+
+      - name: Deploy to GKE
+        run: |
+          kubectl apply -k infrastructure/k8s/overlays/staging
+          kubectl set image deployment/auth auth=${REGISTRY}/${PROJECT_ID}/llamatrade/auth:${{ github.sha }} -n llamatrade
+          kubectl set image deployment/frontend frontend=${REGISTRY}/${PROJECT_ID}/llamatrade/web:${{ github.sha }} -n llamatrade
+          kubectl rollout status deployment/auth -n llamatrade
+          kubectl rollout status deployment/frontend -n llamatrade

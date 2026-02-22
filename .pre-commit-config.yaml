@@ -1,0 +1,54 @@
+# Pre-commit hooks for LlamaTrade
+# Install: pip install pre-commit && pre-commit install
+
+repos:
+  # Python linting with Ruff
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.3.0
+    hooks:
+      - id: ruff
+        args: [--fix, --config=pyproject.toml]
+        files: ^(services|libs)/
+      - id: ruff-format
+        args: [--config=pyproject.toml]
+        files: ^(services|libs)/
+
+  # Python type checking with mypy (run per-service to avoid duplicate module error)
+  - repo: local
+    hooks:
+      - id: mypy
+        name: mypy
+        entry: bash -c 'mypy libs/common --ignore-missing-imports && mypy services/auth --ignore-missing-imports && mypy services/strategy --ignore-missing-imports && mypy services/backtest --ignore-missing-imports && mypy services/market-data --ignore-missing-imports && mypy services/trading --ignore-missing-imports && mypy services/portfolio --ignore-missing-imports && mypy services/notification --ignore-missing-imports && mypy services/billing --ignore-missing-imports'
+        language: system
+        files: ^(services|libs)/.*\.py$
+        pass_filenames: false
+
+  # Frontend linting
+  - repo: local
+    hooks:
+      - id: eslint
+        name: ESLint
+        entry: bash -c 'cd apps/web && npm run lint'
+        language: system
+        files: ^apps/web/.*\.(ts|tsx)$
+        pass_filenames: false
+
+      - id: typescript
+        name: TypeScript Check
+        entry: bash -c 'cd apps/web && npx tsc --noEmit'
+        language: system
+        files: ^apps/web/.*\.(ts|tsx)$
+        pass_filenames: false
+
+  # General checks
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.5.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+        args: ['--allow-multiple-documents']
+        exclude: ^infrastructure/k8s/
+      - id: check-json
+      - id: check-added-large-files
+        args: ['--maxkb=1000']
