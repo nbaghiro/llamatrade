@@ -8,7 +8,7 @@ This document details the end-to-end implementation for both **S-Expression** an
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                              INPUT LAYER                                     │
+│                              INPUT LAYER                                    │
 ├─────────────────┬─────────────────┬─────────────────┬───────────────────────┤
 │   Visual        │   Natural       │   S-Expression  │    Infix DSL          │
 │   Builder       │   Language      │   Text Editor   │    Text Editor        │
@@ -27,21 +27,21 @@ This document details the end-to-end implementation for both **S-Expression** an
          │                 │                │               │
          │                 ▼                ▼               ▼
          │        ┌────────────────────────────────────────────────────┐
-         │        │              UNIFIED AST (Abstract Syntax Tree)     │
-         │        │                                                     │
-         │        │   SymphonyNode / StrategyNode                       │
-         │        │   ├── MetadataNode                                  │
-         │        │   ├── AllocationNode / RulesNode                    │
-         │        │   │   ├── ConditionalNode                           │
-         │        │   │   ├── WeightNode                                │
-         │        │   │   └── AssetNode                                 │
-         │        │   └── ConditionNode                                 │
-         │        │       ├── ComparisonNode                            │
-         │        │       ├── LogicalNode (AND/OR/NOT)                  │
-         │        │       └── IndicatorNode                             │
+         │        │              UNIFIED AST (Abstract Syntax Tree)    │
+         │        │                                                    │
+         │        │   SymphonyNode / StrategyNode                      │
+         │        │   ├── MetadataNode                                 │
+         │        │   ├── AllocationNode / RulesNode                   │
+         │        │   │   ├── ConditionalNode                          │
+         │        │   │   ├── WeightNode                               │
+         │        │   │   └── AssetNode                                │
+         │        │   └── ConditionNode                                │
+         │        │       ├── ComparisonNode                           │
+         │        │       ├── LogicalNode (AND/OR/NOT)                 │
+         │        │       └── IndicatorNode                            │
          └────────┼────────────────────────────────────────────────────┘
-                  │                         │
-                  │                         │
+                  │                        │
+                  │                        │
     ┌─────────────┴─────────────┐          │
     │     BIDIRECTIONAL         │          │
     │     SERIALIZATION         │          │
@@ -53,20 +53,20 @@ This document details the end-to-end implementation for both **S-Expression** an
     └───────────────────────────┘          │
                                            ▼
                   ┌────────────────────────────────────────────────────┐
-                  │              SEMANTIC LAYER                         │
-                  │                                                     │
-                  │   • Type checking                                   │
-                  │   • Symbol resolution (indicators, universes)       │
-                  │   • Validation (required fields, ranges)            │
-                  │   • Optimization (constant folding, CSE)            │
+                  │              SEMANTIC LAYER                        │
+                  │                                                    │
+                  │   • Type checking                                  │
+                  │   • Symbol resolution (indicators, universes)      │
+                  │   • Validation (required fields, ranges)           │
+                  │   • Optimization (constant folding, CSE)           │
                   └────────────────────────────────────────────────────┘
                                            │
                                            ▼
                   ┌────────────────────────────────────────────────────┐
-                  │              IR (Intermediate Representation)       │
-                  │                                                     │
-                  │   Normalized, validated, ready for execution        │
-                  │   Stored in PostgreSQL as JSONB                     │
+                  │        IR (Intermediate Representation)            │
+                  │                                                    │
+                  │   Normalized, validated, ready for execution       │
+                  │   Stored in PostgreSQL as JSONB                    │
                   └────────────────────────────────────────────────────┘
                                            │
                      ┌─────────────────────┼─────────────────────┐
@@ -2003,7 +2003,7 @@ class VisualBlockSerializer:
 
 ## Part 5: AI Generation Pipeline
 
-```python
+````python
 # libs/dsl/llamatrade_dsl/ai/generator.py
 
 from typing import Optional, Literal
@@ -2199,7 +2199,7 @@ class AIStrategyExplainer:
         )
 
         return response.content[0].text
-```
+````
 
 ---
 
@@ -2497,28 +2497,28 @@ export interface BlockNode {
 }
 
 export type BlockType =
-  | 'symphony'
-  | 'strategy'
-  | 'weight'
-  | 'asset'
-  | 'conditional'
-  | 'filter'
-  | 'rule'
-  | 'condition'
-  | 'indicator'
-  | 'action';
+  | "symphony"
+  | "strategy"
+  | "weight"
+  | "asset"
+  | "conditional"
+  | "filter"
+  | "rule"
+  | "condition"
+  | "indicator"
+  | "action";
 
 export interface IndicatorConfig {
   name: string;
   displayName: string;
-  category: 'trend' | 'momentum' | 'volatility' | 'volume';
+  category: "trend" | "momentum" | "volatility" | "volume";
   params: ParamConfig[];
   outputs: string[];
 }
 
 export interface ParamConfig {
   name: string;
-  type: 'number' | 'period' | 'percent';
+  type: "number" | "period" | "percent";
   default: number;
   min?: number;
   max?: number;
@@ -2620,10 +2620,10 @@ const DraggableBlock: React.FC<{ type: BlockType; label: string; icon: string }>
 ```typescript
 // frontend/src/components/StrategyBuilder/serializers.ts
 
-import { BlockNode } from './types';
+import { BlockNode } from "./types";
 
 export function serializeToInfix(blocks: BlockNode): string {
-  if (blocks.type === 'symphony') {
+  if (blocks.type === "symphony") {
     return serializeSymphony(blocks);
   }
   return serializeStrategy(blocks);
@@ -2639,31 +2639,35 @@ function serializeSymphony(node: BlockNode): string {
     lines.push(`  benchmark: ${node.data.benchmark}`);
   }
 
-  lines.push('');
+  lines.push("");
 
   if (node.children?.length) {
     lines.push(indent(serializeAllocation(node.children[0]), 2));
   }
 
-  lines.push('}');
-  return lines.join('\n');
+  lines.push("}");
+  return lines.join("\n");
 }
 
 function serializeAllocation(node: BlockNode): string {
   switch (node.type) {
-    case 'asset':
+    case "asset":
       return node.data.weight
         ? `${node.data.symbol} @ ${node.data.weight * 100}%`
         : node.data.symbol;
 
-    case 'weight':
-      const assets = node.children?.map(serializeAllocation).join(', ') || '';
+    case "weight":
+      const assets = node.children?.map(serializeAllocation).join(", ") || "";
       return `allocate ${node.data.method} [${assets}]`;
 
-    case 'conditional':
+    case "conditional":
       const cond = serializeCondition(node.data.condition);
-      const thenBranch = node.children?.[0] ? serializeAllocation(node.children[0]) : '';
-      const elseBranch = node.children?.[1] ? serializeAllocation(node.children[1]) : '';
+      const thenBranch = node.children?.[0]
+        ? serializeAllocation(node.children[0])
+        : "";
+      const elseBranch = node.children?.[1]
+        ? serializeAllocation(node.children[1])
+        : "";
 
       let result = `if ${cond} {\n${indent(thenBranch, 2)}\n}`;
       if (elseBranch) {
@@ -2671,29 +2675,29 @@ function serializeAllocation(node: BlockNode): string {
       }
       return result;
 
-    case 'filter':
+    case "filter":
       return `${node.data.type} ${node.data.count} from ${node.data.universe} by ${node.data.metric}`;
 
     default:
-      return '';
+      return "";
   }
 }
 
 function serializeCondition(cond: any): string {
-  if (!cond) return 'true';
+  if (!cond) return "true";
 
-  if (cond.type === 'comparison') {
+  if (cond.type === "comparison") {
     const left = serializeExpr(cond.left);
     const right = serializeExpr(cond.right);
     return `${left} ${cond.operator} ${right}`;
   }
 
-  if (cond.type === 'logical') {
+  if (cond.type === "logical") {
     const conditions = cond.conditions.map(serializeCondition);
     return conditions.join(` ${cond.op.toUpperCase()} `);
   }
 
-  if (cond.type === 'crossover') {
+  if (cond.type === "crossover") {
     const fast = serializeExpr(cond.fast);
     const slow = serializeExpr(cond.slow);
     return `${fast} crosses ${cond.direction} ${slow}`;
@@ -2703,11 +2707,11 @@ function serializeCondition(cond: any): string {
 }
 
 function serializeExpr(expr: any): string {
-  if (typeof expr === 'number') return String(expr);
-  if (typeof expr === 'string') return expr;
+  if (typeof expr === "number") return String(expr);
+  if (typeof expr === "string") return expr;
 
-  if (expr.type === 'indicator') {
-    const args = expr.args?.join(', ') || '';
+  if (expr.type === "indicator") {
+    const args = expr.args?.join(", ") || "";
     let result = `${expr.name}(${args})`;
     if (expr.accessor) result += `.${expr.accessor}`;
     return result;
@@ -2717,8 +2721,11 @@ function serializeExpr(expr: any): string {
 }
 
 function indent(text: string, spaces: number): string {
-  const pad = ' '.repeat(spaces);
-  return text.split('\n').map(line => pad + line).join('\n');
+  const pad = " ".repeat(spaces);
+  return text
+    .split("\n")
+    .map((line) => pad + line)
+    .join("\n");
 }
 
 // S-Expression serializer
@@ -2935,6 +2942,7 @@ This implementation provides:
 6. **Execution Engine** - Compile AST to executable trading logic
 
 The layered architecture means users can:
+
 - Use visual blocks for simple strategies
 - Write Infix for medium complexity
 - Use S-expressions for maximum power
