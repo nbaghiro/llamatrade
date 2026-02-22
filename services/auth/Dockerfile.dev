@@ -1,0 +1,31 @@
+# LlamaTrade Auth Service - Development Dockerfile
+
+FROM python:3.12-slim
+
+WORKDIR /app
+
+# Install build dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc \
+    libpq-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy common library first
+COPY libs/common /app/libs/common
+
+# Install common library
+RUN pip install --no-cache-dir -e /app/libs/common
+
+# Copy service dependencies
+COPY services/auth/pyproject.toml services/auth/README.md ./
+
+# Install service dev dependencies
+RUN pip install --no-cache-dir -e ".[dev]"
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PORT=8001
+
+EXPOSE 8001
+
+CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8001", "--reload", "--reload-dir", "/app/src"]
