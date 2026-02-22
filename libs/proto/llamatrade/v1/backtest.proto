@@ -1,0 +1,255 @@
+syntax = "proto3";
+
+package llamatrade.v1;
+
+import "llamatrade/v1/common.proto";
+import "llamatrade/v1/trading.proto";
+
+option java_multiple_files = true;
+option java_package = "com.llamatrade.api.v1";
+
+// =============================================================================
+// ENUMS
+// =============================================================================
+
+// Backtest status
+enum BacktestStatus {
+  BACKTEST_STATUS_UNSPECIFIED = 0;
+  BACKTEST_STATUS_PENDING = 1;
+  BACKTEST_STATUS_RUNNING = 2;
+  BACKTEST_STATUS_COMPLETED = 3;
+  BACKTEST_STATUS_FAILED = 4;
+  BACKTEST_STATUS_CANCELLED = 5;
+}
+
+// =============================================================================
+// MESSAGES
+// =============================================================================
+
+// Backtest configuration
+message BacktestConfig {
+  string strategy_id = 1;
+  int32 strategy_version = 2;
+
+  // Time range
+  Timestamp start_date = 3;
+  Timestamp end_date = 4;
+
+  // Initial conditions
+  Decimal initial_capital = 5;
+
+  // Symbols to trade
+  repeated string symbols = 6;
+
+  // Execution settings
+  Decimal commission = 7;          // Per-trade commission
+  Decimal slippage_percent = 8;    // Simulated slippage
+  bool allow_shorting = 9;
+  Decimal max_position_size = 10;  // As percent of portfolio
+
+  // Data settings
+  string timeframe = 11;
+  bool use_adjusted_prices = 12;
+
+  // Strategy parameters override
+  map<string, string> parameters = 13;
+}
+
+// Backtest run
+message BacktestRun {
+  string id = 1;
+  string tenant_id = 2;
+  string strategy_id = 3;
+  int32 strategy_version = 4;
+
+  BacktestConfig config = 5;
+  BacktestStatus status = 6;
+  string status_message = 7;
+
+  // Progress (0-100)
+  int32 progress_percent = 8;
+  string current_date = 9;
+
+  // Results (populated when completed)
+  BacktestResults results = 10;
+
+  // Timestamps
+  Timestamp created_at = 11;
+  Timestamp started_at = 12;
+  Timestamp completed_at = 13;
+}
+
+// Backtest performance metrics
+message BacktestMetrics {
+  // Returns
+  Decimal total_return = 1;
+  Decimal annualized_return = 2;
+  Decimal benchmark_return = 3;
+  Decimal alpha = 4;
+  Decimal beta = 5;
+
+  // Risk metrics
+  Decimal sharpe_ratio = 6;
+  Decimal sortino_ratio = 7;
+  Decimal max_drawdown = 8;
+  Decimal max_drawdown_duration_days = 9;
+  Decimal volatility = 10;
+  Decimal downside_deviation = 11;
+
+  // Trade statistics
+  int32 total_trades = 12;
+  int32 winning_trades = 13;
+  int32 losing_trades = 14;
+  Decimal win_rate = 15;
+  Decimal average_win = 16;
+  Decimal average_loss = 17;
+  Decimal profit_factor = 18;
+  Decimal expectancy = 19;
+
+  // Position metrics
+  Decimal average_holding_period_days = 20;
+  int32 max_concurrent_positions = 21;
+
+  // Capital metrics
+  Decimal starting_capital = 22;
+  Decimal ending_capital = 23;
+  Decimal peak_capital = 24;
+  Decimal total_commission = 25;
+}
+
+// Equity curve point
+message EquityPoint {
+  Timestamp timestamp = 1;
+  Decimal equity = 2;
+  Decimal cash = 3;
+  Decimal positions_value = 4;
+  Decimal daily_return = 5;
+  Decimal drawdown = 6;
+}
+
+// Backtest trade record
+message BacktestTrade {
+  string symbol = 1;
+  OrderSide side = 2;
+  Decimal quantity = 3;
+  Decimal entry_price = 4;
+  Decimal exit_price = 5;
+  Timestamp entry_time = 6;
+  Timestamp exit_time = 7;
+  Decimal pnl = 8;
+  Decimal pnl_percent = 9;
+  Decimal commission = 10;
+  int32 holding_period_bars = 11;
+  string entry_reason = 12;
+  string exit_reason = 13;
+}
+
+// Backtest results
+message BacktestResults {
+  BacktestMetrics metrics = 1;
+  repeated EquityPoint equity_curve = 2;
+  repeated BacktestTrade trades = 3;
+  repeated Position final_positions = 4;
+
+  // Monthly returns
+  map<string, double> monthly_returns = 5;  // "2024-01" -> 0.05
+
+  // Additional analysis
+  map<string, string> analysis = 6;
+}
+
+// =============================================================================
+// REQUESTS & RESPONSES
+// =============================================================================
+
+// Run backtest
+message RunBacktestRequest {
+  TenantContext context = 1;
+  BacktestConfig config = 2;
+}
+
+message RunBacktestResponse {
+  BacktestRun backtest = 1;
+}
+
+// Get backtest
+message GetBacktestRequest {
+  TenantContext context = 1;
+  string backtest_id = 2;
+}
+
+message GetBacktestResponse {
+  BacktestRun backtest = 1;
+}
+
+// List backtests
+message ListBacktestsRequest {
+  TenantContext context = 1;
+  string strategy_id = 2;  // Filter by strategy
+  repeated BacktestStatus statuses = 3;
+  PaginationRequest pagination = 4;
+}
+
+message ListBacktestsResponse {
+  repeated BacktestRun backtests = 1;
+  PaginationResponse pagination = 2;
+}
+
+// Cancel backtest
+message CancelBacktestRequest {
+  TenantContext context = 1;
+  string backtest_id = 2;
+}
+
+message CancelBacktestResponse {
+  BacktestRun backtest = 1;
+}
+
+// Stream backtest progress
+message StreamBacktestProgressRequest {
+  TenantContext context = 1;
+  string backtest_id = 2;
+}
+
+// Progress update
+message BacktestProgressUpdate {
+  string backtest_id = 1;
+  BacktestStatus status = 2;
+  int32 progress_percent = 3;
+  string current_date = 4;
+  string message = 5;
+  Timestamp timestamp = 6;
+
+  // Partial results (updated periodically)
+  BacktestMetrics partial_metrics = 7;
+}
+
+// Compare backtests
+message CompareBacktestsRequest {
+  TenantContext context = 1;
+  repeated string backtest_ids = 2;
+}
+
+message CompareBacktestsResponse {
+  repeated BacktestRun backtests = 1;
+  // Comparison summary
+  map<string, BacktestMetrics> metrics_by_id = 2;
+}
+
+// =============================================================================
+// SERVICE
+// =============================================================================
+
+service BacktestService {
+  // Backtest management
+  rpc RunBacktest(RunBacktestRequest) returns (RunBacktestResponse);
+  rpc GetBacktest(GetBacktestRequest) returns (GetBacktestResponse);
+  rpc ListBacktests(ListBacktestsRequest) returns (ListBacktestsResponse);
+  rpc CancelBacktest(CancelBacktestRequest) returns (CancelBacktestResponse);
+
+  // Real-time progress
+  rpc StreamBacktestProgress(StreamBacktestProgressRequest) returns (stream BacktestProgressUpdate);
+
+  // Analysis
+  rpc CompareBacktests(CompareBacktestsRequest) returns (CompareBacktestsResponse);
+}

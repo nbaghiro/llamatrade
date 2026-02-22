@@ -1,0 +1,80 @@
+syntax = "proto3";
+
+package llamatrade.v1;
+
+option java_multiple_files = true;
+option java_package = "com.llamatrade.api.v1";
+
+// UUID wrapper for strongly-typed identifiers
+message UUID {
+  string value = 1;
+}
+
+// Timestamp with nanosecond precision
+message Timestamp {
+  int64 seconds = 1;
+  int32 nanos = 2;
+}
+
+// Money representation with currency
+message Money {
+  string currency = 1;  // ISO 4217 currency code (e.g., "USD")
+  string amount = 2;    // Decimal string to avoid floating point issues
+}
+
+// Decimal for precise numeric values
+message Decimal {
+  string value = 1;  // String representation of decimal number
+}
+
+// Pagination request parameters
+message PaginationRequest {
+  int32 page = 1;       // 1-indexed page number
+  int32 page_size = 2;  // Items per page (max 100)
+}
+
+// Pagination response metadata
+message PaginationResponse {
+  int32 total_items = 1;
+  int32 total_pages = 2;
+  int32 current_page = 3;
+  int32 page_size = 4;
+  bool has_next = 5;
+  bool has_previous = 6;
+}
+
+// Tenant and user context for multi-tenancy
+message TenantContext {
+  string tenant_id = 1;
+  string user_id = 2;
+  repeated string roles = 3;
+}
+
+// Standard error response
+message Error {
+  string code = 1;       // Machine-readable error code
+  string message = 2;    // Human-readable message
+  map<string, string> details = 3;  // Additional error context
+}
+
+// Empty message for requests/responses with no payload
+message Empty {}
+
+// Time range for queries
+message TimeRange {
+  Timestamp start = 1;
+  Timestamp end = 2;
+}
+
+// Sort direction
+enum SortDirection {
+  SORT_DIRECTION_UNSPECIFIED = 0;
+  SORT_DIRECTION_ASC = 1;
+  SORT_DIRECTION_DESC = 2;
+}
+
+// Generic sort specification
+message SortSpec {
+  string field = 1;
+  SortDirection direction = 2;
+}

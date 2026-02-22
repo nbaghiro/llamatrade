@@ -1,0 +1,16 @@
+version: v2
+managed:
+  enabled: true
+  override:
+    - file_option: go_package_prefix
+      value: github.com/llamatrade/api/gen/go
+plugins:
+  # Python gRPC and protobuf
+  - remote: buf.build/protocolbuffers/python
+    out: ../grpc/llamatrade_grpc/generated
+  - remote: buf.build/grpc/python
+    out: ../grpc/llamatrade_grpc/generated
+
+  # Optional: Generate TypeScript types for frontend
+  # - remote: buf.build/bufbuild/es
+  #   out: ../../apps/web/src/types/proto
