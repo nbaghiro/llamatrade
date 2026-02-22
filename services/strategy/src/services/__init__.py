@@ -1,0 +1,1 @@
+"""Strategy Service business logic."""
