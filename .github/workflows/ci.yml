@@ -81,22 +81,25 @@ jobs:
           pip install -e libs/common[dev]
           pip install -e libs/db[dev]
 
-      - name: Run auth tests
+      - name: Install coverage tools
+        run: pip install pytest-cov coverage
+
+      - name: Run auth tests with coverage
         env:
           DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/test
           REDIS_URL: redis://localhost:6379
         run: |
           pip install -e services/auth[dev]
-          cd services/auth && pytest tests -v
+          cd services/auth && pytest tests -v --cov=src --cov-report=term-missing
           pip uninstall -y llamatrade-auth
 
-      - name: Run strategy tests
+      - name: Run strategy tests with coverage
         env:
           DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/test
           REDIS_URL: redis://localhost:6379
         run: |
           pip install -e services/strategy[dev]
-          cd services/strategy && pytest tests -v
+          cd services/strategy && pytest tests -v --cov=src --cov-report=term-missing
 
   lint-frontend:
     name: Lint & Type Check Frontend

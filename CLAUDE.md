@@ -50,7 +50,7 @@ Evaluate:
 ### 3. Test Review
 
 Evaluate:
-- **Test coverage percentage** — backend services MUST maintain ≥80% coverage; flag any PR that drops below
+- **Test coverage percentage** — track coverage, target 80% for real implementations (not stubs)
 - Test coverage gaps (unit, integration, e2e)
 - Test quality and assertion strength
 - Missing edge case coverage — be thorough
@@ -138,12 +138,12 @@ services/[name]/
 - Test files: `test_*.py` in `tests/` directory
 
 **Test Coverage Requirements:**
-- **Minimum 80% coverage** enforced for all backend services — CI will fail below this threshold
-- Run coverage locally: `pytest --cov=src --cov-report=term-missing --cov-fail-under=80`
+- **Target 80% coverage** for real implementations (currently tracking only, not enforced)
+- Run coverage locally: `pytest --cov=src --cov-report=term-missing`
 - Generate HTML report: `pytest --cov=src --cov-report=html` (output in `htmlcov/`)
-- When adding new code, you MUST add corresponding tests to maintain coverage
-- When modifying existing code, check if tests need updating
+- When adding **real implementations** (not stubs), add corresponding tests
 - Coverage is measured on `src/` directories, excluding tests and migrations
+- Note: Many services are currently stubbed — focus tests on actual business logic
 
 **What to Test:**
 - Happy path for all endpoints
@@ -231,7 +231,6 @@ make lint                   # All linting
 # Test Coverage
 cd services/auth && pytest --cov=src --cov-report=term-missing    # Coverage report
 cd services/auth && pytest --cov=src --cov-report=html            # HTML report → htmlcov/
-cd services/auth && pytest --cov=src --cov-fail-under=80          # Fail if <80%
 
 # Formatting
 ruff check --fix services/ libs/
@@ -278,6 +277,23 @@ Never allow cross-tenant data access. When in doubt, add tenant filtering.
 
 ---
 
+## Current Project Stage
+
+**Early Development** — Most services have barebones structure:
+- Health endpoints work
+- Routers exist with full endpoint signatures
+- Service methods are mostly stubbed (return `None`, empty lists, or mock data)
+- Database queries not yet implemented (except auth user creation)
+- Focus on building real implementations before enforcing strict coverage
+
+**Services with real logic to prioritize testing:**
+- `market-data` (95% real) — Full Alpaca API integration
+- `auth` (60% real) — JWT tokens, bcrypt, user creation
+- `backtest` engine (30% real) — Metrics calculations exist
+- `strategy` indicators (20% real) — NumPy calculations exist
+
+---
+
 ## Things to Avoid
 
 - Blocking calls in async context (use `asyncio.to_thread` if unavoidable)
@@ -288,5 +304,4 @@ Never allow cross-tenant data access. When in doubt, add tenant filtering.
 - Class-based React components
 - CSS files for component styling (use Tailwind)
 - Direct database access outside service layer
-- **Adding code without tests** — every new feature/fix needs test coverage
-- **Dropping coverage below 80%** — CI will block merges that reduce coverage
+- **Adding real implementations without tests** — new business logic needs coverage

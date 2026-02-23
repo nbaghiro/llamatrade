@@ -26,6 +26,35 @@ exclude = ["tests", "venv", ".venv"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["services/*/tests"]
+addopts = "--cov --cov-report=term-missing"
+
+[tool.coverage.run]
+source = ["services/*/src", "libs/*/src"]
+branch = true
+omit = [
+    "*/tests/*",
+    "*/__pycache__/*",
+    "*/migrations/*",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+    "class .*\\bProtocol\\):",
+    "@abstractmethod",
+]
+# TODO: Enable fail_under=80 once services have real implementations
+# fail_under = 80
+show_missing = true
+skip_covered = false
+
+[tool.coverage.html]
+directory = "htmlcov"
 
 [tool.uv.workspace]
 members = [
