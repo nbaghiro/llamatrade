@@ -254,6 +254,14 @@ npm run lint:fix            # Frontend
 
 ---
 
+## Commit Guidelines
+
+- Use concise, single-line commit messages
+- **Do NOT include Co-Authored-By lines** — no Claude co-author attribution
+- Run `./scripts/ci-local.sh` before committing to verify all checks pass
+
+---
+
 ## Multi-Tenancy
 
 All operations MUST be tenant-scoped:
