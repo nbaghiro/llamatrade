@@ -20,7 +20,7 @@ async def list_transactions(
     page_size: int = Query(20, ge=1, le=100),
     ctx: TenantContext = Depends(require_auth),
     service: TransactionService = Depends(get_transaction_service),
-):
+) -> PaginatedResponse[TransactionResponse]:
     """List transactions."""
     transactions, total = await service.list_transactions(
         tenant_id=ctx.tenant_id,
@@ -37,7 +37,7 @@ async def get_transaction(
     transaction_id: UUID,
     ctx: TenantContext = Depends(require_auth),
     service: TransactionService = Depends(get_transaction_service),
-):
+) -> TransactionResponse:
     """Get a specific transaction."""
     tx = await service.get_transaction(transaction_id=transaction_id, tenant_id=ctx.tenant_id)
     if not tx:

@@ -22,15 +22,19 @@ async def create_backtest(
     request: BacktestCreate,
     ctx: TenantContext = Depends(require_auth),
     service: BacktestService = Depends(get_backtest_service),
-):
+) -> BacktestResponse:
     """Create and queue a new backtest run."""
     try:
+        # Generate name from strategy if not provided
+        name = request.name or f"Backtest {request.strategy_id}"
         backtest = await service.create_backtest(
             tenant_id=ctx.tenant_id,
+            user_id=ctx.user_id,
             strategy_id=request.strategy_id,
             strategy_version=request.strategy_version,
-            start_date=request.start_date,
-            end_date=request.end_date,
+            name=name,
+            start_date=request.start_date.date(),
+            end_date=request.end_date.date(),
             initial_capital=request.initial_capital,
             symbols=request.symbols,
             commission=request.commission,
@@ -49,7 +53,7 @@ async def list_backtests(
     page_size: int = Query(20, ge=1, le=100),
     ctx: TenantContext = Depends(require_auth),
     service: BacktestService = Depends(get_backtest_service),
-):
+) -> PaginatedResponse[BacktestResponse]:
     """List backtests for the tenant."""
     backtests, total = await service.list_backtests(
         tenant_id=ctx.tenant_id,
@@ -66,7 +70,7 @@ async def get_backtest(
     backtest_id: UUID,
     ctx: TenantContext = Depends(require_auth),
     service: BacktestService = Depends(get_backtest_service),
-):
+) -> BacktestResponse:
     """Get backtest status and metadata."""
     backtest = await service.get_backtest(backtest_id=backtest_id, tenant_id=ctx.tenant_id)
     if not backtest:
@@ -79,7 +83,7 @@ async def get_backtest_results(
     backtest_id: UUID,
     ctx: TenantContext = Depends(require_auth),
     service: BacktestService = Depends(get_backtest_service),
-):
+) -> BacktestResultResponse:
     """Get backtest results including metrics and trades."""
     results = await service.get_results(backtest_id=backtest_id, tenant_id=ctx.tenant_id)
     if not results:
@@ -92,7 +96,7 @@ async def cancel_backtest(
     backtest_id: UUID,
     ctx: TenantContext = Depends(require_auth),
     service: BacktestService = Depends(get_backtest_service),
-):
+) -> None:
     """Cancel a pending or running backtest."""
     success = await service.cancel_backtest(backtest_id=backtest_id, tenant_id=ctx.tenant_id)
     if not success:
@@ -106,9 +110,50 @@ async def retry_backtest(
     backtest_id: UUID,
     ctx: TenantContext = Depends(require_auth),
     service: BacktestService = Depends(get_backtest_service),
-):
+) -> BacktestResponse:
     """Retry a failed backtest."""
-    backtest = await service.retry_backtest(backtest_id=backtest_id, tenant_id=ctx.tenant_id)
-    if not backtest:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Backtest not found")
-    return backtest
+    try:
+        backtest = await service.retry_backtest(backtest_id=backtest_id, tenant_id=ctx.tenant_id)
+        if not backtest:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Backtest not found")
+        return backtest
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+
+@router.post("/{backtest_id}/run", response_model=BacktestResultResponse)
+async def run_backtest(
+    backtest_id: UUID,
+    ctx: TenantContext = Depends(require_auth),
+    service: BacktestService = Depends(get_backtest_service),
+) -> BacktestResultResponse:
+    """Execute a pending backtest synchronously and return results."""
+    try:
+        results = await service.run_backtest(backtest_id=backtest_id, tenant_id=ctx.tenant_id)
+        return results
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+
+@router.post("/{backtest_id}/queue")
+async def queue_backtest(
+    backtest_id: UUID,
+    ctx: TenantContext = Depends(require_auth),
+    service: BacktestService = Depends(get_backtest_service),
+) -> dict[str, str]:
+    """Queue a backtest for async execution via Celery."""
+    try:
+        task_id = await service.queue_backtest(backtest_id=backtest_id, tenant_id=ctx.tenant_id)
+        return {"task_id": task_id, "status": "queued"}
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+
+@router.get("/tasks/{task_id}")
+async def get_task_status(
+    task_id: str,
+    ctx: TenantContext = Depends(require_auth),
+    service: BacktestService = Depends(get_backtest_service),
+) -> dict[str, str | None]:
+    """Get the status of a Celery backtest task."""
+    return await service.get_task_status(task_id)

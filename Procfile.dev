@@ -2,6 +2,7 @@
 # Usage: honcho start -f Procfile.dev
 # Install: pip install honcho
 
+gateway: docker rm -f llamatrade-gateway-local 2>/dev/null; docker run --rm --name llamatrade-gateway-local -p 47800:8000 -v $PWD/services/gateway/kong.local.yaml:/kong/declarative/kong.yml:ro -e KONG_DATABASE=off -e KONG_DECLARATIVE_CONFIG=/kong/declarative/kong.yml -e KONG_PROXY_ACCESS_LOG=/dev/stdout -e KONG_PROXY_ERROR_LOG=/dev/stderr kong:3.4
 auth: cd services/auth && source .venv/bin/activate && uvicorn src.main:app --host 0.0.0.0 --port 47810 --reload --reload-dir src
 strategy: cd services/strategy && source .venv/bin/activate && uvicorn src.main:app --host 0.0.0.0 --port 47820 --reload --reload-dir src
 backtest: cd services/backtest && source .venv/bin/activate && uvicorn src.main:app --host 0.0.0.0 --port 47830 --reload --reload-dir src
@@ -10,4 +11,4 @@ trading: cd services/trading && source .venv/bin/activate && uvicorn src.main:ap
 portfolio: cd services/portfolio && source .venv/bin/activate && uvicorn src.main:app --host 0.0.0.0 --port 47860 --reload --reload-dir src
 notification: cd services/notification && source .venv/bin/activate && uvicorn src.main:app --host 0.0.0.0 --port 47870 --reload --reload-dir src
 billing: cd services/billing && source .venv/bin/activate && uvicorn src.main:app --host 0.0.0.0 --port 47880 --reload --reload-dir src
-web: cd apps/web && npm run dev -- --host 0.0.0.0 --port 47300
+web: cd apps/web && npm run dev -- --host 0.0.0.0 --port 47333

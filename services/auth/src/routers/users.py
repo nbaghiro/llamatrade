@@ -18,7 +18,7 @@ async def list_users(
     page_size: int = Query(20, ge=1, le=100),
     ctx: TenantContext = Depends(require_auth),
     user_service: UserService = Depends(get_user_service),
-):
+) -> PaginatedResponse[UserResponse]:
     """List users in the tenant."""
     users, total = await user_service.list_users(
         tenant_id=ctx.tenant_id,
@@ -38,7 +38,7 @@ async def get_user(
     user_id: UUID,
     ctx: TenantContext = Depends(require_auth),
     user_service: UserService = Depends(get_user_service),
-):
+) -> UserResponse:
     """Get a specific user by ID."""
     user = await user_service.get_user(user_id=user_id, tenant_id=ctx.tenant_id)
     if not user:
@@ -51,7 +51,7 @@ async def create_user(
     user_data: UserCreate,
     ctx: TenantContext = Depends(require_roles("admin")),
     user_service: UserService = Depends(get_user_service),
-):
+) -> UserResponse:
     """Create a new user in the tenant (admin only)."""
     try:
         user = await user_service.create_user(
@@ -71,7 +71,7 @@ async def update_user(
     user_data: UserUpdate,
     ctx: TenantContext = Depends(require_roles("admin")),
     user_service: UserService = Depends(get_user_service),
-):
+) -> UserResponse:
     """Update a user (admin only)."""
     user = await user_service.update_user(
         user_id=user_id,
@@ -88,7 +88,7 @@ async def delete_user(
     user_id: UUID,
     ctx: TenantContext = Depends(require_roles("admin")),
     user_service: UserService = Depends(get_user_service),
-):
+) -> None:
     """Delete a user (admin only)."""
     if user_id == ctx.user_id:
         raise HTTPException(

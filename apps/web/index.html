@@ -2,7 +2,7 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <link rel="icon" type="image/svg+xml" href="/logo-green-to-purple.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>LlamaTrade - Algorithmic Trading Platform</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -13,6 +13,25 @@
     />
   </head>
   <body>
+    <script>
+      // Apply theme immediately to prevent flash
+      (function() {
+        try {
+          var stored = localStorage.getItem('llamatrade-theme');
+          if (stored) {
+            var parsed = JSON.parse(stored);
+            var theme = parsed.state && parsed.state.theme;
+            var isDark = theme === 'dark' ||
+              (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+            if (isDark) {
+              document.documentElement.classList.add('dark');
+            } else {
+              document.documentElement.classList.remove('dark');
+            }
+          }
+        } catch (e) {}
+      })();
+    </script>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

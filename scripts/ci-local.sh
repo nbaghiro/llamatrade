@@ -8,6 +8,7 @@
 #   --test-only      Run only tests
 #   --backend-only   Skip frontend checks
 #   --frontend-only  Skip backend checks
+#   --integration    Run integration tests (requires Docker)
 #   --fix            Auto-fix linting issues
 #   -h, --help       Show this help message
 
@@ -25,6 +26,7 @@ RUN_LINT=true
 RUN_TESTS=true
 RUN_BACKEND=true
 RUN_FRONTEND=true
+RUN_INTEGRATION=false
 FIX_MODE=false
 
 # Parse arguments
@@ -46,12 +48,16 @@ while [[ $# -gt 0 ]]; do
             RUN_BACKEND=false
             shift
             ;;
+        --integration)
+            RUN_INTEGRATION=true
+            shift
+            ;;
         --fix)
             FIX_MODE=true
             shift
             ;;
         -h|--help)
-            head -20 "$0" | tail -15
+            head -25 "$0" | tail -20
             exit 0
             ;;
         *)
@@ -209,6 +215,34 @@ if [[ "$RUN_TESTS" == "true" && "$RUN_FRONTEND" == "true" ]]; then
             run_step "Frontend tests" npm test -- --run --passWithNoTests || true
         fi
         cd "$PROJECT_ROOT"
+    fi
+fi
+
+# ═══════════════════════════════════════════════════════════════
+# INTEGRATION TESTS (Optional - run with --integration flag)
+# ═══════════════════════════════════════════════════════════════
+if [[ "$RUN_TESTS" == "true" && "$RUN_INTEGRATION" == "true" ]]; then
+    print_header "Integration Tests"
+
+    # Ensure testcontainers dependencies are installed
+    pip install -q "testcontainers[postgres,redis]>=4.0.0" pytest-xdist pytest-timeout
+
+    # Run integration tests (services against real DB)
+    print_step "Service integration tests"
+    if pytest tests/integration/services -v -m integration --timeout=60 2>/dev/null; then
+        print_success "Service integration tests passed"
+    else
+        print_error "Service integration tests failed"
+        FAILED+=("Service integration tests")
+    fi
+
+    # Run security tests (tenant isolation - critical)
+    print_step "Security tests (tenant isolation)"
+    if pytest tests/integration/security -v -m security --timeout=60 2>/dev/null; then
+        print_success "Security tests passed"
+    else
+        print_error "Security tests failed"
+        FAILED+=("Security tests")
     fi
 fi
 

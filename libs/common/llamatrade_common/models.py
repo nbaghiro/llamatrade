@@ -1,12 +1,82 @@
 """Shared Pydantic models for LlamaTrade services."""
 
 from datetime import datetime
-from typing import Any, TypeVar
+from typing import TypedDict, TypeVar, cast
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 T = TypeVar("T")
+
+
+class IndicatorParams(TypedDict, total=False):
+    """Indicator parameter values."""
+
+    period: int
+    fast_period: int
+    slow_period: int
+    signal_period: int
+    std_dev: float
+    multiplier: float
+    source: str
+
+
+class IndicatorConfigDict(TypedDict):
+    """Indicator configuration as dict."""
+
+    type: str
+    params: IndicatorParams
+    output_name: str
+
+
+class ConditionConfigDict(TypedDict, total=False):
+    """Condition configuration as dict."""
+
+    type: str
+    left: str
+    right: str | float
+    operator: str
+
+
+class ActionConfigDict(TypedDict, total=False):
+    """Action configuration as dict."""
+
+    type: str
+    quantity_type: str
+    quantity_value: float
+    order_type: str
+
+
+class RiskConfigDict(TypedDict, total=False):
+    """Risk management configuration as dict."""
+
+    stop_loss_percent: float
+    take_profit_percent: float
+    trailing_stop_percent: float
+    max_position_size_percent: float
+    max_daily_loss_percent: float
+
+
+class EquityPointDict(TypedDict):
+    """Equity curve point."""
+
+    date: str
+    equity: float
+    drawdown: float
+
+
+class TradeRecordDict(TypedDict, total=False):
+    """Trade record."""
+
+    entry_date: str
+    exit_date: str
+    symbol: str
+    side: str
+    entry_price: float
+    exit_price: float
+    quantity: float
+    pnl: float
+    pnl_percent: float
 
 
 class TenantContext(BaseModel):
@@ -80,17 +150,17 @@ class StrategyConfig(BaseModel):
     description: str | None = None
     symbols: list[str]
     timeframe: str = "1D"
-    indicators: list[dict[str, Any]] = Field(default_factory=list)
-    conditions: list[dict[str, Any]] = Field(default_factory=list)
-    actions: list[dict[str, Any]] = Field(default_factory=list)
-    risk_management: dict[str, Any] = Field(default_factory=dict)
+    indicators: list[IndicatorConfigDict] = Field(default_factory=list)
+    conditions: list[ConditionConfigDict] = Field(default_factory=list)
+    actions: list[ActionConfigDict] = Field(default_factory=list)
+    risk_management: RiskConfigDict = Field(default_factory=lambda: cast(RiskConfigDict, {}))
 
 
 class IndicatorConfig(BaseModel):
     """Indicator configuration."""
 
     type: str
-    params: dict[str, Any] = Field(default_factory=dict)
+    params: IndicatorParams = Field(default_factory=lambda: cast(IndicatorParams, {}))
     output_name: str
 
 
@@ -188,8 +258,8 @@ class BacktestResult(BaseModel):
     id: UUID
     backtest_id: UUID
     metrics: BacktestMetrics
-    equity_curve: list[dict[str, Any]]
-    trades: list[dict[str, Any]]
+    equity_curve: list[EquityPointDict]
+    trades: list[TradeRecordDict]
     created_at: datetime
 
 

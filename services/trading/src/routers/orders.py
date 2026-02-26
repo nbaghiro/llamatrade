@@ -15,10 +15,10 @@ router = APIRouter()
 @router.post("", response_model=OrderResponse, status_code=status.HTTP_201_CREATED)
 async def submit_order(
     order: OrderCreate,
-    session_id: UUID | None = None,
+    session_id: UUID = Query(..., description="Trading session ID"),
     ctx: TenantContext = Depends(require_auth),
     executor: OrderExecutor = Depends(get_order_executor),
-):
+) -> OrderResponse:
     """Submit a new order."""
     try:
         result = await executor.submit_order(
@@ -33,13 +33,13 @@ async def submit_order(
 
 @router.get("", response_model=PaginatedResponse[OrderResponse])
 async def list_orders(
-    status: OrderStatus | None = None,
     session_id: UUID | None = None,
+    status: OrderStatus | None = None,
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     ctx: TenantContext = Depends(require_auth),
     executor: OrderExecutor = Depends(get_order_executor),
-):
+) -> PaginatedResponse[OrderResponse]:
     """List orders for the tenant."""
     orders, total = await executor.list_orders(
         tenant_id=ctx.tenant_id,
@@ -56,9 +56,22 @@ async def get_order(
     order_id: UUID,
     ctx: TenantContext = Depends(require_auth),
     executor: OrderExecutor = Depends(get_order_executor),
-):
+) -> OrderResponse:
     """Get a specific order."""
     order = await executor.get_order(order_id=order_id, tenant_id=ctx.tenant_id)
+    if not order:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Order not found")
+    return order
+
+
+@router.post("/{order_id}/sync", response_model=OrderResponse)
+async def sync_order_status(
+    order_id: UUID,
+    ctx: TenantContext = Depends(require_auth),
+    executor: OrderExecutor = Depends(get_order_executor),
+) -> OrderResponse:
+    """Sync order status with Alpaca."""
+    order = await executor.sync_order_status(order_id=order_id, tenant_id=ctx.tenant_id)
     if not order:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Order not found")
     return order
@@ -69,7 +82,7 @@ async def cancel_order(
     order_id: UUID,
     ctx: TenantContext = Depends(require_auth),
     executor: OrderExecutor = Depends(get_order_executor),
-):
+) -> None:
     """Cancel an order."""
     success = await executor.cancel_order(order_id=order_id, tenant_id=ctx.tenant_id)
     if not success:

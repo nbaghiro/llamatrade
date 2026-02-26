@@ -1,6 +1,4 @@
-"""Subscriptions router."""
-
-from datetime import UTC
+"""Subscriptions router - plan and subscription management."""
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from llamatrade_common.middleware import TenantContext, require_auth
@@ -8,116 +6,163 @@ from llamatrade_common.middleware import TenantContext, require_auth
 from src.models import (
     InvoiceResponse,
     PlanResponse,
-    PlanTier,
-    SubscriptionCreate,
+    SubscriptionCancelRequest,
+    SubscriptionCreateRequest,
     SubscriptionResponse,
+    SubscriptionUpdateRequest,
 )
+from src.services.billing_service import BillingService, get_billing_service
+from src.stripe.client import get_stripe_client
 
 router = APIRouter()
 
-PLANS = [
-    PlanResponse(
-        id="free",
-        name="Free",
-        tier=PlanTier.FREE,
-        price_monthly=0,
-        price_yearly=0,
-        features=["5 backtests/month", "Paper trading", "Basic indicators"],
-        limits={"backtests": 5, "live_strategies": 0, "api_calls": 1000},
-    ),
-    PlanResponse(
-        id="starter",
-        name="Starter",
-        tier=PlanTier.STARTER,
-        price_monthly=29,
-        price_yearly=290,
-        features=["50 backtests/month", "Paper trading", "All indicators", "Email alerts"],
-        limits={"backtests": 50, "live_strategies": 1, "api_calls": 10000},
-    ),
-    PlanResponse(
-        id="pro",
-        name="Pro",
-        tier=PlanTier.PRO,
-        price_monthly=99,
-        price_yearly=990,
-        features=[
-            "Unlimited backtests",
-            "Live trading",
-            "All indicators",
-            "All alerts",
-            "Priority support",
-        ],
-        limits={"backtests": None, "live_strategies": 5, "api_calls": 100000},
-    ),
-    PlanResponse(
-        id="enterprise",
-        name="Enterprise",
-        tier=PlanTier.ENTERPRISE,
-        price_monthly=299,
-        price_yearly=2990,
-        features=[
-            "Everything in Pro",
-            "Unlimited live strategies",
-            "Dedicated support",
-            "Custom integrations",
-        ],
-        limits={"backtests": None, "live_strategies": None, "api_calls": None},
-    ),
-]
-
 
 @router.get("/plans", response_model=list[PlanResponse])
-async def list_plans():
+async def list_plans(
+    billing_service: BillingService = Depends(get_billing_service),
+) -> list[PlanResponse]:
     """List available subscription plans."""
-    return PLANS
+    return await billing_service.list_plans()
 
 
-@router.get("/current", response_model=SubscriptionResponse)
-async def get_current_subscription(ctx: TenantContext = Depends(require_auth)):
-    """Get current subscription."""
-    from datetime import datetime
-    from uuid import uuid4
+@router.get("/plans/{plan_id}", response_model=PlanResponse)
+async def get_plan(
+    plan_id: str,
+    billing_service: BillingService = Depends(get_billing_service),
+) -> PlanResponse:
+    """Get a specific plan by ID."""
+    plan = await billing_service.get_plan(plan_id)
+    if not plan:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Plan {plan_id} not found",
+        )
+    return plan
 
-    now = datetime.now(UTC)
-    return {
-        "id": uuid4(),
-        "tenant_id": ctx.tenant_id,
-        "plan": PLANS[0],
-        "status": "active",
-        "current_period_start": now,
-        "current_period_end": now,
-        "cancel_at_period_end": False,
-        "stripe_subscription_id": None,
-        "created_at": now,
-    }
+
+@router.get("/current", response_model=SubscriptionResponse | None)
+async def get_current_subscription(
+    ctx: TenantContext = Depends(require_auth),
+    billing_service: BillingService = Depends(get_billing_service),
+) -> SubscriptionResponse | None:
+    """Get current subscription for the tenant."""
+    return await billing_service.get_subscription(ctx.tenant_id)
 
 
 @router.post("", response_model=SubscriptionResponse, status_code=status.HTTP_201_CREATED)
 async def create_subscription(
-    request: SubscriptionCreate,
+    request: SubscriptionCreateRequest,
     ctx: TenantContext = Depends(require_auth),
-):
-    """Create or upgrade subscription."""
-    # In production, integrate with Stripe
-    raise HTTPException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED, detail="Stripe integration required"
-    )
+    billing_service: BillingService = Depends(get_billing_service),
+) -> SubscriptionResponse:
+    """Create a new subscription."""
+    try:
+        return await billing_service.create_subscription(
+            tenant_id=ctx.tenant_id,
+            email=ctx.email,
+            request=request,
+        )
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        )
 
 
-@router.post("/cancel")
-async def cancel_subscription(ctx: TenantContext = Depends(require_auth)):
-    """Cancel subscription at period end."""
-    return {"status": "cancelled", "cancel_at_period_end": True}
+@router.put("", response_model=SubscriptionResponse)
+async def update_subscription(
+    request: SubscriptionUpdateRequest,
+    ctx: TenantContext = Depends(require_auth),
+    billing_service: BillingService = Depends(get_billing_service),
+) -> SubscriptionResponse:
+    """Update subscription (change plan)."""
+    try:
+        return await billing_service.update_subscription(
+            tenant_id=ctx.tenant_id,
+            plan_id=request.plan_id,
+        )
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        )
+
+
+@router.post("/cancel", response_model=SubscriptionResponse)
+async def cancel_subscription(
+    request: SubscriptionCancelRequest = SubscriptionCancelRequest(),
+    ctx: TenantContext = Depends(require_auth),
+    billing_service: BillingService = Depends(get_billing_service),
+) -> SubscriptionResponse:
+    """Cancel subscription."""
+    try:
+        return await billing_service.cancel_subscription(
+            tenant_id=ctx.tenant_id,
+            at_period_end=request.at_period_end,
+        )
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        )
+
+
+@router.post("/reactivate", response_model=SubscriptionResponse)
+async def reactivate_subscription(
+    ctx: TenantContext = Depends(require_auth),
+    billing_service: BillingService = Depends(get_billing_service),
+) -> SubscriptionResponse:
+    """Reactivate a cancelled subscription."""
+    try:
+        return await billing_service.reactivate_subscription(
+            tenant_id=ctx.tenant_id,
+        )
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        )
 
 
 @router.get("/invoices", response_model=list[InvoiceResponse])
-async def list_invoices(ctx: TenantContext = Depends(require_auth)):
-    """List invoices."""
-    return []
+async def list_invoices(
+    ctx: TenantContext = Depends(require_auth),
+    billing_service: BillingService = Depends(get_billing_service),
+) -> list[InvoiceResponse]:
+    """List invoices for the current subscription."""
+    # Get subscription to find customer ID
+    subscription = await billing_service.get_subscription(ctx.tenant_id)
 
+    if not subscription or not subscription.stripe_subscription_id:
+        return []
 
-@router.post("/portal-session")
-async def create_portal_session(ctx: TenantContext = Depends(require_auth)):
-    """Create Stripe customer portal session."""
-    # In production, create Stripe portal session
-    return {"url": "https://billing.stripe.com/session/..."}
+    # Get Stripe customer ID from subscription
+    from llamatrade_db.models import Subscription
+    from sqlalchemy import select
+
+    result = await billing_service.db.execute(
+        select(Subscription.stripe_customer_id).where(Subscription.tenant_id == ctx.tenant_id)
+    )
+    customer_id = result.scalar_one_or_none()
+
+    if not customer_id:
+        return []
+
+    # Get invoices from Stripe
+    stripe_client = get_stripe_client()
+    stripe_invoices = await stripe_client.list_invoices(customer_id)
+
+    return [
+        InvoiceResponse(
+            id=inv.id,
+            amount=inv.amount_due / 100,  # Convert from cents
+            currency=inv.currency,
+            status=inv.status,
+            period_start=inv.period_start,
+            period_end=inv.period_end,
+            paid_at=inv.paid_at,
+            invoice_pdf=inv.invoice_pdf,
+            hosted_invoice_url=inv.hosted_invoice_url,
+        )
+        for inv in stripe_invoices
+    ]

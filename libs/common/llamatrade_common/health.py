@@ -8,14 +8,33 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import Callable, Coroutine
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import StrEnum
-from typing import Any
+from typing import TypedDict
 
 from fastapi import APIRouter, Response
 from pydantic import BaseModel
+
+
+class CheckDetails(TypedDict, total=False):
+    """Optional details from a health check."""
+
+    connection_count: int
+    pool_size: int
+    version: str
+    lag_ms: float
+
+
+class CheckResultDict(TypedDict, total=False):
+    """Dictionary representation of check result."""
+
+    healthy: bool
+    latency_ms: float
+    critical: bool
+    message: str
+
 
 logger = logging.getLogger(__name__)
 
@@ -33,7 +52,7 @@ class DependencyCheck:
     """A health check for a dependency."""
 
     name: str
-    check_fn: Callable[[], Coroutine[Any, Any, bool]]
+    check_fn: Callable[[], Awaitable[bool]]
     critical: bool = True
     timeout: float = 5.0
 
@@ -46,7 +65,7 @@ class CheckResult:
     healthy: bool
     latency_ms: float
     message: str | None = None
-    details: dict[str, Any] = field(default_factory=dict)
+    details: CheckDetails = field(default_factory=CheckDetails)
 
 
 class HealthCheckResponse(BaseModel):
@@ -56,7 +75,7 @@ class HealthCheckResponse(BaseModel):
     timestamp: str
     service: str
     version: str
-    checks: dict[str, Any]
+    checks: dict[str, CheckResultDict]
 
 
 class HealthChecker:
@@ -99,7 +118,7 @@ class HealthChecker:
     def add_check(
         self,
         name: str,
-        check_fn: Callable[[], Coroutine[Any, Any, bool]],
+        check_fn: Callable[[], Awaitable[bool]],
         critical: bool = True,
         timeout: float = 5.0,
     ) -> None:
@@ -158,7 +177,7 @@ class HealthChecker:
                 message=str(e),
             )
 
-    async def check_health(self) -> tuple[HealthStatus, dict[str, Any]]:
+    async def check_health(self) -> tuple[HealthStatus, dict[str, CheckResultDict]]:
         """Run all health checks and return overall status.
 
         Returns:
@@ -171,7 +190,7 @@ class HealthChecker:
         results = await asyncio.gather(*[self._run_check(check) for check in self.checks])
 
         # Build response
-        checks_dict: dict[str, Any] = {}
+        checks_dict: dict[str, CheckResultDict] = {}
         has_critical_failure = False
         has_any_failure = False
 
@@ -239,7 +258,9 @@ class HealthChecker:
             return {"status": "ok"}
 
         @router.get("/health/ready")
-        async def readiness_probe(response: Response) -> dict[str, Any]:
+        async def readiness_probe(
+            response: Response,
+        ) -> dict[str, str | dict[str, CheckResultDict]]:
             """Kubernetes readiness probe.
 
             Returns 200 if all critical dependencies are healthy.
@@ -293,11 +314,15 @@ async def check_redis(redis_url: str) -> bool:
         True if healthy
     """
     try:
-        import redis.asyncio as redis
+        from collections.abc import Awaitable
 
-        client = redis.from_url(redis_url)
-        await client.ping()
-        await client.close()
+        from redis.asyncio import Redis
+
+        client = Redis.from_url(redis_url)
+        result = client.ping()
+        if isinstance(result, Awaitable):
+            await result
+        await client.aclose()
         return True
     except Exception as e:
         logger.warning("Redis health check failed: %s", e)

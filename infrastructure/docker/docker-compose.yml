@@ -212,7 +212,7 @@ services:
       dockerfile: Dockerfile
     container_name: llamatrade-web
     ports:
-      - "${LT_WEB_PORT:-47300}:80"
+      - "${LT_WEB_PORT:-47333}:80"
     depends_on:
       - gateway
 

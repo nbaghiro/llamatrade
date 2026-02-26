@@ -1,7 +1,7 @@
 """Celery tasks for backtest execution."""
 
 from datetime import datetime
-from typing import Any
+from typing import TypedDict
 from uuid import UUID
 
 # In production, use Celery
@@ -9,15 +9,34 @@ from uuid import UUID
 # celery_app = Celery("backtest", broker=os.getenv("REDIS_URL"))
 
 
+class StrategyConfigDict(TypedDict, total=False):
+    """Strategy configuration for backtest."""
+
+    name: str
+    symbols: list[str]
+    timeframe: str
+    entry: str
+    exit: str
+    stop_loss_pct: float
+    take_profit_pct: float
+
+
+class BacktestTaskResult(TypedDict):
+    """Result from backtest task."""
+
+    status: str
+    backtest_id: str
+
+
 async def run_backtest_task(
     backtest_id: UUID,
     tenant_id: UUID,
-    strategy_config: dict[str, Any],
+    strategy_config: StrategyConfigDict,
     start_date: datetime,
     end_date: datetime,
     initial_capital: float,
     symbols: list[str],
-) -> dict[str, Any]:
+) -> BacktestTaskResult:
     """Execute a backtest (async task).
 
     In production, this would be a Celery task:
@@ -49,10 +68,10 @@ async def run_backtest_task(
     # 5. Update backtest status
     # await update_backtest_status(backtest_id, "completed")
 
-    return {"status": "completed", "backtest_id": str(backtest_id)}
+    return BacktestTaskResult(status="completed", backtest_id=str(backtest_id))
 
 
-async def update_progress(backtest_id: UUID, progress: float, message: str | None = None):
+async def update_progress(backtest_id: UUID, progress: float, message: str | None = None) -> None:
     """Update backtest progress (called during execution)."""
     # In production, update database and emit WebSocket event
     pass

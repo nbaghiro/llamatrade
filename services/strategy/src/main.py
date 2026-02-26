@@ -1,6 +1,7 @@
 """Strategy Service - Main FastAPI application."""
 
 import os
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -10,7 +11,7 @@ from src.routers import indicators, strategies, templates
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Application lifespan handler."""
     # Startup
     yield
@@ -40,7 +41,7 @@ app.include_router(indicators.router, prefix="/indicators", tags=["Indicators"])
 
 
 @app.get("/health")
-async def health_check():
+async def health_check() -> dict[str, str]:
     """Health check endpoint."""
     return {
         "status": "healthy",

@@ -1,6 +1,7 @@
 """Notification Service - Main FastAPI application."""
 
 import os
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -10,7 +11,7 @@ from src.routers import alerts, channels, notifications
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     yield
 
 
@@ -35,5 +36,5 @@ app.include_router(channels.router, prefix="/channels", tags=["Channels"])
 
 
 @app.get("/health")
-async def health_check():
+async def health_check() -> dict[str, str]:
     return {"status": "healthy", "service": "notification", "version": "0.1.0"}

@@ -1,5 +1,11 @@
 """ORM models for LlamaTrade database."""
 
+from llamatrade_db.models.audit import (
+    AuditEventType,
+    AuditLog,
+    DailyPnL,
+    RiskConfig,
+)
 from llamatrade_db.models.auth import (
     AlpacaCredentials,
     APIKey,
@@ -12,6 +18,7 @@ from llamatrade_db.models.backtest import (
 )
 from llamatrade_db.models.billing import (
     Invoice,
+    PaymentMethod,
     Plan,
     Subscription,
     UsageRecord,
@@ -34,8 +41,13 @@ from llamatrade_db.models.portfolio import (
     Transaction,
 )
 from llamatrade_db.models.strategy import (
+    DeploymentEnvironment,
+    DeploymentStatus,
     Strategy,
+    StrategyDeployment,
+    StrategyStatus,
     StrategyTemplate,
+    StrategyType,
     StrategyVersion,
 )
 from llamatrade_db.models.trading import (
@@ -45,6 +57,11 @@ from llamatrade_db.models.trading import (
 )
 
 __all__ = [
+    # Audit
+    "AuditLog",
+    "AuditEventType",
+    "RiskConfig",
+    "DailyPnL",
     # Auth
     "Tenant",
     "User",
@@ -54,6 +71,11 @@ __all__ = [
     "Strategy",
     "StrategyVersion",
     "StrategyTemplate",
+    "StrategyDeployment",
+    "StrategyType",
+    "StrategyStatus",
+    "DeploymentStatus",
+    "DeploymentEnvironment",
     # Backtest
     "Backtest",
     "BacktestResult",
@@ -80,4 +102,5 @@ __all__ = [
     "Subscription",
     "UsageRecord",
     "Invoice",
+    "PaymentMethod",
 ]

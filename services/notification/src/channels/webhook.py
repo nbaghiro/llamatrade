@@ -2,7 +2,6 @@
 
 import hashlib
 import hmac
-from typing import Any
 
 import httpx
 
@@ -13,7 +12,7 @@ class WebhookChannel:
     async def send(
         self,
         url: str,
-        payload: dict[str, Any],
+        payload: dict[str, str | int | float | bool | list[str] | None],
         secret: str | None = None,
         headers: dict[str, str] | None = None,
     ) -> bool:

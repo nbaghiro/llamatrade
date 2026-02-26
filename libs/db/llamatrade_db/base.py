@@ -27,10 +27,11 @@ class UUIDPrimaryKeyMixin:
 class TenantMixin:
     """Mixin that adds tenant_id column with index for multi-tenant tables."""
 
+    # Note: index is created via __table_args__ below with explicit name
+    # Do NOT add index=True here as it creates a duplicate index
     tenant_id: Mapped[UUID] = mapped_column(
         PG_UUID(as_uuid=True),
         nullable=False,
-        index=True,
     )
 
     @declared_attr

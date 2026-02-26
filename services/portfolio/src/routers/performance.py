@@ -1,6 +1,7 @@
 """Performance router - analytics endpoints."""
 
 from datetime import datetime
+from typing import Any
 
 from fastapi import APIRouter, Depends, Query
 from llamatrade_common.middleware import TenantContext, require_auth
@@ -13,10 +14,10 @@ router = APIRouter()
 
 @router.get("/metrics", response_model=PerformanceMetrics)
 async def get_performance_metrics(
-    period: str = Query(default="1M", regex="^(1D|1W|1M|3M|6M|1Y|YTD|ALL)$"),
+    period: str = Query(default="1M", pattern="^(1D|1W|1M|3M|6M|1Y|YTD|ALL)$"),
     ctx: TenantContext = Depends(require_auth),
     service: PerformanceService = Depends(get_performance_service),
-):
+) -> PerformanceMetrics:
     """Get performance metrics for a period."""
     return await service.get_metrics(tenant_id=ctx.tenant_id, period=period)
 
@@ -27,7 +28,7 @@ async def get_equity_curve(
     end_date: datetime | None = None,
     ctx: TenantContext = Depends(require_auth),
     service: PerformanceService = Depends(get_performance_service),
-):
+) -> list[EquityPoint]:
     """Get historical equity curve."""
     return await service.get_equity_curve(
         tenant_id=ctx.tenant_id,
@@ -36,11 +37,11 @@ async def get_equity_curve(
     )
 
 
-@router.get("/daily-returns", response_model=list[dict])
+@router.get("/daily-returns", response_model=list[dict[str, Any]])
 async def get_daily_returns(
-    period: str = Query(default="1M", regex="^(1W|1M|3M|6M|1Y|YTD|ALL)$"),
+    period: str = Query(default="1M", pattern="^(1W|1M|3M|6M|1Y|YTD|ALL)$"),
     ctx: TenantContext = Depends(require_auth),
     service: PerformanceService = Depends(get_performance_service),
-):
+) -> list[dict[str, float | datetime]]:
     """Get daily returns for a period."""
     return await service.get_daily_returns(tenant_id=ctx.tenant_id, period=period)

@@ -16,7 +16,7 @@ async def list_notifications(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     ctx: TenantContext = Depends(require_auth),
-):
+) -> PaginatedResponse[NotificationResponse]:
     """List notifications."""
     return PaginatedResponse.create(items=[], total=0, page=page, page_size=page_size)
 
@@ -25,6 +25,6 @@ async def list_notifications(
 async def mark_as_read(
     notification_id: UUID,
     ctx: TenantContext = Depends(require_auth),
-):
+) -> dict[str, str]:
     """Mark notification as read."""
     return {"status": "ok"}

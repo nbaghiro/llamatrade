@@ -9,9 +9,9 @@ from __future__ import annotations
 import json
 import logging
 import sys
-from contextvars import ContextVar
+from contextvars import ContextVar, Token
 from datetime import datetime
-from typing import Any
+from types import TracebackType
 
 # Context variables for request-scoped values
 _request_id: ContextVar[str | None] = ContextVar("request_id", default=None)
@@ -61,7 +61,7 @@ class JSONFormatter(logging.Formatter):
 
     def format(self, record: logging.LogRecord) -> str:
         """Format the log record as JSON."""
-        log_dict: dict[str, Any] = {
+        log_dict: dict[str, str | dict[str, str | int] | None] = {
             "timestamp": datetime.utcnow().isoformat() + "Z",
             "level": record.levelname,
             "logger": record.name,
@@ -191,14 +191,19 @@ class LogContext:
             logger.info("Processing order")  # Includes order_id and symbol
     """
 
-    def __init__(self, **kwargs: Any):
+    def __init__(self, **kwargs: str | int | float | bool) -> None:
         self.extra = kwargs
-        self._token: Any = None
+        self._token: Token[str | None] | None = None
 
     def __enter__(self) -> LogContext:
         # Store extra context - in a real implementation, this would
         # use a ContextVar to inject into all log records
         return self
 
-    def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
+    ) -> None:
         pass

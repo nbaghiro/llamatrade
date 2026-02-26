@@ -11,6 +11,14 @@ plugins:
   - remote: buf.build/grpc/python
     out: ../grpc/llamatrade_grpc/generated
 
+  # Generate mypy type stubs (.pyi files)
+  - local: protoc-gen-mypy
+    out: ../grpc/llamatrade_grpc/generated
+    opt:
+      - readable_stubs
+  - local: protoc-gen-mypy_grpc
+    out: ../grpc/llamatrade_grpc/generated
+
   # Optional: Generate TypeScript types for frontend
   # - remote: buf.build/bufbuild/es
   #   out: ../../apps/web/src/types/proto

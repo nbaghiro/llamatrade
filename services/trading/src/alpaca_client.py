@@ -1,12 +1,42 @@
 """Alpaca Trading API client."""
 
 import os
-from typing import Any
+from typing import TypedDict
 from uuid import UUID
 
 import httpx
 
 from src.models import PositionResponse
+
+
+class AlpacaAccountResponse(TypedDict):
+    """Alpaca account API response."""
+
+    id: str
+    account_number: str
+    status: str
+    cash: str
+    portfolio_value: str
+    buying_power: str
+    equity: str
+    currency: str
+
+
+class AlpacaOrderResponse(TypedDict, total=False):
+    """Alpaca order API response."""
+
+    id: str
+    client_order_id: str
+    symbol: str
+    qty: str
+    side: str
+    type: str
+    status: str
+    filled_qty: str
+    filled_avg_price: str | None
+    created_at: str
+    submitted_at: str
+    filled_at: str | None
 
 
 class AlpacaTradingClient:
@@ -21,8 +51,10 @@ class AlpacaTradingClient:
         api_secret: str | None = None,
         paper: bool = True,
     ):
-        self.api_key = api_key or os.getenv("ALPACA_API_KEY", "")
-        self.api_secret = api_secret or os.getenv("ALPACA_API_SECRET", "")
+        env_api_key = os.getenv("ALPACA_API_KEY")
+        env_api_secret = os.getenv("ALPACA_API_SECRET")
+        self.api_key: str = api_key or env_api_key or ""
+        self.api_secret: str = api_secret or env_api_secret or ""
         self.paper = paper
         self.base_url = self.PAPER_URL if paper else self.LIVE_URL
 
@@ -35,15 +67,15 @@ class AlpacaTradingClient:
             timeout=30.0,
         )
 
-    async def close(self):
+    async def close(self) -> None:
         """Close the HTTP client."""
         await self._client.aclose()
 
-    async def get_account(self) -> dict[str, Any]:
+    async def get_account(self) -> AlpacaAccountResponse:
         """Get account information."""
         response = await self._client.get("/account")
         response.raise_for_status()
-        result: dict[str, Any] = response.json()
+        result: AlpacaAccountResponse = response.json()
         return result
 
     async def submit_order(
@@ -55,9 +87,9 @@ class AlpacaTradingClient:
         time_in_force: str = "day",
         limit_price: float | None = None,
         stop_price: float | None = None,
-    ) -> dict[str, Any]:
+    ) -> AlpacaOrderResponse:
         """Submit an order."""
-        data = {
+        data: dict[str, str] = {
             "symbol": symbol,
             "qty": str(qty),
             "side": side,
@@ -71,15 +103,15 @@ class AlpacaTradingClient:
 
         response = await self._client.post("/orders", json=data)
         response.raise_for_status()
-        result: dict[str, Any] = response.json()
+        result: AlpacaOrderResponse = response.json()
         return result
 
-    async def get_order(self, order_id: str) -> dict[str, Any] | None:
+    async def get_order(self, order_id: str) -> AlpacaOrderResponse | None:
         """Get order by Alpaca order ID."""
         try:
             response = await self._client.get(f"/orders/{order_id}")
             response.raise_for_status()
-            result: dict[str, Any] = response.json()
+            result: AlpacaOrderResponse = response.json()
             return result
         except httpx.HTTPStatusError as e:
             if e.response.status_code == 404:

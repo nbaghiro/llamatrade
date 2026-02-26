@@ -1,13 +1,13 @@
 """API Key service - API key management operations."""
 
 from datetime import UTC, datetime
-from typing import Any
 from uuid import UUID, uuid4
 
 from fastapi import Depends
 from llamatrade_common.utils import generate_api_key
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.models import APIKeyCreatedResponse, APIKeyResponse, APIKeyValidationResult
 from src.services.database import get_db
 
 
@@ -23,36 +23,34 @@ class APIKeyService:
         tenant_id: UUID,
         name: str,
         scopes: list[str] | None = None,
-    ) -> dict[str, Any]:
+    ) -> APIKeyCreatedResponse:
         """Create a new API key."""
         key_id = uuid4()
         api_key, key_hash = generate_api_key(prefix="lt")
-        key_prefix = api_key[:10]  # Store prefix for display
         now = datetime.now(UTC)
 
         # In production, store key_hash (not the full key) in database
         # The full api_key is returned only once to the user
 
-        return {
-            "id": key_id,
-            "name": name,
-            "api_key": api_key,  # Full key - shown only on creation
-            "key_prefix": key_prefix,
-            "scopes": scopes or ["read"],
-            "created_at": now,
-        }
+        return APIKeyCreatedResponse(
+            id=key_id,
+            name=name,
+            api_key=api_key,  # Full key - shown only on creation
+            scopes=scopes or ["read"],
+            created_at=now,
+        )
 
     async def list_api_keys(
         self,
         user_id: UUID,
         page: int = 1,
         page_size: int = 20,
-    ) -> tuple[list[dict[str, Any]], int]:
+    ) -> tuple[list[APIKeyResponse], int]:
         """List API keys for a user."""
         # Simplified - in production use SQLAlchemy ORM
         return [], 0
 
-    async def validate_api_key(self, api_key: str) -> dict[str, Any] | None:
+    async def validate_api_key(self, api_key: str) -> APIKeyValidationResult | None:
         """Validate an API key and return associated user/tenant info."""
         # In production:
         # 1. Extract prefix from api_key

@@ -18,7 +18,7 @@ async def list_api_keys(
     page_size: int = Query(20, ge=1, le=100),
     ctx: TenantContext = Depends(require_auth),
     api_key_service: APIKeyService = Depends(get_api_key_service),
-):
+) -> PaginatedResponse[APIKeyResponse]:
     """List API keys for the current user."""
     keys, total = await api_key_service.list_api_keys(
         user_id=ctx.user_id,
@@ -38,7 +38,7 @@ async def create_api_key(
     key_data: APIKeyCreate,
     ctx: TenantContext = Depends(require_auth),
     api_key_service: APIKeyService = Depends(get_api_key_service),
-):
+) -> APIKeyCreatedResponse:
     """Create a new API key.
 
     Note: The full API key is only returned once upon creation.
@@ -58,7 +58,7 @@ async def delete_api_key(
     key_id: UUID,
     ctx: TenantContext = Depends(require_auth),
     api_key_service: APIKeyService = Depends(get_api_key_service),
-):
+) -> None:
     """Delete an API key."""
     success = await api_key_service.delete_api_key(key_id=key_id, user_id=ctx.user_id)
     if not success:

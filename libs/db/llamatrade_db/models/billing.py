@@ -29,6 +29,7 @@ class Plan(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     stripe_price_id_yearly: Mapped[str | None] = mapped_column(String(100), nullable=True)
     features: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
     limits: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    trial_days: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     sort_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
 
@@ -119,3 +120,22 @@ class Invoice(Base, UUIDPrimaryKeyMixin, TenantMixin, TimestampMixin):
     hosted_invoice_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     invoice_pdf: Mapped[str | None] = mapped_column(Text, nullable=True)
     line_items: Mapped[list | None] = mapped_column(JSONB, nullable=True)
+
+
+class PaymentMethod(Base, UUIDPrimaryKeyMixin, TenantMixin, TimestampMixin):
+    """Saved payment method (synced from Stripe)."""
+
+    __tablename__ = "payment_methods"
+    __table_args__ = (
+        Index("ix_payment_methods_stripe_pm", "stripe_payment_method_id"),
+        Index("ix_payment_methods_stripe_customer", "stripe_customer_id"),
+    )
+
+    stripe_payment_method_id: Mapped[str] = mapped_column(String(100), nullable=False, unique=True)
+    stripe_customer_id: Mapped[str] = mapped_column(String(100), nullable=False)
+    type: Mapped[str] = mapped_column(String(50), nullable=False)  # card, bank_account
+    card_brand: Mapped[str | None] = mapped_column(String(50), nullable=True)  # visa, mastercard
+    card_last4: Mapped[str | None] = mapped_column(String(4), nullable=True)
+    card_exp_month: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    card_exp_year: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    is_default: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)

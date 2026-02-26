@@ -7,8 +7,7 @@ from __future__ import annotations
 
 import time
 import uuid
-from collections.abc import Callable
-from typing import Any
+from collections.abc import Awaitable, Callable
 
 from fastapi import FastAPI, Request, Response
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -59,7 +58,7 @@ class ObservabilityMiddleware(BaseHTTPMiddleware):
     async def dispatch(
         self,
         request: Request,
-        call_next: Callable[[Request], Any],
+        call_next: Callable[[Request], Awaitable[Response]],
     ) -> Response:
         """Process request with observability instrumentation."""
         # Generate or extract request ID

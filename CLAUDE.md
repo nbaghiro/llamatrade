@@ -21,7 +21,7 @@ Use these to guide all recommendations:
 - **Err on the side of handling more edge cases**, not fewer; thoughtfulness > speed
 - **Bias toward explicit over clever** — readable code beats clever code
 - **Async-first** — all I/O operations must use async/await
-- **Type everything** — no `Any` without explicit justification
+- **Strict typing enforced** — no `Any` in Python, no `any`/`never` in TypeScript
 
 ---
 
@@ -280,7 +280,7 @@ Never allow cross-tenant data access. When in doubt, add tenant filtering.
 
 - Configuration via environment variables only (no hardcoded values)
 - See `.env.example` for all required variables
-- Ports use 47xxx range (e.g., web: 47300, gateway: 47800)
+- Ports use 47xxx range (e.g., web: 47333, gateway: 47800)
 - Secrets: `JWT_SECRET`, `ENCRYPTION_KEY`, API keys
 
 ---
@@ -308,7 +308,8 @@ Never allow cross-tenant data access. When in doubt, add tenant filtering.
 - Raw SQL queries (use SQLAlchemy ORM)
 - Hardcoded configuration values
 - `print()` statements (use logging)
-- `Any` types without explicit justification
+- `Any` types in Python — use proper types or generics instead
+- `any` or `never` types in TypeScript — use proper types or `unknown` if truly needed
 - Class-based React components
 - CSS files for component styling (use Tailwind)
 - Direct database access outside service layer

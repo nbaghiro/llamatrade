@@ -47,6 +47,7 @@ class SessionStatus(StrEnum):
     ACTIVE = "active"
     PAUSED = "paused"
     STOPPED = "stopped"
+    ERROR = "error"
 
 
 class OrderCreate(BaseModel):
@@ -79,7 +80,12 @@ class OrderResponse(BaseModel):
 
 class SessionCreate(BaseModel):
     strategy_id: UUID
+    credentials_id: UUID
+    name: str = Field(..., min_length=1, max_length=100)
     mode: TradingMode = TradingMode.PAPER
+    strategy_version: int | None = None
+    symbols: list[str] | None = None
+    config: dict | None = None
 
 
 class SessionResponse(BaseModel):

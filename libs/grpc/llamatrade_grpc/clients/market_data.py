@@ -12,7 +12,10 @@ from typing import TYPE_CHECKING
 from llamatrade_grpc.clients.base import BaseGRPCClient
 
 if TYPE_CHECKING:
-    from typing import Any
+    from llamatrade_grpc.generated.llamatrade.v1 import (
+        market_data_pb2,
+        market_data_pb2_grpc,
+    )
 
 logger = logging.getLogger(__name__)
 
@@ -79,19 +82,32 @@ class MarketDataClient(BaseGRPCClient):
     def __init__(
         self,
         target: str = "market-data:50054",
-        **kwargs: Any,
+        *,
+        secure: bool = False,
+        credentials: object | None = None,
+        interceptors: list[object] | None = None,
+        options: list[tuple[str, str | int | bool]] | None = None,
     ) -> None:
         """Initialize the Market Data client.
 
         Args:
             target: The gRPC server address
-            **kwargs: Additional arguments passed to BaseGRPCClient
+            secure: Whether to use TLS
+            credentials: Optional channel credentials
+            interceptors: Optional client interceptors
+            options: Optional channel options
         """
-        super().__init__(target, **kwargs)
-        self._stub: Any = None
+        super().__init__(
+            target,
+            secure=secure,
+            credentials=credentials,  # type: ignore[arg-type]
+            interceptors=interceptors,  # type: ignore[arg-type]
+            options=options,
+        )
+        self._stub: market_data_pb2_grpc.MarketDataServiceStub | None = None
 
     @property
-    def stub(self) -> Any:
+    def stub(self) -> market_data_pb2_grpc.MarketDataServiceStub:
         """Get the gRPC stub (lazy initialization)."""
         if self._stub is None:
             # Import generated code (will be available after buf generate)
@@ -220,7 +236,7 @@ class MarketDataClient(BaseGRPCClient):
         async for trade in self.stub.StreamTrades(request):
             yield self._proto_to_trade(trade)
 
-    def _proto_to_bar(self, proto_bar: Any) -> Bar:
+    def _proto_to_bar(self, proto_bar: market_data_pb2.Bar) -> Bar:
         """Convert protobuf Bar to dataclass."""
         return Bar(
             symbol=proto_bar.symbol,
@@ -234,7 +250,7 @@ class MarketDataClient(BaseGRPCClient):
             vwap=Decimal(proto_bar.vwap.value) if proto_bar.HasField("vwap") else None,
         )
 
-    def _proto_to_quote(self, proto_quote: Any) -> Quote:
+    def _proto_to_quote(self, proto_quote: market_data_pb2.Quote) -> Quote:
         """Convert protobuf Quote to dataclass."""
         return Quote(
             symbol=proto_quote.symbol,
@@ -245,7 +261,7 @@ class MarketDataClient(BaseGRPCClient):
             ask_size=proto_quote.ask_size,
         )
 
-    def _proto_to_trade(self, proto_trade: Any) -> Trade:
+    def _proto_to_trade(self, proto_trade: market_data_pb2.Trade) -> Trade:
         """Convert protobuf Trade to dataclass."""
         return Trade(
             symbol=proto_trade.symbol,

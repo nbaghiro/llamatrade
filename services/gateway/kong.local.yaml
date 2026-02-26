@@ -1,0 +1,210 @@
+_format_version: "3.0"
+_transform: true
+
+# =============================================================================
+# LOCAL DEVELOPMENT CONFIG
+# Routes to services running on host machine via host.docker.internal
+# =============================================================================
+
+services:
+  # Auth Service
+  - name: auth-service
+    url: http://host.docker.internal:47810/auth
+    routes:
+      - name: auth-auth-routes
+        paths:
+          - /api/auth
+        strip_path: true
+  - name: auth-users-service
+    url: http://host.docker.internal:47810/users
+    routes:
+      - name: auth-users-routes
+        paths:
+          - /api/users
+        strip_path: true
+  - name: auth-tenants-service
+    url: http://host.docker.internal:47810/tenants
+    routes:
+      - name: auth-tenants-routes
+        paths:
+          - /api/tenants
+        strip_path: true
+  - name: auth-apikeys-service
+    url: http://host.docker.internal:47810/api-keys
+    routes:
+      - name: auth-apikeys-routes
+        paths:
+          - /api/api-keys
+        strip_path: true
+
+  # Strategy Service
+  - name: strategy-strategies-service
+    url: http://host.docker.internal:47820/strategies
+    routes:
+      - name: strategy-strategies-routes
+        paths:
+          - /api/strategies
+        strip_path: true
+  - name: strategy-templates-service
+    url: http://host.docker.internal:47820/templates
+    routes:
+      - name: strategy-templates-routes
+        paths:
+          - /api/templates
+        strip_path: true
+  - name: strategy-indicators-service
+    url: http://host.docker.internal:47820/indicators
+    routes:
+      - name: strategy-indicators-routes
+        paths:
+          - /api/indicators
+        strip_path: true
+
+  # Backtest Service
+  - name: backtest-service
+    url: http://host.docker.internal:47830/backtests
+    routes:
+      - name: backtest-routes
+        paths:
+          - /api/backtests
+        strip_path: true
+
+  # Market Data Service
+  - name: market-data-bars-service
+    url: http://host.docker.internal:47840/bars
+    routes:
+      - name: market-data-bars-routes
+        paths:
+          - /api/bars
+        strip_path: true
+  - name: market-data-quotes-service
+    url: http://host.docker.internal:47840/quotes
+    routes:
+      - name: market-data-quotes-routes
+        paths:
+          - /api/quotes
+        strip_path: true
+  - name: market-data-trades-service
+    url: http://host.docker.internal:47840/trades
+    routes:
+      - name: market-data-trades-routes
+        paths:
+          - /api/trades
+        strip_path: true
+
+  # Trading Service
+  - name: trading-orders-service
+    url: http://host.docker.internal:47850/orders
+    routes:
+      - name: trading-orders-routes
+        paths:
+          - /api/orders
+        strip_path: true
+  - name: trading-sessions-service
+    url: http://host.docker.internal:47850/sessions
+    routes:
+      - name: trading-sessions-routes
+        paths:
+          - /api/sessions
+        strip_path: true
+  - name: trading-positions-service
+    url: http://host.docker.internal:47850/positions
+    routes:
+      - name: trading-positions-routes
+        paths:
+          - /api/positions
+        strip_path: true
+
+  # Portfolio Service
+  - name: portfolio-portfolio-service
+    url: http://host.docker.internal:47860/portfolio
+    routes:
+      - name: portfolio-portfolio-routes
+        paths:
+          - /api/portfolio
+        strip_path: true
+  - name: portfolio-performance-service
+    url: http://host.docker.internal:47860/performance
+    routes:
+      - name: portfolio-performance-routes
+        paths:
+          - /api/performance
+        strip_path: true
+  - name: portfolio-transactions-service
+    url: http://host.docker.internal:47860/transactions
+    routes:
+      - name: portfolio-transactions-routes
+        paths:
+          - /api/transactions
+        strip_path: true
+
+  # Notification Service
+  - name: notification-notifications-service
+    url: http://host.docker.internal:47870/notifications
+    routes:
+      - name: notification-notifications-routes
+        paths:
+          - /api/notifications
+        strip_path: true
+  - name: notification-alerts-service
+    url: http://host.docker.internal:47870/alerts
+    routes:
+      - name: notification-alerts-routes
+        paths:
+          - /api/alerts
+        strip_path: true
+  - name: notification-channels-service
+    url: http://host.docker.internal:47870/channels
+    routes:
+      - name: notification-channels-routes
+        paths:
+          - /api/channels
+        strip_path: true
+
+  # Billing Service
+  - name: billing-subscriptions-service
+    url: http://host.docker.internal:47880/subscriptions
+    routes:
+      - name: billing-subscriptions-routes
+        paths:
+          - /api/subscriptions
+        strip_path: true
+  - name: billing-invoices-service
+    url: http://host.docker.internal:47880/invoices
+    routes:
+      - name: billing-invoices-routes
+        paths:
+          - /api/invoices
+        strip_path: true
+  - name: billing-payment-methods-service
+    url: http://host.docker.internal:47880/payment-methods
+    routes:
+      - name: billing-payment-methods-routes
+        paths:
+          - /api/payment-methods
+        strip_path: true
+
+# =============================================================================
+# GLOBAL PLUGINS
+# =============================================================================
+plugins:
+  - name: cors
+    config:
+      origins:
+        - http://localhost:47333
+        - http://localhost:3000
+      methods:
+        - GET
+        - POST
+        - PUT
+        - PATCH
+        - DELETE
+        - OPTIONS
+      headers:
+        - Accept
+        - Authorization
+        - Content-Type
+        - X-Request-ID
+        - X-Tenant-ID
+      credentials: true
+      max_age: 3600

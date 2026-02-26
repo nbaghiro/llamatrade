@@ -1,54 +1,41 @@
-"""Template service - pre-built strategy templates."""
+"""Template service - pre-built strategy templates using S-expression DSL."""
 
-from typing import Any
+from typing import TypedDict
 
-from src.models import (
-    ActionConfig,
-    ActionType,
-    ConditionConfig,
-    ConditionOperator,
-    IndicatorConfig,
-    IndicatorType,
-    RiskConfig,
-    StrategyConfig,
-    StrategyType,
-)
+from src.models import StrategyType, TemplateResponse
 
-# Pre-built strategy templates
-TEMPLATES = {
+
+class TemplateData(TypedDict):
+    """Template data structure for internal storage."""
+
+    id: str
+    name: str
+    description: str
+    strategy_type: StrategyType
+    tags: list[str]
+    difficulty: str
+    config_sexpr: str
+
+
+# Pre-built strategy templates using S-expression DSL
+TEMPLATES: dict[str, TemplateData] = {
     "ma_crossover": {
         "id": "ma_crossover",
         "name": "Moving Average Crossover",
         "description": "Classic trend-following strategy using fast and slow EMA crossovers",
         "strategy_type": StrategyType.TREND_FOLLOWING,
         "tags": ["trend", "ema", "beginner"],
-        "config": StrategyConfig(
-            symbols=["AAPL"],
-            timeframe="1D",
-            indicators=[
-                IndicatorConfig(
-                    type=IndicatorType.EMA, params={"period": 12}, output_name="fast_ema"
-                ),
-                IndicatorConfig(
-                    type=IndicatorType.EMA, params={"period": 26}, output_name="slow_ema"
-                ),
-            ],
-            entry_conditions=[
-                ConditionConfig(
-                    left="fast_ema", operator=ConditionOperator.CROSS_ABOVE, right="slow_ema"
-                ),
-            ],
-            exit_conditions=[
-                ConditionConfig(
-                    left="fast_ema", operator=ConditionOperator.CROSS_BELOW, right="slow_ema"
-                ),
-            ],
-            entry_action=ActionConfig(
-                type=ActionType.BUY, quantity_type="percent", quantity_value=10
-            ),
-            exit_action=ActionConfig(type=ActionType.CLOSE_ALL),
-            risk=RiskConfig(stop_loss_percent=5, take_profit_percent=15),
-        ),
+        "difficulty": "beginner",
+        "config_sexpr": """(strategy
+  :name "Moving Average Crossover"
+  :type trend_following
+  :symbols ["AAPL"]
+  :timeframe "1D"
+  :entry (cross-above (ema close 12) (ema close 26))
+  :exit (cross-below (ema close 12) (ema close 26))
+  :position-size-pct 10.0
+  :stop-loss-pct 5.0
+  :take-profit-pct 15.0)""",
     },
     "rsi_mean_reversion": {
         "id": "rsi_mean_reversion",
@@ -56,24 +43,17 @@ TEMPLATES = {
         "description": "Buy oversold conditions (RSI < 30), sell overbought (RSI > 70)",
         "strategy_type": StrategyType.MEAN_REVERSION,
         "tags": ["mean-reversion", "rsi", "intermediate"],
-        "config": StrategyConfig(
-            symbols=["SPY"],
-            timeframe="1D",
-            indicators=[
-                IndicatorConfig(type=IndicatorType.RSI, params={"period": 14}, output_name="rsi"),
-            ],
-            entry_conditions=[
-                ConditionConfig(left="rsi", operator=ConditionOperator.LESS_THAN, right=30),
-            ],
-            exit_conditions=[
-                ConditionConfig(left="rsi", operator=ConditionOperator.GREATER_THAN, right=70),
-            ],
-            entry_action=ActionConfig(
-                type=ActionType.BUY, quantity_type="percent", quantity_value=10
-            ),
-            exit_action=ActionConfig(type=ActionType.CLOSE_ALL),
-            risk=RiskConfig(stop_loss_percent=3, take_profit_percent=10),
-        ),
+        "difficulty": "intermediate",
+        "config_sexpr": """(strategy
+  :name "RSI Mean Reversion"
+  :type mean_reversion
+  :symbols ["SPY"]
+  :timeframe "1D"
+  :entry (< (rsi close 14) 30)
+  :exit (> (rsi close 14) 70)
+  :position-size-pct 10.0
+  :stop-loss-pct 3.0
+  :take-profit-pct 10.0)""",
     },
     "macd_strategy": {
         "id": "macd_strategy",
@@ -81,32 +61,17 @@ TEMPLATES = {
         "description": "Trade MACD line crossovers with the signal line",
         "strategy_type": StrategyType.MOMENTUM,
         "tags": ["momentum", "macd", "beginner"],
-        "config": StrategyConfig(
-            symbols=["QQQ"],
-            timeframe="1D",
-            indicators=[
-                IndicatorConfig(
-                    type=IndicatorType.MACD,
-                    params={"fast_period": 12, "slow_period": 26, "signal_period": 9},
-                    output_name="macd",
-                ),
-            ],
-            entry_conditions=[
-                ConditionConfig(
-                    left="macd.line", operator=ConditionOperator.CROSS_ABOVE, right="macd.signal"
-                ),
-            ],
-            exit_conditions=[
-                ConditionConfig(
-                    left="macd.line", operator=ConditionOperator.CROSS_BELOW, right="macd.signal"
-                ),
-            ],
-            entry_action=ActionConfig(
-                type=ActionType.BUY, quantity_type="percent", quantity_value=10
-            ),
-            exit_action=ActionConfig(type=ActionType.CLOSE_ALL),
-            risk=RiskConfig(stop_loss_percent=4, take_profit_percent=12),
-        ),
+        "difficulty": "beginner",
+        "config_sexpr": """(strategy
+  :name "MACD Strategy"
+  :type momentum
+  :symbols ["QQQ"]
+  :timeframe "1D"
+  :entry (cross-above (macd-line close 12 26 9) (macd-signal close 12 26 9))
+  :exit (cross-below (macd-line close 12 26 9) (macd-signal close 12 26 9))
+  :position-size-pct 10.0
+  :stop-loss-pct 4.0
+  :take-profit-pct 12.0)""",
     },
     "bollinger_bounce": {
         "id": "bollinger_bounce",
@@ -114,34 +79,19 @@ TEMPLATES = {
         "description": "Mean reversion strategy trading bounces off Bollinger Band boundaries",
         "strategy_type": StrategyType.MEAN_REVERSION,
         "tags": ["mean-reversion", "bollinger", "intermediate"],
-        "config": StrategyConfig(
-            symbols=["SPY"],
-            timeframe="1H",
-            indicators=[
-                IndicatorConfig(
-                    type=IndicatorType.BOLLINGER_BANDS,
-                    params={"period": 20, "std_dev": 2},
-                    output_name="bb",
-                ),
-                IndicatorConfig(type=IndicatorType.RSI, params={"period": 14}, output_name="rsi"),
-            ],
-            entry_conditions=[
-                ConditionConfig(
-                    left="price", operator=ConditionOperator.LESS_THAN, right="bb.lower"
-                ),
-                ConditionConfig(left="rsi", operator=ConditionOperator.LESS_THAN, right=35),
-            ],
-            exit_conditions=[
-                ConditionConfig(
-                    left="price", operator=ConditionOperator.GREATER_THAN, right="bb.middle"
-                ),
-            ],
-            entry_action=ActionConfig(
-                type=ActionType.BUY, quantity_type="percent", quantity_value=5
-            ),
-            exit_action=ActionConfig(type=ActionType.CLOSE_ALL),
-            risk=RiskConfig(stop_loss_percent=2, take_profit_percent=6),
-        ),
+        "difficulty": "intermediate",
+        "config_sexpr": """(strategy
+  :name "Bollinger Bands Bounce"
+  :type mean_reversion
+  :symbols ["SPY"]
+  :timeframe "1H"
+  :entry (and
+    (< close (bb-lower close 20 2.0))
+    (< (rsi close 14) 35))
+  :exit (> close (bb-middle close 20 2.0))
+  :position-size-pct 5.0
+  :stop-loss-pct 2.0
+  :take-profit-pct 6.0)""",
     },
     "donchian_breakout": {
         "id": "donchian_breakout",
@@ -149,70 +99,35 @@ TEMPLATES = {
         "description": "Classic breakout strategy using Donchian channels (Turtle Trading style)",
         "strategy_type": StrategyType.BREAKOUT,
         "tags": ["breakout", "donchian", "trend", "advanced"],
-        "config": StrategyConfig(
-            symbols=["GLD"],
-            timeframe="1D",
-            indicators=[
-                IndicatorConfig(
-                    type=IndicatorType.DONCHIAN_CHANNEL,
-                    params={"period": 20},
-                    output_name="donchian",
-                ),
-                IndicatorConfig(type=IndicatorType.ATR, params={"period": 14}, output_name="atr"),
-            ],
-            entry_conditions=[
-                ConditionConfig(
-                    left="price", operator=ConditionOperator.GREATER_THAN, right="donchian.upper"
-                ),
-            ],
-            exit_conditions=[
-                ConditionConfig(
-                    left="price", operator=ConditionOperator.LESS_THAN, right="donchian.lower"
-                ),
-            ],
-            entry_action=ActionConfig(
-                type=ActionType.BUY, quantity_type="percent", quantity_value=5
-            ),
-            exit_action=ActionConfig(type=ActionType.CLOSE_ALL),
-            risk=RiskConfig(stop_loss_percent=5, trailing_stop_percent=3),
-        ),
+        "difficulty": "advanced",
+        "config_sexpr": """(strategy
+  :name "Donchian Channel Breakout"
+  :type breakout
+  :symbols ["GLD"]
+  :timeframe "1D"
+  :entry (> close (donchian-upper high 20))
+  :exit (< close (donchian-lower low 20))
+  :position-size-pct 5.0
+  :stop-loss-pct 5.0
+  :trailing-stop-pct 3.0)""",
     },
     "dual_momentum": {
         "id": "dual_momentum",
         "name": "Dual Momentum",
-        "description": "Combines relative momentum (vs benchmark) with absolute momentum (positive returns)",
+        "description": ("Combines relative momentum (vs benchmark) with absolute momentum"),
         "strategy_type": StrategyType.MOMENTUM,
         "tags": ["momentum", "relative", "absolute", "advanced"],
-        "config": StrategyConfig(
-            symbols=["SPY", "EFA"],
-            timeframe="1D",
-            indicators=[
-                IndicatorConfig(
-                    type=IndicatorType.SMA, params={"period": 200}, output_name="sma_200"
-                ),
-                IndicatorConfig(
-                    type=IndicatorType.SMA, params={"period": 12}, output_name="momentum_12m"
-                ),
-            ],
-            entry_conditions=[
-                ConditionConfig(
-                    left="price", operator=ConditionOperator.GREATER_THAN, right="sma_200"
-                ),
-                ConditionConfig(
-                    left="momentum_12m", operator=ConditionOperator.GREATER_THAN, right=0
-                ),
-            ],
-            exit_conditions=[
-                ConditionConfig(
-                    left="price", operator=ConditionOperator.LESS_THAN, right="sma_200"
-                ),
-            ],
-            entry_action=ActionConfig(
-                type=ActionType.BUY, quantity_type="percent", quantity_value=50
-            ),
-            exit_action=ActionConfig(type=ActionType.CLOSE_ALL),
-            risk=RiskConfig(max_position_size_percent=50),
-        ),
+        "difficulty": "advanced",
+        "config_sexpr": """(strategy
+  :name "Dual Momentum"
+  :type momentum
+  :symbols ["SPY" "EFA"]
+  :timeframe "1D"
+  :entry (and
+    (> close (sma close 200))
+    (> (roc close 252) 0))
+  :exit (< close (sma close 200))
+  :position-size-pct 50.0)""",
     },
     "zscore_mean_reversion": {
         "id": "zscore_mean_reversion",
@@ -220,58 +135,36 @@ TEMPLATES = {
         "description": "Statistical mean reversion using z-score of price deviations",
         "strategy_type": StrategyType.MEAN_REVERSION,
         "tags": ["mean-reversion", "statistical", "zscore", "advanced"],
-        "config": StrategyConfig(
-            symbols=["XLF"],
-            timeframe="1H",
-            indicators=[
-                IndicatorConfig(type=IndicatorType.SMA, params={"period": 20}, output_name="sma"),
-                IndicatorConfig(
-                    type=IndicatorType.BOLLINGER_BANDS,
-                    params={"period": 20, "std_dev": 1},
-                    output_name="bb_1std",
-                ),
-            ],
-            entry_conditions=[
-                ConditionConfig(
-                    left="price", operator=ConditionOperator.LESS_THAN, right="bb_1std.lower"
-                ),
-            ],
-            exit_conditions=[
-                ConditionConfig(left="price", operator=ConditionOperator.GREATER_THAN, right="sma"),
-            ],
-            entry_action=ActionConfig(
-                type=ActionType.BUY, quantity_type="percent", quantity_value=10
-            ),
-            exit_action=ActionConfig(type=ActionType.CLOSE_ALL),
-            risk=RiskConfig(stop_loss_percent=2, max_daily_loss_percent=5),
-        ),
+        "difficulty": "advanced",
+        "config_sexpr": """(strategy
+  :name "Z-Score Mean Reversion"
+  :type mean_reversion
+  :symbols ["XLF"]
+  :timeframe "1H"
+  :entry (< close (bb-lower close 20 1.0))
+  :exit (> close (sma close 20))
+  :position-size-pct 10.0
+  :stop-loss-pct 2.0)""",
     },
     "vwap_strategy": {
         "id": "vwap_strategy",
         "name": "VWAP Strategy",
-        "description": "Intraday strategy using Volume Weighted Average Price as dynamic support/resistance",
+        "description": "Intraday strategy using VWAP as dynamic support/resistance",
         "strategy_type": StrategyType.MEAN_REVERSION,
         "tags": ["intraday", "vwap", "volume", "intermediate"],
-        "config": StrategyConfig(
-            symbols=["TSLA"],
-            timeframe="5m",
-            indicators=[
-                IndicatorConfig(type=IndicatorType.VWAP, params={}, output_name="vwap"),
-                IndicatorConfig(type=IndicatorType.RSI, params={"period": 14}, output_name="rsi"),
-            ],
-            entry_conditions=[
-                ConditionConfig(left="price", operator=ConditionOperator.CROSS_ABOVE, right="vwap"),
-                ConditionConfig(left="rsi", operator=ConditionOperator.GREATER_THAN, right=50),
-            ],
-            exit_conditions=[
-                ConditionConfig(left="price", operator=ConditionOperator.CROSS_BELOW, right="vwap"),
-            ],
-            entry_action=ActionConfig(
-                type=ActionType.BUY, quantity_type="percent", quantity_value=5
-            ),
-            exit_action=ActionConfig(type=ActionType.CLOSE_ALL),
-            risk=RiskConfig(stop_loss_percent=1, take_profit_percent=2),
-        ),
+        "difficulty": "intermediate",
+        "config_sexpr": """(strategy
+  :name "VWAP Strategy"
+  :type mean_reversion
+  :symbols ["TSLA"]
+  :timeframe "5m"
+  :entry (and
+    (cross-above close (vwap close volume))
+    (> (rsi close 14) 50))
+  :exit (cross-below close (vwap close volume))
+  :position-size-pct 5.0
+  :stop-loss-pct 1.0
+  :take-profit-pct 2.0)""",
     },
     "pairs_trading": {
         "id": "pairs_trading",
@@ -279,58 +172,39 @@ TEMPLATES = {
         "description": "Statistical arbitrage between correlated assets (e.g., KO/PEP)",
         "strategy_type": StrategyType.MEAN_REVERSION,
         "tags": ["arbitrage", "pairs", "correlation", "advanced"],
-        "config": StrategyConfig(
-            symbols=["KO", "PEP"],
-            timeframe="1H",
-            indicators=[
-                IndicatorConfig(
-                    type=IndicatorType.SMA, params={"period": 20}, output_name="spread_sma"
-                ),
-                IndicatorConfig(
-                    type=IndicatorType.BOLLINGER_BANDS,
-                    params={"period": 20, "std_dev": 2},
-                    output_name="spread_bb",
-                ),
-            ],
-            entry_conditions=[
-                ConditionConfig(
-                    left="spread", operator=ConditionOperator.LESS_THAN, right="spread_bb.lower"
-                ),
-            ],
-            exit_conditions=[
-                ConditionConfig(
-                    left="spread", operator=ConditionOperator.GREATER_THAN, right="spread_sma"
-                ),
-            ],
-            entry_action=ActionConfig(
-                type=ActionType.BUY, quantity_type="percent", quantity_value=5
-            ),
-            exit_action=ActionConfig(type=ActionType.CLOSE_ALL),
-            risk=RiskConfig(stop_loss_percent=3, max_open_positions=2),
-        ),
+        "difficulty": "advanced",
+        "config_sexpr": """(strategy
+  :name "Pairs Trading"
+  :type mean_reversion
+  :symbols ["KO" "PEP"]
+  :timeframe "1H"
+  :description "Trade the spread between KO and PEP when it deviates from the mean"
+  :entry (< (spread KO PEP) (bb-lower (spread KO PEP) 20 2.0))
+  :exit (> (spread KO PEP) (sma (spread KO PEP) 20))
+  :position-size-pct 5.0
+  :stop-loss-pct 3.0)""",
     },
-    "stop_loss_take_profit": {
-        "id": "stop_loss_take_profit",
-        "name": "Stop Loss / Take Profit Management",
-        "description": "Risk management overlay template - add to any strategy for automated exits",
-        "strategy_type": StrategyType.CUSTOM,
-        "tags": ["risk-management", "stops", "beginner"],
-        "config": StrategyConfig(
-            symbols=["SPY"],
-            timeframe="1D",
-            indicators=[
-                IndicatorConfig(type=IndicatorType.ATR, params={"period": 14}, output_name="atr"),
-            ],
-            entry_conditions=[],  # No entry - overlay only
-            exit_conditions=[],  # Exits handled by risk config
-            risk=RiskConfig(
-                stop_loss_percent=2,
-                take_profit_percent=6,
-                trailing_stop_percent=1.5,
-                max_position_size_percent=10,
-                max_daily_loss_percent=5,
-            ),
-        ),
+    "adx_trend_filter": {
+        "id": "adx_trend_filter",
+        "name": "ADX Trend Filter",
+        "description": "Only trade in strong trends using ADX filter with EMA crossover signals",
+        "strategy_type": StrategyType.TREND_FOLLOWING,
+        "tags": ["trend", "adx", "filter", "intermediate"],
+        "difficulty": "intermediate",
+        "config_sexpr": """(strategy
+  :name "ADX Trend Filter"
+  :type trend_following
+  :symbols ["SPY"]
+  :timeframe "1D"
+  :entry (and
+    (> (adx high low close 14) 25)
+    (cross-above (ema close 9) (ema close 21)))
+  :exit (or
+    (< (adx high low close 14) 20)
+    (cross-below (ema close 9) (ema close 21)))
+  :position-size-pct 10.0
+  :stop-loss-pct 3.0
+  :take-profit-pct 9.0)""",
     },
 }
 
@@ -341,18 +215,73 @@ class TemplateService:
     async def list_templates(
         self,
         strategy_type: StrategyType | None = None,
-    ) -> list[dict[str, Any]]:
-        """List available strategy templates."""
+        difficulty: str | None = None,
+    ) -> list[TemplateResponse]:
+        """List available strategy templates.
+
+        Args:
+            strategy_type: Filter by strategy type
+            difficulty: Filter by difficulty level (beginner, intermediate, advanced)
+
+        Returns:
+            List of TemplateResponse objects
+        """
         templates = list(TEMPLATES.values())
 
         if strategy_type:
             templates = [t for t in templates if t["strategy_type"] == strategy_type]
 
-        return templates
+        if difficulty:
+            templates = [t for t in templates if t["difficulty"] == difficulty]
 
-    async def get_template(self, template_id: str) -> dict[str, Any] | None:
-        """Get a specific template by ID."""
-        return TEMPLATES.get(template_id)
+        return [
+            TemplateResponse(
+                id=t["id"],
+                name=t["name"],
+                description=t["description"],
+                strategy_type=t["strategy_type"],
+                config_sexpr=t["config_sexpr"],
+                config_json={},  # Parsed on demand
+                tags=t["tags"],
+                difficulty=t["difficulty"],
+            )
+            for t in templates
+        ]
+
+    async def get_template(self, template_id: str) -> TemplateResponse | None:
+        """Get a specific template by ID.
+
+        Args:
+            template_id: The template identifier
+
+        Returns:
+            TemplateResponse or None if not found
+        """
+        t = TEMPLATES.get(template_id)
+        if not t:
+            return None
+        return TemplateResponse(
+            id=t["id"],
+            name=t["name"],
+            description=t["description"],
+            strategy_type=t["strategy_type"],
+            config_sexpr=t["config_sexpr"],
+            config_json={},  # Parsed on demand
+            tags=t["tags"],
+            difficulty=t["difficulty"],
+        )
+
+    async def get_template_config(self, template_id: str) -> str | None:
+        """Get just the S-expression config for a template.
+
+        Args:
+            template_id: The template identifier
+
+        Returns:
+            S-expression config string or None if not found
+        """
+        template = TEMPLATES.get(template_id)
+        return template["config_sexpr"] if template else None
 
 
 def get_template_service() -> TemplateService:

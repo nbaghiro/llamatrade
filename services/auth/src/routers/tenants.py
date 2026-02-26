@@ -13,7 +13,7 @@ router = APIRouter()
 async def get_current_tenant(
     ctx: TenantContext = Depends(require_auth),
     tenant_service: TenantService = Depends(get_tenant_service),
-):
+) -> TenantResponse:
     """Get the current tenant."""
     tenant = await tenant_service.get_tenant(tenant_id=ctx.tenant_id)
     if not tenant:
@@ -23,10 +23,10 @@ async def get_current_tenant(
 
 @router.patch("/current", response_model=TenantResponse)
 async def update_current_tenant(
-    settings: dict,
+    settings: dict[str, str | int | bool | None],
     ctx: TenantContext = Depends(require_roles("admin")),
     tenant_service: TenantService = Depends(get_tenant_service),
-):
+) -> TenantResponse:
     """Update the current tenant settings (admin only)."""
     tenant = await tenant_service.update_tenant_settings(
         tenant_id=ctx.tenant_id,
@@ -41,7 +41,7 @@ async def update_current_tenant(
 async def get_alpaca_credentials(
     ctx: TenantContext = Depends(require_roles("admin")),
     tenant_service: TenantService = Depends(get_tenant_service),
-):
+) -> AlpacaCredentials:
     """Get Alpaca API credentials (masked)."""
     creds = await tenant_service.get_alpaca_credentials(tenant_id=ctx.tenant_id)
     if not creds:
@@ -49,10 +49,10 @@ async def get_alpaca_credentials(
 
     # Mask credentials - only show if they exist
     return AlpacaCredentials(
-        paper_key="***" if creds.get("paper_key") else None,
-        paper_secret="***" if creds.get("paper_secret") else None,
-        live_key="***" if creds.get("live_key") else None,
-        live_secret="***" if creds.get("live_secret") else None,
+        paper_key="***" if creds.paper_key else None,
+        paper_secret="***" if creds.paper_secret else None,
+        live_key="***" if creds.live_key else None,
+        live_secret="***" if creds.live_secret else None,
     )
 
 
@@ -61,7 +61,7 @@ async def update_alpaca_credentials(
     credentials: AlpacaCredentialsUpdate,
     ctx: TenantContext = Depends(require_roles("admin")),
     tenant_service: TenantService = Depends(get_tenant_service),
-):
+) -> AlpacaCredentials:
     """Update Alpaca API credentials (admin only)."""
     await tenant_service.update_alpaca_credentials(
         tenant_id=ctx.tenant_id,
@@ -82,7 +82,7 @@ async def update_alpaca_credentials(
 async def delete_alpaca_credentials(
     ctx: TenantContext = Depends(require_roles("admin")),
     tenant_service: TenantService = Depends(get_tenant_service),
-):
+) -> dict[str, str]:
     """Delete Alpaca API credentials (admin only)."""
     await tenant_service.delete_alpaca_credentials(tenant_id=ctx.tenant_id)
     return {"message": "Alpaca credentials deleted"}

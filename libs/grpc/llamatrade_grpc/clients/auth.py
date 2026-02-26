@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING
 from llamatrade_grpc.clients.base import BaseGRPCClient
 
 if TYPE_CHECKING:
-    from typing import Any
+    from llamatrade_grpc.generated.llamatrade.v1 import auth_pb2_grpc
 
 logger = logging.getLogger(__name__)
 
@@ -67,19 +67,32 @@ class AuthClient(BaseGRPCClient):
     def __init__(
         self,
         target: str = "auth:50051",
-        **kwargs: Any,
+        *,
+        secure: bool = False,
+        credentials: object | None = None,
+        interceptors: list[object] | None = None,
+        options: list[tuple[str, str | int | bool]] | None = None,
     ) -> None:
         """Initialize the Auth client.
 
         Args:
             target: The gRPC server address
-            **kwargs: Additional arguments passed to BaseGRPCClient
+            secure: Whether to use TLS
+            credentials: Optional channel credentials
+            interceptors: Optional client interceptors
+            options: Optional channel options
         """
-        super().__init__(target, **kwargs)
-        self._stub: Any = None
+        super().__init__(
+            target,
+            secure=secure,
+            credentials=credentials,  # type: ignore[arg-type]
+            interceptors=interceptors,  # type: ignore[arg-type]
+            options=options,
+        )
+        self._stub: auth_pb2_grpc.AuthServiceStub | None = None
 
     @property
-    def stub(self) -> Any:
+    def stub(self) -> auth_pb2_grpc.AuthServiceStub:
         """Get the gRPC stub (lazy initialization)."""
         if self._stub is None:
             try:

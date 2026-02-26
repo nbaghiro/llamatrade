@@ -44,7 +44,10 @@ setup_venv() {
     echo "  Installing dependencies..."
     source "$venv_dir/bin/activate"
     pip install -q --upgrade pip
+    # Install shared libraries first (with their dependencies)
     pip install -q -e "$PROJECT_ROOT/libs/common"
+    pip install -q -e "$PROJECT_ROOT/libs/db"
+    # Install the service (which may have additional deps)
     pip install -q -e "$svc_dir"
     deactivate
 

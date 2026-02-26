@@ -2,10 +2,50 @@
 
 from datetime import datetime
 from enum import StrEnum
-from typing import Any
+from typing import TypedDict, cast
 from uuid import UUID, uuid4
 
 from pydantic import BaseModel, Field
+
+
+class EventData(TypedDict, total=False):
+    """Base event data structure."""
+
+    # Common fields across event types
+    id: str
+    email: str
+    roles: list[str]
+    order_id: str
+    symbol: str
+    side: str
+    qty: float
+    price: float
+    order_type: str
+    commission: float
+    backtest_id: str
+    progress_percent: float
+    current_date: str
+    message: str
+    total_return: float
+    sharpe_ratio: float
+    max_drawdown: float
+    total_trades: int
+    strategy_id: str
+    signal_type: str
+    confidence: float
+    timestamp: str
+    volume: int
+    bid: float
+    ask: float
+
+
+class EventMetadata(TypedDict, total=False):
+    """Event metadata."""
+
+    source_service: str
+    correlation_id: str
+    trace_id: str
+    retry_count: int
 
 
 class EventType(StrEnum):
@@ -72,8 +112,8 @@ class Event(BaseModel):
     tenant_id: UUID | None = None
     user_id: UUID | None = None
     timestamp: datetime = Field(default_factory=datetime.utcnow)
-    data: dict[str, Any] = Field(default_factory=dict)
-    metadata: dict[str, Any] = Field(default_factory=dict)
+    data: EventData = Field(default_factory=lambda: cast(EventData, {}))
+    metadata: EventMetadata = Field(default_factory=lambda: cast(EventMetadata, {}))
 
     def to_redis_stream(self) -> dict[str, str]:
         """Convert event to Redis stream format."""
@@ -161,7 +201,7 @@ class SignalGeneratedData(BaseModel):
     signal_type: str  # buy, sell, close
     price: float
     confidence: float | None = None
-    metadata: dict[str, Any] = Field(default_factory=dict)
+    metadata: EventMetadata = Field(default_factory=lambda: cast(EventMetadata, {}))
 
 
 class PriceUpdateData(BaseModel):

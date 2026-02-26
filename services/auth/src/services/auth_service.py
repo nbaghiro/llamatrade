@@ -2,7 +2,6 @@
 
 import os
 from datetime import UTC, datetime, timedelta
-from typing import Any
 from uuid import UUID
 
 import bcrypt
@@ -10,6 +9,7 @@ import jwt
 from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.models import TokenResponse, UserResponse, UserWithPassword
 from src.services.database import get_db
 from src.services.tenant_service import TenantService, get_tenant_service
 from src.services.user_service import UserService, get_user_service
@@ -38,7 +38,7 @@ class AuthService:
         tenant_name: str,
         email: str,
         password: str,
-    ) -> dict[str, Any]:
+    ) -> UserResponse:
         """Register a new user and tenant."""
         # Check if email already exists
         existing_user = await self.user_service.get_user_by_email(email)
@@ -50,7 +50,7 @@ class AuthService:
 
         # Create user with admin role
         user = await self.user_service.create_user(
-            tenant_id=tenant["id"],
+            tenant_id=tenant.id,
             email=email,
             password=password,
             role="admin",
@@ -58,30 +58,30 @@ class AuthService:
 
         return user
 
-    async def login(self, email: str, password: str) -> dict[str, Any] | None:
+    async def login(self, email: str, password: str) -> TokenResponse | None:
         """Authenticate user and return tokens."""
         user = await self.user_service.get_user_by_email(email)
         if not user:
             return None
 
-        if not user.get("is_active", False):
+        if not user.is_active:
             return None
 
-        if not self._verify_password(password, user["password_hash"]):
+        if not self._verify_password(password, user.password_hash):
             return None
 
         # Generate tokens
         access_token = self._create_access_token(user)
         refresh_token = self._create_refresh_token(user)
 
-        return {
-            "access_token": access_token,
-            "refresh_token": refresh_token,
-            "token_type": "bearer",
-            "expires_in": ACCESS_TOKEN_EXPIRE_MINUTES * 60,
-        }
+        return TokenResponse(
+            access_token=access_token,
+            refresh_token=refresh_token,
+            token_type="bearer",
+            expires_in=ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+        )
 
-    async def refresh_token(self, refresh_token: str) -> dict[str, Any] | None:
+    async def refresh_token(self, refresh_token: str) -> TokenResponse | None:
         """Refresh access token using refresh token."""
         try:
             payload = jwt.decode(refresh_token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
@@ -92,19 +92,19 @@ class AuthService:
             user_id = UUID(payload["sub"])
             user = await self.user_service.get_user(user_id=user_id)
 
-            if not user or not user.get("is_active", False):
+            if not user or not user.is_active:
                 return None
 
             # Generate new tokens
             access_token = self._create_access_token(user)
             new_refresh_token = self._create_refresh_token(user)
 
-            return {
-                "access_token": access_token,
-                "refresh_token": new_refresh_token,
-                "token_type": "bearer",
-                "expires_in": ACCESS_TOKEN_EXPIRE_MINUTES * 60,
-            }
+            return TokenResponse(
+                access_token=access_token,
+                refresh_token=new_refresh_token,
+                token_type="bearer",
+                expires_in=ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+            )
         except jwt.InvalidTokenError:
             return None
 
@@ -123,11 +123,11 @@ class AuthService:
         new_password: str,
     ) -> bool:
         """Change user password."""
-        user = await self.user_service.get_user(user_id=user_id, include_password=True)
+        user = await self.user_service.get_user_with_password(user_id=user_id)
         if not user:
             return False
 
-        if not self._verify_password(current_password, user["password_hash"]):
+        if not self._verify_password(current_password, user.password_hash):
             return False
 
         new_hash = self._hash_password(new_password)
@@ -145,16 +145,16 @@ class AuthService:
         result: bool = bcrypt.checkpw(password.encode(), password_hash.encode())
         return result
 
-    def _create_access_token(self, user: dict[str, Any]) -> str:
+    def _create_access_token(self, user: UserResponse | UserWithPassword) -> str:
         """Create a JWT access token."""
         now = datetime.now(UTC)
         expire = now + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
 
         payload = {
-            "sub": str(user["id"]),
-            "tenant_id": str(user["tenant_id"]),
-            "email": user["email"],
-            "roles": [user["role"]],  # Convert single role to array for RBAC compatibility
+            "sub": str(user.id),
+            "tenant_id": str(user.tenant_id),
+            "email": str(user.email),
+            "roles": [user.role],  # Convert single role to array for RBAC compatibility
             "type": "access",
             "iat": now,
             "exp": expire,
@@ -163,14 +163,14 @@ class AuthService:
         token: str = jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
         return token
 
-    def _create_refresh_token(self, user: dict[str, Any]) -> str:
+    def _create_refresh_token(self, user: UserResponse | UserWithPassword) -> str:
         """Create a JWT refresh token."""
         now = datetime.now(UTC)
         expire = now + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
 
         payload = {
-            "sub": str(user["id"]),
-            "tenant_id": str(user["tenant_id"]),
+            "sub": str(user.id),
+            "tenant_id": str(user.tenant_id),
             "type": "refresh",
             "iat": now,
             "exp": expire,

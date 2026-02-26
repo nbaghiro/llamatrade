@@ -103,5 +103,5 @@ services:
       - ../../apps/web/src:/app/src:cached
       - ../../apps/web/public:/app/public:cached
     ports:
-      - "${LT_WEB_PORT:-47300}:3000"
+      - "${LT_WEB_PORT:-47333}:3000"
     command: npm run dev -- --host 0.0.0.0

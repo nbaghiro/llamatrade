@@ -13,20 +13,43 @@ target-version = "py312"
 select = ["E", "F", "I", "N", "W", "UP"]
 ignore = ["E501"]
 
+[tool.ruff.lint.per-file-ignores]
+# Generated protobuf files use uppercase method names (HasField, ClearField, etc.)
+"libs/grpc/llamatrade_grpc/generated/**" = ["N802", "N803", "UP036"]
+
 [tool.mypy]
 python_version = "3.12"
-strict = false
+strict = true
 ignore_missing_imports = true
-disallow_untyped_defs = false
+disallow_untyped_defs = true
+disallow_any_generics = false  # Allow Any from third-party libs like pydantic
+disallow_untyped_decorators = false  # Allow FastAPI decorators
 warn_return_any = true
 warn_unused_ignores = true
 show_error_codes = true
 exclude = ["tests", "venv", ".venv"]
+plugins = ["pydantic.mypy"]
+
+[tool.pydantic-mypy]
+init_forbid_extra = true
+init_typed = true
+warn_required_dynamic_aliases = true
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
-testpaths = ["services/*/tests"]
+testpaths = ["services/*/tests", "tests/integration"]
 addopts = "--cov --cov-report=term-missing"
+markers = [
+    "integration: requires real database (deselect with '-m not integration')",
+    "slow: takes >10 seconds (deselect with '-m not slow')",
+    "security: tenant isolation tests",
+    "workflow: multi-service tests",
+    "gateway: Kong gateway configuration tests",
+    "billing: billing and subscription tests",
+]
+filterwarnings = [
+    "ignore::DeprecationWarning:testcontainers.*:",
+]
 
 [tool.coverage.run]
 source = ["services/*/src", "libs/*/src"]
@@ -48,8 +71,8 @@ exclude_lines = [
     "class .*\\bProtocol\\):",
     "@abstractmethod",
 ]
-# TODO: Enable fail_under=80 once services have real implementations
-# fail_under = 80
+# Libraries enforce 80% coverage in their own pyproject.toml
+# Services will enforce 80% once they have real implementations
 show_missing = true
 skip_covered = false
 
@@ -59,7 +82,9 @@ directory = "htmlcov"
 [tool.uv.workspace]
 members = [
     "libs/common",
+    "libs/compiler",
     "libs/db",
+    "libs/dsl",
     "libs/grpc",
     "services/auth",
     "services/strategy",

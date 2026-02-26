@@ -20,8 +20,14 @@ class TenantResponse(BaseModel):
     id: UUID
     name: str
     plan_id: str
-    settings: dict
+    settings: dict[str, str | int | bool | None]
     created_at: datetime
+
+
+class TenantDetailResponse(TenantResponse):
+    """Schema for tenant response with slug."""
+
+    slug: str
 
 
 class UserCreate(BaseModel):
@@ -51,6 +57,18 @@ class UserResponse(BaseModel):
     id: UUID
     tenant_id: UUID
     email: EmailStr
+    role: str
+    is_active: bool
+    created_at: datetime
+
+
+class UserWithPassword(BaseModel):
+    """Internal model including password hash for authentication."""
+
+    id: UUID
+    tenant_id: UUID
+    email: EmailStr
+    password_hash: str
     role: str
     is_active: bool
     created_at: datetime
@@ -171,3 +189,12 @@ class APIKeyCreatedResponse(BaseModel):
     api_key: str  # Full key, shown only on creation
     scopes: list[str]
     created_at: datetime
+
+
+class APIKeyValidationResult(BaseModel):
+    """Result of API key validation."""
+
+    user_id: UUID
+    tenant_id: UUID
+    email: EmailStr
+    scopes: list[str]

@@ -1,11 +1,11 @@
 """Tenant context middleware for FastAPI services."""
 
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from contextvars import ContextVar
 from uuid import UUID
 
 import jwt
-from fastapi import Depends, HTTPException, Request, status
+from fastapi import Depends, HTTPException, Request, Response, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import ValidationError
 
@@ -51,7 +51,9 @@ class TenantMiddleware:
         self.jwt_algorithm = jwt_algorithm
         self.public_paths = public_paths or ["/health", "/docs", "/openapi.json"]
 
-    async def __call__(self, request: Request, call_next: Callable):
+    async def __call__(
+        self, request: Request, call_next: Callable[[Request], Awaitable[Response]]
+    ) -> Response:
         """Process the request and extract tenant context."""
         # Clear any existing context
         set_tenant_context(None)
@@ -119,7 +121,9 @@ async def require_auth(
     return ctx
 
 
-def require_roles(*required_roles: str) -> Callable:
+def require_roles(
+    *required_roles: str,
+) -> Callable[[TenantContext], Awaitable[TenantContext]]:
     """Dependency factory to require specific roles.
 
     Usage:

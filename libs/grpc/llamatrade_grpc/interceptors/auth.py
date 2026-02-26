@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable
-from typing import TYPE_CHECKING, Any
+from collections.abc import Awaitable, Callable
+from typing import TYPE_CHECKING
 
 import grpc
 import grpc.aio
@@ -49,9 +49,9 @@ class AuthInterceptor(grpc.aio.ServerInterceptor):
 
     async def intercept_service(
         self,
-        continuation: Callable[[grpc.HandlerCallDetails], Any],
+        continuation: Callable[[grpc.HandlerCallDetails], Awaitable[grpc.RpcMethodHandler | None]],
         handler_call_details: grpc.HandlerCallDetails,
-    ) -> Any:
+    ) -> grpc.RpcMethodHandler | None:
         """Intercept incoming requests and validate authentication.
 
         Args:
@@ -102,7 +102,7 @@ class AuthInterceptor(grpc.aio.ServerInterceptor):
     def _unauthenticated_handler(self) -> grpc.RpcMethodHandler:
         """Return a handler that always returns UNAUTHENTICATED."""
 
-        async def _abort(request: Any, context: grpc.aio.ServicerContext) -> None:
+        async def _abort(request: object, context: grpc.aio.ServicerContext) -> None:
             await context.abort(
                 grpc.StatusCode.UNAUTHENTICATED,
                 "Invalid or missing authentication token",
@@ -133,10 +133,10 @@ class ClientAuthInterceptor(grpc.aio.UnaryUnaryClientInterceptor):
 
     async def intercept_unary_unary(
         self,
-        continuation: Callable,
+        continuation: Callable[[grpc.aio.ClientCallDetails, object], Awaitable[object]],
         client_call_details: grpc.aio.ClientCallDetails,
-        request: Any,
-    ) -> Any:
+        request: object,
+    ) -> object:
         """Add authentication header to outgoing requests."""
         token = self._token() if callable(self._token) else self._token
 

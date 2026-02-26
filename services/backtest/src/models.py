@@ -18,6 +18,7 @@ class BacktestStatus(StrEnum):
 class BacktestCreate(BaseModel):
     strategy_id: UUID
     strategy_version: int | None = None
+    name: str = Field(default="", max_length=255)
     start_date: datetime
     end_date: datetime
     initial_capital: float = Field(default=100000, gt=0)

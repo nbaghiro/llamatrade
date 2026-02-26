@@ -14,7 +14,7 @@ from llamatrade_grpc.clients.auth import TenantContext
 from llamatrade_grpc.clients.base import BaseGRPCClient
 
 if TYPE_CHECKING:
-    from typing import Any
+    from llamatrade_grpc.generated.llamatrade.v1 import trading_pb2, trading_pb2_grpc
 
 logger = logging.getLogger(__name__)
 
@@ -125,19 +125,32 @@ class TradingClient(BaseGRPCClient):
     def __init__(
         self,
         target: str = "trading:50055",
-        **kwargs: Any,
+        *,
+        secure: bool = False,
+        credentials: object | None = None,
+        interceptors: list[object] | None = None,
+        options: list[tuple[str, str | int | bool]] | None = None,
     ) -> None:
         """Initialize the Trading client.
 
         Args:
             target: The gRPC server address
-            **kwargs: Additional arguments passed to BaseGRPCClient
+            secure: Whether to use TLS
+            credentials: Optional channel credentials
+            interceptors: Optional client interceptors
+            options: Optional channel options
         """
-        super().__init__(target, **kwargs)
-        self._stub: Any = None
+        super().__init__(
+            target,
+            secure=secure,
+            credentials=credentials,  # type: ignore[arg-type]
+            interceptors=interceptors,  # type: ignore[arg-type]
+            options=options,
+        )
+        self._stub: trading_pb2_grpc.TradingServiceStub | None = None
 
     @property
-    def stub(self) -> Any:
+    def stub(self) -> trading_pb2_grpc.TradingServiceStub:
         """Get the gRPC stub (lazy initialization)."""
         if self._stub is None:
             try:
@@ -305,7 +318,7 @@ class TradingClient(BaseGRPCClient):
                 timestamp=datetime.fromtimestamp(update.timestamp.seconds),
             )
 
-    def _proto_to_order(self, proto: Any) -> Order:
+    def _proto_to_order(self, proto: trading_pb2.Order) -> Order:
         """Convert protobuf Order to dataclass."""
         from llamatrade_grpc.generated.llamatrade.v1 import trading_pb2
 
@@ -368,7 +381,7 @@ class TradingClient(BaseGRPCClient):
             ),
         )
 
-    def _proto_to_position(self, proto: Any) -> Position:
+    def _proto_to_position(self, proto: trading_pb2.Position) -> Position:
         """Convert protobuf Position to dataclass."""
         return Position(
             symbol=proto.symbol,

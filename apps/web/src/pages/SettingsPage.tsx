@@ -1,70 +1,118 @@
+/**
+ * SettingsPage - User settings with tabbed layout
+ */
+
+import { CreditCard, User } from 'lucide-react';
+import { useState } from 'react';
+import { Link } from 'react-router-dom';
+
+import { useAuthStore } from '../store/auth';
+
+type Tab = 'account' | 'billing';
+
 export default function SettingsPage() {
+  const [activeTab, setActiveTab] = useState<Tab>('account');
+  const user = useAuthStore((state) => state.user);
+
   return (
-    <div className="space-y-8">
-      <div>
-        <h1 className="text-2xl font-bold text-white">Settings</h1>
-        <p className="text-slate-400 mt-1">Manage your account and preferences</p>
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Alpaca API Keys */}
-        <div className="card">
-          <h2 className="text-lg font-semibold text-white mb-4">Alpaca API Keys</h2>
-          <div className="space-y-4">
-            <div>
-              <label className="label">Paper Trading API Key</label>
-              <input type="password" className="input" placeholder="Enter API key" />
-            </div>
-            <div>
-              <label className="label">Paper Trading Secret</label>
-              <input type="password" className="input" placeholder="Enter secret" />
-            </div>
-            <button className="btn btn-primary">Save Keys</button>
-          </div>
+    <div className="h-[calc(100vh-56px)] overflow-auto bg-gray-50 dark:bg-gray-950 bg-dotted-grid">
+      <div className="mx-auto max-w-4xl px-6 py-8">
+        <div className="mb-8">
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Settings</h1>
+          <p className="mt-1 text-gray-500 dark:text-gray-400">
+            Manage your account and preferences
+          </p>
         </div>
 
-        {/* Notifications */}
-        <div className="card">
-          <h2 className="text-lg font-semibold text-white mb-4">Notifications</h2>
-          <div className="space-y-4">
-            <label className="flex items-center gap-3">
-              <input type="checkbox" className="w-4 h-4 rounded border-slate-600 bg-slate-800" />
-              <span className="text-slate-300">Email notifications</span>
-            </label>
-            <label className="flex items-center gap-3">
-              <input type="checkbox" className="w-4 h-4 rounded border-slate-600 bg-slate-800" />
-              <span className="text-slate-300">Trade alerts</span>
-            </label>
-            <label className="flex items-center gap-3">
-              <input type="checkbox" className="w-4 h-4 rounded border-slate-600 bg-slate-800" />
-              <span className="text-slate-300">Daily summary</span>
-            </label>
-          </div>
+        {/* Tabs */}
+        <div className="mb-6 border-b border-gray-200 dark:border-gray-700">
+          <nav className="-mb-px flex gap-6">
+            <button
+              onClick={() => setActiveTab('account')}
+              className={`flex items-center gap-2 border-b-2 pb-3 text-sm font-medium transition-colors ${
+                activeTab === 'account'
+                  ? 'border-indigo-500 text-indigo-600 dark:text-indigo-400'
+                  : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
+              }`}
+            >
+              <User className="h-4 w-4" />
+              Account
+            </button>
+            <button
+              onClick={() => setActiveTab('billing')}
+              className={`flex items-center gap-2 border-b-2 pb-3 text-sm font-medium transition-colors ${
+                activeTab === 'billing'
+                  ? 'border-indigo-500 text-indigo-600 dark:text-indigo-400'
+                  : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
+              }`}
+            >
+              <CreditCard className="h-4 w-4" />
+              Plan & Billing
+            </button>
+          </nav>
         </div>
 
-        {/* Subscription */}
-        <div className="card">
-          <h2 className="text-lg font-semibold text-white mb-4">Subscription</h2>
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-white font-medium">Free Plan</p>
-              <p className="text-slate-400 text-sm">5 backtests/month, paper trading only</p>
+        {/* Tab Content */}
+        {activeTab === 'account' && (
+          <div className="space-y-6">
+            <div className="rounded-lg border border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-900">
+              <h2 className="mb-4 text-lg font-semibold text-gray-900 dark:text-gray-100">
+                Account Information
+              </h2>
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                    Email
+                  </label>
+                  <p className="mt-1 text-gray-900 dark:text-gray-100">{user?.email || '-'}</p>
+                </div>
+              </div>
             </div>
-            <button className="btn btn-secondary">Upgrade</button>
-          </div>
-        </div>
 
-        {/* Account */}
-        <div className="card">
-          <h2 className="text-lg font-semibold text-white mb-4">Account</h2>
-          <div className="space-y-4">
-            <div>
-              <label className="label">Email</label>
-              <input type="email" className="input" value="user@example.com" disabled />
+            <div className="rounded-lg border border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-900">
+              <h2 className="mb-4 text-lg font-semibold text-gray-900 dark:text-gray-100">
+                Security
+              </h2>
+              <button className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-800">
+                Change Password
+              </button>
             </div>
-            <button className="btn btn-secondary">Change Password</button>
           </div>
-        </div>
+        )}
+
+        {activeTab === 'billing' && (
+          <div className="space-y-6">
+            <div className="rounded-lg border border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-900">
+              <h2 className="mb-4 text-lg font-semibold text-gray-900 dark:text-gray-100">
+                Subscription
+              </h2>
+              <p className="mb-4 text-gray-500 dark:text-gray-400">
+                View and manage your subscription, payment methods, and invoices.
+              </p>
+              <Link
+                to="/billing"
+                className="inline-block rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700"
+              >
+                Manage Billing
+              </Link>
+            </div>
+
+            <div className="rounded-lg border border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-900">
+              <h2 className="mb-4 text-lg font-semibold text-gray-900 dark:text-gray-100">
+                Payment Methods
+              </h2>
+              <p className="mb-4 text-gray-500 dark:text-gray-400">
+                Add, remove, or update your payment methods.
+              </p>
+              <Link
+                to="/billing/payment-methods"
+                className="inline-block rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-800"
+              >
+                Manage Payment Methods
+              </Link>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

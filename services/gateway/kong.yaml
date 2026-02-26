@@ -456,7 +456,7 @@ plugins:
     config:
       origins:
         - http://localhost:3000
-        - http://localhost:47300
+        - http://localhost:47333
         - https://llamatrade.com
         - https://staging.llamatrade.com
         - https://*.llamatrade.com

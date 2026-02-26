@@ -4,7 +4,7 @@
 repos:
   # Python linting with Ruff
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.3.0
+    rev: v0.15.2
     hooks:
       - id: ruff
         args: [--fix, --config=pyproject.toml]
@@ -18,7 +18,7 @@ repos:
     hooks:
       - id: mypy
         name: mypy
-        entry: bash -c 'mypy libs/common --ignore-missing-imports && mypy services/auth --ignore-missing-imports && mypy services/strategy --ignore-missing-imports && mypy services/backtest --ignore-missing-imports && mypy services/market-data --ignore-missing-imports && mypy services/trading --ignore-missing-imports && mypy services/portfolio --ignore-missing-imports && mypy services/notification --ignore-missing-imports && mypy services/billing --ignore-missing-imports'
+        entry: bash -c '.venv/bin/mypy libs/common --ignore-missing-imports && .venv/bin/mypy services/auth --ignore-missing-imports && .venv/bin/mypy services/strategy --ignore-missing-imports && .venv/bin/mypy services/backtest --ignore-missing-imports && .venv/bin/mypy services/market-data --ignore-missing-imports && .venv/bin/mypy services/trading --ignore-missing-imports && .venv/bin/mypy services/portfolio --ignore-missing-imports && .venv/bin/mypy services/notification --ignore-missing-imports && .venv/bin/mypy services/billing --ignore-missing-imports'
         language: system
         files: ^(services|libs)/.*\.py$
         pass_filenames: false

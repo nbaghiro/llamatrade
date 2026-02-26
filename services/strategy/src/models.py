@@ -1,11 +1,48 @@
-"""Strategy Service - Database models and Pydantic schemas."""
+"""Strategy Service - Pydantic schemas for API requests/responses."""
 
 from datetime import datetime
 from enum import StrEnum
-from typing import Any
+from typing import TypedDict
 from uuid import UUID
 
 from pydantic import BaseModel, Field
+
+
+# TypedDict for strategy config JSON (parsed S-expression)
+class StrategyConfigJSON(TypedDict, total=False):
+    """JSON representation of parsed strategy S-expression."""
+
+    name: str
+    symbols: list[str]
+    timeframe: str
+    entry: str | dict[str, object]  # Condition expression
+    exit: str | dict[str, object]  # Condition expression
+    stop_loss_pct: float
+    take_profit_pct: float
+    trailing_stop_pct: float
+    sizing: dict[str, str | float]
+
+
+class ConfigOverride(TypedDict, total=False):
+    """Runtime configuration overrides."""
+
+    symbols: list[str]
+    timeframe: str
+    stop_loss_pct: float
+    take_profit_pct: float
+    sizing_type: str
+    sizing_value: float
+
+
+class IndicatorParamInfo(TypedDict):
+    """Indicator parameter metadata."""
+
+    name: str
+    type: str  # "int", "float", "str"
+    default: int | float | str | None
+    min: int | float | None
+    max: int | float | None
+    description: str
 
 
 class StrategyType(StrEnum):
@@ -27,176 +64,181 @@ class StrategyStatus(StrEnum):
     ARCHIVED = "archived"
 
 
-class IndicatorType(StrEnum):
-    """Available indicator types."""
+class DeploymentStatus(StrEnum):
+    """Deployment lifecycle status."""
 
-    # Trend indicators
-    SMA = "sma"
-    EMA = "ema"
-    MACD = "macd"
-    ADX = "adx"
-
-    # Momentum indicators
-    RSI = "rsi"
-    STOCHASTIC = "stochastic"
-    CCI = "cci"
-    WILLIAMS_R = "williams_r"
-
-    # Volatility indicators
-    BOLLINGER_BANDS = "bollinger_bands"
-    ATR = "atr"
-    KELTNER_CHANNEL = "keltner_channel"
-
-    # Volume indicators
-    OBV = "obv"
-    MFI = "mfi"
-    VWAP = "vwap"
-
-    # Channel indicators
-    DONCHIAN_CHANNEL = "donchian_channel"
+    PENDING = "pending"
+    RUNNING = "running"
+    PAUSED = "paused"
+    STOPPED = "stopped"
+    ERROR = "error"
 
 
-class ConditionOperator(StrEnum):
-    """Condition operators."""
+class DeploymentEnvironment(StrEnum):
+    """Trading environment."""
 
-    GREATER_THAN = "gt"
-    LESS_THAN = "lt"
-    EQUAL = "eq"
-    GREATER_EQUAL = "gte"
-    LESS_EQUAL = "lte"
-    CROSS_ABOVE = "cross_above"
-    CROSS_BELOW = "cross_below"
+    PAPER = "paper"
+    LIVE = "live"
 
 
-class ActionType(StrEnum):
-    """Action types."""
-
-    BUY = "buy"
-    SELL = "sell"
-    CLOSE_LONG = "close_long"
-    CLOSE_SHORT = "close_short"
-    CLOSE_ALL = "close_all"
-
-
-# Request/Response Schemas
-class IndicatorConfig(BaseModel):
-    """Indicator configuration."""
-
-    type: IndicatorType
-    params: dict[str, Any] = Field(default_factory=dict)
-    output_name: str
-
-
-class ConditionConfig(BaseModel):
-    """Trading condition configuration."""
-
-    left: str  # Indicator output name or "price"
-    operator: ConditionOperator
-    right: str | float  # Another indicator or a value
-    and_conditions: list["ConditionConfig"] | None = None
-    or_conditions: list["ConditionConfig"] | None = None
-
-
-class ActionConfig(BaseModel):
-    """Trading action configuration."""
-
-    type: ActionType
-    quantity_type: str = "percent"  # percent, fixed, all
-    quantity_value: float = 100.0
-    order_type: str = "market"  # market, limit
-    limit_offset_percent: float | None = None
-
-
-class RiskConfig(BaseModel):
-    """Risk management configuration."""
-
-    stop_loss_percent: float | None = None
-    take_profit_percent: float | None = None
-    trailing_stop_percent: float | None = None
-    max_position_size_percent: float = 100.0
-    max_daily_loss_percent: float | None = None
-    max_open_positions: int | None = None
-
-
-class StrategyConfig(BaseModel):
-    """Complete strategy configuration."""
-
-    symbols: list[str]
-    timeframe: str = "1D"
-    indicators: list[IndicatorConfig] = Field(default_factory=list)
-    entry_conditions: list[ConditionConfig] = Field(default_factory=list)
-    exit_conditions: list[ConditionConfig] = Field(default_factory=list)
-    entry_action: ActionConfig | None = None
-    exit_action: ActionConfig | None = None
-    risk: RiskConfig = Field(default_factory=RiskConfig)
+# ===================
+# Request Schemas
+# ===================
 
 
 class StrategyCreate(BaseModel):
-    """Schema for creating a strategy."""
+    """Schema for creating a strategy with S-expression config."""
 
     name: str = Field(..., min_length=1, max_length=255)
     description: str | None = None
-    strategy_type: StrategyType = StrategyType.CUSTOM
-    config: StrategyConfig
+    config_sexpr: str = Field(
+        ...,
+        description="S-expression strategy definition",
+        examples=[
+            """(strategy
+  :name "RSI Mean Reversion"
+  :symbols ["AAPL" "MSFT"]
+  :timeframe "1D"
+  :entry (< (rsi close 14) 30)
+  :exit (> (rsi close 14) 70)
+  :stop-loss-pct 2.0
+  :take-profit-pct 6.0)"""
+        ],
+    )
 
 
 class StrategyUpdate(BaseModel):
     """Schema for updating a strategy."""
 
-    name: str | None = None
+    name: str | None = Field(None, min_length=1, max_length=255)
     description: str | None = None
     status: StrategyStatus | None = None
-    config: StrategyConfig | None = None
+    config_sexpr: str | None = Field(
+        None,
+        description="New S-expression config (creates new version if changed)",
+    )
+
+
+class DeploymentCreate(BaseModel):
+    """Schema for creating a deployment."""
+
+    version: int | None = Field(
+        None,
+        description="Strategy version to deploy (defaults to current_version)",
+    )
+    environment: DeploymentEnvironment = DeploymentEnvironment.PAPER
+    config_override: ConfigOverride | None = Field(
+        None,
+        description="Runtime config overrides (e.g., different symbols)",
+    )
+
+
+# ===================
+# Response Schemas
+# ===================
 
 
 class StrategyResponse(BaseModel):
-    """Schema for strategy response."""
+    """Basic strategy info (without config)."""
 
     id: UUID
-    tenant_id: UUID
     name: str
     description: str | None
     strategy_type: StrategyType
     status: StrategyStatus
-    is_template: bool
     current_version: int
     created_at: datetime
     updated_at: datetime
 
 
 class StrategyDetailResponse(StrategyResponse):
-    """Schema for detailed strategy response with config."""
+    """Full strategy response with config."""
 
-    config: StrategyConfig
+    config_sexpr: str
+    config_json: StrategyConfigJSON
+    symbols: list[str]
+    timeframe: str
 
 
 class StrategyVersionResponse(BaseModel):
-    """Schema for strategy version response."""
+    """Strategy version info."""
+
+    version: int
+    config_sexpr: str
+    config_json: StrategyConfigJSON
+    symbols: list[str]
+    timeframe: str
+    changelog: str | None
+    created_at: datetime
+
+
+class DeploymentResponse(BaseModel):
+    """Deployment info."""
 
     id: UUID
     strategy_id: UUID
     version: int
-    config: StrategyConfig
+    environment: DeploymentEnvironment
+    status: DeploymentStatus
+    started_at: datetime | None
+    stopped_at: datetime | None
+    config_override: ConfigOverride | None
+    error_message: str | None
     created_at: datetime
 
 
-class TemplateResponse(BaseModel):
-    """Schema for strategy template response."""
+class ValidationResult(BaseModel):
+    """Strategy validation result."""
 
-    id: str
-    name: str
-    description: str
-    strategy_type: StrategyType
-    config: StrategyConfig
-    tags: list[str] = Field(default_factory=list)
+    valid: bool
+    errors: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+
+
+# ===================
+# Legacy Support (for backwards compatibility)
+# ===================
+
+
+class IndicatorType(StrEnum):
+    """Available indicator types."""
+
+    SMA = "sma"
+    EMA = "ema"
+    MACD = "macd"
+    ADX = "adx"
+    RSI = "rsi"
+    STOCHASTIC = "stochastic"
+    CCI = "cci"
+    WILLIAMS_R = "williams_r"
+    BOLLINGER_BANDS = "bollinger_bands"
+    ATR = "atr"
+    KELTNER_CHANNEL = "keltner_channel"
+    OBV = "obv"
+    MFI = "mfi"
+    VWAP = "vwap"
+    DONCHIAN_CHANNEL = "donchian_channel"
 
 
 class IndicatorInfoResponse(BaseModel):
-    """Schema for indicator information response."""
+    """Indicator metadata."""
 
     type: IndicatorType
     name: str
     description: str
-    params: list[dict[str, Any]]
+    params: list[IndicatorParamInfo]
     outputs: list[str]
     category: str
+
+
+class TemplateResponse(BaseModel):
+    """Strategy template info."""
+
+    id: str
+    name: str
+    description: str | None
+    strategy_type: StrategyType
+    config_sexpr: str
+    config_json: StrategyConfigJSON
+    tags: list[str] = Field(default_factory=list)
+    difficulty: str = "beginner"

@@ -1,11 +1,14 @@
 """Shared utilities for LlamaTrade services."""
 
+from __future__ import annotations
+
 import base64
 import hashlib
 import os
 import secrets
+from collections.abc import Generator, Sequence
 from datetime import UTC, datetime
-from typing import Any
+from typing import TypedDict
 from uuid import UUID, uuid4
 
 from cryptography.fernet import Fernet
@@ -90,11 +93,21 @@ def decrypt_value(encrypted_value: str, encryption_key: str | None = None) -> st
     return decrypted.decode()
 
 
-def paginate(
-    items: list[Any],
+class PaginatedResult(TypedDict):
+    """Result of paginating a list."""
+
+    items: Sequence[object]  # Generic sequence - callers should cast to their type
+    total: int
+    page: int
+    page_size: int
+    total_pages: int
+
+
+def paginate[T](
+    items: Sequence[T],
     page: int = 1,
     page_size: int = 20,
-) -> dict[str, Any]:
+) -> PaginatedResult:
     """Paginate a list of items.
 
     Args:
@@ -111,13 +124,13 @@ def paginate(
     start = (page - 1) * page_size
     end = start + page_size
 
-    return {
-        "items": items[start:end],
-        "total": total,
-        "page": page,
-        "page_size": page_size,
-        "total_pages": total_pages,
-    }
+    return PaginatedResult(
+        items=items[start:end],
+        total=total,
+        page=page,
+        page_size=page_size,
+        total_pages=total_pages,
+    )
 
 
 def format_currency(value: float, currency: str = "USD") -> str:
@@ -159,7 +172,7 @@ def normalize_symbol(symbol: str) -> str:
     return symbol.strip().upper()
 
 
-def chunks(lst: list[Any], n: int):
+def chunks[T](lst: list[T], n: int) -> Generator[list[T], None, None]:
     """Yield successive n-sized chunks from lst."""
     for i in range(0, len(lst), n):
         yield lst[i : i + n]

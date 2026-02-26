@@ -2,71 +2,257 @@
 @tailwind components;
 @tailwind utilities;
 
-:root {
-  --color-bg: #0f172a;
-  --color-surface: #1e293b;
-  --color-border: #334155;
+/* ============================================
+   LlamaTrade Design System
+   Theme: Light/Dark Mode with Tailwind Classes
+   ============================================ */
+
+@layer base {
+  html {
+    @apply antialiased;
+  }
+
+  body {
+    @apply bg-gray-50 dark:bg-gray-950 text-gray-900 dark:text-gray-100 font-sans;
+  }
+
+  /* Monospace for numbers and data */
+  .font-data {
+    @apply font-mono tabular-nums;
+  }
 }
 
-body {
-  @apply bg-slate-900 text-slate-100 font-sans antialiased;
-}
-
-/* Custom scrollbar */
-::-webkit-scrollbar {
+/* Scrollbar - auto-hide (only visible when scrolling/hovering) */
+*::-webkit-scrollbar {
   width: 8px;
   height: 8px;
 }
 
-::-webkit-scrollbar-track {
-  @apply bg-slate-800;
+*::-webkit-scrollbar-track {
+  background: transparent;
 }
 
-::-webkit-scrollbar-thumb {
-  @apply bg-slate-600 rounded;
+/* Light mode scrollbar - hidden by default */
+*::-webkit-scrollbar-thumb {
+  background-color: transparent;
+  border-radius: 9999px;
+  transition: background-color 0.2s;
 }
 
-::-webkit-scrollbar-thumb:hover {
-  @apply bg-slate-500;
+*:hover::-webkit-scrollbar-thumb {
+  background-color: #d4d4d4; /* gray-300 */
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background-color: #a3a3a3; /* gray-400 */
+}
+
+/* Dark mode scrollbar - hidden by default */
+.dark *::-webkit-scrollbar-thumb {
+  background-color: transparent;
+}
+
+.dark *:hover::-webkit-scrollbar-thumb {
+  background-color: #525252; /* gray-600 */
+}
+
+.dark *::-webkit-scrollbar-thumb:hover {
+  background-color: #737373; /* gray-500 */
+}
+
+/* Firefox scrollbar support */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+
+*:hover {
+  scrollbar-color: #d4d4d4 transparent;
+}
+
+.dark * {
+  scrollbar-color: transparent transparent;
+}
+
+.dark *:hover {
+  scrollbar-color: #525252 transparent;
 }
 
 /* Focus styles */
 :focus-visible {
-  @apply outline-none ring-2 ring-primary-500 ring-offset-2 ring-offset-slate-900;
+  @apply outline-none ring-2 ring-green-500 ring-offset-2 ring-offset-white dark:ring-offset-gray-900;
 }
 
-/* Button base styles */
+/* Selection */
+::selection {
+  @apply bg-green-100 dark:bg-green-900 text-green-900 dark:text-green-100;
+}
+
+/* ============================================
+   Component Layer
+   ============================================ */
+
 @layer components {
+  /* Buttons */
   .btn {
-    @apply inline-flex items-center justify-center px-4 py-2 rounded-lg font-medium transition-colors;
+    @apply inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg font-medium text-sm transition-colors;
+    @apply disabled:opacity-50 disabled:cursor-not-allowed;
   }
 
   .btn-primary {
-    @apply bg-primary-600 text-white hover:bg-primary-700 active:bg-primary-800;
+    @apply bg-green-500 text-white hover:bg-green-600 active:bg-green-700;
   }
 
   .btn-secondary {
-    @apply bg-slate-700 text-slate-100 hover:bg-slate-600 active:bg-slate-500;
-  }
-
-  .btn-danger {
-    @apply bg-danger-600 text-white hover:bg-danger-500;
+    @apply bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 border border-gray-200 dark:border-gray-700;
+    @apply hover:bg-gray-50 dark:hover:bg-gray-700 active:bg-gray-100 dark:active:bg-gray-600;
   }
 
   .btn-ghost {
-    @apply text-slate-300 hover:bg-slate-800 hover:text-white;
+    @apply text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-800;
   }
 
+  .btn-danger {
+    @apply bg-red-500 text-white hover:bg-red-600;
+  }
+
+  .btn-sm {
+    @apply text-xs px-3 py-1.5;
+  }
+
+  .btn-lg {
+    @apply text-base px-5 py-2.5;
+  }
+
+  /* Cards */
   .card {
-    @apply bg-slate-800 border border-slate-700 rounded-xl p-6;
+    @apply bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl;
   }
 
+  .card-shadow {
+    @apply bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800 rounded-xl shadow-sm;
+  }
+
+  /* Form inputs */
   .input {
-    @apply w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-slate-100 placeholder-slate-500;
-    @apply focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent;
+    @apply w-full px-3 py-2 rounded-lg transition-shadow;
+    @apply bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-900 dark:text-gray-100;
+    @apply focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent;
+  }
+
+  .input::placeholder {
+    @apply text-gray-400 dark:text-gray-500 text-sm italic;
+  }
+
+  /* Override browser autofill styles */
+  .input:-webkit-autofill,
+  .input:-webkit-autofill:hover,
+  .input:-webkit-autofill:focus,
+  .input:-webkit-autofill:active {
+    -webkit-box-shadow: 0 0 0 30px white inset !important;
+    -webkit-text-fill-color: #111827 !important;
+  }
+
+  .dark .input:-webkit-autofill,
+  .dark .input:-webkit-autofill:hover,
+  .dark .input:-webkit-autofill:focus,
+  .dark .input:-webkit-autofill:active {
+    -webkit-box-shadow: 0 0 0 30px #1a1a1a inset !important;
+    -webkit-text-fill-color: #f3f4f6 !important;
+  }
+
+  .input-error {
+    @apply border-red-500 focus:ring-red-500;
   }
 
   .label {
-    @apply block text-sm font-medium text-slate-300 mb-1;
+    @apply block text-sm font-medium mb-1.5 text-gray-600 dark:text-gray-400;
+  }
+
+  /* Select */
+  .select {
+    @apply input appearance-none bg-no-repeat pr-10;
+    background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e");
+    background-position: right 0.5rem center;
+    background-size: 1.5em 1.5em;
+  }
+
+  /* Badge */
+  .badge {
+    @apply inline-flex items-center px-2 py-0.5 rounded text-xs font-medium;
+  }
+
+  .badge-primary {
+    @apply bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300;
+  }
+
+  .badge-accent {
+    @apply bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300;
+  }
+
+  .badge-gray {
+    @apply bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400;
+  }
+
+  /* Dividers */
+  .divider {
+    @apply border-t border-gray-200 dark:border-gray-800;
+  }
+
+  /* Dropdown menu */
+  .dropdown {
+    @apply absolute z-50 rounded-lg shadow-lg py-1;
+    @apply bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700;
+  }
+
+  .dropdown-item {
+    @apply flex items-center gap-3 px-4 py-2.5 text-sm cursor-pointer;
+    @apply text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800;
+  }
+
+  .dropdown-item-icon {
+    @apply w-5 h-5 text-gray-400 dark:text-gray-500;
+  }
+
+  /* Nav link */
+  .nav-link {
+    @apply px-3 py-2 text-sm font-medium rounded-lg transition-colors;
+    @apply text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-800;
+  }
+
+  .nav-link-active {
+    @apply text-gray-900 dark:text-gray-100 bg-gray-100 dark:bg-gray-800;
+  }
+}
+
+/* ============================================
+   Canvas / Grid Background (Strategy Builder)
+   ============================================ */
+
+@layer utilities {
+  /* Dotted grid pattern */
+  .bg-dotted-grid {
+    background-image: radial-gradient(circle, theme('colors.gray.400') 1px, transparent 1px);
+    background-size: 24px 24px;
+  }
+
+  .dark .bg-dotted-grid {
+    background-image: radial-gradient(circle, #333333 1px, transparent 1px);
+  }
+
+  /* Canvas with grid */
+  .bg-canvas {
+    @apply bg-gray-50 dark:bg-gray-950;
+    background-image: radial-gradient(circle, theme('colors.gray.400') 1px, transparent 1px);
+    background-size: 24px 24px;
+  }
+
+  .dark .bg-canvas {
+    background-image: radial-gradient(circle, #333333 1px, transparent 1px);
+  }
+
+  /* Tree connector lines */
+  .bg-connector {
+    @apply bg-gray-300 dark:bg-gray-600;
   }
 }

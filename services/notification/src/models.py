@@ -2,10 +2,52 @@
 
 from datetime import datetime
 from enum import StrEnum
-from typing import Any
+from typing import TypedDict, cast
 from uuid import UUID
 
 from pydantic import BaseModel, Field
+
+
+class EmailConfig(TypedDict, total=False):
+    """Email channel configuration."""
+
+    smtp_host: str
+    smtp_port: int
+    from_address: str
+    reply_to: str
+
+
+class SMSConfig(TypedDict, total=False):
+    """SMS channel configuration."""
+
+    provider: str  # twilio, etc.
+    from_number: str
+
+
+class PushConfig(TypedDict, total=False):
+    """Push notification configuration."""
+
+    provider: str  # firebase, apns
+    device_token: str
+
+
+class WebhookChannelConfig(TypedDict, total=False):
+    """Webhook channel configuration."""
+
+    url: str
+    secret: str
+    headers: dict[str, str]
+
+
+class SlackConfig(TypedDict, total=False):
+    """Slack channel configuration."""
+
+    webhook_url: str
+    channel: str
+
+
+# Union of all channel configs
+ChannelConfigUnion = EmailConfig | SMSConfig | PushConfig | WebhookChannelConfig | SlackConfig
 
 
 class ChannelType(StrEnum):
@@ -76,7 +118,7 @@ class NotificationResponse(BaseModel):
 class ChannelConfig(BaseModel):
     type: ChannelType
     is_enabled: bool
-    config: dict[str, Any] = Field(default_factory=dict)
+    config: ChannelConfigUnion = Field(default_factory=lambda: cast(ChannelConfigUnion, {}))
 
 
 class WebhookConfig(BaseModel):

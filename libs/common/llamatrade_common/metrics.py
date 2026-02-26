@@ -9,12 +9,13 @@ from __future__ import annotations
 import time
 from collections.abc import Callable
 from functools import wraps
-from typing import Any, TypeVar
+from types import TracebackType
+from typing import ParamSpec, TypeVar, cast
 
 from prometheus_client import Counter, Gauge, Histogram, Info, generate_latest
 
-# Type variable for decorator
-F = TypeVar("F", bound=Callable[..., Any])
+P = ParamSpec("P")
+R = TypeVar("R")
 
 # =============================================================================
 # Standard Metrics
@@ -174,7 +175,7 @@ def get_metrics() -> bytes:
 def time_function(
     metric: Histogram,
     labels: dict[str, str],
-) -> Callable[[F], F]:
+) -> Callable[[Callable[P, R]], Callable[P, R]]:
     """Decorator to time a function and record duration.
 
     Args:
@@ -187,18 +188,21 @@ def time_function(
             ...
     """
 
-    def decorator(func: F) -> F:
+    def decorator(func: Callable[P, R]) -> Callable[P, R]:
         @wraps(func)
-        async def async_wrapper(*args: Any, **kwargs: Any) -> Any:
+        async def async_wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
             start_time = time.perf_counter()
             try:
-                return await func(*args, **kwargs)
+                # func is an async function, so we await it
+                coro = func(*args, **kwargs)
+                result = await coro  # type: ignore[misc]
+                return cast(R, result)
             finally:
                 duration = time.perf_counter() - start_time
                 metric.labels(**labels).observe(duration)
 
         @wraps(func)
-        def sync_wrapper(*args: Any, **kwargs: Any) -> Any:
+        def sync_wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
             start_time = time.perf_counter()
             try:
                 return func(*args, **kwargs)
@@ -209,8 +213,8 @@ def time_function(
         import asyncio
 
         if asyncio.iscoroutinefunction(func):
-            return async_wrapper  # type: ignore
-        return sync_wrapper  # type: ignore
+            return cast(Callable[P, R], async_wrapper)
+        return sync_wrapper
 
     return decorator
 
@@ -219,7 +223,8 @@ class MetricsTimer:
     """Context manager for timing operations.
 
     Example:
-        with MetricsTimer(DB_QUERY_DURATION_SECONDS, {"service": "auth", "operation": "select", "table": "users"}):
+        labels = {"service": "auth", "operation": "select", "table": "users"}
+        with MetricsTimer(DB_QUERY_DURATION_SECONDS, labels):
             result = await db.execute(query)
     """
 
@@ -232,7 +237,12 @@ class MetricsTimer:
         self.start_time = time.perf_counter()
         return self
 
-    def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
+    ) -> None:
         duration = time.perf_counter() - self.start_time
         self.metric.labels(**self.labels).observe(duration)
 

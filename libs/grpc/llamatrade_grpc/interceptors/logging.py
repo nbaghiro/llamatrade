@@ -4,8 +4,7 @@ from __future__ import annotations
 
 import logging
 import time
-from collections.abc import Callable
-from typing import Any
+from collections.abc import Awaitable, Callable
 
 import grpc
 import grpc.aio
@@ -39,9 +38,9 @@ class LoggingInterceptor(grpc.aio.ServerInterceptor):
 
     async def intercept_service(
         self,
-        continuation: Callable[[grpc.HandlerCallDetails], Any],
+        continuation: Callable[[grpc.HandlerCallDetails], Awaitable[grpc.RpcMethodHandler | None]],
         handler_call_details: grpc.HandlerCallDetails,
-    ) -> Any:
+    ) -> grpc.RpcMethodHandler | None:
         """Intercept and log incoming requests.
 
         Args:
@@ -128,10 +127,10 @@ class ClientLoggingInterceptor(grpc.aio.UnaryUnaryClientInterceptor):
 
     async def intercept_unary_unary(
         self,
-        continuation: Callable,
+        continuation: Callable[[grpc.aio.ClientCallDetails, object], Awaitable[object]],
         client_call_details: grpc.aio.ClientCallDetails,
-        request: Any,
-    ) -> Any:
+        request: object,
+    ) -> object:
         """Log outgoing requests and responses."""
         method = client_call_details.method
         start_time = time.perf_counter()

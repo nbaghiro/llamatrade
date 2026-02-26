@@ -28,6 +28,27 @@ dev-infra:
 	@echo "  ./scripts/dev-local.sh strategy"
 	@echo "  etc."
 
+# Start API Gateway for local development (routes to localhost services)
+dev-gateway:
+	@docker rm -f llamatrade-gateway-local 2>/dev/null || true
+	docker run -d --name llamatrade-gateway-local \
+		-p 47800:8000 \
+		-v $(PWD)/services/gateway/kong.local.yaml:/kong/declarative/kong.yml:ro \
+		-e KONG_DATABASE=off \
+		-e KONG_DECLARATIVE_CONFIG=/kong/declarative/kong.yml \
+		-e KONG_PROXY_ACCESS_LOG=/dev/stdout \
+		-e KONG_ADMIN_ACCESS_LOG=/dev/stdout \
+		-e KONG_PROXY_ERROR_LOG=/dev/stderr \
+		-e KONG_ADMIN_ERROR_LOG=/dev/stderr \
+		kong:3.4
+	@echo ""
+	@echo "Gateway running at http://localhost:47800"
+	@echo "Routes to local services on host machine"
+
+# Stop gateway
+dev-gateway-down:
+	docker rm -f llamatrade-gateway-local 2>/dev/null || true
+
 # Create virtual environments for all services
 dev-setup:
 	./scripts/dev-local.sh setup
@@ -85,6 +106,38 @@ test-strategy:
 	@. .venv/bin/activate 2>/dev/null || (python3 -m venv .venv && . .venv/bin/activate); \
 	pip install -q -e "libs/common[dev]" -e "libs/db[dev]" -e "services/strategy[dev]"; \
 	cd services/strategy && pytest tests -v
+
+test-portfolio:
+	@. .venv/bin/activate 2>/dev/null || (python3 -m venv .venv && . .venv/bin/activate); \
+	pip install -q -e "libs/common[dev]" -e "libs/db[dev]" -e "services/portfolio[dev]"; \
+	cd services/portfolio && pytest tests -v
+
+# ===================
+# Integration Tests (requires Docker)
+# ===================
+test-integration:
+	@. .venv/bin/activate 2>/dev/null || (python3 -m venv .venv && . .venv/bin/activate); \
+	pip install -q -e "libs/common[dev,integration]" -e "libs/db[dev]"; \
+	pytest tests/integration -v -n auto --timeout=120
+
+test-integration-quick:
+	@. .venv/bin/activate 2>/dev/null || (python3 -m venv .venv && . .venv/bin/activate); \
+	pip install -q -e "libs/common[dev,integration]" -e "libs/db[dev]"; \
+	pytest tests/integration/services -v -n auto -m "not slow" --timeout=60
+
+test-security:
+	@. .venv/bin/activate 2>/dev/null || (python3 -m venv .venv && . .venv/bin/activate); \
+	pip install -q -e "libs/common[dev,integration]" -e "libs/db[dev]"; \
+	pytest tests/integration/security -v --timeout=60
+
+test-integration-docker:
+	docker compose -f docker-compose.test.yml up -d
+	@. .venv/bin/activate 2>/dev/null || (python3 -m venv .venv && . .venv/bin/activate); \
+	pip install -q -e "libs/common[dev,integration]" -e "libs/db[dev]"; \
+	DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:47533/llamatrade_test \
+	REDIS_URL=redis://localhost:47380 \
+	pytest tests/integration -v --timeout=120 || true
+	docker compose -f docker-compose.test.yml down
 
 # ===================
 # Linting & Type Checking
@@ -214,12 +267,18 @@ help:
 	@echo "  make pre-commit-install - Install pre-commit hooks"
 	@echo "  make pre-commit-run - Run pre-commit on all files"
 	@echo ""
+	@echo "Integration Tests (requires Docker):"
+	@echo "  make test-integration      - Run full integration tests"
+	@echo "  make test-integration-quick - Run quick integration tests"
+	@echo "  make test-security         - Run tenant isolation tests"
+	@echo "  make test-integration-docker - Run with docker-compose.test.yml"
+	@echo ""
 	@echo "Deployment:"
 	@echo "  make deploy-staging - Deploy to staging"
 	@echo "  make deploy-prod    - Deploy to production"
 	@echo ""
 	@echo "Default Ports (all use 47xxx range):"
-	@echo "  Frontend:    http://localhost:47300"
+	@echo "  Frontend:    http://localhost:47333"
 	@echo "  API Gateway: http://localhost:47800"
 	@echo "  PostgreSQL:  localhost:47532"
 	@echo "  Redis:       localhost:47379"

@@ -19,6 +19,7 @@ dev = [
     "pytest-cov>=4.1.0",
     "httpx>=0.26.0",
     "ruff>=0.1.0",
+    "pyjwt>=2.8.0",
 ]
 
 [build-system]

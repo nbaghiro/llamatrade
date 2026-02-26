@@ -58,9 +58,13 @@ class BacktestResult(Base, UUIDPrimaryKeyMixin, TimestampMixin):
         Numeric(precision=10, scale=4), nullable=True
     )
     max_drawdown: Mapped[Decimal] = mapped_column(Numeric(precision=10, scale=6), nullable=False)
+    max_drawdown_duration: Mapped[int | None] = mapped_column(Integer, nullable=True, default=0)
     win_rate: Mapped[Decimal] = mapped_column(Numeric(precision=5, scale=4), nullable=False)
     profit_factor: Mapped[Decimal | None] = mapped_column(
         Numeric(precision=10, scale=4), nullable=True
+    )
+    exposure_time: Mapped[Decimal | None] = mapped_column(
+        Numeric(precision=5, scale=2), nullable=True
     )
 
     # Trade statistics
@@ -78,6 +82,7 @@ class BacktestResult(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     equity_curve: Mapped[list | None] = mapped_column(JSONB, nullable=True)
     trades: Mapped[list | None] = mapped_column(JSONB, nullable=True)
     daily_returns: Mapped[list | None] = mapped_column(JSONB, nullable=True)
+    monthly_returns: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
 
     # Relationships
     backtest: Mapped["Backtest"] = relationship("Backtest", back_populates="results")

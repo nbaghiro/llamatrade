@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
+from types import TracebackType
 
 import grpc
 import grpc.aio
@@ -21,7 +21,7 @@ class BaseGRPCClient:
         secure: bool = False,
         credentials: grpc.ChannelCredentials | None = None,
         interceptors: list[grpc.aio.ClientInterceptor] | None = None,
-        options: list[tuple[str, Any]] | None = None,
+        options: list[tuple[str, str | int | bool]] | None = None,
     ) -> None:
         """Initialize the gRPC client.
 
@@ -82,7 +82,12 @@ class BaseGRPCClient:
         """Async context manager entry."""
         return self
 
-    async def __aexit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
+    ) -> None:
         """Async context manager exit."""
         await self.close()
 

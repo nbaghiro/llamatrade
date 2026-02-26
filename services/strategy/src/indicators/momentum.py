@@ -130,7 +130,7 @@ class CCI:
             mean_dev[i] = np.mean(np.abs(tp[i - self.period + 1 : i + 1] - sma_tp[i]))
 
         # Calculate CCI
-        cci = (tp - sma_tp) / (self.constant * mean_dev)
+        cci: np.ndarray = (tp - sma_tp) / (self.constant * mean_dev)
 
         return cci
 

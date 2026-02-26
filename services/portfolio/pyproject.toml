@@ -9,6 +9,8 @@ dependencies = [
     "pydantic>=2.5.0",
     "llamatrade-common",
     "llamatrade-db",
+    "numpy>=1.26.0",
+    "httpx>=0.26.0",
 ]
 
 [project.optional-dependencies]
