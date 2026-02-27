@@ -16,53 +16,57 @@
 ## Architecture
 
 ```
-┌──────────────────────────────────────────────────────────────────────────────────────┐
-│                                                                                      │
-│  ┌─────────────┐    ┌─────────────┐    ┌─────────────────────────────────────────┐   │
-│  │   React     │    │    Kong     │    │              SERVICES                   │   │
-│  │  Frontend   │───▶│   Gateway   │───▶│                                         │   │
-│  │   :8800     │    │   :8000     │    │  ┌────────┐ ┌────────┐ ┌────────┐       │   │
-│  └──────┬──────┘    └─────────────┘    │  │  Auth  │ │Strategy│ │Backtest│       │   │
-│         │                              │  │ :8810  │ │ :8820  │ │ :8830  │       │   │
-│         │                              │  └────────┘ └────────┘ └───┬────┘       │   │
-│         │                              │  ┌────────┐ ┌────────┐ ┌───▼────┐       │   │
-│         │                              │  │Trading │ │Portfol.│ │ Celery │       │   │
-│         │                              │  │ :8850  │ │ :8860  │ │Workers │       │   │
-│         │                              │  └───┬────┘ └────────┘ └────────┘       │   │
-│         │                              │  ┌───▼────┐ ┌────────┐                  │   │
-│         │ WebSocket                    │  │Notific.│ │ Market │◀────┐            │   │
-│         │                              │  │ :8870  │ │  Data  │     │            │   │
-│         │                              │  └────────┘ │ :8840  │     │ WebSocket  │   │
-│         │                              │             └───┬────┘     │            │   │
-│         │                              └─────────────────┼──────────┼────────────┘   │
-│         │                                                │          │                │
-│         │  ┌─────────────────────────────────────────────┼──────────┼────────────┐   │
-│         │  │                  DATA LAYER                 │          │            │   │
-│         │  │                                             │          │            │   │
-│         │  │  ┌────────────┐       ┌────────────┐        │   ┌──────▼──────┐     │   │
-│         │  │  │ PostgreSQL │       │   Redis    │        │   │   Alpaca    │     │   │
-│         │  │  │   :5432    │       │   :6379    │        │   │   Markets   │     │   │
-│         │  │  │            │       │            │        │   │             │     │   │
-│         │  │  │  users     │       │  cache     │        │   │ REST + WS   │     │   │
-│         │  │  │  strategies│       │  pubsub    │        │   │  (external) │     │   │
-│         │  │  │  trades    │       │  queues    │        │   └─────────────┘     │   │
-│         │  │  └────────────┘       └────────────┘        │                       │   │
-│         │  └─────────────────────────────────────────────┼───────────────────────┘   │
-│         │                                                │                           │
-│         └────────────────────────────────────────────────┘                           │
-│                                                                                      │
-└──────────────────────────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                              USER BROWSER                                   │
+└─────────────────────────────────┬───────────────────────────────────────────┘
+                                  │
+                                  ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                         FRONTEND (React SPA) :8800                          │
+│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐       │
+│  │  Auth    │  │ Strategy │  │ Backtest │  │ Trading  │  │Portfolio │       │
+│  │  Pages   │  │  Builder │  │  Runner  │  │  Panel   │  │Dashboard │       │
+│  └──────────┘  └──────────┘  └──────────┘  └──────────┘  └──────────┘       │
+│                         Zustand + Connect/gRPC Client                       │
+└─────────────────────────────────┬───────────────────────────────────────────┘
+                                  │ Connect Protocol (HTTP/1.1 JSON + Streaming)
+                                  ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                      API GATEWAY (Kong) :8000                               │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐         │
+│  │ JWT Verify  │  │ Rate Limit  │  │   Routing   │  │   Logging   │         │
+│  └─────────────┘  └─────────────┘  └─────────────┘  └─────────────┘         │
+└───────┬─────────────┬─────────────┬─────────────┬─────────────┬─────────────┘
+        │             │             │             │             │
+        ▼             ▼             ▼             ▼             ▼
+   ┌─────────┐  ┌─────────┐  ┌─────────┐  ┌─────────┐  ┌─────────┐
+   │  Auth   │  │Strategy │  │Backtest │  │ Trading │  │Portfolio│
+   │ :8810   │  │ :8820   │  │ :8830   │  │ :8850   │  │ :8860   │
+   └────┬────┘  └────┬────┘  └────┬────┘  └────┬────┘  └────┬────┘
+        │             │             │             │             │
+   ┌─────────┐  ┌─────────┐  ┌─────────┐
+   │ Market  │  │ Notific.│  │ Billing │
+   │  Data   │  │ :8870   │  │ :8880   │
+   │ :8840   │  └─────────┘  └─────────┘
+   └────┬────┘
+        │ WebSocket
+        ▼
+   ┌─────────┐               ┌─────────────┐             ┌─────────┐
+   │ Alpaca  │               │    Redis    │             │ Postgres│
+   │   API   │               │ Cache/Queue │             │   (RLS) │
+   └─────────┘               └─────────────┘             └─────────┘
 ```
 
 ## Tech Stack
 
-| Layer              | Technology                                        |
-| ------------------ | ------------------------------------------------- |
-| **Frontend**       | React 18, TypeScript, Vite, Tailwind CSS, Zustand |
-| **Backend**        | Python 3.12, FastAPI, SQLAlchemy, Pydantic        |
-| **Database**       | PostgreSQL 16, Redis 7                            |
-| **Infrastructure** | Docker, Kubernetes (GKE), Terraform               |
-| **CI/CD**          | GitHub Actions                                    |
+| Layer              | Technology                                            |
+| ------------------ | ----------------------------------------------------- |
+| **Frontend**       | React 18, TypeScript, Vite, Tailwind CSS, Zustand     |
+| **Backend**        | Python 3.12, FastAPI, SQLAlchemy, Pydantic            |
+| **API Protocol**   | gRPC + Connect (HTTP/1.1 JSON for browser, HTTP/2 S2S)|
+| **Database**       | PostgreSQL 16, Redis 7                                |
+| **Infrastructure** | Docker, Kubernetes (GKE), Terraform                   |
+| **CI/CD**          | GitHub Actions                                        |
 
 ## Quick Start
 
@@ -109,11 +113,10 @@ make dev-infra
 
 ### 3. Access the Application
 
-| Service     | URL                        |
-| ----------- | -------------------------- |
-| Frontend    | http://localhost:8800      |
-| API Gateway | http://localhost:8000      |
-| API Docs    | http://localhost:8000/docs |
+| Service     | URL                   |
+| ----------- | --------------------- |
+| Frontend    | http://localhost:8800 |
+| API Gateway | http://localhost:8000 |
 
 ## Project Structure
 
@@ -131,7 +134,9 @@ llamatrade/
 │   ├── notification/        # Alerts & webhooks
 │   └── billing/             # Subscriptions (Stripe)
 ├── libs/
-│   └── common/              # Shared models & utilities
+│   ├── common/              # Shared models & utilities
+│   ├── proto/               # Protocol Buffer definitions
+│   └── grpc/                # Generated gRPC/Connect code
 ├── infrastructure/
 │   ├── docker/              # Docker Compose configs
 │   ├── k8s/                 # Kubernetes manifests
@@ -184,6 +189,7 @@ make tf-apply
 ## Documentation
 
 - [Architecture Guide](.docs/architecture.md)
+- [gRPC/Connect Protocol Guide](.docs/specs/grpc-guide.md)
 - [Alpaca API Reference](.docs/alpaca-api-guide.md)
 - [Trading Strategies Guide](.docs/algorithmic-trading-strategies.md)
 
@@ -191,7 +197,7 @@ make tf-apply
 
 Contributions are welcome! Please read our contributing guidelines before submitting PRs.
 
-1. Fork the repository
+1. Clone the repository
 2. Create a feature branch (`git checkout -b feature/amazing-feature`)
 3. Commit changes (`git commit -m 'Add amazing feature'`)
 4. Push to branch (`git push origin feature/amazing-feature`)
