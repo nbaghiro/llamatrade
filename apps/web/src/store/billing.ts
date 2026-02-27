@@ -2,16 +2,17 @@
  * Billing state management with Zustand
  */
 
+import { Code, ConnectError } from '@connectrpc/connect';
 import { create } from 'zustand';
 
-import { billingApi } from '../services/billing';
-import type {
-  BillingCycle,
-  Invoice,
-  PaymentMethod,
-  Plan,
-  Subscription,
-} from '../types/billing';
+import {
+  BillingInterval,
+  type Invoice,
+  type PaymentMethod,
+  type Plan,
+  type Subscription,
+} from '../generated/proto/llamatrade/v1/billing_pb';
+import { billingClient } from '../services/grpc-client';
 
 interface BillingState {
   // State
@@ -27,10 +28,10 @@ interface BillingState {
   fetchSubscription: () => Promise<void>;
   fetchPaymentMethods: () => Promise<void>;
   fetchInvoices: () => Promise<void>;
-  createSubscription: (planId: string, paymentMethodId: string, billingCycle: BillingCycle) => Promise<Subscription>;
-  updateSubscription: (planId: string) => Promise<Subscription>;
-  cancelSubscription: (atPeriodEnd?: boolean) => Promise<void>;
-  reactivateSubscription: () => Promise<void>;
+  createSubscription: (planId: string, interval: BillingInterval, paymentMethodId?: string) => Promise<Subscription>;
+  updateSubscription: (planId: string, interval?: BillingInterval, prorate?: boolean) => Promise<Subscription>;
+  cancelSubscription: (cancelImmediately?: boolean, reason?: string) => Promise<void>;
+  resumeSubscription: () => Promise<void>;
   setSubscription: (subscription: Subscription | null) => void;
   clearError: () => void;
 }
@@ -48,8 +49,8 @@ export const useBillingStore = create<BillingState>((set) => ({
   fetchPlans: async () => {
     set({ loading: true, error: null });
     try {
-      const response = await billingApi.getPlans();
-      set({ plans: response.data, loading: false });
+      const response = await billingClient.listPlans({});
+      set({ plans: response.plans, loading: false });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to fetch plans';
       set({ error: message, loading: false });
@@ -59,9 +60,14 @@ export const useBillingStore = create<BillingState>((set) => ({
   fetchSubscription: async () => {
     set({ loading: true, error: null });
     try {
-      const response = await billingApi.getSubscription();
-      set({ subscription: response.data, loading: false });
+      const response = await billingClient.getSubscription({});
+      set({ subscription: response.subscription ?? null, loading: false });
     } catch (error) {
+      // NOT_FOUND means no subscription exists - this is normal for new users
+      if (error instanceof ConnectError && error.code === Code.NotFound) {
+        set({ subscription: null, loading: false });
+        return;
+      }
       const message = error instanceof Error ? error.message : 'Failed to fetch subscription';
       set({ error: message, loading: false });
     }
@@ -70,8 +76,8 @@ export const useBillingStore = create<BillingState>((set) => ({
   fetchPaymentMethods: async () => {
     set({ loading: true, error: null });
     try {
-      const response = await billingApi.getPaymentMethods();
-      set({ paymentMethods: response.data, loading: false });
+      const response = await billingClient.listPaymentMethods({});
+      set({ paymentMethods: response.paymentMethods, loading: false });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to fetch payment methods';
       set({ error: message, loading: false });
@@ -81,24 +87,28 @@ export const useBillingStore = create<BillingState>((set) => ({
   fetchInvoices: async () => {
     set({ loading: true, error: null });
     try {
-      const response = await billingApi.getInvoices();
-      set({ invoices: response.data, loading: false });
+      const response = await billingClient.listInvoices({});
+      set({ invoices: response.invoices, loading: false });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to fetch invoices';
       set({ error: message, loading: false });
     }
   },
 
-  createSubscription: async (planId, paymentMethodId, billingCycle) => {
+  createSubscription: async (planId, interval, paymentMethodId) => {
     set({ loading: true, error: null });
     try {
-      const response = await billingApi.createSubscription({
-        plan_id: planId,
-        payment_method_id: paymentMethodId,
-        billing_cycle: billingCycle,
+      const response = await billingClient.createSubscription({
+        planId,
+        interval,
+        paymentMethodId,
       });
-      set({ subscription: response.data, loading: false });
-      return response.data;
+      const subscription = response.subscription;
+      if (!subscription) {
+        throw new Error('No subscription returned');
+      }
+      set({ subscription, loading: false });
+      return subscription;
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to create subscription';
       set({ error: message, loading: false });
@@ -106,12 +116,16 @@ export const useBillingStore = create<BillingState>((set) => ({
     }
   },
 
-  updateSubscription: async (planId) => {
+  updateSubscription: async (planId, interval, prorate) => {
     set({ loading: true, error: null });
     try {
-      const response = await billingApi.updateSubscription({ plan_id: planId });
-      set({ subscription: response.data, loading: false });
-      return response.data;
+      const response = await billingClient.updateSubscription({ planId, interval, prorate });
+      const subscription = response.subscription;
+      if (!subscription) {
+        throw new Error('No subscription returned');
+      }
+      set({ subscription, loading: false });
+      return subscription;
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to update subscription';
       set({ error: message, loading: false });
@@ -119,11 +133,11 @@ export const useBillingStore = create<BillingState>((set) => ({
     }
   },
 
-  cancelSubscription: async (atPeriodEnd = true) => {
+  cancelSubscription: async (cancelImmediately = false, reason) => {
     set({ loading: true, error: null });
     try {
-      const response = await billingApi.cancelSubscription({ at_period_end: atPeriodEnd });
-      set({ subscription: response.data, loading: false });
+      const response = await billingClient.cancelSubscription({ cancelImmediately, reason });
+      set({ subscription: response.subscription ?? null, loading: false });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to cancel subscription';
       set({ error: message, loading: false });
@@ -131,11 +145,11 @@ export const useBillingStore = create<BillingState>((set) => ({
     }
   },
 
-  reactivateSubscription: async () => {
+  resumeSubscription: async () => {
     set({ loading: true, error: null });
     try {
-      const response = await billingApi.reactivateSubscription();
-      set({ subscription: response.data, loading: false });
+      const response = await billingClient.resumeSubscription({});
+      set({ subscription: response.subscription ?? null, loading: false });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to reactivate subscription';
       set({ error: message, loading: false });
@@ -151,3 +165,6 @@ export const useBillingStore = create<BillingState>((set) => ({
     set({ error: null });
   },
 }));
+
+// Re-export for convenience
+export { BillingInterval };

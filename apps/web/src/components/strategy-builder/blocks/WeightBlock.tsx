@@ -1,4 +1,4 @@
-import { ChevronDown, ChevronRight } from 'lucide-react';
+import { ChevronDown, X } from 'lucide-react';
 
 import { useStrategyBuilderStore } from '../../../store/strategy-builder';
 import type { WeightBlock as WeightBlockType } from '../../../types/strategy-builder';
@@ -10,7 +10,7 @@ interface WeightBlockProps {
 }
 
 export function WeightBlock({ block, allocationPercent }: WeightBlockProps) {
-  const { ui, selectBlock, toggleExpand } = useStrategyBuilderStore();
+  const { ui, selectBlock, toggleExpand, deleteBlock } = useStrategyBuilderStore();
   const isSelected = ui.selectedBlockId === block.id;
   const isExpanded = ui.expandedBlocks.has(block.id);
   const methodInfo = getWeightMethodInfo(block.method);
@@ -25,6 +25,11 @@ export function WeightBlock({ block, allocationPercent }: WeightBlockProps) {
     toggleExpand(block.id);
   };
 
+  const handleDeleteClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    deleteBlock(block.id);
+  };
+
   // Get display text for the weight method
   const getDisplayText = () => {
     let text = methodInfo.label;
@@ -35,34 +40,45 @@ export function WeightBlock({ block, allocationPercent }: WeightBlockProps) {
   };
 
   return (
-    <div className="flex items-center gap-2">
+    <div className="relative">
       {/* Percentage badge for specified weight children */}
       {allocationPercent !== undefined && (
-        <span className="px-2 py-0.5 text-xs font-semibold bg-blue-500 text-white rounded">
+        <span className="absolute -left-12 top-1/2 -translate-y-1/2 px-2 py-0.5 text-xs font-semibold bg-blue-500 text-white rounded">
           {allocationPercent}%
         </span>
       )}
 
-      {/* Weight pill */}
+      {/* Weight pill - pink/magenta style like Composer */}
       <div
+        data-testid="weight-block"
         className={`
-          inline-flex items-center gap-2 px-3 py-1.5 rounded-full cursor-pointer
+          inline-flex items-center gap-1.5 pl-1.5 pr-3 py-1.5 rounded-full cursor-pointer
           transition-all duration-150 select-none
-          ${methodInfo.color.bg} ${methodInfo.color.text}
-          ${isSelected ? 'ring-2 ring-offset-1 ring-blue-400' : 'hover:brightness-95'}
+          bg-pink-500 text-white text-sm
+          ${isSelected ? 'ring-2 ring-pink-300 ring-offset-2 ring-offset-white dark:ring-offset-gray-900' : 'hover:bg-pink-600'}
         `}
         onClick={handleClick}
       >
-        <button onClick={handleExpandClick} className="p-0.5 hover:bg-white/30 rounded">
-          {isExpanded ? (
-            <ChevronDown className="w-3 h-3" />
-          ) : (
-            <ChevronRight className="w-3 h-3" />
-          )}
+        {/* Delete button */}
+        <button
+          onClick={handleDeleteClick}
+          className="p-0.5 rounded-full hover:bg-pink-600 transition-colors"
+          title="Delete"
+        >
+          <X className="w-3.5 h-3.5" />
         </button>
 
-        <span className="text-xs font-semibold uppercase tracking-wide">WEIGHT</span>
-        <span className="text-xs font-medium">{getDisplayText()}</span>
+        {/* Expand toggle */}
+        <button
+          onClick={handleExpandClick}
+          className="p-0.5 rounded-full hover:bg-pink-600 transition-colors"
+        >
+          <ChevronDown className={`w-3.5 h-3.5 transition-transform ${isExpanded ? '' : '-rotate-90'}`} />
+        </button>
+
+        {/* WEIGHT label and method */}
+        <span className="font-semibold">WEIGHT</span>
+        <span className="font-normal opacity-90">{getDisplayText()}</span>
       </div>
     </div>
   );

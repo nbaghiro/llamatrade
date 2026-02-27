@@ -1,13 +1,15 @@
-import { TrendingUp, Folder, Scale, ArrowLeft } from 'lucide-react';
+import { TrendingUp, Folder, Scale, ArrowLeft, GitBranch, Filter } from 'lucide-react';
 import { useState } from 'react';
 
 import { useStrategyBuilderStore } from '../../../store/strategy-builder';
-import type { BlockId } from '../../../types/strategy-builder';
+import type { BlockId, ConditionExpression, FilterConfig } from '../../../types/strategy-builder';
 
 import { AssetPicker } from './AssetPicker';
+import { ConditionBuilder } from './ConditionBuilder';
+import { FilterBuilder } from './FilterBuilder';
 import { WeightMethodPicker } from './WeightMethodPicker';
 
-type PickerView = 'main' | 'asset' | 'weight';
+type PickerView = 'main' | 'asset' | 'weight' | 'condition' | 'filter';
 
 interface BlockPickerProps {
   parentId: BlockId;
@@ -17,6 +19,18 @@ interface BlockPickerProps {
 export function BlockPicker({ parentId, onClose }: BlockPickerProps) {
   const [view, setView] = useState<PickerView>('main');
   const addGroup = useStrategyBuilderStore((s) => s.addGroup);
+  const addCondition = useStrategyBuilderStore((s) => s.addCondition);
+  const addFilter = useStrategyBuilderStore((s) => s.addFilter);
+
+  const handleConditionSave = (condition: ConditionExpression) => {
+    addCondition(parentId, condition);
+    onClose();
+  };
+
+  const handleFilterSave = (config: FilterConfig) => {
+    addFilter(parentId, config);
+    onClose();
+  };
 
   if (view === 'asset') {
     return (
@@ -52,6 +66,28 @@ export function BlockPicker({ parentId, onClose }: BlockPickerProps) {
           </div>
           <WeightMethodPicker parentId={parentId} onClose={onClose} />
         </div>
+      </div>
+    );
+  }
+
+  if (view === 'condition') {
+    return (
+      <div className="absolute top-full left-0 mt-2 z-20">
+        <ConditionBuilder
+          onSave={handleConditionSave}
+          onCancel={() => setView('main')}
+        />
+      </div>
+    );
+  }
+
+  if (view === 'filter') {
+    return (
+      <div className="absolute top-full left-0 mt-2 z-20">
+        <FilterBuilder
+          onSave={handleFilterSave}
+          onCancel={() => setView('main')}
+        />
       </div>
     );
   }
@@ -102,6 +138,34 @@ export function BlockPicker({ parentId, onClose }: BlockPickerProps) {
             <div className="text-left">
               <div className="text-sm font-medium text-gray-900 dark:text-gray-100">Weight</div>
               <div className="text-xs text-gray-500 dark:text-gray-400">Allocation method</div>
+            </div>
+          </button>
+
+          <div className="my-2 border-t border-gray-100 dark:border-gray-800" />
+
+          <button
+            onClick={() => setView('condition')}
+            className="w-full flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+          >
+            <div className="p-1.5 bg-amber-100 dark:bg-amber-900/30 rounded">
+              <GitBranch className="w-4 h-4 text-amber-600 dark:text-amber-400" />
+            </div>
+            <div className="text-left">
+              <div className="text-sm font-medium text-gray-900 dark:text-gray-100">If/Else</div>
+              <div className="text-xs text-gray-500 dark:text-gray-400">Conditional allocation</div>
+            </div>
+          </button>
+
+          <button
+            onClick={() => setView('filter')}
+            className="w-full flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+          >
+            <div className="p-1.5 bg-purple-100 dark:bg-purple-900/30 rounded">
+              <Filter className="w-4 h-4 text-purple-600 dark:text-purple-400" />
+            </div>
+            <div className="text-left">
+              <div className="text-sm font-medium text-gray-900 dark:text-gray-100">Filter</div>
+              <div className="text-xs text-gray-500 dark:text-gray-400">Dynamic asset selection</div>
             </div>
           </button>
         </div>

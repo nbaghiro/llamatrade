@@ -1,9 +1,10 @@
+import { ConnectError } from '@connectrpc/connect';
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 
 import Logo from '../components/Logo';
 import { ThemeToggle } from '../components/ThemeToggle';
-import { api } from '../services/api';
+import { authClient } from '../services/grpc-client';
 import { useAuthStore } from '../store/auth';
 
 export default function LoginPage() {
@@ -21,18 +22,25 @@ export default function LoginPage() {
     setLoading(true);
 
     try {
-      const response = await api.post('/auth/login', { email, password });
-      const { access_token: accessToken, refresh_token: refreshToken } = response.data;
+      const response = await authClient.login({ email, password });
 
-      const userResponse = await api.get('/auth/me', {
-        headers: { Authorization: `Bearer ${accessToken}` },
-      });
+      const user = {
+        id: response.user?.id ?? '',
+        email: response.user?.email ?? '',
+        firstName: response.user?.firstName ?? '',
+        lastName: response.user?.lastName ?? '',
+        roles: response.user?.roles ?? [],
+        tenantId: response.user?.tenantId ?? '',
+      };
 
-      login(userResponse.data, accessToken, refreshToken);
+      login(user, response.accessToken, response.refreshToken);
       navigate('/dashboard');
     } catch (err: unknown) {
-      const error = err as { response?: { data?: { detail?: string } } };
-      setError(error.response?.data?.detail || 'Login failed');
+      if (err instanceof ConnectError) {
+        setError(err.message || 'Login failed');
+      } else {
+        setError('Login failed');
+      }
     } finally {
       setLoading(false);
     }

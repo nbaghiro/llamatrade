@@ -1,25 +1,123 @@
-import { ChevronDown, Eye, Redo2, Share2, Trash2, Undo2 } from 'lucide-react';
+import { ArrowLeft, ChevronDown, Eye, Redo2, Share2, Trash2, Undo2, Loader2, AlertCircle } from 'lucide-react';
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 
 import { useStrategyBuilderStore } from '../../../store/strategy-builder';
-import type { RootBlock } from '../../../types/strategy-builder';
+import type { StrategyType } from '../../../types/strategy';
 import { Select } from '../../Select';
 
+const TIMEFRAME_OPTIONS = [
+  { value: '1m', label: '1 Minute' },
+  { value: '5m', label: '5 Minutes' },
+  { value: '15m', label: '15 Minutes' },
+  { value: '1H', label: '1 Hour' },
+  { value: '4H', label: '4 Hours' },
+  { value: '1D', label: 'Daily' },
+  { value: '1W', label: 'Weekly' },
+  { value: '1M', label: 'Monthly' },
+];
+
+const TYPE_OPTIONS: { value: StrategyType; label: string }[] = [
+  { value: 'trend_following', label: 'Trend Following' },
+  { value: 'mean_reversion', label: 'Mean Reversion' },
+  { value: 'momentum', label: 'Momentum' },
+  { value: 'breakout', label: 'Breakout' },
+  { value: 'custom', label: 'Custom' },
+];
+
 export function LeftPanel() {
-  const { tree, ui, updateBlock, undo, redo, canUndo, canRedo, deleteBlock, getBlock } =
-    useStrategyBuilderStore();
-  const rootBlock = tree.blocks[tree.rootId] as RootBlock;
+  const navigate = useNavigate();
+  const {
+    ui,
+    undo,
+    redo,
+    canUndo,
+    canRedo,
+    deleteBlock,
+    getBlock,
+    // Metadata
+    strategyName,
+    strategyDescription,
+    strategyType,
+    timeframe,
+    isDirty,
+    setStrategyName,
+    setStrategyDescription,
+    setStrategyType,
+    setTimeframe,
+    // Async
+    saving,
+    error,
+    saveStrategy,
+    clearError,
+  } = useStrategyBuilderStore();
   const [isDetailsOpen, setIsDetailsOpen] = useState(true);
 
   const selectedBlock = ui.selectedBlockId ? getBlock(ui.selectedBlockId) : null;
   const canDelete = selectedBlock && selectedBlock.type !== 'root';
 
+  const handleSave = async () => {
+    const savedId = await saveStrategy();
+    if (savedId) {
+      // Navigate to the saved strategy (in case it was new)
+      navigate(`/strategies/${savedId}`, { replace: true });
+    }
+  };
+
+  const handleNameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setStrategyName(e.target.value);
+  };
+
+  const handleDescriptionChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setStrategyDescription(e.target.value);
+  };
+
   return (
     <div className="w-[320px] flex-shrink-0 flex flex-col gap-3 p-4 overflow-y-auto">
-      {/* Save Button */}
-      <button className="w-full bg-primary-600 hover:bg-primary-700 text-white font-medium py-2.5 px-4 rounded-lg flex items-center justify-center gap-2 transition-colors shadow-sm">
-        <span className="text-sm">Save changes</span>
-      </button>
+      {/* Error Banner */}
+      {error && (
+        <div className="flex items-start gap-2 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
+          <AlertCircle className="w-4 h-4 text-red-500 mt-0.5 shrink-0" />
+          <div className="flex-1 min-w-0">
+            <p className="text-sm text-red-700 dark:text-red-400">{error}</p>
+            <button
+              onClick={clearError}
+              className="text-xs text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300 mt-1"
+            >
+              Dismiss
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Back + Save */}
+      <div className="flex gap-2">
+        <button
+          onClick={() => navigate('/strategies')}
+          className="p-1.5 rounded-md hover:bg-gray-200 dark:hover:bg-gray-800 text-gray-600 dark:text-gray-400 transition-colors"
+          title="Back to Strategies"
+        >
+          <ArrowLeft className="w-4 h-4" />
+        </button>
+        <button
+          onClick={handleSave}
+          disabled={saving || !isDirty}
+          className={`flex-1 font-medium py-2.5 px-4 rounded-lg flex items-center justify-center gap-2 transition-all shadow-sm bg-primary-600 text-white ${
+            saving || !isDirty
+              ? 'opacity-50'
+              : 'hover:bg-primary-700'
+          }`}
+        >
+          {saving ? (
+            <>
+              <Loader2 className="w-4 h-4 animate-spin" />
+              <span className="text-sm">Saving...</span>
+            </>
+          ) : (
+            <span className="text-sm">Save changes</span>
+          )}
+        </button>
+      </div>
 
       {/* Undo/Redo/Delete */}
       <div className="flex gap-2">
@@ -84,8 +182,8 @@ export function LeftPanel() {
               <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Name</label>
               <input
                 type="text"
-                value={rootBlock.name}
-                onChange={(e) => updateBlock(tree.rootId, { name: e.target.value })}
+                value={strategyName}
+                onChange={handleNameChange}
                 className="w-full px-3 py-2 text-sm border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:border-blue-400 focus:ring-1 focus:ring-blue-400 outline-none"
               />
             </div>
@@ -95,24 +193,34 @@ export function LeftPanel() {
               <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Description</label>
               <textarea
                 placeholder="Describe your strategy..."
+                value={strategyDescription}
+                onChange={handleDescriptionChange}
                 rows={3}
                 className="w-full px-3 py-2 text-sm border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder:text-gray-400 focus:border-blue-400 focus:ring-1 focus:ring-blue-400 outline-none resize-none"
               />
             </div>
 
-            {/* Trading Frequency */}
+            {/* Strategy Type */}
             <div>
               <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">
-                Trading Frequency
+                Strategy Type
               </label>
               <Select
-                defaultValue="daily"
-                options={[
-                  { value: 'daily', label: 'Daily' },
-                  { value: 'weekly', label: 'Weekly' },
-                  { value: 'monthly', label: 'Monthly' },
-                  { value: 'quarterly', label: 'Quarterly' },
-                ]}
+                value={strategyType}
+                onChange={(e) => setStrategyType(e.target.value as StrategyType)}
+                options={TYPE_OPTIONS}
+              />
+            </div>
+
+            {/* Timeframe */}
+            <div>
+              <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">
+                Timeframe
+              </label>
+              <Select
+                value={timeframe}
+                onChange={(e) => setTimeframe(e.target.value)}
+                options={TIMEFRAME_OPTIONS}
               />
             </div>
           </div>

@@ -4,7 +4,11 @@
 
 import { Check } from 'lucide-react';
 
-import type { BillingCycle, Plan } from '../../types/billing';
+import type { Plan } from '../../generated/proto/llamatrade/v1/billing_pb';
+import { PlanTier } from '../../generated/proto/llamatrade/v1/billing_pb';
+import type { Money } from '../../generated/proto/llamatrade/v1/common_pb';
+
+type BillingCycle = 'monthly' | 'yearly';
 
 interface PlanCardProps {
   plan: Plan;
@@ -13,17 +17,11 @@ interface PlanCardProps {
   onSelect: (plan: Plan) => void;
 }
 
-const FEATURE_LABELS: Record<string, string> = {
-  backtests: 'Backtesting',
-  paper_trading: 'Paper Trading',
-  live_trading: 'Live Trading',
-  basic_indicators: 'Basic Indicators',
-  all_indicators: 'All Indicators',
-  email_alerts: 'Email Alerts',
-  sms_alerts: 'SMS Alerts',
-  webhook_alerts: 'Webhook Alerts',
-  priority_support: 'Priority Support',
-};
+// Helper to get numeric price from Money type
+function getPrice(money: Money | undefined): number {
+  if (!money) return 0;
+  return parseFloat(money.amount) || 0;
+}
 
 export default function PlanCard({
   plan,
@@ -31,18 +29,32 @@ export default function PlanCard({
   isCurrentPlan,
   onSelect,
 }: PlanCardProps) {
-  const price = billingCycle === 'monthly' ? plan.price_monthly : plan.price_yearly;
-  const monthlyEquivalent =
-    billingCycle === 'yearly' ? Math.round(plan.price_yearly / 12) : plan.price_monthly;
-  const savings =
-    billingCycle === 'yearly' ? plan.price_monthly * 12 - plan.price_yearly : 0;
+  const monthlyPrice = getPrice(plan.monthlyPrice);
+  const yearlyPrice = getPrice(plan.yearlyPrice);
 
-  const enabledFeatures = Object.entries(plan.features)
-    .filter(([_, enabled]) => enabled)
-    .map(([key]) => key);
+  const price = billingCycle === 'monthly' ? monthlyPrice : yearlyPrice;
+  const monthlyEquivalent = billingCycle === 'yearly' ? Math.round(yearlyPrice / 12) : monthlyPrice;
+  const savings = billingCycle === 'yearly' ? monthlyPrice * 12 - yearlyPrice : 0;
 
-  const isPro = plan.tier === 'pro';
-  const isFree = plan.tier === 'free';
+  const isPro = plan.tier === PlanTier.PROFESSIONAL;
+  const isFree = plan.tier === PlanTier.FREE;
+
+  // Build features list from plan limits
+  const features: string[] = [];
+
+  if (plan.maxBacktestsPerMonth > 0) {
+    features.push(`${plan.maxBacktestsPerMonth} backtests/month`);
+  } else if (plan.maxBacktestsPerMonth === -1 || plan.maxBacktestsPerMonth === 0) {
+    features.push('Unlimited backtests');
+  }
+
+  if (plan.maxStrategies > 0) {
+    features.push(`${plan.maxStrategies} ${plan.maxStrategies === 1 ? 'strategy' : 'strategies'}`);
+  }
+
+  if (plan.maxLiveSessions > 0) {
+    features.push(`${plan.maxLiveSessions} live ${plan.maxLiveSessions === 1 ? 'session' : 'sessions'}`);
+  }
 
   return (
     <div
@@ -70,11 +82,6 @@ export default function PlanCard({
 
       <div className="mb-4">
         <h3 className="text-xl font-semibold text-gray-900 dark:text-gray-100">{plan.name}</h3>
-        {plan.trial_days > 0 && (
-          <span className="mt-1 inline-block rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
-            {plan.trial_days}-day free trial
-          </span>
-        )}
       </div>
 
       <div className="mb-6">
@@ -98,40 +105,21 @@ export default function PlanCard({
         )}
       </div>
 
+      {plan.description && (
+        <p className="mb-4 text-sm text-gray-600 dark:text-gray-400">
+          {plan.description}
+        </p>
+      )}
+
       <ul className="mb-6 flex-1 space-y-3">
-        {enabledFeatures.map((feature) => (
+        {features.map((feature) => (
           <li key={feature} className="flex items-center gap-2">
             <Check className="h-4 w-4 text-green-500" />
             <span className="text-sm text-gray-600 dark:text-gray-300">
-              {FEATURE_LABELS[feature] || feature}
+              {feature}
             </span>
           </li>
         ))}
-        {plan.limits.backtests_per_month !== null && (
-          <li className="flex items-center gap-2">
-            <Check className="h-4 w-4 text-green-500" />
-            <span className="text-sm text-gray-600 dark:text-gray-300">
-              {plan.limits.backtests_per_month} backtests/month
-            </span>
-          </li>
-        )}
-        {plan.limits.backtests_per_month === null && (
-          <li className="flex items-center gap-2">
-            <Check className="h-4 w-4 text-green-500" />
-            <span className="text-sm text-gray-600 dark:text-gray-300">
-              Unlimited backtests
-            </span>
-          </li>
-        )}
-        {plan.limits.live_strategies !== null && plan.limits.live_strategies > 0 && (
-          <li className="flex items-center gap-2">
-            <Check className="h-4 w-4 text-green-500" />
-            <span className="text-sm text-gray-600 dark:text-gray-300">
-              {plan.limits.live_strategies} live{' '}
-              {plan.limits.live_strategies === 1 ? 'strategy' : 'strategies'}
-            </span>
-          </li>
-        )}
       </ul>
 
       <button

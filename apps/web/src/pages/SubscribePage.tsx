@@ -10,11 +10,17 @@ import { Link, useNavigate } from 'react-router-dom';
 
 import CardForm from '../components/billing/CardForm';
 import PlanCard from '../components/billing/PlanCard';
-import { billingApi } from '../services/billing';
-import { useBillingStore } from '../store/billing';
-import type { BillingCycle, Plan } from '../types/billing';
+import type { Plan } from '../generated/proto/llamatrade/v1/billing_pb';
+import { billingClient } from '../services/grpc-client';
+import { useBillingStore, BillingInterval } from '../store/billing';
 
 const stripePromise = loadStripe(import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY || '');
+
+type BillingCycle = 'monthly' | 'yearly';
+
+function billingCycleToInterval(cycle: BillingCycle): BillingInterval {
+  return cycle === 'yearly' ? BillingInterval.YEARLY : BillingInterval.MONTHLY;
+}
 
 export default function SubscribePage() {
   const navigate = useNavigate();
@@ -39,16 +45,22 @@ export default function SubscribePage() {
     setLocalError(null);
 
     // Free plan doesn't need payment
-    if (plan.tier === 'free') {
+    if (plan.tier === 0) { // PlanTier.FREE
       setClientSecret(null);
       return;
     }
 
-    // Create SetupIntent for card collection
+    // Create checkout session for card collection
     setSetupLoading(true);
     try {
-      const response = await billingApi.createSetupIntent();
-      setClientSecret(response.data.client_secret);
+      const response = await billingClient.createCheckoutSession({
+        planId: plan.id,
+        interval: billingCycleToInterval(billingCycle),
+        successUrl: `${window.location.origin}/billing?success=true`,
+        cancelUrl: `${window.location.origin}/subscribe`,
+      });
+      // Use sessionId as the client secret for Stripe Elements
+      setClientSecret(response.sessionId);
     } catch {
       setLocalError('Failed to create setup intent. Please try again.');
     } finally {
@@ -62,7 +74,7 @@ export default function SubscribePage() {
     setSubmitLoading(true);
     setLocalError(null);
     try {
-      await createSubscription(selectedPlan.id, paymentMethodId, billingCycle);
+      await createSubscription(selectedPlan.id, billingCycleToInterval(billingCycle), paymentMethodId);
       navigate('/billing');
     } catch {
       setLocalError('Failed to create subscription. Please try again.');
@@ -76,12 +88,12 @@ export default function SubscribePage() {
   };
 
   const handleFreePlan = async () => {
-    if (!selectedPlan || selectedPlan.tier !== 'free') return;
+    if (!selectedPlan || selectedPlan.tier !== 0) return;
 
     setSubmitLoading(true);
     setLocalError(null);
     try {
-      await createSubscription(selectedPlan.id, '', billingCycle);
+      await createSubscription(selectedPlan.id, BillingInterval.MONTHLY);
       navigate('/billing');
     } catch {
       setLocalError('Failed to create subscription. Please try again.');
@@ -90,11 +102,24 @@ export default function SubscribePage() {
     }
   };
 
-  const currentPlanId = subscription?.plan.id;
+  const currentPlanId = subscription?.planId;
   const displayError = localError || error;
   const clearDisplayError = () => {
     setLocalError(null);
     clearError();
+  };
+
+  // Helper to get price from proto Money type (amount is a decimal string)
+  const getMonthlyPrice = (plan: Plan) => {
+    const money = plan.monthlyPrice;
+    if (!money) return 0;
+    return parseFloat(money.amount) || 0;
+  };
+
+  const getYearlyPrice = (plan: Plan) => {
+    const money = plan.yearlyPrice;
+    if (!money) return 0;
+    return parseFloat(money.amount) || 0;
   };
 
   return (
@@ -177,16 +202,14 @@ export default function SubscribePage() {
         )}
 
         {/* Payment Form Modal */}
-        {selectedPlan && selectedPlan.tier !== 'free' && (
+        {selectedPlan && selectedPlan.tier !== 0 && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
             <div className="w-full max-w-md rounded-2xl bg-white p-6 dark:bg-gray-900">
               <h2 className="mb-4 text-lg font-semibold text-gray-900 dark:text-gray-100">
                 Subscribe to {selectedPlan.name}
               </h2>
               <p className="mb-6 text-sm text-gray-500 dark:text-gray-400">
-                {selectedPlan.trial_days > 0
-                  ? `Start your ${selectedPlan.trial_days}-day free trial. You won't be charged until the trial ends.`
-                  : `You will be charged $${billingCycle === 'monthly' ? selectedPlan.price_monthly : selectedPlan.price_yearly}${billingCycle === 'yearly' ? '/year' : '/month'}.`}
+                {`You will be charged $${billingCycle === 'monthly' ? getMonthlyPrice(selectedPlan) : getYearlyPrice(selectedPlan)}${billingCycle === 'yearly' ? '/year' : '/month'}.`}
               </p>
 
               {setupLoading ? (
@@ -199,11 +222,7 @@ export default function SubscribePage() {
                     clientSecret={clientSecret}
                     onSuccess={handleCardSuccess}
                     onError={handleCardError}
-                    submitLabel={
-                      selectedPlan.trial_days > 0
-                        ? 'Start Free Trial'
-                        : `Pay $${billingCycle === 'monthly' ? selectedPlan.price_monthly : selectedPlan.price_yearly}`
-                    }
+                    submitLabel={`Pay $${billingCycle === 'monthly' ? getMonthlyPrice(selectedPlan) : getYearlyPrice(selectedPlan)}`}
                     loading={submitLoading}
                   />
                 </Elements>
@@ -227,7 +246,7 @@ export default function SubscribePage() {
         )}
 
         {/* Free Plan Confirmation */}
-        {selectedPlan && selectedPlan.tier === 'free' && (
+        {selectedPlan && selectedPlan.tier === 0 && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
             <div className="w-full max-w-md rounded-2xl bg-white p-6 dark:bg-gray-900">
               <h2 className="mb-4 text-lg font-semibold text-gray-900 dark:text-gray-100">

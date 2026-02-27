@@ -1,56 +1,58 @@
 /**
- * Billing API service
+ * Billing gRPC service
+ *
+ * This module wraps the billingClient with convenience functions.
+ * It uses the proto-generated types directly.
  */
 
-import type {
-  AttachPaymentMethodRequest,
-  CancelSubscriptionRequest,
-  CreateSubscriptionRequest,
-  Invoice,
-  PaymentMethod,
-  Plan,
-  SetupIntentResponse,
-  Subscription,
-  UpdateSubscriptionRequest,
-} from '../types/billing';
+import { BillingInterval } from '../generated/proto/llamatrade/v1/billing_pb';
 
-import { api } from './api';
+import { billingClient } from './grpc-client';
 
 export const billingApi = {
-  // Plans - Kong routes /api/subscriptions to billing service
-  getPlans: () => api.get<Plan[]>('/subscriptions/plans'),
-
-  getPlan: (planId: string) => api.get<Plan>(`/subscriptions/plans/${planId}`),
+  // Plans
+  getPlans: () => billingClient.listPlans({}),
 
   // Subscription
-  getSubscription: () => api.get<Subscription | null>('/subscriptions/current'),
+  getSubscription: () => billingClient.getSubscription({}),
 
-  createSubscription: (data: CreateSubscriptionRequest) =>
-    api.post<Subscription>('/subscriptions', data),
+  createSubscription: (planId: string, interval: BillingInterval, paymentMethodId?: string, promoCode?: string) =>
+    billingClient.createSubscription({ planId, interval, paymentMethodId, promoCode }),
 
-  updateSubscription: (data: UpdateSubscriptionRequest) =>
-    api.put<Subscription>('/subscriptions', data),
+  updateSubscription: (planId: string, interval?: BillingInterval, prorate?: boolean) =>
+    billingClient.updateSubscription({ planId, interval, prorate }),
 
-  cancelSubscription: (data: CancelSubscriptionRequest = { at_period_end: true }) =>
-    api.post<Subscription>('/subscriptions/cancel', data),
+  cancelSubscription: (cancelImmediately: boolean = false, reason?: string) =>
+    billingClient.cancelSubscription({ cancelImmediately, reason }),
 
-  reactivateSubscription: () => api.post<Subscription>('/subscriptions/reactivate'),
+  resumeSubscription: () => billingClient.resumeSubscription({}),
 
-  // Payment methods - Kong routes /api/billing to billing service
-  createSetupIntent: () => api.post<SetupIntentResponse>('/billing/payment-methods/setup-intent'),
+  // Payment methods
+  getPaymentMethods: () => billingClient.listPaymentMethods({}),
 
-  getPaymentMethods: () => api.get<PaymentMethod[]>('/billing/payment-methods'),
+  addPaymentMethod: (setupIntentId: string, setAsDefault?: boolean) =>
+    billingClient.addPaymentMethod({ setupIntentId, setAsDefault }),
 
-  attachPaymentMethod: (data: AttachPaymentMethodRequest) =>
-    api.post<PaymentMethod>('/billing/payment-methods', data),
-
-  deletePaymentMethod: (id: string) => api.delete(`/billing/payment-methods/${id}`),
-
-  setDefaultPaymentMethod: (id: string) =>
-    api.put<PaymentMethod>(`/billing/payment-methods/${id}/default`),
+  removePaymentMethod: (paymentMethodId: string) =>
+    billingClient.removePaymentMethod({ paymentMethodId }),
 
   // Invoices
-  getInvoices: () => api.get<Invoice[]>('/subscriptions/invoices'),
+  getInvoices: () => billingClient.listInvoices({}),
+
+  getInvoice: (invoiceId: string) => billingClient.getInvoice({ invoiceId }),
+
+  // Usage
+  getUsage: (periodId?: string) => billingClient.getUsage({ periodId }),
+
+  // Stripe integration
+  createCheckoutSession: (planId: string, interval: BillingInterval, successUrl: string, cancelUrl: string) =>
+    billingClient.createCheckoutSession({ planId, interval, successUrl, cancelUrl }),
+
+  createPortalSession: (returnUrl: string) =>
+    billingClient.createPortalSession({ returnUrl }),
 };
+
+// Re-export enums
+export { BillingInterval };
 
 export default billingApi;

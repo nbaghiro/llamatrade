@@ -5,7 +5,7 @@
 import { CreditCard, MoreVertical, Star, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 
-import type { PaymentMethod } from '../../types/billing';
+import type { PaymentMethod } from '../../generated/proto/llamatrade/v1/billing_pb';
 
 interface PaymentMethodCardProps {
   paymentMethod: PaymentMethod;
@@ -30,15 +30,15 @@ export default function PaymentMethodCard({
 }: PaymentMethodCardProps) {
   const [menuOpen, setMenuOpen] = useState(false);
 
-  const brandColor = CARD_BRAND_COLORS[paymentMethod.card_brand || 'default'];
-  const brandName = paymentMethod.card_brand
-    ? paymentMethod.card_brand.charAt(0).toUpperCase() + paymentMethod.card_brand.slice(1)
+  const brandColor = CARD_BRAND_COLORS[paymentMethod.cardBrand?.toLowerCase() || 'default'];
+  const brandName = paymentMethod.cardBrand
+    ? paymentMethod.cardBrand.charAt(0).toUpperCase() + paymentMethod.cardBrand.slice(1)
     : 'Card';
 
   return (
     <div
       className={`relative flex items-center justify-between rounded-lg border p-4 ${
-        paymentMethod.is_default
+        paymentMethod.isDefault
           ? 'border-indigo-500 bg-indigo-50/50 dark:border-indigo-400 dark:bg-indigo-950/20'
           : 'border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-900'
       }`}
@@ -50,9 +50,9 @@ export default function PaymentMethodCard({
         <div>
           <div className="flex items-center gap-2">
             <span className="font-medium text-gray-900 dark:text-gray-100">
-              {brandName} ending in {paymentMethod.card_last4}
+              {brandName} ending in {paymentMethod.cardLast4}
             </span>
-            {paymentMethod.is_default && (
+            {paymentMethod.isDefault && (
               <span className="inline-flex items-center gap-1 rounded-full bg-indigo-100 px-2 py-0.5 text-xs font-medium text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400">
                 <Star className="h-3 w-3" />
                 Default
@@ -60,7 +60,7 @@ export default function PaymentMethodCard({
             )}
           </div>
           <p className="text-sm text-gray-500 dark:text-gray-400">
-            Expires {paymentMethod.card_exp_month}/{paymentMethod.card_exp_year}
+            Expires {paymentMethod.cardExpMonth}/{paymentMethod.cardExpYear}
           </p>
         </div>
       </div>
@@ -78,7 +78,7 @@ export default function PaymentMethodCard({
           <>
             <div className="fixed inset-0 z-40" onClick={() => setMenuOpen(false)} />
             <div className="absolute right-0 top-full mt-1 w-48 rounded-lg border border-gray-200 bg-white py-1 shadow-lg dark:border-gray-700 dark:bg-gray-900 z-50">
-              {!paymentMethod.is_default && (
+              {!paymentMethod.isDefault && (
                 <button
                   onClick={() => {
                     onSetDefault(paymentMethod.id);

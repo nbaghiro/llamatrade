@@ -1,4 +1,4 @@
-import { CreditCard, Eye, Compass, ChevronDown, LogOut, User, Wallet } from 'lucide-react';
+import { CreditCard, LineChart, Compass, ChevronDown, LogOut, User, Wallet } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 
@@ -10,7 +10,7 @@ import { ThemeToggle } from './ThemeToggle';
 
 const navItems = [
   { to: '/portfolio', icon: Wallet, label: 'Portfolio' },
-  { to: '/strategies', icon: Eye, label: 'Watch' },
+  { to: '/strategies', icon: LineChart, label: 'Strategies' },
   { to: '/backtest', icon: Compass, label: 'Discover' },
 ];
 

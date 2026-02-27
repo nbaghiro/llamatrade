@@ -18,7 +18,7 @@ export default function BillingPage() {
     fetchSubscription,
     fetchInvoices,
     cancelSubscription,
-    reactivateSubscription,
+    resumeSubscription,
     clearError,
   } = useBillingStore();
 
@@ -39,7 +39,7 @@ export default function BillingPage() {
 
   const handleReactivate = async () => {
     try {
-      await reactivateSubscription();
+      await resumeSubscription();
     } catch {
       // Error is handled by store
     }
@@ -177,10 +177,10 @@ export default function BillingPage() {
                       className="border-b border-gray-200 last:border-0 dark:border-gray-700"
                     >
                       <td className="px-4 py-3 text-sm text-gray-900 dark:text-gray-100">
-                        {new Date(invoice.period_start).toLocaleDateString()}
+                        {invoice.periodStart ? new Date(Number(invoice.periodStart.seconds) * 1000).toLocaleDateString() : '-'}
                       </td>
                       <td className="px-4 py-3 text-sm text-gray-900 dark:text-gray-100">
-                        ${invoice.amount.toFixed(2)} {invoice.currency.toUpperCase()}
+                        ${invoice.amount?.amount ?? '0.00'} {(invoice.amount?.currency ?? 'USD').toUpperCase()}
                       </td>
                       <td className="px-4 py-3">
                         <span
@@ -194,9 +194,9 @@ export default function BillingPage() {
                         </span>
                       </td>
                       <td className="px-4 py-3 text-right">
-                        {invoice.invoice_pdf && (
+                        {invoice.pdfUrl && (
                           <a
-                            href={invoice.invoice_pdf}
+                            href={invoice.pdfUrl}
                             target="_blank"
                             rel="noopener noreferrer"
                             className="text-sm text-indigo-600 hover:text-indigo-700 dark:text-indigo-400"

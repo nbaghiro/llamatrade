@@ -4,7 +4,10 @@ import { hasChildren } from '../../types/strategy-builder';
 
 import { AddBlockButton } from './blocks/AddBlockButton';
 import { AssetBlock } from './blocks/AssetBlock';
+import { ElseBlock } from './blocks/ElseBlock';
+import { FilterBlock } from './blocks/FilterBlock';
 import { GroupBlock } from './blocks/GroupBlock';
+import { IfBlock } from './blocks/IfBlock';
 import { RootBlock } from './blocks/RootBlock';
 import { WeightBlock } from './blocks/WeightBlock';
 
@@ -53,6 +56,12 @@ export function TreeNode({ blockId, depth = 0, isLast = true, parentWeightId }: 
         return <GroupBlock block={block} allocationPercent={allocationPercent} />;
       case 'weight':
         return <WeightBlock block={block} allocationPercent={allocationPercent} />;
+      case 'if':
+        return <IfBlock block={block} allocationPercent={allocationPercent} />;
+      case 'else':
+        return <ElseBlock block={block} allocationPercent={allocationPercent} />;
+      case 'filter':
+        return <FilterBlock block={block} allocationPercent={allocationPercent} />;
       default:
         return null;
     }
@@ -60,7 +69,9 @@ export function TreeNode({ blockId, depth = 0, isLast = true, parentWeightId }: 
 
   // Determine spacing based on block type
   const getChildSpacing = () => {
-    if (block.type === 'root' || block.type === 'weight') return 'space-y-4';
+    if (block.type === 'root' || block.type === 'weight' || block.type === 'if' || block.type === 'else' || block.type === 'filter') {
+      return 'space-y-4';
+    }
     return 'space-y-3';
   };
 

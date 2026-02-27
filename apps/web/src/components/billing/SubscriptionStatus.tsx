@@ -4,7 +4,9 @@
 
 import { AlertTriangle, Calendar, Clock, RefreshCw } from 'lucide-react';
 
-import type { Subscription } from '../../types/billing';
+import type { Subscription } from '../../generated/proto/llamatrade/v1/billing_pb';
+import { BillingInterval, SubscriptionStatus as SubStatus } from '../../generated/proto/llamatrade/v1/billing_pb';
+import type { Timestamp } from '../../generated/proto/llamatrade/v1/common_pb';
 
 interface SubscriptionStatusProps {
   subscription: Subscription;
@@ -13,19 +15,39 @@ interface SubscriptionStatusProps {
   loading?: boolean;
 }
 
-function formatDate(dateString: string): string {
-  return new Date(dateString).toLocaleDateString('en-US', {
+function formatDate(timestamp: Timestamp | undefined): string {
+  if (!timestamp) return '-';
+  const date = new Date(Number(timestamp.seconds) * 1000);
+  return date.toLocaleDateString('en-US', {
     month: 'long',
     day: 'numeric',
     year: 'numeric',
   });
 }
 
-function getDaysUntil(dateString: string): number {
-  const date = new Date(dateString);
+function getDaysUntil(timestamp: Timestamp | undefined): number {
+  if (!timestamp) return 0;
+  const date = new Date(Number(timestamp.seconds) * 1000);
   const now = new Date();
   const diffTime = date.getTime() - now.getTime();
   return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+}
+
+function getStatusString(status: SubStatus): string {
+  switch (status) {
+    case SubStatus.ACTIVE:
+      return 'active';
+    case SubStatus.PAST_DUE:
+      return 'past_due';
+    case SubStatus.CANCELED:
+      return 'cancelled';
+    case SubStatus.TRIALING:
+      return 'trialing';
+    case SubStatus.PAUSED:
+      return 'paused';
+    default:
+      return 'unknown';
+  }
 }
 
 export default function SubscriptionStatus({
@@ -34,13 +56,18 @@ export default function SubscriptionStatus({
   onReactivate,
   loading = false,
 }: SubscriptionStatusProps) {
-  const isTrialing = subscription.status === 'trialing';
-  const isCancelling = subscription.cancel_at_period_end;
-  const isPastDue = subscription.status === 'past_due';
+  const statusStr = getStatusString(subscription.status);
+  const isTrialing = subscription.status === SubStatus.TRIALING;
+  const isCancelling = subscription.cancelAtPeriodEnd;
+  const isPastDue = subscription.status === SubStatus.PAST_DUE;
 
-  const trialDaysRemaining = subscription.trial_end
-    ? getDaysUntil(subscription.trial_end)
+  const trialDaysRemaining = subscription.trialEnd
+    ? getDaysUntil(subscription.trialEnd)
     : 0;
+
+  const planName = subscription.plan?.name ?? 'Unknown Plan';
+  const monthlyPrice = subscription.plan?.monthlyPrice?.amount ?? '0';
+  const isYearly = subscription.interval === BillingInterval.YEARLY;
 
   return (
     <div className="rounded-lg border border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-900">
@@ -48,14 +75,14 @@ export default function SubscriptionStatus({
         <div>
           <div className="flex items-center gap-3">
             <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
-              {subscription.plan.name} Plan
+              {planName} Plan
             </h3>
-            <StatusBadge status={subscription.status} cancelling={isCancelling} />
+            <StatusBadge status={statusStr} cancelling={isCancelling} />
           </div>
 
           <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-            ${subscription.plan.price_monthly}/month
-            {subscription.billing_cycle === 'yearly' && ' (billed annually)'}
+            ${monthlyPrice}/month
+            {isYearly && ' (billed annually)'}
           </p>
         </div>
 
@@ -64,13 +91,13 @@ export default function SubscriptionStatus({
             {isCancelling ? 'Cancels on' : 'Next billing date'}
           </p>
           <p className="font-medium text-gray-900 dark:text-gray-100">
-            {formatDate(subscription.current_period_end)}
+            {formatDate(subscription.currentPeriodEnd)}
           </p>
         </div>
       </div>
 
       {/* Trial status */}
-      {isTrialing && subscription.trial_end && (
+      {isTrialing && subscription.trialEnd && (
         <div className="mt-4 rounded-lg bg-amber-50 p-4 dark:bg-amber-900/20">
           <div className="flex items-center gap-2">
             <Clock className="h-5 w-5 text-amber-600 dark:text-amber-400" />
@@ -79,7 +106,7 @@ export default function SubscriptionStatus({
             </span>
           </div>
           <p className="mt-1 text-sm text-amber-600 dark:text-amber-400">
-            Your trial ends on {formatDate(subscription.trial_end)}.
+            Your trial ends on {formatDate(subscription.trialEnd)}.
             {trialDaysRemaining > 0
               ? ` ${trialDaysRemaining} day${trialDaysRemaining === 1 ? '' : 's'} remaining.`
               : ' Ends today.'}
@@ -110,7 +137,7 @@ export default function SubscriptionStatus({
             </span>
           </div>
           <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
-            Your subscription will end on {formatDate(subscription.current_period_end)}. You can
+            Your subscription will end on {formatDate(subscription.currentPeriodEnd)}. You can
             reactivate anytime before then.
           </p>
         </div>

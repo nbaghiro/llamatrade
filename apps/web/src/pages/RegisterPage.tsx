@@ -1,9 +1,10 @@
+import { ConnectError } from '@connectrpc/connect';
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 
 import Logo from '../components/Logo';
 import { ThemeToggle } from '../components/ThemeToggle';
-import { api } from '../services/api';
+import { authClient } from '../services/grpc-client';
 
 export default function RegisterPage() {
   const navigate = useNavigate();
@@ -20,15 +21,18 @@ export default function RegisterPage() {
     setLoading(true);
 
     try {
-      await api.post('/auth/register', {
-        tenant_name: tenantName,
+      await authClient.register({
+        tenantName,
         email,
         password,
       });
       navigate('/login', { state: { registered: true } });
     } catch (err: unknown) {
-      const error = err as { response?: { data?: { detail?: string } } };
-      setError(error.response?.data?.detail || 'Registration failed');
+      if (err instanceof ConnectError) {
+        setError(err.message || 'Registration failed');
+      } else {
+        setError('Registration failed');
+      }
     } finally {
       setLoading(false);
     }
