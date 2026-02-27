@@ -17,7 +17,7 @@ import redis
 
 logger = logging.getLogger(__name__)
 
-REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:47379/0")
+REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 DEFAULT_TTL = 24 * 60 * 60  # 24 hours
 
 

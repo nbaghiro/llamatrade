@@ -3,6 +3,7 @@
 import os
 from datetime import UTC, date, datetime
 from decimal import Decimal
+from typing import Protocol
 from uuid import UUID
 
 from fastapi import Depends
@@ -12,7 +13,6 @@ from llamatrade_db.models.strategy import Strategy, StrategyVersion
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.clients.market_data import MarketDataClient, MarketDataError
 from src.engine.backtester import BacktestConfig, BacktestEngine
 from src.engine.strategy_adapter import create_strategy_function
 from src.models import (
@@ -24,8 +24,111 @@ from src.models import (
     TradeRecord,
 )
 
-# Feature flag for async execution
+# Feature flags
 USE_CELERY = os.getenv("BACKTEST_USE_CELERY", "false").lower() == "true"
+MARKET_DATA_GRPC_TARGET = os.getenv("MARKET_DATA_GRPC_TARGET", "market-data:8840")
+
+
+class MarketDataError(Exception):
+    """Error fetching market data."""
+
+    pass
+
+
+class MarketDataFetcher(Protocol):
+    """Protocol for market data fetchers."""
+
+    async def fetch_bars(
+        self,
+        symbols: list[str],
+        timeframe: str,
+        start_date: date,
+        end_date: date,
+    ) -> dict[str, list[dict]]:
+        """Fetch historical bars for symbols."""
+        ...
+
+
+def get_market_data_client() -> MarketDataFetcher:
+    """Get the gRPC market data client."""
+    return GRPCMarketDataClient(MARKET_DATA_GRPC_TARGET)
+
+
+class GRPCMarketDataClient:
+    """gRPC-based market data client."""
+
+    def __init__(self, target: str = "market-data:8840"):
+        self._target = target
+        self._client = None
+
+    async def _get_client(self):
+        """Lazy initialization of gRPC client."""
+        if self._client is None:
+            from llamatrade_grpc import MarketDataClient
+
+            self._client = MarketDataClient(self._target)
+        return self._client
+
+    async def fetch_bars(
+        self,
+        symbols: list[str],
+        timeframe: str,
+        start_date: date,
+        end_date: date,
+    ) -> dict[str, list[dict]]:
+        """Fetch historical bars using gRPC."""
+        from datetime import datetime
+
+        try:
+            client = await self._get_client()
+
+            # Convert timeframe to gRPC format
+            tf_map = {
+                "1D": "1DAY",
+                "1d": "1DAY",
+                "1Min": "1MIN",
+                "5Min": "5MIN",
+                "15Min": "15MIN",
+                "30Min": "30MIN",
+                "1H": "1HOUR",
+                "1Hour": "1HOUR",
+                "4H": "4HOUR",
+                "1W": "1WEEK",
+            }
+            grpc_timeframe = tf_map.get(timeframe, "1DAY")
+
+            result: dict[str, list[dict]] = {}
+
+            for symbol in symbols:
+                bars = await client.get_historical_bars(
+                    symbol=symbol,
+                    start=datetime.combine(start_date, datetime.min.time()).replace(tzinfo=UTC),
+                    end=datetime.combine(end_date, datetime.max.time()).replace(tzinfo=UTC),
+                    timeframe=grpc_timeframe,
+                )
+
+                result[symbol] = [
+                    {
+                        "timestamp": bar.timestamp,
+                        "open": float(bar.open),
+                        "high": float(bar.high),
+                        "low": float(bar.low),
+                        "close": float(bar.close),
+                        "volume": bar.volume,
+                    }
+                    for bar in bars
+                ]
+
+            return result
+
+        except Exception as e:
+            raise MarketDataError(f"Failed to fetch bars: {e}") from e
+
+    async def close(self) -> None:
+        """Close the client."""
+        if self._client is not None:
+            await self._client.close()
+            self._client = None
 
 
 class BacktestService:
@@ -34,10 +137,10 @@ class BacktestService:
     def __init__(
         self,
         db: AsyncSession,
-        market_data_client: MarketDataClient | None = None,
+        market_data_client: MarketDataFetcher | None = None,
     ):
         self.db = db
-        self.market_data_client = market_data_client or MarketDataClient()
+        self.market_data_client = market_data_client or get_market_data_client()
 
     async def create_backtest(
         self,

@@ -19,12 +19,15 @@ class Bar(Base):
         {"postgresql_partition_by": "RANGE (timestamp)"},
     )
 
+    # Composite PK required for partitioned tables - must include partition column
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    timestamp: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, primary_key=True
+    )
     symbol: Mapped[str] = mapped_column(String(20), nullable=False)
     timeframe: Mapped[str] = mapped_column(
         String(10), nullable=False
     )  # 1min, 5min, 15min, 1hour, 1day
-    timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     open: Mapped[Decimal] = mapped_column(Numeric(precision=18, scale=8), nullable=False)
     high: Mapped[Decimal] = mapped_column(Numeric(precision=18, scale=8), nullable=False)
     low: Mapped[Decimal] = mapped_column(Numeric(precision=18, scale=8), nullable=False)
@@ -43,9 +46,12 @@ class Quote(Base):
         {"postgresql_partition_by": "RANGE (timestamp)"},
     )
 
+    # Composite PK required for partitioned tables - must include partition column
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    timestamp: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, primary_key=True
+    )
     symbol: Mapped[str] = mapped_column(String(20), nullable=False)
-    timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     bid_price: Mapped[Decimal] = mapped_column(Numeric(precision=18, scale=8), nullable=False)
     bid_size: Mapped[int] = mapped_column(Integer, nullable=False)
     ask_price: Mapped[Decimal] = mapped_column(Numeric(precision=18, scale=8), nullable=False)
@@ -64,9 +70,12 @@ class Trade(Base):
         {"postgresql_partition_by": "RANGE (timestamp)"},
     )
 
+    # Composite PK required for partitioned tables - must include partition column
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    timestamp: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, primary_key=True
+    )
     symbol: Mapped[str] = mapped_column(String(20), nullable=False)
-    timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     price: Mapped[Decimal] = mapped_column(Numeric(precision=18, scale=8), nullable=False)
     size: Mapped[int] = mapped_column(Integer, nullable=False)
     exchange: Mapped[str | None] = mapped_column(String(10), nullable=True)

@@ -1,11 +1,11 @@
-"""WebSocket stream manager for real-time data distribution."""
+"""Stream manager for real-time data distribution via gRPC."""
 
 import asyncio
 import logging
 from collections import defaultdict
 from collections.abc import Callable
-
-from fastapi import WebSocket
+from dataclasses import dataclass
+from enum import Enum
 
 from src.models import BarData, QuoteData, StreamData, TradeData
 
@@ -18,15 +18,33 @@ SubscriptionCallback = Callable[
 ]
 
 
-class StreamManager:
-    """Manages WebSocket connections and data subscriptions.
+class StreamType(Enum):
+    """Type of stream data."""
 
-    Provides subscription tracking and data broadcasting to clients.
+    TRADE = "trade"
+    QUOTE = "quote"
+    BAR = "bar"
+
+
+@dataclass
+class StreamMessage:
+    """Message for stream queue."""
+
+    stream_type: StreamType
+    symbol: str
+    data: StreamData
+
+
+class StreamManager:
+    """Manages gRPC stream connections and data subscriptions.
+
+    Provides subscription tracking and data broadcasting to clients via async queues.
+    Each gRPC stream gets its own queue for receiving data.
     """
 
     def __init__(self) -> None:
-        # client_id -> WebSocket
-        self._connections: dict[int, WebSocket] = {}
+        # client_id -> asyncio.Queue for streaming data
+        self._queues: dict[int, asyncio.Queue[StreamMessage]] = {}
 
         # symbol -> set of client_ids
         self._trade_subs: dict[str, set[int]] = defaultdict(set)
@@ -60,7 +78,7 @@ class StreamManager:
     @property
     def connection_count(self) -> int:
         """Number of active connections."""
-        return len(self._connections)
+        return len(self._queues)
 
     @property
     def subscription_count(self) -> dict[str, int]:
@@ -80,11 +98,13 @@ class StreamManager:
             "bars": {s for s, clients in self._bar_subs.items() if clients},
         }
 
-    async def connect(self, client_id: int, websocket: WebSocket) -> None:
-        """Register a new client connection."""
+    async def connect(self, client_id: int) -> asyncio.Queue[StreamMessage]:
+        """Register a new client connection and return its message queue."""
         async with self._lock:
-            self._connections[client_id] = websocket
+            queue: asyncio.Queue[StreamMessage] = asyncio.Queue()
+            self._queues[client_id] = queue
         logger.debug(f"Client {client_id} connected")
+        return queue
 
     async def disconnect(self, client_id: int) -> None:
         """Remove a client connection and all its subscriptions."""
@@ -94,8 +114,8 @@ class StreamManager:
         removed_bars: list[str] = []
 
         async with self._lock:
-            # Remove from connections
-            self._connections.pop(client_id, None)
+            # Remove from queues
+            self._queues.pop(client_id, None)
 
             # Remove from all subscriptions and track what was removed
             for symbol, clients in list(self._trade_subs.items()):
@@ -219,45 +239,50 @@ class StreamManager:
 
     async def broadcast_trade(self, symbol: str, data: TradeData) -> None:
         """Broadcast trade data to subscribed clients."""
-        await self._broadcast(self._trade_subs, symbol, "trade", data)
+        await self._broadcast(self._trade_subs, symbol, StreamType.TRADE, data)
 
     async def broadcast_quote(self, symbol: str, data: QuoteData) -> None:
         """Broadcast quote data to subscribed clients."""
-        await self._broadcast(self._quote_subs, symbol, "quote", data)
+        await self._broadcast(self._quote_subs, symbol, StreamType.QUOTE, data)
 
     async def broadcast_bar(self, symbol: str, data: BarData) -> None:
         """Broadcast bar data to subscribed clients."""
-        await self._broadcast(self._bar_subs, symbol, "bar", data)
+        await self._broadcast(self._bar_subs, symbol, StreamType.BAR, data)
 
     async def _broadcast(
         self,
         subs: dict[str, set[int]],
         symbol: str,
-        msg_type: str,
+        stream_type: StreamType,
         data: StreamData,
     ) -> None:
-        """Broadcast data to subscribed clients."""
+        """Broadcast data to subscribed clients via queues."""
         symbol = symbol.upper()
         client_ids = subs.get(symbol, set())
 
         if not client_ids:
             return
 
-        message = {
-            "type": msg_type,
-            "symbol": symbol,
-            "data": data,
-        }
+        message = StreamMessage(
+            stream_type=stream_type,
+            symbol=symbol,
+            data=data,
+        )
 
-        # Send to all subscribed clients
+        # Send to all subscribed clients via their queues
         disconnected = []
         for client_id in client_ids:
-            websocket = self._connections.get(client_id)
-            if websocket:
+            queue = self._queues.get(client_id)
+            if queue:
                 try:
-                    await websocket.send_json(message)
+                    # Non-blocking put - if queue is full, skip this message
+                    queue.put_nowait(message)
+                except asyncio.QueueFull:
+                    logger.warning(f"Queue full for client {client_id}, dropping message")
                 except Exception:
                     disconnected.append(client_id)
+            else:
+                disconnected.append(client_id)
 
         # Clean up disconnected clients
         for client_id in disconnected:

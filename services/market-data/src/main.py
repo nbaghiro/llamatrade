@@ -1,4 +1,9 @@
-"""Market Data Service - Main FastAPI application."""
+"""Market Data Service - FastAPI with Connect protocol.
+
+This service provides real-time and historical market data.
+It exposes endpoints via Connect protocol for direct browser access,
+while also providing WebSocket streaming via Alpaca.
+"""
 
 import logging
 import os
@@ -13,7 +18,6 @@ from llamatrade_common.observability import setup_observability
 from src.alpaca.client import close_alpaca_client
 from src.cache import close_cache, get_cache, init_cache
 from src.error_handlers import register_error_handlers
-from src.routers import bars, quotes, streaming
 from src.streaming.alpaca_stream import (
     close_alpaca_stream,
     get_alpaca_stream,
@@ -29,6 +33,11 @@ SERVICE_NAME = "market-data"
 SERVICE_VERSION = "0.1.0"
 ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
+
+# Configuration
+CORS_ORIGINS = os.getenv(
+    "CORS_ORIGINS", "http://localhost:8800,http://localhost:3000,http://localhost:47333"
+).split(",")
 
 # Track streaming state for health check
 _stream_connected = False
@@ -63,6 +72,18 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         )
         _stream_connected = False
 
+    # Mount Connect ASGI app
+    try:
+        from llamatrade.v1.market_data_connect import MarketDataServiceASGIApplication
+        from src.grpc.servicer import MarketDataServicer
+
+        servicer = MarketDataServicer()
+        connect_app = MarketDataServiceASGIApplication(servicer)
+        app.mount("/", connect_app)
+        logger.info("Connect ASGI application mounted successfully")
+    except ImportError as e:
+        logger.warning("Connect dependencies not available: %s", e)
+
     yield
 
     # Shutdown - close connections in reverse order
@@ -74,7 +95,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
 app = FastAPI(
     title="LlamaTrade Market Data Service",
-    description="Real-time and historical market data service for LlamaTrade",
+    description="Real-time and historical market data service (Connect protocol)",
     version=SERVICE_VERSION,
     lifespan=lifespan,
 )
@@ -95,16 +116,12 @@ register_error_handlers(app)
 # CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=os.getenv("CORS_ORIGINS", "http://localhost:3000").split(","),
+    allow_origins=CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["*"],
 )
-
-# Include routers
-app.include_router(bars.router, prefix="/bars", tags=["Bars"])
-app.include_router(quotes.router, prefix="/quotes", tags=["Quotes"])
-app.include_router(streaming.router, prefix="/stream", tags=["Streaming"])
 
 
 @app.get("/health")

@@ -1,5 +1,12 @@
-"""HTTP clients for external services."""
+"""Clients for external services.
 
-from src.clients.market_data import MarketDataClient
+All inter-service communication uses gRPC via llamatrade_grpc.
 
-__all__ = ["MarketDataClient"]
+Usage:
+    from llamatrade_grpc.clients import MarketDataClient
+
+    async with MarketDataClient() as client:
+        bars = await client.get_historical_bars(...)
+"""
+
+__all__: list[str] = []

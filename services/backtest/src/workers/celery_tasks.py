@@ -26,11 +26,11 @@ logger = logging.getLogger(__name__)
 # Database configuration
 DATABASE_URL = os.getenv(
     "DATABASE_URL",
-    "postgresql+asyncpg://llamatrade:llamatrade@localhost:47432/llamatrade",
+    "postgresql+asyncpg://llamatrade:llamatrade@localhost:5432/llamatrade",
 )
 
 # Redis for progress updates
-REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:47379/0")
+REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 
 
 def _get_redis() -> redis.Redis:

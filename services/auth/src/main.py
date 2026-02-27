@@ -1,71 +1,71 @@
-"""Auth Service - Main FastAPI application."""
+"""Auth Service - FastAPI with Connect protocol.
 
+This service handles authentication and authorization for LlamaTrade.
+It exposes endpoints via Connect protocol for direct browser access.
+"""
+
+import logging
 import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from llamatrade_common.middleware import TenantMiddleware
-from starlette.middleware.base import BaseHTTPMiddleware
 
-from src.routers import api_keys, auth, tenants, users
 from src.services.database import close_db, init_db
 
-JWT_SECRET = os.getenv("JWT_SECRET", "dev-secret-change-in-production")
-JWT_ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
+logger = logging.getLogger(__name__)
+
+# Configuration
+CORS_ORIGINS = os.getenv(
+    "CORS_ORIGINS", "http://localhost:8800,http://localhost:3000,http://localhost:47333"
+).split(",")
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Application lifespan handler."""
     # Startup
-    await init_db()
+    try:
+        await init_db()
+    except Exception as e:
+        # Log but don't fail - allows testing without database
+        logger.warning("Database initialization failed (non-critical): %s", e)
+
+    # Mount Connect ASGI app
+    try:
+        from llamatrade.v1.auth_connect import AuthServiceASGIApplication
+        from src.grpc.servicer import AuthServicer
+
+        servicer = AuthServicer()
+        connect_app = AuthServiceASGIApplication(servicer)
+        app.mount("/", connect_app)
+        logger.info("Connect ASGI application mounted successfully")
+    except ImportError as e:
+        logger.warning("Connect dependencies not available: %s", e)
+
     yield
+
     # Shutdown
     await close_db()
 
 
 app = FastAPI(
     title="LlamaTrade Auth Service",
-    description="Authentication and authorization service for LlamaTrade",
+    description="Authentication and authorization service for LlamaTrade (Connect protocol)",
     version="0.1.0",
     lifespan=lifespan,
 )
 
-# CORS middleware
+# CORS middleware - must allow Connect protocol headers
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=os.getenv("CORS_ORIGINS", "http://localhost:47333,http://localhost:3000").split(
-        ","
-    ),
+    allow_origins=CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["*"],
 )
-
-# Tenant context middleware (extracts JWT claims)
-app.add_middleware(
-    BaseHTTPMiddleware,
-    dispatch=TenantMiddleware(
-        jwt_secret=JWT_SECRET,
-        jwt_algorithm=JWT_ALGORITHM,
-        public_paths=[
-            "/health",
-            "/docs",
-            "/openapi.json",
-            "/auth/register",
-            "/auth/login",
-            "/auth/refresh",
-        ],
-    ),
-)
-
-# Include routers
-app.include_router(auth.router, prefix="/auth", tags=["Authentication"])
-app.include_router(users.router, prefix="/users", tags=["Users"])
-app.include_router(tenants.router, prefix="/tenants", tags=["Tenants"])
-app.include_router(api_keys.router, prefix="/api-keys", tags=["API Keys"])
 
 
 @app.get("/health")

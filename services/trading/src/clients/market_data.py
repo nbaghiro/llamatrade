@@ -1,44 +1,48 @@
-"""HTTP client for market-data service."""
+"""Market data client for fetching current prices from market-data service."""
 
-import logging
 import os
 
 import httpx
 
-logger = logging.getLogger(__name__)
-
 
 class MarketDataClient:
-    """Client for fetching prices from market-data service."""
+    """HTTP client for fetching real-time market data from the market-data service."""
 
-    def __init__(self, base_url: str | None = None):
-        default_url = os.getenv("MARKET_DATA_URL")
-        self.base_url: str = base_url or default_url or "http://market-data:47804"
-        self._client = httpx.AsyncClient(base_url=self.base_url, timeout=10.0)
+    def __init__(self, base_url: str | None = None, timeout: float = 10.0):
+        """Initialize the market data client.
+
+        Args:
+            base_url: Base URL for the market-data service
+            timeout: Request timeout in seconds
+        """
+        self.base_url = base_url or os.getenv("MARKET_DATA_URL", "http://market-data:8840")
+        self.timeout = timeout
+        self._client: httpx.AsyncClient = httpx.AsyncClient(
+            base_url=self.base_url,
+            timeout=self.timeout,
+        )
 
     async def close(self) -> None:
         """Close the HTTP client."""
-        await self._client.aclose()
+        if self._client:
+            await self._client.aclose()
 
     async def get_latest_price(self, symbol: str) -> float | None:
-        """Get latest price for a symbol.
+        """Get the latest price for a single symbol.
 
         Args:
-            symbol: The stock symbol (e.g., "AAPL")
+            symbol: Stock symbol (e.g., "AAPL")
 
         Returns:
-            The latest close price, or None if unavailable
+            Latest close price as float, or None if unavailable
         """
+        symbol = symbol.upper()
         try:
-            response = await self._client.get(f"/bars/{symbol.upper()}/latest")
+            response = await self._client.get(f"/bars/{symbol}/latest")
             response.raise_for_status()
             data = response.json()
-            return float(data.get("close", 0))
-        except httpx.HTTPStatusError as e:
-            logger.warning(f"Failed to get price for {symbol}: HTTP {e.response.status_code}")
-            return None
-        except Exception as e:
-            logger.warning(f"Failed to get price for {symbol}: {e}")
+            return float(data.get("close", 0.0))
+        except Exception:
             return None
 
     async def get_prices(self, symbols: list[str]) -> dict[str, float]:
@@ -48,51 +52,55 @@ class MarketDataClient:
             symbols: List of stock symbols
 
         Returns:
-            Dictionary mapping symbol to latest price (excludes failures)
+            Dictionary mapping symbol to latest price
         """
-        result: dict[str, float] = {}
+        if not symbols:
+            return {}
+
+        prices = {}
         for symbol in symbols:
+            symbol = symbol.upper()
             price = await self.get_latest_price(symbol)
             if price is not None:
-                result[symbol.upper()] = price
-        return result
+                prices[symbol] = price
+        return prices
 
     async def get_bars(
         self,
         symbol: str,
-        timeframe: str = "1Min",
-        limit: int = 100,
-    ) -> list[dict[str, float | int | str]]:
+        timeframe: str = "1D",
+        limit: int | None = None,
+    ) -> list[dict]:
         """Get historical bars for a symbol.
 
         Args:
-            symbol: The stock symbol
-            timeframe: Bar timeframe (e.g., "1Min", "5Min", "1Hour")
+            symbol: Stock symbol (e.g., "AAPL")
+            timeframe: Timeframe for bars (e.g., "1D", "1H", "1Min")
             limit: Maximum number of bars to return
 
         Returns:
-            List of bar dictionaries with OHLCV data
+            List of bar data dictionaries
         """
+        symbol = symbol.upper()
         try:
-            response = await self._client.get(
-                f"/bars/{symbol.upper()}",
-                params={"timeframe": timeframe, "limit": limit},
-            )
+            params: dict[str, str | int] = {"timeframe": timeframe}
+            if limit is not None:
+                params["limit"] = limit
+
+            response = await self._client.get(f"/bars/{symbol}", params=params)
             response.raise_for_status()
             data = response.json()
-            bars: list[dict[str, float | int | str]] = data.get("bars", [])
-            return bars
-        except Exception as e:
-            logger.warning(f"Failed to get bars for {symbol}: {e}")
+            return data.get("bars", [])
+        except Exception:
             return []
 
 
-# Singleton client
+# Singleton instance
 _client: MarketDataClient | None = None
 
 
 def get_market_data_client() -> MarketDataClient:
-    """Dependency to get market data client."""
+    """Get or create the market data client singleton."""
     global _client
     if _client is None:
         _client = MarketDataClient()

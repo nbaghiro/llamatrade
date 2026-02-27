@@ -1,5 +1,6 @@
-"""Trading service clients."""
+"""Trading service clients.
 
-from src.clients.market_data import MarketDataClient, get_market_data_client
+All inter-service communication uses gRPC via llamatrade_grpc.
+"""
 
-__all__ = ["MarketDataClient", "get_market_data_client"]
+__all__: list[str] = []
