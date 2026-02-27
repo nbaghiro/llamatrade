@@ -29,7 +29,7 @@ brew install bufbuild/buf/buf
 ```python
 from llamatrade_grpc import MarketDataClient
 
-async with MarketDataClient("market-data:50054") as client:
+async with MarketDataClient("market-data:8840") as client:
     # Fetch historical bars
     bars = await client.get_historical_bars(
         symbol="AAPL",
@@ -51,7 +51,7 @@ async with MarketDataClient("market-data:50054") as client:
 ```python
 from llamatrade_grpc import AuthClient
 
-auth_client = AuthClient("auth:50051")
+auth_client = AuthClient("auth:8810")
 
 # Validate a JWT token
 result = await auth_client.validate_token(token)
@@ -73,7 +73,7 @@ from llamatrade_grpc import TradingClient
 from llamatrade_grpc.clients.trading import OrderSide, OrderType
 from decimal import Decimal
 
-async with TradingClient("trading:50055") as client:
+async with TradingClient("trading:8850") as client:
     # Submit an order
     order = await client.submit_order(
         context=context,
@@ -107,18 +107,23 @@ logging_interceptor = LoggingInterceptor(log_level=logging.INFO)
 server = grpc.aio.server(interceptors=[logging_interceptor, auth_interceptor])
 ```
 
-## Port Assignments
+## Port Assignments (gRPC-only)
 
-| Service | REST Port | gRPC Port |
-|---------|-----------|-----------|
-| Auth | 8001 | 50051 |
-| Strategy | 8002 | 50052 |
-| Backtest | 8003 | 50053 |
-| Market Data | 8004 | 50054 |
-| Trading | 8005 | 50055 |
-| Portfolio | 8006 | 50056 |
-| Notification | 8007 | 50057 |
-| Billing | 8008 | 50058 |
+All services expose gRPC only. The API Gateway (Kong) handles gRPC-Web translation for browser clients.
+
+| Service | gRPC Port |
+|---------|-----------|
+| Auth | 8810 |
+| Strategy | 8820 |
+| Backtest | 8830 |
+| Market Data | 8840 |
+| Trading | 8850 |
+| Portfolio | 8860 |
+| Notification | 8870 |
+| Web (Frontend) | 8800 |
+| Billing | 8880 |
+
+**Note:** Billing also exposes HTTP port 8881 for Stripe webhooks (required by Stripe).
 
 ## Development
 

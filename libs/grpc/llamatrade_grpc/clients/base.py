@@ -26,7 +26,7 @@ class BaseGRPCClient:
         """Initialize the gRPC client.
 
         Args:
-            target: The target address (e.g., "localhost:50051")
+            target: The target address (e.g., "localhost:8810")
             secure: Whether to use TLS
             credentials: Optional channel credentials for secure connections
             interceptors: Optional list of client interceptors

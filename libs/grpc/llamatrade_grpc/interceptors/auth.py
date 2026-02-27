@@ -24,7 +24,7 @@ class AuthInterceptor(grpc.aio.ServerInterceptor):
     Example:
         from llamatrade_grpc import AuthClient, AuthInterceptor
 
-        auth_client = AuthClient("auth:50051")
+        auth_client = AuthClient("auth:8810")
         interceptor = AuthInterceptor(
             auth_client,
             skip_methods=["/llamatrade.v1.AuthService/Login"]
@@ -118,7 +118,7 @@ class ClientAuthInterceptor(grpc.aio.UnaryUnaryClientInterceptor):
         token = "eyJ..."
         interceptor = ClientAuthInterceptor(token)
         channel = grpc.aio.insecure_channel(
-            "localhost:50051",
+            "localhost:8810",
             interceptors=[interceptor]
         )
     """

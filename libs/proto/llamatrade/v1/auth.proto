@@ -118,17 +118,88 @@ message RefreshTokenResponse {
   Timestamp refresh_token_expires_at = 4;
 }
 
+// Login
+message LoginRequest {
+  string email = 1;
+  string password = 2;
+}
+
+message LoginResponse {
+  string access_token = 1;
+  string refresh_token = 2;
+  User user = 3;
+  Timestamp access_token_expires_at = 4;
+  Timestamp refresh_token_expires_at = 5;
+}
+
+// Register
+message RegisterRequest {
+  string tenant_name = 1;
+  string email = 2;
+  string password = 3;
+  string first_name = 4;
+  string last_name = 5;
+}
+
+message RegisterResponse {
+  User user = 1;
+  Tenant tenant = 2;
+  string message = 3;
+}
+
+// Get current user (from token)
+message GetCurrentUserRequest {
+  // Token is passed via metadata/headers
+}
+
+message GetCurrentUserResponse {
+  User user = 1;
+  Tenant tenant = 2;
+}
+
+// Logout
+message LogoutRequest {
+  // Token is passed via metadata/headers
+}
+
+message LogoutResponse {
+  bool success = 1;
+}
+
+// Change password
+message ChangePasswordRequest {
+  string current_password = 1;
+  string new_password = 2;
+  // Token is passed via metadata/headers to identify user
+}
+
+message ChangePasswordResponse {
+  bool success = 1;
+  string message = 2;
+}
+
 // =============================================================================
 // SERVICE
 // =============================================================================
 
 service AuthService {
+  // Public endpoints (no auth required)
+  rpc Login(LoginRequest) returns (LoginResponse);
+  rpc Register(RegisterRequest) returns (RegisterResponse);
+
+  // Token operations
+  rpc RefreshToken(RefreshTokenRequest) returns (RefreshTokenResponse);
+  rpc Logout(LogoutRequest) returns (LogoutResponse);
+
+  // Current user (requires auth)
+  rpc GetCurrentUser(GetCurrentUserRequest) returns (GetCurrentUserResponse);
+
+  // Password management (requires auth)
+  rpc ChangePassword(ChangePasswordRequest) returns (ChangePasswordResponse);
+
   // Token validation (high-frequency, called by all services)
   rpc ValidateToken(ValidateTokenRequest) returns (ValidateTokenResponse);
   rpc ValidateAPIKey(ValidateAPIKeyRequest) returns (ValidateAPIKeyResponse);
-
-  // Token refresh
-  rpc RefreshToken(RefreshTokenRequest) returns (RefreshTokenResponse);
 
   // User/tenant lookup
   rpc GetUser(GetUserRequest) returns (GetUserResponse);

@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING
 from llamatrade_grpc.clients.base import BaseGRPCClient
 
 if TYPE_CHECKING:
-    from llamatrade_grpc.generated.llamatrade.v1 import (
+    from llamatrade.v1 import (
         market_data_pb2,
         market_data_pb2_grpc,
     )
@@ -65,7 +65,7 @@ class MarketDataClient(BaseGRPCClient):
     and streaming real-time updates.
 
     Example:
-        async with MarketDataClient("market-data:50051") as client:
+        async with MarketDataClient("market-data:8840") as client:
             # Fetch historical bars
             bars = await client.get_historical_bars(
                 symbol="AAPL",
@@ -81,7 +81,7 @@ class MarketDataClient(BaseGRPCClient):
 
     def __init__(
         self,
-        target: str = "market-data:50054",
+        target: str = "market-data:8840",
         *,
         secure: bool = False,
         credentials: object | None = None,
@@ -112,7 +112,7 @@ class MarketDataClient(BaseGRPCClient):
         if self._stub is None:
             # Import generated code (will be available after buf generate)
             try:
-                from llamatrade_grpc.generated.llamatrade.v1 import (
+                from llamatrade.v1 import (
                     market_data_pb2_grpc,
                 )
 
@@ -146,7 +146,7 @@ class MarketDataClient(BaseGRPCClient):
         Returns:
             List of Bar objects
         """
-        from llamatrade_grpc.generated.llamatrade.v1 import common_pb2, market_data_pb2
+        from llamatrade.v1 import common_pb2, market_data_pb2
 
         # Map timeframe string to enum
         timeframe_map = {
@@ -189,7 +189,7 @@ class MarketDataClient(BaseGRPCClient):
         Yields:
             Bar objects as they arrive
         """
-        from llamatrade_grpc.generated.llamatrade.v1 import market_data_pb2
+        from llamatrade.v1 import market_data_pb2
 
         timeframe_map = {
             "1MIN": market_data_pb2.TIMEFRAME_1MIN,
@@ -213,7 +213,7 @@ class MarketDataClient(BaseGRPCClient):
         Yields:
             Quote objects as they arrive
         """
-        from llamatrade_grpc.generated.llamatrade.v1 import market_data_pb2
+        from llamatrade.v1 import market_data_pb2
 
         request = market_data_pb2.StreamQuotesRequest(symbols=symbols)
 
@@ -229,7 +229,7 @@ class MarketDataClient(BaseGRPCClient):
         Yields:
             Trade objects as they arrive
         """
-        from llamatrade_grpc.generated.llamatrade.v1 import market_data_pb2
+        from llamatrade.v1 import market_data_pb2
 
         request = market_data_pb2.StreamTradesRequest(symbols=symbols)
 

@@ -14,7 +14,7 @@ from llamatrade_grpc.clients.auth import TenantContext
 from llamatrade_grpc.clients.base import BaseGRPCClient
 
 if TYPE_CHECKING:
-    from llamatrade_grpc.generated.llamatrade.v1 import trading_pb2, trading_pb2_grpc
+    from llamatrade.v1 import trading_pb2, trading_pb2_grpc
 
 logger = logging.getLogger(__name__)
 
@@ -106,7 +106,7 @@ class TradingClient(BaseGRPCClient):
     """Client for the Trading gRPC service.
 
     Example:
-        async with TradingClient("trading:50055") as client:
+        async with TradingClient("trading:8850") as client:
             # Submit an order
             order = await client.submit_order(
                 context=context,
@@ -124,7 +124,7 @@ class TradingClient(BaseGRPCClient):
 
     def __init__(
         self,
-        target: str = "trading:50055",
+        target: str = "trading:8850",
         *,
         secure: bool = False,
         credentials: object | None = None,
@@ -154,7 +154,7 @@ class TradingClient(BaseGRPCClient):
         """Get the gRPC stub (lazy initialization)."""
         if self._stub is None:
             try:
-                from llamatrade_grpc.generated.llamatrade.v1 import trading_pb2_grpc
+                from llamatrade.v1 import trading_pb2_grpc
 
                 self._stub = trading_pb2_grpc.TradingServiceStub(self.channel)
             except ImportError:
@@ -193,7 +193,7 @@ class TradingClient(BaseGRPCClient):
         Returns:
             The submitted Order
         """
-        from llamatrade_grpc.generated.llamatrade.v1 import common_pb2, trading_pb2
+        from llamatrade.v1 import common_pb2, trading_pb2
 
         # Map enums
         side_map = {
@@ -248,7 +248,7 @@ class TradingClient(BaseGRPCClient):
         Returns:
             The cancelled Order
         """
-        from llamatrade_grpc.generated.llamatrade.v1 import common_pb2, trading_pb2
+        from llamatrade.v1 import common_pb2, trading_pb2
 
         request = trading_pb2.CancelOrderRequest(
             context=common_pb2.TenantContext(
@@ -272,7 +272,7 @@ class TradingClient(BaseGRPCClient):
         Returns:
             List of Position objects
         """
-        from llamatrade_grpc.generated.llamatrade.v1 import common_pb2, trading_pb2
+        from llamatrade.v1 import common_pb2, trading_pb2
 
         request = trading_pb2.ListPositionsRequest(
             context=common_pb2.TenantContext(
@@ -300,7 +300,7 @@ class TradingClient(BaseGRPCClient):
         Yields:
             OrderUpdate events
         """
-        from llamatrade_grpc.generated.llamatrade.v1 import common_pb2, trading_pb2
+        from llamatrade.v1 import common_pb2, trading_pb2
 
         request = trading_pb2.StreamOrderUpdatesRequest(
             context=common_pb2.TenantContext(
@@ -320,7 +320,7 @@ class TradingClient(BaseGRPCClient):
 
     def _proto_to_order(self, proto: trading_pb2.Order) -> Order:
         """Convert protobuf Order to dataclass."""
-        from llamatrade_grpc.generated.llamatrade.v1 import trading_pb2
+        from llamatrade.v1 import trading_pb2
 
         status_map = {
             trading_pb2.ORDER_STATUS_NEW: OrderStatus.NEW,

@@ -69,6 +69,12 @@ logs/
 .DS_Store
 Thumbs.db
 
+# MCP
+.mcp.json
+
+# Screenshots
+*.png
+
 # Secrets
 *.pem
 *.key

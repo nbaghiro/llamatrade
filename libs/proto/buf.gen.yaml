@@ -5,20 +5,30 @@ managed:
     - file_option: go_package_prefix
       value: github.com/llamatrade/api/gen/go
 plugins:
-  # Python gRPC and protobuf
+  # Python protobuf messages
+  # Output to ../grpc/ so package is llamatrade.v1 (matching proto package)
   - remote: buf.build/protocolbuffers/python
-    out: ../grpc/llamatrade_grpc/generated
+    out: ../grpc
+
+  # Python Connect service stubs (Connect protocol)
+  - remote: buf.build/connectrpc/python
+    out: ../grpc
+
+  # Keep Python gRPC stubs for backward compat
   - remote: buf.build/grpc/python
-    out: ../grpc/llamatrade_grpc/generated
+    out: ../grpc
 
   # Generate mypy type stubs (.pyi files)
   - local: protoc-gen-mypy
-    out: ../grpc/llamatrade_grpc/generated
+    out: ../grpc
     opt:
       - readable_stubs
   - local: protoc-gen-mypy_grpc
-    out: ../grpc/llamatrade_grpc/generated
+    out: ../grpc
 
-  # Optional: Generate TypeScript types for frontend
-  # - remote: buf.build/bufbuild/es
-  #   out: ../../apps/web/src/types/proto
+  # TypeScript for Connect-Web (frontend gRPC)
+  # In Connect-ES v2, protoc-gen-es generates both messages AND services
+  - remote: buf.build/bufbuild/es:v2.2.3
+    out: ../../apps/web/src/generated/proto
+    opt:
+      - target=ts

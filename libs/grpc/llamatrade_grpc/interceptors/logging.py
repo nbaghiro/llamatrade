@@ -112,7 +112,7 @@ class ClientLoggingInterceptor(grpc.aio.UnaryUnaryClientInterceptor):
     Example:
         interceptor = ClientLoggingInterceptor()
         channel = grpc.aio.insecure_channel(
-            "localhost:50051",
+            "localhost:8810",
             interceptors=[interceptor]
         )
     """
