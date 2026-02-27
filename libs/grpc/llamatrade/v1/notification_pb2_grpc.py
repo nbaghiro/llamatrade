@@ -5,7 +5,7 @@ import grpc
 from llamatrade.v1 import notification_pb2 as llamatrade_dot_v1_dot_notification__pb2
 
 
-class NotificationServiceStub(object):
+class NotificationServiceStub:
     """=============================================================================
     SERVICE
     =============================================================================
@@ -65,7 +65,7 @@ class NotificationServiceStub(object):
                 _registered_method=True)
 
 
-class NotificationServiceServicer(object):
+class NotificationServiceServicer:
     """=============================================================================
     SERVICE
     =============================================================================
@@ -185,7 +185,7 @@ def add_NotificationServiceServicer_to_server(servicer, server):
 
 
  # This class is part of an EXPERIMENTAL API.
-class NotificationService(object):
+class NotificationService:
     """=============================================================================
     SERVICE
     =============================================================================

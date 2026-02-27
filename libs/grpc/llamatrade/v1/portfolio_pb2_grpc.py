@@ -5,7 +5,7 @@ import grpc
 from llamatrade.v1 import portfolio_pb2 as llamatrade_dot_v1_dot_portfolio__pb2
 
 
-class PortfolioServiceStub(object):
+class PortfolioServiceStub:
     """=============================================================================
     SERVICE
     =============================================================================
@@ -60,7 +60,7 @@ class PortfolioServiceStub(object):
                 _registered_method=True)
 
 
-class PortfolioServiceServicer(object):
+class PortfolioServiceServicer:
     """=============================================================================
     SERVICE
     =============================================================================
@@ -171,7 +171,7 @@ def add_PortfolioServiceServicer_to_server(servicer, server):
 
 
  # This class is part of an EXPERIMENTAL API.
-class PortfolioService(object):
+class PortfolioService:
     """=============================================================================
     SERVICE
     =============================================================================

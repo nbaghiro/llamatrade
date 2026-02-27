@@ -5,7 +5,6 @@ from datetime import UTC, datetime
 import numpy as np
 import pytest
 from llamatrade_compiler import Bar
-
 from src.compiler.state import EvaluationState, Position
 
 # ===================

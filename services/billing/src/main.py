@@ -37,6 +37,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # Mount Connect ASGI app
     try:
         from llamatrade.v1.billing_connect import BillingServiceASGIApplication
+
         from src.grpc.servicer import BillingServicer
 
         servicer = BillingServicer()

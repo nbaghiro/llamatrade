@@ -101,7 +101,7 @@ test-unit:
 	for svc in auth strategy billing backtest trading market-data portfolio; do \
 		echo ""; \
 		echo "=== Testing $$svc ==="; \
-		cd services/$$svc && pytest tests/ -v && cd ../..; \
+		(cd services/$$svc && pytest tests/ -v); \
 	done
 
 test-unit-quick:
@@ -109,7 +109,7 @@ test-unit-quick:
 	echo "=== Running unit tests (quick mode) ==="; \
 	for svc in auth strategy billing backtest trading market-data portfolio; do \
 		echo "=== $$svc ==="; \
-		cd services/$$svc && pytest tests/ -q && cd ../..; \
+		(cd services/$$svc && pytest tests/ -q); \
 	done
 
 # Run only integration tests (requires Docker for testcontainers)

@@ -3,7 +3,6 @@
 from datetime import UTC
 
 import pytest
-
 from llamatrade_common.utils import (
     calculate_pnl,
     chunks,

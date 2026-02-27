@@ -35,6 +35,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # Mount Connect ASGI app
     try:
         from llamatrade.v1.auth_connect import AuthServiceASGIApplication
+
         from src.grpc.servicer import AuthServicer
 
         servicer = AuthServicer()

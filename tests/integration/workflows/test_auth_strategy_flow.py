@@ -11,10 +11,10 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 from typing import TYPE_CHECKING
-from uuid import UUID, uuid4
+from uuid import uuid4
 
-import grpc.aio
 import pytest
+from connectrpc.errors import ConnectError
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
@@ -23,39 +23,10 @@ pytestmark = [pytest.mark.integration, pytest.mark.workflow, pytest.mark.asyncio
 
 
 class MockServicerContext:
-    """Mock gRPC servicer context for testing."""
+    """Mock ConnectRPC servicer context for testing."""
 
     def __init__(self) -> None:
-        self._metadata: list[tuple[str, str]] = []
-        self._aborted = False
-        self._abort_code: grpc.StatusCode | None = None
-        self._abort_details: str | None = None
-
-    def invocation_metadata(self) -> list[tuple[str, str]]:
-        return self._metadata
-
-    def set_metadata(self, metadata: list[tuple[str, str]]) -> None:
-        self._metadata = metadata
-
-    def HasField(self, field_name: str) -> bool:
-        """Check if a field exists (for proto compatibility)."""
-        return False
-
-    async def abort(self, code: grpc.StatusCode, details: str) -> None:
-        self._aborted = True
-        self._abort_code = code
-        self._abort_details = details
-        raise grpc.aio.AioRpcError(
-            code=code,
-            initial_metadata=None,
-            trailing_metadata=None,
-            details=details,
-            debug_error_string=None,
-        )
-
-    @property
-    def aborted(self) -> bool:
-        return self._aborted
+        self.headers: dict[str, str] = {}
 
 
 @pytest.fixture
@@ -181,14 +152,14 @@ async def register_and_login(auth_servicer, context):
         email=email,
         password="TestPassword123!",
     )
-    register_response = await auth_servicer.Register(register_request, context)
+    register_response = await auth_servicer.register(register_request, context)
 
     # Login
     login_request = auth_pb2.LoginRequest(
         email=email,
         password="TestPassword123!",
     )
-    login_response = await auth_servicer.Login(login_request, context)
+    login_response = await auth_servicer.login(login_request, context)
 
     return {
         "access_token": login_response.access_token,
@@ -233,7 +204,7 @@ class TestStrategyCreationWorkflow:
             dsl_code=VALID_STRATEGY_SEXPR,
         )
 
-        response = await strategy_servicer.CreateStrategy(request, grpc_context)
+        response = await strategy_servicer.create_strategy(request, grpc_context)
 
         assert response.strategy.name == "My Momentum Strategy"
         assert response.strategy.description == "A simple momentum strategy"
@@ -249,15 +220,18 @@ class TestStrategyCreationWorkflow:
         """Test that strategy creation requires valid tenant context."""
         from llamatrade.v1 import common_pb2, strategy_pb2
 
-        # Create with empty context
+        # Create with non-existent tenant/user UUIDs (valid format but don't exist)
         request = strategy_pb2.CreateStrategyRequest(
-            context=common_pb2.TenantContext(tenant_id="", user_id=""),
+            context=common_pb2.TenantContext(
+                tenant_id="00000000-0000-0000-0000-000000000000",
+                user_id="00000000-0000-0000-0000-000000000000",
+            ),
             name="Unauthorized Strategy",
             dsl_code=VALID_STRATEGY_SEXPR,
         )
 
-        with pytest.raises(grpc.aio.AioRpcError):
-            await strategy_servicer.CreateStrategy(request, grpc_context)
+        with pytest.raises(ConnectError):
+            await strategy_servicer.create_strategy(request, grpc_context)
 
 
 class TestStrategyListWorkflow:
@@ -281,7 +255,7 @@ class TestStrategyListWorkflow:
             pagination=common_pb2.PaginationRequest(page=1, page_size=20),
         )
 
-        response = await strategy_servicer.ListStrategies(request, grpc_context)
+        response = await strategy_servicer.list_strategies(request, grpc_context)
 
         assert response.pagination.total_items == 0
         assert len(response.strategies) == 0
@@ -306,14 +280,14 @@ class TestStrategyListWorkflow:
                 name=f"Strategy {i+1}",
                 dsl_code=VALID_STRATEGY_SEXPR,
             )
-            await strategy_servicer.CreateStrategy(create_request, grpc_context)
+            await strategy_servicer.create_strategy(create_request, grpc_context)
 
         # List strategies
         list_request = strategy_pb2.ListStrategiesRequest(
             context=ctx,
             pagination=common_pb2.PaginationRequest(page=1, page_size=20),
         )
-        response = await strategy_servicer.ListStrategies(list_request, grpc_context)
+        response = await strategy_servicer.list_strategies(list_request, grpc_context)
 
         assert response.pagination.total_items == 2
         assert len(response.strategies) == 2
@@ -338,14 +312,14 @@ class TestStrategyListWorkflow:
                 name=f"Paginated Strategy {i+1}",
                 dsl_code=VALID_STRATEGY_SEXPR,
             )
-            await strategy_servicer.CreateStrategy(create_request, grpc_context)
+            await strategy_servicer.create_strategy(create_request, grpc_context)
 
         # Get page 1 with page_size=2
         list_request = strategy_pb2.ListStrategiesRequest(
             context=ctx,
             pagination=common_pb2.PaginationRequest(page=1, page_size=2),
         )
-        response = await strategy_servicer.ListStrategies(list_request, grpc_context)
+        response = await strategy_servicer.list_strategies(list_request, grpc_context)
 
         assert response.pagination.total_items == 5
         assert len(response.strategies) == 2
@@ -375,7 +349,7 @@ class TestStrategyVersionWorkflow:
             name="Versioned Strategy",
             dsl_code=VALID_STRATEGY_SEXPR,
         )
-        create_response = await strategy_servicer.CreateStrategy(create_request, grpc_context)
+        create_response = await strategy_servicer.create_strategy(create_request, grpc_context)
         strategy_id = create_response.strategy.id
         assert create_response.strategy.version == 1
 
@@ -389,7 +363,7 @@ class TestStrategyVersionWorkflow:
             strategy_id=strategy_id,
             dsl_code=updated_sexpr,
         )
-        update_response = await strategy_servicer.UpdateStrategy(update_request, grpc_context)
+        update_response = await strategy_servicer.update_strategy(update_request, grpc_context)
 
         assert update_response.strategy.version == 2
 
@@ -412,7 +386,7 @@ class TestStrategyVersionWorkflow:
             name="Multi-Version Strategy",
             dsl_code=VALID_STRATEGY_SEXPR,
         )
-        create_response = await strategy_servicer.CreateStrategy(create_request, grpc_context)
+        create_response = await strategy_servicer.create_strategy(create_request, grpc_context)
         strategy_id = create_response.strategy.id
 
         # Update twice
@@ -426,7 +400,7 @@ class TestStrategyVersionWorkflow:
                 strategy_id=strategy_id,
                 dsl_code=updated_sexpr,
             )
-            await strategy_servicer.UpdateStrategy(update_request, grpc_context)
+            await strategy_servicer.update_strategy(update_request, grpc_context)
 
         # List versions
         list_request = strategy_pb2.ListStrategyVersionsRequest(
@@ -434,7 +408,7 @@ class TestStrategyVersionWorkflow:
             strategy_id=strategy_id,
             pagination=common_pb2.PaginationRequest(page=1, page_size=20),
         )
-        response = await strategy_servicer.ListStrategyVersions(list_request, grpc_context)
+        response = await strategy_servicer.list_strategy_versions(list_request, grpc_context)
 
         assert len(response.versions) == 3
 
@@ -461,7 +435,7 @@ class TestStrategyTenantIsolation:
             name="Tenant A Strategy",
             dsl_code=VALID_STRATEGY_SEXPR,
         )
-        create_response = await strategy_servicer.CreateStrategy(create_request, grpc_context)
+        create_response = await strategy_servicer.create_strategy(create_request, grpc_context)
         strategy_id = create_response.strategy.id
 
         # Try to access as tenant B
@@ -473,10 +447,10 @@ class TestStrategyTenantIsolation:
             strategy_id=strategy_id,
         )
 
-        with pytest.raises(grpc.aio.AioRpcError) as exc_info:
-            await strategy_servicer.GetStrategy(get_request, MockServicerContext())
+        with pytest.raises(ConnectError) as exc_info:
+            await strategy_servicer.get_strategy(get_request, MockServicerContext())
 
-        assert exc_info.value.code() == grpc.StatusCode.NOT_FOUND
+        assert "NOT_FOUND" in str(exc_info.value.code)
 
     async def test_cannot_modify_other_tenant_strategy(
         self,
@@ -497,7 +471,7 @@ class TestStrategyTenantIsolation:
             name="Protected Strategy",
             dsl_code=VALID_STRATEGY_SEXPR,
         )
-        create_response = await strategy_servicer.CreateStrategy(create_request, grpc_context)
+        create_response = await strategy_servicer.create_strategy(create_request, grpc_context)
         strategy_id = create_response.strategy.id
 
         # Try to update as tenant B
@@ -510,10 +484,10 @@ class TestStrategyTenantIsolation:
             name="Hacked Strategy",
         )
 
-        with pytest.raises(grpc.aio.AioRpcError) as exc_info:
-            await strategy_servicer.UpdateStrategy(update_request, MockServicerContext())
+        with pytest.raises(ConnectError) as exc_info:
+            await strategy_servicer.update_strategy(update_request, MockServicerContext())
 
-        assert exc_info.value.code() == grpc.StatusCode.NOT_FOUND
+        assert "NOT_FOUND" in str(exc_info.value.code)
 
     async def test_cannot_delete_other_tenant_strategy(
         self,
@@ -534,7 +508,7 @@ class TestStrategyTenantIsolation:
             name="Cannot Delete This",
             dsl_code=VALID_STRATEGY_SEXPR,
         )
-        create_response = await strategy_servicer.CreateStrategy(create_request, grpc_context)
+        create_response = await strategy_servicer.create_strategy(create_request, grpc_context)
         strategy_id = create_response.strategy.id
 
         # Try to delete as tenant B
@@ -546,17 +520,17 @@ class TestStrategyTenantIsolation:
             strategy_id=strategy_id,
         )
 
-        with pytest.raises(grpc.aio.AioRpcError) as exc_info:
-            await strategy_servicer.DeleteStrategy(delete_request, MockServicerContext())
+        with pytest.raises(ConnectError) as exc_info:
+            await strategy_servicer.delete_strategy(delete_request, MockServicerContext())
 
-        assert exc_info.value.code() == grpc.StatusCode.NOT_FOUND
+        assert "NOT_FOUND" in str(exc_info.value.code)
 
         # Verify strategy still exists for tenant A
         get_request = strategy_pb2.GetStrategyRequest(
             context=ctx_a,
             strategy_id=strategy_id,
         )
-        get_response = await strategy_servicer.GetStrategy(get_request, grpc_context)
+        get_response = await strategy_servicer.get_strategy(get_request, grpc_context)
         assert get_response.strategy.id == strategy_id
 
     async def test_list_only_shows_own_tenant_strategies(
@@ -579,7 +553,7 @@ class TestStrategyTenantIsolation:
                 name=f"Tenant A Strategy {i+1}",
                 dsl_code=VALID_STRATEGY_SEXPR,
             )
-            await strategy_servicer.CreateStrategy(create_request, grpc_context)
+            await strategy_servicer.create_strategy(create_request, grpc_context)
 
         # Create strategy for tenant B
         auth_info_b = await register_and_login(auth_servicer, MockServicerContext())
@@ -590,14 +564,14 @@ class TestStrategyTenantIsolation:
             name="Tenant B Strategy",
             dsl_code=VALID_STRATEGY_SEXPR,
         )
-        await strategy_servicer.CreateStrategy(create_request, MockServicerContext())
+        await strategy_servicer.create_strategy(create_request, MockServicerContext())
 
         # List as tenant A - should see 2
         list_request_a = strategy_pb2.ListStrategiesRequest(
             context=ctx_a,
             pagination=common_pb2.PaginationRequest(page=1, page_size=20),
         )
-        response_a = await strategy_servicer.ListStrategies(list_request_a, grpc_context)
+        response_a = await strategy_servicer.list_strategies(list_request_a, grpc_context)
         assert response_a.pagination.total_items == 2
 
         # List as tenant B - should see 1
@@ -605,7 +579,7 @@ class TestStrategyTenantIsolation:
             context=ctx_b,
             pagination=common_pb2.PaginationRequest(page=1, page_size=20),
         )
-        response_b = await strategy_servicer.ListStrategies(list_request_b, MockServicerContext())
+        response_b = await strategy_servicer.list_strategies(list_request_b, MockServicerContext())
         assert response_b.pagination.total_items == 1
 
 
@@ -631,7 +605,7 @@ class TestStrategyStatusWorkflow:
             name="Activatable Strategy",
             dsl_code=VALID_STRATEGY_SEXPR,
         )
-        create_response = await strategy_servicer.CreateStrategy(create_request, grpc_context)
+        create_response = await strategy_servicer.create_strategy(create_request, grpc_context)
         strategy_id = create_response.strategy.id
         assert create_response.strategy.status == strategy_pb2.STRATEGY_STATUS_DRAFT
 
@@ -641,7 +615,7 @@ class TestStrategyStatusWorkflow:
             strategy_id=strategy_id,
             status=strategy_pb2.STRATEGY_STATUS_ACTIVE,
         )
-        response = await strategy_servicer.UpdateStrategyStatus(status_request, grpc_context)
+        response = await strategy_servicer.update_strategy_status(status_request, grpc_context)
 
         assert response.strategy.status == strategy_pb2.STRATEGY_STATUS_ACTIVE
 
@@ -664,11 +638,11 @@ class TestStrategyStatusWorkflow:
             name="Pausable Strategy",
             dsl_code=VALID_STRATEGY_SEXPR,
         )
-        create_response = await strategy_servicer.CreateStrategy(create_request, grpc_context)
+        create_response = await strategy_servicer.create_strategy(create_request, grpc_context)
         strategy_id = create_response.strategy.id
 
         # Activate first
-        await strategy_servicer.UpdateStrategyStatus(
+        await strategy_servicer.update_strategy_status(
             strategy_pb2.UpdateStrategyStatusRequest(
                 context=ctx,
                 strategy_id=strategy_id,
@@ -678,7 +652,7 @@ class TestStrategyStatusWorkflow:
         )
 
         # Pause
-        response = await strategy_servicer.UpdateStrategyStatus(
+        response = await strategy_servicer.update_strategy_status(
             strategy_pb2.UpdateStrategyStatusRequest(
                 context=ctx,
                 strategy_id=strategy_id,
@@ -708,7 +682,7 @@ class TestStrategyStatusWorkflow:
             name="Deletable Strategy",
             dsl_code=VALID_STRATEGY_SEXPR,
         )
-        create_response = await strategy_servicer.CreateStrategy(create_request, grpc_context)
+        create_response = await strategy_servicer.create_strategy(create_request, grpc_context)
         strategy_id = create_response.strategy.id
 
         # Delete
@@ -716,7 +690,7 @@ class TestStrategyStatusWorkflow:
             context=ctx,
             strategy_id=strategy_id,
         )
-        delete_response = await strategy_servicer.DeleteStrategy(delete_request, grpc_context)
+        delete_response = await strategy_servicer.delete_strategy(delete_request, grpc_context)
 
         assert delete_response.success is True
 
@@ -725,7 +699,7 @@ class TestStrategyStatusWorkflow:
             context=ctx,
             pagination=common_pb2.PaginationRequest(page=1, page_size=20),
         )
-        list_response = await strategy_servicer.ListStrategies(list_request, grpc_context)
+        list_response = await strategy_servicer.list_strategies(list_request, grpc_context)
 
         strategy_ids = [s.id for s in list_response.strategies]
         assert strategy_id not in strategy_ids
@@ -748,7 +722,7 @@ class TestStrategyValidation:
             validate_only=True,
         )
 
-        response = await strategy_servicer.CompileStrategy(request, grpc_context)
+        response = await strategy_servicer.compile_strategy(request, grpc_context)
 
         assert response.result.success is True
         assert len(response.result.errors) == 0
@@ -767,7 +741,7 @@ class TestStrategyValidation:
             validate_only=True,
         )
 
-        response = await strategy_servicer.CompileStrategy(request, grpc_context)
+        response = await strategy_servicer.compile_strategy(request, grpc_context)
 
         assert response.result.success is False
         assert len(response.result.errors) > 0

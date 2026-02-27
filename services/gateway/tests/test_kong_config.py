@@ -124,7 +124,9 @@ class TestUpstreamConfiguration:
         for upstream in kong_config["upstreams"]:
             # Only check HTTP upstreams (gRPC health checks work differently)
             if "-http-upstream" in upstream["name"]:
-                assert "healthchecks" in upstream, f"HTTP upstream {upstream['name']} missing healthchecks"
+                assert "healthchecks" in upstream, (
+                    f"HTTP upstream {upstream['name']} missing healthchecks"
+                )
 
     def test_upstream_targets_have_valid_format(self, kong_config):
         """Test that upstream targets have host:port format."""

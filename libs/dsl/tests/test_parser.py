@@ -1,7 +1,6 @@
 """Tests for S-expression parser."""
 
 import pytest
-
 from llamatrade_dsl.ast import FunctionCall, Keyword, Literal, Symbol
 from llamatrade_dsl.parser import ParseError, parse, parse_strategy
 

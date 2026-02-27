@@ -185,7 +185,9 @@ def auth_context(context):
     return MockRequestContext(headers={"authorization": f"Bearer {token}"})
 
 
-def create_test_token(user_id: str, tenant_id: str, token_type: str = "access", expired: bool = False):
+def create_test_token(
+    user_id: str, tenant_id: str, token_type: str = "access", expired: bool = False
+):
     """Create a test JWT token."""
     now = datetime.now(UTC)
     if expired:

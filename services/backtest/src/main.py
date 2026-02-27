@@ -26,6 +26,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # Mount Connect ASGI app
     try:
         from llamatrade.v1.backtest_connect import BacktestServiceASGIApplication
+
         from src.grpc.servicer import BacktestServicer
 
         servicer = BacktestServicer()

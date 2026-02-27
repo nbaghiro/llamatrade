@@ -2,7 +2,6 @@
 
 import pytest
 from llamatrade_dsl import parse_strategy
-
 from src.compiler.extractor import (
     IndicatorSpec,
     extract_indicators,

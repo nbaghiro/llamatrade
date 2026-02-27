@@ -8,17 +8,22 @@ requires-python = ">=3.12"
 [tool.ruff]
 line-length = 100
 target-version = "py312"
+extend-exclude = [
+    "libs/grpc/llamatrade",
+    "services/*/src/grpc",
+]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "N", "W", "UP"]
-ignore = ["E501"]
+ignore = ["E501", "UP036"]
 
 [tool.ruff.lint.per-file-ignores]
 # Generated protobuf files use uppercase method names (HasField, ClearField, etc.)
-"libs/grpc/llamatrade_grpc/generated/**" = ["N802", "N803", "UP036"]
-"libs/grpc/llamatrade/**" = ["N802", "N803", "UP036", "E501"]
-# gRPC servicers follow protocol naming (PascalCase methods)
-"services/*/src/grpc/servicer.py" = ["N802", "N803", "F821", "F841"]
+"libs/grpc/llamatrade_grpc/generated/**" = ["N802", "N803", "UP036", "E501"]
+"libs/grpc/llamatrade/**/*.py" = ["N802", "N803", "UP036", "E501"]
+"libs/grpc/llamatrade/**/*.pyi" = ["N802", "N803", "UP036", "E501"]
+# gRPC/Connect servicers follow protocol naming (PascalCase methods) and have inline imports
+"services/*/src/grpc/*.py" = ["N802", "N803", "F821", "F841", "E402", "E501"]
 
 [tool.mypy]
 python_version = "3.12"
@@ -30,7 +35,7 @@ disallow_untyped_decorators = false  # Allow FastAPI decorators
 warn_return_any = true
 warn_unused_ignores = true
 show_error_codes = true
-exclude = ["tests", "venv", ".venv", "libs/grpc/llamatrade", "services/*/src/grpc"]
+exclude = ["tests", "venv", ".venv", "libs/grpc/llamatrade", "services/.*/src/grpc"]
 plugins = ["pydantic.mypy"]
 
 [tool.pydantic-mypy]

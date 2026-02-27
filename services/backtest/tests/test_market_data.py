@@ -28,17 +28,19 @@ class TestMarketDataClientForBacktest:
             Bar(
                 symbol="AAPL",
                 timestamp=datetime(2024, 1, 2 + i, 9, 30),
-                open=Decimal(str(o)),
-                high=Decimal(str(h)),
-                low=Decimal(str(l)),
-                close=Decimal(str(c)),
-                volume=v,
+                open=Decimal(str(open_)),
+                high=Decimal(str(high)),
+                low=Decimal(str(low)),
+                close=Decimal(str(close)),
+                volume=vol,
             )
-            for i, (o, h, l, c, v) in enumerate([
-                (100.0, 105.0, 99.0, 104.0, 10000),
-                (104.0, 108.0, 103.0, 107.0, 12000),
-                (107.0, 110.0, 106.0, 109.0, 15000),
-            ])
+            for i, (open_, high, low, close, vol) in enumerate(
+                [
+                    (100.0, 105.0, 99.0, 104.0, 10000),
+                    (104.0, 108.0, 103.0, 107.0, 12000),
+                    (107.0, 110.0, 106.0, 109.0, 15000),
+                ]
+            )
         ]
         mock_client.get_historical_bars.return_value = mock_bars
 

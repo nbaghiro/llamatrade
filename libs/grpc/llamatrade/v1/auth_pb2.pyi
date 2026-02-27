@@ -3,19 +3,21 @@
 isort:skip_file
 """
 
-from collections import abc as abc
-from google.protobuf import descriptor as descriptor
-from google.protobuf import message as message
-from google.protobuf.internal import containers as containers
-from llamatrade.v1 import common_pb2 as common_pb2
 import builtins as builtins
 import sys
 import typing as typing
+from collections import abc as abc
+
+from google.protobuf import descriptor as descriptor
+from google.protobuf import message as message
+from google.protobuf.internal import containers as containers
+
+from llamatrade.v1 import common_pb2 as common_pb2
 
 if sys.version_info >= (3, 10):
-    from typing import TypeAlias as _TypeAlias
+    pass
 else:
-    from typing_extensions import TypeAlias as _TypeAlias
+    pass
 
 DESCRIPTOR: descriptor.FileDescriptor
 
@@ -64,9 +66,9 @@ class User(message.Message):
         created_at: common_pb2.Timestamp | None = ...,
         last_login: common_pb2.Timestamp | None = ...,
     ) -> None: ...
-    _HasFieldArgType: _TypeAlias = typing.Literal["created_at", b"created_at", "last_login", b"last_login"]  # noqa: Y015
+    type _HasFieldArgType = typing.Literal["created_at", b"created_at", "last_login", b"last_login"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal["created_at", b"created_at", "email", b"email", "first_name", b"first_name", "id", b"id", "is_active", b"is_active", "last_login", b"last_login", "last_name", b"last_name", "roles", b"roles", "tenant_id", b"tenant_id"]  # noqa: Y015
+    type _ClearFieldArgType = typing.Literal["created_at", b"created_at", "email", b"email", "first_name", b"first_name", "id", b"id", "is_active", b"is_active", "last_login", b"last_login", "last_name", b"last_name", "roles", b"roles", "tenant_id", b"tenant_id"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -89,7 +91,7 @@ class Tenant(message.Message):
             key: builtins.str = ...,
             value: builtins.str = ...,
         ) -> None: ...
-        _ClearFieldArgType: _TypeAlias = typing.Literal["key", b"key", "value", b"value"]  # noqa: Y015
+        type _ClearFieldArgType = typing.Literal["key", b"key", "value", b"value"]  # noqa: Y015
         def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
     ID_FIELD_NUMBER: builtins.int
@@ -116,9 +118,9 @@ class Tenant(message.Message):
         created_at: common_pb2.Timestamp | None = ...,
         settings: abc.Mapping[builtins.str, builtins.str] | None = ...,
     ) -> None: ...
-    _HasFieldArgType: _TypeAlias = typing.Literal["created_at", b"created_at"]  # noqa: Y015
+    type _HasFieldArgType = typing.Literal["created_at", b"created_at"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal["created_at", b"created_at", "id", b"id", "is_active", b"is_active", "name", b"name", "plan_id", b"plan_id", "settings", b"settings"]  # noqa: Y015
+    type _ClearFieldArgType = typing.Literal["created_at", b"created_at", "id", b"id", "is_active", b"is_active", "name", b"name", "plan_id", b"plan_id", "settings", b"settings"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -163,9 +165,9 @@ class APIKey(message.Message):
         last_used_at: common_pb2.Timestamp | None = ...,
         is_active: builtins.bool = ...,
     ) -> None: ...
-    _HasFieldArgType: _TypeAlias = typing.Literal["created_at", b"created_at", "expires_at", b"expires_at", "last_used_at", b"last_used_at"]  # noqa: Y015
+    type _HasFieldArgType = typing.Literal["created_at", b"created_at", "expires_at", b"expires_at", "last_used_at", b"last_used_at"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal["created_at", b"created_at", "expires_at", b"expires_at", "id", b"id", "is_active", b"is_active", "last_used_at", b"last_used_at", "name", b"name", "prefix", b"prefix", "scopes", b"scopes", "tenant_id", b"tenant_id"]  # noqa: Y015
+    type _ClearFieldArgType = typing.Literal["created_at", b"created_at", "expires_at", b"expires_at", "id", b"id", "is_active", b"is_active", "last_used_at", b"last_used_at", "name", b"name", "prefix", b"prefix", "scopes", b"scopes", "tenant_id", b"tenant_id"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -186,7 +188,7 @@ class ValidateTokenRequest(message.Message):
         *,
         token: builtins.str = ...,
     ) -> None: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal["token", b"token"]  # noqa: Y015
+    type _ClearFieldArgType = typing.Literal["token", b"token"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -212,9 +214,9 @@ class ValidateTokenResponse(message.Message):
         expires_at: common_pb2.Timestamp | None = ...,
         token_type: builtins.str = ...,
     ) -> None: ...
-    _HasFieldArgType: _TypeAlias = typing.Literal["context", b"context", "expires_at", b"expires_at"]  # noqa: Y015
+    type _HasFieldArgType = typing.Literal["context", b"context", "expires_at", b"expires_at"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal["context", b"context", "expires_at", b"expires_at", "token_type", b"token_type", "valid", b"valid"]  # noqa: Y015
+    type _ClearFieldArgType = typing.Literal["context", b"context", "expires_at", b"expires_at", "token_type", b"token_type", "valid", b"valid"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -234,7 +236,7 @@ class ValidateAPIKeyRequest(message.Message):
         api_key: builtins.str = ...,
         required_scopes: abc.Iterable[builtins.str] | None = ...,
     ) -> None: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal["api_key", b"api_key", "required_scopes", b"required_scopes"]  # noqa: Y015
+    type _ClearFieldArgType = typing.Literal["api_key", b"api_key", "required_scopes", b"required_scopes"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -260,9 +262,9 @@ class ValidateAPIKeyResponse(message.Message):
         granted_scopes: abc.Iterable[builtins.str] | None = ...,
         key_info: APIKey | None = ...,
     ) -> None: ...
-    _HasFieldArgType: _TypeAlias = typing.Literal["context", b"context", "key_info", b"key_info"]  # noqa: Y015
+    type _HasFieldArgType = typing.Literal["context", b"context", "key_info", b"key_info"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal["context", b"context", "granted_scopes", b"granted_scopes", "key_info", b"key_info", "valid", b"valid"]  # noqa: Y015
+    type _ClearFieldArgType = typing.Literal["context", b"context", "granted_scopes", b"granted_scopes", "key_info", b"key_info", "valid", b"valid"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -278,7 +280,7 @@ class GetUserRequest(message.Message):
         *,
         user_id: builtins.str = ...,
     ) -> None: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal["user_id", b"user_id"]  # noqa: Y015
+    type _ClearFieldArgType = typing.Literal["user_id", b"user_id"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -293,9 +295,9 @@ class GetUserResponse(message.Message):
         *,
         user: User | None = ...,
     ) -> None: ...
-    _HasFieldArgType: _TypeAlias = typing.Literal["user", b"user"]  # noqa: Y015
+    type _HasFieldArgType = typing.Literal["user", b"user"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal["user", b"user"]  # noqa: Y015
+    type _ClearFieldArgType = typing.Literal["user", b"user"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -311,7 +313,7 @@ class GetTenantRequest(message.Message):
         *,
         tenant_id: builtins.str = ...,
     ) -> None: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal["tenant_id", b"tenant_id"]  # noqa: Y015
+    type _ClearFieldArgType = typing.Literal["tenant_id", b"tenant_id"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -326,9 +328,9 @@ class GetTenantResponse(message.Message):
         *,
         tenant: Tenant | None = ...,
     ) -> None: ...
-    _HasFieldArgType: _TypeAlias = typing.Literal["tenant", b"tenant"]  # noqa: Y015
+    type _HasFieldArgType = typing.Literal["tenant", b"tenant"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal["tenant", b"tenant"]  # noqa: Y015
+    type _ClearFieldArgType = typing.Literal["tenant", b"tenant"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -351,9 +353,9 @@ class CheckPermissionRequest(message.Message):
         resource: builtins.str = ...,
         action: builtins.str = ...,
     ) -> None: ...
-    _HasFieldArgType: _TypeAlias = typing.Literal["context", b"context"]  # noqa: Y015
+    type _HasFieldArgType = typing.Literal["context", b"context"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal["action", b"action", "context", b"context", "resource", b"resource"]  # noqa: Y015
+    type _ClearFieldArgType = typing.Literal["action", b"action", "context", b"context", "resource", b"resource"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -370,7 +372,7 @@ class CheckPermissionResponse(message.Message):
         allowed: builtins.bool = ...,
         reason: builtins.str = ...,
     ) -> None: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal["allowed", b"allowed", "reason", b"reason"]  # noqa: Y015
+    type _ClearFieldArgType = typing.Literal["allowed", b"allowed", "reason", b"reason"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -386,7 +388,7 @@ class RefreshTokenRequest(message.Message):
         *,
         refresh_token: builtins.str = ...,
     ) -> None: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal["refresh_token", b"refresh_token"]  # noqa: Y015
+    type _ClearFieldArgType = typing.Literal["refresh_token", b"refresh_token"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -411,9 +413,9 @@ class RefreshTokenResponse(message.Message):
         access_token_expires_at: common_pb2.Timestamp | None = ...,
         refresh_token_expires_at: common_pb2.Timestamp | None = ...,
     ) -> None: ...
-    _HasFieldArgType: _TypeAlias = typing.Literal["access_token_expires_at", b"access_token_expires_at", "refresh_token_expires_at", b"refresh_token_expires_at"]  # noqa: Y015
+    type _HasFieldArgType = typing.Literal["access_token_expires_at", b"access_token_expires_at", "refresh_token_expires_at", b"refresh_token_expires_at"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal["access_token", b"access_token", "access_token_expires_at", b"access_token_expires_at", "refresh_token", b"refresh_token", "refresh_token_expires_at", b"refresh_token_expires_at"]  # noqa: Y015
+    type _ClearFieldArgType = typing.Literal["access_token", b"access_token", "access_token_expires_at", b"access_token_expires_at", "refresh_token", b"refresh_token", "refresh_token_expires_at", b"refresh_token_expires_at"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -432,7 +434,7 @@ class LoginRequest(message.Message):
         email: builtins.str = ...,
         password: builtins.str = ...,
     ) -> None: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal["email", b"email", "password", b"password"]  # noqa: Y015
+    type _ClearFieldArgType = typing.Literal["email", b"email", "password", b"password"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -461,9 +463,9 @@ class LoginResponse(message.Message):
         access_token_expires_at: common_pb2.Timestamp | None = ...,
         refresh_token_expires_at: common_pb2.Timestamp | None = ...,
     ) -> None: ...
-    _HasFieldArgType: _TypeAlias = typing.Literal["access_token_expires_at", b"access_token_expires_at", "refresh_token_expires_at", b"refresh_token_expires_at", "user", b"user"]  # noqa: Y015
+    type _HasFieldArgType = typing.Literal["access_token_expires_at", b"access_token_expires_at", "refresh_token_expires_at", b"refresh_token_expires_at", "user", b"user"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal["access_token", b"access_token", "access_token_expires_at", b"access_token_expires_at", "refresh_token", b"refresh_token", "refresh_token_expires_at", b"refresh_token_expires_at", "user", b"user"]  # noqa: Y015
+    type _ClearFieldArgType = typing.Literal["access_token", b"access_token", "access_token_expires_at", b"access_token_expires_at", "refresh_token", b"refresh_token", "refresh_token_expires_at", b"refresh_token_expires_at", "user", b"user"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -491,7 +493,7 @@ class RegisterRequest(message.Message):
         first_name: builtins.str = ...,
         last_name: builtins.str = ...,
     ) -> None: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal["email", b"email", "first_name", b"first_name", "last_name", b"last_name", "password", b"password", "tenant_name", b"tenant_name"]  # noqa: Y015
+    type _ClearFieldArgType = typing.Literal["email", b"email", "first_name", b"first_name", "last_name", b"last_name", "password", b"password", "tenant_name", b"tenant_name"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -513,9 +515,9 @@ class RegisterResponse(message.Message):
         tenant: Tenant | None = ...,
         message: builtins.str = ...,
     ) -> None: ...
-    _HasFieldArgType: _TypeAlias = typing.Literal["tenant", b"tenant", "user", b"user"]  # noqa: Y015
+    type _HasFieldArgType = typing.Literal["tenant", b"tenant", "user", b"user"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal["message", b"message", "tenant", b"tenant", "user", b"user"]  # noqa: Y015
+    type _ClearFieldArgType = typing.Literal["message", b"message", "tenant", b"tenant", "user", b"user"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -546,9 +548,9 @@ class GetCurrentUserResponse(message.Message):
         user: User | None = ...,
         tenant: Tenant | None = ...,
     ) -> None: ...
-    _HasFieldArgType: _TypeAlias = typing.Literal["tenant", b"tenant", "user", b"user"]  # noqa: Y015
+    type _HasFieldArgType = typing.Literal["tenant", b"tenant", "user", b"user"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal["tenant", b"tenant", "user", b"user"]  # noqa: Y015
+    type _ClearFieldArgType = typing.Literal["tenant", b"tenant", "user", b"user"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -574,7 +576,7 @@ class LogoutResponse(message.Message):
         *,
         success: builtins.bool = ...,
     ) -> None: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal["success", b"success"]  # noqa: Y015
+    type _ClearFieldArgType = typing.Literal["success", b"success"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -594,7 +596,7 @@ class ChangePasswordRequest(message.Message):
         current_password: builtins.str = ...,
         new_password: builtins.str = ...,
     ) -> None: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal["current_password", b"current_password", "new_password", b"new_password"]  # noqa: Y015
+    type _ClearFieldArgType = typing.Literal["current_password", b"current_password", "new_password", b"new_password"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -611,5 +613,5 @@ class ChangePasswordResponse(message.Message):
         success: builtins.bool = ...,
         message: builtins.str = ...,
     ) -> None: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal["message", b"message", "success", b"success"]  # noqa: Y015
+    type _ClearFieldArgType = typing.Literal["message", b"message", "success", b"success"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...

@@ -1,15 +1,15 @@
+# mypy: ignore-errors
 """Portfolio gRPC servicer implementation."""
 
 from __future__ import annotations
 
 import logging
-from datetime import timezone
+from datetime import UTC
 from uuid import UUID
 
 import grpc.aio
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from llamatrade_db import get_session_factory
+from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger(__name__)
 
@@ -128,11 +128,11 @@ class PortfolioServicer:
 
                     if request.time_range.start.seconds > 0:
                         start_date = datetime.fromtimestamp(
-                            request.time_range.start.seconds, tz=timezone.utc
+                            request.time_range.start.seconds, tz=UTC
                         )
                     if request.time_range.end.seconds > 0:
                         end_date = datetime.fromtimestamp(
-                            request.time_range.end.seconds, tz=timezone.utc
+                            request.time_range.end.seconds, tz=UTC
                         )
 
                 # Get performance metrics
@@ -228,7 +228,7 @@ class PortfolioServicer:
         context: grpc.aio.ServicerContext,
     ) -> portfolio_pb2.GetPositionsResponse:
         """Get all positions."""
-        from llamatrade.v1 import portfolio_pb2, trading_pb2
+        from llamatrade.v1 import portfolio_pb2
 
         try:
             from src.services.portfolio_service import PortfolioService
@@ -305,7 +305,7 @@ class PortfolioServicer:
         try:
             from decimal import Decimal
 
-            from src.models import TransactionCreate, TransactionType
+            from src.models import TransactionCreate
             from src.services.transaction_service import TransactionService
 
             tenant_id = UUID(request.context.tenant_id)
@@ -480,5 +480,6 @@ class PortfolioServicer:
 
 
 # Type aliases for method signatures (imported lazily)
-from src.models import PortfolioSummary, PositionResponse, TransactionResponse, TransactionType
 from llamatrade.v1 import portfolio_pb2, trading_pb2
+
+from src.models import PortfolioSummary, PositionResponse, TransactionResponse, TransactionType

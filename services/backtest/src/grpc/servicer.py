@@ -6,15 +6,16 @@ import asyncio
 import logging
 from datetime import UTC, date, datetime
 from decimal import Decimal
+from collections.abc import AsyncIterator
+from typing import Any
 from uuid import UUID
 
-from typing import Any
-
 import grpc.aio
+from llamatrade.v1 import backtest_pb2
 from llamatrade_db import get_session_maker
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from llamatrade.v1 import backtest_pb2
+from src.models import BacktestResponse
 from src.services.backtest_service import BacktestService
 
 logger = logging.getLogger(__name__)
@@ -112,6 +113,7 @@ class BacktestServicer:
                         grpc.StatusCode.NOT_FOUND,
                         f"Backtest not found: {request.backtest_id}",
                     )
+                    return backtest_pb2.GetBacktestResponse()  # Never reached
 
                 return backtest_pb2.GetBacktestResponse(
                     backtest=self._to_proto_backtest(backtest),
@@ -212,11 +214,19 @@ class BacktestServicer:
                         grpc.StatusCode.FAILED_PRECONDITION,
                         "Cannot cancel backtest",
                     )
+                    return backtest_pb2.CancelBacktestResponse()  # Never reached
 
                 backtest = await service.get_backtest(
                     backtest_id=backtest_id,
                     tenant_id=tenant_id,
                 )
+
+                if not backtest:
+                    await context.abort(
+                        grpc.StatusCode.NOT_FOUND,
+                        f"Backtest not found: {backtest_id}",
+                    )
+                    return backtest_pb2.CancelBacktestResponse()  # Never reached
 
                 return backtest_pb2.CancelBacktestResponse(
                     backtest=self._to_proto_backtest(backtest),
@@ -235,7 +245,7 @@ class BacktestServicer:
         self,
         request: backtest_pb2.StreamBacktestProgressRequest,
         context: grpc.aio.ServicerContext,
-    ):
+    ) -> AsyncIterator[backtest_pb2.BacktestProgressUpdate]:
         """Stream backtest progress updates via Redis pub/sub."""
         from llamatrade.v1 import backtest_pb2, common_pb2
 

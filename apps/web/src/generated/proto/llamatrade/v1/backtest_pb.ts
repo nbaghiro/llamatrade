@@ -927,4 +927,3 @@ export const BacktestService: GenService<{
   },
 }> = /*@__PURE__*/
   serviceDesc(file_llamatrade_v1_backtest, 0);
-

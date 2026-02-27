@@ -330,4 +330,3 @@ export enum SortDirection {
  */
 export const SortDirectionSchema: GenEnum<SortDirection> = /*@__PURE__*/
   enumDesc(file_llamatrade_v1_common, 0);
-

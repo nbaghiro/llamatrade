@@ -4,8 +4,6 @@ import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from websockets.protocol import State
-
 from src.streaming.alpaca_stream import (
     AlpacaStreamClient,
     StreamConfig,
@@ -13,6 +11,7 @@ from src.streaming.alpaca_stream import (
     get_alpaca_stream,
     init_alpaca_stream,
 )
+from websockets.protocol import State
 
 
 @pytest.fixture

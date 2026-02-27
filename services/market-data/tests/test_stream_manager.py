@@ -4,7 +4,6 @@ import asyncio
 from unittest.mock import MagicMock
 
 import pytest
-
 from src.streaming.manager import (
     StreamManager,
     StreamMessage,

@@ -950,4 +950,3 @@ export const NotificationService: GenService<{
   },
 }> = /*@__PURE__*/
   serviceDesc(file_llamatrade_v1_notification, 0);
-

@@ -2,7 +2,6 @@
 
 import numpy as np
 import pytest
-
 from src.compiler.extractor import IndicatorSpec
 from src.compiler.pipeline import (
     PriceData,

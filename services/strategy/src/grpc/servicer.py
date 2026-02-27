@@ -4,15 +4,13 @@ from __future__ import annotations
 
 import json
 import logging
-from uuid import UUID
-
 from typing import Any
+from uuid import UUID
 
 from connectrpc.code import Code
 from connectrpc.errors import ConnectError
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from llamatrade.v1 import common_pb2, strategy_pb2
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.models import (
     StrategyDetailResponse,
@@ -24,6 +22,39 @@ from src.models import (
 from src.services.database import get_session_maker
 
 logger = logging.getLogger(__name__)
+
+# Nil UUID used to detect missing/invalid context
+_NIL_UUID = UUID("00000000-0000-0000-0000-000000000000")
+
+
+def _validate_tenant_context(context: common_pb2.TenantContext) -> tuple[UUID, UUID]:
+    """Validate and extract tenant_id and user_id from context.
+
+    Raises:
+        ConnectError: If context is invalid (empty or nil UUIDs)
+    """
+    if not context.tenant_id or not context.user_id:
+        raise ConnectError(
+            Code.UNAUTHENTICATED,
+            "Valid tenant context is required",
+        )
+
+    try:
+        tenant_id = UUID(context.tenant_id)
+        user_id = UUID(context.user_id)
+    except ValueError as e:
+        raise ConnectError(
+            Code.INVALID_ARGUMENT,
+            f"Invalid UUID in context: {e}",
+        )
+
+    if tenant_id == _NIL_UUID or user_id == _NIL_UUID:
+        raise ConnectError(
+            Code.UNAUTHENTICATED,
+            "Valid tenant context is required (nil UUID not allowed)",
+        )
+
+    return tenant_id, user_id
 
 
 class StrategyServicer:
@@ -51,7 +82,7 @@ class StrategyServicer:
         """Get a strategy by ID."""
         from src.services.strategy_service import StrategyService
 
-        tenant_id = UUID(request.context.tenant_id)
+        tenant_id, _ = _validate_tenant_context(request.context)
         strategy_id = UUID(request.strategy_id)
 
         async with await self._get_db() as db:
@@ -87,7 +118,7 @@ class StrategyServicer:
         """List strategies for a tenant."""
         from src.services.strategy_service import StrategyService
 
-        tenant_id = UUID(request.context.tenant_id)
+        tenant_id, _ = _validate_tenant_context(request.context)
 
         # Map status filters
         status = None
@@ -135,8 +166,7 @@ class StrategyServicer:
         from src.models import StrategyCreate
         from src.services.strategy_service import StrategyService
 
-        tenant_id = UUID(request.context.tenant_id)
-        user_id = UUID(request.context.user_id)
+        tenant_id, user_id = _validate_tenant_context(request.context)
 
         # Map proto to internal create model
         create_data = StrategyCreate(
@@ -169,8 +199,7 @@ class StrategyServicer:
         from src.models import StrategyUpdate
         from src.services.strategy_service import StrategyService
 
-        tenant_id = UUID(request.context.tenant_id)
-        user_id = UUID(request.context.user_id)
+        tenant_id, user_id = _validate_tenant_context(request.context)
         strategy_id = UUID(request.strategy_id)
 
         # Build update data
@@ -210,7 +239,7 @@ class StrategyServicer:
         """Delete (archive) a strategy."""
         from src.services.strategy_service import StrategyService
 
-        tenant_id = UUID(request.context.tenant_id)
+        tenant_id, _ = _validate_tenant_context(request.context)
         strategy_id = UUID(request.strategy_id)
 
         async with await self._get_db() as db:
@@ -286,7 +315,7 @@ class StrategyServicer:
         """Validate an existing strategy."""
         from src.services.strategy_service import StrategyService
 
-        tenant_id = UUID(request.context.tenant_id)
+        tenant_id, _ = _validate_tenant_context(request.context)
         strategy_id = UUID(request.strategy_id)
 
         async with await self._get_db() as db:
@@ -340,7 +369,7 @@ class StrategyServicer:
         """List versions of a strategy."""
         from src.services.strategy_service import StrategyService
 
-        tenant_id = UUID(request.context.tenant_id)
+        tenant_id, _ = _validate_tenant_context(request.context)
         strategy_id = UUID(request.strategy_id)
 
         page = request.pagination.page if request.HasField("pagination") else 1
@@ -379,7 +408,7 @@ class StrategyServicer:
         from src.models import StrategyUpdate
         from src.services.strategy_service import StrategyService
 
-        tenant_id = UUID(request.context.tenant_id)
+        tenant_id, user_id = _validate_tenant_context(request.context)
         strategy_id = UUID(request.strategy_id)
 
         status = self._from_proto_status(request.status)
@@ -399,7 +428,7 @@ class StrategyServicer:
                 # For other statuses, use update
                 strategy = await service.update_strategy(
                     tenant_id=tenant_id,
-                    user_id=UUID(request.context.user_id),
+                    user_id=user_id,
                     strategy_id=strategy_id,
                     data=StrategyUpdate(status=status),
                 )

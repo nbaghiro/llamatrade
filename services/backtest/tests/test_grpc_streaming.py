@@ -1,10 +1,8 @@
 """Tests for gRPC streaming in backtest service."""
 
 import json
-from datetime import UTC, datetime
 
 import pytest
-
 from src.models import BacktestStatus
 from src.progress import ProgressUpdate
 

@@ -15,7 +15,7 @@ class MarketDataClient:
             base_url: Base URL for the market-data service
             timeout: Request timeout in seconds
         """
-        self.base_url = base_url or os.getenv("MARKET_DATA_URL", "http://localhost:8840")
+        self.base_url: str = base_url or os.getenv("MARKET_DATA_URL", "http://localhost:8840") or ""
         self.timeout = timeout
         self._client: httpx.AsyncClient | None = None
 

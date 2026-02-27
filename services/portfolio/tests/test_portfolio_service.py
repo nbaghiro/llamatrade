@@ -4,7 +4,6 @@ from unittest.mock import AsyncMock, MagicMock
 from uuid import UUID
 
 import pytest
-
 from src.services.portfolio_service import PortfolioService
 
 TEST_TENANT_ID = UUID("11111111-1111-1111-1111-111111111111")

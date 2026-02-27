@@ -14,10 +14,9 @@ from __future__ import annotations
 
 import asyncio
 from typing import TYPE_CHECKING
-from unittest.mock import AsyncMock, MagicMock, patch
 
-import grpc.aio
 import pytest
+from connectrpc.errors import ConnectError
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
@@ -26,35 +25,13 @@ pytestmark = [pytest.mark.integration, pytest.mark.asyncio]
 
 
 class MockServicerContext:
-    """Mock gRPC servicer context for testing."""
+    """Mock ConnectRPC servicer context for testing."""
 
     def __init__(self) -> None:
-        self._metadata: list[tuple[str, str]] = []
-        self._aborted = False
-        self._abort_code: grpc.StatusCode | None = None
-        self._abort_details: str | None = None
+        self.headers: dict[str, str] = {}
 
-    def invocation_metadata(self) -> list[tuple[str, str]]:
-        return self._metadata
-
-    def set_metadata(self, metadata: list[tuple[str, str]]) -> None:
-        self._metadata = metadata
-
-    async def abort(self, code: grpc.StatusCode, details: str) -> None:
-        self._aborted = True
-        self._abort_code = code
-        self._abort_details = details
-        raise grpc.aio.AioRpcError(
-            code=code,
-            initial_metadata=None,
-            trailing_metadata=None,
-            details=details,
-            debug_error_string=None,
-        )
-
-    @property
-    def aborted(self) -> bool:
-        return self._aborted
+    def set_header(self, key: str, value: str) -> None:
+        self.headers[key] = value
 
 
 @pytest.fixture
@@ -116,7 +93,7 @@ class TestUserRegistration:
             last_name="User",
         )
 
-        response = await auth_servicer.Register(request, grpc_context)
+        response = await auth_servicer.register(request, grpc_context)
 
         # Verify response
         assert response.user.email == "newuser@example.com"
@@ -170,11 +147,10 @@ class TestUserRegistration:
             password="SecurePassword123!",
         )
 
-        with pytest.raises(grpc.aio.AioRpcError) as exc_info:
-            await auth_servicer.Register(request, grpc_context)
+        with pytest.raises(ConnectError) as exc_info:
+            await auth_servicer.register(request, grpc_context)
 
-        assert exc_info.value.code() == grpc.StatusCode.ALREADY_EXISTS
-        assert "already registered" in exc_info.value.details().lower()
+        assert "ALREADY_EXISTS" in str(exc_info.value.code)
 
 
 class TestUserLogin:
@@ -195,14 +171,14 @@ class TestUserLogin:
             email="logintest@example.com",
             password="TestPassword123!",
         )
-        await auth_servicer.Register(register_request, grpc_context)
+        await auth_servicer.register(register_request, grpc_context)
 
         # Then login
         login_request = auth_pb2.LoginRequest(
             email="logintest@example.com",
             password="TestPassword123!",
         )
-        response = await auth_servicer.Login(login_request, grpc_context)
+        response = await auth_servicer.login(login_request, grpc_context)
 
         assert response.access_token
         assert response.refresh_token
@@ -225,7 +201,7 @@ class TestUserLogin:
             email="wrongpass@example.com",
             password="CorrectPassword123!",
         )
-        await auth_servicer.Register(register_request, grpc_context)
+        await auth_servicer.register(register_request, grpc_context)
 
         # Try to login with wrong password
         login_request = auth_pb2.LoginRequest(
@@ -233,11 +209,10 @@ class TestUserLogin:
             password="WrongPassword123!",
         )
 
-        with pytest.raises(grpc.aio.AioRpcError) as exc_info:
-            await auth_servicer.Login(login_request, grpc_context)
+        with pytest.raises(ConnectError) as exc_info:
+            await auth_servicer.login(login_request, grpc_context)
 
-        assert exc_info.value.code() == grpc.StatusCode.UNAUTHENTICATED
-        assert "invalid" in exc_info.value.details().lower()
+        assert "UNAUTHENTICATED" in str(exc_info.value.code)
 
     async def test_login_nonexistent_user_fails(
         self,
@@ -252,10 +227,10 @@ class TestUserLogin:
             password="AnyPassword123!",
         )
 
-        with pytest.raises(grpc.aio.AioRpcError) as exc_info:
-            await auth_servicer.Login(login_request, grpc_context)
+        with pytest.raises(ConnectError) as exc_info:
+            await auth_servicer.login(login_request, grpc_context)
 
-        assert exc_info.value.code() == grpc.StatusCode.UNAUTHENTICATED
+        assert "UNAUTHENTICATED" in str(exc_info.value.code)
 
 
 class TestTokenRefresh:
@@ -276,13 +251,13 @@ class TestTokenRefresh:
             email="refreshtest@example.com",
             password="TestPassword123!",
         )
-        await auth_servicer.Register(register_request, grpc_context)
+        await auth_servicer.register(register_request, grpc_context)
 
         login_request = auth_pb2.LoginRequest(
             email="refreshtest@example.com",
             password="TestPassword123!",
         )
-        login_response = await auth_servicer.Login(login_request, grpc_context)
+        login_response = await auth_servicer.login(login_request, grpc_context)
 
         # Wait a bit so new token has different iat
         await asyncio.sleep(1.1)
@@ -291,7 +266,7 @@ class TestTokenRefresh:
         refresh_request = auth_pb2.RefreshTokenRequest(
             refresh_token=login_response.refresh_token,
         )
-        response = await auth_servicer.RefreshToken(refresh_request, grpc_context)
+        response = await auth_servicer.refresh_token(refresh_request, grpc_context)
 
         assert response.access_token
         assert response.refresh_token
@@ -310,10 +285,10 @@ class TestTokenRefresh:
             refresh_token="invalid.refresh.token",
         )
 
-        with pytest.raises(grpc.aio.AioRpcError) as exc_info:
-            await auth_servicer.RefreshToken(refresh_request, grpc_context)
+        with pytest.raises(ConnectError) as exc_info:
+            await auth_servicer.refresh_token(refresh_request, grpc_context)
 
-        assert exc_info.value.code() == grpc.StatusCode.UNAUTHENTICATED
+        assert "UNAUTHENTICATED" in str(exc_info.value.code)
 
     async def test_refresh_with_access_token_fails(
         self,
@@ -330,23 +305,23 @@ class TestTokenRefresh:
             email="accesstokentest@example.com",
             password="TestPassword123!",
         )
-        await auth_servicer.Register(register_request, grpc_context)
+        await auth_servicer.register(register_request, grpc_context)
 
         login_request = auth_pb2.LoginRequest(
             email="accesstokentest@example.com",
             password="TestPassword123!",
         )
-        login_response = await auth_servicer.Login(login_request, grpc_context)
+        login_response = await auth_servicer.login(login_request, grpc_context)
 
         # Try to use access_token as refresh_token
         refresh_request = auth_pb2.RefreshTokenRequest(
             refresh_token=login_response.access_token,  # Wrong token type
         )
 
-        with pytest.raises(grpc.aio.AioRpcError) as exc_info:
-            await auth_servicer.RefreshToken(refresh_request, grpc_context)
+        with pytest.raises(ConnectError) as exc_info:
+            await auth_servicer.refresh_token(refresh_request, grpc_context)
 
-        assert exc_info.value.code() == grpc.StatusCode.INVALID_ARGUMENT
+        assert "INVALID_ARGUMENT" in str(exc_info.value.code)
 
 
 class TestGetCurrentUser:
@@ -369,22 +344,20 @@ class TestGetCurrentUser:
             first_name="Test",
             last_name="User",
         )
-        await auth_servicer.Register(register_request, grpc_context)
+        await auth_servicer.register(register_request, grpc_context)
 
         login_request = auth_pb2.LoginRequest(
             email="metest@example.com",
             password="TestPassword123!",
         )
-        login_response = await auth_servicer.Login(login_request, grpc_context)
+        login_response = await auth_servicer.login(login_request, grpc_context)
 
-        # Set token in metadata
-        grpc_context.set_metadata([
-            ("authorization", f"Bearer {login_response.access_token}"),
-        ])
+        # Set token in headers
+        grpc_context.headers["authorization"] = f"Bearer {login_response.access_token}"
 
         # Get current user
         get_user_request = auth_pb2.GetCurrentUserRequest()
-        response = await auth_servicer.GetCurrentUser(get_user_request, grpc_context)
+        response = await auth_servicer.get_current_user(get_user_request, grpc_context)
 
         assert response.user.email == "metest@example.com"
         assert response.user.first_name == "Test"
@@ -402,13 +375,13 @@ class TestGetCurrentUser:
         """Test GetCurrentUser without token returns UNAUTHENTICATED."""
         from llamatrade.v1 import auth_pb2
 
-        # No metadata set
+        # No headers set
         get_user_request = auth_pb2.GetCurrentUserRequest()
 
-        with pytest.raises(grpc.aio.AioRpcError) as exc_info:
-            await auth_servicer.GetCurrentUser(get_user_request, grpc_context)
+        with pytest.raises(ConnectError) as exc_info:
+            await auth_servicer.get_current_user(get_user_request, grpc_context)
 
-        assert exc_info.value.code() == grpc.StatusCode.UNAUTHENTICATED
+        assert "UNAUTHENTICATED" in str(exc_info.value.code)
 
     async def test_get_current_user_with_invalid_token_fails(
         self,
@@ -418,16 +391,14 @@ class TestGetCurrentUser:
         """Test GetCurrentUser with invalid token returns UNAUTHENTICATED."""
         from llamatrade.v1 import auth_pb2
 
-        grpc_context.set_metadata([
-            ("authorization", "Bearer invalid.token.here"),
-        ])
+        grpc_context.headers["authorization"] = "Bearer invalid.token.here"
 
         get_user_request = auth_pb2.GetCurrentUserRequest()
 
-        with pytest.raises(grpc.aio.AioRpcError) as exc_info:
-            await auth_servicer.GetCurrentUser(get_user_request, grpc_context)
+        with pytest.raises(ConnectError) as exc_info:
+            await auth_servicer.get_current_user(get_user_request, grpc_context)
 
-        assert exc_info.value.code() == grpc.StatusCode.UNAUTHENTICATED
+        assert "UNAUTHENTICATED" in str(exc_info.value.code)
 
 
 class TestPasswordChange:
@@ -448,25 +419,23 @@ class TestPasswordChange:
             email="passchange@example.com",
             password="OldPassword123!",
         )
-        await auth_servicer.Register(register_request, grpc_context)
+        await auth_servicer.register(register_request, grpc_context)
 
         login_request = auth_pb2.LoginRequest(
             email="passchange@example.com",
             password="OldPassword123!",
         )
-        login_response = await auth_servicer.Login(login_request, grpc_context)
+        login_response = await auth_servicer.login(login_request, grpc_context)
 
-        # Set token in metadata
-        grpc_context.set_metadata([
-            ("authorization", f"Bearer {login_response.access_token}"),
-        ])
+        # Set token in headers
+        grpc_context.headers["authorization"] = f"Bearer {login_response.access_token}"
 
         # Change password
         change_request = auth_pb2.ChangePasswordRequest(
             current_password="OldPassword123!",
             new_password="NewPassword456!",
         )
-        response = await auth_servicer.ChangePassword(change_request, grpc_context)
+        response = await auth_servicer.change_password(change_request, grpc_context)
 
         assert response.success is True
 
@@ -476,7 +445,7 @@ class TestPasswordChange:
             password="NewPassword456!",
         )
         new_context = MockServicerContext()
-        new_response = await auth_servicer.Login(new_login_request, new_context)
+        new_response = await auth_servicer.login(new_login_request, new_context)
         assert new_response.access_token
 
         # Verify old password no longer works
@@ -485,9 +454,9 @@ class TestPasswordChange:
             password="OldPassword123!",
         )
         old_context = MockServicerContext()
-        with pytest.raises(grpc.aio.AioRpcError) as exc_info:
-            await auth_servicer.Login(old_login_request, old_context)
-        assert exc_info.value.code() == grpc.StatusCode.UNAUTHENTICATED
+        with pytest.raises(ConnectError) as exc_info:
+            await auth_servicer.login(old_login_request, old_context)
+        assert "UNAUTHENTICATED" in str(exc_info.value.code)
 
     async def test_change_password_wrong_current_fails(
         self,
@@ -504,18 +473,16 @@ class TestPasswordChange:
             email="wrongcurrent@example.com",
             password="RealPassword123!",
         )
-        await auth_servicer.Register(register_request, grpc_context)
+        await auth_servicer.register(register_request, grpc_context)
 
         login_request = auth_pb2.LoginRequest(
             email="wrongcurrent@example.com",
             password="RealPassword123!",
         )
-        login_response = await auth_servicer.Login(login_request, grpc_context)
+        login_response = await auth_servicer.login(login_request, grpc_context)
 
-        # Set token in metadata
-        grpc_context.set_metadata([
-            ("authorization", f"Bearer {login_response.access_token}"),
-        ])
+        # Set token in headers
+        grpc_context.headers["authorization"] = f"Bearer {login_response.access_token}"
 
         # Try to change with wrong current password
         change_request = auth_pb2.ChangePasswordRequest(
@@ -523,7 +490,7 @@ class TestPasswordChange:
             new_password="NewPassword456!",
         )
 
-        with pytest.raises(grpc.aio.AioRpcError) as exc_info:
-            await auth_servicer.ChangePassword(change_request, grpc_context)
+        with pytest.raises(ConnectError) as exc_info:
+            await auth_servicer.change_password(change_request, grpc_context)
 
-        assert exc_info.value.code() == grpc.StatusCode.INVALID_ARGUMENT
+        assert "INVALID_ARGUMENT" in str(exc_info.value.code)

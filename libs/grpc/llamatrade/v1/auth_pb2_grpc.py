@@ -5,7 +5,7 @@ import grpc
 from llamatrade.v1 import auth_pb2 as llamatrade_dot_v1_dot_auth__pb2
 
 
-class AuthServiceStub(object):
+class AuthServiceStub:
     """=============================================================================
     SERVICE
     =============================================================================
@@ -75,7 +75,7 @@ class AuthServiceStub(object):
                 _registered_method=True)
 
 
-class AuthServiceServicer(object):
+class AuthServiceServicer:
     """=============================================================================
     SERVICE
     =============================================================================
@@ -221,7 +221,7 @@ def add_AuthServiceServicer_to_server(servicer, server):
 
 
  # This class is part of an EXPERIMENTAL API.
-class AuthService(object):
+class AuthService:
     """=============================================================================
     SERVICE
     =============================================================================

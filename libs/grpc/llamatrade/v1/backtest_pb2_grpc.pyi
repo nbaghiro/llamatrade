@@ -3,18 +3,20 @@
 isort:skip_file
 """
 
-from collections import abc as _abc
-from grpc import aio as _aio
-from llamatrade.v1 import backtest_pb2 as _backtest_pb2
 import abc as _abc_1
-import grpc as _grpc
 import sys
 import typing as _typing
+from collections import abc as _abc
+
+import grpc as _grpc
+from grpc import aio as _aio
+
+from llamatrade.v1 import backtest_pb2 as _backtest_pb2
 
 if sys.version_info >= (3, 11):
     from typing import Self as _Self
 else:
-    from typing_extensions import Self as _Self
+    from typing import Self as _Self
 
 _T = _typing.TypeVar("_T")
 
@@ -75,7 +77,7 @@ class BacktestServiceServicer(metaclass=_abc_1.ABCMeta):
         self,
         request: _backtest_pb2.RunBacktestRequest,
         context: _ServicerContext,
-    ) -> _typing.Union[_backtest_pb2.RunBacktestResponse, _abc.Awaitable[_backtest_pb2.RunBacktestResponse]]:
+    ) -> _backtest_pb2.RunBacktestResponse | _abc.Awaitable[_backtest_pb2.RunBacktestResponse]:
         """Backtest management"""
 
     @_abc_1.abstractmethod
@@ -83,28 +85,28 @@ class BacktestServiceServicer(metaclass=_abc_1.ABCMeta):
         self,
         request: _backtest_pb2.GetBacktestRequest,
         context: _ServicerContext,
-    ) -> _typing.Union[_backtest_pb2.GetBacktestResponse, _abc.Awaitable[_backtest_pb2.GetBacktestResponse]]: ...
+    ) -> _backtest_pb2.GetBacktestResponse | _abc.Awaitable[_backtest_pb2.GetBacktestResponse]: ...
 
     @_abc_1.abstractmethod
     def ListBacktests(
         self,
         request: _backtest_pb2.ListBacktestsRequest,
         context: _ServicerContext,
-    ) -> _typing.Union[_backtest_pb2.ListBacktestsResponse, _abc.Awaitable[_backtest_pb2.ListBacktestsResponse]]: ...
+    ) -> _backtest_pb2.ListBacktestsResponse | _abc.Awaitable[_backtest_pb2.ListBacktestsResponse]: ...
 
     @_abc_1.abstractmethod
     def CancelBacktest(
         self,
         request: _backtest_pb2.CancelBacktestRequest,
         context: _ServicerContext,
-    ) -> _typing.Union[_backtest_pb2.CancelBacktestResponse, _abc.Awaitable[_backtest_pb2.CancelBacktestResponse]]: ...
+    ) -> _backtest_pb2.CancelBacktestResponse | _abc.Awaitable[_backtest_pb2.CancelBacktestResponse]: ...
 
     @_abc_1.abstractmethod
     def StreamBacktestProgress(
         self,
         request: _backtest_pb2.StreamBacktestProgressRequest,
         context: _ServicerContext,
-    ) -> _typing.Union[_abc.Iterator[_backtest_pb2.BacktestProgressUpdate], _abc.AsyncIterator[_backtest_pb2.BacktestProgressUpdate]]:
+    ) -> _abc.Iterator[_backtest_pb2.BacktestProgressUpdate] | _abc.AsyncIterator[_backtest_pb2.BacktestProgressUpdate]:
         """Real-time progress"""
 
     @_abc_1.abstractmethod
@@ -112,7 +114,7 @@ class BacktestServiceServicer(metaclass=_abc_1.ABCMeta):
         self,
         request: _backtest_pb2.CompareBacktestsRequest,
         context: _ServicerContext,
-    ) -> _typing.Union[_backtest_pb2.CompareBacktestsResponse, _abc.Awaitable[_backtest_pb2.CompareBacktestsResponse]]:
+    ) -> _backtest_pb2.CompareBacktestsResponse | _abc.Awaitable[_backtest_pb2.CompareBacktestsResponse]:
         """Analysis"""
 
-def add_BacktestServiceServicer_to_server(servicer: BacktestServiceServicer, server: _typing.Union[_grpc.Server, _aio.Server]) -> None: ...
+def add_BacktestServiceServicer_to_server(servicer: BacktestServiceServicer, server: _grpc.Server | _aio.Server) -> None: ...

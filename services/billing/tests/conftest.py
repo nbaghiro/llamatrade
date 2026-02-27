@@ -7,7 +7,6 @@ from uuid import UUID, uuid4
 
 import pytest
 from httpx import ASGITransport, AsyncClient
-
 from src.main import app
 from src.models import PlanResponse, PlanTier
 from src.services.database import get_db

@@ -5,7 +5,7 @@ import grpc
 from llamatrade.v1 import backtest_pb2 as llamatrade_dot_v1_dot_backtest__pb2
 
 
-class BacktestServiceStub(object):
+class BacktestServiceStub:
     """=============================================================================
     SERVICE
     =============================================================================
@@ -50,7 +50,7 @@ class BacktestServiceStub(object):
                 _registered_method=True)
 
 
-class BacktestServiceServicer(object):
+class BacktestServiceServicer:
     """=============================================================================
     SERVICE
     =============================================================================
@@ -137,7 +137,7 @@ def add_BacktestServiceServicer_to_server(servicer, server):
 
 
  # This class is part of an EXPERIMENTAL API.
-class BacktestService(object):
+class BacktestService:
     """=============================================================================
     SERVICE
     =============================================================================

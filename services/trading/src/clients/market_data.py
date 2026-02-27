@@ -15,7 +15,9 @@ class MarketDataClient:
             base_url: Base URL for the market-data service
             timeout: Request timeout in seconds
         """
-        self.base_url = base_url or os.getenv("MARKET_DATA_URL", "http://market-data:8840")
+        self.base_url: str = (
+            base_url or os.getenv("MARKET_DATA_URL", "http://market-data:8840") or ""
+        )
         self.timeout = timeout
         self._client: httpx.AsyncClient = httpx.AsyncClient(
             base_url=self.base_url,
@@ -89,8 +91,8 @@ class MarketDataClient:
 
             response = await self._client.get(f"/bars/{symbol}", params=params)
             response.raise_for_status()
-            data = response.json()
-            return data.get("bars", [])
+            data: dict[str, list[dict[str, object]]] = response.json()
+            return list(data.get("bars", []))
         except Exception:
             return []
 

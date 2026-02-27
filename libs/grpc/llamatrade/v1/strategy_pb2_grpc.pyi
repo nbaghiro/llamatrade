@@ -3,18 +3,20 @@
 isort:skip_file
 """
 
-from collections import abc as _abc
-from grpc import aio as _aio
-from llamatrade.v1 import strategy_pb2 as _strategy_pb2
 import abc as _abc_1
-import grpc as _grpc
 import sys
 import typing as _typing
+from collections import abc as _abc
+
+import grpc as _grpc
+from grpc import aio as _aio
+
+from llamatrade.v1 import strategy_pb2 as _strategy_pb2
 
 if sys.version_info >= (3, 11):
     from typing import Self as _Self
 else:
-    from typing_extensions import Self as _Self
+    from typing import Self as _Self
 
 _T = _typing.TypeVar("_T")
 
@@ -83,7 +85,7 @@ class StrategyServiceServicer(metaclass=_abc_1.ABCMeta):
         self,
         request: _strategy_pb2.GetStrategyRequest,
         context: _ServicerContext,
-    ) -> _typing.Union[_strategy_pb2.GetStrategyResponse, _abc.Awaitable[_strategy_pb2.GetStrategyResponse]]:
+    ) -> _strategy_pb2.GetStrategyResponse | _abc.Awaitable[_strategy_pb2.GetStrategyResponse]:
         """CRUD operations"""
 
     @_abc_1.abstractmethod
@@ -91,35 +93,35 @@ class StrategyServiceServicer(metaclass=_abc_1.ABCMeta):
         self,
         request: _strategy_pb2.ListStrategiesRequest,
         context: _ServicerContext,
-    ) -> _typing.Union[_strategy_pb2.ListStrategiesResponse, _abc.Awaitable[_strategy_pb2.ListStrategiesResponse]]: ...
+    ) -> _strategy_pb2.ListStrategiesResponse | _abc.Awaitable[_strategy_pb2.ListStrategiesResponse]: ...
 
     @_abc_1.abstractmethod
     def CreateStrategy(
         self,
         request: _strategy_pb2.CreateStrategyRequest,
         context: _ServicerContext,
-    ) -> _typing.Union[_strategy_pb2.CreateStrategyResponse, _abc.Awaitable[_strategy_pb2.CreateStrategyResponse]]: ...
+    ) -> _strategy_pb2.CreateStrategyResponse | _abc.Awaitable[_strategy_pb2.CreateStrategyResponse]: ...
 
     @_abc_1.abstractmethod
     def UpdateStrategy(
         self,
         request: _strategy_pb2.UpdateStrategyRequest,
         context: _ServicerContext,
-    ) -> _typing.Union[_strategy_pb2.UpdateStrategyResponse, _abc.Awaitable[_strategy_pb2.UpdateStrategyResponse]]: ...
+    ) -> _strategy_pb2.UpdateStrategyResponse | _abc.Awaitable[_strategy_pb2.UpdateStrategyResponse]: ...
 
     @_abc_1.abstractmethod
     def DeleteStrategy(
         self,
         request: _strategy_pb2.DeleteStrategyRequest,
         context: _ServicerContext,
-    ) -> _typing.Union[_strategy_pb2.DeleteStrategyResponse, _abc.Awaitable[_strategy_pb2.DeleteStrategyResponse]]: ...
+    ) -> _strategy_pb2.DeleteStrategyResponse | _abc.Awaitable[_strategy_pb2.DeleteStrategyResponse]: ...
 
     @_abc_1.abstractmethod
     def CompileStrategy(
         self,
         request: _strategy_pb2.CompileStrategyRequest,
         context: _ServicerContext,
-    ) -> _typing.Union[_strategy_pb2.CompileStrategyResponse, _abc.Awaitable[_strategy_pb2.CompileStrategyResponse]]:
+    ) -> _strategy_pb2.CompileStrategyResponse | _abc.Awaitable[_strategy_pb2.CompileStrategyResponse]:
         """DSL operations"""
 
     @_abc_1.abstractmethod
@@ -127,14 +129,14 @@ class StrategyServiceServicer(metaclass=_abc_1.ABCMeta):
         self,
         request: _strategy_pb2.ValidateStrategyRequest,
         context: _ServicerContext,
-    ) -> _typing.Union[_strategy_pb2.ValidateStrategyResponse, _abc.Awaitable[_strategy_pb2.ValidateStrategyResponse]]: ...
+    ) -> _strategy_pb2.ValidateStrategyResponse | _abc.Awaitable[_strategy_pb2.ValidateStrategyResponse]: ...
 
     @_abc_1.abstractmethod
     def ListStrategyVersions(
         self,
         request: _strategy_pb2.ListStrategyVersionsRequest,
         context: _ServicerContext,
-    ) -> _typing.Union[_strategy_pb2.ListStrategyVersionsResponse, _abc.Awaitable[_strategy_pb2.ListStrategyVersionsResponse]]:
+    ) -> _strategy_pb2.ListStrategyVersionsResponse | _abc.Awaitable[_strategy_pb2.ListStrategyVersionsResponse]:
         """Version management"""
 
     @_abc_1.abstractmethod
@@ -142,7 +144,7 @@ class StrategyServiceServicer(metaclass=_abc_1.ABCMeta):
         self,
         request: _strategy_pb2.UpdateStrategyStatusRequest,
         context: _ServicerContext,
-    ) -> _typing.Union[_strategy_pb2.UpdateStrategyStatusResponse, _abc.Awaitable[_strategy_pb2.UpdateStrategyStatusResponse]]:
+    ) -> _strategy_pb2.UpdateStrategyStatusResponse | _abc.Awaitable[_strategy_pb2.UpdateStrategyStatusResponse]:
         """Status management"""
 
-def add_StrategyServiceServicer_to_server(servicer: StrategyServiceServicer, server: _typing.Union[_grpc.Server, _aio.Server]) -> None: ...
+def add_StrategyServiceServicer_to_server(servicer: StrategyServiceServicer, server: _grpc.Server | _aio.Server) -> None: ...

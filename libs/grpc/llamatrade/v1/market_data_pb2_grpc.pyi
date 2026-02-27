@@ -3,18 +3,20 @@
 isort:skip_file
 """
 
-from collections import abc as _abc
-from grpc import aio as _aio
-from llamatrade.v1 import market_data_pb2 as _market_data_pb2
 import abc as _abc_1
-import grpc as _grpc
 import sys
 import typing as _typing
+from collections import abc as _abc
+
+import grpc as _grpc
+from grpc import aio as _aio
+
+from llamatrade.v1 import market_data_pb2 as _market_data_pb2
 
 if sys.version_info >= (3, 11):
     from typing import Self as _Self
 else:
-    from typing_extensions import Self as _Self
+    from typing import Self as _Self
 
 _T = _typing.TypeVar("_T")
 
@@ -81,7 +83,7 @@ class MarketDataServiceServicer(metaclass=_abc_1.ABCMeta):
         self,
         request: _market_data_pb2.StreamBarsRequest,
         context: _ServicerContext,
-    ) -> _typing.Union[_abc.Iterator[_market_data_pb2.Bar], _abc.AsyncIterator[_market_data_pb2.Bar]]:
+    ) -> _abc.Iterator[_market_data_pb2.Bar] | _abc.AsyncIterator[_market_data_pb2.Bar]:
         """Streaming endpoints"""
 
     @_abc_1.abstractmethod
@@ -89,21 +91,21 @@ class MarketDataServiceServicer(metaclass=_abc_1.ABCMeta):
         self,
         request: _market_data_pb2.StreamQuotesRequest,
         context: _ServicerContext,
-    ) -> _typing.Union[_abc.Iterator[_market_data_pb2.Quote], _abc.AsyncIterator[_market_data_pb2.Quote]]: ...
+    ) -> _abc.Iterator[_market_data_pb2.Quote] | _abc.AsyncIterator[_market_data_pb2.Quote]: ...
 
     @_abc_1.abstractmethod
     def StreamTrades(
         self,
         request: _market_data_pb2.StreamTradesRequest,
         context: _ServicerContext,
-    ) -> _typing.Union[_abc.Iterator[_market_data_pb2.Trade], _abc.AsyncIterator[_market_data_pb2.Trade]]: ...
+    ) -> _abc.Iterator[_market_data_pb2.Trade] | _abc.AsyncIterator[_market_data_pb2.Trade]: ...
 
     @_abc_1.abstractmethod
     def GetHistoricalBars(
         self,
         request: _market_data_pb2.GetHistoricalBarsRequest,
         context: _ServicerContext,
-    ) -> _typing.Union[_market_data_pb2.GetHistoricalBarsResponse, _abc.Awaitable[_market_data_pb2.GetHistoricalBarsResponse]]:
+    ) -> _market_data_pb2.GetHistoricalBarsResponse | _abc.Awaitable[_market_data_pb2.GetHistoricalBarsResponse]:
         """Historical data"""
 
     @_abc_1.abstractmethod
@@ -111,14 +113,14 @@ class MarketDataServiceServicer(metaclass=_abc_1.ABCMeta):
         self,
         request: _market_data_pb2.GetMultiBarsRequest,
         context: _ServicerContext,
-    ) -> _typing.Union[_market_data_pb2.GetMultiBarsResponse, _abc.Awaitable[_market_data_pb2.GetMultiBarsResponse]]: ...
+    ) -> _market_data_pb2.GetMultiBarsResponse | _abc.Awaitable[_market_data_pb2.GetMultiBarsResponse]: ...
 
     @_abc_1.abstractmethod
     def GetSnapshot(
         self,
         request: _market_data_pb2.GetSnapshotRequest,
         context: _ServicerContext,
-    ) -> _typing.Union[_market_data_pb2.Snapshot, _abc.Awaitable[_market_data_pb2.Snapshot]]:
+    ) -> _market_data_pb2.Snapshot | _abc.Awaitable[_market_data_pb2.Snapshot]:
         """Snapshots"""
 
     @_abc_1.abstractmethod
@@ -126,14 +128,14 @@ class MarketDataServiceServicer(metaclass=_abc_1.ABCMeta):
         self,
         request: _market_data_pb2.GetSnapshotsRequest,
         context: _ServicerContext,
-    ) -> _typing.Union[_market_data_pb2.GetSnapshotsResponse, _abc.Awaitable[_market_data_pb2.GetSnapshotsResponse]]: ...
+    ) -> _market_data_pb2.GetSnapshotsResponse | _abc.Awaitable[_market_data_pb2.GetSnapshotsResponse]: ...
 
     @_abc_1.abstractmethod
     def GetMarketStatus(
         self,
         request: _market_data_pb2.GetMarketStatusRequest,
         context: _ServicerContext,
-    ) -> _typing.Union[_market_data_pb2.GetMarketStatusResponse, _abc.Awaitable[_market_data_pb2.GetMarketStatusResponse]]:
+    ) -> _market_data_pb2.GetMarketStatusResponse | _abc.Awaitable[_market_data_pb2.GetMarketStatusResponse]:
         """Market info"""
 
-def add_MarketDataServiceServicer_to_server(servicer: MarketDataServiceServicer, server: _typing.Union[_grpc.Server, _aio.Server]) -> None: ...
+def add_MarketDataServiceServicer_to_server(servicer: MarketDataServiceServicer, server: _grpc.Server | _aio.Server) -> None: ...

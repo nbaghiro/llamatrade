@@ -3,8 +3,11 @@
 import os
 from datetime import UTC, date, datetime
 from decimal import Decimal
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 from uuid import UUID
+
+if TYPE_CHECKING:
+    from llamatrade_grpc import MarketDataClient
 
 from fastapi import Depends
 from llamatrade_db import get_db
@@ -61,7 +64,7 @@ class GRPCMarketDataClient:
         self._target = target
         self._client = None
 
-    async def _get_client(self):
+    async def _get_client(self) -> "MarketDataClient":
         """Lazy initialization of gRPC client."""
         if self._client is None:
             from llamatrade_grpc import MarketDataClient
@@ -313,7 +316,7 @@ class BacktestService:
             engine = BacktestEngine(config)
 
             result = engine.run(
-                bars=bars,
+                bars=bars,  # type: ignore[arg-type]
                 strategy_fn=strategy_fn,
                 start_date=datetime.combine(backtest.start_date, datetime.min.time()),
                 end_date=datetime.combine(backtest.end_date, datetime.max.time()),

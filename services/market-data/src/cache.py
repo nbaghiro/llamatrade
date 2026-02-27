@@ -186,7 +186,7 @@ _cache: MarketDataCache | None = None
 async def init_cache() -> MarketDataCache | None:
     """Initialize the Redis cache. Returns None if Redis is unavailable."""
     global _cache
-    redis_url = os.getenv("REDIS_URL", "redis://localhost:47379")
+    redis_url = os.getenv("REDIS_URL", "redis://localhost:6379")
 
     try:
         redis_client = Redis.from_url(redis_url, decode_responses=False)

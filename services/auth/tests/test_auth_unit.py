@@ -11,7 +11,6 @@ from uuid import uuid4
 import jwt
 import pytest
 from httpx import ASGITransport, AsyncClient
-
 from src.main import app
 from src.models import UserResponse, UserWithPassword
 from src.services.auth_service import (
@@ -21,7 +20,6 @@ from src.services.auth_service import (
 )
 from src.services.tenant_service import TenantService
 from src.services.user_service import UserService
-
 
 # ===================
 # Fixtures
@@ -191,7 +189,9 @@ class TestAuthServiceUnit:
         assert result.access_token
         assert result.refresh_token
 
-    async def test_refresh_token_returns_none_for_access_token(self, auth_service, mock_user_service):
+    async def test_refresh_token_returns_none_for_access_token(
+        self, auth_service, mock_user_service
+    ):
         """Test that refresh_token returns None when given an access token."""
         payload = {
             "sub": str(uuid4()),
@@ -240,7 +240,9 @@ class TestAuthServiceUnit:
         assert result is True
         mock_user_service.update_password.assert_called_once()
 
-    async def test_change_password_fails_for_nonexistent_user(self, auth_service, mock_user_service):
+    async def test_change_password_fails_for_nonexistent_user(
+        self, auth_service, mock_user_service
+    ):
         """Test password change fails for non-existent user."""
         mock_user_service.get_user_with_password.return_value = None
 
@@ -252,7 +254,9 @@ class TestAuthServiceUnit:
 
         assert result is False
 
-    async def test_change_password_fails_for_wrong_current_password(self, auth_service, mock_user_service):
+    async def test_change_password_fails_for_wrong_current_password(
+        self, auth_service, mock_user_service
+    ):
         """Test password change fails with wrong current password."""
         user = make_user_with_password()
         mock_user_service.get_user_with_password.return_value = user

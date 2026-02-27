@@ -10,7 +10,6 @@ import numpy as np
 import pytest
 from llamatrade_compiler import Bar, SignalType
 from llamatrade_dsl import parse_strategy
-
 from src.compiler.compiled import compile_strategy
 from src.compiler.evaluator import evaluate_condition
 from src.compiler.extractor import extract_indicators

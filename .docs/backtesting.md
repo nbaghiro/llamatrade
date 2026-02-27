@@ -11,8 +11,8 @@ Backtesting enables users to evaluate trading strategies against historical mark
 **Key Capabilities:**
 
 - Simulate any strategy (config-based or code-based) over historical periods
-- **Support arbitrarily long time ranges** (1980 to present, 45+ years)
-- **Sub-minute execution** even for large universes (100+ symbols)
+- Support arbitrarily long time ranges (1980 to present, 45+ years)
+- Sub-minute execution even for large universes (100+ symbols)
 - Calculate industry-standard performance metrics (Sharpe, Sortino, drawdown, etc.)
 - Produce equity curves and trade-by-trade breakdowns
 - Run asynchronously with real-time progress streaming
@@ -20,9 +20,108 @@ Backtesting enables users to evaluate trading strategies against historical mark
 
 ---
 
-## Performance Architecture
+## Architecture Overview
 
-A core product requirement is **speed at scale**. Users must be able to backtest strategies across decades of data without waiting minutes or hours. The system achieves this through vectorized computation, parallel processing, and intelligent caching.
+### System Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                         BACKTESTING SYSTEM ARCHITECTURE                     │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│   ┌──────────┐      ┌──────────────┐      ┌─────────────────────────────┐   │
+│   │ Frontend │─────▶│ API Gateway  │─────▶│    Backtest Service :8003   │   │
+│   │          │      │   (Kong)     │      │  • Request validation       │   │
+│   └──────────┘      └──────────────┘      │  • Job queuing              │   │
+│        ▲                                  │  • Result retrieval         │   │
+│        │ WebSocket/Polling                └─────────────┬───────────────┘   │
+│        │                                                │                   │
+│   ┌────┴─────────────────────────────┐                  │ Celery Task       │
+│   │        Progress Updates          │                  ▼                   │
+│   │   Redis Pub/Sub ◀────────────────┼──────── Celery Workers (N)           │
+│   └──────────────────────────────────┘          │  • Run simulations        │
+│                                                 │  • Calculate metrics      │
+│                                                 │  • Cache results          │
+│   ┌─────────────────────────────────────────────┴───────────────────────┐   │
+│   │                        DATA DEPENDENCIES                            │   │
+│   │                                                                     │   │
+│   │  Strategy Service ────▶ Strategy config, indicators, conditions     │   │
+│   │  Market Data Service ──▶ Historical OHLCV bars                      │   │
+│   │  PostgreSQL ───────────▶ Backtest records, results storage          │   │
+│   │  Redis ────────────────▶ Bar cache, indicator cache, progress       │   │
+│   │                                                                     │   │
+│   └─────────────────────────────────────────────────────────────────────┘   │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Performance Architecture
+
+A core product requirement is **speed at scale**. The system achieves sub-minute execution through:
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                         PERFORMANCE ARCHITECTURE                            │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  VECTORIZED COMPUTATION (100-500x speedup)                                  │
+│  ─────────────────────────────────────────                                  │
+│  • Process entire time series with NumPy arrays, not row-by-row loops       │
+│  • 45 years × 100 symbols: ~30 seconds (vs ~4 hours row-by-row)             │
+│                                                                             │
+│  PARALLEL PROCESSING                                                        │
+│  ───────────────────                                                        │
+│  • Large universes: Split symbols across workers                            │
+│  • Long periods: Split time chunks across workers                           │
+│  • Auto-selection based on job characteristics                              │
+│                                                                             │
+│  MULTI-LEVEL CACHE                                                          │
+│  ────────────────────────────────────────────────────────────────────────   │
+│                                                                             │
+│  L1: In-Process LRU     │ ~100MB/worker │ <1ms   │ Hot data in current run  │
+│  L2: Redis Cluster      │ Shared        │ ~5ms   │ Indicators, recent runs  │
+│  L3: TimescaleDB        │ 5yr hot data  │ ~50ms  │ Compressed hypertables   │
+│  L4: GCS + DuckDB       │ 1980-2019     │ ~200ms │ Parquet cold storage     │
+│                                                                             │
+│  CACHE HIT SCENARIOS                                                        │
+│  • Same backtest twice: <100ms (results cached)                             │
+│  • Same strategy, different dates: <1s (indicators cached)                  │
+│  • First run, recent data: <10s (TimescaleDB)                               │
+│  • First run, cold data: <30s (Parquet fetch)                               │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Execution Flow
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                         BACKTEST EXECUTION FLOW                             │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  USER                           SYSTEM                                      │
+│  ────                           ──────                                      │
+│                                                                             │
+│  1. Click "Run Backtest"  ───▶  Validate request, create DB record          │
+│                                 Queue Celery task, return backtest_id       │
+│                                                                             │
+│  2. See progress bar      ◀───  Worker: Update status to RUNNING            │
+│     (polling/WebSocket)         Fetch strategy config (10%)                 │
+│                                 Fetch market data, check cache (30%)        │
+│                                 Compute indicators (40%)                    │
+│                                 Run simulation loop (50-90%)                │
+│                                 Calculate metrics (95%)                     │
+│                                                                             │
+│  3. View results          ◀───  Worker: Save results, mark COMPLETED        │
+│                                 Return metrics, equity curve, trades        │
+│                                                                             │
+│  SIMULATION LOOP (for each bar):                                            │
+│  ───────────────────────────────                                            │
+│  Load OHLCV ─▶ Compute indicators ─▶ Evaluate conditions ─▶ Generate signal │
+│       ─▶ Apply slippage/commission ─▶ Execute trade ─▶ Update portfolio     │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
 
 ### Performance Targets
 
@@ -33,194 +132,32 @@ A core product requirement is **speed at scale**. Users must be able to backtest
 | Large universe | 100     | 10 years            | < 15 seconds     |
 | Maximum scale  | 100     | 45 years (1980-now) | < 45 seconds     |
 
-### Vectorized Computation
-
-The engine processes entire time series at once using NumPy arrays, not row-by-row iteration:
-
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                     COMPUTATION APPROACH COMPARISON                         │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                             │
-│  Traditional (Row-by-row):              Vectorized (Array operations):      │
-│  ───────────────────────────            ─────────────────────────────────   │
-│                                                                             │
-│  for date in all_dates:                 # Load all data as NumPy arrays     │
-│      for symbol in symbols:             closes = load_closes()  # (N, S)    │
-│          bar = get_bar(date, symbol)                                        │
-│          rsi = calculate_rsi(bar)       # Compute indicators in one pass    │
-│          if rsi < 30:                   rsi = vectorized_rsi(closes)        │
-│              signal = BUY                                                   │
-│                                         # Generate all signals at once      │
-│  Time: O(days × symbols)                signals = np.where(rsi < 30, 1, 0)  │
-│  45 years, 100 symbols: ~4 hours                                            │
-│                                         Time: O(1) with broadcasting        │
-│                                         45 years, 100 symbols: ~30 seconds  │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
-
-**Why vectorization matters:**
-
-- NumPy operations run in optimized C code, not Python loops
-- Modern CPUs use SIMD (Single Instruction, Multiple Data) for array operations
-- Memory access is sequential and cache-friendly
-- Typical speedup: **100-500x** over row-by-row iteration
-
-### Parallelization Strategy
-
-For large backtests, work is distributed across multiple workers:
-
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                      PARALLEL EXECUTION MODES                               │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                             │
-│  Mode 1: Parallel by Symbol (large universes)                               │
-│  ─────────────────────────────────────────────                              │
-│                                                                             │
-│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐                        │
-│  │ Worker 1 │ │ Worker 2 │ │ Worker 3 │ │ Worker 4 │                        │
-│  │ AAPL     │ │ MSFT     │ │ GOOGL    │ │ AMZN     │  ...25 symbols each    │
-│  │ 45 years │ │ 45 years │ │ 45 years │ │ 45 years │                        │
-│  └────┬─────┘ └────┬─────┘ └────┬─────┘ └────┬─────┘                        │
-│       └────────────┴────────────┴────────────┘                              │
-│                     Merge results                                           │
-│                                                                             │
-│  Mode 2: Parallel by Time Chunks (single symbol, very long periods)         │
-│  ───────────────────────────────────────────────────────────────            │
-│                                                                             │
-│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐           │
-│  │ Worker 1 │ │ Worker 2 │ │ Worker 3 │ │ Worker 4 │ │ Worker 5 │           │
-│  │ 1980-89  │ │ 1990-99  │ │ 2000-09  │ │ 2010-19  │ │ 2020-25  │           │
-│  │   AAPL   │ │   AAPL   │ │   AAPL   │ │   AAPL   │ │   AAPL   │           │
-│  └────┬─────┘ └────┬─────┘ └────┬─────┘ └────┬─────┘ └────┬─────┘           │
-│       └────────────┴────────────┴────────────┴────────────┘                 │
-│                  Chain equity curves sequentially                           │
-│                                                                             │
-│  Automatic Selection:                                                       │
-│    • Universe ≥ workers → Parallel by symbol                                │
-│    • Single symbol + long period → Parallel by time                         │
-│    • Small job → Single worker (no overhead)                                │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
-
-### Multi-Level Caching
-
-Historical data rarely changes. The system caches aggressively at multiple levels:
-
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                           CACHE HIERARCHY                                   │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                             │
-│  Level 1: In-Process LRU (per worker)                                       │
-│  ─────────────────────────────────────                                      │
-│  • Hot data accessed in current backtest                                    │
-│  • ~100MB per worker                                                        │
-│  • Latency: < 1ms                                                           │
-│                                                                             │
-│  Level 2: Redis (shared cluster)                                            │
-│  ──────────────────────────────                                             │
-│  • Pre-computed indicators                                                  │
-│  • Recent backtest results                                                  │
-│  • Key: bt:{symbol}:{indicator}:{params}:{date_range}                       │
-│  • Latency: ~5ms                                                            │
-│  • TTL: 24h for indicators, 7d for results                                  │
-│                                                                             │
-│  Level 3: TimescaleDB (compressed hypertables)                              │
-│  ─────────────────────────────────────────────                              │
-│  • Hot data: recent 5 years                                                 │
-│  • Compressed chunks: 90%+ compression ratio                                │
-│  • Continuous aggregates for monthly/yearly views                           │
-│  • Latency: ~50ms                                                           │
-│                                                                             │
-│  Level 4: Cloud Storage + DuckDB (cold data)                                │
-│  ────────────────────────────────────────────                               │
-│  • Parquet files on GCS for 1980-2019 data                                  │
-│  • DuckDB for in-process SQL on Parquet                                     │
-│  • Latency: ~200ms                                                          │
-│  • Cost: ~$0.02/GB/month                                                    │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
-
-**Cache Hit Scenarios:**
-
-- Running same backtest twice: **< 100ms** (results cached)
-- Same strategy, different dates: **< 1s** (indicators cached)
-- First run, data in TimescaleDB: **< 10s** (compressed read)
-- First run, cold data: **< 30s** (Parquet fetch + compute)
-
-### Pre-Computed Indicators
-
-Common indicators are computed at data ingestion time and stored alongside OHLCV:
-
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                    PRE-COMPUTED INDICATOR COLUMNS                           │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                             │
-│  timestamp  symbol   open    high    low    close   volume   sma_20  rsi_14 │
-│  ─────────────────────────────────────────────────────────────────────────  │
-│  2024-01-02  AAPL   185.00  186.50  184.20  186.00  52M     183.45   62.3   │
-│  2024-01-03  AAPL   186.20  187.80  185.50  187.50  48M     183.90   65.1   │
-│  2024-01-04  AAPL   187.00  188.00  186.00  186.80  45M     184.20   58.7   │
-│  ...                                                                        │
-│                                                                             │
-│  Pre-computed on ingest:        Computed on-demand (cached):                │
-│  • SMA (20, 50, 200)            • Custom period SMAs                        │
-│  • EMA (12, 26)                 • MACD (derived from EMA)                   │
-│  • RSI (14)                     • Bollinger Bands                           │
-│  • ATR (14)                     • Stochastic                                │
-│                                                                             │
-│  Storage overhead: ~40% more columns                                        │
-│  Query speedup: ~5x (no computation needed)                                 │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
-
 ---
 
 ## Historical Data Sources
 
-Alpaca provides data from ~2016 onwards. For backtests starting in 1980, additional data sources are required:
+Alpaca provides data from ~2016 onwards. For backtests starting in 1980, additional sources are required:
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                        HISTORICAL DATA SOURCES                              │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                             │
-│  Time Period          Primary Source        Coverage        Cost            │
-│  ─────────────────────────────────────────────────────────────────────────  │
-│  2016 - Present       Alpaca Markets        US equities     Free (included) │
-│  2003 - 2015          Polygon.io            US equities     $199/mo         │
-│  1998 - 2002          Tiingo                US equities     $30/mo          │
-│  1980 - 1997          EOD Historical        US equities     $20/mo          │
-│                                                                             │
-│  Data Quality Pipeline:                                                     │
-│  ┌─────────────────────────────────────────────────────────────────────┐    │
-│  │  1. Fetch raw data from source                                      │    │
-│  │  2. Apply corporate actions (stock splits, dividends)               │    │
-│  │  3. Validate OHLC relationships (high ≥ open,close ≥ low)           │    │
-│  │  4. Fill gaps (holidays: skip, errors: interpolate)                 │    │
-│  │  5. Store both adjusted and unadjusted prices                       │    │
-│  │  6. Pre-compute standard indicators                                 │    │
-│  │  7. Compress and partition by year                                  │    │
-│  └─────────────────────────────────────────────────────────────────────┘    │
-│                                                                             │
-│  Storage Requirements (100 symbols, 45 years):                              │
-│  • Raw OHLCV: ~50 MB compressed                                             │
-│  • With indicators: ~200 MB compressed                                      │
-│  • Full 500 symbols: ~1 GB compressed                                       │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
+| Time Period    | Primary Source | Coverage    | Cost            |
+| -------------- | -------------- | ----------- | --------------- |
+| 2016 - Present | Alpaca Markets | US equities | Free (included) |
+| 2003 - 2015    | Polygon.io     | US equities | $199/mo         |
+| 1998 - 2002    | Tiingo         | US equities | $30/mo          |
+| 1980 - 1997    | EOD Historical | US equities | $20/mo          |
+
+**Data Quality Pipeline:**
+
+1. Fetch raw data from source
+2. Apply corporate actions (stock splits, dividends)
+3. Validate OHLC relationships (high ≥ open, close ≥ low)
+4. Fill gaps (holidays: skip, errors: interpolate)
+5. Store both adjusted and unadjusted prices
+6. Pre-compute standard indicators (SMA 20/50/200, EMA 12/26, RSI 14, ATR 14)
+7. Compress and partition by year
+
+**Storage Requirements (100 symbols, 45 years):** ~200 MB compressed with indicators.
 
 ### Data Adjustments
-
-Historical prices are adjusted for corporate actions to ensure accurate backtesting:
 
 | Event             | Example                | Adjustment                                    |
 | ----------------- | ---------------------- | --------------------------------------------- |
@@ -228,10 +165,7 @@ Historical prices are adjusted for corporate actions to ensure accurate backtest
 | **Reverse Split** | Stock 1:10 reverse     | Multiply pre-split prices by 10               |
 | **Dividend**      | $2 dividend paid       | Reduce pre-dividend prices by dividend amount |
 
-**Adjusted vs. Unadjusted:**
-
-- **Adjusted prices**: Use for backtesting (shows true returns)
-- **Unadjusted prices**: Use for display (shows actual historical prices)
+Use **adjusted prices** for backtesting (true returns) and **unadjusted** for display.
 
 ---
 
@@ -239,124 +173,51 @@ Historical prices are adjusted for corporate actions to ensure accurate backtest
 
 ### Initiating a Backtest
 
-From the Strategy Builder or Strategy Detail page, users click "Run Backtest" and configure:
+From the Strategy Builder or Strategy Detail page, users configure:
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                         BACKTEST CONFIGURATION                              │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                             │
-│  Strategy:     [RSI Mean Reversion - AAPL        ▼]                         │
-│  Version:      [Latest (v3)                      ▼]                         │
-│                                                                             │
-│  ─────────────────────────────────────────────────────────────────────────  │
-│                                                                             │
-│  Date Range:   [2023-01-01] ─── to ─── [2024-01-01]                         │
-│                                                                             │
-│  Initial Capital:  $[ 100,000 ]                                             │
-│                                                                             │
-│  ─────────────────────────────────────────────────────────────────────────  │
-│                                                                             │
-│  Advanced Settings (optional):                                              │
-│    • Commission per trade:  $[ 1.00 ]                                       │
-│    • Slippage assumption:   [ 0.05 ]%                                       │
-│    • Override symbols:      [ AAPL, MSFT, GOOGL ]  (leave blank for default)│
-│                                                                             │
-│                                    [ Cancel ]  [ Run Backtest ]             │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
+- **Strategy**: Select strategy and version
+- **Date Range**: Start and end dates
+- **Initial Capital**: Starting portfolio value (e.g., $100,000)
+- **Advanced Settings** (optional): Commission per trade, slippage %, symbol overrides
 
 ### Progress Tracking
 
-After submission, the backtest runs asynchronously. Users see real-time progress:
+After submission, the backtest runs asynchronously. Users see:
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                         BACKTEST IN PROGRESS                                │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                             │
-│  Strategy: RSI Mean Reversion - AAPL                                        │
-│  Status:   Running                                                          │
-│                                                                             │
-│  ████████████████████████████░░░░░░░░░░░░  65%                              │
-│                                                                             │
-│  Current step: Simulating trades for Q3 2023...                             │
-│                                                                             │
-│  Started:   2 minutes ago                                                   │
-│  Estimated: ~1 minute remaining                                             │
-│                                                                             │
-│                                              [ Cancel ]                     │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
+- Progress bar with percentage complete
+- Current step description (e.g., "Simulating trades for Q3 2023...")
+- Start time and estimated remaining time
+- Cancel button
 
 ### Results Dashboard
 
-Upon completion, users see a comprehensive results view:
+Upon completion, users see:
 
-```
-┌────────────────────────────────────────────────────────────────────────────┐
-│                         BACKTEST RESULTS                                   │
-│  RSI Mean Reversion - AAPL  •  Jan 2023 - Jan 2024  •  $100,000 initial    │
-├────────────────────────────────────────────────────────────────────────────┤
-│                                                                            │
-│  ┌─────────────────────────────────────────────────────────────────────┐   │
-│  │                     EQUITY CURVE                                    │   │
-│  │  $130k ┤                                          ╭────             │   │
-│  │        │                              ╭───────────╯                 │   │
-│  │  $120k ┤                    ╭─────────╯                             │   │
-│  │        │          ╭─────────╯                                       │   │
-│  │  $110k ┤    ╭─────╯                                                 │   │
-│  │        │╭───╯                                                       │   │
-│  │  $100k ┼╯                                                           │   │
-│  │        └─────────────────────────────────────────────────────────   │   │
-│  │         Jan    Mar    May    Jul    Sep    Nov    Jan               │   │
-│  └─────────────────────────────────────────────────────────────────────┘   │
-│                                                                            │
-│  ┌──────────────────────────┐  ┌──────────────────────────┐                │
-│  │   PERFORMANCE METRICS    │  │   TRADE STATISTICS       │                │
-│  ├──────────────────────────┤  ├──────────────────────────┤                │
-│  │ Total Return    +28.5%   │  │ Total Trades      47     │                │
-│  │ Annual Return   +28.5%   │  │ Winning Trades    29     │                │
-│  │ Sharpe Ratio     1.82    │  │ Losing Trades     18     │                │
-│  │ Sortino Ratio    2.41    │  │ Win Rate        61.7%    │                │
-│  │ Max Drawdown    -8.3%    │  │ Profit Factor    1.64    │                │
-│  │ Drawdown Days    23      │  │ Avg Win         +3.2%    │                │
-│  │ Volatility      15.2%    │  │ Avg Loss        -1.9%    │                │
-│  │ Beta (SPY)       0.85    │  │ Largest Win     +8.7%    │                │
-│  └──────────────────────────┘  │ Largest Loss    -4.1%    │                │
-│                                │ Avg Hold Time   4.2 days │                │
-│                                └──────────────────────────┘                │
-│                                                                            │
-│  ┌─────────────────────────────────────────────────────────────────────┐   │
-│  │                     MONTHLY RETURNS HEATMAP                         │   │
-│  ├─────────────────────────────────────────────────────────────────────┤   │
-│  │         Jan   Feb   Mar   Apr   May   Jun   Jul   Aug   Sep   Oct   │   │
-│  │  2023  +2.1% +3.4% -1.2% +4.5% +2.8% +1.9% +5.2% -0.8% +3.1% +2.4%  │   │
-│  └─────────────────────────────────────────────────────────────────────┘   │
-│                                                                            │
-│  ┌─────────────────────────────────────────────────────────────────────┐   │
-│  │                     TRADE LIST (47 trades)                          │   │
-│  ├────────────┬────────────┬────────┬────────┬─────────┬───────────────┤   │
-│  │ Entry Date │ Exit Date  │ Symbol │ Side   │ P&L     │ P&L %         │   │
-│  ├────────────┼────────────┼────────┼────────┼─────────┼───────────────┤   │
-│  │ 2023-01-15 │ 2023-01-19 │ AAPL   │ Long   │ +$1,245 │ +2.1%         │   │
-│  │ 2023-02-03 │ 2023-02-08 │ AAPL   │ Long   │ +$2,890 │ +4.8%         │   │
-│  │ 2023-02-22 │ 2023-02-24 │ AAPL   │ Long   │ -$512   │ -0.8%         │   │
-│  │ ...        │ ...        │ ...    │ ...    │ ...     │ ...           │   │
-│  └────────────┴────────────┴────────┴────────┴─────────┴───────────────┘   │
-│                                                                            │
-│                [ Export CSV ]  [ Compare ]  [ Deploy Strategy ]            │
-│                                                                            │
-└────────────────────────────────────────────────────────────────────────────┘
-```
+**Equity Curve**: Line chart showing portfolio value over time
+
+**Performance Metrics Panel:**
+
+- Total Return, Annual Return
+- Sharpe Ratio, Sortino Ratio
+- Max Drawdown, Drawdown Days
+- Volatility, Beta (vs SPY)
+
+**Trade Statistics Panel:**
+
+- Total Trades, Winning/Losing Trades
+- Win Rate, Profit Factor
+- Average Win/Loss percentages
+- Largest Win/Loss, Average Hold Time
+
+**Monthly Returns Heatmap**: Color-coded grid of monthly performance
+
+**Trade List**: Sortable table with entry/exit dates, symbol, side, P&L
+
+**Actions**: Export CSV, Compare with other backtests, Deploy Strategy
 
 ---
 
 ## Performance Metrics
-
-The backtester calculates comprehensive metrics to evaluate strategy quality:
 
 ### Return Metrics
 
@@ -374,11 +235,7 @@ The backtester calculates comprehensive metrics to evaluate strategy quality:
 | **Sortino Ratio** | `sqrt(252) × mean(returns) / std(downside_returns)` | Like Sharpe, but only penalizes downside volatility |
 | **Calmar Ratio**  | `annual_return / max_drawdown`                      | Return relative to worst loss                       |
 
-**Benchmarks:**
-
-- Sharpe > 1.0: Good
-- Sharpe > 2.0: Excellent
-- Sharpe > 3.0: Exceptional (verify for overfitting)
+**Benchmarks:** Sharpe > 1.0 is good, > 2.0 is excellent, > 3.0 is exceptional (verify for overfitting).
 
 ### Drawdown Metrics
 
@@ -387,20 +244,6 @@ The backtester calculates comprehensive metrics to evaluate strategy quality:
 | **Max Drawdown**      | `max((peak - equity) / peak)` | Worst peak-to-trough decline |
 | **Drawdown Duration** | Days from peak until new high | How long recovery takes      |
 | **Average Drawdown**  | Mean of all drawdown periods  | Typical underwater period    |
-
-```
-                Peak
-                  │
-  Equity    ──────●───────────────────────────●── New Peak (Recovery)
-                  │╲                         ╱│
-                  │ ╲                       ╱ │
-                  │  ╲         Trough      ╱  │
-                  │   ╲──────────●────────╱   │
-                  │              │            │
-                  ├──────────────┼────────────┤
-                  │   Drawdown   │  Duration  │
-                  │    -15%      │   45 days  │
-```
 
 ### Trade Statistics
 
@@ -418,173 +261,46 @@ The backtester calculates comprehensive metrics to evaluate strategy quality:
 
 ### How Signals Become Trades
 
-The backtester simulates realistic trade execution:
+For each trading day, the backtester:
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                         EXECUTION SIMULATION                                │
-└─────────────────────────────────────────────────────────────────────────────┘
-
-For each trading day in date range:
-    │
-    ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│ 1. LOAD BAR DATA                                                            │
-│    Get OHLCV for all symbols: open, high, low, close, volume                │
-└─────────────────────────────┬───────────────────────────────────────────────┘
-                              │
-                              ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│ 2. COMPUTE INDICATORS                                                       │
-│    Calculate RSI, SMA, MACD, etc. using historical bars                     │
-│    Note: First N bars may have NaN (warmup period)                          │
-└─────────────────────────────┬───────────────────────────────────────────────┘
-                              │
-                              ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│ 3. EVALUATE CONDITIONS                                                      │
-│    Check entry conditions: RSI < 30 AND price > SMA(200)                    │
-│    Check exit conditions: RSI > 70 OR stop_loss_hit                         │
-└─────────────────────────────┬───────────────────────────────────────────────┘
-                              │
-                              ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│ 4. GENERATE SIGNALS                                                         │
-│    If entry conditions met AND no position: generate BUY signal             │
-│    If exit conditions met AND has position: generate SELL signal            │
-└─────────────────────────────┬───────────────────────────────────────────────┘
-                              │
-                              ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│ 5. SIMULATE EXECUTION                                                       │
-│    Apply slippage:  execution_price = close × (1 + slippage_rate)           │
-│    Apply commission: cost = commission_per_trade                            │
-│    Check capital:   if cost > cash, skip trade                              │
-│    Open/close position and record trade                                     │
-└─────────────────────────────┬───────────────────────────────────────────────┘
-                              │
-                              ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│ 6. UPDATE PORTFOLIO                                                         │
-│    cash = cash - (shares × price) - commission     (for buys)               │
-│    cash = cash + (shares × price) - commission     (for sells)              │
-│    equity = cash + sum(position_values)                                     │
-│    Record equity point for curve                                            │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
+1. **Load Bar Data**: Get OHLCV for all symbols
+2. **Compute Indicators**: Calculate RSI, SMA, MACD, etc. (first N bars may have NaN for warmup)
+3. **Evaluate Conditions**: Check entry/exit conditions against current bar
+4. **Generate Signals**: If entry conditions met and no position → BUY; if exit conditions met and has position → SELL
+5. **Simulate Execution**: Apply slippage and commission, check capital availability
+6. **Update Portfolio**: Adjust cash, positions, record equity point
 
 ### Slippage and Commission Modeling
 
-Real trading incurs costs. The backtester models:
+**Slippage** (price movement between signal and execution):
 
-**Slippage** - Price movement between signal and execution:
+- BUY: `execution_price = close × (1 + slippage_rate)` — pay more
+- SELL: `execution_price = close × (1 - slippage_rate)` — receive less
 
-```
-For BUY:  execution_price = close × (1 + slippage_rate)  # Pay more
-For SELL: execution_price = close × (1 - slippage_rate)  # Receive less
-```
+**Commission**: Flat fee per trade, deducted from P&L.
 
-**Commission** - Broker fees per trade:
+**Example:** Buy 100 shares AAPL at $150 with 0.05% slippage and $1 commission:
 
-```
-total_commission = entry_commission + exit_commission
-trade_pnl = gross_pnl - total_commission
-```
-
-**Example:**
-
-```
-Signal: BUY AAPL at $150.00
-Slippage (0.05%): Execution at $150.075
-Commission: $1.00
-
-Signal: SELL AAPL at $165.00
-Slippage (0.05%): Execution at $164.9175
-Commission: $1.00
-
-Gross P&L: 100 shares × ($164.9175 - $150.075) = $1,484.25
-Net P&L:   $1,484.25 - $2.00 = $1,482.25
-```
+- Execution at $150.075, sell later at $164.9175
+- Gross P&L: $1,484.25, Net P&L: $1,482.25 (after $2 total commission)
 
 ---
 
 ## Strategy Interpretation
 
-The backtester supports two strategy formats:
-
 ### Config-Based Strategies
 
-Strategies defined via the visual builder are stored as `StrategyConfig` JSON:
+Strategies from the visual builder are stored as JSON with:
 
-```json
-{
-  "symbols": ["AAPL"],
-  "timeframe": "1D",
-  "indicators": [
-    { "type": "rsi", "params": { "period": 14 }, "output_name": "rsi_14" },
-    { "type": "sma", "params": { "period": 200 }, "output_name": "sma_200" }
-  ],
-  "entry_conditions": [
-    { "left": "rsi_14", "operator": "lt", "right": 30 },
-    { "left": "price", "operator": "gt", "right": "sma_200" }
-  ],
-  "exit_conditions": [{ "left": "rsi_14", "operator": "gt", "right": 70 }],
-  "entry_action": {
-    "type": "buy",
-    "quantity_type": "percent",
-    "quantity_value": 95
-  },
-  "exit_action": { "type": "sell", "quantity_type": "all" },
-  "risk": {
-    "stop_loss_percent": 5.0,
-    "take_profit_percent": 15.0,
-    "max_position_size_percent": 100
-  }
-}
-```
+- `symbols`: List of tickers to trade
+- `timeframe`: Bar interval (e.g., "1D")
+- `indicators`: List of indicator definitions with parameters
+- `entry_conditions`: Conditions that trigger buy signals
+- `exit_conditions`: Conditions that trigger sell signals
+- `entry_action` / `exit_action`: How much to buy/sell
+- `risk`: Stop loss, take profit, position sizing limits
 
-The **Strategy Interpreter** converts this config into executable logic:
-
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                         STRATEGY INTERPRETER                                │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                             │
-│  StrategyConfig (JSON)                                                      │
-│         │                                                                   │
-│         ▼                                                                   │
-│  ┌─────────────────────────────────────────────────────────────────┐        │
-│  │ 1. Parse indicator definitions                                  │        │
-│  │    rsi_14 = RSI(period=14)                                      │        │
-│  │    sma_200 = SMA(period=200)                                    │        │
-│  └─────────────────────────────────────────────────────────────────┘        │
-│         │                                                                   │
-│         ▼                                                                   │
-│  ┌─────────────────────────────────────────────────────────────────┐        │
-│  │ 2. Compute indicators on historical bars                        │        │
-│  │    rsi_values[i] = calculate_rsi(closes[:i], period=14)         │        │
-│  │    sma_values[i] = calculate_sma(closes[:i], period=200)        │        │
-│  └─────────────────────────────────────────────────────────────────┘        │
-│         │                                                                   │
-│         ▼                                                                   │
-│  ┌─────────────────────────────────────────────────────────────────┐        │
-│  │ 3. Evaluate conditions for each bar                             │        │
-│  │    entry = (rsi_values[i] < 30) AND (close[i] > sma_values[i])  │        │
-│  │    exit = (rsi_values[i] > 70)                                  │        │
-│  └─────────────────────────────────────────────────────────────────┘        │
-│         │                                                                   │
-│         ▼                                                                   │
-│  ┌─────────────────────────────────────────────────────────────────┐        │
-│  │ 4. Generate signals                                             │        │
-│  │    if entry AND no_position: return {"type": "buy", ...}        │        │
-│  │    if exit AND has_position: return {"type": "sell", ...}       │        │
-│  └─────────────────────────────────────────────────────────────────┘        │
-│         │                                                                   │
-│         ▼                                                                   │
-│  Signals fed to BacktestEngine                                              │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
+The **Strategy Interpreter** parses this config, computes indicators on historical bars, evaluates conditions for each bar, and generates signals fed to the BacktestEngine.
 
 ### Supported Indicators
 
@@ -610,171 +326,11 @@ The **Strategy Interpreter** converts this config into executable logic:
 
 ### Risk Management
 
-The interpreter also enforces risk rules:
+The interpreter enforces risk rules on each bar while a position is open:
 
-```
-For each bar while position is open:
-    current_pnl_percent = (current_price - entry_price) / entry_price × 100
-
-    # Stop loss check
-    if current_pnl_percent <= -stop_loss_percent:
-        generate SELL signal (reason: stop_loss)
-
-    # Take profit check
-    if current_pnl_percent >= take_profit_percent:
-        generate SELL signal (reason: take_profit)
-
-    # Trailing stop (if enabled)
-    if trailing_stop_percent:
-        update_trailing_stop(highest_price, current_price)
-        if current_price <= trailing_stop_level:
-            generate SELL signal (reason: trailing_stop)
-```
-
----
-
-## Data Flow
-
-### End-to-End Request Flow
-
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                         USER: Clicks "Run Backtest"                         │
-└─────────────────────────────────┬───────────────────────────────────────────┘
-                                  │
-                                  ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                         FRONTEND                                            │
-│  POST /api/backtests                                                        │
-│  {                                                                          │
-│    "strategy_id": "abc-123",                                                │
-│    "start_date": "2023-01-01",                                              │
-│    "end_date": "2024-01-01",                                                │
-│    "initial_capital": 100000                                                │
-│  }                                                                          │
-└─────────────────────────────────┬───────────────────────────────────────────┘
-                                  │
-                                  ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                         API GATEWAY (Kong)                                  │
-│  • Validate JWT token                                                       │
-│  • Extract tenant_id                                                        │
-│  • Rate limit check                                                         │
-│  • Route to Backtest Service                                                │
-└─────────────────────────────────┬───────────────────────────────────────────┘
-                                  │
-                                  ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                         BACKTEST SERVICE :8003                              │
-│                                                                             │
-│  1. Validate request                                                        │
-│  2. Create Backtest record in PostgreSQL (status: PENDING)                  │
-│  3. Enqueue Celery task with backtest_id                                    │
-│  4. Return backtest_id immediately                                          │
-│                                                                             │
-└──────────────┬──────────────────────────────────────────────────────────────┘
-               │                                               │
-               │ Response: {"id": "bt-456", "status": "pending"}
-               │                                               │
-               │                                               ▼
-               │                              ┌───────────────────────────────┐
-               │                              │  FRONTEND: Start polling      │
-               │                              │  GET /api/backtests/bt-456    │
-               │                              │  (or WebSocket subscription)  │
-               │                              └───────────────────────────────┘
-               │
-               ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                         REDIS QUEUE                                         │
-│  Job: run_backtest_task(backtest_id="bt-456", tenant_id="t-789")            │
-└─────────────────────────────────┬───────────────────────────────────────────┘
-                                  │
-                                  ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                         CELERY WORKER                                       │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                             │
-│  Step 1: Update status to RUNNING                                           │
-│          └─► PostgreSQL: UPDATE backtests SET status='running'              │
-│          └─► Redis pub/sub: emit progress(0%, "Starting...")                │
-│                                                                             │
-│  Step 2: Fetch strategy config                                              │
-│          └─► HTTP: GET strategy-service:8002/strategies/{id}                │
-│          └─► Returns: StrategyConfig JSON                                   │
-│          └─► Redis pub/sub: emit progress(10%, "Loaded strategy")           │
-│                                                                             │
-│  Step 3: Fetch historical data                                              │
-│          └─► Check Redis cache for bars                                     │
-│          └─► If miss: HTTP: POST market-data:8004/bars                      │
-│          └─► Cache result for 24 hours                                      │
-│          └─► Redis pub/sub: emit progress(30%, "Fetched market data")       │
-│                                                                             │
-│  Step 4: Initialize interpreter                                             │
-│          └─► Parse StrategyConfig                                           │
-│          └─► Pre-compute indicators for all bars                            │
-│          └─► Redis pub/sub: emit progress(40%, "Computed indicators")       │
-│                                                                             │
-│  Step 5: Run simulation                                                     │
-│          └─► BacktestEngine.run(bars, strategy_fn, start, end)              │
-│          └─► Emit progress every 10% of date range                          │
-│          └─► Redis pub/sub: emit progress(50-90%, "Simulating...")          │
-│                                                                             │
-│  Step 6: Calculate metrics and save results                                 │
-│          └─► Compute Sharpe, Sortino, drawdown, etc.                        │
-│          └─► PostgreSQL: INSERT INTO backtest_results                       │
-│          └─► Redis pub/sub: emit progress(95%, "Saving results")            │
-│                                                                             │
-│  Step 7: Mark complete                                                      │
-│          └─► PostgreSQL: UPDATE backtests SET status='completed'            │
-│          └─► Redis pub/sub: emit progress(100%, "Complete!")                │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
-                                  │
-                                  ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                         FRONTEND: Receives completion event                 │
-│                         Fetches GET /api/backtests/bt-456/results           │
-│                         Renders results dashboard                           │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
-
-### Service Dependencies
-
-```
-┌───────────────────────────────────────────────────────────────────────────┐
-│                      BACKTEST SERVICE DEPENDENCIES                        │
-└───────────────────────────────────────────────────────────────────────────┘
-
-                           ┌─────────────────┐
-                           │ Backtest Service│
-                           │     :8003       │
-                           └────────┬────────┘
-                                    │
-           ┌────────────────────────┼────────────────────────┐
-           │                        │                        │
-           ▼                        ▼                        ▼
-  ┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
-  │Strategy Service │     │Market Data Svc  │     │   PostgreSQL    │
-  │     :8002       │     │     :8004       │     │                 │
-  ├─────────────────┤     ├─────────────────┤     ├─────────────────┤
-  │ GET /strategies │     │ POST /bars      │     │ backtests       │
-  │   /{id}         │     │ (multi-symbol)  │     │ backtest_results│
-  │                 │     │                 │     │                 │
-  │ Returns:        │     │ Returns:        │     │ Stores:         │
-  │ • StrategyConfig│     │ • OHLCV bars    │     │ • Config        │
-  │ • Indicators    │     │ • For date range│     │ • Status        │
-  │ • Conditions    │     │                 │     │ • Results       │
-  └─────────────────┘     └────────┬────────┘     └─────────────────┘
-                                   │
-                                   ▼
-                          ┌─────────────────┐
-                          │   Alpaca API    │
-                          │ (Data Source)   │
-                          ├─────────────────┤
-                          │ Historical bars │
-                          │ via REST API    │
-                          └─────────────────┘
-```
+- **Stop Loss**: Exit if `current_pnl_percent <= -stop_loss_percent`
+- **Take Profit**: Exit if `current_pnl_percent >= take_profit_percent`
+- **Trailing Stop**: Update stop level based on highest price, exit if breached
 
 ---
 
@@ -792,7 +348,7 @@ CREATE TABLE backtests (
     -- Configuration
     name            VARCHAR(255),
     config          JSONB NOT NULL,        -- {commission, slippage, etc.}
-    symbols         JSONB,                  -- ["AAPL", "MSFT"] or null for strategy default
+    symbols         JSONB,                  -- ["AAPL", "MSFT"] or null for default
     start_date      DATE NOT NULL,
     end_date        DATE NOT NULL,
     initial_capital NUMERIC(18,2) NOT NULL,
@@ -808,12 +364,10 @@ CREATE TABLE backtests (
     created_by      UUID NOT NULL REFERENCES users(id),
     created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
 
-    -- Constraints
     CONSTRAINT valid_status CHECK (status IN ('pending','running','completed','failed','cancelled')),
     CONSTRAINT valid_date_range CHECK (end_date > start_date)
 );
 
--- Indexes for common queries
 CREATE INDEX idx_backtests_tenant_status ON backtests(tenant_id, status);
 CREATE INDEX idx_backtests_strategy ON backtests(strategy_id);
 ```
@@ -857,51 +411,17 @@ CREATE TABLE backtest_results (
 
 ## Caching Strategy
 
-Historical market data rarely changes. The system caches aggressively:
+Historical market data rarely changes. The system caches at multiple levels:
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                         CACHING ARCHITECTURE                                │
-└─────────────────────────────────────────────────────────────────────────────┘
+**Cache Key Format:** `bars:{symbol}:{timeframe}:{start_date}:{end_date}`
 
-Request: Get AAPL bars, 1D timeframe, 2023-01-01 to 2024-01-01
+**Lookup Flow:**
 
-                    ┌─────────────────────────────────────┐
-                    │           Backtest Worker           │
-                    └──────────────────┬──────────────────┘
-                                       │
-                                       ▼
-                    ┌─────────────────────────────────────┐
-                    │         Redis Cache Lookup          │
-                    │  Key: bars:AAPL:1D:2023-01-01:2024-01-01
-                    └──────────────────┬──────────────────┘
-                                       │
-                        ┌──────────────┴──────────────┐
-                        │                             │
-                   CACHE HIT                      CACHE MISS
-                        │                             │
-                        ▼                             ▼
-                ┌───────────────┐          ┌────────────────────┐
-                │ Return cached │          │ Call Market Data   │
-                │ bars (fast)   │          │ Service            │
-                │ ~5ms          │          │ ~500ms-2s          │
-                └───────────────┘          └─────────┬──────────┘
-                                                     │
-                                                     ▼
-                                           ┌────────────────────┐
-                                           │ Store in Redis     │
-                                           │ TTL: 24 hours      │
-                                           │ (data won't change)│
-                                           └────────────────────┘
+1. Check Redis for cached bars
+2. On hit: Return immediately (~5ms)
+3. On miss: Call Market Data Service (~500ms-2s), then cache with 24h TTL
 
-Cache Key Format:
-    bars:{symbol}:{timeframe}:{start_date}:{end_date}
-
-Examples:
-    bars:AAPL:1D:2023-01-01:2024-01-01
-    bars:MSFT:1H:2024-01-15:2024-01-20
-    bars:GOOGL:5Min:2024-06-01:2024-06-07
-```
+**Pre-computed Indicators:** Common indicators (SMA 20/50/200, EMA 12/26, RSI 14, ATR 14) are computed at data ingestion time. Custom indicators are computed on-demand and cached in Redis.
 
 ---
 
@@ -920,13 +440,7 @@ Examples:
 
 ### Retry Logic
 
-```
-Task retries: 3 attempts with exponential backoff
-    Attempt 1: immediate
-    Attempt 2: 60 seconds delay
-    Attempt 3: 120 seconds delay
-    After 3 failures: Mark FAILED with error message
-```
+Task retries: 3 attempts with exponential backoff (immediate → 60s → 120s). After 3 failures: Mark FAILED with error message.
 
 ---
 
@@ -965,11 +479,11 @@ Task retries: 3 attempts with exponential backoff
 
 ### What Backtesting Cannot Tell You
 
-- **Future performance** - Past results don't guarantee future returns
-- **Execution quality** - Real fills depend on market conditions at the moment
-- **Emotional factors** - Backtests don't simulate fear, greed, or fatigue
-- **Regime changes** - Markets evolve; a strategy that worked in 1990 may fail today
-- **Black swan events** - Rare events may not appear in historical data
+- **Future performance** — Past results don't guarantee future returns
+- **Execution quality** — Real fills depend on market conditions at the moment
+- **Emotional factors** — Backtests don't simulate fear, greed, or fatigue
+- **Regime changes** — Markets evolve; a strategy that worked in 1990 may fail today
+- **Black swan events** — Rare events may not appear in historical data
 
 ### When to Trust Results
 
@@ -985,13 +499,13 @@ Task retries: 3 attempts with exponential backoff
 - Testing only on recent bull market (post-2009)
 - Sharpe ratio > 3.0 (likely overfitted)
 - Strategy optimized to specific date ranges
-- Few trades (< 100) - insufficient statistical significance
+- Few trades (< 100) — insufficient statistical significance
 
 ---
 
 ## Benchmark Comparisons
 
-Every backtest automatically compares strategy performance against standard benchmarks:
+Every backtest automatically compares strategy performance against standard benchmarks.
 
 ### Built-in Benchmarks
 
@@ -1001,197 +515,24 @@ Every backtest automatically compares strategy performance against standard benc
 | **Risk-Free Rate**  | 3-month Treasury bill yield             | "Did I beat risk-free returns?"    |
 | **60/40 Portfolio** | 60% SPY + 40% BND, rebalanced quarterly | "Did I beat a passive portfolio?"  |
 
-### Benchmark Metrics
+### Benchmark Metrics Computed
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                       BENCHMARK COMPARISON REPORT                           │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                             │
-│  Period: 2010-01-01 to 2024-01-01 (14 years)                                │
-│                                                                             │
-│  ┌──────────────────────────────────────────────────────────────────────┐   │
-│  │ Metric              │ Your Strategy │ SPY B&H │ 60/40  │ Risk-Free   │   │
-│  ├─────────────────────┼───────────────┼─────────┼────────┼─────────────┤   │
-│  │ Total Return        │    +285%      │  +380%  │ +180%  │   +28%      │   │
-│  │ Annual Return       │    +10.2%     │ +11.8%  │  +7.6% │   +1.8%     │   │
-│  │ Sharpe Ratio        │     1.45      │   0.95  │  0.82  │    N/A      │   │
-│  │ Sortino Ratio       │     2.10      │   1.35  │  1.20  │    N/A      │   │
-│  │ Max Drawdown        │    -18%       │  -34%   │ -22%   │    0%       │   │
-│  │ Volatility (annual) │    12.5%      │  15.2%  │ 10.8%  │   0.3%      │   │
-│  │ Beta (vs SPY)       │     0.65      │   1.00  │  0.60  │   0.00      │   │
-│  │ Alpha (annual)      │    +3.2%      │   0.0%  │ +0.8%  │    N/A      │   │
-│  └─────────────────────┴───────────────┴─────────┴────────┴─────────────┘   │
-│                                                                             │
-│  Interpretation:                                                            │
-│  ✓ Higher Sharpe than SPY (better risk-adjusted returns)                    │
-│  ✓ Lower max drawdown than SPY (less painful losses)                        │
-│  ✗ Lower total return than SPY (missed some upside)                         │
-│  ✓ Positive alpha (excess return beyond market exposure)                    │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
+For each benchmark: Total return, annual return, Sharpe ratio, max drawdown, volatility.
 
-### How Benchmarking Works
+For strategy vs SPY specifically:
 
-Benchmarks are computed **alongside** the strategy backtest, not as separate runs:
+- **Beta** = `cov(strategy, spy) / var(spy)` — market sensitivity (1.0 = moves with market, <1.0 = defensive, >1.0 = aggressive)
+- **Alpha** = `strategy_return - (rf + beta × (market_return - rf))` — excess return beyond market exposure
+- **Correlation** and **Information Ratio**
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                    BENCHMARK COMPUTATION FLOW                               │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                             │
-│  User requests backtest:                                                    │
-│    Strategy: RSI Mean Reversion                                             │
-│    Date Range: 2010-01-01 to 2024-01-01                                     │
-│    Initial Capital: $100,000                                                │
-│                                                                             │
-│  ┌────────────────────────────────────────────────────────────────────────┐ │
-│  │                    PARALLEL DATA FETCHING                              │ │
-│  │                                                                        │ │
-│  │  ┌──────────────┐    ┌──────────────┐    ┌──────────────┐              │ │
-│  │  │ Strategy     │    │ SPY          │    │ BND          │              │ │
-│  │  │ Symbols      │    │ (S&P 500)    │    │ (Bonds)      │              │ │
-│  │  │ AAPL, MSFT   │    │ 2010-2024    │    │ 2010-2024    │              │ │
-│  │  └──────┬───────┘    └──────┬───────┘    └──────┬───────┘              │ │
-│  │         │                   │                   │                      │ │
-│  │         └───────────────────┴───────────────────┘                      │ │
-│  │                             │                                          │ │
-│  │                    All fetched in parallel                             │ │
-│  └────────────────────────────────────────────────────────────────────────┘ │
-│                                                                             │
-│  ┌────────────────────────────────────────────────────────────────────────┐ │
-│  │                    PARALLEL COMPUTATION                                │ │
-│  │                                                                        │ │
-│  │  ┌──────────────────────────────────────────────────────────────────┐  │ │
-│  │  │ Strategy Backtest                                                │  │ │
-│  │  │ • Run full simulation with signals, positions, P&L               │  │ │
-│  │  │ • Track equity curve day by day                                  │  │ │
-│  │  │ • Calculate all metrics                                          │  │ │
-│  │  └──────────────────────────────────────────────────────────────────┘  │ │
-│  │                                                                        │ │
-│  │  ┌──────────────────────────────────────────────────────────────────┐  │ │
-│  │  │ SPY Buy & Hold (simple)                                          │  │ │
-│  │  │ • shares = initial_capital / spy_price[0]                        │  │ │
-│  │  │ • equity[t] = shares × spy_price[t]                              │  │ │
-│  │  │ • No trading, just price appreciation                            │  │ │
-│  │  └──────────────────────────────────────────────────────────────────┘  │ │
-│  │                                                                        │ │
-│  │  ┌──────────────────────────────────────────────────────────────────┐  │ │
-│  │  │ 60/40 Portfolio                                                  │  │ │
-│  │  │ • 60% in SPY, 40% in BND                                         │  │ │
-│  │  │ • Rebalance quarterly to maintain ratio                          │  │ │
-│  │  │ • Track combined equity                                          │  │ │
-│  │  └──────────────────────────────────────────────────────────────────┘  │ │
-│  │                                                                        │ │
-│  │  ┌──────────────────────────────────────────────────────────────────┐  │ │
-│  │  │ Risk-Free Rate                                                   │  │ │
-│  │  │ • Fetch 3-month Treasury yield for period                        │  │ │
-│  │  │ • Compound daily: equity[t] = initial × (1 + rate/252)^t         │  │ │
-│  │  └──────────────────────────────────────────────────────────────────┘  │ │
-│  │                                                                        │ │
-│  └────────────────────────────────────────────────────────────────────────┘ │
-│                                                                             │
-│  ┌────────────────────────────────────────────────────────────────────────┐ │
-│  │                    COMPARISON METRICS                                  │ │
-│  │                                                                        │ │
-│  │  For each benchmark, compute:                                          │ │
-│  │  • Total return, annual return                                         │ │
-│  │  • Sharpe ratio (same risk-free rate)                                  │ │
-│  │  • Max drawdown                                                        │ │
-│  │  • Volatility (annualized std of daily returns)                        │ │
-│  │                                                                        │ │
-│  │  For strategy vs SPY specifically:                                     │ │
-│  │  • Beta = cov(strategy, spy) / var(spy)                                │ │
-│  │  • Alpha = strategy_return - (rf + beta × (spy_return - rf))           │ │
-│  │  • Correlation = corr(strategy_daily, spy_daily)                       │ │
-│  │  • Information Ratio = (strategy - spy) / tracking_error               │ │
-│  │                                                                        │ │
-│  └────────────────────────────────────────────────────────────────────────┘ │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
+### Custom Benchmarks
 
-### Comparing Against Another Strategy
+Users can add custom benchmarks:
 
-Users can compare any two backtests that share the same date range:
-
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                    STRATEGY-TO-STRATEGY COMPARISON                          │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                             │
-│  Method 1: Run New Comparison                                               │
-│  ───────────────────────────────                                            │
-│                                                                             │
-│  User has existing backtest: "RSI Mean Reversion" (2020-2024)               │
-│  User wants to compare against: "MACD Crossover" strategy                   │
-│                                                                             │
-│  → System runs MACD backtest with SAME parameters:                          │
-│    • Same date range (2020-2024)                                            │
-│    • Same initial capital ($100,000)                                        │
-│    • Same commission/slippage settings                                      │
-│                                                                             │
-│  → Returns side-by-side comparison                                          │
-│                                                                             │
-│  Method 2: Compare Existing Backtests                                       │
-│  ─────────────────────────────────────                                      │
-│                                                                             │
-│  User selects from backtest history:                                        │
-│  ┌──────────────────────────────────────────────────────────────────────┐   │
-│  │  Select backtests to compare (same date range required):             │   │
-│  │                                                                      │   │
-│  │  ☑ RSI Mean Reversion    2020-01-01 to 2024-01-01    +45.2%          │   │
-│  │  ☑ MACD Crossover        2020-01-01 to 2024-01-01    +38.7%          │   │
-│  │  ☐ Bollinger Bounce      2021-01-01 to 2024-01-01    +22.1%  ⚠️      │   │
-│  │                          ↑ Different date range - cannot compare     │   │
-│  │                                                                      │   │
-│  │                                        [ Compare Selected ]          │   │
-│  └──────────────────────────────────────────────────────────────────────┘   │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
-
-### Comparing Against a Custom Benchmark Asset
-
-Users can specify any tradeable asset as a benchmark:
-
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                    CUSTOM BENCHMARK CONFIGURATION                           │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                             │
-│  Benchmark Settings:                                                        │
-│                                                                             │
-│  Built-in Benchmarks:                                                       │
-│    ☑ SPY (S&P 500)                                                          │
-│    ☑ 60/40 Portfolio                                                        │
-│    ☑ Risk-Free Rate                                                         │
-│                                                                             │
-│  Custom Benchmarks:                                                         │
-│    + Add Custom Benchmark                                                   │
-│                                                                             │
-│    ┌────────────────────────────────────────────────────────────────────┐   │
-│    │  Custom Benchmark 1:                                               │   │
-│    │  Symbol: [ QQQ ]  (Nasdaq 100 ETF)                                 │   │
-│    │  Type:   [● Buy & Hold  ○ Equal Weight Portfolio]                  │   │
-│    │                                                         [ Remove ] │   │
-│    └────────────────────────────────────────────────────────────────────┘   │
-│                                                                             │
-│    ┌────────────────────────────────────────────────────────────────────┐   │
-│    │  Custom Benchmark 2:                                               │   │
-│    │  Symbols: [ XLK, XLF, XLE ]  (Sector ETFs)                         │   │
-│    │  Type:   [○ Buy & Hold  ● Equal Weight Portfolio]                  │   │
-│    │  Rebalance: [ Monthly ▼ ]                                          │   │
-│    │                                                         [ Remove ] │   │
-│    └────────────────────────────────────────────────────────────────────┘   │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
+- Single asset buy & hold (e.g., QQQ)
+- Equal-weight portfolio with rebalancing (e.g., sector ETFs)
 
 ### Benchmark Data Availability
-
-Different benchmarks have different historical availability:
 
 | Benchmark | Inception | Pre-Inception Handling                       |
 | --------- | --------- | -------------------------------------------- |
@@ -1199,151 +540,6 @@ Different benchmarks have different historical availability:
 | QQQ       | 1999      | Use Nasdaq 100 index data for earlier        |
 | BND       | 2007      | Use aggregate bond index proxy               |
 | Risk-Free | 1980+     | 3-month T-bill yields available              |
-
-For backtests starting before a benchmark's inception:
-
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  ⚠️  Benchmark Availability Notice                                          │
-│                                                                             │
-│  Your backtest period: 1985-01-01 to 2024-01-01                             │
-│                                                                             │
-│  SPY ETF began trading in 1993. For the period 1985-1993, we'll use:        │
-│  • S&P 500 Index (^GSPC) total return data                                  │
-│  • Simulated dividend reinvestment                                          │
-│                                                                             │
-│  This provides an accurate representation of S&P 500 performance,           │
-│  but actual ETF tracking may differ slightly.                               │
-│                                                                             │
-│                                              [ Understood, Continue ]       │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
-
-### Alpha and Beta Calculation
-
-**Beta** measures market sensitivity:
-
-```
-beta = covariance(strategy_returns, market_returns) / variance(market_returns)
-```
-
-- Beta = 1.0: Moves with market
-- Beta < 1.0: Less volatile than market (defensive)
-- Beta > 1.0: More volatile than market (aggressive)
-
-**Alpha** measures excess returns:
-
-```
-alpha = strategy_return - (risk_free_rate + beta × (market_return - risk_free_rate))
-```
-
-- Alpha > 0: Strategy adds value beyond market exposure
-- Alpha < 0: Strategy underperforms given its risk
-
-### Technical Implementation
-
-```python
-# Benchmark computation happens in the backtest worker
-
-class BenchmarkCalculator:
-    """Computes benchmark returns alongside strategy backtest."""
-
-    def __init__(self, start_date: date, end_date: date, initial_capital: float):
-        self.start_date = start_date
-        self.end_date = end_date
-        self.initial_capital = initial_capital
-
-    async def compute_buy_and_hold(
-        self,
-        symbol: str,
-        bars: dict[str, np.ndarray]
-    ) -> BenchmarkResult:
-        """Compute buy-and-hold returns for a single asset."""
-        closes = bars['close']
-
-        # Buy at first close, hold until last close
-        shares = self.initial_capital / closes[0]
-        equity_curve = shares * closes
-
-        daily_returns = np.diff(closes) / closes[:-1]
-
-        return BenchmarkResult(
-            name=f"{symbol} Buy & Hold",
-            equity_curve=equity_curve,
-            total_return=(closes[-1] - closes[0]) / closes[0],
-            annual_return=self._annualize(daily_returns),
-            sharpe_ratio=self._sharpe(daily_returns),
-            max_drawdown=self._max_drawdown(equity_curve),
-            daily_returns=daily_returns,
-        )
-
-    async def compute_portfolio(
-        self,
-        symbols: list[str],
-        weights: list[float],
-        bars_by_symbol: dict[str, dict[str, np.ndarray]],
-        rebalance_frequency: str = "quarterly",
-    ) -> BenchmarkResult:
-        """Compute returns for a weighted portfolio with rebalancing."""
-        # Implementation handles rebalancing at specified frequency
-        ...
-
-    def compute_alpha_beta(
-        self,
-        strategy_returns: np.ndarray,
-        benchmark_returns: np.ndarray,
-        risk_free_rate: float = 0.02,
-    ) -> tuple[float, float]:
-        """Compute alpha and beta using CAPM."""
-        # Covariance of strategy with benchmark
-        cov_matrix = np.cov(strategy_returns, benchmark_returns)
-        beta = cov_matrix[0, 1] / cov_matrix[1, 1]
-
-        # Alpha using CAPM formula
-        strategy_annual = self._annualize(strategy_returns)
-        benchmark_annual = self._annualize(benchmark_returns)
-        alpha = strategy_annual - (risk_free_rate + beta * (benchmark_annual - risk_free_rate))
-
-        return alpha, beta
-```
-
-### API Response with Benchmarks
-
-```json
-{
-  "id": "bt-456",
-  "strategy_name": "RSI Mean Reversion",
-  "metrics": {
-    "total_return": 0.452,
-    "sharpe_ratio": 1.82,
-    "max_drawdown": -0.12,
-    "alpha": 0.085,
-    "beta": 0.72
-  },
-  "benchmarks": {
-    "spy_buy_hold": {
-      "total_return": 0.385,
-      "sharpe_ratio": 1.05,
-      "max_drawdown": -0.34
-    },
-    "portfolio_60_40": {
-      "total_return": 0.245,
-      "sharpe_ratio": 0.95,
-      "max_drawdown": -0.22
-    },
-    "risk_free": {
-      "total_return": 0.082
-    }
-  },
-  "vs_spy": {
-    "excess_return": 0.067,
-    "alpha": 0.085,
-    "beta": 0.72,
-    "correlation": 0.65,
-    "information_ratio": 0.42
-  }
-}
-```
 
 ---
 
@@ -1353,111 +549,24 @@ Walk-forward analysis prevents overfitting by simulating real-world strategy dev
 
 ### The Overfitting Problem
 
-Traditional backtesting optimizes parameters on historical data, then tests on the same data:
-
-```
-❌ OVERFITTED APPROACH (Don't do this):
-
-    Full History (2000-2024)
-    ──────────────────────────────────────────────────────
-    │  Optimize parameters: RSI period = 14, threshold = 32.7  │
-    │  Test on same data: "Wow, 45% annual return!"            │
-    ──────────────────────────────────────────────────────────
-
-    Problem: Parameters are curve-fitted to past, won't work in future
-```
+Traditional backtesting optimizes parameters on historical data, then tests on the same data. This leads to curve-fitted parameters that won't work in the future.
 
 ### Walk-Forward Solution
 
 Walk-forward repeatedly optimizes on past data and tests on unseen future data:
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                       WALK-FORWARD ANALYSIS                                 │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                             │
-│  ✓ ROBUST APPROACH:                                                         │
-│                                                                             │
-│  Window 1:                                                                  │
-│  ├── In-Sample (optimize): 2000-2004 ──────────────────┐                    │
-│  └── Out-of-Sample (test): 2005-2006 ──────────────────┼── Record results   │
-│                                                                             │
-│  Window 2:                                                                  │
-│  ├── In-Sample (optimize): 2002-2006 ──────────────────┐                    │
-│  └── Out-of-Sample (test): 2007-2008 ──────────────────┼── Record results   │
-│                                                                             │
-│  Window 3:                                                                  │
-│  ├── In-Sample (optimize): 2004-2008 ──────────────────┐                    │
-│  └── Out-of-Sample (test): 2009-2010 ──────────────────┼── Record results   │
-│                                                                             │
-│  ...continue rolling forward...                                             │
-│                                                                             │
-│  Window N:                                                                  │
-│  ├── In-Sample (optimize): 2018-2022 ──────────────────┐                    │
-│  └── Out-of-Sample (test): 2023-2024 ──────────────────┼── Record results   │
-│                                                                             │
-│  Final Performance = Average of all out-of-sample windows                   │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
+1. **Window 1**: Optimize on 2000-2004, test on 2005-2006 → record results
+2. **Window 2**: Optimize on 2002-2006, test on 2007-2008 → record results
+3. **Continue rolling forward...**
+4. **Final Performance** = Average of all out-of-sample windows
 
-### Walk-Forward Configuration
+### Configuration Options
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                     WALK-FORWARD SETTINGS                                   │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                             │
-│  In-Sample Period:     [ 5 ] years   (how much history to optimize on)      │
-│  Out-of-Sample Period: [ 1 ] year    (how far to test forward)              │
-│  Step Size:            [ 1 ] year    (how often to re-optimize)             │
-│                                                                             │
-│  Parameters to Optimize:                                                    │
-│    ☑ RSI Period         Range: [ 7 ] to [ 21 ]    Step: [ 1 ]               │
-│    ☑ RSI Oversold       Range: [ 20 ] to [ 40 ]   Step: [ 5 ]               │
-│    ☑ RSI Overbought     Range: [ 60 ] to [ 80 ]   Step: [ 5 ]               │
-│    ☐ Stop Loss %        (fixed at 5%)                                       │
-│                                                                             │
-│  Optimization Target:   [ Sharpe Ratio ▼ ]                                  │
-│                         (maximize this metric during in-sample)             │
-│                                                                             │
-│                                         [ Run Walk-Forward Analysis ]       │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
-
-### Walk-Forward Results
-
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                     WALK-FORWARD RESULTS                                    │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                             │
-│  Windows Tested: 15                                                         │
-│  Total Out-of-Sample Period: 15 years (2009-2024)                           │
-│                                                                             │
-│  ┌────────────────────────────────────────────────────────────────────────┐ │
-│  │ Window │ OOS Period  │ Optimal RSI │ OOS Return │ OOS Sharpe │ Status  │ │
-│  ├────────┼─────────────┼─────────────┼────────────┼────────────┼─────────┤ │
-│  │   1    │ 2009-2010   │ 14, 28, 72  │   +22%     │    1.45    │   ✓     │ │
-│  │   2    │ 2010-2011   │ 14, 30, 70  │   +18%     │    1.32    │   ✓     │ │
-│  │   3    │ 2011-2012   │ 12, 32, 68  │   -5%      │   -0.25    │   ✗     │ │
-│  │   4    │ 2012-2013   │ 14, 28, 72  │   +31%     │    2.10    │   ✓     │ │
-│  │  ...   │    ...      │     ...     │    ...     │    ...     │  ...    │ │
-│  │  15    │ 2023-2024   │ 16, 25, 75  │   +12%     │    0.95    │   ✓     │ │
-│  └────────┴─────────────┴─────────────┴────────────┴────────────┴─────────┘ │
-│                                                                             │
-│  Aggregate Out-of-Sample Performance:                                       │
-│  • Annual Return: +11.2% (vs in-sample: +18.5%)                             │
-│  • Sharpe Ratio:   1.05 (vs in-sample: 1.85)                                │
-│  • Win Rate:      73% of windows profitable                                 │
-│  • Efficiency:    60% (OOS Sharpe / IS Sharpe)                              │
-│                                                                             │
-│  ⚠️  Efficiency < 70% suggests moderate overfitting                         │
-│  ✓  Strategy remains profitable out-of-sample                               │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
+- **In-Sample Period**: How much history to optimize on (e.g., 5 years)
+- **Out-of-Sample Period**: How far to test forward (e.g., 1 year)
+- **Step Size**: How often to re-optimize (e.g., 1 year)
+- **Parameters to Optimize**: Select which strategy parameters to vary with ranges
+- **Optimization Target**: Metric to maximize (e.g., Sharpe Ratio)
 
 ### Walk-Forward Efficiency
 
@@ -1465,10 +574,10 @@ Walk-forward repeatedly optimizes on past data and tests on unseen future data:
 
 | Efficiency | Interpretation                 |
 | ---------- | ------------------------------ |
-| > 80%      | Excellent - strategy is robust |
-| 60-80%     | Good - acceptable degradation  |
-| 40-60%     | Moderate - some overfitting    |
-| < 40%      | Poor - significant overfitting |
+| > 80%      | Excellent — strategy is robust |
+| 60-80%     | Good — acceptable degradation  |
+| 40-60%     | Moderate — some overfitting    |
+| < 40%      | Poor — significant overfitting |
 
 ---
 
@@ -1486,110 +595,17 @@ A single backtest shows what _did_ happen. Monte Carlo shows the range of what _
 
 ### Simulation Methods
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                     MONTE CARLO METHODS                                     │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                             │
-│  Method 1: TRADE SHUFFLING                                                  │
-│  ─────────────────────────                                                  │
-│  Original sequence:  [+2%, -1%, +3%, -2%, +1%, +4%, -1%, +2%]               │
-│  Shuffled run 1:     [-1%, +3%, +2%, +1%, -2%, +2%, +4%, -1%]               │
-│  Shuffled run 2:     [+4%, -2%, +1%, -1%, +2%, +3%, -1%, +2%]               │
-│  ...1000 more shuffles...                                                   │
-│                                                                             │
-│  Purpose: Test if strategy success depends on lucky trade ordering          │
-│                                                                             │
-│  Method 2: RANDOM START DATES                                               │
-│  ────────────────────────────                                               │
-│  Instead of starting Jan 1, 2010:                                           │
-│  • Run starting Mar 15, 2010                                                │
-│  • Run starting Jul 22, 2010                                                │
-│  • Run starting Nov 3, 2010                                                 │
-│  ...1000 random start dates...                                              │
-│                                                                             │
-│  Purpose: Test if strategy success depends on lucky start timing            │
-│                                                                             │
-│  Method 3: BOOTSTRAPPED RETURNS                                             │
-│  ──────────────────────────────                                             │
-│  Sample daily returns with replacement to create synthetic histories        │
-│  Preserves return distribution but destroys temporal patterns               │
-│                                                                             │
-│  Purpose: Estimate confidence intervals for metrics                         │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
+1. **Trade Shuffling**: Randomize the order of trades to test if success depends on lucky sequencing
+2. **Random Start Dates**: Vary entry timing to test if success depends on lucky start timing
+3. **Bootstrapped Returns**: Resample daily returns with replacement to estimate confidence intervals
 
-### Monte Carlo Configuration
+### Configuration Options
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                     MONTE CARLO SETTINGS                                    │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                             │
-│  Number of Simulations:  [ 1,000 ]                                          │
-│                                                                             │
-│  Methods to Run:                                                            │
-│    ☑ Trade Shuffling      (randomize trade order)                           │
-│    ☑ Random Start Dates   (vary entry timing)                               │
-│    ☐ Bootstrapped Returns (resample with replacement)                       │
-│                                                                             │
-│  Confidence Intervals:   [ 95 ]%                                            │
-│                                                                             │
-│                                          [ Run Monte Carlo Analysis ]       │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
+- **Number of Simulations**: Typically 1,000
+- **Methods to Run**: Select which randomization methods
+- **Confidence Intervals**: e.g., 95%
 
-### Monte Carlo Results
-
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                     MONTE CARLO RESULTS                                     │
-│                     1,000 Simulations                                       │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                             │
-│  ┌─────────────────────────────────────────────────────────────────────┐    │
-│  │              EQUITY CURVE DISTRIBUTION (Trade Shuffling)            │    │
-│  │                                                                     │    │
-│  │  $200k ┤                                         ╭─── Best 5%       │    │
-│  │        │                              ╭──────────╯                  │    │
-│  │  $150k ┤                    ╭─────────┼──────── Median              │    │
-│  │        │          ╭─────────┼─────────╯                             │    │
-│  │  $100k ┼──────────┼─────────┼───────────────────── Worst 5%         │    │
-│  │        │          ╰─────────╯                                       │    │
-│  │   $50k ┤                                                            │    │
-│  │        └──────────────────────────────────────────────────────────  │    │
-│  │         2010      2014      2018      2022      2024                │    │
-│  └─────────────────────────────────────────────────────────────────────┘    │
-│                                                                             │
-│  ┌───────────────────────────────────────────────────────────────────────┐  │
-│  │                METRIC DISTRIBUTIONS                                   │  │
-│  ├──────────────────┬──────────┬──────────┬──────────┬───────────────────┤  │
-│  │ Metric           │ Original │  Median  │   5th %  │  95th %           │  │
-│  ├──────────────────┼──────────┼──────────┼──────────┼───────────────────┤  │
-│  │ Total Return     │  +120%   │  +115%   │   +45%   │  +180%            │  │
-│  │ Annual Return    │  +8.5%   │   +8.2%  │   +3.8%  │  +12.5%           │  │
-│  │ Sharpe Ratio     │   1.25   │   1.20   │   0.65   │   1.75            │  │
-│  │ Max Drawdown     │  -18%    │  -20%    │  -35%    │  -12%             │  │
-│  │ Longest Drawdown │  8 mo    │  10 mo   │  22 mo   │   5 mo            │  │
-│  └──────────────────┴──────────┴──────────┴──────────┴───────────────────┘  │
-│                                                                             │
-│  Key Insights:                                                              │
-│  ✓ 95% of simulations were profitable (confidence in strategy)              │
-│  ⚠ 5% worst case: -35% drawdown (plan for this psychologically)             │
-│  ✓ Median close to original (strategy not dependent on trade order)         │
-│  ✓ Sharpe stays > 0.65 even in worst 5% (robust risk-adjusted returns)      │
-│                                                                             │
-│  Risk Assessment:                                                           │
-│  • Expected Annual Return: +8.2% (median)                                   │
-│  • Worst-Case Annual Return: +3.8% (5th percentile)                         │
-│  • 95% Confidence Drawdown: You should expect up to -35% at some point      │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
-
-### Interpreting Monte Carlo Results
+### Interpreting Results
 
 **Strategy is ROBUST if:**
 
@@ -1605,70 +621,22 @@ A single backtest shows what _did_ happen. Monte Carlo shows the range of what _
 - 5th percentile shows losses
 - Wide distribution (high variance)
 
-### Monte Carlo + Walk-Forward Combined
+### Combined Analysis
 
-For maximum confidence, run both:
+For maximum confidence, run both walk-forward and Monte Carlo:
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                     COMBINED ROBUSTNESS ANALYSIS                            │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                             │
-│  1. Run Walk-Forward Analysis                                               │
-│     → Confirms strategy works out-of-sample (not curve-fitted)              │
-│                                                                             │
-│  2. Run Monte Carlo on Out-of-Sample Results                                │
-│     → Confirms results aren't dependent on lucky timing/ordering            │
-│                                                                             │
-│  Combined Confidence Score:                                                 │
-│  ┌────────────────────────────────────────────────────────────────────────┐ │
-│  │                                                                        │ │
-│  │   Walk-Forward Efficiency:  68%  ───────────────┬                      │ │
-│  │   Monte Carlo Win Rate:     94%  ───────────────┼─► Combined: 85/100   │ │
-│  │   MC Median vs Original:    97%  ───────────────┘                      │ │
-│  │                                                                        │ │
-│  │   Interpretation: HIGH CONFIDENCE - Strategy is robust                 │ │
-│  │                                                                        │ │
-│  └────────────────────────────────────────────────────────────────────────┘ │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
+1. Walk-forward confirms strategy works out-of-sample (not curve-fitted)
+2. Monte Carlo on out-of-sample results confirms results aren't dependent on lucky timing/ordering
 
 ---
 
 ## Comparison Feature
 
-Users can compare multiple backtests side-by-side:
+Users can compare multiple backtests side-by-side with:
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                         BACKTEST COMPARISON                                 │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                             │
-│  ┌─────────────────────────────────────────────────────────────────────┐    │
-│  │                     EQUITY CURVES OVERLAY                           │    │
-│  │  $140k ┤         ── RSI Strategy                                    │    │
-│  │        │         ── MA Crossover                                    │    │
-│  │  $120k ┤         ── Buy & Hold SPY                                  │    │
-│  │        │                                                            │    │
-│  │  $100k ┼─────────────────────────────────────────────────────────   │    │
-│  │         Jan    Mar    May    Jul    Sep    Nov    Jan               │    │
-│  └─────────────────────────────────────────────────────────────────────┘    │
-│                                                                             │
-│  ┌───────────────────────────────────────────────────────────────────────┐  │
-│  │                     METRICS COMPARISON                                │  │
-│  ├──────────────────┬──────────────┬────────────────┬────────────────────┤  │
-│  │ Metric           │ RSI Strategy │ MA Crossover   │ Buy & Hold SPY     │  │
-│  ├──────────────────┼──────────────┼────────────────┼────────────────────┤  │
-│  │ Total Return     │    +28.5%    │    +18.2%      │    +22.1%          │  │
-│  │ Sharpe Ratio     │     1.82     │     1.24       │     1.45           │  │
-│  │ Max Drawdown     │    -8.3%     │   -12.1%       │   -10.5%           │  │
-│  │ Win Rate         │    61.7%     │    55.2%       │      N/A           │  │
-│  │ Total Trades     │      47      │      23        │       1            │  │
-│  └──────────────────┴──────────────┴────────────────┴────────────────────┘  │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
+- **Equity Curves Overlay**: Multiple strategies on same chart
+- **Metrics Comparison Table**: Side-by-side metrics for each strategy
+- **Requirement**: Backtests must share the same date range to be comparable
 
 ---
 
@@ -1735,12 +703,18 @@ Response: 200 OK
     "max_drawdown": 0.083,
     "win_rate": 0.617,
     "profit_factor": 1.64,
-    "total_trades": 47
+    "total_trades": 47,
+    "alpha": 0.085,
+    "beta": 0.72
+  },
+  "benchmarks": {
+    "spy_buy_hold": { "total_return": 0.385, "sharpe_ratio": 1.05, "max_drawdown": -0.34 },
+    "portfolio_60_40": { "total_return": 0.245, "sharpe_ratio": 0.95, "max_drawdown": -0.22 },
+    "risk_free": { "total_return": 0.082 }
   },
   "equity_curve": [
     {"date": "2023-01-01", "equity": 100000, "drawdown": 0},
-    {"date": "2023-01-02", "equity": 100500, "drawdown": 0},
-    ...
+    {"date": "2023-01-02", "equity": 100500, "drawdown": 0}
   ],
   "trades": [
     {
@@ -1753,14 +727,9 @@ Response: 200 OK
       "quantity": 100,
       "pnl": 555.00,
       "pnl_percent": 3.69
-    },
-    ...
+    }
   ],
-  "monthly_returns": {
-    "2023-01": 0.021,
-    "2023-02": 0.034,
-    ...
-  }
+  "monthly_returns": { "2023-01": 0.021, "2023-02": 0.034 }
 }
 ```
 
@@ -1771,10 +740,7 @@ DELETE /api/backtests/{id}
 Authorization: Bearer {jwt_token}
 
 Response: 200 OK
-{
-  "id": "uuid",
-  "status": "cancelled"
-}
+{ "id": "uuid", "status": "cancelled" }
 ```
 
 ### List Backtests
@@ -1799,19 +765,13 @@ Response: 200 OK
 Real-time progress updates via WebSocket:
 
 ```javascript
-// Frontend connection
 const ws = new WebSocket(
   "wss://api.llamatrade.com/ws/backtests/bt-456/progress",
 );
 
 ws.onmessage = (event) => {
   const data = JSON.parse(event.data);
-  // {
-  //   "backtest_id": "bt-456",
-  //   "progress": 65,
-  //   "message": "Simulating Q3 2023...",
-  //   "status": "running"
-  // }
+  // { "backtest_id": "bt-456", "progress": 65, "message": "Simulating Q3 2023...", "status": "running" }
   updateProgressBar(data.progress);
   updateStatusMessage(data.message);
 };

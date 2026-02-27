@@ -5,7 +5,7 @@ import grpc
 from llamatrade.v1 import billing_pb2 as llamatrade_dot_v1_dot_billing__pb2
 
 
-class BillingServiceStub(object):
+class BillingServiceStub:
     """=============================================================================
     SERVICE
     =============================================================================
@@ -90,7 +90,7 @@ class BillingServiceStub(object):
                 _registered_method=True)
 
 
-class BillingServiceServicer(object):
+class BillingServiceServicer:
     """=============================================================================
     SERVICE
     =============================================================================
@@ -268,7 +268,7 @@ def add_BillingServiceServicer_to_server(servicer, server):
 
 
  # This class is part of an EXPERIMENTAL API.
-class BillingService(object):
+class BillingService:
     """=============================================================================
     SERVICE
     =============================================================================

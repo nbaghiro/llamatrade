@@ -969,4 +969,3 @@ export const PortfolioService: GenService<{
   },
 }> = /*@__PURE__*/
   serviceDesc(file_llamatrade_v1_portfolio, 0);
-

@@ -1000,4 +1000,3 @@ export const StrategyService: GenService<{
   },
 }> = /*@__PURE__*/
   serviceDesc(file_llamatrade_v1_strategy, 0);
-

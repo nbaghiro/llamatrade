@@ -9,7 +9,6 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 from llamatrade_common.middleware import require_auth
 from llamatrade_common.models import TenantContext
-
 from src.main import app
 
 # Test UUIDs

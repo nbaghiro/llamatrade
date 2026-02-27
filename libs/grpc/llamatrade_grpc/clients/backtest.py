@@ -460,10 +460,16 @@ class BacktestClient(BaseGRPCClient):
             end_date=datetime.fromtimestamp(proto.end_date.seconds),
             initial_capital=Decimal(proto.initial_capital.value),
             symbols=list(proto.symbols),
-            commission=Decimal(proto.commission.value) if proto.HasField("commission") else Decimal("0"),
-            slippage_percent=Decimal(proto.slippage_percent.value) if proto.HasField("slippage_percent") else Decimal("0"),
+            commission=Decimal(proto.commission.value)
+            if proto.HasField("commission")
+            else Decimal("0"),
+            slippage_percent=Decimal(proto.slippage_percent.value)
+            if proto.HasField("slippage_percent")
+            else Decimal("0"),
             allow_shorting=proto.allow_shorting,
-            max_position_size=Decimal(proto.max_position_size.value) if proto.HasField("max_position_size") else Decimal("1.0"),
+            max_position_size=Decimal(proto.max_position_size.value)
+            if proto.HasField("max_position_size")
+            else Decimal("1.0"),
             timeframe=proto.timeframe,
             use_adjusted_prices=proto.use_adjusted_prices,
             parameters=dict(proto.parameters),
@@ -485,25 +491,55 @@ class BacktestClient(BaseGRPCClient):
     def _proto_to_metrics(self, proto: backtest_pb2.BacktestMetrics) -> BacktestMetrics:
         """Convert protobuf BacktestMetrics to dataclass."""
         return BacktestMetrics(
-            total_return=Decimal(proto.total_return.value) if proto.HasField("total_return") else Decimal("0"),
-            annualized_return=Decimal(proto.annualized_return.value) if proto.HasField("annualized_return") else Decimal("0"),
-            sharpe_ratio=Decimal(proto.sharpe_ratio.value) if proto.HasField("sharpe_ratio") else Decimal("0"),
-            sortino_ratio=Decimal(proto.sortino_ratio.value) if proto.HasField("sortino_ratio") else Decimal("0"),
-            max_drawdown=Decimal(proto.max_drawdown.value) if proto.HasField("max_drawdown") else Decimal("0"),
-            max_drawdown_duration_days=Decimal(proto.max_drawdown_duration_days.value) if proto.HasField("max_drawdown_duration_days") else Decimal("0"),
-            volatility=Decimal(proto.volatility.value) if proto.HasField("volatility") else Decimal("0"),
+            total_return=Decimal(proto.total_return.value)
+            if proto.HasField("total_return")
+            else Decimal("0"),
+            annualized_return=Decimal(proto.annualized_return.value)
+            if proto.HasField("annualized_return")
+            else Decimal("0"),
+            sharpe_ratio=Decimal(proto.sharpe_ratio.value)
+            if proto.HasField("sharpe_ratio")
+            else Decimal("0"),
+            sortino_ratio=Decimal(proto.sortino_ratio.value)
+            if proto.HasField("sortino_ratio")
+            else Decimal("0"),
+            max_drawdown=Decimal(proto.max_drawdown.value)
+            if proto.HasField("max_drawdown")
+            else Decimal("0"),
+            max_drawdown_duration_days=Decimal(proto.max_drawdown_duration_days.value)
+            if proto.HasField("max_drawdown_duration_days")
+            else Decimal("0"),
+            volatility=Decimal(proto.volatility.value)
+            if proto.HasField("volatility")
+            else Decimal("0"),
             total_trades=proto.total_trades,
             winning_trades=proto.winning_trades,
             losing_trades=proto.losing_trades,
             win_rate=Decimal(proto.win_rate.value) if proto.HasField("win_rate") else Decimal("0"),
-            average_win=Decimal(proto.average_win.value) if proto.HasField("average_win") else Decimal("0"),
-            average_loss=Decimal(proto.average_loss.value) if proto.HasField("average_loss") else Decimal("0"),
-            profit_factor=Decimal(proto.profit_factor.value) if proto.HasField("profit_factor") else Decimal("0"),
-            expectancy=Decimal(proto.expectancy.value) if proto.HasField("expectancy") else Decimal("0"),
-            starting_capital=Decimal(proto.starting_capital.value) if proto.HasField("starting_capital") else Decimal("0"),
-            ending_capital=Decimal(proto.ending_capital.value) if proto.HasField("ending_capital") else Decimal("0"),
-            total_commission=Decimal(proto.total_commission.value) if proto.HasField("total_commission") else Decimal("0"),
-            benchmark_return=Decimal(proto.benchmark_return.value) if proto.HasField("benchmark_return") else None,
+            average_win=Decimal(proto.average_win.value)
+            if proto.HasField("average_win")
+            else Decimal("0"),
+            average_loss=Decimal(proto.average_loss.value)
+            if proto.HasField("average_loss")
+            else Decimal("0"),
+            profit_factor=Decimal(proto.profit_factor.value)
+            if proto.HasField("profit_factor")
+            else Decimal("0"),
+            expectancy=Decimal(proto.expectancy.value)
+            if proto.HasField("expectancy")
+            else Decimal("0"),
+            starting_capital=Decimal(proto.starting_capital.value)
+            if proto.HasField("starting_capital")
+            else Decimal("0"),
+            ending_capital=Decimal(proto.ending_capital.value)
+            if proto.HasField("ending_capital")
+            else Decimal("0"),
+            total_commission=Decimal(proto.total_commission.value)
+            if proto.HasField("total_commission")
+            else Decimal("0"),
+            benchmark_return=Decimal(proto.benchmark_return.value)
+            if proto.HasField("benchmark_return")
+            else None,
             alpha=Decimal(proto.alpha.value) if proto.HasField("alpha") else None,
             beta=Decimal(proto.beta.value) if proto.HasField("beta") else None,
         )
@@ -514,8 +550,12 @@ class BacktestClient(BaseGRPCClient):
             timestamp=datetime.fromtimestamp(proto.timestamp.seconds),
             equity=Decimal(proto.equity.value) if proto.HasField("equity") else Decimal("0"),
             cash=Decimal(proto.cash.value) if proto.HasField("cash") else Decimal("0"),
-            positions_value=Decimal(proto.positions_value.value) if proto.HasField("positions_value") else Decimal("0"),
-            daily_return=Decimal(proto.daily_return.value) if proto.HasField("daily_return") else Decimal("0"),
+            positions_value=Decimal(proto.positions_value.value)
+            if proto.HasField("positions_value")
+            else Decimal("0"),
+            daily_return=Decimal(proto.daily_return.value)
+            if proto.HasField("daily_return")
+            else Decimal("0"),
             drawdown=Decimal(proto.drawdown.value) if proto.HasField("drawdown") else Decimal("0"),
         )
 
@@ -529,13 +569,21 @@ class BacktestClient(BaseGRPCClient):
             symbol=proto.symbol,
             side=side,
             quantity=Decimal(proto.quantity.value) if proto.HasField("quantity") else Decimal("0"),
-            entry_price=Decimal(proto.entry_price.value) if proto.HasField("entry_price") else Decimal("0"),
-            exit_price=Decimal(proto.exit_price.value) if proto.HasField("exit_price") else Decimal("0"),
+            entry_price=Decimal(proto.entry_price.value)
+            if proto.HasField("entry_price")
+            else Decimal("0"),
+            exit_price=Decimal(proto.exit_price.value)
+            if proto.HasField("exit_price")
+            else Decimal("0"),
             entry_time=datetime.fromtimestamp(proto.entry_time.seconds),
             exit_time=datetime.fromtimestamp(proto.exit_time.seconds),
             pnl=Decimal(proto.pnl.value) if proto.HasField("pnl") else Decimal("0"),
-            pnl_percent=Decimal(proto.pnl_percent.value) if proto.HasField("pnl_percent") else Decimal("0"),
-            commission=Decimal(proto.commission.value) if proto.HasField("commission") else Decimal("0"),
+            pnl_percent=Decimal(proto.pnl_percent.value)
+            if proto.HasField("pnl_percent")
+            else Decimal("0"),
+            commission=Decimal(proto.commission.value)
+            if proto.HasField("commission")
+            else Decimal("0"),
             holding_period_bars=proto.holding_period_bars,
             entry_reason=proto.entry_reason,
             exit_reason=proto.exit_reason,

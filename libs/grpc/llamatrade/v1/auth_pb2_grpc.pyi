@@ -3,18 +3,20 @@
 isort:skip_file
 """
 
-from collections import abc as _abc
-from grpc import aio as _aio
-from llamatrade.v1 import auth_pb2 as _auth_pb2
 import abc as _abc_1
-import grpc as _grpc
 import sys
 import typing as _typing
+from collections import abc as _abc
+
+import grpc as _grpc
+from grpc import aio as _aio
+
+from llamatrade.v1 import auth_pb2 as _auth_pb2
 
 if sys.version_info >= (3, 11):
     from typing import Self as _Self
 else:
-    from typing_extensions import Self as _Self
+    from typing import Self as _Self
 
 _T = _typing.TypeVar("_T")
 
@@ -93,7 +95,7 @@ class AuthServiceServicer(metaclass=_abc_1.ABCMeta):
         self,
         request: _auth_pb2.LoginRequest,
         context: _ServicerContext,
-    ) -> _typing.Union[_auth_pb2.LoginResponse, _abc.Awaitable[_auth_pb2.LoginResponse]]:
+    ) -> _auth_pb2.LoginResponse | _abc.Awaitable[_auth_pb2.LoginResponse]:
         """Public endpoints (no auth required)"""
 
     @_abc_1.abstractmethod
@@ -101,14 +103,14 @@ class AuthServiceServicer(metaclass=_abc_1.ABCMeta):
         self,
         request: _auth_pb2.RegisterRequest,
         context: _ServicerContext,
-    ) -> _typing.Union[_auth_pb2.RegisterResponse, _abc.Awaitable[_auth_pb2.RegisterResponse]]: ...
+    ) -> _auth_pb2.RegisterResponse | _abc.Awaitable[_auth_pb2.RegisterResponse]: ...
 
     @_abc_1.abstractmethod
     def RefreshToken(
         self,
         request: _auth_pb2.RefreshTokenRequest,
         context: _ServicerContext,
-    ) -> _typing.Union[_auth_pb2.RefreshTokenResponse, _abc.Awaitable[_auth_pb2.RefreshTokenResponse]]:
+    ) -> _auth_pb2.RefreshTokenResponse | _abc.Awaitable[_auth_pb2.RefreshTokenResponse]:
         """Token operations"""
 
     @_abc_1.abstractmethod
@@ -116,14 +118,14 @@ class AuthServiceServicer(metaclass=_abc_1.ABCMeta):
         self,
         request: _auth_pb2.LogoutRequest,
         context: _ServicerContext,
-    ) -> _typing.Union[_auth_pb2.LogoutResponse, _abc.Awaitable[_auth_pb2.LogoutResponse]]: ...
+    ) -> _auth_pb2.LogoutResponse | _abc.Awaitable[_auth_pb2.LogoutResponse]: ...
 
     @_abc_1.abstractmethod
     def GetCurrentUser(
         self,
         request: _auth_pb2.GetCurrentUserRequest,
         context: _ServicerContext,
-    ) -> _typing.Union[_auth_pb2.GetCurrentUserResponse, _abc.Awaitable[_auth_pb2.GetCurrentUserResponse]]:
+    ) -> _auth_pb2.GetCurrentUserResponse | _abc.Awaitable[_auth_pb2.GetCurrentUserResponse]:
         """Current user (requires auth)"""
 
     @_abc_1.abstractmethod
@@ -131,7 +133,7 @@ class AuthServiceServicer(metaclass=_abc_1.ABCMeta):
         self,
         request: _auth_pb2.ChangePasswordRequest,
         context: _ServicerContext,
-    ) -> _typing.Union[_auth_pb2.ChangePasswordResponse, _abc.Awaitable[_auth_pb2.ChangePasswordResponse]]:
+    ) -> _auth_pb2.ChangePasswordResponse | _abc.Awaitable[_auth_pb2.ChangePasswordResponse]:
         """Password management (requires auth)"""
 
     @_abc_1.abstractmethod
@@ -139,7 +141,7 @@ class AuthServiceServicer(metaclass=_abc_1.ABCMeta):
         self,
         request: _auth_pb2.ValidateTokenRequest,
         context: _ServicerContext,
-    ) -> _typing.Union[_auth_pb2.ValidateTokenResponse, _abc.Awaitable[_auth_pb2.ValidateTokenResponse]]:
+    ) -> _auth_pb2.ValidateTokenResponse | _abc.Awaitable[_auth_pb2.ValidateTokenResponse]:
         """Token validation (high-frequency, called by all services)"""
 
     @_abc_1.abstractmethod
@@ -147,14 +149,14 @@ class AuthServiceServicer(metaclass=_abc_1.ABCMeta):
         self,
         request: _auth_pb2.ValidateAPIKeyRequest,
         context: _ServicerContext,
-    ) -> _typing.Union[_auth_pb2.ValidateAPIKeyResponse, _abc.Awaitable[_auth_pb2.ValidateAPIKeyResponse]]: ...
+    ) -> _auth_pb2.ValidateAPIKeyResponse | _abc.Awaitable[_auth_pb2.ValidateAPIKeyResponse]: ...
 
     @_abc_1.abstractmethod
     def GetUser(
         self,
         request: _auth_pb2.GetUserRequest,
         context: _ServicerContext,
-    ) -> _typing.Union[_auth_pb2.GetUserResponse, _abc.Awaitable[_auth_pb2.GetUserResponse]]:
+    ) -> _auth_pb2.GetUserResponse | _abc.Awaitable[_auth_pb2.GetUserResponse]:
         """User/tenant lookup"""
 
     @_abc_1.abstractmethod
@@ -162,14 +164,14 @@ class AuthServiceServicer(metaclass=_abc_1.ABCMeta):
         self,
         request: _auth_pb2.GetTenantRequest,
         context: _ServicerContext,
-    ) -> _typing.Union[_auth_pb2.GetTenantResponse, _abc.Awaitable[_auth_pb2.GetTenantResponse]]: ...
+    ) -> _auth_pb2.GetTenantResponse | _abc.Awaitable[_auth_pb2.GetTenantResponse]: ...
 
     @_abc_1.abstractmethod
     def CheckPermission(
         self,
         request: _auth_pb2.CheckPermissionRequest,
         context: _ServicerContext,
-    ) -> _typing.Union[_auth_pb2.CheckPermissionResponse, _abc.Awaitable[_auth_pb2.CheckPermissionResponse]]:
+    ) -> _auth_pb2.CheckPermissionResponse | _abc.Awaitable[_auth_pb2.CheckPermissionResponse]:
         """Authorization"""
 
-def add_AuthServiceServicer_to_server(servicer: AuthServiceServicer, server: _typing.Union[_grpc.Server, _aio.Server]) -> None: ...
+def add_AuthServiceServicer_to_server(servicer: AuthServiceServicer, server: _grpc.Server | _aio.Server) -> None: ...

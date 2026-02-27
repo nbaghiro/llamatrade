@@ -3,18 +3,20 @@
 isort:skip_file
 """
 
-from collections import abc as _abc
-from grpc import aio as _aio
-from llamatrade.v1 import trading_pb2 as _trading_pb2
 import abc as _abc_1
-import grpc as _grpc
 import sys
 import typing as _typing
+from collections import abc as _abc
+
+import grpc as _grpc
+from grpc import aio as _aio
+
+from llamatrade.v1 import trading_pb2 as _trading_pb2
 
 if sys.version_info >= (3, 11):
     from typing import Self as _Self
 else:
-    from typing_extensions import Self as _Self
+    from typing import Self as _Self
 
 _T = _typing.TypeVar("_T")
 
@@ -81,7 +83,7 @@ class TradingServiceServicer(metaclass=_abc_1.ABCMeta):
         self,
         request: _trading_pb2.SubmitOrderRequest,
         context: _ServicerContext,
-    ) -> _typing.Union[_trading_pb2.SubmitOrderResponse, _abc.Awaitable[_trading_pb2.SubmitOrderResponse]]:
+    ) -> _trading_pb2.SubmitOrderResponse | _abc.Awaitable[_trading_pb2.SubmitOrderResponse]:
         """Order management"""
 
     @_abc_1.abstractmethod
@@ -89,28 +91,28 @@ class TradingServiceServicer(metaclass=_abc_1.ABCMeta):
         self,
         request: _trading_pb2.CancelOrderRequest,
         context: _ServicerContext,
-    ) -> _typing.Union[_trading_pb2.CancelOrderResponse, _abc.Awaitable[_trading_pb2.CancelOrderResponse]]: ...
+    ) -> _trading_pb2.CancelOrderResponse | _abc.Awaitable[_trading_pb2.CancelOrderResponse]: ...
 
     @_abc_1.abstractmethod
     def GetOrder(
         self,
         request: _trading_pb2.GetOrderRequest,
         context: _ServicerContext,
-    ) -> _typing.Union[_trading_pb2.GetOrderResponse, _abc.Awaitable[_trading_pb2.GetOrderResponse]]: ...
+    ) -> _trading_pb2.GetOrderResponse | _abc.Awaitable[_trading_pb2.GetOrderResponse]: ...
 
     @_abc_1.abstractmethod
     def ListOrders(
         self,
         request: _trading_pb2.ListOrdersRequest,
         context: _ServicerContext,
-    ) -> _typing.Union[_trading_pb2.ListOrdersResponse, _abc.Awaitable[_trading_pb2.ListOrdersResponse]]: ...
+    ) -> _trading_pb2.ListOrdersResponse | _abc.Awaitable[_trading_pb2.ListOrdersResponse]: ...
 
     @_abc_1.abstractmethod
     def GetPosition(
         self,
         request: _trading_pb2.GetPositionRequest,
         context: _ServicerContext,
-    ) -> _typing.Union[_trading_pb2.GetPositionResponse, _abc.Awaitable[_trading_pb2.GetPositionResponse]]:
+    ) -> _trading_pb2.GetPositionResponse | _abc.Awaitable[_trading_pb2.GetPositionResponse]:
         """Position management"""
 
     @_abc_1.abstractmethod
@@ -118,21 +120,21 @@ class TradingServiceServicer(metaclass=_abc_1.ABCMeta):
         self,
         request: _trading_pb2.ListPositionsRequest,
         context: _ServicerContext,
-    ) -> _typing.Union[_trading_pb2.ListPositionsResponse, _abc.Awaitable[_trading_pb2.ListPositionsResponse]]: ...
+    ) -> _trading_pb2.ListPositionsResponse | _abc.Awaitable[_trading_pb2.ListPositionsResponse]: ...
 
     @_abc_1.abstractmethod
     def ClosePosition(
         self,
         request: _trading_pb2.ClosePositionRequest,
         context: _ServicerContext,
-    ) -> _typing.Union[_trading_pb2.ClosePositionResponse, _abc.Awaitable[_trading_pb2.ClosePositionResponse]]: ...
+    ) -> _trading_pb2.ClosePositionResponse | _abc.Awaitable[_trading_pb2.ClosePositionResponse]: ...
 
     @_abc_1.abstractmethod
     def StreamOrderUpdates(
         self,
         request: _trading_pb2.StreamOrderUpdatesRequest,
         context: _ServicerContext,
-    ) -> _typing.Union[_abc.Iterator[_trading_pb2.OrderUpdate], _abc.AsyncIterator[_trading_pb2.OrderUpdate]]:
+    ) -> _abc.Iterator[_trading_pb2.OrderUpdate] | _abc.AsyncIterator[_trading_pb2.OrderUpdate]:
         """Real-time updates"""
 
     @_abc_1.abstractmethod
@@ -140,6 +142,6 @@ class TradingServiceServicer(metaclass=_abc_1.ABCMeta):
         self,
         request: _trading_pb2.StreamPositionUpdatesRequest,
         context: _ServicerContext,
-    ) -> _typing.Union[_abc.Iterator[_trading_pb2.PositionUpdate], _abc.AsyncIterator[_trading_pb2.PositionUpdate]]: ...
+    ) -> _abc.Iterator[_trading_pb2.PositionUpdate] | _abc.AsyncIterator[_trading_pb2.PositionUpdate]: ...
 
-def add_TradingServiceServicer_to_server(servicer: TradingServiceServicer, server: _typing.Union[_grpc.Server, _aio.Server]) -> None: ...
+def add_TradingServiceServicer_to_server(servicer: TradingServiceServicer, server: _grpc.Server | _aio.Server) -> None: ...

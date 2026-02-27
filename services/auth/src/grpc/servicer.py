@@ -5,15 +5,13 @@ from __future__ import annotations
 import logging
 import os
 from datetime import UTC, datetime, timedelta
-
-import jwt
 from typing import Any
 
+import jwt
 from connectrpc.code import Code
 from connectrpc.errors import ConnectError
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from llamatrade.v1 import auth_pb2, common_pb2
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.services.database import get_session_maker
 
@@ -323,9 +321,9 @@ class AuthServicer:
         ctx: Any,
     ) -> auth_pb2.RegisterResponse:
         """Register a new user and tenant."""
-        import bcrypt
         from uuid import uuid4
 
+        import bcrypt
         from llamatrade_db.models import Tenant, User
         from sqlalchemy import select
 
@@ -402,7 +400,6 @@ class AuthServicer:
     ) -> auth_pb2.LoginResponse:
         """Login with email and password."""
         import bcrypt
-
         from llamatrade_db.models import User
         from sqlalchemy import select
 
@@ -480,9 +477,9 @@ class AuthServicer:
 
         Requires authorization token in header.
         """
-        import bcrypt
         from uuid import UUID
 
+        import bcrypt
         from llamatrade_db.models import User
         from sqlalchemy import select
 

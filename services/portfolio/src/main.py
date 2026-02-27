@@ -40,6 +40,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # Mount Connect ASGI app
     try:
         from llamatrade.v1.portfolio_connect import PortfolioServiceASGIApplication
+
         from src.grpc.servicer import PortfolioServicer
 
         servicer = PortfolioServicer()

@@ -3,18 +3,20 @@
 isort:skip_file
 """
 
-from collections import abc as _abc
-from grpc import aio as _aio
-from llamatrade.v1 import portfolio_pb2 as _portfolio_pb2
 import abc as _abc_1
-import grpc as _grpc
 import sys
 import typing as _typing
+from collections import abc as _abc
+
+import grpc as _grpc
+from grpc import aio as _aio
+
+from llamatrade.v1 import portfolio_pb2 as _portfolio_pb2
 
 if sys.version_info >= (3, 11):
     from typing import Self as _Self
 else:
-    from typing_extensions import Self as _Self
+    from typing import Self as _Self
 
 _T = _typing.TypeVar("_T")
 
@@ -83,7 +85,7 @@ class PortfolioServiceServicer(metaclass=_abc_1.ABCMeta):
         self,
         request: _portfolio_pb2.GetPortfolioRequest,
         context: _ServicerContext,
-    ) -> _typing.Union[_portfolio_pb2.GetPortfolioResponse, _abc.Awaitable[_portfolio_pb2.GetPortfolioResponse]]:
+    ) -> _portfolio_pb2.GetPortfolioResponse | _abc.Awaitable[_portfolio_pb2.GetPortfolioResponse]:
         """Portfolio management"""
 
     @_abc_1.abstractmethod
@@ -91,14 +93,14 @@ class PortfolioServiceServicer(metaclass=_abc_1.ABCMeta):
         self,
         request: _portfolio_pb2.ListPortfoliosRequest,
         context: _ServicerContext,
-    ) -> _typing.Union[_portfolio_pb2.ListPortfoliosResponse, _abc.Awaitable[_portfolio_pb2.ListPortfoliosResponse]]: ...
+    ) -> _portfolio_pb2.ListPortfoliosResponse | _abc.Awaitable[_portfolio_pb2.ListPortfoliosResponse]: ...
 
     @_abc_1.abstractmethod
     def GetPerformance(
         self,
         request: _portfolio_pb2.GetPerformanceRequest,
         context: _ServicerContext,
-    ) -> _typing.Union[_portfolio_pb2.GetPerformanceResponse, _abc.Awaitable[_portfolio_pb2.GetPerformanceResponse]]:
+    ) -> _portfolio_pb2.GetPerformanceResponse | _abc.Awaitable[_portfolio_pb2.GetPerformanceResponse]:
         """Performance"""
 
     @_abc_1.abstractmethod
@@ -106,14 +108,14 @@ class PortfolioServiceServicer(metaclass=_abc_1.ABCMeta):
         self,
         request: _portfolio_pb2.GetAssetAllocationRequest,
         context: _ServicerContext,
-    ) -> _typing.Union[_portfolio_pb2.GetAssetAllocationResponse, _abc.Awaitable[_portfolio_pb2.GetAssetAllocationResponse]]: ...
+    ) -> _portfolio_pb2.GetAssetAllocationResponse | _abc.Awaitable[_portfolio_pb2.GetAssetAllocationResponse]: ...
 
     @_abc_1.abstractmethod
     def GetPositions(
         self,
         request: _portfolio_pb2.GetPositionsRequest,
         context: _ServicerContext,
-    ) -> _typing.Union[_portfolio_pb2.GetPositionsResponse, _abc.Awaitable[_portfolio_pb2.GetPositionsResponse]]:
+    ) -> _portfolio_pb2.GetPositionsResponse | _abc.Awaitable[_portfolio_pb2.GetPositionsResponse]:
         """Positions"""
 
     @_abc_1.abstractmethod
@@ -121,7 +123,7 @@ class PortfolioServiceServicer(metaclass=_abc_1.ABCMeta):
         self,
         request: _portfolio_pb2.ListTransactionsRequest,
         context: _ServicerContext,
-    ) -> _typing.Union[_portfolio_pb2.ListTransactionsResponse, _abc.Awaitable[_portfolio_pb2.ListTransactionsResponse]]:
+    ) -> _portfolio_pb2.ListTransactionsResponse | _abc.Awaitable[_portfolio_pb2.ListTransactionsResponse]:
         """Transactions"""
 
     @_abc_1.abstractmethod
@@ -129,14 +131,14 @@ class PortfolioServiceServicer(metaclass=_abc_1.ABCMeta):
         self,
         request: _portfolio_pb2.RecordTransactionRequest,
         context: _ServicerContext,
-    ) -> _typing.Union[_portfolio_pb2.RecordTransactionResponse, _abc.Awaitable[_portfolio_pb2.RecordTransactionResponse]]: ...
+    ) -> _portfolio_pb2.RecordTransactionResponse | _abc.Awaitable[_portfolio_pb2.RecordTransactionResponse]: ...
 
     @_abc_1.abstractmethod
     def SyncPortfolio(
         self,
         request: _portfolio_pb2.SyncPortfolioRequest,
         context: _ServicerContext,
-    ) -> _typing.Union[_portfolio_pb2.SyncPortfolioResponse, _abc.Awaitable[_portfolio_pb2.SyncPortfolioResponse]]:
+    ) -> _portfolio_pb2.SyncPortfolioResponse | _abc.Awaitable[_portfolio_pb2.SyncPortfolioResponse]:
         """Sync with trading"""
 
-def add_PortfolioServiceServicer_to_server(servicer: PortfolioServiceServicer, server: _typing.Union[_grpc.Server, _aio.Server]) -> None: ...
+def add_PortfolioServiceServicer_to_server(servicer: PortfolioServiceServicer, server: _grpc.Server | _aio.Server) -> None: ...

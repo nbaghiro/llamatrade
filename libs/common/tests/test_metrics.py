@@ -4,7 +4,6 @@ import asyncio
 import time
 
 import pytest
-
 from llamatrade_common.metrics import (
     CACHE_HITS_TOTAL,
     CACHE_MISSES_TOTAL,

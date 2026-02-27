@@ -75,6 +75,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # Mount Connect ASGI app
     try:
         from llamatrade.v1.market_data_connect import MarketDataServiceASGIApplication
+
         from src.grpc.servicer import MarketDataServicer
 
         servicer = MarketDataServicer()

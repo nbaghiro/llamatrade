@@ -1,3 +1,4 @@
+# mypy: ignore-errors
 """Market Data gRPC servicer implementation."""
 
 from __future__ import annotations

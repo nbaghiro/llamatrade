@@ -3,18 +3,20 @@
 isort:skip_file
 """
 
-from collections import abc as _abc
-from grpc import aio as _aio
-from llamatrade.v1 import notification_pb2 as _notification_pb2
 import abc as _abc_1
-import grpc as _grpc
 import sys
 import typing as _typing
+from collections import abc as _abc
+
+import grpc as _grpc
+from grpc import aio as _aio
+
+from llamatrade.v1 import notification_pb2 as _notification_pb2
 
 if sys.version_info >= (3, 11):
     from typing import Self as _Self
 else:
-    from typing_extensions import Self as _Self
+    from typing import Self as _Self
 
 _T = _typing.TypeVar("_T")
 
@@ -81,7 +83,7 @@ class NotificationServiceServicer(metaclass=_abc_1.ABCMeta):
         self,
         request: _notification_pb2.ListNotificationsRequest,
         context: _ServicerContext,
-    ) -> _typing.Union[_notification_pb2.ListNotificationsResponse, _abc.Awaitable[_notification_pb2.ListNotificationsResponse]]:
+    ) -> _notification_pb2.ListNotificationsResponse | _abc.Awaitable[_notification_pb2.ListNotificationsResponse]:
         """Notifications"""
 
     @_abc_1.abstractmethod
@@ -89,14 +91,14 @@ class NotificationServiceServicer(metaclass=_abc_1.ABCMeta):
         self,
         request: _notification_pb2.MarkAsReadRequest,
         context: _ServicerContext,
-    ) -> _typing.Union[_notification_pb2.MarkAsReadResponse, _abc.Awaitable[_notification_pb2.MarkAsReadResponse]]: ...
+    ) -> _notification_pb2.MarkAsReadResponse | _abc.Awaitable[_notification_pb2.MarkAsReadResponse]: ...
 
     @_abc_1.abstractmethod
     def ListAlerts(
         self,
         request: _notification_pb2.ListAlertsRequest,
         context: _ServicerContext,
-    ) -> _typing.Union[_notification_pb2.ListAlertsResponse, _abc.Awaitable[_notification_pb2.ListAlertsResponse]]:
+    ) -> _notification_pb2.ListAlertsResponse | _abc.Awaitable[_notification_pb2.ListAlertsResponse]:
         """Alerts"""
 
     @_abc_1.abstractmethod
@@ -104,28 +106,28 @@ class NotificationServiceServicer(metaclass=_abc_1.ABCMeta):
         self,
         request: _notification_pb2.CreateAlertRequest,
         context: _ServicerContext,
-    ) -> _typing.Union[_notification_pb2.CreateAlertResponse, _abc.Awaitable[_notification_pb2.CreateAlertResponse]]: ...
+    ) -> _notification_pb2.CreateAlertResponse | _abc.Awaitable[_notification_pb2.CreateAlertResponse]: ...
 
     @_abc_1.abstractmethod
     def DeleteAlert(
         self,
         request: _notification_pb2.DeleteAlertRequest,
         context: _ServicerContext,
-    ) -> _typing.Union[_notification_pb2.DeleteAlertResponse, _abc.Awaitable[_notification_pb2.DeleteAlertResponse]]: ...
+    ) -> _notification_pb2.DeleteAlertResponse | _abc.Awaitable[_notification_pb2.DeleteAlertResponse]: ...
 
     @_abc_1.abstractmethod
     def ToggleAlert(
         self,
         request: _notification_pb2.ToggleAlertRequest,
         context: _ServicerContext,
-    ) -> _typing.Union[_notification_pb2.ToggleAlertResponse, _abc.Awaitable[_notification_pb2.ToggleAlertResponse]]: ...
+    ) -> _notification_pb2.ToggleAlertResponse | _abc.Awaitable[_notification_pb2.ToggleAlertResponse]: ...
 
     @_abc_1.abstractmethod
     def ListChannels(
         self,
         request: _notification_pb2.ListChannelsRequest,
         context: _ServicerContext,
-    ) -> _typing.Union[_notification_pb2.ListChannelsResponse, _abc.Awaitable[_notification_pb2.ListChannelsResponse]]:
+    ) -> _notification_pb2.ListChannelsResponse | _abc.Awaitable[_notification_pb2.ListChannelsResponse]:
         """Channels"""
 
     @_abc_1.abstractmethod
@@ -133,13 +135,13 @@ class NotificationServiceServicer(metaclass=_abc_1.ABCMeta):
         self,
         request: _notification_pb2.UpdateChannelRequest,
         context: _ServicerContext,
-    ) -> _typing.Union[_notification_pb2.UpdateChannelResponse, _abc.Awaitable[_notification_pb2.UpdateChannelResponse]]: ...
+    ) -> _notification_pb2.UpdateChannelResponse | _abc.Awaitable[_notification_pb2.UpdateChannelResponse]: ...
 
     @_abc_1.abstractmethod
     def TestChannel(
         self,
         request: _notification_pb2.TestChannelRequest,
         context: _ServicerContext,
-    ) -> _typing.Union[_notification_pb2.TestChannelResponse, _abc.Awaitable[_notification_pb2.TestChannelResponse]]: ...
+    ) -> _notification_pb2.TestChannelResponse | _abc.Awaitable[_notification_pb2.TestChannelResponse]: ...
 
-def add_NotificationServiceServicer_to_server(servicer: NotificationServiceServicer, server: _typing.Union[_grpc.Server, _aio.Server]) -> None: ...
+def add_NotificationServiceServicer_to_server(servicer: NotificationServiceServicer, server: _grpc.Server | _aio.Server) -> None: ...

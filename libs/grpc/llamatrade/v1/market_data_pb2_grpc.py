@@ -5,7 +5,7 @@ import grpc
 from llamatrade.v1 import market_data_pb2 as llamatrade_dot_v1_dot_market__data__pb2
 
 
-class MarketDataServiceStub(object):
+class MarketDataServiceStub:
     """=============================================================================
     SERVICE
     =============================================================================
@@ -60,7 +60,7 @@ class MarketDataServiceStub(object):
                 _registered_method=True)
 
 
-class MarketDataServiceServicer(object):
+class MarketDataServiceServicer:
     """=============================================================================
     SERVICE
     =============================================================================
@@ -170,7 +170,7 @@ def add_MarketDataServiceServicer_to_server(servicer, server):
 
 
  # This class is part of an EXPERIMENTAL API.
-class MarketDataService(object):
+class MarketDataService:
     """=============================================================================
     SERVICE
     =============================================================================

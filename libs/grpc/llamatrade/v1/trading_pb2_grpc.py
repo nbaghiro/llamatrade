@@ -5,7 +5,7 @@ import grpc
 from llamatrade.v1 import trading_pb2 as llamatrade_dot_v1_dot_trading__pb2
 
 
-class TradingServiceStub(object):
+class TradingServiceStub:
     """=============================================================================
     SERVICE
     =============================================================================
@@ -65,7 +65,7 @@ class TradingServiceStub(object):
                 _registered_method=True)
 
 
-class TradingServiceServicer(object):
+class TradingServiceServicer:
     """=============================================================================
     SERVICE
     =============================================================================
@@ -185,7 +185,7 @@ def add_TradingServiceServicer_to_server(servicer, server):
 
 
  # This class is part of an EXPERIMENTAL API.
-class TradingService(object):
+class TradingService:
     """=============================================================================
     SERVICE
     =============================================================================

@@ -3,18 +3,20 @@
 isort:skip_file
 """
 
-from collections import abc as _abc
-from grpc import aio as _aio
-from llamatrade.v1 import billing_pb2 as _billing_pb2
 import abc as _abc_1
-import grpc as _grpc
 import sys
 import typing as _typing
+from collections import abc as _abc
+
+import grpc as _grpc
+from grpc import aio as _aio
+
+from llamatrade.v1 import billing_pb2 as _billing_pb2
 
 if sys.version_info >= (3, 11):
     from typing import Self as _Self
 else:
-    from typing_extensions import Self as _Self
+    from typing import Self as _Self
 
 _T = _typing.TypeVar("_T")
 
@@ -97,7 +99,7 @@ class BillingServiceServicer(metaclass=_abc_1.ABCMeta):
         self,
         request: _billing_pb2.GetSubscriptionRequest,
         context: _ServicerContext,
-    ) -> _typing.Union[_billing_pb2.GetSubscriptionResponse, _abc.Awaitable[_billing_pb2.GetSubscriptionResponse]]:
+    ) -> _billing_pb2.GetSubscriptionResponse | _abc.Awaitable[_billing_pb2.GetSubscriptionResponse]:
         """Subscription management"""
 
     @_abc_1.abstractmethod
@@ -105,35 +107,35 @@ class BillingServiceServicer(metaclass=_abc_1.ABCMeta):
         self,
         request: _billing_pb2.CreateSubscriptionRequest,
         context: _ServicerContext,
-    ) -> _typing.Union[_billing_pb2.CreateSubscriptionResponse, _abc.Awaitable[_billing_pb2.CreateSubscriptionResponse]]: ...
+    ) -> _billing_pb2.CreateSubscriptionResponse | _abc.Awaitable[_billing_pb2.CreateSubscriptionResponse]: ...
 
     @_abc_1.abstractmethod
     def UpdateSubscription(
         self,
         request: _billing_pb2.UpdateSubscriptionRequest,
         context: _ServicerContext,
-    ) -> _typing.Union[_billing_pb2.UpdateSubscriptionResponse, _abc.Awaitable[_billing_pb2.UpdateSubscriptionResponse]]: ...
+    ) -> _billing_pb2.UpdateSubscriptionResponse | _abc.Awaitable[_billing_pb2.UpdateSubscriptionResponse]: ...
 
     @_abc_1.abstractmethod
     def CancelSubscription(
         self,
         request: _billing_pb2.CancelSubscriptionRequest,
         context: _ServicerContext,
-    ) -> _typing.Union[_billing_pb2.CancelSubscriptionResponse, _abc.Awaitable[_billing_pb2.CancelSubscriptionResponse]]: ...
+    ) -> _billing_pb2.CancelSubscriptionResponse | _abc.Awaitable[_billing_pb2.CancelSubscriptionResponse]: ...
 
     @_abc_1.abstractmethod
     def ResumeSubscription(
         self,
         request: _billing_pb2.ResumeSubscriptionRequest,
         context: _ServicerContext,
-    ) -> _typing.Union[_billing_pb2.ResumeSubscriptionResponse, _abc.Awaitable[_billing_pb2.ResumeSubscriptionResponse]]: ...
+    ) -> _billing_pb2.ResumeSubscriptionResponse | _abc.Awaitable[_billing_pb2.ResumeSubscriptionResponse]: ...
 
     @_abc_1.abstractmethod
     def GetUsage(
         self,
         request: _billing_pb2.GetUsageRequest,
         context: _ServicerContext,
-    ) -> _typing.Union[_billing_pb2.GetUsageResponse, _abc.Awaitable[_billing_pb2.GetUsageResponse]]:
+    ) -> _billing_pb2.GetUsageResponse | _abc.Awaitable[_billing_pb2.GetUsageResponse]:
         """Usage"""
 
     @_abc_1.abstractmethod
@@ -141,7 +143,7 @@ class BillingServiceServicer(metaclass=_abc_1.ABCMeta):
         self,
         request: _billing_pb2.ListInvoicesRequest,
         context: _ServicerContext,
-    ) -> _typing.Union[_billing_pb2.ListInvoicesResponse, _abc.Awaitable[_billing_pb2.ListInvoicesResponse]]:
+    ) -> _billing_pb2.ListInvoicesResponse | _abc.Awaitable[_billing_pb2.ListInvoicesResponse]:
         """Invoices"""
 
     @_abc_1.abstractmethod
@@ -149,14 +151,14 @@ class BillingServiceServicer(metaclass=_abc_1.ABCMeta):
         self,
         request: _billing_pb2.GetInvoiceRequest,
         context: _ServicerContext,
-    ) -> _typing.Union[_billing_pb2.GetInvoiceResponse, _abc.Awaitable[_billing_pb2.GetInvoiceResponse]]: ...
+    ) -> _billing_pb2.GetInvoiceResponse | _abc.Awaitable[_billing_pb2.GetInvoiceResponse]: ...
 
     @_abc_1.abstractmethod
     def ListPlans(
         self,
         request: _billing_pb2.ListPlansRequest,
         context: _ServicerContext,
-    ) -> _typing.Union[_billing_pb2.ListPlansResponse, _abc.Awaitable[_billing_pb2.ListPlansResponse]]:
+    ) -> _billing_pb2.ListPlansResponse | _abc.Awaitable[_billing_pb2.ListPlansResponse]:
         """Plans"""
 
     @_abc_1.abstractmethod
@@ -164,7 +166,7 @@ class BillingServiceServicer(metaclass=_abc_1.ABCMeta):
         self,
         request: _billing_pb2.ListPaymentMethodsRequest,
         context: _ServicerContext,
-    ) -> _typing.Union[_billing_pb2.ListPaymentMethodsResponse, _abc.Awaitable[_billing_pb2.ListPaymentMethodsResponse]]:
+    ) -> _billing_pb2.ListPaymentMethodsResponse | _abc.Awaitable[_billing_pb2.ListPaymentMethodsResponse]:
         """Payment methods"""
 
     @_abc_1.abstractmethod
@@ -172,21 +174,21 @@ class BillingServiceServicer(metaclass=_abc_1.ABCMeta):
         self,
         request: _billing_pb2.AddPaymentMethodRequest,
         context: _ServicerContext,
-    ) -> _typing.Union[_billing_pb2.AddPaymentMethodResponse, _abc.Awaitable[_billing_pb2.AddPaymentMethodResponse]]: ...
+    ) -> _billing_pb2.AddPaymentMethodResponse | _abc.Awaitable[_billing_pb2.AddPaymentMethodResponse]: ...
 
     @_abc_1.abstractmethod
     def RemovePaymentMethod(
         self,
         request: _billing_pb2.RemovePaymentMethodRequest,
         context: _ServicerContext,
-    ) -> _typing.Union[_billing_pb2.RemovePaymentMethodResponse, _abc.Awaitable[_billing_pb2.RemovePaymentMethodResponse]]: ...
+    ) -> _billing_pb2.RemovePaymentMethodResponse | _abc.Awaitable[_billing_pb2.RemovePaymentMethodResponse]: ...
 
     @_abc_1.abstractmethod
     def CreateCheckoutSession(
         self,
         request: _billing_pb2.CreateCheckoutSessionRequest,
         context: _ServicerContext,
-    ) -> _typing.Union[_billing_pb2.CreateCheckoutSessionResponse, _abc.Awaitable[_billing_pb2.CreateCheckoutSessionResponse]]:
+    ) -> _billing_pb2.CreateCheckoutSessionResponse | _abc.Awaitable[_billing_pb2.CreateCheckoutSessionResponse]:
         """Stripe integration"""
 
     @_abc_1.abstractmethod
@@ -194,6 +196,6 @@ class BillingServiceServicer(metaclass=_abc_1.ABCMeta):
         self,
         request: _billing_pb2.CreatePortalSessionRequest,
         context: _ServicerContext,
-    ) -> _typing.Union[_billing_pb2.CreatePortalSessionResponse, _abc.Awaitable[_billing_pb2.CreatePortalSessionResponse]]: ...
+    ) -> _billing_pb2.CreatePortalSessionResponse | _abc.Awaitable[_billing_pb2.CreatePortalSessionResponse]: ...
 
-def add_BillingServiceServicer_to_server(servicer: BillingServiceServicer, server: _typing.Union[_grpc.Server, _aio.Server]) -> None: ...
+def add_BillingServiceServicer_to_server(servicer: BillingServiceServicer, server: _grpc.Server | _aio.Server) -> None: ...

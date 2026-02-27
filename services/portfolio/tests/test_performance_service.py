@@ -6,7 +6,6 @@ from uuid import UUID
 
 import numpy as np
 import pytest
-
 from src.services.performance_service import PerformanceService
 
 TEST_TENANT_ID = UUID("11111111-1111-1111-1111-111111111111")

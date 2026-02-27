@@ -5,7 +5,6 @@ from datetime import datetime, timedelta
 import numpy as np
 from llamatrade_compiler import Bar, SignalType
 from llamatrade_dsl import parse_strategy
-
 from src.compiler.compiled import compile_strategy
 from src.compiler.state import Position
 

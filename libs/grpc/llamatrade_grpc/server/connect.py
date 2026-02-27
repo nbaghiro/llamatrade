@@ -125,12 +125,16 @@ class CombinedConnectApp:
 
     async def _send_404(self, scope: dict, send: object) -> None:
         """Send 404 Not Found response."""
-        await send({  # type: ignore[operator]
-            "type": "http.response.start",
-            "status": 404,
-            "headers": [[b"content-type", b"text/plain"]],
-        })
-        await send({  # type: ignore[operator]
-            "type": "http.response.body",
-            "body": b"Not Found",
-        })
+        await send(
+            {  # type: ignore[operator]
+                "type": "http.response.start",
+                "status": 404,
+                "headers": [[b"content-type", b"text/plain"]],
+            }
+        )
+        await send(
+            {  # type: ignore[operator]
+                "type": "http.response.body",
+                "body": b"Not Found",
+            }
+        )
