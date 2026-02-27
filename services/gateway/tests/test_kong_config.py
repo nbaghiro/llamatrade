@@ -115,10 +115,16 @@ class TestUpstreamConfiguration:
             assert "targets" in upstream, f"Upstream {upstream['name']} has no targets"
             assert len(upstream["targets"]) > 0
 
-    def test_all_upstreams_have_healthchecks(self, kong_config):
-        """Test that all upstreams have health checks configured."""
+    def test_http_upstreams_have_healthchecks(self, kong_config):
+        """Test that HTTP upstreams have health checks configured.
+
+        Note: gRPC upstreams use gRPC health checking protocol which is
+        configured differently, so we only validate HTTP upstreams here.
+        """
         for upstream in kong_config["upstreams"]:
-            assert "healthchecks" in upstream, f"Upstream {upstream['name']} missing healthchecks"
+            # Only check HTTP upstreams (gRPC health checks work differently)
+            if "-http-upstream" in upstream["name"]:
+                assert "healthchecks" in upstream, f"HTTP upstream {upstream['name']} missing healthchecks"
 
     def test_upstream_targets_have_valid_format(self, kong_config):
         """Test that upstream targets have host:port format."""
@@ -240,61 +246,85 @@ class TestGlobalPlugins:
 class TestServicePortMappings:
     """Tests for service port consistency."""
 
-    EXPECTED_PORTS = {
-        "auth": 8001,
-        "strategy": 8002,
-        "backtest": 8003,
-        "market-data": 8004,
-        "trading": 8005,
-        "portfolio": 8006,
-        "notification": 8007,
-        "billing": 8008,
+    # gRPC ports for services (all services use gRPC only)
+    EXPECTED_GRPC_PORTS = {
+        "auth": 8810,
+        "strategy": 8820,
+        "backtest": 8830,
+        "market-data": 8840,
+        "trading": 8850,
+        "portfolio": 8860,
+        "notification": 8870,
+        "billing": 8880,
     }
 
-    def test_upstream_ports_match_services(self, kong_config):
-        """Test that upstream target ports match expected service ports."""
+    # HTTP ports (only for special cases like Stripe webhooks)
+    EXPECTED_HTTP_PORTS = {
+        "billing": 8881,  # Stripe webhook HTTP endpoint
+    }
+
+    def test_grpc_upstream_ports_match_services(self, kong_config):
+        """Test that gRPC upstream target ports match expected service ports."""
         for upstream in kong_config["upstreams"]:
-            # Extract service name from upstream name (e.g., "auth-upstream" -> "auth")
-            service_name = upstream["name"].replace("-upstream", "")
+            # Extract service name from upstream name (e.g., "auth-grpc-upstream" -> "auth")
+            upstream_name = upstream["name"]
+            if "-grpc-upstream" in upstream_name:
+                service_name = upstream_name.replace("-grpc-upstream", "")
+                if service_name in self.EXPECTED_GRPC_PORTS:
+                    expected_port = self.EXPECTED_GRPC_PORTS[service_name]
+                    target = upstream["targets"][0]["target"]
+                    actual_port = int(target.split(":")[1])
 
-            if service_name in self.EXPECTED_PORTS:
-                expected_port = self.EXPECTED_PORTS[service_name]
-                target = upstream["targets"][0]["target"]
-                actual_port = int(target.split(":")[1])
-
-                assert actual_port == expected_port, (
-                    f"Upstream {upstream['name']} has port {actual_port}, expected {expected_port}"
-                )
-
-    def test_service_ports_match_upstreams(self, kong_config):
-        """Test that service port definitions match their upstreams."""
-        for service in kong_config["services"]:
-            service_name = service["name"].replace("-service", "")
-
-            if service_name in self.EXPECTED_PORTS:
-                expected_port = self.EXPECTED_PORTS[service_name]
-                actual_port = service.get("port")
-
-                if actual_port:
                     assert actual_port == expected_port, (
-                        f"Service {service['name']} has port {actual_port}, "
-                        f"expected {expected_port}"
+                        f"gRPC upstream {upstream_name} has port {actual_port}, expected {expected_port}"
                     )
+
+    def test_http_upstream_ports_match_services(self, kong_config):
+        """Test that HTTP upstream target ports match expected service ports."""
+        for upstream in kong_config["upstreams"]:
+            upstream_name = upstream["name"]
+            if "-http-upstream" in upstream_name:
+                service_name = upstream_name.replace("-http-upstream", "")
+                if service_name in self.EXPECTED_HTTP_PORTS:
+                    expected_port = self.EXPECTED_HTTP_PORTS[service_name]
+                    target = upstream["targets"][0]["target"]
+                    actual_port = int(target.split(":")[1])
+
+                    assert actual_port == expected_port, (
+                        f"HTTP upstream {upstream_name} has port {actual_port}, expected {expected_port}"
+                    )
+
+    def test_grpc_service_ports_match_upstreams(self, kong_config):
+        """Test that gRPC service port definitions match their upstreams."""
+        for service in kong_config["services"]:
+            service_name_full = service["name"]
+            # Extract service name from gRPC service (e.g., "grpc-auth-service" -> "auth")
+            if service_name_full.startswith("grpc-") and service_name_full.endswith("-service"):
+                service_name = service_name_full.replace("grpc-", "").replace("-service", "")
+                if service_name in self.EXPECTED_GRPC_PORTS:
+                    expected_port = self.EXPECTED_GRPC_PORTS[service_name]
+                    actual_port = service.get("port")
+
+                    if actual_port:
+                        assert actual_port == expected_port, (
+                            f"Service {service_name_full} has port {actual_port}, "
+                            f"expected {expected_port}"
+                        )
 
 
 class TestRoutePathConsistency:
     """Tests for route path configuration."""
 
-    def test_all_api_routes_have_api_prefix(self, kong_config):
-        """Test that all routes use /api/ prefix."""
+    def test_all_api_routes_have_valid_prefix(self, kong_config):
+        """Test that all routes use /api/ or /grpc/ prefix."""
         for service in kong_config["services"]:
             for route in service["routes"]:
                 for path in route["paths"]:
                     # Skip webhook routes which may have different patterns
                     if "webhook" in path.lower():
                         continue
-                    assert path.startswith("/api/"), (
-                        f"Route path {path} in {service['name']} should start with /api/"
+                    assert path.startswith("/api/") or path.startswith("/grpc/"), (
+                        f"Route path {path} in {service['name']} should start with /api/ or /grpc/"
                     )
 
     def test_no_duplicate_route_paths(self, kong_config):

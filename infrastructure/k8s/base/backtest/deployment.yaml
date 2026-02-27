@@ -21,7 +21,7 @@ spec:
         - name: backtest
           image: gcr.io/llamatrade/backtest:latest
           ports:
-            - containerPort: 8003
+            - containerPort: 8830
           env:
             - name: DATABASE_URL
               valueFrom:
@@ -51,13 +51,13 @@ spec:
           livenessProbe:
             httpGet:
               path: /health
-              port: 8003
+              port: 8830
             initialDelaySeconds: 10
             periodSeconds: 10
           readinessProbe:
             httpGet:
               path: /health
-              port: 8003
+              port: 8830
             initialDelaySeconds: 5
             periodSeconds: 5
 ---
@@ -70,8 +70,8 @@ spec:
   selector:
     app: backtest
   ports:
-    - port: 8003
-      targetPort: 8003
+    - port: 8830
+      targetPort: 8830
   type: ClusterIP
 ---
 apiVersion: autoscaling/v2

@@ -62,22 +62,25 @@ spec:
             matchLabels:
               tier: backend
       ports:
+        # gRPC ports for backend services
         - protocol: TCP
-          port: 8001
+          port: 8810  # auth
         - protocol: TCP
-          port: 8002
+          port: 8820  # strategy
         - protocol: TCP
-          port: 8003
+          port: 8830  # backtest
         - protocol: TCP
-          port: 8004
+          port: 8840  # market-data
         - protocol: TCP
-          port: 8005
+          port: 8850  # trading
         - protocol: TCP
-          port: 8006
+          port: 8860  # portfolio
         - protocol: TCP
-          port: 8007
+          port: 8870  # notification
         - protocol: TCP
-          port: 8008
+          port: 8880  # billing gRPC
+        - protocol: TCP
+          port: 8881  # billing HTTP (Stripe webhooks)
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy

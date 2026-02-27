@@ -21,7 +21,7 @@ spec:
         - name: market-data
           image: gcr.io/llamatrade/market-data:latest
           ports:
-            - containerPort: 8004
+            - containerPort: 8840
           env:
             - name: ALPACA_API_KEY
               valueFrom:
@@ -56,13 +56,13 @@ spec:
           livenessProbe:
             httpGet:
               path: /health
-              port: 8004
+              port: 8840
             initialDelaySeconds: 10
             periodSeconds: 10
           readinessProbe:
             httpGet:
               path: /health
-              port: 8004
+              port: 8840
             initialDelaySeconds: 5
             periodSeconds: 5
 ---
@@ -75,8 +75,8 @@ spec:
   selector:
     app: market-data
   ports:
-    - port: 8004
-      targetPort: 8004
+    - port: 8840
+      targetPort: 8840
   type: ClusterIP
 ---
 apiVersion: autoscaling/v2

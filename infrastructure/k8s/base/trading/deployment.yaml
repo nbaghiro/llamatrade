@@ -21,7 +21,7 @@ spec:
         - name: trading
           image: gcr.io/llamatrade/trading:latest
           ports:
-            - containerPort: 8005
+            - containerPort: 8850
           env:
             - name: DATABASE_URL
               valueFrom:
@@ -61,13 +61,13 @@ spec:
           livenessProbe:
             httpGet:
               path: /health
-              port: 8005
+              port: 8850
             initialDelaySeconds: 10
             periodSeconds: 10
           readinessProbe:
             httpGet:
               path: /health
-              port: 8005
+              port: 8850
             initialDelaySeconds: 5
             periodSeconds: 5
 ---
@@ -80,8 +80,8 @@ spec:
   selector:
     app: trading
   ports:
-    - port: 8005
-      targetPort: 8005
+    - port: 8850
+      targetPort: 8850
   type: ClusterIP
 ---
 apiVersion: autoscaling/v2

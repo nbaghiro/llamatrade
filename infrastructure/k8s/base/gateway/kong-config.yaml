@@ -8,195 +8,232 @@ data:
     _format_version: "3.0"
     _transform: true
 
+    # gRPC upstreams for backend services
+    upstreams:
+      - name: billing-http-upstream
+        targets:
+          - target: billing:8881
+            weight: 100
+        healthchecks:
+          active:
+            http_path: /health
+            healthy:
+              interval: 5
+              successes: 2
+            unhealthy:
+              interval: 5
+              http_failures: 3
+
+      - name: auth-grpc-upstream
+        targets:
+          - target: auth:8810
+            weight: 100
+
+      - name: strategy-grpc-upstream
+        targets:
+          - target: strategy:8820
+            weight: 100
+
+      - name: backtest-grpc-upstream
+        targets:
+          - target: backtest:8830
+            weight: 100
+
+      - name: market-data-grpc-upstream
+        targets:
+          - target: market-data:8840
+            weight: 100
+
+      - name: trading-grpc-upstream
+        targets:
+          - target: trading:8850
+            weight: 100
+
+      - name: portfolio-grpc-upstream
+        targets:
+          - target: portfolio:8860
+            weight: 100
+
+      - name: notification-grpc-upstream
+        targets:
+          - target: notification:8870
+            weight: 100
+
+      - name: billing-grpc-upstream
+        targets:
+          - target: billing:8880
+            weight: 100
+
     services:
-      # Auth Service
-      - name: auth-service
-        url: http://auth:8001
+      # Stripe Webhook (HTTP - required by Stripe)
+      - name: stripe-webhook-service
+        host: billing-http-upstream
+        port: 8881
+        protocol: http
         routes:
-          - name: auth-routes
+          - name: stripe-webhook-route
             paths:
-              - /api/auth
-              - /api/users
-              - /api/tenants
-              - /api/api-keys
+              - /api/webhooks/stripe
+            methods:
+              - POST
             strip_path: false
         plugins:
           - name: rate-limiting
             config:
               minute: 100
               policy: local
-          - name: cors
-            config:
-              origins:
-                - "*"
-              methods:
-                - GET
-                - POST
-                - PUT
-                - DELETE
-                - OPTIONS
-              headers:
-                - Authorization
-                - Content-Type
-              credentials: true
-              max_age: 3600
 
-      # Strategy Service
-      - name: strategy-service
-        url: http://strategy:8002
+      # Auth gRPC Service
+      - name: grpc-auth-service
+        host: auth-grpc-upstream
+        port: 8810
+        protocol: grpc
         routes:
-          - name: strategy-routes
+          - name: grpc-auth-routes
             paths:
-              - /api/strategies
-              - /api/templates
-              - /api/indicators
-            strip_path: false
+              - /grpc/llamatrade.v1.AuthService
+            protocols:
+              - http
+              - https
         plugins:
+          - name: grpc-web
+          - name: rate-limiting
+            config:
+              minute: 100
+              policy: local
+
+      # Strategy gRPC Service
+      - name: grpc-strategy-service
+        host: strategy-grpc-upstream
+        port: 8820
+        protocol: grpc
+        routes:
+          - name: grpc-strategy-routes
+            paths:
+              - /grpc/llamatrade.v1.StrategyService
+            protocols:
+              - http
+              - https
+        plugins:
+          - name: grpc-web
           - name: rate-limiting
             config:
               minute: 200
               policy: local
-          - name: jwt
-            config:
-              secret_is_base64: false
-              claims_to_verify:
-                - exp
 
-      # Backtest Service
-      - name: backtest-service
-        url: http://backtest:8003
+      # Backtest gRPC Service
+      - name: grpc-backtest-service
+        host: backtest-grpc-upstream
+        port: 8830
+        protocol: grpc
         routes:
-          - name: backtest-routes
+          - name: grpc-backtest-routes
             paths:
-              - /api/backtests
-            strip_path: false
+              - /grpc/llamatrade.v1.BacktestService
+            protocols:
+              - http
+              - https
         plugins:
+          - name: grpc-web
           - name: rate-limiting
             config:
               minute: 50
               policy: local
-          - name: jwt
-            config:
-              secret_is_base64: false
-              claims_to_verify:
-                - exp
 
-      # Market Data Service
-      - name: market-data-service
-        url: http://market-data:8004
+      # Market Data gRPC Service
+      - name: grpc-market-data-service
+        host: market-data-grpc-upstream
+        port: 8840
+        protocol: grpc
         routes:
-          - name: market-data-routes
+          - name: grpc-market-data-routes
             paths:
-              - /api/market-data
-              - /api/bars
-              - /api/quotes
-              - /api/trades
-            strip_path: false
+              - /grpc/llamatrade.v1.MarketDataService
+            protocols:
+              - http
+              - https
         plugins:
+          - name: grpc-web
           - name: rate-limiting
             config:
               minute: 1000
               policy: local
-          - name: jwt
-            config:
-              secret_is_base64: false
-              claims_to_verify:
-                - exp
 
-      # Trading Service
-      - name: trading-service
-        url: http://trading:8005
+      # Trading gRPC Service
+      - name: grpc-trading-service
+        host: trading-grpc-upstream
+        port: 8850
+        protocol: grpc
         routes:
-          - name: trading-routes
+          - name: grpc-trading-routes
             paths:
-              - /api/orders
-              - /api/trading
-              - /api/sessions
-            strip_path: false
+              - /grpc/llamatrade.v1.TradingService
+            protocols:
+              - http
+              - https
         plugins:
+          - name: grpc-web
           - name: rate-limiting
             config:
               minute: 100
               policy: local
-          - name: jwt
-            config:
-              secret_is_base64: false
-              claims_to_verify:
-                - exp
 
-      # Portfolio Service
-      - name: portfolio-service
-        url: http://portfolio:8006
+      # Portfolio gRPC Service
+      - name: grpc-portfolio-service
+        host: portfolio-grpc-upstream
+        port: 8860
+        protocol: grpc
         routes:
-          - name: portfolio-routes
+          - name: grpc-portfolio-routes
             paths:
-              - /api/portfolio
-              - /api/positions
-              - /api/performance
-            strip_path: false
+              - /grpc/llamatrade.v1.PortfolioService
+            protocols:
+              - http
+              - https
         plugins:
+          - name: grpc-web
           - name: rate-limiting
             config:
               minute: 300
               policy: local
-          - name: jwt
-            config:
-              secret_is_base64: false
-              claims_to_verify:
-                - exp
 
-      # Notification Service
-      - name: notification-service
-        url: http://notification:8007
+      # Notification gRPC Service
+      - name: grpc-notification-service
+        host: notification-grpc-upstream
+        port: 8870
+        protocol: grpc
         routes:
-          - name: notification-routes
+          - name: grpc-notification-routes
             paths:
-              - /api/notifications
-              - /api/alerts
-              - /api/webhooks
-            strip_path: false
+              - /grpc/llamatrade.v1.NotificationService
+            protocols:
+              - http
+              - https
         plugins:
+          - name: grpc-web
           - name: rate-limiting
             config:
               minute: 100
               policy: local
-          - name: jwt
-            config:
-              secret_is_base64: false
-              claims_to_verify:
-                - exp
 
-      # Billing Service
-      - name: billing-service
-        url: http://billing:8008
+      # Billing gRPC Service
+      - name: grpc-billing-service
+        host: billing-grpc-upstream
+        port: 8880
+        protocol: grpc
         routes:
-          - name: billing-routes
+          - name: grpc-billing-routes
             paths:
-              - /api/billing
-              - /api/subscriptions
-              - /api/invoices
-            strip_path: false
+              - /grpc/llamatrade.v1.BillingService
+            protocols:
+              - http
+              - https
         plugins:
+          - name: grpc-web
           - name: rate-limiting
             config:
               minute: 50
               policy: local
-          - name: jwt
-            config:
-              secret_is_base64: false
-              claims_to_verify:
-                - exp
-
-      # Stripe Webhook (no auth required)
-      - name: stripe-webhook
-        url: http://billing:8008
-        routes:
-          - name: stripe-webhook-route
-            paths:
-              - /api/billing/webhook
-            methods:
-              - POST
-            strip_path: false
 
     # Global plugins
     plugins:
@@ -206,13 +243,36 @@ data:
           generator: uuid
           echo_downstream: true
 
-      - name: request-transformer
+      - name: cors
         config:
-          add:
-            headers:
-              - X-Gateway-Version:1.0
+          origins:
+            - "*"
+          methods:
+            - GET
+            - POST
+            - PUT
+            - DELETE
+            - OPTIONS
+          headers:
+            - Authorization
+            - Content-Type
+            - X-Request-ID
+            - Accept
+            - Origin
+            - grpc-timeout
+            - x-grpc-web
+            - x-user-agent
+          exposed_headers:
+            - grpc-status
+            - grpc-message
+          credentials: true
+          max_age: 3600
 
-    # Consumer for internal services (optional)
+      - name: prometheus
+        config:
+          per_consumer: false
+
+    # Consumer for internal services
     consumers:
       - username: internal-services
         custom_id: internal

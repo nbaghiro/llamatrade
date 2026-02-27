@@ -21,7 +21,10 @@ spec:
         - name: billing
           image: gcr.io/llamatrade/billing:latest
           ports:
-            - containerPort: 8008
+            - containerPort: 8880
+              name: grpc
+            - containerPort: 8881
+              name: http
           env:
             - name: DATABASE_URL
               valueFrom:
@@ -56,13 +59,13 @@ spec:
           livenessProbe:
             httpGet:
               path: /health
-              port: 8008
+              port: 8881
             initialDelaySeconds: 10
             periodSeconds: 10
           readinessProbe:
             httpGet:
               path: /health
-              port: 8008
+              port: 8881
             initialDelaySeconds: 5
             periodSeconds: 5
 ---
@@ -75,6 +78,10 @@ spec:
   selector:
     app: billing
   ports:
-    - port: 8008
-      targetPort: 8008
+    - port: 8880
+      targetPort: 8880
+      name: grpc
+    - port: 8881
+      targetPort: 8881
+      name: http
   type: ClusterIP

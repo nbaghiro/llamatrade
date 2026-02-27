@@ -21,7 +21,7 @@ spec:
         - name: strategy
           image: gcr.io/llamatrade/strategy:latest
           ports:
-            - containerPort: 8002
+            - containerPort: 8820
           env:
             - name: DATABASE_URL
               valueFrom:
@@ -51,13 +51,13 @@ spec:
           livenessProbe:
             httpGet:
               path: /health
-              port: 8002
+              port: 8820
             initialDelaySeconds: 10
             periodSeconds: 10
           readinessProbe:
             httpGet:
               path: /health
-              port: 8002
+              port: 8820
             initialDelaySeconds: 5
             periodSeconds: 5
 ---
@@ -70,8 +70,8 @@ spec:
   selector:
     app: strategy
   ports:
-    - port: 8002
-      targetPort: 8002
+    - port: 8820
+      targetPort: 8820
   type: ClusterIP
 ---
 apiVersion: autoscaling/v2

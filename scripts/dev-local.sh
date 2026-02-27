@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
-# Run a single service locally with hot-reload
+# Run a single service locally with hot-reload (gRPC-only)
 # Usage: ./scripts/dev-local.sh auth
 # Usage: ./scripts/dev-local.sh setup
+#
+# Services expose gRPC ports only. FastAPI runs internally for health checks
+# and to trigger the lifespan which starts the gRPC server.
 
 set -e
 
@@ -15,17 +18,33 @@ if [ -f "$PROJECT_ROOT/.env" ]; then
     set +a
 fi
 
-get_port() {
+# Get the gRPC port for a service
+get_grpc_port() {
     case "$1" in
-        auth) echo 47810 ;;
-        strategy) echo 47820 ;;
-        backtest) echo 47830 ;;
-        market-data) echo 47840 ;;
-        trading) echo 47850 ;;
-        portfolio) echo 47860 ;;
-        notification) echo 47870 ;;
-        billing) echo 47880 ;;
+        auth) echo 8810 ;;
+        strategy) echo 8820 ;;
+        backtest) echo 8830 ;;
+        market-data) echo 8840 ;;
+        trading) echo 8850 ;;
+        portfolio) echo 8860 ;;
+        notification) echo 8870 ;;
+        billing) echo 8880 ;;
         *) echo 8000 ;;
+    esac
+}
+
+# Get internal HTTP port for FastAPI (health checks only, not exposed)
+get_http_port() {
+    case "$1" in
+        auth) echo 18810 ;;
+        strategy) echo 18820 ;;
+        backtest) echo 18830 ;;
+        market-data) echo 18840 ;;
+        trading) echo 18850 ;;
+        portfolio) echo 18860 ;;
+        notification) echo 18870 ;;
+        billing) echo 18880 ;;
+        *) echo 18000 ;;
     esac
 }
 
@@ -47,6 +66,7 @@ setup_venv() {
     # Install shared libraries first (with their dependencies)
     pip install -q -e "$PROJECT_ROOT/libs/common"
     pip install -q -e "$PROJECT_ROOT/libs/db"
+    pip install -q -e "$PROJECT_ROOT/libs/grpc"
     # Install the service (which may have additional deps)
     pip install -q -e "$svc_dir"
     deactivate
@@ -58,14 +78,27 @@ run_service() {
     local svc=$1
     local svc_dir="$PROJECT_ROOT/services/$svc"
     local venv_dir="$svc_dir/.venv"
-    local port=$(get_port "$svc")
+    local grpc_port=$(get_grpc_port "$svc")
+    local http_port=$(get_http_port "$svc")
 
-    echo "Starting $svc on port $port..."
+    echo "Starting $svc..."
+    echo "  gRPC port: $grpc_port"
+    echo "  Health check port: $http_port (internal)"
 
     source "$venv_dir/bin/activate"
     cd "$svc_dir"
 
-    uvicorn src.main:app --host 0.0.0.0 --port "$port" --reload --reload-dir src
+    # Set GRPC_PORT env var and run uvicorn
+    # FastAPI starts gRPC server during lifespan on GRPC_PORT
+    export GRPC_PORT="$grpc_port"
+
+    # Billing also needs HTTP_PORT for Stripe webhooks
+    if [ "$svc" = "billing" ]; then
+        export HTTP_PORT=8881
+        echo "  Stripe webhook port: 8881"
+    fi
+
+    uvicorn src.main:app --host 0.0.0.0 --port "$http_port" --reload --reload-dir src
 }
 
 setup_all() {
@@ -87,6 +120,16 @@ setup_all() {
     echo "  ./scripts/dev-local.sh auth"
     echo "  ./scripts/dev-local.sh strategy"
     echo "  etc."
+    echo ""
+    echo "Service gRPC ports:"
+    echo "  auth:         8810"
+    echo "  strategy:     8820"
+    echo "  backtest:     8830"
+    echo "  market-data:  8840"
+    echo "  trading:      8850"
+    echo "  portfolio:    8860"
+    echo "  notification: 8870"
+    echo "  billing:      8880 (+ HTTP 8881 for Stripe)"
 }
 
 case "$SERVICE" in
@@ -105,6 +148,16 @@ case "$SERVICE" in
         echo "Commands:"
         echo "  setup    - Create virtual environments for all services"
         echo "  <name>   - Run a specific service with hot-reload"
+        echo ""
+        echo "Services run gRPC servers on these ports:"
+        echo "  auth:         8810"
+        echo "  strategy:     8820"
+        echo "  backtest:     8830"
+        echo "  market-data:  8840"
+        echo "  trading:      8850"
+        echo "  portfolio:    8860"
+        echo "  notification: 8870"
+        echo "  billing:      8880 (+ HTTP 8881 for Stripe webhooks)"
         exit 1
         ;;
 esac

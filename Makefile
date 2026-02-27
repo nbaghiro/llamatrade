@@ -20,8 +20,8 @@ dev-infra:
 	cd infrastructure/docker && docker compose -f docker-compose.yml up -d postgres redis
 	@echo ""
 	@echo "Infrastructure running:"
-	@echo "  PostgreSQL: localhost:47532"
-	@echo "  Redis:      localhost:47379"
+	@echo "  PostgreSQL: localhost:5432"
+	@echo "  Redis:      localhost:6379"
 	@echo ""
 	@echo "Now run services locally:"
 	@echo "  ./scripts/dev-local.sh auth"
@@ -32,7 +32,7 @@ dev-infra:
 dev-gateway:
 	@docker rm -f llamatrade-gateway-local 2>/dev/null || true
 	docker run -d --name llamatrade-gateway-local \
-		-p 47800:8000 \
+		-p 8000:8000 \
 		-v $(PWD)/services/gateway/kong.local.yaml:/kong/declarative/kong.yml:ro \
 		-e KONG_DATABASE=off \
 		-e KONG_DECLARATIVE_CONFIG=/kong/declarative/kong.yml \
@@ -42,7 +42,7 @@ dev-gateway:
 		-e KONG_ADMIN_ERROR_LOG=/dev/stderr \
 		kong:3.4
 	@echo ""
-	@echo "Gateway running at http://localhost:47800"
+	@echo "Gateway running at http://localhost:8000"
 	@echo "Routes to local services on host machine"
 
 # Stop gateway
@@ -78,52 +78,50 @@ build-prod:
 ci:
 	./scripts/ci-local.sh
 
-ci-backend:
-	./scripts/ci-local.sh --backend-only
+ci-backend: lint-python test-unit
+	@echo "Backend CI completed"
 
 ci-lint:
 	./scripts/ci-local.sh --lint-only
 
-ci-test:
-	./scripts/ci-local.sh --test-only
-
-# Testing (runs services in isolation like CI)
-test:
-	./scripts/ci-local.sh --test-only
-
-test-backend:
-	./scripts/ci-local.sh --test-only --backend-only
-
-test-frontend:
-	./scripts/ci-local.sh --test-only --frontend-only
-
-test-auth:
-	@. .venv/bin/activate 2>/dev/null || (python3 -m venv .venv && . .venv/bin/activate); \
-	pip install -q -e "libs/common[dev]" -e "libs/db[dev]" -e "services/auth[dev]"; \
-	cd services/auth && pytest tests -v
-
-test-strategy:
-	@. .venv/bin/activate 2>/dev/null || (python3 -m venv .venv && . .venv/bin/activate); \
-	pip install -q -e "libs/common[dev]" -e "libs/db[dev]" -e "services/strategy[dev]"; \
-	cd services/strategy && pytest tests -v
-
-test-portfolio:
-	@. .venv/bin/activate 2>/dev/null || (python3 -m venv .venv && . .venv/bin/activate); \
-	pip install -q -e "libs/common[dev]" -e "libs/db[dev]" -e "services/portfolio[dev]"; \
-	cd services/portfolio && pytest tests -v
+ci-test: test-unit test-integration
+	@echo "All CI tests completed"
 
 # ===================
-# Integration Tests (requires Docker)
+# Testing
 # ===================
+# Run ALL tests (unit + integration)
+test: test-unit test-integration
+	@echo "All tests completed"
+
+# Run only unit tests (per-service tests)
+test-unit:
+	@. .venv/bin/activate 2>/dev/null || (python3 -m venv .venv && . .venv/bin/activate); \
+	echo "=== Running unit tests for all services ==="; \
+	for svc in auth strategy billing backtest trading market-data portfolio; do \
+		echo ""; \
+		echo "=== Testing $$svc ==="; \
+		cd services/$$svc && pytest tests/ -v && cd ../..; \
+	done
+
+test-unit-quick:
+	@. .venv/bin/activate 2>/dev/null || (python3 -m venv .venv && . .venv/bin/activate); \
+	echo "=== Running unit tests (quick mode) ==="; \
+	for svc in auth strategy billing backtest trading market-data portfolio; do \
+		echo "=== $$svc ==="; \
+		cd services/$$svc && pytest tests/ -q && cd ../..; \
+	done
+
+# Run only integration tests (requires Docker for testcontainers)
 test-integration:
 	@. .venv/bin/activate 2>/dev/null || (python3 -m venv .venv && . .venv/bin/activate); \
 	pip install -q -e "libs/common[dev,integration]" -e "libs/db[dev]"; \
-	pytest tests/integration -v -n auto --timeout=120
+	pytest tests/integration -v --timeout=120
 
 test-integration-quick:
 	@. .venv/bin/activate 2>/dev/null || (python3 -m venv .venv && . .venv/bin/activate); \
 	pip install -q -e "libs/common[dev,integration]" -e "libs/db[dev]"; \
-	pytest tests/integration/services -v -n auto -m "not slow" --timeout=60
+	pytest tests/integration/services -v -m "not slow" --timeout=60
 
 test-security:
 	@. .venv/bin/activate 2>/dev/null || (python3 -m venv .venv && . .venv/bin/activate); \
@@ -134,10 +132,42 @@ test-integration-docker:
 	docker compose -f docker-compose.test.yml up -d
 	@. .venv/bin/activate 2>/dev/null || (python3 -m venv .venv && . .venv/bin/activate); \
 	pip install -q -e "libs/common[dev,integration]" -e "libs/db[dev]"; \
-	DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:47533/llamatrade_test \
-	REDIS_URL=redis://localhost:47380 \
+	DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5433/llamatrade_test \
+	REDIS_URL=redis://localhost:6380 \
 	pytest tests/integration -v --timeout=120 || true
 	docker compose -f docker-compose.test.yml down
+
+# Run tests for specific services
+test-auth:
+	@. .venv/bin/activate 2>/dev/null || (python3 -m venv .venv && . .venv/bin/activate); \
+	cd services/auth && pytest tests -v
+
+test-strategy:
+	@. .venv/bin/activate 2>/dev/null || (python3 -m venv .venv && . .venv/bin/activate); \
+	cd services/strategy && pytest tests -v
+
+test-billing:
+	@. .venv/bin/activate 2>/dev/null || (python3 -m venv .venv && . .venv/bin/activate); \
+	cd services/billing && pytest tests -v
+
+test-backtest:
+	@. .venv/bin/activate 2>/dev/null || (python3 -m venv .venv && . .venv/bin/activate); \
+	cd services/backtest && pytest tests -v
+
+test-trading:
+	@. .venv/bin/activate 2>/dev/null || (python3 -m venv .venv && . .venv/bin/activate); \
+	cd services/trading && pytest tests -v
+
+test-market-data:
+	@. .venv/bin/activate 2>/dev/null || (python3 -m venv .venv && . .venv/bin/activate); \
+	cd services/market-data && pytest tests -v
+
+test-portfolio:
+	@. .venv/bin/activate 2>/dev/null || (python3 -m venv .venv && . .venv/bin/activate); \
+	cd services/portfolio && pytest tests -v
+
+test-frontend:
+	cd apps/web && npm test -- --run --passWithNoTests
 
 # ===================
 # Linting & Type Checking
@@ -257,32 +287,37 @@ help:
 	@echo "  make ci-lint        - Run linting only"
 	@echo "  make ci-test        - Run tests only"
 	@echo ""
-	@echo "Testing & Quality:"
-	@echo "  make test           - Run all tests (in isolation)"
-	@echo "  make test-auth      - Run auth service tests"
-	@echo "  make test-strategy  - Run strategy service tests"
+	@echo "Testing:"
+	@echo "  make test                  - Run ALL tests (unit + integration)"
+	@echo "  make test-unit             - Run unit tests for all services"
+	@echo "  make test-unit-quick       - Run unit tests (quiet mode)"
+	@echo "  make test-integration      - Run integration tests (requires Docker)"
+	@echo "  make test-integration-quick - Run quick integration tests"
+	@echo "  make test-security         - Run tenant isolation tests"
+	@echo "  make test-<service>        - Run tests for specific service"
+	@echo "                               (auth, strategy, billing, backtest,"
+	@echo "                                trading, market-data, portfolio)"
+	@echo "  make test-frontend         - Run frontend tests"
+	@echo ""
+	@echo "Linting & Quality:"
 	@echo "  make lint           - Run all linters + type checks"
 	@echo "  make lint-fix       - Auto-fix Python lint issues"
 	@echo "  make typecheck      - Run type checkers only"
 	@echo "  make pre-commit-install - Install pre-commit hooks"
 	@echo "  make pre-commit-run - Run pre-commit on all files"
 	@echo ""
-	@echo "Integration Tests (requires Docker):"
-	@echo "  make test-integration      - Run full integration tests"
-	@echo "  make test-integration-quick - Run quick integration tests"
-	@echo "  make test-security         - Run tenant isolation tests"
-	@echo "  make test-integration-docker - Run with docker-compose.test.yml"
-	@echo ""
 	@echo "Deployment:"
 	@echo "  make deploy-staging - Deploy to staging"
 	@echo "  make deploy-prod    - Deploy to production"
 	@echo ""
-	@echo "Default Ports (all use 47xxx range):"
-	@echo "  Frontend:    http://localhost:47333"
-	@echo "  API Gateway: http://localhost:47800"
-	@echo "  PostgreSQL:  localhost:47532"
-	@echo "  Redis:       localhost:47379"
+	@echo "Default Ports:"
+	@echo "  Frontend:    http://localhost:8080"
+	@echo "  API Gateway: http://localhost:8000"
+	@echo "  PostgreSQL:  localhost:5432"
+	@echo "  Redis:       localhost:6379"
 	@echo ""
-	@echo "Service Ports:"
-	@echo "  auth:47810  strategy:47820  backtest:47830  market-data:47840"
-	@echo "  trading:47850  portfolio:47860  notification:47870  billing:47880"
+	@echo "Service gRPC Ports:"
+	@echo "  auth:8010  strategy:8020  backtest:8030  market-data:8040"
+	@echo "  trading:8050  portfolio:8060  notification:8070  billing:8090"
+	@echo ""
+	@echo "Note: Services expose gRPC only. Billing also has HTTP:8091 for Stripe webhooks."

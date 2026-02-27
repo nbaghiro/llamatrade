@@ -1,14 +1,27 @@
-# Run all services locally with hot-reload
+# Local development with Connect protocol (no gateway needed)
 # Usage: honcho start -f Procfile.dev
 # Install: pip install honcho
+#
+# Services expose HTTP + Connect on single port each.
+# Frontend connects directly to services (no Kong proxy needed).
+#
+# Ports:
+#   auth:         HTTP+Connect 8810
+#   strategy:     HTTP+Connect 8820
+#   backtest:     HTTP+Connect 8830
+#   market-data:  HTTP+Connect 8840
+#   trading:      HTTP+Connect 8850
+#   portfolio:    HTTP+Connect 8860
+#   notification: HTTP+Connect 8870
+#   billing:      HTTP+Connect 8880 (includes Stripe webhooks)
+#   web:          HTTP 8800
 
-gateway: docker rm -f llamatrade-gateway-local 2>/dev/null; docker run --rm --name llamatrade-gateway-local -p 47800:8000 -v $PWD/services/gateway/kong.local.yaml:/kong/declarative/kong.yml:ro -e KONG_DATABASE=off -e KONG_DECLARATIVE_CONFIG=/kong/declarative/kong.yml -e KONG_PROXY_ACCESS_LOG=/dev/stdout -e KONG_PROXY_ERROR_LOG=/dev/stderr kong:3.4
-auth: cd services/auth && source .venv/bin/activate && uvicorn src.main:app --host 0.0.0.0 --port 47810 --reload --reload-dir src
-strategy: cd services/strategy && source .venv/bin/activate && uvicorn src.main:app --host 0.0.0.0 --port 47820 --reload --reload-dir src
-backtest: cd services/backtest && source .venv/bin/activate && uvicorn src.main:app --host 0.0.0.0 --port 47830 --reload --reload-dir src
-market-data: cd services/market-data && source .venv/bin/activate && uvicorn src.main:app --host 0.0.0.0 --port 47840 --reload --reload-dir src
-trading: cd services/trading && source .venv/bin/activate && uvicorn src.main:app --host 0.0.0.0 --port 47850 --reload --reload-dir src
-portfolio: cd services/portfolio && source .venv/bin/activate && uvicorn src.main:app --host 0.0.0.0 --port 47860 --reload --reload-dir src
-notification: cd services/notification && source .venv/bin/activate && uvicorn src.main:app --host 0.0.0.0 --port 47870 --reload --reload-dir src
-billing: cd services/billing && source .venv/bin/activate && uvicorn src.main:app --host 0.0.0.0 --port 47880 --reload --reload-dir src
-web: cd apps/web && npm run dev -- --host 0.0.0.0 --port 47333
+auth: .venv/bin/uvicorn src.main:app --host 0.0.0.0 --port 8810 --reload --reload-dir services/auth/src --app-dir services/auth
+strategy: .venv/bin/uvicorn src.main:app --host 0.0.0.0 --port 8820 --reload --reload-dir services/strategy/src --app-dir services/strategy
+backtest: .venv/bin/uvicorn src.main:app --host 0.0.0.0 --port 8830 --reload --reload-dir services/backtest/src --app-dir services/backtest
+market-data: .venv/bin/uvicorn src.main:app --host 0.0.0.0 --port 8840 --reload --reload-dir services/market-data/src --app-dir services/market-data
+trading: .venv/bin/uvicorn src.main:app --host 0.0.0.0 --port 8850 --reload --reload-dir services/trading/src --app-dir services/trading
+portfolio: .venv/bin/uvicorn src.main:app --host 0.0.0.0 --port 8860 --reload --reload-dir services/portfolio/src --app-dir services/portfolio
+notification: .venv/bin/uvicorn src.main:app --host 0.0.0.0 --port 8870 --reload --reload-dir services/notification/src --app-dir services/notification
+billing: .venv/bin/uvicorn src.main:app --host 0.0.0.0 --port 8880 --reload --reload-dir services/billing/src --app-dir services/billing
+web: cd apps/web && npm run dev -- --host 0.0.0.0 --port 8800

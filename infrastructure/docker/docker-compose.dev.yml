@@ -11,6 +11,7 @@ services:
 
   # ===================
   # Backend Services with hot-reload
+  # Services run FastAPI for health checks + gRPC server started in lifespan
   # ===================
   auth:
     build:
@@ -20,7 +21,8 @@ services:
       - ../../services/auth/src:/app/src:cached
       - ../../libs/common/llamatrade_common:/app/libs/common/llamatrade_common:cached
       - ../../libs/db/llamatrade_db:/app/libs/db/llamatrade_db:cached
-    command: uvicorn src.main:app --host 0.0.0.0 --port 8001 --reload --reload-dir /app/src
+      - ../../libs/grpc/llamatrade_grpc:/app/libs/grpc/llamatrade_grpc:cached
+    command: uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload --reload-dir /app/src
 
   strategy:
     build:
@@ -30,7 +32,8 @@ services:
       - ../../services/strategy/src:/app/src:cached
       - ../../libs/common/llamatrade_common:/app/libs/common/llamatrade_common:cached
       - ../../libs/db/llamatrade_db:/app/libs/db/llamatrade_db:cached
-    command: uvicorn src.main:app --host 0.0.0.0 --port 8002 --reload --reload-dir /app/src
+      - ../../libs/grpc/llamatrade_grpc:/app/libs/grpc/llamatrade_grpc:cached
+    command: uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload --reload-dir /app/src
 
   backtest:
     build:
@@ -40,7 +43,8 @@ services:
       - ../../services/backtest/src:/app/src:cached
       - ../../libs/common/llamatrade_common:/app/libs/common/llamatrade_common:cached
       - ../../libs/db/llamatrade_db:/app/libs/db/llamatrade_db:cached
-    command: uvicorn src.main:app --host 0.0.0.0 --port 8003 --reload --reload-dir /app/src
+      - ../../libs/grpc/llamatrade_grpc:/app/libs/grpc/llamatrade_grpc:cached
+    command: uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload --reload-dir /app/src
 
   market-data:
     build:
@@ -50,7 +54,8 @@ services:
       - ../../services/market-data/src:/app/src:cached
       - ../../libs/common/llamatrade_common:/app/libs/common/llamatrade_common:cached
       - ../../libs/db/llamatrade_db:/app/libs/db/llamatrade_db:cached
-    command: uvicorn src.main:app --host 0.0.0.0 --port 8004 --reload --reload-dir /app/src
+      - ../../libs/grpc/llamatrade_grpc:/app/libs/grpc/llamatrade_grpc:cached
+    command: uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload --reload-dir /app/src
 
   trading:
     build:
@@ -60,7 +65,8 @@ services:
       - ../../services/trading/src:/app/src:cached
       - ../../libs/common/llamatrade_common:/app/libs/common/llamatrade_common:cached
       - ../../libs/db/llamatrade_db:/app/libs/db/llamatrade_db:cached
-    command: uvicorn src.main:app --host 0.0.0.0 --port 8005 --reload --reload-dir /app/src
+      - ../../libs/grpc/llamatrade_grpc:/app/libs/grpc/llamatrade_grpc:cached
+    command: uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload --reload-dir /app/src
 
   portfolio:
     build:
@@ -70,7 +76,8 @@ services:
       - ../../services/portfolio/src:/app/src:cached
       - ../../libs/common/llamatrade_common:/app/libs/common/llamatrade_common:cached
       - ../../libs/db/llamatrade_db:/app/libs/db/llamatrade_db:cached
-    command: uvicorn src.main:app --host 0.0.0.0 --port 8006 --reload --reload-dir /app/src
+      - ../../libs/grpc/llamatrade_grpc:/app/libs/grpc/llamatrade_grpc:cached
+    command: uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload --reload-dir /app/src
 
   notification:
     build:
@@ -80,7 +87,8 @@ services:
       - ../../services/notification/src:/app/src:cached
       - ../../libs/common/llamatrade_common:/app/libs/common/llamatrade_common:cached
       - ../../libs/db/llamatrade_db:/app/libs/db/llamatrade_db:cached
-    command: uvicorn src.main:app --host 0.0.0.0 --port 8007 --reload --reload-dir /app/src
+      - ../../libs/grpc/llamatrade_grpc:/app/libs/grpc/llamatrade_grpc:cached
+    command: uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload --reload-dir /app/src
 
   billing:
     build:
@@ -90,7 +98,8 @@ services:
       - ../../services/billing/src:/app/src:cached
       - ../../libs/common/llamatrade_common:/app/libs/common/llamatrade_common:cached
       - ../../libs/db/llamatrade_db:/app/libs/db/llamatrade_db:cached
-    command: uvicorn src.main:app --host 0.0.0.0 --port 8008 --reload --reload-dir /app/src
+      - ../../libs/grpc/llamatrade_grpc:/app/libs/grpc/llamatrade_grpc:cached
+    command: uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload --reload-dir /app/src
 
   # ===================
   # Frontend with Vite HMR
@@ -103,5 +112,5 @@ services:
       - ../../apps/web/src:/app/src:cached
       - ../../apps/web/public:/app/public:cached
     ports:
-      - "${LT_WEB_PORT:-47333}:3000"
-    command: npm run dev -- --host 0.0.0.0
+      - "8800:8800"
+    command: npm run dev -- --host 0.0.0.0 --port 8800

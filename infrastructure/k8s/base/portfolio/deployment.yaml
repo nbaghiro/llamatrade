@@ -21,7 +21,7 @@ spec:
         - name: portfolio
           image: gcr.io/llamatrade/portfolio:latest
           ports:
-            - containerPort: 8006
+            - containerPort: 8860
           env:
             - name: DATABASE_URL
               valueFrom:
@@ -51,13 +51,13 @@ spec:
           livenessProbe:
             httpGet:
               path: /health
-              port: 8006
+              port: 8860
             initialDelaySeconds: 10
             periodSeconds: 10
           readinessProbe:
             httpGet:
               path: /health
-              port: 8006
+              port: 8860
             initialDelaySeconds: 5
             periodSeconds: 5
 ---
@@ -70,8 +70,8 @@ spec:
   selector:
     app: portfolio
   ports:
-    - port: 8006
-      targetPort: 8006
+    - port: 8860
+      targetPort: 8860
   type: ClusterIP
 ---
 apiVersion: autoscaling/v2

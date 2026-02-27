@@ -29,7 +29,7 @@ services:
     volumes:
       - llamatrade_postgres_data:/var/lib/postgresql/data
     ports:
-      - "${LT_POSTGRES_PORT:-47532}:5432"
+      - "5432:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 10s
@@ -43,7 +43,7 @@ services:
     volumes:
       - llamatrade_redis_data:/data
     ports:
-      - "${LT_REDIS_PORT:-47379}:6379"
+      - "6379:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
@@ -59,8 +59,8 @@ services:
       dockerfile: Dockerfile
     container_name: llamatrade-gateway
     ports:
-      - "${LT_GATEWAY_PORT:-47800}:8000"
-      - "${LT_GATEWAY_ADMIN_PORT:-47801}:8001"
+      - "8000:8000"
+      - "8001:8001"
     depends_on:
       - auth
       - strategy
@@ -72,7 +72,7 @@ services:
       - billing
 
   # ===================
-  # Backend Services
+  # Backend Services (gRPC only)
   # ===================
   auth:
     build:
@@ -84,13 +84,14 @@ services:
       REDIS_URL: redis://redis:6379
       JWT_SECRET: ${JWT_SECRET:-dev-secret-change-in-production}
       ENCRYPTION_KEY: ${ENCRYPTION_KEY:-dev-encryption-key-change-me}
+      GRPC_PORT: "8810"
     depends_on:
       db-migrate:
         condition: service_completed_successfully
       redis:
         condition: service_healthy
     ports:
-      - "${LT_AUTH_PORT:-47810}:8001"
+      - "8810:8810"
 
   strategy:
     build:
@@ -100,11 +101,12 @@ services:
     environment:
       DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/llamatrade
       REDIS_URL: redis://redis:6379
+      GRPC_PORT: "8820"
     depends_on:
       db-migrate:
         condition: service_completed_successfully
     ports:
-      - "${LT_STRATEGY_PORT:-47820}:8002"
+      - "8820:8820"
 
   backtest:
     build:
@@ -114,13 +116,15 @@ services:
     environment:
       DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/llamatrade
       REDIS_URL: redis://redis:6379
+      GRPC_PORT: "8830"
+      MARKET_DATA_GRPC_TARGET: market-data:8840
     depends_on:
       db-migrate:
         condition: service_completed_successfully
       redis:
         condition: service_healthy
     ports:
-      - "${LT_BACKTEST_PORT:-47830}:8003"
+      - "8830:8830"
 
   market-data:
     build:
@@ -131,11 +135,12 @@ services:
       ALPACA_API_KEY: ${ALPACA_API_KEY:-}
       ALPACA_API_SECRET: ${ALPACA_API_SECRET:-}
       REDIS_URL: redis://redis:6379
+      GRPC_PORT: "8840"
     depends_on:
       redis:
         condition: service_healthy
     ports:
-      - "${LT_MARKET_DATA_PORT:-47840}:8004"
+      - "8840:8840"
 
   trading:
     build:
@@ -147,13 +152,14 @@ services:
       ALPACA_API_KEY: ${ALPACA_API_KEY:-}
       ALPACA_API_SECRET: ${ALPACA_API_SECRET:-}
       REDIS_URL: redis://redis:6379
+      GRPC_PORT: "8850"
     depends_on:
       db-migrate:
         condition: service_completed_successfully
       redis:
         condition: service_healthy
     ports:
-      - "${LT_TRADING_PORT:-47850}:8005"
+      - "8850:8850"
 
   portfolio:
     build:
@@ -163,11 +169,12 @@ services:
     environment:
       DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/llamatrade
       REDIS_URL: redis://redis:6379
+      GRPC_PORT: "8860"
     depends_on:
       db-migrate:
         condition: service_completed_successfully
     ports:
-      - "${LT_PORTFOLIO_PORT:-47860}:8006"
+      - "8860:8860"
 
   notification:
     build:
@@ -180,13 +187,14 @@ services:
       SMTP_HOST: ${SMTP_HOST:-}
       SMTP_USER: ${SMTP_USER:-}
       SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      GRPC_PORT: "8870"
     depends_on:
       db-migrate:
         condition: service_completed_successfully
       redis:
         condition: service_healthy
     ports:
-      - "${LT_NOTIFICATION_PORT:-47870}:8007"
+      - "8870:8870"
 
   billing:
     build:
@@ -197,11 +205,15 @@ services:
       DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/llamatrade
       STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
       STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
+      GRPC_PORT: "8880"
+      # HTTP port for Stripe webhooks only (different from gRPC port)
+      HTTP_PORT: "8881"
     depends_on:
       db-migrate:
         condition: service_completed_successfully
     ports:
-      - "${LT_BILLING_PORT:-47880}:8008"
+      - "8880:8880"
+      - "8881:8881"  # Stripe webhooks require HTTP
 
   # ===================
   # Frontend
@@ -212,7 +224,7 @@ services:
       dockerfile: Dockerfile
     container_name: llamatrade-web
     ports:
-      - "${LT_WEB_PORT:-47333}:80"
+      - "8800:80"
     depends_on:
       - gateway
 

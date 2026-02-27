@@ -4,15 +4,17 @@ metadata:
   name: llamatrade-config
   namespace: llamatrade
 data:
-  # Service URLs (internal K8s DNS)
-  AUTH_SERVICE_URL: "http://auth:8001"
-  STRATEGY_SERVICE_URL: "http://strategy:8002"
-  BACKTEST_SERVICE_URL: "http://backtest:8003"
-  MARKET_DATA_SERVICE_URL: "http://market-data:8004"
-  TRADING_SERVICE_URL: "http://trading:8005"
-  PORTFOLIO_SERVICE_URL: "http://portfolio:8006"
-  NOTIFICATION_SERVICE_URL: "http://notification:8007"
-  BILLING_SERVICE_URL: "http://billing:8008"
+  # Service gRPC targets (internal K8s DNS)
+  AUTH_GRPC_TARGET: "auth:8810"
+  STRATEGY_GRPC_TARGET: "strategy:8820"
+  BACKTEST_GRPC_TARGET: "backtest:8830"
+  MARKET_DATA_GRPC_TARGET: "market-data:8840"
+  TRADING_GRPC_TARGET: "trading:8850"
+  PORTFOLIO_GRPC_TARGET: "portfolio:8860"
+  NOTIFICATION_GRPC_TARGET: "notification:8870"
+  BILLING_GRPC_TARGET: "billing:8880"
+  # Billing also exposes HTTP on 8881 for Stripe webhooks
+  BILLING_HTTP_URL: "http://billing:8881"
   # Common settings
   LOG_LEVEL: "INFO"
   ENVIRONMENT: "production"

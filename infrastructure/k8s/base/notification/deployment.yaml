@@ -21,7 +21,7 @@ spec:
         - name: notification
           image: gcr.io/llamatrade/notification:latest
           ports:
-            - containerPort: 8007
+            - containerPort: 8870
           env:
             - name: DATABASE_URL
               valueFrom:
@@ -66,13 +66,13 @@ spec:
           livenessProbe:
             httpGet:
               path: /health
-              port: 8007
+              port: 8870
             initialDelaySeconds: 10
             periodSeconds: 10
           readinessProbe:
             httpGet:
               path: /health
-              port: 8007
+              port: 8870
             initialDelaySeconds: 5
             periodSeconds: 5
 ---
@@ -85,6 +85,6 @@ spec:
   selector:
     app: notification
   ports:
-    - port: 8007
-      targetPort: 8007
+    - port: 8870
+      targetPort: 8870
   type: ClusterIP

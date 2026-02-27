@@ -21,11 +21,11 @@ JWT_SECRET=dev-secret-change-in-production
 # Encryption Key (change in production!)
 ENCRYPTION_KEY=dev-encryption-key-change-me
 
-# Database (port 47532 to avoid conflicts)
-DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:47532/llamatrade
+# Database
+DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/llamatrade
 
-# Redis (port 47379 to avoid conflicts)
-REDIS_URL=redis://localhost:47379
+# Redis
+REDIS_URL=redis://localhost:6379
 
 # Stripe (optional)
 STRIPE_SECRET_KEY=
@@ -65,7 +65,7 @@ echo ""
 echo "Next steps:"
 echo "  1. Update .env with your Alpaca API keys"
 echo "  2. Run 'make dev' to start all services"
-echo "  3. Open http://localhost:47333 in your browser"
+echo "  3. Open http://localhost:8080 in your browser"
 echo ""
 echo "Quality tools installed:"
 echo "  - Pre-commit hooks (runs on every commit)"
