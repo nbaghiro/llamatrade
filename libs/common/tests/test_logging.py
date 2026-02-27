@@ -4,6 +4,7 @@ import json
 import logging
 
 import pytest
+
 from llamatrade_common.logging import (
     JSONFormatter,
     LogContext,

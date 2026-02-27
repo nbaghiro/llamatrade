@@ -17,16 +17,16 @@ from pathlib import Path
 import httpx
 import pytest
 
-# Service ports (from CLAUDE.md)
+# Service ports
 SERVICE_PORTS = {
-    "auth": 47810,
-    "strategy": 47820,
-    "backtest": 47830,
-    "market-data": 47840,
-    "trading": 47850,
-    "portfolio": 47860,
-    "notification": 47870,
-    "billing": 47880,
+    "auth": 8810,
+    "strategy": 8820,
+    "backtest": 8830,
+    "market-data": 8840,
+    "trading": 8850,
+    "portfolio": 8860,
+    "notification": 8870,
+    "billing": 8880,
 }
 
 # Base path for services

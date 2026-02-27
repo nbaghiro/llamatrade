@@ -6,6 +6,20 @@ for efficiency.
 """
 
 import os
+
+# Register fixture plugins for integration tests
+# Only loaded when running from root directory (tests.integration is in path)
+try:
+    import tests.integration.fixtures.auth  # noqa: F401
+    import tests.integration.fixtures.strategies  # noqa: F401
+
+    pytest_plugins = [
+        "tests.integration.fixtures.auth",
+        "tests.integration.fixtures.strategies",
+    ]
+except ImportError:
+    # Running service tests independently - fixtures not needed
+    pytest_plugins = []
 from collections.abc import AsyncGenerator, Generator
 
 import pytest

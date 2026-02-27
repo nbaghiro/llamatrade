@@ -2,6 +2,7 @@
 
 import numpy as np
 import pytest
+
 from src.indicators.momentum import CCI, RSI, Stochastic, WilliamsR
 from src.indicators.trend import ADX, EMA, MACD, SMA
 from src.indicators.volatility import ATR, BollingerBands, KeltnerChannel

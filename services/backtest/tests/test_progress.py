@@ -96,7 +96,7 @@ class TestProgressPublisher:
     def test_init_default_url(self):
         """Test initialization with default URL."""
         publisher = ProgressPublisher()
-        assert publisher.redis_url == "redis://localhost:47379/0"
+        assert publisher.redis_url == "redis://localhost:6379/0"
         assert publisher._redis is None
 
     def test_init_custom_url(self):
@@ -186,7 +186,7 @@ class TestProgressSubscriber:
     def test_init_default_url(self):
         """Test initialization with default URL."""
         subscriber = ProgressSubscriber()
-        assert subscriber.redis_url == "redis://localhost:47379/0"
+        assert subscriber.redis_url == "redis://localhost:6379/0"
         assert subscriber._redis is None
         assert subscriber._pubsub is None
 

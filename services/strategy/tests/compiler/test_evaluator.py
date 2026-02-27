@@ -6,6 +6,7 @@ import numpy as np
 import pytest
 from llamatrade_compiler import Bar
 from llamatrade_dsl import parse_strategy
+
 from src.compiler.evaluator import (
     EvaluationError,
     evaluate_condition,

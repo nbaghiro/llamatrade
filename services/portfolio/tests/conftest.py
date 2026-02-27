@@ -7,8 +7,9 @@ from uuid import UUID
 
 import pytest
 from httpx import ASGITransport, AsyncClient
-from llamatrade_common.middleware import set_tenant_context
+from llamatrade_common.middleware import require_auth
 from llamatrade_common.models import TenantContext
+
 from src.main import app
 
 # Test UUIDs
@@ -72,15 +73,15 @@ def mock_market_data_client() -> AsyncMock:
 @pytest.fixture
 async def authenticated_client(mock_tenant_context: TenantContext) -> AsyncClient:
     """Create async test client with authentication context."""
-    # Set the tenant context before making requests
-    set_tenant_context(mock_tenant_context)
+    # Override the require_auth dependency to return our mock context
+    app.dependency_overrides[require_auth] = lambda: mock_tenant_context
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
         yield ac
 
-    # Clear context after test
-    set_tenant_context(None)
+    # Clear dependency overrides after test
+    app.dependency_overrides.pop(require_auth, None)
 
 
 @pytest.fixture

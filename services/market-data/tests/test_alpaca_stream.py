@@ -4,6 +4,8 @@ import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from websockets.protocol import State
+
 from src.streaming.alpaca_stream import (
     AlpacaStreamClient,
     StreamConfig,
@@ -35,7 +37,7 @@ def client(stream_config):
 def mock_websocket():
     """Create a mock websocket connection."""
     ws = AsyncMock()
-    ws.open = True
+    ws.state = State.OPEN  # Use State enum instead of bool .open attribute
     ws.send = AsyncMock()
     ws.recv = AsyncMock()
     ws.close = AsyncMock()
@@ -118,13 +120,13 @@ class TestAlpacaStreamClientProperties:
 
     def test_connected_with_closed_websocket(self, client, mock_websocket):
         """Test connected property with closed websocket."""
-        mock_websocket.open = False
+        mock_websocket.state = State.CLOSED
         client._ws = mock_websocket
         assert client.connected is False
 
     def test_connected_with_open_websocket(self, client, mock_websocket):
         """Test connected property with open websocket."""
-        mock_websocket.open = True
+        mock_websocket.state = State.OPEN
         client._ws = mock_websocket
         assert client.connected is True
 
@@ -264,7 +266,7 @@ class TestAlpacaStreamClientSubscribe:
 
     async def test_subscribe_not_authenticated(self, client, mock_websocket):
         """Test subscribe when not authenticated."""
-        mock_websocket.open = True
+        mock_websocket.state = State.OPEN
         client._ws = mock_websocket
         client._authenticated = False
 
@@ -273,7 +275,7 @@ class TestAlpacaStreamClientSubscribe:
 
     async def test_subscribe_success(self, client, mock_websocket):
         """Test successful subscription."""
-        mock_websocket.open = True
+        mock_websocket.state = State.OPEN
         mock_websocket.recv = AsyncMock(
             return_value=json.dumps(
                 [
@@ -296,7 +298,7 @@ class TestAlpacaStreamClientSubscribe:
 
     async def test_subscribe_normalizes_symbols(self, client, mock_websocket):
         """Test that subscribe normalizes symbols to uppercase."""
-        mock_websocket.open = True
+        mock_websocket.state = State.OPEN
         mock_websocket.recv = AsyncMock(
             return_value=json.dumps(
                 [
@@ -319,7 +321,7 @@ class TestAlpacaStreamClientSubscribe:
 
     async def test_subscribe_already_subscribed(self, client, mock_websocket):
         """Test subscribe for already subscribed symbol."""
-        mock_websocket.open = True
+        mock_websocket.state = State.OPEN
         client._ws = mock_websocket
         client._authenticated = True
         client._subscribed_trades.add("AAPL")
@@ -332,7 +334,7 @@ class TestAlpacaStreamClientSubscribe:
 
     async def test_subscribe_exception(self, client, mock_websocket):
         """Test subscribe with exception."""
-        mock_websocket.open = True
+        mock_websocket.state = State.OPEN
         mock_websocket.send = AsyncMock(side_effect=Exception("Send failed"))
         client._ws = mock_websocket
         client._authenticated = True
@@ -343,7 +345,7 @@ class TestAlpacaStreamClientSubscribe:
 
     async def test_subscribe_failure_response(self, client, mock_websocket):
         """Test subscribe with failure response."""
-        mock_websocket.open = True
+        mock_websocket.state = State.OPEN
         mock_websocket.recv = AsyncMock(
             return_value=json.dumps([{"T": "error", "msg": "subscription failed"}])
         )
@@ -365,7 +367,7 @@ class TestAlpacaStreamClientUnsubscribe:
 
     async def test_unsubscribe_empty_list(self, client, mock_websocket):
         """Test unsubscribe with empty lists."""
-        mock_websocket.open = True
+        mock_websocket.state = State.OPEN
         client._ws = mock_websocket
 
         result = await client.unsubscribe(trades=[], quotes=[], bars=[])
@@ -375,7 +377,7 @@ class TestAlpacaStreamClientUnsubscribe:
 
     async def test_unsubscribe_success(self, client, mock_websocket):
         """Test successful unsubscription."""
-        mock_websocket.open = True
+        mock_websocket.state = State.OPEN
         mock_websocket.recv = AsyncMock(
             return_value=json.dumps(
                 [
@@ -398,7 +400,7 @@ class TestAlpacaStreamClientUnsubscribe:
 
     async def test_unsubscribe_normalizes_symbols(self, client, mock_websocket):
         """Test that unsubscribe normalizes symbols to uppercase."""
-        mock_websocket.open = True
+        mock_websocket.state = State.OPEN
         mock_websocket.recv = AsyncMock(return_value=json.dumps([{"T": "subscription"}]))
         client._ws = mock_websocket
         client._subscribed_trades.add("AAPL")
@@ -409,7 +411,7 @@ class TestAlpacaStreamClientUnsubscribe:
 
     async def test_unsubscribe_exception(self, client, mock_websocket):
         """Test unsubscribe with exception."""
-        mock_websocket.open = True
+        mock_websocket.state = State.OPEN
         mock_websocket.send = AsyncMock(side_effect=Exception("Send failed"))
         client._ws = mock_websocket
 

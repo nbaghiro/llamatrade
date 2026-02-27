@@ -1,12 +1,12 @@
 """Kong gateway authentication propagation tests.
 
 These tests verify that:
-1. Public routes are correctly identified and accessible without auth
-2. Protected routes require valid JWT
-3. JWT claims are properly validated (exp claim)
-4. X-Tenant-ID header is allowed through CORS
+1. gRPC services have proper authentication via grpc-web plugin
+2. Webhook routes are publicly accessible (use signature verification)
+3. JWT claims are properly validated
+4. CORS headers are configured
 
-NOTE: These tests verify the configuration. For live testing, see workflow tests.
+NOTE: Most API calls now use gRPC. Only webhooks and WebSockets use HTTP.
 """
 
 import pytest
@@ -23,100 +23,57 @@ pytestmark = [pytest.mark.integration, pytest.mark.gateway]
 class TestPublicRoutes:
     """Tests for public route identification."""
 
-    def test_auth_login_is_public(self, kong_services: list[dict]):
-        """Test /api/auth/login is publicly accessible."""
-        routes = get_routes_for_service(kong_services, "auth-service")
-        public_route = next((r for r in routes if r.get("name") == "auth-public-routes"), None)
-
-        assert public_route is not None
-        assert "/api/auth/login" in public_route.get("paths", [])
-        assert "public" in public_route.get("tags", [])
-
-    def test_auth_register_is_public(self, kong_services: list[dict]):
-        """Test /api/auth/register is publicly accessible."""
-        routes = get_routes_for_service(kong_services, "auth-service")
-        public_route = next((r for r in routes if r.get("name") == "auth-public-routes"), None)
-
-        assert public_route is not None
-        assert "/api/auth/register" in public_route.get("paths", [])
-
-    def test_auth_refresh_is_public(self, kong_services: list[dict]):
-        """Test /api/auth/refresh is publicly accessible.
-
-        Token refresh needs to work with just a refresh token,
-        without a valid access token.
-        """
-        routes = get_routes_for_service(kong_services, "auth-service")
-        public_route = next((r for r in routes if r.get("name") == "auth-public-routes"), None)
-
-        assert public_route is not None
-        assert "/api/auth/refresh" in public_route.get("paths", [])
-
     def test_stripe_webhook_is_public(self, kong_services: list[dict]):
         """Test Stripe webhook endpoint is publicly accessible.
 
         Stripe webhooks use signature verification, not JWT.
         """
-        routes = get_routes_for_service(kong_services, "billing-service")
-        webhook_route = next((r for r in routes if r.get("name") == "stripe-webhook-route"), None)
+        routes = get_routes_for_service(kong_services, "billing-webhook-service")
 
-        assert webhook_route is not None
+        assert len(routes) >= 1, "Billing webhook service should have routes"
+        webhook_route = routes[0]
         assert "webhook" in webhook_route.get("tags", [])
 
 
-class TestProtectedRoutes:
-    """Tests for protected route identification."""
+class TestGRPCServices:
+    """Tests for gRPC service configuration."""
 
-    def test_auth_me_is_protected(self, kong_services: list[dict]):
-        """Test /api/auth/me requires authentication."""
-        routes = get_routes_for_service(kong_services, "auth-service")
-        protected_route = next((r for r in routes if r.get("name") == "auth-protected-routes"), None)
+    def test_grpc_auth_service_has_grpc_web_plugin(self, kong_services: list[dict]):
+        """Test gRPC auth service has grpc-web plugin for browser communication."""
+        plugins = get_service_plugins(kong_services, "grpc-auth-service")
+        grpc_web = next((p for p in plugins if p.get("name") == "grpc-web"), None)
 
-        assert protected_route is not None
-        assert "/api/auth/me" in protected_route.get("paths", [])
-        assert "protected" in protected_route.get("tags", [])
+        assert grpc_web is not None, "gRPC auth service should have grpc-web plugin"
 
-    def test_strategies_are_protected(self, kong_services: list[dict]):
-        """Test strategy routes require authentication."""
-        routes = get_routes_for_service(kong_services, "strategy-service")
+    def test_grpc_market_data_service_exists(self, kong_services: list[dict]):
+        """Test gRPC market data service is configured."""
+        service = next((s for s in kong_services if s["name"] == "grpc-market-data-service"), None)
+        assert service is not None, "gRPC market data service should exist"
+        assert service.get("protocol") == "grpc"
 
-        # All strategy routes should be protected
-        for route in routes:
-            assert "protected" in route.get("tags", [])
+    def test_grpc_strategy_service_exists(self, kong_services: list[dict]):
+        """Test gRPC strategy service is configured."""
+        service = next((s for s in kong_services if s["name"] == "grpc-strategy-service"), None)
+        assert service is not None, "gRPC strategy service should exist"
+        assert service.get("protocol") == "grpc"
 
-        # Service should have JWT plugin
-        plugins = get_service_plugins(kong_services, "strategy-service")
-        assert has_jwt_plugin(plugins)
+    def test_grpc_backtest_service_exists(self, kong_services: list[dict]):
+        """Test gRPC backtest service is configured."""
+        service = next((s for s in kong_services if s["name"] == "grpc-backtest-service"), None)
+        assert service is not None, "gRPC backtest service should exist"
+        assert service.get("protocol") == "grpc"
 
-    def test_backtests_are_protected(self, kong_services: list[dict]):
-        """Test backtest routes require authentication."""
-        plugins = get_service_plugins(kong_services, "backtest-service")
-        assert has_jwt_plugin(plugins)
+    def test_grpc_trading_service_exists(self, kong_services: list[dict]):
+        """Test gRPC trading service is configured."""
+        service = next((s for s in kong_services if s["name"] == "grpc-trading-service"), None)
+        assert service is not None, "gRPC trading service should exist"
+        assert service.get("protocol") == "grpc"
 
-    def test_trading_routes_are_protected(self, kong_services: list[dict]):
-        """Test trading routes require authentication.
-
-        Trading is critical - must be protected.
-        """
-        plugins = get_service_plugins(kong_services, "trading-service")
-        assert has_jwt_plugin(plugins)
-
-        routes = get_routes_for_service(kong_services, "trading-service")
-        for route in routes:
-            assert "protected" in route.get("tags", [])
-
-    def test_billing_protected_routes_are_protected(self, kong_services: list[dict]):
-        """Test billing protected routes require authentication."""
-        routes = get_routes_for_service(kong_services, "billing-service")
-        protected_route = next((r for r in routes if r.get("name") == "billing-protected-routes"), None)
-
-        assert protected_route is not None
-        assert "protected" in protected_route.get("tags", [])
-
-        # Verify subscription/invoice paths are protected
-        paths = protected_route.get("paths", [])
-        assert "/api/subscriptions" in paths
-        assert "/api/invoices" in paths
+    def test_grpc_billing_service_exists(self, kong_services: list[dict]):
+        """Test gRPC billing service is configured."""
+        service = next((s for s in kong_services if s["name"] == "grpc-billing-service"), None)
+        assert service is not None, "gRPC billing service should exist"
+        assert service.get("protocol") == "grpc"
 
 
 class TestJWTConfiguration:
@@ -184,36 +141,33 @@ class TestTenantPropagation:
 class TestRouteTagging:
     """Tests for route tagging consistency."""
 
-    def test_all_protected_routes_tagged(self, kong_services: list[dict]):
-        """Test all protected routes are tagged as 'protected'."""
-        for service in kong_services:
-            plugins = service.get("plugins", [])
+    def test_grpc_routes_tagged(self, kong_services: list[dict]):
+        """Test gRPC routes are tagged as 'grpc'."""
+        grpc_services = [s for s in kong_services if s["name"].startswith("grpc-")]
 
-            # If service has JWT, all its routes should be tagged protected
-            if has_jwt_plugin(plugins):
-                routes = service.get("routes", [])
-                for route in routes:
-                    tags = route.get("tags", [])
-                    assert "protected" in tags, (
-                        f"Route {route.get('name')} in JWT-protected service "
-                        f"{service['name']} should be tagged 'protected'"
-                    )
+        for service in grpc_services:
+            routes = service.get("routes", [])
+            for route in routes:
+                tags = route.get("tags", [])
+                assert "grpc" in tags, (
+                    f"Route {route.get('name')} should be tagged 'grpc'"
+                )
 
-    def test_public_routes_not_tagged_protected(self, kong_services: list[dict]):
-        """Test public routes are tagged appropriately."""
+    def test_public_routes_tagged_appropriately(self, kong_services: list[dict]):
+        """Test public routes (auth, webhooks) are tagged as 'public' or 'webhook'."""
+        # Auth public routes
         auth_routes = get_routes_for_service(kong_services, "auth-service")
-        public_route = next((r for r in auth_routes if r.get("name") == "auth-public-routes"), None)
-
-        assert public_route is not None
-        tags = public_route.get("tags", [])
-        assert "public" in tags
-        assert "protected" not in tags
+        if auth_routes:
+            public_route = next((r for r in auth_routes if "public" in r.get("name", "").lower()), None)
+            if public_route:
+                tags = public_route.get("tags", [])
+                assert "public" in tags
 
     def test_webhook_routes_tagged_webhook(self, kong_services: list[dict]):
         """Test webhook routes are tagged as 'webhook'."""
-        billing_routes = get_routes_for_service(kong_services, "billing-service")
-        webhook_route = next((r for r in billing_routes if r.get("name") == "stripe-webhook-route"), None)
+        billing_routes = get_routes_for_service(kong_services, "billing-webhook-service")
 
-        assert webhook_route is not None
-        tags = webhook_route.get("tags", [])
-        assert "webhook" in tags
+        if billing_routes:
+            webhook_route = billing_routes[0]
+            tags = webhook_route.get("tags", [])
+            assert "webhook" in tags

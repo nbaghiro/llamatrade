@@ -207,9 +207,5 @@ async def clean_db_session(
             await conn.commit()
 
 
-# Import and expose fixtures from submodules
-# These are imported after the session fixtures to avoid circular imports
-pytest_plugins = [
-    "tests.integration.fixtures.auth",
-    "tests.integration.fixtures.strategies",
-]
+# Fixture plugins are registered in tests/conftest.py (root level)
+# to satisfy pytest's requirement that pytest_plugins be in top-level conftest

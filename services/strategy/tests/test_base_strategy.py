@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 import numpy as np
 import pytest
 from llamatrade_compiler import Bar, Signal, SignalType
+
 from src.strategies.base import BaseStrategy
 
 # ===================
