@@ -1022,7 +1022,7 @@ The RunnerManager maintains a registry of active runners:
 │  Protocol: HTTP REST                                                        │
 │  Target: market-data service (internal)                                     │
 │                                                                             │
-│  Base URL: http://market-data:47804 (configurable via MARKET_DATA_URL)      │
+│  Base URL: http://market-data:8840 (configurable via MARKET_DATA_URL)       │
 │                                                                             │
 └─────────────────────────────────────────────────────────────────────────────┘
 

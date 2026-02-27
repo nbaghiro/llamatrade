@@ -1205,17 +1205,17 @@ For backtests starting before a benchmark's inception:
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │  ⚠️  Benchmark Availability Notice                                          │
-│                                                                              │
+│                                                                             │
 │  Your backtest period: 1985-01-01 to 2024-01-01                             │
-│                                                                              │
-│  SPY ETF began trading in 1993. For the period 1985-1993, we'll use:       │
-│  • S&P 500 Index (^GSPC) total return data                                 │
+│                                                                             │
+│  SPY ETF began trading in 1993. For the period 1985-1993, we'll use:        │
+│  • S&P 500 Index (^GSPC) total return data                                  │
 │  • Simulated dividend reinvestment                                          │
-│                                                                              │
+│                                                                             │
 │  This provides an accurate representation of S&P 500 performance,           │
 │  but actual ETF tracking may differ slightly.                               │
-│                                                                              │
-│                                              [ Understood, Continue ]        │
+│                                                                             │
+│                                              [ Understood, Continue ]       │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 

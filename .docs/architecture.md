@@ -12,18 +12,20 @@ LlamaTrade is a SaaS algorithmic trading platform enabling users to create custo
 
 ### Core Services (10 total, all in GKE)
 
-| Service                  | Port   | Responsibility                          |
-| ------------------------ | ------ | --------------------------------------- |
-| **Frontend (Web)**       | 80/443 | React SPA served via nginx, CDN-backed  |
-| **API Gateway**          | 8000   | Routing, auth validation, rate limiting |
-| **Auth Service**         | 8001   | Users, tenants, API keys, JWT           |
-| **Strategy Service**     | 8002   | Strategy CRUD, versioning, templates    |
-| **Backtest Service**     | 8003   | Historical simulation execution         |
-| **Market Data Service**  | 8004   | Real-time + historical data from Alpaca |
-| **Trading Service**      | 8005   | Live order execution, risk enforcement  |
-| **Portfolio Service**    | 8006   | Positions, P&L, performance metrics     |
-| **Notification Service** | 8007   | Alerts, webhooks, email/SMS             |
-| **Billing Service**      | 8008   | Subscriptions, usage metering (Stripe)  |
+| Service                  | gRPC Port | HTTP Port | Responsibility                          |
+| ------------------------ | --------- | --------- | --------------------------------------- |
+| **Frontend (Web)**       | -         | 8800      | React SPA served via nginx, CDN-backed  |
+| **API Gateway**          | -         | 8000      | gRPC-Web proxy, auth, rate limiting     |
+| **Auth Service**         | 8810      | -         | Users, tenants, API keys, JWT           |
+| **Strategy Service**     | 8820      | -         | Strategy CRUD, versioning, templates    |
+| **Backtest Service**     | 8830      | -         | Historical simulation execution         |
+| **Market Data Service**  | 8840      | -         | Real-time + historical data from Alpaca |
+| **Trading Service**      | 8850      | -         | Live order execution, risk enforcement  |
+| **Portfolio Service**    | 8860      | -         | Positions, P&L, performance metrics     |
+| **Notification Service** | 8870      | -         | Alerts, webhooks, email/SMS             |
+| **Billing Service**      | 8880      | 8881*     | Subscriptions, usage metering (Stripe)  |
+
+*Billing requires HTTP port 8881 for Stripe webhooks (Stripe does not support gRPC).
 
 ### High-Level Request Flow
 
@@ -34,29 +36,29 @@ LlamaTrade is a SaaS algorithmic trading platform enabling users to create custo
                                   │
                                   ▼
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                         FRONTEND (React SPA)                                │
+│                         FRONTEND (React SPA) :8800                          │
 │  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐       │
 │  │  Auth    │  │ Strategy │  │ Backtest │  │ Trading  │  │Portfolio │       │
 │  │  Pages   │  │  Builder │  │  Runner  │  │  Panel   │  │Dashboard │       │
 │  └──────────┘  └──────────┘  └──────────┘  └──────────┘  └──────────┘       │
-│                         Zustand + TanStack Query                            │
+│                         Zustand + gRPC-Web Client                           │
 └─────────────────────────────────┬───────────────────────────────────────────┘
-                                  │ HTTP/WebSocket
+                                  │ gRPC-Web (HTTP/2 over HTTP/1.1)
                                   ▼
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                      API GATEWAY (Kong) :8000                               │
 │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐         │
-│  │ JWT Verify  │  │ Rate Limit  │  │   Routing   │  │   Logging   │         │
+│  │ JWT Verify  │  │ Rate Limit  │  │  gRPC-Web   │  │   Logging   │         │
 │  └─────────────┘  └─────────────┘  └─────────────┘  └─────────────┘         │
 └───────┬─────────────┬─────────────┬─────────────┬─────────────┬─────────────┘
         │             │             │             │             │
         ▼             ▼             ▼             ▼             ▼
    ┌─────────┐  ┌─────────┐  ┌─────────┐  ┌─────────┐  ┌─────────┐
    │  Auth   │  │Strategy │  │Backtest │  │ Trading │  │Portfolio│  ...
-   │ :8001   │  │ :8002   │  │ :8003   │  │ :8005   │  │ :8006   │
+   │ :8810   │  │ :8820   │  │ :8830   │  │ :8850   │  │ :8860   │
    └────┬────┘  └────┬────┘  └────┬────┘  └────┬────┘  └────┬────┘
         │             │             │             │             │
-        └─────────────┴─────────────┴─────────────┴─────────────┘
+        └─────────────┴──────gRPC───┴─────────────┴─────────────┘
                                     │
         ┌───────────────────────────┼───────────────────────────┐
         ▼                           ▼                           ▼
@@ -70,10 +72,10 @@ LlamaTrade is a SaaS algorithmic trading platform enabling users to create custo
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                          SYNCHRONOUS (HTTP/REST)                            │
+│                          SYNCHRONOUS (gRPC)                                 │
 │                                                                             │
-│  Frontend ──► Gateway ──► Any Service                                       │
-│  Service  ──► Service  (internal calls)                                     │
+│  Frontend ──► Gateway ──► Any Service  (via gRPC-Web)                       │
+│  Service  ──► Service  (direct gRPC, internal calls)                        │
 │                                                                             │
 │  Examples:                                                                  │
 │  • Auth validates JWT for all services                                      │
@@ -274,7 +276,7 @@ LlamaTrade is a SaaS algorithmic trading platform enabling users to create custo
                                       │ POST /api/strategies
                                       ▼
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                         STRATEGY SERVICE :8002                              │
+│                         STRATEGY SERVICE :8820 (gRPC)                       │
 │  ┌────────────────────────────────────────────────────────────────────────┐ │
 │  │  1. Validate strategy configuration                                    │ │
 │  │  2. Store in PostgreSQL (tenant-scoped)                                │ │
@@ -309,7 +311,7 @@ LlamaTrade is a SaaS algorithmic trading platform enabling users to create custo
                                       │ POST /api/backtests
                                       ▼
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                         BACKTEST SERVICE :8003                              │
+│                         BACKTEST SERVICE :8830 (gRPC)                       │
 │  ┌────────────────────────────────────────────────────────────────────────┐ │
 │  │  1. Queue backtest job in Redis                                        │ │
 │  │  2. Return job_id immediately                                          │ │
@@ -319,7 +321,7 @@ LlamaTrade is a SaaS algorithmic trading platform enabling users to create custo
                     ┌─────────────────┴─────────────────┐
                     ▼                                   ▼
 ┌───────────────────────────────────┐   ┌───────────────────────────────────┐
-│       CELERY WORKER               │   │     MARKET DATA SERVICE :8004     │
+│       CELERY WORKER               │   │   MARKET DATA SERVICE :8840       │
 │  ┌─────────────────────────────┐  │   │  ┌─────────────────────────────┐  │
 │  │ 1. Pick up job from queue   │  │   │  │ Fetch historical OHLCV data │  │
 │  │ 2. Request historical data ─┼──┼──►│  │ from Alpaca API or cache    │  │
@@ -365,7 +367,7 @@ LlamaTrade is a SaaS algorithmic trading platform enabling users to create custo
                                       │ POST /api/trading/sessions
                                       ▼
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                         TRADING SERVICE :8005                               │
+│                         TRADING SERVICE :8850 (gRPC)                        │
 │  ┌────────────────────────────────────────────────────────────────────────┐ │
 │  │  1. Validate Alpaca credentials (from Auth Service)                    │ │
 │  │  2. Create trading session                                             │ │
@@ -377,7 +379,7 @@ LlamaTrade is a SaaS algorithmic trading platform enabling users to create custo
                 ┌─────────────────────┴─────────────────────┐
                 ▼                                           ▼
 ┌───────────────────────────────────┐       ┌───────────────────────────────────┐
-│   MARKET DATA SERVICE :8004       │       │         ALPACA API                │
+│   MARKET DATA SERVICE :8840       │       │         ALPACA API                │
 │  ┌─────────────────────────────┐  │       │  ┌─────────────────────────────┐  │
 │  │ Stream real-time quotes     │  │       │  │ Execute orders              │  │
 │  │ via WebSocket               │  │       │  │ Paper: paper-api.alpaca.com │  │
@@ -399,7 +401,7 @@ LlamaTrade is a SaaS algorithmic trading platform enabling users to create custo
                     ┌─────────────────┼─────────────────┐
                     ▼                 ▼                 ▼
 ┌─────────────────────────┐ ┌─────────────────────────┐ ┌─────────────────────────┐
-│  PORTFOLIO SVC :8006    │ │  NOTIFICATION SVC :8007 │ │  FRONTEND (WebSocket)   │
+│  PORTFOLIO SVC :8860    │ │  NOTIFICATION SVC :8870 │ │  FRONTEND (WebSocket)   │
 │ ┌─────────────────────┐ │ │ ┌─────────────────────┐ │ │ ┌─────────────────────┐ │
 │ │ Update positions    │ │ │ │ Send alert:         │ │ │ │ Live updates:       │ │
 │ │ Record transaction  │ │ │ │ "BUY AAPL @ $185.50"│ │ │ │ • Order executed    │ │
@@ -507,7 +509,7 @@ make dev
 make test
 
 # Access services
-# Frontend: http://localhost:3000
+# Frontend: http://localhost:8800
 # API Gateway: http://localhost:8000
 # API Docs: http://localhost:8000/docs
 ```

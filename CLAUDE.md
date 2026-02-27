@@ -280,7 +280,7 @@ Never allow cross-tenant data access. When in doubt, add tenant filtering.
 
 - Configuration via environment variables only (no hardcoded values)
 - See `.env.example` for all required variables
-- Ports use 47xxx range (e.g., web: 47333, gateway: 47800)
+- Ports: gateway 8000, services 80xx (auth 8810, strategy 8820, etc.), web 8800, billing 8880
 - Secrets: `JWT_SECRET`, `ENCRYPTION_KEY`, API keys
 
 ---
