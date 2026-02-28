@@ -11,38 +11,64 @@ import {
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 
-import { DEMO_STRATEGIES, generateChartData } from '../data/demo-strategies';
+import { DEMO_STRATEGIES, generateChartData, generateBenchmarkData } from '../../data/demo-strategies';
 
-function MiniChart({ data, positive }: { data: number[]; positive: boolean }) {
-  const min = Math.min(...data);
-  const max = Math.max(...data);
+function MiniChart({
+  data,
+  benchmarkData,
+  positive,
+}: {
+  data: number[];
+  benchmarkData: number[];
+  positive: boolean;
+}) {
+  // Calculate combined min/max for both lines to share the same scale
+  const allValues = [...data, ...benchmarkData];
+  const min = Math.min(...allValues);
+  const max = Math.max(...allValues);
   const range = max - min || 1;
 
-  const points = data
-    .map((v, i) => {
-      const x = (i / (data.length - 1)) * 120;
-      const y = 32 - ((v - min) / range) * 28;
-      return `${x},${y}`;
-    })
-    .join(' ');
+  const toPoints = (values: number[]) =>
+    values
+      .map((v, i) => {
+        const x = (i / (values.length - 1)) * 140;
+        const y = 40 - ((v - min) / range) * 34;
+        return `${x},${y}`;
+      })
+      .join(' ');
 
-  const fillPoints = `0,32 ${points} 120,32`;
+  const strategyPoints = toPoints(data);
+  const benchmarkPoints = toPoints(benchmarkData);
+  const fillPoints = `0,40 ${strategyPoints} 140,40`;
   const gradientId = `gradient-${positive ? 'pos' : 'neg'}-${Math.random().toString(36).slice(2)}`;
 
   return (
-    <svg width="120" height="36" className="overflow-visible">
+    <svg width="140" height="44" className="overflow-visible">
       <defs>
         <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor={positive ? '#22c55e' : '#ef4444'} stopOpacity="0.2" />
+          <stop offset="0%" stopColor={positive ? '#22c55e' : '#ef4444'} stopOpacity="0.15" />
           <stop offset="100%" stopColor={positive ? '#22c55e' : '#ef4444'} stopOpacity="0" />
         </linearGradient>
       </defs>
+      {/* Strategy fill area */}
       <polygon points={fillPoints} fill={`url(#${gradientId})`} />
+      {/* Benchmark line (SPY) - dashed gray */}
       <polyline
-        points={points}
+        points={benchmarkPoints}
+        fill="none"
+        stroke="#9ca3af"
+        strokeWidth="1.5"
+        strokeDasharray="3,2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        className="dark:stroke-gray-500"
+      />
+      {/* Strategy line */}
+      <polyline
+        points={strategyPoints}
         fill="none"
         stroke={positive ? '#22c55e' : '#ef4444'}
-        strokeWidth="1.5"
+        strokeWidth="2"
         strokeLinecap="round"
         strokeLinejoin="round"
       />
@@ -106,15 +132,17 @@ export default function StrategiesPage() {
       if (statusFilter !== 'all' && s.status !== statusFilter) return false;
       if (typeFilter !== 'all' && s.type !== typeFilter) return false;
       return true;
-    }).map((s) => ({
+    }).map((s, index) => ({
       ...s,
-      chartData: generateChartData(s.performance.return),
+      // Use unique seeds for varied but consistent charts
+      chartData: generateChartData(s.performance.return, index * 31 + 7),
+      benchmarkData: generateBenchmarkData(index * 17 + 42),
     }));
   }, [searchQuery, statusFilter, typeFilter]);
 
   return (
     <div className="min-h-[calc(100vh-56px)] bg-gray-50 dark:bg-gray-950 bg-dotted-grid">
-      <div className="max-w-6xl mx-auto px-6 py-8">
+      <div className="px-12 py-8">
         {/* Header */}
         <div className="flex items-center justify-between mb-6">
           <div>
@@ -194,6 +222,15 @@ export default function StrategiesPage() {
                   key={strategy.id}
                   className="flex items-center gap-6 px-6 py-4 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors group"
                 >
+                  {/* Performance Chart */}
+                  <div className="hidden sm:block w-36 flex-shrink-0">
+                    <MiniChart
+                      data={strategy.chartData}
+                      benchmarkData={strategy.benchmarkData}
+                      positive={strategy.performance.return >= 0}
+                    />
+                  </div>
+
                   {/* Name & Description */}
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-1">
@@ -219,11 +256,6 @@ export default function StrategiesPage() {
                         {formatTimeAgo(strategy.updated_at)}
                       </span>
                     </div>
-                  </div>
-
-                  {/* Performance Chart */}
-                  <div className="hidden sm:block w-32">
-                    <MiniChart data={strategy.chartData} positive={strategy.performance.return >= 0} />
                   </div>
 
                   {/* Performance Stats */}

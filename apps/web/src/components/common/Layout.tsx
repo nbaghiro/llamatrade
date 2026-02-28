@@ -2,8 +2,8 @@ import { CreditCard, LineChart, Compass, ChevronDown, LogOut, User, Wallet } fro
 import { useEffect, useState } from 'react';
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 
-import { useAuthStore } from '../store/auth';
-import { useBillingStore } from '../store/billing';
+import { useAuthStore } from '../../store/auth';
+import { useBillingStore } from '../../store/billing';
 
 import Logo from './Logo';
 import { ThemeToggle } from './ThemeToggle';

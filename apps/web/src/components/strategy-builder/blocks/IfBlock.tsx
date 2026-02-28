@@ -65,21 +65,21 @@ export function IfBlock({ block }: IfBlockProps) {
 
   return (
     <div ref={blockRef} className="relative">
-      {/* Main pill */}
+      {/* Main pill - amber/yellow for conditions */}
       <div
         data-testid="if-block"
         className={`
           inline-flex items-center gap-1.5 pl-1.5 pr-3 py-1.5 rounded-full cursor-pointer
           transition-all duration-150 select-none
-          bg-emerald-500 text-white text-sm
-          ${isSelected ? 'ring-2 ring-emerald-300 ring-offset-2 ring-offset-white dark:ring-offset-gray-900' : 'hover:bg-emerald-600'}
+          bg-amber-500 text-white text-sm
+          ${isSelected ? 'ring-2 ring-amber-300 ring-offset-2 ring-offset-white dark:ring-offset-gray-900' : 'hover:bg-amber-600'}
         `}
         onClick={handleClick}
       >
         {/* Delete button */}
         <button
           onClick={handleDeleteClick}
-          className="p-0.5 rounded-full hover:bg-emerald-600 transition-colors"
+          className="p-0.5 rounded-full hover:bg-amber-600 transition-colors"
           title="Delete"
         >
           <X className="w-3.5 h-3.5" />
@@ -88,7 +88,7 @@ export function IfBlock({ block }: IfBlockProps) {
         {/* Expand toggle */}
         <button
           onClick={handleExpandClick}
-          className="p-0.5 rounded-full hover:bg-emerald-600 transition-colors"
+          className="p-0.5 rounded-full hover:bg-amber-600 transition-colors"
         >
           <ChevronDown className={`w-3.5 h-3.5 transition-transform ${isExpanded ? '' : '-rotate-90'}`} />
         </button>
@@ -100,7 +100,7 @@ export function IfBlock({ block }: IfBlockProps) {
         {/* Edit button */}
         <button
           onClick={handleEditClick}
-          className="p-0.5 rounded-full hover:bg-emerald-600 transition-colors ml-1"
+          className="p-0.5 rounded-full hover:bg-amber-600 transition-colors ml-1"
           title="Edit condition"
         >
           <Pencil className="w-3 h-3" />

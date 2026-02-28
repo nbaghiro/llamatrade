@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom';
 
 import { useStrategyBuilderStore } from '../../../store/strategy-builder';
 import type { StrategyType } from '../../../types/strategy';
-import { Select } from '../../Select';
+import { Select } from '../../common/Select';
 
 const TIMEFRAME_OPTIONS = [
   { value: '1m', label: '1 Minute' },

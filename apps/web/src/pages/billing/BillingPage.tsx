@@ -6,8 +6,8 @@ import { CreditCard, FileText, Settings } from 'lucide-react';
 import { useEffect } from 'react';
 import { Link } from 'react-router-dom';
 
-import SubscriptionStatus from '../components/billing/SubscriptionStatus';
-import { useBillingStore } from '../store/billing';
+import SubscriptionStatus from '../../components/billing/SubscriptionStatus';
+import { useBillingStore } from '../../store/billing';
 
 export default function BillingPage() {
   const {

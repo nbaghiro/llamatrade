@@ -1,18 +1,19 @@
 import { Routes, Route, Navigate } from 'react-router-dom';
 
-import Layout from './components/Layout';
-import BacktestPage from './pages/BacktestPage';
-import BillingPage from './pages/BillingPage';
-import DashboardPage from './pages/DashboardPage';
-import LoginPage from './pages/LoginPage';
-import PaymentMethodsPage from './pages/PaymentMethodsPage';
-import PortfolioPage from './pages/PortfolioPage';
-import RegisterPage from './pages/RegisterPage';
-import SettingsPage from './pages/SettingsPage';
-import StrategiesPage from './pages/StrategiesPage';
-import StrategyEditorPage from './pages/StrategyEditorPage';
-import SubscribePage from './pages/SubscribePage';
-import TradingPage from './pages/TradingPage';
+import Layout from './components/common/Layout';
+import LoginPage from './pages/auth/LoginPage';
+import RegisterPage from './pages/auth/RegisterPage';
+import BillingPage from './pages/billing/BillingPage';
+import PaymentMethodsPage from './pages/billing/PaymentMethodsPage';
+import SubscribePage from './pages/billing/SubscribePage';
+import DashboardPage from './pages/dashboard/DashboardPage';
+import PortfolioPage from './pages/portfolio/PortfolioPage';
+import SettingsPage from './pages/settings/SettingsPage';
+import { NewStrategyPage } from './pages/strategies/NewStrategyPage';
+import StrategiesPage from './pages/strategies/StrategiesPage';
+import StrategyEditorPage from './pages/strategies/StrategyEditorPage';
+import BacktestPage from './pages/trading/BacktestPage';
+import TradingPage from './pages/trading/TradingPage';
 import { useAuthStore } from './store/auth';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -44,7 +45,8 @@ export default function App() {
         <Route index element={<Navigate to="/dashboard" replace />} />
         <Route path="dashboard" element={<DashboardPage />} />
         <Route path="strategies" element={<StrategiesPage />} />
-        <Route path="strategies/new" element={<StrategyEditorPage />} />
+        <Route path="strategies/new" element={<NewStrategyPage />} />
+        <Route path="strategies/builder" element={<StrategyEditorPage />} />
         <Route path="strategies/:id" element={<StrategyEditorPage />} />
         <Route path="backtest" element={<BacktestPage />} />
         <Route path="trading" element={<TradingPage />} />

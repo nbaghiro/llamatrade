@@ -157,18 +157,109 @@ export function getDemoStrategy(id: string): DemoStrategy | undefined {
 }
 
 /**
- * Generate random chart data based on target return
+ * Seeded random number generator for consistent chart data
  */
-export function generateChartData(targetReturn: number): number[] {
+function createSeededRandom(seed: number) {
+  let s = seed;
+  return () => {
+    s = (s * 9301 + 49297) % 233280;
+    return s / 233280;
+  };
+}
+
+/**
+ * Generate random chart data based on target return with variety
+ */
+export function generateChartData(targetReturn: number, seed?: number): number[] {
   const points = 20;
   const data: number[] = [100];
   const trend = targetReturn / points;
-  const volatility = Math.abs(targetReturn) * 0.15 + 1;
+
+  // Use seed if provided, otherwise use targetReturn as seed for consistency
+  const random = createSeededRandom(seed ?? Math.abs(targetReturn * 1000) + 1);
+
+  // Vary volatility based on the seed
+  const baseVolatility = Math.abs(targetReturn) * 0.2 + 1.5;
+  const volatilityMultiplier = 0.8 + random() * 0.8; // 0.8 to 1.6x
+  const volatility = baseVolatility * volatilityMultiplier;
+
+  // Add some pattern variety: dips, rallies, consolidation
+  const patternType = Math.floor(random() * 4);
 
   for (let i = 1; i < points; i++) {
-    const noise = (Math.random() - 0.5) * volatility;
-    const newValue = data[i - 1] * (1 + (trend + noise) / 100);
+    let patternModifier = 0;
+
+    switch (patternType) {
+      case 0: // Early dip then recovery
+        patternModifier = i < 6 ? -0.3 : 0.15;
+        break;
+      case 1: // Late dip
+        patternModifier = i > 14 ? -0.4 : 0.1;
+        break;
+      case 2: // Mid consolidation
+        patternModifier = (i > 7 && i < 13) ? -0.2 : 0.1;
+        break;
+      case 3: // Steady with volatility spikes
+        patternModifier = (i === 5 || i === 12) ? (random() - 0.5) * 2 : 0;
+        break;
+    }
+
+    const noise = (random() - 0.5) * volatility;
+    const trendWithPattern = trend + patternModifier;
+    const newValue = data[i - 1] * (1 + (trendWithPattern + noise) / 100);
     data.push(newValue);
   }
+
+  // Normalize to hit approximate target return
+  const actualReturn = ((data[data.length - 1] - 100) / 100) * 100;
+  const scale = targetReturn !== 0 ? targetReturn / actualReturn : 1;
+
+  return data.map((v, i) => {
+    if (i === 0) return 100;
+    const normalized = 100 + (v - 100) * Math.abs(scale) * (scale > 0 ? 1 : -1);
+    return normalized;
+  });
+}
+
+/**
+ * Generate benchmark (SPY) chart data with variety
+ * Uses a seeded random for consistency across renders
+ */
+export function generateBenchmarkData(seed: number = 42): number[] {
+  const points = 20;
+  const data: number[] = [100];
+
+  const random = createSeededRandom(seed);
+
+  // Benchmark return varies between 4-12%
+  const benchmarkReturn = 4 + random() * 8;
+  const trend = benchmarkReturn / points;
+
+  // Vary volatility
+  const volatility = 1.2 + random() * 1.5;
+
+  // Different pattern for benchmark
+  const patternType = Math.floor(random() * 3);
+
+  for (let i = 1; i < points; i++) {
+    let patternModifier = 0;
+
+    switch (patternType) {
+      case 0: // Steady climb
+        patternModifier = 0;
+        break;
+      case 1: // Small mid-period pullback
+        patternModifier = (i > 8 && i < 12) ? -0.15 : 0.05;
+        break;
+      case 2: // Early strength, late weakness
+        patternModifier = i < 10 ? 0.1 : -0.1;
+        break;
+    }
+
+    const noise = (random() - 0.5) * volatility;
+    const newValue = data[i - 1] * (1 + (trend + patternModifier + noise) / 100);
+    data.push(newValue);
+  }
+
   return data;
 }

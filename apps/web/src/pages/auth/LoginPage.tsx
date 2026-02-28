@@ -2,10 +2,10 @@ import { ConnectError } from '@connectrpc/connect';
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 
-import Logo from '../components/Logo';
-import { ThemeToggle } from '../components/ThemeToggle';
-import { authClient } from '../services/grpc-client';
-import { useAuthStore } from '../store/auth';
+import Logo from '../../components/common/Logo';
+import { ThemeToggle } from '../../components/common/ThemeToggle';
+import { authClient } from '../../services/grpc-client';
+import { useAuthStore } from '../../store/auth';
 
 export default function LoginPage() {
   const navigate = useNavigate();

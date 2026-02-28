@@ -8,11 +8,11 @@ import { ArrowLeft, Loader2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 
-import CardForm from '../components/billing/CardForm';
-import PlanCard from '../components/billing/PlanCard';
-import type { Plan } from '../generated/proto/llamatrade/v1/billing_pb';
-import { billingClient } from '../services/grpc-client';
-import { useBillingStore, BillingInterval } from '../store/billing';
+import CardForm from '../../components/billing/CardForm';
+import PlanCard from '../../components/billing/PlanCard';
+import type { Plan } from '../../generated/proto/llamatrade/v1/billing_pb';
+import { billingClient } from '../../services/grpc-client';
+import { useBillingStore, BillingInterval } from '../../store/billing';
 
 const stripePromise = loadStripe(import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY || '');
 

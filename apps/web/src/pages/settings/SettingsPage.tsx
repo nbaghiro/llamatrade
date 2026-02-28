@@ -6,7 +6,7 @@ import { CreditCard, User } from 'lucide-react';
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 
-import { useAuthStore } from '../store/auth';
+import { useAuthStore } from '../../store/auth';
 
 type Tab = 'account' | 'billing';
 

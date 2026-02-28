@@ -2,8 +2,8 @@ import { AlertCircle, ArrowLeft, Loader2 } from 'lucide-react';
 import { useEffect } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 
-import { StrategyBuilder } from '../components/strategy-builder/StrategyBuilder';
-import { useStrategyBuilderStore } from '../store/strategy-builder';
+import { StrategyBuilder } from '../../components/strategy-builder/StrategyBuilder';
+import { useStrategyBuilderStore } from '../../store/strategy-builder';
 
 export default function StrategyEditorPage() {
   const { id } = useParams<{ id: string }>();
@@ -11,7 +11,7 @@ export default function StrategyEditorPage() {
   const navigate = useNavigate();
   const templateId = searchParams.get('template');
 
-  const { loadStrategy, loadTemplate, createNew, loading, error, clearError } =
+  const { loadStrategy, loadTemplate, loading, error, clearError } =
     useStrategyBuilderStore();
 
   useEffect(() => {
@@ -21,11 +21,10 @@ export default function StrategyEditorPage() {
     } else if (templateId) {
       // Create from template
       loadTemplate(templateId);
-    } else {
-      // Create new blank strategy
-      createNew();
     }
-  }, [id, templateId, loadStrategy, loadTemplate, createNew]);
+    // Note: Don't call createNew() here - state is already set by NewStrategyPage
+    // when navigating from the template picker
+  }, [id, templateId, loadStrategy, loadTemplate]);
 
   const handleBack = () => {
     navigate('/strategies');

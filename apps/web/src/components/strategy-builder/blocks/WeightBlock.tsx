@@ -48,21 +48,21 @@ export function WeightBlock({ block, allocationPercent }: WeightBlockProps) {
         </span>
       )}
 
-      {/* Weight pill - pink/magenta style like Composer */}
+      {/* Weight pill - green style */}
       <div
         data-testid="weight-block"
         className={`
           inline-flex items-center gap-1.5 pl-1.5 pr-3 py-1.5 rounded-full cursor-pointer
           transition-all duration-150 select-none
-          bg-pink-500 text-white text-sm
-          ${isSelected ? 'ring-2 ring-pink-300 ring-offset-2 ring-offset-white dark:ring-offset-gray-900' : 'hover:bg-pink-600'}
+          bg-green-500 text-white text-sm
+          ${isSelected ? 'ring-2 ring-green-300 ring-offset-2 ring-offset-white dark:ring-offset-gray-900' : 'hover:bg-green-600'}
         `}
         onClick={handleClick}
       >
         {/* Delete button */}
         <button
           onClick={handleDeleteClick}
-          className="p-0.5 rounded-full hover:bg-pink-600 transition-colors"
+          className="p-0.5 rounded-full hover:bg-green-600 transition-colors"
           title="Delete"
         >
           <X className="w-3.5 h-3.5" />
@@ -71,7 +71,7 @@ export function WeightBlock({ block, allocationPercent }: WeightBlockProps) {
         {/* Expand toggle */}
         <button
           onClick={handleExpandClick}
-          className="p-0.5 rounded-full hover:bg-pink-600 transition-colors"
+          className="p-0.5 rounded-full hover:bg-green-600 transition-colors"
         >
           <ChevronDown className={`w-3.5 h-3.5 transition-transform ${isExpanded ? '' : '-rotate-90'}`} />
         </button>
