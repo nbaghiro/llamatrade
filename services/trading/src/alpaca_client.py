@@ -6,6 +6,7 @@ from uuid import UUID
 
 import httpx
 
+from src.metrics import time_alpaca_call
 from src.models import PositionResponse
 
 
@@ -73,10 +74,11 @@ class AlpacaTradingClient:
 
     async def get_account(self) -> AlpacaAccountResponse:
         """Get account information."""
-        response = await self._client.get("/account")
-        response.raise_for_status()
-        result: AlpacaAccountResponse = response.json()
-        return result
+        async with time_alpaca_call("get_account"):
+            response = await self._client.get("/account")
+            response.raise_for_status()
+            result: AlpacaAccountResponse = response.json()
+            return result
 
     async def submit_order(
         self,
@@ -87,8 +89,24 @@ class AlpacaTradingClient:
         time_in_force: str = "day",
         limit_price: float | None = None,
         stop_price: float | None = None,
+        client_order_id: str | None = None,
     ) -> AlpacaOrderResponse:
-        """Submit an order."""
+        """Submit an order.
+
+        Args:
+            symbol: Stock symbol.
+            qty: Number of shares.
+            side: "buy" or "sell".
+            order_type: "market", "limit", "stop", "stop_limit".
+            time_in_force: Order duration ("day", "gtc", etc.).
+            limit_price: Limit price for limit orders.
+            stop_price: Stop price for stop orders.
+            client_order_id: Idempotency key. If provided, Alpaca will return
+                existing order if one with this ID already exists.
+
+        Returns:
+            Alpaca order response.
+        """
         data: dict[str, str] = {
             "symbol": symbol,
             "qty": str(qty),
@@ -100,88 +118,123 @@ class AlpacaTradingClient:
             data["limit_price"] = str(limit_price)
         if stop_price:
             data["stop_price"] = str(stop_price)
+        if client_order_id:
+            data["client_order_id"] = client_order_id
 
-        response = await self._client.post("/orders", json=data)
-        response.raise_for_status()
-        result: AlpacaOrderResponse = response.json()
-        return result
-
-    async def get_order(self, order_id: str) -> AlpacaOrderResponse | None:
-        """Get order by Alpaca order ID."""
-        try:
-            response = await self._client.get(f"/orders/{order_id}")
+        async with time_alpaca_call("submit_order"):
+            response = await self._client.post("/orders", json=data)
             response.raise_for_status()
             result: AlpacaOrderResponse = response.json()
             return result
-        except httpx.HTTPStatusError as e:
-            if e.response.status_code == 404:
-                return None
-            raise
+
+    async def get_order(self, order_id: str) -> AlpacaOrderResponse | None:
+        """Get order by Alpaca order ID."""
+        async with time_alpaca_call("get_order"):
+            try:
+                response = await self._client.get(f"/orders/{order_id}")
+                response.raise_for_status()
+                result: AlpacaOrderResponse = response.json()
+                return result
+            except httpx.HTTPStatusError as e:
+                if e.response.status_code == 404:
+                    return None
+                raise
+
+    async def get_order_by_client_id(self, client_order_id: str) -> AlpacaOrderResponse | None:
+        """Get order by client order ID.
+
+        Useful for crash recovery - check if an order was actually
+        submitted even if we crashed before recording the response.
+
+        Args:
+            client_order_id: The client-provided idempotency key.
+
+        Returns:
+            Order if found, None otherwise.
+        """
+        async with time_alpaca_call("get_order_by_client_id"):
+            try:
+                response = await self._client.get(
+                    "/orders:by_client_order_id",
+                    params={"client_order_id": client_order_id},
+                )
+                response.raise_for_status()
+                result: AlpacaOrderResponse = response.json()
+                return result
+            except httpx.HTTPStatusError as e:
+                if e.response.status_code == 404:
+                    return None
+                raise
 
     async def cancel_order(self, order_id: str) -> bool:
         """Cancel an order."""
-        try:
-            response = await self._client.delete(f"/orders/{order_id}")
-            return bool(response.status_code == 204)
-        except httpx.HTTPStatusError:
-            return False
+        async with time_alpaca_call("cancel_order"):
+            try:
+                response = await self._client.delete(f"/orders/{order_id}")
+                return bool(response.status_code == 204)
+            except httpx.HTTPStatusError:
+                return False
 
     async def get_positions(self, tenant_id: UUID) -> list[PositionResponse]:
         """Get all open positions."""
-        response = await self._client.get("/positions")
-        response.raise_for_status()
-        data = response.json()
+        async with time_alpaca_call("get_positions"):
+            response = await self._client.get("/positions")
+            response.raise_for_status()
+            data = response.json()
 
-        return [
-            PositionResponse(
-                symbol=p["symbol"],
-                qty=float(p["qty"]),
-                side=p["side"],
-                cost_basis=float(p["cost_basis"]),
-                market_value=float(p["market_value"]),
-                unrealized_pnl=float(p["unrealized_pl"]),
-                unrealized_pnl_percent=float(p["unrealized_plpc"]) * 100,
-                current_price=float(p["current_price"]),
-            )
-            for p in data
-        ]
+            return [
+                PositionResponse(
+                    symbol=p["symbol"],
+                    qty=float(p["qty"]),
+                    side=p["side"],
+                    cost_basis=float(p["cost_basis"]),
+                    market_value=float(p["market_value"]),
+                    unrealized_pnl=float(p["unrealized_pl"]),
+                    unrealized_pnl_percent=float(p["unrealized_plpc"]) * 100,
+                    current_price=float(p["current_price"]),
+                )
+                for p in data
+            ]
 
     async def get_position(self, tenant_id: UUID, symbol: str) -> PositionResponse | None:
         """Get position for a symbol."""
-        try:
-            response = await self._client.get(f"/positions/{symbol}")
-            response.raise_for_status()
-            p = response.json()
-            return PositionResponse(
-                symbol=p["symbol"],
-                qty=float(p["qty"]),
-                side=p["side"],
-                cost_basis=float(p["cost_basis"]),
-                market_value=float(p["market_value"]),
-                unrealized_pnl=float(p["unrealized_pl"]),
-                unrealized_pnl_percent=float(p["unrealized_plpc"]) * 100,
-                current_price=float(p["current_price"]),
-            )
-        except httpx.HTTPStatusError as e:
-            if e.response.status_code == 404:
-                return None
-            raise
+        async with time_alpaca_call("get_position"):
+            try:
+                response = await self._client.get(f"/positions/{symbol}")
+                response.raise_for_status()
+                p = response.json()
+                return PositionResponse(
+                    symbol=p["symbol"],
+                    qty=float(p["qty"]),
+                    side=p["side"],
+                    cost_basis=float(p["cost_basis"]),
+                    market_value=float(p["market_value"]),
+                    unrealized_pnl=float(p["unrealized_pl"]),
+                    unrealized_pnl_percent=float(p["unrealized_plpc"]) * 100,
+                    current_price=float(p["current_price"]),
+                )
+            except httpx.HTTPStatusError as e:
+                if e.response.status_code == 404:
+                    return None
+                raise
 
     async def close_position(self, tenant_id: UUID, symbol: str) -> bool:
         """Close a position."""
-        try:
-            response = await self._client.delete(f"/positions/{symbol}")
-            return response.status_code in (200, 204)
-        except httpx.HTTPStatusError:
-            return False
+        async with time_alpaca_call("close_position"):
+            try:
+                response = await self._client.delete(f"/positions/{symbol}")
+                return response.status_code in (200, 204)
+            except httpx.HTTPStatusError:
+                return False
 
     async def close_all_positions(self, tenant_id: UUID) -> bool:
         """Close all positions."""
-        try:
-            response = await self._client.delete("/positions")
-            return response.status_code in (200, 204, 207)
-        except httpx.HTTPStatusError:
-            return False
+        async with time_alpaca_call("close_all_positions"):
+            try:
+                response = await self._client.delete("/positions")
+                return response.status_code in (200, 204, 207)
+            except httpx.HTTPStatusError:
+                return False
 
 
 _client: AlpacaTradingClient | None = None

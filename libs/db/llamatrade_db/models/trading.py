@@ -49,6 +49,7 @@ class Order(Base, UUIDPrimaryKeyMixin, TenantMixin, TimestampMixin):
         Index("ix_orders_session", "session_id"),
         Index("ix_orders_symbol", "symbol"),
         Index("ix_orders_alpaca_order_id", "alpaca_order_id"),
+        Index("ix_orders_parent", "parent_order_id"),
     )
 
     session_id: Mapped[UUID] = mapped_column(
@@ -81,8 +82,31 @@ class Order(Base, UUIDPrimaryKeyMixin, TenantMixin, TimestampMixin):
     signal_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     metadata_: Mapped[dict | None] = mapped_column("metadata", JSONB, nullable=True)
 
+    # Bracket order fields (stop-loss/take-profit)
+    parent_order_id: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True), ForeignKey("orders.id"), nullable=True
+    )
+    bracket_type: Mapped[str | None] = mapped_column(
+        String(20), nullable=True
+    )  # stop_loss, take_profit
+    stop_loss_price: Mapped[Decimal | None] = mapped_column(
+        Numeric(precision=18, scale=8), nullable=True
+    )
+    take_profit_price: Mapped[Decimal | None] = mapped_column(
+        Numeric(precision=18, scale=8), nullable=True
+    )
+
     # Relationships
     session: Mapped["TradingSession"] = relationship("TradingSession", back_populates="orders")
+    parent_order: Mapped["Order | None"] = relationship(
+        "Order",
+        remote_side="Order.id",
+        back_populates="bracket_orders",
+        foreign_keys=[parent_order_id],
+    )
+    bracket_orders: Mapped[list["Order"]] = relationship(
+        "Order", back_populates="parent_order", foreign_keys=[parent_order_id]
+    )
 
 
 class Position(Base, UUIDPrimaryKeyMixin, TenantMixin, TimestampMixin):

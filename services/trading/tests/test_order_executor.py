@@ -8,12 +8,36 @@ from src.models import OrderCreate, OrderSide, OrderStatus, OrderType, RiskCheck
 
 
 @pytest.fixture
+def mock_alert_service():
+    """Create a mock alert service."""
+    service = AsyncMock()
+    service.on_order_filled = AsyncMock()
+    service.on_order_rejected = AsyncMock()
+    service.on_stop_loss_hit = AsyncMock()
+    service.on_take_profit_hit = AsyncMock()
+    service.on_position_opened = AsyncMock()
+    service.on_position_closed = AsyncMock()
+    return service
+
+
+@pytest.fixture
 def order_executor(mock_db, mock_alpaca_client, mock_risk_manager):
     """Create order executor with mocked dependencies."""
     return OrderExecutor(
         db=mock_db,
         alpaca_client=mock_alpaca_client,
         risk_manager=mock_risk_manager,
+    )
+
+
+@pytest.fixture
+def order_executor_with_alerts(mock_db, mock_alpaca_client, mock_risk_manager, mock_alert_service):
+    """Create order executor with alert service."""
+    return OrderExecutor(
+        db=mock_db,
+        alpaca_client=mock_alpaca_client,
+        risk_manager=mock_risk_manager,
+        alert_service=mock_alert_service,
     )
 
 
@@ -605,3 +629,81 @@ class TestSyncAllPendingOrders:
         )
 
         assert updated == 0
+
+
+class TestAlertWiring:
+    """Tests for alert service integration."""
+
+    async def test_risk_rejection_sends_alert(
+        self,
+        order_executor_with_alerts,
+        mock_risk_manager,
+        mock_alert_service,
+        tenant_id,
+        session_id,
+    ):
+        """Test that risk check rejection sends alert."""
+        mock_risk_manager.check_order.return_value = RiskCheckResult(
+            passed=False,
+            violations=["Position too large"],
+        )
+
+        order = OrderCreate(
+            symbol="AAPL",
+            side=OrderSide.BUY,
+            qty=1000.0,
+            order_type=OrderType.MARKET,
+        )
+
+        with pytest.raises(ValueError, match="Risk check failed"):
+            await order_executor_with_alerts.submit_order(
+                tenant_id=tenant_id,
+                session_id=session_id,
+                order=order,
+            )
+
+        # Verify alert was sent
+        mock_alert_service.on_order_rejected.assert_called_once()
+        call_kwargs = mock_alert_service.on_order_rejected.call_args.kwargs
+        assert call_kwargs["symbol"] == "AAPL"
+        assert call_kwargs["side"] == "buy"
+        assert "Position too large" in call_kwargs["reason"]
+
+    async def test_alpaca_failure_sends_alert(
+        self,
+        order_executor_with_alerts,
+        mock_db,
+        mock_alpaca_client,
+        mock_alert_service,
+        tenant_id,
+        session_id,
+    ):
+        """Test that Alpaca API failure sends rejection alert."""
+        mock_alpaca_client.submit_order.side_effect = Exception("API Error")
+
+        async def mock_refresh(obj):
+            from uuid import uuid4
+
+            obj.id = uuid4()
+
+        mock_db.refresh = AsyncMock(side_effect=mock_refresh)
+
+        order = OrderCreate(
+            symbol="GOOGL",
+            side=OrderSide.SELL,
+            qty=5.0,
+            order_type=OrderType.MARKET,
+        )
+
+        with pytest.raises(ValueError, match="Failed to submit order"):
+            await order_executor_with_alerts.submit_order(
+                tenant_id=tenant_id,
+                session_id=session_id,
+                order=order,
+            )
+
+        # Verify rejection alert was sent
+        mock_alert_service.on_order_rejected.assert_called_once()
+        call_kwargs = mock_alert_service.on_order_rejected.call_args.kwargs
+        assert call_kwargs["symbol"] == "GOOGL"
+        assert "Alpaca API error" in call_kwargs["reason"]

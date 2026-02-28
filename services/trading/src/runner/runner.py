@@ -2,16 +2,34 @@
 
 import asyncio
 import logging
+import time
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import Protocol
+from decimal import Decimal
+from typing import Literal, Protocol, cast
 from uuid import UUID
 
 from src.alpaca_client import AlpacaTradingClient
+from src.circuit_breaker import (
+    CircuitBreaker,
+    CircuitBreakerConfig,
+    create_circuit_breaker,
+)
+from src.events.store import EventStore
+from src.events.trading_events import SessionStarted, SessionStopped
+from src.executor.event_sourced_executor import EventSourcedOrderExecutor
 from src.executor.order_executor import OrderExecutor
+from src.metrics import (
+    record_bar_processed,
+    record_signal,
+    record_strategy_error,
+    update_positions,
+    update_runner_gauge,
+)
 from src.models import OrderCreate, OrderSide, OrderType, RiskLimits, TimeInForce
 from src.risk.risk_manager import RiskManager
 from src.runner.bar_stream import AlpacaBarStream, BarData, MockBarStream
+from src.services.alert_service import AlertService
 
 logger = logging.getLogger(__name__)
 
@@ -82,6 +100,10 @@ class StrategyRunner:
         order_executor: OrderExecutor,
         risk_manager: RiskManager,
         alpaca_client: AlpacaTradingClient | None = None,
+        alert_service: AlertService | None = None,
+        strategy_name: str = "Unknown Strategy",
+        circuit_breaker_config: CircuitBreakerConfig | None = None,
+        event_store: EventStore | None = None,
     ):
         self.config = config
         self.strategy_fn = strategy_fn
@@ -89,6 +111,19 @@ class StrategyRunner:
         self.order_executor = order_executor
         self.risk_manager = risk_manager
         self.alpaca_client = alpaca_client
+        self.alerts = alert_service
+        self.strategy_name = strategy_name
+
+        # Event sourcing (optional)
+        self._event_store = event_store
+        self._event_executor: EventSourcedOrderExecutor | None = None
+        if event_store and alpaca_client:
+            self._event_executor = EventSourcedOrderExecutor(
+                event_store=event_store,
+                alpaca_client=alpaca_client,
+                risk_manager=risk_manager,
+                alert_service=alert_service,
+            )
 
         # State
         self._running = False
@@ -97,6 +132,15 @@ class StrategyRunner:
         self._positions: dict[str, Position] = {}
         self._equity = 100000.0  # Default, will be synced from Alpaca
         self._equity_sync_task: asyncio.Task | None = None
+
+        # Circuit breaker
+        self._circuit_breaker = create_circuit_breaker(
+            tenant_id=config.tenant_id,
+            session_id=config.deployment_id,
+            callback=alert_service,
+            starting_equity=self._equity,
+            config=circuit_breaker_config,
+        )
 
         # Metrics
         self._signals_generated = 0
@@ -121,13 +165,31 @@ class StrategyRunner:
     @property
     def metrics(self) -> dict:
         """Get runner metrics."""
+        cb_status = self._circuit_breaker.get_status()
         return {
             "signals_generated": self._signals_generated,
             "orders_submitted": self._orders_submitted,
             "orders_rejected": self._orders_rejected,
             "positions": len(self._positions),
             "bar_history_sizes": {s: len(bars) for s, bars in self._bar_history.items()},
+            "circuit_breaker_state": cb_status.state.value,
+            "circuit_breaker_triggered_at": (
+                cb_status.triggered_at.isoformat() if cb_status.triggered_at else None
+            ),
+            "circuit_breaker_reason": (
+                cb_status.triggered_reason.value if cb_status.triggered_reason else None
+            ),
         }
+
+    @property
+    def circuit_breaker(self) -> CircuitBreaker:
+        """Get the circuit breaker instance."""
+        return self._circuit_breaker
+
+    @property
+    def circuit_breaker_triggered(self) -> bool:
+        """Check if circuit breaker is triggered."""
+        return self._circuit_breaker.is_triggered
 
     async def start(self) -> None:
         """Start the strategy runner."""
@@ -137,12 +199,37 @@ class StrategyRunner:
 
         logger.info(f"Starting strategy runner for deployment {self.config.deployment_id}")
 
+        # Recover from crash if using event sourcing
+        if self._event_executor:
+            logger.info("Recovering state from events...")
+            state = await self._event_executor.recover_from_crash(
+                session_id=self.config.deployment_id,
+                tenant_id=self.config.tenant_id,
+            )
+            # Restore positions from event-sourced state
+            for symbol, pos_state in state.positions.items():
+                self._positions[symbol] = Position(
+                    symbol=symbol,
+                    side=pos_state.side,
+                    quantity=float(pos_state.qty),
+                    entry_price=float(pos_state.avg_cost),
+                    entry_date=datetime.now(UTC),  # Approximate
+                )
+            logger.info(f"Recovered {len(self._positions)} positions from events")
+
         # Sync equity before starting
         await self._sync_equity()
 
         # Connect to bar stream
         if not self.bar_stream.connected:
             if not await self.bar_stream.connect():
+                # Send connection lost alert
+                if self.alerts:
+                    await self.alerts.on_connection_lost(
+                        tenant_id=self.config.tenant_id,
+                        session_id=self.config.deployment_id,
+                        service="bar_stream",
+                    )
                 raise RuntimeError("Failed to connect to bar stream")
 
         # Subscribe to symbols
@@ -150,6 +237,30 @@ class StrategyRunner:
             raise RuntimeError("Failed to subscribe to symbols")
 
         self._running = True
+
+        # Emit SessionStarted event if using event sourcing
+        mode: Literal["live", "paper"] = "paper"  # TODO: Get from config if available
+        if self._event_store:
+            await self._event_store.append(
+                SessionStarted(
+                    tenant_id=self.config.tenant_id,
+                    session_id=self.config.deployment_id,
+                    strategy_id=self.config.strategy_id,
+                    strategy_name=self.strategy_name,
+                    mode=mode,
+                    symbols=self.config.symbols,
+                    starting_equity=Decimal(str(self._equity)),
+                )
+            )
+
+        # Send session started alert
+        if self.alerts:
+            await self.alerts.on_session_started(
+                tenant_id=self.config.tenant_id,
+                session_id=self.config.deployment_id,
+                strategy_name=self.strategy_name,
+                mode=mode,
+            )
 
         # Start periodic equity sync task
         self._equity_sync_task = asyncio.create_task(self._equity_sync_loop())
@@ -169,6 +280,13 @@ class StrategyRunner:
             logger.info("Runner cancelled")
         except Exception as e:
             logger.error(f"Runner error: {e}")
+            # Send session error alert
+            if self.alerts:
+                await self.alerts.on_session_error(
+                    tenant_id=self.config.tenant_id,
+                    session_id=self.config.deployment_id,
+                    error=str(e),
+                )
             raise
         finally:
             self._running = False
@@ -180,11 +298,30 @@ class StrategyRunner:
                     pass
             logger.info("Runner stopped")
 
-    async def stop(self) -> None:
+    async def stop(self, reason: str | None = None) -> None:
         """Stop the strategy runner."""
         logger.info(f"Stopping runner for deployment {self.config.deployment_id}")
         self._running = False
         await self.bar_stream.disconnect()
+
+        # Emit SessionStopped event if using event sourcing
+        if self._event_store:
+            await self._event_store.append(
+                SessionStopped(
+                    tenant_id=self.config.tenant_id,
+                    session_id=self.config.deployment_id,
+                    reason=reason or "user_requested",
+                    final_equity=Decimal(str(self._equity)),
+                )
+            )
+
+        # Send session stopped alert
+        if self.alerts:
+            await self.alerts.on_session_stopped(
+                tenant_id=self.config.tenant_id,
+                session_id=self.config.deployment_id,
+                reason=reason,
+            )
 
     def pause(self) -> None:
         """Pause signal generation (continues receiving bars)."""
@@ -196,8 +333,33 @@ class StrategyRunner:
         logger.info(f"Resuming runner for deployment {self.config.deployment_id}")
         self._paused = False
 
+    async def reset_circuit_breaker(self, force: bool = False) -> bool:
+        """Reset the circuit breaker to allow trading.
+
+        Args:
+            force: If True, reset even if cooldown hasn't elapsed.
+
+        Returns:
+            True if reset was successful.
+        """
+        success = await self._circuit_breaker.reset(force=force)
+        if success:
+            logger.info(f"Circuit breaker reset for deployment {self.config.deployment_id}")
+        return success
+
+    async def trigger_circuit_breaker(self, reason: str | None = None) -> None:
+        """Manually trigger the circuit breaker.
+
+        Args:
+            reason: Optional reason for manual trigger.
+        """
+        await self._circuit_breaker.manual_trigger(reason)
+        # Also pause the runner
+        self.pause()
+
     async def _process_bar(self, bar: BarData) -> None:
         """Process an incoming bar."""
+        start_time = time.perf_counter()
         symbol = bar.symbol
 
         # Ignore bars for untracked symbols
@@ -222,6 +384,11 @@ class StrategyRunner:
         # Get current position
         position = self._positions.get(symbol)
 
+        # Check circuit breaker before generating signals
+        if not self._circuit_breaker.can_trade():
+            logger.debug(f"Circuit breaker triggered, skipping signal generation for {symbol}")
+            return
+
         # Generate signal
         try:
             signal = self.strategy_fn(
@@ -233,42 +400,101 @@ class StrategyRunner:
 
             if signal:
                 self._signals_generated += 1
+                record_signal(signal.type)
                 await self._process_signal(signal)
 
         except Exception as e:
             logger.error(f"Strategy error for {symbol}: {e}")
+            record_strategy_error("signal_generation")
+            # Record error in circuit breaker
+            await self._circuit_breaker.record_api_error(str(e))
+            # Send strategy error alert
+            if self.alerts:
+                await self.alerts.on_strategy_error(
+                    tenant_id=self.config.tenant_id,
+                    session_id=self.config.deployment_id,
+                    error=f"Error processing {symbol}: {e}",
+                )
+        finally:
+            # Record bar processing metrics
+            duration = time.perf_counter() - start_time
+            record_bar_processed(symbol, duration)
 
     async def _process_signal(self, signal: Signal) -> None:
         """Process a trading signal."""
         logger.info(f"Signal: {signal.type} {signal.quantity} {signal.symbol}")
 
-        # Run risk checks
-        risk_result = await self.risk_manager.check_order(
-            tenant_id=self.config.tenant_id,
-            symbol=signal.symbol,
-            side=signal.type,
-            qty=signal.quantity,
-            order_type="market",
-        )
-
-        if not risk_result.passed:
-            logger.warning(f"Signal rejected by risk: {risk_result.violations}")
-            self._orders_rejected += 1
+        # Double-check circuit breaker (may have triggered since bar processing)
+        if not self._circuit_breaker.can_trade():
+            logger.warning(f"Circuit breaker triggered, rejecting signal for {signal.symbol}")
             return
+
+        # Record signal event if using event sourcing
+        if self._event_executor:
+            # Cast signal.type which is str at runtime but constrained to valid values
+            signal_type = cast(
+                Literal["buy", "sell", "short", "cover"],
+                signal.type,
+            )
+            await self._event_executor.record_signal(
+                tenant_id=self.config.tenant_id,
+                session_id=self.config.deployment_id,
+                symbol=signal.symbol,
+                signal_type=signal_type,
+                price=Decimal(str(signal.price)),
+                qty=Decimal(str(signal.quantity)),
+            )
 
         # Convert signal to order
         order = self._signal_to_order(signal)
 
-        # Submit order
+        # Submit order - use event-sourced executor if available
         try:
-            result = await self.order_executor.submit_order(
-                tenant_id=self.config.tenant_id,
-                session_id=self.config.deployment_id,
-                order=order,
-            )
+            if self._event_executor:
+                # Event-sourced path - idempotent, durable
+                order_id = await self._event_executor.submit_order(
+                    tenant_id=self.config.tenant_id,
+                    session_id=self.config.deployment_id,
+                    order=order,
+                    signal_timestamp=signal.timestamp,
+                )
+                self._orders_submitted += 1
+                logger.info(f"Order submitted (event-sourced): {order_id}")
+            else:
+                # Legacy path - uses OrderExecutor directly
+                # Run risk checks (event-sourced executor does this internally)
+                risk_result = await self.risk_manager.check_order(
+                    tenant_id=self.config.tenant_id,
+                    symbol=signal.symbol,
+                    side=signal.type,
+                    qty=signal.quantity,
+                    order_type="market",
+                )
 
-            self._orders_submitted += 1
-            logger.info(f"Order submitted: {result.id} status={result.status}")
+                if not risk_result.passed:
+                    logger.warning(f"Signal rejected by risk: {risk_result.violations}")
+                    self._orders_rejected += 1
+                    if self.alerts:
+                        await self.alerts.on_risk_breach(
+                            tenant_id=self.config.tenant_id,
+                            session_id=self.config.deployment_id,
+                            breach_type="signal_rejected",
+                            details={
+                                "symbol": signal.symbol,
+                                "signal_type": signal.type,
+                                "quantity": signal.quantity,
+                                "violations": risk_result.violations,
+                            },
+                        )
+                    return
+
+                result = await self.order_executor.submit_order(
+                    tenant_id=self.config.tenant_id,
+                    session_id=self.config.deployment_id,
+                    order=order,
+                )
+                self._orders_submitted += 1
+                logger.info(f"Order submitted: {result.id} status={result.status}")
 
             # Update position tracking
             await self._update_position(signal)
@@ -276,6 +502,9 @@ class StrategyRunner:
         except Exception as e:
             logger.error(f"Order submission failed: {e}")
             self._orders_rejected += 1
+            record_strategy_error("order_submission")
+            # Record error in circuit breaker
+            await self._circuit_breaker.record_order_error(str(e))
 
     def _signal_to_order(self, signal: Signal) -> OrderCreate:
         """Convert a signal to an order request."""
@@ -289,11 +518,17 @@ class StrategyRunner:
             time_in_force=TimeInForce.DAY,
         )
 
-    async def _update_position(self, signal: Signal) -> None:
+    async def _update_position(self, signal: Signal, order_id: UUID | None = None) -> None:
         """Update position tracking after signal."""
         symbol = signal.symbol
+        # Generate order_id if not provided (for event sourcing)
+        if order_id is None:
+            from uuid import uuid4
+
+            order_id = uuid4()
 
         if signal.type == "buy":
+            old_position = self._positions.get(symbol)
             self._positions[symbol] = Position(
                 symbol=symbol,
                 side="long",
@@ -301,12 +536,77 @@ class StrategyRunner:
                 entry_price=signal.price,
                 entry_date=signal.timestamp,
             )
+            # Emit position event if using event sourcing
+            if self._event_executor:
+                if old_position and old_position.side == "long":
+                    # Adding to existing position
+                    new_qty = old_position.quantity + signal.quantity
+                    new_avg = (
+                        (old_position.entry_price * old_position.quantity)
+                        + (signal.price * signal.quantity)
+                    ) / new_qty
+                    await self._event_executor.record_position_increased(
+                        tenant_id=self.config.tenant_id,
+                        session_id=self.config.deployment_id,
+                        symbol=symbol,
+                        qty_added=Decimal(str(signal.quantity)),
+                        price=Decimal(str(signal.price)),
+                        new_total_qty=Decimal(str(new_qty)),
+                        new_avg_cost=Decimal(str(new_avg)),
+                        order_id=order_id,
+                    )
+                else:
+                    # Opening new position
+                    await self._event_executor.record_position_opened(
+                        tenant_id=self.config.tenant_id,
+                        session_id=self.config.deployment_id,
+                        symbol=symbol,
+                        side="long",
+                        qty=Decimal(str(signal.quantity)),
+                        entry_price=Decimal(str(signal.price)),
+                        order_id=order_id,
+                    )
+            # Send position opened alert
+            if self.alerts:
+                await self.alerts.on_position_opened(
+                    tenant_id=self.config.tenant_id,
+                    session_id=self.config.deployment_id,
+                    symbol=symbol,
+                    side="long",
+                    qty=signal.quantity,
+                    price=signal.price,
+                )
 
         elif signal.type == "sell":
+            old_position = self._positions.get(symbol)
             if symbol in self._positions:
                 del self._positions[symbol]
+            # Send position closed alert and record trade in circuit breaker
+            if old_position:
+                pnl = (signal.price - old_position.entry_price) * old_position.quantity
+                # Emit position closed event if using event sourcing
+                if self._event_executor:
+                    await self._event_executor.record_position_closed(
+                        tenant_id=self.config.tenant_id,
+                        session_id=self.config.deployment_id,
+                        symbol=symbol,
+                        exit_price=Decimal(str(signal.price)),
+                        realized_pnl=Decimal(str(pnl)),
+                        order_id=order_id,
+                    )
+                # Record trade in circuit breaker
+                await self._circuit_breaker.record_trade(is_win=pnl >= 0, pnl=pnl)
+                if self.alerts:
+                    await self.alerts.on_position_closed(
+                        tenant_id=self.config.tenant_id,
+                        session_id=self.config.deployment_id,
+                        symbol=symbol,
+                        qty=old_position.quantity,
+                        pnl=pnl,
+                    )
 
         elif signal.type == "short":
+            old_position = self._positions.get(symbol)
             self._positions[symbol] = Position(
                 symbol=symbol,
                 side="short",
@@ -314,10 +614,84 @@ class StrategyRunner:
                 entry_price=signal.price,
                 entry_date=signal.timestamp,
             )
+            # Emit position event if using event sourcing
+            if self._event_executor:
+                if old_position and old_position.side == "short":
+                    # Adding to existing short position
+                    new_qty = old_position.quantity + signal.quantity
+                    new_avg = (
+                        (old_position.entry_price * old_position.quantity)
+                        + (signal.price * signal.quantity)
+                    ) / new_qty
+                    await self._event_executor.record_position_increased(
+                        tenant_id=self.config.tenant_id,
+                        session_id=self.config.deployment_id,
+                        symbol=symbol,
+                        qty_added=Decimal(str(signal.quantity)),
+                        price=Decimal(str(signal.price)),
+                        new_total_qty=Decimal(str(new_qty)),
+                        new_avg_cost=Decimal(str(new_avg)),
+                        order_id=order_id,
+                    )
+                else:
+                    # Opening new short position
+                    await self._event_executor.record_position_opened(
+                        tenant_id=self.config.tenant_id,
+                        session_id=self.config.deployment_id,
+                        symbol=symbol,
+                        side="short",
+                        qty=Decimal(str(signal.quantity)),
+                        entry_price=Decimal(str(signal.price)),
+                        order_id=order_id,
+                    )
+            # Send position opened alert
+            if self.alerts:
+                await self.alerts.on_position_opened(
+                    tenant_id=self.config.tenant_id,
+                    session_id=self.config.deployment_id,
+                    symbol=symbol,
+                    side="short",
+                    qty=signal.quantity,
+                    price=signal.price,
+                )
 
         elif signal.type == "cover":
+            old_position = self._positions.get(symbol)
             if symbol in self._positions:
                 del self._positions[symbol]
+            # Send position closed alert and record trade in circuit breaker
+            if old_position:
+                # For short: profit when price goes down
+                pnl = (old_position.entry_price - signal.price) * old_position.quantity
+                # Emit position closed event if using event sourcing
+                if self._event_executor:
+                    await self._event_executor.record_position_closed(
+                        tenant_id=self.config.tenant_id,
+                        session_id=self.config.deployment_id,
+                        symbol=symbol,
+                        exit_price=Decimal(str(signal.price)),
+                        realized_pnl=Decimal(str(pnl)),
+                        order_id=order_id,
+                    )
+                # Record trade in circuit breaker
+                await self._circuit_breaker.record_trade(is_win=pnl >= 0, pnl=pnl)
+                if self.alerts:
+                    await self.alerts.on_position_closed(
+                        tenant_id=self.config.tenant_id,
+                        session_id=self.config.deployment_id,
+                        symbol=symbol,
+                        qty=old_position.quantity,
+                        pnl=pnl,
+                    )
+
+        # Update position metrics
+        total_value = sum(pos.quantity * pos.entry_price for pos in self._positions.values())
+        update_positions(
+            str(self.config.tenant_id),
+            str(self.config.deployment_id),
+            len(self._positions),
+            total_value,
+        )
 
     def set_equity(self, equity: float) -> None:
         """Update equity value (called by external sync)."""
@@ -340,8 +714,22 @@ class StrategyRunner:
             equity_str = account.get("equity", "100000")
             self._equity = float(equity_str)
             logger.debug(f"Synced equity: ${self._equity:,.2f}")
+
+            # Update circuit breaker with current equity
+            self._circuit_breaker.update_equity(self._equity)
+
+            # Perform periodic circuit breaker health check
+            if not self._circuit_breaker.is_triggered:
+                triggered = await self._circuit_breaker.check_thresholds()
+                if triggered:
+                    logger.warning("Circuit breaker triggered during equity sync health check")
+                    # Pause the runner when circuit breaker triggers
+                    self.pause()
+
         except Exception as e:
             logger.warning(f"Failed to sync equity: {e}")
+            # Record API error in circuit breaker
+            await self._circuit_breaker.record_api_error(str(e))
 
     async def _equity_sync_loop(self) -> None:
         """Periodically sync equity from Alpaca (every 60 seconds)."""
@@ -375,8 +763,29 @@ class RunnerManager:
         order_executor: OrderExecutor,
         risk_manager: RiskManager,
         alpaca_client: AlpacaTradingClient | None = None,
+        alert_service: AlertService | None = None,
+        strategy_name: str = "Unknown Strategy",
+        circuit_breaker_config: CircuitBreakerConfig | None = None,
+        event_store: EventStore | None = None,
     ) -> StrategyRunner:
-        """Create and start a new runner."""
+        """Create and start a new runner.
+
+        Args:
+            config: Runner configuration.
+            strategy_fn: Compiled strategy function.
+            bar_stream: Bar data stream.
+            order_executor: Order executor for submitting orders.
+            risk_manager: Risk manager for order validation.
+            alpaca_client: Alpaca trading client (required for event sourcing).
+            alert_service: Alert service for notifications.
+            strategy_name: Human-readable strategy name.
+            circuit_breaker_config: Circuit breaker configuration.
+            event_store: Event store for event sourcing. When provided,
+                enables idempotent order submission and crash recovery.
+
+        Returns:
+            Started StrategyRunner instance.
+        """
         deployment_id = config.deployment_id
 
         if deployment_id in self._runners:
@@ -389,6 +798,10 @@ class RunnerManager:
             order_executor=order_executor,
             risk_manager=risk_manager,
             alpaca_client=alpaca_client,
+            alert_service=alert_service,
+            strategy_name=strategy_name,
+            circuit_breaker_config=circuit_breaker_config,
+            event_store=event_store,
         )
 
         self._runners[deployment_id] = runner
@@ -396,6 +809,9 @@ class RunnerManager:
         # Start in background task
         task = asyncio.create_task(runner.start())
         self._tasks[deployment_id] = task
+
+        # Update active runners metric
+        update_runner_gauge(len(self.active_runners))
 
         return runner
 
@@ -418,6 +834,9 @@ class RunnerManager:
 
         del self._runners[deployment_id]
         del self._tasks[deployment_id]
+
+        # Update active runners metric
+        update_runner_gauge(len(self.active_runners))
 
         return True
 

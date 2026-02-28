@@ -9,8 +9,9 @@ import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Response
 from fastapi.middleware.cors import CORSMiddleware
+from llamatrade_common.metrics import get_metrics, init_service_info
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +24,11 @@ CORS_ORIGINS = os.getenv(
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Application lifespan handler."""
+    # Initialize service metrics
+    environment = os.getenv("ENVIRONMENT", "development")
+    init_service_info("trading", "0.1.0", environment)
+    logger.info("Prometheus metrics initialized")
+
     # Mount Connect ASGI app
     try:
         from llamatrade.v1.trading_connect import TradingServiceASGIApplication
@@ -61,3 +67,12 @@ app.add_middleware(
 async def health_check() -> dict[str, str]:
     """Health check endpoint."""
     return {"status": "healthy", "service": "trading", "version": "0.1.0"}
+
+
+@app.get("/metrics")
+async def metrics() -> Response:
+    """Prometheus metrics endpoint."""
+    return Response(
+        content=get_metrics(),
+        media_type="text/plain; charset=utf-8",
+    )

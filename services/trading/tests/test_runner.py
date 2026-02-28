@@ -6,7 +6,7 @@ from uuid import UUID
 
 import pytest
 from src.models import OrderResponse, OrderStatus
-from src.runner.bar_stream import MockBarStream
+from src.runner.bar_stream import BarData, MockBarStream
 from src.runner.runner import (
     Position,
     RunnerConfig,
@@ -392,3 +392,150 @@ class TestRunnerManagerOperations:
         result = manager.get_runner(runner_config.deployment_id)
 
         assert result is runner
+
+    async def test_stop_runner_not_found(self):
+        """Test stopping non-existent runner returns False."""
+        manager = RunnerManager()
+        result = await manager.stop_runner(UUID("00000000-0000-0000-0000-000000000000"))
+        assert result is False
+
+
+class TestStrategyRunnerAdvanced:
+    """Advanced tests for StrategyRunner."""
+
+    async def test_process_bar_ignores_untracked_symbols(
+        self,
+        runner_config,
+        mock_strategy_fn,
+        mock_order_executor,
+        mock_risk_manager,
+        sample_bars,
+    ):
+        """Test that bars for untracked symbols are ignored."""
+        mock_stream = MockBarStream(bars={"AAPL": sample_bars})
+        runner = StrategyRunner(
+            config=runner_config,
+            strategy_fn=mock_strategy_fn,
+            bar_stream=mock_stream,
+            order_executor=mock_order_executor,
+            risk_manager=mock_risk_manager,
+        )
+
+        # Create a bar for an untracked symbol
+        untracked_bar = sample_bars[0]
+        untracked_bar = BarData(
+            symbol="TSLA",  # Not in config.symbols
+            timestamp=untracked_bar.timestamp,
+            open=untracked_bar.open,
+            high=untracked_bar.high,
+            low=untracked_bar.low,
+            close=untracked_bar.close,
+            volume=untracked_bar.volume,
+        )
+
+        await runner._process_bar(untracked_bar)
+
+        # Strategy function should not be called
+        mock_strategy_fn.assert_not_called()
+
+    async def test_process_bar_warmup_period(
+        self,
+        runner_config,
+        mock_strategy_fn,
+        mock_order_executor,
+        mock_risk_manager,
+        sample_bars,
+    ):
+        """Test that strategy is not called during warmup period."""
+        mock_stream = MockBarStream(bars={"AAPL": sample_bars[:5]})
+        runner = StrategyRunner(
+            config=runner_config,
+            strategy_fn=mock_strategy_fn,
+            bar_stream=mock_stream,
+            order_executor=mock_order_executor,
+            risk_manager=mock_risk_manager,
+        )
+
+        # Process a bar during warmup
+        await runner._process_bar(sample_bars[0])
+
+        # Strategy should not be called during warmup
+        mock_strategy_fn.assert_not_called()
+
+    async def test_process_signal_rejected_by_risk(
+        self,
+        runner_config,
+        mock_strategy_fn,
+        mock_order_executor,
+        mock_risk_manager,
+        sample_bars,
+    ):
+        """Test signal rejection by risk manager."""
+        mock_stream = MockBarStream(bars={"AAPL": sample_bars})
+        runner = StrategyRunner(
+            config=runner_config,
+            strategy_fn=mock_strategy_fn,
+            bar_stream=mock_stream,
+            order_executor=mock_order_executor,
+            risk_manager=mock_risk_manager,
+        )
+
+        # Fill warmup history
+        runner._bar_history["AAPL"] = sample_bars[:15]
+
+        # Configure risk manager to reject
+        mock_risk_manager.check_order.return_value.passed = False
+        mock_risk_manager.check_order.return_value.violations = ["Position too large"]
+
+        signal = Signal(type="buy", symbol="AAPL", quantity=10.0, price=150.0)
+        await runner._process_signal(signal)
+
+        # Order should not be submitted
+        mock_order_executor.submit_order.assert_not_called()
+        assert runner._orders_rejected == 1
+
+    def test_circuit_breaker_property(
+        self,
+        runner_config,
+        mock_strategy_fn,
+        mock_order_executor,
+        mock_risk_manager,
+        sample_bars,
+    ):
+        """Test circuit breaker property access."""
+        mock_stream = MockBarStream(bars={"AAPL": sample_bars})
+        runner = StrategyRunner(
+            config=runner_config,
+            strategy_fn=mock_strategy_fn,
+            bar_stream=mock_stream,
+            order_executor=mock_order_executor,
+            risk_manager=mock_risk_manager,
+        )
+
+        assert runner.circuit_breaker is not None
+        assert runner.circuit_breaker_triggered is False
+
+    async def test_stop_runner(
+        self,
+        runner_config,
+        mock_strategy_fn,
+        mock_order_executor,
+        mock_risk_manager,
+        sample_bars,
+    ):
+        """Test stopping the runner."""
+        mock_stream = MockBarStream(bars={"AAPL": sample_bars})
+        mock_stream.disconnect = AsyncMock()
+
+        runner = StrategyRunner(
+            config=runner_config,
+            strategy_fn=mock_strategy_fn,
+            bar_stream=mock_stream,
+            order_executor=mock_order_executor,
+            risk_manager=mock_risk_manager,
+        )
+
+        await runner.stop(reason="Test stop")
+
+        assert runner._running is False
+        mock_stream.disconnect.assert_called_once()

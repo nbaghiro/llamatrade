@@ -66,10 +66,9 @@ class TradingServicer:
                 side=side_map.get(request.side, OrderSide.BUY),
                 order_type=type_map.get(request.type, OrderType.MARKET),
                 time_in_force=tif_map.get(request.time_in_force, TimeInForce.DAY),
-                quantity=Decimal(request.quantity.value) if request.HasField("quantity") else Decimal("0"),
-                limit_price=Decimal(request.limit_price.value) if request.HasField("limit_price") else None,
-                stop_price=Decimal(request.stop_price.value) if request.HasField("stop_price") else None,
-                client_order_id=request.client_order_id if request.client_order_id else None,
+                qty=float(request.quantity.value) if request.HasField("quantity") else 0.0,
+                limit_price=float(request.limit_price.value) if request.HasField("limit_price") else None,
+                stop_price=float(request.stop_price.value) if request.HasField("stop_price") else None,
             )
 
             # Submit the order
@@ -196,7 +195,7 @@ class TradingServicer:
                 from src.models import OrderStatus as InternalOrderStatus
 
                 status_map = {
-                    trading_pb2.ORDER_STATUS_NEW: InternalOrderStatus.NEW,
+                    trading_pb2.ORDER_STATUS_NEW: InternalOrderStatus.SUBMITTED,
                     trading_pb2.ORDER_STATUS_PENDING: InternalOrderStatus.PENDING,
                     trading_pb2.ORDER_STATUS_FILLED: InternalOrderStatus.FILLED,
                     trading_pb2.ORDER_STATUS_CANCELLED: InternalOrderStatus.CANCELLED,
@@ -352,7 +351,7 @@ class TradingServicer:
                 side=side,
                 order_type=OrderType.MARKET,
                 time_in_force=TimeInForce.DAY,
-                quantity=quantity,
+                qty=float(quantity),
             )
 
             order = await executor.submit_order(
@@ -430,11 +429,14 @@ class TradingServicer:
         from src.models import OrderStatus as InternalOrderStatus
 
         status_map = {
-            InternalOrderStatus.NEW: trading_pb2.ORDER_STATUS_NEW,
+            InternalOrderStatus.SUBMITTED: trading_pb2.ORDER_STATUS_NEW,
             InternalOrderStatus.PENDING: trading_pb2.ORDER_STATUS_PENDING,
+            InternalOrderStatus.ACCEPTED: trading_pb2.ORDER_STATUS_PENDING,
+            InternalOrderStatus.PARTIAL: trading_pb2.ORDER_STATUS_PARTIALLY_FILLED,
             InternalOrderStatus.FILLED: trading_pb2.ORDER_STATUS_FILLED,
             InternalOrderStatus.CANCELLED: trading_pb2.ORDER_STATUS_CANCELLED,
             InternalOrderStatus.REJECTED: trading_pb2.ORDER_STATUS_REJECTED,
+            InternalOrderStatus.EXPIRED: trading_pb2.ORDER_STATUS_EXPIRED,
         }
 
         proto_order = trading_pb2.Order(

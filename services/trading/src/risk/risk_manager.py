@@ -1,5 +1,6 @@
 """Risk manager - enforces trading limits and risk rules with database persistence."""
 
+import time
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
@@ -11,6 +12,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.clients.market_data import MarketDataClient, get_market_data_client
+from src.metrics import record_risk_check, update_daily_pnl, update_drawdown
 from src.models import RiskCheckResult, RiskLimits
 
 
@@ -66,6 +68,7 @@ class RiskManager:
         session_id: UUID | None = None,
     ) -> RiskCheckResult:
         """Check if an order passes all risk limits."""
+        start_time = time.perf_counter()
         violations = []
         limits = await self.get_limits(tenant_id, session_id)
 
@@ -103,8 +106,13 @@ class RiskManager:
             if not rate_check:
                 violations.append("Order rate limit exceeded (max 10 orders/minute)")
 
+        # Record risk check metrics
+        duration = time.perf_counter() - start_time
+        passed = len(violations) == 0
+        record_risk_check(passed=passed, violations=violations, duration=duration)
+
         return RiskCheckResult(
-            passed=len(violations) == 0,
+            passed=passed,
             violations=violations,
         )
 
@@ -243,6 +251,10 @@ class RiskManager:
             self.db.add(daily)
 
         await self.db.commit()
+
+        # Update Prometheus metrics
+        update_daily_pnl(str(tenant_id), str(session_id), total_pnl)
+        update_drawdown(str(tenant_id), str(session_id), float(daily.max_drawdown_pct))
 
     async def record_trade(
         self,

@@ -188,6 +188,11 @@ def mock_order():
     order.canceled_at = None
     order.failed_at = None
     order.created_at = datetime.now(UTC)
+    # Bracket order fields
+    order.parent_order_id = None
+    order.bracket_type = None
+    order.stop_loss_price = None
+    order.take_profit_price = None
     return order
 
 

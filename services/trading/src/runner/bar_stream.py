@@ -13,6 +13,12 @@ from websockets.asyncio.client import ClientConnection
 from websockets.exceptions import ConnectionClosed
 from websockets.protocol import State
 
+from src.metrics import (
+    record_bar_latency,
+    record_bar_stream_reconnect,
+    set_bar_stream_connected,
+)
+
 logger = logging.getLogger(__name__)
 
 
@@ -108,11 +114,13 @@ class AlpacaBarStream:
 
             self._authenticated = True
             self._reconnect_attempts = 0
+            set_bar_stream_connected(True)
             logger.info("Authenticated with Alpaca stream")
             return True
 
         except Exception as e:
             logger.error(f"Failed to connect to Alpaca stream: {e}")
+            set_bar_stream_connected(False)
             return False
 
     async def disconnect(self) -> None:
@@ -128,6 +136,7 @@ class AlpacaBarStream:
             self._ws = None
 
         self._subscribed_symbols.clear()
+        set_bar_stream_connected(False)
         logger.info("Disconnected from Alpaca stream")
 
     async def subscribe(self, symbols: list[str]) -> bool:
@@ -273,6 +282,7 @@ class AlpacaBarStream:
 
         self._reconnect_attempts += 1
         delay = self.config.reconnect_delay * self._reconnect_attempts
+        record_bar_stream_reconnect()
 
         logger.info(
             f"Reconnecting in {delay}s "
@@ -299,6 +309,12 @@ class AlpacaBarStream:
                 timestamp = datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
             else:
                 timestamp = datetime.now(UTC)
+
+            # Record latency from bar timestamp to receipt
+            now = datetime.now(UTC)
+            latency = (now - timestamp).total_seconds()
+            if latency > 0:
+                record_bar_latency(latency)
 
             return BarData(
                 symbol=data.get("S", ""),

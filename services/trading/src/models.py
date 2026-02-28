@@ -60,6 +60,22 @@ class OrderCreate(BaseModel):
     trail_percent: float | None = None
     time_in_force: TimeInForce = TimeInForce.DAY
     extended_hours: bool = False
+    # Bracket order fields (stop-loss/take-profit)
+    stop_loss_price: float | None = None
+    take_profit_price: float | None = None
+    bracket_time_in_force: TimeInForce = TimeInForce.GTC
+
+
+class BracketType(StrEnum):
+    STOP_LOSS = "stop_loss"
+    TAKE_PROFIT = "take_profit"
+
+
+class BracketOrderInfo(BaseModel):
+    """Information about bracket orders (stop-loss/take-profit) attached to a parent order."""
+
+    stop_loss_order_id: UUID | None = None
+    take_profit_order_id: UUID | None = None
 
 
 class OrderResponse(BaseModel):
@@ -76,6 +92,12 @@ class OrderResponse(BaseModel):
     filled_avg_price: float | None = None
     submitted_at: datetime
     filled_at: datetime | None = None
+    # Bracket order fields
+    parent_order_id: UUID | None = None
+    bracket_type: BracketType | None = None
+    stop_loss_price: float | None = None
+    take_profit_price: float | None = None
+    bracket_orders: BracketOrderInfo | None = None
 
 
 class SessionCreate(BaseModel):

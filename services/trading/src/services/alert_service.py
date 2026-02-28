@@ -44,6 +44,8 @@ class AlertType(StrEnum):
     SESSION_STOPPED = "session_stopped"
     SESSION_ERROR = "session_error"
     CONNECTION_LOST = "connection_lost"
+    CIRCUIT_BREAKER_TRIGGERED = "circuit_breaker_triggered"
+    CIRCUIT_BREAKER_RESET = "circuit_breaker_reset"
 
 
 @dataclass
@@ -135,6 +137,66 @@ class AlertService:
                     "side": side,
                     "qty": qty,
                     "reason": reason,
+                },
+            )
+        )
+
+    async def on_stop_loss_hit(
+        self,
+        tenant_id: UUID,
+        session_id: UUID,
+        symbol: str,
+        qty: float,
+        stop_price: float,
+        filled_price: float,
+        pnl: float | None = None,
+    ) -> None:
+        """Send alert when stop-loss order fills."""
+        pnl_str = f", P&L: ${pnl:+.2f}" if pnl is not None else ""
+        await self.send(
+            Alert(
+                tenant_id=tenant_id,
+                session_id=session_id,
+                alert_type=AlertType.STOP_LOSS_HIT,
+                priority=AlertPriority.HIGH,
+                title=f"Stop-Loss Hit: {symbol}",
+                message=f"Stop-loss triggered for {qty} {symbol} @ ${filled_price:.2f}{pnl_str}",
+                symbol=symbol,
+                metadata={
+                    "qty": qty,
+                    "stop_price": stop_price,
+                    "filled_price": filled_price,
+                    "pnl": pnl,
+                },
+            )
+        )
+
+    async def on_take_profit_hit(
+        self,
+        tenant_id: UUID,
+        session_id: UUID,
+        symbol: str,
+        qty: float,
+        target_price: float,
+        filled_price: float,
+        pnl: float | None = None,
+    ) -> None:
+        """Send alert when take-profit order fills."""
+        pnl_str = f", P&L: ${pnl:+.2f}" if pnl is not None else ""
+        await self.send(
+            Alert(
+                tenant_id=tenant_id,
+                session_id=session_id,
+                alert_type=AlertType.TAKE_PROFIT_HIT,
+                priority=AlertPriority.MEDIUM,
+                title=f"Take-Profit Hit: {symbol}",
+                message=f"Take-profit triggered for {qty} {symbol} @ ${filled_price:.2f}{pnl_str}",
+                symbol=symbol,
+                metadata={
+                    "qty": qty,
+                    "target_price": target_price,
+                    "filled_price": filled_price,
+                    "pnl": pnl,
                 },
             )
         )
@@ -365,6 +427,62 @@ class AlertService:
                 metadata={
                     "service": service,
                 },
+            )
+        )
+
+    async def on_circuit_breaker_triggered(
+        self,
+        tenant_id: UUID,
+        session_id: UUID,
+        reason: str,
+        details: dict,
+    ) -> None:
+        """Send alert when circuit breaker is triggered.
+
+        Args:
+            tenant_id: Tenant identifier.
+            session_id: Trading session identifier.
+            reason: Reason for circuit breaker activation.
+            details: Additional details about the trigger.
+        """
+        # Format reason for display
+        reason_display = reason.replace("_", " ").title()
+
+        await self.send(
+            Alert(
+                tenant_id=tenant_id,
+                session_id=session_id,
+                alert_type=AlertType.CIRCUIT_BREAKER_TRIGGERED,
+                priority=AlertPriority.CRITICAL,
+                title="Emergency Circuit Breaker Triggered",
+                message=f"Trading paused due to {reason_display}. Manual review required.",
+                metadata={
+                    "reason": reason,
+                    **details,
+                },
+            )
+        )
+
+    async def on_circuit_breaker_reset(
+        self,
+        tenant_id: UUID,
+        session_id: UUID,
+    ) -> None:
+        """Send alert when circuit breaker is reset.
+
+        Args:
+            tenant_id: Tenant identifier.
+            session_id: Trading session identifier.
+        """
+        await self.send(
+            Alert(
+                tenant_id=tenant_id,
+                session_id=session_id,
+                alert_type=AlertType.CIRCUIT_BREAKER_RESET,
+                priority=AlertPriority.MEDIUM,
+                title="Circuit Breaker Reset",
+                message="Circuit breaker has been reset. Trading can resume.",
+                metadata={},
             )
         )
 

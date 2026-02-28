@@ -215,3 +215,113 @@ class TestMockBarStream:
             received_bars.append(bar)
 
         assert len(received_bars) == 0
+
+
+class TestAlpacaBarStreamAdvanced:
+    """Advanced tests for AlpacaBarStream."""
+
+    async def test_disconnect_clears_state(self):
+        """Test that disconnect clears all state."""
+        stream = AlpacaBarStream()
+        stream._subscribed_symbols = {"AAPL", "GOOGL"}
+        stream._authenticated = True
+        stream._running = True
+
+        await stream.disconnect()
+
+        assert stream._running is False
+        assert stream._authenticated is False
+        assert len(stream._subscribed_symbols) == 0
+
+    async def test_subscribe_fails_when_not_connected(self):
+        """Test subscribe fails when not connected."""
+        stream = AlpacaBarStream()
+
+        result = await stream.subscribe(["AAPL"])
+
+        assert result is False
+
+    async def test_unsubscribe_returns_true_when_not_connected(self):
+        """Test unsubscribe returns True when not connected."""
+        stream = AlpacaBarStream()
+
+        result = await stream.unsubscribe(["AAPL"])
+
+        assert result is True
+
+    async def test_receive_message_returns_none_when_no_ws(self):
+        """Test _receive_message returns None when no WebSocket."""
+        stream = AlpacaBarStream()
+
+        result = await stream._receive_message()
+
+        assert result is None
+
+    async def test_reconnect_fails_after_max_attempts(self):
+        """Test reconnect fails after max attempts reached."""
+        config = StreamConfig(max_reconnect_attempts=3, reconnect_delay=0.01)
+        stream = AlpacaBarStream(config)
+        stream._reconnect_attempts = 3
+
+        result = await stream._reconnect()
+
+        assert result is False
+        assert stream._running is False
+
+    def test_parse_bar_missing_timestamp_uses_now(self):
+        """Test parsing bar without timestamp uses current time."""
+        stream = AlpacaBarStream()
+        data = {
+            "S": "AAPL",
+            "o": 150.0,
+            "h": 152.0,
+            "l": 149.0,
+            "c": 151.0,
+            "v": 100000,
+        }
+
+        bar = stream._parse_bar(data)
+
+        assert bar is not None
+        assert bar.timestamp is not None
+
+    def test_subscribed_symbols_returns_copy(self):
+        """Test subscribed_symbols returns a copy."""
+        stream = AlpacaBarStream()
+        stream._subscribed_symbols = {"AAPL", "GOOGL"}
+
+        symbols = stream.subscribed_symbols
+
+        # Modifying the returned set should not affect internal state
+        symbols.add("TSLA")
+        assert "TSLA" not in stream._subscribed_symbols
+
+
+class TestMockBarStreamAdvanced:
+    """Advanced tests for MockBarStream."""
+
+    def test_subscribed_symbols_returns_copy(self):
+        """Test subscribed_symbols returns a copy."""
+        stream = MockBarStream()
+        stream._subscribed_symbols = {"AAPL", "GOOGL"}
+
+        symbols = stream.subscribed_symbols
+
+        # Modifying the returned set should not affect internal state
+        symbols.add("TSLA")
+        assert "TSLA" not in stream._subscribed_symbols
+
+    async def test_stream_stops_when_running_false(self, sample_bars):
+        """Test stream stops when _running is set to False."""
+        stream = MockBarStream(bars={"AAPL": sample_bars})
+        await stream.subscribe(["AAPL"])
+
+        count = 0
+        async for _ in stream.stream():
+            count += 1
+            if count >= 2:
+                stream._running = False
+                break
+
+        # Should stop after we set _running to False
+        assert count <= len(sample_bars)
