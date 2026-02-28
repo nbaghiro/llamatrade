@@ -4,6 +4,7 @@ import asyncio
 import json
 import logging
 import os
+from collections.abc import Callable
 from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any
@@ -57,6 +58,63 @@ def _publish_progress(
         r.publish(f"backtest:progress:{backtest_id}", json.dumps(payload))
     except Exception as e:
         logger.warning(f"Failed to publish progress: {e}")
+
+
+def _create_progress_callback(
+    backtest_id: str,
+    start_pct: float = 40.0,
+    end_pct: float = 90.0,
+) -> Callable[[int, int, datetime], None]:
+    """Create a progress callback for the backtest engine.
+
+    Args:
+        backtest_id: UUID of the backtest.
+        start_pct: Progress percentage when simulation starts.
+        end_pct: Progress percentage when simulation ends.
+
+    Returns:
+        Callback function for engine progress reporting.
+    """
+    import time
+
+    start_time = time.monotonic()
+    last_report_time = start_time
+    last_report_pct = 0.0
+
+    def callback(current_bar: int, total_bars: int, current_date: datetime) -> None:
+        nonlocal last_report_time, last_report_pct
+
+        if total_bars <= 0:
+            return
+
+        # Calculate progress percentage
+        sim_progress = current_bar / total_bars
+        progress = start_pct + (sim_progress * (end_pct - start_pct))
+
+        # Rate limit: only report every 0.5 seconds or on 5% jumps
+        now = time.monotonic()
+        if progress - last_report_pct < 5.0 and now - last_report_time < 0.5:
+            return
+
+        last_report_time = now
+        last_report_pct = progress
+
+        # Calculate ETA
+        elapsed = now - start_time
+        if elapsed > 0.1 and current_bar > 0:
+            items_per_second = current_bar / elapsed
+            remaining = total_bars - current_bar
+            eta_seconds = int(remaining / items_per_second) if items_per_second > 0 else None
+        else:
+            eta_seconds = None
+
+        # Format message
+        date_str = current_date.strftime("%Y-%m-%d")
+        message = f"Processing {date_str} ({current_bar}/{total_bars})"
+
+        _publish_progress(backtest_id, progress, message, eta_seconds)
+
+    return callback
 
 
 async def _run_backtest_async(
@@ -124,7 +182,7 @@ async def _run_backtest_async(
 
             _publish_progress(backtest_id, 40, "Running simulation")
 
-            # Run backtest
+            # Run backtest with progress callback
             config = BacktestConfig(
                 initial_capital=float(backtest.initial_capital),
                 commission_rate=backtest.config.get("commission", 0),
@@ -132,11 +190,15 @@ async def _run_backtest_async(
             )
             bt_engine = BacktestEngine(config)
 
+            # Create progress callback for bar-by-bar updates (40% to 90%)
+            progress_callback = _create_progress_callback(backtest_id, 40.0, 90.0)
+
             bt_result = bt_engine.run(
                 bars=bars,
                 strategy_fn=strategy_fn,
                 start_date=datetime.combine(backtest.start_date, datetime.min.time()),
                 end_date=datetime.combine(backtest.end_date, datetime.max.time()),
+                progress_callback=progress_callback,
             )
 
             _publish_progress(backtest_id, 90, "Calculating metrics")

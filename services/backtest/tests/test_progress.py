@@ -1,10 +1,18 @@
 """Tests for progress tracking module."""
 
 import json
+import time
+from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from src.progress import ProgressPublisher, ProgressSubscriber, ProgressUpdate
+from src.progress import (
+    BacktestProgressReporter,
+    ProgressPublisher,
+    ProgressSubscriber,
+    ProgressTracker,
+    ProgressUpdate,
+)
 
 
 class TestProgressUpdate:
@@ -372,3 +380,185 @@ class TestProgressIntegration:
             # Should only get message type events
             assert len(updates) == 1
             assert updates[0].progress == 100.0
+
+
+class TestProgressTracker:
+    """Tests for ProgressTracker class."""
+
+    def test_calculate_eta_no_progress(self):
+        """Test ETA returns None when no progress made."""
+        tracker = ProgressTracker(total_items=100)
+        assert tracker.calculate_eta(0) is None
+
+    def test_calculate_eta_insufficient_time(self):
+        """Test ETA returns None when not enough time elapsed."""
+        tracker = ProgressTracker(total_items=100)
+        # Immediately check - not enough time
+        assert tracker.calculate_eta(1) is None
+
+    def test_calculate_eta_with_progress(self):
+        """Test ETA calculation with some progress."""
+        tracker = ProgressTracker(total_items=100)
+        # Simulate time passing
+        tracker.start_time = time.monotonic() - 10  # 10 seconds ago
+
+        eta = tracker.calculate_eta(50)
+
+        # 50 items in 10 seconds = 5 items/second
+        # 50 remaining items at 5/sec = 10 seconds
+        assert eta is not None
+        assert 8 <= eta <= 12  # Allow some variance
+
+    def test_calculate_eta_near_completion(self):
+        """Test ETA near completion."""
+        tracker = ProgressTracker(total_items=100)
+        tracker.start_time = time.monotonic() - 100
+
+        eta = tracker.calculate_eta(99)
+
+        assert eta is not None
+        assert eta <= 2  # Very small ETA
+
+    def test_should_report_initial(self):
+        """Test should_report returns True initially."""
+        tracker = ProgressTracker(total_items=100)
+        # First report should always be allowed
+        assert tracker.should_report(5.0) is True
+
+    def test_should_report_rate_limiting(self):
+        """Test should_report rate limits rapid calls."""
+        tracker = ProgressTracker(total_items=100)
+        tracker.should_report(5.0)  # First call
+
+        # Immediate second call with small increment should be rate limited
+        assert tracker.should_report(5.1) is False
+
+    def test_should_report_significant_jump(self):
+        """Test should_report allows significant progress jumps."""
+        tracker = ProgressTracker(total_items=100)
+        tracker.should_report(5.0)
+
+        # 5% jump should be reported even without time passing
+        assert tracker.should_report(10.0) is True
+
+    def test_should_report_after_interval(self):
+        """Test should_report allows after time interval."""
+        tracker = ProgressTracker(total_items=100)
+        tracker.should_report(5.0)
+
+        # Simulate time passing
+        tracker._last_report_time = time.monotonic() - 1.0
+
+        assert tracker.should_report(5.5) is True
+
+
+class TestBacktestProgressReporter:
+    """Tests for BacktestProgressReporter class."""
+
+    def test_init(self):
+        """Test initialization."""
+        reporter = BacktestProgressReporter("bt-123", total_bars=1000)
+        assert reporter.backtest_id == "bt-123"
+        assert reporter.total_bars == 1000
+        assert reporter.simulation_start_pct == 40.0
+        assert reporter.simulation_end_pct == 90.0
+
+    def test_set_total_bars(self):
+        """Test setting total bars after initialization."""
+        reporter = BacktestProgressReporter("bt-123")
+        assert reporter.total_bars == 0
+
+        reporter.set_total_bars(500)
+
+        assert reporter.total_bars == 500
+        assert reporter._tracker is not None
+        assert reporter._tracker.total_items == 500
+
+    @pytest.mark.asyncio
+    async def test_publish_phase(self):
+        """Test publishing a phase update."""
+        with patch("src.progress.aioredis") as mock_aioredis:
+            mock_redis = AsyncMock()
+            mock_redis.publish = AsyncMock()
+            mock_aioredis.from_url = AsyncMock(return_value=mock_redis)
+
+            reporter = BacktestProgressReporter("bt-123")
+            await reporter.publish_phase("Loading data", 30)
+
+            mock_redis.publish.assert_called_once()
+            call_args = mock_redis.publish.call_args
+            data = json.loads(call_args[0][1])
+            assert data["progress"] == 30
+            assert data["message"] == "Loading data"
+
+    def test_create_engine_callback(self):
+        """Test creating engine callback."""
+        reporter = BacktestProgressReporter("bt-123", total_bars=100)
+        callback = reporter.create_engine_callback()
+
+        assert callable(callback)
+
+    def test_engine_callback_queues_updates(self):
+        """Test engine callback queues progress updates."""
+        reporter = BacktestProgressReporter("bt-123", total_bars=100)
+        callback = reporter.create_engine_callback()
+
+        # Call callback with progress
+        test_date = datetime(2024, 1, 15)
+        callback(50, 100, test_date)
+
+        # Should have queued an update
+        assert len(reporter._pending_updates) == 1
+        progress, message, eta = reporter._pending_updates[0]
+        # 50% through simulation (40% to 90% range) = 40 + 25 = 65%
+        assert 64 <= progress <= 66
+        assert "2024-01-15" in message
+
+    def test_engine_callback_rate_limits(self):
+        """Test engine callback rate limits updates."""
+        reporter = BacktestProgressReporter("bt-123", total_bars=100)
+        callback = reporter.create_engine_callback()
+
+        # Call callback rapidly with small increments
+        test_date = datetime(2024, 1, 15)
+        for i in range(10):
+            callback(i + 1, 100, test_date)
+
+        # Should have rate limited - not all 10 updates
+        assert len(reporter._pending_updates) < 10
+
+    @pytest.mark.asyncio
+    async def test_flush(self):
+        """Test flushing pending updates."""
+        with patch("src.progress.aioredis") as mock_aioredis:
+            mock_redis = AsyncMock()
+            mock_redis.publish = AsyncMock()
+            mock_aioredis.from_url = AsyncMock(return_value=mock_redis)
+
+            reporter = BacktestProgressReporter("bt-123", total_bars=100)
+
+            # Queue some updates manually
+            reporter._pending_updates = [
+                (50.0, "Test 1", 30),
+                (75.0, "Test 2", 15),
+            ]
+
+            await reporter.flush()
+
+            # Should have published both
+            assert mock_redis.publish.call_count == 2
+            assert len(reporter._pending_updates) == 0
+
+    @pytest.mark.asyncio
+    async def test_close(self):
+        """Test closing reporter."""
+        with patch("src.progress.aioredis") as mock_aioredis:
+            mock_redis = AsyncMock()
+            mock_redis.close = AsyncMock()
+            mock_aioredis.from_url = AsyncMock(return_value=mock_redis)
+
+            reporter = BacktestProgressReporter("bt-123")
+            await reporter._publisher._get_redis()  # Create connection
+            await reporter.close()
+
+            mock_redis.close.assert_called_once()

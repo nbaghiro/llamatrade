@@ -7,6 +7,10 @@ from typing import TypedDict
 
 import numpy as np
 
+# Type alias for progress callback
+# Signature: (current_bar: int, total_bars: int, current_date: datetime) -> None
+ProgressCallback = Callable[[int, int, datetime], None]
+
 
 class BarData(TypedDict):
     """Bar data for backtesting."""
@@ -126,6 +130,7 @@ class BacktestEngine:
         strategy_fn: Callable[["BacktestEngine", str, BarData], list[SignalData]],
         start_date: datetime,
         end_date: datetime,
+        progress_callback: ProgressCallback | None = None,
     ) -> BacktestResult:
         """Run a backtest.
 
@@ -134,6 +139,8 @@ class BacktestEngine:
             strategy_fn: Strategy function that takes (engine, symbol, bar) and returns signals
             start_date: Start date for the backtest
             end_date: End date for the backtest
+            progress_callback: Optional callback for progress updates.
+                Signature: (current_bar, total_bars, current_date) -> None
 
         Returns:
             BacktestResult with metrics and trades
@@ -150,9 +157,10 @@ class BacktestEngine:
 
         # Sort dates
         sorted_dates = sorted(all_dates)
+        total_bars = len(sorted_dates)
 
         # Process each date
-        for date in sorted_dates:
+        for bar_idx, date in enumerate(sorted_dates):
             self._current_date = date
             self._total_days += 1
 
@@ -180,6 +188,10 @@ class BacktestEngine:
             # Record equity
             equity = self._calculate_equity(bars, date)
             self.equity_curve.append((date, equity))
+
+            # Report progress
+            if progress_callback is not None:
+                progress_callback(bar_idx + 1, total_bars, date)
 
         # Close all remaining positions at the end
         self._close_all_positions(bars, end_date)

@@ -26,6 +26,7 @@ from src.models import (
     EquityPoint,
     TradeRecord,
 )
+from src.progress import BacktestProgressReporter
 
 # Feature flags
 USE_CELERY = os.getenv("BACKTEST_USE_CELERY", "false").lower() == "true"
@@ -266,14 +267,30 @@ class BacktestService:
         self,
         backtest_id: UUID,
         tenant_id: UUID,
+        publish_progress: bool = True,
     ) -> BacktestResultResponse:
-        """Execute a pending backtest."""
+        """Execute a pending backtest.
+
+        Args:
+            backtest_id: ID of the backtest to run.
+            tenant_id: Tenant ID for isolation.
+            publish_progress: Whether to publish progress updates to Redis.
+
+        Returns:
+            BacktestResultResponse with metrics and trades.
+        """
         backtest = await self._get_backtest_by_id(tenant_id, backtest_id)
         if not backtest:
             raise ValueError("Backtest not found")
 
         if backtest.status != "pending":
             raise ValueError(f"Backtest is {backtest.status}, cannot run")
+
+        # Initialize progress reporter
+        reporter: BacktestProgressReporter | None = None
+        if publish_progress:
+            reporter = BacktestProgressReporter(str(backtest_id))
+            await reporter.publish_phase("Starting backtest", 0)
 
         # Update status to running
         backtest.status = "running"
@@ -282,6 +299,9 @@ class BacktestService:
 
         try:
             # Get strategy version
+            if reporter:
+                await reporter.publish_phase("Loading strategy", 10)
+
             strategy_ver = await self._get_strategy_version(
                 backtest.strategy_id, backtest.strategy_version
             )
@@ -296,7 +316,13 @@ class BacktestService:
             # Create strategy function
             strategy_fn, min_bars = create_strategy_function(config_sexpr)
 
+            if reporter:
+                await reporter.publish_phase("Strategy compiled", 20)
+
             # Fetch historical bars
+            if reporter:
+                await reporter.publish_phase("Fetching market data", 30)
+
             bars = await self.market_data_client.fetch_bars(
                 symbols=backtest.symbols,
                 timeframe=strategy_ver.timeframe or "1D",
@@ -307,7 +333,13 @@ class BacktestService:
             if not bars:
                 raise ValueError("No market data available for specified period")
 
-            # Run backtest
+            # Calculate total bars for progress tracking
+            total_bars = sum(len(symbol_bars) for symbol_bars in bars.values())
+            if reporter:
+                reporter.set_total_bars(total_bars)
+                await reporter.publish_phase("Running simulation", 40)
+
+            # Run backtest with progress callback
             config = BacktestConfig(
                 initial_capital=float(backtest.initial_capital),
                 commission_rate=backtest.config.get("commission", 0),
@@ -315,12 +347,21 @@ class BacktestService:
             )
             engine = BacktestEngine(config)
 
+            # Create progress callback if reporting is enabled
+            progress_callback = reporter.create_engine_callback() if reporter else None
+
             result = engine.run(
                 bars=bars,  # type: ignore[arg-type]
                 strategy_fn=strategy_fn,
                 start_date=datetime.combine(backtest.start_date, datetime.min.time()),
                 end_date=datetime.combine(backtest.end_date, datetime.max.time()),
+                progress_callback=progress_callback,
             )
+
+            # Flush pending progress updates
+            if reporter:
+                await reporter.flush()
+                await reporter.publish_phase("Calculating metrics", 90)
 
             # Save results
             backtest_result = BacktestResult(
@@ -374,6 +415,11 @@ class BacktestService:
             await self.db.commit()
             await self.db.refresh(backtest_result)
 
+            # Publish completion
+            if reporter:
+                await reporter.publish_phase("Completed", 100)
+                await reporter.close()
+
             return self._to_result_response(backtest, backtest_result)
 
         except MarketDataError as e:
@@ -381,6 +427,9 @@ class BacktestService:
             backtest.error_message = f"Market data error: {e}"
             backtest.completed_at = datetime.now(UTC)
             await self.db.commit()
+            if reporter:
+                await reporter.publish_phase(f"Failed: {e}", 100)
+                await reporter.close()
             raise ValueError(str(e)) from e
 
         except Exception as e:
@@ -388,6 +437,9 @@ class BacktestService:
             backtest.error_message = str(e)
             backtest.completed_at = datetime.now(UTC)
             await self.db.commit()
+            if reporter:
+                await reporter.publish_phase(f"Failed: {e}", 100)
+                await reporter.close()
             raise
 
     async def cancel_backtest(
