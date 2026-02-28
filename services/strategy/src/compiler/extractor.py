@@ -3,8 +3,8 @@
 from collections.abc import Callable
 from dataclasses import dataclass
 
+from llamatrade_dsl import INDICATORS
 from llamatrade_dsl.ast import ASTNode, FunctionCall, Keyword, Literal, Strategy, Symbol
-from llamatrade_dsl.validator import INDICATORS
 
 
 @dataclass(frozen=True)

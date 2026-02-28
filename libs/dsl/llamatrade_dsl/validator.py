@@ -15,6 +15,11 @@ from llamatrade_dsl.ast import (
     Strategy,
     Symbol,
 )
+from llamatrade_dsl.indicators import (
+    INDICATORS,
+    validate_indicator_output,
+    validate_indicator_params,
+)
 
 
 @dataclass
@@ -40,27 +45,6 @@ class ValidationResult:
     def __bool__(self) -> bool:
         return self.valid
 
-
-# Known indicators with parameter counts and outputs
-INDICATORS: dict[str, dict] = {
-    "sma": {"min_params": 2, "max_params": 2, "outputs": ["value"]},
-    "ema": {"min_params": 2, "max_params": 2, "outputs": ["value"]},
-    "rsi": {"min_params": 2, "max_params": 2, "outputs": ["value"]},
-    "macd": {"min_params": 4, "max_params": 4, "outputs": ["line", "signal", "histogram"]},
-    "bbands": {"min_params": 3, "max_params": 3, "outputs": ["upper", "middle", "lower"]},
-    "atr": {"min_params": 2, "max_params": 2, "outputs": ["value"]},
-    "adx": {"min_params": 2, "max_params": 2, "outputs": ["value", "plus_di", "minus_di"]},
-    "stoch": {"min_params": 4, "max_params": 4, "outputs": ["k", "d"]},
-    "cci": {"min_params": 2, "max_params": 2, "outputs": ["value"]},
-    "williams-r": {"min_params": 2, "max_params": 2, "outputs": ["value"]},
-    "obv": {"min_params": 1, "max_params": 1, "outputs": ["value"]},
-    "mfi": {"min_params": 2, "max_params": 2, "outputs": ["value"]},
-    "vwap": {"min_params": 1, "max_params": 1, "outputs": ["value"]},
-    "keltner": {"min_params": 3, "max_params": 3, "outputs": ["upper", "middle", "lower"]},
-    "donchian": {"min_params": 2, "max_params": 2, "outputs": ["upper", "lower"]},
-    "stddev": {"min_params": 2, "max_params": 2, "outputs": ["value"]},
-    "momentum": {"min_params": 2, "max_params": 2, "outputs": ["value"]},
-}
 
 # Comparison operators
 COMPARATORS = {">", "<", ">=", "<=", "=", "!="}
@@ -199,34 +183,20 @@ class Validator:
 
     def _validate_indicator(self, name: str, args: tuple[ASTNode, ...], path: str) -> None:
         """Validate indicator function call."""
-        spec = INDICATORS[name]
-
         # Count positional args (excluding keywords)
         positional = [a for a in args if not isinstance(a, Keyword)]
-        min_params = spec["min_params"]
-        max_params = spec.get("max_params", min_params)
 
-        if len(positional) < min_params:
-            self._error(
-                f"{name} requires at least {min_params} arguments, got {len(positional)}",
-                path,
-            )
-        elif len(positional) > max_params:
-            self._error(
-                f"{name} accepts at most {max_params} arguments, got {len(positional)}",
-                path,
-            )
+        # Validate parameter count
+        valid, error = validate_indicator_params(name, len(positional))
+        if not valid and error:
+            self._error(error, path)
 
-        # Validate output selector if present
+        # Validate output selectors
         for arg in args:
             if isinstance(arg, Keyword):
-                valid_outputs = spec["outputs"]
-                if arg.name not in valid_outputs:
-                    self._error(
-                        f"Invalid output selector :{arg.name} for {name}. "
-                        f"Valid outputs: {', '.join(valid_outputs)}",
-                        path,
-                    )
+                valid, error = validate_indicator_output(name, arg.name)
+                if not valid and error:
+                    self._error(error, path)
 
     def _validate_comparator(self, name: str, args: tuple[ASTNode, ...], path: str) -> None:
         """Validate comparison operator."""

@@ -8,9 +8,8 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 
 import numpy as np
-from llamatrade_dsl import parse_strategy, validate_strategy
+from llamatrade_dsl import INDICATORS, parse_strategy, validate_strategy
 from llamatrade_dsl.ast import ASTNode, FunctionCall, Keyword, Literal, Symbol
-from llamatrade_dsl.validator import INDICATORS
 
 from src.engine.backtester import BacktestEngine, BarData, SignalData
 

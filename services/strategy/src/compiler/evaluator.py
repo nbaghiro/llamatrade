@@ -6,12 +6,12 @@ returning boolean results for entry/exit signals.
 
 from datetime import datetime
 
+from llamatrade_dsl import INDICATORS
 from llamatrade_dsl.ast import ASTNode, FunctionCall, Keyword, Literal, Symbol
 from llamatrade_dsl.validator import (
     ARITHMETIC_OPS,
     COMPARATORS,
     CROSSOVER_OPS,
-    INDICATORS,
     LOGICAL_OPS,
     SPECIAL_OPS,
 )

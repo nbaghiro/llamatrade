@@ -6,9 +6,8 @@ Compiles DSL strategies into NumPy operations for fast vectorized execution.
 from collections.abc import Callable
 
 import numpy as np
-from llamatrade_dsl import parse_strategy, validate_strategy
+from llamatrade_dsl import INDICATORS, parse_strategy, validate_strategy
 from llamatrade_dsl.ast import ASTNode, FunctionCall, Keyword, Literal, Symbol
-from llamatrade_dsl.validator import INDICATORS
 
 from src.engine.strategy_adapter import (
     _compute_adx,
