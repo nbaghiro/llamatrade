@@ -13,6 +13,7 @@ dependencies = [
     "llamatrade-compiler",
     "llamatrade-db",
     "llamatrade-dsl",
+    "llamatrade-grpc",
 ]
 
 [project.optional-dependencies]

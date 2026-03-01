@@ -76,10 +76,21 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
+      - name: Install buf CLI
+        uses: bufbuild/buf-setup-action@v1
+        with:
+          version: latest
+
+      - name: Generate proto files
+        run: cd libs/proto && buf generate --template buf.gen.python.yaml
+
       - name: Install shared libs
         run: |
           pip install -e libs/common[dev]
           pip install -e libs/db[dev]
+          pip install -e libs/dsl[dev]
+          pip install -e libs/compiler[dev]
+          pip install -e libs/grpc[dev]
 
       - name: Install coverage tools
         run: pip install pytest-cov coverage
@@ -120,6 +131,9 @@ jobs:
       - name: Install dependencies
         run: cd ../.. && npm ci
 
+      - name: Generate proto files
+        run: npm run proto
+
       - name: Lint (ESLint)
         run: npm run lint
 
@@ -145,6 +159,9 @@ jobs:
 
       - name: Install dependencies
         run: cd ../.. && npm ci
+
+      - name: Generate proto files
+        run: npm run proto
 
       - name: Run tests
         run: npm test -- --run --passWithNoTests

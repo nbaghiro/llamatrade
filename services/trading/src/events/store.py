@@ -145,7 +145,7 @@ class EventStore:
             },
         )
 
-        return record.sequence
+        return int(record.sequence)
 
     async def append_batch(self, events: list[TradingEvent]) -> list[int]:
         """Append multiple events atomically.

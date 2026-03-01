@@ -7,7 +7,7 @@ LlamaTrade is an open-source algorithmic trading platform built as a multi-tenan
 **Tech Stack:**
 - **Backend**: Python 3.12+, FastAPI, SQLAlchemy (async), PostgreSQL, Redis
 - **Frontend**: React 18, TypeScript 5.3+, Vite, Tailwind CSS, Zustand
-- **Infrastructure**: Docker, Kubernetes (GKE), Terraform (GCP), Kong API Gateway
+- **Infrastructure**: Docker, Kubernetes (GKE), Terraform (GCP)
 
 ---
 
@@ -188,11 +188,24 @@ async def test_feature_unauthorized(client):
 **File Structure:**
 ```
 apps/web/src/
-├── components/     # Reusable UI components
-├── pages/          # Route-level components (*Page.tsx)
-├── services/       # API client (axios)
-├── store/          # Zustand stores
-└── types/          # TypeScript type definitions
+├── components/
+│   ├── common/           # Shared UI (Layout, Logo, Select, ThemeToggle)
+│   ├── billing/          # Billing-specific components
+│   ├── strategies/       # Strategy list components
+│   └── strategy-builder/ # Visual strategy builder (blocks/, panels/)
+├── pages/
+│   ├── auth/             # LoginPage, RegisterPage
+│   ├── billing/          # BillingPage, SubscribePage, PaymentMethodsPage
+│   ├── strategies/       # StrategiesPage, StrategyEditorPage
+│   ├── portfolio/        # PortfolioPage
+│   ├── trading/          # TradingPage, BacktestPage
+│   ├── settings/         # SettingsPage
+│   └── dashboard/        # DashboardPage
+├── services/             # gRPC client, API services
+├── store/                # Zustand stores
+├── types/                # TypeScript type definitions
+├── data/                 # Demo/mock data
+└── generated/            # Proto-generated (gitignored, run `make proto`)
 ```
 
 **Required Patterns:**
@@ -211,6 +224,8 @@ apps/web/src/
 
 - `libs/common`: Middleware, shared models, utilities — import as `llamatrade_common`
 - `libs/db`: SQLAlchemy models, database config — import as `llamatrade_db`
+- `libs/proto`: Protobuf definitions (source of truth for gRPC APIs)
+- `libs/grpc`: Generated Python proto code (gitignored, run `make proto`)
 - Changes to libs affect ALL services — test thoroughly
 
 ---
@@ -222,6 +237,11 @@ apps/web/src/
 make dev                    # Docker Compose (all services)
 make dev-infra              # Start only Postgres + Redis
 make dev-local              # Run all services locally
+
+# Proto Generation (required after clone or proto changes)
+make proto                  # Generate Python + TypeScript from protos
+make proto-lint             # Lint proto files
+make proto-breaking         # Check for breaking changes vs main
 
 # Testing
 make test                   # Full CI test suite
@@ -236,6 +256,10 @@ cd services/auth && pytest --cov=src --cov-report=html            # HTML report 
 ruff check --fix services/ libs/
 npm run lint:fix            # Frontend
 ```
+
+**Note:** Proto-generated files are gitignored. After cloning or pulling proto changes, run `make proto` to regenerate:
+- Python: `libs/grpc/llamatrade/`
+- TypeScript: `apps/web/src/generated/proto/`
 
 ---
 
@@ -258,6 +282,8 @@ npm run lint:fix            # Frontend
 
 - Use concise, single-line commit messages
 - **Do NOT include Co-Authored-By lines** — no Claude co-author attribution
+- **Do NOT commit immediately after making changes** — wait for explicit commit instructions
+- Multiple unrelated changes may be in progress on the same branch; keep them separate
 - Run `./scripts/ci-local.sh` before committing to verify all checks pass
 
 ---
@@ -280,7 +306,7 @@ Never allow cross-tenant data access. When in doubt, add tenant filtering.
 
 - Configuration via environment variables only (no hardcoded values)
 - See `.env.example` for all required variables
-- Ports: gateway 8000, services 80xx (auth 8810, strategy 8820, etc.), web 8800, billing 8880
+- Ports: services 88xx (auth 8810, strategy 8820, etc.), web 8800, billing 8880
 - Secrets: `JWT_SECRET`, `ENCRYPTION_KEY`, API keys
 
 ---

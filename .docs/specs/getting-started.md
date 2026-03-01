@@ -101,8 +101,9 @@ This starts:
 
 **Access points:**
 - Frontend: http://localhost:8800
-- API Gateway: http://localhost:8000
-- API Docs: http://localhost:8000/docs
+- Auth: http://localhost:8810
+- Strategy: http://localhost:8820
+- (See Service Ports table below for all services)
 
 ### Option 2: Hybrid (Infrastructure in Docker, Services Local)
 
@@ -147,8 +148,7 @@ llamatrade/
 │   ├── trading/                # Live order execution
 │   ├── portfolio/              # Positions & P&L
 │   ├── notification/           # Alerts & webhooks
-│   ├── billing/                # Subscriptions (Stripe)
-│   └── gateway/                # Kong API Gateway config
+│   └── billing/                # Subscriptions (Stripe)
 │
 ├── libs/                       # Shared libraries
 │   ├── common/                 # Middleware, utilities
@@ -268,11 +268,10 @@ buf generate
 
 ## Service Ports
 
-| Service | gRPC Port | HTTP Port | Description |
-|---------|-----------|-----------|-------------|
-| Frontend | - | 8800 | React SPA |
-| Gateway | - | 8000 | Kong API Gateway |
-| Auth | 8810 | - | Authentication |
+| Service | Port | Description |
+|---------|------|-------------|
+| Frontend | 8800 | React SPA |
+| Auth | 8810 | Authentication |
 | Strategy | 8820 | - | Strategy management |
 | Backtest | 8830 | - | Backtesting |
 | Market Data | 8840 | - | Market data |

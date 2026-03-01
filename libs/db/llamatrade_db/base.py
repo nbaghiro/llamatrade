@@ -8,7 +8,7 @@ from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, declared_attr, mapped_column
 
 
-class Base(DeclarativeBase):
+class Base(DeclarativeBase):  # type: ignore[misc]
     """Base class for all ORM models."""
 
     pass
@@ -35,10 +35,10 @@ class TenantMixin:
     )
 
     @declared_attr
-    def __table_args__(cls):  # noqa: N805
+    def __table_args__(cls) -> tuple:  # noqa: N805  # type: ignore[misc]
         """Create index on tenant_id for efficient tenant filtering."""
         existing_args = getattr(super(), "__table_args__", None)
-        tenant_index = Index(f"ix_{cls.__tablename__}_tenant_id", "tenant_id")
+        tenant_index = Index(f"ix_{cls.__tablename__}_tenant_id", "tenant_id")  # type: ignore[attr-defined]
 
         if existing_args is None:
             return (tenant_index,)

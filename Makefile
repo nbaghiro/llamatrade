@@ -238,6 +238,32 @@ pre-commit-install:
 pre-commit-run:
 	pre-commit run --all-files
 
+# ===================
+# Proto Generation
+# ===================
+proto:
+	@echo "=== Generating proto files (all targets) ==="
+	cd libs/proto && buf generate
+	@echo "Generated:"
+	@echo "  - Python:     libs/grpc/llamatrade/"
+	@echo "  - TypeScript: apps/web/src/generated/proto/"
+
+proto-python:
+	@echo "=== Generating Python proto files ==="
+	cd libs/proto && buf generate
+	@echo "Generated: libs/grpc/llamatrade/"
+
+proto-web:
+	@echo "=== Generating TypeScript proto files ==="
+	cd libs/proto && buf generate --template buf.gen.web.yaml
+	@echo "Generated: apps/web/src/generated/proto/"
+
+proto-lint:
+	cd libs/proto && buf lint
+
+proto-breaking:
+	cd libs/proto && buf breaking --against '.git#branch=main'
+
 # Database
 migrate:
 	@echo "Running migrations..."
@@ -305,6 +331,11 @@ help:
 	@echo "  make typecheck      - Run type checkers only"
 	@echo "  make pre-commit-install - Install pre-commit hooks"
 	@echo "  make pre-commit-run - Run pre-commit on all files"
+	@echo ""
+	@echo "Proto Generation:"
+	@echo "  make proto          - Generate Python + TypeScript from protos"
+	@echo "  make proto-lint     - Lint proto files"
+	@echo "  make proto-breaking - Check for breaking changes"
 	@echo ""
 	@echo "Deployment:"
 	@echo "  make deploy-staging - Deploy to staging"

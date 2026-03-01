@@ -33,6 +33,10 @@ yarn-error.log*
 # Build outputs
 apps/web/dist/
 
+# Generated code (regenerate with: make proto)
+apps/web/src/generated/
+libs/grpc/llamatrade/
+
 # Testing
 .pytest_cache/
 .coverage

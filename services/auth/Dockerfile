@@ -11,12 +11,23 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq-dev \
     && rm -rf /var/lib/apt/lists/*
 
+# Install buf CLI for proto generation
+RUN apt-get update && apt-get install -y --no-install-recommends curl \
+    && curl -sSL "https://github.com/bufbuild/buf/releases/download/v1.47.2/buf-Linux-x86_64" -o /usr/local/bin/buf \
+    && chmod +x /usr/local/bin/buf \
+    && rm -rf /var/lib/apt/lists/*
+
 # Copy shared libraries first (for layer caching)
 COPY libs/common /app/libs/common
 COPY libs/db /app/libs/db
+COPY libs/grpc /app/libs/grpc
+COPY libs/proto /app/libs/proto
+
+# Generate proto files
+RUN cd /app/libs/proto && buf generate --template buf.gen.python.yaml
 
 # Install shared libraries
-RUN pip install --no-cache-dir /app/libs/common /app/libs/db
+RUN pip install --no-cache-dir /app/libs/common /app/libs/db /app/libs/grpc
 
 # Copy service files and install
 COPY services/auth/pyproject.toml services/auth/README.md /app/

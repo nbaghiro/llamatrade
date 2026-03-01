@@ -111,8 +111,7 @@ class BillingServicer:
         create_request = SubscriptionCreateRequest(
             plan_id=request.plan_id,
             billing_cycle=interval,
-            payment_method_id=request.payment_method_id if request.payment_method_id else None,
-            promo_code=request.promo_code if request.promo_code else None,
+            payment_method_id=request.payment_method_id if request.payment_method_id else "",
         )
 
         try:
@@ -462,7 +461,7 @@ class BillingServicer:
             SubscriptionStatus.CANCELLED: billing_pb2.SUBSCRIPTION_STATUS_CANCELED,
             SubscriptionStatus.PAUSED: billing_pb2.SUBSCRIPTION_STATUS_PAUSED,
         }
-        return status_map.get(status, billing_pb2.SUBSCRIPTION_STATUS_UNSPECIFIED)
+        return int(status_map.get(status, billing_pb2.SUBSCRIPTION_STATUS_UNSPECIFIED))
 
     def _to_proto_tier(self, tier: PlanTier) -> int:
         """Convert internal tier to proto enum value."""
@@ -471,7 +470,7 @@ class BillingServicer:
             PlanTier.STARTER: billing_pb2.PLAN_TIER_STARTER,
             PlanTier.PRO: billing_pb2.PLAN_TIER_PROFESSIONAL,
         }
-        return tier_map.get(tier, billing_pb2.PLAN_TIER_UNSPECIFIED)
+        return int(tier_map.get(tier, billing_pb2.PLAN_TIER_UNSPECIFIED))
 
     def _to_proto_interval(self, interval: BillingCycle) -> int:
         """Convert internal billing cycle to proto enum value."""
@@ -479,7 +478,7 @@ class BillingServicer:
             BillingCycle.MONTHLY: billing_pb2.BILLING_INTERVAL_MONTHLY,
             BillingCycle.YEARLY: billing_pb2.BILLING_INTERVAL_YEARLY,
         }
-        return interval_map.get(interval, billing_pb2.BILLING_INTERVAL_UNSPECIFIED)
+        return int(interval_map.get(interval, billing_pb2.BILLING_INTERVAL_UNSPECIFIED))
 
     def _from_proto_interval(self, interval: int) -> BillingCycle:
         """Convert proto interval to internal billing cycle."""

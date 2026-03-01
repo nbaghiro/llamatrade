@@ -1,17 +1,6 @@
 apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
-  name: gateway-pdb
-  namespace: llamatrade
-spec:
-  minAvailable: 1
-  selector:
-    matchLabels:
-      app: gateway
----
-apiVersion: policy/v1
-kind: PodDisruptionBudget
-metadata:
   name: auth-pdb
   namespace: llamatrade
 spec:

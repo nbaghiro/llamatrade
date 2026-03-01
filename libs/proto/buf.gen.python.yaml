@@ -1,0 +1,16 @@
+version: v2
+managed:
+  enabled: true
+plugins:
+  # Python protobuf messages (pinned for protobuf 6.x compatibility)
+  # Output to ../grpc/ so package is llamatrade.v1 (matching proto package)
+  - remote: buf.build/protocolbuffers/python:v30.2
+    out: ../grpc
+
+  # Python Connect service stubs (Connect protocol)
+  - remote: buf.build/connectrpc/python:v0.8.1
+    out: ../grpc
+
+  # Keep Python gRPC stubs for backward compat
+  - remote: buf.build/grpc/python:v1.71.0
+    out: ../grpc

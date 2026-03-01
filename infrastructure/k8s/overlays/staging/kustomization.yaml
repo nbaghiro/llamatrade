@@ -8,8 +8,6 @@ resources:
   - ../../base/configmap.yaml
   - ../../base/secrets.yaml
   - ../../base/redis/deployment.yaml
-  - ../../base/gateway/deployment.yaml
-  - ../../base/gateway/kong-config.yaml
   - ../../base/auth/deployment.yaml
   - ../../base/strategy/deployment.yaml
   - ../../base/backtest/deployment.yaml

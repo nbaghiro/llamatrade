@@ -1,0 +1,10 @@
+version: v2
+managed:
+  enabled: true
+plugins:
+  # TypeScript for Connect-Web (frontend gRPC)
+  # In Connect-ES v2, protoc-gen-es generates both messages AND services
+  - remote: buf.build/bufbuild/es:v2.2.3
+    out: ../../apps/web/src/generated/proto
+    opt:
+      - target=ts

@@ -49,7 +49,7 @@ Users authenticate via JWT access tokens:
 2. Auth service validates credentials
 3. Returns access token + sets refresh cookie
 4. Client includes access token in Authorization header
-5. Gateway validates token, extracts tenant context
+5. Each service validates token via auth middleware, extracts tenant context
 6. When access token expires, use refresh token to get new one
 ```
 
@@ -302,12 +302,11 @@ def get_secret(secret_id: str) -> str:
 
 ## Network Security
 
-### API Gateway
+### Service-Level Security
 
-Kong handles:
+Each service handles via shared middleware (`llamatrade_common`):
 - JWT validation
-- Rate limiting (per-tenant)
-- IP allowlisting (optional)
+- Rate limiting (per-tenant, Redis-based)
 - Request/response logging
 
 **Rate Limits:**

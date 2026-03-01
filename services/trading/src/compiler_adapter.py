@@ -135,12 +135,12 @@ class StrategyAdapter:
     @property
     def name(self) -> str:
         """Get strategy name."""
-        return self.compiled.name
+        return str(self.compiled.name)
 
     @property
     def min_bars(self) -> int:
         """Get minimum bars required for evaluation."""
-        return self.compiled.min_bars
+        return int(self.compiled.min_bars)
 
 
 def load_strategy_adapter(strategy_sexpr: str) -> StrategyAdapter:

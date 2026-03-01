@@ -29,10 +29,10 @@ Backtesting enables users to evaluate trading strategies against historical mark
 │                         BACKTESTING SYSTEM ARCHITECTURE                     │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                             │
-│   ┌──────────┐      ┌──────────────┐      ┌─────────────────────────────┐   │
-│   │ Frontend │─────▶│ API Gateway  │─────▶│    Backtest Service :8003   │   │
-│   │          │      │   (Kong)     │      │  • Request validation       │   │
-│   └──────────┘      └──────────────┘      │  • Job queuing              │   │
+│   ┌──────────┐                             ┌─────────────────────────────┐   │
+│   │ Frontend │────────────────────────────▶│    Backtest Service :8830   │   │
+│   │          │      Connect Protocol       │  • Request validation       │   │
+│   └──────────┘                             │  • Job queuing              │   │
 │        ▲                                  │  • Result retrieval         │   │
 │        │ WebSocket/Polling                └─────────────┬───────────────┘   │
 │        │                                                │                   │

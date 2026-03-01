@@ -16,6 +16,7 @@ dependencies = [
     "cryptography>=41.0.0",
     "llamatrade-common",
     "llamatrade-db",
+    "llamatrade-grpc",
 ]
 
 [project.optional-dependencies]

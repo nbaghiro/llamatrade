@@ -314,16 +314,14 @@ async def check_redis(redis_url: str) -> bool:
         True if healthy
     """
     try:
-        from collections.abc import Awaitable
-
         from redis.asyncio import Redis
 
         client = Redis.from_url(redis_url)
-        result = client.ping()
-        if isinstance(result, Awaitable):
-            await result
-        await client.aclose()
-        return True
+        try:
+            await client.ping()
+            return True
+        finally:
+            await client.aclose()  # type: ignore[attr-defined]
     except Exception as e:
         logger.warning("Redis health check failed: %s", e)
         return False

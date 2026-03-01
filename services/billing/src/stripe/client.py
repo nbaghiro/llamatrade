@@ -98,7 +98,7 @@ class StripeClient:
             # Search for existing customer with this tenant_id
             customers = Customer.search(query=f"metadata['tenant_id']:'{tenant_id}'")
             if customers.data:
-                return customers.data[0].id
+                return str(customers.data[0].id)
 
             # Create new customer
             customer = Customer.create(
@@ -107,7 +107,7 @@ class StripeClient:
                 metadata={"tenant_id": tenant_id},
             )
             logger.info(f"Created Stripe customer {customer.id} for tenant {tenant_id}")
-            return customer.id
+            return str(customer.id)
         except stripe.StripeError as e:
             logger.error(f"Stripe error creating customer: {e}")
             raise StripeError(str(e), getattr(e, "code", None))
@@ -358,9 +358,7 @@ class StripeClient:
         """Verify webhook signature and return the event."""
         try:
             # stripe.Webhook.construct_event is not fully typed in stripe-python
-            event = stripe.Webhook.construct_event(  # type: ignore[no-untyped-call]
-                payload, sig_header, webhook_secret
-            )
+            event = stripe.Webhook.construct_event(payload, sig_header, webhook_secret)
             return cast(Event, event)
         except stripe.SignatureVerificationError as e:
             logger.error(f"Webhook signature verification failed: {e}")

@@ -274,8 +274,7 @@ class IndicatorCache:
             keys = list(r.scan_iter(match=pattern))
             if keys:
                 deleted = r.delete(*keys)
-                # Redis sync client returns int directly; cast to satisfy type checker
-                return cast(int, deleted) if deleted else 0
+                return deleted if deleted else 0
             return 0
 
         except Exception as e:

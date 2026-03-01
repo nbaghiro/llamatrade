@@ -13,10 +13,6 @@ resources:
   # Infrastructure
   - base/redis/deployment.yaml
 
-  # API Gateway
-  - base/gateway/deployment.yaml
-  - base/gateway/kong-config.yaml
-
   # Backend Services
   - base/auth/deployment.yaml
   - base/strategy/deployment.yaml

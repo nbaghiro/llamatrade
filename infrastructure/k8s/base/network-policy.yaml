@@ -11,23 +11,6 @@ spec:
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: allow-gateway-ingress
-  namespace: llamatrade
-spec:
-  podSelector:
-    matchLabels:
-      app: gateway
-  policyTypes:
-    - Ingress
-  ingress:
-    - from: []
-      ports:
-        - protocol: TCP
-          port: 8000
----
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
   name: allow-frontend-ingress
   namespace: llamatrade
 spec:
@@ -54,13 +37,14 @@ spec:
   policyTypes:
     - Ingress
   ingress:
+    # Allow from other backend services and from ingress (for Connect protocol)
     - from:
         - podSelector:
             matchLabels:
-              app: gateway
+              tier: backend
         - podSelector:
             matchLabels:
-              tier: backend
+              app: frontend
       ports:
         # gRPC ports for backend services
         - protocol: TCP

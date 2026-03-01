@@ -9,8 +9,6 @@ resources:
   - ../../base/secrets.yaml
   - ../../base/network-policy.yaml
   - ../../base/redis/deployment.yaml
-  - ../../base/gateway/deployment.yaml
-  - ../../base/gateway/kong-config.yaml
   - ../../base/auth/deployment.yaml
   - ../../base/strategy/deployment.yaml
   - ../../base/backtest/deployment.yaml
@@ -27,14 +25,6 @@ commonLabels:
 
 patches:
   # Production replicas
-  - patch: |-
-      - op: replace
-        path: /spec/replicas
-        value: 3
-    target:
-      kind: Deployment
-      name: gateway
-
   - patch: |-
       - op: replace
         path: /spec/replicas

@@ -109,7 +109,7 @@ server = grpc.aio.server(interceptors=[logging_interceptor, auth_interceptor])
 
 ## Port Assignments (gRPC-only)
 
-All services expose gRPC only. The API Gateway (Kong) handles gRPC-Web translation for browser clients.
+Services expose both HTTP (Connect protocol) and gRPC. Frontend connects directly via Connect (HTTP/1.1 + JSON). Service-to-service calls use gRPC.
 
 | Service | gRPC Port |
 |---------|-----------|

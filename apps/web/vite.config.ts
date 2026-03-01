@@ -6,20 +6,8 @@ export default defineConfig({
   server: {
     port: 8800,
     strictPort: true,
-    proxy: {
-      '/api': {
-        target: 'http://localhost:8000',
-        changeOrigin: true,
-      },
-      '/grpc': {
-        target: 'http://localhost:8000',
-        changeOrigin: true,
-      },
-      '/ws': {
-        target: 'ws://localhost:8000',
-        ws: true,
-      },
-    },
+    // No proxy needed - frontend connects directly to services via Connect protocol
+    // Services handle CORS themselves
   },
   build: {
     outDir: 'dist',

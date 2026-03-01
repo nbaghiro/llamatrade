@@ -27,18 +27,11 @@
 │  │  Auth    │  │ Strategy │  │ Backtest │  │ Trading  │  │Portfolio │       │
 │  │  Pages   │  │  Builder │  │  Runner  │  │  Panel   │  │Dashboard │       │
 │  └──────────┘  └──────────┘  └──────────┘  └──────────┘  └──────────┘       │
-│                         Zustand + Connect/gRPC Client                       │
+│                    Zustand + Connect Protocol Client                        │
 └─────────────────────────────────┬───────────────────────────────────────────┘
-                                  │ Connect Protocol (HTTP/1.1 JSON + Streaming)
+                                  │ Connect Protocol (HTTP/1.1 + JSON)
+                                  │ Direct to Services (no gateway)
                                   ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                      API GATEWAY (Kong) :8000                               │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐         │
-│  │ JWT Verify  │  │ Rate Limit  │  │   Routing   │  │   Logging   │         │
-│  └─────────────┘  └─────────────┘  └─────────────┘  └─────────────┘         │
-└───────┬─────────────┬─────────────┬─────────────┬─────────────┬─────────────┘
-        │             │             │             │             │
-        ▼             ▼             ▼             ▼             ▼
    ┌─────────┐  ┌─────────┐  ┌─────────┐  ┌─────────┐  ┌─────────┐
    │  Auth   │  │Strategy │  │Backtest │  │ Trading │  │Portfolio│
    │ :8810   │  │ :8820   │  │ :8830   │  │ :8850   │  │ :8860   │
@@ -116,7 +109,8 @@ make dev-infra
 | Service     | URL                   |
 | ----------- | --------------------- |
 | Frontend    | http://localhost:8800 |
-| API Gateway | http://localhost:8000 |
+| Auth        | http://localhost:8810 |
+| Strategy    | http://localhost:8820 |
 
 ## Project Structure
 
