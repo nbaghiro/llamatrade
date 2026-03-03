@@ -2,6 +2,37 @@
 export default {
   content: ['./index.html', './src/**/*.{js,ts,jsx,tsx}'],
   darkMode: 'class',
+  // Safelist for dynamically-generated classes in block-theme.ts
+  // Option E: Tricolor Distinct (Emerald/Blue/Violet)
+  safelist: [
+    // Weight block colors (green with opacity)
+    'bg-green-600/80', 'dark:bg-green-600/80',
+    'hover:bg-green-600/90', 'dark:hover:bg-green-700/90',
+    'ring-green-300', 'ring-green-400',
+    // If/Else block colors (blue)
+    'bg-blue-400', 'bg-blue-500', 'bg-blue-600',
+    'hover:bg-blue-500', 'hover:bg-blue-600', 'hover:bg-blue-700',
+    'ring-blue-200', 'ring-blue-300', 'ring-blue-400',
+    // Picker icon colors
+    'bg-emerald-100', 'dark:bg-emerald-900/40', 'text-emerald-500', 'dark:text-emerald-400',
+    'bg-blue-100', 'dark:bg-blue-900/40', 'text-blue-500', 'dark:text-blue-400',
+    'bg-violet-100', 'dark:bg-violet-900/40', 'text-violet-500', 'dark:text-violet-400',
+    'bg-gray-100', 'dark:bg-gray-800',
+    // Asset block colors (emerald accents)
+    'border-emerald-500', 'ring-emerald-500/20', 'dark:ring-emerald-600/20',
+    // Group block colors (blue accents)
+    'border-blue-500', 'ring-blue-500/20', 'dark:ring-blue-600/20',
+    // Filter block colors (violet)
+    'bg-violet-50', 'dark:bg-violet-900/20',
+    'border-violet-200', 'dark:border-violet-800',
+    'border-violet-500', 'dark:border-violet-600',
+    'ring-violet-500/20', 'dark:ring-violet-600/20',
+    'hover:border-violet-300', 'dark:hover:border-violet-700',
+    'hover:bg-violet-100', 'dark:hover:bg-violet-800/50',
+    'text-violet-500', 'dark:text-violet-400',
+    'text-violet-600', 'dark:text-violet-300',
+    'text-violet-900', 'dark:text-violet-100',
+  ],
   theme: {
     extend: {
       colors: {

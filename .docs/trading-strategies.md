@@ -4,84 +4,49 @@ Reference covering trading strategies, mechanics, primitives, and implementation
 
 ---
 
-## Visual System Overview
+## Overview
 
-### Overall Trading System Architecture
+This document is a comprehensive reference for algorithmic trading strategies, covering the core concepts, mechanics, and implementation patterns used in systematic trading. It's organized from foundational primitives through specific strategy types to practical considerations like risk management and backtesting.
 
-```
-┌───────────────────────────────────────────────────────────────────────────────────────────────────┐
-│                                    ALGORITHMIC TRADING SYSTEM                                     │
-└───────────────────────────────────────────────────────────────────────────────────────────────────┘
-                                                  │
-                ┌─────────────────────────────────┼─────────────────────────────────┐
-                ▼                                 ▼                                 ▼
-┌───────────────────────────────┐   ┌───────────────────────────────┐   ┌───────────────────────────────┐
-│          DATA FEEDS           │   │       STRATEGY ENGINE         │   │          BROKER API           │
-│                               │   │                               │   │                               │
-│  • Price/OHLCV                │   │  • Signal Generation          │   │  • Order Submission           │
-│  • Order Book / Level 2       │──▶│  • Position Management        │──▶│  • Fill Notifications         │
-│  • News & Economic Events     │   │  • Risk Assessment            │   │  • Position Updates           │
-│  • Technical Indicators       │   │  • Portfolio Allocation       │   │  • Account Balance            │
-└───────────────────────────────┘   └───────────────────────────────┘   └───────────────────────────────┘
-                                                  │
-                                                  ▼
-                        ┌─────────────────────────────────────────────────────────┐
-                        │                    RISK MANAGEMENT                      │
-                        │                                                         │
-                        │  • Position Sizing & Kelly Criterion                    │
-                        │  • Stop Losses & Trailing Stops                         │
-                        │  • Maximum Drawdown Limits                              │
-                        │  • Correlation & Concentration Checks                   │
-                        └─────────────────────────────────────────────────────────┘
-                                                  │
-                                                  ▼
-                        ┌─────────────────────────────────────────────────────────┐
-                        │                   MONITORING & LOGS                     │
-                        │                                                         │
-                        │  • Real-time P&L Tracking                               │
-                        │  • Trade Journal & Audit Trail                          │
-                        │  • Performance Metrics & Analytics                      │
-                        │  • Alerts & Notifications                               │
-                        └─────────────────────────────────────────────────────────┘
-```
+### How Algorithmic Trading Works
 
-### Strategy Selection Flowchart
+An algorithmic trading system follows a continuous loop: ingest market data, generate signals based on predefined rules, execute orders through a broker, and manage risk throughout.
 
 ```
-                                            ┌───────────────────────────┐
-                                            │       MARKET STATE?       │
-                                            └─────────────┬─────────────┘
-                                                          │
-                ┌─────────────────────────────────────────┼─────────────────────────────────────────┐
-                ▼                                         ▼                                         ▼
-    ┌───────────────────────┐                 ┌───────────────────────┐                 ┌───────────────────────┐
-    │       TRENDING        │                 │        RANGING        │                 │       VOLATILE        │
-    └───────────┬───────────┘                 └───────────┬───────────┘                 └───────────┬───────────┘
-                │                                         │                                         │
-                ▼                                         ▼                                         ▼
-┌───────────────────────────────┐     ┌───────────────────────────────┐     ┌───────────────────────────────┐
-│       TREND FOLLOWING         │     │       MEAN REVERSION          │     │     BREAKOUT / STRADDLES      │
-│                               │     │                               │     │                               │
-│  • Moving Average Crossover   │     │  • Bollinger Band Reversion   │     │  • Channel Breakout           │
-│  • MACD Signals               │     │  • RSI Reversal               │     │  • Long Straddle              │
-│  • Turtle / Donchian          │     │  • Pairs / Statistical Arb    │     │  • Gamma Scalping             │
-│  • Supertrend                 │     │  • Z-Score Mean Reversion     │     │  • Volatility Expansion       │
-└───────────────────────────────┘     └───────────────────────────────┘     └───────────────────────────────┘
+Data Feeds ──► Strategy Engine ──► Broker API
+   │               │                   │
+   │               ▼                   │
+   │         Risk Management           │
+   │               │                   │
+   └───────── Monitoring ◄─────────────┘
 ```
+
+**Core components:**
+- **Data Feeds**: Price data (OHLCV bars, ticks), order book depth, news, and derived indicators
+- **Strategy Engine**: Signal generation, position sizing, and portfolio allocation logic
+- **Broker API**: Order submission, fill notifications, and account management
+- **Risk Management**: Position limits, stop losses, drawdown controls, and correlation checks
+- **Monitoring**: Real-time P&L tracking, trade journaling, and alerting
+
+### Strategy Categories
+
+The right strategy depends on market conditions:
+
+| Market State | Strategy Type | Examples |
+|--------------|---------------|----------|
+| **Trending** | Trend Following | MA crossover, MACD, Donchian breakout, Supertrend |
+| **Ranging** | Mean Reversion | Bollinger bands, RSI reversal, pairs trading, Z-score |
+| **Volatile** | Breakout / Volatility | Channel breakout, straddles, volatility expansion |
 
 ### Trade Lifecycle
 
-```
-┌───────────────────┐       ┌───────────────────┐       ┌───────────────────┐       ┌───────────────────┐       ┌───────────────────┐
-│      SIGNAL       │──────▶│       SIZE        │──────▶│       ENTRY       │──────▶│      MANAGE       │──────▶│       EXIT        │
-└───────────────────┘       └───────────────────┘       └───────────────────┘       └───────────────────┘       └───────────────────┘
-          │                           │                           │                           │                           │
-          ▼                           ▼                           ▼                           ▼                           ▼
-  • Indicator Cross           • Position Sizing          • Order Type Select         • Stop Loss Mgmt           • Target Hit
-  • Pattern Recognition       • Risk % Per Trade         • Limit vs Market           • Trailing Stops           • Stop Triggered
-  • Breakout Detection        • Kelly Criterion          • Entry Timing              • Scale In/Out             • Time-Based Exit
-  • Signal Confirmation       • Portfolio Weight         • Slippage Control          • Add to Winners           • Signal Reversal
-```
+Every trade follows five phases:
+
+1. **Signal**: Indicator cross, pattern recognition, or breakout detection triggers a potential trade
+2. **Size**: Position sizing based on risk percentage, Kelly criterion, or portfolio weight
+3. **Entry**: Order type selection (limit vs market), timing, and slippage control
+4. **Manage**: Stop loss management, trailing stops, scaling in/out, adding to winners
+5. **Exit**: Target hit, stop triggered, time-based exit, or signal reversal
 
 ---
 

@@ -3,6 +3,7 @@ import { useState } from 'react';
 
 import { useStrategyBuilderStore } from '../../../store/strategy-builder';
 import type { BlockId, ConditionExpression, FilterConfig } from '../../../types/strategy-builder';
+import { pickerColors } from '../block-theme';
 
 import { AssetPicker } from './AssetPicker';
 import { ConditionBuilder } from './ConditionBuilder';
@@ -103,8 +104,8 @@ export function BlockPicker({ parentId, onClose }: BlockPickerProps) {
             onClick={() => setView('asset')}
             className="w-full flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
           >
-            <div className="p-1.5 bg-emerald-100 dark:bg-emerald-900/30 rounded">
-              <TrendingUp className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+            <div className={`p-1.5 ${pickerColors.asset.bg} rounded`}>
+              <TrendingUp className={`w-4 h-4 ${pickerColors.asset.icon}`} />
             </div>
             <div className="text-left">
               <div className="text-sm font-medium text-gray-900 dark:text-gray-100">Asset</div>
@@ -119,8 +120,8 @@ export function BlockPicker({ parentId, onClose }: BlockPickerProps) {
             }}
             className="w-full flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
           >
-            <div className="p-1.5 bg-amber-100 dark:bg-amber-900/30 rounded">
-              <Folder className="w-4 h-4 text-amber-600 dark:text-amber-400" />
+            <div className={`p-1.5 ${pickerColors.group.bg} rounded`}>
+              <Folder className={`w-4 h-4 ${pickerColors.group.icon}`} />
             </div>
             <div className="text-left">
               <div className="text-sm font-medium text-gray-900 dark:text-gray-100">Group</div>
@@ -132,8 +133,8 @@ export function BlockPicker({ parentId, onClose }: BlockPickerProps) {
             onClick={() => setView('weight')}
             className="w-full flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
           >
-            <div className="p-1.5 bg-blue-100 dark:bg-blue-900/30 rounded">
-              <Scale className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+            <div className={`p-1.5 ${pickerColors.weight.bg} rounded`}>
+              <Scale className={`w-4 h-4 ${pickerColors.weight.icon}`} />
             </div>
             <div className="text-left">
               <div className="text-sm font-medium text-gray-900 dark:text-gray-100">Weight</div>
@@ -147,8 +148,8 @@ export function BlockPicker({ parentId, onClose }: BlockPickerProps) {
             onClick={() => setView('condition')}
             className="w-full flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
           >
-            <div className="p-1.5 bg-amber-100 dark:bg-amber-900/30 rounded">
-              <GitBranch className="w-4 h-4 text-amber-600 dark:text-amber-400" />
+            <div className={`p-1.5 ${pickerColors.ifElse.bg} rounded`}>
+              <GitBranch className={`w-4 h-4 ${pickerColors.ifElse.icon}`} />
             </div>
             <div className="text-left">
               <div className="text-sm font-medium text-gray-900 dark:text-gray-100">If/Else</div>
@@ -160,8 +161,8 @@ export function BlockPicker({ parentId, onClose }: BlockPickerProps) {
             onClick={() => setView('filter')}
             className="w-full flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
           >
-            <div className="p-1.5 bg-purple-100 dark:bg-purple-900/30 rounded">
-              <Filter className="w-4 h-4 text-purple-600 dark:text-purple-400" />
+            <div className={`p-1.5 ${pickerColors.filter.bg} rounded`}>
+              <Filter className={`w-4 h-4 ${pickerColors.filter.icon}`} />
             </div>
             <div className="text-left">
               <div className="text-sm font-medium text-gray-900 dark:text-gray-100">Filter</div>

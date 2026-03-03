@@ -67,6 +67,121 @@ BONDS            ┌─────────────────┐
 
 ---
 
+## Market Microstructure
+
+Understanding how markets actually work at the execution level is fundamental to algorithmic trading.
+
+### How Prices Are Determined
+
+```
+ORDER BOOK STRUCTURE
+
+         ASKS (Sellers)                    BIDS (Buyers)
+         ─────────────                     ─────────────
+Price    Size    Cumulative          Price    Size    Cumulative
+$100.05  500     500                 $100.00  800     800
+$100.06  1200    1700                $99.99   1500    2300
+$100.07  800     2500                $99.98   2000    4300
+$100.08  2000    4500                $99.97   1000    5300
+
+         Best Ask: $100.05           Best Bid: $100.00
+                   └──────── Spread: $0.05 ────────┘
+
+Mid Price = ($100.05 + $100.00) / 2 = $100.025
+```
+
+**Key concepts:**
+- **Bid**: Highest price buyers will pay
+- **Ask**: Lowest price sellers will accept
+- **Spread**: Difference between best bid and ask (your immediate cost to trade)
+- **Depth**: Total size available at each price level
+
+### Market Makers
+
+Market makers provide liquidity by continuously quoting bid and ask prices:
+
+```
+Market Maker Role:
+  • Quote both sides (willing to buy AND sell)
+  • Profit from spread: Buy at bid, sell at ask
+  • Obligated to maintain orderly markets
+  • Manage inventory risk (don't want too much of one side)
+
+Who are they:
+  • Designated Market Makers (NYSE specialists)
+  • Electronic market makers (Citadel, Virtu, Two Sigma)
+  • High-frequency trading firms
+```
+
+### Order Types and Execution
+
+| Order Type | Execution | When to Use |
+|------------|-----------|-------------|
+| **Market** | Immediately crosses spread, takes liquidity | Urgent entry/exit |
+| **Limit** | Rests in book, provides liquidity | Price-sensitive, patient |
+| **Marketable Limit** | Limit at or through current price | Immediate but with price cap |
+
+```
+Maker vs Taker:
+  Maker: Adds liquidity (limit order resting in book)
+         Often receives rebate from exchange
+
+  Taker: Removes liquidity (market order or marketable limit)
+         Pays exchange fee
+
+  Fee example: Maker rebate $0.002/share, Taker fee $0.003/share
+```
+
+### Slippage and Market Impact
+
+**Slippage**: Difference between expected price and actual fill price
+
+```
+Slippage Sources:
+  1. Spread crossing: Market orders pay the spread
+  2. Price movement: Price moves while order routes
+  3. Partial fills: Large orders eat through multiple levels
+
+Example - 5000 share market buy:
+  Book: 800 @ $100.05, 1200 @ $100.06, 3000 @ $100.07
+
+  Fill: 800 @ $100.05 + 1200 @ $100.06 + 3000 @ $100.07
+  Avg:  $100.065 (vs best ask of $100.05)
+  Slippage: $0.015 per share = $75 total
+```
+
+**Market Impact**: Your order moving the price against you
+
+```
+Impact increases with:
+  • Order size relative to typical volume
+  • Urgency (faster execution = more impact)
+  • Low liquidity periods (pre-market, after-hours)
+
+Rule of thumb: Orders > 1% of daily volume cause measurable impact
+```
+
+### Latency
+
+Time delay from decision to execution:
+
+```
+Latency Components:
+  Decision → Signal → Network → Exchange → Fill → Confirmation
+
+Typical latencies:
+  Retail broker:     50-200ms
+  DMA (direct):      1-10ms
+  Co-located HFT:    <1μs (microsecond)
+
+Impact: Matters for:
+  • Arbitrage strategies (speed critical)
+  • News trading (first mover advantage)
+  • NOT for swing/position trading
+```
+
+---
+
 ## 1. Equities (Stocks)
 
 ### What It Is
@@ -256,6 +371,84 @@ $105    $0.70  $0.85  27%     $5.30  $5.50  29%
 | **Calendar Spread**   | Expecting time decay, stable price   | Profit from theta differential    |
 | **Butterfly**         | Pinpoint price target at expiration  | Low cost, high reward if correct  |
 
+### VIX and Volatility Products
+
+The VIX ("fear index") measures expected S&P 500 volatility over 30 days. Volatility products allow trading volatility itself:
+
+| Product | Type | Characteristics |
+|---------|------|-----------------|
+| **VIX Index** | Index | Not directly tradable, derived from SPX options |
+| **/VX** | Futures | VIX futures, most liquid volatility product |
+| **VXX** | ETN | Short-term VIX futures, severe contango decay |
+| **UVXY** | ETF | 1.5x leveraged VIX futures, extreme decay |
+| **SVXY** | ETF | Inverse VIX (-0.5x), profits from contango |
+
+```
+VIX TERM STRUCTURE (Usually in Contango)
+
+VIX
+Level
+  │
+30│                              ● Dec
+  │                         ● Nov
+  │                    ● Oct
+  │               ● Sep
+  │          ● Aug
+20│     ● Jul
+  │ ● VIX Spot
+  │
+10│
+  └────────────────────────────────▶
+              Time to Expiry
+
+Contango = Front month < Back month
+Long VIX products LOSE money over time due to negative roll yield
+Short VIX products PROFIT from roll but have blowup risk
+```
+
+**Key VIX concepts:**
+- VIX typically ranges 12-20 in calm markets, spikes 30-80+ in crises
+- Mean-reverting: High VIX tends to fall, low VIX tends to rise
+- Negative correlation with SPX: Stocks down → VIX up
+- Contango decay destroys long VIX ETFs (~50-70% annually)
+
+### Pin Risk
+
+Near expiration, stock prices can "pin" to strike prices:
+
+```
+Pin Risk:
+  • Max pain theory: Price gravitates to strike with most open interest
+  • Dealers hedge gamma by buying dips / selling rips
+  • Creates self-reinforcing price stability at strikes
+
+Risk for traders:
+  • ATM options on expiration Friday are unpredictable
+  • Can expire ITM or OTM based on small moves
+  • Short options may or may not be assigned
+```
+
+### Early Assignment Risk
+
+American options can be assigned early (European cannot):
+
+```
+Early Assignment Most Likely When:
+  1. Deep ITM options with little time value
+  2. Just before ex-dividend date (calls on dividend stocks)
+  3. Interest rates high (puts may be assigned for cash)
+
+Example - Dividend capture assignment:
+  Stock: $100, Dividend: $2 tomorrow
+  Call strike: $90, Premium: $10.50
+
+  Intrinsic: $10, Time value: $0.50
+  Dividend: $2 > Time value: $0.50
+
+  → Call holder exercises to capture $2 dividend
+  → Short call seller is assigned, must deliver shares
+```
+
 ### Considerations
 
 - Leverage is built in (control 100 shares for fraction of cost)
@@ -264,6 +457,8 @@ $105    $0.70  $0.85  27%     $5.30  $5.50  29%
 - IV crush after earnings can hurt long options even if direction is right
 - Assignment risk for short options (especially near ex-dividend dates)
 - Complex tax treatment for options trades
+- VIX products are for short-term trading only (contango decay)
+- Pin risk makes expiration-day trading unpredictable
 
 ---
 
@@ -382,6 +577,59 @@ Margin call:      Account below maintenance = add funds or liquidate
 | **Arbitrage**       | Spot vs futures, cross-exchange             | Requires speed            |
 | **Carry Trade**     | Roll yield in backwardated markets          | Long-term                 |
 
+### Micro Contracts: Entry Point for Smaller Accounts
+
+Micro contracts are 1/10th the size of E-mini contracts, making futures accessible to smaller accounts:
+
+| Contract | Symbol | Tick Value | Margin | Good For |
+|----------|--------|------------|--------|----------|
+| Micro E-mini S&P | MES | $1.25 | ~$1,200 | Learning futures mechanics |
+| Micro E-mini Nasdaq | MNQ | $0.50 | ~$1,600 | Tech exposure |
+| Micro E-mini Russell | M2K | $0.50 | ~$700 | Small cap exposure |
+| Micro E-mini Dow | MYM | $0.50 | ~$900 | Blue chip exposure |
+| Micro Gold | MGC | $1.00 | ~$900 | Precious metals |
+| Micro Crude | MCL | $1.00 | ~$800 | Energy exposure |
+
+```
+Why start with micros:
+  • Learn execution, margin, and rolling with small risk
+  • Same market dynamics as full-size contracts
+  • Scale up to E-mini (10x) then full-size when ready
+  • $5,000 account can trade micros responsibly
+```
+
+### Limit Moves and Circuit Breakers
+
+Futures have price limits that halt trading during extreme moves:
+
+```
+S&P 500 FUTURES CIRCUIT BREAKERS
+
+Level 1:  -7%   → 15-minute halt (if before 3:25pm ET)
+Level 2:  -13%  → 15-minute halt (if before 3:25pm ET)
+Level 3:  -20%  → Trading halted for remainder of day
+
+Overnight limits (outside RTH):
+  ±5% from prior settlement → trading halted at limit
+
+COMMODITY LIMIT MOVES
+
+Crude Oil:  ±$5-10 per barrel (varies)
+Gold:       ±$75-150 per oz (varies)
+Corn:       ±$0.25-0.40 per bushel
+
+When limit hit:
+  • Trading pauses or only occurs at limit price
+  • Can be "locked limit" (no trades possible)
+  • Expanded limits may apply next day
+```
+
+**Risk implications:**
+- Cannot exit position if locked limit against you
+- Overnight gaps can exceed limits
+- Margin calls may force liquidation at worst prices
+- Use options for defined risk if concerned about gaps
+
 ### Considerations
 
 - Very high leverage amplifies gains AND losses
@@ -389,6 +637,8 @@ Margin call:      Account below maintenance = add funds or liquidate
 - Near 24-hour trading requires automation for risk management
 - Must manage roll dates to avoid delivery (especially commodities)
 - Extremely liquid (ES trades billions in notional daily)
+- Limit moves can trap positions (use stops or options for protection)
+- Start with micro contracts to learn mechanics with less risk
 
 ---
 
@@ -486,6 +736,90 @@ Rollover:      Overnight positions incur swap cost/credit
 | **Breakout**        | London open/session overlaps create breakouts | Hours              |
 | **Scalping**        | Tight spreads allow many small profits        | Seconds to minutes |
 
+### Currency Correlations
+
+Forex pairs are highly correlated—understanding this prevents accidental over-exposure:
+
+```
+MAJOR PAIR CORRELATIONS
+
+Strong Positive (move together):
+  EUR/USD ↔ GBP/USD   (~0.85)  Both are "anti-dollar"
+  AUD/USD ↔ NZD/USD   (~0.90)  Both commodity/risk currencies
+  EUR/USD ↔ AUD/USD   (~0.70)  Risk-on correlation
+
+Strong Negative (move opposite):
+  EUR/USD ↔ USD/CHF   (~-0.90) Mirror images
+  GBP/USD ↔ USD/JPY   (~-0.50) Risk-on vs safe-haven
+
+Risk implications:
+  Long EUR/USD + Long GBP/USD ≈ 2x position (not diversified)
+  Long EUR/USD + Short USD/CHF ≈ Same trade twice
+```
+
+**Risk-on vs Risk-off:**
+```
+Risk-On (stocks up, optimism):
+  Buy: AUD, NZD, CAD, emerging market currencies
+  Sell: JPY, CHF, USD
+
+Risk-Off (fear, flight to safety):
+  Buy: JPY, CHF, USD
+  Sell: AUD, NZD, emerging market currencies
+```
+
+### Central Bank Intervention
+
+Central banks occasionally intervene directly in currency markets:
+
+```
+Types of Intervention:
+  1. Direct: Central bank buys/sells currency in market
+  2. Verbal: Officials talk currency up/down ("jawboning")
+  3. Policy: Interest rate changes affect currency value
+
+Recent examples:
+  • BOJ intervention (2022): Bought JPY when USD/JPY hit 150
+  • SNB floor (2011-2015): Maintained EUR/CHF at 1.20 until abandoned
+  • PBOC daily fixing: Sets USD/CNY reference rate daily
+
+Trading implications:
+  • Intervention causes sharp, fast moves (100+ pips in minutes)
+  • Often at psychological levels (round numbers)
+  • Can fight the trend temporarily but rarely reverses it
+  • Watch central bank rhetoric for warnings
+```
+
+### Triangular Arbitrage
+
+Exploiting price inconsistencies across three currency pairs:
+
+```
+Triangular Arbitrage Example:
+
+Given rates:
+  EUR/USD = 1.1000
+  GBP/USD = 1.2500
+  EUR/GBP = 0.8700
+
+Implied EUR/GBP = EUR/USD ÷ GBP/USD
+                = 1.1000 ÷ 1.2500 = 0.8800
+
+Actual EUR/GBP = 0.8700 (cheaper than implied)
+
+Arbitrage:
+  1. Sell EUR, buy GBP at 0.8700 (cheap)
+  2. Sell GBP, buy USD at 1.2500
+  3. Sell USD, buy EUR at 1.1000
+  Profit: 0.8800 - 0.8700 = 100 pips per EUR
+
+Reality:
+  • Spreads usually eliminate opportunity
+  • Requires millisecond execution
+  • HFT firms dominate this space
+  • Retail traders can't compete
+```
+
 ### Considerations
 
 - Extremely high liquidity means tight spreads on majors
@@ -494,6 +828,8 @@ Rollover:      Overnight positions incur swap cost/credit
 - News releases (NFP, FOMC) cause extreme volatility spikes
 - 24-hour market means gaps are rare (except weekends)
 - Counterparty risk with retail brokers
+- Understand pair correlations to avoid doubling exposure
+- Central bank intervention can cause sudden reversals
 
 ---
 
@@ -616,6 +952,90 @@ Order types similar to traditional markets plus:
 | **DeFi Yield**       | Liquidity provision, lending               | Smart contract risk           |
 | **Grid Trading**     | Volatility creates many fill opportunities | Range-bound periods           |
 
+### Liquidation Cascades
+
+Unique to leveraged crypto trading—cascading liquidations cause flash crashes:
+
+```
+LIQUIDATION CASCADE MECHANICS
+
+Initial state:
+  BTC Price: $50,000
+  Trader A: Long 10 BTC at 10x leverage
+            Liquidation price: $45,000
+
+Price drops to $45,000:
+  → Trader A liquidated (forced market sell)
+  → Selling pressure pushes price to $44,000
+
+  → Trader B liquidation triggered at $44,000
+  → More selling → price drops to $42,000
+
+  → Trader C, D, E liquidated
+  → Cascade accelerates
+
+Result: Price drops $50,000 → $35,000 in minutes
+        "Flash crash" or "liquidation cascade"
+        Price often recovers quickly after cascade exhausts
+
+              │ $50,000
+              │ ───────
+              │        \
+              │         \
+              │          \  Cascade
+              │           \ begins
+              │            \
+              │             ●$45k (Trader A liq)
+              │              \
+              │               ●$42k (B, C liq)
+              │                \
+              │                 ●$35k (cascade exhausts)
+              │                /
+              │               / Recovery
+              │              /
+              │ ────────────
+              └────────────────────────────▶ Time
+```
+
+**Trading implications:**
+- High leverage positions cluster at round numbers
+- Cascades create buying opportunities after the flush
+- Monitor liquidation levels and open interest
+- Use isolated margin (not cross) to limit liquidation impact
+
+### On-Chain Data as Trading Signals
+
+Blockchain transparency provides unique data unavailable in traditional markets:
+
+```
+ON-CHAIN INDICATORS
+
+Exchange Flows:
+  Inflows to exchanges  → Selling pressure coming
+  Outflows from exchanges → Accumulation (bullish)
+
+Whale Wallets:
+  Track top 100 holders' movements
+  Large transfers to exchanges = potential selling
+
+Holder Distribution:
+  % held by long-term holders (>1 year)
+  High LTH ratio = strong hands, less selling pressure
+
+Network Activity:
+  Active addresses, transaction count
+  Rising activity = growing adoption
+
+Miner Behavior:
+  Miner outflows = selling to cover costs
+  Hash rate changes signal miner sentiment
+```
+
+**Popular on-chain data sources:**
+- Glassnode, CryptoQuant, Santiment (paid)
+- Whale Alert (Twitter, free for large transactions)
+- Arkham Intelligence (wallet tracking)
+
 ### Considerations
 
 - Extreme volatility = opportunity + significant risk
@@ -625,6 +1045,8 @@ Order types similar to traditional markets plus:
 - Tax reporting complex (every trade is taxable event)
 - 24/7 means constant monitoring or automation required
 - Regulatory uncertainty in many jurisdictions
+- Liquidation cascades create flash crashes and opportunities
+- On-chain data provides unique alpha unavailable in traditional markets
 
 ---
 
@@ -726,6 +1148,84 @@ Futures:           ZN (10Y Note), ZB (30Y Bond), ZF (5Y)
 | **Relative Value**   | Similar bonds trading at different yields  | Days to weeks   |
 | **Macro**            | Central bank policy bets via futures       | Event-driven    |
 
+### Credit Ratings
+
+Credit rating agencies assess the likelihood of default:
+
+```
+CREDIT RATING SCALE
+
+Investment Grade (Lower Risk):
+  ─────────────────────────────
+  AAA    │ Highest quality, minimal risk (rare)
+  AA+/AA/AA- │ High quality, very low risk
+  A+/A/A-    │ Upper medium grade
+  BBB+/BBB/BBB- │ Medium grade, adequate protection
+  ─────────────────────────────
+
+  ↑ Investment grade: Pension funds, banks can hold
+
+Speculative Grade / "Junk" (Higher Risk):
+  ─────────────────────────────
+  BB+/BB/BB- │ Speculative, moderate risk
+  B+/B/B-    │ Highly speculative
+  CCC/CC/C   │ Substantial risk, near default
+  D          │ In default
+  ─────────────────────────────
+
+Rating Agencies:
+  • S&P Global Ratings
+  • Moody's (uses Aaa, Aa, A, Baa, etc.)
+  • Fitch Ratings
+
+Spread over Treasuries by rating:
+  AAA:  +0.5%
+  BBB:  +1.5%
+  BB:   +3.0%
+  B:    +5.0%
+  CCC:  +10%+
+```
+
+**"Fallen angels"**: Investment grade bonds downgraded to junk (forced selling by institutions creates opportunity)
+
+### TIPS: Inflation-Protected Securities
+
+Treasury Inflation-Protected Securities adjust principal based on CPI:
+
+```
+TIPS MECHANICS
+
+Purchase: $1,000 principal, 2% real coupon
+
+Year 1: CPI inflation = 3%
+  Adjusted principal: $1,000 × 1.03 = $1,030
+  Coupon payment: $1,030 × 2% = $20.60
+
+Year 2: CPI inflation = 4%
+  Adjusted principal: $1,030 × 1.04 = $1,071.20
+  Coupon payment: $1,071.20 × 2% = $21.42
+
+At maturity: Receive adjusted principal ($1,071.20+)
+            Never less than original $1,000 (deflation floor)
+```
+
+**Key concepts:**
+- **Real yield**: Yield above inflation (what you actually earn in purchasing power)
+- **Breakeven inflation**: TIPS yield vs nominal Treasury yield = market's inflation expectation
+- **When to buy TIPS**: When you expect inflation higher than market expectations
+
+```
+BREAKEVEN INFLATION
+
+10Y Treasury yield:     4.5%
+10Y TIPS real yield:    2.0%
+─────────────────────────────
+Breakeven inflation:    2.5%
+
+If actual inflation > 2.5% → TIPS outperform
+If actual inflation < 2.5% → Nominal Treasuries outperform
+```
+
 ### Considerations
 
 - Less liquid than equities (except Treasury futures)
@@ -734,6 +1234,8 @@ Futures:           ZN (10Y Note), ZB (30Y Bond), ZF (5Y)
 - Credit risk for corporate bonds (defaults)
 - Futures (ZN, ZB) are more liquid than cash bonds
 - Complex for retail (institutional-dominated market)
+- Credit ratings determine institutional demand and spreads
+- TIPS provide inflation protection but have lower nominal yields
 
 ---
 
@@ -1176,6 +1678,140 @@ Size:        Typically $10M+ notional minimum
 
 ---
 
+## Cross-Asset Correlations
+
+Understanding how asset classes move relative to each other is essential for portfolio construction and hedging.
+
+### Traditional Correlations
+
+```
+TYPICAL CORRELATION MATRIX (Long-term averages)
+
+              Stocks  Bonds   Gold    Oil   USD    Crypto
+            ┌───────┬───────┬───────┬───────┬───────┬───────┐
+Stocks      │  1.00 │ -0.30 │  0.00 │ +0.40 │ -0.20 │ +0.50 │
+Bonds       │       │  1.00 │ +0.30 │ -0.10 │ +0.20 │ -0.20 │
+Gold        │       │       │  1.00 │ +0.20 │ -0.40 │ +0.30 │
+Oil         │       │       │       │  1.00 │ -0.30 │ +0.20 │
+USD         │       │       │       │       │  1.00 │ -0.30 │
+Crypto      │       │       │       │       │       │  1.00 │
+            └───────┴───────┴───────┴───────┴───────┴───────┘
+
+Interpretation:
+  +1.0 = Perfect positive (move together)
+   0.0 = No relationship
+  -1.0 = Perfect negative (move opposite)
+```
+
+### Key Relationships
+
+**Stocks ↔ Bonds (Negative correlation: -0.30)**
+```
+Normal regime:
+  Stocks down → Flight to safety → Bonds up
+  Stocks up → Risk-on → Bonds down
+
+Exception (2022):
+  High inflation → Both stocks AND bonds fell
+  Fed raising rates hurt both asset classes
+  Correlation turned positive temporarily
+```
+
+**Gold ↔ USD (Negative correlation: -0.40)**
+```
+Gold priced in USD, so:
+  USD strengthens → Gold cheaper for US buyers → Less int'l demand → Gold falls
+  USD weakens → Gold more expensive → Int'l buying → Gold rises
+
+Also:
+  Real yields up → Gold less attractive (no yield) → Gold falls
+  Real yields down → Gold more attractive → Gold rises
+```
+
+**Risk-On / Risk-Off Framework**
+```
+RISK-ON (Optimism, growth)         RISK-OFF (Fear, recession)
+─────────────────────────          ─────────────────────────
+BUY:                               BUY:
+  • Stocks (especially growth)       • Treasuries (long duration)
+  • High-yield bonds                 • Gold
+  • Commodities (oil, copper)        • USD (global reserve)
+  • AUD, NZD, EM currencies          • JPY, CHF (safe havens)
+  • Crypto                           • Defensive stocks (utilities)
+
+SELL:                              SELL:
+  • Treasuries                       • Stocks (especially cyclicals)
+  • Gold                             • High-yield bonds
+  • JPY, CHF                         • Commodities
+  • Volatility (VIX products)        • EM currencies, crypto
+```
+
+### Correlation Regimes
+
+Correlations are not static—they change based on market environment:
+
+```
+CORRELATION REGIME CHANGES
+
+Normal Growth:
+  Stocks/Bonds: Negative (diversification works)
+  VIX/Stocks: Negative
+
+Crisis / Deleveraging:
+  Correlations spike to +1.0 ("everything sells off")
+  Only cash and Treasuries outperform
+  Diversification fails when needed most
+
+Inflation Shock:
+  Stocks/Bonds: Positive (both lose to inflation)
+  Commodities outperform
+  TIPS provide protection
+
+Recovery:
+  Stocks/Commodities: Strong positive
+  Bonds lag or fall
+  Cyclicals outperform defensives
+```
+
+### Practical Applications
+
+**Portfolio Diversification:**
+```
+Traditional 60/40 Portfolio:
+  60% Stocks + 40% Bonds
+  Relies on negative stock/bond correlation
+  Failed in 2022 when correlation turned positive
+
+Risk Parity Approach:
+  Equal RISK contribution from each asset class
+  Bonds higher allocation (lower vol) to balance stock risk
+  Add commodities, gold for inflation hedge
+
+All-Weather Portfolio (Ray Dalio):
+  30% Stocks
+  40% Long-term bonds
+  15% Intermediate bonds
+  7.5% Gold
+  7.5% Commodities
+  Designed for all economic environments
+```
+
+**Hedging:**
+```
+Hedge stock portfolio with:
+  • Long bonds (TLT) - works in deflation/recession
+  • Long gold (GLD) - works in inflation/uncertainty
+  • Long VIX (VXX) - works in crashes (but decays)
+  • Long USD (UUP) - works in global risk-off
+  • Put options - defined cost, unlimited protection
+
+Hedge currency exposure with:
+  • Futures on currency pair
+  • Currency-hedged ETFs
+```
+
+---
+
 ## Asset Class Selection Guide
 
 ### By Trading Style
@@ -1230,4 +1866,4 @@ Size:        Typically $10M+ notional minimum
 
 ---
 
-_See [Algorithmic Trading Strategies](algorithmic-trading-strategies.md) for detailed strategy implementations._
+_See [Trading Strategies](../trading-strategies.md) for detailed strategy implementations._

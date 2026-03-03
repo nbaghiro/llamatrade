@@ -2,6 +2,7 @@ import { ChevronDown, X } from 'lucide-react';
 
 import { useStrategyBuilderStore } from '../../../store/strategy-builder';
 import type { ElseBlock as ElseBlockType } from '../../../types/strategy-builder';
+import { elseColors } from '../block-theme';
 
 interface ElseBlockProps {
   block: ElseBlockType;
@@ -30,21 +31,21 @@ export function ElseBlock({ block }: ElseBlockProps) {
 
   return (
     <div className="relative">
-      {/* Main pill - blue style like Composer */}
+      {/* Main pill - uses centralized theme */}
       <div
         data-testid="else-block"
         className={`
           inline-flex items-center gap-1.5 pl-1.5 pr-3 py-1.5 rounded-full cursor-pointer
           transition-all duration-150 select-none
-          bg-blue-500 text-white text-sm
-          ${isSelected ? 'ring-2 ring-blue-300 ring-offset-2 ring-offset-white dark:ring-offset-gray-900' : 'hover:bg-blue-600'}
+          ${elseColors.bg} text-white text-sm
+          ${isSelected ? `ring-2 ${elseColors.ring} ring-offset-2 ring-offset-white dark:ring-offset-gray-900` : elseColors.hover}
         `}
         onClick={handleClick}
       >
         {/* Delete button */}
         <button
           onClick={handleDeleteClick}
-          className="p-0.5 rounded-full hover:bg-blue-600 transition-colors"
+          className={`p-0.5 rounded-full ${elseColors.hover} transition-colors`}
           title="Delete"
         >
           <X className="w-3.5 h-3.5" />
@@ -53,7 +54,7 @@ export function ElseBlock({ block }: ElseBlockProps) {
         {/* Expand toggle */}
         <button
           onClick={handleExpandClick}
-          className="p-0.5 rounded-full hover:bg-blue-600 transition-colors"
+          className={`p-0.5 rounded-full ${elseColors.hover} transition-colors`}
         >
           <ChevronDown className={`w-3.5 h-3.5 transition-transform ${isExpanded ? '' : '-rotate-90'}`} />
         </button>

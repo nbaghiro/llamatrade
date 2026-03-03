@@ -82,7 +82,7 @@ The trading service is responsible for:
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                         ORDER EXECUTION FLOW                                 │
+│                         ORDER EXECUTION FLOW                                │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                             │
 │  ┌───────────────────────────────────────────────────────────────────┐      │
@@ -159,14 +159,14 @@ services/trading/
 
 ## Core Components
 
-| Component               | File                         | Responsibility                                          |
-| ----------------------- | ---------------------------- | ------------------------------------------------------- |
-| **TradingServicer**     | `grpc/servicer.py`           | gRPC endpoint implementations                           |
-| **OrderExecutor**       | `executor/order_executor.py` | Submit orders, sync with Alpaca, manage order lifecycle |
-| **PositionService**     | `services/position_service.py` | Local position tracking, P&L calculation              |
-| **RiskManager**         | `risk/risk_manager.py`       | Validate orders, enforce limits, track daily P&L        |
-| **AlpacaTradingClient** | `alpaca_client.py`           | REST client for Alpaca Trading API                      |
-| **MarketDataClient**    | `clients/market_data.py`     | HTTP client for market-data service                     |
+| Component               | File                           | Responsibility                                          |
+| ----------------------- | ------------------------------ | ------------------------------------------------------- |
+| **TradingServicer**     | `grpc/servicer.py`             | gRPC endpoint implementations                           |
+| **OrderExecutor**       | `executor/order_executor.py`   | Submit orders, sync with Alpaca, manage order lifecycle |
+| **PositionService**     | `services/position_service.py` | Local position tracking, P&L calculation                |
+| **RiskManager**         | `risk/risk_manager.py`         | Validate orders, enforce limits, track daily P&L        |
+| **AlpacaTradingClient** | `alpaca_client.py`             | REST client for Alpaca Trading API                      |
+| **MarketDataClient**    | `clients/market_data.py`       | HTTP client for market-data service                     |
 
 ---
 
@@ -191,10 +191,10 @@ services/trading/
 
 ### Real-Time Streaming
 
-| RPC                     | Request                        | Response                | Description                  |
-| ----------------------- | ------------------------------ | ----------------------- | ---------------------------- |
-| `StreamOrderUpdates`    | `StreamOrderUpdatesRequest`    | `stream OrderUpdate`    | Real-time order status       |
-| `StreamPositionUpdates` | `StreamPositionUpdatesRequest` | `stream PositionUpdate` | Real-time position changes   |
+| RPC                     | Request                        | Response                | Description                |
+| ----------------------- | ------------------------------ | ----------------------- | -------------------------- |
+| `StreamOrderUpdates`    | `StreamOrderUpdatesRequest`    | `stream OrderUpdate`    | Real-time order status     |
+| `StreamPositionUpdates` | `StreamPositionUpdatesRequest` | `stream PositionUpdate` | Real-time position changes |
 
 ---
 
@@ -204,13 +204,13 @@ services/trading/
 
 `RiskManager.check_order()` validates against 5 checks:
 
-| # | Check                 | Rule                             | Default    |
-| - | --------------------- | -------------------------------- | ---------- |
-| 1 | **Max Order Value**   | qty × price ≤ limit              | $5,000     |
-| 2 | **Allowed Symbols**   | symbol in whitelist              | All        |
-| 3 | **Max Position Size** | (current + new) × price ≤ limit  | $10,000    |
-| 4 | **Daily Loss Limit**  | daily_pnl > -limit               | $1,000     |
-| 5 | **Order Rate Limit**  | orders in last 60s < limit       | 10/minute  |
+| #   | Check                 | Rule                            | Default   |
+| --- | --------------------- | ------------------------------- | --------- |
+| 1   | **Max Order Value**   | qty × price ≤ limit             | $5,000    |
+| 2   | **Allowed Symbols**   | symbol in whitelist             | All       |
+| 3   | **Max Position Size** | (current + new) × price ≤ limit | $10,000   |
+| 4   | **Daily Loss Limit**  | daily_pnl > -limit              | $1,000    |
+| 5   | **Order Rate Limit**  | orders in last 60s < limit      | 10/minute |
 
 Returns: `RiskCheckResult(passed: bool, violations: list[str])`
 
@@ -261,16 +261,16 @@ PENDING ──► SUBMITTED ──► ACCEPTED ──► FILLED
     └──► REJECTED
 ```
 
-| Status      | Description                              |
-| ----------- | ---------------------------------------- |
-| `PENDING`   | Created in DB, not yet sent to Alpaca    |
-| `SUBMITTED` | Sent to Alpaca, awaiting acceptance      |
-| `ACCEPTED`  | Accepted by Alpaca, awaiting fill        |
-| `PARTIAL`   | Partially filled                         |
-| `FILLED`    | Fully filled                             |
-| `CANCELLED` | Cancelled by user or system              |
-| `REJECTED`  | Rejected by risk check or Alpaca         |
-| `EXPIRED`   | Expired (e.g., day order after market)   |
+| Status      | Description                            |
+| ----------- | -------------------------------------- |
+| `PENDING`   | Created in DB, not yet sent to Alpaca  |
+| `SUBMITTED` | Sent to Alpaca, awaiting acceptance    |
+| `ACCEPTED`  | Accepted by Alpaca, awaiting fill      |
+| `PARTIAL`   | Partially filled                       |
+| `FILLED`    | Fully filled                           |
+| `CANCELLED` | Cancelled by user or system            |
+| `REJECTED`  | Rejected by risk check or Alpaca       |
+| `EXPIRED`   | Expired (e.g., day order after market) |
 
 ### Alpaca Status Mapping
 
@@ -296,6 +296,7 @@ ALPACA_STATUS_MAP = {
 **open_position(tenant_id, session_id, symbol, side, qty, entry_price)**
 
 Creates position with:
+
 - `cost_basis = qty × entry_price`
 - `market_value = qty × entry_price`
 - `unrealized_pl = 0`
@@ -304,6 +305,7 @@ Creates position with:
 **close_position(tenant_id, session_id, symbol, exit_price)**
 
 Calculates realized P&L:
+
 - Long: `(exit_price - entry_price) × qty`
 - Short: `(entry_price - exit_price) × qty`
 
@@ -312,6 +314,7 @@ Sets `is_open = False`, `realized_pl = calculated_pnl`
 **update_prices(tenant_id, session_id, prices)**
 
 For each open position:
+
 - Updates `current_price`, `market_value`
 - Recalculates `unrealized_pl` and `unrealized_plpc`
 
@@ -468,22 +471,23 @@ APCA-API-SECRET-KEY: <api_secret>
 
 **Endpoints Used:**
 
-| Method   | Endpoint             | Purpose                   |
-| -------- | -------------------- | ------------------------- |
-| `GET`    | `/account`           | Get account info          |
-| `POST`   | `/orders`            | Submit order              |
-| `GET`    | `/orders/{id}`       | Get order by ID           |
-| `DELETE` | `/orders/{id}`       | Cancel order              |
-| `GET`    | `/positions`         | List all positions        |
-| `GET`    | `/positions/{symbol}`| Get position by symbol    |
-| `DELETE` | `/positions/{symbol}`| Close position            |
-| `DELETE` | `/positions`         | Close all positions       |
+| Method   | Endpoint              | Purpose                |
+| -------- | --------------------- | ---------------------- |
+| `GET`    | `/account`            | Get account info       |
+| `POST`   | `/orders`             | Submit order           |
+| `GET`    | `/orders/{id}`        | Get order by ID        |
+| `DELETE` | `/orders/{id}`        | Cancel order           |
+| `GET`    | `/positions`          | List all positions     |
+| `GET`    | `/positions/{symbol}` | Get position by symbol |
+| `DELETE` | `/positions/{symbol}` | Close position         |
+| `DELETE` | `/positions`          | Close all positions    |
 
 ### Market-Data Service
 
 **Base URL:** `http://localhost:8840` (configurable via `MARKET_DATA_URL`)
 
 **Used for:**
+
 - Price fetching for risk checks
 - Position value calculations
 
@@ -493,18 +497,18 @@ APCA-API-SECRET-KEY: <api_secret>
 
 ### Services That Call Trading
 
-| Service      | Use Case                     | Method                         |
-| ------------ | ---------------------------- | ------------------------------ |
-| **Frontend** | Order placement, monitoring  | All RPCs                       |
-| **Strategy** | Automated order execution    | `SubmitOrder`, `ClosePosition` |
-| **Backtest** | Simulated order execution    | Similar interface              |
+| Service      | Use Case                    | Method                         |
+| ------------ | --------------------------- | ------------------------------ |
+| **Frontend** | Order placement, monitoring | All RPCs                       |
+| **Strategy** | Automated order execution   | `SubmitOrder`, `ClosePosition` |
+| **Backtest** | Simulated order execution   | Similar interface              |
 
 ### Services That Trading Calls
 
-| Service         | Use Case                   | Method                             |
-| --------------- | -------------------------- | ---------------------------------- |
-| **Market-Data** | Current prices for risk    | HTTP `GET /quotes/{symbol}/latest` |
-| **Alpaca**      | Order execution            | REST API                           |
+| Service         | Use Case                | Method                             |
+| --------------- | ----------------------- | ---------------------------------- |
+| **Market-Data** | Current prices for risk | HTTP `GET /quotes/{symbol}/latest` |
+| **Alpaca**      | Order execution         | REST API                           |
 
 ---
 
@@ -554,22 +558,22 @@ LOG_LEVEL=INFO
 
 ## Order Types
 
-| Type            | Description                                      | Required Fields         |
-| --------------- | ------------------------------------------------ | ----------------------- |
-| `MARKET`        | Execute immediately at current market price      | symbol, side, qty       |
-| `LIMIT`         | Execute at limit price or better                 | + limit_price           |
-| `STOP`          | Trigger market order when stop price reached     | + stop_price            |
-| `STOP_LIMIT`    | Trigger limit order when stop price reached      | + stop_price, limit_price |
-| `TRAILING_STOP` | Stop price trails market by percent or amount    | + trail_percent         |
+| Type            | Description                                   | Required Fields           |
+| --------------- | --------------------------------------------- | ------------------------- |
+| `MARKET`        | Execute immediately at current market price   | symbol, side, qty         |
+| `LIMIT`         | Execute at limit price or better              | + limit_price             |
+| `STOP`          | Trigger market order when stop price reached  | + stop_price              |
+| `STOP_LIMIT`    | Trigger limit order when stop price reached   | + stop_price, limit_price |
+| `TRAILING_STOP` | Stop price trails market by percent or amount | + trail_percent           |
 
 ## Time in Force Options
 
-| TIF   | Name               | Description                                       |
-| ----- | ------------------ | ------------------------------------------------- |
-| `DAY` | Day Order          | Cancel at end of trading day                      |
-| `GTC` | Good Til Cancelled | Remains active until filled or cancelled          |
-| `IOC` | Immediate or Cancel| Fill immediately or cancel remaining              |
-| `FOK` | Fill or Kill       | Fill entire order immediately or cancel entirely  |
+| TIF   | Name                | Description                                      |
+| ----- | ------------------- | ------------------------------------------------ |
+| `DAY` | Day Order           | Cancel at end of trading day                     |
+| `GTC` | Good Til Cancelled  | Remains active until filled or cancelled         |
+| `IOC` | Immediate or Cancel | Fill immediately or cancel remaining             |
+| `FOK` | Fill or Kill        | Fill entire order immediately or cancel entirely |
 
 ---
 
@@ -578,13 +582,13 @@ LOG_LEVEL=INFO
 **Scenario: Frontend submits a limit buy order**
 
 1. **Frontend** calls `tradingClient.submitOrder({
-     symbol: "AAPL",
-     side: ORDER_SIDE_BUY,
-     type: ORDER_TYPE_LIMIT,
-     quantity: "10",
-     limit_price: "185.00",
-     time_in_force: TIME_IN_FORCE_DAY
-   })`
+  symbol: "AAPL",
+  side: ORDER_SIDE_BUY,
+  type: ORDER_TYPE_LIMIT,
+  quantity: "10",
+  limit_price: "185.00",
+  time_in_force: TIME_IN_FORCE_DAY
+})`
 
 2. **gRPC Servicer** receives `SubmitOrderRequest`
    - Extracts `tenant_id` from context
@@ -608,6 +612,7 @@ LOG_LEVEL=INFO
    - `submitted_at` timestamp set
 
 7. **Response** returned to frontend
+
    ```json
    {
      "order": {

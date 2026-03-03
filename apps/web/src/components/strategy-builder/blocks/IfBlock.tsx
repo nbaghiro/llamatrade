@@ -4,6 +4,7 @@ import { useState, useRef, useEffect } from 'react';
 import { conditionToText } from '../../../services/strategy-serializer';
 import { useStrategyBuilderStore } from '../../../store/strategy-builder';
 import type { IfBlock as IfBlockType, ConditionExpression } from '../../../types/strategy-builder';
+import { getIfColors } from '../block-theme';
 import { ConditionEditor } from '../panels/ConditionEditor';
 
 interface IfBlockProps {
@@ -63,23 +64,29 @@ export function IfBlock({ block }: IfBlockProps) {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [isEditing]);
 
+  // Determine if condition uses indicators (vs pure price)
+  const hasIndicator =
+    block.condition.left.type === 'indicator' || block.condition.right.type === 'indicator';
+
+  const colors = getIfColors(hasIndicator);
+
   return (
     <div ref={blockRef} className="relative">
-      {/* Main pill - amber/yellow for conditions */}
+      {/* Main pill - emerald for price, teal for indicator conditions */}
       <div
         data-testid="if-block"
         className={`
           inline-flex items-center gap-1.5 pl-1.5 pr-3 py-1.5 rounded-full cursor-pointer
           transition-all duration-150 select-none
-          bg-amber-500 text-white text-sm
-          ${isSelected ? 'ring-2 ring-amber-300 ring-offset-2 ring-offset-white dark:ring-offset-gray-900' : 'hover:bg-amber-600'}
+          ${colors.bg} text-white text-sm
+          ${isSelected ? `ring-2 ${colors.ring} ring-offset-2 ring-offset-white dark:ring-offset-gray-900` : colors.hover}
         `}
         onClick={handleClick}
       >
         {/* Delete button */}
         <button
           onClick={handleDeleteClick}
-          className="p-0.5 rounded-full hover:bg-amber-600 transition-colors"
+          className={`p-0.5 rounded-full ${colors.hover} transition-colors`}
           title="Delete"
         >
           <X className="w-3.5 h-3.5" />
@@ -88,7 +95,7 @@ export function IfBlock({ block }: IfBlockProps) {
         {/* Expand toggle */}
         <button
           onClick={handleExpandClick}
-          className="p-0.5 rounded-full hover:bg-amber-600 transition-colors"
+          className={`p-0.5 rounded-full ${colors.hover} transition-colors`}
         >
           <ChevronDown className={`w-3.5 h-3.5 transition-transform ${isExpanded ? '' : '-rotate-90'}`} />
         </button>
@@ -100,7 +107,7 @@ export function IfBlock({ block }: IfBlockProps) {
         {/* Edit button */}
         <button
           onClick={handleEditClick}
-          className="p-0.5 rounded-full hover:bg-amber-600 transition-colors ml-1"
+          className={`p-0.5 rounded-full ${colors.hover} transition-colors ml-1`}
           title="Edit condition"
         >
           <Pencil className="w-3 h-3" />
