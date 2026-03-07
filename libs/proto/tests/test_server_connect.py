@@ -3,6 +3,7 @@
 from unittest.mock import AsyncMock
 
 import pytest
+
 from llamatrade_proto.server.connect import (
     ASGIApplication,
     CombinedConnectApp,

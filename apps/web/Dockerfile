@@ -6,11 +6,6 @@ FROM node:20-alpine AS builder
 
 WORKDIR /app
 
-# Install buf CLI for proto generation
-RUN apk add --no-cache curl \
-    && curl -sSL "https://github.com/bufbuild/buf/releases/download/v1.47.2/buf-Linux-x86_64" -o /usr/local/bin/buf \
-    && chmod +x /usr/local/bin/buf
-
 # Copy package files for workspace setup
 COPY package.json package-lock.json ./
 COPY apps/web/package.json ./apps/web/
@@ -18,11 +13,7 @@ COPY apps/web/package.json ./apps/web/
 # Install all dependencies (workspaces)
 RUN npm ci
 
-# Copy proto files and generate TypeScript
-COPY libs/proto ./libs/proto
-RUN cd libs/proto && buf generate --template buf.gen.web.yaml
-
-# Copy web app source
+# Copy web app source (includes pre-generated proto files)
 COPY apps/web ./apps/web
 
 # Build the app

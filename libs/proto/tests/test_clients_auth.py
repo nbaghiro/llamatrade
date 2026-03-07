@@ -4,6 +4,7 @@ from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+
 from llamatrade_proto.clients.auth import (
     APIKeyValidationResult,
     AuthClient,
@@ -347,7 +348,7 @@ class TestAuthClientCheckPermission:
             allowed, reason = await client.check_permission(ctx, "strategies", "create")
 
         assert allowed is False
-        assert "Connection failed" in reason
+        assert reason is not None and "Connection failed" in reason
 
     @pytest.mark.asyncio
     async def test_check_permission_success(self) -> None:

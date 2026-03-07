@@ -1,7 +1,7 @@
 # LlamaTrade Strategy Service Dockerfile
 # Build from repo root: docker build -f services/strategy/Dockerfile -t strategy .
 
-FROM python:3.12-slim AS builder
+FROM python:3.14-slim AS builder
 
 WORKDIR /app
 
@@ -10,21 +10,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     && rm -rf /var/lib/apt/lists/*
 
-# Install buf CLI for proto generation
-RUN apt-get update && apt-get install -y --no-install-recommends curl \
-    && curl -sSL "https://github.com/bufbuild/buf/releases/download/v1.47.2/buf-Linux-x86_64" -o /usr/local/bin/buf \
-    && chmod +x /usr/local/bin/buf \
-    && rm -rf /var/lib/apt/lists/*
-
 # Copy shared libraries first (for layer caching)
 COPY libs/common /app/libs/common
 COPY libs/db /app/libs/db
 COPY libs/dsl /app/libs/dsl
 COPY libs/compiler /app/libs/compiler
 COPY libs/proto /app/libs/proto
-
-# Generate proto files
-RUN cd /app/libs/proto && buf generate --template buf.gen.python.yaml
 
 # Install shared libraries (order matters for dependencies)
 RUN pip install --no-cache-dir /app/libs/common /app/libs/db /app/libs/dsl /app/libs/compiler /app/libs/proto
@@ -35,12 +26,12 @@ COPY services/strategy/src /app/src
 RUN pip install --no-cache-dir .
 
 # Production image
-FROM python:3.12-slim
+FROM python:3.14-slim
 
 WORKDIR /app
 
 # Copy installed packages from builder
-COPY --from=builder /usr/local/lib/python3.12/site-packages /usr/local/lib/python3.12/site-packages
+COPY --from=builder /usr/local/lib/python3.14/site-packages /usr/local/lib/python3.14/site-packages
 COPY --from=builder /usr/local/bin /usr/local/bin
 
 # Copy application code

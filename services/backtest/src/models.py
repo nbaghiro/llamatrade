@@ -6,12 +6,14 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator
 
-from llamatrade_proto.generated.backtest_pb2 import (
-    BacktestStatus as BacktestStatusEnum,
+from llamatrade_proto.generated.backtest_pb2 import (  # noqa: F401
+    BACKTEST_STATUS_CANCELLED,
+    BACKTEST_STATUS_COMPLETED,
+    BACKTEST_STATUS_FAILED,
+    BACKTEST_STATUS_PENDING,
+    BACKTEST_STATUS_RUNNING,
+    BacktestStatus,
 )
-
-# Re-export for backward compatibility
-BacktestStatus = BacktestStatusEnum
 
 # ===================
 # Conversion helpers: proto int -> str (for display/API)
@@ -22,7 +24,7 @@ _BACKTEST_STATUS_PREFIX = "BACKTEST_STATUS_"
 
 def backtest_status_to_str(value: int) -> str:
     """Convert BacktestStatus proto int to string."""
-    name = BacktestStatusEnum.Name(value)
+    name = BacktestStatus.Name(value)
     if name.startswith(_BACKTEST_STATUS_PREFIX):
         return name[len(_BACKTEST_STATUS_PREFIX) :].lower()
     return name.lower()

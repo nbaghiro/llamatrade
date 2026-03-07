@@ -3,6 +3,7 @@
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+
 from llamatrade_proto.server.base import GRPCServer
 
 

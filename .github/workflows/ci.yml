@@ -70,14 +70,6 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
-      - name: Install buf CLI
-        uses: bufbuild/buf-setup-action@v1
-        with:
-          version: latest
-
-      - name: Generate proto files
-        run: cd libs/proto && buf generate --template buf.gen.python.yaml
-
       - name: Install shared libs
         run: |
           pip install -e libs/common[dev]

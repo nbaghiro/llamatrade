@@ -3,6 +3,7 @@
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+
 from llamatrade_proto.interceptors.auth import (
     AuthInterceptor,
     ClientAuthInterceptor,

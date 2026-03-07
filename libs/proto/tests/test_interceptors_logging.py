@@ -4,6 +4,7 @@ import logging
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+
 from llamatrade_proto.interceptors.logging import (
     ClientLoggingInterceptor,
     LoggingInterceptor,

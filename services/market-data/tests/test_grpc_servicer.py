@@ -390,7 +390,7 @@ class TestGetMarketStatus:
         mock_trading_client.get_clock = AsyncMock(return_value=mock_clock)
 
         with patch(
-            "src.grpc.servicer.get_alpaca_trading_client",
+            "src.grpc.servicer.get_trading_client_async",
             return_value=mock_trading_client,
         ):
             request = MockGetMarketStatusRequest()

@@ -5,6 +5,7 @@ from decimal import Decimal
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+
 from llamatrade_proto.clients.auth import TenantContext
 from llamatrade_proto.clients.backtest import (
     BacktestClient,
