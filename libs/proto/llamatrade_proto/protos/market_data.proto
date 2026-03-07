@@ -1,0 +1,184 @@
+syntax = "proto3";
+
+package llamatrade;
+
+import "common.proto";
+
+option java_multiple_files = true;
+option java_package = "com.llamatrade.api";
+
+// =============================================================================
+// ENUMS
+// =============================================================================
+
+// Timeframe for bar data
+enum Timeframe {
+  TIMEFRAME_UNSPECIFIED = 0;
+  TIMEFRAME_1MIN = 1;
+  TIMEFRAME_5MIN = 2;
+  TIMEFRAME_15MIN = 3;
+  TIMEFRAME_30MIN = 4;
+  TIMEFRAME_1HOUR = 5;
+  TIMEFRAME_4HOUR = 6;
+  TIMEFRAME_1DAY = 7;
+  TIMEFRAME_1WEEK = 8;
+  TIMEFRAME_1MONTH = 9;
+}
+
+// Market status
+enum MarketStatus {
+  MARKET_STATUS_UNSPECIFIED = 0;
+  MARKET_STATUS_OPEN = 1;
+  MARKET_STATUS_CLOSED = 2;
+  MARKET_STATUS_PRE_MARKET = 3;
+  MARKET_STATUS_AFTER_HOURS = 4;
+}
+
+// =============================================================================
+// MESSAGES
+// =============================================================================
+
+// OHLCV bar data
+message Bar {
+  string symbol = 1;
+  Timestamp timestamp = 2;
+  Decimal open = 3;
+  Decimal high = 4;
+  Decimal low = 5;
+  Decimal close = 6;
+  int64 volume = 7;
+  int64 trade_count = 8;
+  Decimal vwap = 9;  // Volume-weighted average price
+}
+
+// Real-time quote (bid/ask)
+message Quote {
+  string symbol = 1;
+  Timestamp timestamp = 2;
+  Decimal bid_price = 3;
+  int64 bid_size = 4;
+  Decimal ask_price = 5;
+  int64 ask_size = 6;
+  string bid_exchange = 7;
+  string ask_exchange = 8;
+}
+
+// Trade tick data
+message Trade {
+  string symbol = 1;
+  Timestamp timestamp = 2;
+  Decimal price = 3;
+  int64 size = 4;
+  string exchange = 5;
+  string trade_id = 6;
+  repeated string conditions = 7;
+}
+
+// Snapshot of current market data
+message Snapshot {
+  string symbol = 1;
+  Bar latest_bar = 2;
+  Quote latest_quote = 3;
+  Trade latest_trade = 4;
+  Bar daily_bar = 5;
+  Bar previous_daily_bar = 6;
+  Decimal change = 7;
+  Decimal change_percent = 8;
+}
+
+// =============================================================================
+// REQUESTS & RESPONSES
+// =============================================================================
+
+// Stream bars request
+message StreamBarsRequest {
+  repeated string symbols = 1;
+  Timeframe timeframe = 2;
+}
+
+// Get historical bars request
+message GetHistoricalBarsRequest {
+  string symbol = 1;
+  Timestamp start = 2;
+  Timestamp end = 3;
+  Timeframe timeframe = 4;
+  PaginationRequest pagination = 5;
+  bool adjust_for_splits = 6;
+}
+
+message GetHistoricalBarsResponse {
+  repeated Bar bars = 1;
+  string next_page_token = 2;
+  PaginationResponse pagination = 3;
+}
+
+// Get multiple symbols bars
+message GetMultiBarsRequest {
+  repeated string symbols = 1;
+  Timestamp start = 2;
+  Timestamp end = 3;
+  Timeframe timeframe = 4;
+  int32 limit = 5;
+}
+
+message GetMultiBarsResponse {
+  map<string, BarList> bars = 1;
+}
+
+message BarList {
+  repeated Bar bars = 1;
+}
+
+// Stream quotes request
+message StreamQuotesRequest {
+  repeated string symbols = 1;
+}
+
+// Stream trades request
+message StreamTradesRequest {
+  repeated string symbols = 1;
+}
+
+// Get snapshot request
+message GetSnapshotRequest {
+  string symbol = 1;
+}
+
+message GetSnapshotsRequest {
+  repeated string symbols = 1;
+}
+
+message GetSnapshotsResponse {
+  map<string, Snapshot> snapshots = 1;
+}
+
+// Get market status
+message GetMarketStatusRequest {}
+
+message GetMarketStatusResponse {
+  MarketStatus status = 1;
+  Timestamp next_open = 2;
+  Timestamp next_close = 3;
+}
+
+// =============================================================================
+// SERVICE
+// =============================================================================
+
+service MarketDataService {
+  // Streaming endpoints
+  rpc StreamBars(StreamBarsRequest) returns (stream Bar);
+  rpc StreamQuotes(StreamQuotesRequest) returns (stream Quote);
+  rpc StreamTrades(StreamTradesRequest) returns (stream Trade);
+
+  // Historical data
+  rpc GetHistoricalBars(GetHistoricalBarsRequest) returns (GetHistoricalBarsResponse);
+  rpc GetMultiBars(GetMultiBarsRequest) returns (GetMultiBarsResponse);
+
+  // Snapshots
+  rpc GetSnapshot(GetSnapshotRequest) returns (Snapshot);
+  rpc GetSnapshots(GetSnapshotsRequest) returns (GetSnapshotsResponse);
+
+  // Market info
+  rpc GetMarketStatus(GetMarketStatusRequest) returns (GetMarketStatusResponse);
+}

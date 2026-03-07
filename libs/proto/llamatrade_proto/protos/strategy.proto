@@ -1,0 +1,358 @@
+syntax = "proto3";
+
+package llamatrade;
+
+import "common.proto";
+
+option java_multiple_files = true;
+option java_package = "com.llamatrade.api";
+
+// =============================================================================
+// ENUMS
+// =============================================================================
+
+// Strategy status
+enum StrategyStatus {
+  STRATEGY_STATUS_UNSPECIFIED = 0;
+  STRATEGY_STATUS_DRAFT = 1;
+  STRATEGY_STATUS_ACTIVE = 2;
+  STRATEGY_STATUS_PAUSED = 3;
+  STRATEGY_STATUS_ARCHIVED = 4;
+}
+
+// =============================================================================
+// MESSAGES
+// =============================================================================
+
+// Strategy definition
+message Strategy {
+  string id = 1;
+  string tenant_id = 2;
+  string name = 3;
+  string description = 4;
+  StrategyStatus status = 5;
+  int32 version = 6;
+
+  // DSL definition
+  string dsl_code = 7;
+
+  // Compiled strategy (JSON representation)
+  string compiled_json = 8;
+
+  // Template info (for template-based creation)
+  string template_id = 9;
+  map<string, string> template_params = 10;
+
+  // Configuration
+  repeated string symbols = 11;
+  string timeframe = 12;
+  map<string, string> parameters = 13;
+
+  // Metadata
+  string created_by = 14;
+  Timestamp created_at = 15;
+  Timestamp updated_at = 16;
+
+  // Performance summary (from backtests)
+  Decimal best_sharpe = 17;
+  Decimal best_return = 18;
+}
+
+// Strategy version for history
+message StrategyVersion {
+  string strategy_id = 1;
+  int32 version = 2;
+  string dsl_code = 3;
+  string compiled_json = 4;
+  map<string, string> parameters = 5;
+  string change_summary = 6;
+  string created_by = 7;
+  Timestamp created_at = 8;
+}
+
+// DSL compilation result
+message CompilationResult {
+  bool success = 1;
+  string compiled_json = 2;
+  repeated CompilationError errors = 3;
+  repeated CompilationWarning warnings = 4;
+}
+
+message CompilationError {
+  int32 line = 1;
+  int32 column = 2;
+  string message = 3;
+  string code = 4;
+}
+
+message CompilationWarning {
+  int32 line = 1;
+  int32 column = 2;
+  string message = 3;
+  string code = 4;
+}
+
+// DSL validation result
+message ValidationResult {
+  bool valid = 1;
+  repeated CompilationError errors = 2;
+  repeated CompilationWarning warnings = 3;
+  repeated string detected_symbols = 4;
+  repeated string detected_indicators = 5;
+}
+
+// Strategy execution (paper or live trading session)
+message StrategyExecution {
+  string id = 1;
+  string strategy_id = 2;
+  string tenant_id = 3;
+  int32 version = 4;  // Strategy version being executed
+  ExecutionMode mode = 5;
+  ExecutionStatus status = 6;
+
+  // Runtime configuration overrides
+  repeated string symbols = 7;
+  string timeframe = 8;
+  map<string, string> config_override = 9;
+
+  // Execution metadata
+  Timestamp started_at = 10;
+  Timestamp stopped_at = 11;
+  string error_message = 12;
+
+  // Timestamps
+  Timestamp created_at = 13;
+  Timestamp updated_at = 14;
+}
+
+// =============================================================================
+// REQUESTS & RESPONSES
+// =============================================================================
+
+// Get strategy
+message GetStrategyRequest {
+  TenantContext context = 1;
+  string strategy_id = 2;
+  int32 version = 3;  // Optional: specific version (0 = latest)
+}
+
+message GetStrategyResponse {
+  Strategy strategy = 1;
+}
+
+// List strategies
+message ListStrategiesRequest {
+  TenantContext context = 1;
+  repeated StrategyStatus statuses = 2;
+  string search = 3;  // Search by name/description
+  PaginationRequest pagination = 4;
+  SortSpec sort = 5;
+}
+
+message ListStrategiesResponse {
+  repeated Strategy strategies = 1;
+  PaginationResponse pagination = 2;
+}
+
+// Create strategy
+message CreateStrategyRequest {
+  TenantContext context = 1;
+  string name = 2;
+  string description = 3;
+  string dsl_code = 4;
+  string template_id = 5;  // For template-based creation
+  map<string, string> template_params = 6;
+  repeated string symbols = 7;
+  string timeframe = 8;
+  map<string, string> parameters = 9;
+}
+
+message CreateStrategyResponse {
+  Strategy strategy = 1;
+}
+
+// Update strategy
+message UpdateStrategyRequest {
+  TenantContext context = 1;
+  string strategy_id = 2;
+  string name = 3;
+  string description = 4;
+  string dsl_code = 5;
+  repeated string symbols = 6;
+  string timeframe = 7;
+  map<string, string> parameters = 8;
+  string change_summary = 9;  // For version history
+}
+
+message UpdateStrategyResponse {
+  Strategy strategy = 1;
+}
+
+// Delete strategy
+message DeleteStrategyRequest {
+  TenantContext context = 1;
+  string strategy_id = 2;
+}
+
+message DeleteStrategyResponse {
+  bool success = 1;
+}
+
+// Compile DSL strategy
+message CompileStrategyRequest {
+  TenantContext context = 1;
+  string dsl_code = 2;
+  bool validate_only = 3;  // Just validate, don't compile
+}
+
+message CompileStrategyResponse {
+  CompilationResult result = 1;
+}
+
+// Validate strategy
+message ValidateStrategyRequest {
+  TenantContext context = 1;
+  string strategy_id = 2;
+  int32 version = 3;
+}
+
+message ValidateStrategyResponse {
+  ValidationResult result = 1;
+}
+
+// Get strategy versions
+message ListStrategyVersionsRequest {
+  TenantContext context = 1;
+  string strategy_id = 2;
+  PaginationRequest pagination = 3;
+}
+
+message ListStrategyVersionsResponse {
+  repeated StrategyVersion versions = 1;
+  PaginationResponse pagination = 2;
+}
+
+// Update strategy status
+message UpdateStrategyStatusRequest {
+  TenantContext context = 1;
+  string strategy_id = 2;
+  StrategyStatus status = 3;
+}
+
+message UpdateStrategyStatusResponse {
+  Strategy strategy = 1;
+}
+
+// Clone strategy
+message CloneStrategyRequest {
+  TenantContext context = 1;
+  string strategy_id = 2;
+  string new_name = 3;  // Name for the cloned strategy
+  int32 version = 4;    // Optional: version to clone (0 = latest)
+}
+
+message CloneStrategyResponse {
+  Strategy strategy = 1;
+}
+
+// Create execution
+message CreateExecutionRequest {
+  TenantContext context = 1;
+  string strategy_id = 2;
+  int32 version = 3;            // Optional: strategy version (0 = current)
+  ExecutionMode mode = 4;
+  map<string, string> config_override = 5;  // Runtime config overrides
+}
+
+message CreateExecutionResponse {
+  StrategyExecution execution = 1;
+}
+
+// Get execution
+message GetExecutionRequest {
+  TenantContext context = 1;
+  string execution_id = 2;
+}
+
+message GetExecutionResponse {
+  StrategyExecution execution = 1;
+}
+
+// List executions
+message ListExecutionsRequest {
+  TenantContext context = 1;
+  string strategy_id = 2;  // Optional: filter by strategy
+  repeated ExecutionStatus statuses = 3;  // Optional: filter by status
+  repeated ExecutionMode modes = 4;       // Optional: filter by mode
+  PaginationRequest pagination = 5;
+}
+
+message ListExecutionsResponse {
+  repeated StrategyExecution executions = 1;
+  PaginationResponse pagination = 2;
+}
+
+// Start execution
+message StartExecutionRequest {
+  TenantContext context = 1;
+  string execution_id = 2;
+}
+
+message StartExecutionResponse {
+  StrategyExecution execution = 1;
+}
+
+// Pause execution
+message PauseExecutionRequest {
+  TenantContext context = 1;
+  string execution_id = 2;
+}
+
+message PauseExecutionResponse {
+  StrategyExecution execution = 1;
+}
+
+// Stop execution
+message StopExecutionRequest {
+  TenantContext context = 1;
+  string execution_id = 2;
+  string reason = 3;  // Optional: reason for stopping
+}
+
+message StopExecutionResponse {
+  StrategyExecution execution = 1;
+}
+
+// =============================================================================
+// SERVICE
+// =============================================================================
+
+service StrategyService {
+  // CRUD operations
+  rpc GetStrategy(GetStrategyRequest) returns (GetStrategyResponse);
+  rpc ListStrategies(ListStrategiesRequest) returns (ListStrategiesResponse);
+  rpc CreateStrategy(CreateStrategyRequest) returns (CreateStrategyResponse);
+  rpc UpdateStrategy(UpdateStrategyRequest) returns (UpdateStrategyResponse);
+  rpc DeleteStrategy(DeleteStrategyRequest) returns (DeleteStrategyResponse);
+
+  // Clone strategy
+  rpc CloneStrategy(CloneStrategyRequest) returns (CloneStrategyResponse);
+
+  // DSL operations
+  rpc CompileStrategy(CompileStrategyRequest) returns (CompileStrategyResponse);
+  rpc ValidateStrategy(ValidateStrategyRequest) returns (ValidateStrategyResponse);
+
+  // Version management
+  rpc ListStrategyVersions(ListStrategyVersionsRequest) returns (ListStrategyVersionsResponse);
+
+  // Status management
+  rpc UpdateStrategyStatus(UpdateStrategyStatusRequest) returns (UpdateStrategyStatusResponse);
+
+  // Execution management
+  rpc CreateExecution(CreateExecutionRequest) returns (CreateExecutionResponse);
+  rpc GetExecution(GetExecutionRequest) returns (GetExecutionResponse);
+  rpc ListExecutions(ListExecutionsRequest) returns (ListExecutionsResponse);
+  rpc StartExecution(StartExecutionRequest) returns (StartExecutionResponse);
+  rpc PauseExecution(PauseExecutionRequest) returns (PauseExecutionResponse);
+  rpc StopExecution(StopExecutionRequest) returns (StopExecutionResponse);
+}

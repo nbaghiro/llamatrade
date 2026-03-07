@@ -26,7 +26,7 @@ breaking:
 # Clean generated files
 clean:
 	@echo "Cleaning generated files..."
-	rm -rf ../grpc/llamatrade_grpc/generated/*
+	rm -rf llamatrade_proto/generated/*
 	@echo "Done!"
 
 # Install buf CLI

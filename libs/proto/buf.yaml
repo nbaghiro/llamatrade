@@ -1,6 +1,6 @@
 version: v2
 modules:
-  - path: .
+  - path: llamatrade_proto/protos
     name: buf.build/llamatrade/api
 lint:
   use:
