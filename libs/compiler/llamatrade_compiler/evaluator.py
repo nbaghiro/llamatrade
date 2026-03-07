@@ -1,22 +1,23 @@
-"""Condition evaluator for strategy entry/exit rules.
+"""Condition evaluator for allocation strategy rules.
 
-Evaluates AST condition trees against the current evaluation state,
-returning boolean results for entry/exit signals.
+Evaluates Condition AST nodes against the current evaluation state,
+returning boolean results for If block branch selection.
 """
 
-from datetime import datetime
-
-from llamatrade_dsl.ast import ASTNode, FunctionCall, Keyword, Literal, Symbol
-from llamatrade_dsl.validator import (
-    ARITHMETIC_OPS,
-    COMPARATORS,
-    CROSSOVER_OPS,
-    INDICATORS,
-    LOGICAL_OPS,
-    SPECIAL_OPS,
-)
+import numpy as np
 
 from llamatrade_compiler.state import EvaluationState
+from llamatrade_dsl import (
+    Comparison,
+    Condition,
+    Crossover,
+    Indicator,
+    LogicalOp,
+    Metric,
+    NumericLiteral,
+    Price,
+    Value,
+)
 
 
 class EvaluationError(Exception):
@@ -25,205 +26,58 @@ class EvaluationError(Exception):
     pass
 
 
-def _resolve_value(node: ASTNode, state: EvaluationState) -> float:
-    """Resolve an AST node to a numeric value.
+def _resolve_value(value: Value, state: EvaluationState) -> float:
+    """Resolve a Value node to a numeric value.
 
     Args:
-        node: AST node to resolve
+        value: Value node to resolve
         state: Current evaluation state
 
     Returns:
         The numeric value
 
     Raises:
-        EvaluationError: If the node cannot be resolved
+        EvaluationError: If the value cannot be resolved
     """
-    if isinstance(node, Literal):
-        if isinstance(node.value, bool):
-            return 1.0 if node.value else 0.0
-        if isinstance(node.value, (int, float)):
-            return float(node.value)
-        raise EvaluationError(f"Cannot convert literal to number: {node.value}")
+    if isinstance(value, NumericLiteral):
+        return float(value.value)
 
-    if isinstance(node, Symbol):
-        return state.get_value(node.name)
+    if isinstance(value, Price):
+        return state.get_price(value.symbol, value.field)
 
-    if isinstance(node, FunctionCall):
-        return _evaluate_numeric(node, state)
+    if isinstance(value, Indicator):
+        return state.get_indicator_value(value)
 
-    if isinstance(node, Keyword):
-        raise EvaluationError(f"Unexpected keyword in numeric context: {node.name}")
+    if isinstance(value, Metric):
+        return state.get_metric_value(value)
 
-    raise EvaluationError(f"Unknown node type: {type(node)}")
+    raise EvaluationError(f"Cannot resolve value: {type(value)}")
 
 
-def _evaluate_numeric(call: FunctionCall, state: EvaluationState) -> float:
-    """Evaluate a function call that returns a number.
+def _get_prev_value(value: Value, state: EvaluationState) -> float:
+    """Get the previous bar's value for a Value node."""
+    if isinstance(value, NumericLiteral):
+        return float(value.value)
 
-    Args:
-        call: The function call node
-        state: Current evaluation state
+    if isinstance(value, Price):
+        return state.get_prev_price(value.symbol, value.field)
 
-    Returns:
-        The numeric result
-    """
-    name = call.name
-    args = call.args
+    if isinstance(value, Indicator):
+        return state.get_prev_indicator_value(value)
 
-    # Indicator calls
-    if name in INDICATORS:
-        return _evaluate_indicator(call, state)
+    if isinstance(value, Metric):
+        # Metrics typically don't have prev value - use current
+        return state.get_metric_value(value)
 
-    # Arithmetic operations
-    if name in ARITHMETIC_OPS:
-        return _evaluate_arithmetic(name, args, state)
-
-    # Special functions that return numbers
-    if name == "prev":
-        return _evaluate_prev(args, state)
-
-    if name == "position-pnl-pct":
-        pnl = state.position_pnl_pct()
-        return pnl if pnl is not None else 0.0
-
-    raise EvaluationError(f"Function {name} does not return a number")
+    raise EvaluationError(f"Cannot get previous value of: {type(value)}")
 
 
-def _evaluate_indicator(call: FunctionCall, state: EvaluationState) -> float:
-    """Evaluate an indicator reference.
+def _evaluate_comparison(comparison: Comparison, state: EvaluationState) -> bool:
+    """Evaluate a Comparison condition."""
+    left_val = _resolve_value(comparison.left, state)
+    right_val = _resolve_value(comparison.right, state)
 
-    Looks up the indicator value from pre-computed state.
-    """
-    # Build the cache key from the call
-    parts = [call.name]
-
-    # Extract source and params
-    source = "close"
-    params: list[str] = []
-    output_field: str | None = None
-
-    for arg in call.args:
-        if isinstance(arg, Symbol):
-            source = arg.name
-        elif isinstance(arg, Literal) and isinstance(arg.value, (int, float)):
-            params.append(str(arg.value))
-        elif isinstance(arg, Keyword):
-            output_field = arg.name
-
-    parts.append(source)
-    parts.extend(params)
-    if output_field:
-        parts.append(output_field)
-
-    key = "_".join(parts)
-
-    try:
-        return state.get_indicator(key)
-    except KeyError:
-        # Try without output field for single-output indicators
-        if output_field:
-            key_without_field = "_".join(parts[:-1])
-            try:
-                return state.get_indicator(key_without_field)
-            except KeyError:
-                pass
-        raise EvaluationError(f"Indicator not found: {key}")
-
-
-def _evaluate_arithmetic(name: str, args: tuple[ASTNode, ...], state: EvaluationState) -> float:
-    """Evaluate arithmetic operations."""
-    if name == "abs":
-        if len(args) != 1:
-            raise EvaluationError("abs requires exactly 1 argument")
-        return abs(_resolve_value(args[0], state))
-
-    values = [_resolve_value(arg, state) for arg in args]
-
-    if name == "+":
-        return sum(values)
-
-    if name == "-":
-        if len(values) != 2:
-            raise EvaluationError("- requires exactly 2 arguments")
-        return values[0] - values[1]
-
-    if name == "*":
-        result = 1.0
-        for v in values:
-            result *= v
-        return result
-
-    if name == "/":
-        if len(values) != 2:
-            raise EvaluationError("/ requires exactly 2 arguments")
-        if values[1] == 0:
-            raise EvaluationError("Division by zero")
-        return values[0] / values[1]
-
-    if name == "min":
-        return min(values)
-
-    if name == "max":
-        return max(values)
-
-    raise EvaluationError(f"Unknown arithmetic operation: {name}")
-
-
-def _evaluate_prev(args: tuple[ASTNode, ...], state: EvaluationState) -> float:
-    """Evaluate (prev expr n) - get value n bars ago."""
-    if len(args) != 2:
-        raise EvaluationError("prev requires exactly 2 arguments")
-
-    offset_node = args[1]
-    if not isinstance(offset_node, Literal) or not isinstance(offset_node.value, int):
-        raise EvaluationError("prev offset must be an integer literal")
-
-    offset = offset_node.value
-    expr = args[0]
-
-    # For symbols, use state's offset method
-    if isinstance(expr, Symbol):
-        return state.get_value_at_offset(expr.name, offset)
-
-    # For indicators, get from array
-    if isinstance(expr, FunctionCall) and expr.name in INDICATORS:
-        key = _build_indicator_key(expr)
-        arr = state.get_indicator_array(key)
-        if offset >= len(arr):
-            raise EvaluationError(f"Not enough history for offset {offset}")
-        return float(arr[-(offset + 1)])
-
-    raise EvaluationError(f"prev not supported for: {type(expr)}")
-
-
-def _build_indicator_key(call: FunctionCall) -> str:
-    """Build a cache key for an indicator call."""
-    parts = [call.name]
-    source = "close"
-    params: list[str] = []
-    output_field: str | None = None
-
-    for arg in call.args:
-        if isinstance(arg, Symbol):
-            source = arg.name
-        elif isinstance(arg, Literal) and isinstance(arg.value, (int, float)):
-            params.append(str(arg.value))
-        elif isinstance(arg, Keyword):
-            output_field = arg.name
-
-    parts.append(source)
-    parts.extend(params)
-    if output_field:
-        parts.append(output_field)
-
-    return "_".join(parts)
-
-
-def _evaluate_comparison(op: str, left: ASTNode, right: ASTNode, state: EvaluationState) -> bool:
-    """Evaluate a comparison operation."""
-    left_val = _resolve_value(left, state)
-    right_val = _resolve_value(right, state)
-
+    op = comparison.operator
     if op == ">":
         return left_val > right_val
     if op == "<":
@@ -240,115 +94,50 @@ def _evaluate_comparison(op: str, left: ASTNode, right: ASTNode, state: Evaluati
     raise EvaluationError(f"Unknown comparison operator: {op}")
 
 
-def _evaluate_crossover(name: str, left: ASTNode, right: ASTNode, state: EvaluationState) -> bool:
-    """Evaluate crossover operations.
+def _evaluate_crossover(crossover: Crossover, state: EvaluationState) -> bool:
+    """Evaluate a Crossover condition.
 
-    cross-above: left was <= right, now left > right
-    cross-below: left was >= right, now left < right
+    cross-above: fast was <= slow, now fast > slow
+    cross-below: fast was >= slow, now fast < slow
     """
-    # Current values
-    left_curr = _resolve_value(left, state)
-    right_curr = _resolve_value(right, state)
+    fast_curr = _resolve_value(crossover.fast, state)
+    slow_curr = _resolve_value(crossover.slow, state)
+    fast_prev = _get_prev_value(crossover.fast, state)
+    slow_prev = _get_prev_value(crossover.slow, state)
 
-    # Previous values
-    left_prev = _get_prev_value(left, state)
-    right_prev = _get_prev_value(right, state)
+    if crossover.direction == "above":
+        return fast_prev <= slow_prev and fast_curr > slow_curr
 
-    if name == "cross-above":
-        return left_prev <= right_prev and left_curr > right_curr
+    if crossover.direction == "below":
+        return fast_prev >= slow_prev and fast_curr < slow_curr
 
-    if name == "cross-below":
-        return left_prev >= right_prev and left_curr < right_curr
-
-    raise EvaluationError(f"Unknown crossover operator: {name}")
+    raise EvaluationError(f"Unknown crossover direction: {crossover.direction}")
 
 
-def _get_prev_value(node: ASTNode, state: EvaluationState) -> float:
-    """Get the previous bar's value for a node."""
-    if isinstance(node, Literal):
-        if isinstance(node.value, (int, float)):
-            return float(node.value)
-        raise EvaluationError(f"Cannot get previous value of: {node.value}")
+def _evaluate_logical(logical: LogicalOp, state: EvaluationState) -> bool:
+    """Evaluate a LogicalOp condition."""
+    op = logical.operator
+    operands = logical.operands
 
-    if isinstance(node, Symbol):
-        return state.get_prev_value(node.name)
+    if op == "and":
+        return all(evaluate_condition(operand, state) for operand in operands)
 
-    if isinstance(node, FunctionCall):
-        if node.name in INDICATORS:
-            key = _build_indicator_key(node)
-            arr = state.get_indicator_array(key)
-            if len(arr) < 2:
-                raise EvaluationError("Not enough history for previous value")
-            return float(arr[-2])
+    if op == "or":
+        return any(evaluate_condition(operand, state) for operand in operands)
 
-        # For arithmetic, recursively compute with prev values
-        if node.name in ARITHMETIC_OPS:
-            # This is complex - for now, raise an error
-            raise EvaluationError(f"Crossover with arithmetic not fully supported: {node.name}")
+    if op == "not":
+        if len(operands) != 1:
+            raise EvaluationError("'not' requires exactly 1 operand")
+        return not evaluate_condition(operands[0], state)
 
-    raise EvaluationError(f"Cannot get previous value of: {type(node)}")
+    raise EvaluationError(f"Unknown logical operator: {op}")
 
 
-def _evaluate_logical(name: str, args: tuple[ASTNode, ...], state: EvaluationState) -> bool:
-    """Evaluate logical operations."""
-    if name == "and":
-        return all(evaluate_condition(arg, state) for arg in args)
-
-    if name == "or":
-        return any(evaluate_condition(arg, state) for arg in args)
-
-    if name == "not":
-        if len(args) != 1:
-            raise EvaluationError("not requires exactly 1 argument")
-        return not evaluate_condition(args[0], state)
-
-    raise EvaluationError(f"Unknown logical operator: {name}")
-
-
-def _evaluate_special(name: str, args: tuple[ASTNode, ...], state: EvaluationState) -> bool:
-    """Evaluate special boolean functions."""
-    if name == "has-position":
-        return state.has_position()
-
-    if name == "market-hours":
-        # For now, always return True - can be enhanced with market calendar
-        return True
-
-    if name == "time-between":
-        # (time-between "09:30" "16:00")
-        if len(args) != 2:
-            raise EvaluationError("time-between requires exactly 2 arguments")
-
-        start_str = args[0].value if isinstance(args[0], Literal) else ""
-        end_str = args[1].value if isinstance(args[1], Literal) else ""
-
-        if not isinstance(start_str, str) or not isinstance(end_str, str):
-            raise EvaluationError("time-between requires string arguments")
-
-        current_time = state.current_bar.timestamp.time()
-        start_time = datetime.strptime(start_str, "%H:%M").time()
-        end_time = datetime.strptime(end_str, "%H:%M").time()
-
-        return start_time <= current_time <= end_time
-
-    if name == "day-of-week":
-        # (day-of-week 1 2 3 4 5) - weekday numbers (0=Monday)
-        days = []
-        for arg in args:
-            if isinstance(arg, Literal) and isinstance(arg.value, int):
-                days.append(arg.value)
-
-        current_day = state.current_bar.timestamp.weekday()
-        return current_day in days
-
-    raise EvaluationError(f"Unknown special function: {name}")
-
-
-def evaluate_condition(node: ASTNode, state: EvaluationState) -> bool:
-    """Evaluate an AST condition node.
+def evaluate_condition(condition: Condition, state: EvaluationState) -> bool:
+    """Evaluate a Condition AST node.
 
     Args:
-        node: The condition AST node
+        condition: The condition to evaluate
         state: Current evaluation state
 
     Returns:
@@ -357,67 +146,128 @@ def evaluate_condition(node: ASTNode, state: EvaluationState) -> bool:
     Raises:
         EvaluationError: If condition cannot be evaluated
     """
-    if isinstance(node, Literal):
-        if isinstance(node.value, bool):
-            return node.value
-        raise EvaluationError(f"Non-boolean literal in condition context: {node.value}")
+    if isinstance(condition, Comparison):
+        return _evaluate_comparison(condition, state)
 
-    if isinstance(node, FunctionCall):
-        name = node.name
-        args = node.args
+    if isinstance(condition, Crossover):
+        return _evaluate_crossover(condition, state)
 
-        # Comparison operators
-        if name in COMPARATORS:
-            if len(args) != 2:
-                raise EvaluationError(f"Comparator {name} requires exactly 2 arguments")
-            return _evaluate_comparison(name, args[0], args[1], state)
+    if isinstance(condition, LogicalOp):
+        return _evaluate_logical(condition, state)
 
-        # Logical operators
-        if name in LOGICAL_OPS:
-            return _evaluate_logical(name, args, state)
-
-        # Crossover operators
-        if name in CROSSOVER_OPS:
-            if len(args) != 2:
-                raise EvaluationError(f"Crossover {name} requires exactly 2 arguments")
-            return _evaluate_crossover(name, args[0], args[1], state)
-
-        # Special functions
-        if name in SPECIAL_OPS:
-            return _evaluate_special(name, args, state)
-
-        raise EvaluationError(f"Function {name} does not return boolean")
-
-    raise EvaluationError(f"Cannot evaluate as condition: {type(node)}")
+    raise EvaluationError(f"Cannot evaluate condition: {type(condition)}")
 
 
-def evaluate_entry(state: EvaluationState, entry_condition: ASTNode) -> bool:
-    """Evaluate entry condition.
+def evaluate_condition_safe(condition: Condition, state: EvaluationState) -> bool:
+    """Evaluate a condition, returning False on error.
 
     Args:
+        condition: The condition to evaluate
         state: Current evaluation state
-        entry_condition: The entry condition AST
 
     Returns:
-        True if entry signal should be generated
+        True if condition is met, False if not met or on error
     """
     try:
-        return evaluate_condition(entry_condition, state)
+        return evaluate_condition(condition, state)
     except EvaluationError:
+        return False
+    except KeyError, ValueError, IndexError:
         return False
 
 
-def evaluate_exit(state: EvaluationState, exit_condition: ASTNode) -> bool:
-    """Evaluate exit condition.
+def evaluate_condition_vectorized(
+    condition: Condition,
+    indicator_data: dict[str, np.ndarray],
+    price_data: dict[str, dict[str, np.ndarray]],
+) -> np.ndarray:
+    """Evaluate a condition in vectorized form for backtesting.
 
     Args:
-        state: Current evaluation state
-        exit_condition: The exit condition AST
+        condition: The condition to evaluate
+        indicator_data: Dict mapping indicator keys to arrays
+        price_data: Dict mapping symbol -> field -> price arrays
 
     Returns:
-        True if exit signal should be generated
+        Boolean array where True indicates condition is met
     """
-    try:
-        return evaluate_condition(exit_condition, state)
-    except EvaluationError:
-        return False
+    if isinstance(condition, Comparison):
+        left = _get_vectorized_value(condition.left, indicator_data, price_data)
+        right = _get_vectorized_value(condition.right, indicator_data, price_data)
+
+        op = condition.operator
+        if op == ">":
+            return left > right
+        if op == "<":
+            return left < right
+        if op == ">=":
+            return left >= right
+        if op == "<=":
+            return left <= right
+        if op == "=" or op == "==":
+            return left == right
+        if op == "!=":
+            return left != right
+
+    if isinstance(condition, Crossover):
+        fast = _get_vectorized_value(condition.fast, indicator_data, price_data)
+        slow = _get_vectorized_value(condition.slow, indicator_data, price_data)
+
+        prev_fast = np.roll(fast, 1)
+        prev_slow = np.roll(slow, 1)
+        prev_fast[0] = np.nan
+        prev_slow[0] = np.nan
+
+        if condition.direction == "above":
+            return (prev_fast <= prev_slow) & (fast > slow)
+        else:
+            return (prev_fast >= prev_slow) & (fast < slow)
+
+    if isinstance(condition, LogicalOp):
+        if condition.operator == "and":
+            result = np.ones(len(price_data[next(iter(price_data))]["close"]), dtype=bool)
+            for operand in condition.operands:
+                result &= evaluate_condition_vectorized(operand, indicator_data, price_data)
+            return result
+
+        if condition.operator == "or":
+            result = np.zeros(len(price_data[next(iter(price_data))]["close"]), dtype=bool)
+            for operand in condition.operands:
+                result |= evaluate_condition_vectorized(operand, indicator_data, price_data)
+            return result
+
+        if condition.operator == "not":
+            return ~evaluate_condition_vectorized(condition.operands[0], indicator_data, price_data)
+
+    raise EvaluationError(f"Cannot vectorize condition: {type(condition)}")
+
+
+def _get_vectorized_value(
+    value: Value,
+    indicator_data: dict[str, np.ndarray],
+    price_data: dict[str, dict[str, np.ndarray]],
+) -> np.ndarray:
+    """Get vectorized value for backtesting."""
+    if isinstance(value, NumericLiteral):
+        # Need to determine array length from available data
+        for symbol_data in price_data.values():
+            return np.full(len(symbol_data["close"]), value.value)
+        return np.array([value.value])
+
+    if isinstance(value, Price):
+        return price_data[value.symbol][value.field]
+
+    if isinstance(value, Indicator):
+        key = _build_indicator_key(value)
+        return indicator_data.get(key, np.array([]))
+
+    raise EvaluationError(f"Cannot vectorize value: {type(value)}")
+
+
+def _build_indicator_key(indicator: Indicator) -> str:
+    """Build cache key for an indicator."""
+    parts = [indicator.name, indicator.symbol, "close"]
+    parts.extend(str(p) for p in indicator.params)
+    if indicator.output:
+        parts.append(indicator.output)
+    return "_".join(parts)

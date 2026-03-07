@@ -10,6 +10,32 @@ import numpy as np
 
 from llamatrade_compiler.extractor import IndicatorSpec
 
+__all__ = [
+    # Dataclass
+    "PriceData",
+    # Main functions
+    "compute_indicator",
+    "compute_all_indicators",
+    # Indicator functions (public API for vectorized compiler)
+    "sma",
+    "ema",
+    "rsi",
+    "macd",
+    "bollinger_bands",
+    "atr",
+    "adx",
+    "stochastic",
+    "cci",
+    "williams_r",
+    "obv",
+    "mfi",
+    "vwap",
+    "keltner",
+    "donchian",
+    "stddev",
+    "momentum",
+]
+
 
 @dataclass
 class PriceData:
@@ -608,3 +634,23 @@ def compute_all_indicators(
         all_results.update(results)
 
     return all_results
+
+
+# Public exports for indicator functions (used by strategy_adapter)
+sma = _sma
+ema = _ema
+rsi = _rsi
+macd = _macd
+bollinger_bands = _bollinger_bands
+atr = _atr
+adx = _adx
+stochastic = _stochastic
+cci = _cci
+williams_r = _williams_r
+obv = _obv
+mfi = _mfi
+vwap = _vwap
+keltner = _keltner
+donchian = _donchian
+stddev = _stddev
+momentum = _momentum

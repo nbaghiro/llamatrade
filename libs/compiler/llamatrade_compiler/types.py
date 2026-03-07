@@ -54,7 +54,7 @@ class Bar:
     close: float
     volume: int
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, datetime | float | int]:
         return {
             "timestamp": self.timestamp,
             "open": self.open,

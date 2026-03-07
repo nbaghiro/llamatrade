@@ -3,7 +3,7 @@ name = "llamatrade-compiler"
 version = "0.1.0"
 description = "LlamaTrade Strategy Compiler"
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.14"
 dependencies = [
     "llamatrade-dsl",
     "numpy>=1.26.0",
@@ -40,3 +40,8 @@ exclude_lines = [
     "if TYPE_CHECKING:",
     "raise NotImplementedError",
 ]
+
+[tool.pyright]
+venvPath = "../.."
+venv = ".venv"
+pythonVersion = "3.14"
