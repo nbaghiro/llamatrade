@@ -71,7 +71,7 @@ async def close_db() -> None:
         _async_session_maker = None
 
 
-async def get_db() -> AsyncGenerator[AsyncSession, None]:
+async def get_db() -> AsyncGenerator[AsyncSession]:
     """FastAPI dependency to get database session.
 
     Usage:

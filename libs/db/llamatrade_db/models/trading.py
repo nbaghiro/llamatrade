@@ -1,7 +1,17 @@
-"""Trading execution models."""
+"""Trading execution models.
+
+Enum columns use PostgreSQL native ENUM types with TypeDecorators for transparent
+conversion between proto int values and DB enum strings.
+
+Service code uses proto int constants (ORDER_STATUS_FILLED = 5), while the database
+stores human-readable enum values ('filled').
+
+See libs/db/llamatrade_db/models/enum_types.py for TypeDecorator implementations.
+"""
 
 from datetime import datetime
 from decimal import Decimal
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, Numeric, String, Text
@@ -10,6 +20,15 @@ from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from llamatrade_db.base import Base, TenantMixin, TimestampMixin, UUIDPrimaryKeyMixin
+from llamatrade_db.models._enum_types import (
+    ExecutionModeType,
+    OrderSideType,
+    OrderStatusType,
+    OrderTypeType,
+    PositionSideType,
+    SessionStatusType,
+    TimeInForceType,
+)
 
 
 class TradingSession(Base, UUIDPrimaryKeyMixin, TenantMixin, TimestampMixin):
@@ -25,10 +44,10 @@ class TradingSession(Base, UUIDPrimaryKeyMixin, TenantMixin, TimestampMixin):
     strategy_version: Mapped[int] = mapped_column(Integer, nullable=False)
     credentials_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
-    mode: Mapped[str] = mapped_column(String(20), nullable=False)  # live, paper
-    status: Mapped[str] = mapped_column(String(50), default="stopped", nullable=False)
-    config: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
-    symbols: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+    mode: Mapped[int] = mapped_column(ExecutionModeType(), nullable=False)
+    status: Mapped[int] = mapped_column(SessionStatusType(), default=3, nullable=False)  # STOPPED=3
+    config: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+    symbols: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     stopped_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     last_heartbeat: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -36,8 +55,8 @@ class TradingSession(Base, UUIDPrimaryKeyMixin, TenantMixin, TimestampMixin):
     created_by: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
 
     # Relationships
-    orders: Mapped[list["Order"]] = relationship("Order", back_populates="session")
-    positions: Mapped[list["Position"]] = relationship("Position", back_populates="session")
+    orders: Mapped[list[Order]] = relationship("Order", back_populates="session")
+    positions: Mapped[list[Position]] = relationship("Position", back_populates="session")
 
 
 class Order(Base, UUIDPrimaryKeyMixin, TenantMixin, TimestampMixin):
@@ -58,9 +77,9 @@ class Order(Base, UUIDPrimaryKeyMixin, TenantMixin, TimestampMixin):
     alpaca_order_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
     client_order_id: Mapped[str] = mapped_column(String(100), nullable=False)
     symbol: Mapped[str] = mapped_column(String(20), nullable=False)
-    side: Mapped[str] = mapped_column(String(10), nullable=False)  # buy, sell
-    order_type: Mapped[str] = mapped_column(String(20), nullable=False)  # market, limit, stop, etc.
-    time_in_force: Mapped[str] = mapped_column(String(10), nullable=False)  # day, gtc, ioc, etc.
+    side: Mapped[int] = mapped_column(OrderSideType(), nullable=False)
+    order_type: Mapped[int] = mapped_column(OrderTypeType(), nullable=False)
+    time_in_force: Mapped[int] = mapped_column(TimeInForceType(), nullable=False)
     qty: Mapped[Decimal] = mapped_column(Numeric(precision=18, scale=8), nullable=False)
     limit_price: Mapped[Decimal | None] = mapped_column(
         Numeric(precision=18, scale=8), nullable=True
@@ -68,7 +87,7 @@ class Order(Base, UUIDPrimaryKeyMixin, TenantMixin, TimestampMixin):
     stop_price: Mapped[Decimal | None] = mapped_column(
         Numeric(precision=18, scale=8), nullable=True
     )
-    status: Mapped[str] = mapped_column(String(50), nullable=False)
+    status: Mapped[int] = mapped_column(OrderStatusType(), nullable=False)
     filled_qty: Mapped[Decimal] = mapped_column(
         Numeric(precision=18, scale=8), default=Decimal("0"), nullable=False
     )
@@ -80,15 +99,15 @@ class Order(Base, UUIDPrimaryKeyMixin, TenantMixin, TimestampMixin):
     canceled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     failed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     signal_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
-    metadata_: Mapped[dict | None] = mapped_column("metadata", JSONB, nullable=True)
+    metadata_: Mapped[dict[str, Any] | None] = mapped_column("metadata", JSONB, nullable=True)
 
     # Bracket order fields (stop-loss/take-profit)
     parent_order_id: Mapped[UUID | None] = mapped_column(
         PG_UUID(as_uuid=True), ForeignKey("orders.id"), nullable=True
     )
-    bracket_type: Mapped[str | None] = mapped_column(
-        String(20), nullable=True
-    )  # stop_loss, take_profit
+    bracket_type: Mapped[int | None] = mapped_column(
+        Integer, nullable=True
+    )  # BracketType: stop_loss=1, take_profit=2
     stop_loss_price: Mapped[Decimal | None] = mapped_column(
         Numeric(precision=18, scale=8), nullable=True
     )
@@ -97,14 +116,14 @@ class Order(Base, UUIDPrimaryKeyMixin, TenantMixin, TimestampMixin):
     )
 
     # Relationships
-    session: Mapped["TradingSession"] = relationship("TradingSession", back_populates="orders")
-    parent_order: Mapped["Order | None"] = relationship(
+    session: Mapped[TradingSession] = relationship("TradingSession", back_populates="orders")
+    parent_order: Mapped[Order | None] = relationship(
         "Order",
         remote_side="Order.id",
         back_populates="bracket_orders",
         foreign_keys=[parent_order_id],
     )
-    bracket_orders: Mapped[list["Order"]] = relationship(
+    bracket_orders: Mapped[list[Order]] = relationship(
         "Order", back_populates="parent_order", foreign_keys=[parent_order_id]
     )
 
@@ -119,7 +138,7 @@ class Position(Base, UUIDPrimaryKeyMixin, TenantMixin, TimestampMixin):
         PG_UUID(as_uuid=True), ForeignKey("trading_sessions.id"), nullable=False
     )
     symbol: Mapped[str] = mapped_column(String(20), nullable=False)
-    side: Mapped[str] = mapped_column(String(10), nullable=False)  # long, short
+    side: Mapped[int] = mapped_column(PositionSideType(), nullable=False)
     qty: Mapped[Decimal] = mapped_column(Numeric(precision=18, scale=8), nullable=False)
     avg_entry_price: Mapped[Decimal] = mapped_column(Numeric(precision=18, scale=8), nullable=False)
     current_price: Mapped[Decimal | None] = mapped_column(
@@ -143,4 +162,4 @@ class Position(Base, UUIDPrimaryKeyMixin, TenantMixin, TimestampMixin):
     closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # Relationships
-    session: Mapped["TradingSession"] = relationship("TradingSession", back_populates="positions")
+    session: Mapped[TradingSession] = relationship("TradingSession", back_populates="positions")

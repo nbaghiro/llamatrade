@@ -5,9 +5,14 @@ import os
 from logging.config import fileConfig
 
 from alembic import context
+from sqlalchemy import pool
+from sqlalchemy.engine import Connection
+from sqlalchemy.ext.asyncio import async_engine_from_config
+
 from llamatrade_db.base import Base
 
 # Import all models to register them with metadata
+# pyright: reportUnusedImport=false
 from llamatrade_db.models import (  # noqa: F401
     Alert,
     AlpacaCredentials,
@@ -37,9 +42,6 @@ from llamatrade_db.models import (  # noqa: F401
     User,
     Webhook,
 )
-from sqlalchemy import pool
-from sqlalchemy.engine import Connection
-from sqlalchemy.ext.asyncio import async_engine_from_config
 
 # Alembic Config object
 config = context.config
@@ -54,10 +56,10 @@ target_metadata = Base.metadata
 
 def get_url() -> str:
     """Get database URL from environment or config."""
-    return os.getenv(
-        "DATABASE_URL",
-        config.get_main_option("sqlalchemy.url"),
-    )
+    url = os.getenv("DATABASE_URL") or config.get_main_option("sqlalchemy.url")
+    if url is None:
+        raise RuntimeError("DATABASE_URL environment variable or sqlalchemy.url config required")
+    return url
 
 
 def run_migrations_offline() -> None:

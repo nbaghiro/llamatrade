@@ -14,10 +14,12 @@ Changes:
 """
 
 from collections.abc import Sequence
+from typing import cast
 
 import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql
+from sqlalchemy.sql.schema import Column
 
 # revision identifiers, used by Alembic.
 revision: str = "002"
@@ -201,12 +203,15 @@ def upgrade() -> None:
             nullable=False,
         ),
         sa.Column("version", sa.Integer(), nullable=False),
-        sa.Column("environment", deployment_environment_enum, nullable=False),
-        sa.Column(
-            "status",
-            deployment_status_enum,
-            nullable=False,
-            server_default="pending",
+        cast(Column[str], sa.Column("environment", deployment_environment_enum, nullable=False)),
+        cast(
+            Column[str],
+            sa.Column(
+                "status",
+                deployment_status_enum,
+                nullable=False,
+                server_default="pending",
+            ),
         ),
         sa.Column("started_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("stopped_at", sa.DateTime(timezone=True), nullable=True),

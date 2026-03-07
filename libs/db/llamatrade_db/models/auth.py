@@ -1,6 +1,7 @@
 """Authentication and authorization models."""
 
 from datetime import datetime
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy import Boolean, DateTime, ForeignKey, Index, String, Text
@@ -19,14 +20,14 @@ class Tenant(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     slug: Mapped[str] = mapped_column(String(100), unique=True, nullable=False, index=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
-    settings: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    settings: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
 
     # Relationships
-    users: Mapped[list["User"]] = relationship("User", back_populates="tenant")
-    alpaca_credentials: Mapped[list["AlpacaCredentials"]] = relationship(
+    users: Mapped[list[User]] = relationship("User", back_populates="tenant")
+    alpaca_credentials: Mapped[list[AlpacaCredentials]] = relationship(
         "AlpacaCredentials", back_populates="tenant"
     )
-    api_keys: Mapped[list["APIKey"]] = relationship("APIKey", back_populates="tenant")
+    api_keys: Mapped[list[APIKey]] = relationship("APIKey", back_populates="tenant")
 
 
 class User(Base, UUIDPrimaryKeyMixin, TimestampMixin):
@@ -46,10 +47,10 @@ class User(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     is_verified: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     last_login: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    settings: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    settings: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
 
     # Relationships
-    tenant: Mapped["Tenant"] = relationship("Tenant", back_populates="users")
+    tenant: Mapped[Tenant] = relationship("Tenant", back_populates="users")
 
 
 class AlpacaCredentials(Base, UUIDPrimaryKeyMixin, TimestampMixin):
@@ -67,7 +68,7 @@ class AlpacaCredentials(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
     # Relationships
-    tenant: Mapped["Tenant"] = relationship("Tenant", back_populates="alpaca_credentials")
+    tenant: Mapped[Tenant] = relationship("Tenant", back_populates="alpaca_credentials")
 
 
 class APIKey(Base, UUIDPrimaryKeyMixin, TimestampMixin):
@@ -85,10 +86,10 @@ class APIKey(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     name: Mapped[str] = mapped_column(String(100), nullable=False)
     key_prefix: Mapped[str] = mapped_column(String(10), nullable=False)
     key_hash: Mapped[str] = mapped_column(String(64), nullable=False)
-    scopes: Mapped[list | None] = mapped_column(JSONB, nullable=True)
+    scopes: Mapped[list[str] | None] = mapped_column(JSONB, nullable=True)
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
     # Relationships
-    tenant: Mapped["Tenant"] = relationship("Tenant", back_populates="api_keys")
+    tenant: Mapped[Tenant] = relationship("Tenant", back_populates="api_keys")

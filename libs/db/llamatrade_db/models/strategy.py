@@ -1,51 +1,49 @@
-"""Strategy management models."""
+"""Strategy management models.
+
+Enum columns use PostgreSQL native ENUM types with TypeDecorators for transparent
+conversion between proto int values and DB enum strings.
+
+StrategyType remains as Postgres ENUM because it represents business categories
+(TREND_FOLLOWING, MOMENTUM, etc.) which are not in proto definitions.
+
+See libs/db/llamatrade_db/models/enum_types.py for TypeDecorator implementations.
+"""
+
+from __future__ import annotations
 
 from datetime import datetime
+from decimal import Decimal
 from enum import Enum as PyEnum
+from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
-from sqlalchemy import Boolean, Enum, ForeignKey, Index, Integer, String, Text
+from sqlalchemy import Boolean, Enum, ForeignKey, Index, Integer, Numeric, String, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from llamatrade_db.base import Base, TenantMixin, TimestampMixin, UUIDPrimaryKeyMixin
+from llamatrade_db.models._enum_types import (
+    ExecutionModeType,
+    ExecutionStatusType,
+    StrategyStatusType,
+)
+
+if TYPE_CHECKING:
+    from llamatrade_db.models.portfolio import (
+        StrategyPerformanceMetrics,
+        StrategyPerformanceSnapshot,
+    )
 
 
 class StrategyType(PyEnum):
-    """Types of trading strategies."""
+    """Types of trading strategies (business categorization, not proto-defined)."""
 
     TREND_FOLLOWING = "trend_following"
     MEAN_REVERSION = "mean_reversion"
     MOMENTUM = "momentum"
     BREAKOUT = "breakout"
     CUSTOM = "custom"
-
-
-class StrategyStatus(PyEnum):
-    """Strategy lifecycle status."""
-
-    DRAFT = "draft"
-    ACTIVE = "active"
-    PAUSED = "paused"
-    ARCHIVED = "archived"
-
-
-class DeploymentStatus(PyEnum):
-    """Deployment lifecycle status."""
-
-    PENDING = "pending"
-    RUNNING = "running"
-    PAUSED = "paused"
-    STOPPED = "stopped"
-    ERROR = "error"
-
-
-class DeploymentEnvironment(PyEnum):
-    """Trading environment for deployment."""
-
-    PAPER = "paper"
-    LIVE = "live"
 
 
 class Strategy(Base, UUIDPrimaryKeyMixin, TenantMixin, TimestampMixin):
@@ -70,24 +68,20 @@ class Strategy(Base, UUIDPrimaryKeyMixin, TenantMixin, TimestampMixin):
         nullable=False,
         default=StrategyType.CUSTOM,
     )
-    status: Mapped[StrategyStatus] = mapped_column(
-        Enum(StrategyStatus, name="strategy_status_enum"),
-        nullable=False,
-        default=StrategyStatus.DRAFT,
-    )
+    status: Mapped[int] = mapped_column(StrategyStatusType(), nullable=False, default=1)  # DRAFT=1
     is_public: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     current_version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
     created_by: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
 
     # Relationships
-    versions: Mapped[list["StrategyVersion"]] = relationship(
+    versions: Mapped[list[StrategyVersion]] = relationship(
         "StrategyVersion",
         back_populates="strategy",
         cascade="all, delete-orphan",
         order_by="StrategyVersion.version.desc()",
     )
-    deployments: Mapped[list["StrategyDeployment"]] = relationship(
-        "StrategyDeployment",
+    executions: Mapped[list[StrategyExecution]] = relationship(
+        "StrategyExecution",
         back_populates="strategy",
         cascade="all, delete-orphan",
     )
@@ -117,31 +111,36 @@ class StrategyVersion(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     config_sexpr: Mapped[str] = mapped_column(Text, nullable=False)
 
     # Parsed JSON for querying (denormalized from config_sexpr)
-    config_json: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    config_json: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
 
     # Denormalized fields for efficient filtering
     symbols: Mapped[list[str]] = mapped_column(JSONB, nullable=False)
     timeframe: Mapped[str] = mapped_column(String(10), nullable=False)
 
+    # Additional parameters (e.g., ui_state for visual builder)
+    parameters: Mapped[dict[str, str]] = mapped_column(
+        JSONB, nullable=False, default=dict, server_default="{}"
+    )
+
     changelog: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_by: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
 
     # Relationships
-    strategy: Mapped["Strategy"] = relationship("Strategy", back_populates="versions")
+    strategy: Mapped[Strategy] = relationship("Strategy", back_populates="versions")
 
 
-class StrategyDeployment(Base, UUIDPrimaryKeyMixin, TenantMixin, TimestampMixin):
+class StrategyExecution(Base, UUIDPrimaryKeyMixin, TenantMixin, TimestampMixin):
     """
     Links a strategy version to live or paper trading.
 
-    Tracks the deployment state of a strategy - whether it's running,
-    paused, or stopped, and which version is deployed.
+    Tracks the execution state of a strategy - whether it's running,
+    paused, or stopped, and which version is being executed.
     """
 
-    __tablename__ = "strategy_deployments"
+    __tablename__ = "strategy_executions"
     __table_args__ = (
-        Index("ix_deployments_tenant_status", "tenant_id", "status"),
-        Index("ix_deployments_strategy", "strategy_id"),
+        Index("ix_executions_tenant_status", "tenant_id", "status"),
+        Index("ix_executions_strategy", "strategy_id"),
     )
 
     strategy_id: Mapped[UUID] = mapped_column(
@@ -149,27 +148,41 @@ class StrategyDeployment(Base, UUIDPrimaryKeyMixin, TenantMixin, TimestampMixin)
     )
     version: Mapped[int] = mapped_column(Integer, nullable=False)
 
-    environment: Mapped[DeploymentEnvironment] = mapped_column(
-        Enum(DeploymentEnvironment, name="deployment_environment_enum"),
-        nullable=False,
-    )
-    status: Mapped[DeploymentStatus] = mapped_column(
-        Enum(DeploymentStatus, name="deployment_status_enum"),
-        nullable=False,
-        default=DeploymentStatus.PENDING,
-    )
+    mode: Mapped[int] = mapped_column(ExecutionModeType(), nullable=False)
+    status: Mapped[int] = mapped_column(
+        ExecutionStatusType(), nullable=False, default=1
+    )  # PENDING=1
 
     started_at: Mapped[datetime | None] = mapped_column(nullable=True)
     stopped_at: Mapped[datetime | None] = mapped_column(nullable=True)
 
     # Runtime configuration overrides (e.g., different symbols, risk params)
-    config_override: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    config_override: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
 
     # Error info if status is ERROR
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
 
+    # Performance tracking columns
+    allocated_capital: Mapped[Decimal | None] = mapped_column(Numeric(18, 2), nullable=True)
+    current_value: Mapped[Decimal | None] = mapped_column(Numeric(18, 2), nullable=True)
+    positions_count: Mapped[int] = mapped_column(
+        Integer, nullable=True, default=0, server_default="0"
+    )
+    color: Mapped[str | None] = mapped_column(String(20), nullable=True)  # UI color for charts
+
     # Relationships
-    strategy: Mapped["Strategy"] = relationship("Strategy", back_populates="deployments")
+    strategy: Mapped[Strategy] = relationship("Strategy", back_populates="executions")
+    performance_metrics: Mapped[StrategyPerformanceMetrics | None] = relationship(
+        "StrategyPerformanceMetrics",
+        back_populates="execution",
+        uselist=False,
+        cascade="all, delete-orphan",
+    )
+    performance_snapshots: Mapped[list[StrategyPerformanceSnapshot]] = relationship(
+        "StrategyPerformanceSnapshot",
+        back_populates="execution",
+        cascade="all, delete-orphan",
+    )
 
 
 class StrategyTemplate(Base, UUIDPrimaryKeyMixin, TimestampMixin):
@@ -194,7 +207,7 @@ class StrategyTemplate(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     config_sexpr: Mapped[str] = mapped_column(Text, nullable=False)
 
     # Parsed JSON for display
-    config_json: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    config_json: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
 
     # Metadata
     tags: Mapped[list[str] | None] = mapped_column(JSONB, nullable=True)

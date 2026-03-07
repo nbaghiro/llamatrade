@@ -2,6 +2,7 @@
 
 from datetime import datetime
 from enum import StrEnum
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy import DateTime, Index, String, Text
@@ -76,7 +77,7 @@ class AuditLog(Base, UUIDPrimaryKeyMixin, TenantMixin):
     order_id: Mapped[UUID | None] = mapped_column(PG_UUID(as_uuid=True), nullable=True)
 
     # Event details (JSON blob for flexibility)
-    data: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    data: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
 
     # Human-readable summary
     summary: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -113,8 +114,8 @@ class RiskConfig(Base, UUIDPrimaryKeyMixin, TenantMixin):
     max_orders_per_day: Mapped[int | None] = mapped_column(nullable=True)
 
     # Symbol restrictions (null = all symbols allowed)
-    allowed_symbols: Mapped[list | None] = mapped_column(JSONB, nullable=True)
-    blocked_symbols: Mapped[list | None] = mapped_column(JSONB, nullable=True)
+    allowed_symbols: Mapped[list[str] | None] = mapped_column(JSONB, nullable=True)
+    blocked_symbols: Mapped[list[str] | None] = mapped_column(JSONB, nullable=True)
 
     # Active flag
     is_active: Mapped[bool] = mapped_column(default=True, nullable=False)

@@ -1,11 +1,16 @@
 """Base class and mixins for SQLAlchemy ORM models."""
 
 from datetime import datetime
+from typing import Any
 from uuid import UUID, uuid4
 
 from sqlalchemy import DateTime, Index, func
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, declared_attr, mapped_column
+
+# Type alias for SQLAlchemy __table_args__
+# Can be a tuple of schema items (Index, Constraint, etc.) optionally ending with a dict
+TableArgsType = tuple[Any, ...]
 
 
 class Base(DeclarativeBase):  # type: ignore[misc]
@@ -34,19 +39,26 @@ class TenantMixin:
         nullable=False,
     )
 
-    @declared_attr
-    def __table_args__(cls) -> tuple:  # noqa: N805  # type: ignore[misc]
+    @declared_attr.directive
+    def __table_args__(cls) -> TableArgsType:  # noqa: N805
         """Create index on tenant_id for efficient tenant filtering."""
-        existing_args = getattr(super(), "__table_args__", None)
-        tenant_index = Index(f"ix_{cls.__tablename__}_tenant_id", "tenant_id")  # type: ignore[attr-defined]
+        existing_args: TableArgsType | dict[str, Any] | None = getattr(
+            super(), "__table_args__", None
+        )
+        # __tablename__ is defined on concrete model classes that inherit this mixin
+        tablename: str = getattr(cls, "__tablename__", "unknown")
+        tenant_index: Index = Index(
+            f"ix_{tablename}_tenant_id",
+            "tenant_id",
+        )
 
         if existing_args is None:
             return (tenant_index,)
         elif isinstance(existing_args, dict):
             return (tenant_index, existing_args)
-        elif isinstance(existing_args, tuple):
+        else:
+            # existing_args must be a tuple at this point
             return existing_args + (tenant_index,)
-        return (tenant_index,)
 
 
 class TimestampMixin:

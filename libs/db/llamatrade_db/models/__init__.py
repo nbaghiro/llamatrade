@@ -23,6 +23,9 @@ from llamatrade_db.models.billing import (
     Subscription,
     UsageRecord,
 )
+
+# NOTE: Enum constants should be imported directly from llamatrade_proto.generated.*_pb2
+# e.g., from llamatrade_proto.generated.trading_pb2 import ORDER_SIDE_BUY
 from llamatrade_db.models.market_data import (
     Bar,
     Quote,
@@ -38,14 +41,13 @@ from llamatrade_db.models.portfolio import (
     PerformanceMetrics,
     PortfolioHistory,
     PortfolioSummary,
+    StrategyPerformanceMetrics,
+    StrategyPerformanceSnapshot,
     Transaction,
 )
 from llamatrade_db.models.strategy import (
-    DeploymentEnvironment,
-    DeploymentStatus,
     Strategy,
-    StrategyDeployment,
-    StrategyStatus,
+    StrategyExecution,
     StrategyTemplate,
     StrategyType,
     StrategyVersion,
@@ -71,11 +73,8 @@ __all__ = [
     "Strategy",
     "StrategyVersion",
     "StrategyTemplate",
-    "StrategyDeployment",
+    "StrategyExecution",
     "StrategyType",
-    "StrategyStatus",
-    "DeploymentStatus",
-    "DeploymentEnvironment",
     # Backtest
     "Backtest",
     "BacktestResult",
@@ -88,6 +87,8 @@ __all__ = [
     "Transaction",
     "PortfolioHistory",
     "PerformanceMetrics",
+    "StrategyPerformanceSnapshot",
+    "StrategyPerformanceMetrics",
     # Market Data
     "Bar",
     "Quote",
