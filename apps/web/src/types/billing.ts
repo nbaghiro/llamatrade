@@ -2,11 +2,73 @@
  * Billing and subscription types
  */
 
-export type PlanTier = 'free' | 'starter' | 'pro';
+// Import enum types from proto-generated code (single source of truth)
+import {
+  PlanTier,
+  SubscriptionStatus,
+  BillingInterval,
+} from '../generated/proto/billing_pb';
 
-export type SubscriptionStatus = 'active' | 'past_due' | 'cancelled' | 'trialing' | 'paused';
+// Re-export proto enums
+export { PlanTier, SubscriptionStatus, BillingInterval };
 
+// DEPRECATED: Use BillingInterval instead - kept for backward compatibility
 export type BillingCycle = 'monthly' | 'yearly';
+
+// ============================================
+// Enum Display Helpers
+// ============================================
+
+export function getPlanTierLabel(tier: PlanTier): string {
+  switch (tier) {
+    case PlanTier.FREE:
+      return 'Free';
+    case PlanTier.STARTER:
+      return 'Starter';
+    case PlanTier.PRO:
+      return 'Pro';
+    default:
+      return 'Unknown';
+  }
+}
+
+export function getSubscriptionStatusLabel(status: SubscriptionStatus): string {
+  switch (status) {
+    case SubscriptionStatus.ACTIVE:
+      return 'Active';
+    case SubscriptionStatus.PAST_DUE:
+      return 'Past Due';
+    case SubscriptionStatus.CANCELED:
+      return 'Cancelled';
+    case SubscriptionStatus.TRIALING:
+      return 'Trialing';
+    case SubscriptionStatus.PAUSED:
+      return 'Paused';
+    default:
+      return 'Unknown';
+  }
+}
+
+export function getBillingIntervalLabel(interval: BillingInterval): string {
+  switch (interval) {
+    case BillingInterval.MONTHLY:
+      return 'Monthly';
+    case BillingInterval.YEARLY:
+      return 'Yearly';
+    default:
+      return 'Unknown';
+  }
+}
+
+// Convert legacy BillingCycle to BillingInterval
+export function billingCycleToInterval(cycle: BillingCycle): BillingInterval {
+  return cycle === 'monthly' ? BillingInterval.MONTHLY : BillingInterval.YEARLY;
+}
+
+// Convert BillingInterval to legacy BillingCycle string
+export function billingIntervalToCycle(interval: BillingInterval): BillingCycle {
+  return interval === BillingInterval.MONTHLY ? 'monthly' : 'yearly';
+}
 
 export interface PlanFeatures {
   backtests: boolean;

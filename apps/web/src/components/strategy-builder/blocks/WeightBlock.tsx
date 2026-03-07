@@ -3,7 +3,7 @@ import { ChevronDown, X } from 'lucide-react';
 import { useStrategyBuilderStore } from '../../../store/strategy-builder';
 import type { WeightBlock as WeightBlockType } from '../../../types/strategy-builder';
 import { getWeightMethodInfo } from '../../../types/strategy-builder';
-import { getWeightColors, allocationBadgeColors } from '../block-theme';
+import { useBlockTheme } from '../useTheme';
 
 interface WeightBlockProps {
   block: WeightBlockType;
@@ -12,6 +12,7 @@ interface WeightBlockProps {
 
 export function WeightBlock({ block, allocationPercent }: WeightBlockProps) {
   const { ui, selectBlock, toggleExpand, deleteBlock } = useStrategyBuilderStore();
+  const theme = useBlockTheme();
   const isSelected = ui.selectedBlockId === block.id;
   const isExpanded = ui.expandedBlocks.has(block.id);
   const methodInfo = getWeightMethodInfo(block.method);
@@ -40,7 +41,8 @@ export function WeightBlock({ block, allocationPercent }: WeightBlockProps) {
     return text;
   };
 
-  const colors = getWeightColors(block.method);
+  const colors = theme.weight;
+  const allocationBadgeColors = theme.allocation;
 
   return (
     <div className="relative">

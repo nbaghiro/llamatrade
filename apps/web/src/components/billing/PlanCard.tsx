@@ -4,9 +4,9 @@
 
 import { Check } from 'lucide-react';
 
-import type { Plan } from '../../generated/proto/llamatrade/v1/billing_pb';
-import { PlanTier } from '../../generated/proto/llamatrade/v1/billing_pb';
-import type { Money } from '../../generated/proto/llamatrade/v1/common_pb';
+import type { Plan } from '../../generated/proto/billing_pb';
+import { PlanTier } from '../../generated/proto/billing_pb';
+import type { Money } from '../../generated/proto/common_pb';
 
 type BillingCycle = 'monthly' | 'yearly';
 
@@ -36,7 +36,7 @@ export default function PlanCard({
   const monthlyEquivalent = billingCycle === 'yearly' ? Math.round(yearlyPrice / 12) : monthlyPrice;
   const savings = billingCycle === 'yearly' ? monthlyPrice * 12 - yearlyPrice : 0;
 
-  const isPro = plan.tier === PlanTier.PROFESSIONAL;
+  const isPro = plan.tier === PlanTier.PRO;
   const isFree = plan.tier === PlanTier.FREE;
 
   // Build features list from plan limits

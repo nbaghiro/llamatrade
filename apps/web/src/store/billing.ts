@@ -11,7 +11,7 @@ import {
   type PaymentMethod,
   type Plan,
   type Subscription,
-} from '../generated/proto/llamatrade/v1/billing_pb';
+} from '../generated/proto/billing_pb';
 import { billingClient } from '../services/grpc-client';
 
 interface BillingState {

@@ -2,12 +2,15 @@ import { useCallback, useEffect } from 'react';
 
 import { useStrategyBuilderStore } from '../../store/strategy-builder';
 
+import { RootBlock } from './blocks/RootBlock';
 import { Canvas } from './Canvas';
+import { CodeEditor } from './CodeEditor';
 import { LeftPanel } from './panels/LeftPanel';
 import { RightPanel } from './panels/RightPanel';
 
 export function StrategyBuilder() {
-  const { ui, deleteBlock, undo, redo, canUndo, canRedo, getBlock } = useStrategyBuilderStore();
+  const { tree, ui, viewMode, deleteBlock, undo, redo, canUndo, canRedo, getBlock } = useStrategyBuilderStore();
+  const rootBlock = tree.blocks[tree.rootId];
 
   // Keyboard shortcuts
   const handleKeyDown = useCallback(
@@ -64,8 +67,24 @@ export function StrategyBuilder() {
       {/* Left Panel - Strategy Details */}
       <LeftPanel />
 
-      {/* Center - Canvas */}
-      <Canvas />
+      {/* Center - Canvas or Code Editor */}
+      <div className="flex-1 min-w-0 flex flex-col overflow-hidden pt-4 px-6">
+        {/* Root Block - always visible */}
+        {rootBlock && rootBlock.type === 'root' && (
+          <div className="flex-shrink-0 mb-4">
+            <RootBlock block={rootBlock} />
+          </div>
+        )}
+
+        {/* Main content area - tree or code editor */}
+        {viewMode === 'tree' ? (
+          <Canvas />
+        ) : (
+          <div className="flex-1 min-h-0 overflow-hidden">
+            <CodeEditor />
+          </div>
+        )}
+      </div>
 
       {/* Right Panel - Preview */}
       <RightPanel />

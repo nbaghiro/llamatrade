@@ -5,6 +5,7 @@ import { useNavigate } from 'react-router-dom';
 import { useStrategyBuilderStore } from '../../../store/strategy-builder';
 import type { StrategyType } from '../../../types/strategy';
 import { Select } from '../../common/Select';
+import { ThemeSwitcher } from '../ThemeSwitcher';
 
 const TIMEFRAME_OPTIONS = [
   { value: '1m', label: '1 Minute' },
@@ -36,6 +37,7 @@ export function LeftPanel() {
     deleteBlock,
     getBlock,
     // Metadata
+    strategyId,
     strategyName,
     strategyDescription,
     strategyType,
@@ -55,6 +57,12 @@ export function LeftPanel() {
 
   const selectedBlock = ui.selectedBlockId ? getBlock(ui.selectedBlockId) : null;
   const canDelete = selectedBlock && selectedBlock.type !== 'root';
+
+  const handleBack = () => {
+    // If strategy hasn't been saved yet, go back to template picker
+    // If it has been saved, go to strategies list
+    navigate(strategyId ? '/strategies' : '/strategies/new');
+  };
 
   const handleSave = async () => {
     const savedId = await saveStrategy();
@@ -93,9 +101,9 @@ export function LeftPanel() {
       {/* Back + Save */}
       <div className="flex gap-2">
         <button
-          onClick={() => navigate('/strategies')}
+          onClick={handleBack}
           className="p-1.5 rounded-md hover:bg-gray-200 dark:hover:bg-gray-800 text-gray-600 dark:text-gray-400 transition-colors"
-          title="Back to Strategies"
+          title={strategyId ? 'Back to Strategies' : 'Back to Templates'}
         >
           <ArrowLeft className="w-4 h-4" />
         </button>
@@ -237,6 +245,11 @@ export function LeftPanel() {
           <Share2 className="w-4 h-4" />
           <span className="text-sm">Share</span>
         </button>
+      </div>
+
+      {/* Theme Switcher */}
+      <div className="mt-auto pt-4 border-t border-gray-200 dark:border-gray-700">
+        <ThemeSwitcher />
       </div>
     </div>
   );

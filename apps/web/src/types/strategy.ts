@@ -1,11 +1,70 @@
 // Strategy API Response Types
 // These match the backend services/strategy/src/models.py schemas
 
-// Enums matching backend
-export type StrategyType = 'trend_following' | 'mean_reversion' | 'momentum' | 'breakout' | 'custom';
-export type StrategyStatus = 'draft' | 'active' | 'paused' | 'archived';
-export type DeploymentStatus = 'pending' | 'running' | 'paused' | 'stopped' | 'error';
-export type DeploymentEnvironment = 'paper' | 'live';
+// Import enum types from proto-generated code (single source of truth)
+import {
+  ExecutionMode,
+  ExecutionStatus,
+} from '../generated/proto/common_pb';
+import { StrategyStatus } from '../generated/proto/strategy_pb';
+
+// Re-export proto enums for use in this module
+export { StrategyStatus, ExecutionStatus, ExecutionMode };
+
+// Trading approach type - describes the trading strategy's approach/philosophy
+// This is a frontend-only concept derived from strategy configuration/tags
+// Not defined in proto as it's UI categorization
+export type TradingApproach = 'trend_following' | 'mean_reversion' | 'momentum' | 'breakout' | 'custom';
+
+// StrategyType is used for trading approach categorization in the UI
+export type StrategyType = TradingApproach;
+
+// ============================================
+// Enum Display Helpers
+// ============================================
+
+export function getStrategyStatusLabel(status: StrategyStatus): string {
+  switch (status) {
+    case StrategyStatus.DRAFT:
+      return 'Draft';
+    case StrategyStatus.ACTIVE:
+      return 'Active';
+    case StrategyStatus.PAUSED:
+      return 'Paused';
+    case StrategyStatus.ARCHIVED:
+      return 'Archived';
+    default:
+      return 'Unknown';
+  }
+}
+
+export function getExecutionStatusLabel(status: ExecutionStatus): string {
+  switch (status) {
+    case ExecutionStatus.PENDING:
+      return 'Pending';
+    case ExecutionStatus.RUNNING:
+      return 'Running';
+    case ExecutionStatus.PAUSED:
+      return 'Paused';
+    case ExecutionStatus.STOPPED:
+      return 'Stopped';
+    case ExecutionStatus.ERROR:
+      return 'Error';
+    default:
+      return 'Unknown';
+  }
+}
+
+export function getExecutionModeLabel(mode: ExecutionMode): string {
+  switch (mode) {
+    case ExecutionMode.PAPER:
+      return 'Paper';
+    case ExecutionMode.LIVE:
+      return 'Live';
+    default:
+      return 'Unknown';
+  }
+}
 export type IndicatorType =
   | 'sma'
   | 'ema'
@@ -39,13 +98,13 @@ export interface StrategyUpdate {
   config_sexpr?: string;
 }
 
-export interface DeploymentCreate {
+export interface ExecutionCreate {
   version?: number;
-  environment: DeploymentEnvironment;
-  config_override?: DeploymentConfigOverride;
+  mode: ExecutionMode;
+  config_override?: ExecutionConfigOverride;
 }
 
-export interface DeploymentConfigOverride {
+export interface ExecutionConfigOverride {
   symbols?: string[];
   timeframe?: string;
   stop_loss_pct?: number;
@@ -97,15 +156,15 @@ export interface StrategyVersionResponse {
   created_at: string;
 }
 
-export interface DeploymentResponse {
+export interface ExecutionResponse {
   id: string;
   strategy_id: string;
   version: number;
-  environment: DeploymentEnvironment;
-  status: DeploymentStatus;
+  mode: ExecutionMode;
+  status: ExecutionStatus;
   started_at: string | null;
   stopped_at: string | null;
-  config_override: DeploymentConfigOverride | null;
+  config_override: ExecutionConfigOverride | null;
   error_message: string | null;
   created_at: string;
 }

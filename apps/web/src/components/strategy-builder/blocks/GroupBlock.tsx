@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 
 import { useStrategyBuilderStore } from '../../../store/strategy-builder';
 import type { GroupBlock as GroupBlockType } from '../../../types/strategy-builder';
-import { groupColors, allocationBadgeColors } from '../block-theme';
+import { useBlockTheme } from '../useTheme';
 
 interface GroupBlockProps {
   block: GroupBlockType;
@@ -12,6 +12,9 @@ interface GroupBlockProps {
 
 export function GroupBlock({ block, allocationPercent }: GroupBlockProps) {
   const { ui, selectBlock, toggleExpand, setEditing, updateBlock } = useStrategyBuilderStore();
+  const theme = useBlockTheme();
+  const groupColors = theme.group;
+  const allocationBadgeColors = theme.allocation;
   const isSelected = ui.selectedBlockId === block.id;
   const isExpanded = ui.expandedBlocks.has(block.id);
   const isEditing = ui.editingBlockId === block.id;

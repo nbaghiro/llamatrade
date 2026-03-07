@@ -2,17 +2,18 @@ import { X, Loader2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
-import { StrategyType as ProtoStrategyType, type Strategy } from '../../generated/proto/llamatrade/v1/strategy_pb';
+import { type Strategy } from '../../generated/proto/strategy_pb';
 import { strategyClient } from '../../services/grpc-client';
 
 interface TemplateSelectorProps {
   onClose: () => void;
 }
 
-type StrategyType = 'trend_following' | 'mean_reversion' | 'momentum' | 'breakout' | 'custom';
+// Trading approach type - used for UI categorization (frontend-only concept)
+type TradingApproach = 'trend_following' | 'mean_reversion' | 'momentum' | 'breakout' | 'custom';
 type Difficulty = 'beginner' | 'intermediate' | 'advanced';
 
-const TYPE_LABELS: Record<StrategyType, string> = {
+const TYPE_LABELS: Record<TradingApproach, string> = {
   trend_following: 'Trend Following',
   mean_reversion: 'Mean Reversion',
   momentum: 'Momentum',
@@ -34,23 +35,16 @@ interface TemplateData {
   id: string;
   name: string;
   description: string;
-  strategyType: StrategyType;
+  tradingApproach: TradingApproach;
   difficulty: Difficulty;
   tags: string[];
 }
 
-// Convert proto type enum to UI string
-function protoTypeToLocal(protoType: ProtoStrategyType): StrategyType {
-  switch (protoType) {
-    case ProtoStrategyType.DSL:
-      return 'trend_following'; // Map DSL to a UI type
-    case ProtoStrategyType.PYTHON:
-      return 'custom';
-    case ProtoStrategyType.TEMPLATE:
-      return 'custom';
-    default:
-      return 'custom';
-  }
+// Infer trading approach from strategy configuration (frontend-only inference)
+function inferTradingApproach(_strategy: Strategy): TradingApproach {
+  // In the future, this could analyze the DSL or parameters to determine approach
+  // For now, default to custom
+  return 'custom';
 }
 
 function strategyToTemplate(strategy: Strategy): TemplateData {
@@ -61,7 +55,7 @@ function strategyToTemplate(strategy: Strategy): TemplateData {
     id: strategy.id,
     name: strategy.name,
     description: strategy.description || '',
-    strategyType: protoTypeToLocal(strategy.type),
+    tradingApproach: inferTradingApproach(strategy),
     difficulty,
     tags: strategy.symbols.slice(0, 3),
   };
@@ -74,7 +68,7 @@ export function TemplateSelector({ onClose }: TemplateSelectorProps) {
   const [error, setError] = useState<string | null>(null);
 
   // Filters
-  const [typeFilter, setTypeFilter] = useState<StrategyType | 'all'>('all');
+  const [typeFilter, setTypeFilter] = useState<TradingApproach | 'all'>('all');
   const [difficultyFilter, setDifficultyFilter] = useState<Difficulty | 'all'>('all');
 
   useEffect(() => {
@@ -82,11 +76,13 @@ export function TemplateSelector({ onClose }: TemplateSelectorProps) {
       try {
         setLoading(true);
         // List strategies that can serve as templates
+        // Filter by those with templateId set (template-based strategies)
         const response = await strategyClient.listStrategies({
           pagination: { page: 1, pageSize: 50 },
-          types: [ProtoStrategyType.TEMPLATE], // Filter for template strategies
         });
-        setTemplates(response.strategies.map(strategyToTemplate));
+        // Filter to only those created from templates
+        const templateStrategies = response.strategies.filter(s => s.templateId);
+        setTemplates(templateStrategies.map(strategyToTemplate));
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to load templates');
       } finally {
@@ -97,7 +93,7 @@ export function TemplateSelector({ onClose }: TemplateSelectorProps) {
   }, []);
 
   const filteredTemplates = templates.filter((t) => {
-    if (typeFilter !== 'all' && t.strategyType !== typeFilter) return false;
+    if (typeFilter !== 'all' && t.tradingApproach !== typeFilter) return false;
     if (difficultyFilter !== 'all' && t.difficulty !== difficultyFilter) return false;
     return true;
   });
@@ -133,7 +129,7 @@ export function TemplateSelector({ onClose }: TemplateSelectorProps) {
             <label className="text-sm text-gray-600 dark:text-gray-400">Type:</label>
             <select
               value={typeFilter}
-              onChange={(e) => setTypeFilter(e.target.value as StrategyType | 'all')}
+              onChange={(e) => setTypeFilter(e.target.value as TradingApproach | 'all')}
               className="px-2 py-1 text-sm bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md"
             >
               <option value="all">All</option>
@@ -199,7 +195,7 @@ export function TemplateSelector({ onClose }: TemplateSelectorProps) {
                   </p>
                   <div className="flex items-center gap-2">
                     <span className="px-2 py-0.5 text-xs font-medium rounded bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400">
-                      {TYPE_LABELS[template.strategyType] || 'Custom'}
+                      {TYPE_LABELS[template.tradingApproach] || 'Custom'}
                     </span>
                     {template.tags.slice(0, 2).map((tag) => (
                       <span

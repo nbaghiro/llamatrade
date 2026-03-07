@@ -3,10 +3,14 @@ import { v4 as uuidv4 } from 'uuid';
 import { create } from 'zustand';
 import { immer } from 'zustand/middleware/immer';
 
-import { getDemoStrategy } from '../data/demo-strategies';
-import { StrategyType as ProtoStrategyType } from '../generated/proto/llamatrade/v1/strategy_pb';
 import { strategyClient } from '../services/grpc-client';
-import { toDSL, fromDSL, fromDSLString, conditionToText, validateTree } from '../services/strategy-serializer';
+import {
+  toDSL,
+  fromDSL,
+  fromDSLString,
+  conditionToText,
+  validateTree,
+} from '../services/strategy-serializer';
 import type { StrategyType } from '../types/strategy';
 import type {
   BlockId,
@@ -23,28 +27,10 @@ import type {
 } from '../types/strategy-builder';
 import { hasChildren } from '../types/strategy-builder';
 
+import { getTenantContext } from './auth';
+
 // Enable immer support for Map and Set
 enableMapSet();
-
-// Convert proto enum to local UI type
-function protoTypeToLocal(protoType: ProtoStrategyType): StrategyType {
-  switch (protoType) {
-    case ProtoStrategyType.DSL:
-      return 'custom'; // DSL maps to custom for now
-    case ProtoStrategyType.PYTHON:
-      return 'custom';
-    case ProtoStrategyType.TEMPLATE:
-      return 'custom';
-    default:
-      return 'custom';
-  }
-}
-
-// Convert local UI type to proto enum
-function localTypeToProto(_localType: StrategyType): ProtoStrategyType {
-  // All UI types are DSL-based for now
-  return ProtoStrategyType.DSL;
-}
 
 // Maximum history entries for undo/redo
 const MAX_HISTORY = 50;
@@ -213,12 +199,19 @@ function createInitialState(): { tree: StrategyTree; expandedBlocks: Set<BlockId
 // Initialize once and reuse
 const initialState = createInitialState();
 
+export type ViewMode = 'tree' | 'code';
+
 interface StrategyBuilderState {
   // Tree data
   tree: StrategyTree;
 
   // UI state
   ui: StrategyBuilderUI;
+
+  // View mode state
+  viewMode: ViewMode;
+  dslCode: string;
+  dslParseError: string | null;
 
   // History for undo/redo
   past: StrategyTree[];
@@ -282,6 +275,13 @@ interface StrategyBuilderState {
   loadTemplate: (templateId: string) => Promise<void>;
   saveStrategy: () => Promise<string | null>;
   createNew: () => void;
+
+  // View mode operations
+  setViewMode: (mode: ViewMode) => void;
+  updateDSLCode: (code: string) => void;
+  syncTreeFromCode: () => boolean;
+  getDSLCode: () => string;
+  clearDSLParseError: () => void;
 
   // Utility
   getBlock: (id: BlockId) => Block | undefined;
@@ -361,6 +361,12 @@ export const useStrategyBuilderStore = create<StrategyBuilderState>()(
       expandedBlocks: initialState.expandedBlocks,
       editingBlockId: null,
     },
+
+    // View mode state
+    viewMode: 'tree' as ViewMode,
+    dslCode: '',
+    dslParseError: null,
+
     past: [],
     future: [],
 
@@ -614,6 +620,116 @@ export const useStrategyBuilderStore = create<StrategyBuilderState>()(
         return parent && hasChildren(parent) ? parent : undefined;
       },
 
+      // View mode operations
+      setViewMode: (mode) => {
+        const state = get();
+        if (mode === state.viewMode) return;
+
+        if (mode === 'code') {
+          // Switching to code view: generate DSL from tree
+          const dslCode = state.getDSLCode();
+          set((s) => {
+            s.viewMode = 'code';
+            s.dslCode = dslCode;
+            s.dslParseError = null;
+          });
+        } else {
+          // Switching to tree view: parse DSL back to tree
+          const success = state.syncTreeFromCode();
+          if (success) {
+            set((s) => {
+              s.viewMode = 'tree';
+            });
+          }
+          // If parsing failed, stay in code view (error is already set)
+        }
+      },
+
+      updateDSLCode: (code) => {
+        set((state) => {
+          state.dslCode = code;
+          state.isDirty = true;
+          // Clear parse error when user edits
+          state.dslParseError = null;
+        });
+      },
+
+      syncTreeFromCode: () => {
+        const { dslCode } = get();
+
+        // Try to parse the DSL code
+        const parsed = fromDSLString(dslCode);
+        if (!parsed) {
+          set((s) => {
+            s.dslParseError = 'Invalid DSL syntax. Please check your code.';
+          });
+          return false;
+        }
+
+        const { tree, metadata } = parsed;
+
+        // Validate the parsed tree
+        const validation = validateTree(tree);
+        if (!validation.valid) {
+          set((s) => {
+            s.dslParseError = validation.errors.map((e) => e.message).join(', ');
+          });
+          return false;
+        }
+
+        set((s) => {
+          pushToHistory(s);
+          s.tree = tree;
+
+          // Update metadata from parsed DSL
+          if (metadata.name) {
+            s.strategyName = metadata.name;
+          }
+          if (metadata.description !== undefined) {
+            s.strategyDescription = metadata.description;
+          }
+          if (metadata.timeframe) {
+            s.timeframe = metadata.timeframe;
+          }
+          if (metadata.strategyType) {
+            s.strategyType = metadata.strategyType;
+          }
+
+          // Update root block name to match parsed strategy name
+          const root = s.tree.blocks[s.tree.rootId];
+          if (root && root.type === 'root' && metadata.name) {
+            root.name = metadata.name;
+          }
+
+          // Expand all parent blocks
+          const expandedBlocks = new Set<BlockId>();
+          for (const block of Object.values(tree.blocks)) {
+            if (hasChildren(block)) {
+              expandedBlocks.add(block.id);
+            }
+          }
+          s.ui.expandedBlocks = expandedBlocks;
+          s.dslParseError = null;
+        });
+        return true;
+      },
+
+      getDSLCode: () => {
+        const { tree, strategyName, strategyDescription, strategyType, timeframe } = get();
+        return toDSL(tree, {
+          name: strategyName,
+          description: strategyDescription,
+          strategyType,
+          timeframe,
+        });
+      },
+
+      clearDSLParseError: () => {
+        set((state) => {
+          state.dslParseError = null;
+        });
+      },
+
       reset: () => {
         set((state) => {
           const newState = createInitialState();
@@ -623,6 +739,9 @@ export const useStrategyBuilderStore = create<StrategyBuilderState>()(
             expandedBlocks: newState.expandedBlocks,
             editingBlockId: null,
           };
+          state.viewMode = 'tree';
+          state.dslCode = '';
+          state.dslParseError = null;
           state.past = [];
           state.future = [];
           state.strategyId = null;
@@ -682,91 +801,10 @@ export const useStrategyBuilderStore = create<StrategyBuilderState>()(
           state.error = null;
         });
 
-        // Check for demo data FIRST to avoid API errors during development
-        const demoStrategy = getDemoStrategy(id);
-        if (demoStrategy) {
-          // Special case: Core Satellite Strategy uses portfolio builder format
-          if (demoStrategy.config_sexpr === '__PORTFOLIO_CORE_SATELLITE__') {
-            const { tree, expandedBlocks } = createInitialState();
-            set((state) => {
-              state.strategyId = demoStrategy.id;
-              state.strategyName = demoStrategy.name;
-              state.strategyDescription = demoStrategy.description;
-              state.strategyType = demoStrategy.type;
-              state.timeframe = demoStrategy.timeframe;
-              state.tree = tree;
-              state.ui.expandedBlocks = expandedBlocks;
-              state.isDirty = false;
-              state.loading = false;
-              state.past = [];
-              state.future = [];
-              state.error = null;
-            });
-            return;
-          }
-
-          // Parse the DSL to create block tree with conditions
-          const parsedTree = fromDSLString(demoStrategy.config_sexpr);
-
-          set((state) => {
-            state.strategyId = demoStrategy.id;
-            state.strategyName = demoStrategy.name;
-            state.strategyDescription = demoStrategy.description;
-            state.strategyType = demoStrategy.type;
-            state.timeframe = demoStrategy.timeframe;
-
-            if (parsedTree) {
-              state.tree = parsedTree;
-              // Expand all blocks
-              const expandedBlocks = new Set<BlockId>();
-              for (const block of Object.values(parsedTree.blocks)) {
-                if (hasChildren(block)) {
-                  expandedBlocks.add(block.id);
-                }
-              }
-              state.ui.expandedBlocks = expandedBlocks;
-            } else {
-              // Fallback: create simple tree with just assets
-              const rootId = uuidv4() as BlockId;
-              const blocks: Record<BlockId, Block> = {
-                [rootId]: {
-                  id: rootId,
-                  type: 'root',
-                  parentId: null,
-                  name: demoStrategy.name,
-                  childIds: [],
-                },
-              };
-
-              for (const symbol of demoStrategy.symbols) {
-                const assetId = uuidv4() as BlockId;
-                blocks[assetId] = {
-                  id: assetId,
-                  type: 'asset',
-                  parentId: rootId,
-                  symbol: symbol,
-                  displayName: symbol,
-                  exchange: 'NASDAQ',
-                };
-                (blocks[rootId] as { childIds: BlockId[] }).childIds.push(assetId);
-              }
-
-              state.tree = { rootId, blocks };
-              state.ui.expandedBlocks = new Set([rootId]);
-            }
-
-            state.isDirty = false;
-            state.loading = false;
-            state.past = [];
-            state.future = [];
-            state.error = null;
-          });
-          return;
-        }
-
-        // If not demo, try loading from backend
+        // Load strategy from backend
         try {
-          const response = await strategyClient.getStrategy({ strategyId: id });
+          const context = getTenantContext();
+          const response = await strategyClient.getStrategy({ context, strategyId: id });
           const strategy = response.strategy;
           if (!strategy) {
             throw new Error('Strategy not found');
@@ -776,7 +814,8 @@ export const useStrategyBuilderStore = create<StrategyBuilderState>()(
             state.strategyId = strategy.id;
             state.strategyName = strategy.name;
             state.strategyDescription = strategy.description || '';
-            state.strategyType = protoTypeToLocal(strategy.type);
+            // StrategyType is frontend-only categorization; strategies default to 'custom'
+            state.strategyType = 'custom';
             state.timeframe = strategy.timeframe;
 
             // Convert compiled JSON to block tree
@@ -816,7 +855,8 @@ export const useStrategyBuilderStore = create<StrategyBuilderState>()(
 
         try {
           // Templates use strategy service - get strategy as template
-          const response = await strategyClient.getStrategy({ strategyId: templateId });
+          const context = getTenantContext();
+          const response = await strategyClient.getStrategy({ context, strategyId: templateId });
           const template = response.strategy;
           if (!template) {
             throw new Error('Template not found');
@@ -828,7 +868,8 @@ export const useStrategyBuilderStore = create<StrategyBuilderState>()(
             state.strategyId = null; // New strategy from template
             state.strategyName = template.name;
             state.strategyDescription = template.description || '';
-            state.strategyType = protoTypeToLocal(template.type);
+            // StrategyType is frontend-only categorization; templates default to 'custom'
+            state.strategyType = 'custom';
             state.timeframe = compiledJson.timeframe || template.timeframe || '1D';
 
             // Convert config to block tree
@@ -889,27 +930,40 @@ export const useStrategyBuilderStore = create<StrategyBuilderState>()(
           };
 
           const dslCode = toDSL(state.tree, metadata);
+          const context = getTenantContext();
+
+          // Save UI state (block tree) in parameters for round-trip editing
+          const uiState = JSON.stringify({
+            rootId: state.tree.rootId,
+            blocks: state.tree.blocks,
+          });
+          const parameters: Record<string, string> = {
+            ui_state: uiState,
+          };
 
           let savedStrategyId: string;
 
           if (state.strategyId) {
             // Update existing
             const response = await strategyClient.updateStrategy({
+              context,
               strategyId: state.strategyId,
               name: state.strategyName,
               description: state.strategyDescription || undefined,
               dslCode,
               timeframe: state.timeframe,
+              parameters,
             });
             savedStrategyId = response.strategy?.id ?? state.strategyId;
           } else {
             // Create new
             const response = await strategyClient.createStrategy({
+              context,
               name: state.strategyName,
               description: state.strategyDescription || undefined,
-              type: localTypeToProto(state.strategyType),
               dslCode,
               timeframe: state.timeframe,
+              parameters,
             });
             if (!response.strategy?.id) {
               throw new Error('Failed to create strategy');
@@ -953,6 +1007,9 @@ export const useStrategyBuilderStore = create<StrategyBuilderState>()(
             expandedBlocks: new Set([rootId]),
             editingBlockId: null,
           };
+          state.viewMode = 'tree';
+          state.dslCode = '';
+          state.dslParseError = null;
           state.past = [];
           state.future = [];
           state.strategyId = null;

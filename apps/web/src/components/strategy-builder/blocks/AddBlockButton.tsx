@@ -46,7 +46,7 @@ export function AddBlockButton({ parentId }: AddBlockButtonProps) {
         onClick={() => setIsOpen(!isOpen)}
         className={`
           w-full flex items-center gap-3 px-4 py-3 rounded-lg border-2 border-dashed
-          transition-colors
+          transition-colors overflow-hidden
           ${
             isOpen
               ? 'border-primary-400 bg-primary-50 dark:bg-primary-900/20 text-primary-700 dark:text-primary-400'
@@ -54,9 +54,9 @@ export function AddBlockButton({ parentId }: AddBlockButtonProps) {
           }
         `}
       >
-        <PlusCircle className="w-5 h-5" />
-        <span className="font-medium">Add a Block</span>
-        <span className="text-sm opacity-75">Stocks or Securities, Weights, Conditions...</span>
+        <PlusCircle className="w-5 h-5 shrink-0" />
+        <span className="font-medium whitespace-nowrap">Add a Block</span>
+        <span className="text-sm opacity-75 truncate">Stocks or Securities, Weights, Conditions...</span>
       </button>
 
       {isOpen && <BlockPicker parentId={parentId} onClose={() => setIsOpen(false)} />}

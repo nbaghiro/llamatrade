@@ -1,15 +1,47 @@
-import { ChevronDown, ChevronRight, Layers } from 'lucide-react';
+import { ChevronDown, ChevronRight, Code2, GitBranch, Layers } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 
-import { useStrategyBuilderStore } from '../../../store/strategy-builder';
+import { useStrategyBuilderStore, type ViewMode } from '../../../store/strategy-builder';
 import type { RootBlock as RootBlockType } from '../../../types/strategy-builder';
 
 interface RootBlockProps {
   block: RootBlockType;
 }
 
+interface ViewButtonProps {
+  mode: ViewMode;
+  currentMode: ViewMode;
+  icon: React.ReactNode;
+  label: string;
+  onClick: () => void;
+}
+
+function ViewButton({ mode, currentMode, icon, label, onClick }: ViewButtonProps) {
+  const isActive = mode === currentMode;
+
+  return (
+    <button
+      onClick={(e) => {
+        e.stopPropagation();
+        onClick();
+      }}
+      title={label}
+      aria-label={label}
+      className={`
+        p-1.5 rounded transition-colors
+        ${isActive
+          ? 'bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-gray-100'
+          : 'text-gray-400 dark:text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-600 dark:hover:text-gray-300'
+        }
+      `}
+    >
+      {icon}
+    </button>
+  );
+}
+
 export function RootBlock({ block }: RootBlockProps) {
-  const { ui, selectBlock, toggleExpand, setEditing, updateBlock } = useStrategyBuilderStore();
+  const { ui, viewMode, setViewMode, selectBlock, toggleExpand, setEditing, updateBlock } = useStrategyBuilderStore();
   const isSelected = ui.selectedBlockId === block.id;
   const isExpanded = ui.expandedBlocks.has(block.id);
   const isEditing = ui.editingBlockId === block.id;
@@ -91,6 +123,24 @@ export function RootBlock({ block }: RootBlockProps) {
       ) : (
         <span className="flex-1 font-medium text-gray-900 dark:text-gray-100">{block.name}</span>
       )}
+
+      {/* View Switcher */}
+      <div className="flex items-center gap-0.5 bg-gray-100 dark:bg-gray-800 rounded-lg p-0.5">
+        <ViewButton
+          mode="tree"
+          currentMode={viewMode}
+          icon={<GitBranch size={14} />}
+          label="Visual Editor"
+          onClick={() => setViewMode('tree')}
+        />
+        <ViewButton
+          mode="code"
+          currentMode={viewMode}
+          icon={<Code2 size={14} />}
+          label="Code Editor"
+          onClick={() => setViewMode('code')}
+        />
+      </div>
     </div>
   );
 }

@@ -5,10 +5,11 @@ import { create } from 'zustand';
 
 import {
   StrategyStatus,
-  StrategyType,
   type Strategy,
-} from '../generated/proto/llamatrade/v1/strategy_pb';
+} from '../generated/proto/strategy_pb';
 import { strategyClient } from '../services/grpc-client';
+
+import { getTenantContext } from './auth';
 
 // Map UI status strings to proto enum values
 function parseStatusFilter(status: string): StrategyStatus[] | undefined {
@@ -21,20 +22,6 @@ function parseStatusFilter(status: string): StrategyStatus[] | undefined {
       return [StrategyStatus.PAUSED];
     case 'archived':
       return [StrategyStatus.ARCHIVED];
-    default:
-      return undefined; // 'all' - no filter
-  }
-}
-
-// Map UI type strings to proto enum values
-function parseTypeFilter(type: string): StrategyType[] | undefined {
-  switch (type) {
-    case 'dsl':
-      return [StrategyType.DSL];
-    case 'python':
-      return [StrategyType.PYTHON];
-    case 'template':
-      return [StrategyType.TEMPLATE];
     default:
       return undefined; // 'all' - no filter
   }
@@ -87,15 +74,26 @@ export const useStrategiesStore = create<StrategiesState>((set, get) => ({
 
   // Fetch strategies with current filters
   fetchStrategies: async () => {
-    const { page, pageSize, statusFilter, typeFilter, searchQuery } = get();
+    // Note: typeFilter is kept for UI but not used for backend query (proto doesn't support it)
+    const { page, pageSize, statusFilter, searchQuery } = get();
 
     set({ loading: true, error: null });
 
+    // Get tenant context (will be undefined if not authenticated)
+    const context = getTenantContext();
+    if (!context) {
+      set({
+        error: 'Please log in to view your strategies',
+        loading: false,
+      });
+      return;
+    }
+
     try {
       const response = await strategyClient.listStrategies({
+        context,
         pagination: { page, pageSize },
         statuses: parseStatusFilter(statusFilter),
-        types: parseTypeFilter(typeFilter),
         search: searchQuery || undefined,
       });
 
@@ -107,8 +105,16 @@ export const useStrategiesStore = create<StrategiesState>((set, get) => ({
         loading: false,
       });
     } catch (error) {
+      // Check for authentication errors
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      const isAuthError = errorMessage.includes('401') ||
+                          errorMessage.includes('Unauthorized') ||
+                          errorMessage.includes('unauthenticated');
+
       set({
-        error: error instanceof Error ? error.message : 'Failed to fetch strategies',
+        error: isAuthError
+          ? 'Please log in to view your strategies'
+          : (error instanceof Error ? error.message : 'Failed to fetch strategies'),
         loading: false,
       });
     }
@@ -138,7 +144,8 @@ export const useStrategiesStore = create<StrategiesState>((set, get) => ({
   deleteStrategy: async (id) => {
     set({ loading: true, error: null });
     try {
-      await strategyClient.deleteStrategy({ strategyId: id });
+      const context = getTenantContext();
+      await strategyClient.deleteStrategy({ context, strategyId: id });
       // Remove from local state
       set((state) => ({
         strategies: state.strategies.filter((s) => s.id !== id),
@@ -155,7 +162,9 @@ export const useStrategiesStore = create<StrategiesState>((set, get) => ({
 
   activateStrategy: async (id) => {
     try {
+      const context = getTenantContext();
       const response = await strategyClient.updateStrategyStatus({
+        context,
         strategyId: id,
         status: StrategyStatus.ACTIVE,
       });
@@ -176,7 +185,9 @@ export const useStrategiesStore = create<StrategiesState>((set, get) => ({
 
   pauseStrategy: async (id) => {
     try {
+      const context = getTenantContext();
       const response = await strategyClient.updateStrategyStatus({
+        context,
         strategyId: id,
         status: StrategyStatus.PAUSED,
       });
@@ -197,17 +208,18 @@ export const useStrategiesStore = create<StrategiesState>((set, get) => ({
 
   cloneStrategy: async (id, newName) => {
     try {
+      const context = getTenantContext();
       // Clone by creating a new strategy based on the existing one
-      const getResponse = await strategyClient.getStrategy({ strategyId: id });
+      const getResponse = await strategyClient.getStrategy({ context, strategyId: id });
       const original = getResponse.strategy;
       if (!original) {
         throw new Error('Strategy not found');
       }
 
       const createResponse = await strategyClient.createStrategy({
+        context,
         name: newName ?? `${original.name} (Copy)`,
         description: original.description,
-        type: original.type,
         dslCode: original.dslCode,
         templateId: original.templateId,
         templateParams: original.templateParams,

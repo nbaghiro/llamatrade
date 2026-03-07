@@ -2,7 +2,7 @@ import { ChevronDown, X } from 'lucide-react';
 
 import { useStrategyBuilderStore } from '../../../store/strategy-builder';
 import type { ElseBlock as ElseBlockType } from '../../../types/strategy-builder';
-import { elseColors } from '../block-theme';
+import { useBlockTheme } from '../useTheme';
 
 interface ElseBlockProps {
   block: ElseBlockType;
@@ -11,6 +11,8 @@ interface ElseBlockProps {
 
 export function ElseBlock({ block }: ElseBlockProps) {
   const { ui, selectBlock, toggleExpand, deleteBlock } = useStrategyBuilderStore();
+  const theme = useBlockTheme();
+  const elseColors = theme.elseBlock;
   const isSelected = ui.selectedBlockId === block.id;
   const isExpanded = ui.expandedBlocks.has(block.id);
 

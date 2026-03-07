@@ -48,16 +48,25 @@
 }
 
 /* Dark mode scrollbar - hidden by default */
-.dark *::-webkit-scrollbar-thumb {
+.dark *::-webkit-scrollbar-thumb,
+.dark::-webkit-scrollbar-thumb {
   background-color: transparent;
 }
 
-.dark *:hover::-webkit-scrollbar-thumb {
+.dark *:hover::-webkit-scrollbar-thumb,
+.dark:hover::-webkit-scrollbar-thumb {
   background-color: #525252; /* gray-600 */
 }
 
-.dark *::-webkit-scrollbar-thumb:hover {
+.dark *::-webkit-scrollbar-thumb:hover,
+.dark::-webkit-scrollbar-thumb:hover {
   background-color: #737373; /* gray-500 */
+}
+
+/* Dark mode scrollbar track */
+.dark *::-webkit-scrollbar-track,
+.dark::-webkit-scrollbar-track {
+  background: transparent;
 }
 
 /* Firefox scrollbar support */
@@ -70,10 +79,12 @@
   scrollbar-color: #d4d4d4 transparent;
 }
 
+.dark,
 .dark * {
   scrollbar-color: transparent transparent;
 }
 
+.dark:hover,
 .dark *:hover {
   scrollbar-color: #525252 transparent;
 }

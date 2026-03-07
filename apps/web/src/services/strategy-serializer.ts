@@ -1,5 +1,6 @@
 // Strategy Serializer
 // Converts between visual block tree and S-expression DSL format
+// Also provides tokenization with position tracking for editor integration
 
 import type { StrategyConfigJSON, StrategyType } from '../types/strategy';
 import type {
@@ -12,6 +13,7 @@ import type {
   IfBlock,
   ElseBlock,
   FilterBlock,
+  FilterConfig,
   ConditionExpression,
   ConditionOperand,
   Comparator,
@@ -41,6 +43,14 @@ export interface StrategyMetadata {
   positionSizePct?: number;
 }
 
+/**
+ * Result of parsing a DSL string, includes both tree and metadata
+ */
+export interface ParsedDSL {
+  tree: StrategyTree;
+  metadata: Partial<StrategyMetadata>;
+}
+
 // ============================================
 // Validation Types
 // ============================================
@@ -56,6 +66,89 @@ export interface ValidationResult {
   valid: boolean;
   errors: ValidationError[];
   warnings: ValidationError[];
+}
+
+// ============================================
+// Token Types for Editor Integration
+// ============================================
+
+export type TokenType =
+  | 'keyword'      // strategy, weight, asset, group, if, else, filter
+  | 'parameter'    // :method, :weight, :rebalance, :benchmark, :lookback
+  | 'method'       // specified, equal, momentum, inverse-volatility
+  | 'indicator'    // sma, ema, rsi, macd, bbands
+  | 'operator'     // >, <, >=, <=, cross-above, cross-below
+  | 'logical'      // and, or, not
+  | 'string'       // "Strategy Name"
+  | 'number'       // 50, 0.05, 100
+  | 'comment'      // ; comment
+  | 'symbol'       // SPY, VTI, BND (uppercase identifiers)
+  | 'bracket'      // ( ) [ ] { }
+  | 'unknown';     // Unrecognized tokens
+
+export interface TokenWithPosition {
+  type: TokenType;
+  value: string;
+  start: number;    // Character offset from start of input
+  end: number;      // Character offset (exclusive)
+  line: number;     // 1-indexed line number
+  column: number;   // 1-indexed column number
+}
+
+export interface ParseError {
+  message: string;
+  line: number;
+  column: number;
+  start: number;
+  end: number;
+}
+
+// ============================================
+// Case Conversion Helpers
+// ============================================
+
+// DSL keywords that should use kebab-case
+const KEBAB_CASE_KEYWORDS = new Set([
+  'inverse-volatility',
+  'min-variance',
+  'risk-parity',
+  'cross-above',
+  'cross-below',
+  'lookback-days',
+  'sort-by',
+  'custom-symbols',
+  'stop-loss-pct',
+  'take-profit-pct',
+  'trailing-stop-pct',
+  'position-size-pct',
+  'position-size',
+  'macd-line',
+  'macd-signal',
+  'bb-upper',
+  'bb-middle',
+  'bb-lower',
+  'williams-r',
+]);
+
+/**
+ * Convert snake_case to kebab-case for DSL serialization
+ */
+export function toKebabCase(str: string): string {
+  return str.replace(/_/g, '-');
+}
+
+/**
+ * Convert kebab-case to snake_case for internal representation
+ */
+export function fromKebabCase(str: string): string {
+  return str.replace(/-/g, '_');
+}
+
+/**
+ * Check if a string is a DSL keyword that uses kebab-case
+ */
+export function isKebabCaseKeyword(str: string): boolean {
+  return KEBAB_CASE_KEYWORDS.has(str);
 }
 
 // ============================================
@@ -284,6 +377,11 @@ function extractSymbolsFromCondition(
 
 /**
  * Serialize weight allocation to DSL
+ * Generates: (weight :method <method> [:lookback N] (asset ...) ...)
+ *
+ * IMPORTANT: Backend DSL requires that when method is "specified", all direct
+ * children must be Assets with :weight. Groups cannot be direct children of
+ * a specified weight block. If we have groups, we must use a different method.
  */
 function serializeWeightBlock(
   block: WeightBlock,
@@ -293,58 +391,105 @@ function serializeWeightBlock(
   const children = block.childIds.map((id) => tree.blocks[id]);
   const lines: string[] = [];
 
-  lines.push(`${indent}(allocation :method ${block.method}`);
-
-  if (block.lookbackDays) {
-    lines.push(`${indent}  :lookback-days ${block.lookbackDays}`);
+  // Determine method - backend DSL doesn't support groups under "specified"
+  // If we have non-asset children (groups, nested weights), use "equal" instead
+  let method = block.method;
+  if (method === 'specified') {
+    const hasNonAssetChildren = children.some((child) => !isAssetBlock(child));
+    if (hasNonAssetChildren) {
+      // Can't use specified with groups - fallback to equal
+      method = 'equal';
+    }
   }
 
-  lines.push(`${indent}  :children [`);
+  // Convert method to DSL format (snake_case to kebab-case for multi-word methods)
+  const methodStr = method.replace(/_/g, '-');
+  lines.push(`${indent}(weight :method ${methodStr}`);
+
+  if (block.lookbackDays) {
+    lines.push(`${indent}  :lookback ${block.lookbackDays}`);
+  }
 
   for (const child of children) {
     if (isAssetBlock(child)) {
       const allocation = block.allocations[child.id] ?? 0;
-      if (block.method === 'specified') {
-        lines.push(`${indent}    {:symbol "${child.symbol}" :weight ${allocation / 100}}`);
+      // Only output :weight when using specified method AND we have a valid allocation
+      if (method === 'specified' && allocation > 0) {
+        lines.push(`${indent}  (asset ${child.symbol} :weight ${allocation})`);
       } else {
-        lines.push(`${indent}    {:symbol "${child.symbol}"}`);
+        lines.push(`${indent}  (asset ${child.symbol})`);
       }
     } else if (isGroupBlock(child)) {
-      lines.push(`${indent}    {:group "${child.name}"`);
-      lines.push(serializeChildren(child.childIds, tree, indent + '      '));
-      lines.push(`${indent}    }`);
+      lines.push(`${indent}  (group "${child.name}"`);
+      lines.push(serializeChildren(child.childIds, tree, indent + '    '));
+      lines.push(`${indent}  )`);
+    } else if (isWeightBlock(child)) {
+      lines.push(serializeWeightBlock(child, tree, indent + '  '));
     } else if (isIfBlock(child)) {
-      lines.push(serializeIfBlock(child, tree, indent + '    '));
+      lines.push(serializeIfBlock(child, tree, indent + '  '));
+    } else if (isFilterBlock(child)) {
+      lines.push(serializeFilterBlock(child, indent + '  '));
     }
   }
 
-  lines.push(`${indent}  ])`);
+  lines.push(`${indent})`);
   return lines.join('\n');
 }
 
 /**
  * Serialize IF/ELSE block to DSL
+ * Backend expects: (if CONDITION THEN_BLOCK [(else ELSE_BLOCK)])
+ * No (then ...) wrapper - just the block directly after condition
  */
 function serializeIfBlock(block: IfBlock, tree: StrategyTree, indent: string): string {
   const lines: string[] = [];
 
   lines.push(`${indent}(if ${conditionToDSL(block.condition)}`);
-  lines.push(`${indent}  (then`);
-  lines.push(serializeChildren(block.childIds, tree, indent + '    '));
-  lines.push(`${indent}  )`);
 
-  // Find associated else block
+  // Serialize then block - backend expects a single block, not wrapped in (then ...)
+  // If there are multiple children, wrap them in a weight block
+  if (block.childIds.length === 0) {
+    // No children - add a placeholder weight block
+    lines.push(`${indent}  (weight :method equal)`);
+  } else if (block.childIds.length === 1) {
+    // Single child - serialize directly
+    const child = tree.blocks[block.childIds[0]];
+    if (child) {
+      lines.push(serializeSingleBlock(child, tree, indent + '  '));
+    }
+  } else {
+    // Multiple children - wrap in a weight block
+    lines.push(`${indent}  (weight :method equal`);
+    lines.push(serializeChildren(block.childIds, tree, indent + '    '));
+    lines.push(`${indent}  )`);
+  }
+
+  // Find associated else block by ifBlockId (not by position, as order may vary)
   const parent = tree.blocks[block.parentId];
   if (parent && hasChildren(parent)) {
     const parentBlock = parent as { childIds: BlockId[] };
-    const blockIndex = parentBlock.childIds.indexOf(block.id);
-    if (blockIndex >= 0 && blockIndex < parentBlock.childIds.length - 1) {
-      const nextId = parentBlock.childIds[blockIndex + 1];
-      const nextBlock = tree.blocks[nextId];
-      if (isElseBlock(nextBlock) && nextBlock.ifBlockId === block.id) {
-        lines.push(`${indent}  (else`);
-        lines.push(serializeChildren(nextBlock.childIds, tree, indent + '    '));
-        lines.push(`${indent}  )`);
+    // Search all siblings for an else block that references this if block
+    for (const siblingId of parentBlock.childIds) {
+      const siblingBlock = tree.blocks[siblingId];
+      if (isElseBlock(siblingBlock) && siblingBlock.ifBlockId === block.id) {
+        // Serialize else block - also expects a single block
+        if (siblingBlock.childIds.length === 0) {
+          lines.push(`${indent}  (else (weight :method equal))`);
+        } else if (siblingBlock.childIds.length === 1) {
+          const elseChild = tree.blocks[siblingBlock.childIds[0]];
+          if (elseChild) {
+            lines.push(`${indent}  (else`);
+            lines.push(serializeSingleBlock(elseChild, tree, indent + '    '));
+            lines.push(`${indent}  )`);
+          }
+        } else {
+          lines.push(`${indent}  (else`);
+          lines.push(`${indent}    (weight :method equal`);
+          lines.push(serializeChildren(siblingBlock.childIds, tree, indent + '      '));
+          lines.push(`${indent}    )`);
+          lines.push(`${indent}  )`);
+        }
+        break; // Found the else block, stop searching
       }
     }
   }
@@ -354,21 +499,62 @@ function serializeIfBlock(block: IfBlock, tree: StrategyTree, indent: string): s
 }
 
 /**
+ * Serialize a single block (helper for if/else which expects single blocks)
+ */
+function serializeSingleBlock(block: Block, tree: StrategyTree, indent: string): string {
+  if (isAssetBlock(block)) {
+    return `${indent}(asset ${block.symbol})`;
+  } else if (isGroupBlock(block)) {
+    const lines: string[] = [];
+    lines.push(`${indent}(group "${block.name}"`);
+    lines.push(serializeChildren(block.childIds, tree, indent + '  '));
+    lines.push(`${indent})`);
+    return lines.join('\n');
+  } else if (isWeightBlock(block)) {
+    return serializeWeightBlock(block, tree, indent);
+  } else if (isIfBlock(block)) {
+    return serializeIfBlock(block, tree, indent);
+  } else if (isFilterBlock(block)) {
+    return serializeFilterBlock(block, indent);
+  }
+  return '';
+}
+
+/**
  * Serialize filter block to DSL
+ * Generates: (filter :by <criteria> :select (top/bottom N) [:lookback N] children...)
  */
 function serializeFilterBlock(block: FilterBlock, indent: string): string {
   const config = block.config;
   const lines: string[] = [];
 
-  lines.push(`${indent}(filter`);
-  lines.push(`${indent}  :selection ${config.selection}`);
-  lines.push(`${indent}  :count ${config.count}`);
-  lines.push(`${indent}  :universe ${config.universe}`);
-  lines.push(`${indent}  :sort-by ${config.sortBy}`);
-  lines.push(`${indent}  :period "${config.period}"`);
+  // Map sortBy to filter criteria (e.g., momentum -> returns)
+  const criteriaMap: Record<string, string> = {
+    momentum: 'returns',
+    volatility: 'volatility',
+    volume: 'volume',
+    market_cap: 'market_cap',
+    rsi: 'rsi',
+    dividend_yield: 'dividend_yield',
+  };
+  const criteria = criteriaMap[config.sortBy] || 'returns';
 
+  // Map period to lookback days
+  const periodMap: Record<string, number> = {
+    '1m': 21,
+    '3m': 63,
+    '6m': 126,
+    '12m': 252,
+  };
+  const lookback = periodMap[config.period] || 63;
+
+  lines.push(`${indent}(filter :by ${criteria} :select (${config.selection} ${config.count}) :lookback ${lookback}`);
+
+  // Add children if custom symbols provided
   if (config.customSymbols && config.customSymbols.length > 0) {
-    lines.push(`${indent}  :custom-symbols [${config.customSymbols.map((s) => `"${s}"`).join(' ')}]`);
+    for (const symbol of config.customSymbols) {
+      lines.push(`${indent}  (asset ${symbol})`);
+    }
   }
 
   lines.push(`${indent})`);
@@ -377,6 +563,7 @@ function serializeFilterBlock(block: FilterBlock, indent: string): string {
 
 /**
  * Serialize children of a container block
+ * Generates allocation-based DSL format
  */
 function serializeChildren(
   childIds: BlockId[],
@@ -393,9 +580,9 @@ function serializeChildren(
     if (isElseBlock(child)) continue;
 
     if (isAssetBlock(child)) {
-      lines.push(`${indent}{:symbol "${child.symbol}"}`);
+      lines.push(`${indent}(asset ${child.symbol})`);
     } else if (isGroupBlock(child)) {
-      lines.push(`${indent}(group :name "${child.name}"`);
+      lines.push(`${indent}(group "${child.name}"`);
       lines.push(serializeChildren(child.childIds, tree, indent + '  '));
       lines.push(`${indent})`);
     } else if (isWeightBlock(child)) {
@@ -411,44 +598,79 @@ function serializeChildren(
 }
 
 /**
+ * Map UI timeframe to DSL rebalance frequency
+ */
+function timeframeToRebalance(timeframe: string): string {
+  const mapping: Record<string, string> = {
+    '1D': 'daily',
+    '1W': 'weekly',
+    '1M': 'monthly',
+    '3M': 'quarterly',
+    '1Y': 'annually',
+  };
+  return mapping[timeframe] || 'daily';
+}
+
+/**
+ * Map DSL rebalance frequency to UI timeframe
+ */
+function rebalanceToTimeframe(rebalance: string): string {
+  const mapping: Record<string, string> = {
+    'daily': '1D',
+    'weekly': '1W',
+    'monthly': '1M',
+    'quarterly': '3M',
+    'annually': '1Y',
+  };
+  return mapping[rebalance] || '1D';
+}
+
+/**
  * Convert block tree to S-expression DSL string
+ * Generates allocation-based format compatible with backend parser
  */
 export function toDSL(tree: StrategyTree, metadata: StrategyMetadata): string {
-  const root = tree.blocks[tree.rootId] as RootBlock;
-  const symbols = extractSymbols(tree);
-
   const lines: string[] = [];
+  const root = tree.blocks[tree.rootId];
 
-  lines.push('(strategy');
-  lines.push(`  :name "${metadata.name}"`);
-  lines.push(`  :type ${metadata.strategyType}`);
-  lines.push(`  :symbols [${symbols.map((s) => `"${s}"`).join(' ')}]`);
-  lines.push(`  :timeframe "${metadata.timeframe}"`);
+  // Strategy header with name as first argument (required by backend parser)
+  lines.push(`(strategy "${metadata.name}"`);
 
+  // Optional rebalance frequency
+  const rebalance = timeframeToRebalance(metadata.timeframe);
+  lines.push(`  :rebalance ${rebalance}`);
+
+  // Optional description
   if (metadata.description) {
     lines.push(`  :description "${metadata.description}"`);
   }
 
-  if (metadata.positionSizePct !== undefined) {
-    lines.push(`  :position-size-pct ${metadata.positionSizePct}`);
+  // Serialize children of root block
+  if (root && hasChildren(root)) {
+    const rootBlock = root as { childIds: BlockId[] };
+    const childContent = serializeChildren(rootBlock.childIds, tree, '  ');
+    if (childContent.trim()) {
+      lines.push(childContent);
+    } else {
+      // If no child blocks, create a minimal weight block with extracted symbols
+      const symbols = extractSymbols(tree);
+      if (symbols.length > 0) {
+        lines.push('  (weight :method equal');
+        for (const symbol of symbols) {
+          lines.push(`    (asset ${symbol})`);
+        }
+        lines.push('  )');
+      } else {
+        // Default to SPY if no symbols found
+        lines.push('  (weight :method equal');
+        lines.push('    (asset SPY))');
+      }
+    }
+  } else {
+    // No root children - create minimal strategy
+    lines.push('  (weight :method equal');
+    lines.push('    (asset SPY))');
   }
-
-  if (metadata.stopLossPct !== undefined) {
-    lines.push(`  :stop-loss-pct ${metadata.stopLossPct}`);
-  }
-
-  if (metadata.takeProfitPct !== undefined) {
-    lines.push(`  :take-profit-pct ${metadata.takeProfitPct}`);
-  }
-
-  if (metadata.trailingStopPct !== undefined) {
-    lines.push(`  :trailing-stop-pct ${metadata.trailingStopPct}`);
-  }
-
-  // Serialize portfolio allocation
-  lines.push('  :portfolio (');
-  lines.push(serializeChildren(root.childIds, tree, '    '));
-  lines.push('  )');
 
   lines.push(')');
 
@@ -630,62 +852,219 @@ interface ParsedCondition {
   right: ConditionOperand;
 }
 
+// Token classification sets
+const DSL_KEYWORDS = new Set([
+  'strategy', 'weight', 'asset', 'group', 'if', 'else', 'filter',
+  'then', 'allocation', 'universe',
+]);
+
+const DSL_METHODS = new Set([
+  'specified', 'equal', 'momentum', 'inverse-volatility', 'min-variance',
+  'risk-parity', 'inverse_volatility', 'min_variance', 'risk_parity',
+  'top', 'bottom',
+]);
+
+const DSL_INDICATORS = new Set([
+  'sma', 'ema', 'rsi', 'macd', 'macd-line', 'macd-signal',
+  'bbands', 'bb-upper', 'bb-middle', 'bb-lower',
+  'atr', 'adx', 'stochastic', 'cci', 'williams-r', 'obv', 'mfi', 'vwap', 'roc',
+]);
+
+const DSL_OPERATORS = new Set([
+  '>', '<', '>=', '<=', '=', '!=',
+  'cross-above', 'cross-below', 'crosses-above', 'crosses-below',
+]);
+
+const DSL_LOGICAL = new Set(['and', 'or', 'not']);
+
 /**
- * Simple tokenizer for S-expressions
+ * Classify a token value into its semantic type
+ */
+function classifyToken(value: string): TokenType {
+  // Brackets
+  if ('()[]{}' .includes(value)) {
+    return 'bracket';
+  }
+
+  // Comments
+  if (value.startsWith(';')) {
+    return 'comment';
+  }
+
+  // String literals
+  if (value.startsWith('"') && value.endsWith('"')) {
+    return 'string';
+  }
+
+  // Parameters (keywords starting with :)
+  if (value.startsWith(':')) {
+    return 'parameter';
+  }
+
+  // Numbers
+  if (/^-?\d+(\.\d+)?$/.test(value)) {
+    return 'number';
+  }
+
+  // Check against known token types
+  const lower = value.toLowerCase();
+
+  if (DSL_KEYWORDS.has(lower)) {
+    return 'keyword';
+  }
+
+  if (DSL_METHODS.has(lower)) {
+    return 'method';
+  }
+
+  if (DSL_INDICATORS.has(lower)) {
+    return 'indicator';
+  }
+
+  if (DSL_OPERATORS.has(value)) {
+    return 'operator';
+  }
+
+  if (DSL_LOGICAL.has(lower)) {
+    return 'logical';
+  }
+
+  // Uppercase identifiers are likely symbols (tickers)
+  if (/^[A-Z][A-Z0-9]*$/.test(value)) {
+    return 'symbol';
+  }
+
+  // Price fields
+  if (['close', 'open', 'high', 'low', 'volume', 'price'].includes(lower)) {
+    return 'keyword';
+  }
+
+  return 'unknown';
+}
+
+/**
+ * Simple tokenizer for S-expressions (backward compatible)
  */
 function tokenize(input: string): string[] {
-  const tokens: string[] = [];
+  return tokenizeWithPositions(input).map((t) => t.value);
+}
+
+/**
+ * Tokenizer with position tracking for editor integration
+ * Returns tokens with line, column, and character offset information
+ */
+export function tokenizeWithPositions(input: string): TokenWithPosition[] {
+  const tokens: TokenWithPosition[] = [];
   let current = 0;
+  let line = 1;
+  let lineStart = 0; // Character offset where current line starts
+
+  function getColumn(): number {
+    return current - lineStart + 1;
+  }
+
+  function createToken(type: TokenType, value: string, start: number, startLine: number, startColumn: number): TokenWithPosition {
+    return {
+      type,
+      value,
+      start,
+      end: current,
+      line: startLine,
+      column: startColumn,
+    };
+  }
 
   while (current < input.length) {
     const char = input[current];
 
-    // Skip whitespace
+    // Track newlines for line/column info
+    if (char === '\n') {
+      current++;
+      line++;
+      lineStart = current;
+      continue;
+    }
+
+    // Skip other whitespace
     if (/\s/.test(char)) {
       current++;
       continue;
     }
 
+    // Comments (semicolon to end of line)
+    if (char === ';') {
+      const start = current;
+      const startLine = line;
+      const startColumn = getColumn();
+      let value = '';
+      while (current < input.length && input[current] !== '\n') {
+        value += input[current];
+        current++;
+      }
+      tokens.push(createToken('comment', value, start, startLine, startColumn));
+      continue;
+    }
+
     // Parentheses and brackets
-    if (char === '(' || char === ')' || char === '[' || char === ']' || char === '{' || char === '}') {
-      tokens.push(char);
+    if ('()[]{}' .includes(char)) {
+      const start = current;
+      const startLine = line;
+      const startColumn = getColumn();
       current++;
+      tokens.push(createToken('bracket', char, start, startLine, startColumn));
       continue;
     }
 
     // String literal
     if (char === '"') {
-      let value = '';
+      const start = current;
+      const startLine = line;
+      const startColumn = getColumn();
+      let value = '"';
       current++; // Skip opening quote
       while (current < input.length && input[current] !== '"') {
+        if (input[current] === '\n') {
+          line++;
+          lineStart = current + 1;
+        }
         value += input[current];
         current++;
       }
-      current++; // Skip closing quote
-      tokens.push(`"${value}"`);
+      if (current < input.length) {
+        value += '"';
+        current++; // Skip closing quote
+      }
+      tokens.push(createToken('string', value, start, startLine, startColumn));
       continue;
     }
 
     // Keyword (starts with :)
     if (char === ':') {
+      const start = current;
+      const startLine = line;
+      const startColumn = getColumn();
       let value = ':';
       current++;
       while (current < input.length && /[a-zA-Z0-9_-]/.test(input[current])) {
         value += input[current];
         current++;
       }
-      tokens.push(value);
+      tokens.push(createToken('parameter', value, start, startLine, startColumn));
       continue;
     }
 
-    // Number or symbol
+    // Number, symbol, or identifier
     if (/[a-zA-Z0-9.<>=_-]/.test(char)) {
+      const start = current;
+      const startLine = line;
+      const startColumn = getColumn();
       let value = '';
       while (current < input.length && /[a-zA-Z0-9.<>=_-]/.test(input[current])) {
         value += input[current];
         current++;
       }
-      tokens.push(value);
+      const type = classifyToken(value);
+      tokens.push(createToken(type, value, start, startLine, startColumn));
       continue;
     }
 
@@ -909,22 +1288,12 @@ function parseOperand(expr: unknown, defaultSymbol: string): ConditionOperand | 
   return null;
 }
 
-interface ParsedStrategy {
-  name: string;
-  type: string;
-  symbols: string[];
-  timeframe: string;
-  entry?: ConditionExpression;
-  exit?: ConditionExpression;
-  positionSizePct?: number;
-  stopLossPct?: number;
-  takeProfitPct?: number;
-}
-
 /**
- * Parse a full strategy S-expression string
+ * Parse a full strategy S-expression string into a block tree and metadata
+ * Handles the allocation-based DSL format:
+ *   (strategy "Name" :rebalance daily :description "..." (weight ...) (group ...) ...)
  */
-export function parseDSLString(dslString: string): ParsedStrategy | null {
+export function fromDSLString(dslString: string): ParsedDSL | null {
   try {
     const tokens = tokenize(dslString);
     const pos = { index: 0 };
@@ -934,165 +1303,459 @@ export function parseDSLString(dslString: string): ParsedStrategy | null {
       return null;
     }
 
-    const result: ParsedStrategy = {
-      name: '',
-      type: 'custom',
-      symbols: [],
-      timeframe: '1D',
-    };
+    blockIdCounter = 0;
+    const rootId = generateBlockId();
+    const blocks: Record<BlockId, Block> = {};
 
-    // Parse key-value pairs
-    for (let i = 1; i < parsed.length; i += 2) {
-      const key = parsed[i];
-      const value = parsed[i + 1];
+    // Get strategy name (first argument after 'strategy')
+    let strategyName = 'Imported Strategy';
+    let startIdx = 1;
 
-      switch (key) {
-        case ':name':
-          result.name = String(value);
-          break;
-        case ':type':
-          result.type = String(value);
-          break;
-        case ':symbols':
-          if (Array.isArray(value)) {
-            result.symbols = value.map(String);
-          }
-          break;
-        case ':timeframe':
-          result.timeframe = String(value);
-          break;
-        case ':entry':
-          if (Array.isArray(value)) {
-            const cond = parseConditionExpr(value, result.symbols[0] || 'SPY');
-            if (cond) {
-              result.entry = {
-                left: cond.left,
-                comparator: cond.comparator,
-                right: cond.right,
-              };
-            }
-          }
-          break;
-        case ':exit':
-          if (Array.isArray(value)) {
-            const cond = parseConditionExpr(value, result.symbols[0] || 'SPY');
-            if (cond) {
-              result.exit = {
-                left: cond.left,
-                comparator: cond.comparator,
-                right: cond.right,
-              };
-            }
-          }
-          break;
-        case ':position-size-pct':
-          result.positionSizePct = Number(value);
-          break;
-        case ':stop-loss-pct':
-          result.stopLossPct = Number(value);
-          break;
-        case ':take-profit-pct':
-          result.takeProfitPct = Number(value);
-          break;
-      }
+    if (typeof parsed[1] === 'string' && !String(parsed[1]).startsWith(':')) {
+      strategyName = parsed[1];
+      startIdx = 2;
     }
 
-    return result;
+    const root: RootBlock = {
+      id: rootId,
+      type: 'root',
+      parentId: null,
+      name: strategyName,
+      childIds: [],
+    };
+    blocks[rootId] = root;
+
+    // Initialize metadata with parsed name
+    const metadata: Partial<StrategyMetadata> = {
+      name: strategyName,
+    };
+
+    // Parse remaining elements (key-value pairs and nested blocks)
+    let i = startIdx;
+    while (i < parsed.length) {
+      const item = parsed[i];
+
+      // Key-value pairs - parse metadata
+      if (typeof item === 'string' && item.startsWith(':')) {
+        const key = item.slice(1); // Remove leading ':'
+        const value = parsed[i + 1];
+
+        switch (key) {
+          case 'rebalance':
+            if (typeof value === 'string') {
+              metadata.timeframe = rebalanceToTimeframe(value);
+            }
+            break;
+          case 'description':
+            if (typeof value === 'string') {
+              metadata.description = value;
+            }
+            break;
+          case 'type':
+            if (typeof value === 'string') {
+              metadata.strategyType = value as StrategyType;
+            }
+            break;
+          case 'stop-loss-pct':
+            if (typeof value === 'number') {
+              metadata.stopLossPct = value;
+            }
+            break;
+          case 'take-profit-pct':
+            if (typeof value === 'number') {
+              metadata.takeProfitPct = value;
+            }
+            break;
+          case 'position-size':
+            if (typeof value === 'number') {
+              metadata.positionSizePct = value;
+            }
+            break;
+        }
+
+        i += 2; // Skip key and value
+        continue;
+      }
+
+      // Nested blocks
+      if (Array.isArray(item)) {
+        const childId = parseBlockFromExpr(item, rootId, blocks);
+        if (childId) {
+          root.childIds.push(childId);
+        }
+      }
+
+      i++;
+    }
+
+    return { tree: { rootId, blocks }, metadata };
   } catch {
     return null;
   }
 }
 
 /**
- * Create a block tree from a parsed DSL strategy
+ * Parse a block expression and add it to the blocks map
+ * Returns the block ID or null if parsing failed
  */
-export function fromDSLString(dslString: string): StrategyTree | null {
-  const parsed = parseDSLString(dslString);
-  if (!parsed) return null;
+function parseBlockFromExpr(
+  expr: unknown[],
+  parentId: BlockId,
+  blocks: Record<BlockId, Block>
+): BlockId | null {
+  if (!Array.isArray(expr) || expr.length === 0) return null;
 
-  blockIdCounter = 0;
-  const rootId = generateBlockId();
-  const blocks: Record<BlockId, Block> = {};
+  const blockType = expr[0];
 
-  const root: RootBlock = {
-    id: rootId,
-    type: 'root',
-    parentId: null,
-    name: parsed.name,
+  switch (blockType) {
+    case 'asset':
+      return parseAssetExpr(expr, parentId, blocks);
+    case 'weight':
+      return parseWeightExpr(expr, parentId, blocks);
+    case 'group':
+      return parseGroupExpr(expr, parentId, blocks);
+    case 'if':
+      return parseIfExpr(expr, parentId, blocks);
+    case 'filter':
+      return parseFilterExpr(expr, parentId, blocks);
+    default:
+      return null;
+  }
+}
+
+/**
+ * Parse (asset SYMBOL [:weight N])
+ */
+function parseAssetExpr(
+  expr: unknown[],
+  parentId: BlockId,
+  blocks: Record<BlockId, Block>
+): BlockId {
+  const id = generateBlockId();
+  const symbol = typeof expr[1] === 'string' ? expr[1] : 'UNKNOWN';
+
+  const asset: AssetBlock = {
+    id,
+    type: 'asset',
+    parentId,
+    symbol,
+    exchange: 'NASDAQ',
+    displayName: symbol,
+  };
+  blocks[id] = asset;
+  return id;
+}
+
+/**
+ * Parse (weight :method METHOD [:lookback N] children...)
+ */
+function parseWeightExpr(
+  expr: unknown[],
+  parentId: BlockId,
+  blocks: Record<BlockId, Block>
+): BlockId {
+  const id = generateBlockId();
+
+  // Create weight block FIRST with empty childIds, so that parseIfExpr
+  // can find the parent and add else blocks to it
+  const weightBlock: WeightBlock = {
+    id,
+    type: 'weight',
+    parentId,
+    method: 'equal',
+    allocations: {},
+    lookbackDays: undefined,
     childIds: [],
   };
-  blocks[rootId] = root;
+  blocks[id] = weightBlock;
 
-  // Create asset blocks for each symbol
-  for (const symbol of parsed.symbols) {
-    const assetId = generateBlockId();
-    const asset: AssetBlock = {
-      id: assetId,
-      type: 'asset',
-      parentId: rootId,
-      symbol,
-      exchange: 'NASDAQ',
-      displayName: symbol,
-    };
-    blocks[assetId] = asset;
-    root.childIds.push(assetId);
+  let i = 1;
+  while (i < expr.length) {
+    const item = expr[i];
+
+    if (item === ':method') {
+      const methodVal = String(expr[i + 1] || 'equal');
+      // Convert kebab-case to snake_case for internal representation
+      weightBlock.method = methodVal.replace(/-/g, '_') as WeightBlock['method'];
+      i += 2;
+      continue;
+    }
+
+    if (item === ':lookback') {
+      const lookbackVal = expr[i + 1];
+      weightBlock.lookbackDays = typeof lookbackVal === 'number' ? lookbackVal : undefined;
+      i += 2;
+      continue;
+    }
+
+    // Skip other parameters
+    if (typeof item === 'string' && item.startsWith(':')) {
+      i += 2;
+      continue;
+    }
+
+    // Parse child blocks
+    if (Array.isArray(item)) {
+      // Check if it's an asset with weight
+      if (item[0] === 'asset') {
+        const childId = parseAssetExpr(item, id, blocks);
+        weightBlock.childIds.push(childId);
+
+        // Extract weight if specified
+        for (let j = 2; j < item.length; j++) {
+          if (item[j] === ':weight' && typeof item[j + 1] === 'number') {
+            weightBlock.allocations[childId] = item[j + 1];
+          }
+        }
+      } else {
+        const childId = parseBlockFromExpr(item, id, blocks);
+        if (childId) {
+          weightBlock.childIds.push(childId);
+        }
+      }
+    }
+
+    i++;
   }
 
-  // Create entry condition block
-  if (parsed.entry) {
-    const ifId = generateBlockId();
+  return id;
+}
+
+/**
+ * Parse (group "Name" children...)
+ */
+function parseGroupExpr(
+  expr: unknown[],
+  parentId: BlockId,
+  blocks: Record<BlockId, Block>
+): BlockId {
+  const id = generateBlockId();
+  const name = typeof expr[1] === 'string' ? expr[1] : 'Group';
+
+  // Create group block FIRST with empty childIds, so that parseIfExpr
+  // can find the parent and add else blocks to it
+  const groupBlock = {
+    id,
+    type: 'group' as const,
+    parentId,
+    name,
+    childIds: [] as BlockId[],
+  };
+  blocks[id] = groupBlock;
+
+  // Now parse children - parseIfExpr can push else blocks to groupBlock.childIds
+  for (let i = 2; i < expr.length; i++) {
+    const item = expr[i];
+    if (Array.isArray(item)) {
+      const childId = parseBlockFromExpr(item, id, blocks);
+      if (childId) {
+        groupBlock.childIds.push(childId);
+      }
+    }
+  }
+
+  return id;
+}
+
+/**
+ * Parse (if CONDITION THEN_BLOCK [(else ELSE_BLOCK)])
+ * Handles two formats:
+ * 1. (if CONDITION (then ...) (else ...)) - explicit then wrapper
+ * 2. (if CONDITION BLOCK (else ...)) - direct then block without wrapper
+ */
+function parseIfExpr(
+  expr: unknown[],
+  parentId: BlockId,
+  blocks: Record<BlockId, Block>
+): BlockId {
+  const ifId = generateBlockId();
+  const ifChildIds: BlockId[] = [];
+  const elseChildIds: BlockId[] = [];
+  let conditionExpr: unknown[] | null = null;
+
+  // Find condition, then block, and else block
+  for (let i = 1; i < expr.length; i++) {
+    const item = expr[i];
+    if (!Array.isArray(item)) continue;
+
+    if (item[0] === 'then') {
+      // Explicit (then ...) wrapper - parse children
+      for (let j = 1; j < item.length; j++) {
+        if (Array.isArray(item[j])) {
+          const childId = parseBlockFromExpr(item[j], ifId, blocks);
+          if (childId) {
+            ifChildIds.push(childId);
+          }
+        }
+      }
+    } else if (item[0] === 'else') {
+      // Parse else children (we'll create the else block later)
+      for (let j = 1; j < item.length; j++) {
+        if (Array.isArray(item[j])) {
+          // Placeholder parent - will be updated
+          const childId = parseBlockFromExpr(item[j], ifId, blocks);
+          if (childId) {
+            elseChildIds.push(childId);
+          }
+        }
+      }
+    } else if (!conditionExpr) {
+      // First array that's not then/else is the condition
+      conditionExpr = item;
+    } else {
+      // Any other block after condition is the then-block content (no wrapper)
+      // This handles: (if CONDITION (weight ...) (else ...))
+      const childId = parseBlockFromExpr(item, ifId, blocks);
+      if (childId) {
+        ifChildIds.push(childId);
+      }
+    }
+  }
+
+  // Parse condition
+  let condition: ConditionExpression | undefined;
+  if (conditionExpr) {
+    const parsed = parseConditionExpr(conditionExpr, 'SPY');
+    if (parsed) {
+      condition = {
+        left: parsed.left,
+        comparator: parsed.comparator,
+        right: parsed.right,
+      };
+    }
+  }
+
+  // Default condition if none provided
+  if (!condition) {
+    condition = {
+      left: { type: 'price', symbol: 'SPY', field: 'close' },
+      comparator: 'gt',
+      right: { type: 'number', value: 0 },
+    };
+  }
+
+  const ifBlock: IfBlock = {
+    id: ifId,
+    type: 'if',
+    parentId,
+    condition,
+    conditionText: conditionToText(condition),
+    childIds: ifChildIds,
+  };
+  blocks[ifId] = ifBlock;
+
+  // Create else block
+  if (elseChildIds.length > 0) {
     const elseId = generateBlockId();
 
-    const ifBlock: IfBlock = {
-      id: ifId,
-      type: 'if',
-      parentId: rootId,
-      condition: parsed.entry,
-      conditionText: `Entry: ${conditionToText(parsed.entry)}`,
-      childIds: [],
-    };
-    blocks[ifId] = ifBlock;
-    root.childIds.push(ifId);
+    // Update else children to have correct parent
+    for (const childId of elseChildIds) {
+      const child = blocks[childId];
+      if (child) {
+        child.parentId = elseId;
+      }
+    }
 
     const elseBlock: ElseBlock = {
       id: elseId,
       type: 'else',
-      parentId: rootId,
+      parentId,
       ifBlockId: ifId,
-      childIds: [],
+      childIds: elseChildIds,
     };
     blocks[elseId] = elseBlock;
-    root.childIds.push(elseId);
+
+    // Add else block to parent's children
+    const parent = blocks[parentId];
+    if (parent && hasChildren(parent)) {
+      parent.childIds.push(elseId);
+    }
   }
 
-  // Create exit condition block
-  if (parsed.exit) {
-    const ifId = generateBlockId();
-    const elseId = generateBlockId();
+  return ifId;
+}
 
-    const ifBlock: IfBlock = {
-      id: ifId,
-      type: 'if',
-      parentId: rootId,
-      condition: parsed.exit,
-      conditionText: `Exit: ${conditionToText(parsed.exit)}`,
-      childIds: [],
-    };
-    blocks[ifId] = ifBlock;
-    root.childIds.push(ifId);
+/**
+ * Parse (filter :by CRITERIA :select (top/bottom N) [:lookback N] children...)
+ */
+function parseFilterExpr(
+  expr: unknown[],
+  parentId: BlockId,
+  blocks: Record<BlockId, Block>
+): BlockId {
+  const id = generateBlockId();
+  let sortBy = 'momentum';
+  let selection: 'top' | 'bottom' = 'top';
+  let count = 3;
+  let period = '3m';
+  const customSymbols: string[] = [];
 
-    const elseBlock: ElseBlock = {
-      id: elseId,
-      type: 'else',
-      parentId: rootId,
-      ifBlockId: ifId,
-      childIds: [],
-    };
-    blocks[elseId] = elseBlock;
-    root.childIds.push(elseId);
+  let i = 1;
+  while (i < expr.length) {
+    const item = expr[i];
+
+    if (item === ':by') {
+      const byVal = String(expr[i + 1] || 'returns');
+      // Map 'returns' back to 'momentum'
+      sortBy = byVal === 'returns' ? 'momentum' : byVal;
+      i += 2;
+      continue;
+    }
+
+    if (item === ':select') {
+      const selectExpr = expr[i + 1];
+      if (Array.isArray(selectExpr) && selectExpr.length >= 2) {
+        selection = selectExpr[0] === 'bottom' ? 'bottom' : 'top';
+        count = typeof selectExpr[1] === 'number' ? selectExpr[1] : 3;
+      }
+      i += 2;
+      continue;
+    }
+
+    if (item === ':lookback') {
+      const lookbackVal = expr[i + 1];
+      const lookback = typeof lookbackVal === 'number' ? lookbackVal : 63;
+      // Map lookback days to period
+      if (lookback <= 21) period = '1m';
+      else if (lookback <= 63) period = '3m';
+      else if (lookback <= 126) period = '6m';
+      else period = '12m';
+      i += 2;
+      continue;
+    }
+
+    // Skip other parameters
+    if (typeof item === 'string' && item.startsWith(':')) {
+      i += 2;
+      continue;
+    }
+
+    // Parse child assets for custom symbols
+    if (Array.isArray(item) && item[0] === 'asset') {
+      const symbol = typeof item[1] === 'string' ? item[1] : '';
+      if (symbol) customSymbols.push(symbol);
+    }
+
+    i++;
   }
 
-  return { rootId, blocks };
+  const filter: FilterBlock = {
+    id,
+    type: 'filter',
+    parentId,
+    config: {
+      sortBy: sortBy as FilterConfig['sortBy'],
+      selection,
+      count,
+      period: period as FilterConfig['period'],
+      universe: customSymbols.length > 0 ? 'custom' : 'sp500',
+      customSymbols: customSymbols.length > 0 ? customSymbols : undefined,
+    },
+    displayText: `${selection === 'top' ? 'Top' : 'Bottom'} ${count} by ${sortBy}`,
+    childIds: [],
+  };
+  blocks[id] = filter;
+  return id;
 }
 
 // ============================================
@@ -1103,9 +1766,12 @@ export const strategySerializer = {
   toDSL,
   fromDSL,
   fromDSLString,
-  parseDSLString,
   validateTree,
   conditionToText,
+  tokenizeWithPositions,
+  toKebabCase,
+  fromKebabCase,
+  isKebabCaseKeyword,
 };
 
 export default strategySerializer;

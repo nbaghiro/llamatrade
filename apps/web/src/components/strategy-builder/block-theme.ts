@@ -1,13 +1,4 @@
 // Centralized color theme for strategy builder blocks
-// Update colors here to change them across all block components
-//
-// OPTION E: "Tricolor Distinct" (Light mode optimized)
-// Each block category gets exactly one brand color - maximum differentiation
-// - Weight → Emerald (growth/money)
-// - IF/ELSE → Blue (logic/decisions)
-// - Filter → Violet (selection/filtering)
-//
-// Light mode uses -500 shades, dark mode uses -600 shades
 
 export type BlockColorScheme = {
   bg: string;
@@ -20,136 +11,363 @@ export type PickerIconColors = {
   icon: string;
 };
 
-// =============================================================================
-// PICKER ICON COLORS (Add Block menu) - Clear color separation
-// =============================================================================
-export const pickerColors = {
-  asset: {
-    bg: 'bg-emerald-100 dark:bg-emerald-900/40',
-    icon: 'text-emerald-500 dark:text-emerald-400',
-  },
+export type ThemeColors = {
+  name: string;
+  description: string;
+  weight: BlockColorScheme;
+  ifBlock: BlockColorScheme;
+  elseBlock: BlockColorScheme;
+  filter: BlockColorScheme;
+  allocation: { bg: string; text: string };
   group: {
-    bg: 'bg-gray-100 dark:bg-gray-800',
-    icon: 'text-blue-500 dark:text-blue-400',
-  },
+    bg: string;
+    border: string;
+    borderHover: string;
+    borderSelected: string;
+    ringSelected: string;
+    text: string;
+    textMuted: string;
+    icon: string;
+    expandHover: string;
+  };
+  asset: {
+    bg: string;
+    border: string;
+    borderHover: string;
+    borderSelected: string;
+    ringSelected: string;
+    text: string;
+    textMuted: string;
+    bullet: string;
+  };
+  picker: {
+    asset: PickerIconColors;
+    group: PickerIconColors;
+    weight: PickerIconColors;
+    ifElse: PickerIconColors;
+    filter: PickerIconColors;
+  };
+};
+
+// =============================================================================
+// THEME 1: Green Blue - Green weights, blue IF, purple ELSE
+// =============================================================================
+const greenBlue: ThemeColors = {
+  name: 'Green Blue',
+  description: 'Green weights, blue conditionals',
   weight: {
-    bg: 'bg-emerald-100 dark:bg-emerald-900/40',
-    icon: 'text-emerald-500 dark:text-emerald-400',
+    bg: 'bg-green-600/85 dark:bg-green-600/90',
+    hover: 'hover:bg-green-500/90 dark:hover:bg-green-500/95',
+    ring: 'ring-green-400/50 dark:ring-green-400/50',
   },
-  ifElse: {
-    bg: 'bg-blue-100 dark:bg-blue-900/40',
-    icon: 'text-blue-500 dark:text-blue-400',
+  ifBlock: {
+    bg: 'bg-blue-600/85 dark:bg-blue-600/90',
+    hover: 'hover:bg-blue-500/90 dark:hover:bg-blue-500/95',
+    ring: 'ring-blue-400/50 dark:ring-blue-400/50',
+  },
+  elseBlock: {
+    bg: 'bg-purple-500/80 dark:bg-purple-500/85',
+    hover: 'hover:bg-purple-400/85 dark:hover:bg-purple-400/90',
+    ring: 'ring-purple-400/50 dark:ring-purple-400/50',
   },
   filter: {
-    bg: 'bg-violet-100 dark:bg-violet-900/40',
-    icon: 'text-violet-500 dark:text-violet-400',
+    bg: 'bg-violet-600/80 dark:bg-violet-600/85',
+    hover: 'hover:bg-violet-500/85 dark:hover:bg-violet-500/90',
+    ring: 'ring-violet-400/50 dark:ring-violet-400/50',
+  },
+  allocation: {
+    bg: 'bg-blue-600/90 dark:bg-blue-600/90',
+    text: 'text-white',
+  },
+  group: {
+    bg: 'bg-white dark:bg-gray-900',
+    border: 'border-gray-200 dark:border-gray-700',
+    borderHover: 'hover:border-gray-300 dark:hover:border-gray-600',
+    borderSelected: 'border-green-500 dark:border-green-400',
+    ringSelected: 'ring-2 ring-green-500/20 dark:ring-green-500/20',
+    text: 'text-gray-900 dark:text-gray-100',
+    textMuted: 'text-gray-500 dark:text-gray-400',
+    icon: 'text-green-600 dark:text-green-400',
+    expandHover: 'hover:bg-gray-50 dark:hover:bg-gray-800',
+  },
+  asset: {
+    bg: 'bg-white dark:bg-gray-900',
+    border: 'border-gray-200 dark:border-gray-700',
+    borderHover: 'hover:border-gray-300 dark:hover:border-gray-600',
+    borderSelected: 'border-green-500 dark:border-green-400',
+    ringSelected: 'ring-2 ring-green-500/20 dark:ring-green-500/20',
+    text: 'text-gray-900 dark:text-gray-100',
+    textMuted: 'text-gray-500 dark:text-gray-400',
+    bullet: 'border-green-600 dark:border-green-400',
+  },
+  picker: {
+    asset: { bg: 'bg-green-50 dark:bg-green-900/30', icon: 'text-green-600 dark:text-green-400' },
+    group: { bg: 'bg-gray-100 dark:bg-gray-800', icon: 'text-gray-500 dark:text-gray-400' },
+    weight: { bg: 'bg-green-50 dark:bg-green-900/30', icon: 'text-green-600 dark:text-green-400' },
+    ifElse: { bg: 'bg-blue-50 dark:bg-blue-900/30', icon: 'text-blue-600 dark:text-blue-400' },
+    filter: { bg: 'bg-violet-50 dark:bg-violet-900/30', icon: 'text-violet-600 dark:text-violet-400' },
   },
 };
 
 // =============================================================================
-// WEIGHT BLOCK COLORS - Green (with opacity for softer look)
+// THEME 2: Blue Green - Blue weights, green IF, purple ELSE
 // =============================================================================
+const blueGreen: ThemeColors = {
+  name: 'Blue Green',
+  description: 'Blue weights, green conditionals',
+  weight: {
+    bg: 'bg-blue-600/85 dark:bg-blue-600/90',
+    hover: 'hover:bg-blue-500/90 dark:hover:bg-blue-500/95',
+    ring: 'ring-blue-400/50 dark:ring-blue-400/50',
+  },
+  ifBlock: {
+    bg: 'bg-emerald-600/85 dark:bg-emerald-600/90',
+    hover: 'hover:bg-emerald-500/90 dark:hover:bg-emerald-500/95',
+    ring: 'ring-emerald-400/50 dark:ring-emerald-400/50',
+  },
+  elseBlock: {
+    bg: 'bg-violet-500/80 dark:bg-violet-500/85',
+    hover: 'hover:bg-violet-400/85 dark:hover:bg-violet-400/90',
+    ring: 'ring-violet-400/50 dark:ring-violet-400/50',
+  },
+  filter: {
+    bg: 'bg-purple-600/80 dark:bg-purple-600/85',
+    hover: 'hover:bg-purple-500/85 dark:hover:bg-purple-500/90',
+    ring: 'ring-purple-400/50 dark:ring-purple-400/50',
+  },
+  allocation: {
+    bg: 'bg-emerald-600/90 dark:bg-emerald-600/90',
+    text: 'text-white',
+  },
+  group: {
+    bg: 'bg-white dark:bg-gray-900',
+    border: 'border-gray-200 dark:border-gray-700',
+    borderHover: 'hover:border-gray-300 dark:hover:border-gray-600',
+    borderSelected: 'border-blue-500 dark:border-blue-400',
+    ringSelected: 'ring-2 ring-blue-500/20 dark:ring-blue-500/20',
+    text: 'text-gray-900 dark:text-gray-100',
+    textMuted: 'text-gray-500 dark:text-gray-400',
+    icon: 'text-blue-600 dark:text-blue-400',
+    expandHover: 'hover:bg-gray-50 dark:hover:bg-gray-800',
+  },
+  asset: {
+    bg: 'bg-white dark:bg-gray-900',
+    border: 'border-gray-200 dark:border-gray-700',
+    borderHover: 'hover:border-gray-300 dark:hover:border-gray-600',
+    borderSelected: 'border-blue-500 dark:border-blue-400',
+    ringSelected: 'ring-2 ring-blue-500/20 dark:ring-blue-500/20',
+    text: 'text-gray-900 dark:text-gray-100',
+    textMuted: 'text-gray-500 dark:text-gray-400',
+    bullet: 'border-blue-600 dark:border-blue-400',
+  },
+  picker: {
+    asset: { bg: 'bg-blue-50 dark:bg-blue-900/30', icon: 'text-blue-600 dark:text-blue-400' },
+    group: { bg: 'bg-gray-100 dark:bg-gray-800', icon: 'text-gray-500 dark:text-gray-400' },
+    weight: { bg: 'bg-blue-50 dark:bg-blue-900/30', icon: 'text-blue-600 dark:text-blue-400' },
+    ifElse: { bg: 'bg-emerald-50 dark:bg-emerald-900/30', icon: 'text-emerald-600 dark:text-emerald-400' },
+    filter: { bg: 'bg-purple-50 dark:bg-purple-900/30', icon: 'text-purple-600 dark:text-purple-400' },
+  },
+};
+
+// =============================================================================
+// THEME 3: Emerald Violet - Emerald weights, violet IF, blue ELSE
+// =============================================================================
+const emeraldViolet: ThemeColors = {
+  name: 'Emerald Violet',
+  description: 'Emerald weights, violet conditionals',
+  weight: {
+    bg: 'bg-emerald-600/85 dark:bg-emerald-600/90',
+    hover: 'hover:bg-emerald-500/90 dark:hover:bg-emerald-500/95',
+    ring: 'ring-emerald-400/50 dark:ring-emerald-400/50',
+  },
+  ifBlock: {
+    bg: 'bg-violet-600/85 dark:bg-violet-600/90',
+    hover: 'hover:bg-violet-500/90 dark:hover:bg-violet-500/95',
+    ring: 'ring-violet-400/50 dark:ring-violet-400/50',
+  },
+  elseBlock: {
+    bg: 'bg-blue-500/80 dark:bg-blue-500/85',
+    hover: 'hover:bg-blue-400/85 dark:hover:bg-blue-400/90',
+    ring: 'ring-blue-400/50 dark:ring-blue-400/50',
+  },
+  filter: {
+    bg: 'bg-indigo-600/80 dark:bg-indigo-600/85',
+    hover: 'hover:bg-indigo-500/85 dark:hover:bg-indigo-500/90',
+    ring: 'ring-indigo-400/50 dark:ring-indigo-400/50',
+  },
+  allocation: {
+    bg: 'bg-violet-600/90 dark:bg-violet-600/90',
+    text: 'text-white',
+  },
+  group: {
+    bg: 'bg-white dark:bg-gray-900',
+    border: 'border-gray-200 dark:border-gray-700',
+    borderHover: 'hover:border-gray-300 dark:hover:border-gray-600',
+    borderSelected: 'border-emerald-500 dark:border-emerald-400',
+    ringSelected: 'ring-2 ring-emerald-500/20 dark:ring-emerald-500/20',
+    text: 'text-gray-900 dark:text-gray-100',
+    textMuted: 'text-gray-500 dark:text-gray-400',
+    icon: 'text-emerald-600 dark:text-emerald-400',
+    expandHover: 'hover:bg-gray-50 dark:hover:bg-gray-800',
+  },
+  asset: {
+    bg: 'bg-white dark:bg-gray-900',
+    border: 'border-gray-200 dark:border-gray-700',
+    borderHover: 'hover:border-gray-300 dark:hover:border-gray-600',
+    borderSelected: 'border-emerald-500 dark:border-emerald-400',
+    ringSelected: 'ring-2 ring-emerald-500/20 dark:ring-emerald-500/20',
+    text: 'text-gray-900 dark:text-gray-100',
+    textMuted: 'text-gray-500 dark:text-gray-400',
+    bullet: 'border-emerald-600 dark:border-emerald-400',
+  },
+  picker: {
+    asset: { bg: 'bg-emerald-50 dark:bg-emerald-900/30', icon: 'text-emerald-600 dark:text-emerald-400' },
+    group: { bg: 'bg-gray-100 dark:bg-gray-800', icon: 'text-gray-500 dark:text-gray-400' },
+    weight: { bg: 'bg-emerald-50 dark:bg-emerald-900/30', icon: 'text-emerald-600 dark:text-emerald-400' },
+    ifElse: { bg: 'bg-violet-50 dark:bg-violet-900/30', icon: 'text-violet-600 dark:text-violet-400' },
+    filter: { bg: 'bg-indigo-50 dark:bg-indigo-900/30', icon: 'text-indigo-600 dark:text-indigo-400' },
+  },
+};
+
+// =============================================================================
+// THEME 4: Teal Violet - Teal weights, violet IF, blue ELSE
+// =============================================================================
+const tealViolet: ThemeColors = {
+  name: 'Teal Violet',
+  description: 'Teal weights, violet conditionals',
+  weight: {
+    bg: 'bg-teal-600/85 dark:bg-teal-600/90',
+    hover: 'hover:bg-teal-500/90 dark:hover:bg-teal-500/95',
+    ring: 'ring-teal-400/50 dark:ring-teal-400/50',
+  },
+  ifBlock: {
+    bg: 'bg-violet-600/85 dark:bg-violet-600/90',
+    hover: 'hover:bg-violet-500/90 dark:hover:bg-violet-500/95',
+    ring: 'ring-violet-400/50 dark:ring-violet-400/50',
+  },
+  elseBlock: {
+    bg: 'bg-blue-500/80 dark:bg-blue-500/85',
+    hover: 'hover:bg-blue-400/85 dark:hover:bg-blue-400/90',
+    ring: 'ring-blue-400/50 dark:ring-blue-400/50',
+  },
+  filter: {
+    bg: 'bg-indigo-600/80 dark:bg-indigo-600/85',
+    hover: 'hover:bg-indigo-500/85 dark:hover:bg-indigo-500/90',
+    ring: 'ring-indigo-400/50 dark:ring-indigo-400/50',
+  },
+  allocation: {
+    bg: 'bg-violet-600/90 dark:bg-violet-600/90',
+    text: 'text-white',
+  },
+  group: {
+    bg: 'bg-white dark:bg-gray-900',
+    border: 'border-gray-200 dark:border-gray-700',
+    borderHover: 'hover:border-gray-300 dark:hover:border-gray-600',
+    borderSelected: 'border-teal-500 dark:border-teal-400',
+    ringSelected: 'ring-2 ring-teal-500/20 dark:ring-teal-500/20',
+    text: 'text-gray-900 dark:text-gray-100',
+    textMuted: 'text-gray-500 dark:text-gray-400',
+    icon: 'text-teal-600 dark:text-teal-400',
+    expandHover: 'hover:bg-gray-50 dark:hover:bg-gray-800',
+  },
+  asset: {
+    bg: 'bg-white dark:bg-gray-900',
+    border: 'border-gray-200 dark:border-gray-700',
+    borderHover: 'hover:border-gray-300 dark:hover:border-gray-600',
+    borderSelected: 'border-teal-500 dark:border-teal-400',
+    ringSelected: 'ring-2 ring-teal-500/20 dark:ring-teal-500/20',
+    text: 'text-gray-900 dark:text-gray-100',
+    textMuted: 'text-gray-500 dark:text-gray-400',
+    bullet: 'border-teal-600 dark:border-teal-400',
+  },
+  picker: {
+    asset: { bg: 'bg-teal-50 dark:bg-teal-900/30', icon: 'text-teal-600 dark:text-teal-400' },
+    group: { bg: 'bg-gray-100 dark:bg-gray-800', icon: 'text-gray-500 dark:text-gray-400' },
+    weight: { bg: 'bg-teal-50 dark:bg-teal-900/30', icon: 'text-teal-600 dark:text-teal-400' },
+    ifElse: { bg: 'bg-violet-50 dark:bg-violet-900/30', icon: 'text-violet-600 dark:text-violet-400' },
+    filter: { bg: 'bg-indigo-50 dark:bg-indigo-900/30', icon: 'text-indigo-600 dark:text-indigo-400' },
+  },
+};
+
+// =============================================================================
+// THEME REGISTRY
+// =============================================================================
+export const themes = {
+  greenBlue,
+  blueGreen,
+  emeraldViolet,
+  tealViolet,
+} as const;
+
+export type ThemeName = keyof typeof themes;
+
+// Current active theme - change this to switch themes
+let currentTheme: ThemeName = 'greenBlue';
+
+export function setTheme(name: ThemeName): void {
+  currentTheme = name;
+  // Trigger re-render by dispatching a custom event
+  window.dispatchEvent(new CustomEvent('theme-change', { detail: name }));
+}
+
+export function getTheme(): ThemeColors {
+  return themes[currentTheme];
+}
+
+export function getCurrentThemeName(): ThemeName {
+  return currentTheme;
+}
+
+export function getThemeNames(): ThemeName[] {
+  return Object.keys(themes) as ThemeName[];
+}
+
+// =============================================================================
+// BACKWARDS-COMPATIBLE EXPORTS (use getTheme() for dynamic access)
+// =============================================================================
+
+// These are kept for backwards compatibility but now pull from the active theme
+export function getWeightColors(_method: string): BlockColorScheme {
+  return getTheme().weight;
+}
+
+export function getIfColors(_hasIndicator: boolean): BlockColorScheme {
+  return getTheme().ifBlock;
+}
+
+// Static exports that reference current theme
 export const weightColors: Record<string, BlockColorScheme> = {
-  specified: {
-    bg: 'bg-green-600/80 dark:bg-green-600/80',
-    hover: 'hover:bg-green-600/90 dark:hover:bg-green-700/90',
-    ring: 'ring-green-300 dark:ring-green-400',
-  },
-  equal: {
-    bg: 'bg-green-600/80 dark:bg-green-600/80',
-    hover: 'hover:bg-green-600/90 dark:hover:bg-green-700/90',
-    ring: 'ring-green-300 dark:ring-green-400',
-  },
-  momentum: {
-    bg: 'bg-green-600/80 dark:bg-green-600/80',
-    hover: 'hover:bg-green-600/90 dark:hover:bg-green-700/90',
-    ring: 'ring-green-300 dark:ring-green-400',
-  },
-  dynamic: {
-    bg: 'bg-green-600/80 dark:bg-green-600/80',
-    hover: 'hover:bg-green-600/90 dark:hover:bg-green-700/90',
-    ring: 'ring-green-300 dark:ring-green-400',
-  },
+  get specified() { return getTheme().weight; },
+  get equal() { return getTheme().weight; },
+  get momentum() { return getTheme().weight; },
+  get dynamic() { return getTheme().weight; },
 };
 
-export function getWeightColors(method: string): BlockColorScheme {
-  if (method === 'specified') return weightColors.specified;
-  if (method === 'equal') return weightColors.equal;
-  if (method === 'momentum') return weightColors.momentum;
-  return weightColors.dynamic;
-}
-
-// =============================================================================
-// IF BLOCK COLORS - Blue
-// =============================================================================
 export const ifColors: Record<string, BlockColorScheme> = {
-  price: {
-    bg: 'bg-blue-500 dark:bg-blue-600',
-    hover: 'hover:bg-blue-600 dark:hover:bg-blue-700',
-    ring: 'ring-blue-300 dark:ring-blue-400',
-  },
-  indicator: {
-    bg: 'bg-blue-500 dark:bg-blue-600',
-    hover: 'hover:bg-blue-600 dark:hover:bg-blue-700',
-    ring: 'ring-blue-300 dark:ring-blue-400',
-  },
+  get price() { return getTheme().ifBlock; },
+  get indicator() { return getTheme().ifBlock; },
 };
 
-export function getIfColors(hasIndicator: boolean): BlockColorScheme {
-  return hasIndicator ? ifColors.indicator : ifColors.price;
-}
+export const elseColors: BlockColorScheme = new Proxy({} as BlockColorScheme, {
+  get(_, prop) { return getTheme().elseBlock[prop as keyof BlockColorScheme]; },
+});
 
-// =============================================================================
-// ELSE BLOCK COLORS - Blue (slightly lighter)
-// =============================================================================
-export const elseColors: BlockColorScheme = {
-  bg: 'bg-blue-400 dark:bg-blue-500',
-  hover: 'hover:bg-blue-500 dark:hover:bg-blue-600',
-  ring: 'ring-blue-200 dark:ring-blue-300',
-};
+export const filterColors: BlockColorScheme = new Proxy({} as BlockColorScheme, {
+  get(_, prop) { return getTheme().filter[prop as keyof BlockColorScheme]; },
+});
 
-// =============================================================================
-// FILTER BLOCK COLORS - Violet pill (inline style like Weight)
-// =============================================================================
-export const filterColors: BlockColorScheme = {
-  bg: 'bg-violet-500 dark:bg-violet-600',
-  hover: 'hover:bg-violet-600 dark:hover:bg-violet-700',
-  ring: 'ring-violet-300 dark:ring-violet-400',
-};
+export const groupColors = new Proxy({} as ThemeColors['group'], {
+  get(_, prop) { return getTheme().group[prop as keyof ThemeColors['group']]; },
+});
 
-// =============================================================================
-// GROUP BLOCK COLORS - Gray with blue icon
-// =============================================================================
-export const groupColors = {
-  bg: 'bg-white dark:bg-gray-900',
-  border: 'border-gray-200 dark:border-gray-700',
-  borderHover: 'hover:border-gray-300 dark:hover:border-gray-600',
-  borderSelected: 'border-blue-500 dark:border-blue-500',
-  ringSelected: 'ring-2 ring-blue-500/20 dark:ring-blue-600/20',
-  text: 'text-gray-900 dark:text-gray-100',
-  textMuted: 'text-gray-500 dark:text-gray-400',
-  icon: 'text-blue-500 dark:text-blue-400',
-  expandHover: 'hover:bg-gray-50 dark:hover:bg-gray-800',
-};
+export const assetColors = new Proxy({} as ThemeColors['asset'], {
+  get(_, prop) { return getTheme().asset[prop as keyof ThemeColors['asset']]; },
+});
 
-// =============================================================================
-// ASSET BLOCK COLORS - Gray with emerald bullet
-// =============================================================================
-export const assetColors = {
-  bg: 'bg-white dark:bg-gray-900',
-  border: 'border-gray-200 dark:border-gray-700',
-  borderHover: 'hover:border-gray-300 dark:hover:border-gray-600',
-  borderSelected: 'border-emerald-500 dark:border-emerald-500',
-  ringSelected: 'ring-2 ring-emerald-500/20 dark:ring-emerald-600/20',
-  text: 'text-gray-900 dark:text-gray-100',
-  textMuted: 'text-gray-500 dark:text-gray-400',
-  bullet: 'border-emerald-500 dark:border-emerald-500',
-};
+export const allocationBadgeColors = new Proxy({} as { bg: string; text: string }, {
+  get(_, prop) { return getTheme().allocation[prop as keyof { bg: string; text: string }]; },
+});
 
-// =============================================================================
-// ALLOCATION BADGE COLORS - Blue
-// =============================================================================
-export const allocationBadgeColors = {
-  bg: 'bg-blue-500 dark:bg-blue-600',
-  text: 'text-white',
-};
+export const pickerColors = new Proxy({} as ThemeColors['picker'], {
+  get(_, prop) { return getTheme().picker[prop as keyof ThemeColors['picker']]; },
+});

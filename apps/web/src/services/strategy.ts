@@ -7,9 +7,8 @@
 
 import {
   StrategyStatus,
-  StrategyType,
   type Strategy,
-} from '../generated/proto/llamatrade/v1/strategy_pb';
+} from '../generated/proto/strategy_pb';
 
 import { strategyClient } from './grpc-client';
 
@@ -21,7 +20,6 @@ export async function listStrategies(params: {
   page?: number;
   pageSize?: number;
   statuses?: StrategyStatus[];
-  types?: StrategyType[];
   search?: string;
 } = {}) {
   return strategyClient.listStrategies({
@@ -29,7 +27,6 @@ export async function listStrategies(params: {
       ? { page: params.page ?? 1, pageSize: params.pageSize ?? 20 }
       : undefined,
     statuses: params.statuses,
-    types: params.types,
     search: params.search,
   });
 }
@@ -41,7 +38,6 @@ export async function getStrategy(strategyId: string) {
 export async function createStrategy(data: {
   name: string;
   description?: string;
-  type?: StrategyType;
   dslCode?: string;
   templateId?: string;
   templateParams?: Record<string, string>;
@@ -52,7 +48,6 @@ export async function createStrategy(data: {
   return strategyClient.createStrategy({
     name: data.name,
     description: data.description,
-    type: data.type,
     dslCode: data.dslCode,
     templateId: data.templateId,
     templateParams: data.templateParams,
@@ -127,7 +122,7 @@ export async function listStrategyVersions(strategyId: string, pagination?: { pa
 // Re-exports for convenience
 // ============================================
 
-export { StrategyStatus, StrategyType };
+export { StrategyStatus };
 export type { Strategy };
 
 // ============================================

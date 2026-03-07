@@ -5,6 +5,7 @@ interface User {
   id: string;
   email: string;
   roles: string[];
+  tenantId: string;
 }
 
 interface AuthState {
@@ -15,6 +16,19 @@ interface AuthState {
   login: (user: User, accessToken: string, refreshToken: string) => void;
   logout: () => void;
   setTokens: (accessToken: string, refreshToken: string) => void;
+}
+
+/**
+ * Get tenant context for API requests.
+ * Returns undefined if not authenticated.
+ */
+export function getTenantContext(): { tenantId: string; userId: string } | undefined {
+  const { user } = useAuthStore.getState();
+  if (!user || !user.tenantId) return undefined;
+  return {
+    tenantId: user.tenantId,
+    userId: user.id,
+  };
 }
 
 export const useAuthStore = create<AuthState>()(

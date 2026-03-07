@@ -2,12 +2,11 @@ import { MoreHorizontal, Play, Pause, Copy, Trash2, Edit2 } from 'lucide-react';
 import { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 
-import type { Timestamp } from '../../generated/proto/llamatrade/v1/common_pb';
+import type { Timestamp } from '../../generated/proto/common_pb';
 import {
   StrategyStatus,
-  StrategyType,
   type Strategy,
-} from '../../generated/proto/llamatrade/v1/strategy_pb';
+} from '../../generated/proto/strategy_pb';
 import { useStrategiesStore } from '../../store/strategies';
 
 interface StrategyCardProps {
@@ -15,6 +14,9 @@ interface StrategyCardProps {
 }
 
 type StatusKey = 'draft' | 'active' | 'paused' | 'archived';
+
+// Strategy implementation type - derived from strategy fields
+type ImplementationType = 'dsl' | 'template' | 'custom';
 
 const STATUS_COLORS: Record<StatusKey, { bg: string; text: string }> = {
   draft: { bg: 'bg-gray-100 dark:bg-gray-800', text: 'text-gray-700 dark:text-gray-300' },
@@ -38,13 +40,18 @@ function getStatusKey(status: StrategyStatus): StatusKey {
   }
 }
 
-function getTypeLabel(type: StrategyType): string {
+// Derive implementation type from strategy fields
+function getImplementationType(strategy: Strategy): ImplementationType {
+  if (strategy.templateId) return 'template';
+  if (strategy.dslCode) return 'dsl';
+  return 'custom';
+}
+
+function getTypeLabel(type: ImplementationType): string {
   switch (type) {
-    case StrategyType.DSL:
+    case 'dsl':
       return 'DSL';
-    case StrategyType.PYTHON:
-      return 'Python';
-    case StrategyType.TEMPLATE:
+    case 'template':
       return 'Template';
     default:
       return 'Custom';
@@ -133,7 +140,7 @@ export function StrategyCard({ strategy }: StrategyCardProps) {
       {/* Type badge */}
       <div className="mb-3">
         <span className="px-2 py-0.5 text-xs font-medium rounded bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400">
-          {getTypeLabel(strategy.type)}
+          {getTypeLabel(getImplementationType(strategy))}
         </span>
       </div>
 

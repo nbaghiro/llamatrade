@@ -3,7 +3,7 @@ import { useState } from 'react';
 
 import { useStrategyBuilderStore } from '../../../store/strategy-builder';
 import type { BlockId, ConditionExpression, FilterConfig } from '../../../types/strategy-builder';
-import { pickerColors } from '../block-theme';
+import { useBlockTheme } from '../useTheme';
 
 import { AssetPicker } from './AssetPicker';
 import { ConditionBuilder } from './ConditionBuilder';
@@ -19,6 +19,8 @@ interface BlockPickerProps {
 
 export function BlockPicker({ parentId, onClose }: BlockPickerProps) {
   const [view, setView] = useState<PickerView>('main');
+  const theme = useBlockTheme();
+  const pickerColors = theme.picker;
   const addGroup = useStrategyBuilderStore((s) => s.addGroup);
   const addCondition = useStrategyBuilderStore((s) => s.addCondition);
   const addFilter = useStrategyBuilderStore((s) => s.addFilter);

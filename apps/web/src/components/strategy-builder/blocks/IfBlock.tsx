@@ -4,8 +4,8 @@ import { useState, useRef, useEffect } from 'react';
 import { conditionToText } from '../../../services/strategy-serializer';
 import { useStrategyBuilderStore } from '../../../store/strategy-builder';
 import type { IfBlock as IfBlockType, ConditionExpression } from '../../../types/strategy-builder';
-import { getIfColors } from '../block-theme';
 import { ConditionEditor } from '../panels/ConditionEditor';
+import { useBlockTheme } from '../useTheme';
 
 interface IfBlockProps {
   block: IfBlockType;
@@ -14,6 +14,7 @@ interface IfBlockProps {
 
 export function IfBlock({ block }: IfBlockProps) {
   const { ui, selectBlock, toggleExpand, updateCondition, deleteBlock, tree } = useStrategyBuilderStore();
+  const theme = useBlockTheme();
   const isSelected = ui.selectedBlockId === block.id;
   const isExpanded = ui.expandedBlocks.has(block.id);
   const [isEditing, setIsEditing] = useState(false);
@@ -64,11 +65,8 @@ export function IfBlock({ block }: IfBlockProps) {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [isEditing]);
 
-  // Determine if condition uses indicators (vs pure price)
-  const hasIndicator =
-    block.condition.left.type === 'indicator' || block.condition.right.type === 'indicator';
-
-  const colors = getIfColors(hasIndicator);
+  // Use theme colors for IF block
+  const colors = theme.ifBlock;
 
   return (
     <div ref={blockRef} className="relative">

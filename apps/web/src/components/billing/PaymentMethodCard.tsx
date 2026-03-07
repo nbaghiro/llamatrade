@@ -5,7 +5,7 @@
 import { CreditCard, MoreVertical, Star, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 
-import type { PaymentMethod } from '../../generated/proto/llamatrade/v1/billing_pb';
+import type { PaymentMethod } from '../../generated/proto/billing_pb';
 
 interface PaymentMethodCardProps {
   paymentMethod: PaymentMethod;

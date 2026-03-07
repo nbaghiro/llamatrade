@@ -16,14 +16,14 @@
 import { createClient, type Interceptor } from '@connectrpc/connect';
 import { createConnectTransport } from '@connectrpc/connect-web';
 
-import { AuthService } from '../generated/proto/llamatrade/v1/auth_pb';
-import { BacktestService } from '../generated/proto/llamatrade/v1/backtest_pb';
-import { BillingService } from '../generated/proto/llamatrade/v1/billing_pb';
-import { MarketDataService } from '../generated/proto/llamatrade/v1/market_data_pb';
-import { NotificationService } from '../generated/proto/llamatrade/v1/notification_pb';
-import { PortfolioService } from '../generated/proto/llamatrade/v1/portfolio_pb';
-import { StrategyService } from '../generated/proto/llamatrade/v1/strategy_pb';
-import { TradingService } from '../generated/proto/llamatrade/v1/trading_pb';
+import { AuthService } from '../generated/proto/auth_pb';
+import { BacktestService } from '../generated/proto/backtest_pb';
+import { BillingService } from '../generated/proto/billing_pb';
+import { MarketDataService } from '../generated/proto/market_data_pb';
+import { NotificationService } from '../generated/proto/notification_pb';
+import { PortfolioService } from '../generated/proto/portfolio_pb';
+import { StrategyService } from '../generated/proto/strategy_pb';
+import { TradingService } from '../generated/proto/trading_pb';
 import { useAuthStore } from '../store/auth';
 
 // Direct service URLs (no proxy needed)

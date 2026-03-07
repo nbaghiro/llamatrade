@@ -1,6 +1,6 @@
 import { useStrategyBuilderStore } from '../../../store/strategy-builder';
 import type { AssetBlock as AssetBlockType } from '../../../types/strategy-builder';
-import { assetColors, allocationBadgeColors } from '../block-theme';
+import { useBlockTheme } from '../useTheme';
 
 interface AssetBlockProps {
   block: AssetBlockType;
@@ -9,6 +9,9 @@ interface AssetBlockProps {
 
 export function AssetBlock({ block, allocationPercent }: AssetBlockProps) {
   const { ui, selectBlock } = useStrategyBuilderStore();
+  const theme = useBlockTheme();
+  const assetColors = theme.asset;
+  const allocationBadgeColors = theme.allocation;
   const isSelected = ui.selectedBlockId === block.id;
 
   const handleClick = (e: React.MouseEvent) => {

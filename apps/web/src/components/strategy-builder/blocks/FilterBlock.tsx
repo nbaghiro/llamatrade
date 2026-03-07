@@ -3,7 +3,7 @@ import { ChevronDown, X } from 'lucide-react';
 import { useStrategyBuilderStore } from '../../../store/strategy-builder';
 import type { FilterBlock as FilterBlockType } from '../../../types/strategy-builder';
 import { FILTER_UNIVERSES } from '../../../types/strategy-builder';
-import { filterColors, allocationBadgeColors } from '../block-theme';
+import { useBlockTheme } from '../useTheme';
 
 interface FilterBlockProps {
   block: FilterBlockType;
@@ -13,6 +13,9 @@ interface FilterBlockProps {
 
 export function FilterBlock({ block, allocationPercent, onEditFilter }: FilterBlockProps) {
   const { ui, selectBlock, toggleExpand, deleteBlock } = useStrategyBuilderStore();
+  const theme = useBlockTheme();
+  const filterColors = theme.filter;
+  const allocationBadgeColors = theme.allocation;
   const isSelected = ui.selectedBlockId === block.id;
   const isExpanded = ui.expandedBlocks.has(block.id);
 

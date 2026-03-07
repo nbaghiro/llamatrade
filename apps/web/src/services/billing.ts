@@ -5,7 +5,7 @@
  * It uses the proto-generated types directly.
  */
 
-import { BillingInterval } from '../generated/proto/llamatrade/v1/billing_pb';
+import { BillingInterval } from '../generated/proto/billing_pb';
 
 import { billingClient } from './grpc-client';
 
