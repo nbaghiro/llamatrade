@@ -350,7 +350,7 @@ APCA-API-SECRET-KEY: <api_secret>
 ### Client Usage Example
 
 ```python
-from llamatrade_grpc.clients import MarketDataClient
+from llamatrade_proto.clients import MarketDataClient
 
 async with MarketDataClient("market-data:8840") as client:
     # Historical bars

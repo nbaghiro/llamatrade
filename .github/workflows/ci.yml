@@ -7,7 +7,7 @@ on:
     branches: [main]
 
 env:
-  PYTHON_VERSION: "3.12"
+  PYTHON_VERSION: "3.14"
   NODE_VERSION: "20"
 
 jobs:
@@ -22,8 +22,13 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
-      - name: Install tools
-        run: pip install ruff mypy pydantic fastapi types-redis prometheus-client
+      - name: Set up Node.js (for Pyright)
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install Python tools
+        run: pip install ruff
 
       - name: Run ruff (lint)
         run: ruff check --config pyproject.toml services/ libs/
@@ -31,19 +36,8 @@ jobs:
       - name: Run ruff (format check)
         run: ruff format --config pyproject.toml --check services/ libs/
 
-      - name: Run mypy (type check)
-        run: |
-          # Run mypy per-service to avoid "Duplicate module named src" error
-          mypy libs/common --ignore-missing-imports
-          mypy libs/db --ignore-missing-imports
-          mypy services/auth --ignore-missing-imports
-          mypy services/strategy --ignore-missing-imports
-          mypy services/backtest --ignore-missing-imports
-          mypy services/market-data --ignore-missing-imports
-          mypy services/trading --ignore-missing-imports
-          mypy services/portfolio --ignore-missing-imports
-          mypy services/notification --ignore-missing-imports
-          mypy services/billing --ignore-missing-imports
+      - name: Run Pyright (type check)
+        run: npx pyright services/ libs/
 
   test-backend:
     name: Test Backend
@@ -90,7 +84,7 @@ jobs:
           pip install -e libs/db[dev]
           pip install -e libs/dsl[dev]
           pip install -e libs/compiler[dev]
-          pip install -e libs/grpc[dev]
+          pip install -e libs/proto[dev]
 
       - name: Install coverage tools
         run: pip install pytest-cov coverage

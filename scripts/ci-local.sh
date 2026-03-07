@@ -4,7 +4,7 @@
 # Usage: ./scripts/ci-local.sh [options]
 #
 # Options:
-#   --lint-only      Run only linting (ruff + mypy)
+#   --lint-only      Run only linting (ruff + pyright)
 #   --test-only      Run only tests
 #   --backend-only   Skip frontend checks
 #   --frontend-only  Skip backend checks
@@ -125,19 +125,15 @@ if [[ "$RUN_LINT" == "true" && "$RUN_BACKEND" == "true" ]]; then
         run_step "Ruff format check" ruff format --config pyproject.toml --check services/ libs/
     fi
 
-    print_header "Python Type Checking (mypy)"
+    print_header "Python Type Checking (Pyright)"
 
-    # Run mypy per-service to avoid "Duplicate module named src" error
-    run_step "mypy libs/common" mypy libs/common --ignore-missing-imports || true
-    run_step "mypy libs/db" mypy libs/db --ignore-missing-imports || true
-    run_step "mypy services/auth" mypy services/auth --ignore-missing-imports || true
-    run_step "mypy services/strategy" mypy services/strategy --ignore-missing-imports || true
-    run_step "mypy services/backtest" mypy services/backtest --ignore-missing-imports || true
-    run_step "mypy services/market-data" mypy services/market-data --ignore-missing-imports || true
-    run_step "mypy services/trading" mypy services/trading --ignore-missing-imports || true
-    run_step "mypy services/portfolio" mypy services/portfolio --ignore-missing-imports || true
-    run_step "mypy services/notification" mypy services/notification --ignore-missing-imports || true
-    run_step "mypy services/billing" mypy services/billing --ignore-missing-imports || true
+    # Ensure dependencies are installed for type checking
+    print_step "Syncing dependencies"
+    uv sync --all-packages --quiet
+
+    # Run Pyright for type checking (configured in pyproject.toml)
+    # Note: Don't specify paths - let pyright use include/exclude from pyproject.toml
+    run_step "Pyright" npx pyright
 fi
 
 # ═══════════════════════════════════════════════════════════════

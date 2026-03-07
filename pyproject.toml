@@ -3,45 +3,32 @@ name = "llamatrade"
 version = "0.1.0"
 description = "LlamaTrade - Algorithmic Trading Platform"
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.14"
 
 [tool.ruff]
 line-length = 100
-target-version = "py312"
+target-version = "py314"
+force-exclude = true
 extend-exclude = [
-    "libs/grpc/llamatrade",
-    "services/*/src/grpc",
+    "generated",
 ]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "N", "W", "UP"]
-ignore = ["E501", "UP036"]
+ignore = ["E501", "UP036", "UP046"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["llamatrade_common", "llamatrade_db", "llamatrade_proto", "llamatrade_dsl", "llamatrade_compiler", "llamatrade_alpaca"]
+section-order = ["future", "standard-library", "third-party", "first-party", "local-folder"]
+forced-separate = ["src"]
 
 [tool.ruff.lint.per-file-ignores]
-# Generated protobuf files use uppercase method names (HasField, ClearField, etc.)
-"libs/grpc/llamatrade_grpc/generated/**" = ["N802", "N803", "UP036", "E501"]
-"libs/grpc/llamatrade/**/*.py" = ["N802", "N803", "UP036", "E501"]
-"libs/grpc/llamatrade/**/*.pyi" = ["N802", "N803", "UP036", "E501"]
-# gRPC/Connect servicers follow protocol naming (PascalCase methods) and have inline imports
-"services/*/src/grpc/*.py" = ["N802", "N803", "F821", "F841", "E402", "E501"]
-
-[tool.mypy]
-python_version = "3.12"
-strict = true
-ignore_missing_imports = true
-disallow_untyped_defs = true
-disallow_any_generics = false  # Allow Any from third-party libs like pydantic
-disallow_untyped_decorators = false  # Allow FastAPI decorators
-warn_return_any = true
-warn_unused_ignores = true
-show_error_codes = true
-exclude = ["tests", "venv", ".venv", "libs/grpc/llamatrade", "services/.*/src/grpc"]
-plugins = ["pydantic.mypy"]
-
-[tool.pydantic-mypy]
-init_forbid_extra = true
-init_typed = true
-warn_required_dynamic_aliases = true
+# Generated protobuf files - ignore all style issues (auto-generated code)
+"libs/proto/llamatrade_proto/generated/**" = ["N802", "N803", "UP036", "UP046", "E501", "I001", "F401", "E402", "UP009", "UP035", "UP007"]
+"libs/proto/llamatrade_proto/generated/*.py" = ["N802", "N803", "UP036", "UP046", "E501", "I001", "F401", "E402", "UP009", "UP035", "UP007"]
+"libs/proto/llamatrade_proto/generated/*.pyi" = ["N802", "N803", "UP036", "UP046", "E501", "I001", "F401", "E402", "UP009", "UP035", "UP007"]
+# gRPC/Connect servicers: PascalCase methods from proto, inline imports to avoid circular deps
+"services/*/src/grpc/*.py" = ["N802", "E402"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
@@ -89,17 +76,76 @@ directory = "htmlcov"
 
 [tool.uv.workspace]
 members = [
+    "libs/alpaca",
     "libs/common",
     "libs/compiler",
     "libs/db",
     "libs/dsl",
-    "libs/grpc",
+    "libs/proto",
     "services/auth",
-    "services/strategy",
     "services/backtest",
-    "services/market-data",
-    "services/trading",
-    "services/portfolio",
-    "services/notification",
     "services/billing",
+    "services/market-data",
+    "services/notification",
+    "services/portfolio",
+    "services/strategy",
+    "services/trading",
+]
+
+[tool.uv.sources]
+llamatrade-alpaca = { workspace = true }
+llamatrade-common = { workspace = true }
+llamatrade-compiler = { workspace = true }
+llamatrade-db = { workspace = true }
+llamatrade-dsl = { workspace = true }
+llamatrade-proto = { workspace = true }
+
+[tool.pyright]
+venvPath = "."
+venv = ".venv"
+pythonVersion = "3.14"
+typeCheckingMode = "strict"
+# Include services and libs (src directories only, not tests)
+include = [
+    "services/*/src",
+    "libs/*",
+]
+# Exclude generated code, tests, and proto client/server wrappers (gRPC types)
+exclude = [
+    "**/tests/**",
+    "**/test_*.py",
+    "**/*_test.py",
+    "**/conftest.py",
+    "**/alembic/**",
+    "libs/proto/llamatrade_proto/generated/**",
+    "libs/proto/llamatrade_proto/clients/**",
+    "libs/proto/llamatrade_proto/interceptors/**",
+    "libs/proto/llamatrade_proto/server/**",
+]
+reportMissingImports = true
+reportMissingTypeStubs = false
+# Suppress import resolution issues for internal src.* imports
+reportAttributeAccessIssue = false
+# Suppress calls on Optional types (common with dependency injection patterns)
+reportOptionalCall = false
+reportOptionalMemberAccess = false
+# Extra paths for editable installs (Pyright doesn't read .pth files)
+extraPaths = [
+    "libs/proto",
+    "libs/common",
+    "libs/db",
+    "libs/dsl",
+    "libs/compiler",
+    "libs/alpaca",
+]
+executionEnvironments = [
+    # Service roots with their dependencies
+    { root = "services/auth", extraPaths = ["services/auth", "libs/proto", "libs/common", "libs/db", "libs/alpaca"] },
+    { root = "services/backtest", extraPaths = ["services/backtest", "libs/proto", "libs/common", "libs/db", "libs/dsl", "libs/compiler"] },
+    { root = "services/billing", extraPaths = ["services/billing", "libs/proto", "libs/common", "libs/db"] },
+    { root = "services/market-data", extraPaths = ["services/market-data", "libs/proto", "libs/common", "libs/db", "libs/alpaca"] },
+    { root = "services/notification", extraPaths = ["services/notification", "libs/proto", "libs/common", "libs/db"] },
+    { root = "services/portfolio", extraPaths = ["services/portfolio", "libs/proto", "libs/common", "libs/db"] },
+    { root = "services/strategy", extraPaths = ["services/strategy", "libs/proto", "libs/common", "libs/db", "libs/dsl", "libs/compiler"] },
+    { root = "services/trading", extraPaths = ["services/trading", "libs/proto", "libs/common", "libs/db", "libs/dsl", "libs/compiler", "libs/alpaca"] },
 ]

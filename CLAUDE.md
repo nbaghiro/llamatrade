@@ -5,7 +5,7 @@
 LlamaTrade is an open-source algorithmic trading platform built as a multi-tenant SaaS application. It enables users to create strategies, backtest against historical data, and execute live trades via Alpaca Markets API.
 
 **Tech Stack:**
-- **Backend**: Python 3.12+, FastAPI, SQLAlchemy (async), PostgreSQL, Redis
+- **Backend**: Python 3.14+, FastAPI, SQLAlchemy (async), PostgreSQL, Redis
 - **Frontend**: React 18, TypeScript 5.3+, Vite, Tailwind CSS, Zustand
 - **Infrastructure**: Docker, Kubernetes (GKE), Terraform (GCP)
 
@@ -124,6 +124,7 @@ services/[name]/
 - Pydantic schemas MUST use suffixes: `Create`, `Response`, `Update`, `Request`
 - Tenant context MUST be extracted via `require_auth` middleware and passed through all layers
 - Use `HTTPException` for client errors, let unexpected errors propagate
+- **Enums:** Proto definitions are the single source of truth. Import integer constants from `llamatrade_proto.generated` (e.g., `ORDER_SIDE_BUY`). Use conversion helpers (`order_side_to_str()`) only for external APIs. Store as integers in database.
 
 **Naming:**
 - Functions/variables: `snake_case`
@@ -214,6 +215,7 @@ apps/web/src/
 - API calls via axios instance in `services/api.ts`
 - TypeScript strict mode — no `any` without justification
 - Tailwind CSS for styling (no CSS files in components)
+- **Enums:** Import from proto-generated code (`../generated/proto/*_pb`). Use numeric enum values. Add display helpers in `types/` files for UI labels.
 
 **Naming:**
 - Components: `PascalCase` files matching component name
@@ -224,8 +226,9 @@ apps/web/src/
 
 - `libs/common`: Middleware, shared models, utilities — import as `llamatrade_common`
 - `libs/db`: SQLAlchemy models, database config — import as `llamatrade_db`
-- `libs/proto`: Protobuf definitions (source of truth for gRPC APIs)
-- `libs/grpc`: Generated Python proto code (gitignored, run `make proto`)
+- `libs/dsl`: Strategy DSL parser — import as `llamatrade_dsl`
+- `libs/compiler`: Strategy compiler — import as `llamatrade_compiler`
+- `libs/proto`: Protobuf definitions + generated Connect code — import as `llamatrade_proto`
 - Changes to libs affect ALL services — test thoroughly
 
 ---
@@ -243,6 +246,12 @@ make proto                  # Generate Python + TypeScript from protos
 make proto-lint             # Lint proto files
 make proto-breaking         # Check for breaking changes vs main
 
+# Database Migrations (auto-loads DATABASE_URL from .env)
+make migrate                # Apply all pending migrations
+make migrate-status         # Show current migration version
+make migrate-history        # Show migration history
+make migrate-new            # Create new migration (prompts for name)
+
 # Testing
 make test                   # Full CI test suite
 make test-auth              # Single service tests
@@ -258,7 +267,7 @@ npm run lint:fix            # Frontend
 ```
 
 **Note:** Proto-generated files are gitignored. After cloning or pulling proto changes, run `make proto` to regenerate:
-- Python: `libs/grpc/llamatrade/`
+- Python: `libs/proto/llamatrade_proto/generated/`
 - TypeScript: `apps/web/src/generated/proto/`
 
 ---
@@ -274,7 +283,7 @@ npm run lint:fix            # Frontend
 - Strict mode enabled
 - Run: `npm run lint` in apps/web
 
-**Pre-commit hooks are enforced** — all code must pass ruff, mypy, ESLint, and tsc before commit.
+**Pre-commit hooks are enforced** — all code must pass ruff, pyright, ESLint, and tsc before commit.
 
 ---
 

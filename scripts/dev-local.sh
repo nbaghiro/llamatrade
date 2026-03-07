@@ -66,7 +66,7 @@ setup_venv() {
     # Install shared libraries first (with their dependencies)
     pip install -q -e "$PROJECT_ROOT/libs/common"
     pip install -q -e "$PROJECT_ROOT/libs/db"
-    pip install -q -e "$PROJECT_ROOT/libs/grpc"
+    pip install -q -e "$PROJECT_ROOT/libs/proto"
     # Install the service (which may have additional deps)
     pip install -q -e "$svc_dir"
     deactivate

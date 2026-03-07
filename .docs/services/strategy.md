@@ -1061,7 +1061,7 @@ async def _get_strategy_by_id(self, tenant_id: UUID, strategy_id: UUID) -> Strat
 | `llamatrade_dsl` | `from llamatrade_dsl import parse_strategy, validate_strategy` | DSL parsing & validation |
 | `llamatrade_compiler` | `from llamatrade_compiler import CompiledStrategy` | Runtime execution |
 | `llamatrade_db` | `from llamatrade_db import Strategy, StrategyVersion` | Database models |
-| `llamatrade_grpc` | `from llamatrade_grpc.strategy import strategy_pb2` | Proto definitions |
+| `llamatrade_proto` | `from llamatrade_proto.generated import strategy_pb2` | Proto definitions |
 
 ---
 

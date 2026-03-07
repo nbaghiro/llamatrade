@@ -21,7 +21,7 @@ services:
       - ../../services/auth/src:/app/src:cached
       - ../../libs/common/llamatrade_common:/app/libs/common/llamatrade_common:cached
       - ../../libs/db/llamatrade_db:/app/libs/db/llamatrade_db:cached
-      - ../../libs/grpc/llamatrade_grpc:/app/libs/grpc/llamatrade_grpc:cached
+      - ../../libs/proto/llamatrade_proto:/app/libs/proto/llamatrade_proto:cached
     command: uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload --reload-dir /app/src
 
   strategy:
@@ -32,7 +32,7 @@ services:
       - ../../services/strategy/src:/app/src:cached
       - ../../libs/common/llamatrade_common:/app/libs/common/llamatrade_common:cached
       - ../../libs/db/llamatrade_db:/app/libs/db/llamatrade_db:cached
-      - ../../libs/grpc/llamatrade_grpc:/app/libs/grpc/llamatrade_grpc:cached
+      - ../../libs/proto/llamatrade_proto:/app/libs/proto/llamatrade_proto:cached
     command: uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload --reload-dir /app/src
 
   backtest:
@@ -43,7 +43,7 @@ services:
       - ../../services/backtest/src:/app/src:cached
       - ../../libs/common/llamatrade_common:/app/libs/common/llamatrade_common:cached
       - ../../libs/db/llamatrade_db:/app/libs/db/llamatrade_db:cached
-      - ../../libs/grpc/llamatrade_grpc:/app/libs/grpc/llamatrade_grpc:cached
+      - ../../libs/proto/llamatrade_proto:/app/libs/proto/llamatrade_proto:cached
     command: uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload --reload-dir /app/src
 
   market-data:
@@ -54,7 +54,7 @@ services:
       - ../../services/market-data/src:/app/src:cached
       - ../../libs/common/llamatrade_common:/app/libs/common/llamatrade_common:cached
       - ../../libs/db/llamatrade_db:/app/libs/db/llamatrade_db:cached
-      - ../../libs/grpc/llamatrade_grpc:/app/libs/grpc/llamatrade_grpc:cached
+      - ../../libs/proto/llamatrade_proto:/app/libs/proto/llamatrade_proto:cached
     command: uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload --reload-dir /app/src
 
   trading:
@@ -65,7 +65,7 @@ services:
       - ../../services/trading/src:/app/src:cached
       - ../../libs/common/llamatrade_common:/app/libs/common/llamatrade_common:cached
       - ../../libs/db/llamatrade_db:/app/libs/db/llamatrade_db:cached
-      - ../../libs/grpc/llamatrade_grpc:/app/libs/grpc/llamatrade_grpc:cached
+      - ../../libs/proto/llamatrade_proto:/app/libs/proto/llamatrade_proto:cached
     command: uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload --reload-dir /app/src
 
   portfolio:
@@ -76,7 +76,7 @@ services:
       - ../../services/portfolio/src:/app/src:cached
       - ../../libs/common/llamatrade_common:/app/libs/common/llamatrade_common:cached
       - ../../libs/db/llamatrade_db:/app/libs/db/llamatrade_db:cached
-      - ../../libs/grpc/llamatrade_grpc:/app/libs/grpc/llamatrade_grpc:cached
+      - ../../libs/proto/llamatrade_proto:/app/libs/proto/llamatrade_proto:cached
     command: uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload --reload-dir /app/src
 
   notification:
@@ -87,7 +87,7 @@ services:
       - ../../services/notification/src:/app/src:cached
       - ../../libs/common/llamatrade_common:/app/libs/common/llamatrade_common:cached
       - ../../libs/db/llamatrade_db:/app/libs/db/llamatrade_db:cached
-      - ../../libs/grpc/llamatrade_grpc:/app/libs/grpc/llamatrade_grpc:cached
+      - ../../libs/proto/llamatrade_proto:/app/libs/proto/llamatrade_proto:cached
     command: uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload --reload-dir /app/src
 
   billing:
@@ -98,7 +98,7 @@ services:
       - ../../services/billing/src:/app/src:cached
       - ../../libs/common/llamatrade_common:/app/libs/common/llamatrade_common:cached
       - ../../libs/db/llamatrade_db:/app/libs/db/llamatrade_db:cached
-      - ../../libs/grpc/llamatrade_grpc:/app/libs/grpc/llamatrade_grpc:cached
+      - ../../libs/proto/llamatrade_proto:/app/libs/proto/llamatrade_proto:cached
     command: uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload --reload-dir /app/src
 
   # ===================

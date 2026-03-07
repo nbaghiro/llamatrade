@@ -1,0 +1,53 @@
+{
+  "include": ["services/*/src", "libs/*"],
+  "extraPaths": [
+    "libs/db",
+    "libs/common",
+    "libs/alpaca",
+    "libs/proto",
+    "libs/compiler",
+    "libs/dsl"
+  ],
+  "exclude": [
+    "**/tests/**",
+    "**/test_*.py",
+    "**/*_test.py",
+    "**/conftest.py",
+    "libs/proto/llamatrade_proto/generated/**",
+    "libs/proto/llamatrade_proto/clients/**",
+    "libs/proto/llamatrade_proto/interceptors/**",
+    "**/node_modules/**",
+    "**/__pycache__/**",
+    "**/alembic/**"
+  ],
+  "typeCheckingMode": "standard",
+  "pythonVersion": "3.14",
+  "reportMissingImports": "none",
+  "reportMissingTypeStubs": "none",
+  "reportUnknownMemberType": "none",
+  "reportUnknownParameterType": "none",
+  "reportUnknownArgumentType": "none",
+  "reportUnknownVariableType": "none",
+  "reportUnknownLambdaType": "none",
+  "reportPrivateUsage": "none",
+  "reportUntypedFunctionDecorator": "none",
+  "reportUnusedImport": "warning",
+  "reportUnusedVariable": "warning",
+  "reportMissingParameterType": "warning",
+  "reportUnnecessaryIsInstance": "none",
+  "reportUnnecessaryComparison": "none",
+  "reportAttributeAccessIssue": "none",
+  "reportMissingModuleSource": "none",
+  "reportOptionalCall": "warning",
+  "reportOptionalMemberAccess": "warning",
+  "executionEnvironments": [
+    { "root": "services/auth", "extraPaths": ["services/auth"] },
+    { "root": "services/backtest", "extraPaths": ["services/backtest"] },
+    { "root": "services/billing", "extraPaths": ["services/billing"] },
+    { "root": "services/market-data", "extraPaths": ["services/market-data"] },
+    { "root": "services/notification", "extraPaths": ["services/notification"] },
+    { "root": "services/portfolio", "extraPaths": ["services/portfolio"] },
+    { "root": "services/strategy", "extraPaths": ["services/strategy"] },
+    { "root": "services/trading", "extraPaths": ["services/trading"] }
+  ]
+}

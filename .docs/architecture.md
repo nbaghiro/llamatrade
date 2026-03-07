@@ -659,9 +659,81 @@ LlamaTrade uses **Protocol Buffers** (protobuf) for service contracts:
 - **Connect Protocol**: Frontend (browser) to backend services over HTTP/1.1 with JSON
 - **gRPC**: Service-to-service communication over HTTP/2 with binary protobuf
 
-**Proto definitions:** `libs/proto/llamatrade/v1/`
-**Generated Python code:** `libs/grpc/llamatrade/v1/`
-**Generated TypeScript code:** `apps/web/src/generated/proto/llamatrade/v1/`
+**Proto definitions:** `libs/proto/llamatrade_proto/protos/`
+**Generated Python code:** `libs/proto/llamatrade_proto/generated/`
+**Generated TypeScript code:** `apps/web/src/generated/proto/`
+
+### Enum Conventions (Proto as Source of Truth)
+
+All enums used across the system are defined in proto files and generated for both Python and TypeScript. This ensures type safety and consistency across frontend and backend.
+
+**Pattern:**
+
+```
+Proto Definition (source of truth)
+        │
+        ├──► Python: Integer constants + conversion helpers
+        │    - ORDER_SIDE_BUY = 1
+        │    - order_side_to_str(side: int) -> str
+        │
+        └──► TypeScript: Numeric enums
+             - enum OrderSide { BUY = 1, SELL = 2 }
+```
+
+**Python Usage:**
+
+```python
+# Import proto-generated constants (single source of truth)
+from llamatrade_proto.generated import (
+    ORDER_SIDE_BUY,
+    ORDER_SIDE_SELL,
+    ORDER_STATUS_FILLED,
+)
+
+# Import conversion helpers for external APIs (e.g., Alpaca)
+from src.models import (
+    order_side_to_str,    # int → "buy"/"sell"
+    order_status_to_str,  # int → "filled"/"cancelled"/etc.
+)
+
+# Use integer constants for comparisons and storage
+if order.side == ORDER_SIDE_BUY:
+    # ...
+
+# Use conversion helpers for external API calls
+await alpaca.submit_order(
+    side=order_side_to_str(order.side),  # "buy" or "sell"
+)
+```
+
+**TypeScript Usage:**
+
+```typescript
+// Import enums from proto-generated code
+import { OrderSide, OrderStatus, StrategyStatus } from '../generated/proto/trading_pb';
+
+// Use numeric enum values directly
+if (order.side === OrderSide.BUY) {
+  // ...
+}
+
+// Display helpers for UI
+function getOrderSideLabel(side: OrderSide): string {
+  return side === OrderSide.BUY ? 'Buy' : 'Sell';
+}
+```
+
+**Database Storage:**
+
+- Enums are stored as integers in PostgreSQL (SQLAlchemy `Integer` columns)
+- No string-based enum columns — integers are more compact and consistent with proto
+
+**Key Rules:**
+
+1. **Proto is source of truth** — never define duplicate enums in Python/TypeScript
+2. **Use integer values internally** — comparisons, storage, and cross-service calls
+3. **Convert to strings only at boundaries** — external APIs (Alpaca), user display
+4. **Deprecated StrEnums** — legacy StrEnum classes are kept for backward compatibility but marked DEPRECATED
 
 ### Request Flow Example
 
@@ -770,8 +842,8 @@ make proto
 
 Generates:
 
-- Python: `libs/grpc/llamatrade/v1/*_pb2.py`, `*_connect.py`
-- TypeScript: `apps/web/src/generated/proto/llamatrade/v1/*_pb.ts`
+- Python: `libs/proto/llamatrade_proto/generated/*_pb2.py`, `*_connect.py`
+- TypeScript: `apps/web/src/generated/proto/*_pb.ts`
 
 ---
 

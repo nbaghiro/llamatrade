@@ -40,8 +40,8 @@ EOF
 fi
 
 # Install Python dev tools
-echo "Installing Python dev tools (ruff, mypy, pre-commit)..."
-pip install ruff mypy pre-commit
+echo "Installing Python dev tools (ruff, pre-commit)..."
+pip install ruff pre-commit
 
 # Install Python dependencies
 echo "Installing Python dependencies..."

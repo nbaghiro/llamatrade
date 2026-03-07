@@ -1,4 +1,12 @@
-.PHONY: dev dev-up dev-down dev-infra dev-setup build test lint clean ci
+.PHONY: dev dev-up dev-down dev-infra dev-setup build test lint clean ci migrate migrate-status migrate-history
+
+# Helper to load .env file
+ifneq (,$(wildcard ./.env))
+    ENV_FILE := .env
+else
+    ENV_FILE := .env.example
+endif
+LOAD_ENV := set -a && [ -f $(ENV_FILE) ] && . ./$(ENV_FILE) && set +a
 
 # ===================
 # Development (Docker - all services)
@@ -24,30 +32,8 @@ dev-infra:
 	@echo "  Redis:      localhost:6379"
 	@echo ""
 	@echo "Now run services locally:"
-	@echo "  ./scripts/dev-local.sh auth"
-	@echo "  ./scripts/dev-local.sh strategy"
-	@echo "  etc."
-
-# Start API Gateway for local development (routes to localhost services)
-dev-gateway:
-	@docker rm -f llamatrade-gateway-local 2>/dev/null || true
-	docker run -d --name llamatrade-gateway-local \
-		-p 8000:8000 \
-		-v $(PWD)/services/gateway/kong.local.yaml:/kong/declarative/kong.yml:ro \
-		-e KONG_DATABASE=off \
-		-e KONG_DECLARATIVE_CONFIG=/kong/declarative/kong.yml \
-		-e KONG_PROXY_ACCESS_LOG=/dev/stdout \
-		-e KONG_ADMIN_ACCESS_LOG=/dev/stdout \
-		-e KONG_PROXY_ERROR_LOG=/dev/stderr \
-		-e KONG_ADMIN_ERROR_LOG=/dev/stderr \
-		kong:3.4
-	@echo ""
-	@echo "Gateway running at http://localhost:8000"
-	@echo "Routes to local services on host machine"
-
-# Stop gateway
-dev-gateway-down:
-	docker rm -f llamatrade-gateway-local 2>/dev/null || true
+	@echo "  make dev-local                 # All services"
+	@echo "  make dev-local SERVICE=auth    # Single service"
 
 # Create virtual environments for all services
 dev-setup:
@@ -57,13 +43,19 @@ dev-setup:
 dev-infra-down:
 	cd infrastructure/docker && docker compose stop postgres redis
 
-# Run all services locally (requires honcho: pip install honcho)
+# Run services locally
+# Usage: make dev-local           - Run ALL services (uses honcho)
+#        make dev-local SERVICE=auth  - Run a single service
 dev-local:
+ifdef SERVICE
+	./scripts/dev-local.sh $(SERVICE)
+else
 	@if ! command -v honcho &> /dev/null; then \
 		echo "Installing honcho..."; \
 		pip install honcho; \
 	fi
 	honcho start -f Procfile.dev
+endif
 
 # Build
 build:
@@ -174,58 +166,33 @@ test-frontend:
 # ===================
 lint:
 	@echo "=== Python: Ruff (lint) ==="
-	ruff check --config pyproject.toml services/ libs/
+	ruff check --config pyproject.toml --exclude "libs/proto/llamatrade_proto/generated/*" --exclude "libs/proto/connectrpc/*" services/ libs/
 	@echo "=== Python: Ruff (format) ==="
-	ruff format --config pyproject.toml --check services/ libs/
-	@echo "=== Python: Mypy (type check) ==="
-	@# Run mypy per-service to avoid "Duplicate module named src" error
-	mypy libs/common --ignore-missing-imports
-	mypy services/auth --ignore-missing-imports
-	mypy services/strategy --ignore-missing-imports
-	mypy services/backtest --ignore-missing-imports
-	mypy services/market-data --ignore-missing-imports
-	mypy services/trading --ignore-missing-imports
-	mypy services/portfolio --ignore-missing-imports
-	mypy services/notification --ignore-missing-imports
-	mypy services/billing --ignore-missing-imports
+	ruff format --config pyproject.toml --exclude "libs/proto/llamatrade_proto/generated/*" --exclude "libs/proto/connectrpc/*" --check services/ libs/
+	@echo "=== Python: Pyright (type check) ==="
+	npx pyright services/ libs/
 	@echo "=== Frontend: ESLint ==="
 	cd apps/web && npm run lint
 	@echo "=== Frontend: TypeScript ==="
 	cd apps/web && npx tsc --noEmit
 
 lint-fix:
-	ruff check --config pyproject.toml --fix --unsafe-fixes services/ libs/
-	ruff format --config pyproject.toml services/ libs/
+	ruff check --config pyproject.toml --fix --unsafe-fixes --exclude "libs/proto/llamatrade_proto/generated/*" --exclude "libs/proto/connectrpc/*" services/ libs/
+	ruff format --config pyproject.toml --exclude "libs/proto/llamatrade_proto/generated/*" --exclude "libs/proto/connectrpc/*" services/ libs/
 
 lint-python:
-	ruff check --config pyproject.toml services/ libs/
-	ruff format --config pyproject.toml --check services/ libs/
-	@# Run mypy per-service to avoid "Duplicate module named src" error
-	mypy libs/common --ignore-missing-imports
-	mypy services/auth --ignore-missing-imports
-	mypy services/strategy --ignore-missing-imports
-	mypy services/backtest --ignore-missing-imports
-	mypy services/market-data --ignore-missing-imports
-	mypy services/trading --ignore-missing-imports
-	mypy services/portfolio --ignore-missing-imports
-	mypy services/notification --ignore-missing-imports
-	mypy services/billing --ignore-missing-imports
+	ruff check --config pyproject.toml --exclude "libs/proto/llamatrade_proto/generated/*" --exclude "libs/proto/connectrpc/*" services/ libs/
+	ruff format --config pyproject.toml --exclude "libs/proto/llamatrade_proto/generated/*" --exclude "libs/proto/connectrpc/*" --check services/ libs/
+	npx pyright services/ libs/
 
 lint-frontend:
 	cd apps/web && npm run lint
 	cd apps/web && npx tsc --noEmit
 
 typecheck:
-	@# Run mypy per-service to avoid "Duplicate module named src" error
-	mypy libs/common --ignore-missing-imports
-	mypy services/auth --ignore-missing-imports
-	mypy services/strategy --ignore-missing-imports
-	mypy services/backtest --ignore-missing-imports
-	mypy services/market-data --ignore-missing-imports
-	mypy services/trading --ignore-missing-imports
-	mypy services/portfolio --ignore-missing-imports
-	mypy services/notification --ignore-missing-imports
-	mypy services/billing --ignore-missing-imports
+	@echo "=== Python: Pyright ==="
+	npx pyright services/ libs/
+	@echo "=== Frontend: TypeScript ==="
 	cd apps/web && npx tsc --noEmit
 
 # ===================
@@ -244,14 +211,25 @@ pre-commit-run:
 proto:
 	@echo "=== Generating proto files (all targets) ==="
 	cd libs/proto && buf generate
+	@echo "=== Fixing Python imports (bare -> relative) ==="
+	@cd libs/proto/llamatrade_proto/generated && \
+		for f in *.py; do \
+			sed -i '' 's/^import \([a-z_]*_pb2\) as /from . import \1 as /g' "$$f"; \
+		done
+	@echo '"""Generated protobuf and gRPC code. Do not edit - regenerate with make proto."""' > libs/proto/llamatrade_proto/generated/__init__.py
 	@echo "Generated:"
-	@echo "  - Python:     libs/grpc/llamatrade/"
+	@echo "  - Python:     libs/proto/llamatrade_proto/generated/"
 	@echo "  - TypeScript: apps/web/src/generated/proto/"
 
 proto-python:
 	@echo "=== Generating Python proto files ==="
 	cd libs/proto && buf generate
-	@echo "Generated: libs/grpc/llamatrade/"
+	@echo "=== Fixing Python imports (bare -> relative) ==="
+	@cd libs/proto/llamatrade_proto/generated && \
+		for f in *.py; do \
+			sed -i '' 's/^import \([a-z_]*_pb2\) as /from . import \1 as /g' "$$f"; \
+		done
+	@echo "Generated: libs/proto/llamatrade_proto/generated/"
 
 proto-web:
 	@echo "=== Generating TypeScript proto files ==="
@@ -267,6 +245,17 @@ proto-breaking:
 # Database
 migrate:
 	@echo "Running migrations..."
+	@$(LOAD_ENV) && cd libs/db/llamatrade_db/alembic && ../../../../.venv/bin/alembic upgrade head
+
+migrate-status:
+	@$(LOAD_ENV) && cd libs/db/llamatrade_db/alembic && ../../../../.venv/bin/alembic current
+
+migrate-history:
+	@$(LOAD_ENV) && cd libs/db/llamatrade_db/alembic && ../../../../.venv/bin/alembic history
+
+migrate-new:
+	@read -p "Migration name: " name && \
+	$(LOAD_ENV) && cd libs/db/llamatrade_db/alembic && ../../../../.venv/bin/alembic revision -m "$$name"
 
 # Deployment
 deploy-staging:
@@ -305,7 +294,7 @@ help:
 	@echo "  make dev-setup      - Create virtual environments for all services"
 	@echo "  make dev-infra      - Start only PostgreSQL + Redis in Docker"
 	@echo "  make dev-local      - Run ALL services locally (uses honcho)"
-	@echo "  ./scripts/dev-local.sh <service>  - Run ONE service locally"
+	@echo "  make dev-local SERVICE=<name>  - Run ONE service locally"
 	@echo ""
 	@echo "CI (run locally before pushing):"
 	@echo "  make ci             - Run full CI locally (lint + tests)"
@@ -342,13 +331,10 @@ help:
 	@echo "  make deploy-prod    - Deploy to production"
 	@echo ""
 	@echo "Default Ports:"
-	@echo "  Frontend:    http://localhost:8080"
-	@echo "  API Gateway: http://localhost:8000"
+	@echo "  Frontend:    http://localhost:8800"
 	@echo "  PostgreSQL:  localhost:5432"
 	@echo "  Redis:       localhost:6379"
 	@echo ""
-	@echo "Service gRPC Ports:"
-	@echo "  auth:8010  strategy:8020  backtest:8030  market-data:8040"
-	@echo "  trading:8050  portfolio:8060  notification:8070  billing:8090"
-	@echo ""
-	@echo "Note: Services expose gRPC only. Billing also has HTTP:8091 for Stripe webhooks."
+	@echo "Service Ports (HTTP + Connect Protocol):"
+	@echo "  auth:8810  strategy:8820  backtest:8830  market-data:8840"
+	@echo "  trading:8850  portfolio:8860  notification:8870  billing:8880"

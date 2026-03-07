@@ -9,19 +9,18 @@ repos:
       - id: ruff
         args: [--fix, --config=pyproject.toml]
         files: ^(services|libs)/
-        exclude: ^(libs/grpc/llamatrade/|services/.*/src/grpc/)
+        exclude: ^(libs/proto/llamatrade_proto/generated/|libs/proto/connectrpc/)
       - id: ruff-format
         args: [--config=pyproject.toml]
         files: ^(services|libs)/
-        exclude: ^(libs/grpc/llamatrade/|services/.*/src/grpc/)
+        exclude: ^(libs/proto/llamatrade_proto/generated/|libs/proto/connectrpc/)
 
-  # Python type checking with mypy (run per-service to avoid duplicate module error)
-  # Note: services/*/src/grpc folders are excluded via --exclude flag
+  # Python type checking with Pyright (uses config from pyproject.toml)
   - repo: local
     hooks:
-      - id: mypy
-        name: mypy
-        entry: bash -c '.venv/bin/mypy libs/common --ignore-missing-imports --exclude "src/grpc" && .venv/bin/mypy services/auth --ignore-missing-imports --exclude "src/grpc" && .venv/bin/mypy services/strategy --ignore-missing-imports --exclude "src/grpc" && .venv/bin/mypy services/backtest --ignore-missing-imports --exclude "src/grpc" && .venv/bin/mypy services/market-data --ignore-missing-imports --exclude "src/grpc" && .venv/bin/mypy services/trading --ignore-missing-imports --exclude "src/grpc" && .venv/bin/mypy services/portfolio --ignore-missing-imports --exclude "src/grpc" && .venv/bin/mypy services/notification --ignore-missing-imports --exclude "src/grpc" && .venv/bin/mypy services/billing --ignore-missing-imports --exclude "src/grpc"'
+      - id: pyright
+        name: pyright
+        entry: npx pyright
         language: system
         files: ^(services|libs)/.*\.py$
         pass_filenames: false

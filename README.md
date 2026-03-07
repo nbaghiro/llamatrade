@@ -16,38 +16,49 @@
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                              USER BROWSER                                   │
-└─────────────────────────────────┬───────────────────────────────────────────┘
+┌───────────────────────────────────────────────────────────────────────────┐
+│                             USER BROWSER                                  │
+└─────────────────────────────────┬─────────────────────────────────────────┘
                                   │
                                   ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                         FRONTEND (React SPA) :8800                          │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐       │
-│  │  Auth    │  │ Strategy │  │ Backtest │  │ Trading  │  │Portfolio │       │
-│  │  Pages   │  │  Builder │  │  Runner  │  │  Panel   │  │Dashboard │       │
-│  └──────────┘  └──────────┘  └──────────┘  └──────────┘  └──────────┘       │
-│                    Zustand + Connect Protocol Client                        │
-└─────────────────────────────────┬───────────────────────────────────────────┘
+┌───────────────────────────────────────────────────────────────────────────┐
+│                       FRONTEND (React SPA) :8800                          │
+│                                                                           │
+│   ┌────────┐  ┌──────────┐  ┌──────────┐  ┌─────────┐  ┌───────────┐      │
+│   │  Auth  │  │ Strategy │  │ Backtest │  │ Trading │  │ Portfolio │      │
+│   │ Pages  │  │ Builder  │  │  Runner  │  │  Panel  │  │ Dashboard │      │
+│   └────────┘  └──────────┘  └──────────┘  └─────────┘  └───────────┘      │
+│                                                                           │
+│                   Zustand + Connect Protocol Client                       │
+└─────────────────────────────────┬─────────────────────────────────────────┘
                                   │ Connect Protocol (HTTP/1.1 + JSON)
                                   │ Direct to Services (no gateway)
                                   ▼
-   ┌─────────┐  ┌─────────┐  ┌─────────┐  ┌─────────┐  ┌─────────┐
-   │  Auth   │  │Strategy │  │Backtest │  │ Trading │  │Portfolio│
-   │ :8810   │  │ :8820   │  │ :8830   │  │ :8850   │  │ :8860   │
-   └────┬────┘  └────┬────┘  └────┬────┘  └────┬────┘  └────┬────┘
-        │             │             │             │             │
-   ┌─────────┐  ┌─────────┐  ┌─────────┐
-   │ Market  │  │ Notific.│  │ Billing │
-   │  Data   │  │ :8870   │  │ :8880   │
-   │ :8840   │  └─────────┘  └─────────┘
-   └────┬────┘
-        │ WebSocket
-        ▼
-   ┌─────────┐               ┌─────────────┐             ┌─────────┐
-   │ Alpaca  │               │    Redis    │             │ Postgres│
-   │   API   │               │ Cache/Queue │             │   (RLS) │
-   └─────────┘               └─────────────┘             └─────────┘
+┌───────────┐ ┌───────────┐ ┌───────────┐ ┌───────────┐ ┌───────────┐
+│   Auth    │ │  Strategy │ │  Backtest │ │  Trading  │ │ Portfolio │
+│   :8810   │ │   :8820   │ │   :8830   │ │   :8850   │ │   :8860   │
+└─────┬─────┘ └─────┬─────┘ └─────┬─────┘ └─────┬─────┘ └─────┬─────┘
+      │             │             │             │             │
+      │       ┌─────┴─────┐ ┌─────┴─────┐ ┌─────┴─────┐       │
+      │       │  Market   │ │  Notific. │ │  Billing  │       │
+      │       │   Data    │ │   :8870   │ │   :8880   │       │
+      │       │   :8840   │ └───────────┘ └───────────┘       │
+      │       └─────┬─────┘                                   │
+      │             │ WebSocket                               │
+      │             ▼                                         │
+      │       ┌───────────┐                                   │
+      │       │  Alpaca   │                                   │
+      │       │    API    │                                   │
+      │       └───────────┘                                   │
+      │                                                       │
+      └───────────────────────┬───────────────────────────────┘
+                              │
+          ┌───────────────────┼───────────────────┐
+          ▼                   ▼                   ▼
+    ┌───────────┐       ┌───────────┐       ┌───────────┐
+    │  Postgres │       │   Redis   │       │  Alpaca   │
+    │   (RLS)   │       │   Cache   │       │  Streams  │
+    └───────────┘       └───────────┘       └───────────┘
 ```
 
 ## Tech Stack
@@ -55,7 +66,7 @@
 | Layer              | Technology                                            |
 | ------------------ | ----------------------------------------------------- |
 | **Frontend**       | React 18, TypeScript, Vite, Tailwind CSS, Zustand     |
-| **Backend**        | Python 3.12, FastAPI, SQLAlchemy, Pydantic            |
+| **Backend**        | Python 3.14+, FastAPI, SQLAlchemy, Pydantic           |
 | **API Protocol**   | gRPC + Connect (HTTP/1.1 JSON for browser, HTTP/2 S2S)|
 | **Database**       | PostgreSQL 16, Redis 7                                |
 | **Infrastructure** | Docker, Kubernetes (GKE), Terraform                   |
@@ -66,7 +77,7 @@
 ### Prerequisites
 
 - Docker & Docker Compose
-- Python 3.12+ (for local development)
+- Python 3.14+ (for local development)
 - Node.js 20+ (for frontend)
 - [Alpaca Markets](https://alpaca.markets/) account (free paper trading)
 
@@ -98,9 +109,12 @@ make dev
 # Start infrastructure only
 make dev-infra
 
-# In separate terminals, run services
-./scripts/dev-local.sh auth
-./scripts/dev-local.sh strategy
+# Run all services at once (uses honcho)
+make dev-local
+
+# Or run individual services in separate terminals
+make dev-local SERVICE=auth
+make dev-local SERVICE=strategy
 # ... etc
 ```
 
@@ -129,8 +143,10 @@ llamatrade/
 │   └── billing/             # Subscriptions (Stripe)
 ├── libs/
 │   ├── common/              # Shared models & utilities
-│   ├── proto/               # Protocol Buffer definitions
-│   └── grpc/                # Generated gRPC/Connect code
+│   ├── db/                  # SQLAlchemy models & migrations
+│   ├── dsl/                 # Strategy DSL parser
+│   ├── compiler/            # Strategy compiler
+│   └── proto/               # Protocol Buffers + generated Connect code
 ├── infrastructure/
 │   ├── docker/              # Docker Compose configs
 │   ├── k8s/                 # Kubernetes manifests
