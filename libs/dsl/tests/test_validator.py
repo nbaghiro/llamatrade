@@ -1,383 +1,414 @@
-"""Tests for AST validator."""
+"""Tests for allocation-based strategy DSL validator."""
 
-from llamatrade_dsl.ast import Strategy
-from llamatrade_dsl.parser import parse, parse_strategy
-from llamatrade_dsl.validator import validate, validate_strategy
-
-
-class TestValidateIndicators:
-    """Test validation of indicator function calls."""
-
-    def test_valid_sma(self):
-        node = parse("(sma close 20)")
-        result = validate(node)
-        assert result.valid
-        assert len(result.errors) == 0
-
-    def test_valid_rsi(self):
-        node = parse("(rsi close 14)")
-        result = validate(node)
-        assert result.valid
-
-    def test_valid_macd_with_output(self):
-        node = parse("(macd close 12 26 9 :line)")
-        result = validate(node)
-        assert result.valid
-
-    def test_valid_macd_histogram(self):
-        node = parse("(macd close 12 26 9 :histogram)")
-        result = validate(node)
-        assert result.valid
-
-    def test_valid_bbands_with_output(self):
-        node = parse("(bbands close 20 2 :upper)")
-        result = validate(node)
-        assert result.valid
-
-    def test_invalid_indicator_output(self):
-        node = parse("(macd close 12 26 9 :invalid)")
-        result = validate(node)
-        assert not result.valid
-        assert any("Invalid output selector" in str(e) for e in result.errors)
-
-    def test_indicator_too_few_args(self):
-        node = parse("(sma close)")
-        result = validate(node)
-        assert not result.valid
-        assert any("requires at least 2 arguments" in str(e) for e in result.errors)
-
-    def test_indicator_too_many_args(self):
-        node = parse("(sma close 20 30 40)")
-        result = validate(node)
-        assert not result.valid
-        assert any("at most" in str(e) for e in result.errors)
-
-
-class TestValidateComparators:
-    """Test validation of comparison operators."""
-
-    def test_valid_comparison(self):
-        node = parse("(> (rsi close 14) 70)")
-        result = validate(node)
-        assert result.valid
-
-    def test_valid_less_than(self):
-        node = parse("(< close 100)")
-        result = validate(node)
-        assert result.valid
-
-    def test_comparison_wrong_arg_count(self):
-        node = parse("(> a b c)")
-        result = validate(node)
-        assert not result.valid
-        assert any("exactly 2 arguments" in str(e) for e in result.errors)
-
-
-class TestValidateLogicalOps:
-    """Test validation of logical operators."""
-
-    def test_valid_and(self):
-        node = parse("(and (> close 1) (< volume 2))")
-        result = validate(node)
-        assert result.valid
-
-    def test_valid_or(self):
-        node = parse("(or (> close 1) (< close 2) (> volume 3))")
-        result = validate(node)
-        assert result.valid
-
-    def test_valid_not(self):
-        node = parse("(not (> close 1))")
-        result = validate(node)
-        assert result.valid
-
-    def test_and_too_few_args(self):
-        node = parse("(and cond1)")
-        result = validate(node)
-        assert not result.valid
-        assert any("at least 2 arguments" in str(e) for e in result.errors)
-
-    def test_not_too_many_args(self):
-        node = parse("(not a b)")
-        result = validate(node)
-        assert not result.valid
-        assert any("at most 1 argument" in str(e) for e in result.errors)
-
-
-class TestValidateCrossover:
-    """Test validation of crossover operators."""
-
-    def test_valid_cross_above(self):
-        node = parse("(cross-above (ema close 12) (ema close 26))")
-        result = validate(node)
-        assert result.valid
-
-    def test_valid_cross_below(self):
-        node = parse("(cross-below (sma close 50) (sma close 200))")
-        result = validate(node)
-        assert result.valid
-
-    def test_crossover_wrong_arg_count(self):
-        node = parse("(cross-above a)")
-        result = validate(node)
-        assert not result.valid
-
-
-class TestValidateArithmetic:
-    """Test validation of arithmetic operators."""
-
-    def test_valid_add(self):
-        node = parse("(+ close high low)")
-        result = validate(node)
-        assert result.valid
-
-    def test_valid_subtract(self):
-        node = parse("(- close open)")
-        result = validate(node)
-        assert result.valid
-
-    def test_valid_divide(self):
-        # Z-score calculation
-        node = parse("(/ close (sma close 20))")
-        result = validate(node)
-        assert result.valid
-
-    def test_valid_abs(self):
-        node = parse("(abs (- close open))")
-        result = validate(node)
-        assert result.valid
-
-    def test_subtract_wrong_arg_count(self):
-        node = parse("(- a)")
-        result = validate(node)
-        assert not result.valid
-
-
-class TestValidateSymbols:
-    """Test validation of symbol references."""
-
-    def test_valid_price_symbols(self):
-        for sym in ["close", "open", "high", "low", "volume"]:
-            node = parse(sym)
-            result = validate(node)
-            assert result.valid, f"Symbol {sym} should be valid"
-
-    def test_valid_dollar_prefix(self):
-        node = parse("$symbol")
-        result = validate(node)
-        assert result.valid
-
-    def test_invalid_symbol(self):
-        node = parse("unknown_symbol")
-        result = validate(node)
-        assert not result.valid
-        assert any("Unknown symbol" in str(e) for e in result.errors)
-
-
-class TestValidateUnknownFunction:
-    """Test validation of unknown functions."""
-
-    def test_unknown_function(self):
-        node = parse("(unknown_fn a b)")
-        result = validate(node)
-        assert not result.valid
-        assert any("Unknown function" in str(e) for e in result.errors)
+from llamatrade_dsl import (
+    Asset,
+    Comparison,
+    Filter,
+    Group,
+    Indicator,
+    NumericLiteral,
+    Strategy,
+    Weight,
+    validate,
+    validate_strategy,
+)
 
 
 class TestValidateStrategy:
-    """Test validation of complete strategy definitions."""
+    """Test strategy validation."""
 
-    def test_valid_minimal_strategy(self):
-        source = """
-        (strategy
-          :name "Test"
-          :symbols ["AAPL"]
-          :timeframe "1D"
-          :entry (> (rsi close 14) 30)
-          :exit (< (rsi close 14) 70))
-        """
-        strategy = parse_strategy(source)
-        result = validate_strategy(strategy)
-        assert result.valid, f"Errors: {result.errors}"
+    def test_valid_simple_strategy(self):
+        strategy = Strategy(
+            name="Test",
+            children=[
+                Weight(
+                    method="equal",
+                    children=[Asset(symbol="VTI"), Asset(symbol="BND")],
+                )
+            ],
+        )
+        result = validate(strategy)
+        assert result.valid
 
-    def test_valid_full_strategy(self):
-        source = """
-        (strategy
-          :name "EMA Crossover"
-          :description "Test strategy"
-          :type trend_following
-          :symbols ["AAPL" "MSFT"]
-          :timeframe "1H"
-          :entry (and
-                   (cross-above (ema close 12) (ema close 26))
-                   (> (rsi close 14) 50))
-          :exit (cross-below (ema close 12) (ema close 26))
-          :stop-loss-pct 2.0
-          :take-profit-pct 6.0
-          :max-positions 5)
-        """
-        strategy = parse_strategy(source)
-        result = validate_strategy(strategy)
-        assert result.valid, f"Errors: {result.errors}"
-
-    def test_missing_name(self):
+    def test_strategy_missing_name(self):
         strategy = Strategy(
             name="",
-            symbols=["AAPL"],
-            timeframe="1D",
-            entry=parse("(> close 100)"),
-            exit=parse("(< close 90)"),
+            children=[Asset(symbol="VTI", weight=100)],
         )
-        result = validate_strategy(strategy)
+        result = validate(strategy)
         assert not result.valid
         assert any("name is required" in str(e) for e in result.errors)
 
-    def test_empty_symbols(self):
-        strategy = Strategy(
-            name="Test",
-            symbols=[],
-            timeframe="1D",
-            entry=parse("(> close 100)"),
-            exit=parse("(< close 90)"),
-        )
-        result = validate_strategy(strategy)
+    def test_strategy_no_children(self):
+        strategy = Strategy(name="Test", children=[])
+        result = validate(strategy)
         assert not result.valid
-        assert any("At least one symbol" in str(e) for e in result.errors)
+        assert any("at least one allocation block" in str(e) for e in result.errors)
 
-    def test_invalid_timeframe(self):
+    def test_strategy_invalid_rebalance(self):
         strategy = Strategy(
             name="Test",
-            symbols=["AAPL"],
-            timeframe="2D",  # Invalid
-            entry=parse("(> close 100)"),
-            exit=parse("(< close 90)"),
+            rebalance="invalid",  # type: ignore
+            children=[Asset(symbol="VTI", weight=100)],
         )
-        result = validate_strategy(strategy)
+        result = validate(strategy)
         assert not result.valid
-        assert any("Invalid timeframe" in str(e) for e in result.errors)
+        assert any("rebalance frequency" in str(e) for e in result.errors)
 
-    def test_invalid_strategy_type(self):
+
+class TestValidateWeight:
+    """Test weight block validation."""
+
+    def test_valid_specified_weights(self):
         strategy = Strategy(
             name="Test",
-            symbols=["AAPL"],
-            timeframe="1D",
-            strategy_type="invalid_type",
-            entry=parse("(> close 100)"),
-            exit=parse("(< close 90)"),
+            children=[
+                Weight(
+                    method="specified",
+                    children=[
+                        Asset(symbol="VTI", weight=60),
+                        Asset(symbol="BND", weight=40),
+                    ],
+                )
+            ],
         )
-        result = validate_strategy(strategy)
-        assert not result.valid
-        assert any("Invalid strategy type" in str(e) for e in result.errors)
+        result = validate(strategy)
+        assert result.valid
 
-    def test_invalid_entry_condition(self):
+    def test_specified_weights_not_100(self):
         strategy = Strategy(
             name="Test",
-            symbols=["AAPL"],
-            timeframe="1D",
-            entry=parse("(sma close 20)"),  # Not a condition
-            exit=parse("(< close 90)"),
+            children=[
+                Weight(
+                    method="specified",
+                    children=[
+                        Asset(symbol="VTI", weight=60),
+                        Asset(symbol="BND", weight=30),  # Only 90%
+                    ],
+                )
+            ],
         )
-        result = validate_strategy(strategy)
+        result = validate(strategy)
         assert not result.valid
-        assert any("Expected condition" in str(e) for e in result.errors)
+        assert any("sum to 100%" in str(e) for e in result.errors)
 
-
-class TestValidateRiskConfig:
-    """Test validation of risk configuration."""
-
-    def test_valid_risk_config(self):
+    def test_specified_missing_weights(self):
         strategy = Strategy(
             name="Test",
-            symbols=["AAPL"],
-            timeframe="1D",
-            entry=parse("(> close 100)"),
-            exit=parse("(< close 90)"),
-            risk={
-                "stop_loss_pct": 2.0,
-                "take_profit_pct": 6.0,
-                "max_positions": 5,
-            },
+            children=[
+                Weight(
+                    method="specified",
+                    children=[
+                        Asset(symbol="VTI", weight=60),
+                        Asset(symbol="BND"),  # Missing weight
+                    ],
+                )
+            ],
+        )
+        result = validate(strategy)
+        assert not result.valid
+        assert any("must have :weight" in str(e) for e in result.errors)
+
+    def test_equal_with_weights_error(self):
+        strategy = Strategy(
+            name="Test",
+            children=[
+                Weight(
+                    method="equal",
+                    children=[
+                        Asset(symbol="VTI", weight=50),  # Should not have weight
+                        Asset(symbol="BND", weight=50),
+                    ],
+                )
+            ],
+        )
+        result = validate(strategy)
+        assert not result.valid
+        assert any("should not have :weight" in str(e) for e in result.errors)
+
+    def test_valid_equal_weights(self):
+        strategy = Strategy(
+            name="Test",
+            children=[
+                Weight(
+                    method="equal",
+                    children=[Asset(symbol="VTI"), Asset(symbol="BND")],
+                )
+            ],
+        )
+        result = validate(strategy)
+        assert result.valid
+
+    def test_valid_momentum_with_lookback(self):
+        strategy = Strategy(
+            name="Test",
+            children=[
+                Weight(
+                    method="momentum",
+                    lookback=90,
+                    children=[Asset(symbol="XLK"), Asset(symbol="XLF")],
+                )
+            ],
+        )
+        result = validate(strategy)
+        assert result.valid
+
+    def test_invalid_lookback(self):
+        strategy = Strategy(
+            name="Test",
+            children=[
+                Weight(
+                    method="momentum",
+                    lookback=-10,  # Invalid
+                    children=[Asset(symbol="XLK")],
+                )
+            ],
+        )
+        result = validate(strategy)
+        assert not result.valid
+        assert any("positive integer" in str(e) for e in result.errors)
+
+    def test_invalid_top_exceeds_children(self):
+        strategy = Strategy(
+            name="Test",
+            children=[
+                Weight(
+                    method="momentum",
+                    lookback=90,
+                    top=5,  # Only 2 children
+                    children=[Asset(symbol="XLK"), Asset(symbol="XLF")],
+                )
+            ],
+        )
+        result = validate(strategy)
+        assert not result.valid
+        assert any("exceeds number of children" in str(e) for e in result.errors)
+
+    def test_weight_no_children(self):
+        strategy = Strategy(
+            name="Test",
+            children=[Weight(method="equal", children=[])],
+        )
+        result = validate(strategy)
+        assert not result.valid
+        assert any("at least one child" in str(e) for e in result.errors)
+
+
+class TestValidateGroup:
+    """Test group block validation."""
+
+    def test_valid_group(self):
+        strategy = Strategy(
+            name="Test",
+            children=[
+                Group(
+                    name="Equities",
+                    children=[
+                        Weight(
+                            method="equal",
+                            children=[Asset(symbol="VTI"), Asset(symbol="VXUS")],
+                        )
+                    ],
+                )
+            ],
+        )
+        result = validate(strategy)
+        assert result.valid
+
+    def test_group_missing_name(self):
+        strategy = Strategy(
+            name="Test",
+            children=[Group(name="", children=[Asset(symbol="VTI", weight=100)])],
+        )
+        result = validate(strategy)
+        assert not result.valid
+        assert any("Group name is required" in str(e) for e in result.errors)
+
+    def test_group_no_children(self):
+        strategy = Strategy(
+            name="Test",
+            children=[Group(name="Empty", children=[])],
+        )
+        result = validate(strategy)
+        assert not result.valid
+        assert any("at least one child block" in str(e) for e in result.errors)
+
+
+class TestValidateAsset:
+    """Test asset block validation."""
+
+    def test_valid_asset(self):
+        strategy = Strategy(
+            name="Test",
+            children=[Asset(symbol="VTI", weight=100)],
+        )
+        result = validate(strategy)
+        assert result.valid
+
+    def test_asset_empty_symbol(self):
+        strategy = Strategy(
+            name="Test",
+            children=[Asset(symbol="", weight=100)],
+        )
+        result = validate(strategy)
+        assert not result.valid
+        assert any("symbol is required" in str(e) for e in result.errors)
+
+    def test_asset_invalid_symbol_start(self):
+        strategy = Strategy(
+            name="Test",
+            children=[Asset(symbol="123ABC", weight=100)],
+        )
+        result = validate(strategy)
+        assert not result.valid
+        assert any("start with a letter" in str(e) for e in result.errors)
+
+    def test_asset_negative_weight(self):
+        strategy = Strategy(
+            name="Test",
+            children=[Asset(symbol="VTI", weight=-10)],
+        )
+        result = validate(strategy)
+        assert not result.valid
+        assert any("must be positive" in str(e) for e in result.errors)
+
+
+class TestValidateFilter:
+    """Test filter block validation."""
+
+    def test_valid_filter(self):
+        strategy = Strategy(
+            name="Test",
+            children=[
+                Filter(
+                    by="momentum",
+                    select_direction="top",
+                    select_count=3,
+                    lookback=90,
+                    children=[
+                        Weight(
+                            method="equal",
+                            children=[
+                                Asset(symbol="XLK"),
+                                Asset(symbol="XLF"),
+                                Asset(symbol="XLE"),
+                            ],
+                        )
+                    ],
+                )
+            ],
+        )
+        result = validate(strategy)
+        assert result.valid
+
+    def test_filter_select_exceeds_assets(self):
+        strategy = Strategy(
+            name="Test",
+            children=[
+                Filter(
+                    by="momentum",
+                    select_direction="top",
+                    select_count=5,  # Only 2 assets
+                    children=[
+                        Weight(
+                            method="equal",
+                            children=[Asset(symbol="XLK"), Asset(symbol="XLF")],
+                        )
+                    ],
+                )
+            ],
+        )
+        result = validate(strategy)
+        assert not result.valid
+        assert any("exceeds available assets" in str(e) for e in result.errors)
+
+    def test_filter_no_children(self):
+        strategy = Strategy(
+            name="Test",
+            children=[
+                Filter(
+                    by="momentum",
+                    select_direction="top",
+                    select_count=2,
+                    children=[],
+                )
+            ],
+        )
+        result = validate(strategy)
+        assert not result.valid
+        assert any("at least one child" in str(e) for e in result.errors)
+
+
+class TestValidateConditions:
+    """Test condition validation (in if blocks)."""
+
+    def test_valid_comparison(self):
+        from llamatrade_dsl import If
+
+        strategy = Strategy(
+            name="Test",
+            children=[
+                If(
+                    condition=Comparison(
+                        operator=">",
+                        left=Indicator(name="sma", symbol="SPY", params=(50,)),
+                        right=Indicator(name="sma", symbol="SPY", params=(200,)),
+                    ),
+                    then_block=Asset(symbol="VTI", weight=100),
+                )
+            ],
+        )
+        result = validate(strategy)
+        assert result.valid
+
+    def test_invalid_indicator(self):
+        from llamatrade_dsl import If
+
+        strategy = Strategy(
+            name="Test",
+            children=[
+                If(
+                    condition=Comparison(
+                        operator=">",
+                        left=Indicator(name="unknown", symbol="SPY", params=(14,)),
+                        right=NumericLiteral(value=50),
+                    ),
+                    then_block=Asset(symbol="VTI", weight=100),
+                )
+            ],
+        )
+        result = validate(strategy)
+        assert not result.valid
+        assert any("Unknown indicator" in str(e) for e in result.errors)
+
+    def test_invalid_indicator_params(self):
+        from llamatrade_dsl import If
+
+        strategy = Strategy(
+            name="Test",
+            children=[
+                If(
+                    condition=Comparison(
+                        operator=">",
+                        left=Indicator(name="rsi", symbol="SPY", params=(-14,)),
+                        right=NumericLiteral(value=50),
+                    ),
+                    then_block=Asset(symbol="VTI", weight=100),
+                )
+            ],
+        )
+        result = validate(strategy)
+        assert not result.valid
+        assert any("must be positive" in str(e) for e in result.errors)
+
+
+class TestValidateStrategyAlias:
+    """Test that validate_strategy is an alias for validate."""
+
+    def test_validate_strategy_works(self):
+        strategy = Strategy(
+            name="Test",
+            children=[Asset(symbol="VTI", weight=100)],
         )
         result = validate_strategy(strategy)
         assert result.valid
-
-    def test_stop_loss_out_of_range(self):
-        strategy = Strategy(
-            name="Test",
-            symbols=["AAPL"],
-            timeframe="1D",
-            entry=parse("(> close 100)"),
-            exit=parse("(< close 90)"),
-            risk={"stop_loss_pct": 150},  # > 100
-        )
-        result = validate_strategy(strategy)
-        assert not result.valid
-        assert any("stop_loss_pct" in str(e) for e in result.errors)
-
-    def test_take_profit_out_of_range(self):
-        strategy = Strategy(
-            name="Test",
-            symbols=["AAPL"],
-            timeframe="1D",
-            entry=parse("(> close 100)"),
-            exit=parse("(< close 90)"),
-            risk={"take_profit_pct": 1500},  # > 1000
-        )
-        result = validate_strategy(strategy)
-        assert not result.valid
-        assert any("take_profit_pct" in str(e) for e in result.errors)
-
-    def test_max_positions_invalid(self):
-        strategy = Strategy(
-            name="Test",
-            symbols=["AAPL"],
-            timeframe="1D",
-            entry=parse("(> close 100)"),
-            exit=parse("(< close 90)"),
-            risk={"max_positions": 0},  # Must be positive
-        )
-        result = validate_strategy(strategy)
-        assert not result.valid
-        assert any("max_positions" in str(e) for e in result.errors)
-
-
-class TestValidateSizingConfig:
-    """Test validation of position sizing configuration."""
-
-    def test_valid_percent_equity(self):
-        strategy = Strategy(
-            name="Test",
-            symbols=["AAPL"],
-            timeframe="1D",
-            entry=parse("(> close 100)"),
-            exit=parse("(< close 90)"),
-            sizing={"type": "percent-equity", "value": 10},
-        )
-        result = validate_strategy(strategy)
-        assert result.valid
-
-    def test_invalid_sizing_type(self):
-        strategy = Strategy(
-            name="Test",
-            symbols=["AAPL"],
-            timeframe="1D",
-            entry=parse("(> close 100)"),
-            exit=parse("(< close 90)"),
-            sizing={"type": "invalid-type", "value": 10},
-        )
-        result = validate_strategy(strategy)
-        assert not result.valid
-        assert any("Invalid sizing type" in str(e) for e in result.errors)
-
-    def test_percent_equity_out_of_range(self):
-        strategy = Strategy(
-            name="Test",
-            symbols=["AAPL"],
-            timeframe="1D",
-            entry=parse("(> close 100)"),
-            exit=parse("(< close 90)"),
-            sizing={"type": "percent-equity", "value": 150},  # > 100
-        )
-        result = validate_strategy(strategy)
-        assert not result.valid
-        assert any("sizing.value" in str(e) for e in result.errors)

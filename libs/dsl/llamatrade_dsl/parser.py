@@ -1,19 +1,43 @@
-"""S-expression parser for strategy DSL."""
+"""S-expression parser for allocation-based strategy DSL."""
 
 from __future__ import annotations
 
 import re
+from typing import cast
 
 from llamatrade_dsl.ast import (
-    ASTNode,
-    FunctionCall,
-    Keyword,
-    Literal,
-    LiteralValue,
-    RiskConfig,
-    SizingConfig,
+    COMPARISON_OPS,
+    CROSSOVER_OPS,
+    FILTER_CRITERIA,
+    INDICATORS,
+    LOGICAL_OPS,
+    METRICS,
+    REBALANCE_FREQUENCIES,
+    WEIGHT_METHODS,
+    Asset,
+    Block,
+    Comparison,
+    ComparisonOperator,
+    Condition,
+    Crossover,
+    CrossoverDirection,
+    Filter,
+    FilterCriteria,
+    Group,
+    If,
+    Indicator,
+    LogicalOp,
+    LogicalOperator,
+    Metric,
+    NumericLiteral,
+    Price,
+    PriceField,
+    RebalanceFrequency,
+    SelectDirection,
     Strategy,
-    Symbol,
+    Value,
+    Weight,
+    WeightMethod,
 )
 
 
@@ -34,15 +58,10 @@ class Tokenizer:
         r"""
         (?P<LPAREN>\()|
         (?P<RPAREN>\))|
-        (?P<LBRACKET>\[)|
-        (?P<RBRACKET>\])|
-        (?P<LBRACE>\{)|
-        (?P<RBRACE>\})|
         (?P<STRING>"(?:[^"\\]|\\.)*")|
         (?P<KEYWORD>:[a-zA-Z_][a-zA-Z0-9_-]*)|
         (?P<NUMBER>-?[0-9]+\.?[0-9]*)|
-        (?P<BOOLEAN>true|false)|
-        (?P<OPERATOR>>=|<=|!=|cross-above|cross-below|[><+\-*/=])|
+        (?P<OPERATOR>>=|<=|!=|crosses-above|crosses-below|[><+\-*/=])|
         (?P<SYMBOL>[a-zA-Z_$][a-zA-Z0-9_-]*)|
         (?P<SKIP>\s+)|
         (?P<COMMENT>;[^\n]*)
@@ -73,290 +92,482 @@ class Tokenizer:
 
             column = start - line_start + 1
 
-            if kind not in ("SKIP", "COMMENT"):
+            if kind is not None and kind not in ("SKIP", "COMMENT"):
                 self.tokens.append((kind, value, start, line, column))
 
-    def __iter__(self):
-        return iter(self.tokens)
 
-    def __len__(self):
-        return len(self.tokens)
-
-
-class SExprParser:
-    """
-    Recursive descent parser for S-expressions.
-
-    Supports:
-    - Numbers: 42, 3.14, -5
-    - Strings: "hello", "with \\"escapes\\""
-    - Booleans: true, false
-    - Symbols: close, open, sma, my-indicator
-    - Keywords: :name, :symbols, :entry
-    - Function calls: (sma close 20), (and cond1 cond2)
-    - Vectors: ["AAPL" "MSFT"]
-    - Maps: {:key value} (for metadata)
-    """
+class Parser:
+    """Recursive descent parser for allocation-based strategy DSL."""
 
     def __init__(self, source: str):
         self.source = source
         self.tokenizer = Tokenizer(source)
-        self.tokens = list(self.tokenizer)
+        self.tokens = list(self.tokenizer.tokens)
         self.pos = 0
 
-    def parse(self) -> ASTNode:
-        """Parse the source and return a single AST node."""
+    def parse(self) -> Strategy:
+        """Parse the source and return a Strategy."""
         if not self.tokens:
             raise ParseError("Empty input", 0)
 
-        result = self._parse_expr()
+        result = self._parse_strategy()
 
         if self.pos < len(self.tokens):
             _, _, _, line, col = self.tokens[self.pos]
-            raise ParseError("Unexpected tokens after expression", line=line, column=col)
+            raise ParseError("Unexpected tokens after strategy", line=line, column=col)
 
         return result
 
-    def parse_strategy(self) -> Strategy:
-        """Parse a (strategy ...) definition into a Strategy object."""
-        node = self.parse()
-
-        if not isinstance(node, FunctionCall) or node.name != "strategy":
-            raise ParseError("Expected (strategy ...) definition", 0)
-
-        return self._build_strategy(node)
-
-    def _parse_expr(self) -> ASTNode:
-        """Parse a single expression."""
+    def _current(self) -> tuple[str, str, int, int, int] | None:
+        """Get current token or None if at end."""
         if self.pos >= len(self.tokens):
-            raise ParseError("Unexpected end of input", len(self.source))
-
-        kind, value, position, line, column = self.tokens[self.pos]
-
-        if kind == "LPAREN":
-            return self._parse_list()
-        elif kind == "LBRACKET":
-            return self._parse_vector()
-        elif kind == "LBRACE":
-            return self._parse_map()
-        elif kind == "NUMBER":
-            self.pos += 1
-            if "." in value:
-                return Literal(float(value))
-            return Literal(int(value))
-        elif kind == "STRING":
-            self.pos += 1
-            # Unescape string
-            unescaped = value[1:-1].replace('\\"', '"').replace("\\n", "\n").replace("\\\\", "\\")
-            return Literal(unescaped)
-        elif kind == "BOOLEAN":
-            self.pos += 1
-            return Literal(value == "true")
-        elif kind == "KEYWORD":
-            self.pos += 1
-            return Keyword(value[1:])  # Strip leading colon
-        elif kind == "SYMBOL":
-            self.pos += 1
-            return Symbol(value)
-        else:
-            raise ParseError(f"Unexpected token: {value}", position, line, column)
-
-    def _parse_list(self) -> FunctionCall:
-        """Parse (fn arg1 arg2 ...)."""
-        self._expect("LPAREN")
-
-        if self.pos >= len(self.tokens):
-            raise ParseError("Unexpected end of input in list", len(self.source))
-
-        # Empty list check
-        if self.tokens[self.pos][0] == "RPAREN":
-            raise ParseError(
-                "Empty list not allowed - expected function name",
-                self.tokens[self.pos][2],
-                self.tokens[self.pos][3],
-                self.tokens[self.pos][4],
-            )
-
-        # First element must be function name (symbol or operator)
-        kind, value, pos, line, col = self.tokens[self.pos]
-        if kind not in ("SYMBOL", "OPERATOR"):
-            raise ParseError(f"Expected function name, got {value}", pos, line, col)
-
-        self.pos += 1
-        fn_name = value
-
-        # Parse arguments until closing paren
-        args: list[ASTNode] = []
-        while self.pos < len(self.tokens) and self.tokens[self.pos][0] != "RPAREN":
-            args.append(self._parse_expr())
-
-        self._expect("RPAREN")
-
-        return FunctionCall(fn_name, tuple(args))
-
-    def _parse_vector(self) -> Literal:
-        """Parse [item1 item2 ...] as a list literal."""
-        self._expect("LBRACKET")
-
-        items: list[LiteralValue] = []
-        while self.pos < len(self.tokens) and self.tokens[self.pos][0] != "RBRACKET":
-            node = self._parse_expr()
-            if isinstance(node, Literal):
-                items.append(node.value)
-            elif isinstance(node, Symbol):
-                items.append(node.name)
-            else:
-                _, _, pos, line, col = self.tokens[self.pos - 1]
-                raise ParseError("Vector elements must be literals or symbols", pos, line, col)
-
-        self._expect("RBRACKET")
-
-        return Literal(items)
-
-    def _parse_map(self) -> Literal:
-        """Parse {:key value ...} as a dict literal."""
-        self._expect("LBRACE")
-
-        result: dict[str, LiteralValue | ASTNode] = {}
-        while self.pos < len(self.tokens) and self.tokens[self.pos][0] != "RBRACE":
-            # Expect keyword
-            kind, value, pos, line, col = self.tokens[self.pos]
-            if kind != "KEYWORD":
-                raise ParseError(f"Expected keyword in map, got {value}", pos, line, col)
-
-            key = value[1:]  # Strip colon
-            self.pos += 1
-
-            # Parse value
-            if self.pos >= len(self.tokens):
-                raise ParseError(f"Missing value for key :{key}", pos, line, col)
-
-            value_node = self._parse_expr()
-            if isinstance(value_node, Literal):
-                result[key] = value_node.value
-            elif isinstance(value_node, Symbol):
-                result[key] = value_node.name
-            else:
-                result[key] = value_node
-
-        self._expect("RBRACE")
-
-        return Literal(result)
+            return None
+        return self.tokens[self.pos]
 
     def _expect(self, kind: str) -> str:
-        """Expect a specific token kind, raise error if not found."""
+        """Expect a specific token kind."""
         if self.pos >= len(self.tokens):
             raise ParseError(f"Expected {kind}, got end of input", len(self.source))
 
         actual_kind, value, pos, line, col = self.tokens[self.pos]
         if actual_kind != kind:
-            raise ParseError(f"Expected {kind}, got {actual_kind}", pos, line, col)
+            raise ParseError(f"Expected {kind}, got {actual_kind}: {value}", pos, line, col)
 
         self.pos += 1
         return value
 
-    def _build_strategy(self, node: FunctionCall) -> Strategy:
-        """Convert parsed (strategy ...) to Strategy object."""
-        # Extract keyword arguments
-        kwargs: dict[str, ASTNode] = {}
-        i = 0
-        while i < len(node.args):
-            arg = node.args[i]
-            if isinstance(arg, Keyword):
-                if i + 1 >= len(node.args):
-                    raise ParseError(f"Missing value for keyword :{arg.name}", 0)
-                kwargs[arg.name] = node.args[i + 1]
-                i += 2
-            else:
-                i += 1
+    def _expect_symbol(self, expected: str) -> None:
+        """Expect a specific symbol."""
+        tok = self._current()
+        if tok is None:
+            raise ParseError(f"Expected '{expected}', got end of input", len(self.source))
 
-        # Helper to extract literal values
-        def get_literal(key: str, default: LiteralValue | None = None) -> LiteralValue | None:
-            val = kwargs.get(key)
-            if val is None:
-                return default
-            if isinstance(val, Literal):
-                return val.value
-            if isinstance(val, Symbol):
-                return val.name  # Convert Symbol to string
-            return None
+        kind, value, pos, line, col = tok
+        if kind != "SYMBOL" or value != expected:
+            raise ParseError(f"Expected '{expected}', got {value}", pos, line, col)
+        self.pos += 1
 
-        def get_node(key: str) -> ASTNode | None:
-            val = kwargs.get(key)
-            if val is None:
-                return None
-            return val
+    def _expect_keyword(self, expected: str) -> None:
+        """Expect a specific keyword (with colon prefix in source)."""
+        tok = self._current()
+        if tok is None:
+            raise ParseError(f"Expected ':{expected}', got end of input", len(self.source))
 
-        # Extract required fields
-        name = get_literal("name")
-        if not name:
-            raise ParseError("Strategy requires :name", 0)
+        kind, value, pos, line, col = tok
+        if kind != "KEYWORD" or value != f":{expected}":
+            raise ParseError(f"Expected ':{expected}', got {value}", pos, line, col)
+        self.pos += 1
 
-        symbols = get_literal("symbols")
-        if not symbols or not isinstance(symbols, list):
-            raise ParseError("Strategy requires :symbols as a list", 0)
+    def _peek_keyword(self) -> str | None:
+        """Peek at current token if it's a keyword, return name without colon."""
+        tok = self._current()
+        if tok and tok[0] == "KEYWORD":
+            return tok[1][1:]  # Strip leading colon
+        return None
 
-        timeframe = get_literal("timeframe", "1D")
+    def _parse_strategy(self) -> Strategy:
+        """Parse (strategy "name" :rebalance ... children...)."""
+        self._expect("LPAREN")
+        self._expect_symbol("strategy")
 
-        entry = get_node("entry")
-        if entry is None:
-            raise ParseError("Strategy requires :entry condition", 0)
+        # Parse name (required)
+        name = self._parse_string()
 
-        exit_cond = get_node("exit")
-        if exit_cond is None:
-            raise ParseError("Strategy requires :exit condition", 0)
+        # Parse optional keyword arguments
+        rebalance: RebalanceFrequency | None = None
+        benchmark: str | None = None
+        description: str | None = None
 
-        # Optional fields
-        description = get_literal("description")
-        strategy_type = get_literal("type", "custom")
+        while self._peek_keyword() in ("rebalance", "benchmark", "description"):
+            kw = self._peek_keyword()
+            self.pos += 1  # consume keyword
 
-        # Sizing config
-        position_size_val = get_literal("position-size", 10)
-        sizing_type_val = get_literal("sizing-type", "percent-equity")
-        sizing = SizingConfig(
-            type=str(sizing_type_val) if sizing_type_val else "percent-equity",
-            value=float(position_size_val) if isinstance(position_size_val, (int, float)) else 10,
-        )
+            if kw == "rebalance":
+                tok = self._current()
+                if tok and tok[0] == "SYMBOL" and tok[1] in REBALANCE_FREQUENCIES:
+                    rebalance = cast(RebalanceFrequency, tok[1])
+                    self.pos += 1
+                else:
+                    raise ParseError(f"Invalid rebalance frequency: {tok[1] if tok else 'EOF'}")
+            elif kw == "benchmark":
+                tok = self._current()
+                if tok and tok[0] == "SYMBOL":
+                    benchmark = tok[1]
+                    self.pos += 1
+                else:
+                    raise ParseError("Expected symbol for benchmark")
+            elif kw == "description":
+                description = self._parse_string()
 
-        # Risk config
-        risk: RiskConfig = {}
-        if "stop-loss-pct" in kwargs:
-            risk["stop_loss_pct"] = get_literal("stop-loss-pct")
-        if "take-profit-pct" in kwargs:
-            risk["take_profit_pct"] = get_literal("take-profit-pct")
-        if "trailing-stop-pct" in kwargs:
-            risk["trailing_stop_pct"] = get_literal("trailing-stop-pct")
-        if "max-positions" in kwargs:
-            risk["max_positions"] = get_literal("max-positions")
-        if "max-position-size-pct" in kwargs:
-            risk["max_position_size_pct"] = get_literal("max-position-size-pct")
+        # Parse child blocks
+        children: list[Block] = []
+        while self._current() and self._current()[0] != "RPAREN":  # type: ignore[index]
+            children.append(self._parse_block())
 
-        # Handle :risk map if provided
-        risk_map = get_literal("risk")
-        if isinstance(risk_map, dict):
-            # Convert kebab-case to snake_case
-            for k, v in risk_map.items():
-                snake_key = k.replace("-", "_")
-                risk[snake_key] = v
+        self._expect("RPAREN")
 
         return Strategy(
             name=name,
-            symbols=symbols,
-            timeframe=timeframe,
-            entry=entry,
-            exit=exit_cond,
+            children=children,
+            rebalance=rebalance,
+            benchmark=benchmark,
             description=description,
-            strategy_type=strategy_type,
-            sizing=sizing,
-            risk=risk,
         )
 
+    def _parse_block(self) -> Block:
+        """Parse any block type."""
+        tok = self._current()
+        if tok is None:
+            raise ParseError("Expected block, got end of input", len(self.source))
 
-def parse(source: str) -> ASTNode:
-    """Parse S-expression string to AST."""
-    return SExprParser(source).parse()
+        if tok[0] != "LPAREN":
+            raise ParseError(f"Expected '(', got {tok[1]}", tok[2], tok[3], tok[4])
+
+        # Peek at the block type (symbol after lparen)
+        if self.pos + 1 >= len(self.tokens):
+            raise ParseError("Unexpected end of input")
+
+        next_tok = self.tokens[self.pos + 1]
+        if next_tok[0] != "SYMBOL":
+            raise ParseError(f"Expected block type, got {next_tok[1]}")
+
+        block_type = next_tok[1]
+
+        if block_type == "group":
+            return self._parse_group()
+        elif block_type == "weight":
+            return self._parse_weight()
+        elif block_type == "asset":
+            return self._parse_asset()
+        elif block_type == "if":
+            return self._parse_if()
+        elif block_type == "filter":
+            return self._parse_filter()
+        else:
+            raise ParseError(
+                f"Unknown block type: {block_type}",
+                next_tok[2],
+                next_tok[3],
+                next_tok[4],
+            )
+
+    def _parse_group(self) -> Group:
+        """Parse (group "name" children...)."""
+        self._expect("LPAREN")
+        self._expect_symbol("group")
+
+        name = self._parse_string()
+
+        children: list[Block] = []
+        while self._current() and self._current()[0] != "RPAREN":  # type: ignore[index]
+            children.append(self._parse_block())
+
+        self._expect("RPAREN")
+
+        return Group(name=name, children=children)
+
+    def _parse_weight(self) -> Weight:
+        """Parse (weight :method <method> [:lookback N] [:top N] children...)."""
+        self._expect("LPAREN")
+        self._expect_symbol("weight")
+
+        # Parse :method (required)
+        self._expect_keyword("method")
+        tok = self._current()
+        if tok is None or tok[0] != "SYMBOL":
+            raise ParseError("Expected weight method")
+        method_str = tok[1]
+        if method_str not in WEIGHT_METHODS:
+            raise ParseError(f"Invalid weight method: {method_str}")
+        method = cast(WeightMethod, method_str)
+        self.pos += 1
+
+        # Parse optional :lookback and :top
+        lookback: int | None = None
+        top: int | None = None
+
+        while self._peek_keyword() in ("lookback", "top"):
+            kw = self._peek_keyword()
+            self.pos += 1
+
+            tok = self._current()
+            if tok is None or tok[0] != "NUMBER":
+                raise ParseError(f"Expected number for :{kw}")
+            value = int(tok[1])
+            self.pos += 1
+
+            if kw == "lookback":
+                lookback = value
+            elif kw == "top":
+                top = value
+
+        # Parse children
+        children: list[Block] = []
+        while self._current() and self._current()[0] != "RPAREN":  # type: ignore[index]
+            children.append(self._parse_block())
+
+        self._expect("RPAREN")
+
+        return Weight(method=method, children=children, lookback=lookback, top=top)
+
+    def _parse_asset(self) -> Asset:
+        """Parse (asset SYMBOL [:weight N])."""
+        self._expect("LPAREN")
+        self._expect_symbol("asset")
+
+        # Parse symbol
+        tok = self._current()
+        if tok is None or tok[0] != "SYMBOL":
+            raise ParseError("Expected asset symbol")
+        symbol = tok[1]
+        self.pos += 1
+
+        # Parse optional :weight
+        weight: float | None = None
+        if self._peek_keyword() == "weight":
+            self.pos += 1
+            tok = self._current()
+            if tok is None or tok[0] != "NUMBER":
+                raise ParseError("Expected number for :weight")
+            weight = float(tok[1])
+            self.pos += 1
+
+        self._expect("RPAREN")
+
+        return Asset(symbol=symbol, weight=weight)
+
+    def _parse_if(self) -> If:
+        """Parse (if condition then-block [(else else-block)])."""
+        self._expect("LPAREN")
+        self._expect_symbol("if")
+
+        condition = self._parse_condition()
+        then_block = self._parse_block()
+
+        # Check for optional else
+        else_block: Block | None = None
+        tok = self._current()
+        if tok and tok[0] == "LPAREN":
+            # Peek for 'else'
+            if self.pos + 1 < len(self.tokens) and self.tokens[self.pos + 1][1] == "else":
+                self._expect("LPAREN")
+                self._expect_symbol("else")
+                else_block = self._parse_block()
+                self._expect("RPAREN")
+
+        self._expect("RPAREN")
+
+        return If(condition=condition, then_block=then_block, else_block=else_block)
+
+    def _parse_filter(self) -> Filter:
+        """Parse (filter :by <criteria> :select (top/bottom N) [:lookback N] children...)."""
+        self._expect("LPAREN")
+        self._expect_symbol("filter")
+
+        # Parse :by
+        self._expect_keyword("by")
+        tok = self._current()
+        if tok is None or tok[0] != "SYMBOL":
+            raise ParseError("Expected filter criteria")
+        by_str = tok[1]
+        if by_str not in FILTER_CRITERIA:
+            raise ParseError(f"Invalid filter criteria: {by_str}")
+        by = cast(FilterCriteria, by_str)
+        self.pos += 1
+
+        # Parse :select (top/bottom N)
+        self._expect_keyword("select")
+        self._expect("LPAREN")
+
+        tok = self._current()
+        if tok is None or tok[0] != "SYMBOL" or tok[1] not in ("top", "bottom"):
+            raise ParseError("Expected 'top' or 'bottom' in :select")
+        direction = cast(SelectDirection, tok[1])
+        self.pos += 1
+
+        tok = self._current()
+        if tok is None or tok[0] != "NUMBER":
+            raise ParseError("Expected number in :select")
+        count = int(tok[1])
+        self.pos += 1
+
+        self._expect("RPAREN")
+
+        # Parse optional :lookback
+        lookback: int | None = None
+        if self._peek_keyword() == "lookback":
+            self.pos += 1
+            tok = self._current()
+            if tok is None or tok[0] != "NUMBER":
+                raise ParseError("Expected number for :lookback")
+            lookback = int(tok[1])
+            self.pos += 1
+
+        # Parse children
+        children: list[Block] = []
+        while self._current() and self._current()[0] != "RPAREN":  # type: ignore[index]
+            children.append(self._parse_block())
+
+        self._expect("RPAREN")
+
+        return Filter(
+            by=by,
+            select_direction=direction,
+            select_count=count,
+            children=children,
+            lookback=lookback,
+        )
+
+    def _parse_condition(self) -> Condition:
+        """Parse a condition expression."""
+        self._expect("LPAREN")
+
+        tok = self._current()
+        if tok is None:
+            raise ParseError("Expected condition operator")
+
+        # Get operator
+        if tok[0] == "OPERATOR":
+            op = tok[1]
+            self.pos += 1
+        elif tok[0] == "SYMBOL":
+            op = tok[1]
+            self.pos += 1
+        else:
+            raise ParseError(f"Expected operator, got {tok[1]}")
+
+        if op in COMPARISON_OPS:
+            left = self._parse_value()
+            right = self._parse_value()
+            self._expect("RPAREN")
+            return Comparison(operator=cast(ComparisonOperator, op), left=left, right=right)
+
+        elif op in CROSSOVER_OPS:
+            direction: CrossoverDirection = "above" if op == "crosses-above" else "below"
+            fast = self._parse_value()
+            slow = self._parse_value()
+            self._expect("RPAREN")
+            return Crossover(direction=direction, fast=fast, slow=slow)
+
+        elif op in LOGICAL_OPS:
+            operands: list[Condition] = []
+            while self._current() and self._current()[0] != "RPAREN":  # type: ignore[index]
+                operands.append(self._parse_condition())
+            self._expect("RPAREN")
+            return LogicalOp(operator=cast(LogicalOperator, op), operands=tuple(operands))
+
+        else:
+            raise ParseError(f"Unknown condition operator: {op}")
+
+    def _parse_value(self) -> Value:
+        """Parse a value expression (literal, price, indicator, or metric)."""
+        tok = self._current()
+        if tok is None:
+            raise ParseError("Expected value")
+
+        # Numeric literal
+        if tok[0] == "NUMBER":
+            self.pos += 1
+            return NumericLiteral(float(tok[1]))
+
+        # Must be a function call
+        if tok[0] != "LPAREN":
+            raise ParseError(f"Expected value expression, got {tok[1]}")
+
+        self._expect("LPAREN")
+
+        tok = self._current()
+        if tok is None or tok[0] != "SYMBOL":
+            raise ParseError("Expected function name in value expression")
+
+        fn_name = tok[1]
+        self.pos += 1
+
+        if fn_name == "price":
+            return self._parse_price_rest()
+        elif fn_name in INDICATORS:
+            return self._parse_indicator_rest(fn_name)
+        elif fn_name in METRICS:
+            return self._parse_metric_rest(fn_name)
+        else:
+            raise ParseError(f"Unknown value function: {fn_name}")
+
+    def _parse_price_rest(self) -> Price:
+        """Parse rest of (price SYMBOL [:field])."""
+        tok = self._current()
+        if tok is None or tok[0] != "SYMBOL":
+            raise ParseError("Expected symbol in price expression")
+        symbol = tok[1]
+        self.pos += 1
+
+        field: PriceField = "close"
+        if self._current() and self._current()[0] == "KEYWORD":  # type: ignore[index]
+            kw = self._current()[1][1:]  # type: ignore[index]
+            if kw in ("close", "open", "high", "low", "volume"):
+                field = cast(PriceField, kw)
+                self.pos += 1
+
+        self._expect("RPAREN")
+        return Price(symbol=symbol, field=field)
+
+    def _parse_indicator_rest(self, name: str) -> Indicator:
+        """Parse rest of (indicator SYMBOL params... [:output])."""
+        tok = self._current()
+        if tok is None or tok[0] != "SYMBOL":
+            raise ParseError(f"Expected symbol in {name} indicator")
+        symbol = tok[1]
+        self.pos += 1
+
+        # Parse numeric parameters
+        params: list[int | float] = []
+        while self._current() and self._current()[0] == "NUMBER":  # type: ignore[index]
+            tok = self._current()
+            if "." in tok[1]:  # type: ignore[index]
+                params.append(float(tok[1]))  # type: ignore[index]
+            else:
+                params.append(int(tok[1]))  # type: ignore[index]
+            self.pos += 1
+
+        # Parse optional output keyword
+        output: str | None = None
+        if self._current() and self._current()[0] == "KEYWORD":  # type: ignore[index]
+            output = self._current()[1][1:]  # type: ignore[index]
+            self.pos += 1
+
+        self._expect("RPAREN")
+        return Indicator(name=name, symbol=symbol, params=tuple(params), output=output)
+
+    def _parse_metric_rest(self, name: str) -> Metric:
+        """Parse rest of (metric SYMBOL [period])."""
+        tok = self._current()
+        if tok is None or tok[0] != "SYMBOL":
+            raise ParseError(f"Expected symbol in {name} metric")
+        symbol = tok[1]
+        self.pos += 1
+
+        period: int | None = None
+        if self._current() and self._current()[0] == "NUMBER":  # type: ignore[index]
+            period = int(self._current()[1])  # type: ignore[index]
+            self.pos += 1
+
+        self._expect("RPAREN")
+        return Metric(name=name, symbol=symbol, period=period)  # type: ignore[arg-type]
+
+    def _parse_string(self) -> str:
+        """Parse a string literal."""
+        tok = self._current()
+        if tok is None or tok[0] != "STRING":
+            raise ParseError("Expected string")
+        self.pos += 1
+        # Unescape string
+        return tok[1][1:-1].replace('\\"', '"').replace("\\n", "\n").replace("\\\\", "\\")
+
+
+def parse(source: str) -> Strategy:
+    """Parse S-expression string to Strategy AST."""
+    return Parser(source).parse()
 
 
 def parse_strategy(source: str) -> Strategy:
-    """Parse strategy definition to Strategy object."""
-    return SExprParser(source).parse_strategy()
+    """Parse strategy definition to Strategy object (alias for parse)."""
+    return parse(source)
