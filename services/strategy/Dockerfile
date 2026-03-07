@@ -21,14 +21,13 @@ COPY libs/common /app/libs/common
 COPY libs/db /app/libs/db
 COPY libs/dsl /app/libs/dsl
 COPY libs/compiler /app/libs/compiler
-COPY libs/grpc /app/libs/grpc
 COPY libs/proto /app/libs/proto
 
 # Generate proto files
 RUN cd /app/libs/proto && buf generate --template buf.gen.python.yaml
 
 # Install shared libraries (order matters for dependencies)
-RUN pip install --no-cache-dir /app/libs/common /app/libs/db /app/libs/dsl /app/libs/compiler /app/libs/grpc
+RUN pip install --no-cache-dir /app/libs/common /app/libs/db /app/libs/dsl /app/libs/compiler /app/libs/proto
 
 # Copy service files and install
 COPY services/strategy/pyproject.toml services/strategy/README.md /app/

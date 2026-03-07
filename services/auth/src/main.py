@@ -8,9 +8,11 @@ import logging
 import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from typing import cast
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.types import ASGIApp
 
 from src.services.database import close_db, init_db
 
@@ -34,13 +36,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     # Mount Connect ASGI app
     try:
-        from llamatrade.v1.auth_connect import AuthServiceASGIApplication
+        from llamatrade_proto.generated.auth_connect import AuthServiceASGIApplication
 
         from src.grpc.servicer import AuthServicer
 
         servicer = AuthServicer()
         connect_app = AuthServiceASGIApplication(servicer)
-        app.mount("/", connect_app)
+        app.mount("/", cast(ASGIApp, connect_app))
         logger.info("Connect ASGI application mounted successfully")
     except ImportError as e:
         logger.warning("Connect dependencies not available: %s", e)

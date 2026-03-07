@@ -6,6 +6,12 @@ from unittest.mock import AsyncMock, MagicMock
 from uuid import UUID
 
 import pytest
+
+from llamatrade_proto.generated.trading_pb2 import (
+    POSITION_SIDE_LONG,
+    POSITION_SIDE_SHORT,
+)
+
 from src.services.position_service import PositionService
 
 # Test UUIDs
@@ -41,7 +47,7 @@ def mock_position():
     pos.tenant_id = TEST_TENANT_ID
     pos.session_id = TEST_SESSION_ID
     pos.symbol = "AAPL"
-    pos.side = "long"
+    pos.side = POSITION_SIDE_LONG
     pos.qty = Decimal("100")
     pos.avg_entry_price = Decimal("150.00")
     pos.current_price = Decimal("155.00")
@@ -119,7 +125,7 @@ class TestPositionService:
         # Create short position mock
         mock_position = MagicMock()
         mock_position.symbol = "AAPL"
-        mock_position.side = "short"
+        mock_position.side = POSITION_SIDE_SHORT
         mock_position.qty = Decimal("100")
         mock_position.avg_entry_price = Decimal("150.00")
         mock_position.cost_basis = Decimal("15000.00")

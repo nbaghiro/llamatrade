@@ -3,6 +3,8 @@
 from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
+from llamatrade_proto.generated import billing_pb2
+
 from src.routers.webhooks import (
     _handle_invoice_paid,
     _handle_payment_failed,
@@ -36,7 +38,7 @@ class TestHandleSubscriptionCreated:
         await _handle_subscription_created(mock_db, subscription_data)
 
         # Should have updated status and committed
-        assert mock_sub.status == "active"
+        assert mock_sub.status == billing_pb2.SUBSCRIPTION_STATUS_ACTIVE
         mock_db.commit.assert_called()
 
     async def test_does_nothing_when_not_exists(self) -> None:
@@ -77,7 +79,7 @@ class TestHandleSubscriptionUpdated:
 
         await _handle_subscription_updated(mock_db, subscription_data)
 
-        assert mock_subscription.status == "past_due"
+        assert mock_subscription.status == billing_pb2.SUBSCRIPTION_STATUS_PAST_DUE
         mock_db.commit.assert_called()
 
 
@@ -98,7 +100,7 @@ class TestHandleSubscriptionDeleted:
 
         await _handle_subscription_deleted(mock_db, subscription_data)
 
-        assert mock_subscription.status == "cancelled"
+        assert mock_subscription.status == billing_pb2.SUBSCRIPTION_STATUS_CANCELED
         mock_db.commit.assert_called()
 
 
@@ -175,7 +177,7 @@ class TestHandlePaymentFailed:
 
         await _handle_payment_failed(mock_db, invoice_data)
 
-        assert mock_subscription.status == "past_due"
+        assert mock_subscription.status == billing_pb2.SUBSCRIPTION_STATUS_PAST_DUE
         mock_db.commit.assert_called()
 
     async def test_does_nothing_when_subscription_not_found(self) -> None:

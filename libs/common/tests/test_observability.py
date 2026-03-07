@@ -3,6 +3,7 @@
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+
 from llamatrade_common.observability import (
     ObservabilityMiddleware,
     setup_observability,

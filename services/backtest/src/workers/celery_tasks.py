@@ -7,20 +7,27 @@ import os
 from collections.abc import Callable
 from datetime import UTC, datetime
 from decimal import Decimal
-from typing import Any
+from typing import cast
 from uuid import UUID
 
 import redis
-from celery import Task, shared_task
-from llamatrade_db.models.backtest import Backtest
-from llamatrade_db.models.backtest import BacktestResult as DBBacktestResult
-from llamatrade_db.models.strategy import StrategyVersion
+from celery import Task, shared_task  # type: ignore[import-untyped]
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from src.clients.market_data import MarketDataClient, MarketDataError
+from llamatrade_db.models.backtest import Backtest
+from llamatrade_db.models.backtest import BacktestResult as DBBacktestResult
+from llamatrade_db.models.strategy import StrategyVersion
+from llamatrade_proto.generated.backtest_pb2 import (
+    BACKTEST_STATUS_COMPLETED,
+    BACKTEST_STATUS_FAILED,
+    BACKTEST_STATUS_PENDING,
+    BACKTEST_STATUS_RUNNING,
+)
+
 from src.engine.backtester import BacktestConfig, BacktestEngine
 from src.engine.strategy_adapter import create_strategy_function
+from src.services.backtest_service import GRPCMarketDataClient, MarketDataError
 
 logger = logging.getLogger(__name__)
 
@@ -34,9 +41,9 @@ DATABASE_URL = os.getenv(
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 
 
-def _get_redis() -> redis.Redis:
+def _get_redis() -> redis.Redis:  # type: ignore[type-arg]
     """Get Redis client for progress updates."""
-    return redis.from_url(REDIS_URL)
+    return redis.from_url(REDIS_URL)  # type: ignore[return-value]
 
 
 def _publish_progress(
@@ -55,7 +62,7 @@ def _publish_progress(
             "eta_seconds": eta_seconds,
             "timestamp": datetime.now(UTC).isoformat(),
         }
-        r.publish(f"backtest:progress:{backtest_id}", json.dumps(payload))
+        r.publish(f"backtest:progress:{backtest_id}", json.dumps(payload))  # type: ignore[union-attr]
     except Exception as e:
         logger.warning(f"Failed to publish progress: {e}")
 
@@ -137,12 +144,12 @@ async def _run_backtest_async(
         if not backtest:
             raise ValueError(f"Backtest {backtest_id} not found")
 
-        if backtest.status not in ("pending", "running"):
+        if backtest.status not in (BACKTEST_STATUS_PENDING, BACKTEST_STATUS_RUNNING):
             raise ValueError(f"Backtest is {backtest.status}, cannot run")
 
         # Update status to running
         _publish_progress(backtest_id, 0, "Starting backtest")
-        backtest.status = "running"
+        backtest.status = BACKTEST_STATUS_RUNNING
         backtest.started_at = datetime.now(UTC)
         await db.commit()
 
@@ -164,12 +171,12 @@ async def _run_backtest_async(
                 raise ValueError("Strategy has no S-expression config")
 
             # Create strategy function
-            strategy_fn, min_bars = create_strategy_function(config_sexpr)
+            strategy_fn, _min_bars = create_strategy_function(config_sexpr)
             _publish_progress(backtest_id, 20, "Strategy compiled")
 
             # Fetch historical bars
             _publish_progress(backtest_id, 30, "Fetching market data")
-            market_data_client = MarketDataClient()
+            market_data_client = GRPCMarketDataClient()
             bars = await market_data_client.fetch_bars(
                 symbols=backtest.symbols,
                 timeframe=strategy_ver.timeframe or "1D",
@@ -185,16 +192,20 @@ async def _run_backtest_async(
             # Run backtest with progress callback
             config = BacktestConfig(
                 initial_capital=float(backtest.initial_capital),
-                commission_rate=backtest.config.get("commission", 0),
-                slippage_rate=backtest.config.get("slippage", 0),
+                commission_rate=float(backtest.config.get("commission", 0)),
+                slippage_rate=float(backtest.config.get("slippage", 0)),
             )
             bt_engine = BacktestEngine(config)
 
             # Create progress callback for bar-by-bar updates (40% to 90%)
             progress_callback = _create_progress_callback(backtest_id, 40.0, 90.0)
 
+            # Cast bars dict to expected type (structure is compatible)
+            from src.engine.backtester import BarData
+
+            typed_bars: dict[str, list[BarData]] = cast(dict[str, list[BarData]], bars)
             bt_result = bt_engine.run(
-                bars=bars,
+                bars=typed_bars,
                 strategy_fn=strategy_fn,
                 start_date=datetime.combine(backtest.start_date, datetime.min.time()),
                 end_date=datetime.combine(backtest.end_date, datetime.max.time()),
@@ -254,7 +265,7 @@ async def _run_backtest_async(
             db.add(backtest_result)
 
             # Update backtest status
-            backtest.status = "completed"
+            backtest.status = BACKTEST_STATUS_COMPLETED
             backtest.completed_at = datetime.now(UTC)
             await db.commit()
 
@@ -268,7 +279,7 @@ async def _run_backtest_async(
             }
 
         except MarketDataError as e:
-            backtest.status = "failed"
+            backtest.status = BACKTEST_STATUS_FAILED
             backtest.error_message = f"Market data error: {e}"
             backtest.completed_at = datetime.now(UTC)
             await db.commit()
@@ -276,7 +287,7 @@ async def _run_backtest_async(
             raise
 
         except Exception as e:
-            backtest.status = "failed"
+            backtest.status = BACKTEST_STATUS_FAILED
             backtest.error_message = str(e)
             backtest.completed_at = datetime.now(UTC)
             await db.commit()
@@ -293,9 +304,7 @@ async def _run_backtest_async(
     autoretry_for=(MarketDataError,),
     retry_backoff=True,
 )
-def run_backtest_task(
-    self: Task[Any, Any], backtest_id: str, tenant_id: str
-) -> dict[str, str | float | int]:
+def run_backtest_task(self: Task, backtest_id: str, tenant_id: str) -> dict[str, str | float | int]:
     """Execute a backtest as a Celery task.
 
     Args:
@@ -319,7 +328,7 @@ def run_backtest_task(
 
 @shared_task(bind=True, max_retries=2, default_retry_delay=30)
 def run_symbol_chunk(
-    self: Task[Any, Any],
+    self: Task,
     backtest_id: str,
     tenant_id: str,
     symbols: list[str],
@@ -330,7 +339,7 @@ def run_symbol_chunk(
     initial_capital: float,
     commission: float,
     slippage: float,
-) -> dict[str, Any]:
+) -> dict[str, object]:
     """Run backtest for a chunk of symbols (for parallel execution).
 
     Args:
@@ -351,14 +360,14 @@ def run_symbol_chunk(
     import asyncio
     from datetime import datetime as dt
 
-    from src.clients.market_data import MarketDataClient
     from src.engine.backtester import BacktestConfig, BacktestEngine
     from src.engine.strategy_adapter import create_strategy_function
+    from src.services.backtest_service import GRPCMarketDataClient
 
     logger.info(f"Running symbol chunk for {backtest_id}: {symbols}")
 
-    async def run_chunk() -> dict[str, Any]:
-        market_data_client = MarketDataClient()
+    async def run_chunk() -> dict[str, object]:
+        market_data_client = GRPCMarketDataClient()
 
         # Fetch bars for this chunk
         bars = await market_data_client.fetch_bars(
@@ -388,8 +397,14 @@ def run_symbol_chunk(
         )
         engine = BacktestEngine(config)
 
+        # Cast bars to expected type (structure is compatible)
+        from typing import cast
+
+        from src.engine.backtester import BarData
+
+        typed_bars: dict[str, list[BarData]] = cast(dict[str, list[BarData]], bars)
         result = engine.run(
-            bars=bars,
+            bars=typed_bars,
             strategy_fn=strategy_fn,
             start_date=dt.fromisoformat(start_date),
             end_date=dt.fromisoformat(end_date).replace(hour=23, minute=59, second=59),
@@ -430,8 +445,8 @@ def run_symbol_chunk(
 
 @shared_task(bind=True)
 def merge_results(
-    self: Task[Any, Any], results: list[dict[str, Any]], backtest_id: str, tenant_id: str
-) -> dict[str, Any]:
+    self: Task, results: list[dict[str, object]], backtest_id: str, tenant_id: str
+) -> dict[str, object]:
     """Merge results from parallel symbol chunks.
 
     Combines trades, equity curves, and metrics from multiple chunk results.
@@ -447,32 +462,39 @@ def merge_results(
     import asyncio
     from decimal import Decimal
 
-    from llamatrade_db.models.backtest import Backtest, BacktestResult
     from sqlalchemy import select
     from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
+    from llamatrade_db.models.backtest import Backtest, BacktestResult
+
     logger.info(f"Merging {len(results)} chunk results for {backtest_id}")
 
+    # Helper for safe float conversion
+    def safe_float(val: object, default: float = 0.0) -> float:
+        """Safely convert object to float."""
+        if val is None:
+            return default
+        try:
+            return float(val)  # type: ignore[arg-type]
+        except TypeError, ValueError:
+            return default
+
     # Combine all trades
-    all_trades: list[dict[str, Any]] = []
+    all_trades: list[dict[str, object]] = []
     for r in results:
         if r.get("status") == "completed":
-            trades = r.get("trades", [])
-            if isinstance(trades, list):
-                all_trades.extend(trades)
+            trades = cast(list[dict[str, object]], r.get("trades", []))
+            all_trades.extend(trades)
 
     # Combine equity curves (sum across chunks by date)
     equity_by_date: dict[str, float] = {}
     for r in results:
-        equity_curve = r.get("equity_curve", [])
-        if isinstance(equity_curve, list):
-            for ec in equity_curve:
-                if isinstance(ec, dict):
-                    date_key = str(ec.get("date", ""))
-                    if date_key not in equity_by_date:
-                        equity_by_date[date_key] = 0
-                    equity_val = ec.get("equity", 0)
-                    equity_by_date[date_key] += float(equity_val) if equity_val else 0
+        equity_curve = cast(list[dict[str, object]], r.get("equity_curve", []))
+        for ec_dict in equity_curve:
+            date_key = str(ec_dict.get("date", ""))
+            if date_key not in equity_by_date:
+                equity_by_date[date_key] = 0
+            equity_by_date[date_key] += safe_float(ec_dict.get("equity", 0))
 
     sorted_dates = sorted(equity_by_date.keys())
     combined_equity_curve: list[dict[str, str | float]] = [
@@ -480,24 +502,24 @@ def merge_results(
     ]
 
     # Calculate combined metrics
-    initial_capital: float = sum(float(r.get("initial_capital", 0) or 0) for r in results)
+    initial_capital: float = sum(safe_float(r.get("initial_capital", 0)) for r in results)
     if initial_capital == 0:
         # Estimate from first equity value
         if combined_equity_curve:
-            equity_val = combined_equity_curve[0]["equity"]
-            initial_capital = float(equity_val) if isinstance(equity_val, (int, float)) else 100000
+            first_equity = combined_equity_curve[0]["equity"]
+            initial_capital = float(first_equity)
         else:
             initial_capital = 100000  # Default fallback
 
-    final_equity: float = sum(float(r.get("final_equity", 0) or 0) for r in results)
+    final_equity: float = sum(safe_float(r.get("final_equity", 0)) for r in results)
     total_return = (final_equity - initial_capital) / initial_capital if initial_capital > 0 else 0
 
     # Combine daily returns (weighted average would be more accurate, but simple average works)
     all_daily_returns: list[float] = []
     for r in results:
-        daily_returns = r.get("daily_returns", [])
-        if isinstance(daily_returns, list):
-            all_daily_returns.extend(daily_returns)
+        raw_returns = r.get("daily_returns", [])
+        daily_returns: list[float] = cast(list[float], raw_returns) if raw_returns else []
+        all_daily_returns.extend(daily_returns)
 
     # Save to database
     async def save_merged_results() -> None:
@@ -517,12 +539,12 @@ def merge_results(
                 raise ValueError(f"Backtest {backtest_id} not found")
 
             # Calculate additional metrics
-            wins = [t for t in all_trades if t.get("pnl", 0) > 0]
-            losses = [t for t in all_trades if t.get("pnl", 0) <= 0]
+            wins = [t for t in all_trades if safe_float(t.get("pnl", 0)) > 0]
+            losses = [t for t in all_trades if safe_float(t.get("pnl", 0)) <= 0]
             win_rate = len(wins) / len(all_trades) if all_trades else 0
 
-            total_wins = sum(t.get("pnl", 0) for t in wins)
-            total_losses = abs(sum(t.get("pnl", 0) for t in losses))
+            total_wins = sum(safe_float(t.get("pnl", 0)) for t in wins)
+            total_losses = abs(sum(safe_float(t.get("pnl", 0)) for t in losses))
             profit_factor = total_wins / total_losses if total_losses > 0 else 0
 
             # Metrics requiring equity curve
@@ -591,7 +613,8 @@ def merge_results(
                 losing_trades=len(losses),
                 avg_trade_return=Decimal(
                     str(
-                        sum(t.get("pnl_percent", 0) for t in all_trades) / len(all_trades)
+                        sum(safe_float(t.get("pnl_percent", 0)) for t in all_trades)
+                        / len(all_trades)
                         if all_trades
                         else 0
                     )
@@ -605,7 +628,7 @@ def merge_results(
             )
             db.add(backtest_result)
 
-            backtest.status = "completed"
+            backtest.status = BACKTEST_STATUS_COMPLETED
             backtest.completed_at = datetime.now(UTC)
             await db.commit()
 
@@ -659,18 +682,19 @@ def queue_parallel_backtest(
     Returns:
         Celery group task ID
     """
-    from celery import chord
+    from celery import chord  # type: ignore[import-untyped]
+    from celery.canvas import Signature  # type: ignore[import-untyped]
 
     # Calculate capital per chunk (proportional to symbol count)
     num_symbols = len(symbols)
     chunks = [symbols[i : i + chunk_size] for i in range(0, num_symbols, chunk_size)]
 
-    chunk_tasks = []
+    chunk_tasks: list[Signature] = []
     for chunk_symbols in chunks:
         # Allocate capital proportionally
         chunk_capital = initial_capital * len(chunk_symbols) / num_symbols
 
-        task = run_symbol_chunk.s(
+        task = run_symbol_chunk.s(  # type: ignore[attr-defined]
             backtest_id=backtest_id,
             tenant_id=tenant_id,
             symbols=chunk_symbols,
@@ -682,12 +706,12 @@ def queue_parallel_backtest(
             commission=commission,
             slippage=slippage,
         )
-        chunk_tasks.append(task)
+        chunk_tasks.append(task)  # type: ignore[arg-type]
 
     # Use chord to run chunks in parallel, then merge
-    callback = merge_results.s(backtest_id, tenant_id)
+    callback: Signature = merge_results.s(backtest_id, tenant_id)  # type: ignore[attr-defined]
     job = chord(chunk_tasks, callback)
-    result = job.apply_async()
+    result = job.apply_async()  # type: ignore[union-attr]
 
     logger.info(f"Queued parallel backtest {backtest_id} with {len(chunks)} chunks")
-    return str(result.id)
+    return str(result.id)  # type: ignore[union-attr]

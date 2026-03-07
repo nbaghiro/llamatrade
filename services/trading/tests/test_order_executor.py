@@ -1,10 +1,33 @@
 """Test order executor."""
 
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+
+from llamatrade_alpaca import AlpacaError, OrderNotFoundError
+from llamatrade_alpaca import Order as AlpacaOrder
+from llamatrade_alpaca import OrderSide as AlpacaOrderSide
+from llamatrade_alpaca import OrderStatus as AlpacaOrderStatus
+from llamatrade_alpaca import OrderType as AlpacaOrderType
+from llamatrade_alpaca import TimeInForce as AlpacaTimeInForce
+from llamatrade_proto.generated.trading_pb2 import (
+    ORDER_SIDE_BUY,
+    ORDER_SIDE_SELL,
+    ORDER_STATUS_ACCEPTED,
+    ORDER_STATUS_CANCELLED,
+    ORDER_STATUS_EXPIRED,
+    ORDER_STATUS_FILLED,
+    ORDER_STATUS_PARTIAL,
+    ORDER_STATUS_PENDING,
+    ORDER_STATUS_REJECTED,
+    ORDER_STATUS_SUBMITTED,
+    ORDER_TYPE_LIMIT,
+    ORDER_TYPE_MARKET,
+)
+
 from src.executor.order_executor import OrderExecutor
-from src.models import OrderCreate, OrderSide, OrderStatus, OrderType, RiskCheckResult
+from src.models import OrderCreate, RiskCheckResult
 
 
 @pytest.fixture
@@ -55,9 +78,9 @@ class TestSubmitOrder:
         """Test submitting a market order successfully."""
         order = OrderCreate(
             symbol="AAPL",
-            side=OrderSide.BUY,
+            side=ORDER_SIDE_BUY,
             qty=10.0,
-            order_type=OrderType.MARKET,
+            order_type=ORDER_TYPE_MARKET,
         )
 
         # Mock the database refresh to set an ID
@@ -76,9 +99,9 @@ class TestSubmitOrder:
 
         assert result is not None
         assert result.symbol == "AAPL"
-        assert result.side == "buy"
+        assert result.side == ORDER_SIDE_BUY  # Proto enum: 1
         assert result.qty == 10.0
-        assert result.status in [OrderStatus.SUBMITTED, OrderStatus.ACCEPTED]
+        assert result.status in [ORDER_STATUS_SUBMITTED, ORDER_STATUS_ACCEPTED]
         mock_db.add.assert_called_once()
         mock_alpaca_client.submit_order.assert_called_once()
 
@@ -93,9 +116,9 @@ class TestSubmitOrder:
         """Test submitting a limit order successfully."""
         order = OrderCreate(
             symbol="GOOGL",
-            side=OrderSide.SELL,
+            side=ORDER_SIDE_SELL,
             qty=5.0,
-            order_type=OrderType.LIMIT,
+            order_type=ORDER_TYPE_LIMIT,
             limit_price=150.0,
         )
 
@@ -114,7 +137,7 @@ class TestSubmitOrder:
 
         assert result is not None
         assert result.symbol == "GOOGL"
-        assert result.order_type == "limit"
+        assert result.order_type == ORDER_TYPE_LIMIT  # Proto enum: 2
         mock_alpaca_client.submit_order.assert_called_once()
 
     async def test_submit_order_risk_check_failed(
@@ -132,9 +155,9 @@ class TestSubmitOrder:
 
         order = OrderCreate(
             symbol="AAPL",
-            side=OrderSide.BUY,
+            side=ORDER_SIDE_BUY,
             qty=1000.0,
-            order_type=OrderType.MARKET,
+            order_type=ORDER_TYPE_MARKET,
         )
 
         with pytest.raises(ValueError, match="Risk check failed"):
@@ -164,9 +187,9 @@ class TestSubmitOrder:
 
         order = OrderCreate(
             symbol="AAPL",
-            side=OrderSide.BUY,
+            side=ORDER_SIDE_BUY,
             qty=10.0,
-            order_type=OrderType.MARKET,
+            order_type=ORDER_TYPE_MARKET,
         )
 
         with pytest.raises(ValueError, match="Failed to submit order"):
@@ -238,7 +261,7 @@ class TestCancelOrder:
         order_id,
     ):
         """Test canceling a pending order."""
-        mock_order.status = "pending"
+        mock_order.status = ORDER_STATUS_PENDING
         mock_result = MagicMock()
         mock_result.scalar_one_or_none.return_value = mock_order
         mock_db.execute.return_value = mock_result
@@ -249,7 +272,7 @@ class TestCancelOrder:
         )
 
         assert result is True
-        assert mock_order.status == "cancelled"
+        assert mock_order.status == ORDER_STATUS_CANCELLED
         mock_alpaca_client.cancel_order.assert_called_once()
         mock_db.commit.assert_called()
 
@@ -262,7 +285,7 @@ class TestCancelOrder:
         order_id,
     ):
         """Test that canceling a filled order fails."""
-        mock_order.status = "filled"
+        mock_order.status = ORDER_STATUS_FILLED
         mock_result = MagicMock()
         mock_result.scalar_one_or_none.return_value = mock_order
         mock_db.execute.return_value = mock_result
@@ -346,19 +369,20 @@ class TestMapAlpacaStatus:
     """Tests for _map_alpaca_status."""
 
     def test_map_common_statuses(self, order_executor):
-        """Test mapping common Alpaca statuses."""
-        assert order_executor._map_alpaca_status("new") == "submitted"
-        assert order_executor._map_alpaca_status("accepted") == "accepted"
-        assert order_executor._map_alpaca_status("filled") == "filled"
-        assert order_executor._map_alpaca_status("canceled") == "cancelled"
-        assert order_executor._map_alpaca_status("rejected") == "rejected"
-        assert order_executor._map_alpaca_status("partially_filled") == "partial"
-        assert order_executor._map_alpaca_status("expired") == "expired"
+        """Test mapping common Alpaca statuses to proto enum values."""
+        assert order_executor._map_alpaca_status("new") == ORDER_STATUS_SUBMITTED
+        assert order_executor._map_alpaca_status("accepted") == ORDER_STATUS_ACCEPTED
+        assert order_executor._map_alpaca_status("filled") == ORDER_STATUS_FILLED
+        assert order_executor._map_alpaca_status("canceled") == ORDER_STATUS_CANCELLED
+        assert order_executor._map_alpaca_status("rejected") == ORDER_STATUS_REJECTED
+        assert order_executor._map_alpaca_status("partially_filled") == ORDER_STATUS_PARTIAL
+        assert order_executor._map_alpaca_status("expired") == ORDER_STATUS_EXPIRED
 
     def test_map_unknown_status_passthrough(self, order_executor):
-        """Test that unknown statuses pass through as lowercase."""
-        assert order_executor._map_alpaca_status("UNKNOWN") == "unknown"
-        assert order_executor._map_alpaca_status("CustomStatus") == "customstatus"
+        """Test that unknown statuses default to PENDING."""
+        # Unknown statuses now default to ORDER_STATUS_PENDING (1)
+        assert order_executor._map_alpaca_status("UNKNOWN") == ORDER_STATUS_PENDING
+        assert order_executor._map_alpaca_status("CustomStatus") == ORDER_STATUS_PENDING
 
 
 class TestListOrders:
@@ -433,7 +457,7 @@ class TestListOrders:
 
         orders, total = await order_executor.list_orders(
             tenant_id=tenant_id,
-            status=OrderStatus.FILLED,
+            status=ORDER_STATUS_FILLED,
         )
 
         assert total == 1
@@ -489,7 +513,7 @@ class TestListOrders:
 class TestCancelOrderAlpacaFailure:
     """Tests for cancel_order when Alpaca fails."""
 
-    async def test_cancel_order_alpaca_fails(
+    async def test_cancel_order_alpaca_api_error(
         self,
         order_executor,
         mock_db,
@@ -498,14 +522,14 @@ class TestCancelOrderAlpacaFailure:
         tenant_id,
         order_id,
     ):
-        """Test canceling an order when Alpaca returns False."""
-        mock_order.status = "submitted"
+        """Test canceling an order when Alpaca returns API error."""
+        mock_order.status = ORDER_STATUS_SUBMITTED
         mock_result = MagicMock()
         mock_result.scalar_one_or_none.return_value = mock_order
         mock_db.execute.return_value = mock_result
 
-        # Alpaca fails to cancel
-        mock_alpaca_client.cancel_order.return_value = False
+        # Alpaca fails to cancel - raises AlpacaError
+        mock_alpaca_client.cancel_order.side_effect = AlpacaError("API Error", 500)
 
         result = await order_executor.cancel_order(
             order_id=order_id,
@@ -513,6 +537,34 @@ class TestCancelOrderAlpacaFailure:
         )
 
         assert result is False
+
+    async def test_cancel_order_not_found_at_alpaca(
+        self,
+        order_executor,
+        mock_db,
+        mock_alpaca_client,
+        mock_order,
+        tenant_id,
+        order_id,
+    ):
+        """Test canceling an order when Alpaca says not found (handled gracefully)."""
+        mock_order.status = ORDER_STATUS_SUBMITTED
+        mock_result = MagicMock()
+        mock_result.scalar_one_or_none.return_value = mock_order
+        mock_db.execute.return_value = mock_result
+
+        # Alpaca says order not found - raises OrderNotFoundError
+        # This is handled gracefully (order may have been filled/cancelled already)
+        mock_alpaca_client.cancel_order.side_effect = OrderNotFoundError("not-found-id")
+
+        result = await order_executor.cancel_order(
+            order_id=order_id,
+            tenant_id=tenant_id,
+        )
+
+        # Should still succeed locally - order is marked cancelled
+        assert result is True
+        assert mock_order.status == ORDER_STATUS_CANCELLED
 
 
 class TestSyncOrderStatusEdgeCases:
@@ -577,18 +629,24 @@ class TestSyncAllPendingOrders:
         session_id,
     ):
         """Test syncing pending orders that get updated."""
-        mock_order.status = "submitted"
+        mock_order.status = ORDER_STATUS_SUBMITTED
         mock_result = MagicMock()
         mock_result.scalars.return_value.all.return_value = [mock_order]
         mock_db.execute.return_value = mock_result
 
-        # Alpaca says order is now filled - use dict since code uses .get()
-        mock_alpaca_order = {
-            "status": "filled",
-            "filled_qty": "10.0",
-            "filled_avg_price": "150.0",
-            "filled_at": None,
-        }
+        # Alpaca says order is now filled - use Order model
+        mock_alpaca_order = AlpacaOrder(
+            id="alpaca-order-123",
+            symbol="AAPL",
+            qty=10.0,
+            side=AlpacaOrderSide.BUY,
+            order_type=AlpacaOrderType.MARKET,
+            status=AlpacaOrderStatus.FILLED,
+            time_in_force=AlpacaTimeInForce.DAY,
+            filled_qty=10.0,
+            filled_avg_price=150.0,
+            created_at=datetime.now(UTC),
+        )
         mock_alpaca_client.get_order.return_value = mock_alpaca_order
 
         updated = await order_executor.sync_all_pending_orders(
@@ -609,18 +667,24 @@ class TestSyncAllPendingOrders:
         session_id,
     ):
         """Test syncing when order status hasn't changed."""
-        mock_order.status = "submitted"
+        mock_order.status = ORDER_STATUS_SUBMITTED
         mock_result = MagicMock()
         mock_result.scalars.return_value.all.return_value = [mock_order]
         mock_db.execute.return_value = mock_result
 
-        # Alpaca says order is still submitted (new -> submitted mapping) - use dict
-        mock_alpaca_order = {
-            "status": "new",  # Maps to "submitted"
-            "filled_qty": None,
-            "filled_avg_price": None,
-            "filled_at": None,
-        }
+        # Alpaca says order is still new (maps to submitted) - use Order model
+        mock_alpaca_order = AlpacaOrder(
+            id="alpaca-order-123",
+            symbol="AAPL",
+            qty=10.0,
+            side=AlpacaOrderSide.BUY,
+            order_type=AlpacaOrderType.MARKET,
+            status=AlpacaOrderStatus.NEW,  # Maps to "submitted"
+            time_in_force=AlpacaTimeInForce.DAY,
+            filled_qty=0,
+            filled_avg_price=None,
+            created_at=datetime.now(UTC),
+        )
         mock_alpaca_client.get_order.return_value = mock_alpaca_order
 
         updated = await order_executor.sync_all_pending_orders(
@@ -650,9 +714,9 @@ class TestAlertWiring:
 
         order = OrderCreate(
             symbol="AAPL",
-            side=OrderSide.BUY,
+            side=ORDER_SIDE_BUY,
             qty=1000.0,
-            order_type=OrderType.MARKET,
+            order_type=ORDER_TYPE_MARKET,
         )
 
         with pytest.raises(ValueError, match="Risk check failed"):
@@ -690,9 +754,9 @@ class TestAlertWiring:
 
         order = OrderCreate(
             symbol="GOOGL",
-            side=OrderSide.SELL,
+            side=ORDER_SIDE_SELL,
             qty=5.0,
-            order_type=OrderType.MARKET,
+            order_type=ORDER_TYPE_MARKET,
         )
 
         with pytest.raises(ValueError, match="Failed to submit order"):

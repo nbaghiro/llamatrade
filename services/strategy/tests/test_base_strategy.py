@@ -4,7 +4,9 @@ from datetime import UTC, datetime
 
 import numpy as np
 import pytest
+
 from llamatrade_compiler import Bar, Signal, SignalType
+
 from src.strategies.base import BaseStrategy
 
 # ===================
@@ -48,7 +50,7 @@ class TestStrategy(BaseStrategy):
 
 
 @pytest.fixture
-def strategy():
+def strategy() -> TestStrategy:
     """Create a test strategy with default config."""
     return TestStrategy(
         config={
@@ -63,7 +65,7 @@ def strategy():
 
 
 @pytest.fixture
-def bar():
+def bar() -> Bar:
     """Create a sample bar."""
     return Bar(
         timestamp=datetime.now(UTC),
@@ -83,7 +85,7 @@ def bar():
 class TestBar:
     """Tests for Bar dataclass."""
 
-    def test_bar_creation(self, bar):
+    def test_bar_creation(self, bar: Bar) -> None:
         """Test bar creation with all fields."""
         assert bar.open == 100.0
         assert bar.high == 105.0
@@ -92,7 +94,7 @@ class TestBar:
         assert bar.volume == 10000
         assert bar.timestamp is not None
 
-    def test_bar_to_dict(self, bar):
+    def test_bar_to_dict(self, bar: Bar) -> None:
         """Test bar to_dict method."""
         d = bar.to_dict()
 
@@ -112,7 +114,7 @@ class TestBar:
 class TestSignal:
     """Tests for Signal dataclass."""
 
-    def test_signal_creation(self):
+    def test_signal_creation(self) -> None:
         """Test signal creation with required fields."""
         signal = Signal(
             type=SignalType.BUY,
@@ -129,7 +131,7 @@ class TestSignal:
         assert signal.stop_loss is None  # Default
         assert signal.take_profit is None  # Default
 
-    def test_signal_with_optional_fields(self):
+    def test_signal_with_optional_fields(self) -> None:
         """Test signal creation with optional fields."""
         signal = Signal(
             type=SignalType.SELL,
@@ -147,13 +149,14 @@ class TestSignal:
         assert signal.quantity_percent == 50.0
         assert signal.stop_loss == 2850.0
         assert signal.take_profit == 2700.0
-        assert signal.metadata["reason"] == "RSI oversold"
+        assert signal.metadata is not None
+        assert signal.metadata.get("reason") == "RSI oversold"
 
 
 class TestSignalType:
     """Tests for SignalType enum."""
 
-    def test_signal_types_exist(self):
+    def test_signal_types_exist(self) -> None:
         """Test all signal types exist."""
         assert SignalType.BUY.value == "buy"
         assert SignalType.SELL.value == "sell"
@@ -170,14 +173,14 @@ class TestSignalType:
 class TestBaseStrategy:
     """Tests for BaseStrategy class."""
 
-    def test_strategy_initialization(self, strategy):
+    def test_strategy_initialization(self, strategy: TestStrategy) -> None:
         """Test strategy initialization with config."""
         assert strategy.symbols == ["AAPL", "GOOGL"]
         assert strategy.timeframe == "1D"
         assert strategy.risk_config["stop_loss_percent"] == 5.0
         assert strategy.risk_config["take_profit_percent"] == 10.0
 
-    def test_strategy_default_initialization(self):
+    def test_strategy_default_initialization(self) -> None:
         """Test strategy initialization without config."""
         strategy = TestStrategy()
 
@@ -188,24 +191,24 @@ class TestBaseStrategy:
         assert strategy.positions == {}
         assert strategy.bars == {}
 
-    def test_strategy_name_and_description(self, strategy):
+    def test_strategy_name_and_description(self, strategy: TestStrategy) -> None:
         """Test strategy has name and description."""
         assert strategy.name == "Test Strategy"
         assert strategy.description == "A strategy for testing"
 
-    def test_validate_config_valid(self, strategy):
+    def test_validate_config_valid(self, strategy: TestStrategy) -> None:
         """Test config validation with valid config."""
         errors = strategy.validate_config()
         assert errors == []
 
-    def test_validate_config_missing_symbols(self):
+    def test_validate_config_missing_symbols(self) -> None:
         """Test config validation without symbols."""
         strategy = TestStrategy(config={"timeframe": "1D"})
         errors = strategy.validate_config()
 
         assert "At least one symbol is required" in errors
 
-    def test_validate_config_invalid_timeframe(self):
+    def test_validate_config_invalid_timeframe(self) -> None:
         """Test config validation with invalid timeframe."""
         strategy = TestStrategy(
             config={
@@ -217,7 +220,7 @@ class TestBaseStrategy:
 
         assert any("Invalid timeframe" in e for e in errors)
 
-    def test_add_bar(self, strategy, bar):
+    def test_add_bar(self, strategy: TestStrategy, bar: Bar) -> None:
         """Test adding bars to strategy."""
         strategy.add_bar("AAPL", bar)
 
@@ -225,7 +228,7 @@ class TestBaseStrategy:
         assert len(strategy.bars["AAPL"]) == 1
         assert strategy.bars["AAPL"][0] == bar
 
-    def test_add_multiple_bars(self, strategy):
+    def test_add_multiple_bars(self, strategy: TestStrategy) -> None:
         """Test adding multiple bars."""
         for i in range(5):
             bar = Bar(
@@ -240,7 +243,7 @@ class TestBaseStrategy:
 
         assert len(strategy.bars["AAPL"]) == 5
 
-    def test_get_prices(self, strategy):
+    def test_get_prices(self, strategy: TestStrategy) -> None:
         """Test getting prices from bars."""
         for i in range(5):
             bar = Bar(
@@ -259,7 +262,7 @@ class TestBaseStrategy:
         assert prices[0] == 100.0
         assert prices[4] == 104.0
 
-    def test_get_prices_different_fields(self, strategy, bar):
+    def test_get_prices_different_fields(self, strategy: TestStrategy, bar: Bar) -> None:
         """Test getting different price fields."""
         strategy.add_bar("AAPL", bar)
 
@@ -268,14 +271,14 @@ class TestBaseStrategy:
         assert strategy.get_prices("AAPL", "low")[0] == 99.0
         assert strategy.get_prices("AAPL", "close")[0] == 103.0
 
-    def test_get_prices_empty_symbol(self, strategy):
+    def test_get_prices_empty_symbol(self, strategy: TestStrategy) -> None:
         """Test getting prices for unknown symbol."""
         prices = strategy.get_prices("UNKNOWN")
 
         assert len(prices) == 0
         assert isinstance(prices, np.ndarray)
 
-    def test_get_volumes(self, strategy, bar):
+    def test_get_volumes(self, strategy: TestStrategy, bar: Bar) -> None:
         """Test getting volumes from bars."""
         strategy.add_bar("AAPL", bar)
         volumes = strategy.get_volumes("AAPL")
@@ -283,40 +286,41 @@ class TestBaseStrategy:
         assert len(volumes) == 1
         assert volumes[0] == 10000
 
-    def test_get_volumes_empty_symbol(self, strategy):
+    def test_get_volumes_empty_symbol(self, strategy: TestStrategy) -> None:
         """Test getting volumes for unknown symbol."""
         volumes = strategy.get_volumes("UNKNOWN")
 
         assert len(volumes) == 0
         assert isinstance(volumes, np.ndarray)
 
-    def test_calculate_stop_loss(self, strategy):
+    def test_calculate_stop_loss(self, strategy: TestStrategy) -> None:
         """Test stop loss calculation."""
         stop_loss = strategy.calculate_stop_loss(100.0)
 
         assert stop_loss == 95.0  # 100 * (1 - 5/100)
 
-    def test_calculate_stop_loss_not_configured(self):
+    def test_calculate_stop_loss_not_configured(self) -> None:
         """Test stop loss when not configured."""
         strategy = TestStrategy()
         stop_loss = strategy.calculate_stop_loss(100.0)
 
         assert stop_loss is None
 
-    def test_calculate_take_profit(self, strategy):
+    def test_calculate_take_profit(self, strategy: TestStrategy) -> None:
         """Test take profit calculation."""
         take_profit = strategy.calculate_take_profit(100.0)
 
-        assert take_profit == pytest.approx(110.0)  # 100 * (1 + 10/100)
+        assert take_profit is not None
+        assert abs(take_profit - 110.0) < 0.01  # 100 * (1 + 10/100)
 
-    def test_calculate_take_profit_not_configured(self):
+    def test_calculate_take_profit_not_configured(self) -> None:
         """Test take profit when not configured."""
         strategy = TestStrategy()
         take_profit = strategy.calculate_take_profit(100.0)
 
         assert take_profit is None
 
-    def test_position_tracking(self, strategy):
+    def test_position_tracking(self, strategy: TestStrategy) -> None:
         """Test position tracking."""
         assert strategy.get_position("AAPL") == 0
         assert not strategy.has_position("AAPL")
@@ -336,9 +340,10 @@ class TestBaseStrategy:
         assert strategy.get_position("AAPL") == 0
         assert not strategy.has_position("AAPL")
 
-    def test_on_bar_generates_signals(self, strategy):
+    def test_on_bar_generates_signals(self, strategy: TestStrategy) -> None:
         """Test on_bar method generates signals."""
         # Add enough bars to trigger signal
+        signals: list[Signal] = []
         for i in range(10):
             bar = Bar(
                 timestamp=datetime.now(UTC),
@@ -357,7 +362,7 @@ class TestBaseStrategy:
         assert signals[0].stop_loss is not None
         assert signals[0].take_profit is not None
 
-    def test_on_bar_no_signal_when_has_position(self, strategy):
+    def test_on_bar_no_signal_when_has_position(self, strategy: TestStrategy) -> None:
         """Test on_bar doesn't generate signal when already has position."""
         # Add bars
         for i in range(10):
@@ -391,7 +396,7 @@ class TestBaseStrategy:
 class TestAbstractMethodEnforcement:
     """Tests for abstract method enforcement."""
 
-    def test_cannot_instantiate_base_strategy(self):
+    def test_cannot_instantiate_base_strategy(self) -> None:
         """Test that BaseStrategy cannot be instantiated directly."""
         with pytest.raises(TypeError):
-            BaseStrategy()  # type: ignore
+            BaseStrategy()  # type: ignore[abstract]

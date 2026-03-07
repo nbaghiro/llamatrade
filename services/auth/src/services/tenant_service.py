@@ -6,11 +6,19 @@ from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
 from fastapi import Depends
-from llamatrade_common.utils import encrypt_value
-from sqlalchemy import text
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.models import AlpacaCredentials, TenantDetailResponse, TenantResponse
+from llamatrade_common.utils import decrypt_value, encrypt_value
+from llamatrade_db.models.auth import AlpacaCredentials as AlpacaCredentialsModel
+
+from src.models import (
+    AlpacaCredentialsCreate,
+    AlpacaCredentialsListItem,
+    AlpacaCredentialsResponse,
+    TenantDetailResponse,
+    TenantResponse,
+)
 from src.services.database import get_db
 
 
@@ -84,42 +92,132 @@ class TenantService:
         # Simplified - in production use SQLAlchemy ORM
         return None
 
-    async def get_alpaca_credentials(self, tenant_id: UUID) -> AlpacaCredentials | None:
-        """Get decrypted Alpaca credentials for a tenant."""
-        # Simplified - in production:
-        # 1. Fetch encrypted credentials from DB
-        # 2. Decrypt them using decrypt_value()
-        return None
+    async def get_alpaca_credentials(
+        self, credentials_id: UUID, tenant_id: UUID
+    ) -> AlpacaCredentialsResponse | None:
+        """Get decrypted Alpaca credentials by ID.
 
-    async def update_alpaca_credentials(
-        self,
-        tenant_id: UUID,
-        paper_key: str | None = None,
-        paper_secret: str | None = None,
-        live_key: str | None = None,
-        live_secret: str | None = None,
-    ) -> None:
-        """Update Alpaca credentials (encrypted at rest)."""
-        # In production:
-        # 1. Encrypt credentials using encrypt_value()
-        # 2. Store in database
-        encrypted_data = {}
+        Args:
+            credentials_id: The credentials ID to fetch.
+            tenant_id: Tenant ID for isolation (must match).
 
-        if paper_key:
-            encrypted_data["paper_key_enc"] = encrypt_value(paper_key)
-        if paper_secret:
-            encrypted_data["paper_secret_enc"] = encrypt_value(paper_secret)
-        if live_key:
-            encrypted_data["live_key_enc"] = encrypt_value(live_key)
-        if live_secret:
-            encrypted_data["live_secret_enc"] = encrypt_value(live_secret)
+        Returns:
+            Decrypted credentials or None if not found/not authorized.
+        """
+        stmt = (
+            select(AlpacaCredentialsModel)
+            .where(AlpacaCredentialsModel.id == credentials_id)
+            .where(AlpacaCredentialsModel.tenant_id == tenant_id)  # Tenant isolation!
+            .where(AlpacaCredentialsModel.is_active == True)  # noqa: E712
+        )
+        result = await self.db.execute(stmt)
+        creds = result.scalar_one_or_none()
 
-        # Store encrypted_data in DB...
+        if not creds:
+            return None
 
-    async def delete_alpaca_credentials(self, tenant_id: UUID) -> None:
-        """Delete Alpaca credentials for a tenant."""
-        # Simplified - in production use SQLAlchemy ORM
-        pass
+        return AlpacaCredentialsResponse(
+            id=creds.id,
+            name=creds.name,
+            api_key=decrypt_value(creds.api_key_encrypted),
+            api_secret=decrypt_value(creds.api_secret_encrypted),
+            is_paper=creds.is_paper,
+            is_active=creds.is_active,
+            created_at=creds.created_at,
+        )
+
+    async def create_alpaca_credentials(
+        self, tenant_id: UUID, data: AlpacaCredentialsCreate
+    ) -> AlpacaCredentialsResponse:
+        """Create new encrypted Alpaca credentials.
+
+        Args:
+            tenant_id: Tenant to associate credentials with.
+            data: Credential data including API key and secret.
+
+        Returns:
+            Created credentials with decrypted values for immediate use.
+        """
+        creds = AlpacaCredentialsModel(
+            tenant_id=tenant_id,
+            name=data.name,
+            api_key_encrypted=encrypt_value(data.api_key),
+            api_secret_encrypted=encrypt_value(data.api_secret),
+            is_paper=data.is_paper,
+            is_active=True,
+        )
+        self.db.add(creds)
+        await self.db.commit()
+        await self.db.refresh(creds)
+
+        return AlpacaCredentialsResponse(
+            id=creds.id,
+            name=creds.name,
+            api_key=data.api_key,  # Return unencrypted for immediate use
+            api_secret=data.api_secret,
+            is_paper=creds.is_paper,
+            is_active=creds.is_active,
+            created_at=creds.created_at,
+        )
+
+    async def list_alpaca_credentials(self, tenant_id: UUID) -> list[AlpacaCredentialsListItem]:
+        """List all Alpaca credentials for a tenant (keys masked).
+
+        Args:
+            tenant_id: Tenant to list credentials for.
+
+        Returns:
+            List of credentials with masked API keys.
+        """
+        stmt = (
+            select(AlpacaCredentialsModel)
+            .where(AlpacaCredentialsModel.tenant_id == tenant_id)
+            .order_by(AlpacaCredentialsModel.created_at.desc())
+        )
+        result = await self.db.execute(stmt)
+        creds_list = result.scalars().all()
+
+        items = []
+        for creds in creds_list:
+            # Decrypt just to get prefix, then mask
+            api_key = decrypt_value(creds.api_key_encrypted)
+            items.append(
+                AlpacaCredentialsListItem(
+                    id=creds.id,
+                    name=creds.name,
+                    api_key_prefix=api_key[:8] if len(api_key) >= 8 else api_key,
+                    is_paper=creds.is_paper,
+                    is_active=creds.is_active,
+                    created_at=creds.created_at,
+                )
+            )
+
+        return items
+
+    async def delete_alpaca_credentials(self, credentials_id: UUID, tenant_id: UUID) -> bool:
+        """Soft-delete Alpaca credentials.
+
+        Args:
+            credentials_id: The credentials to delete.
+            tenant_id: Tenant ID for isolation.
+
+        Returns:
+            True if deleted, False if not found.
+        """
+        stmt = (
+            select(AlpacaCredentialsModel)
+            .where(AlpacaCredentialsModel.id == credentials_id)
+            .where(AlpacaCredentialsModel.tenant_id == tenant_id)
+        )
+        result = await self.db.execute(stmt)
+        creds = result.scalar_one_or_none()
+
+        if not creds:
+            return False
+
+        creds.is_active = False
+        await self.db.commit()
+        return True
 
 
 async def get_tenant_service(db: AsyncSession = Depends(get_db)) -> TenantService:

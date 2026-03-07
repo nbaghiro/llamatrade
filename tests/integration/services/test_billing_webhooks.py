@@ -21,13 +21,20 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from llamatrade_db.models import Invoice, PaymentMethod, Subscription, Tenant
+from llamatrade_proto.generated import billing_pb2
 from tests.factories import (
     InvoiceFactory,
     PaymentMethodFactory,
     PlanFactory,
     SubscriptionFactory,
-    TenantFactory,
 )
+
+# Invoice status constants (DB-only, no proto)
+INVOICE_STATUS_DRAFT = 1
+INVOICE_STATUS_OPEN = 2
+INVOICE_STATUS_PAID = 3
+INVOICE_STATUS_VOID = 4
+INVOICE_STATUS_UNCOLLECTIBLE = 5
 
 pytestmark = [pytest.mark.integration, pytest.mark.billing]
 
@@ -55,10 +62,7 @@ def _get_billing_app_and_deps():
 
     # Clear any cached src modules (which might be from other services)
     # Must include bare 'src' module as well as all submodules
-    modules_to_remove = [
-        k for k in list(sys.modules.keys())
-        if k == "src" or k.startswith("src.")
-    ]
+    modules_to_remove = [k for k in list(sys.modules.keys()) if k == "src" or k.startswith("src.")]
     for mod in modules_to_remove:
         del sys.modules[mod]
 
@@ -121,7 +125,7 @@ async def test_subscription(
         plan_id=test_plan.id,
         stripe_subscription_id=f"sub_{uuid4().hex[:24]}",
         stripe_customer_id=f"cus_{uuid4().hex[:24]}",
-        status="active",
+        status=billing_pb2.SUBSCRIPTION_STATUS_ACTIVE,
     )
     db_session.add(subscription)
     await db_session.flush()
@@ -217,7 +221,7 @@ class TestSubscriptionWebhooks:
 
         # Verify database was updated
         await db_session.refresh(test_subscription)
-        assert test_subscription.status == "trialing"
+        assert test_subscription.status == billing_pb2.SUBSCRIPTION_STATUS_TRIALING
         assert test_subscription.trial_start is not None
         assert test_subscription.trial_end is not None
 
@@ -254,7 +258,7 @@ class TestSubscriptionWebhooks:
 
         # Verify database was updated
         await db_session.refresh(test_subscription)
-        assert test_subscription.status == "past_due"
+        assert test_subscription.status == billing_pb2.SUBSCRIPTION_STATUS_PAST_DUE
         assert test_subscription.cancel_at_period_end is True
 
     async def test_subscription_deleted_marks_cancelled(
@@ -286,7 +290,7 @@ class TestSubscriptionWebhooks:
 
         # Verify database was updated
         await db_session.refresh(test_subscription)
-        assert test_subscription.status == "cancelled"
+        assert test_subscription.status == billing_pb2.SUBSCRIPTION_STATUS_CANCELED
         assert test_subscription.canceled_at is not None
 
     async def test_subscription_webhook_for_unknown_subscription(
@@ -374,7 +378,7 @@ class TestInvoiceWebhooks:
         invoice = result.scalar_one_or_none()
 
         assert invoice is not None
-        assert invoice.status == "paid"
+        assert invoice.status == INVOICE_STATUS_PAID
         assert invoice.amount_due == Decimal("29.00")
         assert invoice.amount_paid == Decimal("29.00")
         assert invoice.tenant_id == test_subscription.tenant_id
@@ -391,7 +395,7 @@ class TestInvoiceWebhooks:
         existing_invoice = InvoiceFactory.create(
             tenant_id=test_subscription.tenant_id,
             subscription_id=test_subscription.id,
-            status="open",
+            status=INVOICE_STATUS_OPEN,
             amount_due=Decimal("29.00"),
             amount_paid=Decimal("0.00"),
         )
@@ -427,7 +431,7 @@ class TestInvoiceWebhooks:
 
         # Verify invoice was updated
         await db_session.refresh(existing_invoice)
-        assert existing_invoice.status == "paid"
+        assert existing_invoice.status == INVOICE_STATUS_PAID
         assert existing_invoice.amount_paid == Decimal("29.00")
         assert existing_invoice.paid_at is not None
 
@@ -461,7 +465,7 @@ class TestInvoiceWebhooks:
 
         # Verify subscription was marked past_due
         await db_session.refresh(test_subscription)
-        assert test_subscription.status == "past_due"
+        assert test_subscription.status == billing_pb2.SUBSCRIPTION_STATUS_PAST_DUE
 
 
 class TestPaymentMethodWebhooks:
@@ -601,7 +605,9 @@ class TestPaymentMethodWebhooks:
 
         # Verify payment method was deleted
         result = await db_session.execute(
-            select(PaymentMethod).where(PaymentMethod.stripe_payment_method_id == pm.stripe_payment_method_id)
+            select(PaymentMethod).where(
+                PaymentMethod.stripe_payment_method_id == pm.stripe_payment_method_id
+            )
         )
         assert result.scalar_one_or_none() is None
 

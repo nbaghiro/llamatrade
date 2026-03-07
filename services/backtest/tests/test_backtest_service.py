@@ -6,7 +6,14 @@ from unittest.mock import AsyncMock, MagicMock
 from uuid import UUID, uuid4
 
 import pytest
-from src.models import BacktestStatus
+
+from src.models import (
+    BACKTEST_STATUS_CANCELLED,
+    BACKTEST_STATUS_COMPLETED,
+    BACKTEST_STATUS_FAILED,
+    BACKTEST_STATUS_PENDING,
+    BACKTEST_STATUS_RUNNING,
+)
 from src.services.backtest_service import BacktestService
 
 # Test UUIDs
@@ -33,13 +40,10 @@ def mock_strategy_version():
     version.id = uuid4()
     version.strategy_id = TEST_STRATEGY_ID
     version.version = 1
-    version.config_sexpr = """(strategy
-        :name "Test"
-        :symbols ["AAPL"]
-        :timeframe "1D"
-        :entry (> (sma close 10) (sma close 20))
-        :exit (< (sma close 10) (sma close 20))
-        :position-size 10)"""
+    # Use allocation-based DSL format expected by strategy_adapter
+    version.config_sexpr = (
+        '(strategy "Test" :benchmark SPY :rebalance daily (asset AAPL :weight 100))'
+    )
     version.timeframe = "1D"
     version.symbols = ["AAPL"]
     return version
@@ -54,7 +58,7 @@ def mock_backtest():
     backtest.strategy_id = TEST_STRATEGY_ID
     backtest.strategy_version = 1
     backtest.name = "Test Backtest"
-    backtest.status = "pending"
+    backtest.status = BACKTEST_STATUS_PENDING
     backtest.config = {"commission": 0.001, "slippage": 0.001}
     backtest.symbols = ["AAPL"]
     backtest.start_date = date(2024, 1, 1)
@@ -112,7 +116,7 @@ class TestBacktestServiceCreate:
 
         assert result is not None
         assert result.strategy_id == TEST_STRATEGY_ID
-        assert result.status == BacktestStatus.PENDING
+        assert result.status == BACKTEST_STATUS_PENDING
         mock_db.add.assert_called_once()
         mock_db.commit.assert_called_once()
 
@@ -297,7 +301,7 @@ class TestBacktestServiceList:
         backtests, total = await service.list_backtests(
             TEST_TENANT_ID,
             strategy_id=TEST_STRATEGY_ID,
-            status=BacktestStatus.PENDING,
+            status=BACKTEST_STATUS_PENDING,
         )
 
         assert total == 1
@@ -327,7 +331,7 @@ class TestBacktestServiceCancel:
     @pytest.mark.asyncio
     async def test_cancel_pending_backtest(self, mock_db, mock_backtest):
         """Test cancelling a pending backtest."""
-        mock_backtest.status = "pending"
+        mock_backtest.status = BACKTEST_STATUS_PENDING
         mock_db.execute.return_value = MagicMock(
             scalar_one_or_none=MagicMock(return_value=mock_backtest)
         )
@@ -336,13 +340,13 @@ class TestBacktestServiceCancel:
         result = await service.cancel_backtest(TEST_BACKTEST_ID, TEST_TENANT_ID)
 
         assert result is True
-        assert mock_backtest.status == "cancelled"
+        assert mock_backtest.status == BACKTEST_STATUS_CANCELLED
         mock_db.commit.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_cancel_running_backtest(self, mock_db, mock_backtest):
         """Test cancelling a running backtest."""
-        mock_backtest.status = "running"
+        mock_backtest.status = BACKTEST_STATUS_RUNNING
         mock_db.execute.return_value = MagicMock(
             scalar_one_or_none=MagicMock(return_value=mock_backtest)
         )
@@ -351,12 +355,12 @@ class TestBacktestServiceCancel:
         result = await service.cancel_backtest(TEST_BACKTEST_ID, TEST_TENANT_ID)
 
         assert result is True
-        assert mock_backtest.status == "cancelled"
+        assert mock_backtest.status == BACKTEST_STATUS_CANCELLED
 
     @pytest.mark.asyncio
     async def test_cancel_completed_backtest_fails(self, mock_db, mock_backtest):
         """Test that completed backtests cannot be cancelled."""
-        mock_backtest.status = "completed"
+        mock_backtest.status = BACKTEST_STATUS_COMPLETED
         mock_db.execute.return_value = MagicMock(
             scalar_one_or_none=MagicMock(return_value=mock_backtest)
         )
@@ -383,7 +387,7 @@ class TestBacktestServiceRetry:
     @pytest.mark.asyncio
     async def test_retry_failed_backtest(self, mock_db, mock_backtest):
         """Test retrying a failed backtest."""
-        mock_backtest.status = "failed"
+        mock_backtest.status = BACKTEST_STATUS_FAILED
         mock_backtest.error_message = "Previous error"
         mock_db.execute.return_value = MagicMock(
             scalar_one_or_none=MagicMock(return_value=mock_backtest)
@@ -393,14 +397,14 @@ class TestBacktestServiceRetry:
         result = await service.retry_backtest(TEST_BACKTEST_ID, TEST_TENANT_ID)
 
         assert result is not None
-        assert mock_backtest.status == "pending"
+        assert mock_backtest.status == BACKTEST_STATUS_PENDING
         assert mock_backtest.error_message is None
         mock_db.commit.assert_called()
 
     @pytest.mark.asyncio
     async def test_retry_non_failed_backtest_raises(self, mock_db, mock_backtest):
         """Test that retrying non-failed backtest raises error."""
-        mock_backtest.status = "completed"
+        mock_backtest.status = BACKTEST_STATUS_COMPLETED
         mock_db.execute.return_value = MagicMock(
             scalar_one_or_none=MagicMock(return_value=mock_backtest)
         )
@@ -429,7 +433,7 @@ class TestBacktestServiceRun:
     @pytest.mark.asyncio
     async def test_run_backtest_not_pending_raises(self, mock_db, mock_backtest):
         """Test that running non-pending backtest raises error."""
-        mock_backtest.status = "completed"
+        mock_backtest.status = BACKTEST_STATUS_COMPLETED
         mock_db.execute.return_value = MagicMock(
             scalar_one_or_none=MagicMock(return_value=mock_backtest)
         )
@@ -456,7 +460,7 @@ class TestBacktestServiceRun:
     @pytest.mark.asyncio
     async def test_run_backtest_no_market_data(self, mock_db, mock_backtest, mock_strategy_version):
         """Test that missing market data raises error and sets failed status."""
-        mock_backtest.status = "pending"
+        mock_backtest.status = BACKTEST_STATUS_PENDING
 
         # Setup mock returns
         mock_db.execute.side_effect = [
@@ -475,7 +479,7 @@ class TestBacktestServiceRun:
             await service.run_backtest(TEST_BACKTEST_ID, TEST_TENANT_ID)
 
         assert "No market data" in str(exc_info.value)
-        assert mock_backtest.status == "failed"
+        assert mock_backtest.status == BACKTEST_STATUS_FAILED
 
 
 class TestBacktestServiceResults:
@@ -503,3 +507,254 @@ class TestBacktestServiceResults:
         result = await service.get_results(TEST_BACKTEST_ID, TEST_TENANT_ID)
 
         assert result is None
+
+
+class TestBacktestServiceTimeframe:
+    """Tests for timeframe selection (Phase 1)."""
+
+    @pytest.mark.asyncio
+    async def test_create_backtest_with_timeframe(
+        self, mock_db, mock_strategy, mock_strategy_version
+    ):
+        """Test creating backtest with explicit timeframe."""
+        mock_db.execute.side_effect = [
+            MagicMock(scalar_one_or_none=MagicMock(return_value=mock_strategy)),
+            MagicMock(scalar_one_or_none=MagicMock(return_value=mock_strategy_version)),
+        ]
+
+        added_backtest = None
+
+        def capture_add(obj):
+            nonlocal added_backtest
+            added_backtest = obj
+            obj.id = TEST_BACKTEST_ID
+            obj.created_at = datetime.now(UTC)
+
+        mock_db.add.side_effect = capture_add
+
+        service = BacktestService(mock_db)
+
+        await service.create_backtest(
+            tenant_id=TEST_TENANT_ID,
+            user_id=TEST_USER_ID,
+            strategy_id=TEST_STRATEGY_ID,
+            strategy_version=None,
+            name="Test Backtest",
+            start_date=date(2024, 1, 1),
+            end_date=date(2024, 6, 30),
+            initial_capital=100000.0,
+            symbols=["AAPL"],
+            commission=0.001,
+            slippage=0.001,
+            timeframe="1H",  # Explicit hourly timeframe
+        )
+
+        assert added_backtest is not None
+        assert added_backtest.config["timeframe"] == "1H"
+
+    @pytest.mark.asyncio
+    async def test_create_backtest_invalid_timeframe(self, mock_db):
+        """Test that invalid timeframe raises error."""
+        service = BacktestService(mock_db)
+
+        with pytest.raises(ValueError) as exc_info:
+            await service.create_backtest(
+                tenant_id=TEST_TENANT_ID,
+                user_id=TEST_USER_ID,
+                strategy_id=TEST_STRATEGY_ID,
+                strategy_version=None,
+                name="Test Backtest",
+                start_date=date(2024, 1, 1),
+                end_date=date(2024, 6, 30),
+                initial_capital=100000.0,
+                symbols=["AAPL"],
+                commission=0.001,
+                slippage=0.001,
+                timeframe="invalid",
+            )
+
+        assert "Invalid timeframe" in str(exc_info.value)
+
+    @pytest.mark.asyncio
+    async def test_create_backtest_uses_strategy_timeframe(
+        self, mock_db, mock_strategy, mock_strategy_version
+    ):
+        """Test that strategy timeframe is used when not provided."""
+        mock_strategy_version.timeframe = "4H"
+
+        mock_db.execute.side_effect = [
+            MagicMock(scalar_one_or_none=MagicMock(return_value=mock_strategy)),
+            MagicMock(scalar_one_or_none=MagicMock(return_value=mock_strategy_version)),
+        ]
+
+        added_backtest = None
+
+        def capture_add(obj):
+            nonlocal added_backtest
+            added_backtest = obj
+            obj.id = TEST_BACKTEST_ID
+            obj.created_at = datetime.now(UTC)
+
+        mock_db.add.side_effect = capture_add
+
+        service = BacktestService(mock_db)
+
+        await service.create_backtest(
+            tenant_id=TEST_TENANT_ID,
+            user_id=TEST_USER_ID,
+            strategy_id=TEST_STRATEGY_ID,
+            strategy_version=None,
+            name="Test Backtest",
+            start_date=date(2024, 1, 1),
+            end_date=date(2024, 6, 30),
+            initial_capital=100000.0,
+            symbols=["AAPL"],
+            commission=0.001,
+            slippage=0.001,
+            timeframe=None,  # No explicit timeframe
+        )
+
+        assert added_backtest is not None
+        assert added_backtest.config["timeframe"] == "4H"
+
+
+class TestBacktestServiceBenchmark:
+    """Tests for benchmark configuration (Phase 2)."""
+
+    @pytest.mark.asyncio
+    async def test_create_backtest_with_benchmark(
+        self, mock_db, mock_strategy, mock_strategy_version
+    ):
+        """Test creating backtest with custom benchmark."""
+        mock_db.execute.side_effect = [
+            MagicMock(scalar_one_or_none=MagicMock(return_value=mock_strategy)),
+            MagicMock(scalar_one_or_none=MagicMock(return_value=mock_strategy_version)),
+        ]
+
+        added_backtest = None
+
+        def capture_add(obj):
+            nonlocal added_backtest
+            added_backtest = obj
+            obj.id = TEST_BACKTEST_ID
+            obj.created_at = datetime.now(UTC)
+
+        mock_db.add.side_effect = capture_add
+
+        service = BacktestService(mock_db)
+
+        await service.create_backtest(
+            tenant_id=TEST_TENANT_ID,
+            user_id=TEST_USER_ID,
+            strategy_id=TEST_STRATEGY_ID,
+            strategy_version=None,
+            name="Test Backtest",
+            start_date=date(2024, 1, 1),
+            end_date=date(2024, 6, 30),
+            initial_capital=100000.0,
+            symbols=["AAPL"],
+            commission=0.001,
+            slippage=0.001,
+            benchmark_symbol="QQQ",
+            include_benchmark=True,
+        )
+
+        assert added_backtest is not None
+        assert added_backtest.config["benchmark_symbol"] == "QQQ"
+        assert added_backtest.config["include_benchmark"] is True
+
+    @pytest.mark.asyncio
+    async def test_create_backtest_without_benchmark(
+        self, mock_db, mock_strategy, mock_strategy_version
+    ):
+        """Test creating backtest with benchmark disabled."""
+        mock_db.execute.side_effect = [
+            MagicMock(scalar_one_or_none=MagicMock(return_value=mock_strategy)),
+            MagicMock(scalar_one_or_none=MagicMock(return_value=mock_strategy_version)),
+        ]
+
+        added_backtest = None
+
+        def capture_add(obj):
+            nonlocal added_backtest
+            added_backtest = obj
+            obj.id = TEST_BACKTEST_ID
+            obj.created_at = datetime.now(UTC)
+
+        mock_db.add.side_effect = capture_add
+
+        service = BacktestService(mock_db)
+
+        await service.create_backtest(
+            tenant_id=TEST_TENANT_ID,
+            user_id=TEST_USER_ID,
+            strategy_id=TEST_STRATEGY_ID,
+            strategy_version=None,
+            name="Test Backtest",
+            start_date=date(2024, 1, 1),
+            end_date=date(2024, 6, 30),
+            initial_capital=100000.0,
+            symbols=["AAPL"],
+            commission=0.001,
+            slippage=0.001,
+            include_benchmark=False,
+        )
+
+        assert added_backtest is not None
+        assert added_backtest.config["include_benchmark"] is False
+
+
+class TestBacktestServiceSymbolValidation:
+    """Tests for symbol validation (Phase 3)."""
+
+    @pytest.mark.asyncio
+    async def test_validate_symbols_success(self, mock_db):
+        """Test validating valid symbols."""
+        mock_market_client = AsyncMock()
+        mock_market_client.fetch_bars = AsyncMock(return_value={"AAPL": [{"close": 150}]})
+
+        service = BacktestService(mock_db, market_data_client=mock_market_client)
+
+        # Should not raise
+        await service._validate_symbols(["AAPL", "GOOGL"])
+
+        assert mock_market_client.fetch_bars.call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_validate_symbols_invalid(self, mock_db):
+        """Test validating invalid symbols raises error."""
+        from src.services.backtest_service import MarketDataError
+
+        mock_market_client = AsyncMock()
+        mock_market_client.fetch_bars = AsyncMock(side_effect=MarketDataError("Invalid symbol"))
+
+        service = BacktestService(mock_db, market_data_client=mock_market_client)
+
+        with pytest.raises(ValueError) as exc_info:
+            await service._validate_symbols(["INVALID"])
+
+        assert "Invalid symbols" in str(exc_info.value)
+        assert "INVALID" in str(exc_info.value)
+
+    @pytest.mark.asyncio
+    async def test_validate_symbols_mixed(self, mock_db):
+        """Test validating mix of valid and invalid symbols."""
+        from src.services.backtest_service import MarketDataError
+
+        mock_market_client = AsyncMock()
+
+        async def mock_fetch(symbols, **kwargs):
+            if symbols[0] == "INVALID1" or symbols[0] == "INVALID2":
+                raise MarketDataError("Invalid symbol")
+            return {"AAPL": [{"close": 150}]}
+
+        mock_market_client.fetch_bars = mock_fetch
+
+        service = BacktestService(mock_db, market_data_client=mock_market_client)
+
+        with pytest.raises(ValueError) as exc_info:
+            await service._validate_symbols(["AAPL", "INVALID1", "GOOGL", "INVALID2"])
+
+        error_msg = str(exc_info.value)
+        assert "INVALID1" in error_msg
+        assert "INVALID2" in error_msg

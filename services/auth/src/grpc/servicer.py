@@ -5,13 +5,17 @@ from __future__ import annotations
 import logging
 import os
 from datetime import UTC, datetime, timedelta
-from typing import Any
 
 import jwt
 from connectrpc.code import Code
 from connectrpc.errors import ConnectError
-from llamatrade.v1 import auth_pb2, common_pb2
-from sqlalchemy.ext.asyncio import AsyncSession
+from connectrpc.request import RequestContext
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
+# Type alias for generic request context (accepts any request/response types)
+type AnyContext = RequestContext[object, object]
+
+from llamatrade_proto.generated import auth_pb2, common_pb2
 
 from src.services.database import get_session_maker
 
@@ -33,19 +37,19 @@ class AuthServicer:
 
     def __init__(self) -> None:
         """Initialize the servicer."""
-        self._session_maker: Any = None
+        self._session_maker: async_sessionmaker[AsyncSession] | None = None
 
     async def _get_db(self) -> AsyncSession:
         """Get a database session."""
         if self._session_maker is None:
             self._session_maker = get_session_maker()
+        assert self._session_maker is not None
         session: AsyncSession = self._session_maker()
         return session
 
-    def _get_auth_token(self, ctx: Any) -> str:
+    def _get_auth_token(self, ctx: AnyContext) -> str:
         """Extract bearer token from authorization header."""
-        headers = getattr(ctx, "headers", {})
-        auth_header: str = headers.get("authorization", "")
+        auth_header: str = ctx.request_headers().get("authorization", "")
         if not auth_header.startswith("Bearer "):
             raise ConnectError(
                 Code.UNAUTHENTICATED,
@@ -56,7 +60,7 @@ class AuthServicer:
     async def validate_token(
         self,
         request: auth_pb2.ValidateTokenRequest,
-        ctx: Any,
+        ctx: AnyContext,
     ) -> auth_pb2.ValidateTokenResponse:
         """Validate a JWT token and return context if valid."""
         try:
@@ -92,9 +96,7 @@ class AuthServicer:
             )
 
             if exp:
-                response.expires_at.CopyFrom(
-                    common_pb2.Timestamp(seconds=int(exp))
-                )
+                response.expires_at.CopyFrom(common_pb2.Timestamp(seconds=int(exp)))
 
             return response
 
@@ -105,7 +107,7 @@ class AuthServicer:
     async def validate_a_p_i_key(
         self,
         request: auth_pb2.ValidateAPIKeyRequest,
-        ctx: Any,
+        ctx: AnyContext,
     ) -> auth_pb2.ValidateAPIKeyResponse:
         """Validate an API key and return context if valid."""
         try:
@@ -114,8 +116,9 @@ class AuthServicer:
 
             # Get API key from database
             async with await self._get_db() as db:
-                from llamatrade_db.models import APIKey
                 from sqlalchemy import select
+
+                from llamatrade_db.models import APIKey
 
                 # Find API key by prefix (first 8 chars) and full hash
                 key_prefix = api_key[:8] if len(api_key) >= 8 else api_key
@@ -137,11 +140,11 @@ class AuthServicer:
                     return auth_pb2.ValidateAPIKeyResponse(valid=False)
 
                 # Check required scopes
-                granted_scopes = db_key.scopes or []
+                # db_key.scopes is typed as list | None in the model (untyped JSONB)
+                scopes_raw: list[str] | None = db_key.scopes  # type: ignore[assignment]
+                granted_scopes: list[str] = list(scopes_raw) if scopes_raw else []
                 if required_scopes:
-                    has_all_scopes = all(
-                        scope in granted_scopes for scope in required_scopes
-                    )
+                    has_all_scopes = all(scope in granted_scopes for scope in required_scopes)
                     if not has_all_scopes:
                         return auth_pb2.ValidateAPIKeyResponse(
                             valid=False,
@@ -169,7 +172,7 @@ class AuthServicer:
     async def refresh_token(
         self,
         request: auth_pb2.RefreshTokenRequest,
-        ctx: Any,
+        ctx: AnyContext,
     ) -> auth_pb2.RefreshTokenResponse:
         """Refresh an access token using a refresh token."""
         refresh_token = request.refresh_token
@@ -192,8 +195,9 @@ class AuthServicer:
         async with await self._get_db() as db:
             from uuid import UUID
 
-            from llamatrade_db.models import User
             from sqlalchemy import select
+
+            from llamatrade_db.models import User
 
             result = await db.execute(
                 select(User).where(
@@ -234,14 +238,18 @@ class AuthServicer:
             return auth_pb2.RefreshTokenResponse(
                 access_token=new_access_token,
                 refresh_token=new_refresh_token,
-                access_token_expires_at=common_pb2.Timestamp(seconds=int(access_expire.timestamp())),
-                refresh_token_expires_at=common_pb2.Timestamp(seconds=int(refresh_expire.timestamp())),
+                access_token_expires_at=common_pb2.Timestamp(
+                    seconds=int(access_expire.timestamp())
+                ),
+                refresh_token_expires_at=common_pb2.Timestamp(
+                    seconds=int(refresh_expire.timestamp())
+                ),
             )
 
     async def get_user(
         self,
         request: auth_pb2.GetUserRequest,
-        ctx: Any,
+        ctx: AnyContext,
     ) -> auth_pb2.GetUserResponse:
         """Get user by ID."""
         from uuid import UUID
@@ -249,12 +257,11 @@ class AuthServicer:
         user_id = UUID(request.user_id)
 
         async with await self._get_db() as db:
-            from llamatrade_db.models import User
             from sqlalchemy import select
 
-            result = await db.execute(
-                select(User).where(User.id == user_id)
-            )
+            from llamatrade_db.models import User
+
+            result = await db.execute(select(User).where(User.id == user_id))
             user = result.scalar_one_or_none()
 
             if not user:
@@ -273,16 +280,16 @@ class AuthServicer:
                     roles=[user.role],
                     is_active=user.is_active,
                     created_at=common_pb2.Timestamp(seconds=int(user.created_at.timestamp())),
-                    last_login=common_pb2.Timestamp(
-                        seconds=int(user.last_login.timestamp())
-                    ) if user.last_login else None,
+                    last_login=common_pb2.Timestamp(seconds=int(user.last_login.timestamp()))
+                    if user.last_login
+                    else None,
                 )
             )
 
     async def get_tenant(
         self,
         request: auth_pb2.GetTenantRequest,
-        ctx: Any,
+        ctx: AnyContext,
     ) -> auth_pb2.GetTenantResponse:
         """Get tenant by ID."""
         from uuid import UUID
@@ -290,12 +297,11 @@ class AuthServicer:
         tenant_id = UUID(request.tenant_id)
 
         async with await self._get_db() as db:
-            from llamatrade_db.models import Tenant
             from sqlalchemy import select
 
-            result = await db.execute(
-                select(Tenant).where(Tenant.id == tenant_id)
-            )
+            from llamatrade_db.models import Tenant
+
+            result = await db.execute(select(Tenant).where(Tenant.id == tenant_id))
             tenant = result.scalar_one_or_none()
 
             if not tenant:
@@ -304,6 +310,9 @@ class AuthServicer:
                     f"Tenant not found: {request.tenant_id}",
                 )
 
+            # tenant.settings is typed as dict | None in the model (untyped JSONB)
+            settings: dict[str, str] = tenant.settings if tenant.settings else {}  # type: ignore[assignment]
+
             return auth_pb2.GetTenantResponse(
                 tenant=auth_pb2.Tenant(
                     id=str(tenant.id),
@@ -311,30 +320,29 @@ class AuthServicer:
                     plan_id="",
                     is_active=tenant.is_active,
                     created_at=common_pb2.Timestamp(seconds=int(tenant.created_at.timestamp())),
-                    settings=tenant.settings or {},
+                    settings=settings,
                 )
             )
 
     async def register(
         self,
         request: auth_pb2.RegisterRequest,
-        ctx: Any,
+        ctx: AnyContext,
     ) -> auth_pb2.RegisterResponse:
         """Register a new user and tenant."""
         from uuid import uuid4
 
         import bcrypt
-        from llamatrade_db.models import Tenant, User
         from sqlalchemy import select
+
+        from llamatrade_db.models import Tenant, User
 
         async with await self._get_db() as db:
             import re
             import secrets
 
             # Check if email already exists
-            result = await db.execute(
-                select(User).where(User.email == request.email)
-            )
+            result = await db.execute(select(User).where(User.email == request.email))
             existing_user = result.scalar_one_or_none()
 
             if existing_user:
@@ -355,9 +363,7 @@ class AuthServicer:
             await db.flush()
 
             # Hash password
-            password_hash = bcrypt.hashpw(
-                request.password.encode(), bcrypt.gensalt()
-            ).decode()
+            password_hash = bcrypt.hashpw(request.password.encode(), bcrypt.gensalt()).decode()
 
             # Create user
             user = User(
@@ -396,18 +402,17 @@ class AuthServicer:
     async def login(
         self,
         request: auth_pb2.LoginRequest,
-        ctx: Any,
+        ctx: AnyContext,
     ) -> auth_pb2.LoginResponse:
         """Login with email and password."""
         import bcrypt
-        from llamatrade_db.models import User
         from sqlalchemy import select
+
+        from llamatrade_db.models import User
 
         async with await self._get_db() as db:
             # Find user by email
-            result = await db.execute(
-                select(User).where(User.email == request.email)
-            )
+            result = await db.execute(select(User).where(User.email == request.email))
             user = result.scalar_one_or_none()
 
             if not user:
@@ -455,8 +460,12 @@ class AuthServicer:
             return auth_pb2.LoginResponse(
                 access_token=access_token,
                 refresh_token=refresh_token,
-                access_token_expires_at=common_pb2.Timestamp(seconds=int(access_expire.timestamp())),
-                refresh_token_expires_at=common_pb2.Timestamp(seconds=int(refresh_expire.timestamp())),
+                access_token_expires_at=common_pb2.Timestamp(
+                    seconds=int(access_expire.timestamp())
+                ),
+                refresh_token_expires_at=common_pb2.Timestamp(
+                    seconds=int(refresh_expire.timestamp())
+                ),
                 user=auth_pb2.User(
                     id=str(user.id),
                     tenant_id=str(user.tenant_id),
@@ -471,7 +480,7 @@ class AuthServicer:
     async def change_password(
         self,
         request: auth_pb2.ChangePasswordRequest,
-        ctx: Any,
+        ctx: AnyContext,
     ) -> auth_pb2.ChangePasswordResponse:
         """Change user password.
 
@@ -480,8 +489,9 @@ class AuthServicer:
         from uuid import UUID
 
         import bcrypt
-        from llamatrade_db.models import User
         from sqlalchemy import select
+
+        from llamatrade_db.models import User
 
         # Get token and extract user_id
         token = self._get_auth_token(ctx)
@@ -498,9 +508,7 @@ class AuthServicer:
             raise ConnectError(Code.UNAUTHENTICATED, "Invalid token: missing user ID")
 
         async with await self._get_db() as db:
-            result = await db.execute(
-                select(User).where(User.id == UUID(user_id))
-            )
+            result = await db.execute(select(User).where(User.id == UUID(user_id)))
             user = result.scalar_one_or_none()
 
             if not user:
@@ -527,13 +535,14 @@ class AuthServicer:
     async def get_current_user(
         self,
         request: auth_pb2.GetCurrentUserRequest,
-        ctx: Any,
+        ctx: AnyContext,
     ) -> auth_pb2.GetCurrentUserResponse:
         """Get current user from authorization token."""
         from uuid import UUID
 
-        from llamatrade_db.models import Tenant, User
         from sqlalchemy import select
+
+        from llamatrade_db.models import Tenant, User
 
         # Get token and extract user_id
         token = self._get_auth_token(ctx)
@@ -552,18 +561,14 @@ class AuthServicer:
 
         async with await self._get_db() as db:
             # Get user
-            user_result = await db.execute(
-                select(User).where(User.id == UUID(user_id))
-            )
+            user_result = await db.execute(select(User).where(User.id == UUID(user_id)))
             user = user_result.scalar_one_or_none()
 
             if not user:
                 raise ConnectError(Code.NOT_FOUND, "User not found")
 
             # Get tenant
-            tenant_result = await db.execute(
-                select(Tenant).where(Tenant.id == UUID(tenant_id))
-            )
+            tenant_result = await db.execute(select(Tenant).where(Tenant.id == UUID(tenant_id)))
             tenant = tenant_result.scalar_one_or_none()
 
             if not tenant:
@@ -579,9 +584,9 @@ class AuthServicer:
                     roles=[user.role],
                     is_active=user.is_active,
                     created_at=common_pb2.Timestamp(seconds=int(user.created_at.timestamp())),
-                    last_login=common_pb2.Timestamp(
-                        seconds=int(user.last_login.timestamp())
-                    ) if user.last_login else None,
+                    last_login=common_pb2.Timestamp(seconds=int(user.last_login.timestamp()))
+                    if user.last_login
+                    else None,
                 ),
                 tenant=auth_pb2.Tenant(
                     id=str(tenant.id),
@@ -595,7 +600,7 @@ class AuthServicer:
     async def logout(
         self,
         request: auth_pb2.LogoutRequest,
-        ctx: Any,
+        ctx: AnyContext,
     ) -> auth_pb2.LogoutResponse:
         """Logout and invalidate the current token.
 
@@ -623,7 +628,7 @@ class AuthServicer:
     async def check_permission(
         self,
         request: auth_pb2.CheckPermissionRequest,
-        ctx: Any,
+        ctx: AnyContext,
     ) -> auth_pb2.CheckPermissionResponse:
         """Check if user has permission for a resource/action."""
         # Extract context
@@ -681,3 +686,182 @@ class AuthServicer:
             allowed=False,
             reason=f"No role has permission for {action} on {resource}",
         )
+
+    # ===================
+    # Alpaca Credentials Management
+    # ===================
+
+    async def create_alpaca_credentials(
+        self,
+        request: auth_pb2.CreateAlpacaCredentialsRequest,
+        ctx: AnyContext,
+    ) -> auth_pb2.CreateAlpacaCredentialsResponse:
+        """Create new Alpaca credentials for the authenticated tenant."""
+        from uuid import UUID
+
+        from src.models import AlpacaCredentialsCreate
+        from src.services.tenant_service import TenantService
+
+        # Get tenant_id from auth token
+        token = self._get_auth_token(ctx)
+        try:
+            payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        except jwt.ExpiredSignatureError:
+            raise ConnectError(Code.UNAUTHENTICATED, "Token expired")
+        except jwt.InvalidTokenError:
+            raise ConnectError(Code.UNAUTHENTICATED, "Invalid token")
+
+        tenant_id = payload.get("tenant_id")
+        if not tenant_id:
+            raise ConnectError(Code.UNAUTHENTICATED, "Invalid token: missing tenant ID")
+
+        async with await self._get_db() as db:
+            service = TenantService(db)
+            creds = await service.create_alpaca_credentials(
+                tenant_id=UUID(tenant_id),
+                data=AlpacaCredentialsCreate(
+                    name=request.name,
+                    api_key=request.api_key,
+                    api_secret=request.api_secret,
+                    is_paper=request.is_paper,
+                ),
+            )
+
+            return auth_pb2.CreateAlpacaCredentialsResponse(
+                credentials=auth_pb2.AlpacaCredentials(
+                    id=str(creds.id),
+                    name=creds.name,
+                    api_key=creds.api_key,
+                    api_secret=creds.api_secret,
+                    is_paper=creds.is_paper,
+                    is_active=creds.is_active,
+                    created_at=common_pb2.Timestamp(seconds=int(creds.created_at.timestamp())),
+                )
+            )
+
+    async def get_alpaca_credentials(
+        self,
+        request: auth_pb2.GetAlpacaCredentialsRequest,
+        ctx: AnyContext,
+    ) -> auth_pb2.GetAlpacaCredentialsResponse:
+        """Get Alpaca credentials by ID."""
+        from uuid import UUID
+
+        from src.services.tenant_service import TenantService
+
+        # Get tenant_id from auth token
+        token = self._get_auth_token(ctx)
+        try:
+            payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        except jwt.ExpiredSignatureError:
+            raise ConnectError(Code.UNAUTHENTICATED, "Token expired")
+        except jwt.InvalidTokenError:
+            raise ConnectError(Code.UNAUTHENTICATED, "Invalid token")
+
+        tenant_id = payload.get("tenant_id")
+        if not tenant_id:
+            raise ConnectError(Code.UNAUTHENTICATED, "Invalid token: missing tenant ID")
+
+        async with await self._get_db() as db:
+            service = TenantService(db)
+            creds = await service.get_alpaca_credentials(
+                credentials_id=UUID(request.credentials_id),
+                tenant_id=UUID(tenant_id),
+            )
+
+            if not creds:
+                raise ConnectError(
+                    Code.NOT_FOUND,
+                    f"Credentials not found: {request.credentials_id}",
+                )
+
+            return auth_pb2.GetAlpacaCredentialsResponse(
+                credentials=auth_pb2.AlpacaCredentials(
+                    id=str(creds.id),
+                    name=creds.name,
+                    api_key=creds.api_key,
+                    api_secret=creds.api_secret,
+                    is_paper=creds.is_paper,
+                    is_active=creds.is_active,
+                    created_at=common_pb2.Timestamp(seconds=int(creds.created_at.timestamp())),
+                )
+            )
+
+    async def list_alpaca_credentials(
+        self,
+        request: auth_pb2.ListAlpacaCredentialsRequest,
+        ctx: AnyContext,
+    ) -> auth_pb2.ListAlpacaCredentialsResponse:
+        """List all Alpaca credentials for the authenticated tenant."""
+        from uuid import UUID
+
+        from src.services.tenant_service import TenantService
+
+        # Get tenant_id from auth token
+        token = self._get_auth_token(ctx)
+        try:
+            payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        except jwt.ExpiredSignatureError:
+            raise ConnectError(Code.UNAUTHENTICATED, "Token expired")
+        except jwt.InvalidTokenError:
+            raise ConnectError(Code.UNAUTHENTICATED, "Invalid token")
+
+        tenant_id = payload.get("tenant_id")
+        if not tenant_id:
+            raise ConnectError(Code.UNAUTHENTICATED, "Invalid token: missing tenant ID")
+
+        async with await self._get_db() as db:
+            service = TenantService(db)
+            creds_list = await service.list_alpaca_credentials(tenant_id=UUID(tenant_id))
+
+            return auth_pb2.ListAlpacaCredentialsResponse(
+                credentials=[
+                    auth_pb2.AlpacaCredentialsListItem(
+                        id=str(c.id),
+                        name=c.name,
+                        api_key_prefix=c.api_key_prefix,
+                        is_paper=c.is_paper,
+                        is_active=c.is_active,
+                        created_at=common_pb2.Timestamp(seconds=int(c.created_at.timestamp())),
+                    )
+                    for c in creds_list
+                ]
+            )
+
+    async def delete_alpaca_credentials(
+        self,
+        request: auth_pb2.DeleteAlpacaCredentialsRequest,
+        ctx: AnyContext,
+    ) -> auth_pb2.DeleteAlpacaCredentialsResponse:
+        """Delete Alpaca credentials (soft delete)."""
+        from uuid import UUID
+
+        from src.services.tenant_service import TenantService
+
+        # Get tenant_id from auth token
+        token = self._get_auth_token(ctx)
+        try:
+            payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        except jwt.ExpiredSignatureError:
+            raise ConnectError(Code.UNAUTHENTICATED, "Token expired")
+        except jwt.InvalidTokenError:
+            raise ConnectError(Code.UNAUTHENTICATED, "Invalid token")
+
+        tenant_id = payload.get("tenant_id")
+        if not tenant_id:
+            raise ConnectError(Code.UNAUTHENTICATED, "Invalid token: missing tenant ID")
+
+        async with await self._get_db() as db:
+            service = TenantService(db)
+            deleted = await service.delete_alpaca_credentials(
+                credentials_id=UUID(request.credentials_id),
+                tenant_id=UUID(tenant_id),
+            )
+
+            if not deleted:
+                raise ConnectError(
+                    Code.NOT_FOUND,
+                    f"Credentials not found: {request.credentials_id}",
+                )
+
+            return auth_pb2.DeleteAlpacaCredentialsResponse(success=True)

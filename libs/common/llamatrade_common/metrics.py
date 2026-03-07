@@ -210,9 +210,9 @@ def time_function(
                 duration = time.perf_counter() - start_time
                 metric.labels(**labels).observe(duration)
 
-        import asyncio
+        import inspect
 
-        if asyncio.iscoroutinefunction(func):
+        if inspect.iscoroutinefunction(func):
             return cast(Callable[P, R], async_wrapper)
         return sync_wrapper
 

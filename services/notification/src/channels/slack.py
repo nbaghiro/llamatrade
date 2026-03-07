@@ -4,6 +4,7 @@ import logging
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import StrEnum
+from typing import Any
 
 import httpx
 
@@ -24,13 +25,13 @@ class SlackBlock:
     """A Slack Block Kit block."""
 
     type: str
-    text: dict | None = None
-    elements: list[dict] | None = None
-    fields: list[dict] | None = None
+    text: dict[str, Any] | None = None
+    elements: list[dict[str, Any]] | None = None
+    fields: list[dict[str, Any]] | None = None
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to Slack API format."""
-        result: dict = {"type": self.type}
+        result: dict[str, Any] = {"type": self.type}
         if self.text:
             result["text"] = self.text
         if self.elements:
@@ -47,13 +48,13 @@ class SlackAttachment:
     color: str = SlackMessageColor.INFO
     title: str | None = None
     text: str | None = None
-    fields: list[dict] = field(default_factory=list)
+    fields: list[dict[str, Any]] = field(default_factory=lambda: [])
     footer: str | None = None
     ts: int | None = None
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to Slack API format."""
-        result: dict = {"color": self.color}
+        result: dict[str, Any] = {"color": self.color}
         if self.title:
             result["title"] = self.title
         if self.text:
@@ -141,7 +142,7 @@ class SlackChannel:
         Returns:
             SlackResult with success status.
         """
-        payload: dict = {
+        payload: dict[str, Any] = {
             "text": text,
             "username": username or self.default_username,
             "icon_emoji": icon_emoji or self.default_icon_emoji,
@@ -214,7 +215,7 @@ class SlackChannel:
             SlackResult with success status.
         """
         # Build fields for the attachment
-        fields: list[dict] = []
+        fields: list[dict[str, Any]] = []
 
         if symbol:
             fields.append(
@@ -445,7 +446,7 @@ class SlackChannel:
         Returns:
             SlackResult with success status.
         """
-        fields: list[dict] = []
+        fields: list[dict[str, Any]] = []
 
         if current_value is not None:
             fields.append(

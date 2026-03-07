@@ -3,7 +3,7 @@ name = "llamatrade-common"
 version = "0.1.0"
 description = "Shared utilities and models for LlamaTrade services"
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.14"
 dependencies = [
     "pydantic>=2.5.0",
     "pydantic[email]>=2.5.0",
@@ -52,7 +52,12 @@ exclude_lines = [
 
 [tool.ruff]
 line-length = 100
-target-version = "py312"
+target-version = "py314"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "N", "W", "UP"]
+
+[tool.pyright]
+venvPath = "../.."
+venv = ".venv"
+pythonVersion = "3.14"

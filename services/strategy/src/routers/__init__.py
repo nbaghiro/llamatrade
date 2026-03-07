@@ -1,1 +1,0 @@
-"""Strategy Service routers."""

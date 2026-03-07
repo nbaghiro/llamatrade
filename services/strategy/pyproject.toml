@@ -3,7 +3,7 @@ name = "llamatrade-strategy"
 version = "0.1.0"
 description = "LlamaTrade Strategy Service"
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.14"
 dependencies = [
     "fastapi>=0.109.0",
     "uvicorn[standard]>=0.27.0",
@@ -13,7 +13,7 @@ dependencies = [
     "llamatrade-compiler",
     "llamatrade-db",
     "llamatrade-dsl",
-    "llamatrade-grpc",
+    "llamatrade-proto",
 ]
 
 [project.optional-dependencies]
@@ -37,8 +37,11 @@ asyncio_mode = "auto"
 testpaths = ["tests"]
 
 [tool.ruff]
+extend = "../../pyproject.toml"
 line-length = 100
-target-version = "py312"
+target-version = "py314"
 
-[tool.ruff.lint]
-select = ["E", "F", "I", "N", "W", "UP"]
+[tool.pyright]
+venvPath = "../.."
+venv = ".venv"
+pythonVersion = "3.14"

@@ -1,10 +1,16 @@
 """Tests for notification gRPC servicer methods."""
 
+# pyright: reportPrivateUsage=false
+# pyright: reportArgumentType=false
+
 from datetime import UTC, datetime
+from typing import Any
 from uuid import uuid4
 
 import pytest
-from conftest import TEST_TENANT_ID, TEST_USER_ID
+from conftest import TEST_TENANT_ID, TEST_USER_ID, MockServicerContext
+
+from src.grpc.servicer import NotificationServicer
 
 pytestmark = pytest.mark.asyncio
 
@@ -12,9 +18,11 @@ pytestmark = pytest.mark.asyncio
 class TestListNotifications:
     """Tests for ListNotifications gRPC method."""
 
-    async def test_list_notifications_empty(self, notification_servicer, grpc_context):
+    async def test_list_notifications_empty(
+        self, notification_servicer: NotificationServicer, grpc_context: MockServicerContext
+    ) -> None:
         """Test listing notifications returns empty list when none exist."""
-        from llamatrade.v1 import common_pb2, notification_pb2
+        from llamatrade_proto.generated import common_pb2, notification_pb2
 
         request = notification_pb2.ListNotificationsRequest(
             context=common_pb2.TenantContext(
@@ -30,10 +38,13 @@ class TestListNotifications:
         assert response.unread_count == 0
 
     async def test_list_notifications_with_data(
-        self, notification_servicer, grpc_context, sample_notification
-    ):
+        self,
+        notification_servicer: NotificationServicer,
+        grpc_context: MockServicerContext,
+        sample_notification: dict[str, Any],
+    ) -> None:
         """Test listing notifications returns stored notifications."""
-        from llamatrade.v1 import common_pb2, notification_pb2
+        from llamatrade_proto.generated import common_pb2, notification_pb2
 
         # Add notification to servicer's in-memory storage
         key = f"{TEST_TENANT_ID}:{TEST_USER_ID}"
@@ -53,9 +64,11 @@ class TestListNotifications:
         assert response.pagination.total_items == 1
         assert response.unread_count == 1
 
-    async def test_list_notifications_unread_only(self, notification_servicer, grpc_context):
+    async def test_list_notifications_unread_only(
+        self, notification_servicer: NotificationServicer, grpc_context: MockServicerContext
+    ) -> None:
         """Test filtering notifications by unread_only."""
-        from llamatrade.v1 import common_pb2, notification_pb2
+        from llamatrade_proto.generated import common_pb2, notification_pb2
 
         key = f"{TEST_TENANT_ID}:{TEST_USER_ID}"
         notification_servicer._notifications[key] = [
@@ -99,9 +112,11 @@ class TestListNotifications:
         assert response.notifications[0].title == "Unread Notification"
         assert response.unread_count == 1
 
-    async def test_list_notifications_pagination(self, notification_servicer, grpc_context):
+    async def test_list_notifications_pagination(
+        self, notification_servicer: NotificationServicer, grpc_context: MockServicerContext
+    ) -> None:
         """Test pagination of notifications."""
-        from llamatrade.v1 import common_pb2, notification_pb2
+        from llamatrade_proto.generated import common_pb2, notification_pb2
 
         key = f"{TEST_TENANT_ID}:{TEST_USER_ID}"
         notification_servicer._notifications[key] = [
@@ -137,10 +152,13 @@ class TestListNotifications:
         assert response.pagination.has_previous is False
 
     async def test_list_notifications_tenant_isolation(
-        self, notification_servicer, grpc_context, sample_notification
-    ):
+        self,
+        notification_servicer: NotificationServicer,
+        grpc_context: MockServicerContext,
+        sample_notification: dict[str, Any],
+    ) -> None:
         """Test that notifications are isolated by tenant."""
-        from llamatrade.v1 import common_pb2, notification_pb2
+        from llamatrade_proto.generated import common_pb2, notification_pb2
 
         # Add notification for different tenant
         other_tenant = str(uuid4())
@@ -163,9 +181,11 @@ class TestListNotifications:
 class TestMarkAsRead:
     """Tests for MarkAsRead gRPC method."""
 
-    async def test_mark_single_notification_as_read(self, notification_servicer, grpc_context):
+    async def test_mark_single_notification_as_read(
+        self, notification_servicer: NotificationServicer, grpc_context: MockServicerContext
+    ) -> None:
         """Test marking a single notification as read."""
-        from llamatrade.v1 import common_pb2, notification_pb2
+        from llamatrade_proto.generated import common_pb2, notification_pb2
 
         notification_id = str(uuid4())
         key = f"{TEST_TENANT_ID}:{TEST_USER_ID}"
@@ -198,9 +218,11 @@ class TestMarkAsRead:
         assert notification_servicer._notifications[key][0]["is_read"] is True
         assert notification_servicer._notifications[key][0]["read_at"] is not None
 
-    async def test_mark_all_notifications_as_read(self, notification_servicer, grpc_context):
+    async def test_mark_all_notifications_as_read(
+        self, notification_servicer: NotificationServicer, grpc_context: MockServicerContext
+    ) -> None:
         """Test marking all notifications as read."""
-        from llamatrade.v1 import common_pb2, notification_pb2
+        from llamatrade_proto.generated import common_pb2, notification_pb2
 
         key = f"{TEST_TENANT_ID}:{TEST_USER_ID}"
         notification_servicer._notifications[key] = [
@@ -233,9 +255,11 @@ class TestMarkAsRead:
         for n in notification_servicer._notifications[key]:
             assert n["is_read"] is True
 
-    async def test_mark_already_read_notification(self, notification_servicer, grpc_context):
+    async def test_mark_already_read_notification(
+        self, notification_servicer: NotificationServicer, grpc_context: MockServicerContext
+    ) -> None:
         """Test marking an already-read notification is idempotent."""
-        from llamatrade.v1 import common_pb2, notification_pb2
+        from llamatrade_proto.generated import common_pb2, notification_pb2
 
         notification_id = str(uuid4())
         key = f"{TEST_TENANT_ID}:{TEST_USER_ID}"
@@ -266,9 +290,11 @@ class TestMarkAsRead:
 
         assert response.marked_count == 0
 
-    async def test_mark_nonexistent_notification(self, notification_servicer, grpc_context):
+    async def test_mark_nonexistent_notification(
+        self, notification_servicer: NotificationServicer, grpc_context: MockServicerContext
+    ) -> None:
         """Test marking a nonexistent notification returns 0."""
-        from llamatrade.v1 import common_pb2, notification_pb2
+        from llamatrade_proto.generated import common_pb2, notification_pb2
 
         request = notification_pb2.MarkAsReadRequest(
             context=common_pb2.TenantContext(

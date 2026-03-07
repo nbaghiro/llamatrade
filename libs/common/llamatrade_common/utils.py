@@ -172,7 +172,7 @@ def normalize_symbol(symbol: str) -> str:
     return symbol.strip().upper()
 
 
-def chunks[T](lst: list[T], n: int) -> Generator[list[T], None, None]:
+def chunks[T](lst: list[T], n: int) -> Generator[list[T]]:
     """Yield successive n-sized chunks from lst."""
     for i in range(0, len(lst), n):
         yield lst[i : i + n]

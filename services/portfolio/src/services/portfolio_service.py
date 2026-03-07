@@ -2,16 +2,28 @@
 
 from datetime import UTC, datetime
 from decimal import Decimal
+from typing import cast
 from uuid import UUID
 
 from fastapi import Depends
-from llamatrade_db import get_db
-from llamatrade_db.models.portfolio import PortfolioSummary as PortfolioSummaryModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from llamatrade_db import get_db
+from llamatrade_db.models.portfolio import PortfolioSummary as PortfolioSummaryModel
+
 from src.clients.market_data import MarketDataClient, get_market_data_client
 from src.models import PortfolioSummary, PositionResponse
+
+
+def _safe_float(val: object, default: float = 0.0) -> float:
+    """Safely convert object to float."""
+    if val is None:
+        return default
+    try:
+        return float(val)  # type: ignore[arg-type]
+    except TypeError, ValueError:
+        return default
 
 
 class PortfolioService:
@@ -51,7 +63,8 @@ class PortfolioService:
             )
 
         # Get positions and enrich with current prices
-        positions = summary.positions or []
+        # JSONB columns return untyped objects, cast to expected structure
+        positions: list[dict[str, object]] = cast(list[dict[str, object]], summary.positions or [])
         enriched_positions = await self._enrich_positions_with_prices(positions)
 
         # Calculate aggregated P&L from positions
@@ -85,10 +98,12 @@ class PortfolioService:
         result = await self.db.execute(stmt)
         summary = result.scalar_one_or_none()
 
+        # JSONB columns return untyped objects, cast to expected structure
         if not summary or not summary.positions:
             return []
 
-        return await self._enrich_positions_with_prices(summary.positions)
+        positions: list[dict[str, object]] = cast(list[dict[str, object]], summary.positions)
+        return await self._enrich_positions_with_prices(positions)
 
     async def get_position(self, tenant_id: UUID, symbol: str) -> PositionResponse | None:
         """Get position for a specific symbol.
@@ -109,7 +124,9 @@ class PortfolioService:
 
         return None
 
-    async def _enrich_positions_with_prices(self, positions: list[dict]) -> list[PositionResponse]:
+    async def _enrich_positions_with_prices(
+        self, positions: list[dict[str, object]]
+    ) -> list[PositionResponse]:
         """Enrich position data with current market prices.
 
         Args:
@@ -122,24 +139,28 @@ class PortfolioService:
             return []
 
         # Get symbols and fetch current prices
-        symbols = [p.get("symbol", "") for p in positions if p.get("symbol")]
+        symbols: list[str] = [str(p.get("symbol", "")) for p in positions if p.get("symbol")]
         current_prices: dict[str, float] = {}
 
         if self.market_data and symbols:
-            current_prices = await self.market_data.get_prices(symbols)
+            decimal_prices = await self.market_data.get_prices(symbols)
+            current_prices = {k: float(v) for k, v in decimal_prices.items()}
 
         result: list[PositionResponse] = []
         for pos in positions:
-            symbol = pos.get("symbol", "")
-            qty = float(pos.get("qty", 0))
-            side = pos.get("side", "long")
-            avg_entry_price = float(pos.get("avg_entry_price", 0))
-            cost_basis = float(pos.get("cost_basis", qty * avg_entry_price))
+            symbol: str = str(pos.get("symbol", ""))
+            qty = _safe_float(pos.get("qty", 0))
+            side: str = str(pos.get("side", "long"))
+            avg_entry_price = _safe_float(pos.get("avg_entry_price", 0))
+            cost_val = pos.get("cost_basis")
+            cost_basis = _safe_float(cost_val) if cost_val is not None else qty * avg_entry_price
 
             # Use fetched price or fallback to stored price
-            current_price = current_prices.get(
-                symbol, float(pos.get("current_price", avg_entry_price))
+            current_price_val = pos.get("current_price")
+            fallback_price = (
+                _safe_float(current_price_val) if current_price_val is not None else avg_entry_price
             )
+            current_price = current_prices.get(symbol, fallback_price)
 
             # Calculate current market value
             market_value = qty * current_price
@@ -203,7 +224,7 @@ class PortfolioService:
         cash: float,
         buying_power: float,
         portfolio_value: float,
-        positions: list[dict],
+        positions: list[dict[str, object]],
     ) -> PortfolioSummaryModel:
         """Update or create portfolio summary.
 

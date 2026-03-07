@@ -96,7 +96,7 @@ class TenantMiddleware:
         except jwt.InvalidTokenError:
             # Invalid token - let endpoint handle it
             pass
-        except (KeyError, ValueError, ValidationError):
+        except KeyError, ValueError, ValidationError:
             # Missing or invalid claims - let endpoint handle it
             pass
 

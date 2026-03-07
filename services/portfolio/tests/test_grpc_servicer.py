@@ -3,7 +3,7 @@
 from datetime import UTC, datetime
 from decimal import Decimal
 from unittest.mock import AsyncMock, MagicMock
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 
@@ -11,7 +11,7 @@ import pytest
 
 
 @pytest.fixture
-def mock_context():
+def mock_context() -> MagicMock:
     """Create a mock gRPC context."""
     context = MagicMock()
     context.abort = AsyncMock()
@@ -19,12 +19,12 @@ def mock_context():
 
 
 @pytest.fixture
-def test_tenant_id():
+def test_tenant_id() -> UUID:
     return uuid4()
 
 
 @pytest.fixture
-def mock_portfolio_summary(test_tenant_id):
+def mock_portfolio_summary(test_tenant_id: UUID) -> MagicMock:
     """Create a mock portfolio summary."""
     summary = MagicMock()
     summary.total_equity = Decimal("100000.00")
@@ -41,7 +41,7 @@ def mock_portfolio_summary(test_tenant_id):
 
 
 @pytest.fixture
-def mock_position():
+def mock_position() -> MagicMock:
     """Create a mock position."""
     position = MagicMock()
     position.symbol = "AAPL"
@@ -57,7 +57,7 @@ def mock_position():
 
 
 @pytest.fixture
-def mock_transaction(test_tenant_id):
+def mock_transaction(test_tenant_id: UUID) -> MagicMock:
     """Create a mock transaction."""
     transaction = MagicMock()
     transaction.id = uuid4()
@@ -81,7 +81,7 @@ def mock_transaction(test_tenant_id):
 class TestTransactionTypeConversion:
     """Tests for transaction type conversion helpers."""
 
-    def test_to_proto_transaction_type_mapping(self):
+    def test_to_proto_transaction_type_mapping(self) -> None:
         """Test transaction type enum mapping logic."""
         # Test the mapping logic without importing the actual servicer
         type_map = {
@@ -92,10 +92,10 @@ class TestTransactionTypeConversion:
             "dividend": 5,  # TRANSACTION_TYPE_DIVIDEND
         }
 
-        for txn_type, expected in type_map.items():
+        for txn_type in type_map:
             assert txn_type in type_map
 
-    def test_from_proto_transaction_type_mapping(self):
+    def test_from_proto_transaction_type_mapping(self) -> None:
         """Test reverse transaction type mapping."""
         # Proto value -> internal type
         proto_map = {
@@ -106,19 +106,19 @@ class TestTransactionTypeConversion:
             5: "dividend",
         }
 
-        for proto_val, expected_type in proto_map.items():
+        for proto_val in proto_map:
             assert proto_val in proto_map
 
 
 class TestPositionSideConversion:
     """Tests for position side conversion."""
 
-    def test_position_side_long(self):
+    def test_position_side_long(self) -> None:
         """Test long position side conversion."""
         side = "long"
         assert side in ["long", "short"]
 
-    def test_position_side_short(self):
+    def test_position_side_short(self) -> None:
         """Test short position side conversion."""
         side = "short"
         assert side in ["long", "short"]
@@ -130,7 +130,9 @@ class TestPositionSideConversion:
 class TestPortfolioSummaryConversion:
     """Tests for portfolio summary to proto conversion."""
 
-    def test_portfolio_summary_fields(self, mock_portfolio_summary, test_tenant_id):
+    def test_portfolio_summary_fields(
+        self, mock_portfolio_summary: MagicMock, test_tenant_id: UUID
+    ) -> None:
         """Test portfolio summary has all required fields."""
         summary = mock_portfolio_summary
 
@@ -139,7 +141,7 @@ class TestPortfolioSummaryConversion:
         assert summary.market_value == Decimal("75000.00")
         assert summary.positions_count == 5
 
-    def test_portfolio_pnl_calculation(self, mock_portfolio_summary):
+    def test_portfolio_pnl_calculation(self, mock_portfolio_summary: MagicMock) -> None:
         """Test PnL calculation from summary."""
         summary = mock_portfolio_summary
 
@@ -153,7 +155,7 @@ class TestPortfolioSummaryConversion:
 class TestPositionConversion:
     """Tests for position to proto conversion."""
 
-    def test_position_fields(self, mock_position):
+    def test_position_fields(self, mock_position: MagicMock) -> None:
         """Test position has all required fields."""
         pos = mock_position
 
@@ -162,7 +164,7 @@ class TestPositionConversion:
         assert pos.qty == Decimal("100")
         assert pos.market_value == Decimal("15500.00")
 
-    def test_position_pnl(self, mock_position):
+    def test_position_pnl(self, mock_position: MagicMock) -> None:
         """Test position PnL fields."""
         pos = mock_position
 
@@ -176,7 +178,7 @@ class TestPositionConversion:
 class TestTransactionConversion:
     """Tests for transaction to proto conversion."""
 
-    def test_transaction_fields(self, mock_transaction, test_tenant_id):
+    def test_transaction_fields(self, mock_transaction: MagicMock, test_tenant_id: UUID) -> None:
         """Test transaction has all required fields."""
         txn = mock_transaction
 
@@ -186,7 +188,7 @@ class TestTransactionConversion:
         assert txn.price == Decimal("150.00")
         assert txn.amount == Decimal("1500.00")
 
-    def test_transaction_fees(self, mock_transaction):
+    def test_transaction_fees(self, mock_transaction: MagicMock) -> None:
         """Test transaction fees field."""
         txn = mock_transaction
 
@@ -199,7 +201,7 @@ class TestTransactionConversion:
 class TestAssetAllocation:
     """Tests for asset allocation calculation."""
 
-    def test_allocation_percentage_calculation(self, mock_position):
+    def test_allocation_percentage_calculation(self, mock_position: MagicMock) -> None:
         """Test allocation percentage calculation."""
         total_value = Decimal("100000.00")
         position_value = mock_position.market_value
@@ -208,9 +210,9 @@ class TestAssetAllocation:
 
         assert pct == Decimal("15.5")
 
-    def test_allocation_empty_positions(self):
+    def test_allocation_empty_positions(self) -> None:
         """Test allocation with no positions."""
-        positions = []
+        positions: list[MagicMock] = []
         total_value = sum(p.market_value for p in positions) if positions else Decimal("0")
 
         assert total_value == Decimal("0")
@@ -222,7 +224,7 @@ class TestAssetAllocation:
 class TestPagination:
     """Tests for pagination logic."""
 
-    def test_total_pages_calculation(self):
+    def test_total_pages_calculation(self) -> None:
         """Test total pages calculation."""
         total = 50
         page_size = 20
@@ -231,7 +233,7 @@ class TestPagination:
 
         assert total_pages == 3
 
-    def test_total_pages_exact_division(self):
+    def test_total_pages_exact_division(self) -> None:
         """Test total pages when divides exactly."""
         total = 40
         page_size = 20
@@ -240,7 +242,7 @@ class TestPagination:
 
         assert total_pages == 2
 
-    def test_total_pages_zero_items(self):
+    def test_total_pages_zero_items(self) -> None:
         """Test total pages with zero items."""
         total = 0
         page_size = 20
@@ -249,7 +251,7 @@ class TestPagination:
 
         assert total_pages == 1
 
-    def test_has_next_page(self):
+    def test_has_next_page(self) -> None:
         """Test has_next calculation."""
         page = 1
         total_pages = 3
@@ -258,7 +260,7 @@ class TestPagination:
 
         assert has_next is True
 
-    def test_has_previous_page(self):
+    def test_has_previous_page(self) -> None:
         """Test has_previous calculation."""
         page = 2
 
@@ -273,7 +275,7 @@ class TestPagination:
 class TestPerformanceMetrics:
     """Tests for performance metrics structure."""
 
-    def test_metrics_fields(self):
+    def test_metrics_fields(self) -> None:
         """Test performance metrics has expected fields."""
         metrics = {
             "total_return": Decimal("10.5"),
@@ -292,14 +294,14 @@ class TestPerformanceMetrics:
         assert "sharpe_ratio" in metrics
         assert "max_drawdown" in metrics
 
-    def test_metrics_types(self):
+    def test_metrics_types(self) -> None:
         """Test performance metrics are Decimal type."""
         metrics = {
             "total_return": Decimal("10.5"),
             "volatility": Decimal("15.2"),
         }
 
-        for key, value in metrics.items():
+        for value in metrics.values():
             assert isinstance(value, Decimal)
 
 
@@ -309,7 +311,7 @@ class TestPerformanceMetrics:
 class TestSyncPortfolio:
     """Tests for sync portfolio operation."""
 
-    def test_sync_returns_position_count(self, mock_position):
+    def test_sync_returns_position_count(self, mock_position: MagicMock) -> None:
         """Test sync returns correct position count."""
         positions = [mock_position, mock_position]
 
@@ -317,9 +319,9 @@ class TestSyncPortfolio:
 
         assert positions_synced == 2
 
-    def test_sync_empty_positions(self):
+    def test_sync_empty_positions(self) -> None:
         """Test sync with no positions."""
-        positions = []
+        positions: list[MagicMock] = []
 
         positions_synced = len(positions)
 

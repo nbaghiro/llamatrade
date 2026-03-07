@@ -151,9 +151,14 @@ class SMSChannel:
                     )
 
                 # Handle error response
-                error_data = response.json() if response.content else {}
+                error_data: dict[str, object] = response.json() if response.content else {}
                 error_code = str(error_data.get("code", response.status_code))
-                error_message = error_data.get("message", f"HTTP {response.status_code}")
+                raw_error_message = error_data.get("message")
+                error_message = (
+                    str(raw_error_message)
+                    if raw_error_message is not None
+                    else f"HTTP {response.status_code}"
+                )
 
                 logger.error(f"Twilio API error: {error_code} - {error_message}")
                 return SMSResult(

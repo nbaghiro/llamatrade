@@ -4,18 +4,17 @@ import logging
 from uuid import UUID
 
 from fastapi import Depends
-from llamatrade_db.models import Plan, Subscription
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from llamatrade_db.models import Plan, Subscription
+from llamatrade_proto.generated import billing_pb2
+
 from src.models import (
-    BillingCycle,
     PlanResponse,
-    PlanTier,
     SubscriptionCreateRequest,
     SubscriptionResponse,
-    SubscriptionStatus,
 )
 from src.services.database import get_db
 from src.stripe.client import StripeClient, StripeError, get_stripe_client
@@ -23,12 +22,28 @@ from src.stripe.client import StripeClient, StripeError, get_stripe_client
 logger = logging.getLogger(__name__)
 
 
+def _stripe_status_to_proto(status: str) -> int:
+    """Convert Stripe subscription status string to proto int constant."""
+    mapping: dict[str, int] = {
+        "active": billing_pb2.SUBSCRIPTION_STATUS_ACTIVE,
+        "past_due": billing_pb2.SUBSCRIPTION_STATUS_PAST_DUE,
+        "canceled": billing_pb2.SUBSCRIPTION_STATUS_CANCELED,
+        "cancelled": billing_pb2.SUBSCRIPTION_STATUS_CANCELED,  # British spelling
+        "trialing": billing_pb2.SUBSCRIPTION_STATUS_TRIALING,
+        "paused": billing_pb2.SUBSCRIPTION_STATUS_PAUSED,
+        "incomplete": billing_pb2.SUBSCRIPTION_STATUS_PAST_DUE,  # Map to past_due
+        "incomplete_expired": billing_pb2.SUBSCRIPTION_STATUS_CANCELED,
+        "unpaid": billing_pb2.SUBSCRIPTION_STATUS_PAST_DUE,
+    }
+    return mapping.get(status.lower()) or billing_pb2.SUBSCRIPTION_STATUS_UNSPECIFIED
+
+
 # Default plans - used when database plans are not available
 DEFAULT_PLANS = [
     PlanResponse(
         id="free",
         name="Free",
-        tier=PlanTier.FREE,
+        tier=billing_pb2.PLAN_TIER_FREE,
         price_monthly=0,
         price_yearly=0,
         features={
@@ -50,7 +65,7 @@ DEFAULT_PLANS = [
     PlanResponse(
         id="starter",
         name="Starter",
-        tier=PlanTier.STARTER,
+        tier=billing_pb2.PLAN_TIER_STARTER,
         price_monthly=29,
         price_yearly=290,
         features={
@@ -72,7 +87,7 @@ DEFAULT_PLANS = [
     PlanResponse(
         id="pro",
         name="Pro",
-        tier=PlanTier.PRO,
+        tier=billing_pb2.PLAN_TIER_PRO,
         price_monthly=99,
         price_yearly=990,
         features={
@@ -149,14 +164,17 @@ class BillingService:
 
     def _plan_to_response(self, plan: Plan) -> PlanResponse:
         """Convert Plan model to PlanResponse."""
+        # Explicitly cast the dict types from the database model
+        features: dict[str, bool] = plan.features if plan.features else {}
+        limits: dict[str, int | None] = plan.limits if plan.limits else {}
         return PlanResponse(
             id=plan.name,
             name=plan.display_name,
-            tier=PlanTier(plan.tier),
+            tier=plan.tier,
             price_monthly=float(plan.price_monthly),
             price_yearly=float(plan.price_yearly or plan.price_monthly * 10),
-            features=plan.features or {},
-            limits=plan.limits or {},
+            features=features,
+            limits=limits,
             trial_days=plan.trial_days,
         )
 
@@ -165,7 +183,7 @@ class BillingService:
         try:
             UUID(value)
             return True
-        except (ValueError, AttributeError):
+        except ValueError, AttributeError:
             return False
 
     # ===================
@@ -212,7 +230,7 @@ class BillingService:
         # Get the Stripe price ID based on billing cycle
         price_id = (
             plan_db.stripe_price_id_monthly
-            if request.billing_cycle == BillingCycle.MONTHLY
+            if request.billing_cycle == billing_pb2.BILLING_INTERVAL_MONTHLY
             else plan_db.stripe_price_id_yearly
         )
         if not price_id:
@@ -241,7 +259,7 @@ class BillingService:
             tenant_id=tenant_id,
             plan_id=plan_db.id,
             status=stripe_sub.status,
-            billing_cycle=request.billing_cycle.value,
+            billing_cycle=request.billing_cycle,
             stripe_subscription_id=stripe_sub.id,
             stripe_customer_id=customer_id,
             current_period_start=stripe_sub.current_period_start,
@@ -288,8 +306,8 @@ class BillingService:
         subscription = Subscription(
             tenant_id=tenant_id,
             plan_id=plan_db.id,
-            status="active",
-            billing_cycle="monthly",
+            status=billing_pb2.SUBSCRIPTION_STATUS_ACTIVE,
+            billing_cycle=billing_pb2.BILLING_INTERVAL_MONTHLY,
             current_period_start=now,
             current_period_end=period_end,
             cancel_at_period_end=False,
@@ -353,7 +371,7 @@ class BillingService:
 
         # Update local record
         subscription.plan_id = new_plan_db.id
-        subscription.status = stripe_sub.status
+        subscription.status = _stripe_status_to_proto(stripe_sub.status)
         subscription.current_period_start = stripe_sub.current_period_start
         subscription.current_period_end = stripe_sub.current_period_end
 
@@ -392,7 +410,7 @@ class BillingService:
         if at_period_end:
             subscription.cancel_at_period_end = True
         else:
-            subscription.status = "cancelled"
+            subscription.status = billing_pb2.SUBSCRIPTION_STATUS_CANCELED
             from datetime import UTC, datetime
 
             subscription.canceled_at = datetime.now(UTC)
@@ -446,8 +464,8 @@ class BillingService:
             id=subscription.id,
             tenant_id=subscription.tenant_id,
             plan=plan_response,
-            status=SubscriptionStatus(subscription.status),
-            billing_cycle=BillingCycle(subscription.billing_cycle),
+            status=subscription.status,
+            billing_cycle=subscription.billing_cycle,
             current_period_start=subscription.current_period_start,
             current_period_end=subscription.current_period_end,
             cancel_at_period_end=subscription.cancel_at_period_end,
@@ -471,7 +489,7 @@ class BillingService:
         subscription = result.scalar_one_or_none()
 
         if subscription:
-            subscription.status = status
+            subscription.status = _stripe_status_to_proto(status)
             await self.db.commit()
 
 

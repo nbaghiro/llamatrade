@@ -20,7 +20,7 @@ try:
 except ImportError:
     # Running service tests independently - fixtures not needed
     pytest_plugins = []
-from collections.abc import AsyncGenerator, Generator
+from collections.abc import Generator
 
 import pytest
 from testcontainers.postgres import PostgresContainer
@@ -28,7 +28,7 @@ from testcontainers.redis import RedisContainer
 
 
 @pytest.fixture(scope="session")
-def postgres_container() -> Generator[PostgresContainer, None, None]:
+def postgres_container() -> Generator[PostgresContainer]:
     """Start PostgreSQL container for the test session.
 
     Uses testcontainers to automatically manage container lifecycle.
@@ -45,7 +45,7 @@ def postgres_container() -> Generator[PostgresContainer, None, None]:
 
 
 @pytest.fixture(scope="session")
-def redis_container() -> Generator[RedisContainer, None, None]:
+def redis_container() -> Generator[RedisContainer]:
     """Start Redis container for the test session."""
     with RedisContainer(image="redis:7-alpine") as redis:
         yield redis
@@ -72,7 +72,7 @@ def redis_url(redis_container: RedisContainer) -> str:
 
 
 @pytest.fixture(scope="session", autouse=True)
-def set_test_environment(database_url: str, redis_url: str) -> Generator[None, None, None]:
+def set_test_environment(database_url: str, redis_url: str) -> Generator[None]:
     """Set environment variables for test containers.
 
     This fixture is autouse=True so it runs automatically for all tests.

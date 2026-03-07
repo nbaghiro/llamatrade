@@ -10,7 +10,7 @@ import asyncio
 import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import UTC, datetime
 from enum import StrEnum
 from typing import TypedDict
 
@@ -232,7 +232,9 @@ class HealthChecker:
         router = APIRouter(tags=["Health"])
 
         @router.get("/health", response_model=HealthCheckResponse)
-        async def health_check(response: Response) -> HealthCheckResponse:
+        async def health_check(  # pyright: ignore[reportUnusedFunction]
+            response: Response,
+        ) -> HealthCheckResponse:
             """Full health check including all dependencies."""
             status, checks = await self.check_health()
 
@@ -243,14 +245,14 @@ class HealthChecker:
 
             return HealthCheckResponse(
                 status=status,
-                timestamp=datetime.utcnow().isoformat() + "Z",
+                timestamp=datetime.now(UTC).isoformat().replace("+00:00", "Z"),
                 service=self.service_name,
                 version=self.version,
                 checks=checks,
             )
 
         @router.get("/health/live")
-        async def liveness_probe() -> dict[str, str]:
+        async def liveness_probe() -> dict[str, str]:  # pyright: ignore[reportUnusedFunction]
             """Kubernetes liveness probe.
 
             Always returns 200 if the process is running.
@@ -258,7 +260,7 @@ class HealthChecker:
             return {"status": "ok"}
 
         @router.get("/health/ready")
-        async def readiness_probe(
+        async def readiness_probe(  # pyright: ignore[reportUnusedFunction]
             response: Response,
         ) -> dict[str, str | dict[str, CheckResultDict]]:
             """Kubernetes readiness probe.
@@ -316,9 +318,9 @@ async def check_redis(redis_url: str) -> bool:
     try:
         from redis.asyncio import Redis
 
-        client = Redis.from_url(redis_url)
+        client = Redis.from_url(redis_url)  # pyright: ignore[reportUnknownMemberType]
         try:
-            await client.ping()
+            await client.ping()  # pyright: ignore[reportUnknownMemberType]
             return True
         finally:
             await client.aclose()  # type: ignore[attr-defined]

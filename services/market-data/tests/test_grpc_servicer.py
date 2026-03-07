@@ -5,6 +5,8 @@ from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from connectrpc.errors import ConnectError
+
 from src.grpc.servicer import MarketDataServicer
 from src.models import Bar, Quote, Snapshot, Trade
 
@@ -203,9 +205,9 @@ class TestGetHistoricalBars:
         mock_client = MagicMock()
         mock_client.get_bars = AsyncMock(return_value=[sample_bar])
 
-        with patch("src.grpc.servicer.get_alpaca_client", return_value=mock_client):
+        with patch("src.grpc.servicer.get_market_data_client_async", return_value=mock_client):
             request = MockGetHistoricalBarsRequest(symbol="AAPL")
-            response = await servicer.GetHistoricalBars(request, mock_context)
+            response = await servicer.get_historical_bars(request, mock_context)
 
             assert response is not None
             mock_client.get_bars.assert_called_once()
@@ -218,12 +220,12 @@ class TestGetHistoricalBars:
         mock_client = MagicMock()
         mock_client.get_bars = AsyncMock(return_value=[sample_bar])
 
-        with patch("src.grpc.servicer.get_alpaca_client", return_value=mock_client):
+        with patch("src.grpc.servicer.get_market_data_client_async", return_value=mock_client):
             request = MockGetHistoricalBarsRequest(
                 symbol="AAPL",
                 pagination=MockPagination(page_size=500),
             )
-            response = await servicer.GetHistoricalBars(request, mock_context)
+            response = await servicer.get_historical_bars(request, mock_context)
 
             assert response is not None
             call_kwargs = mock_client.get_bars.call_args.kwargs
@@ -234,13 +236,11 @@ class TestGetHistoricalBars:
         mock_client = MagicMock()
         mock_client.get_bars = AsyncMock(side_effect=Exception("API error"))
 
-        with patch("src.grpc.servicer.get_alpaca_client", return_value=mock_client):
+        with patch("src.grpc.servicer.get_market_data_client_async", return_value=mock_client):
             request = MockGetHistoricalBarsRequest(symbol="AAPL")
 
-            with pytest.raises(Exception, match="aborted"):
-                await servicer.GetHistoricalBars(request, mock_context)
-
-            mock_context.abort.assert_called_once()
+            with pytest.raises(ConnectError, match="Failed to fetch historical bars"):
+                await servicer.get_historical_bars(request, mock_context)
 
 
 # === GetMultiBars Tests ===
@@ -256,9 +256,9 @@ class TestGetMultiBars:
             return_value={"AAPL": [sample_bar], "GOOGL": [sample_bar]}
         )
 
-        with patch("src.grpc.servicer.get_alpaca_client", return_value=mock_client):
+        with patch("src.grpc.servicer.get_market_data_client_async", return_value=mock_client):
             request = MockGetMultiBarsRequest(symbols=["AAPL", "GOOGL"])
-            response = await servicer.GetMultiBars(request, mock_context)
+            response = await servicer.get_multi_bars(request, mock_context)
 
             assert response is not None
             mock_client.get_multi_bars.assert_called_once()
@@ -270,9 +270,9 @@ class TestGetMultiBars:
         mock_client = MagicMock()
         mock_client.get_multi_bars = AsyncMock(return_value={"AAPL": [sample_bar]})
 
-        with patch("src.grpc.servicer.get_alpaca_client", return_value=mock_client):
+        with patch("src.grpc.servicer.get_market_data_client_async", return_value=mock_client):
             request = MockGetMultiBarsRequest(symbols=["AAPL"], limit=500)
-            response = await servicer.GetMultiBars(request, mock_context)
+            response = await servicer.get_multi_bars(request, mock_context)
 
             assert response is not None
             call_kwargs = mock_client.get_multi_bars.call_args.kwargs
@@ -283,11 +283,11 @@ class TestGetMultiBars:
         mock_client = MagicMock()
         mock_client.get_multi_bars = AsyncMock(side_effect=Exception("API error"))
 
-        with patch("src.grpc.servicer.get_alpaca_client", return_value=mock_client):
+        with patch("src.grpc.servicer.get_market_data_client_async", return_value=mock_client):
             request = MockGetMultiBarsRequest(symbols=["AAPL"])
 
-            with pytest.raises(Exception, match="aborted"):
-                await servicer.GetMultiBars(request, mock_context)
+            with pytest.raises(ConnectError, match="Failed to fetch multi bars"):
+                await servicer.get_multi_bars(request, mock_context)
 
 
 # === GetSnapshot Tests ===
@@ -301,41 +301,40 @@ class TestGetSnapshot:
         mock_client = MagicMock()
         mock_client.get_snapshot = AsyncMock(return_value=sample_snapshot)
 
-        with patch("src.grpc.servicer.get_alpaca_client", return_value=mock_client):
+        with patch("src.grpc.servicer.get_market_data_client_async", return_value=mock_client):
             request = MockGetSnapshotRequest(symbol="AAPL")
-            response = await servicer.GetSnapshot(request, mock_context)
+            response = await servicer.get_snapshot(request, mock_context)
 
             assert response is not None
             mock_client.get_snapshot.assert_called_once_with("AAPL")
 
     async def test_get_snapshot_not_found(self, servicer, mock_context):
         """Test snapshot not found handling."""
-        import grpc
+        from connectrpc.code import Code
 
         mock_client = MagicMock()
         mock_client.get_snapshot = AsyncMock(return_value=None)
 
-        with patch("src.grpc.servicer.get_alpaca_client", return_value=mock_client):
-            request = MockGetSnapshotRequest(symbol="INVALID")
+        with patch("src.grpc.servicer.get_market_data_client_async", return_value=mock_client):
+            # Use a valid-format symbol that doesn't exist
+            request = MockGetSnapshotRequest(symbol="ZZZZZ")
 
-            with pytest.raises(Exception, match="aborted"):
-                await servicer.GetSnapshot(request, mock_context)
+            with pytest.raises(ConnectError) as exc_info:
+                await servicer.get_snapshot(request, mock_context)
 
-            # First call should be NOT_FOUND (second call is the error handler catching our mock exception)
-            first_call = mock_context.abort.call_args_list[0]
-            assert first_call[0][0] == grpc.StatusCode.NOT_FOUND
-            assert "INVALID" in first_call[0][1]
+            assert exc_info.value.code == Code.NOT_FOUND
+            assert "ZZZZZ" in str(exc_info.value)
 
     async def test_get_snapshot_error(self, servicer, mock_context):
         """Test error handling in snapshot retrieval."""
         mock_client = MagicMock()
         mock_client.get_snapshot = AsyncMock(side_effect=Exception("API error"))
 
-        with patch("src.grpc.servicer.get_alpaca_client", return_value=mock_client):
+        with patch("src.grpc.servicer.get_market_data_client_async", return_value=mock_client):
             request = MockGetSnapshotRequest(symbol="AAPL")
 
-            with pytest.raises(Exception, match="aborted"):
-                await servicer.GetSnapshot(request, mock_context)
+            with pytest.raises(ConnectError, match="Failed to fetch snapshot"):
+                await servicer.get_snapshot(request, mock_context)
 
 
 # === GetSnapshots Tests ===
@@ -351,9 +350,9 @@ class TestGetSnapshots:
             return_value={"AAPL": sample_snapshot, "GOOGL": sample_snapshot}
         )
 
-        with patch("src.grpc.servicer.get_alpaca_client", return_value=mock_client):
+        with patch("src.grpc.servicer.get_market_data_client_async", return_value=mock_client):
             request = MockGetSnapshotsRequest(symbols=["AAPL", "GOOGL"])
-            response = await servicer.GetSnapshots(request, mock_context)
+            response = await servicer.get_snapshots(request, mock_context)
 
             assert response is not None
             mock_client.get_multi_snapshots.assert_called_once_with(["AAPL", "GOOGL"])
@@ -363,11 +362,11 @@ class TestGetSnapshots:
         mock_client = MagicMock()
         mock_client.get_multi_snapshots = AsyncMock(side_effect=Exception("API error"))
 
-        with patch("src.grpc.servicer.get_alpaca_client", return_value=mock_client):
+        with patch("src.grpc.servicer.get_market_data_client_async", return_value=mock_client):
             request = MockGetSnapshotsRequest(symbols=["AAPL"])
 
-            with pytest.raises(Exception, match="aborted"):
-                await servicer.GetSnapshots(request, mock_context)
+            with pytest.raises(ConnectError, match="Failed to fetch snapshots"):
+                await servicer.get_snapshots(request, mock_context)
 
 
 # === GetMarketStatus Tests ===
@@ -378,12 +377,29 @@ class TestGetMarketStatus:
 
     async def test_get_market_status_returns_response(self, servicer, mock_context):
         """Test market status returns a valid response."""
-        request = MockGetMarketStatusRequest()
-        response = await servicer.GetMarketStatus(request, mock_context)
+        from llamatrade_alpaca import MarketClock
 
-        # The response should have a status field
-        assert response is not None
-        assert hasattr(response, "status")
+        mock_clock = MarketClock(
+            timestamp=datetime(2024, 1, 15, 14, 30, tzinfo=UTC),
+            is_open=True,
+            next_open=datetime(2024, 1, 16, 14, 30, tzinfo=UTC),
+            next_close=datetime(2024, 1, 15, 21, 0, tzinfo=UTC),
+        )
+
+        mock_trading_client = MagicMock()
+        mock_trading_client.get_clock = AsyncMock(return_value=mock_clock)
+
+        with patch(
+            "src.grpc.servicer.get_alpaca_trading_client",
+            return_value=mock_trading_client,
+        ):
+            request = MockGetMarketStatusRequest()
+            response = await servicer.get_market_status(request, mock_context)
+
+            # The response should have a status field
+            assert response is not None
+            assert hasattr(response, "status")
+            mock_trading_client.get_clock.assert_called_once()
 
 
 # === Streaming Tests ===
@@ -411,29 +427,42 @@ class TestStreamBars:
 
     async def test_stream_bars_setup(self, servicer, mock_context):
         """Test streaming bars setup and cleanup."""
+        from src.streaming.manager import StreamType
+
         mock_queue = asyncio.Queue()
         mock_manager = MagicMock()
         mock_manager.connect = AsyncMock(return_value=mock_queue)
         mock_manager.subscribe = AsyncMock()
         mock_manager.disconnect = AsyncMock()
 
-        # Set context to cancel immediately after first iteration
-        call_count = 0
-
-        def cancelled_side_effect():
-            nonlocal call_count
-            call_count += 1
-            return call_count > 1
-
-        mock_context.cancelled = MagicMock(side_effect=cancelled_side_effect)
+        # Add a message to the queue so the test doesn't block
+        bar_message = MagicMock()
+        bar_message.stream_type = StreamType.BAR
+        bar_message.symbol = "AAPL"
+        bar_message.data = {
+            "timestamp": datetime(2024, 1, 15, 14, 30, tzinfo=UTC),
+            "open": 150.0,
+            "high": 152.0,
+            "low": 149.0,
+            "close": 151.0,
+            "volume": 1000000,
+        }
+        await mock_queue.put(bar_message)
 
         with patch("src.grpc.servicer.get_stream_manager", return_value=mock_manager):
             request = MockStreamBarsRequest(symbols=["AAPL", "GOOGL"])
 
-            # Consume the generator
-            async for _ in servicer.StreamBars(request, mock_context):
-                pass
+            # Consume one message then cancel the generator
+            bars_received = []
+            gen = servicer.stream_bars(request, mock_context)
+            try:
+                bar = await gen.__anext__()
+                bars_received.append(bar)
+            finally:
+                # Properly close the generator to trigger cleanup
+                await gen.aclose()
 
+            assert len(bars_received) == 1
             # Verify connect was called
             mock_manager.connect.assert_called_once()
             # Verify subscribe was called with correct params
@@ -450,27 +479,39 @@ class TestStreamQuotes:
 
     async def test_stream_quotes_setup(self, servicer, mock_context):
         """Test streaming quotes setup and cleanup."""
+        from src.streaming.manager import StreamType
+
         mock_queue = asyncio.Queue()
         mock_manager = MagicMock()
         mock_manager.connect = AsyncMock(return_value=mock_queue)
         mock_manager.subscribe = AsyncMock()
         mock_manager.disconnect = AsyncMock()
 
-        call_count = 0
-
-        def cancelled_side_effect():
-            nonlocal call_count
-            call_count += 1
-            return call_count > 1
-
-        mock_context.cancelled = MagicMock(side_effect=cancelled_side_effect)
+        # Add a quote message to the queue
+        quote_message = MagicMock()
+        quote_message.stream_type = StreamType.QUOTE
+        quote_message.symbol = "AAPL"
+        quote_message.data = {
+            "timestamp": datetime(2024, 1, 15, 14, 30, tzinfo=UTC),
+            "bid_price": 150.0,
+            "bid_size": 100,
+            "ask_price": 150.10,
+            "ask_size": 200,
+        }
+        await mock_queue.put(quote_message)
 
         with patch("src.grpc.servicer.get_stream_manager", return_value=mock_manager):
             request = MockStreamQuotesRequest(symbols=["AAPL"])
 
-            async for _ in servicer.StreamQuotes(request, mock_context):
-                pass
+            quotes_received = []
+            gen = servicer.stream_quotes(request, mock_context)
+            try:
+                quote = await gen.__anext__()
+                quotes_received.append(quote)
+            finally:
+                await gen.aclose()
 
+            assert len(quotes_received) == 1
             mock_manager.connect.assert_called_once()
             mock_manager.subscribe.assert_called_once()
             call_kwargs = mock_manager.subscribe.call_args.kwargs
@@ -483,27 +524,39 @@ class TestStreamTrades:
 
     async def test_stream_trades_setup(self, servicer, mock_context):
         """Test streaming trades setup and cleanup."""
+        from src.streaming.manager import StreamType
+
         mock_queue = asyncio.Queue()
         mock_manager = MagicMock()
         mock_manager.connect = AsyncMock(return_value=mock_queue)
         mock_manager.subscribe = AsyncMock()
         mock_manager.disconnect = AsyncMock()
 
-        call_count = 0
-
-        def cancelled_side_effect():
-            nonlocal call_count
-            call_count += 1
-            return call_count > 1
-
-        mock_context.cancelled = MagicMock(side_effect=cancelled_side_effect)
+        # Add a trade message to the queue
+        trade_message = MagicMock()
+        trade_message.stream_type = StreamType.TRADE
+        trade_message.symbol = "AAPL"
+        trade_message.data = {
+            "timestamp": datetime(2024, 1, 15, 14, 30, tzinfo=UTC),
+            "price": 150.05,
+            "size": 100,
+            "exchange": "NASDAQ",
+            "conditions": [],
+        }
+        await mock_queue.put(trade_message)
 
         with patch("src.grpc.servicer.get_stream_manager", return_value=mock_manager):
             request = MockStreamTradesRequest(symbols=["AAPL"])
 
-            async for _ in servicer.StreamTrades(request, mock_context):
-                pass
+            trades_received = []
+            gen = servicer.stream_trades(request, mock_context)
+            try:
+                trade = await gen.__anext__()
+                trades_received.append(trade)
+            finally:
+                await gen.aclose()
 
+            assert len(trades_received) == 1
             mock_manager.connect.assert_called_once()
             mock_manager.subscribe.assert_called_once()
             call_kwargs = mock_manager.subscribe.call_args.kwargs

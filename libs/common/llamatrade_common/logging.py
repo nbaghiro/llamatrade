@@ -10,7 +10,7 @@ import json
 import logging
 import sys
 from contextvars import ContextVar, Token
-from datetime import datetime
+from datetime import UTC, datetime
 from types import TracebackType
 
 # Context variables for request-scoped values
@@ -62,7 +62,7 @@ class JSONFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
         """Format the log record as JSON."""
         log_dict: dict[str, str | dict[str, str | int] | None] = {
-            "timestamp": datetime.utcnow().isoformat() + "Z",
+            "timestamp": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
             "level": record.levelname,
             "logger": record.name,
             "message": record.getMessage(),

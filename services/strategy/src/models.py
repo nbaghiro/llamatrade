@@ -7,6 +7,54 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
+# Import proto enum descriptors for conversion helpers and constants
+from llamatrade_proto.generated.common_pb2 import (
+    EXECUTION_MODE_PAPER,
+)
+from llamatrade_proto.generated.common_pb2 import (
+    ExecutionMode as ExecutionModeEnum,
+)
+from llamatrade_proto.generated.common_pb2 import (
+    ExecutionStatus as ExecutionStatusEnum,
+)
+from llamatrade_proto.generated.strategy_pb2 import (
+    StrategyStatus as StrategyStatusEnum,
+)
+
+# Proto enum prefixes for string conversion
+_STRATEGY_STATUS_PREFIX = "STRATEGY_STATUS_"
+_EXECUTION_STATUS_PREFIX = "EXECUTION_STATUS_"
+_EXECUTION_MODE_PREFIX = "EXECUTION_MODE_"
+
+
+# ===================
+# Conversion helpers: proto int -> str (for display/API)
+# ===================
+
+
+def strategy_status_to_str(value: int) -> str:
+    """Convert StrategyStatus proto int to string."""
+    name = StrategyStatusEnum.Name(value)
+    if name.startswith(_STRATEGY_STATUS_PREFIX):
+        return name[len(_STRATEGY_STATUS_PREFIX) :].lower()
+    return name.lower()
+
+
+def execution_status_to_str(value: int) -> str:
+    """Convert ExecutionStatus proto int to string."""
+    name = ExecutionStatusEnum.Name(value)
+    if name.startswith(_EXECUTION_STATUS_PREFIX):
+        return name[len(_EXECUTION_STATUS_PREFIX) :].lower()
+    return name.lower()
+
+
+def execution_mode_to_str(value: int) -> str:
+    """Convert ExecutionMode proto int to string."""
+    name = ExecutionModeEnum.Name(value)
+    if name.startswith(_EXECUTION_MODE_PREFIX):
+        return name[len(_EXECUTION_MODE_PREFIX) :].lower()
+    return name.lower()
+
 
 # TypedDict for strategy config JSON (parsed S-expression)
 class StrategyConfigJSON(TypedDict, total=False):
@@ -46,39 +94,13 @@ class IndicatorParamInfo(TypedDict):
 
 
 class StrategyType(StrEnum):
-    """Strategy types."""
+    """Strategy types (business categorization, not proto-defined)."""
 
     TREND_FOLLOWING = "trend_following"
     MEAN_REVERSION = "mean_reversion"
     MOMENTUM = "momentum"
     BREAKOUT = "breakout"
     CUSTOM = "custom"
-
-
-class StrategyStatus(StrEnum):
-    """Strategy status."""
-
-    DRAFT = "draft"
-    ACTIVE = "active"
-    PAUSED = "paused"
-    ARCHIVED = "archived"
-
-
-class DeploymentStatus(StrEnum):
-    """Deployment lifecycle status."""
-
-    PENDING = "pending"
-    RUNNING = "running"
-    PAUSED = "paused"
-    STOPPED = "stopped"
-    ERROR = "error"
-
-
-class DeploymentEnvironment(StrEnum):
-    """Trading environment."""
-
-    PAPER = "paper"
-    LIVE = "live"
 
 
 # ===================
@@ -105,28 +127,40 @@ class StrategyCreate(BaseModel):
   :take-profit-pct 6.0)"""
         ],
     )
+    parameters: dict[str, str] | None = Field(
+        default=None,
+        description="Additional parameters (e.g., ui_state for visual builder)",
+    )
 
 
 class StrategyUpdate(BaseModel):
     """Schema for updating a strategy."""
 
-    name: str | None = Field(None, min_length=1, max_length=255)
+    name: str | None = Field(default=None, min_length=1, max_length=255)
     description: str | None = None
-    status: StrategyStatus | None = None
+    status: int | None = None  # StrategyStatus proto int
     config_sexpr: str | None = Field(
-        None,
+        default=None,
         description="New S-expression config (creates new version if changed)",
+    )
+    parameters: dict[str, str] | None = Field(
+        default=None,
+        description="Additional parameters (e.g., ui_state for visual builder)",
+    )
+    changelog: str | None = Field(
+        default=None,
+        description="Change summary for version history (only used when config_sexpr changes)",
     )
 
 
-class DeploymentCreate(BaseModel):
-    """Schema for creating a deployment."""
+class ExecutionCreate(BaseModel):
+    """Schema for creating an execution."""
 
     version: int | None = Field(
         None,
-        description="Strategy version to deploy (defaults to current_version)",
+        description="Strategy version to execute (defaults to current_version)",
     )
-    environment: DeploymentEnvironment = DeploymentEnvironment.PAPER
+    mode: int = EXECUTION_MODE_PAPER  # ExecutionMode proto int
     config_override: ConfigOverride | None = Field(
         None,
         description="Runtime config overrides (e.g., different symbols)",
@@ -145,7 +179,7 @@ class StrategyResponse(BaseModel):
     name: str
     description: str | None
     strategy_type: StrategyType
-    status: StrategyStatus
+    status: int  # StrategyStatus proto int
     current_version: int
     created_at: datetime
     updated_at: datetime
@@ -158,6 +192,7 @@ class StrategyDetailResponse(StrategyResponse):
     config_json: StrategyConfigJSON
     symbols: list[str]
     timeframe: str
+    parameters: dict[str, str] = Field(default_factory=dict)
 
 
 class StrategyVersionResponse(BaseModel):
@@ -170,16 +205,17 @@ class StrategyVersionResponse(BaseModel):
     timeframe: str
     changelog: str | None
     created_at: datetime
+    parameters: dict[str, str] = Field(default_factory=dict)
 
 
-class DeploymentResponse(BaseModel):
-    """Deployment info."""
+class ExecutionResponse(BaseModel):
+    """Execution info."""
 
     id: UUID
     strategy_id: UUID
     version: int
-    environment: DeploymentEnvironment
-    status: DeploymentStatus
+    mode: int  # ExecutionMode proto int
+    status: int  # ExecutionStatus proto int
     started_at: datetime | None
     stopped_at: datetime | None
     config_override: ConfigOverride | None
@@ -193,10 +229,12 @@ class ValidationResult(BaseModel):
     valid: bool
     errors: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
+    detected_symbols: list[str] = Field(default_factory=list)
+    detected_indicators: list[str] = Field(default_factory=list)
 
 
 # ===================
-# Legacy Support (for backwards compatibility)
+# Indicator Types
 # ===================
 
 

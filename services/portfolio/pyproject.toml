@@ -2,13 +2,14 @@
 name = "llamatrade-portfolio"
 version = "0.1.0"
 description = "LlamaTrade Portfolio Service"
-requires-python = ">=3.12"
+requires-python = ">=3.14"
 dependencies = [
     "fastapi>=0.109.0",
     "uvicorn[standard]>=0.27.0",
     "pydantic>=2.5.0",
     "llamatrade-common",
     "llamatrade-db",
+    "llamatrade-proto",
     "numpy>=1.26.0",
     "httpx>=0.26.0",
 ]
@@ -35,7 +36,10 @@ testpaths = ["tests"]
 
 [tool.ruff]
 line-length = 100
-target-version = "py312"
+target-version = "py314"
+extend = "../../pyproject.toml"
 
-[tool.ruff.lint]
-select = ["E", "F", "I", "N", "W", "UP"]
+[tool.pyright]
+venvPath = "../.."
+venv = ".venv"
+pythonVersion = "3.14"

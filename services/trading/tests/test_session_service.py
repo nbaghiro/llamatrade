@@ -3,7 +3,15 @@
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from src.models import SessionStatus, TradingMode
+
+from llamatrade_proto.generated.common_pb2 import (
+    EXECUTION_MODE_PAPER,
+    EXECUTION_STATUS_ERROR,
+    EXECUTION_STATUS_PAUSED,
+    EXECUTION_STATUS_RUNNING,
+    EXECUTION_STATUS_STOPPED,
+)
+
 from src.services.session_service import SessionService
 
 
@@ -49,14 +57,14 @@ class TestStartSession:
             strategy_id=strategy_id,
             strategy_version=None,
             name="Test Session",
-            mode=TradingMode.PAPER,
+            mode=EXECUTION_MODE_PAPER,
             credentials_id=credentials_id,
         )
 
         assert result is not None
         assert result.strategy_id == strategy_id
-        assert result.mode == TradingMode.PAPER
-        assert result.status == SessionStatus.ACTIVE
+        assert result.mode == EXECUTION_MODE_PAPER
+        assert result.status == EXECUTION_STATUS_RUNNING
         mock_db.add.assert_called_once()
         mock_db.commit.assert_called()
 
@@ -81,7 +89,7 @@ class TestStartSession:
                 strategy_id=strategy_id,
                 strategy_version=None,
                 name="Test Session",
-                mode=TradingMode.PAPER,
+                mode=EXECUTION_MODE_PAPER,
                 credentials_id=credentials_id,
             )
 
@@ -112,7 +120,7 @@ class TestStartSession:
                 strategy_id=strategy_id,
                 strategy_version=None,
                 name="Test Session",
-                mode=TradingMode.PAPER,
+                mode=EXECUTION_MODE_PAPER,
                 credentials_id=credentials_id,
             )
 
@@ -183,7 +191,7 @@ class TestStopSession:
         )
 
         assert result is not None
-        assert mock_trading_session.status == "stopped"
+        assert mock_trading_session.status == EXECUTION_STATUS_STOPPED
         assert mock_trading_session.stopped_at is not None
         mock_db.commit.assert_called()
 
@@ -196,7 +204,7 @@ class TestStopSession:
         session_id,
     ):
         """Test stopping an already stopped session (no-op)."""
-        mock_trading_session.status = "stopped"
+        mock_trading_session.status = EXECUTION_STATUS_STOPPED
         mock_result = MagicMock()
         mock_result.scalar_one_or_none.return_value = mock_trading_session
         mock_db.execute.return_value = mock_result
@@ -231,7 +239,7 @@ class TestPauseResumeSession:
         )
 
         assert result is not None
-        assert mock_trading_session.status == "paused"
+        assert mock_trading_session.status == EXECUTION_STATUS_PAUSED
         mock_db.commit.assert_called()
 
     async def test_pause_non_active_session_error(
@@ -243,7 +251,7 @@ class TestPauseResumeSession:
         session_id,
     ):
         """Test error when pausing a non-active session."""
-        mock_trading_session.status = "stopped"
+        mock_trading_session.status = EXECUTION_STATUS_STOPPED
         mock_result = MagicMock()
         mock_result.scalar_one_or_none.return_value = mock_trading_session
         mock_db.execute.return_value = mock_result
@@ -263,7 +271,7 @@ class TestPauseResumeSession:
         session_id,
     ):
         """Test resuming a paused session."""
-        mock_trading_session.status = "paused"
+        mock_trading_session.status = EXECUTION_STATUS_PAUSED
         mock_result = MagicMock()
         mock_result.scalar_one_or_none.return_value = mock_trading_session
         mock_db.execute.return_value = mock_result
@@ -274,7 +282,7 @@ class TestPauseResumeSession:
         )
 
         assert result is not None
-        assert mock_trading_session.status == "active"
+        assert mock_trading_session.status == EXECUTION_STATUS_RUNNING
         mock_db.commit.assert_called()
 
     async def test_resume_non_paused_session_error(
@@ -320,7 +328,7 @@ class TestSetError:
         )
 
         assert result is not None
-        assert mock_trading_session.status == "error"
+        assert mock_trading_session.status == EXECUTION_STATUS_ERROR
         assert mock_trading_session.error_message == "Connection lost"
         assert mock_trading_session.stopped_at is not None
         mock_db.commit.assert_called()

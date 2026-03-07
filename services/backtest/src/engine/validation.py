@@ -44,7 +44,7 @@ class ValidationResult:
     """Result of data validation."""
 
     valid: bool
-    issues: list[ValidationIssue] = field(default_factory=list)
+    issues: list[ValidationIssue] = field(default_factory=lambda: [])
     symbols_checked: int = 0
     bars_checked: int = 0
 
@@ -258,33 +258,31 @@ class DataValidator:
             prev_c = prev_bar["close"]
 
             # Check timestamp ordering
-            if ts is not None and prev_ts is not None:
-                if ts <= prev_ts:
-                    issues.append(
-                        ValidationIssue(
-                            severity=ValidationSeverity.ERROR,
-                            symbol=symbol,
-                            bar_index=index,
-                            timestamp=ts,
-                            field="timestamp",
-                            message=f"Timestamp not increasing (prev: {prev_ts})",
-                        )
+            if ts <= prev_ts:
+                issues.append(
+                    ValidationIssue(
+                        severity=ValidationSeverity.ERROR,
+                        symbol=symbol,
+                        bar_index=index,
+                        timestamp=ts,
+                        field="timestamp",
+                        message=f"Timestamp not increasing (prev: {prev_ts})",
                     )
+                )
 
-                # Check for gaps
-                if isinstance(ts, datetime) and isinstance(prev_ts, datetime):
-                    gap = ts - prev_ts
-                    if gap > timedelta(days=self.max_gap_days):
-                        issues.append(
-                            ValidationIssue(
-                                severity=ValidationSeverity.WARNING,
-                                symbol=symbol,
-                                bar_index=index,
-                                timestamp=ts,
-                                field="timestamp",
-                                message=f"Large gap in data ({gap.days} days)",
-                            )
-                        )
+            # Check for gaps
+            gap = ts - prev_ts
+            if gap > timedelta(days=self.max_gap_days):
+                issues.append(
+                    ValidationIssue(
+                        severity=ValidationSeverity.WARNING,
+                        symbol=symbol,
+                        bar_index=index,
+                        timestamp=ts,
+                        field="timestamp",
+                        message=f"Large gap in data ({gap.days} days)",
+                    )
+                )
 
             # Check for extreme price changes
             if prev_c > 0:

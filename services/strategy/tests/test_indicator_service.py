@@ -1,6 +1,9 @@
 """Tests for IndicatorService to improve coverage."""
 
+# pyright: reportPrivateUsage=false
+
 import pytest
+
 from src.models import IndicatorType
 from src.services.indicator_service import (
     CATEGORIES,
@@ -14,7 +17,7 @@ from src.services.indicator_service import (
 
 
 @pytest.fixture
-def indicator_service():
+def indicator_service() -> IndicatorService:
     """Create an IndicatorService instance."""
     return IndicatorService()
 
@@ -25,7 +28,7 @@ def indicator_service():
 class TestParamHelper:
     """Tests for _param helper function."""
 
-    def test_param_basic(self):
+    def test_param_basic(self) -> None:
         """Test creating a basic parameter."""
         param = _param("period", "int", 20)
 
@@ -36,7 +39,7 @@ class TestParamHelper:
         assert param["max"] is None
         assert param["description"] == ""
 
-    def test_param_with_range(self):
+    def test_param_with_range(self) -> None:
         """Test creating a parameter with min/max range."""
         param = _param("period", "int", 14, 1, 100, "Lookback period")
 
@@ -45,7 +48,7 @@ class TestParamHelper:
         assert param["max"] == 100
         assert param["description"] == "Lookback period"
 
-    def test_param_float_type(self):
+    def test_param_float_type(self) -> None:
         """Test creating a float parameter."""
         param = _param("std_dev", "float", 2.0, 0.5, 5.0, "Standard deviation")
 
@@ -61,7 +64,7 @@ class TestParamHelper:
 class TestIndicatorsDict:
     """Tests for INDICATORS constant dict."""
 
-    def test_contains_all_indicator_types(self):
+    def test_contains_all_indicator_types(self) -> None:
         """Test that INDICATORS contains entries for all expected types."""
         expected_types = [
             IndicatorType.SMA,
@@ -75,7 +78,7 @@ class TestIndicatorsDict:
         for indicator_type in expected_types:
             assert indicator_type in INDICATORS
 
-    def test_sma_indicator_info(self):
+    def test_sma_indicator_info(self) -> None:
         """Test SMA indicator metadata."""
         sma = INDICATORS[IndicatorType.SMA]
 
@@ -86,7 +89,7 @@ class TestIndicatorsDict:
         assert sma.params[0]["name"] == "period"
         assert sma.outputs == ["value"]
 
-    def test_macd_indicator_has_multiple_params(self):
+    def test_macd_indicator_has_multiple_params(self) -> None:
         """Test MACD indicator has multiple parameters."""
         macd = INDICATORS[IndicatorType.MACD]
 
@@ -96,13 +99,13 @@ class TestIndicatorsDict:
         assert "slow_period" in param_names
         assert "signal_period" in param_names
 
-    def test_macd_indicator_has_multiple_outputs(self):
+    def test_macd_indicator_has_multiple_outputs(self) -> None:
         """Test MACD indicator has multiple outputs."""
         macd = INDICATORS[IndicatorType.MACD]
 
         assert macd.outputs == ["line", "signal", "histogram"]
 
-    def test_bollinger_bands_params(self):
+    def test_bollinger_bands_params(self) -> None:
         """Test Bollinger Bands has correct params."""
         bb = INDICATORS[IndicatorType.BOLLINGER_BANDS]
 
@@ -112,7 +115,7 @@ class TestIndicatorsDict:
         assert bb.params[1]["type"] == "float"
         assert bb.outputs == ["upper", "middle", "lower"]
 
-    def test_volume_indicators_exist(self):
+    def test_volume_indicators_exist(self) -> None:
         """Test volume category indicators."""
         obv = INDICATORS[IndicatorType.OBV]
         mfi = INDICATORS[IndicatorType.MFI]
@@ -122,7 +125,7 @@ class TestIndicatorsDict:
         assert mfi.category == "volume"
         assert vwap.category == "volume"
 
-    def test_obv_has_no_params(self):
+    def test_obv_has_no_params(self) -> None:
         """Test OBV has no parameters."""
         obv = INDICATORS[IndicatorType.OBV]
 
@@ -135,7 +138,7 @@ class TestIndicatorsDict:
 class TestCategories:
     """Tests for CATEGORIES constant."""
 
-    def test_categories_contains_expected(self):
+    def test_categories_contains_expected(self) -> None:
         """Test CATEGORIES contains all expected categories."""
         assert "trend" in CATEGORIES
         assert "momentum" in CATEGORIES
@@ -143,7 +146,7 @@ class TestCategories:
         assert "volume" in CATEGORIES
         assert "channel" in CATEGORIES
 
-    def test_categories_count(self):
+    def test_categories_count(self) -> None:
         """Test CATEGORIES has expected count."""
         assert len(CATEGORIES) == 5
 
@@ -154,13 +157,15 @@ class TestCategories:
 class TestListIndicators:
     """Tests for list_indicators method."""
 
-    async def test_list_all_indicators(self, indicator_service):
+    async def test_list_all_indicators(self, indicator_service: IndicatorService) -> None:
         """Test listing all indicators."""
         indicators = await indicator_service.list_indicators()
 
         assert len(indicators) == len(INDICATORS)
 
-    async def test_list_indicators_filter_by_category(self, indicator_service):
+    async def test_list_indicators_filter_by_category(
+        self, indicator_service: IndicatorService
+    ) -> None:
         """Test filtering indicators by category."""
         trend_indicators = await indicator_service.list_indicators(category="trend")
 
@@ -168,21 +173,27 @@ class TestListIndicators:
         for indicator in trend_indicators:
             assert indicator.category == "trend"
 
-    async def test_list_indicators_momentum_category(self, indicator_service):
+    async def test_list_indicators_momentum_category(
+        self, indicator_service: IndicatorService
+    ) -> None:
         """Test filtering by momentum category."""
         momentum_indicators = await indicator_service.list_indicators(category="momentum")
 
         assert len(momentum_indicators) > 0
         assert all(i.category == "momentum" for i in momentum_indicators)
 
-    async def test_list_indicators_volatility_category(self, indicator_service):
+    async def test_list_indicators_volatility_category(
+        self, indicator_service: IndicatorService
+    ) -> None:
         """Test filtering by volatility category."""
         volatility_indicators = await indicator_service.list_indicators(category="volatility")
 
         assert len(volatility_indicators) > 0
         assert all(i.category == "volatility" for i in volatility_indicators)
 
-    async def test_list_indicators_empty_category(self, indicator_service):
+    async def test_list_indicators_empty_category(
+        self, indicator_service: IndicatorService
+    ) -> None:
         """Test filtering by non-existent category returns empty."""
         indicators = await indicator_service.list_indicators(category="nonexistent")
 
@@ -195,7 +206,7 @@ class TestListIndicators:
 class TestGetIndicator:
     """Tests for get_indicator method."""
 
-    async def test_get_indicator_found(self, indicator_service):
+    async def test_get_indicator_found(self, indicator_service: IndicatorService) -> None:
         """Test getting an existing indicator."""
         indicator = await indicator_service.get_indicator(IndicatorType.RSI)
 
@@ -204,7 +215,7 @@ class TestGetIndicator:
         assert indicator.name == "Relative Strength Index"
         assert indicator.category == "momentum"
 
-    async def test_get_indicator_not_found(self, indicator_service):
+    async def test_get_indicator_not_found(self, indicator_service: IndicatorService) -> None:
         """Test getting a non-existent indicator returns None."""
         # Use a mock type that doesn't exist in the dict
         # Since IndicatorType is an enum, we need to test with all valid types
@@ -216,7 +227,7 @@ class TestGetIndicator:
             else:
                 assert result is None
 
-    async def test_get_stochastic_indicator(self, indicator_service):
+    async def test_get_stochastic_indicator(self, indicator_service: IndicatorService) -> None:
         """Test getting Stochastic indicator details."""
         indicator = await indicator_service.get_indicator(IndicatorType.STOCHASTIC)
 
@@ -231,7 +242,7 @@ class TestGetIndicator:
 class TestListCategories:
     """Tests for list_categories method."""
 
-    async def test_list_categories(self, indicator_service):
+    async def test_list_categories(self, indicator_service: IndicatorService) -> None:
         """Test listing categories."""
         categories = await indicator_service.list_categories()
 
@@ -245,7 +256,7 @@ class TestListCategories:
 class TestGetIndicatorServiceDependency:
     """Tests for get_indicator_service dependency."""
 
-    def test_returns_service_instance(self):
+    def test_returns_service_instance(self) -> None:
         """Test that get_indicator_service returns an IndicatorService."""
         service = get_indicator_service()
 

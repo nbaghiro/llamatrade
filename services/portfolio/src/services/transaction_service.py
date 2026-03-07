@@ -5,12 +5,17 @@ from decimal import Decimal
 from uuid import UUID
 
 from fastapi import Depends
-from llamatrade_db import get_db
-from llamatrade_db.models.portfolio import Transaction
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.models import TransactionCreate, TransactionResponse, TransactionType
+from llamatrade_db import get_db
+from llamatrade_db.models.portfolio import Transaction
+from llamatrade_proto.generated.portfolio_pb2 import (
+    TRANSACTION_TYPE_BUY,
+    TRANSACTION_TYPE_SELL,
+)
+
+from src.models import TransactionCreate, TransactionResponse, transaction_type_to_str
 
 
 class TransactionService:
@@ -22,7 +27,7 @@ class TransactionService:
     async def list_transactions(
         self,
         tenant_id: UUID,
-        type: TransactionType | None,
+        type: int | None,  # TransactionType proto value
         symbol: str | None,
         page: int,
         page_size: int,
@@ -42,9 +47,11 @@ class TransactionService:
         # Build base query
         base_stmt = select(Transaction).where(Transaction.tenant_id == tenant_id)
 
-        # Apply type filter
+        # Apply type filter - convert proto int to string for DB query
         if type:
-            base_stmt = base_stmt.where(Transaction.transaction_type == type.value)
+            base_stmt = base_stmt.where(
+                Transaction.transaction_type == transaction_type_to_str(type)
+            )
 
         # Apply symbol filter
         if symbol:
@@ -116,7 +123,7 @@ class TransactionService:
             tenant_id=tenant_id,
             session_id=session_id,
             order_id=order_id,
-            transaction_type=data.type.value,
+            transaction_type=transaction_type_to_str(data.type),
             symbol=data.symbol.upper() if data.symbol else None,
             side=self._get_side_from_type(data.type),
             qty=Decimal(str(data.qty)) if data.qty else None,
@@ -196,30 +203,55 @@ class TransactionService:
 
     def _to_response(self, tx: Transaction) -> TransactionResponse:
         """Convert Transaction ORM object to response."""
-        # Map transaction_type to TransactionType enum
-        try:
-            tx_type = TransactionType(tx.transaction_type)
-        except ValueError:
-            # Default to buy if unknown type
-            tx_type = TransactionType.BUY
+        # Map string transaction_type to proto int
+        tx_type = self._str_to_proto_type(tx.transaction_type)
 
         return TransactionResponse(
             id=tx.id,
+            tenant_id=tx.tenant_id,
             type=tx_type,
             symbol=tx.symbol,
-            qty=float(tx.qty) if tx.qty else None,
+            quantity=float(tx.qty) if tx.qty else None,
             price=float(tx.price) if tx.price else None,
             amount=float(tx.amount),
-            commission=float(tx.fees),
+            fees=float(tx.fees),
             description=tx.description,
-            executed_at=tx.transaction_date,
+            reference_id=None,  # Not stored in DB model
+            created_at=tx.transaction_date,
         )
 
-    def _get_side_from_type(self, tx_type: TransactionType) -> str | None:
-        """Get side (buy/sell) from transaction type."""
-        if tx_type == TransactionType.BUY:
+    def _str_to_proto_type(self, tx_type_str: str) -> int:
+        """Convert string transaction type to proto int."""
+        from llamatrade_proto.generated.portfolio_pb2 import (
+            TRANSACTION_TYPE_BUY,
+            TRANSACTION_TYPE_DEPOSIT,
+            TRANSACTION_TYPE_DIVIDEND,
+            TRANSACTION_TYPE_FEE,
+            TRANSACTION_TYPE_INTEREST,
+            TRANSACTION_TYPE_SELL,
+            TRANSACTION_TYPE_TRANSFER_IN,
+            TRANSACTION_TYPE_TRANSFER_OUT,
+            TRANSACTION_TYPE_WITHDRAWAL,
+        )
+
+        mapping = {
+            "buy": TRANSACTION_TYPE_BUY,
+            "sell": TRANSACTION_TYPE_SELL,
+            "deposit": TRANSACTION_TYPE_DEPOSIT,
+            "withdrawal": TRANSACTION_TYPE_WITHDRAWAL,
+            "dividend": TRANSACTION_TYPE_DIVIDEND,
+            "interest": TRANSACTION_TYPE_INTEREST,
+            "fee": TRANSACTION_TYPE_FEE,
+            "transfer_in": TRANSACTION_TYPE_TRANSFER_IN,
+            "transfer_out": TRANSACTION_TYPE_TRANSFER_OUT,
+        }
+        return mapping.get(tx_type_str.lower(), TRANSACTION_TYPE_BUY)
+
+    def _get_side_from_type(self, tx_type: int) -> str | None:
+        """Get side (buy/sell) from transaction type proto value."""
+        if tx_type == TRANSACTION_TYPE_BUY:
             return "buy"
-        elif tx_type == TransactionType.SELL:
+        elif tx_type == TRANSACTION_TYPE_SELL:
             return "sell"
         return None
 

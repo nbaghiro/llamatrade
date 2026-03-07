@@ -100,7 +100,7 @@ class SessionState:
     strategy_id: UUID | None = None
     strategy_name: str | None = None
     mode: Literal["live", "paper"] | None = None
-    symbols: list[str] = field(default_factory=list)
+    symbols: list[str] = field(default_factory=lambda: list[str]())
 
     # Status
     status: str = "unknown"  # starting, active, paused, stopped, error
@@ -108,8 +108,8 @@ class SessionState:
     circuit_breaker_reason: str | None = None
 
     # Positions and orders
-    positions: dict[str, PositionState] = field(default_factory=dict)
-    orders: dict[UUID, OrderState] = field(default_factory=dict)
+    positions: dict[str, PositionState] = field(default_factory=lambda: dict[str, PositionState]())
+    orders: dict[UUID, OrderState] = field(default_factory=lambda: dict[UUID, OrderState]())
 
     # Metrics
     starting_equity: Decimal = Decimal("0")
@@ -296,7 +296,7 @@ class SessionState:
         tenant_id: UUID,
         event_store: EventStore,
         from_sequence: int = 0,
-    ) -> "SessionState":
+    ) -> SessionState:
         """Load session state by replaying events.
 
         Args:
@@ -375,7 +375,7 @@ class PositionAggregate:
         symbol: str,
         session_id: UUID,
         event_store: EventStore,
-    ) -> "PositionAggregate":
+    ) -> PositionAggregate:
         """Load position state by replaying position events."""
         position = cls(symbol=symbol)
 
@@ -391,7 +391,13 @@ class PositionAggregate:
             session_id=session_id,
             event_types=position_event_types,
         ):
-            if hasattr(event, "symbol") and event.symbol == symbol:
+            # Check if this is a position event for our symbol
+            if (
+                isinstance(
+                    event, (PositionOpened, PositionIncreased, PositionReduced, PositionClosed)
+                )
+                and event.symbol == symbol
+            ):
                 position.apply(event)
 
         return position

@@ -1,44 +1,99 @@
 """Strategy service - CRUD operations with S-expression DSL support."""
 
+from datetime import UTC
+from typing import Any, cast
 from uuid import UUID
 
 from fastapi import Depends
+from sqlalchemy import func, or_, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from llamatrade_compiler.extractor import extract_indicators, get_required_symbols
 from llamatrade_db import get_db
 from llamatrade_db.models.strategy import (
-    DeploymentEnvironment as DBDeploymentEnvironment,
-)
-from llamatrade_db.models.strategy import (
-    DeploymentStatus as DBDeploymentStatus,
-)
-from llamatrade_db.models.strategy import (
     Strategy,
-    StrategyDeployment,
+    StrategyExecution,
     StrategyVersion,
-)
-from llamatrade_db.models.strategy import (
-    StrategyStatus as DBStrategyStatus,
 )
 from llamatrade_db.models.strategy import (
     StrategyType as DBStrategyType,
 )
-from llamatrade_dsl import parse_strategy, to_json, validate_strategy
-from llamatrade_dsl.parser import ParseError
-from sqlalchemy import func, select
-from sqlalchemy.ext.asyncio import AsyncSession
+from llamatrade_dsl import ParseError, parse_strategy, to_json, validate_strategy
+from llamatrade_proto.generated.common_pb2 import (
+    EXECUTION_STATUS_ERROR,
+    EXECUTION_STATUS_PAUSED,
+    EXECUTION_STATUS_PENDING,
+    EXECUTION_STATUS_RUNNING,
+    EXECUTION_STATUS_STOPPED,
+)
+from llamatrade_proto.generated.strategy_pb2 import (
+    STRATEGY_STATUS_ACTIVE,
+    STRATEGY_STATUS_ARCHIVED,
+    STRATEGY_STATUS_DRAFT,
+    STRATEGY_STATUS_PAUSED,
+)
 
 from src.models import (
-    DeploymentCreate,
-    DeploymentResponse,
-    DeploymentStatus,
+    ConfigOverride,
+    ExecutionCreate,
+    ExecutionResponse,
+    StrategyConfigJSON,
     StrategyCreate,
     StrategyDetailResponse,
     StrategyResponse,
-    StrategyStatus,
     StrategyType,
     StrategyUpdate,
     StrategyVersionResponse,
     ValidationResult,
+    execution_status_to_str,
 )
+
+# Valid status transitions: (from_status, to_status) using proto int values
+# Rules: DRAFT→ACTIVE, ACTIVE↔PAUSED, any→ARCHIVED
+_VALID_STATUS_TRANSITIONS: set[tuple[int, int]] = {
+    (STRATEGY_STATUS_DRAFT, STRATEGY_STATUS_ACTIVE),
+    (STRATEGY_STATUS_ACTIVE, STRATEGY_STATUS_PAUSED),
+    (STRATEGY_STATUS_PAUSED, STRATEGY_STATUS_ACTIVE),
+    # Any status can transition to ARCHIVED
+    (STRATEGY_STATUS_DRAFT, STRATEGY_STATUS_ARCHIVED),
+    (STRATEGY_STATUS_ACTIVE, STRATEGY_STATUS_ARCHIVED),
+    (STRATEGY_STATUS_PAUSED, STRATEGY_STATUS_ARCHIVED),
+}
+
+
+def _rebalance_to_timeframe(rebalance: str | None) -> str:
+    """Convert rebalance frequency to a timeframe string.
+
+    Allocation strategies use rebalance frequency instead of intraday timeframes.
+    We map to daily-level timeframes for backward compatibility with the DB schema.
+    """
+    mapping = {
+        "daily": "1D",
+        "weekly": "1W",
+        "monthly": "1M",
+        "quarterly": "3M",
+        "annually": "1Y",
+    }
+    return mapping.get(rebalance or "daily", "1D")
+
+
+def _validate_status_transition(current: int, target: int) -> tuple[bool, str]:
+    """Validate a status transition.
+
+    Args:
+        current: Current status (proto int value)
+        target: Target status (proto int value)
+
+    Returns:
+        Tuple of (is_valid, error_message). error_message is empty if valid.
+    """
+    if current == target:
+        return True, ""
+
+    if (current, target) in _VALID_STATUS_TRANSITIONS:
+        return True, ""
+
+    return False, f"Invalid status transition: {current} → {target}"
 
 
 class StrategyService:
@@ -70,8 +125,15 @@ class StrategyService:
             error_messages = [str(e) for e in validation.errors]
             raise ValueError(f"Invalid strategy: {'; '.join(error_messages)}")
 
-        # Map strategy type
-        db_type = DBStrategyType(ast.strategy_type)
+        # Extract symbols from the allocation strategy
+        symbols = list(get_required_symbols(ast))
+
+        # Map rebalance frequency to a timeframe for backward compatibility
+        # Allocation strategies use rebalance frequency instead of intraday timeframes
+        timeframe = _rebalance_to_timeframe(ast.rebalance)
+
+        # Allocation strategies default to CUSTOM type
+        db_type = DBStrategyType.CUSTOM
 
         # Create strategy record
         strategy = Strategy(
@@ -79,7 +141,7 @@ class StrategyService:
             name=data.name,
             description=data.description,
             strategy_type=db_type,
-            status=DBStrategyStatus.DRAFT,
+            status=STRATEGY_STATUS_DRAFT,
             current_version=1,
             created_by=user_id,
         )
@@ -93,8 +155,9 @@ class StrategyService:
             version=1,
             config_sexpr=data.config_sexpr,
             config_json=config_json,
-            symbols=ast.symbols,
-            timeframe=ast.timeframe,
+            symbols=symbols,
+            timeframe=timeframe,
+            parameters=data.parameters or {},
             created_by=user_id,
         )
         self.db.add(version)
@@ -113,7 +176,7 @@ class StrategyService:
         if not strategy:
             return None
 
-        version = await self._get_version(strategy.id, strategy.current_version)
+        version = await self._get_version(tenant_id, strategy.id, strategy.current_version)
         if not version:
             return None
 
@@ -122,37 +185,77 @@ class StrategyService:
     async def list_strategies(
         self,
         tenant_id: UUID,
-        status: StrategyStatus | None = None,
+        status: int | None = None,  # StrategyStatus proto int
         strategy_type: StrategyType | None = None,
+        search: str | None = None,
+        sort_field: str | None = None,
+        sort_direction: str | None = None,
         page: int = 1,
         page_size: int = 20,
     ) -> tuple[list[StrategyResponse], int]:
-        """List strategies for a tenant with optional filtering."""
+        """List strategies for a tenant with optional filtering, search, and sort.
+
+        Args:
+            tenant_id: Tenant UUID
+            status: Filter by status
+            strategy_type: Filter by type
+            search: Search term for name/description (case-insensitive)
+            sort_field: Field to sort by (name, created_at, updated_at, status)
+            sort_direction: Sort direction (asc, desc)
+            page: Page number (1-indexed)
+            page_size: Items per page
+        """
         # Build query
         stmt = select(Strategy).where(Strategy.tenant_id == tenant_id)
 
         if status:
-            stmt = stmt.where(Strategy.status == DBStrategyStatus(status.value))
+            stmt = stmt.where(Strategy.status == status)  # Already proto int
         if strategy_type:
             stmt = stmt.where(Strategy.strategy_type == DBStrategyType(strategy_type.value))
 
+        # Search by name or description (case-insensitive)
+        if search:
+            search_pattern = f"%{search}%"
+            stmt = stmt.where(
+                or_(
+                    Strategy.name.ilike(search_pattern),
+                    Strategy.description.ilike(search_pattern),
+                )
+            )
+
         # Exclude archived by default
         if not status:
-            stmt = stmt.where(Strategy.status != DBStrategyStatus.ARCHIVED)
+            stmt = stmt.where(Strategy.status != STRATEGY_STATUS_ARCHIVED)
 
         # Count total
         count_stmt = select(func.count()).select_from(stmt.subquery())
         total_result = await self.db.execute(count_stmt)
         total = total_result.scalar() or 0
 
-        # Paginate and order
-        stmt = stmt.order_by(Strategy.updated_at.desc())
+        # Apply sorting
+        sort_column = self._get_sort_column(sort_field)
+        if sort_direction == "asc":
+            stmt = stmt.order_by(sort_column.asc())
+        else:
+            stmt = stmt.order_by(sort_column.desc())
+
+        # Paginate
         stmt = stmt.offset((page - 1) * page_size).limit(page_size)
 
         result = await self.db.execute(stmt)
         strategies = result.scalars().all()
 
         return [self._to_response(s) for s in strategies], total
+
+    def _get_sort_column(self, field: str | None) -> Any:
+        """Get SQLAlchemy column for sorting."""
+        sort_columns = {
+            "name": Strategy.name,
+            "created_at": Strategy.created_at,
+            "updated_at": Strategy.updated_at,
+            "status": Strategy.status,
+        }
+        return sort_columns.get(field or "updated_at", Strategy.updated_at)
 
     async def update_strategy(
         self,
@@ -166,6 +269,9 @@ class StrategyService:
 
         If config_sexpr is provided, creates a new version.
         Otherwise, only updates metadata fields.
+
+        Raises:
+            ValueError: If status transition is invalid or config is invalid.
         """
         strategy = await self._get_strategy_by_id(tenant_id, strategy_id)
         if not strategy:
@@ -176,8 +282,13 @@ class StrategyService:
             strategy.name = data.name
         if data.description is not None:
             strategy.description = data.description
+
+        # Validate and apply status change (both are proto int values)
         if data.status is not None:
-            strategy.status = DBStrategyStatus(data.status.value)
+            is_valid, error_msg = _validate_status_transition(strategy.status, data.status)
+            if not is_valid:
+                raise ValueError(error_msg)
+            strategy.status = data.status
 
         # If config changed, create new version
         if data.config_sexpr is not None:
@@ -193,13 +304,19 @@ class StrategyService:
             new_version_num = strategy.current_version + 1
             config_json = to_json(ast)
 
+            # Extract symbols and timeframe from allocation strategy
+            symbols = list(get_required_symbols(ast))
+            timeframe = _rebalance_to_timeframe(ast.rebalance)
+
             version = StrategyVersion(
                 strategy_id=strategy.id,
                 version=new_version_num,
                 config_sexpr=data.config_sexpr,
                 config_json=config_json,
-                symbols=ast.symbols,
-                timeframe=ast.timeframe,
+                symbols=symbols,
+                timeframe=timeframe,
+                parameters=data.parameters or {},
+                changelog=data.changelog,  # Persist change summary
                 created_by=user_id,
             )
             self.db.add(version)
@@ -208,7 +325,9 @@ class StrategyService:
         await self.db.commit()
         await self.db.refresh(strategy)
 
-        current_version = await self._get_version(strategy.id, strategy.current_version)
+        current_version = await self._get_version(tenant_id, strategy.id, strategy.current_version)
+        if current_version is None:
+            raise ValueError("Strategy version not found after update")
         return self._to_detail_response(strategy, current_version)
 
     async def delete_strategy(
@@ -221,7 +340,7 @@ class StrategyService:
         if not strategy:
             return False
 
-        strategy.status = DBStrategyStatus.ARCHIVED
+        strategy.status = STRATEGY_STATUS_ARCHIVED
         await self.db.commit()
         return True
 
@@ -230,12 +349,20 @@ class StrategyService:
         tenant_id: UUID,
         strategy_id: UUID,
     ) -> StrategyResponse | None:
-        """Set strategy status to ACTIVE."""
+        """Set strategy status to ACTIVE.
+
+        Raises:
+            ValueError: If status transition is not allowed.
+        """
         strategy = await self._get_strategy_by_id(tenant_id, strategy_id)
         if not strategy:
             return None
 
-        strategy.status = DBStrategyStatus.ACTIVE
+        is_valid, error_msg = _validate_status_transition(strategy.status, STRATEGY_STATUS_ACTIVE)
+        if not is_valid:
+            raise ValueError(error_msg)
+
+        strategy.status = STRATEGY_STATUS_ACTIVE
         await self.db.commit()
         await self.db.refresh(strategy)
         return self._to_response(strategy)
@@ -245,12 +372,20 @@ class StrategyService:
         tenant_id: UUID,
         strategy_id: UUID,
     ) -> StrategyResponse | None:
-        """Set strategy status to PAUSED."""
+        """Set strategy status to PAUSED.
+
+        Raises:
+            ValueError: If status transition is not allowed.
+        """
         strategy = await self._get_strategy_by_id(tenant_id, strategy_id)
         if not strategy:
             return None
 
-        strategy.status = DBStrategyStatus.PAUSED
+        is_valid, error_msg = _validate_status_transition(strategy.status, STRATEGY_STATUS_PAUSED)
+        if not is_valid:
+            raise ValueError(error_msg)
+
+        strategy.status = STRATEGY_STATUS_PAUSED
         await self.db.commit()
         await self.db.refresh(strategy)
         return self._to_response(strategy)
@@ -286,7 +421,7 @@ class StrategyService:
         if not strategy:
             return None
 
-        v = await self._get_version(strategy_id, version)
+        v = await self._get_version(tenant_id, strategy_id, version)
         return self._to_version_response(v) if v else None
 
     async def clone_strategy(
@@ -311,11 +446,90 @@ class StrategyService:
             ),
         )
 
+    async def create_from_template(
+        self,
+        tenant_id: UUID,
+        user_id: UUID,
+        template_id: str,
+        name: str | None = None,
+        description: str | None = None,
+        template_params: dict[str, str] | None = None,
+    ) -> StrategyDetailResponse:
+        """Create a strategy from a template.
+
+        Args:
+            tenant_id: Tenant UUID
+            user_id: User UUID
+            template_id: Template ID (e.g., "ma_crossover", "rsi_mean_reversion")
+            name: Optional custom name (defaults to template name)
+            description: Optional custom description
+            template_params: Optional parameter overrides (e.g., symbols, timeframe)
+
+        Raises:
+            ValueError: If template_id is not found or params are invalid
+        """
+        from src.services.template_service import TEMPLATES
+
+        template = TEMPLATES.get(template_id)
+        if not template:
+            raise ValueError(f"Template not found: {template_id}")
+
+        config_sexpr = template["config_sexpr"]
+
+        # Apply template parameter overrides
+        if template_params:
+            import re
+
+            # Simple string replacement for common parameters
+            if "symbols" in template_params:
+                # Parse symbols as JSON array string
+                symbols = template_params["symbols"]
+                # Replace the :symbols field in the s-expression
+                config_sexpr = re.sub(
+                    r":symbols\s+\[.*?\]",
+                    f":symbols {symbols}",
+                    config_sexpr,
+                )
+            if "timeframe" in template_params:
+                config_sexpr = re.sub(
+                    r':timeframe\s+"[^"]*"',
+                    f':timeframe "{template_params["timeframe"]}"',
+                    config_sexpr,
+                )
+            if "stop_loss_pct" in template_params:
+                config_sexpr = re.sub(
+                    r":stop-loss-pct\s+[\d.]+",
+                    f":stop-loss-pct {template_params['stop_loss_pct']}",
+                    config_sexpr,
+                )
+            if "take_profit_pct" in template_params:
+                config_sexpr = re.sub(
+                    r":take-profit-pct\s+[\d.]+",
+                    f":take-profit-pct {template_params['take_profit_pct']}",
+                    config_sexpr,
+                )
+
+        strategy_name = name or template["name"]
+        strategy_description = description or template["description"]
+
+        return await self.create_strategy(
+            tenant_id=tenant_id,
+            user_id=user_id,
+            data=StrategyCreate(
+                name=strategy_name,
+                description=strategy_description,
+                config_sexpr=config_sexpr,
+            ),
+        )
+
     async def validate_config(
         self,
         config_sexpr: str,
     ) -> ValidationResult:
-        """Validate a strategy configuration without saving."""
+        """Validate a strategy configuration without saving.
+
+        Returns validation result including detected symbols and indicators.
+        """
         try:
             ast = parse_strategy(config_sexpr)
             validation = validate_strategy(ast)
@@ -323,80 +537,258 @@ class StrategyService:
             errors = [str(e) for e in validation.errors]
             warnings: list[str] = []
 
-            # Add additional warnings
-            if ast.risk.get("stop_loss_pct") and ast.risk["stop_loss_pct"] > 10:
-                warnings.append("Stop loss exceeds 10% - consider reducing for risk management")
+            # Extract symbols from the allocation strategy
+            detected_symbols: list[str] = []
+            if validation.valid:
+                try:
+                    detected_symbols = list(get_required_symbols(ast))
+                except Exception:
+                    pass
 
-            if len(ast.symbols) > 20:
+            # Add warning for strategies with many symbols
+            if len(detected_symbols) > 20:
                 warnings.append("Trading more than 20 symbols may impact execution speed")
+
+            # Extract detected indicators
+            detected_indicators: list[str] = []
+            if validation.valid:
+                try:
+                    indicator_specs = extract_indicators(ast)
+                    # Format as "indicator_type(params)" for display
+                    for spec in indicator_specs:
+                        params_str = ", ".join(str(p) for p in spec.params)
+                        detected_indicators.append(f"{spec.indicator_type}({params_str})")
+                except Exception:
+                    # Don't fail validation if indicator extraction fails
+                    pass
 
             return ValidationResult(
                 valid=validation.valid,
                 errors=errors,
                 warnings=warnings,
+                detected_symbols=detected_symbols,
+                detected_indicators=detected_indicators,
             )
         except Exception as e:
             return ValidationResult(
                 valid=False,
                 errors=[str(e)],
                 warnings=[],
+                detected_symbols=[],
+                detected_indicators=[],
             )
 
     # ===================
-    # Deployment methods
+    # Execution methods
     # ===================
 
-    async def create_deployment(
+    async def create_execution(
         self,
         tenant_id: UUID,
         strategy_id: UUID,
-        data: DeploymentCreate,
-    ) -> DeploymentResponse | None:
-        """Create a new deployment for a strategy."""
+        data: ExecutionCreate,
+    ) -> ExecutionResponse | None:
+        """Create a new execution for a strategy."""
         strategy = await self._get_strategy_by_id(tenant_id, strategy_id)
         if not strategy:
             return None
 
         version = data.version or strategy.current_version
 
-        # Verify version exists
-        v = await self._get_version(strategy_id, version)
+        # Verify version exists (with tenant isolation)
+        v = await self._get_version(tenant_id, strategy_id, version)
         if not v:
             raise ValueError(f"Version {version} not found")
 
-        deployment = StrategyDeployment(
+        execution = StrategyExecution(
             tenant_id=tenant_id,
             strategy_id=strategy_id,
             version=version,
-            environment=DBDeploymentEnvironment(data.environment.value),
-            status=DBDeploymentStatus.PENDING,
+            mode=data.mode,  # Already proto int
+            status=EXECUTION_STATUS_PENDING,
             config_override=data.config_override,
         )
-        self.db.add(deployment)
+        self.db.add(execution)
         await self.db.commit()
-        await self.db.refresh(deployment)
+        await self.db.refresh(execution)
 
-        return self._to_deployment_response(deployment)
+        return self._to_execution_response(execution)
 
-    async def list_deployments(
+    async def list_executions(
         self,
         tenant_id: UUID,
         strategy_id: UUID | None = None,
-        status: DeploymentStatus | None = None,
-    ) -> list[DeploymentResponse]:
-        """List deployments for a tenant."""
-        stmt = select(StrategyDeployment).where(StrategyDeployment.tenant_id == tenant_id)
+        status: int | None = None,
+        mode: int | None = None,
+        page: int = 1,
+        page_size: int = 20,
+    ) -> tuple[list[ExecutionResponse], int]:
+        """List executions for a tenant with pagination."""
+        stmt = select(StrategyExecution).where(StrategyExecution.tenant_id == tenant_id)
 
         if strategy_id:
-            stmt = stmt.where(StrategyDeployment.strategy_id == strategy_id)
+            stmt = stmt.where(StrategyExecution.strategy_id == strategy_id)
         if status:
-            stmt = stmt.where(StrategyDeployment.status == DBDeploymentStatus(status.value))
+            stmt = stmt.where(StrategyExecution.status == status)  # Already proto int
+        if mode:
+            stmt = stmt.where(StrategyExecution.mode == mode)  # Already proto int
 
-        stmt = stmt.order_by(StrategyDeployment.created_at.desc())
+        # Count total
+        count_stmt = select(func.count()).select_from(stmt.subquery())
+        total_result = await self.db.execute(count_stmt)
+        total = total_result.scalar() or 0
+
+        # Paginate and order
+        stmt = stmt.order_by(StrategyExecution.created_at.desc())
+        stmt = stmt.offset((page - 1) * page_size).limit(page_size)
+
         result = await self.db.execute(stmt)
-        deployments = result.scalars().all()
+        executions = result.scalars().all()
 
-        return [self._to_deployment_response(d) for d in deployments]
+        return [self._to_execution_response(e) for e in executions], total
+
+    async def get_execution(
+        self,
+        tenant_id: UUID,
+        execution_id: UUID,
+    ) -> ExecutionResponse | None:
+        """Get an execution by ID."""
+        execution = await self._get_execution_by_id(tenant_id, execution_id)
+        if not execution:
+            return None
+        return self._to_execution_response(execution)
+
+    async def start_execution(
+        self,
+        tenant_id: UUID,
+        execution_id: UUID,
+    ) -> ExecutionResponse | None:
+        """Start a pending execution.
+
+        Transitions status from PENDING to RUNNING and sets started_at.
+
+        Raises:
+            ValueError: If execution is not in PENDING status.
+        """
+        from datetime import datetime
+
+        execution = await self._get_execution_by_id(tenant_id, execution_id)
+        if not execution:
+            return None
+
+        if execution.status != EXECUTION_STATUS_PENDING:
+            raise ValueError(
+                f"Cannot start execution: status is {execution_status_to_str(execution.status)}, expected pending"
+            )
+
+        execution.status = EXECUTION_STATUS_RUNNING
+        execution.started_at = datetime.now(UTC)
+        await self.db.commit()
+        await self.db.refresh(execution)
+
+        return self._to_execution_response(execution)
+
+    async def pause_execution(
+        self,
+        tenant_id: UUID,
+        execution_id: UUID,
+    ) -> ExecutionResponse | None:
+        """Pause a running execution.
+
+        Transitions status from RUNNING to PAUSED.
+
+        Raises:
+            ValueError: If execution is not in RUNNING status.
+        """
+        execution = await self._get_execution_by_id(tenant_id, execution_id)
+        if not execution:
+            return None
+
+        if execution.status != EXECUTION_STATUS_RUNNING:
+            raise ValueError(
+                f"Cannot pause execution: status is {execution_status_to_str(execution.status)}, expected running"
+            )
+
+        execution.status = EXECUTION_STATUS_PAUSED
+        await self.db.commit()
+        await self.db.refresh(execution)
+
+        return self._to_execution_response(execution)
+
+    async def resume_execution(
+        self,
+        tenant_id: UUID,
+        execution_id: UUID,
+    ) -> ExecutionResponse | None:
+        """Resume a paused execution.
+
+        Transitions status from PAUSED to RUNNING.
+
+        Raises:
+            ValueError: If execution is not in PAUSED status.
+        """
+        execution = await self._get_execution_by_id(tenant_id, execution_id)
+        if not execution:
+            return None
+
+        if execution.status != EXECUTION_STATUS_PAUSED:
+            raise ValueError(
+                f"Cannot resume execution: status is {execution_status_to_str(execution.status)}, expected paused"
+            )
+
+        execution.status = EXECUTION_STATUS_RUNNING
+        await self.db.commit()
+        await self.db.refresh(execution)
+
+        return self._to_execution_response(execution)
+
+    async def stop_execution(
+        self,
+        tenant_id: UUID,
+        execution_id: UUID,
+        reason: str | None = None,
+    ) -> ExecutionResponse | None:
+        """Stop an execution.
+
+        Can stop from RUNNING or PAUSED status. Sets stopped_at timestamp.
+
+        Raises:
+            ValueError: If execution is already stopped or in error state.
+        """
+        from datetime import datetime
+
+        execution = await self._get_execution_by_id(tenant_id, execution_id)
+        if not execution:
+            return None
+
+        if execution.status in (EXECUTION_STATUS_STOPPED, EXECUTION_STATUS_ERROR):
+            raise ValueError(
+                f"Cannot stop execution: already in terminal status {execution_status_to_str(execution.status)}"
+            )
+
+        if execution.status == EXECUTION_STATUS_PENDING:
+            raise ValueError("Cannot stop execution: execution has not started yet")
+
+        execution.status = EXECUTION_STATUS_STOPPED
+        execution.stopped_at = datetime.now(UTC)
+        if reason:
+            execution.error_message = f"Stopped: {reason}"
+        await self.db.commit()
+        await self.db.refresh(execution)
+
+        return self._to_execution_response(execution)
+
+    async def _get_execution_by_id(
+        self, tenant_id: UUID, execution_id: UUID
+    ) -> StrategyExecution | None:
+        """Get execution ensuring tenant isolation."""
+        stmt = (
+            select(StrategyExecution)
+            .where(StrategyExecution.id == execution_id)
+            .where(StrategyExecution.tenant_id == tenant_id)
+        )
+        result = await self.db.execute(stmt)
+        return result.scalar_one_or_none()
 
     # ===================
     # Private helpers
@@ -412,10 +804,19 @@ class StrategyService:
         result = await self.db.execute(stmt)
         return result.scalar_one_or_none()
 
-    async def _get_version(self, strategy_id: UUID, version: int) -> StrategyVersion | None:
-        """Get a specific version."""
+    async def _get_version(
+        self, tenant_id: UUID, strategy_id: UUID, version: int
+    ) -> StrategyVersion | None:
+        """Get a specific version with tenant isolation.
+
+        Joins with Strategy table to ensure the version belongs to a strategy
+        owned by the specified tenant, preventing data leakage if strategy_id
+        is guessed.
+        """
         stmt = (
             select(StrategyVersion)
+            .join(Strategy, StrategyVersion.strategy_id == Strategy.id)
+            .where(Strategy.tenant_id == tenant_id)
             .where(StrategyVersion.strategy_id == strategy_id)
             .where(StrategyVersion.version == version)
         )
@@ -429,7 +830,7 @@ class StrategyService:
             name=s.name,
             description=s.description,
             strategy_type=StrategyType(s.strategy_type.value),
-            status=StrategyStatus(s.status.value),
+            status=s.status,  # Already proto int from DB TypeDecorator
             current_version=s.current_version,
             created_at=s.created_at,
             updated_at=s.updated_at,
@@ -442,14 +843,15 @@ class StrategyService:
             name=s.name,
             description=s.description,
             strategy_type=StrategyType(s.strategy_type.value),
-            status=StrategyStatus(s.status.value),
+            status=s.status,  # Already proto int from DB TypeDecorator
             current_version=s.current_version,
             created_at=s.created_at,
             updated_at=s.updated_at,
             config_sexpr=v.config_sexpr,
-            config_json=v.config_json,
+            config_json=cast(StrategyConfigJSON, v.config_json),
             symbols=v.symbols,
             timeframe=v.timeframe,
+            parameters=v.parameters or {},
         )
 
     def _to_version_response(self, v: StrategyVersion) -> StrategyVersionResponse:
@@ -457,26 +859,27 @@ class StrategyService:
         return StrategyVersionResponse(
             version=v.version,
             config_sexpr=v.config_sexpr,
-            config_json=v.config_json,
+            config_json=cast(StrategyConfigJSON, v.config_json),
             symbols=v.symbols,
             timeframe=v.timeframe,
             changelog=v.changelog,
             created_at=v.created_at,
+            parameters=v.parameters or {},
         )
 
-    def _to_deployment_response(self, d: StrategyDeployment) -> DeploymentResponse:
-        """Convert deployment model to response schema."""
-        return DeploymentResponse(
-            id=d.id,
-            strategy_id=d.strategy_id,
-            version=d.version,
-            environment=d.environment.value,
-            status=DeploymentStatus(d.status.value),
-            started_at=d.started_at,
-            stopped_at=d.stopped_at,
-            config_override=d.config_override,
-            error_message=d.error_message,
-            created_at=d.created_at,
+    def _to_execution_response(self, e: StrategyExecution) -> ExecutionResponse:
+        """Convert execution model to response schema."""
+        return ExecutionResponse(
+            id=e.id,
+            strategy_id=e.strategy_id,
+            version=e.version,
+            mode=e.mode,  # Already proto int from DB TypeDecorator
+            status=e.status,  # Already proto int from DB TypeDecorator
+            started_at=e.started_at,
+            stopped_at=e.stopped_at,
+            config_override=cast(ConfigOverride, e.config_override) if e.config_override else None,
+            error_message=e.error_message,
+            created_at=e.created_at,
         )
 
 

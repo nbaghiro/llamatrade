@@ -4,9 +4,11 @@ import asyncio
 import json
 import logging
 import os
+import random
 from collections.abc import AsyncGenerator
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from typing import Any
 
 import websockets
 from websockets.asyncio.client import ClientConnection
@@ -44,8 +46,10 @@ class StreamConfig:
     api_key: str = field(default_factory=lambda: os.getenv("ALPACA_API_KEY", ""))
     api_secret: str = field(default_factory=lambda: os.getenv("ALPACA_API_SECRET", ""))
     paper: bool = True
-    reconnect_delay: float = 5.0
+    reconnect_delay: float = 1.0  # Base delay for exponential backoff
+    max_reconnect_delay: float = 60.0  # Maximum delay between reconnects
     max_reconnect_attempts: int = 10
+    jitter_factor: float = 0.1  # Random jitter as fraction of delay (0-1)
 
 
 class AlpacaBarStream:
@@ -90,6 +94,7 @@ class AlpacaBarStream:
         """Connect to Alpaca WebSocket and authenticate."""
         try:
             self._ws = await websockets.connect(self.url)
+            assert self._ws is not None  # websockets.connect always returns a connection
             logger.info(f"Connected to Alpaca stream: {self.url}")
 
             # Wait for welcome message
@@ -214,7 +219,7 @@ class AlpacaBarStream:
             logger.error(f"Failed to unsubscribe: {e}")
             return False
 
-    async def stream(self) -> AsyncGenerator[BarData, None]:
+    async def stream(self) -> AsyncGenerator[BarData]:
         """Stream bar data as an async generator.
 
         This method handles reconnection automatically.
@@ -274,18 +279,27 @@ class AlpacaBarStream:
             return None
 
     async def _reconnect(self) -> bool:
-        """Attempt to reconnect to the stream."""
+        """Attempt to reconnect to the stream with exponential backoff and jitter."""
         if self._reconnect_attempts >= self.config.max_reconnect_attempts:
             logger.error("Max reconnection attempts reached")
             self._running = False
             return False
 
         self._reconnect_attempts += 1
-        delay = self.config.reconnect_delay * self._reconnect_attempts
         record_bar_stream_reconnect()
 
+        # Calculate exponential backoff delay
+        # Formula: base_delay * 2^(attempt-1), e.g., 1, 2, 4, 8, 16, 32...
+        base_delay = self.config.reconnect_delay * (2 ** (self._reconnect_attempts - 1))
+
+        # Add random jitter to prevent thundering herd
+        jitter = random.uniform(0, self.config.jitter_factor * base_delay)
+
+        # Cap at max delay
+        delay = min(base_delay + jitter, self.config.max_reconnect_delay)
+
         logger.info(
-            f"Reconnecting in {delay}s "
+            f"Reconnecting in {delay:.2f}s "
             f"(attempt {self._reconnect_attempts}/{self.config.max_reconnect_attempts})"
         )
         await asyncio.sleep(delay)
@@ -300,7 +314,7 @@ class AlpacaBarStream:
 
         return False
 
-    def _parse_bar(self, data: dict) -> BarData | None:
+    def _parse_bar(self, data: dict[str, Any]) -> BarData | None:
         """Parse Alpaca bar message to BarData."""
         try:
             # Parse timestamp
@@ -370,7 +384,7 @@ class MockBarStream:
             self._subscribed_symbols.clear()
         return True
 
-    async def stream(self) -> AsyncGenerator[BarData, None]:
+    async def stream(self) -> AsyncGenerator[BarData]:
         """Stream mock bars."""
         self._running = True
 

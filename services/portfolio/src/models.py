@@ -1,10 +1,42 @@
 """Portfolio Service - Pydantic schemas."""
 
 from datetime import datetime
-from enum import StrEnum
 from uuid import UUID
 
 from pydantic import BaseModel
+
+from llamatrade_proto.generated.portfolio_pb2 import (
+    TRANSACTION_TYPE_BUY,
+    TRANSACTION_TYPE_DEPOSIT,
+    TRANSACTION_TYPE_DIVIDEND,
+    TRANSACTION_TYPE_FEE,
+    TRANSACTION_TYPE_INTEREST,
+    TRANSACTION_TYPE_SELL,
+    TRANSACTION_TYPE_TRANSFER_IN,
+    TRANSACTION_TYPE_TRANSFER_OUT,
+    TRANSACTION_TYPE_WITHDRAWAL,
+)
+
+# ===================
+# Conversion helpers: proto int -> str (for display/API)
+# ===================
+
+_TRANSACTION_TYPE_TO_STR: dict[int, str] = {
+    TRANSACTION_TYPE_BUY: "buy",
+    TRANSACTION_TYPE_SELL: "sell",
+    TRANSACTION_TYPE_DEPOSIT: "deposit",
+    TRANSACTION_TYPE_WITHDRAWAL: "withdrawal",
+    TRANSACTION_TYPE_DIVIDEND: "dividend",
+    TRANSACTION_TYPE_INTEREST: "interest",
+    TRANSACTION_TYPE_FEE: "fee",
+    TRANSACTION_TYPE_TRANSFER_IN: "transfer_in",
+    TRANSACTION_TYPE_TRANSFER_OUT: "transfer_out",
+}
+
+
+def transaction_type_to_str(value: int) -> str:
+    """Convert TransactionType proto value to string."""
+    return _TRANSACTION_TYPE_TO_STR.get(value, "unknown")
 
 
 class PositionResponse(BaseModel):
@@ -46,6 +78,14 @@ class PerformanceMetrics(BaseModel):
     best_day: float
     worst_day: float
     avg_daily_return: float
+    # Additional period returns
+    ytd_return: float = 0.0
+    mtd_return: float = 0.0
+    wtd_return: float = 0.0
+    # Benchmark comparison
+    beta: float = 0.0
+    alpha: float = 0.0
+    benchmark_return: float = 0.0
 
 
 class EquityPoint(BaseModel):
@@ -55,29 +95,22 @@ class EquityPoint(BaseModel):
     market_value: float
 
 
-class TransactionType(StrEnum):
-    BUY = "buy"
-    SELL = "sell"
-    DIVIDEND = "dividend"
-    DEPOSIT = "deposit"
-    WITHDRAWAL = "withdrawal"
-    FEE = "fee"
-
-
 class TransactionResponse(BaseModel):
     id: UUID
-    type: TransactionType
+    tenant_id: UUID
+    type: int  # TransactionType proto value
     symbol: str | None = None
-    qty: float | None = None
+    quantity: float | None = None
     price: float | None = None
     amount: float
-    commission: float = 0
+    fees: float = 0
     description: str | None = None
-    executed_at: datetime
+    reference_id: str | None = None
+    created_at: datetime
 
 
 class TransactionCreate(BaseModel):
-    type: TransactionType
+    type: int  # TransactionType proto value
     symbol: str | None = None
     qty: float | None = None
     price: float | None = None

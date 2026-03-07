@@ -1,16 +1,19 @@
+# pyright: reportPrivateUsage=false
 """Unit tests for auth service layer.
 
 These tests verify the AuthService business logic without HTTP/gRPC layer.
 For endpoint tests, see test_grpc_auth.py.
 """
 
+from collections.abc import AsyncGenerator
 from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, patch
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import jwt
 import pytest
 from httpx import ASGITransport, AsyncClient
+
 from src.main import app
 from src.models import UserResponse, UserWithPassword
 from src.services.auth_service import (
@@ -27,7 +30,7 @@ from src.services.user_service import UserService
 
 
 @pytest.fixture
-async def client():
+async def client() -> AsyncGenerator[AsyncClient]:
     """Create async test client."""
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
@@ -35,24 +38,24 @@ async def client():
 
 
 @pytest.fixture
-def mock_user_service():
+def mock_user_service() -> AsyncMock:
     """Create a mock user service."""
     return AsyncMock(spec=UserService)
 
 
 @pytest.fixture
-def mock_tenant_service():
+def mock_tenant_service() -> AsyncMock:
     """Create a mock tenant service."""
     return AsyncMock(spec=TenantService)
 
 
 def make_user_response(
-    user_id=None,
-    tenant_id=None,
-    email="test@example.com",
-    role="user",
-    is_active=True,
-):
+    user_id: UUID | None = None,
+    tenant_id: UUID | None = None,
+    email: str = "test@example.com",
+    role: str = "user",
+    is_active: bool = True,
+) -> UserResponse:
     """Create a mock UserResponse."""
     return UserResponse(
         id=user_id or uuid4(),
@@ -65,13 +68,13 @@ def make_user_response(
 
 
 def make_user_with_password(
-    user_id=None,
-    tenant_id=None,
-    email="test@example.com",
-    password_hash="$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/X4.",
-    role="user",
-    is_active=True,
-):
+    user_id: UUID | None = None,
+    tenant_id: UUID | None = None,
+    email: str = "test@example.com",
+    password_hash: str = "$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/X4.",
+    role: str = "user",
+    is_active: bool = True,
+) -> UserWithPassword:
     """Create a mock UserWithPassword."""
     return UserWithPassword(
         id=user_id or uuid4(),
@@ -89,7 +92,7 @@ def make_user_with_password(
 # ===================
 
 
-async def test_health_check(client):
+async def test_health_check(client: AsyncClient) -> None:
     """Test health endpoint returns healthy status."""
     response = await client.get("/health")
     assert response.status_code == 200
@@ -107,16 +110,20 @@ class TestAuthServiceUnit:
     """Unit tests for AuthService."""
 
     @pytest.fixture
-    def mock_db(self):
+    def mock_db(self) -> AsyncMock:
         """Create a mock database session."""
         return AsyncMock()
 
     @pytest.fixture
-    def auth_service(self, mock_db, mock_user_service, mock_tenant_service):
+    def auth_service(
+        self, mock_db: AsyncMock, mock_user_service: AsyncMock, mock_tenant_service: AsyncMock
+    ) -> AuthService:
         """Create AuthService with mocked dependencies."""
         return AuthService(mock_db, mock_user_service, mock_tenant_service)
 
-    async def test_login_returns_tokens_on_valid_credentials(self, auth_service, mock_user_service):
+    async def test_login_returns_tokens_on_valid_credentials(
+        self, auth_service: AuthService, mock_user_service: AsyncMock
+    ) -> None:
         """Test that login returns tokens for valid credentials."""
         user = make_user_with_password(password_hash="$2b$12$validhash")
         mock_user_service.get_user_by_email.return_value = user
@@ -132,7 +139,9 @@ class TestAuthServiceUnit:
         assert result.refresh_token
         assert result.token_type == "bearer"
 
-    async def test_login_returns_none_for_nonexistent_user(self, auth_service, mock_user_service):
+    async def test_login_returns_none_for_nonexistent_user(
+        self, auth_service: AuthService, mock_user_service: AsyncMock
+    ) -> None:
         """Test that login returns None for non-existent user."""
         mock_user_service.get_user_by_email.return_value = None
 
@@ -143,7 +152,9 @@ class TestAuthServiceUnit:
 
         assert result is None
 
-    async def test_login_returns_none_for_inactive_user(self, auth_service, mock_user_service):
+    async def test_login_returns_none_for_inactive_user(
+        self, auth_service: AuthService, mock_user_service: AsyncMock
+    ) -> None:
         """Test that login returns None for inactive user."""
         user = make_user_with_password(is_active=False)
         mock_user_service.get_user_by_email.return_value = user
@@ -155,7 +166,9 @@ class TestAuthServiceUnit:
 
         assert result is None
 
-    async def test_login_returns_none_for_wrong_password(self, auth_service, mock_user_service):
+    async def test_login_returns_none_for_wrong_password(
+        self, auth_service: AuthService, mock_user_service: AsyncMock
+    ) -> None:
         """Test that login returns None for wrong password."""
         user = make_user_with_password()
         mock_user_service.get_user_by_email.return_value = user
@@ -168,7 +181,9 @@ class TestAuthServiceUnit:
 
         assert result is None
 
-    async def test_refresh_token_returns_new_tokens(self, auth_service, mock_user_service):
+    async def test_refresh_token_returns_new_tokens(
+        self, auth_service: AuthService, mock_user_service: AsyncMock
+    ) -> None:
         """Test that refresh_token returns new tokens for valid refresh token."""
         user = make_user_response()
         mock_user_service.get_user.return_value = user
@@ -190,8 +205,8 @@ class TestAuthServiceUnit:
         assert result.refresh_token
 
     async def test_refresh_token_returns_none_for_access_token(
-        self, auth_service, mock_user_service
-    ):
+        self, auth_service: AuthService, mock_user_service: AsyncMock
+    ) -> None:
         """Test that refresh_token returns None when given an access token."""
         payload = {
             "sub": str(uuid4()),
@@ -205,7 +220,9 @@ class TestAuthServiceUnit:
 
         assert result is None
 
-    async def test_refresh_token_returns_none_for_expired_token(self, auth_service):
+    async def test_refresh_token_returns_none_for_expired_token(
+        self, auth_service: AuthService
+    ) -> None:
         """Test that refresh_token returns None for expired token."""
         payload = {
             "sub": str(uuid4()),
@@ -219,13 +236,17 @@ class TestAuthServiceUnit:
 
         assert result is None
 
-    async def test_refresh_token_returns_none_for_invalid_token(self, auth_service):
+    async def test_refresh_token_returns_none_for_invalid_token(
+        self, auth_service: AuthService
+    ) -> None:
         """Test that refresh_token returns None for malformed token."""
         result = await auth_service.refresh_token("invalid_token")
 
         assert result is None
 
-    async def test_change_password_success(self, auth_service, mock_user_service):
+    async def test_change_password_success(
+        self, auth_service: AuthService, mock_user_service: AsyncMock
+    ) -> None:
         """Test successful password change."""
         user = make_user_with_password()
         mock_user_service.get_user_with_password.return_value = user
@@ -241,8 +262,8 @@ class TestAuthServiceUnit:
         mock_user_service.update_password.assert_called_once()
 
     async def test_change_password_fails_for_nonexistent_user(
-        self, auth_service, mock_user_service
-    ):
+        self, auth_service: AuthService, mock_user_service: AsyncMock
+    ) -> None:
         """Test password change fails for non-existent user."""
         mock_user_service.get_user_with_password.return_value = None
 
@@ -255,8 +276,8 @@ class TestAuthServiceUnit:
         assert result is False
 
     async def test_change_password_fails_for_wrong_current_password(
-        self, auth_service, mock_user_service
-    ):
+        self, auth_service: AuthService, mock_user_service: AsyncMock
+    ) -> None:
         """Test password change fails with wrong current password."""
         user = make_user_with_password()
         mock_user_service.get_user_with_password.return_value = user
@@ -271,7 +292,7 @@ class TestAuthServiceUnit:
         assert result is False
         mock_user_service.update_password.assert_not_called()
 
-    def test_verify_password_correct(self, auth_service):
+    def test_verify_password_correct(self, auth_service: AuthService) -> None:
         """Test password verification with correct password."""
         import bcrypt
 
@@ -283,7 +304,7 @@ class TestAuthServiceUnit:
 
         assert result is True
 
-    def test_verify_password_incorrect(self, auth_service):
+    def test_verify_password_incorrect(self, auth_service: AuthService) -> None:
         """Test password verification with incorrect password."""
         import bcrypt
 
@@ -296,7 +317,7 @@ class TestAuthServiceUnit:
 
         assert result is False
 
-    def test_hash_password(self, auth_service):
+    def test_hash_password(self, auth_service: AuthService) -> None:
         """Test password hashing."""
         password = "TestPass123"
 
@@ -305,7 +326,7 @@ class TestAuthServiceUnit:
         assert hashed.startswith("$2b$")
         assert len(hashed) == 60
 
-    def test_create_access_token(self, auth_service):
+    def test_create_access_token(self, auth_service: AuthService) -> None:
         """Test access token creation."""
         user = make_user_response()
 
@@ -317,7 +338,7 @@ class TestAuthServiceUnit:
         assert payload["type"] == "access"
         assert "exp" in payload
 
-    def test_create_refresh_token(self, auth_service):
+    def test_create_refresh_token(self, auth_service: AuthService) -> None:
         """Test refresh token creation."""
         user = make_user_response()
 

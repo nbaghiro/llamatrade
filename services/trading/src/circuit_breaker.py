@@ -17,7 +17,7 @@ import time
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import StrEnum
-from typing import Protocol
+from typing import Any, Protocol
 from uuid import UUID
 
 from prometheus_client import Counter
@@ -76,7 +76,7 @@ class CircuitBreakerStatus:
     state: CircuitBreakerState
     triggered_at: datetime | None = None
     triggered_reason: CircuitBreakerReason | None = None
-    triggered_details: dict | None = None
+    triggered_details: dict[str, Any] | None = None
     cooldown_remaining_seconds: int | None = None
     can_resume: bool = True
 
@@ -85,7 +85,7 @@ class CircuitBreakerStatus:
 class ErrorTracker:
     """Tracks errors within a time window."""
 
-    errors: list[float] = field(default_factory=list)  # Timestamps of errors
+    errors: list[float] = field(default_factory=lambda: [])  # Timestamps of errors
     window_seconds: int = 300
 
     def add_error(self) -> None:
@@ -111,7 +111,7 @@ class CircuitBreakerCallback(Protocol):
         tenant_id: UUID,
         session_id: UUID,
         reason: str,
-        details: dict,
+        details: dict[str, Any],
     ) -> None: ...
 
     async def on_circuit_breaker_reset(
@@ -163,7 +163,7 @@ class CircuitBreaker:
         self._state = CircuitBreakerState.CLOSED
         self._triggered_at: datetime | None = None
         self._triggered_reason: CircuitBreakerReason | None = None
-        self._triggered_details: dict | None = None
+        self._triggered_details: dict[str, Any] | None = None
 
         # Tracking
         self._consecutive_losses = 0
@@ -174,7 +174,7 @@ class CircuitBreaker:
         self._api_errors = ErrorTracker(window_seconds=config.error_window_seconds)
 
         # Cooldown task
-        self._cooldown_task: asyncio.Task | None = None
+        self._cooldown_task: asyncio.Task[None] | None = None
 
     @property
     def state(self) -> CircuitBreakerState:
@@ -437,7 +437,7 @@ class CircuitBreaker:
         self._consecutive_losses = 0
         self._peak_equity = self._current_equity
 
-    async def _trigger(self, reason: CircuitBreakerReason, details: dict) -> None:
+    async def _trigger(self, reason: CircuitBreakerReason, details: dict[str, Any]) -> None:
         """Trigger the circuit breaker.
 
         Args:

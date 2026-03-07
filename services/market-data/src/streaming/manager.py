@@ -3,7 +3,7 @@
 import asyncio
 import logging
 from collections import defaultdict
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from enum import Enum
 
@@ -11,10 +11,13 @@ from src.models import BarData, QuoteData, StreamData, TradeData
 
 logger = logging.getLogger(__name__)
 
-# Callback type for subscription changes
+# Queue size limit to prevent memory exhaustion from slow clients
+QUEUE_MAX_SIZE = 1000
+
+# Callback type for subscription changes (must be async)
 SubscriptionCallback = Callable[
     [list[str], list[str], list[str]],  # trades, quotes, bars
-    None,
+    Awaitable[None],
 ]
 
 
@@ -101,7 +104,7 @@ class StreamManager:
     async def connect(self, client_id: int) -> asyncio.Queue[StreamMessage]:
         """Register a new client connection and return its message queue."""
         async with self._lock:
-            queue: asyncio.Queue[StreamMessage] = asyncio.Queue()
+            queue: asyncio.Queue[StreamMessage] = asyncio.Queue(maxsize=QUEUE_MAX_SIZE)
             self._queues[client_id] = queue
         logger.debug(f"Client {client_id} connected")
         return queue
@@ -139,7 +142,7 @@ class StreamManager:
         # Notify bridge of removed subscriptions
         if self._on_unsubscribe and (removed_trades or removed_quotes or removed_bars):
             try:
-                self._on_unsubscribe(removed_trades, removed_quotes, removed_bars)
+                await self._on_unsubscribe(removed_trades, removed_quotes, removed_bars)
             except Exception as e:
                 logger.error(f"Error in unsubscribe callback: {e}")
 
@@ -187,7 +190,7 @@ class StreamManager:
         # Notify bridge of new subscriptions
         if self._on_subscribe and (new_trades or new_quotes or new_bars):
             try:
-                self._on_subscribe(new_trades, new_quotes, new_bars)
+                await self._on_subscribe(new_trades, new_quotes, new_bars)
             except Exception as e:
                 logger.error(f"Error in subscribe callback: {e}")
 
@@ -233,7 +236,7 @@ class StreamManager:
         # Notify bridge of removed subscriptions
         if self._on_unsubscribe and (removed_trades or removed_quotes or removed_bars):
             try:
-                self._on_unsubscribe(removed_trades, removed_quotes, removed_bars)
+                await self._on_unsubscribe(removed_trades, removed_quotes, removed_bars)
             except Exception as e:
                 logger.error(f"Error in unsubscribe callback: {e}")
 
@@ -270,7 +273,7 @@ class StreamManager:
         )
 
         # Send to all subscribed clients via their queues
-        disconnected = []
+        disconnected: list[int] = []
         for client_id in client_ids:
             queue = self._queues.get(client_id)
             if queue:

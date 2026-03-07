@@ -3,7 +3,14 @@
 from datetime import UTC, datetime
 
 import pytest
-from src.models import OrderResponse, OrderStatus, RiskCheckResult
+
+from llamatrade_proto.generated.trading_pb2 import (
+    ORDER_SIDE_BUY,
+    ORDER_STATUS_FILLED,
+    ORDER_TYPE_MARKET,
+)
+
+from src.models import OrderResponse, RiskCheckResult
 from src.runner.runner import Signal
 from src.services.audit_service import AuditService
 
@@ -33,10 +40,10 @@ def sample_order_response(order_id):
         id=order_id,
         alpaca_order_id="alpaca-123",
         symbol="AAPL",
-        side="buy",
+        side=ORDER_SIDE_BUY,
         qty=10.0,
-        order_type="market",
-        status=OrderStatus.FILLED,
+        order_type=ORDER_TYPE_MARKET,
+        status=ORDER_STATUS_FILLED,
         filled_qty=10.0,
         filled_avg_price=150.50,
         submitted_at=datetime.now(UTC),

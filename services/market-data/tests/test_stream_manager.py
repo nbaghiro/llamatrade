@@ -4,6 +4,8 @@ import asyncio
 from unittest.mock import MagicMock
 
 import pytest
+
+from src.models import TradeData
 from src.streaming.manager import (
     StreamManager,
     StreamMessage,
@@ -355,7 +357,12 @@ class TestStreamMessageModel:
 
     def test_stream_message_creation(self):
         """Test creating a StreamMessage."""
-        data = {"price": 150.0}
+        data: TradeData = {
+            "price": 150.0,
+            "size": 100,
+            "exchange": "NASDAQ",
+            "timestamp": "2024-01-15T16:00:00Z",
+        }
         msg = StreamMessage(
             stream_type=StreamType.TRADE,
             symbol="AAPL",

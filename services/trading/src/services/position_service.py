@@ -5,13 +5,17 @@ from decimal import Decimal
 from uuid import UUID
 
 from fastapi import Depends
-from llamatrade_db import get_db
-from llamatrade_db.models.trading import Position
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from llamatrade_db import get_db
+from llamatrade_db.models.trading import Position
+from llamatrade_proto.generated.trading_pb2 import (
+    POSITION_SIDE_LONG,
+)
+
 from src.clients.market_data import MarketDataClient, get_market_data_client
-from src.models import PositionResponse
+from src.models import PositionResponse, position_side_to_str
 
 
 class PositionService:
@@ -101,7 +105,7 @@ class PositionService:
         qty = float(position.qty)
         entry_price = float(position.avg_entry_price)
 
-        if position.side == "long":
+        if position.side == POSITION_SIDE_LONG:
             realized_pl = (exit_price - entry_price) * qty
         else:
             realized_pl = (entry_price - exit_price) * qty
@@ -236,7 +240,7 @@ class PositionService:
             pos.current_price = Decimal(str(price))
             pos.market_value = Decimal(str(qty * price))
 
-            if pos.side == "long":
+            if pos.side == POSITION_SIDE_LONG:
                 unrealized_pl = (price - entry_price) * qty
             else:
                 unrealized_pl = (entry_price - price) * qty
@@ -354,7 +358,7 @@ class PositionService:
         return PositionResponse(
             symbol=p.symbol,
             qty=float(p.qty),
-            side=p.side,
+            side=position_side_to_str(p.side),
             cost_basis=float(p.cost_basis),
             market_value=float(p.market_value) if p.market_value else 0.0,
             unrealized_pnl=float(p.unrealized_pl) if p.unrealized_pl else 0.0,
@@ -368,4 +372,14 @@ async def get_position_service(
     market_data: MarketDataClient = Depends(get_market_data_client),
 ) -> PositionService:
     """Dependency to get position service."""
+    return PositionService(db=db, market_data=market_data)
+
+
+async def create_position_service() -> PositionService:
+    """Create position service without dependency injection.
+
+    Used by gRPC servicer where FastAPI DI is not available.
+    """
+    db = await anext(get_db())
+    market_data = get_market_data_client()
     return PositionService(db=db, market_data=market_data)

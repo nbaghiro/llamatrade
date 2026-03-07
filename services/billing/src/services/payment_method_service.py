@@ -4,9 +4,10 @@ import logging
 from uuid import UUID
 
 from fastapi import Depends
-from llamatrade_db.models import PaymentMethod
 from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from llamatrade_db.models import PaymentMethod
 
 from src.models import PaymentMethodResponse, SetupIntentResponse
 from src.services.billing_service import BillingService, get_billing_service

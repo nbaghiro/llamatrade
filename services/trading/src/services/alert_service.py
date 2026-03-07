@@ -1,19 +1,30 @@
 """Alert service - sends notifications for important trading events."""
 
+import hashlib
+import hmac
+import json
 import logging
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import StrEnum
+from typing import Any
 from uuid import UUID
 
 import httpx
 from fastapi import Depends
-from llamatrade_db import get_db
-from llamatrade_db.models.notification import Webhook
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from tenacity import (
+    retry,
+    retry_if_exception_type,
+    stop_after_attempt,
+    wait_exponential,
+)
 
-from src.models import OrderResponse
+from llamatrade_db import get_db
+from llamatrade_db.models.notification import Webhook
+
+from src.models import OrderResponse, order_side_to_str
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +45,7 @@ class AlertType(StrEnum):
     ORDER_REJECTED = "order_rejected"
     POSITION_OPENED = "position_opened"
     POSITION_CLOSED = "position_closed"
+    POSITION_DRIFT = "position_drift"
     STOP_LOSS_HIT = "stop_loss_hit"
     TAKE_PROFIT_HIT = "take_profit_hit"
     RISK_BREACH = "risk_breach"
@@ -59,7 +71,7 @@ class Alert:
     message: str
     session_id: UUID | None = None
     symbol: str | None = None
-    metadata: dict = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=lambda: {})
     timestamp: datetime = field(default_factory=lambda: datetime.now(UTC))
 
 
@@ -103,7 +115,7 @@ class AlertService:
                 session_id=session_id,
                 alert_type=AlertType.ORDER_FILLED,
                 priority=AlertPriority.LOW,
-                title=f"Order Filled: {order.side.upper()} {order.symbol}",
+                title=f"Order Filled: {order_side_to_str(order.side).upper()} {order.symbol}",
                 message=f"Filled {order.filled_qty} {order.symbol}{price_str}",
                 symbol=order.symbol,
                 metadata={
@@ -254,12 +266,75 @@ class AlertService:
             )
         )
 
+    async def on_position_drift(
+        self,
+        tenant_id: UUID,
+        session_id: UUID,
+        symbol: str,
+        drift_type: str,
+        local_qty: float,
+        broker_qty: float,
+        action: str,
+    ) -> None:
+        """Send alert for position drift detected during reconciliation.
+
+        Args:
+            tenant_id: Tenant identifier.
+            session_id: Trading session identifier.
+            symbol: Symbol with position drift.
+            drift_type: Type of drift (missing_local, missing_broker,
+                       quantity_mismatch, side_mismatch).
+            local_qty: Quantity in local position tracking.
+            broker_qty: Quantity at broker.
+            action: Action taken (corrected, alerted).
+        """
+        # Determine priority based on drift type and action
+        if drift_type == "side_mismatch":
+            priority = AlertPriority.CRITICAL
+        elif action == "alerted":
+            priority = AlertPriority.HIGH
+        else:
+            priority = AlertPriority.MEDIUM
+
+        # Build message based on drift type
+        if drift_type == "missing_local":
+            message = f"Position {symbol} found at broker ({broker_qty} shares) but not tracked locally. Auto-added."
+        elif drift_type == "missing_broker":
+            message = f"Position {symbol} tracked locally ({local_qty} shares) but not found at broker. Manual review required."
+        elif drift_type == "side_mismatch":
+            message = f"Position {symbol} has side mismatch between local and broker. Manual review required."
+        elif drift_type == "quantity_mismatch":
+            if action == "corrected":
+                message = f"Position {symbol} quantity drift corrected: {local_qty} -> {broker_qty}"
+            else:
+                message = f"Position {symbol} has significant quantity drift: local={local_qty}, broker={broker_qty}. Manual review required."
+        else:
+            message = f"Position {symbol} drift detected: {drift_type}"
+
+        await self.send(
+            Alert(
+                tenant_id=tenant_id,
+                session_id=session_id,
+                alert_type=AlertType.POSITION_DRIFT,
+                priority=priority,
+                title=f"Position Drift: {symbol}",
+                message=message,
+                symbol=symbol,
+                metadata={
+                    "drift_type": drift_type,
+                    "local_qty": local_qty,
+                    "broker_qty": broker_qty,
+                    "action": action,
+                },
+            )
+        )
+
     async def on_risk_breach(
         self,
         tenant_id: UUID,
         session_id: UUID,
         breach_type: str,
-        details: dict,
+        details: dict[str, Any],
     ) -> None:
         """Send alert for risk limit breach."""
         await self.send(
@@ -435,7 +510,7 @@ class AlertService:
         tenant_id: UUID,
         session_id: UUID,
         reason: str,
-        details: dict,
+        details: dict[str, Any],
     ) -> None:
         """Send alert when circuit breaker is triggered.
 
@@ -504,44 +579,166 @@ class AlertService:
     def _should_send(self, alert: Alert, webhook: Webhook) -> bool:
         """Check if alert should be sent to this webhook."""
         # Check if webhook is configured for this alert type
-        if webhook.events:
-            if alert.alert_type.value not in webhook.events:
+        # Cast required because Webhook.events is typed as Mapped[list] without type args
+        webhook_events: list[str] = getattr(webhook, "events", [])
+        if webhook_events:
+            if alert.alert_type.value not in webhook_events:
                 return False
 
         return True
 
     async def _send_webhook(self, webhook: Webhook, alert: Alert) -> None:
-        """Send alert to webhook URL."""
+        """Send alert to webhook URL with retry logic and delivery tracking."""
         if not self._http_client:
             self._http_client = httpx.AsyncClient(timeout=10.0)
 
-        payload = {
+        metadata_payload: dict[str, Any] = {
+            "tenant_id": str(alert.tenant_id),
+            "session_id": str(alert.session_id) if alert.session_id else None,
+            "symbol": alert.symbol,
+            **alert.metadata,
+        }
+
+        payload: dict[str, Any] = {
             "type": alert.alert_type.value,
             "priority": alert.priority.value,
             "title": alert.title,
             "message": alert.message,
             "timestamp": alert.timestamp.isoformat(),
-            "metadata": {
-                "tenant_id": str(alert.tenant_id),
-                "session_id": str(alert.session_id) if alert.session_id else None,
-                "symbol": alert.symbol,
-                **alert.metadata,
-            },
+            "metadata": metadata_payload,
         }
 
+        # Serialize payload for HMAC and request
+        payload_bytes = json.dumps(payload, sort_keys=True).encode("utf-8")
+
         headers = {"Content-Type": "application/json"}
+
+        # Add HMAC signature if secret is configured
         if webhook.secret:
-            # In production, add HMAC signature
-            headers["X-Webhook-Secret"] = webhook.secret
+            signature = hmac.new(
+                webhook.secret.encode("utf-8"),
+                payload_bytes,
+                hashlib.sha256,
+            ).hexdigest()
+            headers["X-Webhook-Signature"] = f"sha256={signature}"
+
+        # Add custom headers from webhook config
+        if webhook.headers:
+            for key, value in webhook.headers.items():
+                headers[str(key)] = str(value)
+
+        # Send with retry logic
+        status_code: int | None = None
+        try:
+            status_code = await self._send_webhook_with_retry(
+                url=webhook.url,
+                payload=payload,
+                headers=headers,
+            )
+            # Success - reset failure count
+            await self._update_webhook_delivery(
+                webhook=webhook,
+                status_code=status_code,
+                success=True,
+            )
+            logger.info(f"Sent webhook alert to {webhook.url}: {alert.alert_type.value}")
+
+        except httpx.HTTPStatusError as e:
+            # HTTP error after retries exhausted (reraise=True raises original exception)
+            status_code = e.response.status_code
+            await self._update_webhook_delivery(
+                webhook=webhook,
+                status_code=status_code,
+                success=False,
+            )
+            logger.error(f"Webhook delivery failed after retries to {webhook.url}: {e}")
+            raise
+
+        except (httpx.ConnectError, httpx.TimeoutException) as e:
+            # Connection/timeout error after retries exhausted
+            await self._update_webhook_delivery(
+                webhook=webhook,
+                status_code=status_code,
+                success=False,
+            )
+            logger.error(f"Webhook delivery failed after retries to {webhook.url}: {e}")
+            raise
+
+        except Exception as e:
+            # Non-retryable error
+            await self._update_webhook_delivery(
+                webhook=webhook,
+                status_code=status_code,
+                success=False,
+            )
+            logger.error(f"Webhook delivery error to {webhook.url}: {e}")
+            raise
+
+    @retry(
+        retry=retry_if_exception_type(
+            (httpx.HTTPStatusError, httpx.ConnectError, httpx.TimeoutException)
+        ),
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=1, max=10),
+        reraise=True,
+    )
+    async def _send_webhook_with_retry(
+        self,
+        url: str,
+        payload: dict[str, Any],
+        headers: dict[str, str],
+    ) -> int:
+        """Send webhook request with automatic retry on failure.
+
+        Returns:
+            HTTP status code on success.
+
+        Raises:
+            httpx.HTTPStatusError: On 4xx/5xx responses.
+            httpx.ConnectError: On connection failures.
+            httpx.TimeoutException: On timeout.
+        """
+        if not self._http_client:
+            self._http_client = httpx.AsyncClient(timeout=10.0)
+        assert self._http_client is not None
 
         response = await self._http_client.post(
-            webhook.url,
+            url,
             json=payload,
             headers=headers,
         )
         response.raise_for_status()
+        return response.status_code
 
-        logger.info(f"Sent webhook alert to {webhook.url}: {alert.alert_type.value}")
+    async def _update_webhook_delivery(
+        self,
+        webhook: Webhook,
+        status_code: int | None,
+        success: bool,
+    ) -> None:
+        """Update webhook delivery tracking fields.
+
+        Args:
+            webhook: The webhook to update.
+            status_code: HTTP status code from delivery attempt.
+            success: Whether delivery was successful.
+        """
+        if not self.db:
+            return
+
+        try:
+            webhook.last_triggered_at = datetime.now(UTC)
+            webhook.last_status_code = status_code
+
+            if success:
+                webhook.failure_count = 0
+            else:
+                webhook.failure_count = webhook.failure_count + 1
+
+            await self.db.commit()
+        except Exception as e:
+            logger.error(f"Failed to update webhook delivery status: {e}")
+            await self.db.rollback()
 
     async def close(self) -> None:
         """Close HTTP client."""

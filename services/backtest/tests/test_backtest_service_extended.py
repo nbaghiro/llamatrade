@@ -6,7 +6,14 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
 import pytest
-from src.models import BacktestStatus
+
+from src.models import (
+    BACKTEST_STATUS_CANCELLED,
+    BACKTEST_STATUS_COMPLETED,
+    BACKTEST_STATUS_FAILED,
+    BACKTEST_STATUS_PENDING,
+    BACKTEST_STATUS_RUNNING,
+)
 from src.services.backtest_service import BacktestService, GRPCMarketDataClient, MarketDataError
 
 # === Test Constants ===
@@ -67,7 +74,7 @@ def mock_backtest():
     backtest.strategy_id = TEST_STRATEGY_ID
     backtest.strategy_version = 1
     backtest.name = "Test Backtest"
-    backtest.status = "pending"
+    backtest.status = BACKTEST_STATUS_PENDING
     backtest.symbols = ["AAPL"]
     backtest.start_date = date(2024, 1, 1)
     backtest.end_date = date(2024, 1, 31)
@@ -296,7 +303,7 @@ class TestListBacktests:
         mock_db.execute.side_effect = [mock_result1, mock_result2]
 
         backtests, total = await backtest_service.list_backtests(
-            TEST_TENANT_ID, status=BacktestStatus.PENDING
+            TEST_TENANT_ID, status=BACKTEST_STATUS_PENDING
         )
 
         assert len(backtests) == 1
@@ -310,7 +317,7 @@ class TestCancelBacktest:
 
     async def test_cancel_pending_backtest(self, backtest_service, mock_db, mock_backtest):
         """Test cancelling a pending backtest."""
-        mock_backtest.status = "pending"
+        mock_backtest.status = BACKTEST_STATUS_PENDING
 
         mock_result = MagicMock()
         mock_result.scalar_one_or_none.return_value = mock_backtest
@@ -319,11 +326,11 @@ class TestCancelBacktest:
         result = await backtest_service.cancel_backtest(TEST_BACKTEST_ID, TEST_TENANT_ID)
 
         assert result is True
-        assert mock_backtest.status == "cancelled"
+        assert mock_backtest.status == BACKTEST_STATUS_CANCELLED
 
     async def test_cancel_running_backtest(self, backtest_service, mock_db, mock_backtest):
         """Test cancelling a running backtest."""
-        mock_backtest.status = "running"
+        mock_backtest.status = BACKTEST_STATUS_RUNNING
 
         mock_result = MagicMock()
         mock_result.scalar_one_or_none.return_value = mock_backtest
@@ -335,7 +342,7 @@ class TestCancelBacktest:
 
     async def test_cancel_completed_backtest(self, backtest_service, mock_db, mock_backtest):
         """Test cancelling a completed backtest fails."""
-        mock_backtest.status = "completed"
+        mock_backtest.status = BACKTEST_STATUS_COMPLETED
 
         mock_result = MagicMock()
         mock_result.scalar_one_or_none.return_value = mock_backtest
@@ -364,7 +371,7 @@ class TestRetryBacktest:
 
     async def test_retry_failed_backtest(self, backtest_service, mock_db, mock_backtest):
         """Test retrying a failed backtest."""
-        mock_backtest.status = "failed"
+        mock_backtest.status = BACKTEST_STATUS_FAILED
         mock_backtest.error_message = "Previous error"
 
         mock_result = MagicMock()
@@ -374,12 +381,12 @@ class TestRetryBacktest:
         result = await backtest_service.retry_backtest(TEST_BACKTEST_ID, TEST_TENANT_ID)
 
         assert result is not None
-        assert mock_backtest.status == "pending"
+        assert mock_backtest.status == BACKTEST_STATUS_PENDING
         assert mock_backtest.error_message is None
 
     async def test_retry_non_failed_backtest(self, backtest_service, mock_db, mock_backtest):
         """Test retrying a non-failed backtest fails."""
-        mock_backtest.status = "completed"
+        mock_backtest.status = BACKTEST_STATUS_COMPLETED
 
         mock_result = MagicMock()
         mock_result.scalar_one_or_none.return_value = mock_backtest

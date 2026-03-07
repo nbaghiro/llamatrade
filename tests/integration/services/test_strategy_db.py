@@ -12,8 +12,12 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from llamatrade_db.models import Strategy, StrategyVersion, Tenant, User
-from llamatrade_db.models.strategy import StrategyStatus
-from tests.factories import StrategyFactory, StrategyVersionFactory
+from tests.factories import (
+    STRATEGY_STATUS_ACTIVE,
+    STRATEGY_STATUS_ARCHIVED,
+    StrategyFactory,
+    StrategyVersionFactory,
+)
 
 pytestmark = pytest.mark.integration
 
@@ -39,9 +43,7 @@ class TestStrategyPersistence:
         await db_session.flush()
 
         # Verify it was persisted
-        result = await db_session.execute(
-            select(Strategy).where(Strategy.id == strategy.id)
-        )
+        result = await db_session.execute(select(Strategy).where(Strategy.id == strategy.id))
         persisted = result.scalar_one_or_none()
 
         assert persisted is not None
@@ -290,9 +292,7 @@ class TestStrategyCascadeDelete:
         await db_session.flush()
 
         # Verify strategy is gone
-        result = await db_session.execute(
-            select(Strategy).where(Strategy.id == strategy_id)
-        )
+        result = await db_session.execute(select(Strategy).where(Strategy.id == strategy_id))
         assert result.scalar_one_or_none() is None
 
         # Verify versions are gone
@@ -343,7 +343,7 @@ class TestStrategyQueries:
                 StrategyFactory.create(
                     tenant_id=test_tenant.id,
                     created_by=test_user.id,
-                    status=StrategyStatus.ACTIVE,
+                    status=STRATEGY_STATUS_ACTIVE,  # Proto int: ACTIVE=2
                 )
             )
 
@@ -353,7 +353,7 @@ class TestStrategyQueries:
                 StrategyFactory.create(
                     tenant_id=test_tenant.id,
                     created_by=test_user.id,
-                    status=StrategyStatus.ARCHIVED,
+                    status=STRATEGY_STATUS_ARCHIVED,  # Proto int: ARCHIVED=4
                 )
             )
 
@@ -363,13 +363,13 @@ class TestStrategyQueries:
         result = await db_session.execute(
             select(Strategy).where(
                 Strategy.tenant_id == test_tenant.id,
-                Strategy.status == StrategyStatus.ACTIVE,
+                Strategy.status == STRATEGY_STATUS_ACTIVE,  # Proto int: ACTIVE=2
             )
         )
         active = result.scalars().all()
 
         assert len(active) == 3
-        assert all(s.status == StrategyStatus.ACTIVE for s in active)
+        assert all(s.status == STRATEGY_STATUS_ACTIVE for s in active)
 
     async def test_filter_public_strategies(
         self,

@@ -4,6 +4,7 @@ Maps Alpaca API errors and resilience errors to appropriate HTTP responses.
 """
 
 import logging
+from collections.abc import Awaitable, Callable
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
@@ -19,6 +20,9 @@ from src.models import (
 
 logger = logging.getLogger(__name__)
 
+# Type alias for exception handlers
+type ExceptionHandler[T: Exception] = Callable[[Request, T], Awaitable[JSONResponse]]
+
 
 def register_error_handlers(app: FastAPI) -> None:
     """Register all error handlers with the FastAPI app.
@@ -28,7 +32,9 @@ def register_error_handlers(app: FastAPI) -> None:
     """
 
     @app.exception_handler(SymbolNotFoundError)
-    async def symbol_not_found_handler(request: Request, exc: SymbolNotFoundError) -> JSONResponse:
+    async def symbol_not_found_handler(  # pyright: ignore[reportUnusedFunction]
+        request: Request, exc: SymbolNotFoundError
+    ) -> JSONResponse:
         """Handle symbol not found errors (404)."""
         logger.warning(
             f"Symbol not found: {exc.symbol}",
@@ -44,7 +50,9 @@ def register_error_handlers(app: FastAPI) -> None:
         )
 
     @app.exception_handler(InvalidRequestError)
-    async def invalid_request_handler(request: Request, exc: InvalidRequestError) -> JSONResponse:
+    async def invalid_request_handler(  # pyright: ignore[reportUnusedFunction]
+        request: Request, exc: InvalidRequestError
+    ) -> JSONResponse:
         """Handle invalid request errors (400)."""
         logger.warning(
             f"Invalid request: {exc.message}",
@@ -59,7 +67,9 @@ def register_error_handlers(app: FastAPI) -> None:
         )
 
     @app.exception_handler(AlpacaRateLimitError)
-    async def rate_limit_handler(request: Request, exc: AlpacaRateLimitError) -> JSONResponse:
+    async def rate_limit_handler(  # pyright: ignore[reportUnusedFunction]
+        request: Request, exc: AlpacaRateLimitError
+    ) -> JSONResponse:
         """Handle rate limit errors (503 with Retry-After).
 
         We return 503 (Service Unavailable) instead of 429 because:
@@ -72,7 +82,7 @@ def register_error_handlers(app: FastAPI) -> None:
             extra={"retry_after": exc.retry_after, "path": request.url.path},
         )
 
-        headers = {}
+        headers: dict[str, str] = {}
         if exc.retry_after:
             headers["Retry-After"] = str(exc.retry_after)
 
@@ -87,7 +97,9 @@ def register_error_handlers(app: FastAPI) -> None:
         )
 
     @app.exception_handler(AlpacaServerError)
-    async def alpaca_server_error_handler(request: Request, exc: AlpacaServerError) -> JSONResponse:
+    async def alpaca_server_error_handler(  # pyright: ignore[reportUnusedFunction]
+        request: Request, exc: AlpacaServerError
+    ) -> JSONResponse:
         """Handle Alpaca server errors (502 Bad Gateway)."""
         logger.error(
             f"Alpaca server error: {exc.message}",
@@ -102,7 +114,9 @@ def register_error_handlers(app: FastAPI) -> None:
         )
 
     @app.exception_handler(CircuitOpenError)
-    async def circuit_open_handler(request: Request, exc: CircuitOpenError) -> JSONResponse:
+    async def circuit_open_handler(  # pyright: ignore[reportUnusedFunction]
+        request: Request, exc: CircuitOpenError
+    ) -> JSONResponse:
         """Handle circuit breaker open errors (503)."""
         logger.warning(
             "Circuit breaker open",
@@ -119,7 +133,9 @@ def register_error_handlers(app: FastAPI) -> None:
         )
 
     @app.exception_handler(AlpacaError)
-    async def alpaca_error_handler(request: Request, exc: AlpacaError) -> JSONResponse:
+    async def alpaca_error_handler(  # pyright: ignore[reportUnusedFunction]
+        request: Request, exc: AlpacaError
+    ) -> JSONResponse:
         """Catch-all handler for any other Alpaca errors."""
         logger.error(
             f"Alpaca error: {exc.message}",

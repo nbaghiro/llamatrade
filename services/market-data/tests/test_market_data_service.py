@@ -4,6 +4,7 @@ from datetime import UTC, datetime
 from unittest.mock import AsyncMock
 
 import pytest
+
 from src.cache import MarketDataCache
 from src.models import Snapshot, Timeframe
 from src.services.market_data_service import MarketDataService
@@ -103,15 +104,19 @@ class TestGetMultiBars:
     async def test_fetches_uncached_symbols_only(
         self, mock_alpaca_client, mock_cache, mock_redis, sample_bars
     ):
-        """Test that only uncached symbols are fetched from Alpaca."""
+        """Test that only uncached symbols are fetched from Alpaca (using batch mget)."""
 
-        # AAPL is cached, TSLA is not
-        def mock_get(key):
-            if "AAPL" in key:
-                return MarketDataCache.serialize_model_list(sample_bars).encode()
-            return None
+        # AAPL is cached, TSLA is not - use mget for batch lookup
+        def mock_mget(keys):
+            result = []
+            for key in keys:
+                if "AAPL" in key:
+                    result.append(MarketDataCache.serialize_model_list(sample_bars).encode())
+                else:
+                    result.append(None)
+            return result
 
-        mock_redis.get = AsyncMock(side_effect=mock_get)
+        mock_redis.mget = AsyncMock(side_effect=mock_mget)
         mock_alpaca_client.get_multi_bars.return_value = {"TSLA": sample_bars[:2]}
 
         service = MarketDataService(alpaca=mock_alpaca_client, cache=mock_cache)
@@ -133,6 +138,9 @@ class TestGetMultiBars:
         call_args = mock_alpaca_client.get_multi_bars.call_args
         assert call_args.kwargs["symbols"] == ["TSLA"]
 
+        # Should use mget (batch) instead of individual get calls
+        mock_redis.mget.assert_called_once()
+
 
 class TestGetLatestBar:
     """Tests for get_latest_bar method."""
@@ -147,6 +155,7 @@ class TestGetLatestBar:
 
         result = await service.get_latest_bar(symbol="AAPL")
 
+        assert result is not None
         assert result.close == sample_bar.close
         mock_alpaca_client.get_latest_bar.assert_not_called()
 
@@ -159,6 +168,7 @@ class TestGetLatestBar:
 
         result = await service.get_latest_bar(symbol="AAPL")
 
+        assert result is not None
         assert result.close == sample_bar.close
         mock_alpaca_client.get_latest_bar.assert_called_once()
 
@@ -176,6 +186,7 @@ class TestGetLatestQuote:
 
         result = await service.get_latest_quote(symbol="AAPL")
 
+        assert result is not None
         assert result.bid_price == sample_quote.bid_price
         mock_alpaca_client.get_latest_quote.assert_not_called()
 
@@ -188,6 +199,7 @@ class TestGetLatestQuote:
 
         result = await service.get_latest_quote(symbol="AAPL")
 
+        assert result is not None
         assert result.bid_price == sample_quote.bid_price
         mock_alpaca_client.get_latest_quote.assert_called_once()
 
@@ -205,6 +217,7 @@ class TestGetSnapshot:
 
         result = await service.get_snapshot(symbol="AAPL")
 
+        assert result is not None
         assert result.symbol == sample_snapshot.symbol
         mock_alpaca_client.get_snapshot.assert_not_called()
 
@@ -217,6 +230,7 @@ class TestGetSnapshot:
 
         result = await service.get_snapshot(symbol="AAPL")
 
+        assert result is not None
         assert result.symbol == sample_snapshot.symbol
         mock_alpaca_client.get_snapshot.assert_called_once()
 
@@ -228,14 +242,19 @@ class TestGetMultiSnapshots:
     async def test_fetches_uncached_symbols_only(
         self, mock_alpaca_client, mock_cache, mock_redis, sample_snapshot
     ):
-        """Test that only uncached symbols are fetched from Alpaca."""
+        """Test that only uncached symbols are fetched from Alpaca (using batch mget)."""
 
-        def mock_get(key):
-            if "AAPL" in key:
-                return MarketDataCache.serialize_model(sample_snapshot).encode()
-            return None
+        # AAPL is cached, TSLA is not - use mget for batch lookup
+        def mock_mget(keys):
+            result = []
+            for key in keys:
+                if "AAPL" in key:
+                    result.append(MarketDataCache.serialize_model(sample_snapshot).encode())
+                else:
+                    result.append(None)
+            return result
 
-        mock_redis.get = AsyncMock(side_effect=mock_get)
+        mock_redis.mget = AsyncMock(side_effect=mock_mget)
 
         tsla_snapshot = Snapshot(symbol="TSLA")
         mock_alpaca_client.get_multi_snapshots.return_value = {"TSLA": tsla_snapshot}
@@ -253,6 +272,9 @@ class TestGetMultiSnapshots:
         mock_alpaca_client.get_multi_snapshots.assert_called_once()
         call_args = mock_alpaca_client.get_multi_snapshots.call_args
         assert call_args.kwargs["symbols"] == ["TSLA"]
+
+        # Should use mget (batch) instead of individual get calls
+        mock_redis.mget.assert_called_once()
 
 
 class TestSymbolNormalization:

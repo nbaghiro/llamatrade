@@ -4,6 +4,7 @@ from decimal import Decimal
 from uuid import uuid4
 
 import pytest
+
 from src.events.aggregates import (
     OrderState,
     PositionAggregate,
@@ -536,4 +537,5 @@ class TestOrderEvents:
         )
 
         assert event.reason == "insufficient_buying_power"
+        assert event.broker_message is not None
         assert "insufficient" in event.broker_message.lower()

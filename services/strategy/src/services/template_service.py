@@ -1,4 +1,4 @@
-"""Template service - pre-built strategy templates using S-expression DSL."""
+"""Template service - pre-built strategy templates using allocation-based S-expression DSL."""
 
 from typing import TypedDict
 
@@ -17,194 +17,255 @@ class TemplateData(TypedDict):
     config_sexpr: str
 
 
-# Pre-built strategy templates using S-expression DSL
+# Pre-built allocation strategy templates using S-expression DSL
 TEMPLATES: dict[str, TemplateData] = {
     "ma_crossover": {
         "id": "ma_crossover",
         "name": "Moving Average Crossover",
-        "description": "Classic trend-following strategy using fast and slow EMA crossovers",
+        "description": "Trend-following allocation using EMA crossovers",
         "strategy_type": StrategyType.TREND_FOLLOWING,
         "tags": ["trend", "ema", "beginner"],
         "difficulty": "beginner",
-        "config_sexpr": """(strategy
-  :name "Moving Average Crossover"
-  :type trend_following
-  :symbols ["AAPL"]
-  :timeframe "1D"
-  :entry (cross-above (ema close 12) (ema close 26))
-  :exit (cross-below (ema close 12) (ema close 26))
-  :position-size-pct 10.0
-  :stop-loss-pct 5.0
-  :take-profit-pct 15.0)""",
+        "config_sexpr": """(strategy "Moving Average Crossover"
+  :rebalance daily
+  :benchmark SPY
+  (if (crosses-above (ema SPY 12) (ema SPY 26))
+    (asset SPY :weight 100)
+    (else (asset TLT :weight 100))))""",
     },
     "rsi_mean_reversion": {
         "id": "rsi_mean_reversion",
         "name": "RSI Mean Reversion",
-        "description": "Buy oversold conditions (RSI < 30), sell overbought (RSI > 70)",
+        "description": "Allocate to equities when oversold, bonds when overbought",
         "strategy_type": StrategyType.MEAN_REVERSION,
         "tags": ["mean-reversion", "rsi", "intermediate"],
         "difficulty": "intermediate",
-        "config_sexpr": """(strategy
-  :name "RSI Mean Reversion"
-  :type mean_reversion
-  :symbols ["SPY"]
-  :timeframe "1D"
-  :entry (< (rsi close 14) 30)
-  :exit (> (rsi close 14) 70)
-  :position-size-pct 10.0
-  :stop-loss-pct 3.0
-  :take-profit-pct 10.0)""",
+        "config_sexpr": """(strategy "RSI Mean Reversion"
+  :rebalance daily
+  :benchmark SPY
+  (if (< (rsi SPY 14) 30)
+    (asset SPY :weight 100)
+    (else (if (> (rsi SPY 14) 70)
+      (asset TLT :weight 100)
+      (else (weight :method equal
+        (asset SPY)
+        (asset TLT)))))))""",
     },
-    "macd_strategy": {
-        "id": "macd_strategy",
-        "name": "MACD Strategy",
-        "description": "Trade MACD line crossovers with the signal line",
-        "strategy_type": StrategyType.MOMENTUM,
-        "tags": ["momentum", "macd", "beginner"],
+    "sixty_forty": {
+        "id": "sixty_forty",
+        "name": "60/40 Portfolio",
+        "description": "Classic 60% equities / 40% bonds allocation",
+        "strategy_type": StrategyType.CUSTOM,
+        "tags": ["classic", "balanced", "beginner"],
         "difficulty": "beginner",
-        "config_sexpr": """(strategy
-  :name "MACD Strategy"
-  :type momentum
-  :symbols ["QQQ"]
-  :timeframe "1D"
-  :entry (cross-above (macd-line close 12 26 9) (macd-signal close 12 26 9))
-  :exit (cross-below (macd-line close 12 26 9) (macd-signal close 12 26 9))
-  :position-size-pct 10.0
-  :stop-loss-pct 4.0
-  :take-profit-pct 12.0)""",
+        "config_sexpr": """(strategy "60/40 Portfolio"
+  :rebalance monthly
+  :benchmark SPY
+  (weight :method specified
+    (asset VTI :weight 60)
+    (asset BND :weight 40)))""",
     },
-    "bollinger_bounce": {
-        "id": "bollinger_bounce",
-        "name": "Bollinger Bands Bounce",
-        "description": "Mean reversion strategy trading bounces off Bollinger Band boundaries",
-        "strategy_type": StrategyType.MEAN_REVERSION,
-        "tags": ["mean-reversion", "bollinger", "intermediate"],
+    "momentum_rotation": {
+        "id": "momentum_rotation",
+        "name": "Momentum Sector Rotation",
+        "description": "Rotate to top momentum sectors",
+        "strategy_type": StrategyType.MOMENTUM,
+        "tags": ["momentum", "sectors", "intermediate"],
         "difficulty": "intermediate",
-        "config_sexpr": """(strategy
-  :name "Bollinger Bands Bounce"
-  :type mean_reversion
-  :symbols ["SPY"]
-  :timeframe "1H"
-  :entry (and
-    (< close (bb-lower close 20 2.0))
-    (< (rsi close 14) 35))
-  :exit (> close (bb-middle close 20 2.0))
-  :position-size-pct 5.0
-  :stop-loss-pct 2.0
-  :take-profit-pct 6.0)""",
+        "config_sexpr": """(strategy "Momentum Sector Rotation"
+  :rebalance monthly
+  :benchmark SPY
+  (filter :by momentum :select (top 3) :lookback 90
+    (weight :method momentum :lookback 90
+      (asset XLK)
+      (asset XLF)
+      (asset XLE)
+      (asset XLV)
+      (asset XLI)
+      (asset XLP)
+      (asset XLY)
+      (asset XLU)
+      (asset XLRE)
+      (asset XLC)
+      (asset XLB))))""",
     },
-    "donchian_breakout": {
-        "id": "donchian_breakout",
-        "name": "Donchian Channel Breakout",
-        "description": "Classic breakout strategy using Donchian channels (Turtle Trading style)",
-        "strategy_type": StrategyType.BREAKOUT,
-        "tags": ["breakout", "donchian", "trend", "advanced"],
+    "risk_parity": {
+        "id": "risk_parity",
+        "name": "Risk Parity",
+        "description": "Equal risk contribution across asset classes",
+        "strategy_type": StrategyType.CUSTOM,
+        "tags": ["risk-parity", "diversification", "advanced"],
         "difficulty": "advanced",
-        "config_sexpr": """(strategy
-  :name "Donchian Channel Breakout"
-  :type breakout
-  :symbols ["GLD"]
-  :timeframe "1D"
-  :entry (> close (donchian-upper high 20))
-  :exit (< close (donchian-lower low 20))
-  :position-size-pct 5.0
-  :stop-loss-pct 5.0
-  :trailing-stop-pct 3.0)""",
+        "config_sexpr": """(strategy "Risk Parity"
+  :rebalance monthly
+  :benchmark SPY
+  (weight :method inverse-volatility :lookback 60
+    (asset SPY)
+    (asset TLT)
+    (asset GLD)
+    (asset DBC)))""",
     },
     "dual_momentum": {
         "id": "dual_momentum",
         "name": "Dual Momentum",
-        "description": ("Combines relative momentum (vs benchmark) with absolute momentum"),
+        "description": "Classic dual momentum: compare US vs International, allocate to winner or bonds",
         "strategy_type": StrategyType.MOMENTUM,
-        "tags": ["momentum", "relative", "absolute", "advanced"],
+        "tags": ["momentum", "trend", "advanced"],
         "difficulty": "advanced",
-        "config_sexpr": """(strategy
-  :name "Dual Momentum"
-  :type momentum
-  :symbols ["SPY" "EFA"]
-  :timeframe "1D"
-  :entry (and
-    (> close (sma close 200))
-    (> (roc close 252) 0))
-  :exit (< close (sma close 200))
-  :position-size-pct 50.0)""",
+        "config_sexpr": """(strategy "Dual Momentum"
+  :rebalance monthly
+  :benchmark SPY
+  (if (and
+        (> (momentum SPY 252) (momentum EFA 252))
+        (> (momentum SPY 252) 0))
+    (asset SPY :weight 100)
+    (else (if (and
+          (> (momentum EFA 252) (momentum SPY 252))
+          (> (momentum EFA 252) 0))
+      (asset EFA :weight 100)
+      (else (asset AGG :weight 100))))))""",
     },
-    "zscore_mean_reversion": {
-        "id": "zscore_mean_reversion",
-        "name": "Z-Score Mean Reversion",
-        "description": "Statistical mean reversion using z-score of price deviations",
-        "strategy_type": StrategyType.MEAN_REVERSION,
-        "tags": ["mean-reversion", "statistical", "zscore", "advanced"],
+    "golden_cross": {
+        "id": "golden_cross",
+        "name": "Golden Cross",
+        "description": "Allocate to equities when 50-day SMA crosses above 200-day SMA",
+        "strategy_type": StrategyType.TREND_FOLLOWING,
+        "tags": ["trend", "sma", "beginner"],
+        "difficulty": "beginner",
+        "config_sexpr": """(strategy "Golden Cross"
+  :rebalance daily
+  :benchmark SPY
+  (if (> (sma SPY 50) (sma SPY 200))
+    (asset SPY :weight 100)
+    (else (asset AGG :weight 100))))""",
+    },
+    "volatility_targeting": {
+        "id": "volatility_targeting",
+        "name": "Volatility Targeting",
+        "description": "Reduce equity allocation when VIX is high",
+        "strategy_type": StrategyType.CUSTOM,
+        "tags": ["volatility", "risk-management", "advanced"],
         "difficulty": "advanced",
-        "config_sexpr": """(strategy
-  :name "Z-Score Mean Reversion"
-  :type mean_reversion
-  :symbols ["XLF"]
-  :timeframe "1H"
-  :entry (< close (bb-lower close 20 1.0))
-  :exit (> close (sma close 20))
-  :position-size-pct 10.0
-  :stop-loss-pct 2.0)""",
+        "config_sexpr": """(strategy "Volatility Targeting"
+  :rebalance daily
+  :benchmark SPY
+  (if (> (price VIX) 30)
+    (weight :method specified
+      (asset SPY :weight 25)
+      (asset TLT :weight 75))
+    (else (if (> (price VIX) 20)
+      (weight :method specified
+        (asset SPY :weight 50)
+        (asset TLT :weight 50))
+      (else (weight :method specified
+        (asset SPY :weight 75)
+        (asset TLT :weight 25)))))))""",
     },
-    "vwap_strategy": {
-        "id": "vwap_strategy",
-        "name": "VWAP Strategy",
-        "description": "Intraday strategy using VWAP as dynamic support/resistance",
-        "strategy_type": StrategyType.MEAN_REVERSION,
-        "tags": ["intraday", "vwap", "volume", "intermediate"],
+    "all_weather": {
+        "id": "all_weather",
+        "name": "All Weather Portfolio",
+        "description": "Ray Dalio inspired diversified allocation",
+        "strategy_type": StrategyType.CUSTOM,
+        "tags": ["diversified", "all-weather", "beginner"],
+        "difficulty": "beginner",
+        "config_sexpr": """(strategy "All Weather Portfolio"
+  :rebalance quarterly
+  :benchmark SPY
+  (weight :method specified
+    (asset VTI :weight 30)
+    (asset TLT :weight 40)
+    (asset IEF :weight 15)
+    (asset GLD :weight 7.5)
+    (asset DBC :weight 7.5)))""",
+    },
+    "equal_weight_tech": {
+        "id": "equal_weight_tech",
+        "name": "Equal Weight Tech",
+        "description": "Equal allocation across major tech stocks",
+        "strategy_type": StrategyType.CUSTOM,
+        "tags": ["tech", "equal-weight", "beginner"],
+        "difficulty": "beginner",
+        "config_sexpr": """(strategy "Equal Weight Tech"
+  :rebalance monthly
+  :benchmark QQQ
+  (weight :method equal
+    (asset AAPL)
+    (asset MSFT)
+    (asset GOOGL)
+    (asset AMZN)
+    (asset META)
+    (asset NVDA)
+    (asset TSLA)))""",
+    },
+    "macd_strategy": {
+        "id": "macd_strategy",
+        "name": "MACD Momentum",
+        "description": "Trade based on MACD histogram crossovers",
+        "strategy_type": StrategyType.MOMENTUM,
+        "tags": ["momentum", "macd", "intermediate"],
         "difficulty": "intermediate",
-        "config_sexpr": """(strategy
-  :name "VWAP Strategy"
-  :type mean_reversion
-  :symbols ["TSLA"]
-  :timeframe "5m"
-  :entry (and
-    (cross-above close (vwap close volume))
-    (> (rsi close 14) 50))
-  :exit (cross-below close (vwap close volume))
-  :position-size-pct 5.0
-  :stop-loss-pct 1.0
-  :take-profit-pct 2.0)""",
+        "config_sexpr": """(strategy "MACD Momentum"
+  :rebalance daily
+  :benchmark SPY
+  (if (> (macd SPY 12 26 9 :output histogram) 0)
+    (asset SPY :weight 100)
+    (else (asset SHY :weight 100))))""",
+    },
+    "bollinger_bounce": {
+        "id": "bollinger_bounce",
+        "name": "Bollinger Bounce",
+        "description": "Mean reversion strategy using Bollinger Bands",
+        "strategy_type": StrategyType.MEAN_REVERSION,
+        "tags": ["mean-reversion", "bollinger", "intermediate"],
+        "difficulty": "intermediate",
+        "config_sexpr": """(strategy "Bollinger Bounce"
+  :rebalance daily
+  :benchmark SPY
+  (if (< (price SPY) (bbands SPY 20 2 :output lower))
+    (asset SPY :weight 100)
+    (else (if (> (price SPY) (bbands SPY 20 2 :output upper))
+      (asset TLT :weight 100)
+      (else (weight :method equal
+        (asset SPY)
+        (asset TLT)))))))""",
+    },
+    "donchian_breakout": {
+        "id": "donchian_breakout",
+        "name": "Donchian Channel Breakout",
+        "description": "Turtle trading inspired breakout strategy",
+        "strategy_type": StrategyType.BREAKOUT,
+        "tags": ["breakout", "donchian", "trend", "advanced"],
+        "difficulty": "advanced",
+        "config_sexpr": """(strategy "Donchian Breakout"
+  :rebalance daily
+  :benchmark SPY
+  (if (> (price SPY) (donchian SPY 20 :output upper))
+    (asset SPY :weight 100)
+    (else (if (< (price SPY) (donchian SPY 20 :output lower))
+      (asset TLT :weight 100)
+      (else (weight :method specified
+        (asset SPY :weight 50)
+        (asset TLT :weight 50)))))))""",
     },
     "pairs_trading": {
         "id": "pairs_trading",
         "name": "Pairs Trading",
-        "description": "Statistical arbitrage between correlated assets (e.g., KO/PEP)",
+        "description": "Mean reversion on correlated asset pairs (KO/PEP)",
         "strategy_type": StrategyType.MEAN_REVERSION,
-        "tags": ["arbitrage", "pairs", "correlation", "advanced"],
+        "tags": ["pairs", "mean-reversion", "advanced"],
         "difficulty": "advanced",
-        "config_sexpr": """(strategy
-  :name "Pairs Trading"
-  :type mean_reversion
-  :symbols ["KO" "PEP"]
-  :timeframe "1H"
-  :description "Trade the spread between KO and PEP when it deviates from the mean"
-  :entry (< (spread KO PEP) (bb-lower (spread KO PEP) 20 2.0))
-  :exit (> (spread KO PEP) (sma (spread KO PEP) 20))
-  :position-size-pct 5.0
-  :stop-loss-pct 3.0)""",
-    },
-    "adx_trend_filter": {
-        "id": "adx_trend_filter",
-        "name": "ADX Trend Filter",
-        "description": "Only trade in strong trends using ADX filter with EMA crossover signals",
-        "strategy_type": StrategyType.TREND_FOLLOWING,
-        "tags": ["trend", "adx", "filter", "intermediate"],
-        "difficulty": "intermediate",
-        "config_sexpr": """(strategy
-  :name "ADX Trend Filter"
-  :type trend_following
-  :symbols ["SPY"]
-  :timeframe "1D"
-  :entry (and
-    (> (adx high low close 14) 25)
-    (cross-above (ema close 9) (ema close 21)))
-  :exit (or
-    (< (adx high low close 14) 20)
-    (cross-below (ema close 9) (ema close 21)))
-  :position-size-pct 10.0
-  :stop-loss-pct 3.0
-  :take-profit-pct 9.0)""",
+        "config_sexpr": """(strategy "Pairs Trading"
+  :rebalance daily
+  :benchmark SPY
+  (if (< (zscore (ratio KO PEP) 20) -2)
+    (weight :method specified
+      (asset KO :weight 50)
+      (asset PEP :weight -50))
+    (else (if (> (zscore (ratio KO PEP) 20) 2)
+      (weight :method specified
+        (asset KO :weight -50)
+        (asset PEP :weight 50))
+      (else (asset SHY :weight 100))))))""",
     },
 }
 

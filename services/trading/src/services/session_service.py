@@ -1,16 +1,24 @@
 """Session service - trading session management with database persistence."""
 
 from datetime import UTC, datetime
+from typing import Any
 from uuid import UUID
 
 from fastapi import Depends
-from llamatrade_db import get_db
-from llamatrade_db.models.strategy import Strategy, StrategyVersion
-from llamatrade_db.models.trading import Position, TradingSession
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.models import SessionResponse, SessionStatus, TradingMode
+from llamatrade_db import get_db
+from llamatrade_db.models.strategy import Strategy, StrategyVersion
+from llamatrade_db.models.trading import Position, TradingSession
+from llamatrade_proto.generated.common_pb2 import (
+    EXECUTION_STATUS_ERROR,
+    EXECUTION_STATUS_PAUSED,
+    EXECUTION_STATUS_RUNNING,
+    EXECUTION_STATUS_STOPPED,
+)
+
+from src.models import SessionResponse
 
 
 class SessionService:
@@ -26,10 +34,10 @@ class SessionService:
         strategy_id: UUID,
         strategy_version: int | None,
         name: str,
-        mode: TradingMode,
+        mode: int,  # ExecutionMode proto value: PAPER=1, LIVE=2
         credentials_id: UUID,
         symbols: list[str] | None = None,
-        config: dict | None = None,
+        config: dict[str, Any] | None = None,
     ) -> SessionResponse:
         """Start a new trading session."""
         # Verify strategy exists and belongs to tenant
@@ -58,8 +66,8 @@ class SessionService:
             strategy_version=version,
             credentials_id=credentials_id,
             name=name,
-            mode=mode.value,
-            status="active",
+            mode=mode,  # Proto enum value (int): PAPER=1, LIVE=2
+            status=EXECUTION_STATUS_RUNNING,
             config=config or {},
             symbols=actual_symbols,
             started_at=now,
@@ -98,7 +106,7 @@ class SessionService:
     async def list_sessions(
         self,
         tenant_id: UUID,
-        status: SessionStatus | None = None,
+        status: int | None = None,  # ExecutionStatus proto value
         strategy_id: UUID | None = None,
         page: int = 1,
         page_size: int = 20,
@@ -107,7 +115,7 @@ class SessionService:
         stmt = select(TradingSession).where(TradingSession.tenant_id == tenant_id)
 
         if status:
-            stmt = stmt.where(TradingSession.status == status.value)
+            stmt = stmt.where(TradingSession.status == status)
         if strategy_id:
             stmt = stmt.where(TradingSession.strategy_id == strategy_id)
 
@@ -135,10 +143,10 @@ class SessionService:
         if not session:
             return None
 
-        if session.status == "stopped":
+        if session.status == EXECUTION_STATUS_STOPPED:
             return self._to_response(session)
 
-        session.status = "stopped"
+        session.status = EXECUTION_STATUS_STOPPED
         session.stopped_at = datetime.now(UTC)
         await self.db.commit()
         await self.db.refresh(session)
@@ -155,10 +163,10 @@ class SessionService:
         if not session:
             return None
 
-        if session.status != "active":
+        if session.status != EXECUTION_STATUS_RUNNING:
             raise ValueError("Only active sessions can be paused")
 
-        session.status = "paused"
+        session.status = EXECUTION_STATUS_PAUSED
         await self.db.commit()
         await self.db.refresh(session)
 
@@ -174,10 +182,10 @@ class SessionService:
         if not session:
             return None
 
-        if session.status != "paused":
+        if session.status != EXECUTION_STATUS_PAUSED:
             raise ValueError("Only paused sessions can be resumed")
 
-        session.status = "active"
+        session.status = EXECUTION_STATUS_RUNNING
         await self.db.commit()
         await self.db.refresh(session)
 
@@ -208,7 +216,7 @@ class SessionService:
         if not session:
             return None
 
-        session.status = "error"
+        session.status = EXECUTION_STATUS_ERROR
         session.error_message = error_message
         session.stopped_at = datetime.now(UTC)
         await self.db.commit()
@@ -320,8 +328,8 @@ class SessionService:
             id=s.id,
             tenant_id=s.tenant_id,
             strategy_id=s.strategy_id,
-            mode=TradingMode(s.mode),
-            status=SessionStatus(s.status),
+            mode=s.mode,  # Already an int (proto enum value)
+            status=s.status,  # Already an int (proto enum value)
             started_at=s.started_at or s.created_at,
             stopped_at=s.stopped_at,
             pnl=realized_pnl + unrealized_pnl,
@@ -337,8 +345,8 @@ class SessionService:
             id=s.id,
             tenant_id=s.tenant_id,
             strategy_id=s.strategy_id,
-            mode=TradingMode(s.mode),
-            status=SessionStatus(s.status),
+            mode=s.mode,  # Already an int (proto enum value)
+            status=s.status,  # Already an int (proto enum value)
             started_at=s.started_at or s.created_at,
             stopped_at=s.stopped_at,
             pnl=0,  # Use _to_response_with_pnl for actual P&L

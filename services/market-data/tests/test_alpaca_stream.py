@@ -4,6 +4,8 @@ import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from websockets.protocol import State
+
 from src.streaming.alpaca_stream import (
     AlpacaStreamClient,
     StreamConfig,
@@ -11,7 +13,6 @@ from src.streaming.alpaca_stream import (
     get_alpaca_stream,
     init_alpaca_stream,
 )
-from websockets.protocol import State
 
 
 @pytest.fixture
@@ -498,8 +499,8 @@ class TestAlpacaStreamClientDispatch:
     """Tests for message dispatch."""
 
     async def test_dispatch_trade_message(self, client):
-        """Test dispatching trade message to callback."""
-        on_trade = MagicMock()
+        """Test dispatching trade message to async callback."""
+        on_trade = AsyncMock()
         client.set_callbacks(on_trade=on_trade)
 
         item = {
@@ -519,8 +520,8 @@ class TestAlpacaStreamClientDispatch:
         assert args[1] is not None  # TradeData is a TypedDict, can't use isinstance
 
     async def test_dispatch_quote_message(self, client):
-        """Test dispatching quote message to callback."""
-        on_quote = MagicMock()
+        """Test dispatching quote message to async callback."""
+        on_quote = AsyncMock()
         client.set_callbacks(on_quote=on_quote)
 
         item = {
@@ -538,8 +539,8 @@ class TestAlpacaStreamClientDispatch:
         on_quote.assert_called_once()
 
     async def test_dispatch_bar_message(self, client):
-        """Test dispatching bar message to callback."""
-        on_bar = MagicMock()
+        """Test dispatching bar message to async callback."""
+        on_bar = AsyncMock()
         client.set_callbacks(on_bar=on_bar)
 
         item = {

@@ -1,9 +1,11 @@
+# pyright: reportArgumentType=false
 """Tests for the backtest engine."""
 
 from datetime import UTC, datetime, timedelta
 
 import numpy as np
 import pytest
+
 from src.engine.backtester import (
     BacktestConfig,
     BacktestEngine,
@@ -444,7 +446,7 @@ class TestBacktestEngine:
         assert result.trades[0].commission == 20.0  # 10 * 2 (entry + exit)
 
     def test_engine_handles_empty_bars(self, engine):
-        """Test engine handles empty bar data."""
+        """Test engine handles empty bar data - returns initial capital."""
         result = engine.run(
             bars={},
             strategy_fn=lambda eng, sym, bar: [],
@@ -453,7 +455,8 @@ class TestBacktestEngine:
         )
 
         assert isinstance(result, BacktestResult)
-        assert result.final_equity == 0
+        # No trading occurred, so final equity should equal initial capital
+        assert result.final_equity == 100000
 
     def test_engine_closes_positions_at_end(self, engine, sample_bars):
         """Test that positions are closed at backtest end."""
@@ -517,9 +520,11 @@ class TestBacktestEngine:
         # Max drawdown should be >= 0
         assert result.max_drawdown >= 0
 
-    def test_engine_allows_entry_with_low_cash(self, engine):
-        """Test that entries are allowed (engine doesn't enforce cash limits)."""
-        engine.cash = 10  # Very low cash
+    def test_engine_rejects_entry_with_insufficient_cash(self):
+        """Test that entries are rejected when there's insufficient cash."""
+        # Create engine with very low initial capital
+        config = BacktestConfig(initial_capital=10)
+        engine = BacktestEngine(config)
 
         bars = {
             "AAPL": [
@@ -545,9 +550,11 @@ class TestBacktestEngine:
             end_date=datetime(2024, 1, 1, tzinfo=UTC),
         )
 
-        # Engine allows entry (doesn't enforce cash limits - this is expected behavior)
-        # Cash management should be handled at strategy level
-        assert len(result.trades) == 1
+        # Engine enforces cash limits - signal should be rejected
+        assert len(result.trades) == 0
+        # Signal should be tracked as rejected
+        assert len(result.rejected_signals) == 1
+        assert "Insufficient cash" in result.rejected_signals[0].reason
 
 
 class TestPosition:
@@ -567,3 +574,161 @@ class TestPosition:
         assert pos.side == "long"
         assert pos.entry_price == 100.0
         assert pos.quantity == 10
+
+
+class TestEdgeCases:
+    """Tests for edge cases and error scenarios."""
+
+    def test_trade_pnl_percent_zero_quantity(self):
+        """Test P&L percentage with zero quantity doesn't crash."""
+        trade = Trade(
+            entry_date=datetime(2024, 1, 1, tzinfo=UTC),
+            exit_date=datetime(2024, 1, 10, tzinfo=UTC),
+            symbol="AAPL",
+            side="long",
+            entry_price=100.0,
+            exit_price=110.0,
+            quantity=0,  # Zero quantity
+            commission=2.0,
+        )
+
+        # Should return 0 instead of raising ZeroDivisionError
+        assert trade.pnl_percent == 0.0
+
+    def test_trade_pnl_percent_zero_entry_price(self):
+        """Test P&L percentage with zero entry price doesn't crash."""
+        trade = Trade(
+            entry_date=datetime(2024, 1, 1, tzinfo=UTC),
+            exit_date=datetime(2024, 1, 10, tzinfo=UTC),
+            symbol="AAPL",
+            side="long",
+            entry_price=0.0,  # Zero entry price
+            exit_price=110.0,
+            quantity=10,
+            commission=2.0,
+        )
+
+        # Should return 0 instead of raising ZeroDivisionError
+        assert trade.pnl_percent == 0.0
+
+    def test_engine_tracks_rejected_signals(self):
+        """Test that rejected signals are tracked."""
+        config = BacktestConfig(initial_capital=100)
+        engine = BacktestEngine(config)
+
+        bars = {
+            "AAPL": [
+                {
+                    "timestamp": datetime(2024, 1, 1, tzinfo=UTC),
+                    "open": 100,
+                    "high": 105,
+                    "low": 99,
+                    "close": 100,
+                    "volume": 1000,
+                },
+                {
+                    "timestamp": datetime(2024, 1, 2, tzinfo=UTC),
+                    "open": 100,
+                    "high": 105,
+                    "low": 99,
+                    "close": 100,
+                    "volume": 1000,
+                },
+            ]
+        }
+
+        attempts = [0]
+
+        def strategy_fn(eng, symbol, bar):
+            attempts[0] += 1
+            # Always try to buy more than we can afford
+            return [{"type": "buy", "symbol": symbol, "quantity": 100, "price": bar["close"]}]
+
+        result = engine.run(
+            bars=bars,
+            strategy_fn=strategy_fn,
+            start_date=datetime(2024, 1, 1, tzinfo=UTC),
+            end_date=datetime(2024, 1, 2, tzinfo=UTC),
+        )
+
+        # Both attempts should be rejected (insufficient cash)
+        assert len(result.rejected_signals) == 2
+        for rejected in result.rejected_signals:
+            assert rejected.symbol == "AAPL"
+            assert rejected.signal_type == "buy"
+            assert "Insufficient cash" in rejected.reason
+
+    def test_single_bar_backtest(self):
+        """Test backtest with only one bar."""
+        config = BacktestConfig(initial_capital=10000)
+        engine = BacktestEngine(config)
+
+        bars = {
+            "AAPL": [
+                {
+                    "timestamp": datetime(2024, 1, 1, tzinfo=UTC),
+                    "open": 100,
+                    "high": 105,
+                    "low": 99,
+                    "close": 100,
+                    "volume": 1000,
+                },
+            ]
+        }
+
+        def strategy_fn(eng, symbol, bar):
+            if not eng.has_position(symbol):
+                return [{"type": "buy", "symbol": symbol, "quantity": 10, "price": bar["close"]}]
+            return []
+
+        result = engine.run(
+            bars=bars,
+            strategy_fn=strategy_fn,
+            start_date=datetime(2024, 1, 1, tzinfo=UTC),
+            end_date=datetime(2024, 1, 1, tzinfo=UTC),
+        )
+
+        assert isinstance(result, BacktestResult)
+        # Should have 1 trade (opened and closed at end)
+        assert len(result.trades) == 1
+        assert result.final_equity > 0
+
+    def test_strategy_exception_handling(self):
+        """Test that engine handles strategy function exceptions gracefully."""
+        config = BacktestConfig(initial_capital=10000)
+        engine = BacktestEngine(config)
+
+        bars = {
+            "AAPL": [
+                {
+                    "timestamp": datetime(2024, 1, 1, tzinfo=UTC),
+                    "open": 100,
+                    "high": 105,
+                    "low": 99,
+                    "close": 100,
+                    "volume": 1000,
+                },
+                {
+                    "timestamp": datetime(2024, 1, 2, tzinfo=UTC),
+                    "open": 100,
+                    "high": 105,
+                    "low": 99,
+                    "close": 110,
+                    "volume": 1000,
+                },
+            ]
+        }
+
+        def bad_strategy(eng, symbol, bar):
+            if bar["close"] > 105:
+                raise ValueError("Strategy error on price threshold")
+            return []
+
+        # Strategy exception should propagate (not silently swallowed)
+        with pytest.raises(ValueError, match="Strategy error"):
+            engine.run(
+                bars=bars,
+                strategy_fn=bad_strategy,
+                start_date=datetime(2024, 1, 1, tzinfo=UTC),
+                end_date=datetime(2024, 1, 2, tzinfo=UTC),
+            )

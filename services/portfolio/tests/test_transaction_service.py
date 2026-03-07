@@ -1,12 +1,22 @@
 """Tests for TransactionService."""
 
+# pyright: reportPrivateUsage=false
+
 from datetime import UTC, datetime
 from decimal import Decimal
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import UUID, uuid4
 
 import pytest
-from src.models import TransactionCreate, TransactionResponse, TransactionType
+
+from llamatrade_proto.generated.portfolio_pb2 import (
+    TRANSACTION_TYPE_BUY,
+    TRANSACTION_TYPE_DEPOSIT,
+    TRANSACTION_TYPE_DIVIDEND,
+    TRANSACTION_TYPE_SELL,
+)
+
+from src.models import TransactionCreate, TransactionResponse
 from src.services.transaction_service import TransactionService
 
 pytestmark = pytest.mark.asyncio
@@ -30,7 +40,7 @@ def make_mock_transaction(
     fees: Decimal = Decimal("0.00"),
     net_amount: Decimal = Decimal("15000.00"),
     description: str = "Buy 100 AAPL",
-    transaction_date: datetime = None,
+    transaction_date: datetime | None = None,
 ) -> MagicMock:
     """Create a mock transaction ORM object."""
     tx = MagicMock()
@@ -52,7 +62,7 @@ def make_mock_transaction(
 class TestListTransactions:
     """Tests for list_transactions method."""
 
-    async def test_list_transactions_empty(self, mock_db):
+    async def test_list_transactions_empty(self, mock_db: AsyncMock) -> None:
         """Test listing transactions returns empty when none exist."""
         # Setup mock
         mock_result = MagicMock()
@@ -74,7 +84,7 @@ class TestListTransactions:
         assert transactions == []
         assert total == 0
 
-    async def test_list_transactions_with_data(self, mock_db):
+    async def test_list_transactions_with_data(self, mock_db: AsyncMock) -> None:
         """Test listing transactions returns stored transactions."""
         mock_transactions = [
             make_mock_transaction(id=uuid4()),
@@ -101,7 +111,7 @@ class TestListTransactions:
         assert total == 2
         assert all(isinstance(t, TransactionResponse) for t in transactions)
 
-    async def test_list_transactions_filter_by_type(self, mock_db):
+    async def test_list_transactions_filter_by_type(self, mock_db: AsyncMock) -> None:
         """Test filtering transactions by type."""
         mock_transactions = [make_mock_transaction(transaction_type="buy")]
 
@@ -113,18 +123,18 @@ class TestListTransactions:
 
         service = TransactionService(db=mock_db)
 
-        transactions, total = await service.list_transactions(
+        transactions, _ = await service.list_transactions(
             tenant_id=TEST_TENANT_ID,
-            type=TransactionType.BUY,
+            type=TRANSACTION_TYPE_BUY,
             symbol=None,
             page=1,
             page_size=20,
         )
 
         assert len(transactions) == 1
-        assert transactions[0].type == TransactionType.BUY
+        assert transactions[0].type == TRANSACTION_TYPE_BUY
 
-    async def test_list_transactions_filter_by_symbol(self, mock_db):
+    async def test_list_transactions_filter_by_symbol(self, mock_db: AsyncMock) -> None:
         """Test filtering transactions by symbol."""
         mock_transactions = [make_mock_transaction(symbol="AAPL")]
 
@@ -136,7 +146,7 @@ class TestListTransactions:
 
         service = TransactionService(db=mock_db)
 
-        transactions, total = await service.list_transactions(
+        transactions, _ = await service.list_transactions(
             tenant_id=TEST_TENANT_ID,
             type=None,
             symbol="aapl",  # lowercase should be normalized
@@ -147,7 +157,7 @@ class TestListTransactions:
         assert len(transactions) == 1
         assert transactions[0].symbol == "AAPL"
 
-    async def test_list_transactions_pagination(self, mock_db):
+    async def test_list_transactions_pagination(self, mock_db: AsyncMock) -> None:
         """Test pagination of transactions."""
         # Page 2 should skip first page_size items
         mock_transactions = [make_mock_transaction()]
@@ -160,7 +170,7 @@ class TestListTransactions:
 
         service = TransactionService(db=mock_db)
 
-        transactions, total = await service.list_transactions(
+        _, total = await service.list_transactions(
             tenant_id=TEST_TENANT_ID,
             type=None,
             symbol=None,
@@ -176,7 +186,7 @@ class TestListTransactions:
 class TestGetTransaction:
     """Tests for get_transaction method."""
 
-    async def test_get_transaction_found(self, mock_db):
+    async def test_get_transaction_found(self, mock_db: AsyncMock) -> None:
         """Test getting a transaction that exists."""
         mock_tx = make_mock_transaction()
 
@@ -196,7 +206,7 @@ class TestGetTransaction:
         assert transaction.id == TEST_TRANSACTION_ID
         assert transaction.symbol == "AAPL"
 
-    async def test_get_transaction_not_found(self, mock_db):
+    async def test_get_transaction_not_found(self, mock_db: AsyncMock) -> None:
         """Test getting a transaction that doesn't exist."""
         mock_result = MagicMock()
         mock_result.scalar_one_or_none.return_value = None
@@ -211,7 +221,7 @@ class TestGetTransaction:
 
         assert transaction is None
 
-    async def test_get_transaction_tenant_isolation(self, mock_db):
+    async def test_get_transaction_tenant_isolation(self, mock_db: AsyncMock) -> None:
         """Test that transactions are isolated by tenant."""
         # Transaction exists but for different tenant
         mock_result = MagicMock()
@@ -232,12 +242,12 @@ class TestGetTransaction:
 class TestCreateTransaction:
     """Tests for create_transaction method."""
 
-    async def test_create_transaction_buy(self, mock_db):
+    async def test_create_transaction_buy(self, mock_db: AsyncMock) -> None:
         """Test creating a buy transaction."""
         mock_db.refresh = AsyncMock(return_value=None)
 
         # Make the mock return the transaction after add/commit
-        def setup_tx_after_add(tx):
+        def setup_tx_after_add(tx: MagicMock) -> None:
             tx.id = TEST_TRANSACTION_ID
             tx.transaction_date = datetime.now(UTC)
 
@@ -250,18 +260,19 @@ class TestCreateTransaction:
             "_to_response",
             return_value=TransactionResponse(
                 id=TEST_TRANSACTION_ID,
-                type=TransactionType.BUY,
+                tenant_id=TEST_TENANT_ID,
+                type=TRANSACTION_TYPE_BUY,
                 symbol="AAPL",
-                qty=100.0,
+                quantity=100.0,
                 price=150.0,
                 amount=15000.0,
-                commission=0.0,
+                fees=0.0,
                 description="Buy 100 AAPL",
-                executed_at=datetime.now(UTC),
+                created_at=datetime.now(UTC),
             ),
         ):
             create_data = TransactionCreate(
-                type=TransactionType.BUY,
+                type=TRANSACTION_TYPE_BUY,
                 symbol="AAPL",
                 qty=100.0,
                 price=150.0,
@@ -278,11 +289,11 @@ class TestCreateTransaction:
             )
 
             assert transaction is not None
-            assert transaction.type == TransactionType.BUY
+            assert transaction.type == TRANSACTION_TYPE_BUY
             mock_db.add.assert_called_once()
             mock_db.commit.assert_called_once()
 
-    async def test_create_transaction_sell(self, mock_db):
+    async def test_create_transaction_sell(self, mock_db: AsyncMock) -> None:
         """Test creating a sell transaction."""
         mock_db.refresh = AsyncMock(return_value=None)
 
@@ -293,18 +304,19 @@ class TestCreateTransaction:
             "_to_response",
             return_value=TransactionResponse(
                 id=TEST_TRANSACTION_ID,
-                type=TransactionType.SELL,
+                tenant_id=TEST_TENANT_ID,
+                type=TRANSACTION_TYPE_SELL,
                 symbol="AAPL",
-                qty=50.0,
+                quantity=50.0,
                 price=160.0,
                 amount=8000.0,
-                commission=1.0,
+                fees=1.0,
                 description="Sell 50 AAPL",
-                executed_at=datetime.now(UTC),
+                created_at=datetime.now(UTC),
             ),
         ):
             create_data = TransactionCreate(
-                type=TransactionType.SELL,
+                type=TRANSACTION_TYPE_SELL,
                 symbol="AAPL",
                 qty=50.0,
                 price=160.0,
@@ -319,9 +331,9 @@ class TestCreateTransaction:
             )
 
             assert transaction is not None
-            assert transaction.type == TransactionType.SELL
+            assert transaction.type == TRANSACTION_TYPE_SELL
 
-    async def test_create_transaction_dividend(self, mock_db):
+    async def test_create_transaction_dividend(self, mock_db: AsyncMock) -> None:
         """Test creating a dividend transaction."""
         mock_db.refresh = AsyncMock(return_value=None)
 
@@ -332,18 +344,19 @@ class TestCreateTransaction:
             "_to_response",
             return_value=TransactionResponse(
                 id=TEST_TRANSACTION_ID,
-                type=TransactionType.DIVIDEND,
+                tenant_id=TEST_TENANT_ID,
+                type=TRANSACTION_TYPE_DIVIDEND,
                 symbol="AAPL",
-                qty=None,
+                quantity=None,
                 price=None,
                 amount=50.0,
-                commission=0.0,
+                fees=0.0,
                 description="Dividend from AAPL",
-                executed_at=datetime.now(UTC),
+                created_at=datetime.now(UTC),
             ),
         ):
             create_data = TransactionCreate(
-                type=TransactionType.DIVIDEND,
+                type=TRANSACTION_TYPE_DIVIDEND,
                 symbol="AAPL",
                 amount=50.0,
                 description="Dividend from AAPL",
@@ -355,14 +368,14 @@ class TestCreateTransaction:
             )
 
             assert transaction is not None
-            assert transaction.type == TransactionType.DIVIDEND
+            assert transaction.type == TRANSACTION_TYPE_DIVIDEND
 
-    async def test_create_transaction_symbol_normalized(self, mock_db):
+    async def test_create_transaction_symbol_normalized(self, mock_db: AsyncMock) -> None:
         """Test that symbol is normalized to uppercase."""
         mock_db.refresh = AsyncMock(return_value=None)
-        added_tx = None
+        added_tx: MagicMock | None = None
 
-        def capture_tx(tx):
+        def capture_tx(tx: MagicMock) -> None:
             nonlocal added_tx
             added_tx = tx
 
@@ -371,7 +384,7 @@ class TestCreateTransaction:
         service = TransactionService(db=mock_db)
 
         create_data = TransactionCreate(
-            type=TransactionType.BUY,
+            type=TRANSACTION_TYPE_BUY,
             symbol="aapl",  # lowercase
             qty=100.0,
             price=150.0,
@@ -383,13 +396,14 @@ class TestCreateTransaction:
             "_to_response",
             return_value=TransactionResponse(
                 id=TEST_TRANSACTION_ID,
-                type=TransactionType.BUY,
+                tenant_id=TEST_TENANT_ID,
+                type=TRANSACTION_TYPE_BUY,
                 symbol="AAPL",
-                qty=100.0,
+                quantity=100.0,
                 price=150.0,
                 amount=15000.0,
-                commission=0.0,
-                executed_at=datetime.now(UTC),
+                fees=0.0,
+                created_at=datetime.now(UTC),
             ),
         ):
             await service.create_transaction(
@@ -404,7 +418,7 @@ class TestCreateTransaction:
 class TestGetRealizedPnl:
     """Tests for get_realized_pnl method."""
 
-    async def test_get_realized_pnl_no_transactions(self, mock_db):
+    async def test_get_realized_pnl_no_transactions(self, mock_db: AsyncMock) -> None:
         """Test realized P&L with no transactions."""
         mock_result = MagicMock()
         mock_result.scalar.return_value = None
@@ -416,7 +430,7 @@ class TestGetRealizedPnl:
 
         assert pnl == 0.0
 
-    async def test_get_realized_pnl_with_transactions(self, mock_db):
+    async def test_get_realized_pnl_with_transactions(self, mock_db: AsyncMock) -> None:
         """Test realized P&L with transactions."""
         mock_result = MagicMock()
         mock_result.scalar.return_value = Decimal("5000.00")
@@ -428,7 +442,7 @@ class TestGetRealizedPnl:
 
         assert pnl == 5000.0
 
-    async def test_get_realized_pnl_with_date_range(self, mock_db):
+    async def test_get_realized_pnl_with_date_range(self, mock_db: AsyncMock) -> None:
         """Test realized P&L with date range filter."""
         mock_result = MagicMock()
         mock_result.scalar.return_value = Decimal("2500.00")
@@ -447,7 +461,7 @@ class TestGetRealizedPnl:
 
         assert pnl == 2500.0
 
-    async def test_get_realized_pnl_negative(self, mock_db):
+    async def test_get_realized_pnl_negative(self, mock_db: AsyncMock) -> None:
         """Test realized P&L with negative value (losses)."""
         mock_result = MagicMock()
         mock_result.scalar.return_value = Decimal("-1500.00")
@@ -463,7 +477,7 @@ class TestGetRealizedPnl:
 class TestGetTransactionCount:
     """Tests for get_transaction_count method."""
 
-    async def test_get_transaction_count_all(self, mock_db):
+    async def test_get_transaction_count_all(self, mock_db: AsyncMock) -> None:
         """Test getting total transaction count."""
         mock_result = MagicMock()
         mock_result.scalar.return_value = 10
@@ -475,7 +489,7 @@ class TestGetTransactionCount:
 
         assert count == 10
 
-    async def test_get_transaction_count_winning(self, mock_db):
+    async def test_get_transaction_count_winning(self, mock_db: AsyncMock) -> None:
         """Test getting winning transaction count."""
         mock_result = MagicMock()
         mock_result.scalar.return_value = 7
@@ -490,7 +504,7 @@ class TestGetTransactionCount:
 
         assert count == 7
 
-    async def test_get_transaction_count_losing(self, mock_db):
+    async def test_get_transaction_count_losing(self, mock_db: AsyncMock) -> None:
         """Test getting losing transaction count."""
         mock_result = MagicMock()
         mock_result.scalar.return_value = 3
@@ -505,7 +519,7 @@ class TestGetTransactionCount:
 
         assert count == 3
 
-    async def test_get_transaction_count_empty(self, mock_db):
+    async def test_get_transaction_count_empty(self, mock_db: AsyncMock) -> None:
         """Test transaction count with no transactions."""
         mock_result = MagicMock()
         mock_result.scalar.return_value = None
@@ -521,7 +535,7 @@ class TestGetTransactionCount:
 class TestToResponse:
     """Tests for _to_response helper method."""
 
-    async def test_to_response_buy_transaction(self, mock_db):
+    async def test_to_response_buy_transaction(self, mock_db: AsyncMock) -> None:
         """Test converting a buy transaction to response."""
         mock_tx = make_mock_transaction(transaction_type="buy")
 
@@ -529,53 +543,53 @@ class TestToResponse:
         response = service._to_response(mock_tx)
 
         assert isinstance(response, TransactionResponse)
-        assert response.type == TransactionType.BUY
+        assert response.type == TRANSACTION_TYPE_BUY
         assert response.symbol == "AAPL"
-        assert response.qty == 100.0
+        assert response.quantity == 100.0
         assert response.price == 150.0
 
-    async def test_to_response_sell_transaction(self, mock_db):
+    async def test_to_response_sell_transaction(self, mock_db: AsyncMock) -> None:
         """Test converting a sell transaction to response."""
         mock_tx = make_mock_transaction(transaction_type="sell")
 
         service = TransactionService(db=mock_db)
         response = service._to_response(mock_tx)
 
-        assert response.type == TransactionType.SELL
+        assert response.type == TRANSACTION_TYPE_SELL
 
-    async def test_to_response_unknown_type_defaults_to_buy(self, mock_db):
+    async def test_to_response_unknown_type_defaults_to_buy(self, mock_db: AsyncMock) -> None:
         """Test that unknown transaction type defaults to BUY."""
         mock_tx = make_mock_transaction(transaction_type="unknown_type")
 
         service = TransactionService(db=mock_db)
         response = service._to_response(mock_tx)
 
-        assert response.type == TransactionType.BUY
+        assert response.type == TRANSACTION_TYPE_BUY
 
 
 class TestGetSideFromType:
     """Tests for _get_side_from_type helper method."""
 
-    async def test_get_side_from_buy(self, mock_db):
+    async def test_get_side_from_buy(self, mock_db: AsyncMock) -> None:
         """Test getting side from BUY type."""
         service = TransactionService(db=mock_db)
-        side = service._get_side_from_type(TransactionType.BUY)
+        side = service._get_side_from_type(TRANSACTION_TYPE_BUY)
         assert side == "buy"
 
-    async def test_get_side_from_sell(self, mock_db):
+    async def test_get_side_from_sell(self, mock_db: AsyncMock) -> None:
         """Test getting side from SELL type."""
         service = TransactionService(db=mock_db)
-        side = service._get_side_from_type(TransactionType.SELL)
+        side = service._get_side_from_type(TRANSACTION_TYPE_SELL)
         assert side == "sell"
 
-    async def test_get_side_from_dividend(self, mock_db):
+    async def test_get_side_from_dividend(self, mock_db: AsyncMock) -> None:
         """Test getting side from DIVIDEND type returns None."""
         service = TransactionService(db=mock_db)
-        side = service._get_side_from_type(TransactionType.DIVIDEND)
+        side = service._get_side_from_type(TRANSACTION_TYPE_DIVIDEND)
         assert side is None
 
-    async def test_get_side_from_deposit(self, mock_db):
+    async def test_get_side_from_deposit(self, mock_db: AsyncMock) -> None:
         """Test getting side from DEPOSIT type returns None."""
         service = TransactionService(db=mock_db)
-        side = service._get_side_from_type(TransactionType.DEPOSIT)
+        side = service._get_side_from_type(TRANSACTION_TYPE_DEPOSIT)
         assert side is None

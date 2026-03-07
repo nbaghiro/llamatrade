@@ -50,10 +50,7 @@ def _load_auth_servicer():
             sys.path.remove(svc_path)
 
     # Clear cached src modules
-    modules_to_remove = [
-        k for k in list(sys.modules.keys())
-        if k == "src" or k.startswith("src.")
-    ]
+    modules_to_remove = [k for k in list(sys.modules.keys()) if k == "src" or k.startswith("src.")]
     for mod in modules_to_remove:
         del sys.modules[mod]
 
@@ -63,6 +60,7 @@ def _load_auth_servicer():
     sys.path.insert(0, auth_path_str)
 
     from src.grpc.servicer import AuthServicer
+
     return AuthServicer
 
 
@@ -81,10 +79,7 @@ def _load_strategy_servicer():
             sys.path.remove(svc_path)
 
     # Clear cached src modules
-    modules_to_remove = [
-        k for k in list(sys.modules.keys())
-        if k == "src" or k.startswith("src.")
-    ]
+    modules_to_remove = [k for k in list(sys.modules.keys()) if k == "src" or k.startswith("src.")]
     for mod in modules_to_remove:
         del sys.modules[mod]
 
@@ -94,14 +89,15 @@ def _load_strategy_servicer():
     sys.path.insert(0, strategy_path_str)
 
     from src.grpc.servicer import StrategyServicer
+
     return StrategyServicer
 
 
 @pytest.fixture
 def auth_servicer(db_session: AsyncSession):
     """Create an auth servicer with test database session."""
-    AuthServicer = _load_auth_servicer()
-    servicer = AuthServicer()
+    auth_servicer_cls = _load_auth_servicer()
+    servicer = auth_servicer_cls()
 
     async def mock_get_db():
         return db_session
@@ -113,8 +109,8 @@ def auth_servicer(db_session: AsyncSession):
 @pytest.fixture
 def strategy_servicer(db_session: AsyncSession):
     """Create a strategy servicer with test database session."""
-    StrategyServicer = _load_strategy_servicer()
-    servicer = StrategyServicer()
+    strategy_servicer_cls = _load_strategy_servicer()
+    servicer = strategy_servicer_cls()
 
     async def mock_get_db():
         return db_session
@@ -123,26 +119,20 @@ def strategy_servicer(db_session: AsyncSession):
     return servicer
 
 
-# Sample valid S-expression strategy config
-VALID_STRATEGY_SEXPR = """
-(strategy
-  :name "Test Momentum Strategy"
-  :type momentum
-  :symbols ["AAPL" "GOOGL"]
-  :timeframe "1D"
-  :entry (and
-           (cross-above (sma close 20) (sma close 50))
-           (> volume 1000000))
-  :exit (cross-below (sma close 20) (sma close 50))
-  :risk {:stop-loss-pct 5
-         :take-profit-pct 15
-         :max-position-pct 10})
-"""
+# Sample valid S-expression strategy config (allocation-based format)
+VALID_STRATEGY_SEXPR = """(strategy "Test Momentum Strategy"
+  :rebalance daily
+  :benchmark SPY
+  (if (crosses-above (sma SPY 20) (sma SPY 50))
+    (weight :method equal
+      (asset AAPL)
+      (asset GOOGL))
+    (else (asset TLT :weight 100))))"""
 
 
 async def register_and_login(auth_servicer, context):
     """Helper to register and login, returning tokens and user info."""
-    from llamatrade.v1 import auth_pb2
+    from llamatrade_proto.generated import auth_pb2
 
     email = f"test-{uuid4().hex[:8]}@example.com"
 
@@ -170,7 +160,7 @@ async def register_and_login(auth_servicer, context):
 
 def create_tenant_context(user_id: str, tenant_id: str):
     """Create a TenantContext proto message."""
-    from llamatrade.v1 import common_pb2
+    from llamatrade_proto.generated import common_pb2
 
     return common_pb2.TenantContext(
         tenant_id=tenant_id,
@@ -190,7 +180,7 @@ class TestStrategyCreationWorkflow:
         db_session: AsyncSession,
     ):
         """Test creating a strategy with valid S-expression config."""
-        from llamatrade.v1 import strategy_pb2
+        from llamatrade_proto.generated import strategy_pb2
 
         # First, register and login
         auth_info = await register_and_login(auth_servicer, grpc_context)
@@ -218,7 +208,7 @@ class TestStrategyCreationWorkflow:
         grpc_context: MockServicerContext,
     ):
         """Test that strategy creation requires valid tenant context."""
-        from llamatrade.v1 import common_pb2, strategy_pb2
+        from llamatrade_proto.generated import common_pb2, strategy_pb2
 
         # Create with non-existent tenant/user UUIDs (valid format but don't exist)
         request = strategy_pb2.CreateStrategyRequest(
@@ -245,7 +235,7 @@ class TestStrategyListWorkflow:
         db_session: AsyncSession,
     ):
         """Test listing strategies when none exist."""
-        from llamatrade.v1 import common_pb2, strategy_pb2
+        from llamatrade_proto.generated import common_pb2, strategy_pb2
 
         auth_info = await register_and_login(auth_servicer, grpc_context)
         ctx = create_tenant_context(auth_info["user_id"], auth_info["tenant_id"])
@@ -268,7 +258,7 @@ class TestStrategyListWorkflow:
         db_session: AsyncSession,
     ):
         """Test listing strategies after creating some."""
-        from llamatrade.v1 import common_pb2, strategy_pb2
+        from llamatrade_proto.generated import common_pb2, strategy_pb2
 
         auth_info = await register_and_login(auth_servicer, grpc_context)
         ctx = create_tenant_context(auth_info["user_id"], auth_info["tenant_id"])
@@ -277,7 +267,7 @@ class TestStrategyListWorkflow:
         for i in range(2):
             create_request = strategy_pb2.CreateStrategyRequest(
                 context=ctx,
-                name=f"Strategy {i+1}",
+                name=f"Strategy {i + 1}",
                 dsl_code=VALID_STRATEGY_SEXPR,
             )
             await strategy_servicer.create_strategy(create_request, grpc_context)
@@ -300,7 +290,7 @@ class TestStrategyListWorkflow:
         db_session: AsyncSession,
     ):
         """Test pagination for strategy listing."""
-        from llamatrade.v1 import common_pb2, strategy_pb2
+        from llamatrade_proto.generated import common_pb2, strategy_pb2
 
         auth_info = await register_and_login(auth_servicer, grpc_context)
         ctx = create_tenant_context(auth_info["user_id"], auth_info["tenant_id"])
@@ -309,7 +299,7 @@ class TestStrategyListWorkflow:
         for i in range(5):
             create_request = strategy_pb2.CreateStrategyRequest(
                 context=ctx,
-                name=f"Paginated Strategy {i+1}",
+                name=f"Paginated Strategy {i + 1}",
                 dsl_code=VALID_STRATEGY_SEXPR,
             )
             await strategy_servicer.create_strategy(create_request, grpc_context)
@@ -338,7 +328,7 @@ class TestStrategyVersionWorkflow:
         db_session: AsyncSession,
     ):
         """Test that updating config creates a new version."""
-        from llamatrade.v1 import strategy_pb2
+        from llamatrade_proto.generated import strategy_pb2
 
         auth_info = await register_and_login(auth_servicer, grpc_context)
         ctx = create_tenant_context(auth_info["user_id"], auth_info["tenant_id"])
@@ -353,10 +343,13 @@ class TestStrategyVersionWorkflow:
         strategy_id = create_response.strategy.id
         assert create_response.strategy.version == 1
 
-        # Update with new config
+        # Update with new config (change assets)
         updated_sexpr = VALID_STRATEGY_SEXPR.replace(
-            ':symbols ["AAPL" "GOOGL"]',
-            ':symbols ["MSFT" "AMZN" "NVDA"]',
+            "(asset AAPL)",
+            "(asset MSFT)",
+        ).replace(
+            "(asset GOOGL)",
+            "(asset NVDA)",
         )
         update_request = strategy_pb2.UpdateStrategyRequest(
             context=ctx,
@@ -375,7 +368,7 @@ class TestStrategyVersionWorkflow:
         db_session: AsyncSession,
     ):
         """Test listing all versions of a strategy."""
-        from llamatrade.v1 import common_pb2, strategy_pb2
+        from llamatrade_proto.generated import common_pb2, strategy_pb2
 
         auth_info = await register_and_login(auth_servicer, grpc_context)
         ctx = create_tenant_context(auth_info["user_id"], auth_info["tenant_id"])
@@ -392,8 +385,8 @@ class TestStrategyVersionWorkflow:
         # Update twice
         for i in range(2):
             updated_sexpr = VALID_STRATEGY_SEXPR.replace(
-                ':name "Test Momentum Strategy"',
-                f':name "Version {i+2}"',
+                '"Test Momentum Strategy"',
+                f'"Version {i + 2}"',
             )
             update_request = strategy_pb2.UpdateStrategyRequest(
                 context=ctx,
@@ -424,7 +417,7 @@ class TestStrategyTenantIsolation:
         db_session: AsyncSession,
     ):
         """Test that one tenant cannot access another tenant's strategy."""
-        from llamatrade.v1 import strategy_pb2
+        from llamatrade_proto.generated import strategy_pb2
 
         # Create strategy as tenant A
         auth_info_a = await register_and_login(auth_servicer, grpc_context)
@@ -460,7 +453,7 @@ class TestStrategyTenantIsolation:
         db_session: AsyncSession,
     ):
         """Test that one tenant cannot modify another tenant's strategy."""
-        from llamatrade.v1 import strategy_pb2
+        from llamatrade_proto.generated import strategy_pb2
 
         # Create strategy as tenant A
         auth_info_a = await register_and_login(auth_servicer, grpc_context)
@@ -497,7 +490,7 @@ class TestStrategyTenantIsolation:
         db_session: AsyncSession,
     ):
         """Test that one tenant cannot delete another tenant's strategy."""
-        from llamatrade.v1 import strategy_pb2
+        from llamatrade_proto.generated import strategy_pb2
 
         # Create strategy as tenant A
         auth_info_a = await register_and_login(auth_servicer, grpc_context)
@@ -541,7 +534,7 @@ class TestStrategyTenantIsolation:
         db_session: AsyncSession,
     ):
         """Test that listing only shows the requesting tenant's strategies."""
-        from llamatrade.v1 import common_pb2, strategy_pb2
+        from llamatrade_proto.generated import common_pb2, strategy_pb2
 
         # Create strategies for tenant A
         auth_info_a = await register_and_login(auth_servicer, grpc_context)
@@ -550,7 +543,7 @@ class TestStrategyTenantIsolation:
         for i in range(2):
             create_request = strategy_pb2.CreateStrategyRequest(
                 context=ctx_a,
-                name=f"Tenant A Strategy {i+1}",
+                name=f"Tenant A Strategy {i + 1}",
                 dsl_code=VALID_STRATEGY_SEXPR,
             )
             await strategy_servicer.create_strategy(create_request, grpc_context)
@@ -594,7 +587,7 @@ class TestStrategyStatusWorkflow:
         db_session: AsyncSession,
     ):
         """Test activating a strategy."""
-        from llamatrade.v1 import strategy_pb2
+        from llamatrade_proto.generated import strategy_pb2
 
         auth_info = await register_and_login(auth_servicer, grpc_context)
         ctx = create_tenant_context(auth_info["user_id"], auth_info["tenant_id"])
@@ -627,7 +620,7 @@ class TestStrategyStatusWorkflow:
         db_session: AsyncSession,
     ):
         """Test pausing an active strategy."""
-        from llamatrade.v1 import strategy_pb2
+        from llamatrade_proto.generated import strategy_pb2
 
         auth_info = await register_and_login(auth_servicer, grpc_context)
         ctx = create_tenant_context(auth_info["user_id"], auth_info["tenant_id"])
@@ -671,7 +664,7 @@ class TestStrategyStatusWorkflow:
         db_session: AsyncSession,
     ):
         """Test that delete soft-archives the strategy."""
-        from llamatrade.v1 import common_pb2, strategy_pb2
+        from llamatrade_proto.generated import common_pb2, strategy_pb2
 
         auth_info = await register_and_login(auth_servicer, grpc_context)
         ctx = create_tenant_context(auth_info["user_id"], auth_info["tenant_id"])
@@ -714,7 +707,7 @@ class TestStrategyValidation:
         grpc_context: MockServicerContext,
     ):
         """Test validating a valid strategy configuration."""
-        from llamatrade.v1 import common_pb2, strategy_pb2
+        from llamatrade_proto.generated import common_pb2, strategy_pb2
 
         request = strategy_pb2.CompileStrategyRequest(
             context=common_pb2.TenantContext(tenant_id="", user_id=""),
@@ -733,7 +726,7 @@ class TestStrategyValidation:
         grpc_context: MockServicerContext,
     ):
         """Test validating an invalid strategy configuration."""
-        from llamatrade.v1 import common_pb2, strategy_pb2
+        from llamatrade_proto.generated import common_pb2, strategy_pb2
 
         request = strategy_pb2.CompileStrategyRequest(
             context=common_pb2.TenantContext(tenant_id="", user_id=""),

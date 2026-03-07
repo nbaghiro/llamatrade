@@ -1,9 +1,18 @@
+# pyright: reportOperatorIssue=false
 """Tests for gRPC streaming in backtest service."""
 
 import json
 
 import pytest
-from src.models import BacktestStatus
+
+from src.models import (
+    BACKTEST_STATUS_CANCELLED,
+    BACKTEST_STATUS_COMPLETED,
+    BACKTEST_STATUS_FAILED,
+    BACKTEST_STATUS_PENDING,
+    BACKTEST_STATUS_RUNNING,
+    BacktestStatus,
+)
 from src.progress import ProgressUpdate
 
 
@@ -80,31 +89,31 @@ class TestBacktestStatusMapping:
     """Tests for BacktestStatus enum values."""
 
     def test_status_enum_values(self):
-        """Test that BacktestStatus has expected values."""
-        assert BacktestStatus.PENDING is not None
-        assert BacktestStatus.RUNNING is not None
-        assert BacktestStatus.COMPLETED is not None
-        assert BacktestStatus.FAILED is not None
-        assert BacktestStatus.CANCELLED is not None
+        """Test that BacktestStatus constants have expected values."""
+        assert BACKTEST_STATUS_PENDING == 1
+        assert BACKTEST_STATUS_RUNNING == 2
+        assert BACKTEST_STATUS_COMPLETED == 3
+        assert BACKTEST_STATUS_FAILED == 4
+        assert BACKTEST_STATUS_CANCELLED == 5
 
     def test_status_names(self):
-        """Test status name properties."""
-        assert BacktestStatus.PENDING.name == "PENDING"
-        assert BacktestStatus.RUNNING.name == "RUNNING"
-        assert BacktestStatus.COMPLETED.name == "COMPLETED"
-        assert BacktestStatus.FAILED.name == "FAILED"
-        assert BacktestStatus.CANCELLED.name == "CANCELLED"
+        """Test status name lookup via proto enum."""
+        assert BacktestStatus.Name(BACKTEST_STATUS_PENDING) == "BACKTEST_STATUS_PENDING"
+        assert BacktestStatus.Name(BACKTEST_STATUS_RUNNING) == "BACKTEST_STATUS_RUNNING"
+        assert BacktestStatus.Name(BACKTEST_STATUS_COMPLETED) == "BACKTEST_STATUS_COMPLETED"
+        assert BacktestStatus.Name(BACKTEST_STATUS_FAILED) == "BACKTEST_STATUS_FAILED"
+        assert BacktestStatus.Name(BACKTEST_STATUS_CANCELLED) == "BACKTEST_STATUS_CANCELLED"
 
     def test_terminal_statuses(self):
         """Test which statuses are terminal (backtest is done)."""
         terminal_statuses = {
-            BacktestStatus.COMPLETED,
-            BacktestStatus.FAILED,
-            BacktestStatus.CANCELLED,
+            BACKTEST_STATUS_COMPLETED,
+            BACKTEST_STATUS_FAILED,
+            BACKTEST_STATUS_CANCELLED,
         }
         non_terminal_statuses = {
-            BacktestStatus.PENDING,
-            BacktestStatus.RUNNING,
+            BACKTEST_STATUS_PENDING,
+            BACKTEST_STATUS_RUNNING,
         }
 
         for status in terminal_statuses:

@@ -53,8 +53,10 @@ class TestStreamConfig:
         config = StreamConfig()
 
         assert config.paper is True
-        assert config.reconnect_delay == 5.0
+        assert config.reconnect_delay == 1.0  # Base delay for exponential backoff
+        assert config.max_reconnect_delay == 60.0  # Max delay cap
         assert config.max_reconnect_attempts == 10
+        assert config.jitter_factor == 0.1
 
 
 class TestAlpacaBarStream:
@@ -267,6 +269,99 @@ class TestAlpacaBarStreamAdvanced:
 
         assert result is False
         assert stream._running is False
+
+    async def test_reconnect_uses_exponential_backoff(self):
+        """Test reconnect delay increases exponentially."""
+        from unittest.mock import AsyncMock, patch
+
+        config = StreamConfig(
+            reconnect_delay=0.01,  # 10ms base
+            max_reconnect_delay=1.0,
+            max_reconnect_attempts=5,
+            jitter_factor=0.0,  # Disable jitter for predictable testing
+        )
+        stream = AlpacaBarStream(config)
+
+        # Mock connect to fail
+        stream.connect = AsyncMock(return_value=False)
+
+        delays = []
+
+        async def track_sleep(delay):
+            delays.append(delay)
+
+        with patch("asyncio.sleep", side_effect=track_sleep):
+            # Attempt multiple reconnects
+            for _ in range(3):
+                await stream._reconnect()
+
+        # Delays should follow exponential pattern: base * 2^(n-1)
+        # Attempt 1: 0.01 * 2^0 = 0.01
+        # Attempt 2: 0.01 * 2^1 = 0.02
+        # Attempt 3: 0.01 * 2^2 = 0.04
+        assert len(delays) == 3
+        assert delays[0] == 0.01
+        assert delays[1] == 0.02
+        assert delays[2] == 0.04
+
+    async def test_reconnect_respects_max_delay(self):
+        """Test reconnect delay is capped at max_reconnect_delay."""
+        from unittest.mock import AsyncMock, patch
+
+        config = StreamConfig(
+            reconnect_delay=1.0,
+            max_reconnect_delay=5.0,  # Cap at 5s
+            max_reconnect_attempts=10,
+            jitter_factor=0.0,
+        )
+        stream = AlpacaBarStream(config)
+        stream.connect = AsyncMock(return_value=False)
+
+        delays = []
+
+        async def track_sleep(delay):
+            delays.append(delay)
+
+        with patch("asyncio.sleep", side_effect=track_sleep):
+            # Attempt 5 reconnects
+            for _ in range(5):
+                await stream._reconnect()
+
+        # Exponential: 1, 2, 4, 8, 16 -> but capped at 5
+        assert delays[0] == 1.0
+        assert delays[1] == 2.0
+        assert delays[2] == 4.0
+        assert delays[3] == 5.0  # Capped
+        assert delays[4] == 5.0  # Capped
+
+    async def test_reconnect_adds_jitter(self):
+        """Test reconnect adds jitter to delay."""
+        import random
+        from unittest.mock import AsyncMock, patch
+
+        config = StreamConfig(
+            reconnect_delay=1.0,
+            max_reconnect_delay=60.0,
+            max_reconnect_attempts=5,
+            jitter_factor=0.1,  # 10% jitter
+        )
+        stream = AlpacaBarStream(config)
+        stream.connect = AsyncMock(return_value=False)
+
+        delays = []
+
+        async def track_sleep(delay):
+            delays.append(delay)
+
+        # Seed random for reproducibility
+        random.seed(42)
+
+        with patch("asyncio.sleep", side_effect=track_sleep):
+            await stream._reconnect()
+
+        # First attempt base delay is 1.0, jitter is 0-0.1
+        # Total should be between 1.0 and 1.1
+        assert 1.0 <= delays[0] <= 1.1
 
     def test_parse_bar_missing_timestamp_uses_now(self):
         """Test parsing bar without timestamp uses current time."""

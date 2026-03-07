@@ -23,7 +23,63 @@ from llamatrade_db.models import (
     TradingSession,
     User,
 )
-from llamatrade_db.models.strategy import StrategyStatus, StrategyType
+from llamatrade_db.models.strategy import StrategyType
+
+# Backtest enums (re-exported for tests)
+from llamatrade_proto.generated.backtest_pb2 import (  # noqa: F401
+    BACKTEST_STATUS_COMPLETED,
+    BACKTEST_STATUS_FAILED,
+    BACKTEST_STATUS_PENDING,
+    BACKTEST_STATUS_RUNNING,
+)
+
+# Billing enums (re-exported for tests)
+from llamatrade_proto.generated.billing_pb2 import (  # noqa: F401
+    BILLING_INTERVAL_MONTHLY,
+    PLAN_TIER_STARTER,
+    SUBSCRIPTION_STATUS_ACTIVE,
+)
+
+# Common enums (re-exported for tests)
+from llamatrade_proto.generated.common_pb2 import (  # noqa: F401
+    EXECUTION_MODE_LIVE,
+    EXECUTION_MODE_PAPER,
+    EXECUTION_STATUS_ERROR,
+    EXECUTION_STATUS_PAUSED,
+    EXECUTION_STATUS_RUNNING,
+    EXECUTION_STATUS_STOPPED,
+)
+
+# Strategy enums (re-exported for tests)
+from llamatrade_proto.generated.strategy_pb2 import (  # noqa: F401
+    STRATEGY_STATUS_ACTIVE,
+    STRATEGY_STATUS_ARCHIVED,
+    STRATEGY_STATUS_DRAFT,
+)
+
+# Trading enums (re-exported for tests)
+from llamatrade_proto.generated.trading_pb2 import (  # noqa: F401
+    ORDER_SIDE_BUY,
+    ORDER_SIDE_SELL,
+    ORDER_STATUS_PENDING,
+    ORDER_TYPE_MARKET,
+    POSITION_SIDE_LONG,
+    TIME_IN_FORCE_DAY,
+)
+
+# Legacy aliases for SESSION_STATUS (mapped to EXECUTION_STATUS in proto)
+SESSION_STATUS_ACTIVE = EXECUTION_STATUS_RUNNING
+SESSION_STATUS_PAUSED = EXECUTION_STATUS_PAUSED
+SESSION_STATUS_STOPPED = EXECUTION_STATUS_STOPPED
+SESSION_STATUS_ERROR = EXECUTION_STATUS_ERROR
+
+# DB-only enums (not in proto)
+# InvoiceStatus: DRAFT=1, OPEN=2, PAID=3, VOID=4, UNCOLLECTIBLE=5
+INVOICE_STATUS_DRAFT = 1
+INVOICE_STATUS_OPEN = 2
+INVOICE_STATUS_PAID = 3
+INVOICE_STATUS_VOID = 4
+INVOICE_STATUS_UNCOLLECTIBLE = 5
 
 
 class TenantFactory:
@@ -93,7 +149,7 @@ class StrategyFactory:
         name: str = "Test Strategy",
         description: str | None = "A test trading strategy",
         strategy_type: StrategyType = StrategyType.MOMENTUM,
-        status: StrategyStatus = StrategyStatus.DRAFT,
+        status: int = STRATEGY_STATUS_DRAFT,  # Proto int: DRAFT=1
         is_public: bool = False,
         current_version: int = 1,
     ) -> Strategy:
@@ -171,7 +227,7 @@ class BacktestFactory:
         id: UUID | None = None,
         name: str = "Test Backtest",
         strategy_version: int = 1,
-        status: str = "pending",
+        status: int = BACKTEST_STATUS_PENDING,  # Proto int: PENDING=1
         start_date: datetime | None = None,
         end_date: datetime | None = None,
         initial_capital: Decimal = Decimal("100000.00"),
@@ -262,8 +318,8 @@ class TradingSessionFactory:
         id: UUID | None = None,
         name: str = "Test Session",
         strategy_version: int = 1,
-        status: str = "stopped",
-        mode: str = "paper",
+        status: int = SESSION_STATUS_STOPPED,  # Proto int: STOPPED=3
+        mode: int = EXECUTION_MODE_PAPER,  # Proto int: PAPER=1
         config: dict | None = None,
         symbols: list | None = None,
     ) -> TradingSession:
@@ -294,11 +350,11 @@ class OrderFactory:
         id: UUID | None = None,
         client_order_id: str | None = None,
         symbol: str = "AAPL",
-        side: str = "buy",
+        side: int = ORDER_SIDE_BUY,  # Proto int: BUY=1
         qty: Decimal = Decimal("10.00000000"),
-        order_type: str = "market",
-        time_in_force: str = "day",
-        status: str = "pending",
+        order_type: int = ORDER_TYPE_MARKET,  # Proto int: MARKET=1
+        time_in_force: int = TIME_IN_FORCE_DAY,  # Proto int: DAY=1
+        status: int = ORDER_STATUS_PENDING,  # Proto int: PENDING=1
         limit_price: Decimal | None = None,
         stop_price: Decimal | None = None,
         filled_qty: Decimal = Decimal("0"),
@@ -335,7 +391,7 @@ class PositionFactory:
         session_id: UUID,
         id: UUID | None = None,
         symbol: str = "AAPL",
-        side: str = "long",
+        side: int = POSITION_SIDE_LONG,  # Proto int: LONG=1
         qty: Decimal = Decimal("10.00000000"),
         avg_entry_price: Decimal = Decimal("150.00000000"),
         current_price: Decimal | None = Decimal("155.00000000"),
@@ -385,7 +441,7 @@ class PlanFactory:
         id: UUID | None = None,
         name: str = "starter",
         display_name: str = "Starter",
-        tier: str = "starter",
+        tier: int = PLAN_TIER_STARTER,  # Proto int: FREE=1, STARTER=2, PRO=3
         price_monthly: float = 29.0,
         price_yearly: float = 290.0,
         features: dict | None = None,
@@ -423,8 +479,8 @@ class SubscriptionFactory:
         tenant_id: UUID,
         plan_id: UUID,
         id: UUID | None = None,
-        status: str = "active",
-        billing_cycle: str = "monthly",
+        status: int = SUBSCRIPTION_STATUS_ACTIVE,  # Proto int: ACTIVE=1, PAST_DUE=2, etc.
+        billing_cycle: int = BILLING_INTERVAL_MONTHLY,  # Proto int: MONTHLY=1, YEARLY=2
         stripe_subscription_id: str | None = "sub_test_123",
         stripe_customer_id: str | None = "cus_test_123",
         current_period_start: datetime | None = None,
@@ -459,7 +515,7 @@ class InvoiceFactory:
         stripe_invoice_id: str | None = None,
         id: UUID | None = None,
         invoice_number: str | None = None,
-        status: str = "open",
+        status: int = INVOICE_STATUS_OPEN,  # DB-only: DRAFT=1, OPEN=2, PAID=3, VOID=4, UNCOLLECTIBLE=5
         amount_due: Decimal = Decimal("29.00"),
         amount_paid: Decimal = Decimal("0.00"),
         currency: str = "usd",

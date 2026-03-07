@@ -1,13 +1,17 @@
 """Shared test fixtures for strategy service tests."""
 
-from datetime import datetime
+from collections.abc import AsyncGenerator
+from datetime import UTC, datetime
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from llamatrade_common.models import TenantContext
+
 from src.main import app
 
 # ===================
@@ -56,19 +60,19 @@ INVALID_MISSING_ENTRY = """(strategy
 
 
 @pytest.fixture
-def tenant_id():
+def tenant_id() -> UUID:
     """Generate a test tenant ID."""
     return uuid4()
 
 
 @pytest.fixture
-def user_id():
+def user_id() -> UUID:
     """Generate a test user ID."""
     return uuid4()
 
 
 @pytest.fixture
-def strategy_id():
+def strategy_id() -> UUID:
     """Generate a test strategy ID."""
     return uuid4()
 
@@ -79,7 +83,7 @@ def strategy_id():
 
 
 @pytest.fixture
-def mock_db():
+def mock_db() -> AsyncMock:
     """Create a mock async database session."""
     db = AsyncMock(spec=AsyncSession)
     db.add = MagicMock()
@@ -97,24 +101,20 @@ def mock_db():
 
 
 def make_mock_strategy(
-    id: Any = None,
-    tenant_id: Any = None,
+    id: UUID | None = None,
+    tenant_id: UUID | None = None,
     name: str = "Test Strategy",
     description: str | None = None,
     strategy_type: str = "mean_reversion",
-    status: str = "draft",
+    status: int | None = None,  # StrategyStatus proto value
     current_version: int = 1,
-    created_by: Any = None,
+    created_by: UUID | None = None,
     created_at: datetime | None = None,
     updated_at: datetime | None = None,
-):
+) -> MagicMock:
     """Create a mock Strategy object."""
-    from llamatrade_db.models.strategy import (
-        StrategyStatus as DBStrategyStatus,
-    )
-    from llamatrade_db.models.strategy import (
-        StrategyType as DBStrategyType,
-    )
+    from llamatrade_db.models.strategy import StrategyType as DBStrategyType
+    from llamatrade_proto.generated.strategy_pb2 import STRATEGY_STATUS_DRAFT
 
     strategy = MagicMock()
     strategy.id = id or uuid4()
@@ -122,26 +122,26 @@ def make_mock_strategy(
     strategy.name = name
     strategy.description = description
     strategy.strategy_type = DBStrategyType(strategy_type)
-    strategy.status = DBStrategyStatus(status)
+    strategy.status = status if status is not None else STRATEGY_STATUS_DRAFT
     strategy.current_version = current_version
     strategy.created_by = created_by or uuid4()
-    strategy.created_at = created_at or datetime.utcnow()
-    strategy.updated_at = updated_at or datetime.utcnow()
+    strategy.created_at = created_at or datetime.now(UTC)
+    strategy.updated_at = updated_at or datetime.now(UTC)
     return strategy
 
 
 def make_mock_version(
-    id: Any = None,
-    strategy_id: Any = None,
+    id: UUID | None = None,
+    strategy_id: UUID | None = None,
     version: int = 1,
     config_sexpr: str = VALID_RSI_STRATEGY,
-    config_json: dict | None = None,
+    config_json: dict[str, Any] | None = None,
     symbols: list[str] | None = None,
     timeframe: str = "1D",
     changelog: str | None = None,
-    created_by: Any = None,
+    created_by: UUID | None = None,
     created_at: datetime | None = None,
-):
+) -> MagicMock:
     """Create a mock StrategyVersion object."""
     ver = MagicMock()
     ver.id = id or uuid4()
@@ -153,12 +153,12 @@ def make_mock_version(
     ver.timeframe = timeframe
     ver.changelog = changelog
     ver.created_by = created_by or uuid4()
-    ver.created_at = created_at or datetime.utcnow()
+    ver.created_at = created_at or datetime.now(UTC)
     return ver
 
 
 @pytest.fixture
-def mock_strategy(tenant_id, user_id, strategy_id):
+def mock_strategy(tenant_id: UUID, user_id: UUID, strategy_id: UUID) -> MagicMock:
     """Create a mock strategy."""
     return make_mock_strategy(
         id=strategy_id,
@@ -168,7 +168,7 @@ def mock_strategy(tenant_id, user_id, strategy_id):
 
 
 @pytest.fixture
-def mock_version(strategy_id, user_id):
+def mock_version(strategy_id: UUID, user_id: UUID) -> MagicMock:
     """Create a mock version."""
     return make_mock_version(
         strategy_id=strategy_id,
@@ -182,7 +182,7 @@ def mock_version(strategy_id, user_id):
 
 
 @pytest.fixture
-async def client():
+async def client() -> AsyncGenerator[AsyncClient]:
     """Create async HTTP test client."""
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
@@ -194,10 +194,8 @@ async def client():
 # ===================
 
 
-def make_auth_context(tenant_id, user_id):
+def make_auth_context(tenant_id: UUID, user_id: UUID) -> TenantContext:
     """Create a mock TenantContext for auth override."""
-    from llamatrade_common.models import TenantContext
-
     return TenantContext(
         tenant_id=tenant_id,
         user_id=user_id,

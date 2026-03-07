@@ -5,10 +5,11 @@ from uuid import UUID
 
 import numpy as np
 from fastapi import Depends
-from llamatrade_db import get_db
-from llamatrade_db.models.portfolio import PortfolioHistory
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from llamatrade_db import get_db
+from llamatrade_db.models.portfolio import PortfolioHistory
 
 from src.models import EquityPoint, PerformanceMetrics
 
@@ -173,7 +174,7 @@ class PerformanceService:
             return []
 
         result: list[dict[str, float | datetime]] = []
-        for i, h in enumerate(history):
+        for h in history:
             if h.daily_return is not None:
                 result.append(
                     {

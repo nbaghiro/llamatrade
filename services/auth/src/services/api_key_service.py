@@ -4,8 +4,9 @@ from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
 from fastapi import Depends
-from llamatrade_common.utils import generate_api_key
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from llamatrade_common.utils import generate_api_key
 
 from src.models import APIKeyCreatedResponse, APIKeyResponse, APIKeyValidationResult
 from src.services.database import get_db
@@ -26,7 +27,7 @@ class APIKeyService:
     ) -> APIKeyCreatedResponse:
         """Create a new API key."""
         key_id = uuid4()
-        api_key, key_hash = generate_api_key(prefix="lt")
+        api_key, _key_hash = generate_api_key(prefix="lt")
         now = datetime.now(UTC)
 
         # In production, store key_hash (not the full key) in database

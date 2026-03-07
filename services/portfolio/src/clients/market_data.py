@@ -1,75 +1,112 @@
-"""Market data client for fetching current prices from market-data service."""
+"""Market data client for fetching current prices from market-data service via gRPC."""
 
+import logging
 import os
+from decimal import Decimal
 
-import httpx
+from llamatrade_proto.clients.market_data import MarketDataClient as GRPCMarketDataClient
+from llamatrade_proto.clients.market_data import Snapshot
+
+logger = logging.getLogger(__name__)
 
 
 class MarketDataClient:
-    """HTTP client for fetching real-time market data from the market-data service."""
+    """gRPC client for fetching real-time market data from the market-data service."""
 
-    def __init__(self, base_url: str | None = None, timeout: float = 10.0):
+    def __init__(self, target: str | None = None):
         """Initialize the market data client.
 
         Args:
-            base_url: Base URL for the market-data service
-            timeout: Request timeout in seconds
+            target: gRPC target address for the market-data service
         """
-        self.base_url: str = base_url or os.getenv("MARKET_DATA_URL", "http://localhost:8840") or ""
-        self.timeout = timeout
-        self._client: httpx.AsyncClient | None = None
+        self.target = target or os.getenv("MARKET_DATA_GRPC_TARGET", "market-data:8840")
+        self._client: GRPCMarketDataClient | None = None
 
-    async def _get_client(self) -> httpx.AsyncClient:
-        """Get or create HTTP client."""
+    def _get_client(self) -> GRPCMarketDataClient:
+        """Get or create the gRPC client."""
         if self._client is None:
-            self._client = httpx.AsyncClient(
-                base_url=self.base_url,
-                timeout=self.timeout,
-            )
+            self._client = GRPCMarketDataClient(target=self.target)
         return self._client
 
     async def close(self) -> None:
-        """Close the HTTP client."""
-        if self._client:
-            await self._client.aclose()
+        """Close the gRPC client."""
+        if self._client is not None:
+            await self._client.close()
             self._client = None
 
-    async def get_latest_price(self, symbol: str) -> float:
+    async def get_latest_price(self, symbol: str) -> Decimal:
         """Get the latest price for a single symbol.
 
         Args:
             symbol: Stock symbol (e.g., "AAPL")
 
         Returns:
-            Latest price as float
-        """
-        client = await self._get_client()
-        response = await client.get(f"/quotes/{symbol}/latest")
-        response.raise_for_status()
-        data = response.json()
-        # Use midpoint of bid/ask or last trade price
-        return float(data.get("price", data.get("last", 0.0)))
+            Latest price as Decimal
 
-    async def get_prices(self, symbols: list[str]) -> dict[str, float]:
+        Raises:
+            Exception: If price cannot be fetched
+        """
+        symbol = symbol.upper()
+        client = self._get_client()
+        return await client.get_latest_price(symbol)
+
+    async def get_prices(self, symbols: list[str]) -> dict[str, Decimal]:
         """Get latest prices for multiple symbols.
 
         Args:
             symbols: List of stock symbols
 
         Returns:
-            Dictionary mapping symbol to latest price
+            Dictionary mapping symbol to latest price (as Decimal)
         """
         if not symbols:
             return {}
 
-        prices = {}
-        for symbol in symbols:
-            try:
-                prices[symbol] = await self.get_latest_price(symbol)
-            except Exception:
-                # If we can't get a price, use 0.0 as fallback
-                prices[symbol] = 0.0
-        return prices
+        symbols = [s.upper() for s in symbols]
+        try:
+            client = self._get_client()
+            return await client.get_latest_prices(symbols)
+        except Exception as e:
+            logger.warning("Failed to get prices for %s: %s", symbols, e)
+            # Return zeros for failed lookups
+            return {symbol: Decimal(0) for symbol in symbols}
+
+    async def get_snapshot(self, symbol: str) -> Snapshot | None:
+        """Get full market snapshot for a symbol.
+
+        Args:
+            symbol: Stock symbol (e.g., "AAPL")
+
+        Returns:
+            Snapshot with latest price, bid/ask, and change info
+        """
+        symbol = symbol.upper()
+        try:
+            client = self._get_client()
+            return await client.get_snapshot(symbol)
+        except Exception as e:
+            logger.warning("Failed to get snapshot for %s: %s", symbol, e)
+            return None
+
+    async def get_snapshots(self, symbols: list[str]) -> dict[str, Snapshot]:
+        """Get market snapshots for multiple symbols.
+
+        Args:
+            symbols: List of stock symbols
+
+        Returns:
+            Dictionary mapping symbol to Snapshot
+        """
+        if not symbols:
+            return {}
+
+        symbols = [s.upper() for s in symbols]
+        try:
+            client = self._get_client()
+            return await client.get_snapshots(symbols)
+        except Exception as e:
+            logger.warning("Failed to get snapshots for %s: %s", symbols, e)
+            return {}
 
 
 # Singleton instance

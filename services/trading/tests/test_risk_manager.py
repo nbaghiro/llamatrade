@@ -1,21 +1,41 @@
 """Test risk manager."""
 
-from unittest.mock import AsyncMock, MagicMock
+from datetime import datetime
+from unittest.mock import AsyncMock, MagicMock, patch
+from zoneinfo import ZoneInfo
 
 import pytest
+
 from src.models import RiskLimits
 from src.risk.risk_manager import RiskManager, get_risk_manager
+from src.utils.trading_hours import TradingHoursConfig
 
 
 @pytest.fixture
 def risk_manager():
-    """Create a risk manager instance without DB."""
-    return RiskManager()
+    """Create a risk manager instance without DB.
+
+    Default limits allow trading outside market hours for test isolation.
+    """
+    manager = RiskManager()
+    # Allow trading outside market hours for non-market-hours tests
+    manager._default_limits = RiskLimits(
+        max_position_size=10000,
+        max_daily_loss=1000,
+        max_order_value=5000,
+        allow_outside_market_hours=True,
+    )
+    return manager
 
 
 @pytest.fixture
 def risk_manager_with_db(mock_db):
-    """Create a risk manager instance with mocked DB."""
+    """Create a risk manager instance with mocked DB.
+
+    Clears the shared config cache to ensure test isolation.
+    """
+    # Clear shared cache to prevent test pollution
+    RiskManager._config_cache.clear()
     return RiskManager(db=mock_db)
 
 
@@ -50,12 +70,14 @@ class TestRiskManager:
 
     async def test_check_order_passes(self, risk_manager, tenant_id):
         """Test order that passes risk checks."""
+        # Use limit order to specify price explicitly
         result = await risk_manager.check_order(
             tenant_id=tenant_id,
             symbol="AAPL",
             side="buy",
             qty=10.0,
-            order_type="market",
+            order_type="limit",
+            limit_price=150.0,  # 10 * 150 = 1500 < 5000 max
         )
 
         assert result.passed is True
@@ -63,19 +85,33 @@ class TestRiskManager:
 
     async def test_check_order_exceeds_value(self, risk_manager, tenant_id):
         """Test order that exceeds max order value."""
-        # With default limit_price placeholder of 100 and max_order_value of 5000
-        # qty of 100 * 100 = 10000 > 5000
+        # 100 * 100 = 10000 > 5000 max_order_value
         result = await risk_manager.check_order(
             tenant_id=tenant_id,
             symbol="AAPL",
             side="buy",
             qty=100.0,
-            order_type="market",
+            order_type="limit",
+            limit_price=100.0,
         )
 
         assert result.passed is False
         assert len(result.violations) > 0
         assert any("exceeds limit" in v for v in result.violations)
+
+    async def test_check_market_order_rejects_when_price_unavailable(self, risk_manager, tenant_id):
+        """Test that market orders are rejected when price is unavailable."""
+        # Market order with no market data = price unavailable
+        result = await risk_manager.check_order(
+            tenant_id=tenant_id,
+            symbol="UNKNOWN",
+            side="buy",
+            qty=10.0,
+            order_type="market",
+        )
+
+        assert result.passed is False
+        assert any("price unavailable" in v for v in result.violations)
 
     async def test_check_order_with_limit_price(self, risk_manager, tenant_id):
         """Test order value calculation with limit price."""
@@ -98,15 +134,17 @@ class TestRiskManager:
         risk_manager._default_limits = RiskLimits(
             max_order_value=10000,
             allowed_symbols=["AAPL", "GOOGL"],
+            allow_outside_market_hours=True,  # Focus on symbol restriction, not market hours
         )
 
-        # MSFT not in allowed list
+        # MSFT not in allowed list - use limit order for explicit price
         result = await risk_manager.check_order(
             tenant_id=tenant_id,
             symbol="MSFT",
             side="buy",
             qty=10.0,
-            order_type="market",
+            order_type="limit",
+            limit_price=100.0,
         )
 
         assert result.passed is False
@@ -117,14 +155,17 @@ class TestRiskManager:
         risk_manager._default_limits = RiskLimits(
             max_order_value=10000,
             allowed_symbols=["AAPL", "GOOGL"],
+            allow_outside_market_hours=True,  # Focus on symbol restriction, not market hours
         )
 
+        # Use limit order for explicit price
         result = await risk_manager.check_order(
             tenant_id=tenant_id,
             symbol="AAPL",
             side="buy",
             qty=10.0,
-            order_type="market",
+            order_type="limit",
+            limit_price=100.0,
         )
 
         assert result.passed is True
@@ -448,20 +489,41 @@ class TestRiskManagerRecordTradeWithDB:
 class TestRiskManagerPositionSize:
     """Tests for position size checks."""
 
-    async def test_check_position_size_no_position(
+    async def test_check_position_size_no_position_with_price(
         self, risk_manager_with_db, mock_db, tenant_id, session_id
     ):
-        """Test _check_position_size with no existing position."""
+        """Test _check_position_size with no existing position but price available."""
         mock_result = MagicMock()
         mock_result.scalar_one_or_none.return_value = None
         mock_db.execute.return_value = mock_result
+
+        # Mock market data to provide price
+        mock_market_data = AsyncMock()
+        mock_market_data.get_latest_price.return_value = 100.0
+        risk_manager_with_db.market_data = mock_market_data
 
         result = await risk_manager_with_db._check_position_size(
             tenant_id, session_id, "AAPL", 10, "buy", 10000
         )
 
-        # 10 * 100 (default) = 1000 < 10000
+        # 10 * 100 = 1000 < 10000
         assert result is True
+
+    async def test_check_position_size_no_position_no_price(
+        self, risk_manager_with_db, mock_db, tenant_id, session_id
+    ):
+        """Test _check_position_size fails-safe when no price available."""
+        mock_result = MagicMock()
+        mock_result.scalar_one_or_none.return_value = None
+        mock_db.execute.return_value = mock_result
+
+        # No market data, no cache = price unavailable
+        result = await risk_manager_with_db._check_position_size(
+            tenant_id, session_id, "UNKNOWN", 10, "buy", 10000
+        )
+
+        # Fail-safe: can't verify position size without price
+        assert result is False
 
     async def test_check_position_size_exceeds(
         self, risk_manager_with_db, mock_db, tenant_id, session_id
@@ -527,11 +589,11 @@ class TestRiskManagerPriceCache:
 
         assert price == 170.0
 
-    async def test_price_fallback(self, risk_manager):
-        """Test fallback price when no data available."""
+    async def test_price_returns_none_when_unavailable(self, risk_manager):
+        """Test that None is returned when no price available."""
         price = await risk_manager._get_current_price("UNKNOWN")
 
-        assert price == 100.0  # Default fallback
+        assert price is None  # Fail-safe: no default fallback
 
 
 class TestRiskManagerCheckDailyLoss:
@@ -630,3 +692,152 @@ class TestRiskManagerGetLimitsWithConfig:
         limits = await risk_manager_with_db.get_limits(tenant_id, session_id)
 
         assert limits.max_position_size == 15000
+
+
+class TestRiskManagerMarketHours:
+    """Tests for market hours enforcement in risk checks."""
+
+    @pytest.fixture
+    def risk_manager_market_hours(self):
+        """Create a risk manager with trading hours checker."""
+        return RiskManager(trading_hours_config=TradingHoursConfig())
+
+    async def test_check_order_blocked_outside_market_hours(
+        self, risk_manager_market_hours, tenant_id
+    ):
+        """Test order is blocked outside market hours."""
+        # Mock the trading hours checker to return market closed
+        with patch.object(
+            risk_manager_market_hours._trading_hours,
+            "is_market_open",
+            return_value=False,
+        ):
+            with patch.object(
+                risk_manager_market_hours._trading_hours,
+                "get_session_info",
+            ) as mock_session:
+                mock_session.return_value = MagicMock(
+                    session_type="closed",
+                    next_regular_open=datetime(
+                        2026, 3, 9, 9, 30, tzinfo=ZoneInfo("America/New_York")
+                    ),
+                )
+
+                result = await risk_manager_market_hours.check_order(
+                    tenant_id=tenant_id,
+                    symbol="AAPL",
+                    side="buy",
+                    qty=10.0,
+                    order_type="market",
+                )
+
+                assert result.passed is False
+                assert len(result.violations) == 1
+                assert "Market is closed" in result.violations[0]
+                assert "Next open: 2026-03-09" in result.violations[0]
+
+    async def test_check_order_allowed_during_market_hours(
+        self, risk_manager_market_hours, tenant_id
+    ):
+        """Test order passes during market hours."""
+        with patch.object(
+            risk_manager_market_hours._trading_hours,
+            "is_market_open",
+            return_value=True,
+        ):
+            result = await risk_manager_market_hours.check_order(
+                tenant_id=tenant_id,
+                symbol="AAPL",
+                side="buy",
+                qty=10.0,
+                order_type="market",
+            )
+
+            # May have other violations but not market hours
+            assert not any("Market is closed" in v for v in result.violations)
+
+    async def test_check_order_bypass_market_hours_flag(self, risk_manager_market_hours, tenant_id):
+        """Test order passes when allow_outside_market_hours flag is set."""
+        # Override default limits to allow outside hours
+        risk_manager_market_hours._default_limits = RiskLimits(
+            max_order_value=10000,
+            allow_outside_market_hours=True,
+        )
+
+        with patch.object(
+            risk_manager_market_hours._trading_hours,
+            "is_market_open",
+            return_value=False,
+        ):
+            result = await risk_manager_market_hours.check_order(
+                tenant_id=tenant_id,
+                symbol="AAPL",
+                side="buy",
+                qty=10.0,
+                order_type="market",
+            )
+
+            # Should NOT have market hours violation
+            assert not any("Market is closed" in v for v in result.violations)
+
+    async def test_check_order_premarket_session_blocked_by_default(
+        self, risk_manager_market_hours, tenant_id
+    ):
+        """Test pre-market trading is blocked by default."""
+        with patch.object(
+            risk_manager_market_hours._trading_hours,
+            "is_market_open",
+            return_value=False,
+        ):
+            with patch.object(
+                risk_manager_market_hours._trading_hours,
+                "get_session_info",
+            ) as mock_session:
+                mock_session.return_value = MagicMock(
+                    session_type="premarket",
+                    next_regular_open=datetime(
+                        2026, 3, 6, 9, 30, tzinfo=ZoneInfo("America/New_York")
+                    ),
+                )
+
+                result = await risk_manager_market_hours.check_order(
+                    tenant_id=tenant_id,
+                    symbol="AAPL",
+                    side="buy",
+                    qty=10.0,
+                    order_type="market",
+                )
+
+                assert result.passed is False
+                assert any("premarket" in v for v in result.violations)
+
+    async def test_check_order_afterhours_session_blocked_by_default(
+        self, risk_manager_market_hours, tenant_id
+    ):
+        """Test after-hours trading is blocked by default."""
+        with patch.object(
+            risk_manager_market_hours._trading_hours,
+            "is_market_open",
+            return_value=False,
+        ):
+            with patch.object(
+                risk_manager_market_hours._trading_hours,
+                "get_session_info",
+            ) as mock_session:
+                mock_session.return_value = MagicMock(
+                    session_type="afterhours",
+                    next_regular_open=datetime(
+                        2026, 3, 9, 9, 30, tzinfo=ZoneInfo("America/New_York")
+                    ),
+                )
+
+                result = await risk_manager_market_hours.check_order(
+                    tenant_id=tenant_id,
+                    symbol="AAPL",
+                    side="buy",
+                    qty=10.0,
+                    order_type="market",
+                )
+
+                assert result.passed is False
+                assert any("afterhours" in v for v in result.violations)

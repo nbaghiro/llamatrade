@@ -1,6 +1,6 @@
 """Event schemas for async messaging between services."""
 
-from datetime import datetime
+from datetime import UTC, datetime
 from enum import StrEnum
 from typing import TypedDict, cast
 from uuid import UUID, uuid4
@@ -111,7 +111,7 @@ class Event(BaseModel):
     type: EventType
     tenant_id: UUID | None = None
     user_id: UUID | None = None
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(UTC))
     data: EventData = Field(default_factory=lambda: cast(EventData, {}))
     metadata: EventMetadata = Field(default_factory=lambda: cast(EventMetadata, {}))
 
@@ -130,7 +130,7 @@ class Event(BaseModel):
         }
 
     @classmethod
-    def from_redis_stream(cls, data: dict[str, str]) -> "Event":
+    def from_redis_stream(cls, data: dict[str, str]) -> Event:
         """Create event from Redis stream data."""
         import json
 

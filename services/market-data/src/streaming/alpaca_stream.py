@@ -7,7 +7,7 @@ import asyncio
 import json
 import logging
 import os
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any
@@ -33,6 +33,11 @@ class MessageType(StrEnum):
     BAR = "b"
 
 
+# WebSocket send timeout in seconds
+# If a send takes longer than this, the connection is considered stalled
+WEBSOCKET_SEND_TIMEOUT = 10.0
+
+
 @dataclass
 class StreamConfig:
     """Configuration for Alpaca stream."""
@@ -44,10 +49,10 @@ class StreamConfig:
     max_reconnect_attempts: int = 10
 
 
-# Callback types
-TradeCallback = Callable[[str, TradeData], None]
-QuoteCallback = Callable[[str, QuoteData], None]
-BarCallback = Callable[[str, BarData], None]
+# Callback types - async to allow direct awaiting without thread pool
+TradeCallback = Callable[[str, TradeData], Awaitable[None]]
+QuoteCallback = Callable[[str, QuoteData], Awaitable[None]]
+BarCallback = Callable[[str, BarData], Awaitable[None]]
 
 
 class AlpacaStreamClient:
@@ -123,6 +128,7 @@ class AlpacaStreamClient:
         """
         try:
             self._ws = await websockets.connect(self.url)
+            assert self._ws is not None  # websockets.connect always returns a connection
             logger.info(f"Connected to Alpaca stream: {self.url}")
 
             # Wait for welcome message
@@ -137,7 +143,10 @@ class AlpacaStreamClient:
                 "key": self.config.api_key,
                 "secret": self.config.api_secret,
             }
-            await self._ws.send(json.dumps(auth_msg))
+            await asyncio.wait_for(
+                self._ws.send(json.dumps(auth_msg)),
+                timeout=WEBSOCKET_SEND_TIMEOUT,
+            )
 
             # Wait for auth response
             msg = await self._receive_message()
@@ -211,7 +220,10 @@ class AlpacaStreamClient:
             if self._ws is None:
                 logger.error("Cannot subscribe: WebSocket is None")
                 return False
-            await self._ws.send(json.dumps(sub_msg))
+            await asyncio.wait_for(
+                self._ws.send(json.dumps(sub_msg)),
+                timeout=WEBSOCKET_SEND_TIMEOUT,
+            )
 
             # Wait for subscription confirmation
             msg = await self._receive_message()
@@ -267,7 +279,10 @@ class AlpacaStreamClient:
 
             if self._ws is None:
                 return False
-            await self._ws.send(json.dumps(unsub_msg))
+            await asyncio.wait_for(
+                self._ws.send(json.dumps(unsub_msg)),
+                timeout=WEBSOCKET_SEND_TIMEOUT,
+            )
 
             # Wait for confirmation
             msg = await self._receive_message()
@@ -324,42 +339,45 @@ class AlpacaStreamClient:
                 logger.error(f"Stream error: {e}")
                 await asyncio.sleep(1)
 
-    async def _dispatch_message(self, item: dict) -> None:
-        """Dispatch a message to the appropriate callback."""
-        msg_type = item.get("T")
+    async def _dispatch_message(self, item: dict[str, Any]) -> None:
+        """Dispatch a message to the appropriate callback.
+
+        Callbacks are async and directly awaited - no thread pool overhead.
+        """
+        msg_type: str | None = item.get("T")
 
         if msg_type == MessageType.TRADE:
             if self._on_trade:
                 trade_data = self._parse_trade(item)
                 if trade_data:
-                    symbol = item.get("S", "")
-                    await asyncio.to_thread(self._on_trade, symbol, trade_data)
+                    symbol: str = item.get("S", "")
+                    await self._on_trade(symbol, trade_data)
 
         elif msg_type == MessageType.QUOTE:
             if self._on_quote:
                 quote_data = self._parse_quote(item)
                 if quote_data:
                     symbol = item.get("S", "")
-                    await asyncio.to_thread(self._on_quote, symbol, quote_data)
+                    await self._on_quote(symbol, quote_data)
 
         elif msg_type == MessageType.BAR:
             if self._on_bar:
                 bar_data = self._parse_bar(item)
                 if bar_data:
                     symbol = item.get("S", "")
-                    await asyncio.to_thread(self._on_bar, symbol, bar_data)
+                    await self._on_bar(symbol, bar_data)
 
         elif msg_type == MessageType.ERROR:
             logger.error(f"Stream error message: {item.get('msg')}")
 
-    async def _receive_message(self, timeout: float = 10.0) -> list[dict[Any, Any]] | None:
+    async def _receive_message(self, timeout: float = 10.0) -> list[dict[str, Any]] | None:
         """Receive and parse a WebSocket message."""
         if not self._ws:
             return None
 
         try:
             raw = await asyncio.wait_for(self._ws.recv(), timeout=timeout)
-            parsed: list[dict[Any, Any]] = json.loads(raw)
+            parsed: list[dict[str, Any]] = json.loads(raw)
             return parsed
         except TimeoutError:
             return None
@@ -403,24 +421,24 @@ class AlpacaStreamClient:
 
         return False
 
-    def _parse_trade(self, data: dict) -> TradeData | None:
+    def _parse_trade(self, data: dict[str, Any]) -> TradeData | None:
         """Parse Alpaca trade message."""
         try:
-            ts = data.get("t", "")
+            ts: str = data.get("t", "")
             return TradeData(
                 price=float(data.get("p", 0)),
                 size=int(data.get("s", 0)),
-                exchange=data.get("x", ""),
+                exchange=str(data.get("x", "")),
                 timestamp=ts,
             )
         except Exception as e:
             logger.error(f"Failed to parse trade: {e}")
             return None
 
-    def _parse_quote(self, data: dict) -> QuoteData | None:
+    def _parse_quote(self, data: dict[str, Any]) -> QuoteData | None:
         """Parse Alpaca quote message."""
         try:
-            ts = data.get("t", "")
+            ts: str = data.get("t", "")
             return QuoteData(
                 bid_price=float(data.get("bp", 0)),
                 bid_size=int(data.get("bs", 0)),
@@ -432,10 +450,10 @@ class AlpacaStreamClient:
             logger.error(f"Failed to parse quote: {e}")
             return None
 
-    def _parse_bar(self, data: dict) -> BarData | None:
+    def _parse_bar(self, data: dict[str, Any]) -> BarData | None:
         """Parse Alpaca bar message."""
         try:
-            ts = data.get("t", "")
+            ts: str = data.get("t", "")
             return BarData(
                 open=float(data.get("o", 0)),
                 high=float(data.get("h", 0)),
@@ -451,10 +469,19 @@ class AlpacaStreamClient:
 
 # Global instance
 _stream_client: AlpacaStreamClient | None = None
+_stream_lock: asyncio.Lock | None = None
+
+
+def _get_stream_lock() -> asyncio.Lock:
+    """Get or create the stream initialization lock."""
+    global _stream_lock
+    if _stream_lock is None:
+        _stream_lock = asyncio.Lock()
+    return _stream_lock
 
 
 def get_alpaca_stream() -> AlpacaStreamClient:
-    """Get the global Alpaca stream client."""
+    """Get the global Alpaca stream client (creates if not exists)."""
     global _stream_client
     if _stream_client is None:
         _stream_client = AlpacaStreamClient()
@@ -464,23 +491,37 @@ def get_alpaca_stream() -> AlpacaStreamClient:
 async def init_alpaca_stream() -> AlpacaStreamClient | None:
     """Initialize and connect the Alpaca stream client.
 
+    Thread-safe: Uses asyncio.Lock to prevent race conditions during
+    concurrent initialization.
+
     Returns:
         Connected client or None if connection failed
     """
     global _stream_client
-    _stream_client = AlpacaStreamClient()
 
-    if await _stream_client.connect():
-        return _stream_client
+    async with _get_stream_lock():
+        # Check if already initialized
+        if _stream_client is not None and _stream_client.connected:
+            return _stream_client
 
-    logger.warning("Failed to connect to Alpaca stream")
-    _stream_client = None
-    return None
+        _stream_client = AlpacaStreamClient()
+
+        if await _stream_client.connect():
+            return _stream_client
+
+        logger.warning("Failed to connect to Alpaca stream")
+        _stream_client = None
+        return None
 
 
 async def close_alpaca_stream() -> None:
-    """Close the global Alpaca stream client."""
+    """Close the global Alpaca stream client.
+
+    Thread-safe: Uses asyncio.Lock to prevent race conditions.
+    """
     global _stream_client
-    if _stream_client:
-        await _stream_client.disconnect()
-        _stream_client = None
+
+    async with _get_stream_lock():
+        if _stream_client:
+            await _stream_client.disconnect()
+            _stream_client = None

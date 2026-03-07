@@ -4,7 +4,7 @@ import logging
 import os
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Literal, cast
+from typing import Any, Literal
 
 import stripe
 from stripe import Customer, Event, Invoice, PaymentMethod, SetupIntent, Subscription
@@ -96,7 +96,10 @@ class StripeClient:
         """Get existing customer by metadata or create new one."""
         try:
             # Search for existing customer with this tenant_id
-            customers = Customer.search(query=f"metadata['tenant_id']:'{tenant_id}'")
+            # pyright: ignore[reportUnknownMemberType] - stripe library has incomplete type stubs
+            customers = Customer.search(  # pyright: ignore[reportUnknownMemberType]
+                query=f"metadata['tenant_id']:'{tenant_id}'"
+            )
             if customers.data:
                 return str(customers.data[0].id)
 
@@ -225,7 +228,7 @@ class StripeClient:
     ) -> SubscriptionResult:
         """Create a subscription for a customer."""
         try:
-            params: dict = {
+            params: dict[str, Any] = {
                 "customer": customer_id,
                 "items": [{"price": price_id}],
                 "default_payment_method": payment_method_id,
@@ -236,7 +239,7 @@ class StripeClient:
             if trial_days > 0:
                 params["trial_period_days"] = trial_days
 
-            subscription = Subscription.create(**params)
+            subscription = Subscription.create(**params)  # pyright: ignore[reportUnknownArgumentType]
             return self._subscription_to_result(subscription)
         except stripe.StripeError as e:
             logger.error(f"Stripe error creating subscription: {e}")
@@ -358,8 +361,11 @@ class StripeClient:
         """Verify webhook signature and return the event."""
         try:
             # stripe.Webhook.construct_event is not fully typed in stripe-python
-            event = stripe.Webhook.construct_event(payload, sig_header, webhook_secret)
-            return cast(Event, event)
+            # pyright: ignore[reportUnknownMemberType] - stripe library has incomplete type stubs
+            event: Event = stripe.Webhook.construct_event(  # pyright: ignore[reportUnknownMemberType]
+                payload, sig_header, webhook_secret
+            )
+            return event
         except stripe.SignatureVerificationError as e:
             logger.error(f"Webhook signature verification failed: {e}")
             raise StripeError("Invalid webhook signature", "signature_verification_error")

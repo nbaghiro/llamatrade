@@ -1,12 +1,14 @@
 """Audit service - records all trading events for compliance and debugging."""
 
 from datetime import UTC, datetime
+from typing import Any
 from uuid import UUID
 
 from fastapi import Depends
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from llamatrade_db import get_db
 from llamatrade_db.models.audit import AuditEventType, AuditLog
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.models import OrderResponse, RiskCheckResult
 from src.runner.runner import Signal
@@ -204,7 +206,7 @@ class AuditService:
         tenant_id: UUID,
         session_id: UUID,
         breach_type: str,
-        details: dict,
+        details: dict[str, Any],
     ) -> None:
         """Log risk limit breach."""
         await self._log(
@@ -412,7 +414,7 @@ class AuditService:
         self,
         tenant_id: UUID,
         event_type: AuditEventType,
-        data: dict,
+        data: dict[str, Any],
         session_id: UUID | None = None,
         symbol: str | None = None,
         order_id: UUID | None = None,

@@ -4,9 +4,7 @@ This module provides fixtures for starting and managing service processes
 for multi-service integration tests.
 """
 
-import asyncio
 import os
-import signal
 import subprocess
 import sys
 from collections.abc import AsyncGenerator, Generator
@@ -64,7 +62,7 @@ def start_service(
     port: int | None = None,
     env_overrides: dict[str, str] | None = None,
     timeout: float = 30.0,
-) -> Generator[ServiceProcess, None, None]:
+) -> Generator[ServiceProcess]:
     """Start a service as a subprocess.
 
     Args:
@@ -126,7 +124,9 @@ def _wait_for_health(base_url: str, timeout: float) -> None:
 
         time.sleep(0.5)
 
-    raise TimeoutError(f"Service at {base_url} did not become healthy within {timeout}s: {last_error}")
+    raise TimeoutError(
+        f"Service at {base_url} did not become healthy within {timeout}s: {last_error}"
+    )
 
 
 @asynccontextmanager
@@ -135,7 +135,7 @@ async def start_service_async(
     port: int | None = None,
     env_overrides: dict[str, str] | None = None,
     timeout: float = 30.0,
-) -> AsyncGenerator[ServiceProcess, None]:
+) -> AsyncGenerator[ServiceProcess]:
     """Async version of start_service."""
     # Use sync context manager in async context
     with start_service(name, port, env_overrides, timeout) as service:
@@ -151,7 +151,7 @@ async def start_service_async(
 def auth_service(
     database_url: str,
     redis_url: str,
-) -> Generator[ServiceProcess, None, None]:
+) -> Generator[ServiceProcess]:
     """Start auth service for the test module."""
     env = {
         "DATABASE_URL": database_url,
@@ -167,7 +167,7 @@ def auth_service(
 def strategy_service(
     database_url: str,
     redis_url: str,
-) -> Generator[ServiceProcess, None, None]:
+) -> Generator[ServiceProcess]:
     """Start strategy service for the test module."""
     env = {
         "DATABASE_URL": database_url,
@@ -183,7 +183,7 @@ def strategy_service(
 def backtest_service(
     database_url: str,
     redis_url: str,
-) -> Generator[ServiceProcess, None, None]:
+) -> Generator[ServiceProcess]:
     """Start backtest service for the test module."""
     env = {
         "DATABASE_URL": database_url,
@@ -196,7 +196,7 @@ def backtest_service(
 
 
 @pytest.fixture
-async def workflow_client() -> AsyncGenerator[httpx.AsyncClient, None]:
+async def workflow_client() -> AsyncGenerator[httpx.AsyncClient]:
     """Create an async HTTP client for workflow tests."""
     async with httpx.AsyncClient(timeout=30.0) as client:
         yield client
@@ -265,12 +265,8 @@ async def create_strategy(
             "config": {
                 "symbols": ["AAPL"],
                 "timeframe": "1D",
-                "indicators": [
-                    {"type": "sma", "params": {"period": 20}, "output_name": "sma_20"}
-                ],
-                "entry_conditions": [
-                    {"type": "cross_above", "left": "close", "right": "sma_20"}
-                ],
+                "indicators": [{"type": "sma", "params": {"period": 20}, "output_name": "sma_20"}],
+                "entry_conditions": [{"type": "cross_above", "left": "close", "right": "sma_20"}],
                 "exit_conditions": [],
                 "risk": {"stop_loss_percent": 5},
             },

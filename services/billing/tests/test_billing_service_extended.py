@@ -1,22 +1,22 @@
+# pyright: reportPrivateUsage=false
 """Extended tests for BillingService to improve coverage."""
 
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from unittest.mock import AsyncMock, MagicMock
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
-from src.models import (
-    PlanTier,
-    SubscriptionStatus,
-)
+
+from llamatrade_proto.generated import billing_pb2
+
 from src.services.billing_service import DEFAULT_PLANS, BillingService
 
 # === Test Fixtures ===
 
 
 @pytest.fixture
-def mock_db():
+def mock_db() -> MagicMock:
     """Create a mock database session."""
     db = MagicMock()
     db.execute = AsyncMock()
@@ -28,7 +28,7 @@ def mock_db():
 
 
 @pytest.fixture
-def mock_stripe():
+def mock_stripe() -> MagicMock:
     """Create a mock Stripe client."""
     stripe = MagicMock()
     stripe.get_or_create_customer = AsyncMock(return_value="cus_123")
@@ -40,13 +40,13 @@ def mock_stripe():
 
 
 @pytest.fixture
-def billing_service(mock_db, mock_stripe):
+def billing_service(mock_db: MagicMock, mock_stripe: MagicMock) -> BillingService:
     """Create a BillingService instance."""
     return BillingService(mock_db, mock_stripe)
 
 
 @pytest.fixture
-def test_tenant_id():
+def test_tenant_id() -> UUID:
     return uuid4()
 
 
@@ -56,7 +56,9 @@ def test_tenant_id():
 class TestListPlans:
     """Tests for list_plans method."""
 
-    async def test_list_plans_returns_defaults_when_db_empty(self, billing_service, mock_db):
+    async def test_list_plans_returns_defaults_when_db_empty(
+        self, billing_service: BillingService, mock_db: MagicMock
+    ) -> None:
         """Test listing plans returns defaults when DB is empty."""
         mock_result = MagicMock()
         mock_result.scalars.return_value.all.return_value = []
@@ -67,12 +69,14 @@ class TestListPlans:
         assert len(plans) == len(DEFAULT_PLANS)
         assert plans[0].id == "free"
 
-    async def test_list_plans_returns_db_plans(self, billing_service, mock_db):
+    async def test_list_plans_returns_db_plans(
+        self, billing_service: BillingService, mock_db: MagicMock
+    ) -> None:
         """Test listing plans returns plans from database."""
         mock_plan = MagicMock()
         mock_plan.name = "starter"
         mock_plan.display_name = "Starter"
-        mock_plan.tier = "starter"
+        mock_plan.tier = billing_pb2.PLAN_TIER_STARTER
         mock_plan.price_monthly = Decimal("29.00")
         mock_plan.price_yearly = Decimal("290.00")
         mock_plan.features = {"backtests": True}
@@ -95,7 +99,9 @@ class TestListPlans:
 class TestGetPlan:
     """Tests for get_plan method."""
 
-    async def test_get_plan_from_defaults(self, billing_service, mock_db):
+    async def test_get_plan_from_defaults(
+        self, billing_service: BillingService, mock_db: MagicMock
+    ) -> None:
         """Test getting plan from defaults when not in DB."""
         mock_result = MagicMock()
         mock_result.scalar_one_or_none.return_value = None
@@ -106,7 +112,9 @@ class TestGetPlan:
         assert plan is not None
         assert plan.id == "free"
 
-    async def test_get_plan_not_found(self, billing_service, mock_db):
+    async def test_get_plan_not_found(
+        self, billing_service: BillingService, mock_db: MagicMock
+    ) -> None:
         """Test getting non-existent plan."""
         mock_result = MagicMock()
         mock_result.scalar_one_or_none.return_value = None
@@ -123,7 +131,9 @@ class TestGetPlan:
 class TestGetSubscription:
     """Tests for get_subscription method."""
 
-    async def test_get_subscription_not_found(self, billing_service, mock_db, test_tenant_id):
+    async def test_get_subscription_not_found(
+        self, billing_service: BillingService, mock_db: MagicMock, test_tenant_id: UUID
+    ) -> None:
         """Test getting subscription when none exists."""
         mock_result = MagicMock()
         mock_result.scalar_one_or_none.return_value = None
@@ -133,13 +143,15 @@ class TestGetSubscription:
 
         assert result is None
 
-    async def test_get_subscription_found(self, billing_service, mock_db, test_tenant_id):
+    async def test_get_subscription_found(
+        self, billing_service: BillingService, mock_db: MagicMock, test_tenant_id: UUID
+    ) -> None:
         """Test getting existing subscription."""
         now = datetime.now(UTC)
         mock_plan = MagicMock()
         mock_plan.name = "starter"
         mock_plan.display_name = "Starter"
-        mock_plan.tier = "starter"
+        mock_plan.tier = billing_pb2.PLAN_TIER_STARTER
         mock_plan.price_monthly = Decimal("29.00")
         mock_plan.price_yearly = Decimal("290.00")
         mock_plan.features = {}
@@ -150,8 +162,8 @@ class TestGetSubscription:
         mock_sub.id = uuid4()
         mock_sub.tenant_id = test_tenant_id
         mock_sub.plan = mock_plan
-        mock_sub.status = "active"
-        mock_sub.billing_cycle = "monthly"
+        mock_sub.status = billing_pb2.SUBSCRIPTION_STATUS_ACTIVE
+        mock_sub.billing_cycle = billing_pb2.BILLING_INTERVAL_MONTHLY
         mock_sub.current_period_start = now
         mock_sub.current_period_end = now + timedelta(days=30)
         mock_sub.cancel_at_period_end = False
@@ -167,7 +179,7 @@ class TestGetSubscription:
         result = await billing_service.get_subscription(test_tenant_id)
 
         assert result is not None
-        assert result.status == SubscriptionStatus.ACTIVE
+        assert result.status == billing_pb2.SUBSCRIPTION_STATUS_ACTIVE
 
 
 # === create_subscription Tests ===
@@ -176,20 +188,20 @@ class TestGetSubscription:
 class TestCreateSubscription:
     """Tests for create_subscription method."""
 
-    def test_default_plans_contains_free(self):
+    def test_default_plans_contains_free(self) -> None:
         """Test DEFAULT_PLANS contains free tier."""
         free_plan = next((p for p in DEFAULT_PLANS if p.id == "free"), None)
 
         assert free_plan is not None
-        assert free_plan.tier == PlanTier.FREE
+        assert free_plan.tier == billing_pb2.PLAN_TIER_FREE
         assert free_plan.price_monthly == 0
 
-    def test_default_plans_contains_pro(self):
+    def test_default_plans_contains_pro(self) -> None:
         """Test DEFAULT_PLANS contains pro tier."""
         pro_plan = next((p for p in DEFAULT_PLANS if p.id == "pro"), None)
 
         assert pro_plan is not None
-        assert pro_plan.tier == PlanTier.PRO
+        assert pro_plan.tier == billing_pb2.PLAN_TIER_PRO
         assert pro_plan.price_monthly > 0
 
 
@@ -199,7 +211,9 @@ class TestCreateSubscription:
 class TestUpdateSubscription:
     """Tests for update_subscription method."""
 
-    async def test_update_subscription_no_active(self, billing_service, mock_db, test_tenant_id):
+    async def test_update_subscription_no_active(
+        self, billing_service: BillingService, mock_db: MagicMock, test_tenant_id: UUID
+    ) -> None:
         """Test updating subscription when none active."""
         mock_result = MagicMock()
         mock_result.scalar_one_or_none.return_value = None
@@ -215,7 +229,9 @@ class TestUpdateSubscription:
 class TestCancelSubscription:
     """Tests for cancel_subscription method."""
 
-    async def test_cancel_subscription_no_active(self, billing_service, mock_db, test_tenant_id):
+    async def test_cancel_subscription_no_active(
+        self, billing_service: BillingService, mock_db: MagicMock, test_tenant_id: UUID
+    ) -> None:
         """Test cancelling subscription when none active."""
         mock_result = MagicMock()
         mock_result.scalar_one_or_none.return_value = None
@@ -232,8 +248,8 @@ class TestReactivateSubscription:
     """Tests for reactivate_subscription method."""
 
     async def test_reactivate_subscription_not_pending_cancel(
-        self, billing_service, mock_db, test_tenant_id
-    ):
+        self, billing_service: BillingService, mock_db: MagicMock, test_tenant_id: UUID
+    ) -> None:
         """Test reactivating when no subscription pending cancellation."""
         mock_result = MagicMock()
         mock_result.scalar_one_or_none.return_value = None
@@ -249,10 +265,12 @@ class TestReactivateSubscription:
 class TestSyncSubscriptionFromStripe:
     """Tests for sync_subscription_from_stripe method."""
 
-    async def test_sync_updates_status(self, billing_service, mock_db):
+    async def test_sync_updates_status(
+        self, billing_service: BillingService, mock_db: MagicMock
+    ) -> None:
         """Test syncing subscription status from Stripe."""
         mock_sub = MagicMock()
-        mock_sub.status = "active"
+        mock_sub.status = billing_pb2.SUBSCRIPTION_STATUS_ACTIVE
 
         mock_result = MagicMock()
         mock_result.scalar_one_or_none.return_value = mock_sub
@@ -260,10 +278,12 @@ class TestSyncSubscriptionFromStripe:
 
         await billing_service.sync_subscription_from_stripe("sub_123", "cancelled")
 
-        assert mock_sub.status == "cancelled"
+        assert mock_sub.status == billing_pb2.SUBSCRIPTION_STATUS_CANCELED
         mock_db.commit.assert_called_once()
 
-    async def test_sync_no_subscription_found(self, billing_service, mock_db):
+    async def test_sync_no_subscription_found(
+        self, billing_service: BillingService, mock_db: MagicMock
+    ) -> None:
         """Test syncing when subscription not found."""
         mock_result = MagicMock()
         mock_result.scalar_one_or_none.return_value = None
@@ -279,11 +299,11 @@ class TestSyncSubscriptionFromStripe:
 class TestIsUuid:
     """Tests for _is_uuid helper method."""
 
-    def test_is_uuid_valid(self, billing_service):
+    def test_is_uuid_valid(self, billing_service: BillingService) -> None:
         """Test valid UUID detection."""
         assert billing_service._is_uuid(str(uuid4())) is True
 
-    def test_is_uuid_invalid(self, billing_service):
+    def test_is_uuid_invalid(self, billing_service: BillingService) -> None:
         """Test invalid UUID detection."""
         assert billing_service._is_uuid("not-a-uuid") is False
         assert billing_service._is_uuid("free") is False

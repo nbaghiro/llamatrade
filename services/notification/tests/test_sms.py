@@ -4,18 +4,19 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 import pytest
+
 from src.channels.sms import SMSChannel, SMSProvider, SMSResult
 
 
 class TestSMSChannelConfiguration:
     """Tests for SMS channel configuration."""
 
-    def test_default_provider(self):
+    def test_default_provider(self) -> None:
         """Test default provider is Twilio."""
         channel = SMSChannel()
         assert channel.provider == SMSProvider.TWILIO
 
-    def test_is_configured_false_when_missing_credentials(self):
+    def test_is_configured_false_when_missing_credentials(self) -> None:
         """Test is_configured returns False when credentials missing."""
         with patch.dict(
             "os.environ",
@@ -29,7 +30,7 @@ class TestSMSChannelConfiguration:
             channel = SMSChannel()
             assert channel.is_configured is False
 
-    def test_is_configured_true_with_credentials(self):
+    def test_is_configured_true_with_credentials(self) -> None:
         """Test is_configured returns True with all credentials."""
         with patch.dict(
             "os.environ",
@@ -42,7 +43,7 @@ class TestSMSChannelConfiguration:
             channel = SMSChannel()
             assert channel.is_configured is True
 
-    def test_is_configured_false_with_partial_credentials(self):
+    def test_is_configured_false_with_partial_credentials(self) -> None:
         """Test is_configured returns False with partial credentials."""
         with patch.dict(
             "os.environ",
@@ -59,7 +60,7 @@ class TestSMSChannelConfiguration:
 class TestSMSResult:
     """Tests for SMSResult dataclass."""
 
-    def test_successful_result(self):
+    def test_successful_result(self) -> None:
         """Test creating a successful result."""
         result = SMSResult(success=True, message_sid="SM123")
         assert result.success is True
@@ -67,7 +68,7 @@ class TestSMSResult:
         assert result.error_code is None
         assert result.error_message is None
 
-    def test_failed_result(self):
+    def test_failed_result(self) -> None:
         """Test creating a failed result."""
         result = SMSResult(
             success=False,
@@ -83,7 +84,7 @@ class TestSMSChannelSend:
     """Tests for SMS channel send method."""
 
     @pytest.mark.asyncio
-    async def test_send_not_configured(self):
+    async def test_send_not_configured(self) -> None:
         """Test send fails gracefully when not configured."""
         with patch.dict(
             "os.environ",
@@ -101,7 +102,7 @@ class TestSMSChannelSend:
             assert result.error_code == "NOT_CONFIGURED"
 
     @pytest.mark.asyncio
-    async def test_send_invalid_phone_format(self):
+    async def test_send_invalid_phone_format(self) -> None:
         """Test send fails with invalid phone number format."""
         with patch.dict(
             "os.environ",
@@ -118,7 +119,7 @@ class TestSMSChannelSend:
             assert result.error_code == "INVALID_NUMBER"
 
     @pytest.mark.asyncio
-    async def test_send_success(self):
+    async def test_send_success(self) -> None:
         """Test successful SMS send."""
         with patch.dict(
             "os.environ",
@@ -145,7 +146,7 @@ class TestSMSChannelSend:
                 assert result.message_sid == "SM123456"
 
     @pytest.mark.asyncio
-    async def test_send_api_error(self):
+    async def test_send_api_error(self) -> None:
         """Test SMS send handles API errors."""
         with patch.dict(
             "os.environ",
@@ -174,10 +175,11 @@ class TestSMSChannelSend:
 
                 assert result.success is False
                 assert result.error_code == "21211"
+                assert result.error_message is not None
                 assert "Invalid phone number" in result.error_message
 
     @pytest.mark.asyncio
-    async def test_send_timeout(self):
+    async def test_send_timeout(self) -> None:
         """Test SMS send handles timeout."""
         with patch.dict(
             "os.environ",
@@ -200,7 +202,7 @@ class TestSMSChannelSend:
                 assert result.error_code == "TIMEOUT"
 
     @pytest.mark.asyncio
-    async def test_send_request_error(self):
+    async def test_send_request_error(self) -> None:
         """Test SMS send handles request errors."""
         with patch.dict(
             "os.environ",
@@ -223,7 +225,7 @@ class TestSMSChannelSend:
                 assert result.error_code == "REQUEST_ERROR"
 
     @pytest.mark.asyncio
-    async def test_send_truncates_long_message(self):
+    async def test_send_truncates_long_message(self) -> None:
         """Test that long messages are truncated."""
         with patch.dict(
             "os.environ",
@@ -254,7 +256,7 @@ class TestSMSChannelSend:
                 assert sent_message.endswith("...")
 
     @pytest.mark.asyncio
-    async def test_send_custom_from_number(self):
+    async def test_send_custom_from_number(self) -> None:
         """Test sending with custom from number."""
         with patch.dict(
             "os.environ",
@@ -289,7 +291,7 @@ class TestSMSChannelHelpers:
     """Tests for SMS channel helper methods."""
 
     @pytest.mark.asyncio
-    async def test_send_verification_code(self):
+    async def test_send_verification_code(self) -> None:
         """Test sending verification code."""
         with patch.dict(
             "os.environ",
@@ -319,7 +321,7 @@ class TestSMSChannelHelpers:
                 assert "verification code" in body.lower()
 
     @pytest.mark.asyncio
-    async def test_send_alert_with_message(self):
+    async def test_send_alert_with_message(self) -> None:
         """Test sending alert with custom message."""
         with patch.dict(
             "os.environ",
@@ -353,7 +355,7 @@ class TestSMSChannelHelpers:
                 assert "$150.00" in body
 
     @pytest.mark.asyncio
-    async def test_send_alert_with_symbol(self):
+    async def test_send_alert_with_symbol(self) -> None:
         """Test sending alert with symbol."""
         with patch.dict(
             "os.environ",
@@ -387,7 +389,7 @@ class TestSMSChannelHelpers:
                 assert "TSLA" in body
 
     @pytest.mark.asyncio
-    async def test_send_alert_basic(self):
+    async def test_send_alert_basic(self) -> None:
         """Test sending basic alert."""
         with patch.dict(
             "os.environ",

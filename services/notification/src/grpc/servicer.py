@@ -1,13 +1,16 @@
-# mypy: ignore-errors
 """Notification gRPC servicer implementation."""
 
 from __future__ import annotations
 
 import logging
 from datetime import UTC, datetime
+from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
 import grpc.aio
+
+if TYPE_CHECKING:
+    from llamatrade_proto.generated import notification_pb2
 
 logger = logging.getLogger(__name__)
 
@@ -24,17 +27,17 @@ class NotificationServicer:
     def __init__(self) -> None:
         """Initialize the servicer."""
         # In-memory storage for stubs
-        self._notifications: dict[str, list[dict]] = {}
-        self._alerts: dict[str, list[dict]] = {}
-        self._channels: dict[str, list[dict]] = {}
+        self._notifications: dict[str, list[dict[str, Any]]] = {}
+        self._alerts: dict[str, list[dict[str, Any]]] = {}
+        self._channels: dict[str, list[dict[str, Any]]] = {}
 
     async def ListNotifications(
         self,
         request: notification_pb2.ListNotificationsRequest,
-        context: grpc.aio.ServicerContext,
+        context: grpc.aio.ServicerContext[Any, Any],
     ) -> notification_pb2.ListNotificationsResponse:
         """List notifications for a user."""
-        from llamatrade.v1 import common_pb2, notification_pb2
+        from llamatrade_proto.generated import common_pb2, notification_pb2
 
         try:
             tenant_id = request.context.tenant_id
@@ -49,7 +52,9 @@ class NotificationServicer:
                 notifications = [n for n in notifications if not n.get("is_read", False)]
 
             # Count unread
-            unread_count = sum(1 for n in self._notifications.get(key, []) if not n.get("is_read", False))
+            unread_count = sum(
+                1 for n in self._notifications.get(key, []) if not n.get("is_read", False)
+            )
 
             # Paginate
             page = request.pagination.page if request.HasField("pagination") else 1
@@ -84,10 +89,10 @@ class NotificationServicer:
     async def MarkAsRead(
         self,
         request: notification_pb2.MarkAsReadRequest,
-        context: grpc.aio.ServicerContext,
+        context: grpc.aio.ServicerContext[Any, Any],
     ) -> notification_pb2.MarkAsReadResponse:
         """Mark notification(s) as read."""
-        from llamatrade.v1 import notification_pb2
+        from llamatrade_proto.generated import notification_pb2
 
         try:
             tenant_id = request.context.tenant_id
@@ -126,10 +131,10 @@ class NotificationServicer:
     async def ListAlerts(
         self,
         request: notification_pb2.ListAlertsRequest,
-        context: grpc.aio.ServicerContext,
+        context: grpc.aio.ServicerContext[Any, Any],
     ) -> notification_pb2.ListAlertsResponse:
         """List alerts for a user."""
-        from llamatrade.v1 import notification_pb2
+        from llamatrade_proto.generated import notification_pb2
 
         try:
             tenant_id = request.context.tenant_id
@@ -156,10 +161,10 @@ class NotificationServicer:
     async def CreateAlert(
         self,
         request: notification_pb2.CreateAlertRequest,
-        context: grpc.aio.ServicerContext,
+        context: grpc.aio.ServicerContext[Any, Any],
     ) -> notification_pb2.CreateAlertResponse:
         """Create a new alert."""
-        from llamatrade.v1 import notification_pb2
+        from llamatrade_proto.generated import notification_pb2
 
         try:
             tenant_id = request.context.tenant_id
@@ -180,7 +185,9 @@ class NotificationServicer:
                 "condition": {
                     "type": request.condition.type,
                     "symbol": request.condition.symbol,
-                    "threshold": request.condition.threshold.value if request.condition.HasField("threshold") else None,
+                    "threshold": request.condition.threshold.value
+                    if request.condition.HasField("threshold")
+                    else None,
                     "strategy_id": request.condition.strategy_id,
                 },
                 "channels": list(request.channels),
@@ -210,10 +217,10 @@ class NotificationServicer:
     async def DeleteAlert(
         self,
         request: notification_pb2.DeleteAlertRequest,
-        context: grpc.aio.ServicerContext,
+        context: grpc.aio.ServicerContext[Any, Any],
     ) -> notification_pb2.DeleteAlertResponse:
         """Delete an alert."""
-        from llamatrade.v1 import notification_pb2
+        from llamatrade_proto.generated import notification_pb2
 
         try:
             tenant_id = request.context.tenant_id
@@ -246,10 +253,10 @@ class NotificationServicer:
     async def ToggleAlert(
         self,
         request: notification_pb2.ToggleAlertRequest,
-        context: grpc.aio.ServicerContext,
+        context: grpc.aio.ServicerContext[Any, Any],
     ) -> notification_pb2.ToggleAlertResponse:
         """Toggle alert active status."""
-        from llamatrade.v1 import notification_pb2
+        from llamatrade_proto.generated import notification_pb2
 
         try:
             tenant_id = request.context.tenant_id
@@ -288,17 +295,17 @@ class NotificationServicer:
     async def ListChannels(
         self,
         request: notification_pb2.ListChannelsRequest,
-        context: grpc.aio.ServicerContext,
+        context: grpc.aio.ServicerContext[Any, Any],
     ) -> notification_pb2.ListChannelsResponse:
         """List notification channels for a user."""
-        from llamatrade.v1 import notification_pb2
+        from llamatrade_proto.generated import notification_pb2
 
         try:
             tenant_id = request.context.tenant_id
             user_id = request.context.user_id
             key = f"{tenant_id}:{user_id}"
 
-            channels = self._channels.get(key, [])
+            channels: list[dict[str, Any]] = self._channels.get(key, [])
 
             # Return default channels if none configured
             if not channels:
@@ -330,10 +337,10 @@ class NotificationServicer:
     async def UpdateChannel(
         self,
         request: notification_pb2.UpdateChannelRequest,
-        context: grpc.aio.ServicerContext,
+        context: grpc.aio.ServicerContext[Any, Any],
     ) -> notification_pb2.UpdateChannelResponse:
         """Update a notification channel."""
-        from llamatrade.v1 import notification_pb2
+        from llamatrade_proto.generated import notification_pb2
 
         try:
             tenant_id = request.context.tenant_id
@@ -383,10 +390,10 @@ class NotificationServicer:
     async def TestChannel(
         self,
         request: notification_pb2.TestChannelRequest,
-        context: grpc.aio.ServicerContext,
+        context: grpc.aio.ServicerContext[Any, Any],
     ) -> notification_pb2.TestChannelResponse:
         """Test a notification channel."""
-        from llamatrade.v1 import notification_pb2
+        from llamatrade_proto.generated import notification_pb2
 
         try:
             # Stub implementation - always succeeds
@@ -406,9 +413,9 @@ class NotificationServicer:
     # Helper methods
     # ===================
 
-    def _to_proto_notification(self, n: dict) -> notification_pb2.Notification:
+    def _to_proto_notification(self, n: dict[str, Any]) -> notification_pb2.Notification:
         """Convert notification dict to proto Notification."""
-        from llamatrade.v1 import common_pb2, notification_pb2
+        from llamatrade_proto.generated import common_pb2, notification_pb2
 
         created_at = n.get("created_at")
         if isinstance(created_at, str):
@@ -427,13 +434,15 @@ class NotificationServicer:
             message=n.get("message", ""),
             is_read=n.get("is_read", False),
             metadata=n.get("metadata", {}),
-            created_at=common_pb2.Timestamp(seconds=int(created_at.timestamp())) if created_at else None,
+            created_at=common_pb2.Timestamp(seconds=int(created_at.timestamp()))
+            if created_at
+            else None,
             read_at=common_pb2.Timestamp(seconds=int(read_at.timestamp())) if read_at else None,
         )
 
-    def _to_proto_alert(self, a: dict) -> notification_pb2.Alert:
+    def _to_proto_alert(self, a: dict[str, Any]) -> notification_pb2.Alert:
         """Convert alert dict to proto Alert."""
-        from llamatrade.v1 import common_pb2, notification_pb2
+        from llamatrade_proto.generated import common_pb2, notification_pb2
 
         condition = a.get("condition", {})
 
@@ -459,20 +468,28 @@ class NotificationServicer:
             condition=notification_pb2.AlertCondition(
                 type=condition.get("type", notification_pb2.ALERT_CONDITION_TYPE_UNSPECIFIED),
                 symbol=condition.get("symbol", ""),
-                threshold=common_pb2.Decimal(value=str(condition.get("threshold", 0))) if condition.get("threshold") else None,
+                threshold=common_pb2.Decimal(value=str(condition.get("threshold", 0)))
+                if condition.get("threshold")
+                else None,
                 strategy_id=condition.get("strategy_id", ""),
             ),
             channels=a.get("channels", []),
             cooldown_minutes=a.get("cooldown_minutes", 0),
             times_triggered=a.get("times_triggered", 0),
-            last_triggered_at=common_pb2.Timestamp(seconds=int(last_triggered.timestamp())) if last_triggered else None,
-            created_at=common_pb2.Timestamp(seconds=int(created_at.timestamp())) if created_at else None,
-            updated_at=common_pb2.Timestamp(seconds=int(updated_at.timestamp())) if updated_at else None,
+            last_triggered_at=common_pb2.Timestamp(seconds=int(last_triggered.timestamp()))
+            if last_triggered
+            else None,
+            created_at=common_pb2.Timestamp(seconds=int(created_at.timestamp()))
+            if created_at
+            else None,
+            updated_at=common_pb2.Timestamp(seconds=int(updated_at.timestamp()))
+            if updated_at
+            else None,
         )
 
-    def _to_proto_channel(self, c: dict) -> notification_pb2.Channel:
+    def _to_proto_channel(self, c: dict[str, Any]) -> notification_pb2.Channel:
         """Convert channel dict to proto Channel."""
-        from llamatrade.v1 import common_pb2, notification_pb2
+        from llamatrade_proto.generated import common_pb2, notification_pb2
 
         created_at = c.get("created_at")
         if isinstance(created_at, str):
@@ -490,10 +507,14 @@ class NotificationServicer:
             is_enabled=c.get("is_enabled", False),
             is_verified=c.get("is_verified", False),
             config=c.get("config", {}),
-            created_at=common_pb2.Timestamp(seconds=int(created_at.timestamp())) if created_at else None,
-            updated_at=common_pb2.Timestamp(seconds=int(updated_at.timestamp())) if updated_at else None,
+            created_at=common_pb2.Timestamp(seconds=int(created_at.timestamp()))
+            if created_at
+            else None,
+            updated_at=common_pb2.Timestamp(seconds=int(updated_at.timestamp()))
+            if updated_at
+            else None,
         )
 
 
 # Type aliases for method signatures (imported lazily)
-from llamatrade.v1 import notification_pb2
+from llamatrade_proto.generated import notification_pb2

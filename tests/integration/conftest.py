@@ -90,7 +90,7 @@ def run_migrations(database_url: str) -> None:
     )
 
     # Tables to exclude from creation (use PostgreSQL partitioning)
-    EXCLUDED_TABLES = {"bars", "quotes", "trades"}
+    excluded_tables = {"bars", "quotes", "trades"}
 
     async def create_tables():
         engine = create_async_engine(database_url)
@@ -106,8 +106,7 @@ def run_migrations(database_url: str) -> None:
         async with engine.begin() as conn:
             # Get tables to create (excluding partitioned tables)
             tables_to_create = [
-                table for table in Base.metadata.sorted_tables
-                if table.name not in EXCLUDED_TABLES
+                table for table in Base.metadata.sorted_tables if table.name not in excluded_tables
             ]
 
             # Use create_all with tables parameter to handle indexes properly
@@ -125,7 +124,7 @@ def run_migrations(database_url: str) -> None:
 
 
 @pytest.fixture
-async def async_engine(database_url: str, run_migrations: None) -> AsyncGenerator[AsyncEngine, None]:
+async def async_engine(database_url: str, run_migrations: None) -> AsyncGenerator[AsyncEngine]:
     """Create async engine for each test.
 
     Uses NullPool to avoid connection pool issues with different event loops.
@@ -154,7 +153,7 @@ def session_maker(async_engine: AsyncEngine) -> async_sessionmaker[AsyncSession]
 async def db_session(
     async_engine: AsyncEngine,
     session_maker: async_sessionmaker[AsyncSession],
-) -> AsyncGenerator[AsyncSession, None]:
+) -> AsyncGenerator[AsyncSession]:
     """Create a database session with transaction rollback for test isolation.
 
     Each test gets its own transaction that is rolled back at the end,
@@ -177,7 +176,7 @@ async def db_session(
 async def clean_db_session(
     async_engine: AsyncEngine,
     session_maker: async_sessionmaker[AsyncSession],
-) -> AsyncGenerator[AsyncSession, None]:
+) -> AsyncGenerator[AsyncSession]:
     """Create a database session that commits (for tests that need persistence).
 
     Use sparingly - prefer db_session with rollback for test isolation.
@@ -201,9 +200,7 @@ async def clean_db_session(
 
         if tables:
             # Truncate all tables with CASCADE
-            await conn.execute(
-                text(f"TRUNCATE TABLE {', '.join(tables)} CASCADE")
-            )
+            await conn.execute(text(f"TRUNCATE TABLE {', '.join(tables)} CASCADE"))
             await conn.commit()
 
 

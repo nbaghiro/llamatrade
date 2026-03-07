@@ -9,13 +9,15 @@ import logging
 import os
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from typing import Any
+from typing import Any, cast
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.types import ASGIApp
+
+from llamatrade_alpaca import close_all_clients
 from llamatrade_common.observability import setup_observability
 
-from src.alpaca.client import close_alpaca_client
 from src.cache import close_cache, get_cache, init_cache
 from src.error_handlers import register_error_handlers
 from src.streaming.alpaca_stream import (
@@ -44,7 +46,7 @@ _stream_connected = False
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
+async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     """Application lifespan handler."""
     global _stream_connected
 
@@ -74,13 +76,13 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     # Mount Connect ASGI app
     try:
-        from llamatrade.v1.market_data_connect import MarketDataServiceASGIApplication
+        from llamatrade_proto.generated.market_data_connect import MarketDataServiceASGIApplication
 
         from src.grpc.servicer import MarketDataServicer
 
         servicer = MarketDataServicer()
         connect_app = MarketDataServiceASGIApplication(servicer)
-        app.mount("/", connect_app)
+        app.mount("/", cast(ASGIApp, connect_app))
         logger.info("Connect ASGI application mounted successfully")
     except ImportError as e:
         logger.warning("Connect dependencies not available: %s", e)
@@ -90,7 +92,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # Shutdown - close connections in reverse order
     await close_stream_bridge()
     await close_alpaca_stream()
-    await close_alpaca_client()
+    await close_all_clients()
     await close_cache()
 
 

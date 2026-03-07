@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 from unittest.mock import MagicMock, patch
 
 import pytest
+
 from src.grpc.servicer import MarketDataServicer
 from src.streaming.manager import StreamManager, StreamMessage, StreamType
 

@@ -56,8 +56,14 @@ class Trade:
 
     @property
     def pnl_percent(self) -> float:
-        """Calculate P&L percentage."""
-        return (self.pnl / (self.entry_price * self.quantity)) * 100
+        """Calculate P&L percentage.
+
+        Returns 0.0 if entry_price or quantity is zero to avoid division by zero.
+        """
+        denominator = self.entry_price * self.quantity
+        if denominator == 0:
+            return 0.0
+        return (self.pnl / denominator) * 100
 
 
 @dataclass
@@ -82,11 +88,44 @@ class BacktestConfig:
 
 
 @dataclass
+class RejectedSignal:
+    """A signal that was rejected by the engine."""
+
+    date: datetime
+    symbol: str
+    signal_type: str
+    quantity: float
+    price: float
+    reason: str
+
+
+def _empty_trade_list() -> list[Trade]:
+    return []
+
+
+def _empty_equity_curve() -> list[tuple[datetime, float]]:
+    return []
+
+
+def _empty_rejected_signals() -> list[RejectedSignal]:
+    return []
+
+
+def _empty_float_list() -> list[float]:
+    return []
+
+
+def _empty_monthly_returns() -> dict[str, float]:
+    return {}
+
+
+@dataclass
 class BacktestResult:
     """Results from a backtest run."""
 
-    trades: list[Trade] = field(default_factory=list)
-    equity_curve: list[tuple[datetime, float]] = field(default_factory=list)
+    trades: list[Trade] = field(default_factory=_empty_trade_list)
+    equity_curve: list[tuple[datetime, float]] = field(default_factory=_empty_equity_curve)
+    rejected_signals: list[RejectedSignal] = field(default_factory=_empty_rejected_signals)
     final_equity: float = 0
     total_return: float = 0
     annual_return: float = 0
@@ -96,9 +135,19 @@ class BacktestResult:
     max_drawdown_duration: int = 0  # In trading days
     win_rate: float = 0
     profit_factor: float = 0
-    daily_returns: list[float] = field(default_factory=list)
-    monthly_returns: dict[str, float] = field(default_factory=dict)  # "YYYY-MM" -> return
+    daily_returns: list[float] = field(default_factory=_empty_float_list)
+    monthly_returns: dict[str, float] = field(default_factory=_empty_monthly_returns)
     exposure_time: float = 0  # Percentage of time with open positions
+    # Benchmark comparison fields
+    benchmark_return: float = 0
+    benchmark_equity_curve: list[tuple[datetime, float]] = field(
+        default_factory=_empty_equity_curve
+    )
+    benchmark_symbol: str = ""
+    alpha: float = 0
+    beta: float = 0
+    information_ratio: float = 0
+    excess_return: float = 0
 
 
 class BacktestEngine:
@@ -110,6 +159,7 @@ class BacktestEngine:
         self.positions: dict[str, Position] = {}
         self.trades: list[Trade] = []
         self.equity_curve: list[tuple[datetime, float]] = []
+        self.rejected_signals: list[RejectedSignal] = []
         self._current_date: datetime | None = None
         self._days_with_position: int = 0
         self._total_days: int = 0
@@ -120,6 +170,7 @@ class BacktestEngine:
         self.positions = {}
         self.trades = []
         self.equity_curve = []
+        self.rejected_signals = []
         self._current_date = None
         self._days_with_position = 0
         self._total_days = 0
@@ -127,7 +178,7 @@ class BacktestEngine:
     def run(
         self,
         bars: dict[str, list[BarData]],
-        strategy_fn: Callable[["BacktestEngine", str, BarData], list[SignalData]],
+        strategy_fn: Callable[[BacktestEngine, str, BarData], list[SignalData]],
         start_date: datetime,
         end_date: datetime,
         progress_callback: ProgressCallback | None = None,
@@ -148,7 +199,7 @@ class BacktestEngine:
         self.reset()
 
         # Get all dates in range
-        all_dates = set()
+        all_dates: set[datetime] = set()
         for symbol_bars in bars.values():
             for b in symbol_bars:
                 bar_date = b["timestamp"]
@@ -156,7 +207,7 @@ class BacktestEngine:
                     all_dates.add(bar_date)
 
         # Sort dates
-        sorted_dates = sorted(all_dates)
+        sorted_dates: list[datetime] = sorted(all_dates)
         total_bars = len(sorted_dates)
 
         # Process each date
@@ -228,7 +279,13 @@ class BacktestEngine:
                 self._close_position(symbol, price)
 
     def _open_position(self, symbol: str, side: str, price: float, quantity: float) -> None:
-        """Open a new position."""
+        """Open a new position.
+
+        If the position cannot be opened (insufficient cash, no current date),
+        the signal is recorded in rejected_signals for debugging.
+        """
+        signal_type = "buy" if side == "long" else "short"
+
         if self._current_date is None:
             return
 
@@ -236,7 +293,18 @@ class BacktestEngine:
         commission = self.config.commission_rate
 
         if cost + commission > self.cash:
-            return  # Not enough cash
+            # Track rejected signal for debugging
+            self.rejected_signals.append(
+                RejectedSignal(
+                    date=self._current_date,
+                    symbol=symbol,
+                    signal_type=signal_type,
+                    quantity=quantity,
+                    price=price,
+                    reason=f"Insufficient cash: need ${cost + commission:.2f}, have ${self.cash:.2f}",
+                )
+            )
+            return
 
         self.cash -= cost + commission
         self.positions[symbol] = Position(
@@ -305,7 +373,8 @@ class BacktestEngine:
     def _calculate_results(self) -> BacktestResult:
         """Calculate backtest metrics."""
         if not self.equity_curve:
-            return BacktestResult()
+            # No trading occurred, return initial capital as final equity
+            return BacktestResult(final_equity=self.config.initial_capital)
 
         equities = np.array([e[1] for e in self.equity_curve])
         initial = self.config.initial_capital
@@ -387,6 +456,7 @@ class BacktestEngine:
         return BacktestResult(
             trades=self.trades,
             equity_curve=self.equity_curve,
+            rejected_signals=self.rejected_signals,
             final_equity=final,
             total_return=total_return,
             annual_return=annual_return,

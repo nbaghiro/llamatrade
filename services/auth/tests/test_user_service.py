@@ -1,10 +1,12 @@
+# pyright: reportPrivateUsage=false
 """Tests for UserService."""
 
 from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
+
 from src.models import UserUpdate
 from src.services.user_service import UserService
 
@@ -12,7 +14,7 @@ from src.services.user_service import UserService
 
 
 @pytest.fixture
-def mock_db():
+def mock_db() -> MagicMock:
     """Create a mock database session."""
     db = MagicMock()
     db.execute = AsyncMock()
@@ -22,18 +24,18 @@ def mock_db():
 
 
 @pytest.fixture
-def user_service(mock_db):
+def user_service(mock_db: MagicMock) -> UserService:
     """Create a UserService instance with mock db."""
     return UserService(mock_db)
 
 
 @pytest.fixture
-def test_tenant_id():
+def test_tenant_id() -> UUID:
     return uuid4()
 
 
 @pytest.fixture
-def test_user_id():
+def test_user_id() -> UUID:
     return uuid4()
 
 
@@ -43,7 +45,9 @@ def test_user_id():
 class TestCreateUser:
     """Tests for create_user method."""
 
-    async def test_create_user_success(self, user_service, mock_db, test_tenant_id):
+    async def test_create_user_success(
+        self, user_service: UserService, mock_db: MagicMock, test_tenant_id: UUID
+    ) -> None:
         """Test creating a user successfully."""
         email = "test@example.com"
         password = "SecurePass123"
@@ -61,7 +65,9 @@ class TestCreateUser:
         assert result.is_active is True
         mock_db.execute.assert_called_once()
 
-    async def test_create_user_with_admin_role(self, user_service, mock_db, test_tenant_id):
+    async def test_create_user_with_admin_role(
+        self, user_service: UserService, mock_db: MagicMock, test_tenant_id: UUID
+    ) -> None:
         """Test creating a user with admin role."""
         result = await user_service.create_user(
             tenant_id=test_tenant_id,
@@ -79,7 +85,13 @@ class TestCreateUser:
 class TestGetUser:
     """Tests for get_user method."""
 
-    async def test_get_user_found(self, user_service, mock_db, test_user_id, test_tenant_id):
+    async def test_get_user_found(
+        self,
+        user_service: UserService,
+        mock_db: MagicMock,
+        test_user_id: UUID,
+        test_tenant_id: UUID,
+    ) -> None:
         """Test getting a user that exists."""
         now = datetime.now(UTC)
         mock_row = MagicMock()
@@ -100,7 +112,9 @@ class TestGetUser:
         assert result.id == test_user_id
         assert result.email == "test@example.com"
 
-    async def test_get_user_not_found(self, user_service, mock_db, test_user_id):
+    async def test_get_user_not_found(
+        self, user_service: UserService, mock_db: MagicMock, test_user_id: UUID
+    ) -> None:
         """Test getting a user that doesn't exist."""
         mock_result = MagicMock()
         mock_result.fetchone.return_value = None
@@ -118,8 +132,12 @@ class TestGetUserWithPassword:
     """Tests for get_user_with_password method."""
 
     async def test_get_user_with_password_found(
-        self, user_service, mock_db, test_user_id, test_tenant_id
-    ):
+        self,
+        user_service: UserService,
+        mock_db: MagicMock,
+        test_user_id: UUID,
+        test_tenant_id: UUID,
+    ) -> None:
         """Test getting user with password hash."""
         now = datetime.now(UTC)
         mock_row = MagicMock()
@@ -140,7 +158,9 @@ class TestGetUserWithPassword:
         assert result is not None
         assert result.password_hash == "$2b$12$hashedpassword"
 
-    async def test_get_user_with_password_not_found(self, user_service, mock_db, test_user_id):
+    async def test_get_user_with_password_not_found(
+        self, user_service: UserService, mock_db: MagicMock, test_user_id: UUID
+    ) -> None:
         """Test getting non-existent user with password."""
         mock_result = MagicMock()
         mock_result.fetchone.return_value = None
@@ -158,8 +178,12 @@ class TestGetUserByEmail:
     """Tests for get_user_by_email method."""
 
     async def test_get_user_by_email_found(
-        self, user_service, mock_db, test_user_id, test_tenant_id
-    ):
+        self,
+        user_service: UserService,
+        mock_db: MagicMock,
+        test_user_id: UUID,
+        test_tenant_id: UUID,
+    ) -> None:
         """Test getting user by email."""
         now = datetime.now(UTC)
         mock_row = MagicMock()
@@ -180,7 +204,9 @@ class TestGetUserByEmail:
         assert result is not None
         assert result.email == "test@example.com"
 
-    async def test_get_user_by_email_not_found(self, user_service, mock_db):
+    async def test_get_user_by_email_not_found(
+        self, user_service: UserService, mock_db: MagicMock
+    ) -> None:
         """Test getting non-existent user by email."""
         mock_result = MagicMock()
         mock_result.fetchone.return_value = None
@@ -197,7 +223,9 @@ class TestGetUserByEmail:
 class TestListUsers:
     """Tests for list_users method."""
 
-    async def test_list_users_returns_empty(self, user_service, test_tenant_id):
+    async def test_list_users_returns_empty(
+        self, user_service: UserService, test_tenant_id: UUID
+    ) -> None:
         """Test listing users returns empty (stub)."""
         users, total = await user_service.list_users(test_tenant_id)
 
@@ -211,7 +239,9 @@ class TestListUsers:
 class TestUpdateUser:
     """Tests for update_user method."""
 
-    async def test_update_user_returns_none(self, user_service, test_user_id, test_tenant_id):
+    async def test_update_user_returns_none(
+        self, user_service: UserService, test_user_id: UUID, test_tenant_id: UUID
+    ) -> None:
         """Test updating user returns None (stub)."""
         update = UserUpdate(email="new@example.com")
 
@@ -226,7 +256,9 @@ class TestUpdateUser:
 class TestUpdatePassword:
     """Tests for update_password method."""
 
-    async def test_update_password_executes(self, user_service, mock_db, test_user_id):
+    async def test_update_password_executes(
+        self, user_service: UserService, mock_db: MagicMock, test_user_id: UUID
+    ) -> None:
         """Test updating password executes query."""
         new_hash = "$2b$12$newhash"
 
@@ -241,7 +273,9 @@ class TestUpdatePassword:
 class TestDeleteUser:
     """Tests for delete_user method."""
 
-    async def test_delete_user_returns_false(self, user_service, test_user_id, test_tenant_id):
+    async def test_delete_user_returns_false(
+        self, user_service: UserService, test_user_id: UUID, test_tenant_id: UUID
+    ) -> None:
         """Test deleting user returns False (stub)."""
         result = await user_service.delete_user(test_user_id, test_tenant_id)
 
@@ -254,7 +288,7 @@ class TestDeleteUser:
 class TestHashPassword:
     """Tests for _hash_password method."""
 
-    def test_hash_password_returns_hash(self, user_service):
+    def test_hash_password_returns_hash(self, user_service: UserService) -> None:
         """Test password hashing returns bcrypt hash."""
         password = "TestPassword123"
 
@@ -263,7 +297,7 @@ class TestHashPassword:
         assert hashed.startswith("$2b$")
         assert len(hashed) == 60
 
-    def test_hash_password_different_each_time(self, user_service):
+    def test_hash_password_different_each_time(self, user_service: UserService) -> None:
         """Test password hashing produces different hashes."""
         password = "TestPassword123"
 

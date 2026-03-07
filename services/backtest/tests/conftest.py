@@ -6,6 +6,7 @@ from uuid import UUID
 
 import pytest
 from httpx import ASGITransport, AsyncClient
+
 from src.main import app
 
 # Test UUIDs
@@ -83,7 +84,7 @@ async def client():
 @pytest.fixture
 def sample_backtest_response(backtest_id, tenant_id, strategy_id):
     """Sample backtest response for testing."""
-    from src.models import BacktestResponse, BacktestStatus
+    from src.models import BACKTEST_STATUS_PENDING, BacktestResponse
 
     return BacktestResponse(
         id=backtest_id,
@@ -93,7 +94,7 @@ def sample_backtest_response(backtest_id, tenant_id, strategy_id):
         start_date=datetime(2024, 1, 1, tzinfo=UTC),
         end_date=datetime(2024, 12, 31, tzinfo=UTC),
         initial_capital=100000.0,
-        status=BacktestStatus.PENDING,
+        status=BACKTEST_STATUS_PENDING,
         progress=0.0,
         error_message=None,
         created_at=datetime.now(UTC),

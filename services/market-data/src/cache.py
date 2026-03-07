@@ -1,5 +1,6 @@
 """Redis cache utilities for market data."""
 
+import asyncio
 import json
 import logging
 import os
@@ -167,10 +168,39 @@ class MarketDataCache:
             logger.warning(f"Cache delete failed for key {key}: {e}")
             return False
 
+    async def mget(self, keys: list[str]) -> dict[str, str | None]:
+        """Get multiple values from cache in a single round-trip.
+
+        Args:
+            keys: List of cache keys to fetch
+
+        Returns:
+            Dict mapping keys to values (None for cache misses)
+        """
+        if not keys:
+            return {}
+
+        try:
+            values = await self._redis.mget(keys)
+            result: dict[str, str | None] = {}
+            hits = 0
+            for key, value in zip(keys, values, strict=True):
+                if value is not None:
+                    result[key] = value.decode("utf-8") if isinstance(value, bytes) else value
+                    hits += 1
+                else:
+                    result[key] = None
+            logger.debug(f"Cache mget: {len(keys)} keys, {hits} hits")
+            return result
+        except RedisError as e:
+            logger.warning(f"Cache mget failed for {len(keys)} keys: {e}")
+            # Return all misses on error
+            return {key: None for key in keys}
+
     async def health_check(self) -> bool:
         """Check if Redis connection is healthy."""
         try:
-            result = self._redis.ping()
+            result = self._redis.ping()  # pyright: ignore[reportUnknownMemberType]
             if isinstance(result, Awaitable):
                 await result
             return True
@@ -181,38 +211,64 @@ class MarketDataCache:
 # === Lifecycle Functions ===
 
 _cache: MarketDataCache | None = None
+_cache_lock: asyncio.Lock | None = None
+
+
+def _get_cache_lock() -> asyncio.Lock:
+    """Get or create the cache initialization lock."""
+    global _cache_lock
+    if _cache_lock is None:
+        _cache_lock = asyncio.Lock()
+    return _cache_lock
 
 
 async def init_cache() -> MarketDataCache | None:
-    """Initialize the Redis cache. Returns None if Redis is unavailable."""
-    global _cache
-    redis_url = os.getenv("REDIS_URL", "redis://localhost:6379")
+    """Initialize the Redis cache. Returns None if Redis is unavailable.
 
-    try:
-        redis_client = Redis.from_url(redis_url, decode_responses=False)
-        # Test connection
-        result = redis_client.ping()
-        if isinstance(result, Awaitable):
-            await result
-        _cache = MarketDataCache(redis_client)
-        logger.info(f"Redis cache connected: {redis_url}")
-        return _cache
-    except RedisError as e:
-        logger.warning(f"Redis connection failed, caching disabled: {e}")
-        return None
+    Thread-safe: Uses asyncio.Lock to prevent race conditions during
+    concurrent initialization.
+    """
+    global _cache
+
+    async with _get_cache_lock():
+        # Check if already initialized (double-check pattern)
+        if _cache is not None:
+            return _cache
+
+        redis_url = os.getenv("REDIS_URL", "redis://localhost:6379")
+
+        try:
+            redis_client = Redis.from_url(  # pyright: ignore[reportUnknownMemberType]
+                redis_url, decode_responses=False
+            )
+            # Test connection
+            result = redis_client.ping()  # pyright: ignore[reportUnknownMemberType]
+            if isinstance(result, Awaitable):
+                await result
+            _cache = MarketDataCache(redis_client)
+            logger.info(f"Redis cache connected: {redis_url}")
+            return _cache
+        except RedisError as e:
+            logger.warning(f"Redis connection failed, caching disabled: {e}")
+            return None
 
 
 async def close_cache() -> None:
-    """Close the Redis connection."""
+    """Close the Redis connection.
+
+    Thread-safe: Uses asyncio.Lock to prevent race conditions.
+    """
     global _cache
-    if _cache is not None:
-        try:
-            await _cache.redis.aclose()  # type: ignore[attr-defined]
-            logger.info("Redis cache connection closed")
-        except RedisError as e:
-            logger.warning(f"Error closing Redis connection: {e}")
-        finally:
-            _cache = None
+
+    async with _get_cache_lock():
+        if _cache is not None:
+            try:
+                await _cache.redis.aclose()  # type: ignore[attr-defined]
+                logger.info("Redis cache connection closed")
+            except RedisError as e:
+                logger.warning(f"Error closing Redis connection: {e}")
+            finally:
+                _cache = None
 
 
 def get_cache() -> MarketDataCache | None:

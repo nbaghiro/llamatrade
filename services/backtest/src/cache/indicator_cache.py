@@ -14,6 +14,7 @@ from typing import TypedDict, cast
 
 import numpy as np
 import redis
+from numpy.typing import NDArray
 
 logger = logging.getLogger(__name__)
 
@@ -52,21 +53,21 @@ class IndicatorCache:
         """
         self.redis_url = redis_url or REDIS_URL
         self.ttl = ttl
-        self._redis: redis.Redis | None = None
+        self._redis: redis.Redis | None = None  # type: ignore[type-arg]
         self._hits = 0
         self._misses = 0
 
-    def _get_redis(self) -> redis.Redis:
+    def _get_redis(self) -> redis.Redis:  # type: ignore[type-arg]
         """Get Redis client (lazy initialization)."""
         if self._redis is None:
-            self._redis = redis.from_url(self.redis_url)
+            self._redis = redis.from_url(self.redis_url)  # type: ignore[reportUnknownMemberType]
         return self._redis
 
     def _build_key(
         self,
         symbol: str,
         indicator: str,
-        params: tuple,
+        params: tuple[int | float, ...],
         start_date: date,
         end_date: date,
     ) -> str:
@@ -136,10 +137,10 @@ class IndicatorCache:
         self,
         symbol: str,
         indicator: str,
-        params: tuple,
+        params: tuple[int | float, ...],
         start_date: date,
         end_date: date,
-    ) -> np.ndarray | None:
+    ) -> NDArray[np.float64] | None:
         """Get cached indicator values.
 
         Args:
@@ -177,10 +178,10 @@ class IndicatorCache:
         self,
         symbol: str,
         indicator: str,
-        params: tuple,
+        params: tuple[int | float, ...],
         start_date: date,
         end_date: date,
-        values: np.ndarray,
+        values: NDArray[np.float64],
         ttl: int | None = None,
     ) -> bool:
         """Set cached indicator values.
@@ -217,8 +218,8 @@ class IndicatorCache:
         params: tuple[int | float, ...],
         start_date: date,
         end_date: date,
-        compute_fn: Callable[[], np.ndarray],
-    ) -> np.ndarray:
+        compute_fn: Callable[[], NDArray[np.float64]],
+    ) -> NDArray[np.float64]:
         """Get from cache or compute and cache.
 
         Args:
@@ -271,9 +272,10 @@ class IndicatorCache:
             else:
                 pattern = f"{self.KEY_PREFIX}:*"
 
-            keys = list(r.scan_iter(match=pattern))
+            keys: list[bytes] = list(r.scan_iter(match=pattern))  # type: ignore[reportUnknownMemberType, reportUnknownArgumentType]
             if keys:
-                deleted = r.delete(*keys)
+                # r.delete returns int for sync redis
+                deleted: int = r.delete(*keys)  # type: ignore[reportAssignmentType]
                 return deleted if deleted else 0
             return 0
 

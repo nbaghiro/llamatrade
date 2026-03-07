@@ -1,11 +1,18 @@
+# pyright: reportPrivateUsage=false
+# pyright: reportArgumentType=false
+# pyright: reportUnknownLambdaType=false
 """Unit tests for billing services."""
 
 from datetime import UTC, datetime, timedelta
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
 import pytest
-from src.models import BillingCycle, SubscriptionCreateRequest
+
+from llamatrade_proto.generated import billing_pb2
+
+from src.models import SubscriptionCreateRequest
 from src.services.billing_service import DEFAULT_PLANS, BillingService
 from src.services.payment_method_service import PaymentMethodService
 from src.stripe.client import PaymentMethodResult, SetupIntentResult, SubscriptionResult
@@ -14,8 +21,8 @@ from src.stripe.client import PaymentMethodResult, SetupIntentResult, Subscripti
 class MockStripeClient:
     """Mock Stripe client for unit tests."""
 
-    def __init__(self):
-        self.customers = {}
+    def __init__(self) -> None:
+        self.customers: dict[str, str] = {}
 
     async def get_or_create_customer(
         self, tenant_id: str, email: str, name: str | None = None
@@ -84,11 +91,11 @@ class MockStripeClient:
 class MockPlan:
     """Mock Plan model."""
 
-    def __init__(self, **kwargs):
+    def __init__(self, **kwargs: Any) -> None:
         self.id = kwargs.get("id", uuid4())
         self.name = kwargs.get("name", "starter")
         self.display_name = kwargs.get("display_name", "Starter")
-        self.tier = kwargs.get("tier", "starter")
+        self.tier = kwargs.get("tier", billing_pb2.PLAN_TIER_STARTER)
         self.price_monthly = kwargs.get("price_monthly", 29)
         self.price_yearly = kwargs.get("price_yearly", 290)
         self.features = kwargs.get("features", {})
@@ -101,13 +108,13 @@ class MockPlan:
 class MockSubscription:
     """Mock Subscription model."""
 
-    def __init__(self, **kwargs):
+    def __init__(self, **kwargs: Any) -> None:
         self.id = kwargs.get("id", uuid4())
         self.tenant_id = kwargs.get("tenant_id", uuid4())
         self.plan = kwargs.get("plan", MockPlan())
         self.plan_id = self.plan.id
-        self.status = kwargs.get("status", "active")
-        self.billing_cycle = kwargs.get("billing_cycle", "monthly")
+        self.status = kwargs.get("status", billing_pb2.SUBSCRIPTION_STATUS_ACTIVE)
+        self.billing_cycle = kwargs.get("billing_cycle", billing_pb2.BILLING_INTERVAL_MONTHLY)
         self.stripe_subscription_id = kwargs.get("stripe_subscription_id", "sub_test_123")
         self.stripe_customer_id = kwargs.get("stripe_customer_id", "cus_test_123")
         now = datetime.now(UTC)
@@ -202,7 +209,7 @@ class TestBillingServiceSubscriptions:
         subscription = await service.get_subscription(mock_sub.tenant_id)
 
         assert subscription is not None
-        assert subscription.status.value == "active"
+        assert subscription.status == billing_pb2.SUBSCRIPTION_STATUS_ACTIVE
 
     async def test_cancel_subscription_not_found(self) -> None:
         """Test canceling subscription when none exists."""
@@ -234,7 +241,7 @@ class TestBillingServiceSubscriptions:
         service = BillingService(mock_db, MockStripeClient())
         await service.cancel_subscription(mock_sub.tenant_id, at_period_end=False)
 
-        assert mock_sub.status == "cancelled"
+        assert mock_sub.status == billing_pb2.SUBSCRIPTION_STATUS_CANCELED
 
     async def test_reactivate_subscription_not_found(self) -> None:
         """Test reactivating subscription when none pending cancellation."""
@@ -266,7 +273,7 @@ class TestBillingServiceSubscriptions:
         service = BillingService(mock_db, MockStripeClient())
         await service.sync_subscription_from_stripe("sub_test_123", "past_due")
 
-        assert mock_sub.status == "past_due"
+        assert mock_sub.status == billing_pb2.SUBSCRIPTION_STATUS_PAST_DUE
 
     async def test_ensure_stripe_customer(self) -> None:
         """Test ensuring Stripe customer exists."""
@@ -282,7 +289,7 @@ class TestBillingServiceSubscriptions:
 class MockPaymentMethod:
     """Mock PaymentMethod model."""
 
-    def __init__(self, **kwargs):
+    def __init__(self, **kwargs: Any) -> None:
         self.id = kwargs.get("id", uuid4())
         self.tenant_id = kwargs.get("tenant_id", uuid4())
         self.stripe_payment_method_id = kwargs.get("stripe_payment_method_id", "pm_test_123")
@@ -531,7 +538,7 @@ class TestBillingServiceCreateSubscription:
                 request=SubscriptionCreateRequest(
                     plan_id="nonexistent",
                     payment_method_id="pm_test",
-                    billing_cycle=BillingCycle.MONTHLY,
+                    billing_cycle=billing_pb2.BILLING_INTERVAL_MONTHLY,
                 ),
             )
 
@@ -543,7 +550,7 @@ class TestBillingServiceCreateSubscription:
         plan = MockPlan(
             name="test",
             display_name="Test Plan",
-            tier="starter",
+            tier=billing_pb2.PLAN_TIER_STARTER,
             price_monthly=29,
             price_yearly=290,
             features={"feature1": True},
@@ -566,8 +573,8 @@ class TestBillingServiceCreateSubscription:
         subscription = MockSubscription()
         response = service._subscription_to_response(subscription)
 
-        assert response.status.value == "active"
-        assert response.billing_cycle.value == "monthly"
+        assert response.status == billing_pb2.SUBSCRIPTION_STATUS_ACTIVE
+        assert response.billing_cycle == billing_pb2.BILLING_INTERVAL_MONTHLY
 
 
 class TestPaymentMethodServiceAttach:
@@ -594,21 +601,23 @@ class TestDefaultPlans:
 
     def test_free_plan_exists(self) -> None:
         """Test that free plan is defined."""
-        free_plan = next((p for p in DEFAULT_PLANS if p.tier == "free"), None)
+        free_plan = next((p for p in DEFAULT_PLANS if p.tier == billing_pb2.PLAN_TIER_FREE), None)
         assert free_plan is not None
         assert free_plan.price_monthly == 0
         assert free_plan.trial_days == 0
 
     def test_starter_plan_exists(self) -> None:
         """Test that starter plan is defined."""
-        starter_plan = next((p for p in DEFAULT_PLANS if p.tier == "starter"), None)
+        starter_plan = next(
+            (p for p in DEFAULT_PLANS if p.tier == billing_pb2.PLAN_TIER_STARTER), None
+        )
         assert starter_plan is not None
         assert starter_plan.price_monthly == 29
         assert starter_plan.trial_days == 14
 
     def test_pro_plan_exists(self) -> None:
         """Test that pro plan is defined."""
-        pro_plan = next((p for p in DEFAULT_PLANS if p.tier == "pro"), None)
+        pro_plan = next((p for p in DEFAULT_PLANS if p.tier == billing_pb2.PLAN_TIER_PRO), None)
         assert pro_plan is not None
         assert pro_plan.price_monthly == 99
         assert pro_plan.trial_days == 14
@@ -627,8 +636,13 @@ class TestDefaultPlans:
 
     def test_plan_id_matches_tier(self) -> None:
         """Test that plan IDs match their tiers."""
+        tier_to_id = {
+            billing_pb2.PLAN_TIER_FREE: "free",
+            billing_pb2.PLAN_TIER_STARTER: "starter",
+            billing_pb2.PLAN_TIER_PRO: "pro",
+        }
         for plan in DEFAULT_PLANS:
-            assert plan.id == plan.tier
+            assert plan.id == tier_to_id[plan.tier]
 
     def test_yearly_price_has_discount(self) -> None:
         """Test that yearly prices have discount."""
@@ -655,7 +669,7 @@ class TestCreateFreeSubscription:
         plan = await service.get_plan("free")
         assert plan is not None
         assert plan.id == "free"
-        assert plan.tier == "free"
+        assert plan.tier == billing_pb2.PLAN_TIER_FREE
         assert plan.price_monthly == 0
 
 
@@ -700,8 +714,8 @@ class TestListPlansFromDB:
     async def test_list_plans_from_db(self) -> None:
         """Test listing plans when they exist in the database."""
         mock_plans = [
-            MockPlan(name="db_free", display_name="DB Free", tier="free"),
-            MockPlan(name="db_pro", display_name="DB Pro", tier="pro"),
+            MockPlan(name="db_free", display_name="DB Free", tier=billing_pb2.PLAN_TIER_FREE),
+            MockPlan(name="db_pro", display_name="DB Pro", tier=billing_pb2.PLAN_TIER_PRO),
         ]
         mock_db = AsyncMock()
         mock_db.execute.return_value = MagicMock(scalars=lambda: MagicMock(all=lambda: mock_plans))
@@ -780,7 +794,7 @@ class TestGetPlanByName:
         # Get starter plan with different case
         plan = await service.get_plan("Starter")
         assert plan is not None
-        assert plan.tier == "starter"
+        assert plan.tier == billing_pb2.PLAN_TIER_STARTER
 
     async def test_get_plan_by_tier(self) -> None:
         """Test getting plan by tier name."""
@@ -794,7 +808,7 @@ class TestGetPlanByName:
         # Get pro plan
         plan = await service.get_plan("pro")
         assert plan is not None
-        assert plan.tier == "pro"
+        assert plan.tier == billing_pb2.PLAN_TIER_PRO
         assert plan.price_monthly == 99
 
 
@@ -864,13 +878,13 @@ class TestBillingServiceModelConversions:
 
         now = datetime.now(UTC)
         subscription = MockSubscription(
-            status="trialing",
+            status=billing_pb2.SUBSCRIPTION_STATUS_TRIALING,
             trial_start=now,
             trial_end=now + timedelta(days=14),
         )
 
         response = service._subscription_to_response(subscription)
-        assert response.status.value == "trialing"
+        assert response.status == billing_pb2.SUBSCRIPTION_STATUS_TRIALING
         assert response.trial_start is not None
         assert response.trial_end is not None
 
@@ -882,7 +896,7 @@ class TestBillingServiceModelConversions:
         plan = MockPlan(
             name="test",
             display_name="Test Plan",
-            tier="starter",
+            tier=billing_pb2.PLAN_TIER_STARTER,
             price_monthly=49,
             price_yearly=490,
             features={"feature1": True, "feature2": False},
@@ -894,7 +908,7 @@ class TestBillingServiceModelConversions:
 
         assert response.id == "test"
         assert response.name == "Test Plan"
-        assert response.tier == "starter"
+        assert response.tier == billing_pb2.PLAN_TIER_STARTER
         assert response.price_monthly == 49
         assert response.price_yearly == 490
         assert response.features["feature1"] is True
@@ -907,13 +921,13 @@ class TestDefaultPlanFeatures:
 
     def test_free_plan_no_live_trading(self) -> None:
         """Test that free plan doesn't allow live trading."""
-        free_plan = next((p for p in DEFAULT_PLANS if p.tier == "free"), None)
+        free_plan = next((p for p in DEFAULT_PLANS if p.tier == billing_pb2.PLAN_TIER_FREE), None)
         assert free_plan is not None
         assert free_plan.features.get("live_trading") is False
 
     def test_pro_plan_has_live_trading(self) -> None:
         """Test that pro plan allows live trading."""
-        pro_plan = next((p for p in DEFAULT_PLANS if p.tier == "pro"), None)
+        pro_plan = next((p for p in DEFAULT_PLANS if p.tier == billing_pb2.PLAN_TIER_PRO), None)
         assert pro_plan is not None
         assert pro_plan.features.get("live_trading") is True
 
@@ -924,17 +938,17 @@ class TestDefaultPlanFeatures:
 
     def test_free_plan_has_lowest_limits(self) -> None:
         """Test that free plan has the lowest limits."""
-        free_plan = next((p for p in DEFAULT_PLANS if p.tier == "free"), None)
-        pro_plan = next((p for p in DEFAULT_PLANS if p.tier == "pro"), None)
+        free_plan = next((p for p in DEFAULT_PLANS if p.tier == billing_pb2.PLAN_TIER_FREE), None)
+        pro_plan = next((p for p in DEFAULT_PLANS if p.tier == billing_pb2.PLAN_TIER_PRO), None)
 
         assert free_plan is not None
         assert pro_plan is not None
 
         # Free should have lower backtest limit than pro
-        free_limit = free_plan.limits.get("backtests_per_month", 0)
-        pro_limit = pro_plan.limits.get("backtests_per_month")
+        free_limit = free_plan.limits.get("backtests_per_month") or 0
+        pro_limit = pro_plan.limits.get("backtests_per_month") or float("inf")
 
-        assert free_limit < (pro_limit or float("inf"))
+        assert free_limit < pro_limit
 
 
 class TestPaymentMethodListBranches:
@@ -965,7 +979,7 @@ class TestBillingServiceGetSubscription:
 
     async def test_get_subscription_with_plan(self) -> None:
         """Test getting subscription includes plan details."""
-        mock_plan = MockPlan(name="pro", display_name="Pro Plan", tier="pro")
+        mock_plan = MockPlan(name="pro", display_name="Pro Plan", tier=billing_pb2.PLAN_TIER_PRO)
         mock_sub = MockSubscription(plan=mock_plan)
 
         mock_db = AsyncMock()
@@ -976,7 +990,7 @@ class TestBillingServiceGetSubscription:
 
         assert result is not None
         assert result.plan.name == "Pro Plan"
-        assert result.plan.tier == "pro"
+        assert result.plan.tier == billing_pb2.PLAN_TIER_PRO
 
 
 class TestPaymentMethodToResponse:
@@ -1007,33 +1021,33 @@ class TestSubscriptionStatusConversions:
 
     async def test_subscription_trialing_status(self) -> None:
         """Test subscription with trialing status."""
-        mock_sub = MockSubscription(status="trialing")
+        mock_sub = MockSubscription(status=billing_pb2.SUBSCRIPTION_STATUS_TRIALING)
         mock_db = AsyncMock()
 
         service = BillingService(mock_db, MockStripeClient())
         response = service._subscription_to_response(mock_sub)
 
-        assert response.status.value == "trialing"
+        assert response.status == billing_pb2.SUBSCRIPTION_STATUS_TRIALING
 
     async def test_subscription_past_due_status(self) -> None:
         """Test subscription with past_due status."""
-        mock_sub = MockSubscription(status="past_due")
+        mock_sub = MockSubscription(status=billing_pb2.SUBSCRIPTION_STATUS_PAST_DUE)
         mock_db = AsyncMock()
 
         service = BillingService(mock_db, MockStripeClient())
         response = service._subscription_to_response(mock_sub)
 
-        assert response.status.value == "past_due"
+        assert response.status == billing_pb2.SUBSCRIPTION_STATUS_PAST_DUE
 
     async def test_subscription_cancelled_status(self) -> None:
         """Test subscription with cancelled status."""
-        mock_sub = MockSubscription(status="cancelled")
+        mock_sub = MockSubscription(status=billing_pb2.SUBSCRIPTION_STATUS_CANCELED)
         mock_db = AsyncMock()
 
         service = BillingService(mock_db, MockStripeClient())
         response = service._subscription_to_response(mock_sub)
 
-        assert response.status.value == "cancelled"
+        assert response.status == billing_pb2.SUBSCRIPTION_STATUS_CANCELED
 
 
 class TestBillingServiceEnsureCustomer:
@@ -1095,20 +1109,20 @@ class TestSubscriptionBillingCycle:
 
     async def test_subscription_monthly_cycle(self) -> None:
         """Test subscription with monthly billing cycle."""
-        mock_sub = MockSubscription(billing_cycle="monthly")
+        mock_sub = MockSubscription(billing_cycle=billing_pb2.BILLING_INTERVAL_MONTHLY)
         mock_db = AsyncMock()
 
         service = BillingService(mock_db, MockStripeClient())
         response = service._subscription_to_response(mock_sub)
 
-        assert response.billing_cycle.value == "monthly"
+        assert response.billing_cycle == billing_pb2.BILLING_INTERVAL_MONTHLY
 
     async def test_subscription_yearly_cycle(self) -> None:
         """Test subscription with yearly billing cycle."""
-        mock_sub = MockSubscription(billing_cycle="yearly")
+        mock_sub = MockSubscription(billing_cycle=billing_pb2.BILLING_INTERVAL_YEARLY)
         mock_db = AsyncMock()
 
         service = BillingService(mock_db, MockStripeClient())
         response = service._subscription_to_response(mock_sub)
 
-        assert response.billing_cycle.value == "yearly"
+        assert response.billing_cycle == billing_pb2.BILLING_INTERVAL_YEARLY

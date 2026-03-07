@@ -7,6 +7,23 @@ from uuid import UUID
 
 import pytest
 from httpx import ASGITransport, AsyncClient
+
+from llamatrade_alpaca import Account, Order
+from llamatrade_alpaca import OrderSide as AlpacaOrderSide
+from llamatrade_alpaca import OrderStatus as AlpacaOrderStatus
+from llamatrade_alpaca import OrderType as AlpacaOrderType
+from llamatrade_alpaca import TimeInForce as AlpacaTimeInForce
+from llamatrade_proto.generated.common_pb2 import (
+    EXECUTION_MODE_PAPER,
+    EXECUTION_STATUS_RUNNING,
+)
+from llamatrade_proto.generated.trading_pb2 import (
+    ORDER_SIDE_BUY,
+    ORDER_STATUS_SUBMITTED,
+    ORDER_TYPE_MARKET,
+    TIME_IN_FORCE_DAY,
+)
+
 from src.main import app
 
 # Test UUIDs
@@ -64,43 +81,60 @@ def mock_alpaca_client():
     """Create a mock Alpaca trading client."""
     client = AsyncMock()
     client.get_account = AsyncMock(
-        return_value={
-            "id": "test-account",
-            "account_number": "123456789",
-            "status": "ACTIVE",
-            "cash": "100000.00",
-            "portfolio_value": "100000.00",
-            "buying_power": "200000.00",
-            "equity": "100000.00",
-            "currency": "USD",
-        }
+        return_value=Account(
+            id="test-account",
+            account_number="123456789",
+            status="ACTIVE",
+            cash=100000.00,
+            portfolio_value=100000.00,
+            buying_power=200000.00,
+            equity=100000.00,
+        )
     )
     client.submit_order = AsyncMock(
-        return_value={
-            "id": "alpaca-order-123",
-            "client_order_id": "test-client-order",
-            "symbol": "AAPL",
-            "qty": "10",
-            "side": "buy",
-            "type": "market",
-            "status": "accepted",
-            "filled_qty": "0",
-            "filled_avg_price": None,
-            "created_at": "2024-01-15T10:00:00Z",
-            "submitted_at": "2024-01-15T10:00:00Z",
-            "filled_at": None,
-        }
+        return_value=Order(
+            id="alpaca-order-123",
+            client_order_id="test-client-order",
+            symbol="AAPL",
+            qty=10.0,
+            side=AlpacaOrderSide.BUY,
+            order_type=AlpacaOrderType.MARKET,
+            status=AlpacaOrderStatus.ACCEPTED,
+            time_in_force=AlpacaTimeInForce.DAY,
+            filled_qty=0,
+            filled_avg_price=None,
+            created_at=datetime(2024, 1, 15, 10, 0, 0, tzinfo=UTC),
+        )
     )
     client.get_order = AsyncMock(
-        return_value={
-            "id": "alpaca-order-123",
-            "status": "filled",
-            "filled_qty": "10",
-            "filled_avg_price": "150.50",
-            "filled_at": "2024-01-15T10:01:00Z",
-        }
+        return_value=Order(
+            id="alpaca-order-123",
+            symbol="AAPL",
+            qty=10.0,
+            side=AlpacaOrderSide.BUY,
+            order_type=AlpacaOrderType.MARKET,
+            status=AlpacaOrderStatus.FILLED,
+            time_in_force=AlpacaTimeInForce.DAY,
+            filled_qty=10.0,
+            filled_avg_price=150.50,
+            created_at=datetime(2024, 1, 15, 10, 0, 0, tzinfo=UTC),
+        )
     )
-    client.cancel_order = AsyncMock(return_value=True)
+    # These methods return None on success, raise exceptions on failure
+    client.cancel_order = AsyncMock(return_value=None)
+    client.close_position = AsyncMock(
+        return_value=Order(
+            id="close-order-123",
+            symbol="AAPL",
+            qty=10.0,
+            side=AlpacaOrderSide.SELL,
+            order_type=AlpacaOrderType.MARKET,
+            status=AlpacaOrderStatus.NEW,
+            time_in_force=AlpacaTimeInForce.DAY,
+            created_at=datetime(2024, 1, 15, 10, 0, 0, tzinfo=UTC),
+        )
+    )
+    client.close_all_positions = AsyncMock(return_value=[])
     client.get_positions = AsyncMock(return_value=[])
     client.get_position = AsyncMock(return_value=None)
     return client
@@ -151,8 +185,8 @@ def mock_trading_session():
     session.strategy_version = 1
     session.credentials_id = TEST_CREDENTIALS_ID
     session.name = "Test Session"
-    session.mode = "paper"
-    session.status = "active"
+    session.mode = EXECUTION_MODE_PAPER
+    session.status = EXECUTION_STATUS_RUNNING
     session.config = {}
     session.symbols = ["AAPL", "GOOGL"]
     session.started_at = datetime.now(UTC)
@@ -174,13 +208,13 @@ def mock_order():
     order.alpaca_order_id = "alpaca-order-123"
     order.client_order_id = "client-order-123"
     order.symbol = "AAPL"
-    order.side = "buy"
-    order.order_type = "market"
-    order.time_in_force = "day"
+    order.side = ORDER_SIDE_BUY
+    order.order_type = ORDER_TYPE_MARKET
+    order.time_in_force = TIME_IN_FORCE_DAY
     order.qty = Decimal("10")
     order.limit_price = None
     order.stop_price = None
-    order.status = "submitted"
+    order.status = ORDER_STATUS_SUBMITTED
     order.filled_qty = Decimal("0")
     order.filled_avg_price = None
     order.submitted_at = datetime.now(UTC)

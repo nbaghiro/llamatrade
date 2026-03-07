@@ -3,17 +3,22 @@ name = "llamatrade-trading"
 version = "0.1.0"
 description = "LlamaTrade Trading Service"
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.14"
 dependencies = [
     "fastapi>=0.109.0",
     "uvicorn[standard]>=0.27.0",
     "pydantic>=2.5.0",
     "httpx>=0.26.0",
     "websockets>=12.0",
+    "grpcio>=1.60.0",
+    "exchange-calendars>=4.2.0",
+    "redis>=5.0.0",
+    "tenacity>=8.2.0",
     "llamatrade-common",
     "llamatrade-compiler",
     "llamatrade-db",
     "llamatrade-dsl",
+    "llamatrade-alpaca",
 ]
 
 [project.optional-dependencies]
@@ -49,3 +54,8 @@ exclude_lines = [
     "if TYPE_CHECKING:",
     "raise NotImplementedError",
 ]
+
+[tool.pyright]
+venvPath = "../.."
+venv = ".venv"
+pythonVersion = "3.14"

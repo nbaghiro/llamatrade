@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING, TypedDict
 import numpy as np
 
 if TYPE_CHECKING:
-    from src.clients.market_data import MarketDataClient
+    from src.services.backtest_service import MarketDataFetcher
 
 
 class BenchmarkBarData(TypedDict):
@@ -116,6 +116,7 @@ class BenchmarkCalculator:
         stock_shares = stock_capital / spy_bars[0]["close"]
 
         # Handle bonds
+        daily_rf_rate = 0.0  # Default, only used when use_bond_etf is False
         if bond_bars and len(bond_bars) == len(spy_bars):
             bond_shares = bond_capital / bond_bars[0]["close"]
             use_bond_etf = True
@@ -244,7 +245,7 @@ class BenchmarkCalculator:
 
         alpha = strategy_annual - (rf + beta * (benchmark_annual - rf))
 
-        return alpha, beta
+        return float(alpha), float(beta)
 
     def calculate_information_ratio(
         self,
@@ -339,7 +340,7 @@ class BenchmarkCalculator:
 
 
 async def fetch_benchmark_data(
-    market_data_client: "MarketDataClient",
+    market_data_client: MarketDataFetcher,
     start_date: datetime,
     end_date: datetime,
     timeframe: str = "1D",
@@ -364,13 +365,36 @@ async def fetch_benchmark_data(
             end_date=end_date.date(),
         )
 
-        spy_bars: list[BenchmarkBarData] = [
-            {"timestamp": b["timestamp"], "close": float(b["close"])} for b in bars.get("SPY", [])
-        ]
+        def _to_float(val: object) -> float:
+            """Safely convert to float."""
+            try:
+                return float(val)  # type: ignore[arg-type]
+            except TypeError, ValueError:
+                return 0.0
 
-        bond_bars_list: list[BenchmarkBarData] = [
-            {"timestamp": b["timestamp"], "close": float(b["close"])} for b in bars.get("BND", [])
-        ]
+        spy_bars: list[BenchmarkBarData] = []
+        for b in bars.get("SPY", []):
+            ts = b["timestamp"]
+            spy_bars.append(
+                {
+                    "timestamp": ts
+                    if isinstance(ts, datetime)
+                    else datetime.fromisoformat(str(ts)),
+                    "close": _to_float(b["close"]),
+                }
+            )
+
+        bond_bars_list: list[BenchmarkBarData] = []
+        for b in bars.get("BND", []):
+            ts = b["timestamp"]
+            bond_bars_list.append(
+                {
+                    "timestamp": ts
+                    if isinstance(ts, datetime)
+                    else datetime.fromisoformat(str(ts)),
+                    "close": _to_float(b["close"]),
+                }
+            )
 
         return spy_bars, bond_bars_list if bond_bars_list else None
 

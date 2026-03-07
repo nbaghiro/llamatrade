@@ -5,6 +5,7 @@ import asyncio
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+
 from llamatrade_common.health import (
     CheckResult,
     DependencyCheck,

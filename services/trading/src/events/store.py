@@ -9,15 +9,15 @@ import logging
 from collections.abc import AsyncIterator
 from datetime import datetime
 from decimal import Decimal
-from typing import Any
 from uuid import UUID
 
-from llamatrade_db import Base
 from sqlalchemy import BigInteger, DateTime, Index, String, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Mapped, mapped_column
+
+from llamatrade_db import Base
 
 from src.events.base import TradingEvent, deserialize_event
 
@@ -58,7 +58,7 @@ class EventRecord(Base):  # type: ignore[misc]
     )
 
     # Event payload
-    data: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    data: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False)
 
     # Indexes for efficient queries
     __table_args__ = (
@@ -71,10 +71,12 @@ class EventRecord(Base):  # type: ignore[misc]
 class DecimalEncoder(json.JSONEncoder):
     """JSON encoder that handles Decimal types."""
 
-    def default(self, obj: Any) -> Any:
-        if isinstance(obj, Decimal):
-            return str(obj)
-        return super().default(obj)
+    def default(self, o: object) -> str:
+        if isinstance(o, Decimal):
+            return str(o)
+        # For unhandled types, fall back to JSONEncoder default
+        # which raises TypeError for unsupported types
+        return str(super().default(o))
 
 
 class EventStore:
@@ -159,7 +161,7 @@ class EventStore:
         Returns:
             List of sequence numbers assigned.
         """
-        sequences = []
+        sequences: list[int] = []
         for event in events:
             seq = await self.append(event)
             sequences.append(seq)
@@ -192,7 +194,7 @@ class EventStore:
             WHERE session_id = :session_id
               AND sequence > :from_sequence
         """
-        params: dict[str, Any] = {
+        params: dict[str, object] = {
             "session_id": session_id,
             "from_sequence": from_sequence,
         }
@@ -213,9 +215,9 @@ class EventStore:
 
         result = await self.db.execute(text(query), params)
 
-        for row in result:
-            event_data = dict(row._mapping["data"])
-            event_data["sequence"] = row._mapping["sequence"]
+        for row in result.mappings():
+            event_data = dict(row["data"])
+            event_data["sequence"] = row["sequence"]
             yield deserialize_event(event_data)
 
     async def read_all(
@@ -243,7 +245,7 @@ class EventStore:
             WHERE tenant_id = :tenant_id
               AND sequence > :from_sequence
         """
-        params: dict[str, Any] = {
+        params: dict[str, object] = {
             "tenant_id": tenant_id,
             "from_sequence": from_sequence,
         }
@@ -260,9 +262,9 @@ class EventStore:
 
         result = await self.db.execute(text(query), params)
 
-        for row in result:
-            event_data = dict(row._mapping["data"])
-            event_data["sequence"] = row._mapping["sequence"]
+        for row in result.mappings():
+            event_data = dict(row["data"])
+            event_data["sequence"] = row["sequence"]
             yield deserialize_event(event_data)
 
     async def get_by_id(self, event_id: UUID) -> TradingEvent | None:
@@ -281,13 +283,13 @@ class EventStore:
             WHERE event_id = :event_id
         """
         result = await self.db.execute(text(query), {"event_id": event_id})
-        row = result.first()
+        row = result.mappings().first()
 
         if not row:
             return None
 
-        event_data = dict(row._mapping["data"])
-        event_data["sequence"] = row._mapping["sequence"]
+        event_data = dict(row["data"])
+        event_data["sequence"] = row["sequence"]
         return deserialize_event(event_data)
 
     async def get_latest_sequence(self, session_id: UUID) -> int:
@@ -305,8 +307,8 @@ class EventStore:
             WHERE session_id = :session_id
         """
         result = await self.db.execute(text(query), {"session_id": session_id})
-        row = result.first()
-        return row._mapping["max_seq"] if row else 0
+        row = result.mappings().first()
+        return int(row["max_seq"]) if row else 0
 
     async def count_events(
         self,
@@ -327,15 +329,15 @@ class EventStore:
             FROM trading_events
             WHERE session_id = :session_id
         """
-        params: dict[str, Any] = {"session_id": session_id}
+        params: dict[str, object] = {"session_id": session_id}
 
         if event_types:
             query += " AND event_type = ANY(:event_types)"
             params["event_types"] = event_types
 
         result = await self.db.execute(text(query), params)
-        row = result.first()
-        return row._mapping["count"] if row else 0
+        row = result.mappings().first()
+        return int(row["count"]) if row else 0
 
 
 def create_event_store(db: AsyncSession) -> EventStore:

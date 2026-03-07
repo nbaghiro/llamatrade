@@ -27,7 +27,7 @@ from typing import Any
 from uuid import uuid4
 
 import httpx
-from fastapi import FastAPI, HTTPException, Query, status
+from fastapi import FastAPI, HTTPException, Query
 from pydantic import BaseModel
 
 app = FastAPI(
@@ -87,16 +87,18 @@ class MockDataStore:
                 variation = (i % 5 - 2) * 0.01
                 price = base_price * (1 + variation)
 
-                self.bars[symbol].append({
-                    "t": date.isoformat(),
-                    "o": round(price * 0.99, 2),
-                    "h": round(price * 1.02, 2),
-                    "l": round(price * 0.98, 2),
-                    "c": round(price, 2),
-                    "v": 10000000 + i * 100000,
-                    "n": 50000 + i * 1000,
-                    "vw": round(price, 2),
-                })
+                self.bars[symbol].append(
+                    {
+                        "t": date.isoformat(),
+                        "o": round(price * 0.99, 2),
+                        "h": round(price * 1.02, 2),
+                        "l": round(price * 0.98, 2),
+                        "c": round(price, 2),
+                        "v": 10000000 + i * 100000,
+                        "n": 50000 + i * 1000,
+                        "vw": round(price, 2),
+                    }
+                )
 
 
 # Global data store
@@ -462,11 +464,11 @@ def create_alpaca_mock_server(port: int = 8888):
                 response = httpx.get(f"{base_url}/health", timeout=1.0)
                 if response.status_code == 200:
                     break
-            except (httpx.RequestError, httpx.HTTPError):
+            except httpx.RequestError, httpx.HTTPError:
                 pass
             time.sleep(0.2)
         else:
-            raise TimeoutError(f"Alpaca mock server did not start within 10s")
+            raise TimeoutError("Alpaca mock server did not start within 10s")
 
         yield server
     finally:

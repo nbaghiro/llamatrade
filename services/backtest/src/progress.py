@@ -2,25 +2,42 @@
 
 import json
 import os
+import threading
 import time
 from collections.abc import AsyncIterator, Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import UTC, datetime
+from typing import cast
 
 import redis.asyncio as aioredis
+from redis.asyncio.client import PubSub
 
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 
 
-@dataclass
 class ProgressTracker:
-    """Tracks progress and calculates ETA for a backtest."""
+    """Tracks progress and calculates ETA for a backtest.
 
-    total_items: int
-    start_time: float = field(default_factory=time.monotonic)
-    _last_report_time: float = field(default_factory=time.monotonic)
-    _last_report_progress: float = 0.0
-    _min_report_interval: float = 0.5  # Minimum seconds between reports
+    Thread-safe: all state mutations are protected by a lock.
+    """
+
+    def __init__(
+        self,
+        total_items: int,
+        min_report_interval: float = 0.5,
+    ):
+        """Initialize the progress tracker.
+
+        Args:
+            total_items: Total number of items to process.
+            min_report_interval: Minimum seconds between reports.
+        """
+        self.total_items = total_items
+        self.start_time = time.monotonic()
+        self._last_report_time = time.monotonic()
+        self._last_report_progress = 0.0
+        self._min_report_interval = min_report_interval
+        self._lock = threading.Lock()
 
     def calculate_eta(self, current_item: int) -> int | None:
         """Calculate estimated seconds remaining.
@@ -34,6 +51,7 @@ class ProgressTracker:
         if current_item <= 0 or self.total_items <= 0:
             return None
 
+        # Thread-safe read of start_time (immutable after init)
         elapsed = time.monotonic() - self.start_time
         if elapsed < 0.1:  # Not enough time elapsed
             return None
@@ -49,6 +67,8 @@ class ProgressTracker:
     def should_report(self, current_progress: float) -> bool:
         """Check if we should report progress (rate limiting).
 
+        Thread-safe: uses lock to protect _last_report_time and _last_report_progress.
+
         Args:
             current_progress: Current progress percentage (0-100).
 
@@ -57,19 +77,20 @@ class ProgressTracker:
         """
         now = time.monotonic()
 
-        # Always report on significant progress jumps (5% or more)
-        if current_progress - self._last_report_progress >= 5.0:
-            self._last_report_time = now
-            self._last_report_progress = current_progress
-            return True
+        with self._lock:
+            # Always report on significant progress jumps (5% or more)
+            if current_progress - self._last_report_progress >= 5.0:
+                self._last_report_time = now
+                self._last_report_progress = current_progress
+                return True
 
-        # Rate limit frequent reports
-        if now - self._last_report_time >= self._min_report_interval:
-            self._last_report_time = now
-            self._last_report_progress = current_progress
-            return True
+            # Rate limit frequent reports
+            if now - self._last_report_time >= self._min_report_interval:
+                self._last_report_time = now
+                self._last_report_progress = current_progress
+                return True
 
-        return False
+            return False
 
 
 @dataclass
@@ -82,7 +103,7 @@ class ProgressUpdate:
     eta_seconds: int | None = None
     timestamp: str | None = None
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, str | float | int | None]:
         return {
             "backtest_id": self.backtest_id,
             "progress": self.progress,
@@ -97,11 +118,11 @@ class ProgressPublisher:
 
     def __init__(self, redis_url: str | None = None):
         self.redis_url = redis_url or REDIS_URL
-        self._redis: aioredis.Redis | None = None
+        self._redis: aioredis.Redis | None = None  # type: ignore[type-arg]
 
-    async def _get_redis(self) -> aioredis.Redis:
+    async def _get_redis(self) -> aioredis.Redis:  # type: ignore[type-arg]
         if self._redis is None:
-            self._redis = await aioredis.from_url(self.redis_url)
+            self._redis = await aioredis.from_url(self.redis_url)  # type: ignore[no-untyped-call]
         return self._redis
 
     async def publish(
@@ -119,7 +140,7 @@ class ProgressPublisher:
             message=message,
             eta_seconds=eta_seconds,
         )
-        await redis.publish(
+        await redis.publish(  # type: ignore[no-untyped-call]
             f"backtest:progress:{backtest_id}",
             json.dumps(update.to_dict()),
         )
@@ -136,12 +157,12 @@ class ProgressSubscriber:
 
     def __init__(self, redis_url: str | None = None):
         self.redis_url = redis_url or REDIS_URL
-        self._redis: aioredis.Redis | None = None
-        self._pubsub: aioredis.client.PubSub | None = None
+        self._redis: aioredis.Redis | None = None  # type: ignore[type-arg]
+        self._pubsub: PubSub | None = None
 
-    async def _get_redis(self) -> aioredis.Redis:
+    async def _get_redis(self) -> aioredis.Redis:  # type: ignore[type-arg]
         if self._redis is None:
-            self._redis = await aioredis.from_url(self.redis_url)
+            self._redis = await aioredis.from_url(self.redis_url)  # type: ignore[no-untyped-call]
         return self._redis
 
     async def subscribe(self, backtest_id: str) -> AsyncIterator[ProgressUpdate]:
@@ -150,27 +171,34 @@ class ProgressSubscriber:
         Yields ProgressUpdate objects as they come in.
         """
         redis = await self._get_redis()
-        self._pubsub = redis.pubsub()
+        pubsub: PubSub = redis.pubsub()  # type: ignore[no-untyped-call]
+        self._pubsub = pubsub
         channel = f"backtest:progress:{backtest_id}"
 
-        await self._pubsub.subscribe(channel)
+        await pubsub.subscribe(channel)  # type: ignore[no-untyped-call]
 
         try:
-            async for message in self._pubsub.listen():
-                if message["type"] == "message":
-                    data = json.loads(message["data"])
+            async for message in pubsub.listen():  # type: ignore[no-untyped-call]
+                msg = cast(dict[str, object], message)
+                if msg["type"] == "message":
+                    raw_data = cast(str | bytes, msg["data"])
+                    data = cast(dict[str, object], json.loads(raw_data))
+                    progress_val = data.get("progress", 0)
+                    progress = int(progress_val) if isinstance(progress_val, (int, float)) else 0
+                    eta_val = data.get("eta_seconds")
+                    ts_val = data.get("timestamp")
                     yield ProgressUpdate(
-                        backtest_id=data["backtest_id"],
-                        progress=data["progress"],
-                        message=data["message"],
-                        eta_seconds=data.get("eta_seconds"),
-                        timestamp=data.get("timestamp"),
+                        backtest_id=str(data["backtest_id"]),
+                        progress=progress,
+                        message=str(data.get("message", "")),
+                        eta_seconds=int(eta_val) if isinstance(eta_val, (int, float)) else None,
+                        timestamp=str(ts_val) if ts_val is not None else None,
                     )
                     # Stop if we hit 100%
-                    if data["progress"] >= 100:
+                    if progress >= 100:
                         break
         finally:
-            await self._pubsub.unsubscribe(channel)
+            await pubsub.unsubscribe(channel)  # type: ignore[no-untyped-call]
 
     async def close(self) -> None:
         """Close the Redis connection."""
@@ -226,8 +254,10 @@ class BacktestProgressReporter:
         self.simulation_start_pct = simulation_start_pct
         self.simulation_end_pct = simulation_end_pct
         self._publisher = ProgressPublisher(redis_url)
-        self._tracker: ProgressTracker | None = None
+        self._tracker: ProgressTracker | None = ProgressTracker(total_items=total_bars)
         self._pending_updates: list[tuple[float, str, int | None]] = []
+        self._lock = threading.Lock()  # Thread-safe access to _pending_updates
+        self._max_pending = 100  # Auto-flush threshold to bound memory usage
 
     async def publish_phase(
         self,
@@ -263,12 +293,14 @@ class BacktestProgressReporter:
 
         Returns:
             A synchronous callback that queues progress updates.
+            Thread-safe: uses lock to protect _pending_updates.
+            Auto-trims queue when it exceeds _max_pending to bound memory.
         """
         # Import here to avoid circular imports
         from datetime import datetime as dt
 
         def callback(current_bar: int, total_bars: int, current_date: dt) -> None:
-            # Update tracker if total changed
+            # Update tracker if total changed (thread-safe read)
             if self._tracker is None or self._tracker.total_items != total_bars:
                 self._tracker = ProgressTracker(total_items=total_bars)
 
@@ -292,16 +324,33 @@ class BacktestProgressReporter:
             date_str = current_date.strftime("%Y-%m-%d")
             message = f"Processing {date_str} ({current_bar}/{total_bars})"
 
-            # Queue update for async publishing
-            self._pending_updates.append((progress, message, eta))
+            # Queue update for async publishing (thread-safe)
+            with self._lock:
+                self._pending_updates.append((progress, message, eta))
+
+                # Auto-trim queue if it exceeds limit to bound memory usage.
+                # Keep only the most recent half of updates (discarding older ones).
+                # This ensures progress stays bounded even if flush() isn't called.
+                if len(self._pending_updates) > self._max_pending:
+                    # Keep the most recent updates (second half)
+                    trim_count = self._max_pending // 2
+                    self._pending_updates = self._pending_updates[-trim_count:]
 
         return callback
 
     async def flush(self) -> None:
-        """Publish all pending progress updates."""
-        for progress, message, eta in self._pending_updates:
+        """Publish all pending progress updates.
+
+        Thread-safe: acquires lock to drain _pending_updates.
+        """
+        # Atomically grab all pending updates
+        with self._lock:
+            updates = list(self._pending_updates)
+            self._pending_updates.clear()
+
+        # Publish outside the lock to avoid blocking callbacks
+        for progress, message, eta in updates:
             await self._publisher.publish(self.backtest_id, progress, message, eta)
-        self._pending_updates.clear()
 
     async def close(self) -> None:
         """Close the publisher connection."""

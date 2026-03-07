@@ -1,11 +1,17 @@
 """Tests for alert gRPC servicer methods."""
 
+# pyright: reportPrivateUsage=false
+# pyright: reportArgumentType=false
+
 from datetime import UTC, datetime
+from typing import Any
 from uuid import uuid4
 
 import grpc.aio
 import pytest
-from conftest import TEST_TENANT_ID, TEST_USER_ID
+from conftest import TEST_TENANT_ID, TEST_USER_ID, MockServicerContext
+
+from src.grpc.servicer import NotificationServicer
 
 pytestmark = pytest.mark.asyncio
 
@@ -13,9 +19,11 @@ pytestmark = pytest.mark.asyncio
 class TestListAlerts:
     """Tests for ListAlerts gRPC method."""
 
-    async def test_list_alerts_empty(self, notification_servicer, grpc_context):
+    async def test_list_alerts_empty(
+        self, notification_servicer: NotificationServicer, grpc_context: MockServicerContext
+    ) -> None:
         """Test listing alerts returns empty list when none exist."""
-        from llamatrade.v1 import common_pb2, notification_pb2
+        from llamatrade_proto.generated import common_pb2, notification_pb2
 
         request = notification_pb2.ListAlertsRequest(
             context=common_pb2.TenantContext(
@@ -28,9 +36,14 @@ class TestListAlerts:
 
         assert len(response.alerts) == 0
 
-    async def test_list_alerts_with_data(self, notification_servicer, grpc_context, sample_alert):
+    async def test_list_alerts_with_data(
+        self,
+        notification_servicer: NotificationServicer,
+        grpc_context: MockServicerContext,
+        sample_alert: dict[str, Any],
+    ) -> None:
         """Test listing alerts returns stored alerts."""
-        from llamatrade.v1 import common_pb2, notification_pb2
+        from llamatrade_proto.generated import common_pb2, notification_pb2
 
         key = f"{TEST_TENANT_ID}:{TEST_USER_ID}"
         notification_servicer._alerts[key] = [sample_alert]
@@ -47,9 +60,11 @@ class TestListAlerts:
         assert len(response.alerts) == 1
         assert response.alerts[0].name == "Price Alert"
 
-    async def test_list_alerts_active_only(self, notification_servicer, grpc_context):
+    async def test_list_alerts_active_only(
+        self, notification_servicer: NotificationServicer, grpc_context: MockServicerContext
+    ) -> None:
         """Test filtering alerts by active_only."""
-        from llamatrade.v1 import common_pb2, notification_pb2
+        from llamatrade_proto.generated import common_pb2, notification_pb2
 
         key = f"{TEST_TENANT_ID}:{TEST_USER_ID}"
         notification_servicer._alerts[key] = [
@@ -102,9 +117,11 @@ class TestListAlerts:
 class TestCreateAlert:
     """Tests for CreateAlert gRPC method."""
 
-    async def test_create_alert_success(self, notification_servicer, grpc_context):
+    async def test_create_alert_success(
+        self, notification_servicer: NotificationServicer, grpc_context: MockServicerContext
+    ) -> None:
         """Test creating an alert successfully."""
-        from llamatrade.v1 import common_pb2, notification_pb2
+        from llamatrade_proto.generated import common_pb2, notification_pb2
 
         request = notification_pb2.CreateAlertRequest(
             context=common_pb2.TenantContext(
@@ -134,9 +151,11 @@ class TestCreateAlert:
         key = f"{TEST_TENANT_ID}:{TEST_USER_ID}"
         assert len(notification_servicer._alerts[key]) == 1
 
-    async def test_create_alert_with_strategy_condition(self, notification_servicer, grpc_context):
+    async def test_create_alert_with_strategy_condition(
+        self, notification_servicer: NotificationServicer, grpc_context: MockServicerContext
+    ) -> None:
         """Test creating an alert with strategy-based condition."""
-        from llamatrade.v1 import common_pb2, notification_pb2
+        from llamatrade_proto.generated import common_pb2, notification_pb2
 
         strategy_id = str(uuid4())
         request = notification_pb2.CreateAlertRequest(
@@ -158,9 +177,11 @@ class TestCreateAlert:
         assert response.alert.name == "Strategy Alert"
         assert response.alert.condition.strategy_id == strategy_id
 
-    async def test_create_multiple_alerts(self, notification_servicer, grpc_context):
+    async def test_create_multiple_alerts(
+        self, notification_servicer: NotificationServicer, grpc_context: MockServicerContext
+    ) -> None:
         """Test creating multiple alerts for same user."""
-        from llamatrade.v1 import common_pb2, notification_pb2
+        from llamatrade_proto.generated import common_pb2, notification_pb2
 
         for i in range(3):
             request = notification_pb2.CreateAlertRequest(
@@ -185,9 +206,11 @@ class TestCreateAlert:
 class TestDeleteAlert:
     """Tests for DeleteAlert gRPC method."""
 
-    async def test_delete_alert_success(self, notification_servicer, grpc_context):
+    async def test_delete_alert_success(
+        self, notification_servicer: NotificationServicer, grpc_context: MockServicerContext
+    ) -> None:
         """Test deleting an alert successfully."""
-        from llamatrade.v1 import common_pb2, notification_pb2
+        from llamatrade_proto.generated import common_pb2, notification_pb2
 
         alert_id = str(uuid4())
         key = f"{TEST_TENANT_ID}:{TEST_USER_ID}"
@@ -222,9 +245,11 @@ class TestDeleteAlert:
         assert response.success is True
         assert len(notification_servicer._alerts[key]) == 0
 
-    async def test_delete_alert_not_found(self, notification_servicer, grpc_context):
+    async def test_delete_alert_not_found(
+        self, notification_servicer: NotificationServicer, grpc_context: MockServicerContext
+    ) -> None:
         """Test deleting a nonexistent alert returns NOT_FOUND."""
-        from llamatrade.v1 import common_pb2, notification_pb2
+        from llamatrade_proto.generated import common_pb2, notification_pb2
 
         request = notification_pb2.DeleteAlertRequest(
             context=common_pb2.TenantContext(
@@ -243,9 +268,11 @@ class TestDeleteAlert:
 class TestToggleAlert:
     """Tests for ToggleAlert gRPC method."""
 
-    async def test_toggle_alert_deactivate(self, notification_servicer, grpc_context):
+    async def test_toggle_alert_deactivate(
+        self, notification_servicer: NotificationServicer, grpc_context: MockServicerContext
+    ) -> None:
         """Test deactivating an alert."""
-        from llamatrade.v1 import common_pb2, notification_pb2
+        from llamatrade_proto.generated import common_pb2, notification_pb2
 
         alert_id = str(uuid4())
         key = f"{TEST_TENANT_ID}:{TEST_USER_ID}"
@@ -281,9 +308,11 @@ class TestToggleAlert:
         assert response.alert.is_active is False
         assert notification_servicer._alerts[key][0]["is_active"] is False
 
-    async def test_toggle_alert_activate(self, notification_servicer, grpc_context):
+    async def test_toggle_alert_activate(
+        self, notification_servicer: NotificationServicer, grpc_context: MockServicerContext
+    ) -> None:
         """Test activating an alert."""
-        from llamatrade.v1 import common_pb2, notification_pb2
+        from llamatrade_proto.generated import common_pb2, notification_pb2
 
         alert_id = str(uuid4())
         key = f"{TEST_TENANT_ID}:{TEST_USER_ID}"
@@ -318,9 +347,11 @@ class TestToggleAlert:
 
         assert response.alert.is_active is True
 
-    async def test_toggle_alert_not_found(self, notification_servicer, grpc_context):
+    async def test_toggle_alert_not_found(
+        self, notification_servicer: NotificationServicer, grpc_context: MockServicerContext
+    ) -> None:
         """Test toggling a nonexistent alert returns NOT_FOUND."""
-        from llamatrade.v1 import common_pb2, notification_pb2
+        from llamatrade_proto.generated import common_pb2, notification_pb2
 
         request = notification_pb2.ToggleAlertRequest(
             context=common_pb2.TenantContext(
@@ -336,9 +367,11 @@ class TestToggleAlert:
 
         assert exc_info.value.code() == grpc.StatusCode.NOT_FOUND
 
-    async def test_toggle_alert_updates_timestamp(self, notification_servicer, grpc_context):
+    async def test_toggle_alert_updates_timestamp(
+        self, notification_servicer: NotificationServicer, grpc_context: MockServicerContext
+    ) -> None:
         """Test that toggling updates the updated_at timestamp."""
-        from llamatrade.v1 import common_pb2, notification_pb2
+        from llamatrade_proto.generated import common_pb2, notification_pb2
 
         alert_id = str(uuid4())
         original_time = "2024-01-01T00:00:00+00:00"

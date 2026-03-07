@@ -4,22 +4,23 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import Any
 from uuid import UUID
 
 import jwt
 from connectrpc.code import Code
 from connectrpc.errors import ConnectError
-from llamatrade.v1 import billing_pb2, common_pb2
-from sqlalchemy.ext.asyncio import AsyncSession
+from connectrpc.request import RequestContext
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
+# Type alias for generic request context (accepts any request/response types)
+type AnyContext = RequestContext[object, object]
+
+from llamatrade_proto.generated import billing_pb2, common_pb2
 
 from src.models import (
-    BillingCycle,
     PaymentMethodResponse,
     PlanResponse,
-    PlanTier,
     SubscriptionResponse,
-    SubscriptionStatus,
 )
 from src.services.database import get_session_maker
 from src.stripe.client import get_stripe_client
@@ -39,19 +40,19 @@ class BillingServicer:
 
     def __init__(self) -> None:
         """Initialize the servicer."""
-        self._session_maker: Any = None
+        self._session_maker: async_sessionmaker[AsyncSession] | None = None
 
     async def _get_db(self) -> AsyncSession:
         """Get a database session."""
         if self._session_maker is None:
             self._session_maker = get_session_maker()
+        assert self._session_maker is not None
         session: AsyncSession = self._session_maker()
         return session
 
-    def _get_tenant_id(self, ctx: Any) -> UUID:
+    def _get_tenant_id(self, ctx: AnyContext) -> UUID:
         """Extract tenant_id from JWT token in Authorization header."""
-        headers = getattr(ctx, "headers", {})
-        auth_header: str = headers.get("authorization", "")
+        auth_header: str = ctx.request_headers().get("authorization", "")
         if not auth_header.startswith("Bearer "):
             raise ConnectError(
                 Code.UNAUTHENTICATED,
@@ -75,7 +76,7 @@ class BillingServicer:
     async def get_subscription(
         self,
         request: billing_pb2.GetSubscriptionRequest,
-        ctx: Any,
+        ctx: AnyContext,
     ) -> billing_pb2.GetSubscriptionResponse:
         """Get the current subscription for a tenant."""
         from src.services.billing_service import BillingService
@@ -97,7 +98,7 @@ class BillingServicer:
     async def create_subscription(
         self,
         request: billing_pb2.CreateSubscriptionRequest,
-        ctx: Any,
+        ctx: AnyContext,
     ) -> billing_pb2.CreateSubscriptionResponse:
         """Create a new subscription."""
         from src.models import SubscriptionCreateRequest
@@ -137,7 +138,7 @@ class BillingServicer:
     async def update_subscription(
         self,
         request: billing_pb2.UpdateSubscriptionRequest,
-        ctx: Any,
+        ctx: AnyContext,
     ) -> billing_pb2.UpdateSubscriptionResponse:
         """Update subscription (change plan)."""
         from src.services.billing_service import BillingService
@@ -162,7 +163,7 @@ class BillingServicer:
     async def cancel_subscription(
         self,
         request: billing_pb2.CancelSubscriptionRequest,
-        ctx: Any,
+        ctx: AnyContext,
     ) -> billing_pb2.CancelSubscriptionResponse:
         """Cancel subscription."""
         from src.services.billing_service import BillingService
@@ -187,7 +188,7 @@ class BillingServicer:
     async def resume_subscription(
         self,
         request: billing_pb2.ResumeSubscriptionRequest,
-        ctx: Any,
+        ctx: AnyContext,
     ) -> billing_pb2.ResumeSubscriptionResponse:
         """Resume a cancelled subscription."""
         from src.services.billing_service import BillingService
@@ -209,7 +210,7 @@ class BillingServicer:
     async def get_usage(
         self,
         request: billing_pb2.GetUsageRequest,
-        ctx: Any,
+        ctx: AnyContext,
     ) -> billing_pb2.GetUsageResponse:
         """Get usage metrics for a tenant."""
         tenant_id = self._get_tenant_id(ctx)
@@ -234,7 +235,7 @@ class BillingServicer:
     async def list_invoices(
         self,
         request: billing_pb2.ListInvoicesRequest,
-        ctx: Any,
+        ctx: AnyContext,
     ) -> billing_pb2.ListInvoicesResponse:
         """List invoices for a tenant."""
         # Invoices are managed through Stripe portal
@@ -253,7 +254,7 @@ class BillingServicer:
     async def get_invoice(
         self,
         request: billing_pb2.GetInvoiceRequest,
-        ctx: Any,
+        ctx: AnyContext,
     ) -> billing_pb2.GetInvoiceResponse:
         """Get a specific invoice."""
         raise ConnectError(Code.NOT_FOUND, f"Invoice not found: {request.invoice_id}")
@@ -261,7 +262,7 @@ class BillingServicer:
     async def list_plans(
         self,
         request: billing_pb2.ListPlansRequest,
-        ctx: Any,
+        ctx: AnyContext,
     ) -> billing_pb2.ListPlansResponse:
         """List available plans."""
         from src.services.billing_service import BillingService
@@ -278,7 +279,7 @@ class BillingServicer:
     async def list_payment_methods(
         self,
         request: billing_pb2.ListPaymentMethodsRequest,
-        ctx: Any,
+        ctx: AnyContext,
     ) -> billing_pb2.ListPaymentMethodsResponse:
         """List payment methods for a tenant."""
         from src.services.billing_service import BillingService
@@ -299,7 +300,7 @@ class BillingServicer:
     async def add_payment_method(
         self,
         request: billing_pb2.AddPaymentMethodRequest,
-        ctx: Any,
+        ctx: AnyContext,
     ) -> billing_pb2.AddPaymentMethodResponse:
         """Add a payment method."""
         from src.services.billing_service import BillingService
@@ -328,7 +329,7 @@ class BillingServicer:
     async def remove_payment_method(
         self,
         request: billing_pb2.RemovePaymentMethodRequest,
-        ctx: Any,
+        ctx: AnyContext,
     ) -> billing_pb2.RemovePaymentMethodResponse:
         """Remove a payment method."""
         from src.services.billing_service import BillingService
@@ -354,7 +355,7 @@ class BillingServicer:
     async def create_checkout_session(
         self,
         request: billing_pb2.CreateCheckoutSessionRequest,
-        ctx: Any,
+        ctx: AnyContext,
     ) -> billing_pb2.CreateCheckoutSessionResponse:
         """Create a Stripe checkout session."""
         tenant_id = self._get_tenant_id(ctx)
@@ -368,7 +369,7 @@ class BillingServicer:
     async def create_portal_session(
         self,
         request: billing_pb2.CreatePortalSessionRequest,
-        ctx: Any,
+        ctx: AnyContext,
     ) -> billing_pb2.CreatePortalSessionResponse:
         """Create a Stripe customer portal session."""
         tenant_id = self._get_tenant_id(ctx)
@@ -397,7 +398,7 @@ class BillingServicer:
                 currency="USD",
                 amount=str(
                     subscription.plan.price_monthly
-                    if subscription.billing_cycle.value == "monthly"
+                    if subscription.billing_cycle == billing_pb2.BILLING_INTERVAL_MONTHLY
                     else subscription.plan.price_yearly
                 ),
             ),
@@ -438,9 +439,7 @@ class BillingServicer:
             priority_support=plan.features.get("priority_support", False),
         )
 
-    def _to_proto_payment_method(
-        self, pm: PaymentMethodResponse
-    ) -> billing_pb2.PaymentMethod:
+    def _to_proto_payment_method(self, pm: PaymentMethodResponse) -> billing_pb2.PaymentMethod:
         """Convert internal payment method to proto PaymentMethod."""
         return billing_pb2.PaymentMethod(
             id=str(pm.id),
@@ -452,38 +451,18 @@ class BillingServicer:
             card_exp_year=pm.card_exp_year or 0,
         )
 
-    def _to_proto_status(self, status: SubscriptionStatus) -> int:
-        """Convert internal status to proto enum value."""
-        status_map = {
-            SubscriptionStatus.ACTIVE: billing_pb2.SUBSCRIPTION_STATUS_ACTIVE,
-            SubscriptionStatus.TRIALING: billing_pb2.SUBSCRIPTION_STATUS_TRIALING,
-            SubscriptionStatus.PAST_DUE: billing_pb2.SUBSCRIPTION_STATUS_PAST_DUE,
-            SubscriptionStatus.CANCELLED: billing_pb2.SUBSCRIPTION_STATUS_CANCELED,
-            SubscriptionStatus.PAUSED: billing_pb2.SUBSCRIPTION_STATUS_PAUSED,
-        }
-        return int(status_map.get(status, billing_pb2.SUBSCRIPTION_STATUS_UNSPECIFIED))
+    def _to_proto_status(self, status: int) -> int:
+        """Return proto status value (already proto int)."""
+        return status
 
-    def _to_proto_tier(self, tier: PlanTier) -> int:
-        """Convert internal tier to proto enum value."""
-        tier_map = {
-            PlanTier.FREE: billing_pb2.PLAN_TIER_FREE,
-            PlanTier.STARTER: billing_pb2.PLAN_TIER_STARTER,
-            PlanTier.PRO: billing_pb2.PLAN_TIER_PROFESSIONAL,
-        }
-        return int(tier_map.get(tier, billing_pb2.PLAN_TIER_UNSPECIFIED))
+    def _to_proto_tier(self, tier: int) -> int:
+        """Return proto tier value (already proto int)."""
+        return tier
 
-    def _to_proto_interval(self, interval: BillingCycle) -> int:
-        """Convert internal billing cycle to proto enum value."""
-        interval_map = {
-            BillingCycle.MONTHLY: billing_pb2.BILLING_INTERVAL_MONTHLY,
-            BillingCycle.YEARLY: billing_pb2.BILLING_INTERVAL_YEARLY,
-        }
-        return int(interval_map.get(interval, billing_pb2.BILLING_INTERVAL_UNSPECIFIED))
+    def _to_proto_interval(self, interval: int) -> int:
+        """Return proto interval value (already proto int)."""
+        return interval
 
-    def _from_proto_interval(self, interval: int) -> BillingCycle:
-        """Convert proto interval to internal billing cycle."""
-        interval_map = {
-            billing_pb2.BILLING_INTERVAL_MONTHLY: BillingCycle.MONTHLY,
-            billing_pb2.BILLING_INTERVAL_YEARLY: BillingCycle.YEARLY,
-        }
-        return interval_map.get(interval, BillingCycle.MONTHLY)
+    def _from_proto_interval(self, interval: int) -> int:
+        """Return proto interval value (already proto int)."""
+        return interval

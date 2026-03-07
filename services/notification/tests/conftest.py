@@ -1,10 +1,15 @@
 """Shared test fixtures for notification service."""
 
+from collections.abc import AsyncGenerator
 from datetime import UTC, datetime
+from typing import Any
 from uuid import UUID
 
+import grpc
 import pytest
 from httpx import ASGITransport, AsyncClient
+
+from src.grpc.servicer import NotificationServicer
 from src.main import app
 
 # Test UUIDs
@@ -28,7 +33,7 @@ def user_id() -> UUID:
 
 
 @pytest.fixture
-async def client() -> AsyncClient:
+async def client() -> AsyncGenerator[AsyncClient]:
     """Create async test client."""
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
@@ -39,20 +44,18 @@ class MockServicerContext:
     """Mock gRPC servicer context for testing."""
 
     def __init__(self) -> None:
-        self.code = None
-        self.details = None
+        self.code: grpc.StatusCode | None = None
+        self.details: str | None = None
         self._cancelled = False
 
-    async def abort(self, code, details: str) -> None:
+    async def abort(self, code: grpc.StatusCode, details: str) -> None:
         """Mock abort that raises an exception."""
-        import grpc
-
         self.code = code
         self.details = details
         raise grpc.aio.AioRpcError(
             code=code,
-            initial_metadata=None,
-            trailing_metadata=None,
+            initial_metadata=grpc.aio.Metadata(),
+            trailing_metadata=grpc.aio.Metadata(),
             details=details,
             debug_error_string=None,
         )
@@ -68,15 +71,13 @@ def grpc_context() -> MockServicerContext:
 
 
 @pytest.fixture
-def notification_servicer():
+def notification_servicer() -> NotificationServicer:
     """Create a notification servicer instance."""
-    from src.grpc.servicer import NotificationServicer
-
     return NotificationServicer()
 
 
 @pytest.fixture
-def sample_notification() -> dict:
+def sample_notification() -> dict[str, Any]:
     """Create a sample notification."""
     return {
         "id": str(TEST_NOTIFICATION_ID),
@@ -93,7 +94,7 @@ def sample_notification() -> dict:
 
 
 @pytest.fixture
-def sample_alert() -> dict:
+def sample_alert() -> dict[str, Any]:
     """Create a sample alert."""
     return {
         "id": str(TEST_ALERT_ID),
@@ -118,7 +119,7 @@ def sample_alert() -> dict:
 
 
 @pytest.fixture
-def sample_channel() -> dict:
+def sample_channel() -> dict[str, Any]:
     """Create a sample channel."""
     return {
         "id": str(TEST_CHANNEL_ID),

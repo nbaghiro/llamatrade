@@ -1,3 +1,4 @@
+# pyright: reportOperatorIssue=false
 """Tests for progress tracking module."""
 
 import json
@@ -6,6 +7,7 @@ from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+
 from src.progress import (
     BacktestProgressReporter,
     ProgressPublisher,
@@ -385,6 +387,18 @@ class TestProgressIntegration:
 class TestProgressTracker:
     """Tests for ProgressTracker class."""
 
+    def test_init(self):
+        """Test initialization creates lock."""
+        tracker = ProgressTracker(total_items=100)
+        assert tracker.total_items == 100
+        assert tracker._lock is not None
+        assert tracker._min_report_interval == 0.5
+
+    def test_init_custom_interval(self):
+        """Test initialization with custom interval."""
+        tracker = ProgressTracker(total_items=100, min_report_interval=1.0)
+        assert tracker._min_report_interval == 1.0
+
     def test_calculate_eta_no_progress(self):
         """Test ETA returns None when no progress made."""
         tracker = ProgressTracker(total_items=100)
@@ -447,9 +461,44 @@ class TestProgressTracker:
         tracker.should_report(5.0)
 
         # Simulate time passing
-        tracker._last_report_time = time.monotonic() - 1.0
+        with tracker._lock:
+            tracker._last_report_time = time.monotonic() - 1.0
 
         assert tracker.should_report(5.5) is True
+
+    def test_should_report_thread_safety(self):
+        """Test should_report is thread-safe with concurrent calls."""
+        import threading
+
+        tracker = ProgressTracker(total_items=100)
+        results = []
+        errors = []
+
+        def call_should_report(progress):
+            try:
+                result = tracker.should_report(progress)
+                results.append(result)
+            except Exception as e:
+                errors.append(e)
+
+        # Create multiple threads calling should_report simultaneously
+        threads = []
+        for i in range(20):
+            t = threading.Thread(target=call_should_report, args=(i * 5.0,))
+            threads.append(t)
+
+        # Start all threads at once
+        for t in threads:
+            t.start()
+
+        # Wait for all threads
+        for t in threads:
+            t.join()
+
+        # No errors should have occurred
+        assert len(errors) == 0
+        # All calls should have returned a result
+        assert len(results) == 20
 
 
 class TestBacktestProgressReporter:
@@ -562,3 +611,80 @@ class TestBacktestProgressReporter:
             await reporter.close()
 
             mock_redis.close.assert_called_once()
+
+    def test_engine_callback_auto_trims_queue(self):
+        """Test engine callback auto-trims queue when exceeding max_pending."""
+        reporter = BacktestProgressReporter("bt-123", total_bars=1000)
+        reporter._max_pending = 10  # Set low limit for testing
+
+        callback = reporter.create_engine_callback()
+
+        # Generate many updates that bypass rate limiting (5% jumps)
+        test_date = datetime(2024, 1, 15)
+        for i in range(100):
+            # Force should_report to return True by simulating significant jumps
+            if reporter._tracker:
+                with reporter._tracker._lock:
+                    reporter._tracker._last_report_progress = 0.0
+                    reporter._tracker._last_report_time = 0.0
+            callback(i * 10, 1000, test_date)
+
+        # Queue should be trimmed to at most max_pending
+        assert len(reporter._pending_updates) <= reporter._max_pending
+
+    def test_engine_callback_keeps_recent_updates_on_trim(self):
+        """Test that auto-trim keeps the most recent updates."""
+        reporter = BacktestProgressReporter("bt-123", total_bars=100)
+        reporter._max_pending = 10
+
+        # Directly add updates to simulate exceeding the limit
+        for i in range(15):
+            reporter._pending_updates.append((float(i), f"Update {i}", i))
+
+        # Trigger a callback that will cause auto-trim
+        callback = reporter.create_engine_callback()
+        test_date = datetime(2024, 1, 15)
+
+        # Reset tracker to force a report
+        if reporter._tracker:
+            with reporter._tracker._lock:
+                reporter._tracker._last_report_progress = 0.0
+                reporter._tracker._last_report_time = 0.0
+
+        callback(99, 100, test_date)
+
+        # Queue should be trimmed, keeping recent updates
+        # After trim, we should have at most max_pending entries
+        assert len(reporter._pending_updates) <= reporter._max_pending
+
+    def test_engine_callback_thread_safety(self):
+        """Test engine callback is thread-safe with concurrent calls."""
+        import threading
+
+        reporter = BacktestProgressReporter("bt-123", total_bars=1000)
+        errors = []
+
+        def call_callback(bar_num):
+            try:
+                callback = reporter.create_engine_callback()
+                test_date = datetime(2024, 1, 15)
+                callback(bar_num, 1000, test_date)
+            except Exception as e:
+                errors.append(e)
+
+        # Create multiple threads calling callback simultaneously
+        threads = []
+        for i in range(20):
+            t = threading.Thread(target=call_callback, args=(i * 50,))
+            threads.append(t)
+
+        # Start all threads at once
+        for t in threads:
+            t.start()
+
+        # Wait for all threads
+        for t in threads:
+            t.join()
+
+        # No errors should have occurred
+        assert len(errors) == 0

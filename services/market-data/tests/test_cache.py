@@ -4,6 +4,7 @@ from datetime import UTC, date, datetime, timedelta
 
 import pytest
 from redis.exceptions import RedisError
+
 from src.cache import (
     TTL_HISTORICAL_BARS,
     TTL_LATEST_BAR,
@@ -137,8 +138,13 @@ class TestSerialization:
         serialized = MarketDataCache.serialize_model(sample_snapshot)
         deserialized = MarketDataCache.deserialize_model(serialized, Snapshot)
 
+        assert deserialized is not None
         assert deserialized.symbol == sample_snapshot.symbol
+        assert deserialized.latest_quote is not None
+        assert sample_snapshot.latest_quote is not None
         assert deserialized.latest_quote.bid_price == sample_snapshot.latest_quote.bid_price
+        assert deserialized.daily_bar is not None
+        assert sample_snapshot.daily_bar is not None
         assert deserialized.daily_bar.close == sample_snapshot.daily_bar.close
 
     def test_serialize_deserialize_bars_dict(self, sample_bars):
@@ -261,3 +267,142 @@ class TestTTLConstants:
     def test_ttl_snapshot(self):
         """Test snapshot TTL is 15 seconds."""
         assert TTL_SNAPSHOT == 15
+
+
+class TestTTLEdgeCases:
+    """Tests for TTL calculation edge cases."""
+
+    def test_ttl_end_exactly_yesterday_midnight(self):
+        """Test TTL for data ending exactly at yesterday's midnight."""
+        today = date.today()
+        yesterday = today - timedelta(days=1)
+        start = datetime(2024, 1, 1, tzinfo=UTC)
+        end = datetime.combine(yesterday, datetime.min.time(), tzinfo=UTC)
+
+        ttl = MarketDataCache.calculate_bars_ttl(start, end)
+
+        # Yesterday is historical data
+        assert ttl == TTL_HISTORICAL_BARS
+
+    def test_ttl_end_exactly_today_midnight(self):
+        """Test TTL for data ending exactly at today's midnight."""
+        today = date.today()
+        start = datetime(2024, 1, 1, tzinfo=UTC)
+        end = datetime.combine(today, datetime.min.time(), tzinfo=UTC)
+
+        ttl = MarketDataCache.calculate_bars_ttl(start, end)
+
+        # Today at midnight counts as today's data
+        assert ttl == TTL_TODAY_BARS
+
+    def test_ttl_end_in_distant_past(self):
+        """Test TTL for data from the distant past."""
+        start = datetime(2020, 1, 1, tzinfo=UTC)
+        end = datetime(2020, 12, 31, tzinfo=UTC)
+
+        ttl = MarketDataCache.calculate_bars_ttl(start, end)
+
+        # Historical data gets long TTL
+        assert ttl == TTL_HISTORICAL_BARS
+
+    def test_ttl_start_and_end_same_day_historical(self):
+        """Test TTL when start and end are same day (historical)."""
+        yesterday = date.today() - timedelta(days=1)
+        start = datetime.combine(yesterday, datetime.min.time(), tzinfo=UTC)
+        end = datetime.combine(yesterday, datetime.max.time(), tzinfo=UTC)
+
+        ttl = MarketDataCache.calculate_bars_ttl(start, end)
+
+        # Single day in the past is historical
+        assert ttl == TTL_HISTORICAL_BARS
+
+    def test_ttl_start_and_end_same_day_today(self):
+        """Test TTL when start and end are same day (today)."""
+        today = date.today()
+        start = datetime.combine(today, datetime.min.time(), tzinfo=UTC)
+        end = datetime.combine(today, datetime.max.time(), tzinfo=UTC)
+
+        ttl = MarketDataCache.calculate_bars_ttl(start, end)
+
+        # Today's data uses short TTL
+        assert ttl == TTL_TODAY_BARS
+
+
+class TestMgetOperation:
+    """Tests for batch mget operation."""
+
+    @pytest.mark.asyncio
+    async def test_mget_all_hits(self, mock_cache, mock_redis):
+        """Test mget when all keys are cached."""
+        mock_redis.mget.return_value = [b'{"a": 1}', b'{"b": 2}', b'{"c": 3}']
+
+        result = await mock_cache.mget(["key1", "key2", "key3"])
+
+        assert len(result) == 3
+        assert result["key1"] == '{"a": 1}'
+        assert result["key2"] == '{"b": 2}'
+        assert result["key3"] == '{"c": 3}'
+        mock_redis.mget.assert_called_once_with(["key1", "key2", "key3"])
+
+    @pytest.mark.asyncio
+    async def test_mget_all_misses(self, mock_cache, mock_redis):
+        """Test mget when all keys are cache misses."""
+        mock_redis.mget.return_value = [None, None, None]
+
+        result = await mock_cache.mget(["key1", "key2", "key3"])
+
+        assert len(result) == 3
+        assert result["key1"] is None
+        assert result["key2"] is None
+        assert result["key3"] is None
+
+    @pytest.mark.asyncio
+    async def test_mget_partial_hits(self, mock_cache, mock_redis):
+        """Test mget with some hits and some misses."""
+        mock_redis.mget.return_value = [b'{"a": 1}', None, b'{"c": 3}']
+
+        result = await mock_cache.mget(["key1", "key2", "key3"])
+
+        assert result["key1"] == '{"a": 1}'
+        assert result["key2"] is None
+        assert result["key3"] == '{"c": 3}'
+
+    @pytest.mark.asyncio
+    async def test_mget_empty_keys(self, mock_cache, mock_redis):
+        """Test mget with empty key list."""
+        result = await mock_cache.mget([])
+
+        assert result == {}
+        mock_redis.mget.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_mget_single_key(self, mock_cache, mock_redis):
+        """Test mget with single key."""
+        mock_redis.mget.return_value = [b'{"value": 42}']
+
+        result = await mock_cache.mget(["only_key"])
+
+        assert len(result) == 1
+        assert result["only_key"] == '{"value": 42}'
+
+    @pytest.mark.asyncio
+    async def test_mget_handles_redis_error(self, mock_cache, mock_redis):
+        """Test mget gracefully handles Redis errors."""
+        mock_redis.mget.side_effect = RedisError("Connection failed")
+
+        result = await mock_cache.mget(["key1", "key2"])
+
+        # Should return all misses on error
+        assert len(result) == 2
+        assert result["key1"] is None
+        assert result["key2"] is None
+
+    @pytest.mark.asyncio
+    async def test_mget_handles_string_values(self, mock_cache, mock_redis):
+        """Test mget handles string values (not bytes)."""
+        mock_redis.mget.return_value = ['{"a": 1}', '{"b": 2}']
+
+        result = await mock_cache.mget(["key1", "key2"])
+
+        assert result["key1"] == '{"a": 1}'
+        assert result["key2"] == '{"b": 2}'

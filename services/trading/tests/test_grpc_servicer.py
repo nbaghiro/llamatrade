@@ -8,6 +8,17 @@ from uuid import UUID, uuid4
 import grpc.aio
 import pytest
 
+from llamatrade_proto.generated.trading_pb2 import (
+    ORDER_SIDE_BUY,
+    ORDER_SIDE_SELL,
+    ORDER_STATUS_CANCELLED,
+    ORDER_STATUS_FILLED,
+    ORDER_STATUS_PENDING,
+    ORDER_STATUS_SUBMITTED,
+    ORDER_TYPE_LIMIT,
+    ORDER_TYPE_MARKET,
+)
+
 # Test UUIDs (matching conftest.py)
 TEST_TENANT_ID = UUID("11111111-1111-1111-1111-111111111111")
 TEST_USER_ID = UUID("22222222-2222-2222-2222-222222222222")
@@ -31,8 +42,8 @@ class MockServicerContext:
         self.details = details
         raise grpc.aio.AioRpcError(
             code=code,
-            initial_metadata=None,
-            trailing_metadata=None,
+            initial_metadata=grpc.aio.Metadata(),
+            trailing_metadata=grpc.aio.Metadata(),
             details=details,
             debug_error_string=None,
         )
@@ -72,28 +83,26 @@ def make_mock_order(
     created_at: datetime | None = None,
 ) -> MagicMock:
     """Create a mock order object for servicer tests."""
-    from src.models import OrderSide, OrderStatus, OrderType
-
     order = MagicMock()
     order.id = id
     order.tenant_id = tenant_id
     order.session_id = session_id
     order.symbol = symbol
-    order.side = OrderSide.BUY if side == "BUY" else OrderSide.SELL
-    order.quantity = quantity
-    order.order_type = OrderType.MARKET if order_type == "MARKET" else OrderType.LIMIT
+    order.side = ORDER_SIDE_BUY if side == "BUY" else ORDER_SIDE_SELL
+    order.qty = quantity  # Servicer expects 'qty' not 'quantity'
+    order.order_type = ORDER_TYPE_MARKET if order_type == "MARKET" else ORDER_TYPE_LIMIT
     order.status = {
-        "SUBMITTED": OrderStatus.SUBMITTED,
-        "PENDING": OrderStatus.PENDING,
-        "FILLED": OrderStatus.FILLED,
-        "CANCELLED": OrderStatus.CANCELLED,
-    }.get(status, OrderStatus.SUBMITTED)
-    order.filled_quantity = filled_quantity
+        "SUBMITTED": ORDER_STATUS_SUBMITTED,
+        "PENDING": ORDER_STATUS_PENDING,
+        "FILLED": ORDER_STATUS_FILLED,
+        "CANCELLED": ORDER_STATUS_CANCELLED,
+    }.get(status, ORDER_STATUS_SUBMITTED)
+    order.filled_qty = filled_quantity  # Servicer expects 'filled_qty'
     order.limit_price = limit_price
     order.stop_price = stop_price
-    order.average_fill_price = average_fill_price
-    order.client_order_id = client_order_id
-    order.created_at = created_at or datetime.now(UTC)
+    order.filled_avg_price = average_fill_price  # Servicer expects 'filled_avg_price'
+    order.alpaca_order_id = client_order_id  # Servicer expects 'alpaca_order_id'
+    order.submitted_at = created_at or datetime.now(UTC)  # Servicer expects 'submitted_at'
     return order
 
 
@@ -112,7 +121,8 @@ def make_mock_position(
     position = MagicMock()
     position.id = id or uuid4()
     position.symbol = symbol
-    position.quantity = quantity
+    position.qty = quantity  # Servicer expects 'qty' not 'quantity'
+    position.quantity = quantity  # Also add quantity for ClosePosition
     position.side = side
     position.cost_basis = cost_basis
     position.average_entry_price = average_entry_price
@@ -144,7 +154,7 @@ def create_mock_position_service(
     """Create a mock position service with configured return values."""
     mock_service = MagicMock()
     mock_service.get_position = AsyncMock(return_value=get_position_return)
-    mock_service.list_positions = AsyncMock(return_value=list_positions_return or [])
+    mock_service.list_open_positions = AsyncMock(return_value=list_positions_return or [])
     return mock_service
 
 
@@ -153,12 +163,14 @@ class TestSubmitOrder:
 
     async def test_submit_order_success(self, trading_servicer, grpc_context):
         """Test successfully submitting a market order."""
-        from llamatrade.v1 import common_pb2, trading_pb2
+        from llamatrade_proto.generated import common_pb2, trading_pb2
 
         mock_order = make_mock_order()
         mock_executor = create_mock_executor(submit_order_return=mock_order)
 
-        with patch("src.grpc.servicer.get_order_executor", new=lambda: mock_executor):
+        with patch(
+            "src.grpc.servicer.create_order_executor", new=AsyncMock(return_value=mock_executor)
+        ):
             request = trading_pb2.SubmitOrderRequest(
                 context=common_pb2.TenantContext(
                     tenant_id=str(TEST_TENANT_ID),
@@ -180,12 +192,14 @@ class TestSubmitOrder:
 
     async def test_submit_order_limit_order(self, trading_servicer, grpc_context):
         """Test submitting a limit order."""
-        from llamatrade.v1 import common_pb2, trading_pb2
+        from llamatrade_proto.generated import common_pb2, trading_pb2
 
         mock_order = make_mock_order(order_type="LIMIT", limit_price=Decimal("150.50"))
         mock_executor = create_mock_executor(submit_order_return=mock_order)
 
-        with patch("src.grpc.servicer.get_order_executor", new=lambda: mock_executor):
+        with patch(
+            "src.grpc.servicer.create_order_executor", new=AsyncMock(return_value=mock_executor)
+        ):
             request = trading_pb2.SubmitOrderRequest(
                 context=common_pb2.TenantContext(
                     tenant_id=str(TEST_TENANT_ID),
@@ -206,12 +220,14 @@ class TestSubmitOrder:
 
     async def test_submit_order_invalid_argument(self, trading_servicer, grpc_context):
         """Test submitting an order with invalid arguments returns INVALID_ARGUMENT."""
-        from llamatrade.v1 import common_pb2, trading_pb2
+        from llamatrade_proto.generated import common_pb2, trading_pb2
 
         mock_executor = MagicMock()
         mock_executor.submit_order = AsyncMock(side_effect=ValueError("Invalid quantity"))
 
-        with patch("src.grpc.servicer.get_order_executor", new=lambda: mock_executor):
+        with patch(
+            "src.grpc.servicer.create_order_executor", new=AsyncMock(return_value=mock_executor)
+        ):
             request = trading_pb2.SubmitOrderRequest(
                 context=common_pb2.TenantContext(
                     tenant_id=str(TEST_TENANT_ID),
@@ -235,7 +251,7 @@ class TestCancelOrder:
 
     async def test_cancel_order_success(self, trading_servicer, grpc_context):
         """Test successfully cancelling an order."""
-        from llamatrade.v1 import common_pb2, trading_pb2
+        from llamatrade_proto.generated import common_pb2, trading_pb2
 
         mock_order = make_mock_order(status="CANCELLED")
         mock_executor = create_mock_executor(
@@ -243,7 +259,9 @@ class TestCancelOrder:
             get_order_return=mock_order,
         )
 
-        with patch("src.grpc.servicer.get_order_executor", new=lambda: mock_executor):
+        with patch(
+            "src.grpc.servicer.create_order_executor", new=AsyncMock(return_value=mock_executor)
+        ):
             request = trading_pb2.CancelOrderRequest(
                 context=common_pb2.TenantContext(
                     tenant_id=str(TEST_TENANT_ID),
@@ -259,11 +277,13 @@ class TestCancelOrder:
 
     async def test_cancel_order_failed_precondition(self, trading_servicer, grpc_context):
         """Test cancelling an order that cannot be cancelled."""
-        from llamatrade.v1 import common_pb2, trading_pb2
+        from llamatrade_proto.generated import common_pb2, trading_pb2
 
         mock_executor = create_mock_executor(cancel_order_return=False)
 
-        with patch("src.grpc.servicer.get_order_executor", new=lambda: mock_executor):
+        with patch(
+            "src.grpc.servicer.create_order_executor", new=AsyncMock(return_value=mock_executor)
+        ):
             request = trading_pb2.CancelOrderRequest(
                 context=common_pb2.TenantContext(
                     tenant_id=str(TEST_TENANT_ID),
@@ -283,12 +303,14 @@ class TestGetOrder:
 
     async def test_get_order_success(self, trading_servicer, grpc_context):
         """Test getting an order by ID."""
-        from llamatrade.v1 import common_pb2, trading_pb2
+        from llamatrade_proto.generated import common_pb2, trading_pb2
 
         mock_order = make_mock_order()
         mock_executor = create_mock_executor(get_order_return=mock_order)
 
-        with patch("src.grpc.servicer.get_order_executor", new=lambda: mock_executor):
+        with patch(
+            "src.grpc.servicer.create_order_executor", new=AsyncMock(return_value=mock_executor)
+        ):
             request = trading_pb2.GetOrderRequest(
                 context=common_pb2.TenantContext(
                     tenant_id=str(TEST_TENANT_ID),
@@ -304,11 +326,13 @@ class TestGetOrder:
 
     async def test_get_order_not_found(self, trading_servicer, grpc_context):
         """Test getting a nonexistent order returns NOT_FOUND."""
-        from llamatrade.v1 import common_pb2, trading_pb2
+        from llamatrade_proto.generated import common_pb2, trading_pb2
 
         mock_executor = create_mock_executor(get_order_return=None)
 
-        with patch("src.grpc.servicer.get_order_executor", new=lambda: mock_executor):
+        with patch(
+            "src.grpc.servicer.create_order_executor", new=AsyncMock(return_value=mock_executor)
+        ):
             request = trading_pb2.GetOrderRequest(
                 context=common_pb2.TenantContext(
                     tenant_id=str(TEST_TENANT_ID),
@@ -328,11 +352,13 @@ class TestListOrders:
 
     async def test_list_orders_empty(self, trading_servicer, grpc_context):
         """Test listing orders returns empty list when none exist."""
-        from llamatrade.v1 import common_pb2, trading_pb2
+        from llamatrade_proto.generated import common_pb2, trading_pb2
 
         mock_executor = create_mock_executor(list_orders_return=([], 0))
 
-        with patch("src.grpc.servicer.get_order_executor", new=lambda: mock_executor):
+        with patch(
+            "src.grpc.servicer.create_order_executor", new=AsyncMock(return_value=mock_executor)
+        ):
             request = trading_pb2.ListOrdersRequest(
                 context=common_pb2.TenantContext(
                     tenant_id=str(TEST_TENANT_ID),
@@ -348,7 +374,7 @@ class TestListOrders:
 
     async def test_list_orders_with_data(self, trading_servicer, grpc_context):
         """Test listing orders with data."""
-        from llamatrade.v1 import common_pb2, trading_pb2
+        from llamatrade_proto.generated import common_pb2, trading_pb2
 
         mock_orders = [
             make_mock_order(id=uuid4(), symbol="AAPL"),
@@ -356,7 +382,9 @@ class TestListOrders:
         ]
         mock_executor = create_mock_executor(list_orders_return=(mock_orders, 2))
 
-        with patch("src.grpc.servicer.get_order_executor", new=lambda: mock_executor):
+        with patch(
+            "src.grpc.servicer.create_order_executor", new=AsyncMock(return_value=mock_executor)
+        ):
             request = trading_pb2.ListOrdersRequest(
                 context=common_pb2.TenantContext(
                     tenant_id=str(TEST_TENANT_ID),
@@ -372,12 +400,14 @@ class TestListOrders:
 
     async def test_list_orders_with_status_filter(self, trading_servicer, grpc_context):
         """Test filtering orders by status."""
-        from llamatrade.v1 import common_pb2, trading_pb2
+        from llamatrade_proto.generated import common_pb2, trading_pb2
 
         mock_orders = [make_mock_order(status="FILLED")]
         mock_executor = create_mock_executor(list_orders_return=(mock_orders, 1))
 
-        with patch("src.grpc.servicer.get_order_executor", new=lambda: mock_executor):
+        with patch(
+            "src.grpc.servicer.create_order_executor", new=AsyncMock(return_value=mock_executor)
+        ):
             request = trading_pb2.ListOrdersRequest(
                 context=common_pb2.TenantContext(
                     tenant_id=str(TEST_TENANT_ID),
@@ -398,12 +428,15 @@ class TestGetPosition:
 
     async def test_get_position_success(self, trading_servicer, grpc_context):
         """Test getting a position by symbol."""
-        from llamatrade.v1 import common_pb2, trading_pb2
+        from llamatrade_proto.generated import common_pb2, trading_pb2
 
         mock_position = make_mock_position()
         mock_service = create_mock_position_service(get_position_return=mock_position)
 
-        with patch("src.services.position_service.get_position_service", new=lambda: mock_service):
+        with patch(
+            "src.services.position_service.create_position_service",
+            new=AsyncMock(return_value=mock_service),
+        ):
             request = trading_pb2.GetPositionRequest(
                 context=common_pb2.TenantContext(
                     tenant_id=str(TEST_TENANT_ID),
@@ -420,11 +453,14 @@ class TestGetPosition:
 
     async def test_get_position_not_found(self, trading_servicer, grpc_context):
         """Test getting a nonexistent position returns NOT_FOUND."""
-        from llamatrade.v1 import common_pb2, trading_pb2
+        from llamatrade_proto.generated import common_pb2, trading_pb2
 
         mock_service = create_mock_position_service(get_position_return=None)
 
-        with patch("src.services.position_service.get_position_service", new=lambda: mock_service):
+        with patch(
+            "src.services.position_service.create_position_service",
+            new=AsyncMock(return_value=mock_service),
+        ):
             request = trading_pb2.GetPositionRequest(
                 context=common_pb2.TenantContext(
                     tenant_id=str(TEST_TENANT_ID),
@@ -445,11 +481,14 @@ class TestListPositions:
 
     async def test_list_positions_empty(self, trading_servicer, grpc_context):
         """Test listing positions returns empty list when none exist."""
-        from llamatrade.v1 import common_pb2, trading_pb2
+        from llamatrade_proto.generated import common_pb2, trading_pb2
 
         mock_service = create_mock_position_service(list_positions_return=[])
 
-        with patch("src.services.position_service.get_position_service", new=lambda: mock_service):
+        with patch(
+            "src.services.position_service.create_position_service",
+            new=AsyncMock(return_value=mock_service),
+        ):
             request = trading_pb2.ListPositionsRequest(
                 context=common_pb2.TenantContext(
                     tenant_id=str(TEST_TENANT_ID),
@@ -464,7 +503,7 @@ class TestListPositions:
 
     async def test_list_positions_with_data(self, trading_servicer, grpc_context):
         """Test listing positions with data."""
-        from llamatrade.v1 import common_pb2, trading_pb2
+        from llamatrade_proto.generated import common_pb2, trading_pb2
 
         mock_positions = [
             make_mock_position(symbol="AAPL"),
@@ -472,7 +511,10 @@ class TestListPositions:
         ]
         mock_service = create_mock_position_service(list_positions_return=mock_positions)
 
-        with patch("src.services.position_service.get_position_service", new=lambda: mock_service):
+        with patch(
+            "src.services.position_service.create_position_service",
+            new=AsyncMock(return_value=mock_service),
+        ):
             request = trading_pb2.ListPositionsRequest(
                 context=common_pb2.TenantContext(
                     tenant_id=str(TEST_TENANT_ID),
@@ -493,7 +535,7 @@ class TestClosePosition:
 
     async def test_close_position_success(self, trading_servicer, grpc_context):
         """Test closing a position successfully."""
-        from llamatrade.v1 import common_pb2, trading_pb2
+        from llamatrade_proto.generated import common_pb2, trading_pb2
 
         mock_position = make_mock_position()
         mock_order = make_mock_order(side="SELL")
@@ -501,8 +543,13 @@ class TestClosePosition:
         mock_service = create_mock_position_service(get_position_return=mock_position)
 
         with (
-            patch("src.grpc.servicer.get_order_executor", new=lambda: mock_executor),
-            patch("src.services.position_service.get_position_service", new=lambda: mock_service),
+            patch(
+                "src.grpc.servicer.create_order_executor", new=AsyncMock(return_value=mock_executor)
+            ),
+            patch(
+                "src.services.position_service.create_position_service",
+                new=AsyncMock(return_value=mock_service),
+            ),
         ):
             request = trading_pb2.ClosePositionRequest(
                 context=common_pb2.TenantContext(
@@ -519,11 +566,14 @@ class TestClosePosition:
 
     async def test_close_position_not_found(self, trading_servicer, grpc_context):
         """Test closing a nonexistent position returns NOT_FOUND."""
-        from llamatrade.v1 import common_pb2, trading_pb2
+        from llamatrade_proto.generated import common_pb2, trading_pb2
 
         mock_service = create_mock_position_service(get_position_return=None)
 
-        with patch("src.services.position_service.get_position_service", new=lambda: mock_service):
+        with patch(
+            "src.services.position_service.create_position_service",
+            new=AsyncMock(return_value=mock_service),
+        ):
             request = trading_pb2.ClosePositionRequest(
                 context=common_pb2.TenantContext(
                     tenant_id=str(TEST_TENANT_ID),
@@ -543,10 +593,11 @@ class TestStreamOrderUpdates:
     """Tests for StreamOrderUpdates gRPC method."""
 
     async def test_stream_order_updates_starts(self, trading_servicer, grpc_context):
-        """Test that order updates stream can be started."""
+        """Test that order updates stream can be started and exits on cancel."""
         import asyncio
+        from unittest.mock import AsyncMock, MagicMock, patch
 
-        from llamatrade.v1 import common_pb2, trading_pb2
+        from llamatrade_proto.generated import common_pb2, trading_pb2
 
         # Set context to cancelled after a short time
         async def cancel_after_delay():
@@ -561,23 +612,43 @@ class TestStreamOrderUpdates:
             session_id=str(TEST_SESSION_ID),
         )
 
+        # Mock the subscriber to return empty generator
+        mock_subscriber = MagicMock()
+
+        async def empty_subscribe(_):
+            # Yield nothing, just loop until cancelled
+            return
+            yield  # Make it a generator
+
+        mock_subscriber.subscribe_orders = empty_subscribe
+        mock_subscriber.close = AsyncMock()
+
         # Start the cancellation task
         cancel_task = asyncio.create_task(cancel_after_delay())
 
-        # The stream should exit when context is cancelled
-        await trading_servicer.StreamOrderUpdates(request, grpc_context)
+        with patch(
+            "src.grpc.servicer.get_trading_event_subscriber",
+            return_value=mock_subscriber,
+        ):
+            # Iterate over the async generator
+            responses = []
+            async for response in trading_servicer.StreamOrderUpdates(request, grpc_context):
+                responses.append(response)
 
         await cancel_task
+        # Should complete without errors
+        assert len(responses) == 0
 
 
 class TestStreamPositionUpdates:
     """Tests for StreamPositionUpdates gRPC method."""
 
     async def test_stream_position_updates_starts(self, trading_servicer, grpc_context):
-        """Test that position updates stream can be started."""
+        """Test that position updates stream can be started and exits on cancel."""
         import asyncio
+        from unittest.mock import AsyncMock, MagicMock, patch
 
-        from llamatrade.v1 import common_pb2, trading_pb2
+        from llamatrade_proto.generated import common_pb2, trading_pb2
 
         # Set context to cancelled after a short time
         async def cancel_after_delay():
@@ -592,10 +663,29 @@ class TestStreamPositionUpdates:
             session_id=str(TEST_SESSION_ID),
         )
 
+        # Mock the subscriber to return empty generator
+        mock_subscriber = MagicMock()
+
+        async def empty_subscribe(_):
+            # Yield nothing, just loop until cancelled
+            return
+            yield  # Make it a generator
+
+        mock_subscriber.subscribe_positions = empty_subscribe
+        mock_subscriber.close = AsyncMock()
+
         # Start the cancellation task
         cancel_task = asyncio.create_task(cancel_after_delay())
 
-        # The stream should exit when context is cancelled
-        await trading_servicer.StreamPositionUpdates(request, grpc_context)
+        with patch(
+            "src.grpc.servicer.get_trading_event_subscriber",
+            return_value=mock_subscriber,
+        ):
+            # Iterate over the async generator
+            responses = []
+            async for response in trading_servicer.StreamPositionUpdates(request, grpc_context):
+                responses.append(response)
 
         await cancel_task
+        # Should complete without errors
+        assert len(responses) == 0

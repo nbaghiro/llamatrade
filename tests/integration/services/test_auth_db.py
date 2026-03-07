@@ -33,6 +33,10 @@ class MockServicerContext:
     def set_header(self, key: str, value: str) -> None:
         self.headers[key] = value
 
+    def request_headers(self) -> dict[str, str]:
+        """Return request headers (ConnectRPC API)."""
+        return self.headers
+
 
 @pytest.fixture
 def grpc_context() -> MockServicerContext:
@@ -53,10 +57,7 @@ def auth_servicer(db_session: AsyncSession):
         sys.path.insert(0, auth_path_str)
 
     # Clear any cached src modules
-    modules_to_remove = [
-        k for k in list(sys.modules.keys())
-        if k == "src" or k.startswith("src.")
-    ]
+    modules_to_remove = [k for k in list(sys.modules.keys()) if k == "src" or k.startswith("src.")]
     for mod in modules_to_remove:
         del sys.modules[mod]
 
@@ -83,7 +84,7 @@ class TestUserRegistration:
         db_session: AsyncSession,
     ):
         """Test registration creates both tenant and user in database."""
-        from llamatrade.v1 import auth_pb2
+        from llamatrade_proto.generated import auth_pb2
 
         request = auth_pb2.RegisterRequest(
             tenant_name="Test Company",
@@ -109,8 +110,9 @@ class TestUserRegistration:
         # Verify user exists in database
         from uuid import UUID
 
-        from llamatrade_db.models import User
         from sqlalchemy import select
+
+        from llamatrade_db.models import User
 
         user_result = await db_session.execute(
             select(User).where(User.email == "newuser@example.com")
@@ -139,7 +141,7 @@ class TestUserRegistration:
         test_user,
     ):
         """Test registration fails if email already exists."""
-        from llamatrade.v1 import auth_pb2
+        from llamatrade_proto.generated import auth_pb2
 
         request = auth_pb2.RegisterRequest(
             tenant_name="Another Company",
@@ -163,7 +165,7 @@ class TestUserLogin:
         db_session: AsyncSession,
     ):
         """Test login with correct credentials returns tokens."""
-        from llamatrade.v1 import auth_pb2
+        from llamatrade_proto.generated import auth_pb2
 
         # First register a user
         register_request = auth_pb2.RegisterRequest(
@@ -193,7 +195,7 @@ class TestUserLogin:
         db_session: AsyncSession,
     ):
         """Test login with wrong password returns UNAUTHENTICATED."""
-        from llamatrade.v1 import auth_pb2
+        from llamatrade_proto.generated import auth_pb2
 
         # First register a user
         register_request = auth_pb2.RegisterRequest(
@@ -220,7 +222,7 @@ class TestUserLogin:
         grpc_context: MockServicerContext,
     ):
         """Test login with nonexistent email returns UNAUTHENTICATED."""
-        from llamatrade.v1 import auth_pb2
+        from llamatrade_proto.generated import auth_pb2
 
         login_request = auth_pb2.LoginRequest(
             email="doesnotexist@example.com",
@@ -243,7 +245,7 @@ class TestTokenRefresh:
         db_session: AsyncSession,
     ):
         """Test refresh token returns new access and refresh tokens."""
-        from llamatrade.v1 import auth_pb2
+        from llamatrade_proto.generated import auth_pb2
 
         # Register and login to get tokens
         register_request = auth_pb2.RegisterRequest(
@@ -279,7 +281,7 @@ class TestTokenRefresh:
         grpc_context: MockServicerContext,
     ):
         """Test refresh with invalid token returns UNAUTHENTICATED."""
-        from llamatrade.v1 import auth_pb2
+        from llamatrade_proto.generated import auth_pb2
 
         refresh_request = auth_pb2.RefreshTokenRequest(
             refresh_token="invalid.refresh.token",
@@ -297,7 +299,7 @@ class TestTokenRefresh:
         db_session: AsyncSession,
     ):
         """Test refresh using an access token (instead of refresh) fails."""
-        from llamatrade.v1 import auth_pb2
+        from llamatrade_proto.generated import auth_pb2
 
         # Register and login to get tokens
         register_request = auth_pb2.RegisterRequest(
@@ -334,7 +336,7 @@ class TestGetCurrentUser:
         db_session: AsyncSession,
     ):
         """Test GetCurrentUser returns current user information."""
-        from llamatrade.v1 import auth_pb2
+        from llamatrade_proto.generated import auth_pb2
 
         # Register and login
         register_request = auth_pb2.RegisterRequest(
@@ -373,7 +375,7 @@ class TestGetCurrentUser:
         grpc_context: MockServicerContext,
     ):
         """Test GetCurrentUser without token returns UNAUTHENTICATED."""
-        from llamatrade.v1 import auth_pb2
+        from llamatrade_proto.generated import auth_pb2
 
         # No headers set
         get_user_request = auth_pb2.GetCurrentUserRequest()
@@ -389,7 +391,7 @@ class TestGetCurrentUser:
         grpc_context: MockServicerContext,
     ):
         """Test GetCurrentUser with invalid token returns UNAUTHENTICATED."""
-        from llamatrade.v1 import auth_pb2
+        from llamatrade_proto.generated import auth_pb2
 
         grpc_context.headers["authorization"] = "Bearer invalid.token.here"
 
@@ -411,7 +413,7 @@ class TestPasswordChange:
         db_session: AsyncSession,
     ):
         """Test changing password with correct current password."""
-        from llamatrade.v1 import auth_pb2
+        from llamatrade_proto.generated import auth_pb2
 
         # Register and login
         register_request = auth_pb2.RegisterRequest(
@@ -465,7 +467,7 @@ class TestPasswordChange:
         db_session: AsyncSession,
     ):
         """Test changing password with wrong current password fails."""
-        from llamatrade.v1 import auth_pb2
+        from llamatrade_proto.generated import auth_pb2
 
         # Register and login
         register_request = auth_pb2.RegisterRequest(

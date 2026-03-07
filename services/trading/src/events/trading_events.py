@@ -6,7 +6,7 @@ facts that are appended to the event store and used to reconstruct state.
 
 from dataclasses import dataclass, field
 from decimal import Decimal
-from typing import ClassVar, Literal
+from typing import Any, ClassVar, Literal
 from uuid import UUID
 
 from src.events.base import TradingEvent, register_event
@@ -31,7 +31,9 @@ class SignalGenerated(TradingEvent):
     price: Decimal  # Price at time of signal
     qty: Decimal  # Suggested quantity
     confidence: float = 1.0  # Strategy confidence (0-1)
-    indicators: dict = field(default_factory=dict)  # Indicator values at signal time
+    indicators: dict[str, Any] = field(
+        default_factory=lambda: {}
+    )  # Indicator values at signal time
 
 
 @register_event
@@ -47,7 +49,7 @@ class SignalRejected(TradingEvent):
     symbol: str
     signal_type: Literal["buy", "sell", "short", "cover"]
     reason: str  # Why rejected: "risk_check_failed", "circuit_breaker", etc.
-    details: dict = field(default_factory=dict)
+    details: dict[str, Any] = field(default_factory=lambda: {})
 
 
 # =============================================================================
@@ -162,6 +164,79 @@ class OrderCancelled(TradingEvent):
 
 
 # =============================================================================
+# Bracket Order Events
+# =============================================================================
+
+
+@register_event
+@dataclass(kw_only=True)
+class BracketOrderCreated(TradingEvent):
+    """A bracket order (stop-loss or take-profit) was created.
+
+    Emitted when bracket orders are submitted after the main order fills.
+    """
+
+    EVENT_TYPE: ClassVar[str] = "bracket.created"
+
+    order_id: UUID  # This bracket order's ID
+    parent_order_id: UUID  # The main order this is protecting
+    bracket_type: Literal["stop_loss", "take_profit"]
+    symbol: str
+    side: Literal["buy", "sell"]  # Exit side (opposite of entry)
+    qty: Decimal
+    trigger_price: Decimal  # Stop price for SL, limit price for TP
+    limit_price: Decimal | None = None  # For stop-limit orders
+
+
+@register_event
+@dataclass(kw_only=True)
+class BracketOrderAccepted(TradingEvent):
+    """Broker accepted the bracket order."""
+
+    EVENT_TYPE: ClassVar[str] = "bracket.accepted"
+
+    order_id: UUID
+    parent_order_id: UUID
+    bracket_type: Literal["stop_loss", "take_profit"]
+    broker_order_id: str
+
+
+@register_event
+@dataclass(kw_only=True)
+class BracketOrderTriggered(TradingEvent):
+    """A bracket order was filled.
+
+    Emitted when stop-loss or take-profit executes.
+    """
+
+    EVENT_TYPE: ClassVar[str] = "bracket.triggered"
+
+    order_id: UUID
+    parent_order_id: UUID
+    bracket_type: Literal["stop_loss", "take_profit"]
+    symbol: str
+    filled_qty: Decimal
+    filled_avg_price: Decimal
+    realized_pnl: Decimal | None = None
+
+
+@register_event
+@dataclass(kw_only=True)
+class BracketOrderCancelled(TradingEvent):
+    """A bracket order was cancelled due to OCO behavior.
+
+    Emitted when the sibling bracket order fills, triggering OCO cancellation.
+    """
+
+    EVENT_TYPE: ClassVar[str] = "bracket.cancelled"
+
+    order_id: UUID
+    parent_order_id: UUID
+    bracket_type: Literal["stop_loss", "take_profit"]
+    reason: str = "oco_triggered"  # "oco_triggered", "parent_cancelled", "user_requested"
+
+
+# =============================================================================
 # Position Events
 # =============================================================================
 
@@ -180,7 +255,7 @@ class PositionOpened(TradingEvent):
     side: Literal["long", "short"]
     qty: Decimal
     entry_price: Decimal
-    order_id: UUID  # The fill that opened this position
+    order_id: UUID | None = None  # The fill that opened this position
 
 
 @register_event
@@ -232,7 +307,7 @@ class PositionClosed(TradingEvent):
     symbol: str
     exit_price: Decimal
     realized_pnl: Decimal
-    order_id: UUID
+    order_id: UUID | None = None
 
 
 # =============================================================================
@@ -250,7 +325,7 @@ class SessionStarted(TradingEvent):
     strategy_id: UUID
     strategy_name: str
     mode: Literal["live", "paper"]
-    symbols: list[str] = field(default_factory=list)
+    symbols: list[str] = field(default_factory=lambda: [])
     starting_equity: Decimal = Decimal("0")
 
 
@@ -297,7 +372,7 @@ class CircuitBreakerTriggered(TradingEvent):
     EVENT_TYPE: ClassVar[str] = "circuit_breaker.triggered"
 
     reason: str  # "consecutive_losses", "daily_loss_limit", etc.
-    details: dict = field(default_factory=dict)
+    details: dict[str, Any] = field(default_factory=lambda: {})
 
 
 @register_event
@@ -325,9 +400,9 @@ class ReconciliationPerformed(TradingEvent):
 
     EVENT_TYPE: ClassVar[str] = "reconciliation.performed"
 
-    positions_added: list[str] = field(default_factory=list)
-    positions_removed: list[str] = field(default_factory=list)
-    positions_adjusted: list[str] = field(default_factory=list)
+    positions_added: list[str] = field(default_factory=lambda: [])
+    positions_removed: list[str] = field(default_factory=lambda: [])
+    positions_adjusted: list[str] = field(default_factory=lambda: [])
     orders_synced: int = 0
     discrepancies_found: int = 0
 

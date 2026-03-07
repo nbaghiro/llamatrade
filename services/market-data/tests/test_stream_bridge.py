@@ -1,8 +1,9 @@
 """Tests for StreamBridge class."""
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+
 from src.models import BarData, QuoteData, TradeData
 from src.streaming.alpaca_stream import AlpacaStreamClient
 from src.streaming.bridge import (
@@ -242,8 +243,8 @@ class TestStreamBridgeRemoveSubscriptions:
 class TestStreamBridgeHandlers:
     """Tests for data handlers."""
 
-    def test_handle_trade_creates_task(self, bridge, mock_stream_manager):
-        """Test that _handle_trade creates a broadcast task."""
+    async def test_handle_trade_broadcasts_directly(self, bridge, mock_stream_manager):
+        """Test that _handle_trade directly awaits broadcast (no thread pool)."""
         trade_data = TradeData(
             price=150.0,
             size=100,
@@ -251,13 +252,13 @@ class TestStreamBridgeHandlers:
             timestamp="2024-01-15T09:30:00Z",
         )
 
-        with patch("asyncio.create_task") as mock_create_task:
-            bridge._handle_trade("AAPL", trade_data)
+        await bridge._handle_trade("AAPL", trade_data)
 
-        mock_create_task.assert_called_once()
+        # Handler now directly awaits broadcast instead of using create_task
+        mock_stream_manager.broadcast_trade.assert_called_once_with("AAPL", trade_data)
 
-    def test_handle_quote_creates_task(self, bridge, mock_stream_manager):
-        """Test that _handle_quote creates a broadcast task."""
+    async def test_handle_quote_broadcasts_directly(self, bridge, mock_stream_manager):
+        """Test that _handle_quote directly awaits broadcast (no thread pool)."""
         quote_data = QuoteData(
             bid_price=150.0,
             bid_size=100,
@@ -266,13 +267,13 @@ class TestStreamBridgeHandlers:
             timestamp="2024-01-15T09:30:00Z",
         )
 
-        with patch("asyncio.create_task") as mock_create_task:
-            bridge._handle_quote("AAPL", quote_data)
+        await bridge._handle_quote("AAPL", quote_data)
 
-        mock_create_task.assert_called_once()
+        # Handler now directly awaits broadcast instead of using create_task
+        mock_stream_manager.broadcast_quote.assert_called_once_with("AAPL", quote_data)
 
-    def test_handle_bar_creates_task(self, bridge, mock_stream_manager):
-        """Test that _handle_bar creates a broadcast task."""
+    async def test_handle_bar_broadcasts_directly(self, bridge, mock_stream_manager):
+        """Test that _handle_bar directly awaits broadcast (no thread pool)."""
         bar_data = BarData(
             open=150.0,
             high=151.0,
@@ -282,10 +283,10 @@ class TestStreamBridgeHandlers:
             timestamp="2024-01-15T09:30:00Z",
         )
 
-        with patch("asyncio.create_task") as mock_create_task:
-            bridge._handle_bar("AAPL", bar_data)
+        await bridge._handle_bar("AAPL", bar_data)
 
-        mock_create_task.assert_called_once()
+        # Handler now directly awaits broadcast instead of using create_task
+        mock_stream_manager.broadcast_bar.assert_called_once_with("AAPL", bar_data)
 
 
 class TestStreamBridgeBroadcast:

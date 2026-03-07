@@ -110,7 +110,7 @@ class BaseStrategy(ABC):
         Returns:
             List of validation errors (empty if valid)
         """
-        errors = []
+        errors: list[str] = []
 
         if not self.symbols:
             errors.append("At least one symbol is required")

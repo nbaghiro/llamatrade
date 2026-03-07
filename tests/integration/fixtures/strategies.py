@@ -1,11 +1,9 @@
 """Strategy fixtures for integration tests."""
 
-from uuid import uuid4
-
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from llamatrade_db.models import Strategy, StrategyVersion, Tenant, User
+from llamatrade_db.models import Strategy, Tenant, User
 from tests.factories import StrategyFactory, StrategyVersionFactory
 
 

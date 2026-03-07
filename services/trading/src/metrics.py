@@ -66,6 +66,12 @@ BRACKET_ORDERS_TRIGGERED = Counter(
     ["bracket_type"],  # stop_loss, take_profit
 )
 
+BRACKET_OCO_CONFLICTS = Counter(
+    "trading_bracket_oco_conflicts_total",
+    "Total OCO conflicts where both bracket orders filled simultaneously",
+    ["outcome"],  # both_filled, cancelled_already, lock_contention
+)
+
 # =============================================================================
 # Risk Metrics
 # =============================================================================
@@ -160,6 +166,38 @@ BAR_STREAM_CONNECTED = Gauge(
 )
 
 # =============================================================================
+# Trade Stream Metrics
+# =============================================================================
+
+TRADE_STREAM_EVENTS_TOTAL = Counter(
+    "trading_trade_stream_events_total",
+    "Total trade stream events by type",
+    ["event_type"],  # new, fill, partial_fill, canceled, rejected, etc.
+)
+
+TRADE_STREAM_RECONNECTS_TOTAL = Counter(
+    "trading_trade_stream_reconnects_total",
+    "Number of trade stream reconnections",
+)
+
+TRADE_STREAM_CONNECTED = Gauge(
+    "trading_trade_stream_connected",
+    "Whether trade stream is connected (1) or not (0)",
+)
+
+FILL_PROCESSING_DURATION = Histogram(
+    "trading_fill_processing_duration_seconds",
+    "Time to process a fill event and update position",
+    buckets=(0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25),
+)
+
+FILLS_PROCESSED_TOTAL = Counter(
+    "trading_fills_processed_total",
+    "Total fills processed",
+    ["side", "fill_type"],  # fill_type: full, partial
+)
+
+# =============================================================================
 # Alpaca API Metrics
 # =============================================================================
 
@@ -192,6 +230,35 @@ POSITION_VALUE_GAUGE = Gauge(
     ["tenant_id", "session_id"],
 )
 
+# =============================================================================
+# Position Reconciliation Metrics
+# =============================================================================
+
+POSITION_RECONCILIATION_TOTAL = Counter(
+    "trading_position_reconciliation_total",
+    "Total position reconciliation checks",
+    ["result"],  # match, drift_corrected, drift_alerted, error
+)
+
+POSITION_DRIFT_DETECTED = Counter(
+    "trading_position_drift_detected_total",
+    "Position drifts detected by type",
+    ["drift_type"],  # missing_local, missing_broker, quantity_mismatch, side_mismatch
+)
+
+POSITION_DRIFT_QUANTITY_PERCENT = Histogram(
+    "trading_position_drift_quantity_percent",
+    "Percentage drift in position quantity",
+    ["symbol"],
+    buckets=(0.5, 1.0, 2.0, 5.0, 10.0, 25.0, 50.0, 100.0),
+)
+
+POSITION_RECONCILIATION_DURATION = Histogram(
+    "trading_position_reconciliation_duration_seconds",
+    "Time to perform position reconciliation",
+    buckets=(0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0),
+)
+
 
 # =============================================================================
 # Helper Functions and Decorators
@@ -211,7 +278,7 @@ class AsyncMetricsTimer:
         self.labels = labels
         self.start_time: float = 0
 
-    async def __aenter__(self) -> "AsyncMetricsTimer":
+    async def __aenter__(self) -> AsyncMetricsTimer:
         self.start_time = time.perf_counter()
         return self
 
@@ -409,6 +476,15 @@ def record_bracket_order_triggered(bracket_type: str) -> None:
     BRACKET_ORDERS_TRIGGERED.labels(bracket_type=bracket_type).inc()
 
 
+def record_bracket_oco_conflict(outcome: str) -> None:
+    """Record an OCO conflict during bracket order handling.
+
+    Args:
+        outcome: Type of conflict (both_filled, cancelled_already, lock_contention)
+    """
+    BRACKET_OCO_CONFLICTS.labels(outcome=outcome).inc()
+
+
 def record_strategy_error(error_type: str) -> None:
     """Record a strategy execution error.
 
@@ -416,3 +492,69 @@ def record_strategy_error(error_type: str) -> None:
         error_type: Type of error (signal_generation, order_submission, other)
     """
     STRATEGY_ERRORS_TOTAL.labels(error_type=error_type).inc()
+
+
+def record_position_reconciliation(
+    result: str,
+    duration: float,
+    drift_type: str | None = None,
+    symbol: str | None = None,
+    drift_percent: float | None = None,
+) -> None:
+    """Record a position reconciliation check.
+
+    Args:
+        result: Reconciliation result (match, drift_corrected, drift_alerted, error)
+        duration: Time taken in seconds
+        drift_type: Type of drift if detected (missing_local, missing_broker,
+                   quantity_mismatch, side_mismatch)
+        symbol: Symbol with drift (if any)
+        drift_percent: Percentage drift in quantity (if applicable)
+    """
+    POSITION_RECONCILIATION_TOTAL.labels(result=result).inc()
+    POSITION_RECONCILIATION_DURATION.observe(duration)
+
+    if drift_type:
+        POSITION_DRIFT_DETECTED.labels(drift_type=drift_type).inc()
+
+    if symbol and drift_percent is not None:
+        POSITION_DRIFT_QUANTITY_PERCENT.labels(symbol=symbol).observe(abs(drift_percent))
+
+
+def record_trade_stream_event(event_type: str) -> None:
+    """Record a trade stream event.
+
+    Args:
+        event_type: Type of event (new, fill, partial_fill, canceled, rejected, etc.)
+    """
+    TRADE_STREAM_EVENTS_TOTAL.labels(event_type=event_type).inc()
+
+
+def record_trade_stream_reconnect() -> None:
+    """Record a trade stream reconnection."""
+    TRADE_STREAM_RECONNECTS_TOTAL.inc()
+
+
+def set_trade_stream_connected(connected: bool) -> None:
+    """Set trade stream connection status.
+
+    Args:
+        connected: Whether stream is connected
+    """
+    TRADE_STREAM_CONNECTED.set(1 if connected else 0)
+
+
+def record_fill_processed(
+    side: str,
+    fill_type: str,
+    duration: float,
+) -> None:
+    """Record a fill event processing.
+
+    Args:
+        side: Order side (buy, sell)
+        fill_type: Type of fill (full, partial)
+        duration: Processing time in seconds
+    """
+    FILLS_PROCESSED_TOTAL.labels(side=side, fill_type=fill_type).inc()
+    FILL_PROCESSING_DURATION.observe(duration)

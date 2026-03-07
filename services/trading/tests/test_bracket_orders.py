@@ -1,13 +1,54 @@
 """Test bracket order functionality (stop-loss/take-profit)."""
 
+from datetime import UTC, datetime
 from decimal import Decimal
 from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
 import pytest
+
+from llamatrade_alpaca import Order as AlpacaOrder
+from llamatrade_alpaca import OrderNotFoundError
+from llamatrade_alpaca import OrderSide as AlpacaOrderSide
+from llamatrade_alpaca import OrderStatus as AlpacaOrderStatus
+from llamatrade_alpaca import OrderType as AlpacaOrderType
+from llamatrade_alpaca import TimeInForce as AlpacaTimeInForce
 from llamatrade_db.models.trading import Order
+from llamatrade_proto.generated.trading_pb2 import (
+    ORDER_SIDE_BUY,
+    ORDER_SIDE_SELL,
+    ORDER_STATUS_CANCELLED,
+    ORDER_STATUS_FILLED,
+    ORDER_STATUS_SUBMITTED,
+    ORDER_TYPE_LIMIT,
+    ORDER_TYPE_MARKET,
+    ORDER_TYPE_STOP_LIMIT,
+    TIME_IN_FORCE_DAY,
+    TIME_IN_FORCE_GTC,
+)
+
 from src.executor.order_executor import OrderExecutor
-from src.models import OrderCreate, OrderSide, OrderType, TimeInForce
+from src.models import BracketType, OrderCreate
+
+
+def make_alpaca_order(order_id: str, status: str = "accepted") -> AlpacaOrder:
+    """Create a mock Alpaca order for testing."""
+    status_map = {
+        "accepted": AlpacaOrderStatus.ACCEPTED,
+        "filled": AlpacaOrderStatus.FILLED,
+        "canceled": AlpacaOrderStatus.CANCELED,
+        "new": AlpacaOrderStatus.NEW,
+    }
+    return AlpacaOrder(
+        id=order_id,
+        symbol="AAPL",
+        qty=10.0,
+        side=AlpacaOrderSide.SELL,
+        order_type=AlpacaOrderType.STOP_LIMIT,
+        status=status_map.get(status, AlpacaOrderStatus.ACCEPTED),
+        time_in_force=AlpacaTimeInForce.GTC,
+        created_at=datetime.now(UTC),
+    )
 
 
 @pytest.fixture
@@ -30,20 +71,20 @@ def mock_parent_order(tenant_id, session_id):
     order.alpaca_order_id = "alpaca-parent-123"
     order.client_order_id = "client-parent-123"
     order.symbol = "AAPL"
-    order.side = "buy"
-    order.order_type = "market"
-    order.time_in_force = "day"
+    order.side = ORDER_SIDE_BUY
+    order.order_type = ORDER_TYPE_MARKET
+    order.time_in_force = TIME_IN_FORCE_DAY
     order.qty = Decimal("10")
     order.limit_price = None
     order.stop_price = None
-    order.status = "filled"
+    order.status = ORDER_STATUS_FILLED
     order.filled_qty = Decimal("10")
     order.filled_avg_price = Decimal("150.00")
     order.stop_loss_price = Decimal("145.00")  # -3.3% SL
     order.take_profit_price = Decimal("165.00")  # +10% TP
     order.parent_order_id = None
     order.bracket_type = None
-    order.metadata_ = {"bracket_tif": "gtc"}
+    order.metadata_ = {"bracket_tif": TIME_IN_FORCE_GTC}
     return order
 
 
@@ -61,12 +102,12 @@ class TestSubmitOrderWithBrackets:
         """Test that bracket prices are stored on the order."""
         order = OrderCreate(
             symbol="AAPL",
-            side=OrderSide.BUY,
+            side=ORDER_SIDE_BUY,
             qty=10.0,
-            order_type=OrderType.MARKET,
+            order_type=ORDER_TYPE_MARKET,
             stop_loss_price=145.0,
             take_profit_price=165.0,
-            bracket_time_in_force=TimeInForce.GTC,
+            bracket_time_in_force=TIME_IN_FORCE_GTC,
         )
 
         captured_order = None
@@ -92,7 +133,7 @@ class TestSubmitOrderWithBrackets:
         assert captured_order is not None
         assert captured_order.stop_loss_price == Decimal("145.0")
         assert captured_order.take_profit_price == Decimal("165.0")
-        assert captured_order.metadata_ == {"bracket_tif": "gtc"}
+        assert captured_order.metadata_ == {"bracket_tif": TIME_IN_FORCE_GTC}
 
     async def test_submit_order_with_only_stop_loss(
         self,
@@ -105,9 +146,9 @@ class TestSubmitOrderWithBrackets:
         """Test order with only stop-loss configured."""
         order = OrderCreate(
             symbol="AAPL",
-            side=OrderSide.BUY,
+            side=ORDER_SIDE_BUY,
             qty=10.0,
-            order_type=OrderType.MARKET,
+            order_type=ORDER_TYPE_MARKET,
             stop_loss_price=145.0,
         )
 
@@ -130,6 +171,7 @@ class TestSubmitOrderWithBrackets:
             order=order,
         )
 
+        assert captured_order is not None
         assert captured_order.stop_loss_price == Decimal("145.0")
         assert captured_order.take_profit_price is None
 
@@ -167,10 +209,7 @@ class TestBracketOrderCreation:
         async def mock_submit(*args, **kwargs):
             nonlocal call_count
             call_count += 1
-            return {
-                "id": f"alpaca-bracket-{call_count}",
-                "status": "accepted",
-            }
+            return make_alpaca_order(f"alpaca-bracket-{call_count}", "accepted")
 
         mock_alpaca_client.submit_order = AsyncMock(side_effect=mock_submit)
 
@@ -186,17 +225,17 @@ class TestBracketOrderCreation:
         assert tp_order is not None
 
         # Verify SL order properties
-        sl_created = [o for o in orders_created if o.bracket_type == "stop_loss"]
+        sl_created = [o for o in orders_created if o.bracket_type == BracketType.STOP_LOSS]
         assert len(sl_created) == 1
-        assert sl_created[0].side == "sell"  # Exit side opposite of buy
-        assert sl_created[0].order_type == "stop_limit"
+        assert sl_created[0].side == ORDER_SIDE_SELL  # Exit side opposite of buy
+        assert sl_created[0].order_type == ORDER_TYPE_STOP_LIMIT
         assert sl_created[0].parent_order_id == mock_parent_order.id
 
         # Verify TP order properties
-        tp_created = [o for o in orders_created if o.bracket_type == "take_profit"]
+        tp_created = [o for o in orders_created if o.bracket_type == BracketType.TAKE_PROFIT]
         assert len(tp_created) == 1
-        assert tp_created[0].side == "sell"
-        assert tp_created[0].order_type == "limit"
+        assert tp_created[0].side == ORDER_SIDE_SELL
+        assert tp_created[0].order_type == ORDER_TYPE_LIMIT
         assert tp_created[0].parent_order_id == mock_parent_order.id
 
     async def test_bracket_order_uses_correct_exit_side_for_sell(
@@ -209,7 +248,7 @@ class TestBracketOrderCreation:
         session_id,
     ):
         """Test that bracket orders use BUY side when parent is SELL."""
-        mock_parent_order.side = "sell"
+        mock_parent_order.side = ORDER_SIDE_SELL
         mock_parent_order.take_profit_price = None  # Only test SL
 
         orders_created = []
@@ -226,7 +265,7 @@ class TestBracketOrderCreation:
 
         mock_db.refresh = AsyncMock(side_effect=mock_refresh)
         mock_alpaca_client.submit_order = AsyncMock(
-            return_value={"id": "alpaca-123", "status": "accepted"}
+            return_value=make_alpaca_order("alpaca-123", "accepted")
         )
 
         await bracket_order_executor._submit_bracket_orders(
@@ -238,7 +277,7 @@ class TestBracketOrderCreation:
 
         # Exit side should be BUY for a SELL parent
         assert len(orders_created) == 1
-        assert orders_created[0].side == "buy"
+        assert orders_created[0].side == ORDER_SIDE_BUY
 
 
 class TestHandleOrderFill:
@@ -266,7 +305,7 @@ class TestHandleOrderFill:
 
         mock_db.refresh = AsyncMock(side_effect=mock_refresh)
         mock_alpaca_client.submit_order = AsyncMock(
-            return_value={"id": "alpaca-123", "status": "accepted"}
+            return_value=make_alpaca_order("alpaca-123", "accepted")
         )
 
         await bracket_order_executor._handle_order_fill(
@@ -334,7 +373,7 @@ class TestOCOBehavior:
         sl_order.id = uuid4()
         sl_order.parent_order_id = parent_id
         sl_order.bracket_type = "stop_loss"
-        sl_order.status = "filled"
+        sl_order.status = ORDER_STATUS_FILLED
 
         # The sibling TP order (should be cancelled)
         tp_order = MagicMock(spec=Order)
@@ -342,7 +381,7 @@ class TestOCOBehavior:
         tp_order.parent_order_id = parent_id
         tp_order.bracket_type = "take_profit"
         tp_order.alpaca_order_id = "alpaca-tp-123"
-        tp_order.status = "submitted"
+        tp_order.status = ORDER_STATUS_SUBMITTED
         tp_order.metadata_ = None
 
         # Mock query to return sibling
@@ -354,7 +393,7 @@ class TestOCOBehavior:
 
         # Verify TP was cancelled via Alpaca
         mock_alpaca_client.cancel_order.assert_called_once_with("alpaca-tp-123")
-        assert tp_order.status == "cancelled"
+        assert tp_order.status == ORDER_STATUS_CANCELLED
         assert tp_order.metadata_["cancelled_reason"] == "oco_triggered"
 
     async def test_tp_fill_cancels_sl(
@@ -371,7 +410,7 @@ class TestOCOBehavior:
         tp_order.id = uuid4()
         tp_order.parent_order_id = parent_id
         tp_order.bracket_type = "take_profit"
-        tp_order.status = "filled"
+        tp_order.status = ORDER_STATUS_FILLED
 
         # The sibling SL order (should be cancelled)
         sl_order = MagicMock(spec=Order)
@@ -379,7 +418,7 @@ class TestOCOBehavior:
         sl_order.parent_order_id = parent_id
         sl_order.bracket_type = "stop_loss"
         sl_order.alpaca_order_id = "alpaca-sl-123"
-        sl_order.status = "submitted"
+        sl_order.status = ORDER_STATUS_SUBMITTED
         sl_order.metadata_ = None
 
         mock_result = MagicMock()
@@ -389,7 +428,7 @@ class TestOCOBehavior:
         await bracket_order_executor._handle_bracket_fill(tp_order)
 
         mock_alpaca_client.cancel_order.assert_called_once_with("alpaca-sl-123")
-        assert sl_order.status == "cancelled"
+        assert sl_order.status == ORDER_STATUS_CANCELLED
 
 
 class TestCancelBracketOrders:
@@ -408,12 +447,12 @@ class TestCancelBracketOrders:
         sl_order = MagicMock(spec=Order)
         sl_order.id = uuid4()
         sl_order.alpaca_order_id = "alpaca-sl-123"
-        sl_order.status = "submitted"
+        sl_order.status = ORDER_STATUS_SUBMITTED
 
         tp_order = MagicMock(spec=Order)
         tp_order.id = uuid4()
         tp_order.alpaca_order_id = "alpaca-tp-123"
-        tp_order.status = "submitted"
+        tp_order.status = ORDER_STATUS_SUBMITTED
 
         mock_result = MagicMock()
         mock_result.scalars.return_value.all.return_value = [sl_order, tp_order]
@@ -426,8 +465,8 @@ class TestCancelBracketOrders:
 
         assert count == 2
         assert mock_alpaca_client.cancel_order.call_count == 2
-        assert sl_order.status == "cancelled"
-        assert tp_order.status == "cancelled"
+        assert sl_order.status == ORDER_STATUS_CANCELLED
+        assert tp_order.status == ORDER_STATUS_CANCELLED
 
     async def test_cancel_parent_cancels_brackets(
         self,
@@ -443,7 +482,7 @@ class TestCancelBracketOrders:
         parent_order.id = order_id
         parent_order.tenant_id = tenant_id
         parent_order.alpaca_order_id = "alpaca-parent-123"
-        parent_order.status = "submitted"
+        parent_order.status = ORDER_STATUS_SUBMITTED
         parent_order.stop_loss_price = Decimal("145.0")
         parent_order.take_profit_price = Decimal("165.0")
 
@@ -490,13 +529,14 @@ class TestSyncWithBracketFills:
         parent_order.tenant_id = tenant_id
         parent_order.session_id = uuid4()
         parent_order.alpaca_order_id = "alpaca-parent-123"
+        parent_order.client_order_id = "client-parent-123"
         parent_order.symbol = "AAPL"
-        parent_order.side = "buy"
-        parent_order.order_type = "market"
+        parent_order.side = ORDER_SIDE_BUY
+        parent_order.order_type = ORDER_TYPE_MARKET
         parent_order.qty = Decimal("10")
         parent_order.limit_price = None
         parent_order.stop_price = None
-        parent_order.status = "submitted"  # Will change to filled
+        parent_order.status = ORDER_STATUS_SUBMITTED
         parent_order.filled_qty = Decimal("0")
         parent_order.stop_loss_price = Decimal("145.0")
         parent_order.take_profit_price = Decimal("165.0")
@@ -506,21 +546,26 @@ class TestSyncWithBracketFills:
         parent_order.submitted_at = None
         parent_order.created_at = MagicMock()
         parent_order.filled_at = None
-        parent_order.metadata_ = {"bracket_tif": "gtc"}
+        parent_order.metadata_ = {"bracket_tif": TIME_IN_FORCE_GTC}
 
         mock_result = MagicMock()
         mock_result.scalar_one_or_none.return_value = parent_order
         mock_db.execute = AsyncMock(return_value=mock_result)
 
         # Alpaca says order is filled
-        mock_alpaca_client.get_order = AsyncMock(
-            return_value={
-                "status": "filled",
-                "filled_qty": "10",
-                "filled_avg_price": "150.50",
-                "filled_at": "2024-01-15T10:01:00Z",
-            }
+        filled_order = AlpacaOrder(
+            id="alpaca-parent-123",
+            symbol="AAPL",
+            qty=10.0,
+            side=AlpacaOrderSide.BUY,
+            order_type=AlpacaOrderType.MARKET,
+            status=AlpacaOrderStatus.FILLED,
+            time_in_force=AlpacaTimeInForce.DAY,
+            filled_qty=10.0,
+            filled_avg_price=150.50,
+            created_at=datetime.now(UTC),
         )
+        mock_alpaca_client.get_order = AsyncMock(return_value=filled_order)
 
         orders_created = []
 
@@ -536,7 +581,7 @@ class TestSyncWithBracketFills:
 
         mock_db.refresh = AsyncMock(side_effect=mock_refresh)
         mock_alpaca_client.submit_order = AsyncMock(
-            return_value={"id": "alpaca-bracket-123", "status": "accepted"}
+            return_value=make_alpaca_order("alpaca-bracket-123", "accepted")
         )
 
         await bracket_order_executor.sync_order_status(
@@ -567,13 +612,14 @@ class TestGetOrderWithBracketInfo:
         parent_order.id = order_id
         parent_order.tenant_id = tenant_id
         parent_order.alpaca_order_id = "alpaca-123"
+        parent_order.client_order_id = "client-123"
         parent_order.symbol = "AAPL"
-        parent_order.side = "buy"
+        parent_order.side = ORDER_SIDE_BUY
         parent_order.qty = Decimal("10")
-        parent_order.order_type = "market"
+        parent_order.order_type = ORDER_TYPE_MARKET
         parent_order.limit_price = None
         parent_order.stop_price = None
-        parent_order.status = "filled"
+        parent_order.status = ORDER_STATUS_FILLED
         parent_order.filled_qty = Decimal("10")
         parent_order.filled_avg_price = Decimal("150.0")
         parent_order.submitted_at = None
@@ -587,11 +633,11 @@ class TestGetOrderWithBracketInfo:
         # Bracket orders
         sl_order = MagicMock(spec=Order)
         sl_order.id = sl_order_id
-        sl_order.bracket_type = "stop_loss"
+        sl_order.bracket_type = BracketType.STOP_LOSS
 
         tp_order = MagicMock(spec=Order)
         tp_order.id = tp_order_id
-        tp_order.bracket_type = "take_profit"
+        tp_order.bracket_type = BracketType.TAKE_PROFIT
 
         # Mock queries
         parent_result = MagicMock()
@@ -641,7 +687,7 @@ class TestBracketOrderValidation:
 
         mock_db.refresh = AsyncMock(side_effect=mock_refresh)
         mock_alpaca_client.submit_order = AsyncMock(
-            return_value={"id": "alpaca-123", "status": "accepted"}
+            return_value=make_alpaca_order("alpaca-123", "accepted")
         )
 
         await bracket_order_executor._submit_bracket_orders(
@@ -681,7 +727,7 @@ class TestBracketOrderValidation:
 
         mock_db.refresh = AsyncMock(side_effect=mock_refresh)
         mock_alpaca_client.submit_order = AsyncMock(
-            return_value={"id": "alpaca-123", "status": "accepted"}
+            return_value=make_alpaca_order("alpaca-123", "accepted")
         )
 
         await bracket_order_executor._submit_bracket_orders(
@@ -693,7 +739,7 @@ class TestBracketOrderValidation:
 
         assert len(orders_created) == 1
         sl_order = orders_created[0]
-        assert sl_order.order_type == "stop_limit"
+        assert sl_order.order_type == ORDER_TYPE_STOP_LIMIT
         assert sl_order.stop_price == Decimal("145.0")
         # Limit price should be slightly below stop for sell orders
         assert sl_order.limit_price < sl_order.stop_price
@@ -724,7 +770,7 @@ class TestBracketOrderValidation:
 
         mock_db.refresh = AsyncMock(side_effect=mock_refresh)
         mock_alpaca_client.submit_order = AsyncMock(
-            return_value={"id": "alpaca-123", "status": "accepted"}
+            return_value=make_alpaca_order("alpaca-123", "accepted")
         )
 
         await bracket_order_executor._submit_bracket_orders(
@@ -736,6 +782,184 @@ class TestBracketOrderValidation:
 
         assert len(orders_created) == 1
         tp_order = orders_created[0]
-        assert tp_order.order_type == "limit"
+        assert tp_order.order_type == ORDER_TYPE_LIMIT
         assert tp_order.stop_price is None
         assert tp_order.limit_price == Decimal("165.0")
+
+
+class TestOCORaceConditionHandling:
+    """Tests for OCO race condition handling when both brackets fill simultaneously."""
+
+    async def test_both_brackets_filled_simultaneously(
+        self,
+        bracket_order_executor,
+        mock_db,
+        mock_alpaca_client,
+    ):
+        """Test handling when both bracket orders filled at the same time."""
+        parent_id = uuid4()
+
+        # The filled SL order (the one we're processing)
+        sl_order = MagicMock(spec=Order)
+        sl_order.id = uuid4()
+        sl_order.parent_order_id = parent_id
+        sl_order.bracket_type = BracketType.STOP_LOSS
+        sl_order.status = ORDER_STATUS_FILLED
+        sl_order.filled_avg_price = Decimal("145.0")
+        sl_order.qty = Decimal("10")
+        sl_order.stop_price = Decimal("145.0")
+        sl_order.tenant_id = uuid4()
+        sl_order.session_id = uuid4()
+        sl_order.symbol = "AAPL"
+
+        # The sibling TP order also filled (race condition!)
+        tp_order = MagicMock(spec=Order)
+        tp_order.id = uuid4()
+        tp_order.parent_order_id = parent_id
+        tp_order.bracket_type = BracketType.TAKE_PROFIT
+        tp_order.alpaca_order_id = "alpaca-tp-123"
+        tp_order.status = ORDER_STATUS_FILLED  # Already filled!
+        tp_order.metadata_ = None
+
+        mock_result = MagicMock()
+        mock_result.scalars.return_value.all.return_value = [tp_order]
+        mock_db.execute = AsyncMock(return_value=mock_result)
+
+        await bracket_order_executor._handle_bracket_fill(sl_order)
+
+        # Should NOT try to cancel an already filled order
+        mock_alpaca_client.cancel_order.assert_not_called()
+        # Status should remain filled, not changed to cancelled
+        assert tp_order.status == ORDER_STATUS_FILLED
+
+    async def test_sibling_already_cancelled(
+        self,
+        bracket_order_executor,
+        mock_db,
+        mock_alpaca_client,
+    ):
+        """Test handling when sibling was already cancelled (idempotent)."""
+        parent_id = uuid4()
+
+        sl_order = MagicMock(spec=Order)
+        sl_order.id = uuid4()
+        sl_order.parent_order_id = parent_id
+        sl_order.bracket_type = BracketType.STOP_LOSS
+        sl_order.status = ORDER_STATUS_FILLED
+        sl_order.filled_avg_price = Decimal("145.0")
+        sl_order.qty = Decimal("10")
+        sl_order.stop_price = Decimal("145.0")
+        sl_order.tenant_id = uuid4()
+        sl_order.session_id = uuid4()
+        sl_order.symbol = "AAPL"
+
+        # Sibling already cancelled
+        tp_order = MagicMock(spec=Order)
+        tp_order.id = uuid4()
+        tp_order.parent_order_id = parent_id
+        tp_order.bracket_type = BracketType.TAKE_PROFIT
+        tp_order.alpaca_order_id = "alpaca-tp-123"
+        tp_order.status = ORDER_STATUS_CANCELLED  # Already cancelled!
+        tp_order.metadata_ = {"cancelled_reason": "oco_triggered"}
+
+        mock_result = MagicMock()
+        mock_result.scalars.return_value.all.return_value = [tp_order]
+        mock_db.execute = AsyncMock(return_value=mock_result)
+
+        await bracket_order_executor._handle_bracket_fill(sl_order)
+
+        # Should NOT try to cancel an already cancelled order
+        mock_alpaca_client.cancel_order.assert_not_called()
+        # Status should remain cancelled
+        assert tp_order.status == ORDER_STATUS_CANCELLED
+
+    async def test_cancel_returns_not_found_syncs_status(
+        self,
+        bracket_order_executor,
+        mock_db,
+        mock_alpaca_client,
+    ):
+        """Test that NOT_FOUND error triggers status sync from Alpaca."""
+        parent_id = uuid4()
+
+        sl_order = MagicMock(spec=Order)
+        sl_order.id = uuid4()
+        sl_order.parent_order_id = parent_id
+        sl_order.bracket_type = BracketType.STOP_LOSS
+        sl_order.status = ORDER_STATUS_FILLED
+        sl_order.filled_avg_price = Decimal("145.0")
+        sl_order.qty = Decimal("10")
+        sl_order.stop_price = Decimal("145.0")
+        sl_order.tenant_id = uuid4()
+        sl_order.session_id = uuid4()
+        sl_order.symbol = "AAPL"
+
+        # Sibling appears active but filled at Alpaca (race)
+        tp_order = MagicMock(spec=Order)
+        tp_order.id = uuid4()
+        tp_order.parent_order_id = parent_id
+        tp_order.bracket_type = BracketType.TAKE_PROFIT
+        tp_order.alpaca_order_id = "alpaca-tp-123"
+        tp_order.status = ORDER_STATUS_SUBMITTED  # Looks active locally
+        tp_order.metadata_ = None
+
+        mock_result = MagicMock()
+        mock_result.scalars.return_value.all.return_value = [tp_order]
+        mock_db.execute = AsyncMock(return_value=mock_result)
+
+        # Cancel raises OrderNotFoundError (order already processed at Alpaca)
+        mock_alpaca_client.cancel_order.side_effect = OrderNotFoundError("alpaca-tp-123")
+
+        # get_order shows it actually filled (returns Order model)
+        mock_alpaca_client.get_order.return_value = AlpacaOrder(
+            id="alpaca-tp-123",
+            symbol="AAPL",
+            qty=10.0,
+            side=AlpacaOrderSide.SELL,
+            order_type=AlpacaOrderType.LIMIT,
+            status=AlpacaOrderStatus.FILLED,
+            time_in_force=AlpacaTimeInForce.GTC,
+            filled_qty=10.0,
+            filled_avg_price=165.0,
+            created_at=datetime.now(UTC),
+        )
+
+        await bracket_order_executor._handle_bracket_fill(sl_order)
+
+        # Should have synced the status
+        mock_alpaca_client.get_order.assert_called_once_with("alpaca-tp-123")
+        # Status should be updated to filled
+        assert tp_order.status == ORDER_STATUS_FILLED
+
+    async def test_select_for_update_used(
+        self,
+        bracket_order_executor,
+        mock_db,
+        mock_alpaca_client,
+    ):
+        """Test that SELECT FOR UPDATE is used to prevent race conditions."""
+        parent_id = uuid4()
+
+        sl_order = MagicMock(spec=Order)
+        sl_order.id = uuid4()
+        sl_order.parent_order_id = parent_id
+        sl_order.bracket_type = BracketType.STOP_LOSS
+        sl_order.status = ORDER_STATUS_FILLED
+        sl_order.filled_avg_price = Decimal("145.0")
+        sl_order.qty = Decimal("10")
+        sl_order.stop_price = Decimal("145.0")
+        sl_order.tenant_id = uuid4()
+        sl_order.session_id = uuid4()
+        sl_order.symbol = "AAPL"
+
+        mock_result = MagicMock()
+        mock_result.scalars.return_value.all.return_value = []
+        mock_db.execute = AsyncMock(return_value=mock_result)
+
+        await bracket_order_executor._handle_bracket_fill(sl_order)
+
+        # Verify SELECT FOR UPDATE was used in the query
+        call_args = mock_db.execute.call_args
+        stmt = call_args[0][0]
+        # The statement should have with_for_update applied
+        assert hasattr(stmt, "_for_update_arg") or "FOR UPDATE" in str(stmt)

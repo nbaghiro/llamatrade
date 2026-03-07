@@ -1,10 +1,16 @@
 """Tests for channel gRPC servicer methods."""
 
+# pyright: reportPrivateUsage=false
+# pyright: reportArgumentType=false
+
 from datetime import UTC, datetime
+from typing import Any
 from uuid import uuid4
 
 import pytest
-from conftest import TEST_TENANT_ID, TEST_USER_ID
+from conftest import TEST_TENANT_ID, TEST_USER_ID, MockServicerContext
+
+from src.grpc.servicer import NotificationServicer
 
 pytestmark = pytest.mark.asyncio
 
@@ -12,9 +18,11 @@ pytestmark = pytest.mark.asyncio
 class TestListChannels:
     """Tests for ListChannels gRPC method."""
 
-    async def test_list_channels_returns_default_email(self, notification_servicer, grpc_context):
+    async def test_list_channels_returns_default_email(
+        self, notification_servicer: NotificationServicer, grpc_context: MockServicerContext
+    ) -> None:
         """Test listing channels returns default email channel if none configured."""
-        from llamatrade.v1 import common_pb2, notification_pb2
+        from llamatrade_proto.generated import common_pb2, notification_pb2
 
         request = notification_pb2.ListChannelsRequest(
             context=common_pb2.TenantContext(
@@ -31,10 +39,13 @@ class TestListChannels:
         assert response.channels[0].is_verified is False
 
     async def test_list_channels_with_configured_channels(
-        self, notification_servicer, grpc_context, sample_channel
-    ):
+        self,
+        notification_servicer: NotificationServicer,
+        grpc_context: MockServicerContext,
+        sample_channel: dict[str, Any],
+    ) -> None:
         """Test listing configured channels."""
-        from llamatrade.v1 import common_pb2, notification_pb2
+        from llamatrade_proto.generated import common_pb2, notification_pb2
 
         key = f"{TEST_TENANT_ID}:{TEST_USER_ID}"
         notification_servicer._channels[key] = [sample_channel]
@@ -52,9 +63,11 @@ class TestListChannels:
         assert response.channels[0].is_enabled is True
         assert response.channels[0].is_verified is True
 
-    async def test_list_channels_multiple_types(self, notification_servicer, grpc_context):
+    async def test_list_channels_multiple_types(
+        self, notification_servicer: NotificationServicer, grpc_context: MockServicerContext
+    ) -> None:
         """Test listing multiple channel types."""
-        from llamatrade.v1 import common_pb2, notification_pb2
+        from llamatrade_proto.generated import common_pb2, notification_pb2
 
         key = f"{TEST_TENANT_ID}:{TEST_USER_ID}"
         notification_servicer._channels[key] = [
@@ -97,9 +110,11 @@ class TestListChannels:
 class TestUpdateChannel:
     """Tests for UpdateChannel gRPC method."""
 
-    async def test_update_channel_create_new(self, notification_servicer, grpc_context):
+    async def test_update_channel_create_new(
+        self, notification_servicer: NotificationServicer, grpc_context: MockServicerContext
+    ) -> None:
         """Test creating a new channel via update."""
-        from llamatrade.v1 import common_pb2, notification_pb2
+        from llamatrade_proto.generated import common_pb2, notification_pb2
 
         request = notification_pb2.UpdateChannelRequest(
             context=common_pb2.TenantContext(
@@ -121,9 +136,11 @@ class TestUpdateChannel:
         key = f"{TEST_TENANT_ID}:{TEST_USER_ID}"
         assert len(notification_servicer._channels[key]) == 1
 
-    async def test_update_channel_modify_existing(self, notification_servicer, grpc_context):
+    async def test_update_channel_modify_existing(
+        self, notification_servicer: NotificationServicer, grpc_context: MockServicerContext
+    ) -> None:
         """Test updating an existing channel."""
-        from llamatrade.v1 import common_pb2, notification_pb2
+        from llamatrade_proto.generated import common_pb2, notification_pb2
 
         channel_id = str(uuid4())
         key = f"{TEST_TENANT_ID}:{TEST_USER_ID}"
@@ -159,9 +176,11 @@ class TestUpdateChannel:
         # Should still have only one email channel
         assert len(notification_servicer._channels[key]) == 1
 
-    async def test_update_channel_add_webhook(self, notification_servicer, grpc_context):
+    async def test_update_channel_add_webhook(
+        self, notification_servicer: NotificationServicer, grpc_context: MockServicerContext
+    ) -> None:
         """Test adding a webhook channel."""
-        from llamatrade.v1 import common_pb2, notification_pb2
+        from llamatrade_proto.generated import common_pb2, notification_pb2
 
         request = notification_pb2.UpdateChannelRequest(
             context=common_pb2.TenantContext(
@@ -182,9 +201,11 @@ class TestUpdateChannel:
         assert response.channel.is_enabled is True
         assert "url" in response.channel.config
 
-    async def test_update_channel_disable(self, notification_servicer, grpc_context):
+    async def test_update_channel_disable(
+        self, notification_servicer: NotificationServicer, grpc_context: MockServicerContext
+    ) -> None:
         """Test disabling a channel."""
-        from llamatrade.v1 import common_pb2, notification_pb2
+        from llamatrade_proto.generated import common_pb2, notification_pb2
 
         key = f"{TEST_TENANT_ID}:{TEST_USER_ID}"
         notification_servicer._channels[key] = [
@@ -219,9 +240,11 @@ class TestUpdateChannel:
 class TestTestChannel:
     """Tests for TestChannel gRPC method."""
 
-    async def test_test_channel_success(self, notification_servicer, grpc_context):
+    async def test_test_channel_success(
+        self, notification_servicer: NotificationServicer, grpc_context: MockServicerContext
+    ) -> None:
         """Test testing a channel (stub always succeeds)."""
-        from llamatrade.v1 import common_pb2, notification_pb2
+        from llamatrade_proto.generated import common_pb2, notification_pb2
 
         request = notification_pb2.TestChannelRequest(
             context=common_pb2.TenantContext(
@@ -236,9 +259,11 @@ class TestTestChannel:
         assert response.success is True
         assert "stub" in response.message.lower()
 
-    async def test_test_channel_webhook(self, notification_servicer, grpc_context):
+    async def test_test_channel_webhook(
+        self, notification_servicer: NotificationServicer, grpc_context: MockServicerContext
+    ) -> None:
         """Test testing a webhook channel."""
-        from llamatrade.v1 import common_pb2, notification_pb2
+        from llamatrade_proto.generated import common_pb2, notification_pb2
 
         request = notification_pb2.TestChannelRequest(
             context=common_pb2.TenantContext(
@@ -256,9 +281,11 @@ class TestTestChannel:
 class TestTenantIsolation:
     """Tests for tenant isolation in channel operations."""
 
-    async def test_channels_isolated_by_tenant(self, notification_servicer, grpc_context):
+    async def test_channels_isolated_by_tenant(
+        self, notification_servicer: NotificationServicer, grpc_context: MockServicerContext
+    ) -> None:
         """Test that channels are isolated by tenant."""
-        from llamatrade.v1 import common_pb2, notification_pb2
+        from llamatrade_proto.generated import common_pb2, notification_pb2
 
         other_tenant = str(uuid4())
         other_key = f"{other_tenant}:{TEST_USER_ID}"

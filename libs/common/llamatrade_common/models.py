@@ -1,7 +1,7 @@
 """Shared Pydantic models for LlamaTrade services."""
 
-from datetime import datetime
-from typing import TypedDict, TypeVar, cast
+from datetime import UTC, datetime
+from typing import Annotated, TypedDict, TypeVar, cast
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
@@ -110,9 +110,7 @@ class PaginatedResponse[T](BaseModel):
     total_pages: int
 
     @classmethod
-    def create(
-        cls, items: list[T], total: int, page: int, page_size: int
-    ) -> "PaginatedResponse[T]":
+    def create(cls, items: list[T], total: int, page: int, page_size: int) -> PaginatedResponse[T]:
         total_pages = (total + page_size - 1) // page_size if page_size > 0 else 0
         return cls(
             items=items,
@@ -138,7 +136,7 @@ class HealthResponse(BaseModel):
     status: str = "healthy"
     service: str
     version: str
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(UTC))
     dependencies: dict[str, str] = Field(default_factory=dict)
 
 
@@ -150,9 +148,9 @@ class StrategyConfig(BaseModel):
     description: str | None = None
     symbols: list[str]
     timeframe: str = "1D"
-    indicators: list[IndicatorConfigDict] = Field(default_factory=list)
-    conditions: list[ConditionConfigDict] = Field(default_factory=list)
-    actions: list[ActionConfigDict] = Field(default_factory=list)
+    indicators: Annotated[list[IndicatorConfigDict], Field(default_factory=list)]
+    conditions: Annotated[list[ConditionConfigDict], Field(default_factory=list)]
+    actions: Annotated[list[ActionConfigDict], Field(default_factory=list)]
     risk_management: RiskConfigDict = Field(default_factory=lambda: cast(RiskConfigDict, {}))
 
 

@@ -1,18 +1,36 @@
 """Backtest Service - Pydantic schemas."""
 
 from datetime import datetime
-from enum import StrEnum
+from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+
+from llamatrade_proto.generated.backtest_pb2 import (
+    BacktestStatus as BacktestStatusEnum,
+)
+
+# Re-export for backward compatibility
+BacktestStatus = BacktestStatusEnum
+
+# ===================
+# Conversion helpers: proto int -> str (for display/API)
+# ===================
+
+_BACKTEST_STATUS_PREFIX = "BACKTEST_STATUS_"
 
 
-class BacktestStatus(StrEnum):
-    PENDING = "pending"
-    RUNNING = "running"
-    COMPLETED = "completed"
-    FAILED = "failed"
-    CANCELLED = "cancelled"
+def backtest_status_to_str(value: int) -> str:
+    """Convert BacktestStatus proto int to string."""
+    name = BacktestStatusEnum.Name(value)
+    if name.startswith(_BACKTEST_STATUS_PREFIX):
+        return name[len(_BACKTEST_STATUS_PREFIX) :].lower()
+    return name.lower()
+
+
+# Valid timeframes for backtesting
+VALID_TIMEFRAMES = ("1Min", "5Min", "15Min", "30Min", "1H", "4H", "1D", "1W")
+TimeframeType = Literal["1Min", "5Min", "15Min", "30Min", "1H", "4H", "1D", "1W"]
 
 
 class BacktestCreate(BaseModel):
@@ -25,6 +43,21 @@ class BacktestCreate(BaseModel):
     symbols: list[str] | None = None
     commission: float = Field(default=0, ge=0)
     slippage: float = Field(default=0, ge=0)
+    # Phase 1: Timeframe selection
+    timeframe: str = Field(default="1D", description="Data timeframe for backtest")
+    # Phase 2: Benchmark configuration
+    benchmark_symbol: str | None = Field(default="SPY", max_length=10)
+    include_benchmark: bool = Field(default=True)
+
+    @field_validator("timeframe")
+    @classmethod
+    def validate_timeframe(cls, v: str) -> str:
+        """Validate timeframe is supported."""
+        if v not in VALID_TIMEFRAMES:
+            raise ValueError(
+                f"Invalid timeframe '{v}'. Must be one of: {', '.join(VALID_TIMEFRAMES)}"
+            )
+        return v
 
 
 class BacktestMetrics(BaseModel):
@@ -45,6 +78,13 @@ class BacktestMetrics(BaseModel):
     largest_loss: float
     avg_holding_period: float  # days
     exposure_time: float  # percentage
+    # Phase 5: Benchmark comparison metrics
+    benchmark_return: float = 0
+    benchmark_symbol: str = "SPY"
+    alpha: float = 0
+    beta: float = 0
+    information_ratio: float = 0
+    excess_return: float = 0
 
 
 class TradeRecord(BaseModel):
@@ -67,6 +107,13 @@ class EquityPoint(BaseModel):
     drawdown_percent: float
 
 
+class BenchmarkEquityPoint(BaseModel):
+    """Equity point for benchmark comparison overlay."""
+
+    date: datetime
+    equity: float
+
+
 class BacktestResponse(BaseModel):
     id: UUID
     tenant_id: UUID
@@ -75,7 +122,7 @@ class BacktestResponse(BaseModel):
     start_date: datetime
     end_date: datetime
     initial_capital: float
-    status: BacktestStatus
+    status: int  # BacktestStatus proto value
     progress: float = 0
     error_message: str | None = None
     created_at: datetime
@@ -91,3 +138,5 @@ class BacktestResultResponse(BaseModel):
     trades: list[TradeRecord]
     monthly_returns: dict[str, float]
     created_at: datetime
+    # Phase 5: Benchmark equity curve for chart overlay
+    benchmark_equity_curve: list[BenchmarkEquityPoint] = []

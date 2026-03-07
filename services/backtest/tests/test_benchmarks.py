@@ -1,9 +1,11 @@
+# pyright: reportArgumentType=false
 """Tests for benchmark calculations."""
 
 from datetime import UTC, datetime, timedelta
 
 import numpy as np
 import pytest
+
 from src.engine.benchmarks import (
     BenchmarkCalculator,
     BenchmarkMetrics,

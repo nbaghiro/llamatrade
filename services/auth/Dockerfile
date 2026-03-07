@@ -20,14 +20,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends curl \
 # Copy shared libraries first (for layer caching)
 COPY libs/common /app/libs/common
 COPY libs/db /app/libs/db
-COPY libs/grpc /app/libs/grpc
 COPY libs/proto /app/libs/proto
 
 # Generate proto files
 RUN cd /app/libs/proto && buf generate --template buf.gen.python.yaml
 
 # Install shared libraries
-RUN pip install --no-cache-dir /app/libs/common /app/libs/db /app/libs/grpc
+RUN pip install --no-cache-dir /app/libs/common /app/libs/db /app/libs/proto
 
 # Copy service files and install
 COPY services/auth/pyproject.toml services/auth/README.md /app/

@@ -1,17 +1,33 @@
-# mypy: ignore-errors
 """Trading gRPC servicer implementation."""
 
 from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import AsyncGenerator
 from decimal import Decimal
+from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
 import grpc.aio
 
-from src.executor.order_executor import get_order_executor
-from src.models import OrderCreate, OrderSide, OrderType, TimeInForce
+from llamatrade_proto.generated.trading_pb2 import (
+    ORDER_SIDE_BUY,
+    ORDER_SIDE_SELL,
+    ORDER_TYPE_MARKET,
+    TIME_IN_FORCE_DAY,
+)
+
+from src.executor.order_executor import create_order_executor
+from src.models import OrderCreate, OrderResponse, PositionResponse
+from src.streaming import (
+    OrderUpdate,
+    PositionUpdate,
+    get_trading_event_subscriber,
+)
+
+if TYPE_CHECKING:
+    from llamatrade_proto.generated import trading_pb2
 
 logger = logging.getLogger(__name__)
 
@@ -29,46 +45,32 @@ class TradingServicer:
     async def SubmitOrder(
         self,
         request: trading_pb2.SubmitOrderRequest,
-        context: grpc.aio.ServicerContext,
+        context: grpc.aio.ServicerContext[Any, Any],
     ) -> trading_pb2.SubmitOrderResponse:
         """Submit a new order."""
-        from llamatrade.v1 import trading_pb2
+        from llamatrade_proto.generated import trading_pb2
 
         try:
-            executor = get_order_executor()
+            executor = await create_order_executor()
 
             # Extract tenant context
             tenant_id = UUID(request.context.tenant_id)
             session_id = UUID(request.session_id)
 
-            # Map proto enums to internal enums
-            side_map = {
-                trading_pb2.ORDER_SIDE_BUY: OrderSide.BUY,
-                trading_pb2.ORDER_SIDE_SELL: OrderSide.SELL,
-            }
-            type_map = {
-                trading_pb2.ORDER_TYPE_MARKET: OrderType.MARKET,
-                trading_pb2.ORDER_TYPE_LIMIT: OrderType.LIMIT,
-                trading_pb2.ORDER_TYPE_STOP: OrderType.STOP,
-                trading_pb2.ORDER_TYPE_STOP_LIMIT: OrderType.STOP_LIMIT,
-                trading_pb2.ORDER_TYPE_TRAILING_STOP: OrderType.TRAILING_STOP,
-            }
-            tif_map = {
-                trading_pb2.TIME_IN_FORCE_DAY: TimeInForce.DAY,
-                trading_pb2.TIME_IN_FORCE_GTC: TimeInForce.GTC,
-                trading_pb2.TIME_IN_FORCE_IOC: TimeInForce.IOC,
-                trading_pb2.TIME_IN_FORCE_FOK: TimeInForce.FOK,
-            }
-
+            # Proto enum values are same as our int constants - use directly
             # Create order request
             order_create = OrderCreate(
                 symbol=request.symbol,
-                side=side_map.get(request.side, OrderSide.BUY),
-                order_type=type_map.get(request.type, OrderType.MARKET),
-                time_in_force=tif_map.get(request.time_in_force, TimeInForce.DAY),
+                side=request.side or ORDER_SIDE_BUY,
+                order_type=request.type or ORDER_TYPE_MARKET,
+                time_in_force=request.time_in_force or TIME_IN_FORCE_DAY,
                 qty=float(request.quantity.value) if request.HasField("quantity") else 0.0,
-                limit_price=float(request.limit_price.value) if request.HasField("limit_price") else None,
-                stop_price=float(request.stop_price.value) if request.HasField("stop_price") else None,
+                limit_price=float(request.limit_price.value)
+                if request.HasField("limit_price")
+                else None,
+                stop_price=float(request.stop_price.value)
+                if request.HasField("stop_price")
+                else None,
             )
 
             # Submit the order
@@ -97,13 +99,13 @@ class TradingServicer:
     async def CancelOrder(
         self,
         request: trading_pb2.CancelOrderRequest,
-        context: grpc.aio.ServicerContext,
+        context: grpc.aio.ServicerContext[Any, Any],
     ) -> trading_pb2.CancelOrderResponse:
         """Cancel an order."""
-        from llamatrade.v1 import trading_pb2
+        from llamatrade_proto.generated import trading_pb2
 
         try:
-            executor = get_order_executor()
+            executor = await create_order_executor()
 
             tenant_id = UUID(request.context.tenant_id)
             order_id = UUID(request.order_id)
@@ -143,13 +145,13 @@ class TradingServicer:
     async def GetOrder(
         self,
         request: trading_pb2.GetOrderRequest,
-        context: grpc.aio.ServicerContext,
+        context: grpc.aio.ServicerContext[Any, Any],
     ) -> trading_pb2.GetOrderResponse:
         """Get an order by ID."""
-        from llamatrade.v1 import trading_pb2
+        from llamatrade_proto.generated import trading_pb2
 
         try:
-            executor = get_order_executor()
+            executor = await create_order_executor()
 
             tenant_id = UUID(request.context.tenant_id)
             order_id = UUID(request.order_id)
@@ -177,31 +179,19 @@ class TradingServicer:
     async def ListOrders(
         self,
         request: trading_pb2.ListOrdersRequest,
-        context: grpc.aio.ServicerContext,
+        context: grpc.aio.ServicerContext[Any, Any],
     ) -> trading_pb2.ListOrdersResponse:
         """List orders for a tenant."""
-        from llamatrade.v1 import common_pb2, trading_pb2
+        from llamatrade_proto.generated import common_pb2, trading_pb2
 
         try:
-            executor = get_order_executor()
+            executor = await create_order_executor()
 
             tenant_id = UUID(request.context.tenant_id)
             session_id = UUID(request.session_id) if request.session_id else None
 
-            # Map status filters
-            status = None
-            if request.statuses:
-                # Use first status for now
-                from src.models import OrderStatus as InternalOrderStatus
-
-                status_map = {
-                    trading_pb2.ORDER_STATUS_NEW: InternalOrderStatus.SUBMITTED,
-                    trading_pb2.ORDER_STATUS_PENDING: InternalOrderStatus.PENDING,
-                    trading_pb2.ORDER_STATUS_FILLED: InternalOrderStatus.FILLED,
-                    trading_pb2.ORDER_STATUS_CANCELLED: InternalOrderStatus.CANCELLED,
-                }
-                if request.statuses[0] in status_map:
-                    status = status_map[request.statuses[0]]
+            # Use first status filter if provided (proto int values pass through directly)
+            status = request.statuses[0] if request.statuses else None
 
             page = request.pagination.page if request.HasField("pagination") else 1
             page_size = request.pagination.page_size if request.HasField("pagination") else 20
@@ -239,15 +229,15 @@ class TradingServicer:
     async def GetPosition(
         self,
         request: trading_pb2.GetPositionRequest,
-        context: grpc.aio.ServicerContext,
+        context: grpc.aio.ServicerContext[Any, Any],
     ) -> trading_pb2.GetPositionResponse:
         """Get a position by symbol."""
-        from llamatrade.v1 import trading_pb2
+        from llamatrade_proto.generated import trading_pb2
 
         try:
-            from src.services.position_service import get_position_service
+            from src.services.position_service import create_position_service
 
-            service = get_position_service()
+            service = await create_position_service()
 
             tenant_id = UUID(request.context.tenant_id)
             session_id = UUID(request.session_id)
@@ -281,20 +271,20 @@ class TradingServicer:
     async def ListPositions(
         self,
         request: trading_pb2.ListPositionsRequest,
-        context: grpc.aio.ServicerContext,
+        context: grpc.aio.ServicerContext[Any, Any],
     ) -> trading_pb2.ListPositionsResponse:
         """List positions for a session."""
-        from llamatrade.v1 import trading_pb2
+        from llamatrade_proto.generated import trading_pb2
 
         try:
-            from src.services.position_service import get_position_service
+            from src.services.position_service import create_position_service
 
-            service = get_position_service()
+            service = await create_position_service()
 
             tenant_id = UUID(request.context.tenant_id)
             session_id = UUID(request.session_id)
 
-            positions = await service.list_positions(
+            positions = await service.list_open_positions(
                 tenant_id=tenant_id,
                 session_id=session_id,
             )
@@ -313,22 +303,22 @@ class TradingServicer:
     async def ClosePosition(
         self,
         request: trading_pb2.ClosePositionRequest,
-        context: grpc.aio.ServicerContext,
+        context: grpc.aio.ServicerContext[Any, Any],
     ) -> trading_pb2.ClosePositionResponse:
         """Close a position."""
-        from llamatrade.v1 import trading_pb2
+        from llamatrade_proto.generated import trading_pb2
 
         try:
-            executor = get_order_executor()
+            executor = await create_order_executor()
 
             tenant_id = UUID(request.context.tenant_id)
             session_id = UUID(request.session_id)
             symbol = request.symbol
 
             # Get current position
-            from src.services.position_service import get_position_service
+            from src.services.position_service import create_position_service
 
-            service = get_position_service()
+            service = await create_position_service()
             position = await service.get_position(
                 tenant_id=tenant_id,
                 session_id=session_id,
@@ -342,15 +332,19 @@ class TradingServicer:
                 )
 
             # Determine quantity and side
-            quantity = Decimal(request.quantity.value) if request.HasField("quantity") and Decimal(request.quantity.value) > 0 else position.quantity
-            side = OrderSide.SELL if position.side == "long" else OrderSide.BUY
+            quantity = (
+                Decimal(request.quantity.value)
+                if request.HasField("quantity") and Decimal(request.quantity.value) > 0
+                else Decimal(str(position.qty))
+            )
+            side = ORDER_SIDE_SELL if position.side == "long" else ORDER_SIDE_BUY
 
             # Create close order
             order_create = OrderCreate(
                 symbol=symbol,
                 side=side,
-                order_type=OrderType.MARKET,
-                time_in_force=TimeInForce.DAY,
+                order_type=ORDER_TYPE_MARKET,
+                time_in_force=TIME_IN_FORCE_DAY,
                 qty=float(quantity),
             )
 
@@ -376,116 +370,270 @@ class TradingServicer:
     async def StreamOrderUpdates(
         self,
         request: trading_pb2.StreamOrderUpdatesRequest,
-        context: grpc.aio.ServicerContext,
-    ):
-        """Stream real-time order updates."""
-
-        tenant_id = request.context.tenant_id
+        context: grpc.aio.ServicerContext[Any, Any],
+    ) -> AsyncGenerator[trading_pb2.OrderUpdate]:
+        """Stream real-time order updates via Redis pub/sub."""
+        _tenant_id = request.context.tenant_id  # Reserved for future use
         session_id = request.session_id
         logger.info("Starting order updates stream for session: %s", session_id)
 
+        subscriber = get_trading_event_subscriber()
         try:
-            while not context.cancelled():
-                # In production, would integrate with a message queue
-                # For now, poll or wait
-                await asyncio.sleep(30.0)
+            async for update in subscriber.subscribe_orders(session_id):
+                if context.cancelled():
+                    break
+                proto_update = self._to_proto_order_update(update)
+                yield proto_update
 
         except asyncio.CancelledError:
             logger.info("Order updates stream cancelled for session: %s", session_id)
+        except Exception as e:
+            logger.error("Order stream error for session %s: %s", session_id, e, exc_info=True)
+            raise
+        finally:
+            await subscriber.close()
 
     async def StreamPositionUpdates(
         self,
         request: trading_pb2.StreamPositionUpdatesRequest,
-        context: grpc.aio.ServicerContext,
-    ):
-        """Stream real-time position updates."""
-
-        tenant_id = request.context.tenant_id
+        context: grpc.aio.ServicerContext[Any, Any],
+    ) -> AsyncGenerator[trading_pb2.PositionUpdate]:
+        """Stream real-time position updates via Redis pub/sub."""
+        _tenant_id = request.context.tenant_id  # Reserved for future use
         session_id = request.session_id
         logger.info("Starting position updates stream for session: %s", session_id)
 
+        subscriber = get_trading_event_subscriber()
         try:
-            while not context.cancelled():
-                await asyncio.sleep(30.0)
+            async for update in subscriber.subscribe_positions(session_id):
+                if context.cancelled():
+                    break
+                proto_update = self._to_proto_position_update(update)
+                yield proto_update
 
         except asyncio.CancelledError:
             logger.info("Position updates stream cancelled for session: %s", session_id)
+        except Exception as e:
+            logger.error("Position stream error for session %s: %s", session_id, e, exc_info=True)
+            raise
+        finally:
+            await subscriber.close()
 
     def _to_proto_order(self, order: OrderResponse) -> trading_pb2.Order:
-        """Convert internal order to proto Order."""
-        from llamatrade.v1 import common_pb2, trading_pb2
+        """Convert internal order to proto Order.
 
-        side_map = {
-            OrderSide.BUY: trading_pb2.ORDER_SIDE_BUY,
-            OrderSide.SELL: trading_pb2.ORDER_SIDE_SELL,
-        }
-        type_map = {
-            OrderType.MARKET: trading_pb2.ORDER_TYPE_MARKET,
-            OrderType.LIMIT: trading_pb2.ORDER_TYPE_LIMIT,
-            OrderType.STOP: trading_pb2.ORDER_TYPE_STOP,
-            OrderType.STOP_LIMIT: trading_pb2.ORDER_TYPE_STOP_LIMIT,
-            OrderType.TRAILING_STOP: trading_pb2.ORDER_TYPE_TRAILING_STOP,
-        }
-        from src.models import OrderStatus as InternalOrderStatus
-
-        status_map = {
-            InternalOrderStatus.SUBMITTED: trading_pb2.ORDER_STATUS_NEW,
-            InternalOrderStatus.PENDING: trading_pb2.ORDER_STATUS_PENDING,
-            InternalOrderStatus.ACCEPTED: trading_pb2.ORDER_STATUS_PENDING,
-            InternalOrderStatus.PARTIAL: trading_pb2.ORDER_STATUS_PARTIALLY_FILLED,
-            InternalOrderStatus.FILLED: trading_pb2.ORDER_STATUS_FILLED,
-            InternalOrderStatus.CANCELLED: trading_pb2.ORDER_STATUS_CANCELLED,
-            InternalOrderStatus.REJECTED: trading_pb2.ORDER_STATUS_REJECTED,
-            InternalOrderStatus.EXPIRED: trading_pb2.ORDER_STATUS_EXPIRED,
-        }
+        Since OrderResponse now uses int values that match proto enum values,
+        we can pass them directly without mapping.
+        """
+        from llamatrade_proto.generated import common_pb2, trading_pb2
 
         proto_order = trading_pb2.Order(
             id=str(order.id),
-            client_order_id=order.client_order_id or "",
-            tenant_id=str(order.tenant_id) if hasattr(order, "tenant_id") else "",
-            session_id=str(order.session_id) if hasattr(order, "session_id") else "",
+            client_order_id=order.alpaca_order_id or "",
+            tenant_id="",  # Not stored in OrderResponse
+            session_id="",  # Not stored in OrderResponse
             symbol=order.symbol,
-            side=side_map.get(order.side, trading_pb2.ORDER_SIDE_BUY),
-            type=type_map.get(order.order_type, trading_pb2.ORDER_TYPE_MARKET),
-            status=status_map.get(order.status, trading_pb2.ORDER_STATUS_NEW),
-            quantity=common_pb2.Decimal(value=str(order.quantity)),
+            side=order.side,  # Int matches proto value
+            type=order.order_type,  # Int matches proto value
+            status=order.status,  # Int matches proto value
+            quantity=common_pb2.Decimal(value=str(order.qty)),
         )
 
-        if order.filled_quantity:
-            proto_order.filled_quantity.CopyFrom(common_pb2.Decimal(value=str(order.filled_quantity)))
+        if order.filled_qty:
+            proto_order.filled_quantity.CopyFrom(common_pb2.Decimal(value=str(order.filled_qty)))
         if order.limit_price:
             proto_order.limit_price.CopyFrom(common_pb2.Decimal(value=str(order.limit_price)))
         if order.stop_price:
             proto_order.stop_price.CopyFrom(common_pb2.Decimal(value=str(order.stop_price)))
-        if order.average_fill_price:
-            proto_order.average_fill_price.CopyFrom(common_pb2.Decimal(value=str(order.average_fill_price)))
-        if order.created_at:
-            proto_order.created_at.CopyFrom(common_pb2.Timestamp(seconds=int(order.created_at.timestamp())))
+        if order.filled_avg_price:
+            proto_order.average_fill_price.CopyFrom(
+                common_pb2.Decimal(value=str(order.filled_avg_price))
+            )
+        if order.submitted_at:
+            proto_order.created_at.CopyFrom(
+                common_pb2.Timestamp(seconds=int(order.submitted_at.timestamp()))
+            )
 
         return proto_order
 
     def _to_proto_position(self, position: PositionResponse) -> trading_pb2.Position:
         """Convert internal position to proto Position."""
-        from llamatrade.v1 import common_pb2, trading_pb2
+        from llamatrade_proto.generated import common_pb2, trading_pb2
 
-        side = trading_pb2.POSITION_SIDE_LONG if position.side == "long" else trading_pb2.POSITION_SIDE_SHORT
-
-        proto_position = trading_pb2.Position(
-            id=str(position.id) if hasattr(position, "id") else "",
-            symbol=position.symbol,
-            side=side,
-            quantity=common_pb2.Decimal(value=str(position.quantity)),
+        side = (
+            trading_pb2.POSITION_SIDE_LONG
+            if position.side == "long"
+            else trading_pb2.POSITION_SIDE_SHORT
         )
 
-        if hasattr(position, "cost_basis") and position.cost_basis:
+        proto_position = trading_pb2.Position(
+            id="",  # PositionResponse doesn't have id
+            symbol=position.symbol,
+            side=side,
+            quantity=common_pb2.Decimal(value=str(position.qty)),
+        )
+
+        if position.cost_basis:
             proto_position.cost_basis.CopyFrom(common_pb2.Decimal(value=str(position.cost_basis)))
-        if hasattr(position, "average_entry_price") and position.average_entry_price:
-            proto_position.average_entry_price.CopyFrom(common_pb2.Decimal(value=str(position.average_entry_price)))
-        if hasattr(position, "current_price") and position.current_price:
-            proto_position.current_price.CopyFrom(common_pb2.Decimal(value=str(position.current_price)))
-        if hasattr(position, "market_value") and position.market_value:
-            proto_position.market_value.CopyFrom(common_pb2.Decimal(value=str(position.market_value)))
-        if hasattr(position, "unrealized_pnl") and position.unrealized_pnl:
-            proto_position.unrealized_pnl.CopyFrom(common_pb2.Decimal(value=str(position.unrealized_pnl)))
+        # PositionResponse doesn't have average_entry_price, use cost_basis / qty
+        if position.qty > 0:
+            avg_entry = position.cost_basis / position.qty
+            proto_position.average_entry_price.CopyFrom(common_pb2.Decimal(value=str(avg_entry)))
+        if position.current_price:
+            proto_position.current_price.CopyFrom(
+                common_pb2.Decimal(value=str(position.current_price))
+            )
+        if position.market_value:
+            proto_position.market_value.CopyFrom(
+                common_pb2.Decimal(value=str(position.market_value))
+            )
+        if position.unrealized_pnl:
+            proto_position.unrealized_pnl.CopyFrom(
+                common_pb2.Decimal(value=str(position.unrealized_pnl))
+            )
 
         return proto_position
+
+    def _to_proto_order_update(self, update: OrderUpdate) -> trading_pb2.OrderUpdate:
+        """Convert streaming OrderUpdate to proto OrderUpdate.
+
+        Proto OrderUpdate structure (from trading.proto):
+        - Order order = 1;  // embedded full Order message
+        - Fill latest_fill = 2;  // optional
+        - string event_type = 3;  // "new", "fill", "partial_fill", "cancelled", "rejected"
+        - Timestamp timestamp = 4;
+        """
+        from llamatrade_proto.generated import common_pb2, trading_pb2
+
+        # Map status string to proto enum
+        status_map = {
+            "submitted": trading_pb2.ORDER_STATUS_SUBMITTED,
+            "pending": trading_pb2.ORDER_STATUS_PENDING,
+            "accepted": trading_pb2.ORDER_STATUS_ACCEPTED,
+            "partial": trading_pb2.ORDER_STATUS_PARTIAL,
+            "filled": trading_pb2.ORDER_STATUS_FILLED,
+            "cancelled": trading_pb2.ORDER_STATUS_CANCELLED,
+            "rejected": trading_pb2.ORDER_STATUS_REJECTED,
+            "expired": trading_pb2.ORDER_STATUS_EXPIRED,
+        }
+
+        # Map side string to proto enum
+        side_map = {
+            "buy": trading_pb2.ORDER_SIDE_BUY,
+            "sell": trading_pb2.ORDER_SIDE_SELL,
+        }
+
+        # Map order type string to proto enum
+        type_map = {
+            "market": trading_pb2.ORDER_TYPE_MARKET,
+            "limit": trading_pb2.ORDER_TYPE_LIMIT,
+            "stop": trading_pb2.ORDER_TYPE_STOP,
+            "stop_limit": trading_pb2.ORDER_TYPE_STOP_LIMIT,
+            "trailing_stop": trading_pb2.ORDER_TYPE_TRAILING_STOP,
+        }
+
+        # Build embedded Order message
+        order = trading_pb2.Order(
+            id=update.order_id,
+            client_order_id=update.alpaca_order_id or "",
+            session_id=update.session_id,
+            symbol=update.symbol,
+            side=side_map.get(update.side.lower(), trading_pb2.ORDER_SIDE_BUY),
+            type=type_map.get(update.order_type.lower(), trading_pb2.ORDER_TYPE_MARKET),
+            status=status_map.get(update.status.lower(), trading_pb2.ORDER_STATUS_SUBMITTED),
+            quantity=common_pb2.Decimal(value=str(update.qty)),
+        )
+
+        if update.filled_qty > 0:
+            order.filled_quantity.CopyFrom(common_pb2.Decimal(value=str(update.filled_qty)))
+        if update.filled_avg_price is not None:
+            order.average_fill_price.CopyFrom(
+                common_pb2.Decimal(value=str(update.filled_avg_price))
+            )
+
+        # Map update_type to event_type
+        event_type_map = {
+            "submitted": "new",
+            "filled": "fill",
+            "partial": "partial_fill",
+            "cancelled": "cancelled",
+            "rejected": "rejected",
+            "status_change": "status_change",
+        }
+        event_type = event_type_map.get(update.update_type, update.update_type)
+
+        # Build OrderUpdate with embedded Order
+        proto_update = trading_pb2.OrderUpdate(
+            order=order,
+            event_type=event_type,
+        )
+
+        # Add timestamp if available
+        if update.timestamp:
+            try:
+                from datetime import datetime
+
+                dt = datetime.fromisoformat(update.timestamp.replace("Z", "+00:00"))
+                proto_update.timestamp.CopyFrom(common_pb2.Timestamp(seconds=int(dt.timestamp())))
+            except ValueError, AttributeError:
+                pass
+
+        return proto_update
+
+    def _to_proto_position_update(self, update: PositionUpdate) -> trading_pb2.PositionUpdate:
+        """Convert streaming PositionUpdate to proto PositionUpdate.
+
+        Proto PositionUpdate structure (from trading.proto):
+        - Position position = 1;  // embedded full Position message
+        - string event_type = 2;  // "opened", "updated", "closed"
+        - Timestamp timestamp = 3;
+        """
+        from llamatrade_proto.generated import common_pb2, trading_pb2
+
+        side = (
+            trading_pb2.POSITION_SIDE_LONG
+            if update.side.lower() == "long"
+            else trading_pb2.POSITION_SIDE_SHORT
+        )
+
+        # Build embedded Position message
+        position = trading_pb2.Position(
+            session_id=update.session_id,
+            symbol=update.symbol,
+            side=side,
+            quantity=common_pb2.Decimal(value=str(update.qty)),
+        )
+
+        if update.cost_basis:
+            position.cost_basis.CopyFrom(common_pb2.Decimal(value=str(update.cost_basis)))
+        if update.qty > 0 and update.cost_basis:
+            avg_entry = update.cost_basis / update.qty
+            position.average_entry_price.CopyFrom(common_pb2.Decimal(value=str(avg_entry)))
+        if update.current_price:
+            position.current_price.CopyFrom(common_pb2.Decimal(value=str(update.current_price)))
+        if update.market_value:
+            position.market_value.CopyFrom(common_pb2.Decimal(value=str(update.market_value)))
+        if update.unrealized_pnl:
+            position.unrealized_pnl.CopyFrom(common_pb2.Decimal(value=str(update.unrealized_pnl)))
+        if update.unrealized_pnl_percent:
+            position.unrealized_pnl_percent.CopyFrom(
+                common_pb2.Decimal(value=str(update.unrealized_pnl_percent))
+            )
+
+        # Build PositionUpdate with embedded Position
+        proto_update = trading_pb2.PositionUpdate(
+            position=position,
+            event_type=update.update_type,
+        )
+
+        # Add timestamp if available
+        if update.timestamp:
+            try:
+                from datetime import datetime
+
+                dt = datetime.fromisoformat(update.timestamp.replace("Z", "+00:00"))
+                proto_update.timestamp.CopyFrom(common_pb2.Timestamp(seconds=int(dt.timestamp())))
+            except ValueError, AttributeError:
+                pass
+
+        return proto_update

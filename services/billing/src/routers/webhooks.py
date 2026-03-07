@@ -2,12 +2,23 @@
 
 import logging
 import os
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from llamatrade_proto.generated import billing_pb2
+
+from src.services.billing_service import _stripe_status_to_proto
 from src.services.database import get_db
 from src.stripe.client import StripeError, get_stripe_client
+
+# Invoice status constants (DB-only, no proto)
+INVOICE_STATUS_DRAFT = 1
+INVOICE_STATUS_OPEN = 2
+INVOICE_STATUS_PAID = 3
+INVOICE_STATUS_VOID = 4
+INVOICE_STATUS_UNCOLLECTIBLE = 5
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -91,15 +102,16 @@ async def handle_stripe_webhook(
     return {"received": True}
 
 
-async def _handle_subscription_created(db: AsyncSession, subscription: dict) -> None:
+async def _handle_subscription_created(db: AsyncSession, subscription: dict[str, Any]) -> None:
     """Handle customer.subscription.created event."""
     from datetime import UTC, datetime
 
-    from llamatrade_db.models import Subscription
     from sqlalchemy import select
 
-    stripe_sub_id = subscription.get("id")
-    sub_status = subscription.get("status")
+    from llamatrade_db.models import Subscription
+
+    stripe_sub_id: str | None = subscription.get("id")
+    sub_status: str | None = subscription.get("status")
 
     logger.info(f"Subscription created: {stripe_sub_id}, status: {sub_status}")
 
@@ -111,30 +123,32 @@ async def _handle_subscription_created(db: AsyncSession, subscription: dict) -> 
 
     if local_sub:
         # Update status
-        local_sub.status = sub_status
-        local_sub.current_period_start = datetime.fromtimestamp(
-            subscription.get("current_period_start", 0), tz=UTC
-        )
-        local_sub.current_period_end = datetime.fromtimestamp(
-            subscription.get("current_period_end", 0), tz=UTC
-        )
-        if subscription.get("trial_start"):
-            local_sub.trial_start = datetime.fromtimestamp(subscription["trial_start"], tz=UTC)
-        if subscription.get("trial_end"):
-            local_sub.trial_end = datetime.fromtimestamp(subscription["trial_end"], tz=UTC)
+        if sub_status is not None:
+            local_sub.status = _stripe_status_to_proto(sub_status)
+        current_period_start: int = subscription.get("current_period_start", 0)
+        current_period_end: int = subscription.get("current_period_end", 0)
+        local_sub.current_period_start = datetime.fromtimestamp(current_period_start, tz=UTC)
+        local_sub.current_period_end = datetime.fromtimestamp(current_period_end, tz=UTC)
+        trial_start: int | None = subscription.get("trial_start")
+        trial_end: int | None = subscription.get("trial_end")
+        if trial_start:
+            local_sub.trial_start = datetime.fromtimestamp(trial_start, tz=UTC)
+        if trial_end:
+            local_sub.trial_end = datetime.fromtimestamp(trial_end, tz=UTC)
         await db.commit()
 
 
-async def _handle_subscription_updated(db: AsyncSession, subscription: dict) -> None:
+async def _handle_subscription_updated(db: AsyncSession, subscription: dict[str, Any]) -> None:
     """Handle customer.subscription.updated event."""
     from datetime import UTC, datetime
 
-    from llamatrade_db.models import Subscription
     from sqlalchemy import select
 
-    stripe_sub_id = subscription.get("id")
-    sub_status = subscription.get("status")
-    cancel_at_period_end = subscription.get("cancel_at_period_end", False)
+    from llamatrade_db.models import Subscription
+
+    stripe_sub_id: str | None = subscription.get("id")
+    sub_status: str | None = subscription.get("status")
+    cancel_at_period_end: bool = subscription.get("cancel_at_period_end", False)
 
     logger.info(f"Subscription updated: {stripe_sub_id}, status: {sub_status}")
 
@@ -144,27 +158,28 @@ async def _handle_subscription_updated(db: AsyncSession, subscription: dict) -> 
     local_sub = result.scalar_one_or_none()
 
     if local_sub:
-        local_sub.status = sub_status
+        if sub_status is not None:
+            local_sub.status = _stripe_status_to_proto(sub_status)
         local_sub.cancel_at_period_end = cancel_at_period_end
-        local_sub.current_period_start = datetime.fromtimestamp(
-            subscription.get("current_period_start", 0), tz=UTC
-        )
-        local_sub.current_period_end = datetime.fromtimestamp(
-            subscription.get("current_period_end", 0), tz=UTC
-        )
-        if subscription.get("canceled_at"):
-            local_sub.canceled_at = datetime.fromtimestamp(subscription["canceled_at"], tz=UTC)
+        current_period_start: int = subscription.get("current_period_start", 0)
+        current_period_end: int = subscription.get("current_period_end", 0)
+        local_sub.current_period_start = datetime.fromtimestamp(current_period_start, tz=UTC)
+        local_sub.current_period_end = datetime.fromtimestamp(current_period_end, tz=UTC)
+        canceled_at: int | None = subscription.get("canceled_at")
+        if canceled_at:
+            local_sub.canceled_at = datetime.fromtimestamp(canceled_at, tz=UTC)
         await db.commit()
 
 
-async def _handle_subscription_deleted(db: AsyncSession, subscription: dict) -> None:
+async def _handle_subscription_deleted(db: AsyncSession, subscription: dict[str, Any]) -> None:
     """Handle customer.subscription.deleted event."""
     from datetime import UTC, datetime
 
-    from llamatrade_db.models import Subscription
     from sqlalchemy import select
 
-    stripe_sub_id = subscription.get("id")
+    from llamatrade_db.models import Subscription
+
+    stripe_sub_id: str | None = subscription.get("id")
 
     logger.info(f"Subscription deleted: {stripe_sub_id}")
 
@@ -174,21 +189,22 @@ async def _handle_subscription_deleted(db: AsyncSession, subscription: dict) -> 
     local_sub = result.scalar_one_or_none()
 
     if local_sub:
-        local_sub.status = "cancelled"
+        local_sub.status = billing_pb2.SUBSCRIPTION_STATUS_CANCELED
         local_sub.canceled_at = datetime.now(UTC)
         await db.commit()
 
 
-async def _handle_invoice_paid(db: AsyncSession, invoice: dict) -> None:
+async def _handle_invoice_paid(db: AsyncSession, invoice: dict[str, Any]) -> None:
     """Handle invoice.paid event."""
     from datetime import UTC, datetime
     from decimal import Decimal
 
-    from llamatrade_db.models import Invoice, Subscription
     from sqlalchemy import select
 
-    stripe_invoice_id = invoice.get("id")
-    stripe_sub_id = invoice.get("subscription")
+    from llamatrade_db.models import Invoice, Subscription
+
+    stripe_invoice_id: str | None = invoice.get("id")
+    stripe_sub_id: str | None = invoice.get("subscription")
 
     logger.info(f"Invoice paid: {stripe_invoice_id}")
 
@@ -206,10 +222,19 @@ async def _handle_invoice_paid(db: AsyncSession, invoice: dict) -> None:
     result = await db.execute(select(Invoice).where(Invoice.stripe_invoice_id == stripe_invoice_id))
     existing = result.scalar_one_or_none()
 
+    amount_paid_cents: int = invoice.get("amount_paid", 0)
+    amount_due_cents: int = invoice.get("amount_due", 0)
+    period_start: int = invoice.get("period_start", 0)
+    period_end: int = invoice.get("period_end", 0)
+    invoice_number: str | None = invoice.get("number")
+    currency: str = invoice.get("currency", "usd")
+    hosted_invoice_url: str | None = invoice.get("hosted_invoice_url")
+    invoice_pdf: str | None = invoice.get("invoice_pdf")
+
     if existing:
         # Update status
-        existing.status = "paid"
-        existing.amount_paid = Decimal(str(invoice.get("amount_paid", 0) / 100))
+        existing.status = INVOICE_STATUS_PAID
+        existing.amount_paid = Decimal(str(amount_paid_cents / 100))
         existing.paid_at = datetime.now(UTC)
     else:
         # Create new invoice record
@@ -217,28 +242,29 @@ async def _handle_invoice_paid(db: AsyncSession, invoice: dict) -> None:
             tenant_id=subscription.tenant_id,
             subscription_id=subscription.id,
             stripe_invoice_id=stripe_invoice_id,
-            invoice_number=invoice.get("number"),
-            status="paid",
-            amount_due=Decimal(str(invoice.get("amount_due", 0) / 100)),
-            amount_paid=Decimal(str(invoice.get("amount_paid", 0) / 100)),
-            currency=invoice.get("currency", "usd"),
-            period_start=datetime.fromtimestamp(invoice.get("period_start", 0), tz=UTC),
-            period_end=datetime.fromtimestamp(invoice.get("period_end", 0), tz=UTC),
+            invoice_number=invoice_number,
+            status=INVOICE_STATUS_PAID,
+            amount_due=Decimal(str(amount_due_cents / 100)),
+            amount_paid=Decimal(str(amount_paid_cents / 100)),
+            currency=currency,
+            period_start=datetime.fromtimestamp(period_start, tz=UTC),
+            period_end=datetime.fromtimestamp(period_end, tz=UTC),
             paid_at=datetime.now(UTC),
-            hosted_invoice_url=invoice.get("hosted_invoice_url"),
-            invoice_pdf=invoice.get("invoice_pdf"),
+            hosted_invoice_url=hosted_invoice_url,
+            invoice_pdf=invoice_pdf,
         )
         db.add(new_invoice)
 
     await db.commit()
 
 
-async def _handle_payment_failed(db: AsyncSession, invoice: dict) -> None:
+async def _handle_payment_failed(db: AsyncSession, invoice: dict[str, Any]) -> None:
     """Handle invoice.payment_failed event."""
-    from llamatrade_db.models import Subscription
     from sqlalchemy import select
 
-    stripe_sub_id = invoice.get("subscription")
+    from llamatrade_db.models import Subscription
+
+    stripe_sub_id: str | None = invoice.get("subscription")
 
     logger.warning(f"Payment failed for subscription: {stripe_sub_id}")
 
@@ -251,19 +277,20 @@ async def _handle_payment_failed(db: AsyncSession, invoice: dict) -> None:
     subscription = result.scalar_one_or_none()
 
     if subscription:
-        subscription.status = "past_due"
+        subscription.status = billing_pb2.SUBSCRIPTION_STATUS_PAST_DUE
         await db.commit()
 
 
-async def _handle_payment_method_attached(db: AsyncSession, payment_method: dict) -> None:
+async def _handle_payment_method_attached(db: AsyncSession, payment_method: dict[str, Any]) -> None:
     """Handle payment_method.attached event."""
-    from llamatrade_db.models import PaymentMethod, Subscription
     from sqlalchemy import select
 
-    stripe_pm_id = payment_method.get("id")
-    customer_id = payment_method.get("customer")
-    pm_type = payment_method.get("type", "card")
-    card = payment_method.get("card", {})
+    from llamatrade_db.models import PaymentMethod, Subscription
+
+    stripe_pm_id: str | None = payment_method.get("id")
+    customer_id: str | None = payment_method.get("customer")
+    pm_type: str = payment_method.get("type", "card")
+    card: dict[str, Any] = payment_method.get("card", {})
 
     logger.info(f"Payment method attached: {stripe_pm_id}")
 
@@ -291,15 +318,20 @@ async def _handle_payment_method_attached(db: AsyncSession, payment_method: dict
     existing_methods = result.scalars().all()
     is_default = len(existing_methods) == 0
 
+    card_brand: str | None = card.get("brand")
+    card_last4: str | None = card.get("last4")
+    card_exp_month: int | None = card.get("exp_month")
+    card_exp_year: int | None = card.get("exp_year")
+
     new_pm = PaymentMethod(
         tenant_id=tenant_id,
         stripe_payment_method_id=stripe_pm_id,
         stripe_customer_id=customer_id,
         type=pm_type,
-        card_brand=card.get("brand"),
-        card_last4=card.get("last4"),
-        card_exp_month=card.get("exp_month"),
-        card_exp_year=card.get("exp_year"),
+        card_brand=card_brand,
+        card_last4=card_last4,
+        card_exp_month=card_exp_month,
+        card_exp_year=card_exp_year,
         is_default=is_default,
     )
 
@@ -307,12 +339,13 @@ async def _handle_payment_method_attached(db: AsyncSession, payment_method: dict
     await db.commit()
 
 
-async def _handle_payment_method_detached(db: AsyncSession, payment_method: dict) -> None:
+async def _handle_payment_method_detached(db: AsyncSession, payment_method: dict[str, Any]) -> None:
     """Handle payment_method.detached event."""
-    from llamatrade_db.models import PaymentMethod
     from sqlalchemy import delete
 
-    stripe_pm_id = payment_method.get("id")
+    from llamatrade_db.models import PaymentMethod
+
+    stripe_pm_id: str | None = payment_method.get("id")
 
     logger.info(f"Payment method detached: {stripe_pm_id}")
 

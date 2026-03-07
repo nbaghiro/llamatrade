@@ -1,6 +1,7 @@
 """Tests for trading service Prometheus metrics."""
 
 import pytest
+
 from src.metrics import (
     ACTIVE_POSITIONS,
     ACTIVE_RUNNERS,

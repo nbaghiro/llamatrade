@@ -1,14 +1,18 @@
 """Shared test fixtures for portfolio service."""
 
+from collections.abc import AsyncGenerator
 from datetime import UTC, date, datetime
 from decimal import Decimal
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 from uuid import UUID
 
 import pytest
 from httpx import ASGITransport, AsyncClient
+
 from llamatrade_common.middleware import require_auth
 from llamatrade_common.models import TenantContext
+
 from src.main import app
 
 # Test UUIDs
@@ -70,7 +74,9 @@ def mock_market_data_client() -> AsyncMock:
 
 
 @pytest.fixture
-async def authenticated_client(mock_tenant_context: TenantContext) -> AsyncClient:
+async def authenticated_client(
+    mock_tenant_context: TenantContext,
+) -> AsyncGenerator[AsyncClient]:
     """Create async test client with authentication context."""
     # Override the require_auth dependency to return our mock context
     app.dependency_overrides[require_auth] = lambda: mock_tenant_context
@@ -84,7 +90,7 @@ async def authenticated_client(mock_tenant_context: TenantContext) -> AsyncClien
 
 
 @pytest.fixture
-async def client() -> AsyncClient:
+async def client() -> AsyncGenerator[AsyncClient]:
     """Create async test client without authentication."""
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
@@ -92,7 +98,7 @@ async def client() -> AsyncClient:
 
 
 @pytest.fixture
-def sample_positions() -> list[dict]:
+def sample_positions() -> list[dict[str, Any]]:
     """Sample positions data for testing."""
     return [
         {
@@ -115,7 +121,7 @@ def sample_positions() -> list[dict]:
 
 
 @pytest.fixture
-def sample_portfolio_summary(sample_positions: list[dict]) -> MagicMock:
+def sample_portfolio_summary(sample_positions: list[dict[str, Any]]) -> MagicMock:
     """Create a mock portfolio summary model."""
     summary = MagicMock()
     summary.tenant_id = TEST_TENANT_ID
@@ -137,7 +143,7 @@ def sample_portfolio_summary(sample_positions: list[dict]) -> MagicMock:
 @pytest.fixture
 def sample_portfolio_history() -> list[MagicMock]:
     """Create sample portfolio history records."""
-    history = []
+    history: list[MagicMock] = []
     base_equity = 100000
     for i in range(30):
         record = MagicMock()

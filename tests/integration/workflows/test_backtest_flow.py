@@ -12,15 +12,19 @@ Mark with @pytest.mark.slow for selective execution.
 
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
-from uuid import uuid4
 
-import httpx
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from llamatrade_db.models import Backtest, Strategy, Tenant, User
-from tests.factories import BacktestFactory, StrategyFactory
-from tests.integration.fixtures.auth import create_auth_headers, create_jwt_token
+from llamatrade_db.models import Backtest, Tenant, User
+from tests.factories import (
+    BACKTEST_STATUS_COMPLETED,
+    BACKTEST_STATUS_FAILED,
+    BACKTEST_STATUS_PENDING,
+    BACKTEST_STATUS_RUNNING,
+    BacktestFactory,
+    StrategyFactory,
+)
 
 pytestmark = [pytest.mark.integration, pytest.mark.workflow, pytest.mark.slow]
 
@@ -66,7 +70,7 @@ class TestBacktestWorkflowWithDatabase:
             tenant_id=test_tenant.id,
             strategy_id=strategy.id,
             created_by=test_user.id,
-            status="pending",
+            status=BACKTEST_STATUS_PENDING,
             start_date=start_date.date(),
             end_date=end_date.date(),
             initial_capital=Decimal("100000.00"),
@@ -76,19 +80,19 @@ class TestBacktestWorkflowWithDatabase:
         await db_session.flush()
 
         assert backtest.id is not None
-        assert backtest.status == "pending"
+        assert backtest.status == BACKTEST_STATUS_PENDING
 
         # Step 3: Simulate backtest execution
-        backtest.status = "running"
+        backtest.status = BACKTEST_STATUS_RUNNING
         await db_session.flush()
-        assert backtest.status == "running"
+        assert backtest.status == BACKTEST_STATUS_RUNNING
 
         # Simulate completion with results
-        backtest.status = "completed"
+        backtest.status = BACKTEST_STATUS_COMPLETED
         await db_session.flush()
 
         # Step 4: Verify final state
-        assert backtest.status == "completed"
+        assert backtest.status == BACKTEST_STATUS_COMPLETED
         assert backtest.strategy_id == strategy.id
         assert backtest.tenant_id == test_tenant.id
 
@@ -223,21 +227,21 @@ class TestBacktestStatusTransitions:
             tenant_id=test_tenant.id,
             strategy_id=strategy.id,
             created_by=test_user.id,
-            status="pending",
+            status=BACKTEST_STATUS_PENDING,
         )
         db_session.add(backtest)
         await db_session.flush()
 
         # Transition: pending -> running
-        assert backtest.status == "pending"
-        backtest.status = "running"
+        assert backtest.status == BACKTEST_STATUS_PENDING
+        backtest.status = BACKTEST_STATUS_RUNNING
         await db_session.flush()
-        assert backtest.status == "running"
+        assert backtest.status == BACKTEST_STATUS_RUNNING
 
         # Transition: running -> completed
-        backtest.status = "completed"
+        backtest.status = BACKTEST_STATUS_COMPLETED
         await db_session.flush()
-        assert backtest.status == "completed"
+        assert backtest.status == BACKTEST_STATUS_COMPLETED
 
     async def test_failed_backtest_status(
         self,
@@ -257,18 +261,18 @@ class TestBacktestStatusTransitions:
             tenant_id=test_tenant.id,
             strategy_id=strategy.id,
             created_by=test_user.id,
-            status="pending",
+            status=BACKTEST_STATUS_PENDING,
         )
         db_session.add(backtest)
         await db_session.flush()
 
         # Transition: pending -> running -> failed
-        backtest.status = "running"
+        backtest.status = BACKTEST_STATUS_RUNNING
         await db_session.flush()
 
-        backtest.status = "failed"
+        backtest.status = BACKTEST_STATUS_FAILED
         await db_session.flush()
-        assert backtest.status == "failed"
+        assert backtest.status == BACKTEST_STATUS_FAILED
 
 
 class TestBacktestWithResults:
@@ -294,14 +298,14 @@ class TestBacktestWithResults:
             tenant_id=test_tenant.id,
             strategy_id=strategy.id,
             created_by=test_user.id,
-            status="completed",
+            status=BACKTEST_STATUS_COMPLETED,
         )
         db_session.add(backtest)
         await db_session.flush()
 
         # Generate a large equity curve (365 days of data)
         equity_curve = [
-            {"date": f"2023-{(i//30)+1:02d}-{(i%30)+1:02d}", "equity": 100000 + i * 100}
+            {"date": f"2023-{(i // 30) + 1:02d}-{(i % 30) + 1:02d}", "equity": 100000 + i * 100}
             for i in range(365)
         ]
 
@@ -340,7 +344,7 @@ class TestBacktestWithResults:
             tenant_id=test_tenant.id,
             strategy_id=strategy.id,
             created_by=test_user.id,
-            status="completed",
+            status=BACKTEST_STATUS_COMPLETED,
         )
         db_session.add(backtest)
         await db_session.flush()

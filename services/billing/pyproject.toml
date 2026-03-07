@@ -2,7 +2,7 @@
 name = "llamatrade-billing"
 version = "0.1.0"
 description = "LlamaTrade Billing Service"
-requires-python = ">=3.12"
+requires-python = ">=3.14"
 dependencies = [
     "fastapi>=0.109.0",
     "uvicorn[standard]>=0.27.0",
@@ -10,7 +10,7 @@ dependencies = [
     "stripe>=7.0.0",
     "llamatrade-common",
     "llamatrade-db",
-    "llamatrade-grpc",
+    "llamatrade-proto",
 ]
 
 [project.optional-dependencies]
@@ -35,8 +35,11 @@ asyncio_mode = "auto"
 testpaths = ["tests"]
 
 [tool.ruff]
+extend = "../../pyproject.toml"
 line-length = 100
-target-version = "py312"
+target-version = "py314"
 
-[tool.ruff.lint]
-select = ["E", "F", "I", "N", "W", "UP"]
+[tool.pyright]
+venvPath = "../.."
+venv = ".venv"
+pythonVersion = "3.14"

@@ -3,7 +3,8 @@
 import logging
 from datetime import datetime
 
-from src.alpaca.client import AlpacaDataClient, get_alpaca_client
+from llamatrade_alpaca import MarketDataClient, get_market_data_client_async
+
 from src.cache import (
     TTL_LATEST_BAR,
     TTL_LATEST_QUOTE,
@@ -19,7 +20,7 @@ logger = logging.getLogger(__name__)
 class MarketDataService:
     """Service layer for market data with caching."""
 
-    def __init__(self, alpaca: AlpacaDataClient, cache: MarketDataCache | None):
+    def __init__(self, alpaca: MarketDataClient, cache: MarketDataCache | None):
         self._alpaca = alpaca
         self._cache = cache
 
@@ -74,18 +75,25 @@ class MarketDataService:
         """Get historical bars for multiple symbols with caching.
 
         Note: Multi-symbol requests are cached per-symbol for flexibility.
+        Uses batch mget to avoid N+1 Redis lookups.
         """
         symbols = [s.upper() for s in symbols]
         result: dict[str, list[Bar]] = {}
         symbols_to_fetch: list[str] = []
 
-        # Check cache for each symbol (unless refresh requested)
+        # Check cache for all symbols in one round-trip (unless refresh requested)
         if self._cache and not refresh:
-            for symbol in symbols:
-                cache_key = MarketDataCache.bars_key(symbol, timeframe, start, end, limit)
-                cached = await self._cache.get(cache_key)
-                if cached:
-                    result[symbol] = MarketDataCache.deserialize_model_list(cached, Bar)
+            # Build key -> symbol mapping
+            key_to_symbol = {
+                MarketDataCache.bars_key(symbol, timeframe, start, end, limit): symbol
+                for symbol in symbols
+            }
+            # Batch fetch from cache
+            cached_values = await self._cache.mget(list(key_to_symbol.keys()))
+            for key, value in cached_values.items():
+                symbol = key_to_symbol[key]
+                if value is not None:
+                    result[symbol] = MarketDataCache.deserialize_model_list(value, Bar)
                 else:
                     symbols_to_fetch.append(symbol)
         else:
@@ -201,18 +209,24 @@ class MarketDataService:
         symbols: list[str],
         refresh: bool = False,
     ) -> dict[str, Snapshot]:
-        """Get market snapshots for multiple symbols with caching."""
+        """Get market snapshots for multiple symbols with caching.
+
+        Uses batch mget to avoid N+1 Redis lookups.
+        """
         symbols = [s.upper() for s in symbols]
         result: dict[str, Snapshot] = {}
         symbols_to_fetch: list[str] = []
 
-        # Check cache for each symbol (unless refresh requested)
+        # Check cache for all symbols in one round-trip (unless refresh requested)
         if self._cache and not refresh:
-            for symbol in symbols:
-                cache_key = MarketDataCache.snapshot_key(symbol)
-                cached = await self._cache.get(cache_key)
-                if cached:
-                    result[symbol] = MarketDataCache.deserialize_model(cached, Snapshot)
+            # Build key -> symbol mapping
+            key_to_symbol = {MarketDataCache.snapshot_key(symbol): symbol for symbol in symbols}
+            # Batch fetch from cache
+            cached_values = await self._cache.mget(list(key_to_symbol.keys()))
+            for key, value in cached_values.items():
+                symbol = key_to_symbol[key]
+                if value is not None:
+                    result[symbol] = MarketDataCache.deserialize_model(value, Snapshot)
                 else:
                     symbols_to_fetch.append(symbol)
         else:
@@ -238,6 +252,6 @@ class MarketDataService:
 
 async def get_market_data_service() -> MarketDataService:
     """FastAPI dependency to get the market data service."""
-    alpaca = await get_alpaca_client()
+    alpaca = await get_market_data_client_async()
     cache = get_cache()
     return MarketDataService(alpaca=alpaca, cache=cache)

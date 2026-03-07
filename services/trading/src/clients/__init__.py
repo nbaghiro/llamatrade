@@ -1,6 +1,6 @@
 """Trading service clients.
 
-All inter-service communication uses gRPC via llamatrade_grpc.
+All inter-service communication uses Connect protocol via llamatrade_proto.
 """
 
 __all__: list[str] = []

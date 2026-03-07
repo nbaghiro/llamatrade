@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock
 from uuid import uuid4
 
 import pytest
+
 from src.circuit_breaker import (
     CircuitBreaker,
     CircuitBreakerConfig,

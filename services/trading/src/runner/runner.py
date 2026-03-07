@@ -3,13 +3,22 @@
 import asyncio
 import logging
 import time
+from collections import deque
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from decimal import Decimal
-from typing import Literal, Protocol, cast
+from typing import Any, Literal, Protocol, cast
 from uuid import UUID
 
-from src.alpaca_client import AlpacaTradingClient
+from llamatrade_alpaca import TradingClient
+from llamatrade_proto.generated.trading_pb2 import (
+    ORDER_SIDE_BUY,
+    ORDER_SIDE_SELL,
+    ORDER_TYPE_MARKET,
+    TIME_IN_FORCE_DAY,
+)
+
 from src.circuit_breaker import (
     CircuitBreaker,
     CircuitBreakerConfig,
@@ -21,15 +30,24 @@ from src.executor.event_sourced_executor import EventSourcedOrderExecutor
 from src.executor.order_executor import OrderExecutor
 from src.metrics import (
     record_bar_processed,
+    record_fill_processed,
+    record_position_reconciliation,
     record_signal,
     record_strategy_error,
     update_positions,
     update_runner_gauge,
 )
-from src.models import OrderCreate, OrderSide, OrderType, RiskLimits, TimeInForce
+from src.models import OrderCreate, RiskLimits
 from src.risk.risk_manager import RiskManager
 from src.runner.bar_stream import AlpacaBarStream, BarData, MockBarStream
+from src.runner.trade_stream import (
+    AlpacaTradeStream,
+    MockTradeStream,
+    TradeEvent,
+    TradeEventType,
+)
 from src.services.alert_service import AlertService
+from src.utils.trading_hours import TradingHoursChecker, TradingHoursConfig
 
 logger = logging.getLogger(__name__)
 
@@ -61,21 +79,36 @@ class RunnerConfig:
     """Configuration for strategy runner."""
 
     tenant_id: UUID
-    deployment_id: UUID
+    execution_id: UUID
     strategy_id: UUID
     symbols: list[str]
     timeframe: str
     warmup_bars: int = 50
     risk_limits: RiskLimits | None = None
 
+    # Position reconciliation settings
+    position_reconciliation_enabled: bool = True
+    position_reconciliation_interval_seconds: int = 300  # 5 minutes
+    position_drift_auto_correct_threshold_pct: float = 5.0  # Auto-correct if < 5% drift
+    position_drift_alert_threshold_pct: float = 10.0  # Alert if >= 10% drift
+
+    # Trading hours settings
+    enforce_trading_hours: bool = True  # Skip signals outside market hours
+    allow_premarket: bool = False  # Allow trading during pre-market (4 AM - 9:30 AM ET)
+    allow_afterhours: bool = False  # Allow trading during after-hours (4 PM - 8 PM ET)
+
 
 class StrategyFunction(Protocol):
-    """Protocol for compiled strategy functions."""
+    """Protocol for compiled strategy functions.
+
+    The bars parameter accepts any sequence type (list, deque, etc.)
+    to allow for efficient O(1) append operations in the runner.
+    """
 
     def __call__(
         self,
         symbol: str,
-        bars: list[BarData],
+        bars: Sequence[BarData],
         position: Position | None,
         equity: float,
     ) -> Signal | None: ...
@@ -97,9 +130,10 @@ class StrategyRunner:
         config: RunnerConfig,
         strategy_fn: StrategyFunction,
         bar_stream: AlpacaBarStream | MockBarStream,
+        trade_stream: AlpacaTradeStream | MockTradeStream,
         order_executor: OrderExecutor,
         risk_manager: RiskManager,
-        alpaca_client: AlpacaTradingClient | None = None,
+        alpaca_client: TradingClient | None = None,
         alert_service: AlertService | None = None,
         strategy_name: str = "Unknown Strategy",
         circuit_breaker_config: CircuitBreakerConfig | None = None,
@@ -113,6 +147,7 @@ class StrategyRunner:
         self.alpaca_client = alpaca_client
         self.alerts = alert_service
         self.strategy_name = strategy_name
+        self.trade_stream = trade_stream
 
         # Event sourcing (optional)
         self._event_store = event_store
@@ -128,24 +163,48 @@ class StrategyRunner:
         # State
         self._running = False
         self._paused = False
-        self._bar_history: dict[str, list[BarData]] = {s: [] for s in config.symbols}
+        # Use deque with maxlen for O(1) append and automatic size limiting
+        max_history_size = config.warmup_bars + 100
+        self._bar_history: dict[str, deque[BarData]] = {
+            s: deque(maxlen=max_history_size) for s in config.symbols
+        }
         self._positions: dict[str, Position] = {}
         self._equity = 100000.0  # Default, will be synced from Alpaca
-        self._equity_sync_task: asyncio.Task | None = None
+        self._equity_sync_task: asyncio.Task[None] | None = None
+        self._position_sync_task: asyncio.Task[None] | None = None
+        self._trade_stream_task: asyncio.Task[None] | None = None
+
+        # Track pending orders (submitted but not yet filled)
+        # Maps client_order_id -> signal info for position updates on fill
+        self._pending_orders: dict[str, Signal] = {}
 
         # Circuit breaker
         self._circuit_breaker = create_circuit_breaker(
             tenant_id=config.tenant_id,
-            session_id=config.deployment_id,
+            session_id=config.execution_id,
             callback=alert_service,
             starting_equity=self._equity,
             config=circuit_breaker_config,
         )
 
+        # Trading hours checker
+        self._trading_hours: TradingHoursChecker | None = None
+        if config.enforce_trading_hours:
+            trading_hours_config = TradingHoursConfig(
+                allow_premarket=config.allow_premarket,
+                allow_afterhours=config.allow_afterhours,
+            )
+            self._trading_hours = TradingHoursChecker(trading_hours_config)
+
         # Metrics
         self._signals_generated = 0
         self._orders_submitted = 0
         self._orders_rejected = 0
+        self._fills_processed = 0
+
+        # Reconciliation tracking
+        self._last_reconciliation_time: datetime | None = None
+        self._reconciliation_error_count: int = 0
 
     @property
     def running(self) -> bool:
@@ -163,13 +222,15 @@ class StrategyRunner:
         return self._positions.copy()
 
     @property
-    def metrics(self) -> dict:
+    def metrics(self) -> dict[str, Any]:
         """Get runner metrics."""
         cb_status = self._circuit_breaker.get_status()
         return {
             "signals_generated": self._signals_generated,
             "orders_submitted": self._orders_submitted,
             "orders_rejected": self._orders_rejected,
+            "fills_processed": self._fills_processed,
+            "pending_orders": len(self._pending_orders),
             "positions": len(self._positions),
             "bar_history_sizes": {s: len(bars) for s, bars in self._bar_history.items()},
             "circuit_breaker_state": cb_status.state.value,
@@ -179,7 +240,24 @@ class StrategyRunner:
             "circuit_breaker_reason": (
                 cb_status.triggered_reason.value if cb_status.triggered_reason else None
             ),
+            "last_reconciliation_time": (
+                self._last_reconciliation_time.isoformat()
+                if self._last_reconciliation_time
+                else None
+            ),
+            "reconciliation_error_count": self._reconciliation_error_count,
+            "trade_stream_connected": self.trade_stream.connected,
         }
+
+    @property
+    def last_reconciliation_time(self) -> datetime | None:
+        """Get last successful reconciliation time."""
+        return self._last_reconciliation_time
+
+    @property
+    def reconciliation_error_count(self) -> int:
+        """Get count of consecutive reconciliation errors."""
+        return self._reconciliation_error_count
 
     @property
     def circuit_breaker(self) -> CircuitBreaker:
@@ -197,13 +275,13 @@ class StrategyRunner:
             logger.warning("Runner already started")
             return
 
-        logger.info(f"Starting strategy runner for deployment {self.config.deployment_id}")
+        logger.info(f"Starting strategy runner for execution {self.config.execution_id}")
 
         # Recover from crash if using event sourcing
         if self._event_executor:
             logger.info("Recovering state from events...")
             state = await self._event_executor.recover_from_crash(
-                session_id=self.config.deployment_id,
+                session_id=self.config.execution_id,
                 tenant_id=self.config.tenant_id,
             )
             # Restore positions from event-sourced state
@@ -227,7 +305,7 @@ class StrategyRunner:
                 if self.alerts:
                     await self.alerts.on_connection_lost(
                         tenant_id=self.config.tenant_id,
-                        session_id=self.config.deployment_id,
+                        session_id=self.config.execution_id,
                         service="bar_stream",
                     )
                 raise RuntimeError("Failed to connect to bar stream")
@@ -235,6 +313,22 @@ class StrategyRunner:
         # Subscribe to symbols
         if not await self.bar_stream.subscribe(self.config.symbols):
             raise RuntimeError("Failed to subscribe to symbols")
+
+        # Connect to trade stream for fill updates
+        if not self.trade_stream.connected:
+            if not await self.trade_stream.connect():
+                if self.alerts:
+                    await self.alerts.on_connection_lost(
+                        tenant_id=self.config.tenant_id,
+                        session_id=self.config.execution_id,
+                        service="trade_stream",
+                    )
+                raise RuntimeError("Failed to connect to trade stream")
+
+        if not await self.trade_stream.subscribe():
+            raise RuntimeError("Failed to subscribe to trade updates")
+
+        logger.info("Connected to trade stream for fill updates")
 
         self._running = True
 
@@ -244,7 +338,7 @@ class StrategyRunner:
             await self._event_store.append(
                 SessionStarted(
                     tenant_id=self.config.tenant_id,
-                    session_id=self.config.deployment_id,
+                    session_id=self.config.execution_id,
                     strategy_id=self.config.strategy_id,
                     strategy_name=self.strategy_name,
                     mode=mode,
@@ -257,13 +351,20 @@ class StrategyRunner:
         if self.alerts:
             await self.alerts.on_session_started(
                 tenant_id=self.config.tenant_id,
-                session_id=self.config.deployment_id,
+                session_id=self.config.execution_id,
                 strategy_name=self.strategy_name,
                 mode=mode,
             )
 
         # Start periodic equity sync task
         self._equity_sync_task = asyncio.create_task(self._equity_sync_loop())
+
+        # Start periodic position reconciliation task (if enabled)
+        if self.config.position_reconciliation_enabled and self.alpaca_client:
+            self._position_sync_task = asyncio.create_task(self._position_sync_loop())
+
+        # Start trade stream processing task (for event-driven position updates)
+        self._trade_stream_task = asyncio.create_task(self._trade_stream_loop())
 
         # Main processing loop
         try:
@@ -284,7 +385,7 @@ class StrategyRunner:
             if self.alerts:
                 await self.alerts.on_session_error(
                     tenant_id=self.config.tenant_id,
-                    session_id=self.config.deployment_id,
+                    session_id=self.config.execution_id,
                     error=str(e),
                 )
             raise
@@ -296,20 +397,37 @@ class StrategyRunner:
                     await self._equity_sync_task
                 except asyncio.CancelledError:
                     pass
+            if self._position_sync_task:
+                self._position_sync_task.cancel()
+                try:
+                    await self._position_sync_task
+                except asyncio.CancelledError:
+                    pass
             logger.info("Runner stopped")
 
     async def stop(self, reason: str | None = None) -> None:
         """Stop the strategy runner."""
-        logger.info(f"Stopping runner for deployment {self.config.deployment_id}")
+        logger.info(f"Stopping runner for execution {self.config.execution_id}")
         self._running = False
+
+        # Disconnect streams
         await self.bar_stream.disconnect()
+        await self.trade_stream.disconnect()
+
+        # Cancel background tasks
+        if self._trade_stream_task and not self._trade_stream_task.done():
+            self._trade_stream_task.cancel()
+            try:
+                await self._trade_stream_task
+            except asyncio.CancelledError:
+                pass
 
         # Emit SessionStopped event if using event sourcing
         if self._event_store:
             await self._event_store.append(
                 SessionStopped(
                     tenant_id=self.config.tenant_id,
-                    session_id=self.config.deployment_id,
+                    session_id=self.config.execution_id,
                     reason=reason or "user_requested",
                     final_equity=Decimal(str(self._equity)),
                 )
@@ -319,18 +437,18 @@ class StrategyRunner:
         if self.alerts:
             await self.alerts.on_session_stopped(
                 tenant_id=self.config.tenant_id,
-                session_id=self.config.deployment_id,
+                session_id=self.config.execution_id,
                 reason=reason,
             )
 
     def pause(self) -> None:
         """Pause signal generation (continues receiving bars)."""
-        logger.info(f"Pausing runner for deployment {self.config.deployment_id}")
+        logger.info(f"Pausing runner for execution {self.config.execution_id}")
         self._paused = True
 
     def resume(self) -> None:
         """Resume signal generation."""
-        logger.info(f"Resuming runner for deployment {self.config.deployment_id}")
+        logger.info(f"Resuming runner for execution {self.config.execution_id}")
         self._paused = False
 
     async def reset_circuit_breaker(self, force: bool = False) -> bool:
@@ -344,7 +462,7 @@ class StrategyRunner:
         """
         success = await self._circuit_breaker.reset(force=force)
         if success:
-            logger.info(f"Circuit breaker reset for deployment {self.config.deployment_id}")
+            logger.info(f"Circuit breaker reset for execution {self.config.execution_id}")
         return success
 
     async def trigger_circuit_breaker(self, reason: str | None = None) -> None:
@@ -366,18 +484,20 @@ class StrategyRunner:
         if symbol not in self._bar_history:
             return
 
-        # Add to history
+        # Add to history (deque with maxlen handles size limiting automatically)
         self._bar_history[symbol].append(bar)
-
-        # Limit history size
-        max_history = self.config.warmup_bars + 100
-        if len(self._bar_history[symbol]) > max_history:
-            self._bar_history[symbol] = self._bar_history[symbol][-max_history:]
 
         # Skip if warming up
         if len(self._bar_history[symbol]) < self.config.warmup_bars:
             logger.debug(
                 f"Warming up {symbol}: {len(self._bar_history[symbol])}/{self.config.warmup_bars}"
+            )
+            return
+
+        # Check trading hours before generating signals
+        if self._trading_hours and not self._trading_hours.is_market_open(bar.timestamp):
+            logger.debug(
+                f"Market closed at {bar.timestamp}, skipping signal generation for {symbol}"
             )
             return
 
@@ -412,7 +532,7 @@ class StrategyRunner:
             if self.alerts:
                 await self.alerts.on_strategy_error(
                     tenant_id=self.config.tenant_id,
-                    session_id=self.config.deployment_id,
+                    session_id=self.config.execution_id,
                     error=f"Error processing {symbol}: {e}",
                 )
         finally:
@@ -438,7 +558,7 @@ class StrategyRunner:
             )
             await self._event_executor.record_signal(
                 tenant_id=self.config.tenant_id,
-                session_id=self.config.deployment_id,
+                session_id=self.config.execution_id,
                 symbol=signal.symbol,
                 signal_type=signal_type,
                 price=Decimal(str(signal.price)),
@@ -454,7 +574,7 @@ class StrategyRunner:
                 # Event-sourced path - idempotent, durable
                 order_id = await self._event_executor.submit_order(
                     tenant_id=self.config.tenant_id,
-                    session_id=self.config.deployment_id,
+                    session_id=self.config.execution_id,
                     order=order,
                     signal_timestamp=signal.timestamp,
                 )
@@ -477,7 +597,7 @@ class StrategyRunner:
                     if self.alerts:
                         await self.alerts.on_risk_breach(
                             tenant_id=self.config.tenant_id,
-                            session_id=self.config.deployment_id,
+                            session_id=self.config.execution_id,
                             breach_type="signal_rejected",
                             details={
                                 "symbol": signal.symbol,
@@ -490,14 +610,18 @@ class StrategyRunner:
 
                 result = await self.order_executor.submit_order(
                     tenant_id=self.config.tenant_id,
-                    session_id=self.config.deployment_id,
+                    session_id=self.config.execution_id,
                     order=order,
                 )
                 self._orders_submitted += 1
                 logger.info(f"Order submitted: {result.id} status={result.status}")
 
-            # Update position tracking
-            await self._update_position(signal)
+                # Track pending order for fill-based position update
+                if result.client_order_id:
+                    self._pending_orders[result.client_order_id] = signal
+
+            # Position updates happen via trade stream fill events, not here
+            # This ensures positions match broker reality
 
         except Exception as e:
             logger.error(f"Order submission failed: {e}")
@@ -508,14 +632,14 @@ class StrategyRunner:
 
     def _signal_to_order(self, signal: Signal) -> OrderCreate:
         """Convert a signal to an order request."""
-        side = OrderSide.BUY if signal.type in ("buy", "cover") else OrderSide.SELL
+        side = ORDER_SIDE_BUY if signal.type in ("buy", "cover") else ORDER_SIDE_SELL
 
         return OrderCreate(
             symbol=signal.symbol,
             side=side,
             qty=signal.quantity,
-            order_type=OrderType.MARKET,
-            time_in_force=TimeInForce.DAY,
+            order_type=ORDER_TYPE_MARKET,
+            time_in_force=TIME_IN_FORCE_DAY,
         )
 
     async def _update_position(self, signal: Signal, order_id: UUID | None = None) -> None:
@@ -547,7 +671,7 @@ class StrategyRunner:
                     ) / new_qty
                     await self._event_executor.record_position_increased(
                         tenant_id=self.config.tenant_id,
-                        session_id=self.config.deployment_id,
+                        session_id=self.config.execution_id,
                         symbol=symbol,
                         qty_added=Decimal(str(signal.quantity)),
                         price=Decimal(str(signal.price)),
@@ -559,7 +683,7 @@ class StrategyRunner:
                     # Opening new position
                     await self._event_executor.record_position_opened(
                         tenant_id=self.config.tenant_id,
-                        session_id=self.config.deployment_id,
+                        session_id=self.config.execution_id,
                         symbol=symbol,
                         side="long",
                         qty=Decimal(str(signal.quantity)),
@@ -570,7 +694,7 @@ class StrategyRunner:
             if self.alerts:
                 await self.alerts.on_position_opened(
                     tenant_id=self.config.tenant_id,
-                    session_id=self.config.deployment_id,
+                    session_id=self.config.execution_id,
                     symbol=symbol,
                     side="long",
                     qty=signal.quantity,
@@ -588,7 +712,7 @@ class StrategyRunner:
                 if self._event_executor:
                     await self._event_executor.record_position_closed(
                         tenant_id=self.config.tenant_id,
-                        session_id=self.config.deployment_id,
+                        session_id=self.config.execution_id,
                         symbol=symbol,
                         exit_price=Decimal(str(signal.price)),
                         realized_pnl=Decimal(str(pnl)),
@@ -599,7 +723,7 @@ class StrategyRunner:
                 if self.alerts:
                     await self.alerts.on_position_closed(
                         tenant_id=self.config.tenant_id,
-                        session_id=self.config.deployment_id,
+                        session_id=self.config.execution_id,
                         symbol=symbol,
                         qty=old_position.quantity,
                         pnl=pnl,
@@ -625,7 +749,7 @@ class StrategyRunner:
                     ) / new_qty
                     await self._event_executor.record_position_increased(
                         tenant_id=self.config.tenant_id,
-                        session_id=self.config.deployment_id,
+                        session_id=self.config.execution_id,
                         symbol=symbol,
                         qty_added=Decimal(str(signal.quantity)),
                         price=Decimal(str(signal.price)),
@@ -637,7 +761,7 @@ class StrategyRunner:
                     # Opening new short position
                     await self._event_executor.record_position_opened(
                         tenant_id=self.config.tenant_id,
-                        session_id=self.config.deployment_id,
+                        session_id=self.config.execution_id,
                         symbol=symbol,
                         side="short",
                         qty=Decimal(str(signal.quantity)),
@@ -648,7 +772,7 @@ class StrategyRunner:
             if self.alerts:
                 await self.alerts.on_position_opened(
                     tenant_id=self.config.tenant_id,
-                    session_id=self.config.deployment_id,
+                    session_id=self.config.execution_id,
                     symbol=symbol,
                     side="short",
                     qty=signal.quantity,
@@ -667,7 +791,7 @@ class StrategyRunner:
                 if self._event_executor:
                     await self._event_executor.record_position_closed(
                         tenant_id=self.config.tenant_id,
-                        session_id=self.config.deployment_id,
+                        session_id=self.config.execution_id,
                         symbol=symbol,
                         exit_price=Decimal(str(signal.price)),
                         realized_pnl=Decimal(str(pnl)),
@@ -678,7 +802,7 @@ class StrategyRunner:
                 if self.alerts:
                     await self.alerts.on_position_closed(
                         tenant_id=self.config.tenant_id,
-                        session_id=self.config.deployment_id,
+                        session_id=self.config.execution_id,
                         symbol=symbol,
                         qty=old_position.quantity,
                         pnl=pnl,
@@ -688,7 +812,7 @@ class StrategyRunner:
         total_value = sum(pos.quantity * pos.entry_price for pos in self._positions.values())
         update_positions(
             str(self.config.tenant_id),
-            str(self.config.deployment_id),
+            str(self.config.execution_id),
             len(self._positions),
             total_value,
         )
@@ -738,6 +862,565 @@ class StrategyRunner:
             if self._running:
                 await self._sync_equity()
 
+    async def _position_sync_loop(self) -> None:
+        """Periodically reconcile positions with Alpaca."""
+        interval = self.config.position_reconciliation_interval_seconds
+        while self._running:
+            await asyncio.sleep(interval)
+            if self._running:
+                await self._sync_positions()
+
+    async def _trade_stream_loop(self) -> None:
+        """Process trade updates from Alpaca for event-driven position management.
+
+        This loop receives fill events and updates positions based on actual
+        broker fills rather than optimistic assumptions. This ensures position
+        state matches broker reality.
+        """
+        logger.info("Starting trade stream processing loop")
+
+        try:
+            async for event in self.trade_stream.stream():
+                if not self._running:
+                    break
+
+                try:
+                    await self._handle_trade_event(event)
+                except Exception as e:
+                    logger.error(f"Error handling trade event: {e}")
+                    record_strategy_error("trade_event_processing")
+
+        except asyncio.CancelledError:
+            logger.info("Trade stream loop cancelled")
+        except Exception as e:
+            logger.error(f"Trade stream loop error: {e}")
+            if self.alerts:
+                await self.alerts.on_strategy_error(
+                    tenant_id=self.config.tenant_id,
+                    session_id=self.config.execution_id,
+                    error=f"Trade stream error: {e}",
+                )
+
+    async def _handle_trade_event(self, event: TradeEvent) -> None:
+        """Handle a trade update event from Alpaca.
+
+        Args:
+            event: The trade event to process
+        """
+        # Only process events for symbols we're tracking
+        if event.symbol not in self.config.symbols:
+            return
+
+        logger.debug(
+            f"Trade event: {event.event_type.value} {event.symbol} order={event.order_id[:8]}..."
+        )
+
+        if event.event_type == TradeEventType.FILL:
+            await self._handle_fill_event(event)
+        elif event.event_type == TradeEventType.PARTIAL_FILL:
+            await self._handle_partial_fill_event(event)
+        elif event.event_type == TradeEventType.CANCELED:
+            await self._handle_order_canceled(event)
+        elif event.event_type == TradeEventType.REJECTED:
+            await self._handle_order_rejected(event)
+
+    async def _handle_fill_event(self, event: TradeEvent) -> None:
+        """Handle a complete fill event - update position based on broker confirmation.
+
+        Args:
+            event: The fill event from Alpaca
+        """
+        start_time = time.perf_counter()
+
+        if not event.fill:
+            logger.warning(f"Fill event missing fill data: {event.order_id}")
+            return
+
+        fill = event.fill
+        symbol = fill.symbol
+        side = fill.side
+        fill_qty = float(fill.fill_qty)
+        fill_price = float(fill.fill_price)
+
+        logger.info(f"Processing fill: {side} {fill_qty} {symbol} @ ${fill_price:.2f}")
+
+        # Look up the original signal (if we submitted this order)
+        signal = self._pending_orders.pop(fill.client_order_id, None)
+
+        # Update position based on fill
+        old_position = self._positions.get(symbol)
+
+        if side == "buy":
+            # Opening or adding to long position
+            if old_position and old_position.side == "long":
+                # Adding to existing long position
+                new_qty = old_position.quantity + fill_qty
+                new_avg = (
+                    (old_position.entry_price * old_position.quantity) + (fill_price * fill_qty)
+                ) / new_qty
+                self._positions[symbol] = Position(
+                    symbol=symbol,
+                    side="long",
+                    quantity=new_qty,
+                    entry_price=new_avg,
+                    entry_date=old_position.entry_date,
+                )
+            elif old_position and old_position.side == "short":
+                # Closing short position (cover)
+                remaining = old_position.quantity - fill_qty
+                if remaining <= 0:
+                    # Fully closed
+                    pnl = (old_position.entry_price - fill_price) * old_position.quantity
+                    del self._positions[symbol]
+                    await self._circuit_breaker.record_trade(is_win=pnl >= 0, pnl=pnl)
+                    if self.alerts:
+                        await self.alerts.on_position_closed(
+                            tenant_id=self.config.tenant_id,
+                            session_id=self.config.execution_id,
+                            symbol=symbol,
+                            qty=old_position.quantity,
+                            pnl=pnl,
+                        )
+                else:
+                    # Partially closed
+                    self._positions[symbol] = Position(
+                        symbol=symbol,
+                        side="short",
+                        quantity=remaining,
+                        entry_price=old_position.entry_price,
+                        entry_date=old_position.entry_date,
+                    )
+            else:
+                # New long position
+                self._positions[symbol] = Position(
+                    symbol=symbol,
+                    side="long",
+                    quantity=fill_qty,
+                    entry_price=fill_price,
+                    entry_date=event.timestamp,
+                )
+                if self.alerts:
+                    await self.alerts.on_position_opened(
+                        tenant_id=self.config.tenant_id,
+                        session_id=self.config.execution_id,
+                        symbol=symbol,
+                        side="long",
+                        qty=fill_qty,
+                        price=fill_price,
+                    )
+
+        else:  # sell
+            # Closing long position or opening short
+            if old_position and old_position.side == "long":
+                # Closing long position
+                remaining = old_position.quantity - fill_qty
+                if remaining <= 0:
+                    # Fully closed
+                    pnl = (fill_price - old_position.entry_price) * old_position.quantity
+                    del self._positions[symbol]
+                    await self._circuit_breaker.record_trade(is_win=pnl >= 0, pnl=pnl)
+                    if self.alerts:
+                        await self.alerts.on_position_closed(
+                            tenant_id=self.config.tenant_id,
+                            session_id=self.config.execution_id,
+                            symbol=symbol,
+                            qty=old_position.quantity,
+                            pnl=pnl,
+                        )
+                else:
+                    # Partially closed
+                    self._positions[symbol] = Position(
+                        symbol=symbol,
+                        side="long",
+                        quantity=remaining,
+                        entry_price=old_position.entry_price,
+                        entry_date=old_position.entry_date,
+                    )
+            elif old_position and old_position.side == "short":
+                # Adding to short position
+                new_qty = old_position.quantity + fill_qty
+                new_avg = (
+                    (old_position.entry_price * old_position.quantity) + (fill_price * fill_qty)
+                ) / new_qty
+                self._positions[symbol] = Position(
+                    symbol=symbol,
+                    side="short",
+                    quantity=new_qty,
+                    entry_price=new_avg,
+                    entry_date=old_position.entry_date,
+                )
+            else:
+                # New short position
+                self._positions[symbol] = Position(
+                    symbol=symbol,
+                    side="short",
+                    quantity=fill_qty,
+                    entry_price=fill_price,
+                    entry_date=event.timestamp,
+                )
+                if self.alerts:
+                    await self.alerts.on_position_opened(
+                        tenant_id=self.config.tenant_id,
+                        session_id=self.config.execution_id,
+                        symbol=symbol,
+                        side="short",
+                        qty=fill_qty,
+                        price=fill_price,
+                    )
+
+        # Record metrics
+        self._fills_processed += 1
+        duration = time.perf_counter() - start_time
+        record_fill_processed(side=side, fill_type="full", duration=duration)
+
+        # Update position metrics
+        self._update_position_metrics()
+
+        # Emit event if using event sourcing and we have the original signal
+        if self._event_executor and signal:
+            signal_type = cast(
+                Literal["buy", "sell", "short", "cover"],
+                signal.type,
+            )
+            # Record fill in event store
+            if signal_type in ("buy", "short"):
+                await self._event_executor.record_position_opened(
+                    tenant_id=self.config.tenant_id,
+                    session_id=self.config.execution_id,
+                    symbol=symbol,
+                    side="long" if signal_type == "buy" else "short",
+                    qty=Decimal(str(fill_qty)),
+                    entry_price=Decimal(str(fill_price)),
+                    order_id=UUID(event.order_id) if len(event.order_id) == 36 else None,
+                )
+            elif signal_type in ("sell", "cover") and old_position:
+                pnl = (
+                    (fill_price - old_position.entry_price) * fill_qty
+                    if old_position.side == "long"
+                    else (old_position.entry_price - fill_price) * fill_qty
+                )
+                await self._event_executor.record_position_closed(
+                    tenant_id=self.config.tenant_id,
+                    session_id=self.config.execution_id,
+                    symbol=symbol,
+                    exit_price=Decimal(str(fill_price)),
+                    realized_pnl=Decimal(str(pnl)),
+                    order_id=UUID(event.order_id) if len(event.order_id) == 36 else None,
+                )
+
+        logger.info(f"Fill processed: {symbol} now {self._positions.get(symbol, 'flat')}")
+
+    async def _handle_partial_fill_event(self, event: TradeEvent) -> None:
+        """Handle a partial fill event.
+
+        For partial fills, we update position incrementally.
+        """
+        # Treat partial fills similarly to full fills for position tracking
+        await self._handle_fill_event(event)
+
+        # Log that this was a partial fill
+        if event.fill:
+            logger.info(
+                f"Partial fill: {event.fill.fill_qty}/{event.qty} "
+                f"remaining={event.fill.remaining_qty}"
+            )
+
+    async def _handle_order_canceled(self, event: TradeEvent) -> None:
+        """Handle an order cancellation.
+
+        Remove from pending orders - no position update needed.
+        """
+        # Remove from pending orders if we were tracking it
+        signal = self._pending_orders.pop(event.client_order_id, None)
+        if signal:
+            logger.info(f"Order canceled: {event.symbol} {signal.type} {signal.quantity}")
+
+    async def _handle_order_rejected(self, event: TradeEvent) -> None:
+        """Handle an order rejection.
+
+        Remove from pending orders and alert.
+        """
+        signal = self._pending_orders.pop(event.client_order_id, None)
+        if signal:
+            logger.warning(f"Order rejected: {event.symbol} {signal.type} {signal.quantity}")
+            self._orders_rejected += 1
+            record_strategy_error("order_rejected")
+
+            if self.alerts:
+                await self.alerts.on_strategy_error(
+                    tenant_id=self.config.tenant_id,
+                    session_id=self.config.execution_id,
+                    error=f"Order rejected by broker: {event.symbol} {signal.type}",
+                )
+
+    def _update_position_metrics(self) -> None:
+        """Update Prometheus metrics for positions."""
+        total_value = sum(pos.quantity * pos.entry_price for pos in self._positions.values())
+        update_positions(
+            str(self.config.tenant_id),
+            str(self.config.execution_id),
+            len(self._positions),
+            total_value,
+        )
+
+    async def _sync_positions(self) -> None:
+        """Reconcile local positions with Alpaca broker positions.
+
+        This method:
+        1. Fetches all positions from Alpaca
+        2. Compares with local position tracking
+        3. Auto-corrects small drifts (< auto_correct_threshold)
+        4. Alerts on large drifts (>= alert_threshold)
+        5. Handles missing positions in either direction
+        """
+        if not self.alpaca_client:
+            return
+
+        import time
+
+        start_time = time.perf_counter()
+
+        try:
+            # Fetch positions from Alpaca
+            broker_positions = await self.alpaca_client.get_positions()
+
+            # Build lookup by symbol
+            broker_by_symbol = {p.symbol: p for p in broker_positions}
+            local_symbols = set(self._positions.keys())
+            broker_symbols = set(broker_by_symbol.keys())
+
+            # Track symbols relevant to this strategy
+            strategy_symbols = set(self.config.symbols)
+
+            # Check for discrepancies
+            all_ok = True
+
+            # 1. Positions we track locally but broker doesn't have
+            missing_at_broker = local_symbols - broker_symbols
+            for symbol in missing_at_broker:
+                # Only care about symbols in our strategy
+                if symbol not in strategy_symbols:
+                    continue
+
+                local_pos = self._positions[symbol]
+                logger.warning(
+                    f"Position drift: {symbol} exists locally "
+                    f"({local_pos.side} {local_pos.quantity}) but not at broker"
+                )
+
+                duration = time.perf_counter() - start_time
+                record_position_reconciliation(
+                    result="drift_alerted",
+                    duration=duration,
+                    drift_type="missing_broker",
+                    symbol=symbol,
+                    drift_percent=100.0,  # 100% missing
+                )
+
+                # Alert on missing broker position
+                if self.alerts:
+                    await self.alerts.on_position_drift(
+                        tenant_id=self.config.tenant_id,
+                        session_id=self.config.execution_id,
+                        symbol=symbol,
+                        drift_type="missing_broker",
+                        local_qty=local_pos.quantity,
+                        broker_qty=0.0,
+                        action="alerted",
+                    )
+
+                all_ok = False
+
+            # 2. Positions broker has but we don't track locally
+            missing_locally = broker_symbols - local_symbols
+            for symbol in missing_locally:
+                # Only care about symbols in our strategy
+                if symbol not in strategy_symbols:
+                    continue
+
+                broker_pos = broker_by_symbol[symbol]
+                logger.warning(
+                    f"Position drift: {symbol} exists at broker "
+                    f"({broker_pos.side} {broker_pos.qty}) but not locally"
+                )
+
+                # Auto-add missing position (broker is source of truth)
+                self._positions[symbol] = Position(
+                    symbol=symbol,
+                    side=broker_pos.side,
+                    quantity=broker_pos.qty,
+                    entry_price=broker_pos.cost_basis / broker_pos.qty if broker_pos.qty > 0 else 0,
+                    entry_date=datetime.now(UTC),  # Approximate
+                )
+
+                duration = time.perf_counter() - start_time
+                record_position_reconciliation(
+                    result="drift_corrected",
+                    duration=duration,
+                    drift_type="missing_local",
+                    symbol=symbol,
+                    drift_percent=100.0,
+                )
+
+                logger.info(f"Auto-corrected: Added missing local position for {symbol}")
+
+                if self.alerts:
+                    await self.alerts.on_position_drift(
+                        tenant_id=self.config.tenant_id,
+                        session_id=self.config.execution_id,
+                        symbol=symbol,
+                        drift_type="missing_local",
+                        local_qty=0.0,
+                        broker_qty=broker_pos.qty,
+                        action="corrected",
+                    )
+
+                all_ok = False
+
+            # 3. Check quantity/side mismatches for symbols we both have
+            common_symbols = local_symbols & broker_symbols & strategy_symbols
+            for symbol in common_symbols:
+                local_pos = self._positions[symbol]
+                broker_pos = broker_by_symbol[symbol]
+
+                # Check side mismatch
+                if local_pos.side != broker_pos.side:
+                    logger.error(
+                        f"Position drift: {symbol} side mismatch - "
+                        f"local={local_pos.side}, broker={broker_pos.side}"
+                    )
+
+                    duration = time.perf_counter() - start_time
+                    record_position_reconciliation(
+                        result="drift_alerted",
+                        duration=duration,
+                        drift_type="side_mismatch",
+                        symbol=symbol,
+                    )
+
+                    if self.alerts:
+                        await self.alerts.on_position_drift(
+                            tenant_id=self.config.tenant_id,
+                            session_id=self.config.execution_id,
+                            symbol=symbol,
+                            drift_type="side_mismatch",
+                            local_qty=local_pos.quantity,
+                            broker_qty=broker_pos.qty,
+                            action="alerted",
+                        )
+
+                    all_ok = False
+                    continue
+
+                # Check quantity mismatch
+                if local_pos.quantity != broker_pos.qty:
+                    drift_pct = (
+                        abs(local_pos.quantity - broker_pos.qty)
+                        / max(local_pos.quantity, broker_pos.qty, 0.001)
+                        * 100
+                    )
+
+                    auto_correct_threshold = self.config.position_drift_auto_correct_threshold_pct
+                    alert_threshold = self.config.position_drift_alert_threshold_pct
+
+                    if drift_pct < auto_correct_threshold:
+                        # Auto-correct small drift
+                        old_qty = local_pos.quantity
+                        local_pos.quantity = broker_pos.qty
+
+                        duration = time.perf_counter() - start_time
+                        record_position_reconciliation(
+                            result="drift_corrected",
+                            duration=duration,
+                            drift_type="quantity_mismatch",
+                            symbol=symbol,
+                            drift_percent=drift_pct,
+                        )
+
+                        logger.info(
+                            f"Auto-corrected: {symbol} quantity drift "
+                            f"{old_qty} -> {broker_pos.qty} ({drift_pct:.1f}%)"
+                        )
+
+                        if self.alerts:
+                            await self.alerts.on_position_drift(
+                                tenant_id=self.config.tenant_id,
+                                session_id=self.config.execution_id,
+                                symbol=symbol,
+                                drift_type="quantity_mismatch",
+                                local_qty=old_qty,
+                                broker_qty=broker_pos.qty,
+                                action="corrected",
+                            )
+
+                    elif drift_pct >= alert_threshold:
+                        # Large drift - alert but don't auto-correct
+                        duration = time.perf_counter() - start_time
+                        record_position_reconciliation(
+                            result="drift_alerted",
+                            duration=duration,
+                            drift_type="quantity_mismatch",
+                            symbol=symbol,
+                            drift_percent=drift_pct,
+                        )
+
+                        logger.warning(
+                            f"Position drift: {symbol} quantity mismatch - "
+                            f"local={local_pos.quantity}, broker={broker_pos.qty} "
+                            f"({drift_pct:.1f}% drift)"
+                        )
+
+                        if self.alerts:
+                            await self.alerts.on_position_drift(
+                                tenant_id=self.config.tenant_id,
+                                session_id=self.config.execution_id,
+                                symbol=symbol,
+                                drift_type="quantity_mismatch",
+                                local_qty=local_pos.quantity,
+                                broker_qty=broker_pos.qty,
+                                action="alerted",
+                            )
+
+                        all_ok = False
+
+                    else:
+                        # Medium drift - log but don't act
+                        logger.debug(
+                            f"Position drift (ignored): {symbol} {drift_pct:.1f}% "
+                            f"(local={local_pos.quantity}, broker={broker_pos.qty})"
+                        )
+
+            # Record overall success if no issues
+            if all_ok:
+                duration = time.perf_counter() - start_time
+                record_position_reconciliation(result="match", duration=duration)
+                logger.debug(
+                    f"Position reconciliation complete: {len(common_symbols)} positions match"
+                )
+
+            # Track successful reconciliation
+            self._last_reconciliation_time = datetime.now(UTC)
+            self._reconciliation_error_count = 0  # Reset error count on success
+
+        except Exception as e:
+            duration = time.perf_counter() - start_time
+            record_position_reconciliation(result="error", duration=duration)
+            logger.error(f"Failed to reconcile positions: {e}")
+
+            # Track error count
+            self._reconciliation_error_count += 1
+
+            # Alert if 3+ consecutive failures
+            if self._reconciliation_error_count >= 3 and self.alerts:
+                await self.alerts.on_strategy_error(
+                    tenant_id=self.config.tenant_id,
+                    session_id=self.config.execution_id,
+                    error=f"Position reconciliation failing ({self._reconciliation_error_count} consecutive errors): {e}",
+                )
+
+            # Record API error in circuit breaker
+            await self._circuit_breaker.record_api_error(str(e))
+
 
 class RunnerManager:
     """Manages multiple strategy runners."""
@@ -751,18 +1434,19 @@ class RunnerManager:
         """Get IDs of active runners."""
         return [uid for uid, runner in self._runners.items() if runner.running]
 
-    def get_runner(self, deployment_id: UUID) -> StrategyRunner | None:
+    def get_runner(self, execution_id: UUID) -> StrategyRunner | None:
         """Get a runner by deployment ID."""
-        return self._runners.get(deployment_id)
+        return self._runners.get(execution_id)
 
     async def start_runner(
         self,
         config: RunnerConfig,
         strategy_fn: StrategyFunction,
         bar_stream: AlpacaBarStream | MockBarStream,
+        trade_stream: AlpacaTradeStream | MockTradeStream,
         order_executor: OrderExecutor,
         risk_manager: RiskManager,
-        alpaca_client: AlpacaTradingClient | None = None,
+        alpaca_client: TradingClient | None = None,
         alert_service: AlertService | None = None,
         strategy_name: str = "Unknown Strategy",
         circuit_breaker_config: CircuitBreakerConfig | None = None,
@@ -774,6 +1458,7 @@ class RunnerManager:
             config: Runner configuration.
             strategy_fn: Compiled strategy function.
             bar_stream: Bar data stream.
+            trade_stream: Trade update stream.
             order_executor: Order executor for submitting orders.
             risk_manager: Risk manager for order validation.
             alpaca_client: Alpaca trading client (required for event sourcing).
@@ -786,15 +1471,16 @@ class RunnerManager:
         Returns:
             Started StrategyRunner instance.
         """
-        deployment_id = config.deployment_id
+        execution_id = config.execution_id
 
-        if deployment_id in self._runners:
-            raise ValueError(f"Runner already exists for deployment {deployment_id}")
+        if execution_id in self._runners:
+            raise ValueError(f"Runner already exists for execution {execution_id}")
 
         runner = StrategyRunner(
             config=config,
             strategy_fn=strategy_fn,
             bar_stream=bar_stream,
+            trade_stream=trade_stream,
             order_executor=order_executor,
             risk_manager=risk_manager,
             alpaca_client=alpaca_client,
@@ -804,27 +1490,27 @@ class RunnerManager:
             event_store=event_store,
         )
 
-        self._runners[deployment_id] = runner
+        self._runners[execution_id] = runner
 
         # Start in background task
         task = asyncio.create_task(runner.start())
-        self._tasks[deployment_id] = task
+        self._tasks[execution_id] = task
 
         # Update active runners metric
         update_runner_gauge(len(self.active_runners))
 
         return runner
 
-    async def stop_runner(self, deployment_id: UUID) -> bool:
+    async def stop_runner(self, execution_id: UUID) -> bool:
         """Stop a runner."""
-        runner = self._runners.get(deployment_id)
+        runner = self._runners.get(execution_id)
         if not runner:
             return False
 
         await runner.stop()
 
         # Cancel task
-        task = self._tasks.get(deployment_id)
+        task = self._tasks.get(execution_id)
         if task:
             task.cancel()
             try:
@@ -832,8 +1518,8 @@ class RunnerManager:
             except asyncio.CancelledError:
                 pass
 
-        del self._runners[deployment_id]
-        del self._tasks[deployment_id]
+        del self._runners[execution_id]
+        del self._tasks[execution_id]
 
         # Update active runners metric
         update_runner_gauge(len(self.active_runners))
@@ -842,8 +1528,8 @@ class RunnerManager:
 
     async def stop_all(self) -> None:
         """Stop all runners."""
-        for deployment_id in list(self._runners.keys()):
-            await self.stop_runner(deployment_id)
+        for execution_id in list(self._runners.keys()):
+            await self.stop_runner(execution_id)
 
 
 # Singleton manager

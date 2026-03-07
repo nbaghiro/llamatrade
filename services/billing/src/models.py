@@ -1,11 +1,53 @@
 """Billing Service - Pydantic schemas."""
 
 from datetime import datetime
-from enum import StrEnum
 from typing import TypedDict
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
+
+from llamatrade_proto.generated import billing_pb2
+
+# ===================
+# Conversion helpers: proto int -> str (for display/API)
+# ===================
+
+_PLAN_TIER_TO_STR: dict[int, str] = {
+    billing_pb2.PLAN_TIER_UNSPECIFIED: "unspecified",
+    billing_pb2.PLAN_TIER_FREE: "free",
+    billing_pb2.PLAN_TIER_STARTER: "starter",
+    billing_pb2.PLAN_TIER_PRO: "pro",
+}
+
+_SUBSCRIPTION_STATUS_TO_STR: dict[int, str] = {
+    billing_pb2.SUBSCRIPTION_STATUS_UNSPECIFIED: "unspecified",
+    billing_pb2.SUBSCRIPTION_STATUS_ACTIVE: "active",
+    billing_pb2.SUBSCRIPTION_STATUS_PAST_DUE: "past_due",
+    billing_pb2.SUBSCRIPTION_STATUS_CANCELED: "canceled",
+    billing_pb2.SUBSCRIPTION_STATUS_TRIALING: "trialing",
+    billing_pb2.SUBSCRIPTION_STATUS_PAUSED: "paused",
+}
+
+_BILLING_INTERVAL_TO_STR: dict[int, str] = {
+    billing_pb2.BILLING_INTERVAL_UNSPECIFIED: "unspecified",
+    billing_pb2.BILLING_INTERVAL_MONTHLY: "monthly",
+    billing_pb2.BILLING_INTERVAL_YEARLY: "yearly",
+}
+
+
+def plan_tier_to_str(value: int) -> str:
+    """Convert PlanTier proto int to string."""
+    return _PLAN_TIER_TO_STR.get(value, "unspecified")
+
+
+def subscription_status_to_str(value: int) -> str:
+    """Convert SubscriptionStatus proto int to string."""
+    return _SUBSCRIPTION_STATUS_TO_STR.get(value, "unspecified")
+
+
+def billing_interval_to_str(value: int) -> str:
+    """Convert BillingInterval proto int to string."""
+    return _BILLING_INTERVAL_TO_STR.get(value, "unspecified")
 
 
 class PlanLimits(TypedDict, total=False):
@@ -17,25 +59,6 @@ class PlanLimits(TypedDict, total=False):
     data_requests_per_day: int
     historical_data_years: int
     priority_support: bool
-
-
-class PlanTier(StrEnum):
-    FREE = "free"
-    STARTER = "starter"
-    PRO = "pro"
-
-
-class SubscriptionStatus(StrEnum):
-    ACTIVE = "active"
-    PAST_DUE = "past_due"
-    CANCELLED = "cancelled"
-    TRIALING = "trialing"
-    PAUSED = "paused"
-
-
-class BillingCycle(StrEnum):
-    MONTHLY = "monthly"
-    YEARLY = "yearly"
 
 
 # ===================
@@ -64,7 +87,7 @@ class PlanResponse(BaseModel):
 
     id: str
     name: str
-    tier: PlanTier
+    tier: int  # PlanTier proto int
     price_monthly: float
     price_yearly: float
     features: dict[str, bool]
@@ -85,8 +108,8 @@ class SubscriptionResponse(BaseModel):
     id: UUID
     tenant_id: UUID
     plan: PlanResponse
-    status: SubscriptionStatus
-    billing_cycle: BillingCycle
+    status: int  # SubscriptionStatus proto int
+    billing_cycle: int  # BillingInterval proto int
     current_period_start: datetime
     current_period_end: datetime
     cancel_at_period_end: bool
@@ -101,7 +124,7 @@ class SubscriptionCreateRequest(BaseModel):
 
     plan_id: str
     payment_method_id: str
-    billing_cycle: BillingCycle = BillingCycle.MONTHLY
+    billing_cycle: int = billing_pb2.BILLING_INTERVAL_MONTHLY
 
 
 class SubscriptionUpdateRequest(BaseModel):
@@ -209,4 +232,4 @@ class WebhookEvent(BaseModel):
 
     id: str
     type: str
-    data: dict
+    data: dict[str, object]

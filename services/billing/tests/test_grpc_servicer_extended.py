@@ -6,13 +6,13 @@ from uuid import uuid4
 
 import jwt
 import pytest
+
+from llamatrade_proto.generated import billing_pb2
+
 from src.grpc.servicer import BillingServicer
 from src.models import (
-    BillingCycle,
     PlanResponse,
-    PlanTier,
     SubscriptionResponse,
-    SubscriptionStatus,
 )
 
 # === Test Constants ===
@@ -48,7 +48,7 @@ def mock_ctx():
     """Create a mock context with auth header."""
     ctx = MagicMock()
     token = create_test_token()
-    ctx.headers = {"authorization": f"Bearer {token}"}
+    ctx.request_headers.return_value = {"authorization": f"Bearer {token}"}
     return ctx
 
 
@@ -56,7 +56,7 @@ def mock_ctx():
 def mock_ctx_no_auth():
     """Create a mock context without auth."""
     ctx = MagicMock()
-    ctx.headers = {}
+    ctx.request_headers.return_value = {}
     return ctx
 
 
@@ -65,7 +65,7 @@ def mock_ctx_expired():
     """Create a mock context with expired token."""
     ctx = MagicMock()
     token = create_test_token(expired=True)
-    ctx.headers = {"authorization": f"Bearer {token}"}
+    ctx.request_headers.return_value = {"authorization": f"Bearer {token}"}
     return ctx
 
 
@@ -75,7 +75,7 @@ def sample_plan():
     return PlanResponse(
         id="starter",
         name="Starter",
-        tier=PlanTier.STARTER,
+        tier=billing_pb2.PLAN_TIER_STARTER,
         price_monthly=29,
         price_yearly=290,
         features={"backtests": True, "live_trading": False},
@@ -92,8 +92,8 @@ def sample_subscription(sample_plan):
         id=uuid4(),
         tenant_id=TEST_TENANT_ID,
         plan=sample_plan,
-        status=SubscriptionStatus.ACTIVE,
-        billing_cycle=BillingCycle.MONTHLY,
+        status=billing_pb2.SUBSCRIPTION_STATUS_ACTIVE,
+        billing_cycle=billing_pb2.BILLING_INTERVAL_MONTHLY,
         current_period_start=now,
         current_period_end=now + timedelta(days=30),
         cancel_at_period_end=False,
@@ -134,7 +134,7 @@ class TestGetTenantId:
         from connectrpc.errors import ConnectError
 
         ctx = MagicMock()
-        ctx.headers = {"authorization": "Bearer invalid-token"}
+        ctx.request_headers.return_value = {"authorization": "Bearer invalid-token"}
 
         with pytest.raises(ConnectError) as exc_info:
             servicer._get_tenant_id(ctx)
@@ -150,7 +150,7 @@ class TestGetSubscription:
     @pytest.mark.asyncio
     async def test_get_subscription_success(self, servicer, mock_ctx, sample_subscription):
         """Test getting subscription successfully."""
-        from llamatrade.v1 import billing_pb2
+        from llamatrade_proto.generated import billing_pb2
 
         mock_service = MagicMock()
         mock_service.get_subscription = AsyncMock(return_value=sample_subscription)
@@ -181,7 +181,7 @@ class TestGetUsage:
     @pytest.mark.asyncio
     async def test_get_usage_returns_stubbed(self, servicer, mock_ctx):
         """Test getting usage returns stubbed data."""
-        from llamatrade.v1 import billing_pb2
+        from llamatrade_proto.generated import billing_pb2
 
         with patch.object(servicer, "_get_tenant_id", return_value=TEST_TENANT_ID):
             request = billing_pb2.GetUsageRequest(period_id="current")
@@ -200,7 +200,7 @@ class TestListInvoices:
     @pytest.mark.asyncio
     async def test_list_invoices_returns_empty(self, servicer, mock_ctx):
         """Test listing invoices returns empty list."""
-        from llamatrade.v1 import billing_pb2
+        from llamatrade_proto.generated import billing_pb2
 
         request = billing_pb2.ListInvoicesRequest()
         response = await servicer.list_invoices(request, mock_ctx)
@@ -219,7 +219,8 @@ class TestGetInvoice:
     async def test_get_invoice_not_found(self, servicer, mock_ctx):
         """Test getting invoice returns not found."""
         from connectrpc.errors import ConnectError
-        from llamatrade.v1 import billing_pb2
+
+        from llamatrade_proto.generated import billing_pb2
 
         request = billing_pb2.GetInvoiceRequest(invoice_id="inv_123")
 
@@ -237,7 +238,7 @@ class TestListPlans:
     @pytest.mark.asyncio
     async def test_list_plans_success(self, servicer, mock_ctx, sample_plan):
         """Test listing plans successfully."""
-        from llamatrade.v1 import billing_pb2
+        from llamatrade_proto.generated import billing_pb2
 
         mock_service = MagicMock()
         mock_service.list_plans = AsyncMock(return_value=[sample_plan])
@@ -267,7 +268,7 @@ class TestCreateCheckoutSession:
     @pytest.mark.asyncio
     async def test_create_checkout_session_returns_placeholder(self, servicer, mock_ctx):
         """Test creating checkout session returns placeholder URL."""
-        from llamatrade.v1 import billing_pb2
+        from llamatrade_proto.generated import billing_pb2
 
         with patch.object(servicer, "_get_tenant_id", return_value=TEST_TENANT_ID):
             request = billing_pb2.CreateCheckoutSessionRequest(plan_id="pro")
@@ -286,7 +287,7 @@ class TestCreatePortalSession:
     @pytest.mark.asyncio
     async def test_create_portal_session_returns_placeholder(self, servicer, mock_ctx):
         """Test creating portal session returns placeholder URL."""
-        from llamatrade.v1 import billing_pb2
+        from llamatrade_proto.generated import billing_pb2
 
         with patch.object(servicer, "_get_tenant_id", return_value=TEST_TENANT_ID):
             request = billing_pb2.CreatePortalSessionRequest()
@@ -299,49 +300,42 @@ class TestCreatePortalSession:
 
 
 class TestHelperMethods:
-    """Tests for helper conversion methods."""
+    """Tests for helper conversion methods (now pass-through)."""
 
     def test_to_proto_status(self, servicer):
-        """Test status conversion."""
-        from llamatrade.v1 import billing_pb2
-
+        """Test status pass-through (already proto int)."""
         assert (
-            servicer._to_proto_status(SubscriptionStatus.ACTIVE)
+            servicer._to_proto_status(billing_pb2.SUBSCRIPTION_STATUS_ACTIVE)
             == billing_pb2.SUBSCRIPTION_STATUS_ACTIVE
         )
         assert (
-            servicer._to_proto_status(SubscriptionStatus.TRIALING)
+            servicer._to_proto_status(billing_pb2.SUBSCRIPTION_STATUS_TRIALING)
             == billing_pb2.SUBSCRIPTION_STATUS_TRIALING
         )
 
     def test_to_proto_tier(self, servicer):
-        """Test tier conversion."""
-        from llamatrade.v1 import billing_pb2
-
-        assert servicer._to_proto_tier(PlanTier.FREE) == billing_pb2.PLAN_TIER_FREE
-        assert servicer._to_proto_tier(PlanTier.PRO) == billing_pb2.PLAN_TIER_PROFESSIONAL
+        """Test tier pass-through (already proto int)."""
+        assert servicer._to_proto_tier(billing_pb2.PLAN_TIER_FREE) == billing_pb2.PLAN_TIER_FREE
+        assert servicer._to_proto_tier(billing_pb2.PLAN_TIER_PRO) == billing_pb2.PLAN_TIER_PRO
 
     def test_to_proto_interval(self, servicer):
-        """Test interval conversion."""
-        from llamatrade.v1 import billing_pb2
-
+        """Test interval pass-through (already proto int)."""
         assert (
-            servicer._to_proto_interval(BillingCycle.MONTHLY)
+            servicer._to_proto_interval(billing_pb2.BILLING_INTERVAL_MONTHLY)
             == billing_pb2.BILLING_INTERVAL_MONTHLY
         )
         assert (
-            servicer._to_proto_interval(BillingCycle.YEARLY) == billing_pb2.BILLING_INTERVAL_YEARLY
+            servicer._to_proto_interval(billing_pb2.BILLING_INTERVAL_YEARLY)
+            == billing_pb2.BILLING_INTERVAL_YEARLY
         )
 
     def test_from_proto_interval(self, servicer):
-        """Test interval reverse conversion."""
-        from llamatrade.v1 import billing_pb2
-
+        """Test interval pass-through (already proto int)."""
         assert (
             servicer._from_proto_interval(billing_pb2.BILLING_INTERVAL_MONTHLY)
-            == BillingCycle.MONTHLY
+            == billing_pb2.BILLING_INTERVAL_MONTHLY
         )
         assert (
             servicer._from_proto_interval(billing_pb2.BILLING_INTERVAL_YEARLY)
-            == BillingCycle.YEARLY
+            == billing_pb2.BILLING_INTERVAL_YEARLY
         )

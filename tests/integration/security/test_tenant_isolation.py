@@ -21,21 +21,23 @@ from llamatrade_db.models import (
     Order,
     Position,
     Strategy,
-    StrategyVersion,
     Subscription,
     Tenant,
     TradingSession,
     User,
 )
 from tests.factories import (
+    EXECUTION_MODE_LIVE,
+    EXECUTION_MODE_PAPER,
+    ORDER_SIDE_BUY,
+    ORDER_SIDE_SELL,
+    PLAN_TIER_STARTER,
     BacktestFactory,
     OrderFactory,
     PlanFactory,
     PositionFactory,
     StrategyFactory,
-    StrategyVersionFactory,
     SubscriptionFactory,
-    TenantFactory,
     TradingSessionFactory,
     UserFactory,
 )
@@ -45,6 +47,7 @@ from tests.factories import (
 def fake_credentials_id():
     """Generate a fake credentials ID for tests."""
     return uuid4()
+
 
 pytestmark = [pytest.mark.integration, pytest.mark.security]
 
@@ -288,7 +291,7 @@ class TestOrderIsolation:
             tenant_id=test_tenant.id,
             session_id=session_a.id,
             symbol="AAPL",
-            side="buy",
+            side=ORDER_SIDE_BUY,
         )
         db_session.add(order_a)
 
@@ -313,15 +316,13 @@ class TestOrderIsolation:
             tenant_id=second_tenant.id,
             session_id=session_b.id,
             symbol="GOOGL",
-            side="sell",
+            side=ORDER_SIDE_SELL,
         )
         db_session.add(order_b)
         await db_session.flush()
 
         # Tenant A can only see their orders
-        result = await db_session.execute(
-            select(Order).where(Order.tenant_id == test_tenant.id)
-        )
+        result = await db_session.execute(select(Order).where(Order.tenant_id == test_tenant.id))
         orders = result.scalars().all()
 
         assert len(orders) == 1
@@ -437,9 +438,7 @@ class TestUserIsolation:
         await db_session.flush()
 
         # Query users for tenant A
-        result = await db_session.execute(
-            select(User).where(User.tenant_id == test_tenant.id)
-        )
+        result = await db_session.execute(select(User).where(User.tenant_id == test_tenant.id))
         users = result.scalars().all()
 
         # Should only see users from tenant A
@@ -471,9 +470,7 @@ class TestUserIsolation:
         await db_session.flush()  # Should NOT raise
 
         # Verify both exist
-        result = await db_session.execute(
-            select(User).where(User.email == "shared@example.com")
-        )
+        result = await db_session.execute(select(User).where(User.email == "shared@example.com"))
         users = result.scalars().all()
         assert len(users) == 2
 
@@ -495,7 +492,7 @@ class TestSubscriptionIsolation:
     ):
         """Test that subscriptions are isolated by tenant."""
         # Create plan (shared, not tenant-scoped)
-        plan = PlanFactory.create(name="starter", tier="starter")
+        plan = PlanFactory.create(name="starter", tier=PLAN_TIER_STARTER)
         db_session.add(plan)
         await db_session.flush()
 
@@ -692,7 +689,7 @@ class TestBulkQueryIsolation:
         db_session.add(strategy_a)
         await db_session.flush()
 
-        for mode in ["paper", "paper", "live"]:
+        for mode in [EXECUTION_MODE_PAPER, EXECUTION_MODE_PAPER, EXECUTION_MODE_LIVE]:
             db_session.add(
                 TradingSessionFactory.create(
                     tenant_id=test_tenant.id,
@@ -711,7 +708,12 @@ class TestBulkQueryIsolation:
         db_session.add(strategy_b)
         await db_session.flush()
 
-        for mode in ["live", "live", "live", "live"]:
+        for mode in [
+            EXECUTION_MODE_LIVE,
+            EXECUTION_MODE_LIVE,
+            EXECUTION_MODE_LIVE,
+            EXECUTION_MODE_LIVE,
+        ]:
             db_session.add(
                 TradingSessionFactory.create(
                     tenant_id=second_tenant.id,
@@ -732,8 +734,8 @@ class TestBulkQueryIsolation:
         )
         mode_counts = {row[0]: row[1] for row in result.all()}
 
-        # Tenant A has 2 paper, 1 live
-        assert mode_counts.get("paper", 0) == 2
-        assert mode_counts.get("live", 0) == 1
+        # Tenant A has 2 paper (mode=1), 1 live (mode=2)
+        assert mode_counts.get(EXECUTION_MODE_PAPER, 0) == 2
+        assert mode_counts.get(EXECUTION_MODE_LIVE, 0) == 1
 
         # Tenant B's 4 live sessions should not affect tenant A's counts

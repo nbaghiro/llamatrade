@@ -5,6 +5,7 @@ from uuid import uuid4
 import pytest
 from fastapi import Depends, FastAPI
 from fastapi.testclient import TestClient
+
 from llamatrade_common.middleware import (
     ServiceClient,
     TenantMiddleware,

@@ -87,12 +87,12 @@ class ObservabilityMiddleware(BaseHTTPMiddleware):
         ).inc()
 
         start_time = time.perf_counter()
+        status_code = 500  # Default to error, will be overwritten on success
 
         try:
             response: Response = await call_next(request)
             status_code = response.status_code
         except Exception as e:
-            status_code = 500
             logger.exception("Unhandled exception in request: %s", e)
             raise
         finally:
@@ -203,7 +203,7 @@ def setup_observability(
 
     # Add metrics endpoint
     @app.get("/metrics", include_in_schema=False)
-    async def metrics_endpoint() -> Response:
+    async def metrics_endpoint() -> Response:  # pyright: ignore[reportUnusedFunction]
         """Prometheus metrics endpoint."""
         return Response(
             content=get_metrics(),

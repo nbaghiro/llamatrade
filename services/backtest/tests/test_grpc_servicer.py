@@ -1,3 +1,4 @@
+# pyright: reportArgumentType=false
 """Tests for backtest gRPC servicer methods."""
 
 from datetime import UTC, datetime
@@ -6,7 +7,13 @@ from uuid import UUID, uuid4
 
 import grpc.aio
 import pytest
-from src.models import BacktestResponse, BacktestStatus
+
+from src.models import (
+    BACKTEST_STATUS_CANCELLED,
+    BACKTEST_STATUS_COMPLETED,
+    BACKTEST_STATUS_PENDING,
+    BacktestResponse,
+)
 
 # Test UUIDs
 TEST_TENANT_ID = UUID("11111111-1111-1111-1111-111111111111")
@@ -60,7 +67,7 @@ def make_mock_backtest(
     tenant_id: UUID = TEST_TENANT_ID,
     strategy_id: UUID = TEST_STRATEGY_ID,
     strategy_version: int = 1,
-    status: BacktestStatus = BacktestStatus.PENDING,
+    status: int = BACKTEST_STATUS_PENDING,  # BacktestStatus proto value
     progress: float = 0.0,
     initial_capital: float = 100000.0,
     error_message: str | None = None,
@@ -89,16 +96,48 @@ def make_mock_backtest(
 
 
 class MockAsyncContextManager:
-    """Mock async context manager for database sessions."""
+    """Mock async context manager for database sessions and services."""
 
-    def __init__(self, service_mock):
-        self.service_mock = service_mock
+    def __init__(self, return_value):
+        self.return_value = return_value
 
     async def __aenter__(self):
-        return self.service_mock
+        return self.return_value
 
     async def __aexit__(self, *args):
         pass
+
+
+def create_mock_get_db(mock_db):
+    """Create a mock _get_db that returns an async context manager.
+
+    The @asynccontextmanager decorated _get_db() returns a context manager
+    synchronously (not awaited), which then uses __aenter__/__aexit__.
+    """
+    return lambda: MockAsyncContextManager(mock_db)
+
+
+def create_mock_service_class(mock_service):
+    """Create a mock BacktestService class that acts as an async context manager.
+
+    BacktestService(db) returns an instance that supports async context manager.
+    """
+
+    class MockBacktestService:
+        def __init__(self, db):
+            self.db = db
+            # Copy all attributes from mock_service
+            for attr in dir(mock_service):
+                if not attr.startswith("_"):
+                    setattr(self, attr, getattr(mock_service, attr))
+
+        async def __aenter__(self):
+            return mock_service
+
+        async def __aexit__(self, *args):
+            pass
+
+    return MockBacktestService
 
 
 class TestRunBacktest:
@@ -106,7 +145,7 @@ class TestRunBacktest:
 
     async def test_run_backtest_success(self, backtest_servicer, grpc_context):
         """Test successfully running a backtest."""
-        from llamatrade.v1 import backtest_pb2, common_pb2
+        from llamatrade_proto.generated import backtest_pb2, common_pb2
 
         mock_backtest = make_mock_backtest()
 
@@ -115,11 +154,12 @@ class TestRunBacktest:
         mock_service.create_backtest = AsyncMock(return_value=mock_backtest)
 
         mock_db = MagicMock()
-        mock_db.__aenter__ = AsyncMock(return_value=mock_db)
-        mock_db.__aexit__ = AsyncMock(return_value=None)
 
-        with patch.object(backtest_servicer, "_get_db", new=AsyncMock(return_value=mock_db)):
-            with patch("src.grpc.servicer.BacktestService", return_value=mock_service):
+        with patch.object(backtest_servicer, "_get_db", new=create_mock_get_db(mock_db)):
+            with patch(
+                "src.grpc.servicer.BacktestService",
+                new=create_mock_service_class(mock_service),
+            ):
                 request = backtest_pb2.RunBacktestRequest(
                     context=common_pb2.TenantContext(
                         tenant_id=str(TEST_TENANT_ID),
@@ -145,17 +185,18 @@ class TestRunBacktest:
 
     async def test_run_backtest_invalid_argument(self, backtest_servicer, grpc_context):
         """Test running backtest with invalid arguments."""
-        from llamatrade.v1 import backtest_pb2, common_pb2
+        from llamatrade_proto.generated import backtest_pb2, common_pb2
 
         mock_db = MagicMock()
-        mock_db.__aenter__ = AsyncMock(return_value=mock_db)
-        mock_db.__aexit__ = AsyncMock(return_value=None)
 
         mock_service = MagicMock()
         mock_service.create_backtest = AsyncMock(side_effect=ValueError("Invalid strategy"))
 
-        with patch.object(backtest_servicer, "_get_db", new=AsyncMock(return_value=mock_db)):
-            with patch("src.grpc.servicer.BacktestService", return_value=mock_service):
+        with patch.object(backtest_servicer, "_get_db", new=create_mock_get_db(mock_db)):
+            with patch(
+                "src.grpc.servicer.BacktestService",
+                new=create_mock_service_class(mock_service),
+            ):
                 request = backtest_pb2.RunBacktestRequest(
                     context=common_pb2.TenantContext(
                         tenant_id=str(TEST_TENANT_ID),
@@ -180,7 +221,7 @@ class TestGetBacktest:
 
     async def test_get_backtest_success(self, backtest_servicer, grpc_context):
         """Test getting a backtest by ID."""
-        from llamatrade.v1 import backtest_pb2, common_pb2
+        from llamatrade_proto.generated import backtest_pb2, common_pb2
 
         mock_backtest = make_mock_backtest()
 
@@ -188,11 +229,12 @@ class TestGetBacktest:
         mock_service.get_backtest = AsyncMock(return_value=mock_backtest)
 
         mock_db = MagicMock()
-        mock_db.__aenter__ = AsyncMock(return_value=mock_db)
-        mock_db.__aexit__ = AsyncMock(return_value=None)
 
-        with patch.object(backtest_servicer, "_get_db", new=AsyncMock(return_value=mock_db)):
-            with patch("src.grpc.servicer.BacktestService", return_value=mock_service):
+        with patch.object(backtest_servicer, "_get_db", new=create_mock_get_db(mock_db)):
+            with patch(
+                "src.grpc.servicer.BacktestService",
+                new=create_mock_service_class(mock_service),
+            ):
                 request = backtest_pb2.GetBacktestRequest(
                     context=common_pb2.TenantContext(
                         tenant_id=str(TEST_TENANT_ID),
@@ -208,17 +250,18 @@ class TestGetBacktest:
 
     async def test_get_backtest_not_found(self, backtest_servicer, grpc_context):
         """Test getting a nonexistent backtest returns NOT_FOUND."""
-        from llamatrade.v1 import backtest_pb2, common_pb2
+        from llamatrade_proto.generated import backtest_pb2, common_pb2
 
         mock_service = MagicMock()
         mock_service.get_backtest = AsyncMock(return_value=None)
 
         mock_db = MagicMock()
-        mock_db.__aenter__ = AsyncMock(return_value=mock_db)
-        mock_db.__aexit__ = AsyncMock(return_value=None)
 
-        with patch.object(backtest_servicer, "_get_db", new=AsyncMock(return_value=mock_db)):
-            with patch("src.grpc.servicer.BacktestService", return_value=mock_service):
+        with patch.object(backtest_servicer, "_get_db", new=create_mock_get_db(mock_db)):
+            with patch(
+                "src.grpc.servicer.BacktestService",
+                new=create_mock_service_class(mock_service),
+            ):
                 request = backtest_pb2.GetBacktestRequest(
                     context=common_pb2.TenantContext(
                         tenant_id=str(TEST_TENANT_ID),
@@ -238,17 +281,18 @@ class TestListBacktests:
 
     async def test_list_backtests_empty(self, backtest_servicer, grpc_context):
         """Test listing backtests returns empty list when none exist."""
-        from llamatrade.v1 import backtest_pb2, common_pb2
+        from llamatrade_proto.generated import backtest_pb2, common_pb2
 
         mock_service = MagicMock()
         mock_service.list_backtests = AsyncMock(return_value=([], 0))
 
         mock_db = MagicMock()
-        mock_db.__aenter__ = AsyncMock(return_value=mock_db)
-        mock_db.__aexit__ = AsyncMock(return_value=None)
 
-        with patch.object(backtest_servicer, "_get_db", new=AsyncMock(return_value=mock_db)):
-            with patch("src.grpc.servicer.BacktestService", return_value=mock_service):
+        with patch.object(backtest_servicer, "_get_db", new=create_mock_get_db(mock_db)):
+            with patch(
+                "src.grpc.servicer.BacktestService",
+                new=create_mock_service_class(mock_service),
+            ):
                 request = backtest_pb2.ListBacktestsRequest(
                     context=common_pb2.TenantContext(
                         tenant_id=str(TEST_TENANT_ID),
@@ -263,22 +307,23 @@ class TestListBacktests:
 
     async def test_list_backtests_with_data(self, backtest_servicer, grpc_context):
         """Test listing backtests with data."""
-        from llamatrade.v1 import backtest_pb2, common_pb2
+        from llamatrade_proto.generated import backtest_pb2, common_pb2
 
         mock_backtests = [
             make_mock_backtest(id=uuid4()),
-            make_mock_backtest(id=uuid4(), status=BacktestStatus.COMPLETED),
+            make_mock_backtest(id=uuid4(), status=BACKTEST_STATUS_COMPLETED),
         ]
 
         mock_service = MagicMock()
         mock_service.list_backtests = AsyncMock(return_value=(mock_backtests, 2))
 
         mock_db = MagicMock()
-        mock_db.__aenter__ = AsyncMock(return_value=mock_db)
-        mock_db.__aexit__ = AsyncMock(return_value=None)
 
-        with patch.object(backtest_servicer, "_get_db", new=AsyncMock(return_value=mock_db)):
-            with patch("src.grpc.servicer.BacktestService", return_value=mock_service):
+        with patch.object(backtest_servicer, "_get_db", new=create_mock_get_db(mock_db)):
+            with patch(
+                "src.grpc.servicer.BacktestService",
+                new=create_mock_service_class(mock_service),
+            ):
                 request = backtest_pb2.ListBacktestsRequest(
                     context=common_pb2.TenantContext(
                         tenant_id=str(TEST_TENANT_ID),
@@ -293,7 +338,7 @@ class TestListBacktests:
 
     async def test_list_backtests_filter_by_strategy(self, backtest_servicer, grpc_context):
         """Test filtering backtests by strategy ID."""
-        from llamatrade.v1 import backtest_pb2, common_pb2
+        from llamatrade_proto.generated import backtest_pb2, common_pb2
 
         mock_backtests = [make_mock_backtest()]
 
@@ -301,11 +346,12 @@ class TestListBacktests:
         mock_service.list_backtests = AsyncMock(return_value=(mock_backtests, 1))
 
         mock_db = MagicMock()
-        mock_db.__aenter__ = AsyncMock(return_value=mock_db)
-        mock_db.__aexit__ = AsyncMock(return_value=None)
 
-        with patch.object(backtest_servicer, "_get_db", new=AsyncMock(return_value=mock_db)):
-            with patch("src.grpc.servicer.BacktestService", return_value=mock_service):
+        with patch.object(backtest_servicer, "_get_db", new=create_mock_get_db(mock_db)):
+            with patch(
+                "src.grpc.servicer.BacktestService",
+                new=create_mock_service_class(mock_service),
+            ):
                 request = backtest_pb2.ListBacktestsRequest(
                     context=common_pb2.TenantContext(
                         tenant_id=str(TEST_TENANT_ID),
@@ -322,19 +368,20 @@ class TestListBacktests:
 
     async def test_list_backtests_filter_by_status(self, backtest_servicer, grpc_context):
         """Test filtering backtests by status."""
-        from llamatrade.v1 import backtest_pb2, common_pb2
+        from llamatrade_proto.generated import backtest_pb2, common_pb2
 
-        mock_backtests = [make_mock_backtest(status=BacktestStatus.COMPLETED)]
+        mock_backtests = [make_mock_backtest(status=BACKTEST_STATUS_COMPLETED)]
 
         mock_service = MagicMock()
         mock_service.list_backtests = AsyncMock(return_value=(mock_backtests, 1))
 
         mock_db = MagicMock()
-        mock_db.__aenter__ = AsyncMock(return_value=mock_db)
-        mock_db.__aexit__ = AsyncMock(return_value=None)
 
-        with patch.object(backtest_servicer, "_get_db", new=AsyncMock(return_value=mock_db)):
-            with patch("src.grpc.servicer.BacktestService", return_value=mock_service):
+        with patch.object(backtest_servicer, "_get_db", new=create_mock_get_db(mock_db)):
+            with patch(
+                "src.grpc.servicer.BacktestService",
+                new=create_mock_service_class(mock_service),
+            ):
                 request = backtest_pb2.ListBacktestsRequest(
                     context=common_pb2.TenantContext(
                         tenant_id=str(TEST_TENANT_ID),
@@ -354,20 +401,21 @@ class TestCancelBacktest:
 
     async def test_cancel_backtest_success(self, backtest_servicer, grpc_context):
         """Test successfully cancelling a backtest."""
-        from llamatrade.v1 import backtest_pb2, common_pb2
+        from llamatrade_proto.generated import backtest_pb2, common_pb2
 
-        mock_backtest = make_mock_backtest(status=BacktestStatus.CANCELLED)
+        mock_backtest = make_mock_backtest(status=BACKTEST_STATUS_CANCELLED)
 
         mock_service = MagicMock()
         mock_service.cancel_backtest = AsyncMock(return_value=True)
         mock_service.get_backtest = AsyncMock(return_value=mock_backtest)
 
         mock_db = MagicMock()
-        mock_db.__aenter__ = AsyncMock(return_value=mock_db)
-        mock_db.__aexit__ = AsyncMock(return_value=None)
 
-        with patch.object(backtest_servicer, "_get_db", new=AsyncMock(return_value=mock_db)):
-            with patch("src.grpc.servicer.BacktestService", return_value=mock_service):
+        with patch.object(backtest_servicer, "_get_db", new=create_mock_get_db(mock_db)):
+            with patch(
+                "src.grpc.servicer.BacktestService",
+                new=create_mock_service_class(mock_service),
+            ):
                 request = backtest_pb2.CancelBacktestRequest(
                     context=common_pb2.TenantContext(
                         tenant_id=str(TEST_TENANT_ID),
@@ -383,17 +431,18 @@ class TestCancelBacktest:
 
     async def test_cancel_backtest_failed_precondition(self, backtest_servicer, grpc_context):
         """Test cancelling a backtest that cannot be cancelled."""
-        from llamatrade.v1 import backtest_pb2, common_pb2
+        from llamatrade_proto.generated import backtest_pb2, common_pb2
 
         mock_service = MagicMock()
         mock_service.cancel_backtest = AsyncMock(return_value=False)
 
         mock_db = MagicMock()
-        mock_db.__aenter__ = AsyncMock(return_value=mock_db)
-        mock_db.__aexit__ = AsyncMock(return_value=None)
 
-        with patch.object(backtest_servicer, "_get_db", new=AsyncMock(return_value=mock_db)):
-            with patch("src.grpc.servicer.BacktestService", return_value=mock_service):
+        with patch.object(backtest_servicer, "_get_db", new=create_mock_get_db(mock_db)):
+            with patch(
+                "src.grpc.servicer.BacktestService",
+                new=create_mock_service_class(mock_service),
+            ):
                 request = backtest_pb2.CancelBacktestRequest(
                     context=common_pb2.TenantContext(
                         tenant_id=str(TEST_TENANT_ID),
@@ -413,24 +462,25 @@ class TestCompareBacktests:
 
     async def test_compare_backtests_success(self, backtest_servicer, grpc_context):
         """Test comparing multiple backtests."""
-        from llamatrade.v1 import backtest_pb2, common_pb2
+        from llamatrade_proto.generated import backtest_pb2, common_pb2
 
         backtest_id_1 = uuid4()
         backtest_id_2 = uuid4()
         mock_backtests = [
-            make_mock_backtest(id=backtest_id_1, status=BacktestStatus.COMPLETED),
-            make_mock_backtest(id=backtest_id_2, status=BacktestStatus.COMPLETED),
+            make_mock_backtest(id=backtest_id_1, status=BACKTEST_STATUS_COMPLETED),
+            make_mock_backtest(id=backtest_id_2, status=BACKTEST_STATUS_COMPLETED),
         ]
 
         mock_service = MagicMock()
         mock_service.get_backtest = AsyncMock(side_effect=mock_backtests)
 
         mock_db = MagicMock()
-        mock_db.__aenter__ = AsyncMock(return_value=mock_db)
-        mock_db.__aexit__ = AsyncMock(return_value=None)
 
-        with patch.object(backtest_servicer, "_get_db", new=AsyncMock(return_value=mock_db)):
-            with patch("src.grpc.servicer.BacktestService", return_value=mock_service):
+        with patch.object(backtest_servicer, "_get_db", new=create_mock_get_db(mock_db)):
+            with patch(
+                "src.grpc.servicer.BacktestService",
+                new=create_mock_service_class(mock_service),
+            ):
                 request = backtest_pb2.CompareBacktestsRequest(
                     context=common_pb2.TenantContext(
                         tenant_id=str(TEST_TENANT_ID),
@@ -445,22 +495,23 @@ class TestCompareBacktests:
 
     async def test_compare_backtests_partial_not_found(self, backtest_servicer, grpc_context):
         """Test comparing backtests when some are not found."""
-        from llamatrade.v1 import backtest_pb2, common_pb2
+        from llamatrade_proto.generated import backtest_pb2, common_pb2
 
         backtest_id_1 = uuid4()
         backtest_id_2 = uuid4()
-        mock_backtest = make_mock_backtest(id=backtest_id_1, status=BacktestStatus.COMPLETED)
+        mock_backtest = make_mock_backtest(id=backtest_id_1, status=BACKTEST_STATUS_COMPLETED)
 
         mock_service = MagicMock()
         # First call returns backtest, second returns None
         mock_service.get_backtest = AsyncMock(side_effect=[mock_backtest, None])
 
         mock_db = MagicMock()
-        mock_db.__aenter__ = AsyncMock(return_value=mock_db)
-        mock_db.__aexit__ = AsyncMock(return_value=None)
 
-        with patch.object(backtest_servicer, "_get_db", new=AsyncMock(return_value=mock_db)):
-            with patch("src.grpc.servicer.BacktestService", return_value=mock_service):
+        with patch.object(backtest_servicer, "_get_db", new=create_mock_get_db(mock_db)):
+            with patch(
+                "src.grpc.servicer.BacktestService",
+                new=create_mock_service_class(mock_service),
+            ):
                 request = backtest_pb2.CompareBacktestsRequest(
                     context=common_pb2.TenantContext(
                         tenant_id=str(TEST_TENANT_ID),
@@ -480,17 +531,18 @@ class TestStreamBacktestProgress:
 
     async def test_stream_progress_backtest_not_found(self, backtest_servicer, grpc_context):
         """Test streaming progress for nonexistent backtest returns NOT_FOUND."""
-        from llamatrade.v1 import backtest_pb2, common_pb2
+        from llamatrade_proto.generated import backtest_pb2, common_pb2
 
         mock_service = MagicMock()
         mock_service.get_backtest = AsyncMock(return_value=None)
 
         mock_db = MagicMock()
-        mock_db.__aenter__ = AsyncMock(return_value=mock_db)
-        mock_db.__aexit__ = AsyncMock(return_value=None)
 
-        with patch.object(backtest_servicer, "_get_db", new=AsyncMock(return_value=mock_db)):
-            with patch("src.grpc.servicer.BacktestService", return_value=mock_service):
+        with patch.object(backtest_servicer, "_get_db", new=create_mock_get_db(mock_db)):
+            with patch(
+                "src.grpc.servicer.BacktestService",
+                new=create_mock_service_class(mock_service),
+            ):
                 request = backtest_pb2.StreamBacktestProgressRequest(
                     context=common_pb2.TenantContext(
                         tenant_id=str(TEST_TENANT_ID),
@@ -507,19 +559,20 @@ class TestStreamBacktestProgress:
 
     async def test_stream_progress_completed_backtest(self, backtest_servicer, grpc_context):
         """Test streaming progress for already completed backtest returns immediately."""
-        from llamatrade.v1 import backtest_pb2, common_pb2
+        from llamatrade_proto.generated import backtest_pb2, common_pb2
 
-        mock_backtest = make_mock_backtest(status=BacktestStatus.COMPLETED, progress=100.0)
+        mock_backtest = make_mock_backtest(status=BACKTEST_STATUS_COMPLETED, progress=100.0)
 
         mock_service = MagicMock()
         mock_service.get_backtest = AsyncMock(return_value=mock_backtest)
 
         mock_db = MagicMock()
-        mock_db.__aenter__ = AsyncMock(return_value=mock_db)
-        mock_db.__aexit__ = AsyncMock(return_value=None)
 
-        with patch.object(backtest_servicer, "_get_db", new=AsyncMock(return_value=mock_db)):
-            with patch("src.grpc.servicer.BacktestService", return_value=mock_service):
+        with patch.object(backtest_servicer, "_get_db", new=create_mock_get_db(mock_db)):
+            with patch(
+                "src.grpc.servicer.BacktestService",
+                new=create_mock_service_class(mock_service),
+            ):
                 request = backtest_pb2.StreamBacktestProgressRequest(
                     context=common_pb2.TenantContext(
                         tenant_id=str(TEST_TENANT_ID),

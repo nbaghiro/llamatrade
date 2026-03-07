@@ -1,6 +1,7 @@
 """Tests for TemplateService to improve coverage."""
 
 import pytest
+
 from src.models import StrategyType
 from src.services.template_service import (
     TEMPLATES,
@@ -12,7 +13,7 @@ from src.services.template_service import (
 
 
 @pytest.fixture
-def template_service():
+def template_service() -> TemplateService:
     """Create a TemplateService instance."""
     return TemplateService()
 
@@ -23,7 +24,7 @@ def template_service():
 class TestTemplatesDict:
     """Tests for TEMPLATES constant dict."""
 
-    def test_contains_ma_crossover(self):
+    def test_contains_ma_crossover(self) -> None:
         """Test TEMPLATES contains MA crossover template."""
         assert "ma_crossover" in TEMPLATES
         ma = TEMPLATES["ma_crossover"]
@@ -31,33 +32,33 @@ class TestTemplatesDict:
         assert ma["strategy_type"] == StrategyType.TREND_FOLLOWING
         assert ma["difficulty"] == "beginner"
 
-    def test_contains_rsi_mean_reversion(self):
+    def test_contains_rsi_mean_reversion(self) -> None:
         """Test TEMPLATES contains RSI mean reversion template."""
         assert "rsi_mean_reversion" in TEMPLATES
         rsi = TEMPLATES["rsi_mean_reversion"]
         assert rsi["strategy_type"] == StrategyType.MEAN_REVERSION
         assert "rsi" in rsi["tags"]
 
-    def test_contains_macd_strategy(self):
+    def test_contains_macd_strategy(self) -> None:
         """Test TEMPLATES contains MACD strategy template."""
         assert "macd_strategy" in TEMPLATES
         macd = TEMPLATES["macd_strategy"]
         assert macd["strategy_type"] == StrategyType.MOMENTUM
 
-    def test_contains_bollinger_bounce(self):
+    def test_contains_bollinger_bounce(self) -> None:
         """Test TEMPLATES contains Bollinger bounce template."""
         assert "bollinger_bounce" in TEMPLATES
         bb = TEMPLATES["bollinger_bounce"]
         assert bb["difficulty"] == "intermediate"
 
-    def test_contains_donchian_breakout(self):
+    def test_contains_donchian_breakout(self) -> None:
         """Test TEMPLATES contains Donchian breakout template."""
         assert "donchian_breakout" in TEMPLATES
         dc = TEMPLATES["donchian_breakout"]
         assert dc["strategy_type"] == StrategyType.BREAKOUT
         assert dc["difficulty"] == "advanced"
 
-    def test_all_templates_have_required_fields(self):
+    def test_all_templates_have_required_fields(self) -> None:
         """Test all templates have required fields."""
         required_fields = [
             "id",
@@ -69,23 +70,21 @@ class TestTemplatesDict:
             "config_sexpr",
         ]
 
-        for template_id, template in TEMPLATES.items():
+        for _, template in TEMPLATES.items():
             for field in required_fields:
-                assert field in template, f"Template {template_id} missing {field}"
+                assert field in template
 
-    def test_all_templates_have_valid_sexpr(self):
+    def test_all_templates_have_valid_sexpr(self) -> None:
         """Test all templates have non-empty S-expression configs."""
-        for template_id, template in TEMPLATES.items():
+        for _, template in TEMPLATES.items():
             config = template["config_sexpr"]
-            assert config.strip().startswith("(strategy"), (
-                f"Template {template_id} config doesn't start with (strategy"
-            )
+            assert config.strip().startswith("(strategy")
 
-    def test_difficulty_levels_valid(self):
+    def test_difficulty_levels_valid(self) -> None:
         """Test all templates have valid difficulty levels."""
         valid_difficulties = ["beginner", "intermediate", "advanced"]
 
-        for template_id, template in TEMPLATES.items():
+        for _, template in TEMPLATES.items():
             assert template["difficulty"] in valid_difficulties
 
 
@@ -95,13 +94,13 @@ class TestTemplatesDict:
 class TestListTemplates:
     """Tests for list_templates method."""
 
-    async def test_list_all_templates(self, template_service):
+    async def test_list_all_templates(self, template_service: TemplateService) -> None:
         """Test listing all templates."""
         templates = await template_service.list_templates()
 
         assert len(templates) == len(TEMPLATES)
 
-    async def test_list_templates_by_strategy_type(self, template_service):
+    async def test_list_templates_by_strategy_type(self, template_service: TemplateService) -> None:
         """Test filtering templates by strategy type."""
         mean_reversion = await template_service.list_templates(
             strategy_type=StrategyType.MEAN_REVERSION
@@ -111,7 +110,9 @@ class TestListTemplates:
         for template in mean_reversion:
             assert template.strategy_type == StrategyType.MEAN_REVERSION
 
-    async def test_list_templates_by_difficulty_beginner(self, template_service):
+    async def test_list_templates_by_difficulty_beginner(
+        self, template_service: TemplateService
+    ) -> None:
         """Test filtering templates by beginner difficulty."""
         beginner = await template_service.list_templates(difficulty="beginner")
 
@@ -119,7 +120,9 @@ class TestListTemplates:
         for template in beginner:
             assert template.difficulty == "beginner"
 
-    async def test_list_templates_by_difficulty_advanced(self, template_service):
+    async def test_list_templates_by_difficulty_advanced(
+        self, template_service: TemplateService
+    ) -> None:
         """Test filtering templates by advanced difficulty."""
         advanced = await template_service.list_templates(difficulty="advanced")
 
@@ -127,7 +130,7 @@ class TestListTemplates:
         for template in advanced:
             assert template.difficulty == "advanced"
 
-    async def test_list_templates_combined_filters(self, template_service):
+    async def test_list_templates_combined_filters(self, template_service: TemplateService) -> None:
         """Test filtering by both type and difficulty."""
         result = await template_service.list_templates(
             strategy_type=StrategyType.MEAN_REVERSION,
@@ -138,13 +141,13 @@ class TestListTemplates:
             assert template.strategy_type == StrategyType.MEAN_REVERSION
             assert template.difficulty == "intermediate"
 
-    async def test_list_templates_no_matches(self, template_service):
+    async def test_list_templates_no_matches(self, template_service: TemplateService) -> None:
         """Test filtering with no matching templates."""
         result = await template_service.list_templates(difficulty="expert")
 
         assert result == []
 
-    async def test_list_templates_response_fields(self, template_service):
+    async def test_list_templates_response_fields(self, template_service: TemplateService) -> None:
         """Test that template responses have all fields."""
         templates = await template_service.list_templates()
 
@@ -164,7 +167,7 @@ class TestListTemplates:
 class TestGetTemplate:
     """Tests for get_template method."""
 
-    async def test_get_template_found(self, template_service):
+    async def test_get_template_found(self, template_service: TemplateService) -> None:
         """Test getting an existing template."""
         template = await template_service.get_template("ma_crossover")
 
@@ -173,13 +176,13 @@ class TestGetTemplate:
         assert template.name == "Moving Average Crossover"
         assert template.strategy_type == StrategyType.TREND_FOLLOWING
 
-    async def test_get_template_not_found(self, template_service):
+    async def test_get_template_not_found(self, template_service: TemplateService) -> None:
         """Test getting a non-existent template."""
         template = await template_service.get_template("nonexistent")
 
         assert template is None
 
-    async def test_get_template_rsi(self, template_service):
+    async def test_get_template_rsi(self, template_service: TemplateService) -> None:
         """Test getting RSI template."""
         template = await template_service.get_template("rsi_mean_reversion")
 
@@ -187,7 +190,7 @@ class TestGetTemplate:
         assert "RSI" in template.name
         assert "rsi" in template.tags
 
-    async def test_get_template_pairs_trading(self, template_service):
+    async def test_get_template_pairs_trading(self, template_service: TemplateService) -> None:
         """Test getting pairs trading template."""
         template = await template_service.get_template("pairs_trading")
 
@@ -195,7 +198,7 @@ class TestGetTemplate:
         assert "KO" in template.config_sexpr
         assert "PEP" in template.config_sexpr
 
-    async def test_get_template_has_config_json(self, template_service):
+    async def test_get_template_has_config_json(self, template_service: TemplateService) -> None:
         """Test that returned template has config_json field (empty dict)."""
         template = await template_service.get_template("ma_crossover")
 
@@ -209,7 +212,7 @@ class TestGetTemplate:
 class TestGetTemplateConfig:
     """Tests for get_template_config method."""
 
-    async def test_get_template_config_found(self, template_service):
+    async def test_get_template_config_found(self, template_service: TemplateService) -> None:
         """Test getting config for existing template."""
         config = await template_service.get_template_config("ma_crossover")
 
@@ -217,21 +220,24 @@ class TestGetTemplateConfig:
         assert "(strategy" in config
         assert "ema" in config.lower()
 
-    async def test_get_template_config_not_found(self, template_service):
+    async def test_get_template_config_not_found(self, template_service: TemplateService) -> None:
         """Test getting config for non-existent template."""
         config = await template_service.get_template_config("nonexistent")
 
         assert config is None
 
-    async def test_get_template_config_bollinger(self, template_service):
+    async def test_get_template_config_bollinger(self, template_service: TemplateService) -> None:
         """Test getting Bollinger bounce config."""
         config = await template_service.get_template_config("bollinger_bounce")
 
         assert config is not None
-        assert "bb-lower" in config
-        assert "bb-middle" in config
+        assert "bbands" in config
+        assert ":output lower" in config
+        assert ":output upper" in config
 
-    async def test_get_template_config_dual_momentum(self, template_service):
+    async def test_get_template_config_dual_momentum(
+        self, template_service: TemplateService
+    ) -> None:
         """Test getting dual momentum config."""
         config = await template_service.get_template_config("dual_momentum")
 
@@ -246,7 +252,7 @@ class TestGetTemplateConfig:
 class TestGetTemplateServiceDependency:
     """Tests for get_template_service dependency."""
 
-    def test_returns_service_instance(self):
+    def test_returns_service_instance(self) -> None:
         """Test that get_template_service returns a TemplateService."""
         service = get_template_service()
 

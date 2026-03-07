@@ -1,28 +1,42 @@
-"""Risk manager - enforces trading limits and risk rules with database persistence."""
+"""Risk manager - enforces trading limits and risk rules with database persistence.
 
+Includes market hours enforcement as first-line defense against out-of-hours trading.
+"""
+
+import logging
 import time
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 from fastapi import Depends
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from llamatrade_db import get_db
 from llamatrade_db.models.audit import DailyPnL, RiskConfig
 from llamatrade_db.models.trading import Order, Position
-from sqlalchemy import func, select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.clients.market_data import MarketDataClient, get_market_data_client
 from src.metrics import record_risk_check, update_daily_pnl, update_drawdown
 from src.models import RiskCheckResult, RiskLimits
+from src.utils.cache import AsyncTTLCache
+from src.utils.trading_hours import TradingHoursChecker, TradingHoursConfig
+
+logger = logging.getLogger(__name__)
 
 
 class RiskManager:
     """Manages risk limits and validates orders against them."""
 
+    # Shared config cache across all RiskManager instances
+    # TTL of 60 seconds reduces DB queries while allowing timely config updates
+    _config_cache: AsyncTTLCache = AsyncTTLCache(default_ttl=60.0, max_size=100)
+
     def __init__(
         self,
         db: AsyncSession | None = None,
         market_data: MarketDataClient | None = None,
+        trading_hours_config: TradingHoursConfig | None = None,
     ):
         self.db = db
         self.market_data = market_data
@@ -34,6 +48,8 @@ class RiskManager:
         )
         # Price cache for fallback (symbol -> last known price)
         self._price_cache: dict[str, float] = {}
+        # Trading hours checker for market hours enforcement
+        self._trading_hours = TradingHoursChecker(trading_hours_config or TradingHoursConfig())
 
     async def get_limits(
         self,
@@ -67,13 +83,49 @@ class RiskManager:
         limit_price: float | None = None,
         session_id: UUID | None = None,
     ) -> RiskCheckResult:
-        """Check if an order passes all risk limits."""
+        """Check if an order passes all risk limits.
+
+        Checks performed (in order):
+        0. Market hours - orders blocked outside trading hours
+        1. Max order value
+        2. Allowed symbols
+        3. Position size
+        4. Daily loss
+        5. Order rate limit
+        """
         start_time = time.perf_counter()
-        violations = []
+        violations: list[str] = []
         limits = await self.get_limits(tenant_id, session_id)
 
+        # 0. Check market hours (first check, unless explicitly bypassed)
+        if not limits.allow_outside_market_hours:
+            if not self._trading_hours.is_market_open():
+                session_info = self._trading_hours.get_session_info()
+                next_open = (
+                    session_info.next_regular_open.strftime("%Y-%m-%d %H:%M ET")
+                    if session_info.next_regular_open
+                    else "unknown"
+                )
+                violations.append(
+                    f"Market is closed ({session_info.session_type}). Next open: {next_open}"
+                )
+                # Early return for market hours - don't check other limits
+                duration = time.perf_counter() - start_time
+                record_risk_check(passed=False, violations=violations, duration=duration)
+                return RiskCheckResult(passed=False, violations=violations)
+
         # Estimate order value
-        estimated_price = limit_price or await self._get_current_price(symbol)
+        if limit_price:
+            estimated_price = limit_price
+        else:
+            estimated_price = await self._get_current_price(symbol)
+            if estimated_price is None:
+                # Fail-safe: reject order if we can't verify the value
+                violations.append(f"Unable to verify order value for {symbol} - price unavailable")
+                duration = time.perf_counter() - start_time
+                record_risk_check(passed=False, violations=violations, duration=duration)
+                return RiskCheckResult(passed=False, violations=violations)
+
         order_value = qty * estimated_price
 
         # 1. Check max order value
@@ -164,6 +216,12 @@ class RiskManager:
             self.db.add(config)
 
         await self.db.commit()
+
+        # Invalidate cache for this config
+        cache_key = f"risk_config:{tenant_id}:{session_id or 'tenant'}"
+        await self._config_cache.invalidate(cache_key)
+        logger.debug(f"Risk config cache invalidated: {cache_key}")
+
         return limits
 
     async def get_current_drawdown(
@@ -294,10 +352,26 @@ class RiskManager:
         tenant_id: UUID,
         session_id: UUID | None,
     ) -> RiskConfig | None:
-        """Get risk config from database."""
+        """Get risk config from database with caching.
+
+        Config is cached for 60 seconds to reduce database load while
+        still allowing timely updates.
+        """
         if not self.db:
             return None
 
+        # Build cache key
+        cache_key = f"risk_config:{tenant_id}:{session_id or 'tenant'}"
+
+        # Check cache first
+        cached = await self._config_cache.get(cache_key)
+        if cached is not None:
+            logger.debug(f"Risk config cache hit: {cache_key}")
+            return cached
+
+        logger.debug(f"Risk config cache miss: {cache_key}")
+
+        # Query database
         stmt = (
             select(RiskConfig)
             .where(RiskConfig.tenant_id == tenant_id)
@@ -310,48 +384,72 @@ class RiskManager:
             stmt = stmt.where(RiskConfig.session_id.is_(None))
 
         result = await self.db.execute(stmt)
-        return result.scalar_one_or_none()
+        config = result.scalar_one_or_none()
+
+        # Cache the result (even if None, to avoid repeated DB queries)
+        await self._config_cache.set(cache_key, config)
+
+        return config
 
     def _config_to_limits(self, config: RiskConfig) -> RiskLimits:
         """Convert database config to RiskLimits."""
+        # Get allowed_symbols from DB model (may be None or list)
+        raw_symbols = config.allowed_symbols  # type: ignore[reportUnknownMemberType]
+        allowed_symbols: list[str] | None = raw_symbols if raw_symbols else None
         return RiskLimits(
             max_position_size=config.max_position_value,
             max_daily_loss=config.max_daily_loss_value,
             max_order_value=config.max_order_value,
-            allowed_symbols=config.allowed_symbols,
+            allowed_symbols=allowed_symbols,
         )
 
-    async def _get_current_price(self, symbol: str) -> float:
-        """Get current price for a symbol from market data service."""
+    async def _get_current_price(self, symbol: str) -> float | None:
+        """Get current price for a symbol from market data service.
+
+        Returns None if price is unavailable from all sources. This triggers
+        a fail-safe risk check rejection rather than using a fallback price
+        that could cause incorrect risk calculations.
+        """
         symbol = symbol.upper()
 
         # Try to fetch from market data service
         if self.market_data:
-            price = await self.market_data.get_latest_price(symbol)
-            if price is not None and price > 0:
-                self._price_cache[symbol] = price
-                return price
+            try:
+                price = await self.market_data.get_latest_price(symbol)
+                if price is not None and price > 0:
+                    self._price_cache[symbol] = price
+                    return price
+            except Exception as e:
+                logger.warning(f"Failed to get price from market data for {symbol}: {e}")
 
         # Fall back to cached price
         if symbol in self._price_cache:
+            logger.debug(f"Using cached price for {symbol}: {self._price_cache[symbol]}")
             return self._price_cache[symbol]
 
         # If we have DB, try to get last known price from position
         if self.db:
-            stmt = (
-                select(Position.current_price)
-                .where(Position.symbol == symbol)
-                .where(Position.current_price.isnot(None))
-                .order_by(Position.updated_at.desc())
-                .limit(1)
-            )
-            result = await self.db.execute(stmt)
-            cached_price = result.scalar_one_or_none()
-            if cached_price:
-                return float(cached_price)
+            try:
+                stmt = (
+                    select(Position.current_price)
+                    .where(Position.symbol == symbol)
+                    .where(Position.current_price.isnot(None))
+                    .order_by(Position.updated_at.desc())
+                    .limit(1)
+                )
+                result = await self.db.execute(stmt)
+                cached_price = result.scalar_one_or_none()
+                if cached_price:
+                    price = float(cached_price)
+                    self._price_cache[symbol] = price
+                    logger.debug(f"Using DB price for {symbol}: {price}")
+                    return price
+            except Exception as e:
+                logger.warning(f"Failed to get price from DB for {symbol}: {e}")
 
-        # Last resort fallback (should rarely be used)
-        return 100.0
+        # No price available - return None to trigger fail-safe rejection
+        logger.warning(f"No price available for {symbol} from any source")
+        return None
 
     async def _check_position_size(
         self,
@@ -378,9 +476,18 @@ class RiskManager:
         position = result.scalar_one_or_none()
 
         current_qty = float(position.qty) if position else 0.0
-        current_price = (
-            float(position.current_price) if position and position.current_price else 100.0
-        )
+
+        # Get price from position or fetch it
+        if position and position.current_price:
+            current_price = float(position.current_price)
+        else:
+            # Fetch price from market data
+            fetched_price = await self._get_current_price(symbol)
+            if fetched_price is None:
+                # Fail-safe: can't verify position size without price
+                logger.warning(f"Cannot check position size for {symbol} - price unavailable")
+                return False
+            current_price = fetched_price
 
         # Calculate new position size
         if side in ("buy", "cover"):

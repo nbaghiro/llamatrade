@@ -2,13 +2,17 @@
 
 from collections.abc import AsyncGenerator
 from datetime import UTC, datetime, timedelta
+from typing import Any
 from unittest.mock import MagicMock
 from uuid import UUID, uuid4
 
 import pytest
 from httpx import ASGITransport, AsyncClient
+
+from llamatrade_proto.generated import billing_pb2
+
 from src.main import app
-from src.models import PlanResponse, PlanTier
+from src.models import PlanResponse
 from src.services.database import get_db
 from src.stripe.client import (
     InvoiceResult,
@@ -27,17 +31,18 @@ class MockStripeClient:
     """Mock Stripe client for testing."""
 
     def __init__(self) -> None:
-        self.customers: dict[str, dict] = {}
-        self.subscriptions: dict[str, dict] = {}
-        self.payment_methods: dict[str, dict] = {}
-        self.setup_intents: dict[str, dict] = {}
+        self.customers: dict[str, dict[str, Any]] = {}
+        self.subscriptions: dict[str, dict[str, Any]] = {}
+        self.payment_methods: dict[str, dict[str, Any]] = {}
+        self.setup_intents: dict[str, dict[str, Any]] = {}
 
     async def get_or_create_customer(
         self, tenant_id: str, email: str, name: str | None = None
     ) -> str:
         """Get or create a mock customer."""
         for cid, customer in self.customers.items():
-            if customer.get("metadata", {}).get("tenant_id") == tenant_id:
+            metadata = customer.get("metadata", {})
+            if isinstance(metadata, dict) and metadata.get("tenant_id") == tenant_id:
                 return cid
 
         customer_id = f"cus_test_{len(self.customers)}"
@@ -49,7 +54,7 @@ class MockStripeClient:
         }
         return customer_id
 
-    async def get_customer(self, customer_id: str) -> dict | None:
+    async def get_customer(self, customer_id: str) -> dict[str, Any] | None:
         """Get a mock customer."""
         return self.customers.get(customer_id)
 
@@ -93,11 +98,11 @@ class MockStripeClient:
         return [
             PaymentMethodResult(
                 id=pm_id,
-                type=pm.get("type", "card"),
-                card_brand=pm.get("card_brand", "visa"),
-                card_last4=pm.get("card_last4", "4242"),
-                card_exp_month=pm.get("card_exp_month", 12),
-                card_exp_year=pm.get("card_exp_year", 2030),
+                type=str(pm.get("type", "card")),
+                card_brand=str(pm.get("card_brand", "visa")),
+                card_last4=str(pm.get("card_last4", "4242")),
+                card_exp_month=int(pm.get("card_exp_month", 12)),
+                card_exp_year=int(pm.get("card_exp_year", 2030)),
             )
             for pm_id, pm in self.payment_methods.items()
             if pm.get("customer") == customer_id
@@ -114,7 +119,8 @@ class MockStripeClient:
         """Get default payment method."""
         customer = self.customers.get(customer_id)
         if customer:
-            return customer.get("default_payment_method")
+            result = customer.get("default_payment_method")
+            return str(result) if result else None
         return None
 
     async def create_subscription(
@@ -164,7 +170,7 @@ class MockStripeClient:
 
         return SubscriptionResult(
             id=subscription_id,
-            status=sub.get("status", "active"),
+            status=str(sub.get("status", "active")),
             current_period_start=now,
             current_period_end=now + timedelta(days=30),
             cancel_at_period_end=False,
@@ -201,14 +207,17 @@ class MockStripeClient:
             return None
 
         now = datetime.now(UTC)
+        trial_start_val = sub.get("trial_start")
+        trial_end_val = sub.get("trial_end")
+
         return SubscriptionResult(
             id=subscription_id,
-            status=sub.get("status", "active"),
+            status=str(sub.get("status", "active")),
             current_period_start=now,
             current_period_end=now + timedelta(days=30),
-            cancel_at_period_end=sub.get("cancel_at_period_end", False),
-            trial_start=sub.get("trial_start"),
-            trial_end=sub.get("trial_end"),
+            cancel_at_period_end=bool(sub.get("cancel_at_period_end", False)),
+            trial_start=trial_start_val if isinstance(trial_start_val, datetime) else None,
+            trial_end=trial_end_val if isinstance(trial_end_val, datetime) else None,
         )
 
     async def list_invoices(self, customer_id: str, limit: int = 10) -> list[InvoiceResult]:
@@ -229,11 +238,11 @@ class MockStripeClient:
 
     def verify_webhook_signature(
         self, payload: bytes, sig_header: str, webhook_secret: str
-    ) -> dict:
+    ) -> dict[str, Any]:
         """Mock webhook verification."""
         import json
 
-        return json.loads(payload)
+        return json.loads(payload)  # type: ignore[no-any-return]
 
 
 # ===================
@@ -249,17 +258,17 @@ class MockPlan:
         id: UUID | None = None,
         name: str = "starter",
         display_name: str = "Starter",
-        tier: str = "starter",
+        tier: int = billing_pb2.PLAN_TIER_STARTER,
         price_monthly: float = 29.0,
         price_yearly: float = 290.0,
-        features: dict | None = None,
-        limits: dict | None = None,
+        features: dict[str, Any] | None = None,
+        limits: dict[str, Any] | None = None,
         trial_days: int = 14,
         stripe_price_id_monthly: str = "price_monthly_test",
         stripe_price_id_yearly: str = "price_yearly_test",
         is_active: bool = True,
         sort_order: int = 1,
-    ):
+    ) -> None:
         self.id = id or uuid4()
         self.name = name
         self.display_name = display_name
@@ -283,8 +292,8 @@ class MockSubscription:
         id: UUID | None = None,
         tenant_id: UUID | None = None,
         plan: MockPlan | None = None,
-        status: str = "active",
-        billing_cycle: str = "monthly",
+        status: int = billing_pb2.SUBSCRIPTION_STATUS_ACTIVE,
+        billing_cycle: int = billing_pb2.BILLING_INTERVAL_MONTHLY,
         stripe_subscription_id: str | None = "sub_test_123",
         stripe_customer_id: str | None = "cus_test_123",
         current_period_start: datetime | None = None,
@@ -293,7 +302,7 @@ class MockSubscription:
         trial_start: datetime | None = None,
         trial_end: datetime | None = None,
         created_at: datetime | None = None,
-    ):
+    ) -> None:
         self.id = id or uuid4()
         self.tenant_id = tenant_id or uuid4()
         self.plan = plan or MockPlan()
@@ -309,7 +318,7 @@ class MockSubscription:
         self.trial_start = trial_start
         self.trial_end = trial_end
         self.created_at = created_at or now
-        self.canceled_at = None
+        self.canceled_at: datetime | None = None
 
 
 class MockPaymentMethodModel:
@@ -327,7 +336,7 @@ class MockPaymentMethodModel:
         card_exp_month: int = 12,
         card_exp_year: int = 2030,
         is_default: bool = False,
-    ):
+    ) -> None:
         self.id = id or uuid4()
         self.tenant_id = tenant_id or uuid4()
         self.stripe_payment_method_id = stripe_payment_method_id
@@ -344,7 +353,7 @@ class MockAsyncSession:
     """Mock async database session."""
 
     def __init__(self) -> None:
-        self._data: dict = {
+        self._data: dict[str, list[Any]] = {
             "plans": [],
             "subscriptions": [],
             "payment_methods": [],
@@ -362,7 +371,7 @@ class MockAsyncSession:
         """Set payment method to return from queries."""
         self._return_payment_method = pm
 
-    async def execute(self, query) -> MagicMock:
+    async def execute(self, query: object) -> MagicMock:
         """Mock execute - returns configured results."""
         result = MagicMock()
 
@@ -390,19 +399,19 @@ class MockAsyncSession:
         """Mock flush."""
         pass
 
-    async def refresh(self, obj, attrs=None) -> None:
+    async def refresh(self, obj: object, attrs: list[str] | None = None) -> None:
         """Mock refresh - set up required attributes."""
         # Ensure subscription has a plan
-        if hasattr(obj, "plan") and obj.plan is None:
-            obj.plan = MockPlan()
+        if hasattr(obj, "plan") and getattr(obj, "plan") is None:
+            setattr(obj, "plan", MockPlan())
         # Ensure objects have an ID
-        if hasattr(obj, "id") and obj.id is None:
-            obj.id = uuid4()
+        if hasattr(obj, "id") and getattr(obj, "id") is None:
+            setattr(obj, "id", uuid4())
         # Ensure created_at is set
-        if hasattr(obj, "created_at") and obj.created_at is None:
-            obj.created_at = datetime.now(UTC)
+        if hasattr(obj, "created_at") and getattr(obj, "created_at") is None:
+            setattr(obj, "created_at", datetime.now(UTC))
 
-    def add(self, obj) -> None:
+    def add(self, obj: object) -> None:
         """Mock add."""
         pass
 
@@ -427,8 +436,8 @@ def mock_db() -> MockAsyncSession:
 def mock_db_with_subscription() -> MockAsyncSession:
     """Create a mock database session with an existing subscription."""
     db = MockAsyncSession()
-    plan = MockPlan(name="starter", tier="starter")
-    subscription = MockSubscription(plan=plan, status="active")
+    plan = MockPlan(name="starter", tier=billing_pb2.PLAN_TIER_STARTER)
+    subscription = MockSubscription(plan=plan, status=billing_pb2.SUBSCRIPTION_STATUS_ACTIVE)
     db.set_subscription(subscription)
     return db
 
@@ -437,10 +446,10 @@ def mock_db_with_subscription() -> MockAsyncSession:
 def mock_db_with_cancelled_subscription() -> MockAsyncSession:
     """Create a mock database session with a subscription pending cancellation."""
     db = MockAsyncSession()
-    plan = MockPlan(name="starter", tier="starter")
+    plan = MockPlan(name="starter", tier=billing_pb2.PLAN_TIER_STARTER)
     subscription = MockSubscription(
         plan=plan,
-        status="active",
+        status=billing_pb2.SUBSCRIPTION_STATUS_ACTIVE,
         cancel_at_period_end=True,
     )
     db.set_subscription(subscription)
@@ -464,10 +473,10 @@ def mock_db_with_payment_method() -> MockAsyncSession:
 @pytest.fixture
 async def client(
     mock_stripe_client: MockStripeClient, mock_db: MockAsyncSession
-) -> AsyncGenerator[AsyncClient, None]:
+) -> AsyncGenerator[AsyncClient]:
     """Create async test client with mocked dependencies."""
 
-    async def get_mock_db():
+    async def get_mock_db() -> AsyncGenerator[MockAsyncSession]:
         yield mock_db
 
     # Override dependencies
@@ -486,10 +495,10 @@ async def client(
 @pytest.fixture
 async def client_with_subscription(
     mock_stripe_client: MockStripeClient, mock_db_with_subscription: MockAsyncSession
-) -> AsyncGenerator[AsyncClient, None]:
+) -> AsyncGenerator[AsyncClient]:
     """Create async test client with an existing subscription."""
 
-    async def get_mock_db():
+    async def get_mock_db() -> AsyncGenerator[MockAsyncSession]:
         yield mock_db_with_subscription
 
     app.dependency_overrides[get_stripe_client] = lambda: mock_stripe_client
@@ -507,10 +516,10 @@ async def client_with_subscription(
 @pytest.fixture
 async def client_with_cancelled_subscription(
     mock_stripe_client: MockStripeClient, mock_db_with_cancelled_subscription: MockAsyncSession
-) -> AsyncGenerator[AsyncClient, None]:
+) -> AsyncGenerator[AsyncClient]:
     """Create async test client with a subscription pending cancellation."""
 
-    async def get_mock_db():
+    async def get_mock_db() -> AsyncGenerator[MockAsyncSession]:
         yield mock_db_with_cancelled_subscription
 
     app.dependency_overrides[get_stripe_client] = lambda: mock_stripe_client
@@ -528,10 +537,10 @@ async def client_with_cancelled_subscription(
 @pytest.fixture
 async def client_with_payment_method(
     mock_stripe_client: MockStripeClient, mock_db_with_payment_method: MockAsyncSession
-) -> AsyncGenerator[AsyncClient, None]:
+) -> AsyncGenerator[AsyncClient]:
     """Create async test client with an existing payment method."""
 
-    async def get_mock_db():
+    async def get_mock_db() -> AsyncGenerator[MockAsyncSession]:
         yield mock_db_with_payment_method
 
     app.dependency_overrides[get_stripe_client] = lambda: mock_stripe_client
@@ -554,7 +563,7 @@ async def client_with_payment_method(
 def make_plan(
     id: str = "test_plan",
     name: str = "Test Plan",
-    tier: PlanTier = PlanTier.STARTER,
+    tier: int = billing_pb2.PLAN_TIER_STARTER,
     price_monthly: float = 29.0,
     price_yearly: float = 290.0,
     trial_days: int = 14,
@@ -569,11 +578,11 @@ def make_plan(
         features={
             "backtests": True,
             "paper_trading": True,
-            "live_trading": tier == PlanTier.PRO,
+            "live_trading": tier == billing_pb2.PLAN_TIER_PRO,
         },
         limits={
-            "backtests_per_month": 50 if tier != PlanTier.PRO else None,
-            "live_strategies": 1 if tier == PlanTier.STARTER else 5,
+            "backtests_per_month": 50 if tier != billing_pb2.PLAN_TIER_PRO else None,
+            "live_strategies": 1 if tier == billing_pb2.PLAN_TIER_STARTER else 5,
         },
         trial_days=trial_days,
     )
@@ -584,7 +593,9 @@ def make_tenant_id() -> str:
     return str(uuid4())
 
 
-def make_auth_header(tenant_id: str | None = None, email: str = "test@example.com") -> dict:
+def make_auth_header(
+    tenant_id: str | None = None, email: str = "test@example.com"
+) -> dict[str, str]:
     """Create auth headers with a test JWT token."""
     import jwt
 

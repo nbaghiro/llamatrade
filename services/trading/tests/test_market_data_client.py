@@ -5,7 +5,8 @@ from decimal import Decimal
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from llamatrade_grpc.clients.market_data import Bar, MarketDataClient, Quote, Trade
+
+from llamatrade_proto.clients.market_data import Bar, MarketDataClient, Quote, Trade
 
 
 class TestMarketDataClientMethods:

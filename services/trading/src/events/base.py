@@ -31,7 +31,7 @@ class TradingEvent:
     session_id: UUID
     timestamp: datetime = field(default_factory=lambda: datetime.now(UTC))
     sequence: int | None = None  # Set by event store on append
-    metadata: dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=lambda: {})
 
     @property
     def event_type(self) -> str:
@@ -62,7 +62,7 @@ class TradingEvent:
         return data
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "TradingEvent":
+    def from_dict(cls, data: dict[str, Any]) -> TradingEvent:
         """Deserialize event from dictionary.
 
         Note: This base implementation only works for the base class.
@@ -82,7 +82,7 @@ class TradingEvent:
 _EVENT_REGISTRY: dict[str, type[TradingEvent]] = {}
 
 
-def register_event(event_class: type[TradingEvent]) -> type[TradingEvent]:
+def register_event[T: TradingEvent](event_class: type[T]) -> type[T]:
     """Decorator to register an event class for deserialization."""
     _EVENT_REGISTRY[event_class.EVENT_TYPE] = event_class
     return event_class

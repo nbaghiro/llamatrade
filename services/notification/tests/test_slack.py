@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, patch
 
 import httpx
 import pytest
+
 from src.channels.slack import (
     SlackAttachment,
     SlackBlock,
@@ -16,7 +17,7 @@ from src.channels.slack import (
 class TestSlackMessageColor:
     """Tests for SlackMessageColor enum."""
 
-    def test_color_values(self):
+    def test_color_values(self) -> None:
         """Test color enum values."""
         assert SlackMessageColor.GOOD == "good"
         assert SlackMessageColor.WARNING == "warning"
@@ -27,13 +28,13 @@ class TestSlackMessageColor:
 class TestSlackBlock:
     """Tests for SlackBlock dataclass."""
 
-    def test_basic_block(self):
+    def test_basic_block(self) -> None:
         """Test creating a basic block."""
         block = SlackBlock(type="section")
         result = block.to_dict()
         assert result == {"type": "section"}
 
-    def test_block_with_text(self):
+    def test_block_with_text(self) -> None:
         """Test block with text."""
         block = SlackBlock(
             type="section",
@@ -42,7 +43,7 @@ class TestSlackBlock:
         result = block.to_dict()
         assert result["text"] == {"type": "mrkdwn", "text": "Hello"}
 
-    def test_block_with_fields(self):
+    def test_block_with_fields(self) -> None:
         """Test block with fields."""
         block = SlackBlock(
             type="section",
@@ -58,13 +59,13 @@ class TestSlackBlock:
 class TestSlackAttachment:
     """Tests for SlackAttachment dataclass."""
 
-    def test_basic_attachment(self):
+    def test_basic_attachment(self) -> None:
         """Test creating a basic attachment."""
         attachment = SlackAttachment(color=SlackMessageColor.GOOD)
         result = attachment.to_dict()
         assert result == {"color": "good"}
 
-    def test_full_attachment(self):
+    def test_full_attachment(self) -> None:
         """Test attachment with all fields."""
         attachment = SlackAttachment(
             color=SlackMessageColor.DANGER,
@@ -87,13 +88,13 @@ class TestSlackAttachment:
 class TestSlackResult:
     """Tests for SlackResult dataclass."""
 
-    def test_successful_result(self):
+    def test_successful_result(self) -> None:
         """Test creating a successful result."""
         result = SlackResult(success=True)
         assert result.success is True
         assert result.error_message is None
 
-    def test_failed_result(self):
+    def test_failed_result(self) -> None:
         """Test creating a failed result."""
         result = SlackResult(success=False, error_message="API error")
         assert result.success is False
@@ -103,14 +104,14 @@ class TestSlackResult:
 class TestSlackChannelInit:
     """Tests for SlackChannel initialization."""
 
-    def test_basic_init(self):
+    def test_basic_init(self) -> None:
         """Test basic initialization."""
         channel = SlackChannel(webhook_url="https://hooks.slack.com/test")
         assert channel.webhook_url == "https://hooks.slack.com/test"
         assert channel.default_channel is None
         assert channel.default_username == "LlamaTrade"
 
-    def test_full_init(self):
+    def test_full_init(self) -> None:
         """Test initialization with all options."""
         channel = SlackChannel(
             webhook_url="https://hooks.slack.com/test",
@@ -127,7 +128,7 @@ class TestSlackChannelSend:
     """Tests for SlackChannel send method."""
 
     @pytest.mark.asyncio
-    async def test_send_simple_message(self):
+    async def test_send_simple_message(self) -> None:
         """Test sending a simple message."""
         channel = SlackChannel(webhook_url="https://hooks.slack.com/test")
 
@@ -145,7 +146,7 @@ class TestSlackChannelSend:
             assert result.success is True
 
     @pytest.mark.asyncio
-    async def test_send_with_channel_override(self):
+    async def test_send_with_channel_override(self) -> None:
         """Test sending with channel override."""
         channel = SlackChannel(webhook_url="https://hooks.slack.com/test")
 
@@ -164,7 +165,7 @@ class TestSlackChannelSend:
             assert payload["channel"] == "#general"
 
     @pytest.mark.asyncio
-    async def test_send_with_blocks(self):
+    async def test_send_with_blocks(self) -> None:
         """Test sending with Block Kit blocks."""
         channel = SlackChannel(webhook_url="https://hooks.slack.com/test")
 
@@ -191,7 +192,7 @@ class TestSlackChannelSend:
             assert len(payload["blocks"]) == 1
 
     @pytest.mark.asyncio
-    async def test_send_with_attachments(self):
+    async def test_send_with_attachments(self) -> None:
         """Test sending with attachments."""
         channel = SlackChannel(webhook_url="https://hooks.slack.com/test")
 
@@ -219,7 +220,7 @@ class TestSlackChannelSend:
             assert payload["attachments"][0]["color"] == "good"
 
     @pytest.mark.asyncio
-    async def test_send_api_error(self):
+    async def test_send_api_error(self) -> None:
         """Test handling API error response."""
         channel = SlackChannel(webhook_url="https://hooks.slack.com/test")
 
@@ -235,10 +236,11 @@ class TestSlackChannelSend:
             result = await channel.send("Hello!")
 
             assert result.success is False
+            assert result.error_message is not None
             assert "invalid_payload" in result.error_message
 
     @pytest.mark.asyncio
-    async def test_send_timeout(self):
+    async def test_send_timeout(self) -> None:
         """Test handling timeout."""
         channel = SlackChannel(webhook_url="https://hooks.slack.com/test")
 
@@ -250,10 +252,11 @@ class TestSlackChannelSend:
             result = await channel.send("Hello!")
 
             assert result.success is False
+            assert result.error_message is not None
             assert "timed out" in result.error_message.lower()
 
     @pytest.mark.asyncio
-    async def test_send_request_error(self):
+    async def test_send_request_error(self) -> None:
         """Test handling request error."""
         channel = SlackChannel(webhook_url="https://hooks.slack.com/test")
 
@@ -272,7 +275,7 @@ class TestSlackChannelTradingAlerts:
     """Tests for SlackChannel trading alert methods."""
 
     @pytest.mark.asyncio
-    async def test_send_trading_alert(self):
+    async def test_send_trading_alert(self) -> None:
         """Test sending a trading alert."""
         channel = SlackChannel(webhook_url="https://hooks.slack.com/test")
 
@@ -298,7 +301,7 @@ class TestSlackChannelTradingAlerts:
             assert "AAPL" in payload["text"]
 
     @pytest.mark.asyncio
-    async def test_send_order_filled_buy(self):
+    async def test_send_order_filled_buy(self) -> None:
         """Test sending order filled notification for buy."""
         channel = SlackChannel(webhook_url="https://hooks.slack.com/test")
 
@@ -324,7 +327,7 @@ class TestSlackChannelTradingAlerts:
             assert payload["attachments"][0]["color"] == "good"
 
     @pytest.mark.asyncio
-    async def test_send_order_filled_sell(self):
+    async def test_send_order_filled_sell(self) -> None:
         """Test sending order filled notification for sell."""
         channel = SlackChannel(webhook_url="https://hooks.slack.com/test")
 
@@ -350,7 +353,7 @@ class TestSlackChannelTradingAlerts:
             assert payload["attachments"][0]["color"] == "warning"
 
     @pytest.mark.asyncio
-    async def test_send_position_closed_profit(self):
+    async def test_send_position_closed_profit(self) -> None:
         """Test sending position closed notification with profit."""
         channel = SlackChannel(webhook_url="https://hooks.slack.com/test")
 
@@ -375,7 +378,7 @@ class TestSlackChannelTradingAlerts:
             assert payload["attachments"][0]["color"] == "good"
 
     @pytest.mark.asyncio
-    async def test_send_position_closed_loss(self):
+    async def test_send_position_closed_loss(self) -> None:
         """Test sending position closed notification with loss."""
         channel = SlackChannel(webhook_url="https://hooks.slack.com/test")
 
@@ -399,7 +402,7 @@ class TestSlackChannelTradingAlerts:
             assert payload["attachments"][0]["color"] == "danger"
 
     @pytest.mark.asyncio
-    async def test_send_price_alert(self):
+    async def test_send_price_alert(self) -> None:
         """Test sending price alert."""
         channel = SlackChannel(webhook_url="https://hooks.slack.com/test")
 
@@ -425,7 +428,7 @@ class TestSlackChannelTradingAlerts:
             assert "above" in payload["text"]
 
     @pytest.mark.asyncio
-    async def test_send_session_started(self):
+    async def test_send_session_started(self) -> None:
         """Test sending session started notification."""
         channel = SlackChannel(webhook_url="https://hooks.slack.com/test")
 
@@ -449,7 +452,7 @@ class TestSlackChannelTradingAlerts:
             assert payload["attachments"][0]["color"] == "good"
 
     @pytest.mark.asyncio
-    async def test_send_session_error(self):
+    async def test_send_session_error(self) -> None:
         """Test sending session error notification."""
         channel = SlackChannel(webhook_url="https://hooks.slack.com/test")
 
@@ -473,7 +476,7 @@ class TestSlackChannelTradingAlerts:
             assert payload["attachments"][0]["color"] == "danger"
 
     @pytest.mark.asyncio
-    async def test_send_risk_alert(self):
+    async def test_send_risk_alert(self) -> None:
         """Test sending risk alert."""
         channel = SlackChannel(webhook_url="https://hooks.slack.com/test")
 

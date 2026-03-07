@@ -1,51 +1,62 @@
 """Vectorized backtest engine for high-performance backtesting.
 
 This engine uses NumPy vectorization to achieve significantly faster
-execution compared to the row-by-row engine. It's designed for:
+execution compared to the bar-by-bar engine. It's designed for:
 - 1 symbol, 1 year: < 100ms
 - 10 symbols, 5 years: < 2 seconds
 - 100 symbols, 10 years: < 15 seconds
+
+## Key Differences from Bar-by-Bar Engine (backtester.py)
+
+1. **Position Types**: Only supports long positions. Use bar-by-bar engine for shorts.
+
+2. **Signal Rejection**: Silently skips entries when insufficient cash (no tracking).
+   Bar-by-bar engine tracks rejected signals in BacktestResult.rejected_signals.
+
+3. **Commission Handling**: Applies commission_rate * 2 on exit only.
+   Bar-by-bar engine deducts commission on both entry and exit.
+
+4. **Risk Exits**: Stop-loss and take-profit are computed during simulation loop
+   using actual entry prices (not pre-computed).
+
+5. **Strategy Interface**: Requires VectorizedCompiledStrategy with entry_fn/exit_fn
+   that return boolean arrays. Bar-by-bar engine uses callable(engine, symbol, bar).
+
+Choose this engine for:
+- Large-scale parameter optimization
+- Multi-asset universes (100+ symbols)
+- Long-only strategies without complex position management
+
+Choose bar-by-bar engine for:
+- Short selling
+- Position sizing based on current equity
+- Debugging rejected signals
+- Maximum accuracy in commission/slippage modeling
 """
 
-from collections.abc import Callable
-from dataclasses import dataclass, field
 from datetime import datetime
-from typing import TypedDict
 
 import numpy as np
 
+# Import vectorized types from shared library
+from llamatrade_compiler import (
+    VectorizedBarData,
+    VectorizedCompiledStrategy,
+    prepare_vectorized_bars,
+)
+
 from src.engine.backtester import BacktestConfig, BacktestResult, Trade
 
+# Re-export for backward compatibility
+CompiledStrategy = VectorizedCompiledStrategy
 
-class VectorizedBarData(TypedDict):
-    """Vectorized bar data for multiple symbols."""
-
-    timestamps: np.ndarray  # Shape: (num_bars,) datetime64
-    opens: np.ndarray  # Shape: (num_symbols, num_bars)
-    highs: np.ndarray  # Shape: (num_symbols, num_bars)
-    lows: np.ndarray  # Shape: (num_symbols, num_bars)
-    closes: np.ndarray  # Shape: (num_symbols, num_bars)
-    volumes: np.ndarray  # Shape: (num_symbols, num_bars)
-
-
-SignalFn = Callable[["VectorizedBarData", dict[str, np.ndarray]], np.ndarray]
-
-
-@dataclass
-class CompiledStrategy:
-    """Pre-compiled strategy for vectorized execution."""
-
-    # Entry condition as a callable that returns boolean array
-    entry_fn: SignalFn
-    # Exit condition as a callable that returns boolean array
-    exit_fn: SignalFn
-    # Pre-computed indicators as dict of arrays
-    indicators: dict[str, np.ndarray] = field(default_factory=dict)
-    # Position sizing (fraction of equity)
-    position_size_pct: float = 10.0
-    # Risk parameters
-    stop_loss_pct: float | None = None
-    take_profit_pct: float | None = None
+# Re-export prepare_vectorized_bars for backward compatibility
+__all__ = [
+    "VectorizedBacktestEngine",
+    "VectorizedBarData",
+    "CompiledStrategy",
+    "prepare_vectorized_bars",
+]
 
 
 class VectorizedBacktestEngine:
@@ -57,7 +68,7 @@ class VectorizedBacktestEngine:
     def run(
         self,
         bars: VectorizedBarData,
-        strategy: CompiledStrategy,
+        strategy: VectorizedCompiledStrategy,
         symbols: list[str],
     ) -> BacktestResult:
         """Run a vectorized backtest.
@@ -69,31 +80,51 @@ class VectorizedBacktestEngine:
 
         Returns:
             BacktestResult with metrics and trades
+
+        Raises:
+            ValueError: If bars data is missing required keys or is empty.
         """
+        # Validate required keys exist
+        required_keys = ["timestamps", "closes", "opens", "highs", "lows", "volumes"]
+        missing_keys = [k for k in required_keys if k not in bars]
+        if missing_keys:
+            raise ValueError(f"bars data missing required keys: {missing_keys}")
+
+        # Validate arrays are not empty
+        if len(bars["timestamps"]) == 0:
+            return BacktestResult(
+                final_equity=self.config.initial_capital,
+                total_return=0.0,
+                annual_return=0.0,
+            )
+
+        # Validate symbols list
+        if not symbols:
+            raise ValueError("symbols list cannot be empty")
+
         num_symbols = len(symbols)
         num_bars = len(bars["timestamps"])
         timestamps = bars["timestamps"]
         closes = bars["closes"]
 
+        # Validate array shapes match
+        if closes.shape[0] != num_symbols:
+            raise ValueError(
+                f"closes array has {closes.shape[0]} symbols but {num_symbols} symbols provided"
+            )
+
         # Initialize tracking arrays
-        positions = np.zeros((num_symbols, num_bars), dtype=np.float64)  # Quantity held
-        entry_prices = np.zeros((num_symbols, num_bars), dtype=np.float64)
+        _positions = np.zeros((num_symbols, num_bars), dtype=np.float64)  # Quantity held (TODO)
+        _entry_prices = np.zeros((num_symbols, num_bars), dtype=np.float64)  # TODO
         equity = np.zeros(num_bars, dtype=np.float64)
 
         # Get entry/exit signals as boolean arrays (num_symbols, num_bars)
         entry_signals = strategy.entry_fn(bars, strategy.indicators)
         exit_signals = strategy.exit_fn(bars, strategy.indicators)
 
-        # Apply risk exits if configured
-        if strategy.stop_loss_pct or strategy.take_profit_pct:
-            exit_signals = self._apply_risk_exits(
-                exit_signals,
-                closes,
-                entry_prices,
-                positions,
-                strategy.stop_loss_pct,
-                strategy.take_profit_pct,
-            )
+        # Note: Risk exits (stop-loss/take-profit) are applied during the simulation loop
+        # below, where we have actual entry prices. Pre-computing them here would use
+        # uninitialized entry_prices (all zeros) which produces incorrect results.
 
         # Track trades
         trades: list[Trade] = []
@@ -108,21 +139,39 @@ class VectorizedBacktestEngine:
         for bar_idx in range(num_bars):
             bar_close = closes[:, bar_idx]
 
-            # Process exits first
+            # Process exits first (strategy signals + risk exits)
             exit_mask = exit_signals[:, bar_idx] & (current_positions > 0)
+
+            # Apply risk exits (stop-loss / take-profit) for positions with real entry prices
+            if strategy.stop_loss_pct or strategy.take_profit_pct:
+                in_position_mask = current_positions > 0
+                if np.any(in_position_mask):
+                    # Calculate P&L percentage for positions
+                    with np.errstate(divide="ignore", invalid="ignore"):
+                        pnl_pct = np.where(
+                            current_entry_prices > 0,
+                            (bar_close - current_entry_prices) / current_entry_prices * 100,
+                            0,
+                        )
+                    if strategy.stop_loss_pct is not None:
+                        exit_mask |= (pnl_pct <= -strategy.stop_loss_pct) & in_position_mask
+                    if strategy.take_profit_pct is not None:
+                        exit_mask |= (pnl_pct >= strategy.take_profit_pct) & in_position_mask
             if np.any(exit_mask):
-                for sym_idx in np.where(exit_mask)[0]:
+                for sym_idx_np in np.where(exit_mask)[0]:
+                    sym_idx = int(sym_idx_np)
                     # Record trade
+                    symbol: str = symbols[sym_idx]
                     trade = Trade(
                         entry_date=self._idx_to_datetime(
                             timestamps, int(current_entry_bars[sym_idx])
                         ),
                         exit_date=self._idx_to_datetime(timestamps, bar_idx),
-                        symbol=symbols[sym_idx],
+                        symbol=symbol,
                         side="long",
-                        entry_price=current_entry_prices[sym_idx],
-                        exit_price=bar_close[sym_idx],
-                        quantity=current_positions[sym_idx],
+                        entry_price=float(current_entry_prices[sym_idx]),
+                        exit_price=float(bar_close[sym_idx]),
+                        quantity=float(current_positions[sym_idx]),
                         commission=self.config.commission_rate * 2,
                     )
                     trades.append(trade)
@@ -138,7 +187,8 @@ class VectorizedBacktestEngine:
             # Process entries (only if not already in position)
             entry_mask = entry_signals[:, bar_idx] & (current_positions == 0)
             if np.any(entry_mask):
-                for sym_idx in np.where(entry_mask)[0]:
+                for sym_idx_np in np.where(entry_mask)[0]:
+                    sym_idx = int(sym_idx_np)
                     # Calculate position size
                     equity_now = current_cash + np.sum(current_positions * bar_close)
                     position_value = equity_now * strategy.position_size_pct / 100
@@ -199,7 +249,17 @@ class VectorizedBacktestEngine:
         stop_loss_pct: float | None,
         take_profit_pct: float | None,
     ) -> np.ndarray:
-        """Apply stop-loss and take-profit exits vectorized."""
+        """Apply stop-loss and take-profit exits vectorized.
+
+        .. deprecated::
+            This method is no longer used internally. Risk exits are now
+            computed during the simulation loop where actual entry prices
+            are available. Kept for backward compatibility with external code.
+
+        Note: For this to work correctly, entry_prices must be pre-populated
+        with actual entry prices for each position, which requires knowing
+        entry points before simulation (not possible in general case).
+        """
         result = exit_signals.copy()
 
         if stop_loss_pct is not None:
@@ -224,7 +284,25 @@ class VectorizedBacktestEngine:
         return result
 
     def _idx_to_datetime(self, timestamps: np.ndarray, idx: int) -> datetime:
-        """Convert numpy datetime64 to Python datetime."""
+        """Convert numpy datetime64 to Python datetime.
+
+        Args:
+            timestamps: Array of timestamps
+            idx: Index into the array (must be valid)
+
+        Returns:
+            Python datetime object
+
+        Raises:
+            IndexError: If idx is out of bounds
+        """
+        if len(timestamps) == 0:
+            raise IndexError("Cannot index into empty timestamps array")
+        if idx < 0 or idx >= len(timestamps):
+            raise IndexError(
+                f"Index {idx} out of bounds for timestamps array of length {len(timestamps)}"
+            )
+
         ts = timestamps[idx]
         if isinstance(ts, np.datetime64):
             # Convert numpy datetime64 to Python datetime
@@ -351,66 +429,3 @@ class VectorizedBacktestEngine:
             prev_month_end_equity = month_end_equity
 
         return monthly_returns
-
-
-def prepare_vectorized_bars(
-    bars: dict[str, list[dict]],
-    symbols: list[str],
-) -> tuple[VectorizedBarData, np.ndarray]:
-    """Convert row-based bars to vectorized format.
-
-    Args:
-        bars: Dictionary mapping symbol to list of bar dicts
-        symbols: List of symbol names in desired order
-
-    Returns:
-        Tuple of (VectorizedBarData, timestamps array)
-    """
-    # Get all unique timestamps
-    all_timestamps = set()
-    for symbol_bars in bars.values():
-        for bar in symbol_bars:
-            all_timestamps.add(bar["timestamp"])
-
-    timestamps = np.array(sorted(all_timestamps))
-    num_bars = len(timestamps)
-    num_symbols = len(symbols)
-
-    # Create timestamp index for fast lookup
-    ts_to_idx = {ts: i for i, ts in enumerate(timestamps)}
-
-    # Pre-allocate arrays
-    opens = np.full((num_symbols, num_bars), np.nan, dtype=np.float64)
-    highs = np.full((num_symbols, num_bars), np.nan, dtype=np.float64)
-    lows = np.full((num_symbols, num_bars), np.nan, dtype=np.float64)
-    closes = np.full((num_symbols, num_bars), np.nan, dtype=np.float64)
-    volumes = np.zeros((num_symbols, num_bars), dtype=np.float64)
-
-    # Fill arrays
-    for sym_idx, symbol in enumerate(symbols):
-        symbol_bars = bars.get(symbol, [])
-        for bar in symbol_bars:
-            bar_idx = ts_to_idx.get(bar["timestamp"])
-            if bar_idx is not None:
-                opens[sym_idx, bar_idx] = bar["open"]
-                highs[sym_idx, bar_idx] = bar["high"]
-                lows[sym_idx, bar_idx] = bar["low"]
-                closes[sym_idx, bar_idx] = bar["close"]
-                volumes[sym_idx, bar_idx] = bar["volume"]
-
-    # Forward-fill NaN values for closes (for missing days)
-    for sym_idx in range(num_symbols):
-        mask = np.isnan(closes[sym_idx])
-        if np.any(mask):
-            idx = np.where(~mask, np.arange(num_bars), 0)
-            np.maximum.accumulate(idx, out=idx)
-            closes[sym_idx, mask] = closes[sym_idx, idx[mask]]
-
-    return {
-        "timestamps": timestamps,
-        "opens": opens,
-        "highs": highs,
-        "lows": lows,
-        "closes": closes,
-        "volumes": volumes,
-    }, timestamps

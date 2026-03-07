@@ -1,9 +1,12 @@
 """Tests for portfolio service."""
 
+# pyright: reportPrivateUsage=false
+
 from unittest.mock import AsyncMock, MagicMock
 from uuid import UUID
 
 import pytest
+
 from src.services.portfolio_service import PortfolioService
 
 TEST_TENANT_ID = UUID("11111111-1111-1111-1111-111111111111")
@@ -24,7 +27,7 @@ def portfolio_service_no_market_data(mock_db: AsyncMock) -> PortfolioService:
 async def test_get_summary_no_data(
     portfolio_service: PortfolioService,
     mock_db: AsyncMock,
-):
+) -> None:
     """Test get_summary returns default when no summary exists."""
     # Mock empty result
     mock_result = MagicMock()
@@ -43,7 +46,7 @@ async def test_get_summary_with_data(
     mock_db: AsyncMock,
     sample_portfolio_summary: MagicMock,
     mock_market_data_client: AsyncMock,
-):
+) -> None:
     """Test get_summary returns correct data when summary exists."""
     # Mock result with data
     mock_result = MagicMock()
@@ -60,7 +63,7 @@ async def test_get_summary_with_data(
 async def test_list_positions_empty(
     portfolio_service: PortfolioService,
     mock_db: AsyncMock,
-):
+) -> None:
     """Test list_positions returns empty list when no summary exists."""
     mock_result = MagicMock()
     mock_result.scalar_one_or_none.return_value = None
@@ -76,7 +79,7 @@ async def test_list_positions_with_data(
     mock_db: AsyncMock,
     sample_portfolio_summary: MagicMock,
     mock_market_data_client: AsyncMock,
-):
+) -> None:
     """Test list_positions returns enriched position data."""
     mock_result = MagicMock()
     mock_result.scalar_one_or_none.return_value = sample_portfolio_summary
@@ -95,7 +98,7 @@ async def test_list_positions_without_market_data(
     portfolio_service_no_market_data: PortfolioService,
     mock_db: AsyncMock,
     sample_portfolio_summary: MagicMock,
-):
+) -> None:
     """Test list_positions uses stored price when market data unavailable."""
     mock_result = MagicMock()
     mock_result.scalar_one_or_none.return_value = sample_portfolio_summary
@@ -113,7 +116,7 @@ async def test_get_position_found(
     mock_db: AsyncMock,
     sample_portfolio_summary: MagicMock,
     mock_market_data_client: AsyncMock,
-):
+) -> None:
     """Test get_position returns correct position."""
     mock_result = MagicMock()
     mock_result.scalar_one_or_none.return_value = sample_portfolio_summary
@@ -130,7 +133,7 @@ async def test_get_position_not_found(
     mock_db: AsyncMock,
     sample_portfolio_summary: MagicMock,
     mock_market_data_client: AsyncMock,
-):
+) -> None:
     """Test get_position returns None when symbol not found."""
     mock_result = MagicMock()
     mock_result.scalar_one_or_none.return_value = sample_portfolio_summary
@@ -146,7 +149,7 @@ async def test_get_position_case_insensitive(
     mock_db: AsyncMock,
     sample_portfolio_summary: MagicMock,
     mock_market_data_client: AsyncMock,
-):
+) -> None:
     """Test get_position handles case-insensitive symbol lookup."""
     mock_result = MagicMock()
     mock_result.scalar_one_or_none.return_value = sample_portfolio_summary
@@ -160,7 +163,7 @@ async def test_get_position_case_insensitive(
     assert position.symbol == "AAPL"
 
 
-def test_calculate_unrealized_pnl_long_profit():
+def test_calculate_unrealized_pnl_long_profit() -> None:
     """Test P&L calculation for profitable long position."""
     service = PortfolioService(db=MagicMock(), market_data=None)
 
@@ -174,7 +177,7 @@ def test_calculate_unrealized_pnl_long_profit():
     assert pnl == 1000.0  # (110 - 100) * 100
 
 
-def test_calculate_unrealized_pnl_long_loss():
+def test_calculate_unrealized_pnl_long_loss() -> None:
     """Test P&L calculation for losing long position."""
     service = PortfolioService(db=MagicMock(), market_data=None)
 
@@ -188,7 +191,7 @@ def test_calculate_unrealized_pnl_long_loss():
     assert pnl == -1000.0  # (90 - 100) * 100
 
 
-def test_calculate_unrealized_pnl_short_profit():
+def test_calculate_unrealized_pnl_short_profit() -> None:
     """Test P&L calculation for profitable short position."""
     service = PortfolioService(db=MagicMock(), market_data=None)
 
@@ -202,7 +205,7 @@ def test_calculate_unrealized_pnl_short_profit():
     assert pnl == 1000.0  # (100 - 90) * 100
 
 
-def test_calculate_unrealized_pnl_short_loss():
+def test_calculate_unrealized_pnl_short_loss() -> None:
     """Test P&L calculation for losing short position."""
     service = PortfolioService(db=MagicMock(), market_data=None)
 

@@ -1,87 +1,83 @@
-"""Unit tests for StrategyService with DSL support."""
+"""Unit tests for StrategyService with allocation-based DSL support."""
 
-from datetime import datetime
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
-from src.models import (
-    DeploymentCreate,
-    DeploymentEnvironment,
-    StrategyCreate,
-    StrategyStatus,
-    StrategyUpdate,
+
+from llamatrade_proto.generated.common_pb2 import EXECUTION_MODE_PAPER
+from llamatrade_proto.generated.strategy_pb2 import (
+    STRATEGY_STATUS_ACTIVE,
 )
+
+from src.models import ExecutionCreate, StrategyCreate, StrategyUpdate
 from src.services.strategy_service import StrategyService
 
 # ===================
-# Sample S-expressions
+# Sample S-expressions (allocation-based format)
 # ===================
 
-VALID_RSI_STRATEGY = """(strategy
-  :name "RSI Mean Reversion"
-  :type mean_reversion
-  :symbols ["AAPL" "MSFT"]
-  :timeframe "1D"
-  :entry (< (rsi close 14) 30)
-  :exit (> (rsi close 14) 70)
-  :stop-loss-pct 2.0
-  :take-profit-pct 6.0)"""
+VALID_RSI_STRATEGY = """(strategy "RSI Mean Reversion"
+  :rebalance daily
+  :benchmark SPY
+  (if (< (rsi SPY 14) 30)
+    (asset SPY :weight 100)
+    (else (asset TLT :weight 100))))"""
 
-VALID_MA_CROSSOVER = """(strategy
-  :name "MA Crossover"
-  :type trend_following
-  :symbols ["SPY"]
-  :timeframe "4H"
-  :entry (cross-above (sma close 20) (sma close 50))
-  :exit (cross-below (sma close 20) (sma close 50))
-  :position-size-pct 5.0)"""
+VALID_MA_CROSSOVER = """(strategy "MA Crossover"
+  :rebalance daily
+  :benchmark SPY
+  (if (crosses-above (sma SPY 20) (sma SPY 50))
+    (asset SPY :weight 100)
+    (else (asset AGG :weight 100))))"""
 
-VALID_MOMENTUM_STRATEGY = """(strategy
-  :name "Momentum Strategy"
-  :type momentum
-  :symbols ["QQQ" "IWM"]
-  :timeframe "1H"
-  :entry (and (> (rsi close 14) 50) (> close (sma close 20)))
-  :exit (or (< (rsi close 14) 40) (< close (sma close 20))))"""
+VALID_EQUAL_WEIGHT = """(strategy "Equal Weight Portfolio"
+  :rebalance monthly
+  :benchmark SPY
+  (weight :method equal
+    (asset QQQ)
+    (asset IWM)))"""
 
-INVALID_SYNTAX = '(strategy :name "broken'  # Missing closing quotes and paren
+INVALID_SYNTAX = '(strategy "broken'  # Missing closing quotes and paren
 
-INVALID_MISSING_ENTRY = """(strategy
-  :name "No Entry"
-  :symbols ["AAPL"]
-  :timeframe "1D"
-  :exit true)"""
+INVALID_MISSING_BODY = """(strategy "No Body"
+  :benchmark SPY
+  :rebalance monthly)"""
+
+
+# Proto status int mappings for tests
+_STATUS_STR_TO_INT = {"draft": 1, "active": 2, "paused": 3, "archived": 4}
 
 
 def make_mock_strategy(
-    id=None,
-    tenant_id=None,
-    name="Test Strategy",
-    description=None,
-    strategy_type="mean_reversion",
-    status="draft",
-    current_version=1,
-    created_by=None,
-    created_at=None,
-    updated_at=None,
-):
+    id: UUID | None = None,
+    tenant_id: UUID | None = None,
+    name: str = "Test Strategy",
+    description: str | None = None,
+    strategy_type: str = "custom",
+    status: int | str = 1,  # Proto int or string: DRAFT=1, ACTIVE=2, PAUSED=3, ARCHIVED=4
+    current_version: int = 1,
+    created_by: UUID | None = None,
+    created_at: datetime | None = None,
+    updated_at: datetime | None = None,
+) -> MagicMock:
     """Create a mock Strategy object."""
-    from llamatrade_db.models.strategy import (
-        StrategyStatus as DBStrategyStatus,
-    )
     from llamatrade_db.models.strategy import (
         StrategyType as DBStrategyType,
     )
 
-    now = datetime.now()
+    # Convert string status to int if needed
+    status_int = _STATUS_STR_TO_INT.get(status, status) if isinstance(status, str) else status
+
+    now = datetime.now(UTC)
     strategy = MagicMock()
     strategy.id = id or uuid4()
     strategy.tenant_id = tenant_id or uuid4()
     strategy.name = name
     strategy.description = description
     strategy.strategy_type = DBStrategyType(strategy_type)
-    strategy.status = DBStrategyStatus(status)
+    strategy.status = status_int  # DB TypeDecorator returns proto int directly
     strategy.current_version = current_version
     strategy.created_by = created_by or uuid4()
     strategy.created_at = created_at or now
@@ -90,17 +86,18 @@ def make_mock_strategy(
 
 
 def make_mock_version(
-    id=None,
-    strategy_id=None,
-    version=1,
-    config_sexpr=None,
-    config_json=None,
-    symbols=None,
-    timeframe="1D",
-    changelog=None,
-    created_by=None,
-    created_at=None,
-):
+    id: UUID | None = None,
+    strategy_id: UUID | None = None,
+    version: int = 1,
+    config_sexpr: str | None = None,
+    config_json: dict[str, str] | None = None,
+    symbols: list[str] | None = None,
+    timeframe: str = "1D",
+    changelog: str | None = None,
+    created_by: UUID | None = None,
+    created_at: datetime | None = None,
+    parameters: dict[str, object] | None = None,
+) -> MagicMock:
     """Create a mock StrategyVersion object."""
     ver = MagicMock()
     ver.id = id or uuid4()
@@ -108,11 +105,12 @@ def make_mock_version(
     ver.version = version
     ver.config_sexpr = config_sexpr or VALID_RSI_STRATEGY
     ver.config_json = config_json or {"name": "Test Strategy"}
-    ver.symbols = symbols or ["AAPL", "MSFT"]
+    ver.symbols = symbols or ["SPY", "TLT"]
     ver.timeframe = timeframe
     ver.changelog = changelog
     ver.created_by = created_by or uuid4()
-    ver.created_at = created_at or datetime.utcnow()
+    ver.created_at = created_at or datetime.now(UTC)
+    ver.parameters = parameters or {}
     return ver
 
 
@@ -122,25 +120,25 @@ def make_mock_version(
 
 
 @pytest.fixture
-def tenant_id():
+def tenant_id() -> UUID:
     """Generate a test tenant ID."""
     return uuid4()
 
 
 @pytest.fixture
-def user_id():
+def user_id() -> UUID:
     """Generate a test user ID."""
     return uuid4()
 
 
 @pytest.fixture
-def strategy_id():
+def strategy_id() -> UUID:
     """Generate a test strategy ID."""
     return uuid4()
 
 
 @pytest.fixture
-def mock_db():
+def mock_db() -> AsyncMock:
     """Create a mock async database session."""
     from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -162,7 +160,9 @@ def mock_db():
 class TestCreateStrategy:
     """Tests for StrategyService.create_strategy."""
 
-    async def test_create_strategy_success(self, mock_db, tenant_id, user_id):
+    async def test_create_strategy_success(
+        self, mock_db: AsyncMock, tenant_id: UUID, user_id: UUID
+    ) -> None:
         """Test creating a strategy with valid S-expression."""
         service = StrategyService(mock_db)
 
@@ -171,15 +171,15 @@ class TestCreateStrategy:
         mock_version = make_mock_version(
             strategy_id=mock_strategy.id,
             config_sexpr=VALID_RSI_STRATEGY,
-            symbols=["AAPL", "MSFT"],
+            symbols=["SPY", "TLT"],
             timeframe="1D",
         )
 
         # Mock refresh to set required attributes
-        def set_strategy_attrs(obj):
+        def set_strategy_attrs(obj: MagicMock) -> None:
             obj.id = mock_strategy.id
-            obj.created_at = datetime.now()
-            obj.updated_at = datetime.now()
+            obj.created_at = datetime.now(UTC)
+            obj.updated_at = datetime.now(UTC)
 
         mock_db.refresh = AsyncMock(side_effect=set_strategy_attrs)
 
@@ -202,7 +202,9 @@ class TestCreateStrategy:
         mock_db.commit.assert_called()
         assert result is not None
 
-    async def test_create_strategy_invalid_syntax(self, mock_db, tenant_id, user_id):
+    async def test_create_strategy_invalid_syntax(
+        self, mock_db: AsyncMock, tenant_id: UUID, user_id: UUID
+    ) -> None:
         """Test creating a strategy with invalid S-expression raises error."""
         service = StrategyService(mock_db)
 
@@ -218,13 +220,15 @@ class TestCreateStrategy:
                 data=data,
             )
 
-    async def test_create_strategy_missing_entry(self, mock_db, tenant_id, user_id):
-        """Test creating a strategy without :entry raises validation error."""
+    async def test_create_strategy_missing_body(
+        self, mock_db: AsyncMock, tenant_id: UUID, user_id: UUID
+    ) -> None:
+        """Test creating a strategy without body raises validation error."""
         service = StrategyService(mock_db)
 
         data = StrategyCreate(
-            name="No Entry Strategy",
-            config_sexpr=INVALID_MISSING_ENTRY,
+            name="No Body Strategy",
+            config_sexpr=INVALID_MISSING_BODY,
         )
 
         with pytest.raises(ValueError) as exc_info:
@@ -235,20 +239,16 @@ class TestCreateStrategy:
             )
         assert "Invalid strategy" in str(exc_info.value)
 
-    async def test_create_strategy_extracts_type(self, mock_db, tenant_id, user_id):
-        """Test that strategy type is extracted from S-expression."""
-        StrategyService(mock_db)
-
-        StrategyCreate(
-            name="Trend Following Strategy",
-            config_sexpr=VALID_MA_CROSSOVER,
-        )
-
-        # Verify the AST parsing extracts the correct type
+    async def test_create_strategy_extracts_symbols(
+        self, mock_db: AsyncMock, tenant_id: UUID, user_id: UUID
+    ) -> None:
+        """Test that symbols are extracted from S-expression."""
+        from llamatrade_compiler.extractor import get_required_symbols
         from llamatrade_dsl import parse_strategy
 
-        ast = parse_strategy(VALID_MA_CROSSOVER)
-        assert ast.strategy_type == "trend_following"
+        ast = parse_strategy(VALID_RSI_STRATEGY)
+        symbols = get_required_symbols(ast)
+        assert "SPY" in symbols
 
 
 # ===================
@@ -259,7 +259,9 @@ class TestCreateStrategy:
 class TestGetStrategy:
     """Tests for StrategyService.get_strategy."""
 
-    async def test_get_strategy_found(self, mock_db, tenant_id, strategy_id):
+    async def test_get_strategy_found(
+        self, mock_db: AsyncMock, tenant_id: UUID, strategy_id: UUID
+    ) -> None:
         """Test getting an existing strategy."""
         service = StrategyService(mock_db)
 
@@ -287,7 +289,7 @@ class TestGetStrategy:
         assert result is not None
         assert result.id == strategy_id
 
-    async def test_get_strategy_not_found(self, mock_db, tenant_id):
+    async def test_get_strategy_not_found(self, mock_db: AsyncMock, tenant_id: UUID) -> None:
         """Test getting a non-existent strategy returns None."""
         service = StrategyService(mock_db)
         non_existent_id = uuid4()
@@ -300,7 +302,9 @@ class TestGetStrategy:
 
         assert result is None
 
-    async def test_get_strategy_tenant_isolation(self, mock_db, strategy_id):
+    async def test_get_strategy_tenant_isolation(
+        self, mock_db: AsyncMock, strategy_id: UUID
+    ) -> None:
         """Test that strategy lookup is scoped to tenant."""
         service = StrategyService(mock_db)
 
@@ -314,12 +318,12 @@ class TestGetStrategy:
         mock_version = make_mock_version(strategy_id=strategy_id)
 
         # Mock returns the strategy only for tenant A
-        async def tenant_scoped_lookup(tid, sid):
+        async def tenant_scoped_lookup(tid: UUID, sid: UUID) -> MagicMock | None:
             if tid == tenant_a:
                 return mock_strategy
             return None
 
-        async def get_version_mock(sid, version):
+        async def get_version_mock(tid: UUID, sid: UUID, version: int) -> MagicMock:
             return mock_version
 
         with (
@@ -343,7 +347,7 @@ class TestGetStrategy:
 class TestListStrategies:
     """Tests for StrategyService.list_strategies."""
 
-    async def test_list_strategies_empty(self, mock_db, tenant_id):
+    async def test_list_strategies_empty(self, mock_db: AsyncMock, tenant_id: UUID) -> None:
         """Test listing strategies when none exist."""
         service = StrategyService(mock_db)
 
@@ -366,7 +370,9 @@ class TestListStrategies:
         assert strategies == []
         assert total == 0
 
-    async def test_list_strategies_with_results(self, mock_db, tenant_id, user_id):
+    async def test_list_strategies_with_results(
+        self, mock_db: AsyncMock, tenant_id: UUID, user_id: UUID
+    ) -> None:
         """Test listing strategies returns correct results."""
         service = StrategyService(mock_db)
 
@@ -398,7 +404,9 @@ class TestListStrategies:
         assert len(strategies) == 3
         assert total == 3
 
-    async def test_list_strategies_filter_by_status(self, mock_db, tenant_id):
+    async def test_list_strategies_filter_by_status(
+        self, mock_db: AsyncMock, tenant_id: UUID
+    ) -> None:
         """Test filtering strategies by status."""
         service = StrategyService(mock_db)
 
@@ -417,7 +425,7 @@ class TestListStrategies:
 
         strategies, total = await service.list_strategies(
             tenant_id=tenant_id,
-            status=StrategyStatus.ACTIVE,
+            status=STRATEGY_STATUS_ACTIVE,
             page=1,
             page_size=20,
         )
@@ -434,7 +442,9 @@ class TestListStrategies:
 class TestUpdateStrategy:
     """Tests for StrategyService.update_strategy."""
 
-    async def test_update_strategy_metadata_only(self, mock_db, tenant_id, user_id, strategy_id):
+    async def test_update_strategy_metadata_only(
+        self, mock_db: AsyncMock, tenant_id: UUID, user_id: UUID, strategy_id: UUID
+    ) -> None:
         """Test updating only metadata (no new version)."""
         service = StrategyService(mock_db)
 
@@ -470,8 +480,8 @@ class TestUpdateStrategy:
         assert mock_strategy.current_version == 1
 
     async def test_update_strategy_new_config_creates_version(
-        self, mock_db, tenant_id, user_id, strategy_id
-    ):
+        self, mock_db: AsyncMock, tenant_id: UUID, user_id: UUID, strategy_id: UUID
+    ) -> None:
         """Test updating config creates a new version."""
         service = StrategyService(mock_db)
 
@@ -502,7 +512,44 @@ class TestUpdateStrategy:
         mock_db.commit.assert_called()
         assert mock_strategy.current_version == 2
 
-    async def test_update_strategy_not_found(self, mock_db, tenant_id, user_id):
+    async def test_update_strategy_persists_changelog(
+        self, mock_db: AsyncMock, tenant_id: UUID, user_id: UUID, strategy_id: UUID
+    ) -> None:
+        """Test that changelog is persisted when updating config."""
+        service = StrategyService(mock_db)
+
+        mock_strategy = make_mock_strategy(
+            id=strategy_id,
+            tenant_id=tenant_id,
+            current_version=1,
+        )
+        mock_version = make_mock_version(strategy_id=strategy_id, version=2)
+
+        with (
+            patch.object(service, "_get_strategy_by_id", return_value=mock_strategy),
+            patch.object(service, "_get_version", return_value=mock_version),
+        ):
+            data = StrategyUpdate(
+                config_sexpr=VALID_MA_CROSSOVER,
+                changelog="Updated to MA crossover strategy",
+            )
+
+            await service.update_strategy(
+                tenant_id=tenant_id,
+                user_id=user_id,
+                strategy_id=strategy_id,
+                data=data,
+            )
+
+        # Verify changelog was passed to the new version
+        # The add() call should have been made with a StrategyVersion containing changelog
+        add_call_args = mock_db.add.call_args
+        added_version = add_call_args[0][0]  # First positional arg
+        assert added_version.changelog == "Updated to MA crossover strategy"
+
+    async def test_update_strategy_not_found(
+        self, mock_db: AsyncMock, tenant_id: UUID, user_id: UUID
+    ) -> None:
         """Test updating non-existent strategy returns None."""
         service = StrategyService(mock_db)
 
@@ -518,7 +565,9 @@ class TestUpdateStrategy:
 
         assert result is None
 
-    async def test_update_strategy_invalid_config(self, mock_db, tenant_id, user_id, strategy_id):
+    async def test_update_strategy_invalid_config(
+        self, mock_db: AsyncMock, tenant_id: UUID, user_id: UUID, strategy_id: UUID
+    ) -> None:
         """Test updating with invalid config raises error."""
         service = StrategyService(mock_db)
 
@@ -549,7 +598,9 @@ class TestUpdateStrategy:
 class TestDeleteStrategy:
     """Tests for StrategyService.delete_strategy."""
 
-    async def test_delete_strategy_archives(self, mock_db, tenant_id, strategy_id):
+    async def test_delete_strategy_archives(
+        self, mock_db: AsyncMock, tenant_id: UUID, strategy_id: UUID
+    ) -> None:
         """Test deleting a strategy archives it (soft delete)."""
         service = StrategyService(mock_db)
 
@@ -566,12 +617,11 @@ class TestDeleteStrategy:
             )
 
         assert result is True
-        from llamatrade_db.models.strategy import StrategyStatus as DBStatus
-
-        assert mock_strategy.status == DBStatus.ARCHIVED
+        # StrategyStatus: ARCHIVED=4
+        assert mock_strategy.status == 4
         mock_db.commit.assert_called()
 
-    async def test_delete_strategy_not_found(self, mock_db, tenant_id):
+    async def test_delete_strategy_not_found(self, mock_db: AsyncMock, tenant_id: UUID) -> None:
         """Test deleting non-existent strategy returns False."""
         service = StrategyService(mock_db)
 
@@ -592,7 +642,9 @@ class TestDeleteStrategy:
 class TestStatusManagement:
     """Tests for activate_strategy and pause_strategy."""
 
-    async def test_activate_strategy(self, mock_db, tenant_id, strategy_id):
+    async def test_activate_strategy(
+        self, mock_db: AsyncMock, tenant_id: UUID, strategy_id: UUID
+    ) -> None:
         """Test activating a draft strategy."""
         service = StrategyService(mock_db)
 
@@ -608,12 +660,13 @@ class TestStatusManagement:
                 strategy_id=strategy_id,
             )
 
-        from llamatrade_db.models.strategy import StrategyStatus as DBStatus
-
-        assert mock_strategy.status == DBStatus.ACTIVE
+        # StrategyStatus: ACTIVE=2
+        assert mock_strategy.status == 2
         mock_db.commit.assert_called()
 
-    async def test_pause_strategy(self, mock_db, tenant_id, strategy_id):
+    async def test_pause_strategy(
+        self, mock_db: AsyncMock, tenant_id: UUID, strategy_id: UUID
+    ) -> None:
         """Test pausing an active strategy."""
         service = StrategyService(mock_db)
 
@@ -629,10 +682,70 @@ class TestStatusManagement:
                 strategy_id=strategy_id,
             )
 
-        from llamatrade_db.models.strategy import StrategyStatus as DBStatus
-
-        assert mock_strategy.status == DBStatus.PAUSED
+        # StrategyStatus: PAUSED=3
+        assert mock_strategy.status == 3
         mock_db.commit.assert_called()
+
+    async def test_activate_archived_strategy_fails(
+        self, mock_db: AsyncMock, tenant_id: UUID, strategy_id: UUID
+    ) -> None:
+        """Test that activating an archived strategy raises ValueError."""
+        service = StrategyService(mock_db)
+
+        mock_strategy = make_mock_strategy(
+            id=strategy_id,
+            tenant_id=tenant_id,
+            status="archived",
+        )
+
+        with patch.object(service, "_get_strategy_by_id", return_value=mock_strategy):
+            with pytest.raises(ValueError, match="Invalid status transition"):
+                await service.activate_strategy(
+                    tenant_id=tenant_id,
+                    strategy_id=strategy_id,
+                )
+
+    async def test_pause_draft_strategy_fails(
+        self, mock_db: AsyncMock, tenant_id: UUID, strategy_id: UUID
+    ) -> None:
+        """Test that pausing a draft strategy raises ValueError."""
+        service = StrategyService(mock_db)
+
+        mock_strategy = make_mock_strategy(
+            id=strategy_id,
+            tenant_id=tenant_id,
+            status="draft",
+        )
+
+        with patch.object(service, "_get_strategy_by_id", return_value=mock_strategy):
+            with pytest.raises(ValueError, match="Invalid status transition"):
+                await service.pause_strategy(
+                    tenant_id=tenant_id,
+                    strategy_id=strategy_id,
+                )
+
+    async def test_update_status_via_update_validates_transition(
+        self, mock_db: AsyncMock, tenant_id: UUID, user_id: UUID, strategy_id: UUID
+    ) -> None:
+        """Test that updating status via update_strategy validates transition."""
+        from src.models import StrategyUpdate
+
+        service = StrategyService(mock_db)
+
+        mock_strategy = make_mock_strategy(
+            id=strategy_id,
+            tenant_id=tenant_id,
+            status="archived",
+        )
+
+        with patch.object(service, "_get_strategy_by_id", return_value=mock_strategy):
+            with pytest.raises(ValueError, match="Invalid status transition"):
+                await service.update_strategy(
+                    tenant_id=tenant_id,
+                    user_id=user_id,
+                    strategy_id=strategy_id,
+                    data=StrategyUpdate(status=STRATEGY_STATUS_ACTIVE),
+                )
 
 
 # ===================
@@ -643,7 +756,9 @@ class TestStatusManagement:
 class TestVersionManagement:
     """Tests for version listing and retrieval."""
 
-    async def test_list_versions(self, mock_db, tenant_id, strategy_id, user_id):
+    async def test_list_versions(
+        self, mock_db: AsyncMock, tenant_id: UUID, strategy_id: UUID, user_id: UUID
+    ) -> None:
         """Test listing all versions of a strategy."""
         service = StrategyService(mock_db)
 
@@ -670,7 +785,9 @@ class TestVersionManagement:
         assert len(versions) == 2
         assert versions[0].version == 2  # Newest first
 
-    async def test_get_version(self, mock_db, tenant_id, strategy_id):
+    async def test_get_version(
+        self, mock_db: AsyncMock, tenant_id: UUID, strategy_id: UUID
+    ) -> None:
         """Test getting a specific version."""
         service = StrategyService(mock_db)
 
@@ -697,7 +814,9 @@ class TestVersionManagement:
         assert version is not None
         assert version.version == 1
 
-    async def test_list_versions_strategy_not_found(self, mock_db, tenant_id):
+    async def test_list_versions_strategy_not_found(
+        self, mock_db: AsyncMock, tenant_id: UUID
+    ) -> None:
         """Test listing versions of non-existent strategy."""
         service = StrategyService(mock_db)
 
@@ -718,7 +837,9 @@ class TestVersionManagement:
 class TestCloneStrategy:
     """Tests for StrategyService.clone_strategy."""
 
-    async def test_clone_strategy_success(self, mock_db, tenant_id, user_id, strategy_id):
+    async def test_clone_strategy_success(
+        self, mock_db: AsyncMock, tenant_id: UUID, user_id: UUID, strategy_id: UUID
+    ) -> None:
         """Test cloning a strategy."""
         service = StrategyService(mock_db)
 
@@ -757,7 +878,9 @@ class TestCloneStrategy:
         mock_get.assert_called_once()
         mock_create.assert_called_once()
 
-    async def test_clone_strategy_not_found(self, mock_db, tenant_id, user_id):
+    async def test_clone_strategy_not_found(
+        self, mock_db: AsyncMock, tenant_id: UUID, user_id: UUID
+    ) -> None:
         """Test cloning non-existent strategy returns None."""
         service = StrategyService(mock_db)
 
@@ -780,7 +903,7 @@ class TestCloneStrategy:
 class TestValidation:
     """Tests for StrategyService.validate_config."""
 
-    async def test_validate_valid_config(self, mock_db):
+    async def test_validate_valid_config(self, mock_db: AsyncMock) -> None:
         """Test validating a valid S-expression."""
         service = StrategyService(mock_db)
 
@@ -789,7 +912,7 @@ class TestValidation:
         assert result.valid is True
         assert result.errors == []
 
-    async def test_validate_invalid_syntax(self, mock_db):
+    async def test_validate_invalid_syntax(self, mock_db: AsyncMock) -> None:
         """Test validating invalid syntax returns error."""
         service = StrategyService(mock_db)
 
@@ -798,43 +921,27 @@ class TestValidation:
         assert result.valid is False
         assert len(result.errors) > 0
 
-    async def test_validate_missing_required_fields(self, mock_db):
-        """Test validating config with missing fields."""
+    async def test_validate_missing_body(self, mock_db: AsyncMock) -> None:
+        """Test validating config with missing body."""
         service = StrategyService(mock_db)
 
-        result = await service.validate_config(INVALID_MISSING_ENTRY)
+        result = await service.validate_config(INVALID_MISSING_BODY)
 
         assert result.valid is False
-        assert any("entry" in e.lower() for e in result.errors)
-
-    async def test_validate_warnings_for_high_risk(self, mock_db):
-        """Test validation adds warnings for high-risk settings."""
-        service = StrategyService(mock_db)
-
-        high_risk_config = """(strategy
-          :name "High Risk"
-          :symbols ["AAPL"]
-          :timeframe "1D"
-          :entry true
-          :exit true
-          :stop-loss-pct 15.0)"""
-
-        result = await service.validate_config(high_risk_config)
-
-        assert result.valid is True
-        assert any("stop loss" in w.lower() for w in result.warnings)
 
 
 # ===================
-# Deployment Tests
+# Execution Tests
 # ===================
 
 
-class TestDeployments:
-    """Tests for deployment operations."""
+class TestExecutions:
+    """Tests for execution operations."""
 
-    async def test_create_deployment_paper(self, mock_db, tenant_id, strategy_id):
-        """Test creating a paper trading deployment."""
+    async def test_create_execution_paper(
+        self, mock_db: AsyncMock, tenant_id: UUID, strategy_id: UUID
+    ) -> None:
+        """Test creating a paper trading execution."""
         service = StrategyService(mock_db)
 
         mock_strategy = make_mock_strategy(
@@ -844,23 +951,25 @@ class TestDeployments:
         )
         mock_version = make_mock_version(strategy_id=strategy_id)
 
-        # Setup mock refresh to set deployment attributes
-        def set_deployment_attrs(deployment):
-            deployment.id = uuid4()
-            deployment.created_at = datetime.now()
-            deployment.updated_at = datetime.now()
+        # Setup mock refresh to set execution attributes
+        def set_execution_attrs(execution: MagicMock) -> None:
+            execution.id = uuid4()
+            execution.created_at = datetime.now(UTC)
+            execution.updated_at = datetime.now(UTC)
 
-        mock_db.refresh = AsyncMock(side_effect=set_deployment_attrs)
+        mock_db.refresh = AsyncMock(side_effect=set_execution_attrs)
 
         with (
             patch.object(service, "_get_strategy_by_id", return_value=mock_strategy),
             patch.object(service, "_get_version", return_value=mock_version),
         ):
-            data = DeploymentCreate(
-                environment=DeploymentEnvironment.PAPER,
+            data = ExecutionCreate(
+                version=None,
+                mode=EXECUTION_MODE_PAPER,
+                config_override=None,
             )
 
-            result = await service.create_deployment(
+            result = await service.create_execution(
                 tenant_id=tenant_id,
                 strategy_id=strategy_id,
                 data=data,
@@ -869,16 +978,19 @@ class TestDeployments:
         mock_db.add.assert_called()
         mock_db.commit.assert_called()
         assert result is not None
-        assert result.status.value == "pending"
+        # ExecutionStatus: PENDING=1
+        assert result.status == 1
 
-    async def test_create_deployment_strategy_not_found(self, mock_db, tenant_id):
-        """Test creating deployment for non-existent strategy."""
+    async def test_create_execution_strategy_not_found(
+        self, mock_db: AsyncMock, tenant_id: UUID
+    ) -> None:
+        """Test creating execution for non-existent strategy."""
         service = StrategyService(mock_db)
 
         with patch.object(service, "_get_strategy_by_id", return_value=None):
-            data = DeploymentCreate(environment=DeploymentEnvironment.PAPER)
+            data = ExecutionCreate(version=None, mode=EXECUTION_MODE_PAPER, config_override=None)
 
-            result = await service.create_deployment(
+            result = await service.create_execution(
                 tenant_id=tenant_id,
                 strategy_id=uuid4(),
                 data=data,
@@ -886,8 +998,10 @@ class TestDeployments:
 
         assert result is None
 
-    async def test_create_deployment_invalid_version(self, mock_db, tenant_id, strategy_id):
-        """Test creating deployment with non-existent version."""
+    async def test_create_execution_invalid_version(
+        self, mock_db: AsyncMock, tenant_id: UUID, strategy_id: UUID
+    ) -> None:
+        """Test creating execution with non-existent version."""
         service = StrategyService(mock_db)
 
         mock_strategy = make_mock_strategy(
@@ -900,50 +1014,238 @@ class TestDeployments:
             patch.object(service, "_get_strategy_by_id", return_value=mock_strategy),
             patch.object(service, "_get_version", return_value=None),
         ):
-            data = DeploymentCreate(
+            data = ExecutionCreate(
                 version=999,  # Non-existent version
-                environment=DeploymentEnvironment.PAPER,
+                mode=EXECUTION_MODE_PAPER,
+                config_override=None,
             )
 
             with pytest.raises(ValueError) as exc_info:
-                await service.create_deployment(
+                await service.create_execution(
                     tenant_id=tenant_id,
                     strategy_id=strategy_id,
                     data=data,
                 )
             assert "not found" in str(exc_info.value)
 
-    async def test_list_deployments(self, mock_db, tenant_id, strategy_id):
-        """Test listing deployments for a strategy."""
+    async def test_list_executions(
+        self, mock_db: AsyncMock, tenant_id: UUID, strategy_id: UUID
+    ) -> None:
+        """Test listing executions for a strategy."""
         service = StrategyService(mock_db)
 
-        from llamatrade_db.models.strategy import (
-            DeploymentEnvironment as DBEnv,
-        )
-        from llamatrade_db.models.strategy import (
-            DeploymentStatus as DBStatus,
-        )
+        # DB TypeDecorator returns proto int values directly
+        # ExecutionMode: PAPER=1, LIVE=2
+        # ExecutionStatus: PENDING=1, RUNNING=2, PAUSED=3, STOPPED=4, ERROR=5
 
-        mock_deployment = MagicMock()
-        mock_deployment.id = uuid4()
-        mock_deployment.strategy_id = strategy_id
-        mock_deployment.tenant_id = tenant_id
-        mock_deployment.version = 1
-        mock_deployment.environment = DBEnv.PAPER
-        mock_deployment.status = DBStatus.PENDING
-        mock_deployment.started_at = None
-        mock_deployment.stopped_at = None
-        mock_deployment.config_override = None
-        mock_deployment.error_message = None
-        mock_deployment.created_at = datetime.now()
+        mock_execution = MagicMock()
+        mock_execution.id = uuid4()
+        mock_execution.strategy_id = strategy_id
+        mock_execution.tenant_id = tenant_id
+        mock_execution.version = 1
+        mock_execution.mode = 1  # PAPER
+        mock_execution.status = 1  # PENDING
+        mock_execution.started_at = None
+        mock_execution.stopped_at = None
+        mock_execution.config_override = None
+        mock_execution.error_message = None
+        mock_execution.created_at = datetime.now(UTC)
 
-        mock_result = MagicMock()
-        mock_result.scalars.return_value.all.return_value = [mock_deployment]
-        mock_db.execute.return_value = mock_result
+        # Mock count query result (returns scalar for total)
+        mock_count_result = MagicMock()
+        mock_count_result.scalar.return_value = 1
 
-        deployments = await service.list_deployments(
+        # Mock list query result
+        mock_list_result = MagicMock()
+        mock_list_result.scalars.return_value.all.return_value = [mock_execution]
+
+        # Return different results for count vs list queries
+        mock_db.execute.side_effect = [mock_count_result, mock_list_result]
+
+        executions, total = await service.list_executions(
             tenant_id=tenant_id,
             strategy_id=strategy_id,
         )
 
-        assert len(deployments) == 1
+        assert len(executions) == 1
+        assert total == 1
+
+
+# ===================
+# Search and Sort Tests
+# ===================
+
+
+class TestSearchAndSort:
+    """Tests for search and sort functionality in list_strategies."""
+
+    async def test_list_strategies_with_search(self, mock_db: AsyncMock, tenant_id: UUID) -> None:
+        """Test listing strategies with search filter."""
+        service = StrategyService(mock_db)
+
+        # Mock count returns 1
+        mock_count_result = MagicMock()
+        mock_count_result.scalar.return_value = 1
+
+        # Mock list returns matching strategy
+        mock_strategy = make_mock_strategy(
+            id=uuid4(),
+            tenant_id=tenant_id,
+            name="RSI Strategy",
+        )
+        mock_list_result = MagicMock()
+        mock_list_result.scalars.return_value.all.return_value = [mock_strategy]
+
+        mock_db.execute.side_effect = [mock_count_result, mock_list_result]
+
+        strategies, total = await service.list_strategies(
+            tenant_id=tenant_id,
+            search="RSI",
+            page=1,
+            page_size=20,
+        )
+
+        assert total == 1
+        assert len(strategies) == 1
+
+    async def test_list_strategies_with_sort(self, mock_db: AsyncMock, tenant_id: UUID) -> None:
+        """Test listing strategies with sort options."""
+        service = StrategyService(mock_db)
+
+        # Mock count returns 2
+        mock_count_result = MagicMock()
+        mock_count_result.scalar.return_value = 2
+
+        # Mock list returns strategies
+        mock_strategies = [
+            make_mock_strategy(id=uuid4(), tenant_id=tenant_id, name="A Strategy"),
+            make_mock_strategy(id=uuid4(), tenant_id=tenant_id, name="B Strategy"),
+        ]
+        mock_list_result = MagicMock()
+        mock_list_result.scalars.return_value.all.return_value = mock_strategies
+
+        mock_db.execute.side_effect = [mock_count_result, mock_list_result]
+
+        strategies, total = await service.list_strategies(
+            tenant_id=tenant_id,
+            sort_field="name",
+            sort_direction="asc",
+            page=1,
+            page_size=20,
+        )
+
+        assert total == 2
+        assert len(strategies) == 2
+
+
+# ===================
+# Template Tests
+# ===================
+
+
+class TestCreateFromTemplate:
+    """Tests for create_from_template."""
+
+    async def test_create_from_template_success(
+        self, mock_db: AsyncMock, tenant_id: UUID, user_id: UUID
+    ) -> None:
+        """Test creating strategy from template."""
+        service = StrategyService(mock_db)
+
+        with patch.object(service, "create_strategy") as mock_create:
+            mock_create.return_value = MagicMock(
+                name="Moving Average Crossover",
+            )
+
+            result = await service.create_from_template(
+                tenant_id=tenant_id,
+                user_id=user_id,
+                template_id="ma_crossover",
+            )
+
+        mock_create.assert_called_once()
+        assert result is not None
+
+    async def test_create_from_template_with_custom_name(
+        self, mock_db: AsyncMock, tenant_id: UUID, user_id: UUID
+    ) -> None:
+        """Test creating strategy from template with custom name."""
+        service = StrategyService(mock_db)
+
+        with patch.object(service, "create_strategy") as mock_create:
+            mock_create.return_value = MagicMock(name="My Custom Strategy")
+
+            await service.create_from_template(
+                tenant_id=tenant_id,
+                user_id=user_id,
+                template_id="rsi_mean_reversion",
+                name="My Custom Strategy",
+                description="Custom description",
+            )
+
+        # Verify create_strategy was called with custom name
+        call_args = mock_create.call_args
+        assert call_args.kwargs["data"].name == "My Custom Strategy"
+        assert call_args.kwargs["data"].description == "Custom description"
+
+    async def test_create_from_template_not_found(
+        self, mock_db: AsyncMock, tenant_id: UUID, user_id: UUID
+    ) -> None:
+        """Test creating strategy from non-existent template."""
+        service = StrategyService(mock_db)
+
+        with pytest.raises(ValueError, match="Template not found"):
+            await service.create_from_template(
+                tenant_id=tenant_id,
+                user_id=user_id,
+                template_id="non_existent_template",
+            )
+
+
+# ===================
+# Detected Indicators Tests
+# ===================
+
+
+class TestDetectedIndicators:
+    """Tests for detected_indicators in validation."""
+
+    async def test_validate_returns_detected_indicators(self, mock_db: AsyncMock) -> None:
+        """Test that validation returns detected indicators."""
+        service = StrategyService(mock_db)
+
+        result = await service.validate_config(VALID_RSI_STRATEGY)
+
+        assert result.valid is True
+        assert len(result.detected_indicators) > 0
+        # Should detect RSI indicator
+        assert any("rsi" in ind.lower() for ind in result.detected_indicators)
+
+    async def test_validate_returns_detected_symbols(self, mock_db: AsyncMock) -> None:
+        """Test that validation returns detected symbols."""
+        service = StrategyService(mock_db)
+
+        result = await service.validate_config(VALID_RSI_STRATEGY)
+
+        assert result.valid is True
+        assert len(result.detected_symbols) > 0
+        assert "SPY" in result.detected_symbols
+
+    async def test_validate_multiple_indicators(self, mock_db: AsyncMock) -> None:
+        """Test validation with multiple indicators."""
+        service = StrategyService(mock_db)
+
+        multi_indicator_config = """(strategy "Multi Indicator"
+  :rebalance daily
+  :benchmark SPY
+  (if (and
+    (< (rsi SPY 14) 30)
+    (crosses-above (ema SPY 12) (ema SPY 26)))
+    (asset SPY :weight 100)
+    (else (asset AGG :weight 100))))"""
+
+        result = await service.validate_config(multi_indicator_config)
+
+        assert result.valid is True
+        # Should detect both RSI and EMA
+        assert len(result.detected_indicators) >= 2
