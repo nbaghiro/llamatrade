@@ -59,9 +59,7 @@ export function LeftPanel() {
   const canDelete = selectedBlock && selectedBlock.type !== 'root';
 
   const handleBack = () => {
-    // If strategy hasn't been saved yet, go back to template picker
-    // If it has been saved, go to strategies list
-    navigate(strategyId ? '/strategies' : '/strategies/new');
+    navigate('/strategies');
   };
 
   const handleSave = async () => {

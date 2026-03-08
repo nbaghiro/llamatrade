@@ -2,8 +2,10 @@ import { CreditCard, LineChart, FlaskConical, ChevronDown, LogOut, User, Wallet 
 import { useEffect, useState } from 'react';
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 
+import NewStrategyDialog from '../../components/strategies/NewStrategyDialog';
 import { useAuthStore } from '../../store/auth';
 import { useBillingStore } from '../../store/billing';
+import { useUIStore } from '../../store/ui';
 
 import Logo from './Logo';
 import { ThemeToggle } from './ThemeToggle';
@@ -21,6 +23,7 @@ export default function Layout() {
   const [userMenuOpen, setUserMenuOpen] = useState(false);
 
   const { subscription, fetchSubscription } = useBillingStore();
+  const { newStrategyDialogOpen, openNewStrategyDialog, closeNewStrategyDialog } = useUIStore();
 
   useEffect(() => {
     fetchSubscription();
@@ -64,13 +67,13 @@ export default function Layout() {
 
           {/* Create Button */}
           <div className="ml-2">
-            <NavLink
-              to="/strategies/new"
+            <button
+              onClick={openNewStrategyDialog}
               className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-gray-600 dark:text-gray-400 bg-gray-100 dark:bg-gray-800 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
             >
               <span>Create</span>
               <ChevronDown className="w-4 h-4" />
-            </NavLink>
+            </button>
           </div>
         </div>
 
@@ -137,6 +140,9 @@ export default function Layout() {
 
       {/* Floating Theme Toggle */}
       <ThemeToggle />
+
+      {/* New Strategy Dialog (global - works from any page) */}
+      <NewStrategyDialog isOpen={newStrategyDialogOpen} onClose={closeNewStrategyDialog} />
     </div>
   );
 }

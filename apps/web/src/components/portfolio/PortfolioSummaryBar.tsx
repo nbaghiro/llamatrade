@@ -4,7 +4,8 @@
  */
 
 import { ArrowDownRight, ArrowUpRight, Plus } from 'lucide-react';
-import { Link } from 'react-router-dom';
+
+import { useUIStore } from '../../store/ui';
 
 interface PortfolioSummaryBarProps {
   totalEquity: number;
@@ -35,6 +36,8 @@ export default function PortfolioSummaryBar({
   totalReturn,
   totalReturnPercent,
 }: PortfolioSummaryBarProps) {
+  const openNewStrategyDialog = useUIStore((state) => state.openNewStrategyDialog);
+
   return (
     <div className="flex items-center gap-6 bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-700 px-6 py-4 shadow-sm">
       {/* Total Equity */}
@@ -119,13 +122,13 @@ export default function PortfolioSummaryBar({
       <div className="flex-1 min-w-0" />
 
       {/* Add Strategy Button */}
-      <Link
-        to="/strategies/new"
+      <button
+        onClick={openNewStrategyDialog}
         className="flex items-center gap-2 px-4 py-2.5 bg-green-50 dark:bg-green-900/20 hover:bg-green-100 dark:hover:bg-green-900/30 text-green-700 dark:text-green-400 rounded-lg font-medium transition-colors border border-green-200 dark:border-green-800 shrink-0 whitespace-nowrap"
       >
         <Plus className="w-4 h-4" />
         Add Strategy
-      </Link>
+      </button>
     </div>
   );
 }

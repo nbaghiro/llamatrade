@@ -18,6 +18,7 @@ import { Link } from 'react-router-dom';
 import { generateChartData, generateBenchmarkData } from '../../data/demo-strategies';
 import { StrategyStatus } from '../../generated/proto/strategy_pb';
 import { useStrategiesStore } from '../../store/strategies';
+import { useUIStore } from '../../store/ui';
 
 function MiniChart({
   data,
@@ -176,6 +177,9 @@ export default function StrategiesPage() {
     clearError,
   } = useStrategiesStore();
 
+  // UI store for dialog
+  const openNewStrategyDialog = useUIStore((state) => state.openNewStrategyDialog);
+
   // Local UI state
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -249,13 +253,13 @@ export default function StrategiesPage() {
               {loading ? 'Loading...' : `${strategiesWithCharts.length} ${strategiesWithCharts.length === 1 ? 'strategy' : 'strategies'}`}
             </p>
           </div>
-          <Link
-            to="/strategies/new"
+          <button
+            onClick={openNewStrategyDialog}
             className="flex items-center gap-2 px-4 py-2.5 bg-green-50 dark:bg-green-900/20 hover:bg-green-100 dark:hover:bg-green-900/30 text-green-700 dark:text-green-400 rounded-lg font-medium transition-colors border border-green-200 dark:border-green-800"
           >
             <Plus className="w-4 h-4" />
             New Strategy
-          </Link>
+          </button>
         </div>
 
         {/* Error Banner */}
@@ -356,13 +360,13 @@ export default function StrategiesPage() {
                   : 'Create your first strategy to get started'}
               </p>
               {!searchQuery && statusFilter === 'all' && typeFilter === 'all' && (
-                <Link
-                  to="/strategies/new"
+                <button
+                  onClick={openNewStrategyDialog}
                   className="inline-flex items-center gap-2 px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-lg font-medium transition-colors"
                 >
                   <Plus className="w-4 h-4" />
                   Create Strategy
-                </Link>
+                </button>
               )}
             </div>
           ) : (
