@@ -26,35 +26,35 @@ class TestTemplatesDict:
 
     def test_contains_ma_crossover(self) -> None:
         """Test TEMPLATES contains MA crossover template."""
-        assert "ma_crossover" in TEMPLATES
-        ma = TEMPLATES["ma_crossover"]
+        assert "ma-crossover" in TEMPLATES
+        ma = TEMPLATES["ma-crossover"]
         assert ma["name"] == "Moving Average Crossover"
         assert ma["strategy_type"] == StrategyType.TREND_FOLLOWING
         assert ma["difficulty"] == "beginner"
 
     def test_contains_rsi_mean_reversion(self) -> None:
         """Test TEMPLATES contains RSI mean reversion template."""
-        assert "rsi_mean_reversion" in TEMPLATES
-        rsi = TEMPLATES["rsi_mean_reversion"]
+        assert "rsi-mean-reversion" in TEMPLATES
+        rsi = TEMPLATES["rsi-mean-reversion"]
         assert rsi["strategy_type"] == StrategyType.MEAN_REVERSION
         assert "rsi" in rsi["tags"]
 
     def test_contains_macd_strategy(self) -> None:
         """Test TEMPLATES contains MACD strategy template."""
-        assert "macd_strategy" in TEMPLATES
-        macd = TEMPLATES["macd_strategy"]
+        assert "macd-strategy" in TEMPLATES
+        macd = TEMPLATES["macd-strategy"]
         assert macd["strategy_type"] == StrategyType.MOMENTUM
 
     def test_contains_bollinger_bounce(self) -> None:
         """Test TEMPLATES contains Bollinger bounce template."""
-        assert "bollinger_bounce" in TEMPLATES
-        bb = TEMPLATES["bollinger_bounce"]
+        assert "bollinger-bounce" in TEMPLATES
+        bb = TEMPLATES["bollinger-bounce"]
         assert bb["difficulty"] == "intermediate"
 
     def test_contains_donchian_breakout(self) -> None:
         """Test TEMPLATES contains Donchian breakout template."""
-        assert "donchian_breakout" in TEMPLATES
-        dc = TEMPLATES["donchian_breakout"]
+        assert "donchian-breakout" in TEMPLATES
+        dc = TEMPLATES["donchian-breakout"]
         assert dc["strategy_type"] == StrategyType.BREAKOUT
         assert dc["difficulty"] == "advanced"
 
@@ -169,10 +169,10 @@ class TestGetTemplate:
 
     async def test_get_template_found(self, template_service: TemplateService) -> None:
         """Test getting an existing template."""
-        template = await template_service.get_template("ma_crossover")
+        template = await template_service.get_template("ma-crossover")
 
         assert template is not None
-        assert template.id == "ma_crossover"
+        assert template.id == "ma-crossover"
         assert template.name == "Moving Average Crossover"
         assert template.strategy_type == StrategyType.TREND_FOLLOWING
 
@@ -184,7 +184,7 @@ class TestGetTemplate:
 
     async def test_get_template_rsi(self, template_service: TemplateService) -> None:
         """Test getting RSI template."""
-        template = await template_service.get_template("rsi_mean_reversion")
+        template = await template_service.get_template("rsi-mean-reversion")
 
         assert template is not None
         assert "RSI" in template.name
@@ -192,7 +192,7 @@ class TestGetTemplate:
 
     async def test_get_template_pairs_trading(self, template_service: TemplateService) -> None:
         """Test getting pairs trading template."""
-        template = await template_service.get_template("pairs_trading")
+        template = await template_service.get_template("pairs-trading")
 
         assert template is not None
         assert "KO" in template.config_sexpr
@@ -200,7 +200,7 @@ class TestGetTemplate:
 
     async def test_get_template_has_config_json(self, template_service: TemplateService) -> None:
         """Test that returned template has config_json field (empty dict)."""
-        template = await template_service.get_template("ma_crossover")
+        template = await template_service.get_template("ma-crossover")
 
         assert template is not None
         assert template.config_json == {}
@@ -214,7 +214,7 @@ class TestGetTemplateConfig:
 
     async def test_get_template_config_found(self, template_service: TemplateService) -> None:
         """Test getting config for existing template."""
-        config = await template_service.get_template_config("ma_crossover")
+        config = await template_service.get_template_config("ma-crossover")
 
         assert config is not None
         assert "(strategy" in config
@@ -228,7 +228,7 @@ class TestGetTemplateConfig:
 
     async def test_get_template_config_bollinger(self, template_service: TemplateService) -> None:
         """Test getting Bollinger bounce config."""
-        config = await template_service.get_template_config("bollinger_bounce")
+        config = await template_service.get_template_config("bollinger-bounce")
 
         assert config is not None
         assert "bbands" in config
@@ -239,7 +239,7 @@ class TestGetTemplateConfig:
         self, template_service: TemplateService
     ) -> None:
         """Test getting dual momentum config."""
-        config = await template_service.get_template_config("dual_momentum")
+        config = await template_service.get_template_config("dual-momentum")
 
         assert config is not None
         assert "SPY" in config

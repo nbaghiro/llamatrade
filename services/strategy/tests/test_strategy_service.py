@@ -1160,7 +1160,7 @@ class TestCreateFromTemplate:
             result = await service.create_from_template(
                 tenant_id=tenant_id,
                 user_id=user_id,
-                template_id="ma_crossover",
+                template_id="ma-crossover",
             )
 
         mock_create.assert_called_once()
@@ -1178,7 +1178,7 @@ class TestCreateFromTemplate:
             await service.create_from_template(
                 tenant_id=tenant_id,
                 user_id=user_id,
-                template_id="rsi_mean_reversion",
+                template_id="rsi-mean-reversion",
                 name="My Custom Strategy",
                 description="Custom description",
             )
