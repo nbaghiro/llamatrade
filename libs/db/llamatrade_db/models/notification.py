@@ -23,6 +23,7 @@ from llamatrade_db.models._enum_types import (
     NotificationStatusType,
     NotificationTypeType,
 )
+from llamatrade_proto.generated import notification_pb2
 
 
 class Alert(Base, UUIDPrimaryKeyMixin, TenantMixin, TimestampMixin):
@@ -35,7 +36,9 @@ class Alert(Base, UUIDPrimaryKeyMixin, TenantMixin, TimestampMixin):
     )
 
     name: Mapped[str] = mapped_column(String(255), nullable=False)
-    alert_type: Mapped[int] = mapped_column(AlertConditionTypeType(), nullable=False)
+    alert_type: Mapped[notification_pb2.AlertConditionType.ValueType] = mapped_column(
+        AlertConditionTypeType(), nullable=False
+    )
     symbol: Mapped[str | None] = mapped_column(String(20), nullable=True)
     condition: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
     status: Mapped[int] = mapped_column(AlertStatusType(), default=1, nullable=False)  # ACTIVE=1
@@ -62,8 +65,12 @@ class Notification(Base, UUIDPrimaryKeyMixin, TenantMixin, TimestampMixin):
 
     user_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
     alert_id: Mapped[UUID | None] = mapped_column(PG_UUID(as_uuid=True), nullable=True)
-    notification_type: Mapped[int] = mapped_column(NotificationTypeType(), nullable=False)
-    channel: Mapped[int] = mapped_column(ChannelTypeType(), nullable=False)
+    notification_type: Mapped[notification_pb2.NotificationType.ValueType] = mapped_column(
+        NotificationTypeType(), nullable=False
+    )
+    channel: Mapped[notification_pb2.ChannelType.ValueType] = mapped_column(
+        ChannelTypeType(), nullable=False
+    )
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     message: Mapped[str] = mapped_column(Text, nullable=False)
     data: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
@@ -82,7 +89,9 @@ class NotificationChannel(Base, UUIDPrimaryKeyMixin, TenantMixin, TimestampMixin
     __table_args__ = (Index("ix_notification_channels_tenant_user", "tenant_id", "user_id"),)
 
     user_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
-    channel_type: Mapped[int] = mapped_column(ChannelTypeType(), nullable=False)
+    channel_type: Mapped[notification_pb2.ChannelType.ValueType] = mapped_column(
+        ChannelTypeType(), nullable=False
+    )
     destination: Mapped[str] = mapped_column(
         String(320), nullable=False
     )  # email address, phone, device token

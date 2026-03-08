@@ -6,48 +6,84 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from llamatrade_proto.generated import billing_pb2
+from llamatrade_proto.generated.billing_pb2 import (
+    BILLING_INTERVAL_MONTHLY,
+    BILLING_INTERVAL_UNSPECIFIED,
+    BILLING_INTERVAL_YEARLY,
+    INVOICE_STATUS_DRAFT,
+    INVOICE_STATUS_OPEN,
+    INVOICE_STATUS_PAID,
+    INVOICE_STATUS_UNCOLLECTIBLE,
+    INVOICE_STATUS_VOID,
+    PLAN_TIER_FREE,
+    PLAN_TIER_PRO,
+    PLAN_TIER_STARTER,
+    PLAN_TIER_UNSPECIFIED,
+    SUBSCRIPTION_STATUS_ACTIVE,
+    SUBSCRIPTION_STATUS_CANCELED,
+    SUBSCRIPTION_STATUS_PAST_DUE,
+    SUBSCRIPTION_STATUS_PAUSED,
+    SUBSCRIPTION_STATUS_TRIALING,
+    SUBSCRIPTION_STATUS_UNSPECIFIED,
+    BillingInterval,
+    InvoiceStatus,
+    PlanTier,
+    SubscriptionStatus,
+)
 
 # ===================
-# Conversion helpers: proto int -> str (for display/API)
+# Conversion helpers: proto ValueType -> str (for display/API)
 # ===================
 
 _PLAN_TIER_TO_STR: dict[int, str] = {
-    billing_pb2.PLAN_TIER_UNSPECIFIED: "unspecified",
-    billing_pb2.PLAN_TIER_FREE: "free",
-    billing_pb2.PLAN_TIER_STARTER: "starter",
-    billing_pb2.PLAN_TIER_PRO: "pro",
+    PLAN_TIER_UNSPECIFIED: "unspecified",
+    PLAN_TIER_FREE: "free",
+    PLAN_TIER_STARTER: "starter",
+    PLAN_TIER_PRO: "pro",
 }
 
 _SUBSCRIPTION_STATUS_TO_STR: dict[int, str] = {
-    billing_pb2.SUBSCRIPTION_STATUS_UNSPECIFIED: "unspecified",
-    billing_pb2.SUBSCRIPTION_STATUS_ACTIVE: "active",
-    billing_pb2.SUBSCRIPTION_STATUS_PAST_DUE: "past_due",
-    billing_pb2.SUBSCRIPTION_STATUS_CANCELED: "canceled",
-    billing_pb2.SUBSCRIPTION_STATUS_TRIALING: "trialing",
-    billing_pb2.SUBSCRIPTION_STATUS_PAUSED: "paused",
+    SUBSCRIPTION_STATUS_UNSPECIFIED: "unspecified",
+    SUBSCRIPTION_STATUS_ACTIVE: "active",
+    SUBSCRIPTION_STATUS_PAST_DUE: "past_due",
+    SUBSCRIPTION_STATUS_CANCELED: "canceled",
+    SUBSCRIPTION_STATUS_TRIALING: "trialing",
+    SUBSCRIPTION_STATUS_PAUSED: "paused",
 }
 
 _BILLING_INTERVAL_TO_STR: dict[int, str] = {
-    billing_pb2.BILLING_INTERVAL_UNSPECIFIED: "unspecified",
-    billing_pb2.BILLING_INTERVAL_MONTHLY: "monthly",
-    billing_pb2.BILLING_INTERVAL_YEARLY: "yearly",
+    BILLING_INTERVAL_UNSPECIFIED: "unspecified",
+    BILLING_INTERVAL_MONTHLY: "monthly",
+    BILLING_INTERVAL_YEARLY: "yearly",
+}
+
+_INVOICE_STATUS_TO_STR: dict[int, str] = {
+    INVOICE_STATUS_DRAFT: "draft",
+    INVOICE_STATUS_OPEN: "open",
+    INVOICE_STATUS_PAID: "paid",
+    INVOICE_STATUS_VOID: "void",
+    INVOICE_STATUS_UNCOLLECTIBLE: "uncollectible",
 }
 
 
-def plan_tier_to_str(value: int) -> str:
-    """Convert PlanTier proto int to string."""
+def plan_tier_to_str(value: PlanTier.ValueType) -> str:
+    """Convert PlanTier proto value to string."""
     return _PLAN_TIER_TO_STR.get(value, "unspecified")
 
 
-def subscription_status_to_str(value: int) -> str:
-    """Convert SubscriptionStatus proto int to string."""
+def subscription_status_to_str(value: SubscriptionStatus.ValueType) -> str:
+    """Convert SubscriptionStatus proto value to string."""
     return _SUBSCRIPTION_STATUS_TO_STR.get(value, "unspecified")
 
 
-def billing_interval_to_str(value: int) -> str:
-    """Convert BillingInterval proto int to string."""
+def billing_interval_to_str(value: BillingInterval.ValueType) -> str:
+    """Convert BillingInterval proto value to string."""
     return _BILLING_INTERVAL_TO_STR.get(value, "unspecified")
+
+
+def invoice_status_to_str(value: InvoiceStatus.ValueType) -> str:
+    """Convert InvoiceStatus proto value to string."""
+    return _INVOICE_STATUS_TO_STR.get(value, "draft")
 
 
 class PlanLimits(TypedDict, total=False):
@@ -87,7 +123,7 @@ class PlanResponse(BaseModel):
 
     id: str
     name: str
-    tier: int  # PlanTier proto int
+    tier: PlanTier.ValueType
     price_monthly: float
     price_yearly: float
     features: dict[str, bool]
@@ -108,8 +144,8 @@ class SubscriptionResponse(BaseModel):
     id: UUID
     tenant_id: UUID
     plan: PlanResponse
-    status: int  # SubscriptionStatus proto int
-    billing_cycle: int  # BillingInterval proto int
+    status: SubscriptionStatus.ValueType
+    billing_cycle: BillingInterval.ValueType
     current_period_start: datetime
     current_period_end: datetime
     cancel_at_period_end: bool
@@ -124,7 +160,7 @@ class SubscriptionCreateRequest(BaseModel):
 
     plan_id: str
     payment_method_id: str
-    billing_cycle: int = billing_pb2.BILLING_INTERVAL_MONTHLY
+    billing_cycle: BillingInterval.ValueType = BILLING_INTERVAL_MONTHLY
 
 
 class SubscriptionUpdateRequest(BaseModel):
@@ -214,7 +250,7 @@ class InvoiceResponse(BaseModel):
     id: str
     amount: float
     currency: str
-    status: str
+    status: InvoiceStatus.ValueType
     period_start: datetime
     period_end: datetime
     paid_at: datetime | None = None

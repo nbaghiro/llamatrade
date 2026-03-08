@@ -2,7 +2,6 @@
 
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import cast
 
 import numpy as np
 from numpy.typing import NDArray
@@ -125,8 +124,7 @@ class EvaluationState:
 
         value = self.indicators[key]
         if isinstance(value, np.ndarray):
-            arr = cast(NDArray[np.floating], value)
-            return float(arr[-1])
+            return float(value[-1])
         return float(value)
 
     def get_prev_indicator_value(self, indicator: Indicator) -> float:
@@ -151,10 +149,9 @@ class EvaluationState:
 
         value = self.indicators[key]
         if isinstance(value, np.ndarray):
-            arr = cast(NDArray[np.floating], value)
-            if len(arr) > 1:
-                return float(arr[-2])
-            return float(arr[-1])
+            if len(value) > 1:
+                return float(value[-2])
+            return float(value[-1])
         return float(value)
 
     def get_indicator_array(self, key: str) -> np.ndarray:

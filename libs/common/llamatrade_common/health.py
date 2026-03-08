@@ -320,7 +320,7 @@ async def check_redis(redis_url: str) -> bool:
 
         client = Redis.from_url(redis_url)  # pyright: ignore[reportUnknownMemberType]
         try:
-            await client.ping()  # pyright: ignore[reportUnknownMemberType]
+            await client.ping()  # pyright: ignore[reportUnknownMemberType, reportGeneralTypeIssues]
             return True
         finally:
             await client.aclose()  # type: ignore[attr-defined]

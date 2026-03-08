@@ -15,9 +15,6 @@ from llamatrade_db.models.strategy import (
     StrategyExecution,
     StrategyVersion,
 )
-from llamatrade_db.models.strategy import (
-    StrategyType as DBStrategyType,
-)
 from llamatrade_dsl import ParseError, parse_strategy, to_json, validate_strategy
 from llamatrade_proto.generated.common_pb2 import (
     EXECUTION_STATUS_ERROR,
@@ -41,7 +38,6 @@ from src.models import (
     StrategyCreate,
     StrategyDetailResponse,
     StrategyResponse,
-    StrategyType,
     StrategyUpdate,
     StrategyVersionResponse,
     ValidationResult,
@@ -135,9 +131,6 @@ class StrategyService:
         # Allocation strategies use rebalance frequency instead of intraday timeframes
         timeframe = _rebalance_to_timeframe(ast.rebalance)
 
-        # Allocation strategies default to CUSTOM type
-        db_type = DBStrategyType.CUSTOM
-
         # Use nested transaction for atomicity (strategy + version created together)
         async with self.db.begin_nested():
             # Create strategy record
@@ -145,7 +138,6 @@ class StrategyService:
                 tenant_id=tenant_id,
                 name=data.name,
                 description=data.description,
-                strategy_type=db_type,
                 status=STRATEGY_STATUS_DRAFT,
                 current_version=1,
                 created_by=user_id,
@@ -193,7 +185,6 @@ class StrategyService:
         self,
         tenant_id: UUID,
         status: int | None = None,  # StrategyStatus proto int
-        strategy_type: StrategyType | None = None,
         search: str | None = None,
         sort_field: str | None = None,
         sort_direction: str | None = None,
@@ -205,7 +196,6 @@ class StrategyService:
         Args:
             tenant_id: Tenant UUID
             status: Filter by status
-            strategy_type: Filter by type
             search: Search term for name/description (case-insensitive)
             sort_field: Field to sort by (name, created_at, updated_at, status)
             sort_direction: Sort direction (asc, desc)
@@ -217,8 +207,6 @@ class StrategyService:
 
         if status:
             stmt = stmt.where(Strategy.status == status)  # Already proto int
-        if strategy_type:
-            stmt = stmt.where(Strategy.strategy_type == DBStrategyType(strategy_type.value))
 
         # Search by name or description (case-insensitive)
         if search:
@@ -853,8 +841,7 @@ class StrategyService:
             id=s.id,
             name=s.name,
             description=s.description,
-            strategy_type=StrategyType(s.strategy_type.value),
-            status=s.status,  # Already proto int from DB TypeDecorator
+            status=s.status,
             current_version=s.current_version,
             created_at=s.created_at,
             updated_at=s.updated_at,
@@ -866,8 +853,7 @@ class StrategyService:
             id=s.id,
             name=s.name,
             description=s.description,
-            strategy_type=StrategyType(s.strategy_type.value),
-            status=s.status,  # Already proto int from DB TypeDecorator
+            status=s.status,
             current_version=s.current_version,
             created_at=s.created_at,
             updated_at=s.updated_at,
@@ -897,8 +883,8 @@ class StrategyService:
             id=e.id,
             strategy_id=e.strategy_id,
             version=e.version,
-            mode=e.mode,  # Already proto int from DB TypeDecorator
-            status=e.status,  # Already proto int from DB TypeDecorator
+            mode=e.mode,
+            status=e.status,
             started_at=e.started_at,
             stopped_at=e.stopped_at,
             config_override=cast(ConfigOverride, e.config_override) if e.config_override else None,

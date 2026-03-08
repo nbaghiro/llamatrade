@@ -8,6 +8,7 @@ import { Link } from 'react-router-dom';
 
 import SubscriptionStatus from '../../components/billing/SubscriptionStatus';
 import { useBillingStore } from '../../store/billing';
+import { getInvoiceStatusLabel, InvoiceStatus } from '../../types/billing';
 
 export default function BillingPage() {
   const {
@@ -185,12 +186,12 @@ export default function BillingPage() {
                       <td className="px-4 py-3">
                         <span
                           className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${
-                            invoice.status === 'paid'
+                            invoice.status === InvoiceStatus.PAID
                               ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
                               : 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400'
                           }`}
                         >
-                          {invoice.status.charAt(0).toUpperCase() + invoice.status.slice(1)}
+                          {getInvoiceStatusLabel(invoice.status)}
                         </span>
                       </td>
                       <td className="px-4 py-3 text-right">

@@ -26,7 +26,17 @@ Value Types:
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 from typing import Literal as TypingLiteral
+
+if TYPE_CHECKING:
+    pass  # Block is defined later in this file
+
+
+def _empty_block_list() -> list[Block]:
+    """Factory for empty block list."""
+    return []
+
 
 # =============================================================================
 # Source Location (for error reporting)
@@ -275,7 +285,7 @@ class Weight:
     """
 
     method: WeightMethod
-    children: list[Block] = field(default_factory=list)
+    children: list[Block] = field(default_factory=_empty_block_list)
     lookback: int | None = None
     top: int | None = None
     location: SourceLocation | None = None
@@ -304,7 +314,7 @@ class Group:
     """
 
     name: str
-    children: list[Block] = field(default_factory=list)
+    children: list[Block] = field(default_factory=_empty_block_list)
     location: SourceLocation | None = None
 
     def __repr__(self) -> str:
@@ -354,7 +364,7 @@ class Filter:
     by: FilterCriteria
     select_direction: SelectDirection
     select_count: int
-    children: list[Block] = field(default_factory=list)
+    children: list[Block] = field(default_factory=_empty_block_list)
     lookback: int | None = None
     location: SourceLocation | None = None
 
@@ -380,7 +390,7 @@ class Strategy:
     """
 
     name: str
-    children: list[Block] = field(default_factory=list)
+    children: list[Block] = field(default_factory=_empty_block_list)
     rebalance: RebalanceFrequency | None = None
     benchmark: str | None = None
     description: str | None = None

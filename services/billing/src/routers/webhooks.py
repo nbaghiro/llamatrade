@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from llamatrade_proto.generated import billing_pb2
 
-from src.services.billing_service import _stripe_status_to_proto
+from src.services.billing_service import stripe_status_to_proto
 from src.services.database import get_db
 from src.stripe.client import StripeError, get_stripe_client
 
@@ -124,7 +124,7 @@ async def _handle_subscription_created(db: AsyncSession, subscription: dict[str,
     if local_sub:
         # Update status
         if sub_status is not None:
-            local_sub.status = _stripe_status_to_proto(sub_status)
+            local_sub.status = stripe_status_to_proto(sub_status)
         current_period_start: int = subscription.get("current_period_start", 0)
         current_period_end: int = subscription.get("current_period_end", 0)
         local_sub.current_period_start = datetime.fromtimestamp(current_period_start, tz=UTC)
@@ -159,7 +159,7 @@ async def _handle_subscription_updated(db: AsyncSession, subscription: dict[str,
 
     if local_sub:
         if sub_status is not None:
-            local_sub.status = _stripe_status_to_proto(sub_status)
+            local_sub.status = stripe_status_to_proto(sub_status)
         local_sub.cancel_at_period_end = cancel_at_period_end
         current_period_start: int = subscription.get("current_period_start", 0)
         current_period_end: int = subscription.get("current_period_end", 0)

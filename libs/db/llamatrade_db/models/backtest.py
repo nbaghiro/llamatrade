@@ -18,6 +18,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from llamatrade_db.base import Base, TenantMixin, TimestampMixin, UUIDPrimaryKeyMixin
 from llamatrade_db.models._enum_types import BacktestStatusType
+from llamatrade_proto.generated import backtest_pb2
 
 
 class Backtest(Base, UUIDPrimaryKeyMixin, TenantMixin, TimestampMixin):
@@ -32,7 +33,7 @@ class Backtest(Base, UUIDPrimaryKeyMixin, TenantMixin, TimestampMixin):
     strategy_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
     strategy_version: Mapped[int] = mapped_column(Integer, nullable=False)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
-    status: Mapped[int] = mapped_column(
+    status: Mapped[backtest_pb2.BacktestStatus.ValueType] = mapped_column(
         BacktestStatusType(), default=1, nullable=False
     )  # PENDING=1
     config: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)

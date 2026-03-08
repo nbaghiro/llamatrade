@@ -638,6 +638,7 @@ class TestBulkQueryIsolation:
                 StrategyFactory.create(
                     tenant_id=test_tenant.id,
                     created_by=test_user.id,
+                    name=f"Tenant A Strategy {i}",
                 )
             )
 
@@ -647,6 +648,7 @@ class TestBulkQueryIsolation:
                 StrategyFactory.create(
                     tenant_id=second_tenant.id,
                     created_by=test_user.id,
+                    name=f"Tenant B Strategy {i}",
                 )
             )
 
@@ -685,6 +687,7 @@ class TestBulkQueryIsolation:
         strategy_a = StrategyFactory.create(
             tenant_id=test_tenant.id,
             created_by=test_user.id,
+            name="Aggregation Test Strategy A",
         )
         db_session.add(strategy_a)
         await db_session.flush()
@@ -704,6 +707,7 @@ class TestBulkQueryIsolation:
         strategy_b = StrategyFactory.create(
             tenant_id=second_tenant.id,
             created_by=test_user.id,
+            name="Aggregation Test Strategy B",
         )
         db_session.add(strategy_b)
         await db_session.flush()

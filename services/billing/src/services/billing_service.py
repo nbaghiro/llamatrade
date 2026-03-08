@@ -1,6 +1,7 @@
 """Billing service - subscription and plan management."""
 
 import logging
+from typing import cast
 from uuid import UUID
 
 from fastapi import Depends
@@ -10,6 +11,7 @@ from sqlalchemy.orm import selectinload
 
 from llamatrade_db.models import Plan, Subscription
 from llamatrade_proto.generated import billing_pb2
+from llamatrade_proto.generated.billing_pb2 import SubscriptionStatus
 
 from src.models import (
     PlanResponse,
@@ -22,8 +24,8 @@ from src.stripe.client import StripeClient, StripeError, get_stripe_client
 logger = logging.getLogger(__name__)
 
 
-def _stripe_status_to_proto(status: str) -> int:
-    """Convert Stripe subscription status string to proto int constant."""
+def stripe_status_to_proto(status: str) -> SubscriptionStatus.ValueType:
+    """Convert Stripe subscription status string to proto ValueType."""
     mapping: dict[str, int] = {
         "active": billing_pb2.SUBSCRIPTION_STATUS_ACTIVE,
         "past_due": billing_pb2.SUBSCRIPTION_STATUS_PAST_DUE,
@@ -35,7 +37,8 @@ def _stripe_status_to_proto(status: str) -> int:
         "incomplete_expired": billing_pb2.SUBSCRIPTION_STATUS_CANCELED,
         "unpaid": billing_pb2.SUBSCRIPTION_STATUS_PAST_DUE,
     }
-    return mapping.get(status.lower()) or billing_pb2.SUBSCRIPTION_STATUS_UNSPECIFIED
+    result = mapping.get(status.lower()) or billing_pb2.SUBSCRIPTION_STATUS_UNSPECIFIED
+    return cast(SubscriptionStatus.ValueType, result)
 
 
 # Default plans - used when database plans are not available
@@ -371,7 +374,7 @@ class BillingService:
 
         # Update local record
         subscription.plan_id = new_plan_db.id
-        subscription.status = _stripe_status_to_proto(stripe_sub.status)
+        subscription.status = stripe_status_to_proto(stripe_sub.status)
         subscription.current_period_start = stripe_sub.current_period_start
         subscription.current_period_end = stripe_sub.current_period_end
 
@@ -489,7 +492,7 @@ class BillingService:
         subscription = result.scalar_one_or_none()
 
         if subscription:
-            subscription.status = _stripe_status_to_proto(status)
+            subscription.status = stripe_status_to_proto(status)
             await self.db.commit()
 
 

@@ -3,24 +3,20 @@
 Enum columns use PostgreSQL native ENUM types with TypeDecorators for transparent
 conversion between proto int values and DB enum strings.
 
-StrategyType remains as Postgres ENUM because it represents business categories
-(TREND_FOLLOWING, MOMENTUM, etc.) which are not in proto definitions.
-
-See libs/db/llamatrade_db/models/enum_types.py for TypeDecorator implementations.
+All enums are now proto-defined. See libs/db/llamatrade_db/models/_enum_types.py
+for TypeDecorator implementations.
 """
 
 from __future__ import annotations
 
 from datetime import datetime
 from decimal import Decimal
-from enum import Enum as PyEnum
 from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
 from sqlalchemy import (
     Boolean,
     CheckConstraint,
-    Enum,
     ForeignKey,
     Index,
     Integer,
@@ -35,26 +31,20 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from llamatrade_db.base import Base, TenantMixin, TimestampMixin, UUIDPrimaryKeyMixin
 from llamatrade_db.models._enum_types import (
+    AssetClassType,
     ExecutionModeType,
     ExecutionStatusType,
     StrategyStatusType,
+    TemplateCategoryType,
+    TemplateDifficultyType,
 )
+from llamatrade_proto.generated import common_pb2, strategy_pb2
 
 if TYPE_CHECKING:
     from llamatrade_db.models.portfolio import (
         StrategyPerformanceMetrics,
         StrategyPerformanceSnapshot,
     )
-
-
-class StrategyType(PyEnum):
-    """Types of trading strategies (business categorization, not proto-defined)."""
-
-    TREND_FOLLOWING = "trend_following"
-    MEAN_REVERSION = "mean_reversion"
-    MOMENTUM = "momentum"
-    BREAKOUT = "breakout"
-    CUSTOM = "custom"
 
 
 class Strategy(Base, UUIDPrimaryKeyMixin, TenantMixin, TimestampMixin):
@@ -70,17 +60,13 @@ class Strategy(Base, UUIDPrimaryKeyMixin, TenantMixin, TimestampMixin):
         UniqueConstraint("tenant_id", "name", name="uq_strategy_tenant_name"),
         Index("ix_strategies_tenant_name", "tenant_id", "name"),
         Index("ix_strategies_tenant_status", "tenant_id", "status"),
-        Index("ix_strategies_tenant_type", "tenant_id", "strategy_type"),
     )
 
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
-    strategy_type: Mapped[StrategyType] = mapped_column(
-        Enum(StrategyType, name="strategy_type_enum"),
-        nullable=False,
-        default=StrategyType.CUSTOM,
-    )
-    status: Mapped[int] = mapped_column(StrategyStatusType(), nullable=False, default=1)  # DRAFT=1
+    status: Mapped[strategy_pb2.StrategyStatus.ValueType] = mapped_column(
+        StrategyStatusType(), nullable=False, default=1
+    )  # DRAFT=1
     is_public: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     current_version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
     created_by: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
@@ -166,8 +152,10 @@ class StrategyExecution(Base, UUIDPrimaryKeyMixin, TenantMixin, TimestampMixin):
     )
     version: Mapped[int] = mapped_column(Integer, nullable=False)
 
-    mode: Mapped[int] = mapped_column(ExecutionModeType(), nullable=False)
-    status: Mapped[int] = mapped_column(
+    mode: Mapped[common_pb2.ExecutionMode.ValueType] = mapped_column(
+        ExecutionModeType(), nullable=False
+    )
+    status: Mapped[common_pb2.ExecutionStatus.ValueType] = mapped_column(
         ExecutionStatusType(), nullable=False, default=1
     )  # PENDING=1
 
@@ -212,13 +200,15 @@ class StrategyTemplate(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     """
 
     __tablename__ = "strategy_templates"
+    __table_args__ = (Index("ix_strategy_templates_category", "category"),)
 
     name: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
-    category: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
-    strategy_type: Mapped[StrategyType] = mapped_column(
-        Enum(StrategyType, name="strategy_type_enum", create_constraint=False),
-        nullable=False,
+    category: Mapped[strategy_pb2.TemplateCategory.ValueType] = mapped_column(
+        TemplateCategoryType(), nullable=False
+    )
+    asset_class: Mapped[strategy_pb2.AssetClass.ValueType] = mapped_column(
+        AssetClassType(), nullable=False
     )
 
     # S-expression template
@@ -229,6 +219,8 @@ class StrategyTemplate(Base, UUIDPrimaryKeyMixin, TimestampMixin):
 
     # Metadata
     tags: Mapped[list[str] | None] = mapped_column(JSONB, nullable=True)
-    difficulty: Mapped[str] = mapped_column(String(20), default="beginner", nullable=False)
+    difficulty: Mapped[strategy_pb2.TemplateDifficulty.ValueType] = mapped_column(
+        TemplateDifficultyType(), nullable=False, default=1
+    )  # BEGINNER=1
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     usage_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)

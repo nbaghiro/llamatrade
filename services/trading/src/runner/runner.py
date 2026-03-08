@@ -551,16 +551,15 @@ class StrategyRunner:
 
         # Record signal event if using event sourcing
         if self._event_executor:
-            # Cast signal.type which is str at runtime but constrained to valid values
-            signal_type = cast(
-                Literal["buy", "sell", "short", "cover"],
-                signal.type,
+            # Convert signal type string to proto enum value
+            signal_type_proto = (
+                ORDER_SIDE_SELL if signal.type in ("sell", "short") else ORDER_SIDE_BUY
             )
             await self._event_executor.record_signal(
                 tenant_id=self.config.tenant_id,
                 session_id=self.config.execution_id,
                 symbol=signal.symbol,
-                signal_type=signal_type,
+                signal_type=signal_type_proto,
                 price=Decimal(str(signal.price)),
                 qty=Decimal(str(signal.quantity)),
             )
@@ -835,8 +834,7 @@ class StrategyRunner:
 
         try:
             account = await self.alpaca_client.get_account()
-            equity_str = account.get("equity", "100000")
-            self._equity = float(equity_str)
+            self._equity = account.equity
             logger.debug(f"Synced equity: ${self._equity:,.2f}")
 
             # Update circuit breaker with current equity

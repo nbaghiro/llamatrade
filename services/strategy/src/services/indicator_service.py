@@ -1,6 +1,25 @@
 """Indicator service - indicator metadata and information."""
 
-from src.models import IndicatorInfoResponse, IndicatorParamInfo, IndicatorType
+from llamatrade_proto.generated.strategy_pb2 import (
+    INDICATOR_TYPE_ADX,
+    INDICATOR_TYPE_ATR,
+    INDICATOR_TYPE_BOLLINGER_BANDS,
+    INDICATOR_TYPE_CCI,
+    INDICATOR_TYPE_DONCHIAN_CHANNEL,
+    INDICATOR_TYPE_EMA,
+    INDICATOR_TYPE_KELTNER_CHANNEL,
+    INDICATOR_TYPE_MACD,
+    INDICATOR_TYPE_MFI,
+    INDICATOR_TYPE_OBV,
+    INDICATOR_TYPE_RSI,
+    INDICATOR_TYPE_SMA,
+    INDICATOR_TYPE_STOCHASTIC,
+    INDICATOR_TYPE_VWAP,
+    INDICATOR_TYPE_WILLIAMS_R,
+    IndicatorType,
+)
+
+from src.models import IndicatorInfoResponse, IndicatorParamInfo
 
 
 def _param(
@@ -23,25 +42,25 @@ def _param(
 
 
 # Indicator metadata as properly typed IndicatorInfoResponse objects
-INDICATORS: dict[IndicatorType, IndicatorInfoResponse] = {
-    IndicatorType.SMA: IndicatorInfoResponse(
-        type=IndicatorType.SMA,
+INDICATORS: dict[IndicatorType.ValueType, IndicatorInfoResponse] = {
+    INDICATOR_TYPE_SMA: IndicatorInfoResponse(
+        type=INDICATOR_TYPE_SMA,
         name="Simple Moving Average",
         description="Average price over a specified period",
         category="trend",
         params=[_param("period", "int", 20, 1, 500, "Lookback period")],
         outputs=["value"],
     ),
-    IndicatorType.EMA: IndicatorInfoResponse(
-        type=IndicatorType.EMA,
+    INDICATOR_TYPE_EMA: IndicatorInfoResponse(
+        type=INDICATOR_TYPE_EMA,
         name="Exponential Moving Average",
         description="Weighted average giving more weight to recent prices",
         category="trend",
         params=[_param("period", "int", 20, 1, 500, "Lookback period")],
         outputs=["value"],
     ),
-    IndicatorType.MACD: IndicatorInfoResponse(
-        type=IndicatorType.MACD,
+    INDICATOR_TYPE_MACD: IndicatorInfoResponse(
+        type=INDICATOR_TYPE_MACD,
         name="Moving Average Convergence Divergence",
         description="Trend-following momentum indicator showing relationship between two EMAs",
         category="trend",
@@ -52,24 +71,24 @@ INDICATORS: dict[IndicatorType, IndicatorInfoResponse] = {
         ],
         outputs=["line", "signal", "histogram"],
     ),
-    IndicatorType.ADX: IndicatorInfoResponse(
-        type=IndicatorType.ADX,
+    INDICATOR_TYPE_ADX: IndicatorInfoResponse(
+        type=INDICATOR_TYPE_ADX,
         name="Average Directional Index",
         description="Measures trend strength regardless of direction",
         category="trend",
         params=[_param("period", "int", 14, 1, 100, "Lookback period")],
         outputs=["value", "plus_di", "minus_di"],
     ),
-    IndicatorType.RSI: IndicatorInfoResponse(
-        type=IndicatorType.RSI,
+    INDICATOR_TYPE_RSI: IndicatorInfoResponse(
+        type=INDICATOR_TYPE_RSI,
         name="Relative Strength Index",
         description="Momentum oscillator measuring speed and magnitude of price changes (0-100)",
         category="momentum",
         params=[_param("period", "int", 14, 1, 100, "Lookback period")],
         outputs=["value"],
     ),
-    IndicatorType.STOCHASTIC: IndicatorInfoResponse(
-        type=IndicatorType.STOCHASTIC,
+    INDICATOR_TYPE_STOCHASTIC: IndicatorInfoResponse(
+        type=INDICATOR_TYPE_STOCHASTIC,
         name="Stochastic Oscillator",
         description="Compares closing price to price range over a period",
         category="momentum",
@@ -80,24 +99,24 @@ INDICATORS: dict[IndicatorType, IndicatorInfoResponse] = {
         ],
         outputs=["k", "d"],
     ),
-    IndicatorType.CCI: IndicatorInfoResponse(
-        type=IndicatorType.CCI,
+    INDICATOR_TYPE_CCI: IndicatorInfoResponse(
+        type=INDICATOR_TYPE_CCI,
         name="Commodity Channel Index",
         description="Measures deviation from statistical mean",
         category="momentum",
         params=[_param("period", "int", 20, 1, 100, "Lookback period")],
         outputs=["value"],
     ),
-    IndicatorType.WILLIAMS_R: IndicatorInfoResponse(
-        type=IndicatorType.WILLIAMS_R,
+    INDICATOR_TYPE_WILLIAMS_R: IndicatorInfoResponse(
+        type=INDICATOR_TYPE_WILLIAMS_R,
         name="Williams %R",
         description="Momentum indicator showing overbought/oversold levels",
         category="momentum",
         params=[_param("period", "int", 14, 1, 100, "Lookback period")],
         outputs=["value"],
     ),
-    IndicatorType.BOLLINGER_BANDS: IndicatorInfoResponse(
-        type=IndicatorType.BOLLINGER_BANDS,
+    INDICATOR_TYPE_BOLLINGER_BANDS: IndicatorInfoResponse(
+        type=INDICATOR_TYPE_BOLLINGER_BANDS,
         name="Bollinger Bands",
         description="Volatility bands placed above and below a moving average",
         category="volatility",
@@ -107,16 +126,16 @@ INDICATORS: dict[IndicatorType, IndicatorInfoResponse] = {
         ],
         outputs=["upper", "middle", "lower"],
     ),
-    IndicatorType.ATR: IndicatorInfoResponse(
-        type=IndicatorType.ATR,
+    INDICATOR_TYPE_ATR: IndicatorInfoResponse(
+        type=INDICATOR_TYPE_ATR,
         name="Average True Range",
         description="Measures market volatility",
         category="volatility",
         params=[_param("period", "int", 14, 1, 100, "Lookback period")],
         outputs=["value"],
     ),
-    IndicatorType.KELTNER_CHANNEL: IndicatorInfoResponse(
-        type=IndicatorType.KELTNER_CHANNEL,
+    INDICATOR_TYPE_KELTNER_CHANNEL: IndicatorInfoResponse(
+        type=INDICATOR_TYPE_KELTNER_CHANNEL,
         name="Keltner Channel",
         description="Volatility-based envelope around an EMA",
         category="volatility",
@@ -127,32 +146,32 @@ INDICATORS: dict[IndicatorType, IndicatorInfoResponse] = {
         ],
         outputs=["upper", "middle", "lower"],
     ),
-    IndicatorType.OBV: IndicatorInfoResponse(
-        type=IndicatorType.OBV,
+    INDICATOR_TYPE_OBV: IndicatorInfoResponse(
+        type=INDICATOR_TYPE_OBV,
         name="On-Balance Volume",
         description="Cumulative volume indicator relating volume to price changes",
         category="volume",
         params=[],
         outputs=["value"],
     ),
-    IndicatorType.MFI: IndicatorInfoResponse(
-        type=IndicatorType.MFI,
+    INDICATOR_TYPE_MFI: IndicatorInfoResponse(
+        type=INDICATOR_TYPE_MFI,
         name="Money Flow Index",
         description="Volume-weighted RSI (0-100)",
         category="volume",
         params=[_param("period", "int", 14, 1, 100, "Lookback period")],
         outputs=["value"],
     ),
-    IndicatorType.VWAP: IndicatorInfoResponse(
-        type=IndicatorType.VWAP,
+    INDICATOR_TYPE_VWAP: IndicatorInfoResponse(
+        type=INDICATOR_TYPE_VWAP,
         name="Volume Weighted Average Price",
         description="Average price weighted by volume (intraday)",
         category="volume",
         params=[],
         outputs=["value"],
     ),
-    IndicatorType.DONCHIAN_CHANNEL: IndicatorInfoResponse(
-        type=IndicatorType.DONCHIAN_CHANNEL,
+    INDICATOR_TYPE_DONCHIAN_CHANNEL: IndicatorInfoResponse(
+        type=INDICATOR_TYPE_DONCHIAN_CHANNEL,
         name="Donchian Channel",
         description="Highest high and lowest low over a period",
         category="channel",
@@ -181,7 +200,7 @@ class IndicatorService:
 
     async def get_indicator(
         self,
-        indicator_type: IndicatorType,
+        indicator_type: IndicatorType.ValueType,
     ) -> IndicatorInfoResponse | None:
         """Get indicator information."""
         return INDICATORS.get(indicator_type)

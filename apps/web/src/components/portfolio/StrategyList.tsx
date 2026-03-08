@@ -6,7 +6,7 @@
 import { ChevronDown, Filter } from 'lucide-react';
 import { useState } from 'react';
 
-import type { ExecutionMode, ExecutionStatus, Period, StrategyPerformance } from '../../store/portfolio';
+import { ExecutionMode, ExecutionStatus, type Period, type StrategyPerformance } from '../../store/portfolio';
 
 import StrategyRow from './StrategyRow';
 
@@ -32,8 +32,8 @@ type SortDirection = 'asc' | 'desc';
  * - Non-running strategies show as 'paused'
  */
 function getDisplayStatus(mode: ExecutionMode, status: ExecutionStatus): DisplayStatus {
-  if (status === 'running') {
-    return mode === 'live' ? 'live' : 'paper';
+  if (status === ExecutionStatus.RUNNING) {
+    return mode === ExecutionMode.LIVE ? 'live' : 'paper';
   }
   return 'paused';
 }

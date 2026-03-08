@@ -451,18 +451,26 @@ class BillingServicer:
             card_exp_year=pm.card_exp_year or 0,
         )
 
-    def _to_proto_status(self, status: int) -> int:
-        """Return proto status value (already proto int)."""
+    def _to_proto_status(
+        self, status: billing_pb2.SubscriptionStatus.ValueType
+    ) -> billing_pb2.SubscriptionStatus.ValueType:
+        """Return proto status value (already proto ValueType)."""
         return status
 
-    def _to_proto_tier(self, tier: int) -> int:
-        """Return proto tier value (already proto int)."""
+    def _to_proto_tier(
+        self, tier: billing_pb2.PlanTier.ValueType
+    ) -> billing_pb2.PlanTier.ValueType:
+        """Return proto tier value (already proto ValueType)."""
         return tier
 
-    def _to_proto_interval(self, interval: int) -> int:
-        """Return proto interval value (already proto int)."""
+    def _to_proto_interval(
+        self, interval: billing_pb2.BillingInterval.ValueType
+    ) -> billing_pb2.BillingInterval.ValueType:
+        """Return proto interval value (already proto ValueType)."""
         return interval
 
-    def _from_proto_interval(self, interval: int) -> int:
-        """Return proto interval value (already proto int)."""
+    def _from_proto_interval(
+        self, interval: billing_pb2.BillingInterval.ValueType
+    ) -> billing_pb2.BillingInterval.ValueType:
+        """Return proto interval value (already proto ValueType)."""
         return interval

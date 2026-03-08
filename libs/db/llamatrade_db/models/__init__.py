@@ -49,7 +49,6 @@ from llamatrade_db.models.strategy import (
     Strategy,
     StrategyExecution,
     StrategyTemplate,
-    StrategyType,
     StrategyVersion,
 )
 from llamatrade_db.models.trading import (
@@ -74,7 +73,6 @@ __all__ = [
     "StrategyVersion",
     "StrategyTemplate",
     "StrategyExecution",
-    "StrategyType",
     # Backtest
     "Backtest",
     "BacktestResult",

@@ -12,7 +12,7 @@ Example:
 """
 
 import logging
-from typing import Literal
+from typing import Any, Literal, cast
 
 from ..client_base import AlpacaClientBase
 from ..config import AlpacaCredentials, AlpacaUrls
@@ -245,10 +245,13 @@ class TradingClient(AlpacaClientBase):
         async with time_alpaca_call("cancel_all_orders"):
             response = await self._delete("/orders")
             # Response is a list of cancelled orders
-            data = response.json()
-            if isinstance(data, list):
-                return [parse_order(item.get("body", item)) for item in data]
-            return []
+            raw_data: list[dict[str, Any]] = response.json()
+            results: list[Order] = []
+            for item in raw_data:
+                body = item.get("body")
+                order_data = cast(dict[str, Any], body) if isinstance(body, dict) else item
+                results.append(parse_order(order_data))
+            return results
 
     # =========================================================================
     # Positions
@@ -335,16 +338,16 @@ class TradingClient(AlpacaClientBase):
             params = {"cancel_orders": str(cancel_orders).lower()}
             response = await self._delete("/positions", params=params)
 
-            data = response.json()
+            data: list[dict[str, Any]] = response.json()
             logger.info(f"Closed all positions: {len(data)} liquidation orders")
 
             # Response is list of orders or order wrappers
-            orders = []
+            orders: list[Order] = []
             for item in data:
                 # Handle wrapped response format
-                order_data = item.get("body", item)
-                if order_data:
-                    orders.append(parse_order(order_data))
+                body = item.get("body")
+                order_data = cast(dict[str, Any], body) if isinstance(body, dict) else item
+                orders.append(parse_order(order_data))
             return orders
 
     # =========================================================================

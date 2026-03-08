@@ -110,6 +110,67 @@ ALERT_CONDITION_TYPE_RSI_BELOW: AlertConditionType.ValueType  # 6
 ALERT_CONDITION_TYPE_ORDER_FILLED: AlertConditionType.ValueType  # 7
 ALERT_CONDITION_TYPE_STRATEGY_SIGNAL: AlertConditionType.ValueType  # 8
 
+class _AlertStatus:
+    ValueType = typing.NewType("ValueType", builtins.int)
+    V: _TypeAlias = ValueType  # noqa: Y015
+
+class _AlertStatusEnumTypeWrapper(enum_type_wrapper._EnumTypeWrapper[_AlertStatus.ValueType], builtins.type):
+    DESCRIPTOR: descriptor.EnumDescriptor
+    ALERT_STATUS_UNSPECIFIED: _AlertStatus.ValueType  # 0
+    ALERT_STATUS_ACTIVE: _AlertStatus.ValueType  # 1
+    ALERT_STATUS_TRIGGERED: _AlertStatus.ValueType  # 2
+    ALERT_STATUS_DISABLED: _AlertStatus.ValueType  # 3
+
+class AlertStatus(_AlertStatus, metaclass=_AlertStatusEnumTypeWrapper):
+    """Alert status"""
+
+ALERT_STATUS_UNSPECIFIED: AlertStatus.ValueType  # 0
+ALERT_STATUS_ACTIVE: AlertStatus.ValueType  # 1
+ALERT_STATUS_TRIGGERED: AlertStatus.ValueType  # 2
+ALERT_STATUS_DISABLED: AlertStatus.ValueType  # 3
+
+class _NotificationStatus:
+    ValueType = typing.NewType("ValueType", builtins.int)
+    V: _TypeAlias = ValueType  # noqa: Y015
+
+class _NotificationStatusEnumTypeWrapper(enum_type_wrapper._EnumTypeWrapper[_NotificationStatus.ValueType], builtins.type):
+    DESCRIPTOR: descriptor.EnumDescriptor
+    NOTIFICATION_STATUS_UNSPECIFIED: _NotificationStatus.ValueType  # 0
+    NOTIFICATION_STATUS_PENDING: _NotificationStatus.ValueType  # 1
+    NOTIFICATION_STATUS_SENT: _NotificationStatus.ValueType  # 2
+    NOTIFICATION_STATUS_FAILED: _NotificationStatus.ValueType  # 3
+    NOTIFICATION_STATUS_READ: _NotificationStatus.ValueType  # 4
+
+class NotificationStatus(_NotificationStatus, metaclass=_NotificationStatusEnumTypeWrapper):
+    """Notification delivery status"""
+
+NOTIFICATION_STATUS_UNSPECIFIED: NotificationStatus.ValueType  # 0
+NOTIFICATION_STATUS_PENDING: NotificationStatus.ValueType  # 1
+NOTIFICATION_STATUS_SENT: NotificationStatus.ValueType  # 2
+NOTIFICATION_STATUS_FAILED: NotificationStatus.ValueType  # 3
+NOTIFICATION_STATUS_READ: NotificationStatus.ValueType  # 4
+
+class _NotificationPriority:
+    ValueType = typing.NewType("ValueType", builtins.int)
+    V: _TypeAlias = ValueType  # noqa: Y015
+
+class _NotificationPriorityEnumTypeWrapper(enum_type_wrapper._EnumTypeWrapper[_NotificationPriority.ValueType], builtins.type):
+    DESCRIPTOR: descriptor.EnumDescriptor
+    NOTIFICATION_PRIORITY_UNSPECIFIED: _NotificationPriority.ValueType  # 0
+    NOTIFICATION_PRIORITY_LOW: _NotificationPriority.ValueType  # 1
+    NOTIFICATION_PRIORITY_MEDIUM: _NotificationPriority.ValueType  # 2
+    NOTIFICATION_PRIORITY_HIGH: _NotificationPriority.ValueType  # 3
+    NOTIFICATION_PRIORITY_CRITICAL: _NotificationPriority.ValueType  # 4
+
+class NotificationPriority(_NotificationPriority, metaclass=_NotificationPriorityEnumTypeWrapper):
+    """Notification priority"""
+
+NOTIFICATION_PRIORITY_UNSPECIFIED: NotificationPriority.ValueType  # 0
+NOTIFICATION_PRIORITY_LOW: NotificationPriority.ValueType  # 1
+NOTIFICATION_PRIORITY_MEDIUM: NotificationPriority.ValueType  # 2
+NOTIFICATION_PRIORITY_HIGH: NotificationPriority.ValueType  # 3
+NOTIFICATION_PRIORITY_CRITICAL: NotificationPriority.ValueType  # 4
+
 @typing.final
 class Notification(message.Message):
     """=============================================================================

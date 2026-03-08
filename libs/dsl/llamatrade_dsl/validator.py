@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
 from llamatrade_dsl.ast import (
     COMPARISON_OPS,
@@ -29,6 +30,19 @@ from llamatrade_dsl.ast import (
     Value,
     Weight,
 )
+
+if TYPE_CHECKING:
+    pass  # ValidationError is defined later
+
+
+def _empty_str_list() -> list[str]:
+    """Factory for empty string list."""
+    return []
+
+
+def _empty_error_list() -> list[ValidationError]:
+    """Factory for empty error list."""
+    return []
 
 
 def _find_similar(target: str, candidates: frozenset[str], max_results: int = 3) -> list[str]:
@@ -95,10 +109,10 @@ class ValidationError:
     path: str = ""
     line: int | None = None
     column: int | None = None
-    suggestions: list[str] = field(default_factory=list)
+    suggestions: list[str] = field(default_factory=_empty_str_list)
 
     def __str__(self) -> str:
-        parts = []
+        parts: list[str] = []
 
         # Add location if available
         if self.line is not None:
@@ -129,7 +143,7 @@ class ValidationResult:
     """Result of validation."""
 
     valid: bool
-    errors: list[ValidationError] = field(default_factory=list)
+    errors: list[ValidationError] = field(default_factory=_empty_error_list)
 
     def __bool__(self) -> bool:
         return self.valid

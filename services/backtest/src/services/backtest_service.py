@@ -39,6 +39,7 @@ from src.models import (
     BacktestMetrics,
     BacktestResponse,
     BacktestResultResponse,
+    BacktestStatus,
     BenchmarkEquityPoint,
     EquityPoint,
     TradeRecord,
@@ -57,12 +58,12 @@ _STATUS_STR_TO_PROTO: dict[str, int] = {
 }
 
 
-def _normalize_status(status: str | int) -> int:
-    """Convert status string or int to proto int constant."""
+def _normalize_status(status: str | int) -> BacktestStatus.ValueType:
+    """Convert status string or int to proto ValueType."""
     if isinstance(status, int):
-        return status
+        return cast(BacktestStatus.ValueType, status)
     result = _STATUS_STR_TO_PROTO.get(status.lower())
-    return result if result is not None else BACKTEST_STATUS_PENDING
+    return cast(BacktestStatus.ValueType, result if result is not None else BACKTEST_STATUS_PENDING)
 
 
 USE_CELERY = os.getenv("BACKTEST_USE_CELERY", "false").lower() == "true"

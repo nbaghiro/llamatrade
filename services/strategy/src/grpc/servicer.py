@@ -86,7 +86,7 @@ class StrategyServicer:
     async def get_strategy(
         self,
         request: strategy_pb2.GetStrategyRequest,
-        ctx: RequestContext,
+        ctx: RequestContext[object, object],
     ) -> strategy_pb2.GetStrategyResponse:
         """Get a strategy by ID."""
         from src.services.strategy_service import StrategyService
@@ -123,7 +123,7 @@ class StrategyServicer:
     async def list_strategies(
         self,
         request: strategy_pb2.ListStrategiesRequest,
-        ctx: RequestContext,
+        ctx: RequestContext[object, object],
     ) -> strategy_pb2.ListStrategiesResponse:
         """List strategies for a tenant with filtering, search, and sort."""
         from src.services.strategy_service import StrategyService
@@ -180,7 +180,7 @@ class StrategyServicer:
     async def create_strategy(
         self,
         request: strategy_pb2.CreateStrategyRequest,
-        ctx: RequestContext,
+        ctx: RequestContext[object, object],
     ) -> strategy_pb2.CreateStrategyResponse:
         """Create a new strategy.
 
@@ -236,7 +236,7 @@ class StrategyServicer:
     async def update_strategy(
         self,
         request: strategy_pb2.UpdateStrategyRequest,
-        ctx: RequestContext,
+        ctx: RequestContext[object, object],
     ) -> strategy_pb2.UpdateStrategyResponse:
         """Update an existing strategy."""
         from src.models import StrategyUpdate
@@ -283,7 +283,7 @@ class StrategyServicer:
     async def delete_strategy(
         self,
         request: strategy_pb2.DeleteStrategyRequest,
-        ctx: RequestContext,
+        ctx: RequestContext[object, object],
     ) -> strategy_pb2.DeleteStrategyResponse:
         """Delete (archive) a strategy."""
         from src.services.strategy_service import StrategyService
@@ -307,7 +307,7 @@ class StrategyServicer:
     async def compile_strategy(
         self,
         request: strategy_pb2.CompileStrategyRequest,
-        ctx: RequestContext,
+        ctx: RequestContext[object, object],
     ) -> strategy_pb2.CompileStrategyResponse:
         """Compile/validate DSL code."""
         from src.services.strategy_service import StrategyService
@@ -361,7 +361,7 @@ class StrategyServicer:
     async def validate_strategy(
         self,
         request: strategy_pb2.ValidateStrategyRequest,
-        ctx: RequestContext,
+        ctx: RequestContext[object, object],
     ) -> strategy_pb2.ValidateStrategyResponse:
         """Validate an existing strategy."""
         from src.services.strategy_service import StrategyService
@@ -416,7 +416,7 @@ class StrategyServicer:
     async def list_strategy_versions(
         self,
         request: strategy_pb2.ListStrategyVersionsRequest,
-        ctx: RequestContext,
+        ctx: RequestContext[object, object],
     ) -> strategy_pb2.ListStrategyVersionsResponse:
         """List versions of a strategy."""
         from src.services.strategy_service import StrategyService
@@ -455,7 +455,7 @@ class StrategyServicer:
     async def update_strategy_status(
         self,
         request: strategy_pb2.UpdateStrategyStatusRequest,
-        ctx: RequestContext,
+        ctx: RequestContext[object, object],
     ) -> strategy_pb2.UpdateStrategyStatusResponse:
         """Update strategy status.
 
@@ -515,7 +515,7 @@ class StrategyServicer:
     async def clone_strategy(
         self,
         request: strategy_pb2.CloneStrategyRequest,
-        ctx: RequestContext,
+        ctx: RequestContext[object, object],
     ) -> strategy_pb2.CloneStrategyResponse:
         """Clone a strategy with a new name."""
         from src.services.strategy_service import StrategyService
@@ -573,7 +573,7 @@ class StrategyServicer:
     async def create_execution(
         self,
         request: strategy_pb2.CreateExecutionRequest,
-        ctx: RequestContext,
+        ctx: RequestContext[object, object],
     ) -> strategy_pb2.CreateExecutionResponse:
         """Create a new execution for a strategy."""
         from src.models import ExecutionCreate
@@ -616,7 +616,7 @@ class StrategyServicer:
     async def get_execution(
         self,
         request: strategy_pb2.GetExecutionRequest,
-        ctx: RequestContext,
+        ctx: RequestContext[object, object],
     ) -> strategy_pb2.GetExecutionResponse:
         """Get an execution by ID."""
         from src.services.strategy_service import StrategyService
@@ -642,7 +642,7 @@ class StrategyServicer:
     async def list_executions(
         self,
         request: strategy_pb2.ListExecutionsRequest,
-        ctx: RequestContext,
+        ctx: RequestContext[object, object],
     ) -> strategy_pb2.ListExecutionsResponse:
         """List executions with optional filters."""
         from src.services.strategy_service import StrategyService
@@ -688,7 +688,7 @@ class StrategyServicer:
     async def start_execution(
         self,
         request: strategy_pb2.StartExecutionRequest,
-        ctx: RequestContext,
+        ctx: RequestContext[object, object],
     ) -> strategy_pb2.StartExecutionResponse:
         """Start a pending execution."""
         from src.services.strategy_service import StrategyService
@@ -718,7 +718,7 @@ class StrategyServicer:
     async def pause_execution(
         self,
         request: strategy_pb2.PauseExecutionRequest,
-        ctx: RequestContext,
+        ctx: RequestContext[object, object],
     ) -> strategy_pb2.PauseExecutionResponse:
         """Pause a running execution."""
         from src.services.strategy_service import StrategyService
@@ -748,7 +748,7 @@ class StrategyServicer:
     async def stop_execution(
         self,
         request: strategy_pb2.StopExecutionRequest,
-        ctx: RequestContext,
+        ctx: RequestContext[object, object],
     ) -> strategy_pb2.StopExecutionResponse:
         """Stop an execution."""
         from src.services.strategy_service import StrategyService
@@ -784,21 +784,20 @@ class StrategyServicer:
     async def list_templates(
         self,
         request: strategy_pb2.ListTemplatesRequest,
-        ctx: RequestContext,
+        ctx: RequestContext[object, object],
     ) -> strategy_pb2.ListTemplatesResponse:
         """List available strategy templates.
 
         Templates are pre-built strategy definitions that users can use as starting points.
         No authentication required - templates are public.
         """
-        from src.models import AssetClass, TemplateCategory
         from src.services.template_service import get_template_service
 
         template_service = get_template_service()
 
-        # Map string filters to enums
-        category = TemplateCategory(request.category) if request.category else None
-        asset_class = AssetClass(request.asset_class) if request.asset_class else None
+        # Request now uses proto enum values directly (0 = unspecified means no filter)
+        category = request.category if request.category else None
+        asset_class = request.asset_class if request.asset_class else None
         difficulty = request.difficulty if request.difficulty else None
 
         templates = await template_service.list_templates(
@@ -813,9 +812,8 @@ class StrategyServicer:
                     id=t.id,
                     name=t.name,
                     description=t.description or "",
-                    strategy_type=str(t.strategy_type),
-                    category=str(t.category),
-                    asset_class=str(t.asset_class),
+                    category=t.category,
+                    asset_class=t.asset_class,
                     config_sexpr=t.config_sexpr,
                     tags=t.tags,
                     difficulty=t.difficulty,
@@ -828,7 +826,7 @@ class StrategyServicer:
     async def get_template(
         self,
         request: strategy_pb2.GetTemplateRequest,
-        ctx: RequestContext,
+        ctx: RequestContext[object, object],
     ) -> strategy_pb2.GetTemplateResponse:
         """Get a specific template by ID.
 
@@ -850,9 +848,8 @@ class StrategyServicer:
                 id=template.id,
                 name=template.name,
                 description=template.description or "",
-                strategy_type=str(template.strategy_type),
-                category=str(template.category),
-                asset_class=str(template.asset_class),
+                category=template.category,
+                asset_class=template.asset_class,
                 config_sexpr=template.config_sexpr,
                 tags=template.tags,
                 difficulty=template.difficulty,
@@ -874,7 +871,7 @@ class StrategyServicer:
             tenant_id="",  # Not included in response
             name=strategy.name,
             description=strategy.description or "",
-            status=strategy.status,  # Already proto int
+            status=strategy.status,
             version=strategy.current_version,
             dsl_code=strategy.config_sexpr,
             compiled_json=config_json_str,
@@ -892,7 +889,7 @@ class StrategyServicer:
             tenant_id="",
             name=strategy.name,
             description=strategy.description or "",
-            status=strategy.status,  # Already proto int
+            status=strategy.status,
             version=strategy.current_version,
             created_at=common_pb2.Timestamp(seconds=int(strategy.created_at.timestamp())),
             updated_at=common_pb2.Timestamp(seconds=int(strategy.updated_at.timestamp())),
@@ -933,8 +930,8 @@ class StrategyServicer:
             strategy_id=str(execution.strategy_id),
             tenant_id="",  # Not included in response
             version=execution.version,
-            mode=execution.mode,  # Already proto int
-            status=execution.status,  # Already proto int
+            mode=execution.mode,
+            status=execution.status,
             config_override=config_override_map,
             started_at=common_pb2.Timestamp(seconds=int(execution.started_at.timestamp()))
             if execution.started_at

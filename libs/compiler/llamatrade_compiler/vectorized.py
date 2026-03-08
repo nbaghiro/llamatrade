@@ -46,6 +46,18 @@ AllocationFn = Callable[
     dict[str, NDArray[np.float64]],
 ]
 
+# Type alias for entry/exit signal functions
+# Takes (bars, indicators) and returns boolean array of shape (num_symbols, num_bars)
+SignalFn = Callable[
+    [VectorizedBarData, dict[str, NDArray[np.float64]]],
+    NDArray[np.bool_],
+]
+
+
+def _empty_indicator_dict() -> dict[str, NDArray[np.float64]]:
+    """Factory for empty indicator dict."""
+    return {}
+
 
 @dataclass
 class VectorizedCompiledStrategy:
@@ -60,13 +72,25 @@ class VectorizedCompiledStrategy:
         strategy_name: Name of the strategy
         rebalance_frequency: How often to rebalance (daily, weekly, monthly, etc.)
         benchmark: Benchmark symbol for comparison
+        entry_fn: Optional signal function for entries (for signal-based strategies)
+        exit_fn: Optional signal function for exits (for signal-based strategies)
+        stop_loss_pct: Stop loss percentage (e.g., 5.0 for 5%)
+        take_profit_pct: Take profit percentage (e.g., 10.0 for 10%)
+        position_size_pct: Position size as percentage of equity (e.g., 10.0 for 10%)
     """
 
     allocation_fn: AllocationFn
-    indicators: dict[str, NDArray[np.float64]] = field(default_factory=lambda: {})
+    indicators: dict[str, NDArray[np.float64]] = field(default_factory=_empty_indicator_dict)
     strategy_name: str = ""
     rebalance_frequency: str | None = None
     benchmark: str | None = None
+    # Signal-based strategy functions
+    entry_fn: SignalFn | None = None
+    exit_fn: SignalFn | None = None
+    # Risk management
+    stop_loss_pct: float | None = None
+    take_profit_pct: float | None = None
+    position_size_pct: float = 10.0  # Default 10% of equity per position
 
     def compute_weights(
         self,

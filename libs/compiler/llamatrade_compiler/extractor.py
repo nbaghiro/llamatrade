@@ -4,7 +4,6 @@ from dataclasses import dataclass
 
 from llamatrade_dsl import (
     INDICATORS,
-    Asset,
     Block,
     Comparison,
     Condition,
@@ -13,7 +12,6 @@ from llamatrade_dsl import (
     Group,
     If,
     Indicator,
-    LogicalOp,
     Metric,
     Price,
     Strategy,
@@ -172,7 +170,8 @@ def _extract_from_condition(
         _extract_from_value(condition.fast, indicators)
         _extract_from_value(condition.slow, indicators)
 
-    elif isinstance(condition, LogicalOp):
+    else:
+        # condition is LogicalOp (the only remaining type in the Condition union)
         for operand in condition.operands:
             _extract_from_condition(operand, indicators)
 
@@ -204,9 +203,7 @@ def _extract_from_block(
         for child in block.children:
             _extract_from_block(child, indicators)
 
-    elif isinstance(block, Asset):
-        # Assets don't contain indicators
-        pass
+    # else: block is Asset - assets don't contain indicators
 
 
 def extract_indicators(strategy: Strategy) -> list[IndicatorSpec]:
@@ -284,7 +281,8 @@ def _extract_symbols_from_block(block: Block, symbols: set[str]) -> None:
         for child in block.children:
             _extract_symbols_from_block(child, symbols)
 
-    elif isinstance(block, Asset):
+    else:
+        # block is Asset (the only remaining type in the Block union)
         symbols.add(block.symbol)
 
 
@@ -298,7 +296,8 @@ def _extract_symbols_from_condition(condition: Condition, symbols: set[str]) -> 
         _extract_symbols_from_value(condition.fast, symbols)
         _extract_symbols_from_value(condition.slow, symbols)
 
-    elif isinstance(condition, LogicalOp):
+    else:
+        # condition is LogicalOp (the only remaining type in the Condition union)
         for operand in condition.operands:
             _extract_symbols_from_condition(operand, symbols)
 

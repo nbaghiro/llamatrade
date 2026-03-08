@@ -46,6 +46,120 @@ STRATEGY_STATUS_ACTIVE: StrategyStatus.ValueType  # 2
 STRATEGY_STATUS_PAUSED: StrategyStatus.ValueType  # 3
 STRATEGY_STATUS_ARCHIVED: StrategyStatus.ValueType  # 4
 
+class _TemplateCategory:
+    ValueType = typing.NewType("ValueType", builtins.int)
+    V: _TypeAlias = ValueType  # noqa: Y015
+
+class _TemplateCategoryEnumTypeWrapper(enum_type_wrapper._EnumTypeWrapper[_TemplateCategory.ValueType], builtins.type):
+    DESCRIPTOR: descriptor.EnumDescriptor
+    TEMPLATE_CATEGORY_UNSPECIFIED: _TemplateCategory.ValueType  # 0
+    TEMPLATE_CATEGORY_BUY_AND_HOLD: _TemplateCategory.ValueType  # 1
+    TEMPLATE_CATEGORY_TACTICAL: _TemplateCategory.ValueType  # 2
+    TEMPLATE_CATEGORY_FACTOR: _TemplateCategory.ValueType  # 3
+    TEMPLATE_CATEGORY_INCOME: _TemplateCategory.ValueType  # 4
+    TEMPLATE_CATEGORY_TREND: _TemplateCategory.ValueType  # 5
+    TEMPLATE_CATEGORY_MEAN_REVERSION: _TemplateCategory.ValueType  # 6
+    TEMPLATE_CATEGORY_ALTERNATIVES: _TemplateCategory.ValueType  # 7
+
+class TemplateCategory(_TemplateCategory, metaclass=_TemplateCategoryEnumTypeWrapper):
+    """Template category - primary classification by investment approach"""
+
+TEMPLATE_CATEGORY_UNSPECIFIED: TemplateCategory.ValueType  # 0
+TEMPLATE_CATEGORY_BUY_AND_HOLD: TemplateCategory.ValueType  # 1
+TEMPLATE_CATEGORY_TACTICAL: TemplateCategory.ValueType  # 2
+TEMPLATE_CATEGORY_FACTOR: TemplateCategory.ValueType  # 3
+TEMPLATE_CATEGORY_INCOME: TemplateCategory.ValueType  # 4
+TEMPLATE_CATEGORY_TREND: TemplateCategory.ValueType  # 5
+TEMPLATE_CATEGORY_MEAN_REVERSION: TemplateCategory.ValueType  # 6
+TEMPLATE_CATEGORY_ALTERNATIVES: TemplateCategory.ValueType  # 7
+
+class _AssetClass:
+    ValueType = typing.NewType("ValueType", builtins.int)
+    V: _TypeAlias = ValueType  # noqa: Y015
+
+class _AssetClassEnumTypeWrapper(enum_type_wrapper._EnumTypeWrapper[_AssetClass.ValueType], builtins.type):
+    DESCRIPTOR: descriptor.EnumDescriptor
+    ASSET_CLASS_UNSPECIFIED: _AssetClass.ValueType  # 0
+    ASSET_CLASS_EQUITY: _AssetClass.ValueType  # 1
+    ASSET_CLASS_FIXED_INCOME: _AssetClass.ValueType  # 2
+    ASSET_CLASS_MULTI_ASSET: _AssetClass.ValueType  # 3
+    ASSET_CLASS_CRYPTO: _AssetClass.ValueType  # 4
+    ASSET_CLASS_COMMODITY: _AssetClass.ValueType  # 5
+    ASSET_CLASS_OPTIONS: _AssetClass.ValueType  # 6
+
+class AssetClass(_AssetClass, metaclass=_AssetClassEnumTypeWrapper):
+    """Asset class - what the strategy primarily invests in"""
+
+ASSET_CLASS_UNSPECIFIED: AssetClass.ValueType  # 0
+ASSET_CLASS_EQUITY: AssetClass.ValueType  # 1
+ASSET_CLASS_FIXED_INCOME: AssetClass.ValueType  # 2
+ASSET_CLASS_MULTI_ASSET: AssetClass.ValueType  # 3
+ASSET_CLASS_CRYPTO: AssetClass.ValueType  # 4
+ASSET_CLASS_COMMODITY: AssetClass.ValueType  # 5
+ASSET_CLASS_OPTIONS: AssetClass.ValueType  # 6
+
+class _IndicatorType:
+    ValueType = typing.NewType("ValueType", builtins.int)
+    V: _TypeAlias = ValueType  # noqa: Y015
+
+class _IndicatorTypeEnumTypeWrapper(enum_type_wrapper._EnumTypeWrapper[_IndicatorType.ValueType], builtins.type):
+    DESCRIPTOR: descriptor.EnumDescriptor
+    INDICATOR_TYPE_UNSPECIFIED: _IndicatorType.ValueType  # 0
+    INDICATOR_TYPE_SMA: _IndicatorType.ValueType  # 1
+    INDICATOR_TYPE_EMA: _IndicatorType.ValueType  # 2
+    INDICATOR_TYPE_MACD: _IndicatorType.ValueType  # 3
+    INDICATOR_TYPE_ADX: _IndicatorType.ValueType  # 4
+    INDICATOR_TYPE_RSI: _IndicatorType.ValueType  # 5
+    INDICATOR_TYPE_STOCHASTIC: _IndicatorType.ValueType  # 6
+    INDICATOR_TYPE_CCI: _IndicatorType.ValueType  # 7
+    INDICATOR_TYPE_WILLIAMS_R: _IndicatorType.ValueType  # 8
+    INDICATOR_TYPE_BOLLINGER_BANDS: _IndicatorType.ValueType  # 9
+    INDICATOR_TYPE_ATR: _IndicatorType.ValueType  # 10
+    INDICATOR_TYPE_KELTNER_CHANNEL: _IndicatorType.ValueType  # 11
+    INDICATOR_TYPE_OBV: _IndicatorType.ValueType  # 12
+    INDICATOR_TYPE_MFI: _IndicatorType.ValueType  # 13
+    INDICATOR_TYPE_VWAP: _IndicatorType.ValueType  # 14
+    INDICATOR_TYPE_DONCHIAN_CHANNEL: _IndicatorType.ValueType  # 15
+
+class IndicatorType(_IndicatorType, metaclass=_IndicatorTypeEnumTypeWrapper):
+    """Technical indicator types"""
+
+INDICATOR_TYPE_UNSPECIFIED: IndicatorType.ValueType  # 0
+INDICATOR_TYPE_SMA: IndicatorType.ValueType  # 1
+INDICATOR_TYPE_EMA: IndicatorType.ValueType  # 2
+INDICATOR_TYPE_MACD: IndicatorType.ValueType  # 3
+INDICATOR_TYPE_ADX: IndicatorType.ValueType  # 4
+INDICATOR_TYPE_RSI: IndicatorType.ValueType  # 5
+INDICATOR_TYPE_STOCHASTIC: IndicatorType.ValueType  # 6
+INDICATOR_TYPE_CCI: IndicatorType.ValueType  # 7
+INDICATOR_TYPE_WILLIAMS_R: IndicatorType.ValueType  # 8
+INDICATOR_TYPE_BOLLINGER_BANDS: IndicatorType.ValueType  # 9
+INDICATOR_TYPE_ATR: IndicatorType.ValueType  # 10
+INDICATOR_TYPE_KELTNER_CHANNEL: IndicatorType.ValueType  # 11
+INDICATOR_TYPE_OBV: IndicatorType.ValueType  # 12
+INDICATOR_TYPE_MFI: IndicatorType.ValueType  # 13
+INDICATOR_TYPE_VWAP: IndicatorType.ValueType  # 14
+INDICATOR_TYPE_DONCHIAN_CHANNEL: IndicatorType.ValueType  # 15
+
+class _TemplateDifficulty:
+    ValueType = typing.NewType("ValueType", builtins.int)
+    V: _TypeAlias = ValueType  # noqa: Y015
+
+class _TemplateDifficultyEnumTypeWrapper(enum_type_wrapper._EnumTypeWrapper[_TemplateDifficulty.ValueType], builtins.type):
+    DESCRIPTOR: descriptor.EnumDescriptor
+    TEMPLATE_DIFFICULTY_UNSPECIFIED: _TemplateDifficulty.ValueType  # 0
+    TEMPLATE_DIFFICULTY_BEGINNER: _TemplateDifficulty.ValueType  # 1
+    TEMPLATE_DIFFICULTY_INTERMEDIATE: _TemplateDifficulty.ValueType  # 2
+    TEMPLATE_DIFFICULTY_ADVANCED: _TemplateDifficulty.ValueType  # 3
+
+class TemplateDifficulty(_TemplateDifficulty, metaclass=_TemplateDifficultyEnumTypeWrapper):
+    """Template difficulty level"""
+
+TEMPLATE_DIFFICULTY_UNSPECIFIED: TemplateDifficulty.ValueType  # 0
+TEMPLATE_DIFFICULTY_BEGINNER: TemplateDifficulty.ValueType  # 1
+TEMPLATE_DIFFICULTY_INTERMEDIATE: TemplateDifficulty.ValueType  # 2
+TEMPLATE_DIFFICULTY_ADVANCED: TemplateDifficulty.ValueType  # 3
+
 @typing.final
 class Strategy(message.Message):
     """=============================================================================
@@ -341,7 +455,6 @@ class StrategyTemplate(message.Message):
     ID_FIELD_NUMBER: builtins.int
     NAME_FIELD_NUMBER: builtins.int
     DESCRIPTION_FIELD_NUMBER: builtins.int
-    STRATEGY_TYPE_FIELD_NUMBER: builtins.int
     CATEGORY_FIELD_NUMBER: builtins.int
     ASSET_CLASS_FIELD_NUMBER: builtins.int
     CONFIG_SEXPR_FIELD_NUMBER: builtins.int
@@ -350,34 +463,26 @@ class StrategyTemplate(message.Message):
     id: builtins.str
     name: builtins.str
     description: builtins.str
-    strategy_type: builtins.str
-    """e.g., "allocation", "momentum", "regime" """
-    category: builtins.str
-    """e.g., "buy-and-hold", "tactical", "factor" """
-    asset_class: builtins.str
-    """e.g., "equity", "multi-asset", "crypto" """
+    category: TemplateCategory.ValueType
+    asset_class: AssetClass.ValueType
     config_sexpr: builtins.str
     """S-expression DSL definition"""
-    difficulty: builtins.str
-    """"beginner", "intermediate", "advanced" """
+    difficulty: TemplateDifficulty.ValueType
     @builtins.property
-    def tags(self) -> containers.RepeatedScalarFieldContainer[builtins.str]:
-        """Additional labels"""
-
+    def tags(self) -> containers.RepeatedScalarFieldContainer[builtins.str]: ...
     def __init__(
         self,
         *,
         id: builtins.str = ...,
         name: builtins.str = ...,
         description: builtins.str = ...,
-        strategy_type: builtins.str = ...,
-        category: builtins.str = ...,
-        asset_class: builtins.str = ...,
+        category: TemplateCategory.ValueType = ...,
+        asset_class: AssetClass.ValueType = ...,
         config_sexpr: builtins.str = ...,
         tags: abc.Iterable[builtins.str] | None = ...,
-        difficulty: builtins.str = ...,
+        difficulty: TemplateDifficulty.ValueType = ...,
     ) -> None: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal["asset_class", b"asset_class", "category", b"category", "config_sexpr", b"config_sexpr", "description", b"description", "difficulty", b"difficulty", "id", b"id", "name", b"name", "strategy_type", b"strategy_type", "tags", b"tags"]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["asset_class", b"asset_class", "category", b"category", "config_sexpr", b"config_sexpr", "description", b"description", "difficulty", b"difficulty", "id", b"id", "name", b"name", "tags", b"tags"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -1304,18 +1409,18 @@ class ListTemplatesRequest(message.Message):
     CATEGORY_FIELD_NUMBER: builtins.int
     ASSET_CLASS_FIELD_NUMBER: builtins.int
     DIFFICULTY_FIELD_NUMBER: builtins.int
-    category: builtins.str
+    category: TemplateCategory.ValueType
     """Optional: filter by category"""
-    asset_class: builtins.str
+    asset_class: AssetClass.ValueType
     """Optional: filter by asset class"""
-    difficulty: builtins.str
+    difficulty: TemplateDifficulty.ValueType
     """Optional: filter by difficulty"""
     def __init__(
         self,
         *,
-        category: builtins.str = ...,
-        asset_class: builtins.str = ...,
-        difficulty: builtins.str = ...,
+        category: TemplateCategory.ValueType = ...,
+        asset_class: AssetClass.ValueType = ...,
+        difficulty: TemplateDifficulty.ValueType = ...,
     ) -> None: ...
     _ClearFieldArgType: _TypeAlias = typing.Literal["asset_class", b"asset_class", "category", b"category", "difficulty", b"difficulty"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...

@@ -321,9 +321,9 @@ class OrderExecutor(OrderSubmissionMixin):
                     order_id=order.id,
                     alpaca_order_id=order.alpaca_order_id,
                     symbol=order.symbol,
-                    side=order.side,
+                    side=order_side_to_str(order.side),
                     qty=float(order.qty),
-                    order_type=order.order_type,
+                    order_type=order_type_to_str(order.order_type),
                     filled_qty=float(order.filled_qty),
                     filled_avg_price=filled_price,
                 )
@@ -398,7 +398,7 @@ class OrderExecutor(OrderSubmissionMixin):
         # Process results
         for (order, _), alpaca_order in zip(orders_with_ids, alpaca_results, strict=False):
             # Skip if fetch failed (exception returned)
-            if isinstance(alpaca_order, Exception):
+            if isinstance(alpaca_order, BaseException):
                 continue
             if not alpaca_order:
                 continue

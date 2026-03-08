@@ -6,7 +6,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator
 
-from llamatrade_proto.generated.backtest_pb2 import (  # noqa: F401
+from llamatrade_proto.generated.backtest_pb2 import (
     BACKTEST_STATUS_CANCELLED,
     BACKTEST_STATUS_COMPLETED,
     BACKTEST_STATUS_FAILED,
@@ -15,22 +15,35 @@ from llamatrade_proto.generated.backtest_pb2 import (  # noqa: F401
     BacktestStatus,
 )
 
+# Re-export proto constants for convenience
+__all__ = [
+    "BACKTEST_STATUS_CANCELLED",
+    "BACKTEST_STATUS_COMPLETED",
+    "BACKTEST_STATUS_FAILED",
+    "BACKTEST_STATUS_PENDING",
+    "BACKTEST_STATUS_RUNNING",
+    "BacktestStatus",
+]
+
 # ===================
-# Conversion helpers: proto int -> str (for display/API)
+# Conversion helpers: proto ValueType -> str (for display/API)
 # ===================
 
 _BACKTEST_STATUS_PREFIX = "BACKTEST_STATUS_"
 
 
-def backtest_status_to_str(value: int) -> str:
-    """Convert BacktestStatus proto int to string."""
+def backtest_status_to_str(value: BacktestStatus.ValueType) -> str:
+    """Convert BacktestStatus proto value to string."""
     name = BacktestStatus.Name(value)
     if name.startswith(_BACKTEST_STATUS_PREFIX):
         return name[len(_BACKTEST_STATUS_PREFIX) :].lower()
     return name.lower()
 
 
-# Valid timeframes for backtesting
+# Valid timeframes for backtesting.
+# These values mirror the Timeframe enum in market_data.proto (single source of truth).
+# The string format here is used for API/display; proto uses integer constants internally.
+# See: libs/proto/llamatrade_proto/protos/market_data.proto
 VALID_TIMEFRAMES = ("1Min", "5Min", "15Min", "30Min", "1H", "4H", "1D", "1W")
 TimeframeType = Literal["1Min", "5Min", "15Min", "30Min", "1H", "4H", "1D", "1W"]
 
@@ -127,7 +140,7 @@ class BacktestResponse(BaseModel):
     start_date: datetime
     end_date: datetime
     initial_capital: float
-    status: int  # BacktestStatus proto value
+    status: BacktestStatus.ValueType
     progress: float = 0
     error_message: str | None = None
     created_at: datetime

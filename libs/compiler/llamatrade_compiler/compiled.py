@@ -54,6 +54,16 @@ def _empty_indicator_cache() -> dict[str, NDArray[np.float64]]:
     return {}
 
 
+def _empty_symbol_set() -> set[str]:
+    """Factory for empty symbol set."""
+    return set()
+
+
+def _empty_allocation() -> dict[str, float]:
+    """Factory for empty allocation dict."""
+    return {}
+
+
 @dataclass
 class CompiledStrategy:
     """A compiled allocation strategy ready for execution.
@@ -70,13 +80,13 @@ class CompiledStrategy:
 
     strategy: Strategy
     indicators: list[IndicatorSpec] = field(default_factory=_empty_indicator_list)
-    symbols: set[str] = field(default_factory=set)
+    symbols: set[str] = field(default_factory=_empty_symbol_set)
     min_bars: int = 0
     _bar_history: dict[str, list[Bar]] = field(default_factory=_empty_bar_history, repr=False)
     _indicator_cache: dict[str, NDArray[np.float64]] = field(
         default_factory=_empty_indicator_cache, repr=False
     )
-    _last_allocation: dict[str, float] = field(default_factory=dict, repr=False)
+    _last_allocation: dict[str, float] = field(default_factory=_empty_allocation, repr=False)
 
     @classmethod
     def compile(cls, strategy: Strategy) -> CompiledStrategy:
@@ -107,6 +117,11 @@ class CompiledStrategy:
         self._bar_history = {}
         self._indicator_cache = {}
         self._last_allocation = {}
+
+    @property
+    def indicator_cache(self) -> dict[str, NDArray[np.float64]]:
+        """Get the indicator cache (for inspection/debugging)."""
+        return self._indicator_cache
 
     def add_bars(self, bars: dict[str, Bar]) -> None:
         """Add bars for all symbols.
@@ -238,10 +253,8 @@ class CompiledStrategy:
         if isinstance(block, If):
             return self._evaluate_if(block, state)
 
-        if isinstance(block, Filter):
-            return self._evaluate_filter(block, state)
-
-        return {}
+        # block is Filter (the only remaining type in the Block union)
+        return self._evaluate_filter(block, state)
 
     def _evaluate_children(self, children: list[Block], state: EvaluationState) -> dict[str, float]:
         """Evaluate multiple children and combine their weights."""
@@ -397,7 +410,7 @@ class CompiledStrategy:
                 if len(bars) >= lookback:
                     closes = np.array([b.close for b in bars[-lookback:]])
                     returns = np.diff(closes) / closes[:-1]
-                    vol = np.std(returns) if len(returns) > 0 else 0
+                    vol = float(np.std(returns)) if len(returns) > 0 else 0.0
                     volatilities[symbol] = vol if vol > 0 else 0.0001
                 else:
                     volatilities[symbol] = 0.0001

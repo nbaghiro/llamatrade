@@ -439,9 +439,9 @@ class PortfolioServicer:
 
             # Build filters - proto enum values are passed directly as ints
             filters = ListPerformanceFilters()
-            if request.mode != portfolio_pb2.EXECUTION_MODE_UNSPECIFIED:
+            if request.mode != common_pb2.EXECUTION_MODE_UNSPECIFIED:
                 filters.mode = request.mode
-            if request.status != portfolio_pb2.EXECUTION_STATUS_UNSPECIFIED:
+            if request.status != common_pb2.EXECUTION_STATUS_UNSPECIFIED:
                 filters.status = request.status
 
             async with await self._get_db() as db:
@@ -658,39 +658,45 @@ class PortfolioServicer:
             timestamp=common_pb2.Timestamp(seconds=int(txn.created_at.timestamp())),
         )
 
-    def _to_proto_transaction_type(self, txn_type: TransactionType) -> int:
-        """Convert internal transaction type to proto enum value."""
+    def _to_proto_transaction_type(self, txn_type: int) -> portfolio_pb2.TransactionType.ValueType:
+        """Convert transaction type int to proto ValueType."""
         from llamatrade_proto.generated import portfolio_pb2
 
-        from src.models import TransactionType
-
-        type_map = {
-            TransactionType.DEPOSIT: portfolio_pb2.TRANSACTION_TYPE_DEPOSIT,
-            TransactionType.WITHDRAWAL: portfolio_pb2.TRANSACTION_TYPE_WITHDRAWAL,
-            TransactionType.BUY: portfolio_pb2.TRANSACTION_TYPE_BUY,
-            TransactionType.SELL: portfolio_pb2.TRANSACTION_TYPE_SELL,
-            TransactionType.DIVIDEND: portfolio_pb2.TRANSACTION_TYPE_DIVIDEND,
-            TransactionType.INTEREST: portfolio_pb2.TRANSACTION_TYPE_INTEREST,
-            TransactionType.FEE: portfolio_pb2.TRANSACTION_TYPE_FEE,
+        # Return the value - it's already a valid TransactionType int
+        valid_types: set[portfolio_pb2.TransactionType.ValueType] = {
+            portfolio_pb2.TRANSACTION_TYPE_DEPOSIT,
+            portfolio_pb2.TRANSACTION_TYPE_WITHDRAWAL,
+            portfolio_pb2.TRANSACTION_TYPE_BUY,
+            portfolio_pb2.TRANSACTION_TYPE_SELL,
+            portfolio_pb2.TRANSACTION_TYPE_DIVIDEND,
+            portfolio_pb2.TRANSACTION_TYPE_INTEREST,
+            portfolio_pb2.TRANSACTION_TYPE_FEE,
         }
-        return type_map.get(txn_type, portfolio_pb2.TRANSACTION_TYPE_UNSPECIFIED)
+        for valid_type in valid_types:
+            if txn_type == valid_type:
+                return valid_type
+        return portfolio_pb2.TRANSACTION_TYPE_DEPOSIT
 
-    def _from_proto_transaction_type(self, txn_type: int) -> TransactionType:
-        """Convert proto transaction type to internal type."""
+    def _from_proto_transaction_type(
+        self, txn_type: int
+    ) -> portfolio_pb2.TransactionType.ValueType:
+        """Convert proto transaction type int to ValueType."""
         from llamatrade_proto.generated import portfolio_pb2
 
-        from src.models import TransactionType
-
-        type_map: dict[int, TransactionType] = {
-            portfolio_pb2.TRANSACTION_TYPE_DEPOSIT: TransactionType.DEPOSIT,
-            portfolio_pb2.TRANSACTION_TYPE_WITHDRAWAL: TransactionType.WITHDRAWAL,
-            portfolio_pb2.TRANSACTION_TYPE_BUY: TransactionType.BUY,
-            portfolio_pb2.TRANSACTION_TYPE_SELL: TransactionType.SELL,
-            portfolio_pb2.TRANSACTION_TYPE_DIVIDEND: TransactionType.DIVIDEND,
-            portfolio_pb2.TRANSACTION_TYPE_INTEREST: TransactionType.INTEREST,
-            portfolio_pb2.TRANSACTION_TYPE_FEE: TransactionType.FEE,
+        # Validate the value is a known transaction type
+        valid_types: set[portfolio_pb2.TransactionType.ValueType] = {
+            portfolio_pb2.TRANSACTION_TYPE_DEPOSIT,
+            portfolio_pb2.TRANSACTION_TYPE_WITHDRAWAL,
+            portfolio_pb2.TRANSACTION_TYPE_BUY,
+            portfolio_pb2.TRANSACTION_TYPE_SELL,
+            portfolio_pb2.TRANSACTION_TYPE_DIVIDEND,
+            portfolio_pb2.TRANSACTION_TYPE_INTEREST,
+            portfolio_pb2.TRANSACTION_TYPE_FEE,
         }
-        return type_map.get(txn_type, TransactionType.DEPOSIT)
+        for valid_type in valid_types:
+            if txn_type == valid_type:
+                return valid_type
+        return portfolio_pb2.TRANSACTION_TYPE_DEPOSIT
 
     def _to_proto_strategy_summary(
         self, summary: StrategyPerformanceSummary
@@ -698,24 +704,24 @@ class PortfolioServicer:
         """Convert internal strategy summary to proto."""
         from llamatrade_proto.generated import common_pb2, portfolio_pb2
 
-        mode_map = {
-            "paper": portfolio_pb2.EXECUTION_MODE_PAPER,
-            "live": portfolio_pb2.EXECUTION_MODE_LIVE,
+        mode_map: dict[str, common_pb2.ExecutionMode.ValueType] = {
+            "paper": common_pb2.EXECUTION_MODE_PAPER,
+            "live": common_pb2.EXECUTION_MODE_LIVE,
         }
-        status_map = {
-            "pending": portfolio_pb2.EXECUTION_STATUS_UNSPECIFIED,
-            "running": portfolio_pb2.EXECUTION_STATUS_RUNNING,
-            "paused": portfolio_pb2.EXECUTION_STATUS_PAUSED,
-            "stopped": portfolio_pb2.EXECUTION_STATUS_STOPPED,
-            "error": portfolio_pb2.EXECUTION_STATUS_ERROR,
+        status_map: dict[str, common_pb2.ExecutionStatus.ValueType] = {
+            "pending": common_pb2.EXECUTION_STATUS_PENDING,
+            "running": common_pb2.EXECUTION_STATUS_RUNNING,
+            "paused": common_pb2.EXECUTION_STATUS_PAUSED,
+            "stopped": common_pb2.EXECUTION_STATUS_STOPPED,
+            "error": common_pb2.EXECUTION_STATUS_ERROR,
         }
 
         return portfolio_pb2.StrategyPerformanceSummary(
             execution_id=str(summary.execution_id),
             strategy_id=str(summary.strategy_id),
             strategy_name=summary.strategy_name,
-            mode=mode_map.get(summary.mode, portfolio_pb2.EXECUTION_MODE_UNSPECIFIED),
-            status=status_map.get(summary.status, portfolio_pb2.EXECUTION_STATUS_UNSPECIFIED),
+            mode=mode_map.get(summary.mode, common_pb2.EXECUTION_MODE_UNSPECIFIED),
+            status=status_map.get(summary.status, common_pb2.EXECUTION_STATUS_UNSPECIFIED),
             color=summary.color or "",
             allocated_capital=common_pb2.Decimal(
                 value=str(summary.allocated_capital) if summary.allocated_capital else "0"
@@ -804,7 +810,7 @@ class PortfolioServicer:
 # Type aliases for method signatures (imported lazily)
 from llamatrade_proto.generated import portfolio_pb2, trading_pb2
 
-from src.models import PortfolioSummary, PositionResponse, TransactionResponse, TransactionType
+from src.models import PortfolioSummary, PositionResponse, TransactionResponse
 from src.services.strategy_performance_service import (
     LiveMetrics,
     PeriodReturns,

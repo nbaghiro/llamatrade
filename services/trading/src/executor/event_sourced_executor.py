@@ -11,7 +11,7 @@ import logging
 import time
 from datetime import UTC, datetime
 from decimal import Decimal
-from typing import Any, Literal, cast
+from typing import Any, Literal
 from uuid import UUID, uuid4
 
 from llamatrade_alpaca import AlpacaError, OrderNotFoundError, TradingClient
@@ -23,6 +23,8 @@ from llamatrade_proto.generated.trading_pb2 import (
     ORDER_TYPE_LIMIT,
     ORDER_TYPE_STOP_LIMIT,
     TIME_IN_FORCE_GTC,
+    OrderSide,
+    TimeInForce,
 )
 
 from src.events.aggregates import SessionState
@@ -191,7 +193,7 @@ class EventSourcedOrderExecutor(OrderSubmissionMixin):
                     tenant_id=tenant_id,
                     session_id=session_id,
                     symbol=order.symbol,
-                    signal_type=self._side_to_signal_type(order.side),
+                    signal_type=order_side_to_str(order.side),
                     reason="risk_check_failed",
                     details={"violations": risk_result.violations},
                 )
@@ -215,16 +217,10 @@ class EventSourcedOrderExecutor(OrderSubmissionMixin):
                 order_id=order_id,
                 client_order_id=client_order_id,
                 symbol=order.symbol.upper(),
-                side=cast(Literal["buy", "sell"], order_side_to_str(order.side)),
+                side=order_side_to_str(order.side),
                 qty=Decimal(str(order.qty)),
-                order_type=cast(
-                    Literal["market", "limit", "stop", "stop_limit"],
-                    order_type_to_str(order.order_type),
-                ),
-                time_in_force=cast(
-                    Literal["day", "gtc", "ioc", "fok"],
-                    time_in_force_to_str(order.time_in_force),
-                ),
+                order_type=order_type_to_str(order.order_type),
+                time_in_force=time_in_force_to_str(order.time_in_force),
                 limit_price=Decimal(str(order.limit_price)) if order.limit_price else None,
                 stop_price=Decimal(str(order.stop_price)) if order.stop_price else None,
                 stop_loss_price=(
@@ -323,7 +319,7 @@ class EventSourcedOrderExecutor(OrderSubmissionMixin):
         tenant_id: UUID,
         session_id: UUID,
         symbol: str,
-        signal_type: Literal["buy", "sell", "short", "cover"],
+        signal_type: OrderSide.ValueType,
         price: Decimal,
         qty: Decimal,
         confidence: float = 1.0,
@@ -339,7 +335,7 @@ class EventSourcedOrderExecutor(OrderSubmissionMixin):
                 tenant_id=tenant_id,
                 session_id=session_id,
                 symbol=symbol,
-                signal_type=signal_type,
+                signal_type=order_side_to_str(signal_type),
                 price=price,
                 qty=qty,
                 confidence=confidence,
@@ -558,12 +554,12 @@ class EventSourcedOrderExecutor(OrderSubmissionMixin):
         parent_order_id: UUID,
         parent_client_order_id: str,
         symbol: str,
-        entry_side: int,
+        entry_side: OrderSide.ValueType,
         qty: Decimal,
         filled_price: Decimal,
         stop_loss_price: Decimal | None = None,
         take_profit_price: Decimal | None = None,
-        bracket_time_in_force: int = TIME_IN_FORCE_GTC,
+        bracket_time_in_force: TimeInForce.ValueType = TIME_IN_FORCE_GTC,
     ) -> tuple[UUID | None, UUID | None]:
         """Submit bracket orders (stop-loss and/or take-profit) after main order fills.
 
@@ -633,10 +629,10 @@ class EventSourcedOrderExecutor(OrderSubmissionMixin):
         parent_client_order_id: str,
         bracket_type: int,
         symbol: str,
-        exit_side: int,
+        exit_side: OrderSide.ValueType,
         qty: Decimal,
         trigger_price: Decimal,
-        time_in_force: int,
+        time_in_force: TimeInForce.ValueType,
     ) -> UUID | None:
         """Submit a single bracket order (SL or TP).
 
@@ -671,11 +667,9 @@ class EventSourcedOrderExecutor(OrderSubmissionMixin):
                 session_id=session_id,
                 order_id=order_id,
                 parent_order_id=parent_order_id,
-                bracket_type=cast(
-                    Literal["stop_loss", "take_profit"], bracket_type_to_str(bracket_type)
-                ),
+                bracket_type=bracket_type_to_str(bracket_type),
                 symbol=symbol,
-                side=cast(Literal["buy", "sell"], order_side_to_str(exit_side)),
+                side=order_side_to_str(exit_side),
                 qty=qty,
                 trigger_price=trigger_price,
                 limit_price=limit_price,
@@ -704,9 +698,7 @@ class EventSourcedOrderExecutor(OrderSubmissionMixin):
                     session_id=session_id,
                     order_id=order_id,
                     parent_order_id=parent_order_id,
-                    bracket_type=cast(
-                        Literal["stop_loss", "take_profit"], bracket_type_to_str(bracket_type)
-                    ),
+                    bracket_type=bracket_type_to_str(bracket_type),
                     broker_order_id=broker_order_id,
                 )
             )
@@ -764,9 +756,7 @@ class EventSourcedOrderExecutor(OrderSubmissionMixin):
                 session_id=session_id,
                 order_id=filled_order_id,
                 parent_order_id=parent_order_id,
-                bracket_type=cast(
-                    Literal["stop_loss", "take_profit"], bracket_type_to_str(bracket_type)
-                ),
+                bracket_type=bracket_type_to_str(bracket_type),
                 symbol=symbol,
                 filled_qty=filled_qty,
                 filled_avg_price=filled_price,
@@ -904,7 +894,7 @@ class EventSourcedOrderExecutor(OrderSubmissionMixin):
                 session_id=session_id,
                 order_id=order_id,
                 symbol=order.symbol.upper(),
-                side=cast(Literal["buy", "sell"], order_side_to_str(order.side)),
+                side=order_side_to_str(order.side),
                 filled_qty=filled_qty,
                 filled_avg_price=filled_price,
             )
@@ -947,16 +937,10 @@ class EventSourcedOrderExecutor(OrderSubmissionMixin):
                 order_id=order_id,
                 client_order_id=client_order_id,
                 symbol=order.symbol.upper(),
-                side=cast(Literal["buy", "sell"], order_side_to_str(order.side)),
+                side=order_side_to_str(order.side),
                 qty=Decimal(str(order.qty)),
-                order_type=cast(
-                    Literal["market", "limit", "stop", "stop_limit"],
-                    order_type_to_str(order.order_type),
-                ),
-                time_in_force=cast(
-                    Literal["day", "gtc", "ioc", "fok"],
-                    time_in_force_to_str(order.time_in_force),
-                ),
+                order_type=order_type_to_str(order.order_type),
+                time_in_force=time_in_force_to_str(order.time_in_force),
                 limit_price=Decimal(str(order.limit_price)) if order.limit_price else None,
                 stop_price=Decimal(str(order.stop_price)) if order.stop_price else None,
             )

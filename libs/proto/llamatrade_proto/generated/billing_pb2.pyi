@@ -84,6 +84,29 @@ BILLING_INTERVAL_UNSPECIFIED: BillingInterval.ValueType  # 0
 BILLING_INTERVAL_MONTHLY: BillingInterval.ValueType  # 1
 BILLING_INTERVAL_YEARLY: BillingInterval.ValueType  # 2
 
+class _InvoiceStatus:
+    ValueType = typing.NewType("ValueType", builtins.int)
+    V: _TypeAlias = ValueType  # noqa: Y015
+
+class _InvoiceStatusEnumTypeWrapper(enum_type_wrapper._EnumTypeWrapper[_InvoiceStatus.ValueType], builtins.type):
+    DESCRIPTOR: descriptor.EnumDescriptor
+    INVOICE_STATUS_UNSPECIFIED: _InvoiceStatus.ValueType  # 0
+    INVOICE_STATUS_DRAFT: _InvoiceStatus.ValueType  # 1
+    INVOICE_STATUS_OPEN: _InvoiceStatus.ValueType  # 2
+    INVOICE_STATUS_PAID: _InvoiceStatus.ValueType  # 3
+    INVOICE_STATUS_VOID: _InvoiceStatus.ValueType  # 4
+    INVOICE_STATUS_UNCOLLECTIBLE: _InvoiceStatus.ValueType  # 5
+
+class InvoiceStatus(_InvoiceStatus, metaclass=_InvoiceStatusEnumTypeWrapper):
+    """Invoice status"""
+
+INVOICE_STATUS_UNSPECIFIED: InvoiceStatus.ValueType  # 0
+INVOICE_STATUS_DRAFT: InvoiceStatus.ValueType  # 1
+INVOICE_STATUS_OPEN: InvoiceStatus.ValueType  # 2
+INVOICE_STATUS_PAID: InvoiceStatus.ValueType  # 3
+INVOICE_STATUS_VOID: InvoiceStatus.ValueType  # 4
+INVOICE_STATUS_UNCOLLECTIBLE: InvoiceStatus.ValueType  # 5
+
 @typing.final
 class Plan(message.Message):
     """=============================================================================
@@ -320,8 +343,7 @@ class Invoice(message.Message):
     id: builtins.str
     tenant_id: builtins.str
     subscription_id: builtins.str
-    status: builtins.str
-    """"draft", "open", "paid", "void", "uncollectible" """
+    status: InvoiceStatus.ValueType
     pdf_url: builtins.str
     stripe_invoice_id: builtins.str
     @builtins.property
@@ -349,7 +371,7 @@ class Invoice(message.Message):
         amount: common_pb2.Money | None = ...,
         amount_paid: common_pb2.Money | None = ...,
         amount_remaining: common_pb2.Money | None = ...,
-        status: builtins.str = ...,
+        status: InvoiceStatus.ValueType = ...,
         period_start: common_pb2.Timestamp | None = ...,
         period_end: common_pb2.Timestamp | None = ...,
         due_date: common_pb2.Timestamp | None = ...,

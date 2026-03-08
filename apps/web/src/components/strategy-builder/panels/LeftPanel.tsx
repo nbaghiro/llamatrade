@@ -3,7 +3,6 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 import { useStrategyBuilderStore } from '../../../store/strategy-builder';
-import type { StrategyType } from '../../../types/strategy';
 import { Select } from '../../common/Select';
 import { ThemeSwitcher } from '../ThemeSwitcher';
 
@@ -16,14 +15,6 @@ const TIMEFRAME_OPTIONS = [
   { value: '1D', label: 'Daily' },
   { value: '1W', label: 'Weekly' },
   { value: '1M', label: 'Monthly' },
-];
-
-const TYPE_OPTIONS: { value: StrategyType; label: string }[] = [
-  { value: 'trend_following', label: 'Trend Following' },
-  { value: 'mean_reversion', label: 'Mean Reversion' },
-  { value: 'momentum', label: 'Momentum' },
-  { value: 'breakout', label: 'Breakout' },
-  { value: 'custom', label: 'Custom' },
 ];
 
 export function LeftPanel() {
@@ -40,12 +31,10 @@ export function LeftPanel() {
     strategyId,
     strategyName,
     strategyDescription,
-    strategyType,
     timeframe,
     isDirty,
     setStrategyName,
     setStrategyDescription,
-    setStrategyType,
     setTimeframe,
     // Async
     saving,
@@ -203,18 +192,6 @@ export function LeftPanel() {
                 onChange={handleDescriptionChange}
                 rows={3}
                 className="w-full px-3 py-2 text-sm border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder:text-gray-400 focus:border-blue-400 focus:ring-1 focus:ring-blue-400 outline-none resize-none"
-              />
-            </div>
-
-            {/* Strategy Type */}
-            <div>
-              <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">
-                Strategy Type
-              </label>
-              <Select
-                value={strategyType}
-                onChange={(e) => setStrategyType(e.target.value as StrategyType)}
-                options={TYPE_OPTIONS}
               />
             </div>
 

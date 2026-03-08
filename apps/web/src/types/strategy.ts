@@ -6,18 +6,24 @@ import {
   ExecutionMode,
   ExecutionStatus,
 } from '../generated/proto/common_pb';
-import { StrategyStatus } from '../generated/proto/strategy_pb';
+import {
+  AssetClass,
+  IndicatorType,
+  StrategyStatus,
+  TemplateCategory,
+  TemplateDifficulty,
+} from '../generated/proto/strategy_pb';
 
 // Re-export proto enums for use in this module
-export { StrategyStatus, ExecutionStatus, ExecutionMode };
-
-// Trading approach type - describes the trading strategy's approach/philosophy
-// This is a frontend-only concept derived from strategy configuration/tags
-// Not defined in proto as it's UI categorization
-export type TradingApproach = 'trend_following' | 'mean_reversion' | 'momentum' | 'breakout' | 'custom';
-
-// StrategyType is used for trading approach categorization in the UI
-export type StrategyType = TradingApproach;
+export {
+  AssetClass,
+  ExecutionMode,
+  ExecutionStatus,
+  IndicatorType,
+  StrategyStatus,
+  TemplateCategory,
+  TemplateDifficulty,
+};
 
 // ============================================
 // Enum Display Helpers
@@ -65,24 +71,99 @@ export function getExecutionModeLabel(mode: ExecutionMode): string {
       return 'Unknown';
   }
 }
-export type IndicatorType =
-  | 'sma'
-  | 'ema'
-  | 'macd'
-  | 'adx'
-  | 'rsi'
-  | 'stochastic'
-  | 'cci'
-  | 'williams_r'
-  | 'bollinger_bands'
-  | 'atr'
-  | 'keltner_channel'
-  | 'obv'
-  | 'mfi'
-  | 'vwap'
-  | 'donchian_channel';
+
+export function getTemplateCategoryLabel(category: TemplateCategory): string {
+  switch (category) {
+    case TemplateCategory.BUY_AND_HOLD:
+      return 'Buy & Hold';
+    case TemplateCategory.TACTICAL:
+      return 'Tactical';
+    case TemplateCategory.FACTOR:
+      return 'Factor';
+    case TemplateCategory.INCOME:
+      return 'Income';
+    case TemplateCategory.TREND:
+      return 'Trend';
+    case TemplateCategory.MEAN_REVERSION:
+      return 'Mean Reversion';
+    case TemplateCategory.ALTERNATIVES:
+      return 'Alternatives';
+    default:
+      return 'Unknown';
+  }
+}
+
+export function getAssetClassLabel(assetClass: AssetClass): string {
+  switch (assetClass) {
+    case AssetClass.EQUITY:
+      return 'Equity';
+    case AssetClass.FIXED_INCOME:
+      return 'Fixed Income';
+    case AssetClass.MULTI_ASSET:
+      return 'Multi-Asset';
+    case AssetClass.CRYPTO:
+      return 'Crypto';
+    case AssetClass.COMMODITY:
+      return 'Commodity';
+    case AssetClass.OPTIONS:
+      return 'Options';
+    default:
+      return 'Unknown';
+  }
+}
+
+export function getIndicatorTypeLabel(indicator: IndicatorType): string {
+  switch (indicator) {
+    case IndicatorType.SMA:
+      return 'SMA';
+    case IndicatorType.EMA:
+      return 'EMA';
+    case IndicatorType.MACD:
+      return 'MACD';
+    case IndicatorType.ADX:
+      return 'ADX';
+    case IndicatorType.RSI:
+      return 'RSI';
+    case IndicatorType.STOCHASTIC:
+      return 'Stochastic';
+    case IndicatorType.CCI:
+      return 'CCI';
+    case IndicatorType.WILLIAMS_R:
+      return "Williams %R";
+    case IndicatorType.BOLLINGER_BANDS:
+      return 'Bollinger Bands';
+    case IndicatorType.ATR:
+      return 'ATR';
+    case IndicatorType.KELTNER_CHANNEL:
+      return 'Keltner Channel';
+    case IndicatorType.OBV:
+      return 'OBV';
+    case IndicatorType.MFI:
+      return 'MFI';
+    case IndicatorType.VWAP:
+      return 'VWAP';
+    case IndicatorType.DONCHIAN_CHANNEL:
+      return 'Donchian Channel';
+    default:
+      return 'Unknown';
+  }
+}
+
+export function getTemplateDifficultyLabel(difficulty: TemplateDifficulty): string {
+  switch (difficulty) {
+    case TemplateDifficulty.BEGINNER:
+      return 'Beginner';
+    case TemplateDifficulty.INTERMEDIATE:
+      return 'Intermediate';
+    case TemplateDifficulty.ADVANCED:
+      return 'Advanced';
+    default:
+      return 'Unknown';
+  }
+}
+
+// IndicatorCategory is UI-only categorization for display purposes
 export type IndicatorCategory = 'trend' | 'momentum' | 'volatility' | 'volume' | 'channel';
-export type TemplateDifficulty = 'beginner' | 'intermediate' | 'advanced';
 
 // Request schemas
 export interface StrategyCreate {
@@ -118,7 +199,6 @@ export interface StrategyResponse {
   id: string;
   name: string;
   description: string | null;
-  strategy_type: StrategyType;
   status: StrategyStatus;
   current_version: number;
   created_at: string;
@@ -127,7 +207,6 @@ export interface StrategyResponse {
 
 export interface StrategyConfigJSON {
   name?: string;
-  type?: StrategyType;
   symbols: string[];
   timeframe: string;
   entry?: unknown;
@@ -179,7 +258,8 @@ export interface TemplateResponse {
   id: string;
   name: string;
   description: string | null;
-  strategy_type: StrategyType;
+  category: TemplateCategory;
+  asset_class: AssetClass;
   config_sexpr: string;
   config_json: StrategyConfigJSON;
   tags: string[];
@@ -218,11 +298,11 @@ export interface StrategyListParams {
   page?: number;
   page_size?: number;
   status?: StrategyStatus;
-  strategy_type?: StrategyType;
 }
 
 export interface TemplateListParams {
-  strategy_type?: StrategyType;
+  category?: TemplateCategory;
+  asset_class?: AssetClass;
   difficulty?: TemplateDifficulty;
 }
 

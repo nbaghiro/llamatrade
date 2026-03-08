@@ -105,10 +105,22 @@ venvPath = "."
 venv = ".venv"
 pythonVersion = "3.14"
 typeCheckingMode = "strict"
-# Include services and libs (src directories only, not tests)
+# Include services and libs (explicitly listed)
 include = [
-    "services/*/src",
-    "libs/*",
+    "services/auth/src",
+    "services/backtest/src",
+    "services/billing/src",
+    "services/market-data/src",
+    "services/notification/src",
+    "services/portfolio/src",
+    "services/strategy/src",
+    "services/trading/src",
+    "libs/alpaca",
+    "libs/common",
+    "libs/compiler",
+    "libs/db",
+    "libs/dsl",
+    "libs/proto",
 ]
 # Exclude generated code, tests, and proto client/server wrappers (gRPC types)
 exclude = [
@@ -122,30 +134,26 @@ exclude = [
     "libs/proto/llamatrade_proto/interceptors/**",
     "libs/proto/llamatrade_proto/server/**",
 ]
+# Type checking settings
 reportMissingImports = true
 reportMissingTypeStubs = false
-# Suppress import resolution issues for internal src.* imports
-reportAttributeAccessIssue = false
-# Suppress calls on Optional types (common with dependency injection patterns)
-reportOptionalCall = false
-reportOptionalMemberAccess = false
 # Extra paths for editable installs (Pyright doesn't read .pth files)
 extraPaths = [
-    "libs/proto",
+    "libs/alpaca",
     "libs/common",
+    "libs/compiler",
     "libs/db",
     "libs/dsl",
-    "libs/compiler",
-    "libs/alpaca",
+    "libs/proto",
 ]
+# All libs available to all services (alphabetically sorted for consistency)
 executionEnvironments = [
-    # Service roots with their dependencies
-    { root = "services/auth", extraPaths = ["services/auth", "libs/proto", "libs/common", "libs/db", "libs/alpaca"] },
-    { root = "services/backtest", extraPaths = ["services/backtest", "libs/proto", "libs/common", "libs/db", "libs/dsl", "libs/compiler"] },
-    { root = "services/billing", extraPaths = ["services/billing", "libs/proto", "libs/common", "libs/db"] },
-    { root = "services/market-data", extraPaths = ["services/market-data", "libs/proto", "libs/common", "libs/db", "libs/alpaca"] },
-    { root = "services/notification", extraPaths = ["services/notification", "libs/proto", "libs/common", "libs/db"] },
-    { root = "services/portfolio", extraPaths = ["services/portfolio", "libs/proto", "libs/common", "libs/db"] },
-    { root = "services/strategy", extraPaths = ["services/strategy", "libs/proto", "libs/common", "libs/db", "libs/dsl", "libs/compiler"] },
-    { root = "services/trading", extraPaths = ["services/trading", "libs/proto", "libs/common", "libs/db", "libs/dsl", "libs/compiler", "libs/alpaca"] },
+    { root = "services/auth", extraPaths = ["services/auth", "libs/alpaca", "libs/common", "libs/compiler", "libs/db", "libs/dsl", "libs/proto"] },
+    { root = "services/backtest", extraPaths = ["services/backtest", "libs/alpaca", "libs/common", "libs/compiler", "libs/db", "libs/dsl", "libs/proto"] },
+    { root = "services/billing", extraPaths = ["services/billing", "libs/alpaca", "libs/common", "libs/compiler", "libs/db", "libs/dsl", "libs/proto"] },
+    { root = "services/market-data", extraPaths = ["services/market-data", "libs/alpaca", "libs/common", "libs/compiler", "libs/db", "libs/dsl", "libs/proto"] },
+    { root = "services/notification", extraPaths = ["services/notification", "libs/alpaca", "libs/common", "libs/compiler", "libs/db", "libs/dsl", "libs/proto"] },
+    { root = "services/portfolio", extraPaths = ["services/portfolio", "libs/alpaca", "libs/common", "libs/compiler", "libs/db", "libs/dsl", "libs/proto"] },
+    { root = "services/strategy", extraPaths = ["services/strategy", "libs/alpaca", "libs/common", "libs/compiler", "libs/db", "libs/dsl", "libs/proto"] },
+    { root = "services/trading", extraPaths = ["services/trading", "libs/alpaca", "libs/common", "libs/compiler", "libs/db", "libs/dsl", "libs/proto"] },
 ]

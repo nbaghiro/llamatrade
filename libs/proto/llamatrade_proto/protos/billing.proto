@@ -36,6 +36,16 @@ enum BillingInterval {
   BILLING_INTERVAL_YEARLY = 2;
 }
 
+// Invoice status
+enum InvoiceStatus {
+  INVOICE_STATUS_UNSPECIFIED = 0;
+  INVOICE_STATUS_DRAFT = 1;
+  INVOICE_STATUS_OPEN = 2;
+  INVOICE_STATUS_PAID = 3;
+  INVOICE_STATUS_VOID = 4;
+  INVOICE_STATUS_UNCOLLECTIBLE = 5;
+}
+
 // =============================================================================
 // MESSAGES
 // =============================================================================
@@ -134,7 +144,7 @@ message Invoice {
   Money amount_paid = 5;
   Money amount_remaining = 6;
 
-  string status = 7;  // "draft", "open", "paid", "void", "uncollectible"
+  InvoiceStatus status = 7;
 
   Timestamp period_start = 8;
   Timestamp period_end = 9;

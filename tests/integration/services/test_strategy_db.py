@@ -78,6 +78,7 @@ class TestStrategyPersistence:
         await db_session.flush()
 
         version = StrategyVersionFactory.create(
+            tenant_id=test_tenant.id,
             strategy_id=strategy.id,
             created_by=test_user.id,
             config_json=config_json,
@@ -160,6 +161,7 @@ class TestStrategyVersioning:
         await db_session.flush()
 
         version = StrategyVersionFactory.create(
+            tenant_id=test_tenant.id,
             strategy_id=strategy.id,
             created_by=test_user.id,
             version=1,
@@ -198,6 +200,7 @@ class TestStrategyVersioning:
         # Create 3 versions
         for v in range(1, 4):
             version = StrategyVersionFactory.create(
+                tenant_id=test_tenant.id,
                 strategy_id=strategy.id,
                 created_by=test_user.id,
                 version=v,
@@ -238,6 +241,7 @@ class TestStrategyVersioning:
 
         # Create version 1
         version1 = StrategyVersionFactory.create(
+            tenant_id=test_tenant.id,
             strategy_id=strategy.id,
             created_by=test_user.id,
             version=1,
@@ -247,6 +251,7 @@ class TestStrategyVersioning:
 
         # Try to create another version 1 (should fail)
         version1_dup = StrategyVersionFactory.create(
+            tenant_id=test_tenant.id,
             strategy_id=strategy.id,
             created_by=test_user.id,
             version=1,  # Duplicate
@@ -277,6 +282,7 @@ class TestStrategyCascadeDelete:
         # Create versions
         for v in range(1, 4):
             version = StrategyVersionFactory.create(
+                tenant_id=test_tenant.id,
                 strategy_id=strategy.id,
                 created_by=test_user.id,
                 version=v,
@@ -318,6 +324,7 @@ class TestStrategyQueries:
                 StrategyFactory.create(
                     tenant_id=test_tenant.id,
                     created_by=test_user.id,
+                    name=f"Count Strategy {i}",
                 )
             )
         await db_session.flush()
@@ -343,6 +350,7 @@ class TestStrategyQueries:
                 StrategyFactory.create(
                     tenant_id=test_tenant.id,
                     created_by=test_user.id,
+                    name=f"Active Strategy {i}",
                     status=STRATEGY_STATUS_ACTIVE,  # Proto int: ACTIVE=2
                 )
             )
@@ -353,6 +361,7 @@ class TestStrategyQueries:
                 StrategyFactory.create(
                     tenant_id=test_tenant.id,
                     created_by=test_user.id,
+                    name=f"Archived Strategy {i}",
                     status=STRATEGY_STATUS_ARCHIVED,  # Proto int: ARCHIVED=4
                 )
             )
@@ -384,6 +393,7 @@ class TestStrategyQueries:
                 StrategyFactory.create(
                     tenant_id=test_tenant.id,
                     created_by=test_user.id,
+                    name=f"Private Strategy {i}",
                     is_public=False,
                 )
             )
@@ -394,6 +404,7 @@ class TestStrategyQueries:
                 StrategyFactory.create(
                     tenant_id=test_tenant.id,
                     created_by=test_user.id,
+                    name=f"Public Strategy {i}",
                     is_public=True,
                 )
             )
@@ -487,6 +498,7 @@ class TestStrategyRelationships:
         # Add versions
         for v in range(1, 4):
             version = StrategyVersionFactory.create(
+                tenant_id=test_tenant.id,
                 strategy_id=strategy.id,
                 created_by=test_user.id,
                 version=v,

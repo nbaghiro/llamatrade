@@ -20,7 +20,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from decimal import Decimal
 from enum import Enum
-from typing import Literal
+from typing import Literal, cast
 
 import websockets
 from websockets.asyncio.client import ClientConnection
@@ -34,6 +34,10 @@ from src.metrics import (
 )
 
 logger = logging.getLogger(__name__)
+
+# Typed empty collections for pyright strict mode
+_EMPTY_OBJECT_DICT: dict[str, object] = {}
+_EMPTY_OBJECT_LIST: list[object] = []
 
 
 class TradeEventType(Enum):
@@ -167,15 +171,19 @@ class AlpacaTradeStream:
 
             # Check for authorized message
             if msg.get("stream") == "authorization":
-                data = msg.get("data", {})
-                if data.get("status") == "authorized":
+                data_raw = msg.get("data", _EMPTY_OBJECT_DICT)
+                auth_data = cast(
+                    dict[str, object],
+                    data_raw if isinstance(data_raw, dict) else _EMPTY_OBJECT_DICT,
+                )
+                if auth_data.get("status") == "authorized":
                     self._authenticated = True
                     self._reconnect_attempts = 0
                     set_trade_stream_connected(True)
                     logger.info("Authenticated with Alpaca trade stream")
                     return True
                 else:
-                    logger.error(f"Auth failed: {data}")
+                    logger.error(f"Auth failed: {auth_data}")
                     return False
 
             logger.error(f"Unexpected auth response: {msg}")
@@ -223,7 +231,16 @@ class AlpacaTradeStream:
             # Wait for subscription confirmation
             msg = await self._receive_message()
             if msg and msg.get("stream") == "listening":
-                streams = msg.get("data", {}).get("streams", [])
+                data_raw = msg.get("data", _EMPTY_OBJECT_DICT)
+                sub_data = cast(
+                    dict[str, object],
+                    data_raw if isinstance(data_raw, dict) else _EMPTY_OBJECT_DICT,
+                )
+                streams_raw = sub_data.get("streams", _EMPTY_OBJECT_LIST)
+                streams = cast(
+                    list[object],
+                    streams_raw if isinstance(streams_raw, list) else _EMPTY_OBJECT_LIST,
+                )
                 if "trade_updates" in streams:
                     self._subscribed = True
                     logger.info("Subscribed to trade_updates stream")
@@ -258,7 +275,12 @@ class AlpacaTradeStream:
 
                 # Check if it's a trade update
                 if msg.get("stream") == "trade_updates":
-                    event = self._parse_trade_event(msg.get("data", {}))
+                    event_data = msg.get("data", _EMPTY_OBJECT_DICT)
+                    trade_data = cast(
+                        dict[str, object],
+                        event_data if isinstance(event_data, dict) else _EMPTY_OBJECT_DICT,
+                    )
+                    event = self._parse_trade_event(trade_data)
                     if event:
                         record_trade_stream_event(event.event_type.value)
                         yield event
@@ -276,14 +298,14 @@ class AlpacaTradeStream:
                 logger.error(f"Trade stream error: {e}")
                 await asyncio.sleep(1)
 
-    async def _receive_message(self, timeout: float = 10.0) -> dict | None:
+    async def _receive_message(self, timeout: float = 10.0) -> dict[str, object] | None:
         """Receive and parse a WebSocket message."""
         if not self._ws:
             return None
 
         try:
             raw = await asyncio.wait_for(self._ws.recv(), timeout=timeout)
-            result: dict = json.loads(raw)
+            result: dict[str, object] = json.loads(raw)
             return result
         except TimeoutError:
             return None
@@ -320,20 +342,25 @@ class AlpacaTradeStream:
 
         return False
 
-    def _parse_trade_event(self, data: dict) -> TradeEvent | None:
+    def _parse_trade_event(self, data: dict[str, object]) -> TradeEvent | None:
         """Parse Alpaca trade update message to TradeEvent."""
         try:
-            event_str = data.get("event", "")
+            event_str = str(data.get("event", ""))
             try:
                 event_type = TradeEventType(event_str)
             except ValueError:
                 logger.warning(f"Unknown trade event type: {event_str}")
                 return None
 
-            order = data.get("order", {})
+            order_data = data.get("order")
+            order = cast(
+                dict[str, object],
+                order_data if isinstance(order_data, dict) else _EMPTY_OBJECT_DICT,
+            )
 
             # Parse timestamp
-            ts_str = data.get("timestamp") or order.get("updated_at", "")
+            ts_raw = data.get("timestamp") or order.get("updated_at", "")
+            ts_str = str(ts_raw) if ts_raw else ""
             if ts_str:
                 timestamp = datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
             else:
@@ -347,11 +374,13 @@ class AlpacaTradeStream:
             # Parse fill data for fill events
             fill = None
             if event_type in (TradeEventType.FILL, TradeEventType.PARTIAL_FILL):
+                side_raw = order.get("side", "buy")
+                side_str: Literal["buy", "sell"] = "sell" if side_raw == "sell" else "buy"
                 fill = FillData(
-                    order_id=order.get("id", ""),
-                    client_order_id=order.get("client_order_id", ""),
-                    symbol=order.get("symbol", ""),
-                    side=order.get("side", "buy"),
+                    order_id=str(order.get("id", "")),
+                    client_order_id=str(order.get("client_order_id", "")),
+                    symbol=str(order.get("symbol", "")),
+                    side=side_str,
                     fill_qty=Decimal(str(data.get("qty", 0))),
                     fill_price=Decimal(str(data.get("price", 0))),
                     total_filled_qty=Decimal(str(order.get("filled_qty", 0))),
@@ -363,13 +392,17 @@ class AlpacaTradeStream:
                     ),
                 )
 
+            # Parse side and order type for TradeEvent
+            event_side_raw = order.get("side", "buy")
+            event_side: Literal["buy", "sell"] = "sell" if event_side_raw == "sell" else "buy"
+
             return TradeEvent(
                 event_type=event_type,
-                order_id=order.get("id", ""),
-                client_order_id=order.get("client_order_id", ""),
-                symbol=order.get("symbol", ""),
-                side=order.get("side", "buy"),
-                order_type=order.get("type", "market"),
+                order_id=str(order.get("id", "")),
+                client_order_id=str(order.get("client_order_id", "")),
+                symbol=str(order.get("symbol", "")),
+                side=event_side,
+                order_type=str(order.get("type", "market")),
                 qty=Decimal(str(order.get("qty", 0))),
                 filled_qty=Decimal(str(order.get("filled_qty", 0))),
                 filled_avg_price=filled_avg_price,

@@ -2,7 +2,7 @@
 // Converts between visual block tree and S-expression DSL format
 // Also provides tokenization with position tracking for editor integration
 
-import type { StrategyConfigJSON, StrategyType } from '../types/strategy';
+import type { StrategyConfigJSON } from '../types/strategy';
 import type {
   Block,
   BlockId,
@@ -35,7 +35,6 @@ import {
 export interface StrategyMetadata {
   name: string;
   description?: string;
-  strategyType: StrategyType;
   timeframe: string;
   stopLossPct?: number;
   takeProfitPct?: number;
@@ -746,16 +745,16 @@ import {
 } from './validation';
 
 /**
- * Validate a strategy tree before saving
+ * Validate a strategy tree before saving.
  *
- * Uses the comprehensive validation module but maintains backward compatibility
- * with the original ValidationResult interface.
+ * Combines structural validation (root block, parent references) with
+ * content validation from the validation module.
  */
 export function validateTree(tree: StrategyTree): ValidationResult {
   const errors: ValidationError[] = [];
   const warnings: ValidationError[] = [];
 
-  // Basic root check (not covered by validation module)
+  // Structural: verify root block exists
   const root = tree.blocks[tree.rootId];
   if (!root || root.type !== 'root') {
     errors.push({
@@ -765,7 +764,7 @@ export function validateTree(tree: StrategyTree): ValidationResult {
     return { valid: false, errors, warnings };
   }
 
-  // Check parent references (not covered by validation module)
+  // Structural: verify parent references are valid
   for (const block of Object.values(tree.blocks)) {
     if (block.parentId !== null && !tree.blocks[block.parentId]) {
       errors.push({
@@ -776,10 +775,10 @@ export function validateTree(tree: StrategyTree): ValidationResult {
     }
   }
 
-  // Run comprehensive validation
+  // Content validation (block rules, required fields)
   const result = validateStrategy(tree);
 
-  // Convert comprehensive issues to legacy format
+  // Map comprehensive issues to ValidationError format
   const mapIssue = (issue: ComprehensiveIssue): ValidationError => ({
     blockId: issue.blockId,
     field: issue.field,
@@ -910,7 +909,7 @@ function classifyToken(value: string): TokenType {
 }
 
 /**
- * Simple tokenizer for S-expressions (backward compatible)
+ * Simple tokenizer for S-expressions (returns values only, no positions)
  */
 function tokenize(input: string): string[] {
   return tokenizeWithPositions(input).map((t) => t.value);
@@ -1409,11 +1408,6 @@ export function fromDSLString(dslString: string): ParsedDSL | null {
           case 'description':
             if (typeof value === 'string') {
               metadata.description = value;
-            }
-            break;
-          case 'type':
-            if (typeof value === 'string') {
-              metadata.strategyType = value as StrategyType;
             }
             break;
           case 'stop-loss-pct':

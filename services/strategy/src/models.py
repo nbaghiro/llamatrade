@@ -1,59 +1,134 @@
 """Strategy Service - Pydantic schemas for API requests/responses."""
 
 from datetime import datetime
-from enum import StrEnum
 from typing import TypedDict
 from uuid import UUID
 
 from pydantic import BaseModel, Field
 
-# Import proto enum descriptors for conversion helpers and constants
+# Import proto enum types for proper typing
 from llamatrade_proto.generated.common_pb2 import (
     EXECUTION_MODE_PAPER,
-)
-from llamatrade_proto.generated.common_pb2 import (
-    ExecutionMode as ExecutionModeEnum,
-)
-from llamatrade_proto.generated.common_pb2 import (
-    ExecutionStatus as ExecutionStatusEnum,
+    ExecutionMode,
+    ExecutionStatus,
 )
 from llamatrade_proto.generated.strategy_pb2 import (
-    StrategyStatus as StrategyStatusEnum,
+    AssetClass,
+    IndicatorType,
+    StrategyStatus,
+    TemplateCategory,
+    TemplateDifficulty,
 )
 
 # Proto enum prefixes for string conversion
 _STRATEGY_STATUS_PREFIX = "STRATEGY_STATUS_"
 _EXECUTION_STATUS_PREFIX = "EXECUTION_STATUS_"
 _EXECUTION_MODE_PREFIX = "EXECUTION_MODE_"
+_TEMPLATE_CATEGORY_PREFIX = "TEMPLATE_CATEGORY_"
+_ASSET_CLASS_PREFIX = "ASSET_CLASS_"
+_INDICATOR_TYPE_PREFIX = "INDICATOR_TYPE_"
+_TEMPLATE_DIFFICULTY_PREFIX = "TEMPLATE_DIFFICULTY_"
 
 
 # ===================
-# Conversion helpers: proto int -> str (for display/API)
+# Conversion helpers: proto ValueType -> str (for display/API)
 # ===================
 
 
-def strategy_status_to_str(value: int) -> str:
-    """Convert StrategyStatus proto int to string."""
-    name = StrategyStatusEnum.Name(value)
+def strategy_status_to_str(value: StrategyStatus.ValueType) -> str:
+    """Convert StrategyStatus proto value to string."""
+    name = StrategyStatus.Name(value)
     if name.startswith(_STRATEGY_STATUS_PREFIX):
         return name[len(_STRATEGY_STATUS_PREFIX) :].lower()
     return name.lower()
 
 
-def execution_status_to_str(value: int) -> str:
-    """Convert ExecutionStatus proto int to string."""
-    name = ExecutionStatusEnum.Name(value)
+def execution_status_to_str(value: ExecutionStatus.ValueType) -> str:
+    """Convert ExecutionStatus proto value to string."""
+    name = ExecutionStatus.Name(value)
     if name.startswith(_EXECUTION_STATUS_PREFIX):
         return name[len(_EXECUTION_STATUS_PREFIX) :].lower()
     return name.lower()
 
 
-def execution_mode_to_str(value: int) -> str:
-    """Convert ExecutionMode proto int to string."""
-    name = ExecutionModeEnum.Name(value)
+def execution_mode_to_str(value: ExecutionMode.ValueType) -> str:
+    """Convert ExecutionMode proto value to string."""
+    name = ExecutionMode.Name(value)
     if name.startswith(_EXECUTION_MODE_PREFIX):
         return name[len(_EXECUTION_MODE_PREFIX) :].lower()
     return name.lower()
+
+
+def template_category_to_str(value: TemplateCategory.ValueType) -> str:
+    """Convert TemplateCategory proto value to kebab-case string."""
+    name = TemplateCategory.Name(value)
+    if name.startswith(_TEMPLATE_CATEGORY_PREFIX):
+        # Convert SNAKE_CASE to kebab-case: BUY_AND_HOLD -> buy-and-hold
+        return name[len(_TEMPLATE_CATEGORY_PREFIX) :].lower().replace("_", "-")
+    return name.lower().replace("_", "-")
+
+
+def asset_class_to_str(value: AssetClass.ValueType) -> str:
+    """Convert AssetClass proto value to kebab-case string."""
+    name = AssetClass.Name(value)
+    if name.startswith(_ASSET_CLASS_PREFIX):
+        return name[len(_ASSET_CLASS_PREFIX) :].lower().replace("_", "-")
+    return name.lower().replace("_", "-")
+
+
+def indicator_type_to_str(value: IndicatorType.ValueType) -> str:
+    """Convert IndicatorType proto value to lowercase string."""
+    name = IndicatorType.Name(value)
+    if name.startswith(_INDICATOR_TYPE_PREFIX):
+        return name[len(_INDICATOR_TYPE_PREFIX) :].lower()
+    return name.lower()
+
+
+def template_difficulty_to_str(value: TemplateDifficulty.ValueType) -> str:
+    """Convert TemplateDifficulty proto value to lowercase string."""
+    name = TemplateDifficulty.Name(value)
+    if name.startswith(_TEMPLATE_DIFFICULTY_PREFIX):
+        return name[len(_TEMPLATE_DIFFICULTY_PREFIX) :].lower()
+    return name.lower()
+
+
+# ===================
+# String to Proto conversion helpers (for API request filters)
+# ===================
+
+
+def str_to_template_category(value: str) -> TemplateCategory.ValueType | None:
+    """Convert kebab-case string to TemplateCategory proto value."""
+    if not value:
+        return None
+    # Convert kebab-case to SNAKE_CASE: buy-and-hold -> BUY_AND_HOLD
+    enum_name = f"{_TEMPLATE_CATEGORY_PREFIX}{value.upper().replace('-', '_')}"
+    try:
+        return TemplateCategory.Value(enum_name)
+    except ValueError:
+        return None
+
+
+def str_to_asset_class(value: str) -> AssetClass.ValueType | None:
+    """Convert kebab-case string to AssetClass proto value."""
+    if not value:
+        return None
+    enum_name = f"{_ASSET_CLASS_PREFIX}{value.upper().replace('-', '_')}"
+    try:
+        return AssetClass.Value(enum_name)
+    except ValueError:
+        return None
+
+
+def str_to_template_difficulty(value: str) -> TemplateDifficulty.ValueType | None:
+    """Convert lowercase string to TemplateDifficulty proto value."""
+    if not value:
+        return None
+    enum_name = f"{_TEMPLATE_DIFFICULTY_PREFIX}{value.upper()}"
+    try:
+        return TemplateDifficulty.Value(enum_name)
+    except ValueError:
+        return None
 
 
 # TypedDict for strategy config JSON (parsed S-expression)
@@ -93,49 +168,7 @@ class IndicatorParamInfo(TypedDict):
     description: str
 
 
-class StrategyType(StrEnum):
-    """Strategy types (business categorization, not proto-defined).
-
-    Trading mechanism categories:
-    - ALLOCATION: Static buy-and-hold allocations with rebalancing
-    - TREND_FOLLOWING: Trend-following strategies (MA crossover, breakout)
-    - MEAN_REVERSION: Counter-trend strategies (RSI, Bollinger)
-    - MOMENTUM: Momentum-based rotation and factor strategies
-    - REGIME: Regime-based tactical switching (VIX, risk-on/off)
-    - BREAKOUT: Breakout and channel strategies
-    - CUSTOM: Other strategies that don't fit above categories
-    """
-
-    ALLOCATION = "allocation"
-    TREND_FOLLOWING = "trend_following"
-    MEAN_REVERSION = "mean_reversion"
-    MOMENTUM = "momentum"
-    REGIME = "regime"
-    BREAKOUT = "breakout"
-    CUSTOM = "custom"
-
-
-class TemplateCategory(StrEnum):
-    """Template category - primary classification by investment approach."""
-
-    BUY_AND_HOLD = "buy-and-hold"
-    TACTICAL = "tactical"
-    FACTOR = "factor"
-    INCOME = "income"
-    TREND = "trend"
-    MEAN_REVERSION = "mean-reversion"
-    ALTERNATIVES = "alternatives"
-
-
-class AssetClass(StrEnum):
-    """Asset class - what the strategy primarily invests in."""
-
-    EQUITY = "equity"
-    FIXED_INCOME = "fixed-income"
-    MULTI_ASSET = "multi-asset"
-    CRYPTO = "crypto"
-    COMMODITY = "commodity"
-    OPTIONS = "options"
+# TemplateCategory, AssetClass, IndicatorType, TemplateDifficulty are now imported from proto
 
 
 # ===================
@@ -173,7 +206,7 @@ class StrategyUpdate(BaseModel):
 
     name: str | None = Field(default=None, min_length=1, max_length=255)
     description: str | None = None
-    status: int | None = None  # StrategyStatus proto int
+    status: StrategyStatus.ValueType | None = None
     config_sexpr: str | None = Field(
         default=None,
         description="New S-expression config (creates new version if changed)",
@@ -195,7 +228,7 @@ class ExecutionCreate(BaseModel):
         None,
         description="Strategy version to execute (defaults to current_version)",
     )
-    mode: int = EXECUTION_MODE_PAPER  # ExecutionMode proto int
+    mode: ExecutionMode.ValueType = EXECUTION_MODE_PAPER
     config_override: ConfigOverride | None = Field(
         None,
         description="Runtime config overrides (e.g., different symbols)",
@@ -213,8 +246,7 @@ class StrategyResponse(BaseModel):
     id: UUID
     name: str
     description: str | None
-    strategy_type: StrategyType
-    status: int  # StrategyStatus proto int
+    status: StrategyStatus.ValueType
     current_version: int
     created_at: datetime
     updated_at: datetime
@@ -249,8 +281,8 @@ class ExecutionResponse(BaseModel):
     id: UUID
     strategy_id: UUID
     version: int
-    mode: int  # ExecutionMode proto int
-    status: int  # ExecutionStatus proto int
+    mode: ExecutionMode.ValueType
+    status: ExecutionStatus.ValueType
     started_at: datetime | None
     stopped_at: datetime | None
     config_override: ConfigOverride | None
@@ -272,31 +304,13 @@ class ValidationResult(BaseModel):
 # Indicator Types
 # ===================
 
-
-class IndicatorType(StrEnum):
-    """Available indicator types."""
-
-    SMA = "sma"
-    EMA = "ema"
-    MACD = "macd"
-    ADX = "adx"
-    RSI = "rsi"
-    STOCHASTIC = "stochastic"
-    CCI = "cci"
-    WILLIAMS_R = "williams_r"
-    BOLLINGER_BANDS = "bollinger_bands"
-    ATR = "atr"
-    KELTNER_CHANNEL = "keltner_channel"
-    OBV = "obv"
-    MFI = "mfi"
-    VWAP = "vwap"
-    DONCHIAN_CHANNEL = "donchian_channel"
+# IndicatorType is now imported from proto
 
 
 class IndicatorInfoResponse(BaseModel):
     """Indicator metadata."""
 
-    type: IndicatorType
+    type: IndicatorType.ValueType
     name: str
     description: str
     params: list[IndicatorParamInfo]
@@ -310,10 +324,9 @@ class TemplateResponse(BaseModel):
     id: str
     name: str
     description: str | None
-    strategy_type: StrategyType
-    category: TemplateCategory
-    asset_class: AssetClass
+    category: TemplateCategory.ValueType
+    asset_class: AssetClass.ValueType
     config_sexpr: str
     config_json: StrategyConfigJSON
     tags: list[str] = Field(default_factory=list)
-    difficulty: str = "beginner"
+    difficulty: TemplateDifficulty.ValueType

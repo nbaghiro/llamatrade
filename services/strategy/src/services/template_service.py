@@ -6,7 +6,29 @@ Frontend fetches these via API and parses S-expressions into visual blocks.
 
 from typing import TypedDict
 
-from src.models import AssetClass, StrategyType, TemplateCategory, TemplateResponse
+from llamatrade_proto.generated.strategy_pb2 import (
+    ASSET_CLASS_COMMODITY,
+    ASSET_CLASS_CRYPTO,
+    ASSET_CLASS_EQUITY,
+    ASSET_CLASS_FIXED_INCOME,
+    ASSET_CLASS_MULTI_ASSET,
+    ASSET_CLASS_OPTIONS,
+    TEMPLATE_CATEGORY_ALTERNATIVES,
+    TEMPLATE_CATEGORY_BUY_AND_HOLD,
+    TEMPLATE_CATEGORY_FACTOR,
+    TEMPLATE_CATEGORY_INCOME,
+    TEMPLATE_CATEGORY_MEAN_REVERSION,
+    TEMPLATE_CATEGORY_TACTICAL,
+    TEMPLATE_CATEGORY_TREND,
+    TEMPLATE_DIFFICULTY_ADVANCED,
+    TEMPLATE_DIFFICULTY_BEGINNER,
+    TEMPLATE_DIFFICULTY_INTERMEDIATE,
+    AssetClass,
+    TemplateCategory,
+    TemplateDifficulty,
+)
+
+from src.models import TemplateResponse
 
 
 class TemplateData(TypedDict):
@@ -15,11 +37,10 @@ class TemplateData(TypedDict):
     id: str
     name: str
     description: str
-    strategy_type: StrategyType
-    category: TemplateCategory
-    asset_class: AssetClass
+    category: TemplateCategory.ValueType
+    asset_class: AssetClass.ValueType
     tags: list[str]
-    difficulty: str
+    difficulty: TemplateDifficulty.ValueType
     config_sexpr: str
 
 
@@ -37,11 +58,10 @@ TEMPLATES: dict[str, TemplateData] = {
         "id": "classic-60-40",
         "name": "Classic 60/40",
         "description": "The foundational portfolio—60% stocks, 40% bonds. Simple, time-tested, effective.",
-        "strategy_type": StrategyType.ALLOCATION,
-        "category": TemplateCategory.BUY_AND_HOLD,
-        "asset_class": AssetClass.MULTI_ASSET,
+        "category": TEMPLATE_CATEGORY_BUY_AND_HOLD,
+        "asset_class": ASSET_CLASS_MULTI_ASSET,
         "tags": ["classic", "balanced"],
-        "difficulty": "beginner",
+        "difficulty": TEMPLATE_DIFFICULTY_BEGINNER,
         "config_sexpr": """(strategy "Classic 60/40"
   :rebalance monthly
   :benchmark SPY
@@ -53,11 +73,10 @@ TEMPLATES: dict[str, TemplateData] = {
         "id": "three-fund",
         "name": "Three-Fund Portfolio",
         "description": "Bogleheads classic—total US market, international, and bonds for maximum diversification.",
-        "strategy_type": StrategyType.ALLOCATION,
-        "category": TemplateCategory.BUY_AND_HOLD,
-        "asset_class": AssetClass.MULTI_ASSET,
+        "category": TEMPLATE_CATEGORY_BUY_AND_HOLD,
+        "asset_class": ASSET_CLASS_MULTI_ASSET,
         "tags": ["bogleheads", "diversified"],
-        "difficulty": "beginner",
+        "difficulty": TEMPLATE_DIFFICULTY_BEGINNER,
         "config_sexpr": """(strategy "Three-Fund Portfolio"
   :rebalance quarterly
   :benchmark VTI
@@ -70,11 +89,10 @@ TEMPLATES: dict[str, TemplateData] = {
         "id": "equal-weight-sectors",
         "name": "Equal Weight Sectors",
         "description": "Equal allocation across major market sectors. Removes market-cap bias.",
-        "strategy_type": StrategyType.ALLOCATION,
-        "category": TemplateCategory.BUY_AND_HOLD,
-        "asset_class": AssetClass.EQUITY,
+        "category": TEMPLATE_CATEGORY_BUY_AND_HOLD,
+        "asset_class": ASSET_CLASS_EQUITY,
         "tags": ["sectors", "equal-weight"],
-        "difficulty": "beginner",
+        "difficulty": TEMPLATE_DIFFICULTY_BEGINNER,
         "config_sexpr": """(strategy "Equal Weight Sectors"
   :rebalance monthly
   :benchmark SPY
@@ -95,11 +113,10 @@ TEMPLATES: dict[str, TemplateData] = {
         "id": "tech-growth",
         "name": "Tech Growth",
         "description": "Concentrated exposure to leading technology companies with conviction weights.",
-        "strategy_type": StrategyType.ALLOCATION,
-        "category": TemplateCategory.BUY_AND_HOLD,
-        "asset_class": AssetClass.EQUITY,
+        "category": TEMPLATE_CATEGORY_BUY_AND_HOLD,
+        "asset_class": ASSET_CLASS_EQUITY,
         "tags": ["tech", "growth", "concentrated"],
-        "difficulty": "beginner",
+        "difficulty": TEMPLATE_DIFFICULTY_BEGINNER,
         "config_sexpr": """(strategy "Tech Growth"
   :rebalance monthly
   :benchmark QQQ
@@ -116,11 +133,10 @@ TEMPLATES: dict[str, TemplateData] = {
         "id": "core-satellite",
         "name": "Core-Satellite",
         "description": "Stable core of index funds combined with satellite positions in higher-conviction plays.",
-        "strategy_type": StrategyType.ALLOCATION,
-        "category": TemplateCategory.BUY_AND_HOLD,
-        "asset_class": AssetClass.MULTI_ASSET,
+        "category": TEMPLATE_CATEGORY_BUY_AND_HOLD,
+        "asset_class": ASSET_CLASS_MULTI_ASSET,
         "tags": ["core-satellite", "hybrid"],
-        "difficulty": "intermediate",
+        "difficulty": TEMPLATE_DIFFICULTY_INTERMEDIATE,
         "config_sexpr": """(strategy "Core-Satellite"
   :rebalance monthly
   :benchmark SPY
@@ -139,11 +155,10 @@ TEMPLATES: dict[str, TemplateData] = {
         "id": "global-allocation",
         "name": "Global Asset Allocation",
         "description": "Globally diversified portfolio across geographies and asset classes.",
-        "strategy_type": StrategyType.ALLOCATION,
-        "category": TemplateCategory.BUY_AND_HOLD,
-        "asset_class": AssetClass.MULTI_ASSET,
+        "category": TEMPLATE_CATEGORY_BUY_AND_HOLD,
+        "asset_class": ASSET_CLASS_MULTI_ASSET,
         "tags": ["global", "diversified"],
-        "difficulty": "beginner",
+        "difficulty": TEMPLATE_DIFFICULTY_BEGINNER,
         "config_sexpr": """(strategy "Global Asset Allocation"
   :rebalance quarterly
   :benchmark VT
@@ -165,11 +180,10 @@ TEMPLATES: dict[str, TemplateData] = {
         "id": "risk-parity",
         "name": "Risk Parity",
         "description": "Allocate by risk contribution using inverse volatility—equal risk across asset classes.",
-        "strategy_type": StrategyType.ALLOCATION,
-        "category": TemplateCategory.BUY_AND_HOLD,
-        "asset_class": AssetClass.MULTI_ASSET,
+        "category": TEMPLATE_CATEGORY_BUY_AND_HOLD,
+        "asset_class": ASSET_CLASS_MULTI_ASSET,
         "tags": ["risk-parity", "all-weather"],
-        "difficulty": "intermediate",
+        "difficulty": TEMPLATE_DIFFICULTY_INTERMEDIATE,
         "config_sexpr": """(strategy "Risk Parity"
   :rebalance monthly
   :benchmark SPY
@@ -183,11 +197,10 @@ TEMPLATES: dict[str, TemplateData] = {
         "id": "all-weather",
         "name": "All-Weather Portfolio",
         "description": "Ray Dalio inspired diversified allocation for all economic conditions.",
-        "strategy_type": StrategyType.ALLOCATION,
-        "category": TemplateCategory.BUY_AND_HOLD,
-        "asset_class": AssetClass.MULTI_ASSET,
+        "category": TEMPLATE_CATEGORY_BUY_AND_HOLD,
+        "asset_class": ASSET_CLASS_MULTI_ASSET,
         "tags": ["all-weather", "ray-dalio", "famous-portfolio"],
-        "difficulty": "beginner",
+        "difficulty": TEMPLATE_DIFFICULTY_BEGINNER,
         "config_sexpr": """(strategy "All-Weather Portfolio"
   :rebalance quarterly
   :benchmark SPY
@@ -202,11 +215,10 @@ TEMPLATES: dict[str, TemplateData] = {
         "id": "permanent-portfolio",
         "name": "Permanent Portfolio",
         "description": "Harry Browne's 4x25% allocation designed for all economic conditions—stocks, bonds, gold, cash.",
-        "strategy_type": StrategyType.ALLOCATION,
-        "category": TemplateCategory.BUY_AND_HOLD,
-        "asset_class": AssetClass.MULTI_ASSET,
+        "category": TEMPLATE_CATEGORY_BUY_AND_HOLD,
+        "asset_class": ASSET_CLASS_MULTI_ASSET,
         "tags": ["all-weather", "harry-browne", "famous-portfolio"],
-        "difficulty": "beginner",
+        "difficulty": TEMPLATE_DIFFICULTY_BEGINNER,
         "config_sexpr": """(strategy "Permanent Portfolio"
   :rebalance quarterly
   :benchmark SPY
@@ -220,11 +232,10 @@ TEMPLATES: dict[str, TemplateData] = {
         "id": "ivy-portfolio",
         "name": "Ivy Portfolio",
         "description": "Meb Faber's endowment-style 5-asset allocation modeled on institutional investors.",
-        "strategy_type": StrategyType.ALLOCATION,
-        "category": TemplateCategory.BUY_AND_HOLD,
-        "asset_class": AssetClass.MULTI_ASSET,
+        "category": TEMPLATE_CATEGORY_BUY_AND_HOLD,
+        "asset_class": ASSET_CLASS_MULTI_ASSET,
         "tags": ["endowment", "meb-faber", "famous-portfolio"],
-        "difficulty": "beginner",
+        "difficulty": TEMPLATE_DIFFICULTY_BEGINNER,
         "config_sexpr": """(strategy "Ivy Portfolio"
   :rebalance monthly
   :benchmark SPY
@@ -239,11 +250,10 @@ TEMPLATES: dict[str, TemplateData] = {
         "id": "golden-butterfly",
         "name": "Golden Butterfly",
         "description": "Balanced allocation with small-cap value tilt—total market, SCV, long bonds, short bonds, gold.",
-        "strategy_type": StrategyType.ALLOCATION,
-        "category": TemplateCategory.BUY_AND_HOLD,
-        "asset_class": AssetClass.MULTI_ASSET,
+        "category": TEMPLATE_CATEGORY_BUY_AND_HOLD,
+        "asset_class": ASSET_CLASS_MULTI_ASSET,
         "tags": ["all-weather", "small-cap-value", "famous-portfolio"],
-        "difficulty": "beginner",
+        "difficulty": TEMPLATE_DIFFICULTY_BEGINNER,
         "config_sexpr": """(strategy "Golden Butterfly"
   :rebalance quarterly
   :benchmark SPY
@@ -258,11 +268,10 @@ TEMPLATES: dict[str, TemplateData] = {
         "id": "swensen-portfolio",
         "name": "Swensen Portfolio",
         "description": "David Swensen's Yale Endowment-inspired diversified model for individual investors.",
-        "strategy_type": StrategyType.ALLOCATION,
-        "category": TemplateCategory.BUY_AND_HOLD,
-        "asset_class": AssetClass.MULTI_ASSET,
+        "category": TEMPLATE_CATEGORY_BUY_AND_HOLD,
+        "asset_class": ASSET_CLASS_MULTI_ASSET,
         "tags": ["endowment", "yale", "david-swensen", "famous-portfolio"],
-        "difficulty": "beginner",
+        "difficulty": TEMPLATE_DIFFICULTY_BEGINNER,
         "config_sexpr": """(strategy "Swensen Portfolio"
   :rebalance quarterly
   :benchmark SPY
@@ -278,11 +287,10 @@ TEMPLATES: dict[str, TemplateData] = {
         "id": "low-volatility",
         "name": "Low Volatility",
         "description": "Minimum volatility defensive strategy for reduced drawdowns and smoother returns.",
-        "strategy_type": StrategyType.ALLOCATION,
-        "category": TemplateCategory.BUY_AND_HOLD,
-        "asset_class": AssetClass.EQUITY,
+        "category": TEMPLATE_CATEGORY_BUY_AND_HOLD,
+        "asset_class": ASSET_CLASS_EQUITY,
         "tags": ["defensive", "low-vol"],
-        "difficulty": "beginner",
+        "difficulty": TEMPLATE_DIFFICULTY_BEGINNER,
         "config_sexpr": """(strategy "Low Volatility"
   :rebalance monthly
   :benchmark SPY
@@ -299,11 +307,10 @@ TEMPLATES: dict[str, TemplateData] = {
         "id": "momentum-sectors",
         "name": "Momentum Sectors",
         "description": "Weight sectors by recent momentum—more allocation to stronger performers.",
-        "strategy_type": StrategyType.MOMENTUM,
-        "category": TemplateCategory.FACTOR,
-        "asset_class": AssetClass.EQUITY,
+        "category": TEMPLATE_CATEGORY_FACTOR,
+        "asset_class": ASSET_CLASS_EQUITY,
         "tags": ["momentum", "sectors", "rotation"],
-        "difficulty": "intermediate",
+        "difficulty": TEMPLATE_DIFFICULTY_INTERMEDIATE,
         "config_sexpr": """(strategy "Momentum Sectors"
   :rebalance monthly
   :benchmark SPY
@@ -324,11 +331,10 @@ TEMPLATES: dict[str, TemplateData] = {
         "id": "larry-portfolio",
         "name": "Larry Portfolio",
         "description": "Larry Swedroe's factor-tilted allocation emphasizing small-cap value globally.",
-        "strategy_type": StrategyType.ALLOCATION,
-        "category": TemplateCategory.FACTOR,
-        "asset_class": AssetClass.EQUITY,
+        "category": TEMPLATE_CATEGORY_FACTOR,
+        "asset_class": ASSET_CLASS_EQUITY,
         "tags": ["small-cap-value", "larry-swedroe", "famous-portfolio"],
-        "difficulty": "beginner",
+        "difficulty": TEMPLATE_DIFFICULTY_BEGINNER,
         "config_sexpr": """(strategy "Larry Portfolio"
   :rebalance quarterly
   :benchmark SPY
@@ -342,11 +348,10 @@ TEMPLATES: dict[str, TemplateData] = {
         "id": "multi-factor-smart-beta",
         "name": "Multi-Factor Smart Beta",
         "description": "Combined Value + Momentum + Quality + Size factor exposure via ETFs.",
-        "strategy_type": StrategyType.ALLOCATION,
-        "category": TemplateCategory.FACTOR,
-        "asset_class": AssetClass.EQUITY,
+        "category": TEMPLATE_CATEGORY_FACTOR,
+        "asset_class": ASSET_CLASS_EQUITY,
         "tags": ["smart-beta", "multi-factor"],
-        "difficulty": "beginner",
+        "difficulty": TEMPLATE_DIFFICULTY_BEGINNER,
         "config_sexpr": """(strategy "Multi-Factor Smart Beta"
   :rebalance quarterly
   :benchmark SPY
@@ -360,11 +365,10 @@ TEMPLATES: dict[str, TemplateData] = {
         "id": "multi-factor-rotation",
         "name": "Multi-Factor Sector Rotation",
         "description": "Rotate into top-performing sectors using filters with factor-based weighting.",
-        "strategy_type": StrategyType.MOMENTUM,
-        "category": TemplateCategory.FACTOR,
-        "asset_class": AssetClass.EQUITY,
+        "category": TEMPLATE_CATEGORY_FACTOR,
+        "asset_class": ASSET_CLASS_EQUITY,
         "tags": ["rotation", "sectors", "filters"],
-        "difficulty": "advanced",
+        "difficulty": TEMPLATE_DIFFICULTY_ADVANCED,
         "config_sexpr": """(strategy "Multi-Factor Sector Rotation"
   :rebalance monthly
   :benchmark SPY
@@ -382,11 +386,10 @@ TEMPLATES: dict[str, TemplateData] = {
         "id": "deep-value",
         "name": "Deep Value",
         "description": "Concentrated value factor exposure with rotation to top performers.",
-        "strategy_type": StrategyType.MOMENTUM,
-        "category": TemplateCategory.FACTOR,
-        "asset_class": AssetClass.EQUITY,
+        "category": TEMPLATE_CATEGORY_FACTOR,
+        "asset_class": ASSET_CLASS_EQUITY,
         "tags": ["factor", "value", "concentrated"],
-        "difficulty": "intermediate",
+        "difficulty": TEMPLATE_DIFFICULTY_INTERMEDIATE,
         "config_sexpr": """(strategy "Deep Value"
   :rebalance monthly
   :benchmark SPY
@@ -400,11 +403,10 @@ TEMPLATES: dict[str, TemplateData] = {
         "id": "small-cap-value-tilt",
         "name": "Small-Cap Value Tilt",
         "description": "Size + value factor combination for enhanced returns.",
-        "strategy_type": StrategyType.ALLOCATION,
-        "category": TemplateCategory.FACTOR,
-        "asset_class": AssetClass.EQUITY,
+        "category": TEMPLATE_CATEGORY_FACTOR,
+        "asset_class": ASSET_CLASS_EQUITY,
         "tags": ["factor", "small-cap-value"],
-        "difficulty": "intermediate",
+        "difficulty": TEMPLATE_DIFFICULTY_INTERMEDIATE,
         "config_sexpr": """(strategy "Small-Cap Value Tilt"
   :rebalance monthly
   :benchmark IWM
@@ -418,11 +420,10 @@ TEMPLATES: dict[str, TemplateData] = {
         "id": "sector-rsi-rotation",
         "name": "Sector RSI Rotation",
         "description": "Rotate into oversold sectors using RSI signals with momentum-weighted allocation.",
-        "strategy_type": StrategyType.MEAN_REVERSION,
-        "category": TemplateCategory.FACTOR,
-        "asset_class": AssetClass.EQUITY,
+        "category": TEMPLATE_CATEGORY_FACTOR,
+        "asset_class": ASSET_CLASS_EQUITY,
         "tags": ["rotation", "rsi", "sectors", "mean-reversion"],
-        "difficulty": "intermediate",
+        "difficulty": TEMPLATE_DIFFICULTY_INTERMEDIATE,
         "config_sexpr": """(strategy "Sector RSI Rotation"
   :rebalance weekly
   :benchmark SPY
@@ -448,11 +449,10 @@ TEMPLATES: dict[str, TemplateData] = {
         "id": "international-value-momentum",
         "name": "International Value Momentum",
         "description": "Combine value and momentum factors internationally with trend filter.",
-        "strategy_type": StrategyType.MOMENTUM,
-        "category": TemplateCategory.FACTOR,
-        "asset_class": AssetClass.EQUITY,
+        "category": TEMPLATE_CATEGORY_FACTOR,
+        "asset_class": ASSET_CLASS_EQUITY,
         "tags": ["international", "value", "momentum", "multi-factor"],
-        "difficulty": "intermediate",
+        "difficulty": TEMPLATE_DIFFICULTY_INTERMEDIATE,
         "config_sexpr": """(strategy "International Value Momentum"
   :rebalance monthly
   :benchmark VEU
@@ -473,11 +473,10 @@ TEMPLATES: dict[str, TemplateData] = {
         "id": "factor-timing",
         "name": "Factor Timing Strategy",
         "description": "Dynamic factor rotation: momentum vs value based on trend, low-vol vs size based on VIX, plus quality core.",
-        "strategy_type": StrategyType.REGIME,
-        "category": TemplateCategory.FACTOR,
-        "asset_class": AssetClass.EQUITY,
+        "category": TEMPLATE_CATEGORY_FACTOR,
+        "asset_class": ASSET_CLASS_EQUITY,
         "tags": ["factors", "timing", "rotation", "multi-factor"],
-        "difficulty": "advanced",
+        "difficulty": TEMPLATE_DIFFICULTY_ADVANCED,
         "config_sexpr": """(strategy "Factor Timing Strategy"
   :rebalance weekly
   :benchmark SPY
@@ -501,11 +500,10 @@ TEMPLATES: dict[str, TemplateData] = {
         "id": "dividend-aristocrats",
         "name": "Dividend Aristocrats",
         "description": "Blue-chip companies with 25+ years of consecutive dividend increases.",
-        "strategy_type": StrategyType.ALLOCATION,
-        "category": TemplateCategory.INCOME,
-        "asset_class": AssetClass.EQUITY,
+        "category": TEMPLATE_CATEGORY_INCOME,
+        "asset_class": ASSET_CLASS_EQUITY,
         "tags": ["dividends", "aristocrats", "blue-chip"],
-        "difficulty": "beginner",
+        "difficulty": TEMPLATE_DIFFICULTY_BEGINNER,
         "config_sexpr": """(strategy "Dividend Aristocrats"
   :rebalance quarterly
   :benchmark SPY
@@ -527,11 +525,10 @@ TEMPLATES: dict[str, TemplateData] = {
         "id": "income-focus",
         "name": "Income Focus",
         "description": "Maximize income through dividends, REITs, and high-yield bonds.",
-        "strategy_type": StrategyType.ALLOCATION,
-        "category": TemplateCategory.INCOME,
-        "asset_class": AssetClass.MULTI_ASSET,
+        "category": TEMPLATE_CATEGORY_INCOME,
+        "asset_class": ASSET_CLASS_MULTI_ASSET,
         "tags": ["dividends", "reits", "high-yield"],
-        "difficulty": "intermediate",
+        "difficulty": TEMPLATE_DIFFICULTY_INTERMEDIATE,
         "config_sexpr": """(strategy "Income Focus"
   :rebalance quarterly
   :benchmark SPY
@@ -554,11 +551,10 @@ TEMPLATES: dict[str, TemplateData] = {
         "id": "quality-dividend",
         "name": "Quality Dividend",
         "description": "High-quality dividend growers with proven track records of increasing payouts.",
-        "strategy_type": StrategyType.ALLOCATION,
-        "category": TemplateCategory.INCOME,
-        "asset_class": AssetClass.EQUITY,
+        "category": TEMPLATE_CATEGORY_INCOME,
+        "asset_class": ASSET_CLASS_EQUITY,
         "tags": ["dividends", "quality", "dividend-growth"],
-        "difficulty": "beginner",
+        "difficulty": TEMPLATE_DIFFICULTY_BEGINNER,
         "config_sexpr": """(strategy "Quality Dividend"
   :rebalance quarterly
   :benchmark SPY
@@ -572,11 +568,10 @@ TEMPLATES: dict[str, TemplateData] = {
         "id": "covered-call-income",
         "name": "Covered Call Income",
         "description": "Buy-write strategy using covered call ETFs for enhanced income generation.",
-        "strategy_type": StrategyType.ALLOCATION,
-        "category": TemplateCategory.INCOME,
-        "asset_class": AssetClass.OPTIONS,
+        "category": TEMPLATE_CATEGORY_INCOME,
+        "asset_class": ASSET_CLASS_OPTIONS,
         "tags": ["covered-call", "options", "premium-income"],
-        "difficulty": "beginner",
+        "difficulty": TEMPLATE_DIFFICULTY_BEGINNER,
         "config_sexpr": """(strategy "Covered Call Income"
   :rebalance monthly
   :benchmark SPY
@@ -589,11 +584,10 @@ TEMPLATES: dict[str, TemplateData] = {
         "id": "dividend-growth-barbell",
         "name": "Dividend Growth Barbell",
         "description": "Barbell strategy combining stable dividend income with conditional growth exposure.",
-        "strategy_type": StrategyType.REGIME,
-        "category": TemplateCategory.INCOME,
-        "asset_class": AssetClass.EQUITY,
+        "category": TEMPLATE_CATEGORY_INCOME,
+        "asset_class": ASSET_CLASS_EQUITY,
         "tags": ["dividends", "growth", "barbell", "conditional"],
-        "difficulty": "intermediate",
+        "difficulty": TEMPLATE_DIFFICULTY_INTERMEDIATE,
         "config_sexpr": """(strategy "Dividend Growth Barbell"
   :rebalance monthly
   :benchmark SPY
@@ -618,11 +612,10 @@ TEMPLATES: dict[str, TemplateData] = {
         "id": "volatility-regime",
         "name": "Volatility Regime",
         "description": "Adjust allocation based on VIX levels—aggressive in low vol, defensive in high vol.",
-        "strategy_type": StrategyType.REGIME,
-        "category": TemplateCategory.TACTICAL,
-        "asset_class": AssetClass.MULTI_ASSET,
+        "category": TEMPLATE_CATEGORY_TACTICAL,
+        "asset_class": ASSET_CLASS_MULTI_ASSET,
         "tags": ["vix", "regime", "volatility"],
-        "difficulty": "advanced",
+        "difficulty": TEMPLATE_DIFFICULTY_ADVANCED,
         "config_sexpr": """(strategy "Volatility Regime"
   :rebalance daily
   :benchmark SPY
@@ -642,11 +635,10 @@ TEMPLATES: dict[str, TemplateData] = {
         "id": "risk-on-off",
         "name": "Risk-On/Risk-Off Tactical",
         "description": "Switch between aggressive growth and defensive positions based on market regime.",
-        "strategy_type": StrategyType.REGIME,
-        "category": TemplateCategory.TACTICAL,
-        "asset_class": AssetClass.MULTI_ASSET,
+        "category": TEMPLATE_CATEGORY_TACTICAL,
+        "asset_class": ASSET_CLASS_MULTI_ASSET,
         "tags": ["regime", "risk-management"],
-        "difficulty": "advanced",
+        "difficulty": TEMPLATE_DIFFICULTY_ADVANCED,
         "config_sexpr": """(strategy "Risk-On/Risk-Off Tactical"
   :rebalance daily
   :benchmark SPY
@@ -686,11 +678,10 @@ TEMPLATES: dict[str, TemplateData] = {
         "id": "tail-risk-hedged",
         "name": "Tail Risk Hedged",
         "description": "Core equity exposure with tail hedge allocation for crash protection.",
-        "strategy_type": StrategyType.ALLOCATION,
-        "category": TemplateCategory.TACTICAL,
-        "asset_class": AssetClass.OPTIONS,
+        "category": TEMPLATE_CATEGORY_TACTICAL,
+        "asset_class": ASSET_CLASS_OPTIONS,
         "tags": ["hedged", "tail-risk", "crash-protection"],
-        "difficulty": "beginner",
+        "difficulty": TEMPLATE_DIFFICULTY_BEGINNER,
         "config_sexpr": """(strategy "Tail Risk Hedged"
   :rebalance monthly
   :benchmark SPY
@@ -702,11 +693,10 @@ TEMPLATES: dict[str, TemplateData] = {
         "id": "buffer-protection",
         "name": "Buffer Protection",
         "description": "Hedged equity with downside buffer ETFs for smoother returns.",
-        "strategy_type": StrategyType.ALLOCATION,
-        "category": TemplateCategory.TACTICAL,
-        "asset_class": AssetClass.OPTIONS,
+        "category": TEMPLATE_CATEGORY_TACTICAL,
+        "asset_class": ASSET_CLASS_OPTIONS,
         "tags": ["buffer", "hedged", "options"],
-        "difficulty": "intermediate",
+        "difficulty": TEMPLATE_DIFFICULTY_INTERMEDIATE,
         "config_sexpr": """(strategy "Buffer Protection"
   :rebalance quarterly
   :benchmark SPY
@@ -718,11 +708,10 @@ TEMPLATES: dict[str, TemplateData] = {
         "id": "bond-duration-regime",
         "name": "Bond Duration Regime",
         "description": "Switch between short and long duration bonds based on rate environment signals.",
-        "strategy_type": StrategyType.REGIME,
-        "category": TemplateCategory.TACTICAL,
-        "asset_class": AssetClass.FIXED_INCOME,
+        "category": TEMPLATE_CATEGORY_TACTICAL,
+        "asset_class": ASSET_CLASS_FIXED_INCOME,
         "tags": ["bonds", "duration", "rates", "regime"],
-        "difficulty": "intermediate",
+        "difficulty": TEMPLATE_DIFFICULTY_INTERMEDIATE,
         "config_sexpr": """(strategy "Bond Duration Regime"
   :rebalance weekly
   :benchmark BND
@@ -741,11 +730,10 @@ TEMPLATES: dict[str, TemplateData] = {
         "id": "multi-regime-adaptive",
         "name": "Multi-Regime Adaptive Allocation",
         "description": "Three-tier VIX regime system: crisis mode (defensive), cautious mode (balanced), risk-on mode (aggressive).",
-        "strategy_type": StrategyType.REGIME,
-        "category": TemplateCategory.TACTICAL,
-        "asset_class": AssetClass.MULTI_ASSET,
+        "category": TEMPLATE_CATEGORY_TACTICAL,
+        "asset_class": ASSET_CLASS_MULTI_ASSET,
         "tags": ["regime", "vix", "adaptive", "multi-tier"],
-        "difficulty": "advanced",
+        "difficulty": TEMPLATE_DIFFICULTY_ADVANCED,
         "config_sexpr": """(strategy "Multi-Regime Adaptive"
   :rebalance daily
   :benchmark SPY
@@ -775,11 +763,10 @@ TEMPLATES: dict[str, TemplateData] = {
         "id": "global-macro-multi-asset",
         "name": "Global Macro Multi-Asset",
         "description": "Institutional-style global macro: US/International equity rotation, inflation-protected bonds, trend-filtered commodities.",
-        "strategy_type": StrategyType.REGIME,
-        "category": TemplateCategory.TACTICAL,
-        "asset_class": AssetClass.MULTI_ASSET,
+        "category": TEMPLATE_CATEGORY_TACTICAL,
+        "asset_class": ASSET_CLASS_MULTI_ASSET,
         "tags": ["global", "macro", "rotation", "institutional"],
-        "difficulty": "advanced",
+        "difficulty": TEMPLATE_DIFFICULTY_ADVANCED,
         "config_sexpr": """(strategy "Global Macro Multi-Asset"
   :rebalance weekly
   :benchmark SPY
@@ -807,11 +794,10 @@ TEMPLATES: dict[str, TemplateData] = {
         "id": "simple-trend",
         "name": "Simple Trend Following",
         "description": "Stay invested above 200-day SMA, move to bonds when below. Classic trend strategy.",
-        "strategy_type": StrategyType.TREND_FOLLOWING,
-        "category": TemplateCategory.TREND,
-        "asset_class": AssetClass.MULTI_ASSET,
+        "category": TEMPLATE_CATEGORY_TREND,
+        "asset_class": ASSET_CLASS_MULTI_ASSET,
         "tags": ["sma", "200-day", "trend"],
-        "difficulty": "intermediate",
+        "difficulty": TEMPLATE_DIFFICULTY_INTERMEDIATE,
         "config_sexpr": """(strategy "Simple Trend Following"
   :rebalance daily
   :benchmark SPY
@@ -823,11 +809,10 @@ TEMPLATES: dict[str, TemplateData] = {
         "id": "dual-ma",
         "name": "Dual Moving Average",
         "description": "Golden cross strategy—bullish when 50-day crosses above 200-day moving average.",
-        "strategy_type": StrategyType.TREND_FOLLOWING,
-        "category": TemplateCategory.TREND,
-        "asset_class": AssetClass.MULTI_ASSET,
+        "category": TEMPLATE_CATEGORY_TREND,
+        "asset_class": ASSET_CLASS_MULTI_ASSET,
         "tags": ["golden-cross", "moving-average", "crossover"],
-        "difficulty": "intermediate",
+        "difficulty": TEMPLATE_DIFFICULTY_INTERMEDIATE,
         "config_sexpr": """(strategy "Dual Moving Average"
   :rebalance daily
   :benchmark SPY
@@ -847,11 +832,10 @@ TEMPLATES: dict[str, TemplateData] = {
         "id": "ma-crossover",
         "name": "Moving Average Crossover",
         "description": "Trend-following allocation using EMA crossovers.",
-        "strategy_type": StrategyType.TREND_FOLLOWING,
-        "category": TemplateCategory.TREND,
-        "asset_class": AssetClass.MULTI_ASSET,
+        "category": TEMPLATE_CATEGORY_TREND,
+        "asset_class": ASSET_CLASS_MULTI_ASSET,
         "tags": ["trend", "ema", "crossover"],
-        "difficulty": "beginner",
+        "difficulty": TEMPLATE_DIFFICULTY_BEGINNER,
         "config_sexpr": """(strategy "Moving Average Crossover"
   :rebalance daily
   :benchmark SPY
@@ -863,11 +847,10 @@ TEMPLATES: dict[str, TemplateData] = {
         "id": "golden-cross",
         "name": "Golden Cross",
         "description": "Allocate to equities when 50-day SMA crosses above 200-day SMA.",
-        "strategy_type": StrategyType.TREND_FOLLOWING,
-        "category": TemplateCategory.TREND,
-        "asset_class": AssetClass.MULTI_ASSET,
+        "category": TEMPLATE_CATEGORY_TREND,
+        "asset_class": ASSET_CLASS_MULTI_ASSET,
         "tags": ["trend", "sma", "golden-cross"],
-        "difficulty": "beginner",
+        "difficulty": TEMPLATE_DIFFICULTY_BEGINNER,
         "config_sexpr": """(strategy "Golden Cross"
   :rebalance daily
   :benchmark SPY
@@ -879,11 +862,10 @@ TEMPLATES: dict[str, TemplateData] = {
         "id": "dual-momentum",
         "name": "Dual Momentum",
         "description": "Classic dual momentum: compare US vs International, allocate to winner or bonds.",
-        "strategy_type": StrategyType.MOMENTUM,
-        "category": TemplateCategory.TREND,
-        "asset_class": AssetClass.MULTI_ASSET,
+        "category": TEMPLATE_CATEGORY_TREND,
+        "asset_class": ASSET_CLASS_MULTI_ASSET,
         "tags": ["momentum", "trend", "dual-momentum"],
-        "difficulty": "advanced",
+        "difficulty": TEMPLATE_DIFFICULTY_ADVANCED,
         "config_sexpr": """(strategy "Dual Momentum"
   :rebalance monthly
   :benchmark SPY
@@ -897,11 +879,10 @@ TEMPLATES: dict[str, TemplateData] = {
         "id": "donchian-breakout",
         "name": "Donchian Channel Breakout",
         "description": "Turtle trading inspired breakout strategy.",
-        "strategy_type": StrategyType.BREAKOUT,
-        "category": TemplateCategory.TREND,
-        "asset_class": AssetClass.MULTI_ASSET,
+        "category": TEMPLATE_CATEGORY_TREND,
+        "asset_class": ASSET_CLASS_MULTI_ASSET,
         "tags": ["breakout", "donchian", "turtle"],
-        "difficulty": "advanced",
+        "difficulty": TEMPLATE_DIFFICULTY_ADVANCED,
         "config_sexpr": """(strategy "Donchian Breakout"
   :rebalance daily
   :benchmark SPY
@@ -921,11 +902,10 @@ TEMPLATES: dict[str, TemplateData] = {
         "id": "rsi-mean-reversion",
         "name": "RSI Mean Reversion",
         "description": "Allocate to equities when oversold, bonds when overbought.",
-        "strategy_type": StrategyType.MEAN_REVERSION,
-        "category": TemplateCategory.MEAN_REVERSION,
-        "asset_class": AssetClass.MULTI_ASSET,
+        "category": TEMPLATE_CATEGORY_MEAN_REVERSION,
+        "asset_class": ASSET_CLASS_MULTI_ASSET,
         "tags": ["mean-reversion", "rsi", "oscillator"],
-        "difficulty": "intermediate",
+        "difficulty": TEMPLATE_DIFFICULTY_INTERMEDIATE,
         "config_sexpr": """(strategy "RSI Mean Reversion"
   :rebalance daily
   :benchmark SPY
@@ -941,11 +921,10 @@ TEMPLATES: dict[str, TemplateData] = {
         "id": "bollinger-bounce",
         "name": "Bollinger Bounce",
         "description": "Mean reversion strategy using Bollinger Bands.",
-        "strategy_type": StrategyType.MEAN_REVERSION,
-        "category": TemplateCategory.MEAN_REVERSION,
-        "asset_class": AssetClass.MULTI_ASSET,
+        "category": TEMPLATE_CATEGORY_MEAN_REVERSION,
+        "asset_class": ASSET_CLASS_MULTI_ASSET,
         "tags": ["mean-reversion", "bollinger", "bands"],
-        "difficulty": "intermediate",
+        "difficulty": TEMPLATE_DIFFICULTY_INTERMEDIATE,
         "config_sexpr": """(strategy "Bollinger Bounce"
   :rebalance daily
   :benchmark SPY
@@ -961,11 +940,10 @@ TEMPLATES: dict[str, TemplateData] = {
         "id": "macd-strategy",
         "name": "MACD Momentum",
         "description": "Trade based on MACD histogram crossovers.",
-        "strategy_type": StrategyType.MOMENTUM,
-        "category": TemplateCategory.MEAN_REVERSION,
-        "asset_class": AssetClass.MULTI_ASSET,
+        "category": TEMPLATE_CATEGORY_MEAN_REVERSION,
+        "asset_class": ASSET_CLASS_MULTI_ASSET,
         "tags": ["momentum", "macd"],
-        "difficulty": "intermediate",
+        "difficulty": TEMPLATE_DIFFICULTY_INTERMEDIATE,
         "config_sexpr": """(strategy "MACD Momentum"
   :rebalance daily
   :benchmark SPY
@@ -977,11 +955,10 @@ TEMPLATES: dict[str, TemplateData] = {
         "id": "pairs-trading",
         "name": "Pairs Trading",
         "description": "Mean reversion on correlated asset pairs (KO/PEP).",
-        "strategy_type": StrategyType.MEAN_REVERSION,
-        "category": TemplateCategory.MEAN_REVERSION,
-        "asset_class": AssetClass.EQUITY,
+        "category": TEMPLATE_CATEGORY_MEAN_REVERSION,
+        "asset_class": ASSET_CLASS_EQUITY,
         "tags": ["pairs", "mean-reversion", "statistical-arbitrage"],
-        "difficulty": "advanced",
+        "difficulty": TEMPLATE_DIFFICULTY_ADVANCED,
         "config_sexpr": """(strategy "Pairs Trading"
   :rebalance daily
   :benchmark SPY
@@ -1003,11 +980,10 @@ TEMPLATES: dict[str, TemplateData] = {
         "id": "crypto-market-cap",
         "name": "Crypto Market Cap",
         "description": "Market-cap weighted allocation to top cryptocurrencies—BTC, ETH, SOL.",
-        "strategy_type": StrategyType.ALLOCATION,
-        "category": TemplateCategory.ALTERNATIVES,
-        "asset_class": AssetClass.CRYPTO,
+        "category": TEMPLATE_CATEGORY_ALTERNATIVES,
+        "asset_class": ASSET_CLASS_CRYPTO,
         "tags": ["bitcoin", "ethereum", "market-cap"],
-        "difficulty": "beginner",
+        "difficulty": TEMPLATE_DIFFICULTY_BEGINNER,
         "config_sexpr": """(strategy "Crypto Market Cap"
   :rebalance weekly
   :benchmark BTCUSD
@@ -1020,11 +996,10 @@ TEMPLATES: dict[str, TemplateData] = {
         "id": "defi-blue-chips",
         "name": "DeFi Blue Chips",
         "description": "Equal-weight allocation to leading DeFi protocol tokens with governance focus.",
-        "strategy_type": StrategyType.ALLOCATION,
-        "category": TemplateCategory.ALTERNATIVES,
-        "asset_class": AssetClass.CRYPTO,
+        "category": TEMPLATE_CATEGORY_ALTERNATIVES,
+        "asset_class": ASSET_CLASS_CRYPTO,
         "tags": ["defi", "governance", "protocols"],
-        "difficulty": "beginner",
+        "difficulty": TEMPLATE_DIFFICULTY_BEGINNER,
         "config_sexpr": """(strategy "DeFi Blue Chips"
   :rebalance weekly
   :benchmark ETHUSD
@@ -1038,11 +1013,10 @@ TEMPLATES: dict[str, TemplateData] = {
         "id": "crypto-momentum-rotation",
         "name": "Crypto Momentum Rotation",
         "description": "Rotate to top 3 cryptos by 90-day momentum.",
-        "strategy_type": StrategyType.MOMENTUM,
-        "category": TemplateCategory.ALTERNATIVES,
-        "asset_class": AssetClass.CRYPTO,
+        "category": TEMPLATE_CATEGORY_ALTERNATIVES,
+        "asset_class": ASSET_CLASS_CRYPTO,
         "tags": ["crypto", "momentum", "rotation"],
-        "difficulty": "advanced",
+        "difficulty": TEMPLATE_DIFFICULTY_ADVANCED,
         "config_sexpr": """(strategy "Crypto Momentum Rotation"
   :rebalance weekly
   :benchmark BTCUSD
@@ -1058,11 +1032,10 @@ TEMPLATES: dict[str, TemplateData] = {
         "id": "crypto-trend-vol-filter",
         "name": "Crypto Trend Vol Filter",
         "description": "Crypto allocation with dual trend filters: BTC trend for core, ETH trend for altcoin satellite. Safety to stablecoins when down.",
-        "strategy_type": StrategyType.REGIME,
-        "category": TemplateCategory.ALTERNATIVES,
-        "asset_class": AssetClass.CRYPTO,
+        "category": TEMPLATE_CATEGORY_ALTERNATIVES,
+        "asset_class": ASSET_CLASS_CRYPTO,
         "tags": ["crypto", "trend", "volatility", "stablecoin"],
-        "difficulty": "advanced",
+        "difficulty": TEMPLATE_DIFFICULTY_ADVANCED,
         "config_sexpr": """(strategy "Crypto Trend Vol Filter"
   :rebalance daily
   :benchmark BTCUSD
@@ -1083,11 +1056,10 @@ TEMPLATES: dict[str, TemplateData] = {
         "id": "managed-futures-trend",
         "name": "Managed Futures Trend",
         "description": "CTA-style trend following via managed futures ETFs.",
-        "strategy_type": StrategyType.TREND_FOLLOWING,
-        "category": TemplateCategory.ALTERNATIVES,
-        "asset_class": AssetClass.COMMODITY,
+        "category": TEMPLATE_CATEGORY_ALTERNATIVES,
+        "asset_class": ASSET_CLASS_COMMODITY,
         "tags": ["managed-futures", "trend", "cta"],
-        "difficulty": "intermediate",
+        "difficulty": TEMPLATE_DIFFICULTY_INTERMEDIATE,
         "config_sexpr": """(strategy "Managed Futures Trend"
   :rebalance monthly
   :benchmark SPY
@@ -1099,11 +1071,10 @@ TEMPLATES: dict[str, TemplateData] = {
         "id": "commodity-momentum",
         "name": "Commodity Momentum",
         "description": "Trend following across commodity sectors.",
-        "strategy_type": StrategyType.MOMENTUM,
-        "category": TemplateCategory.ALTERNATIVES,
-        "asset_class": AssetClass.COMMODITY,
+        "category": TEMPLATE_CATEGORY_ALTERNATIVES,
+        "asset_class": ASSET_CLASS_COMMODITY,
         "tags": ["commodity", "momentum", "trend"],
-        "difficulty": "advanced",
+        "difficulty": TEMPLATE_DIFFICULTY_ADVANCED,
         "config_sexpr": """(strategy "Commodity Momentum"
   :rebalance monthly
   :benchmark DBC
@@ -1118,11 +1089,10 @@ TEMPLATES: dict[str, TemplateData] = {
         "id": "global-macro-regime",
         "name": "Global Macro Regime",
         "description": "Regime-based allocation using VIX for growth vs defensive positioning.",
-        "strategy_type": StrategyType.REGIME,
-        "category": TemplateCategory.ALTERNATIVES,
-        "asset_class": AssetClass.MULTI_ASSET,
+        "category": TEMPLATE_CATEGORY_ALTERNATIVES,
+        "asset_class": ASSET_CLASS_MULTI_ASSET,
         "tags": ["macro", "regime", "vix"],
-        "difficulty": "advanced",
+        "difficulty": TEMPLATE_DIFFICULTY_ADVANCED,
         "config_sexpr": """(strategy "Global Macro Regime"
   :rebalance daily
   :benchmark SPY
@@ -1149,26 +1119,21 @@ class TemplateService:
 
     async def list_templates(
         self,
-        strategy_type: StrategyType | None = None,
-        category: TemplateCategory | None = None,
-        asset_class: AssetClass | None = None,
-        difficulty: str | None = None,
+        category: TemplateCategory.ValueType | None = None,
+        asset_class: AssetClass.ValueType | None = None,
+        difficulty: TemplateDifficulty.ValueType | None = None,
     ) -> list[TemplateResponse]:
         """List available strategy templates.
 
         Args:
-            strategy_type: Filter by strategy type
-            category: Filter by template category
-            asset_class: Filter by asset class
-            difficulty: Filter by difficulty level (beginner, intermediate, advanced)
+            category: Filter by template category (proto enum value)
+            asset_class: Filter by asset class (proto enum value)
+            difficulty: Filter by difficulty level (proto enum value)
 
         Returns:
             List of TemplateResponse objects
         """
         templates = list(TEMPLATES.values())
-
-        if strategy_type:
-            templates = [t for t in templates if t["strategy_type"] == strategy_type]
 
         if category:
             templates = [t for t in templates if t["category"] == category]
@@ -1184,7 +1149,6 @@ class TemplateService:
                 id=t["id"],
                 name=t["name"],
                 description=t["description"],
-                strategy_type=t["strategy_type"],
                 category=t["category"],
                 asset_class=t["asset_class"],
                 config_sexpr=t["config_sexpr"],
@@ -1211,7 +1175,6 @@ class TemplateService:
             id=t["id"],
             name=t["name"],
             description=t["description"],
-            strategy_type=t["strategy_type"],
             category=t["category"],
             asset_class=t["asset_class"],
             config_sexpr=t["config_sexpr"],

@@ -27,12 +27,15 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Application lifespan handler."""
     # Mount Connect ASGI app
     try:
-        from llamatrade_proto.generated.strategy_connect import StrategyServiceASGIApplication
+        from llamatrade_proto.generated.strategy_connect import (
+            StrategyService,
+            StrategyServiceASGIApplication,
+        )
 
         from src.grpc.servicer import StrategyServicer
 
         servicer = StrategyServicer()
-        connect_app = StrategyServiceASGIApplication(servicer)
+        connect_app = StrategyServiceASGIApplication(cast(StrategyService, servicer))
         app.mount("/", cast(ASGIApp, connect_app))
         logger.info("Connect ASGI application mounted successfully")
     except ImportError as e:

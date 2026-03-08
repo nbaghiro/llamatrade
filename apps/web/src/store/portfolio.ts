@@ -1,18 +1,18 @@
 // Portfolio Store
 // Manages portfolio state including strategy performance data for the portfolio page
-//
-// Note: After running `make proto`, these types can be replaced with generated proto types:
-// import { StrategyPerformanceSummary, ExecutionMode, ExecutionStatus } from '../generated/proto/portfolio_pb';
 
 import { create } from 'zustand';
 
+import {
+  ExecutionMode,
+  ExecutionStatus,
+} from '../generated/proto/common_pb';
 import { portfolioClient } from '../services/grpc-client';
 
 import { useAuthStore } from './auth';
 
-// Types - these map to proto-generated types after `make proto`
-export type ExecutionMode = 'paper' | 'live';
-export type ExecutionStatus = 'running' | 'paused' | 'stopped' | 'error';
+// Re-export proto enums for convenience
+export { ExecutionMode, ExecutionStatus };
 
 export interface Position {
   symbol: string;
@@ -60,8 +60,8 @@ export interface StrategyPerformance {
   id: string;         // execution_id
   strategyId: string; // strategy_id
   name: string;
-  mode: ExecutionMode;
-  status: ExecutionStatus;
+  mode: ExecutionMode;      // Proto enum value
+  status: ExecutionStatus;  // Proto enum value
   color: string;
 
   // Aggregates
@@ -131,20 +131,22 @@ const STRATEGY_COLORS = [
   '#84cc16', // lime
 ];
 
-// Helper to map proto ExecutionStatus enum to local type
+// Helper to map proto ExecutionStatus number to enum
 function mapProtoStatus(status: number): ExecutionStatus {
-  // Proto enum values: 0=UNSPECIFIED, 1=RUNNING, 2=PAUSED, 3=STOPPED, 4=ERROR
+  // Proto enum values: 0=UNSPECIFIED, 1=PENDING, 2=RUNNING, 3=PAUSED, 4=STOPPED, 5=ERROR
   switch (status) {
-    case 1:
-      return 'running';
-    case 2:
-      return 'paused';
-    case 3:
-      return 'stopped';
-    case 4:
-      return 'error';
+    case ExecutionStatus.RUNNING:
+      return ExecutionStatus.RUNNING;
+    case ExecutionStatus.PAUSED:
+      return ExecutionStatus.PAUSED;
+    case ExecutionStatus.STOPPED:
+      return ExecutionStatus.STOPPED;
+    case ExecutionStatus.ERROR:
+      return ExecutionStatus.ERROR;
+    case ExecutionStatus.PENDING:
+      return ExecutionStatus.PENDING;
     default:
-      return 'stopped';
+      return ExecutionStatus.STOPPED;
   }
 }
 
@@ -193,8 +195,8 @@ const DEMO_STRATEGIES: StrategyPerformance[] = [
     id: 'exec-1',
     strategyId: 'strat-1',
     name: 'Momentum Alpha',
-    mode: 'live',
-    status: 'running',
+    mode: ExecutionMode.LIVE,
+    status: ExecutionStatus.RUNNING,
     color: STRATEGY_COLORS[0],
     allocatedCapital: 50000,
     currentValue: 56200,
@@ -256,8 +258,8 @@ const DEMO_STRATEGIES: StrategyPerformance[] = [
     id: 'exec-2',
     strategyId: 'strat-2',
     name: 'Mean Reversion',
-    mode: 'paper',
-    status: 'running',
+    mode: ExecutionMode.PAPER,
+    status: ExecutionStatus.RUNNING,
     color: STRATEGY_COLORS[1],
     allocatedCapital: 30000,
     currentValue: 32460,
@@ -307,8 +309,8 @@ const DEMO_STRATEGIES: StrategyPerformance[] = [
     id: 'exec-3',
     strategyId: 'strat-3',
     name: 'Value Screener',
-    mode: 'live',
-    status: 'running',
+    mode: ExecutionMode.LIVE,
+    status: ExecutionStatus.RUNNING,
     color: STRATEGY_COLORS[2],
     allocatedCapital: 25000,
     currentValue: 24475,
@@ -358,8 +360,8 @@ const DEMO_STRATEGIES: StrategyPerformance[] = [
     id: 'exec-4',
     strategyId: 'strat-4',
     name: 'Tech Growth',
-    mode: 'paper',
-    status: 'paused',
+    mode: ExecutionMode.PAPER,
+    status: ExecutionStatus.PAUSED,
     color: STRATEGY_COLORS[3],
     allocatedCapital: 20000,
     currentValue: 21800,
@@ -424,7 +426,7 @@ export const usePortfolioStore = create<PortfolioState>((set) => ({
             id: s.executionId,
             strategyId: s.strategyId,
             name: s.strategyName,
-            mode: (s.mode === 1 ? 'paper' : 'live') as ExecutionMode,
+            mode: s.mode === ExecutionMode.PAPER ? ExecutionMode.PAPER : ExecutionMode.LIVE,
             status: mapProtoStatus(s.status),
             color: s.color || STRATEGY_COLORS[i % STRATEGY_COLORS.length],
             allocatedCapital: parseFloat(s.allocatedCapital?.value || '0'),

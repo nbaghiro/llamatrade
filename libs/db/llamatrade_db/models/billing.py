@@ -23,6 +23,7 @@ from llamatrade_db.models._enum_types import (
     PlanTierType,
     SubscriptionStatusType,
 )
+from llamatrade_proto.generated import billing_pb2
 
 
 class Plan(Base, UUIDPrimaryKeyMixin, TimestampMixin):
@@ -33,7 +34,7 @@ class Plan(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     name: Mapped[str] = mapped_column(String(100), nullable=False, unique=True)
     display_name: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
-    tier: Mapped[int] = mapped_column(PlanTierType(), nullable=False)
+    tier: Mapped[billing_pb2.PlanTier.ValueType] = mapped_column(PlanTierType(), nullable=False)
     price_monthly: Mapped[Decimal] = mapped_column(Numeric(precision=10, scale=2), nullable=False)
     price_yearly: Mapped[Decimal | None] = mapped_column(
         Numeric(precision=10, scale=2), nullable=True
@@ -62,8 +63,12 @@ class Subscription(Base, UUIDPrimaryKeyMixin, TenantMixin, TimestampMixin):
     plan_id: Mapped[UUID] = mapped_column(
         PG_UUID(as_uuid=True), ForeignKey("plans.id"), nullable=False
     )
-    status: Mapped[int] = mapped_column(SubscriptionStatusType(), nullable=False)
-    billing_cycle: Mapped[int] = mapped_column(BillingIntervalType(), nullable=False)
+    status: Mapped[billing_pb2.SubscriptionStatus.ValueType] = mapped_column(
+        SubscriptionStatusType(), nullable=False
+    )
+    billing_cycle: Mapped[billing_pb2.BillingInterval.ValueType] = mapped_column(
+        BillingIntervalType(), nullable=False
+    )
     stripe_subscription_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
     stripe_customer_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
     current_period_start: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

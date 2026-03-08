@@ -1,4 +1,5 @@
 // Common types
+import { StrategyStatus } from '../generated/proto/strategy_pb';
 
 export interface User {
   id: string;
@@ -13,7 +14,7 @@ export interface Strategy {
   name: string;
   description: string | null;
   strategy_type: string;
-  status: 'draft' | 'active' | 'paused' | 'archived';
+  status: StrategyStatus;
   current_version: number;
   created_at: string;
   updated_at: string;

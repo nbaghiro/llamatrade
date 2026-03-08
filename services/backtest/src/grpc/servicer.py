@@ -302,7 +302,7 @@ class BacktestServicer:
                         )
                         return
 
-                    # Send initial status (backtest.status is already proto int)
+                    # Send initial status (backtest.status is already proto ValueType)
                     yield backtest_pb2.BacktestProgressUpdate(
                         backtest_id=backtest_id,
                         status=backtest.status,
@@ -384,7 +384,7 @@ class BacktestServicer:
         """Convert internal backtest to proto BacktestRun."""
         from llamatrade_proto.generated import backtest_pb2, common_pb2
 
-        # backtest.status is already a proto int
+        # backtest.status is already proto ValueType
         proto = backtest_pb2.BacktestRun(
             id=str(backtest.id),
             tenant_id=str(backtest.tenant_id),

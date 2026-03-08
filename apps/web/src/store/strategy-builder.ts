@@ -12,7 +12,6 @@ import {
   validateTree,
 } from '../services/strategy-serializer';
 import { validateStrategy, type ValidationResult, type ValidationIssue } from '../services/validation';
-import type { StrategyType } from '../types/strategy';
 import type {
   BlockId,
   Block,
@@ -231,7 +230,6 @@ interface StrategyBuilderState {
   strategyId: string | null;
   strategyName: string;
   strategyDescription: string;
-  strategyType: StrategyType;
   timeframe: string;
   isDirty: boolean;
 
@@ -280,7 +278,6 @@ interface StrategyBuilderState {
   // Metadata operations
   setStrategyName: (name: string) => void;
   setStrategyDescription: (description: string) => void;
-  setStrategyType: (type: StrategyType) => void;
   setTimeframe: (timeframe: string) => void;
 
   // History operations
@@ -416,7 +413,6 @@ export const useStrategyBuilderStore = create<StrategyBuilderState>()(
     strategyId: null,
     strategyName: 'Untitled Strategy',
     strategyDescription: '',
-    strategyType: 'custom' as StrategyType,
     timeframe: '1D',
     isDirty: false,
 
@@ -754,9 +750,6 @@ export const useStrategyBuilderStore = create<StrategyBuilderState>()(
           if (metadata.timeframe) {
             s.timeframe = metadata.timeframe;
           }
-          if (metadata.strategyType) {
-            s.strategyType = metadata.strategyType;
-          }
 
           // Update root block name to match parsed strategy name
           const root = s.tree.blocks[s.tree.rootId];
@@ -779,11 +772,10 @@ export const useStrategyBuilderStore = create<StrategyBuilderState>()(
       },
 
       getDSLCode: () => {
-        const { tree, strategyName, strategyDescription, strategyType, timeframe } = get();
+        const { tree, strategyName, strategyDescription, timeframe } = get();
         return toDSL(tree, {
           name: strategyName,
           description: strategyDescription,
-          strategyType,
           timeframe,
         });
       },
@@ -816,7 +808,6 @@ export const useStrategyBuilderStore = create<StrategyBuilderState>()(
           state.strategyId = null;
           state.strategyName = 'Untitled Strategy';
           state.strategyDescription = '';
-          state.strategyType = 'custom';
           state.timeframe = '1D';
           state.isDirty = false;
           state.serverVersion = 0;
@@ -855,13 +846,6 @@ export const useStrategyBuilderStore = create<StrategyBuilderState>()(
         });
       },
 
-      setStrategyType: (type) => {
-        set((state) => {
-          state.strategyType = type;
-          state.isDirty = true;
-        });
-      },
-
       setTimeframe: (timeframe) => {
         set((state) => {
           state.timeframe = timeframe;
@@ -889,8 +873,6 @@ export const useStrategyBuilderStore = create<StrategyBuilderState>()(
             state.strategyId = strategy.id;
             state.strategyName = strategy.name;
             state.strategyDescription = strategy.description || '';
-            // StrategyType is frontend-only categorization; strategies default to 'custom'
-            state.strategyType = 'custom';
             state.timeframe = strategy.timeframe;
 
             // Track server version for optimistic locking
@@ -949,8 +931,6 @@ export const useStrategyBuilderStore = create<StrategyBuilderState>()(
             state.strategyId = null; // New strategy from template
             state.strategyName = template.name;
             state.strategyDescription = template.description || '';
-            // StrategyType is frontend-only categorization; templates default to 'custom'
-            state.strategyType = 'custom';
             state.timeframe = compiledJson.timeframe || template.timeframe || '1D';
 
             // Convert config to block tree
@@ -1007,7 +987,6 @@ export const useStrategyBuilderStore = create<StrategyBuilderState>()(
           const metadata = {
             name: state.strategyName,
             description: state.strategyDescription,
-            strategyType: state.strategyType,
             timeframe: state.timeframe,
           };
 
@@ -1181,7 +1160,6 @@ export const useStrategyBuilderStore = create<StrategyBuilderState>()(
           state.strategyId = null;
           state.strategyName = 'New Strategy';
           state.strategyDescription = '';
-          state.strategyType = 'custom';
           state.timeframe = '1D';
           state.isDirty = false;
           state.serverVersion = 0;

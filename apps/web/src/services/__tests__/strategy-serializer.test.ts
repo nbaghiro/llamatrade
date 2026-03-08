@@ -411,7 +411,6 @@ describe('toDSL', () => {
     const metadata: StrategyMetadata = {
       name: 'Test Strategy',
       timeframe: '1D',
-      strategyType: 'momentum',
     };
 
     const dsl = toDSL(tree, metadata);
@@ -436,7 +435,6 @@ describe('round-trip DSL serialization', () => {
     const metadata: StrategyMetadata = {
       name: parsed!.metadata.name || 'Simple Portfolio',
       timeframe: parsed!.metadata.timeframe || '1D',
-      strategyType: 'custom',
     };
 
     const reserialized = toDSL(parsed!.tree, metadata);
@@ -469,7 +467,6 @@ describe('round-trip DSL serialization', () => {
     const metadata: StrategyMetadata = {
       name: parsed!.metadata.name || 'Grouped Strategy',
       timeframe: parsed!.metadata.timeframe || '1W',
-      strategyType: 'custom',
     };
 
     const reserialized = toDSL(parsed!.tree, metadata);
@@ -495,7 +492,6 @@ describe('round-trip DSL serialization', () => {
     const metadata: StrategyMetadata = {
       name: parsed!.metadata.name || 'Conditional',
       timeframe: parsed!.metadata.timeframe || '1D',
-      strategyType: 'custom',
     };
 
     const reserialized = toDSL(parsed!.tree, metadata);

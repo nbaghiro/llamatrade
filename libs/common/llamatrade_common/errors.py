@@ -57,9 +57,9 @@ class DSLError:
     column: int | None = None
     suggestions: list[str] | None = None
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, int | str | list[str]]:
         """Convert to dictionary for JSON serialization."""
-        result = {
+        result: dict[str, int | str | list[str]] = {
             "code": self.code.value,
             "code_name": self.code.name,
             "message": self.message,

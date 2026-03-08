@@ -422,8 +422,7 @@ class TradingServicer:
     def _to_proto_order(self, order: OrderResponse) -> trading_pb2.Order:
         """Convert internal order to proto Order.
 
-        Since OrderResponse now uses int values that match proto enum values,
-        we can pass them directly without mapping.
+        OrderResponse now uses proto ValueType directly, so no casting needed.
         """
         from llamatrade_proto.generated import common_pb2, trading_pb2
 
@@ -433,9 +432,9 @@ class TradingServicer:
             tenant_id="",  # Not stored in OrderResponse
             session_id="",  # Not stored in OrderResponse
             symbol=order.symbol,
-            side=order.side,  # Int matches proto value
-            type=order.order_type,  # Int matches proto value
-            status=order.status,  # Int matches proto value
+            side=order.side,
+            type=order.order_type,
+            status=order.status,
             quantity=common_pb2.Decimal(value=str(order.qty)),
         )
 

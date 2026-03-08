@@ -6,7 +6,10 @@
  */
 
 import {
+  AssetClass,
   StrategyStatus,
+  TemplateCategory,
+  TemplateDifficulty,
   type Strategy,
 } from '../generated/proto/strategy_pb';
 
@@ -123,9 +126,9 @@ export async function listStrategyVersions(strategyId: string, pagination?: { pa
 // ============================================
 
 export async function listTemplates(params: {
-  category?: string;
-  assetClass?: string;
-  difficulty?: string;
+  category?: TemplateCategory;
+  assetClass?: AssetClass;
+  difficulty?: TemplateDifficulty;
 } = {}) {
   return strategyClient.listTemplates({
     category: params.category,

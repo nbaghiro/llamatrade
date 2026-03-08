@@ -13,9 +13,9 @@ import {
   ALL_DIFFICULTIES,
   CATEGORY_LABELS,
   DIFFICULTY_LABELS,
+  TemplateCategory,
+  TemplateDifficulty,
   type StrategyTemplate,
-  type TemplateCategory,
-  type TemplateDifficulty,
 } from '../../data/strategy-templates';
 import { listTemplates } from '../../services/strategy';
 import { fromDSLString } from '../../services/strategy-serializer';
@@ -23,20 +23,22 @@ import { useStrategyBuilderStore } from '../../store/strategy-builder';
 import type { BlockId } from '../../types/strategy-builder';
 import { hasChildren } from '../../types/strategy-builder';
 
-const DIFFICULTY_COLORS: Record<string, string> = {
-  beginner: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
-  intermediate: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
-  advanced: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
+const DIFFICULTY_COLORS: Record<TemplateDifficulty, string> = {
+  [TemplateDifficulty.UNSPECIFIED]: 'bg-gray-100 text-gray-700 dark:bg-gray-900/30 dark:text-gray-400',
+  [TemplateDifficulty.BEGINNER]: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
+  [TemplateDifficulty.INTERMEDIATE]: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
+  [TemplateDifficulty.ADVANCED]: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
 };
 
-const CATEGORY_COLORS: Record<string, string> = {
-  'buy-and-hold': 'bg-slate-100 text-slate-700 dark:bg-slate-900/30 dark:text-slate-400',
-  tactical: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
-  factor: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400',
-  income: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400',
-  trend: 'bg-cyan-100 text-cyan-700 dark:bg-cyan-900/30 dark:text-cyan-400',
-  'mean-reversion': 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400',
-  alternatives: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400',
+const CATEGORY_COLORS: Record<TemplateCategory, string> = {
+  [TemplateCategory.UNSPECIFIED]: 'bg-gray-100 text-gray-700 dark:bg-gray-900/30 dark:text-gray-400',
+  [TemplateCategory.BUY_AND_HOLD]: 'bg-slate-100 text-slate-700 dark:bg-slate-900/30 dark:text-slate-400',
+  [TemplateCategory.TACTICAL]: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
+  [TemplateCategory.FACTOR]: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400',
+  [TemplateCategory.INCOME]: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400',
+  [TemplateCategory.TREND]: 'bg-cyan-100 text-cyan-700 dark:bg-cyan-900/30 dark:text-cyan-400',
+  [TemplateCategory.MEAN_REVERSION]: 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400',
+  [TemplateCategory.ALTERNATIVES]: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400',
 };
 
 interface NewStrategyDialogProps {
@@ -201,13 +203,12 @@ export default function NewStrategyDialog({ isOpen, onClose }: NewStrategyDialog
           id: t.id,
           name: t.name,
           description: t.description,
-          strategy_type: t.strategyType,
-          category: t.category as TemplateCategory,
-          asset_class: t.assetClass as StrategyTemplate['asset_class'],
+          category: t.category,
+          asset_class: t.assetClass,
           config_sexpr: t.configSexpr,
           config_json: {},
           tags: [...t.tags],
-          difficulty: t.difficulty as TemplateDifficulty,
+          difficulty: t.difficulty,
         }));
         setTemplates(mappedTemplates);
       } catch {
@@ -288,7 +289,6 @@ export default function NewStrategyDialog({ isOpen, onClose }: NewStrategyDialog
       strategyId: null,
       strategyName: metadata.name || template.name,
       strategyDescription: template.description,
-      strategyType: 'custom',
       timeframe: metadata.timeframe || '1D',
       isDirty: true,
       loading: false,
@@ -382,9 +382,9 @@ export default function NewStrategyDialog({ isOpen, onClose }: NewStrategyDialog
                   onClick={() => setSelectedDifficulty(selectedDifficulty === difficulty ? 'all' : difficulty)}
                   className={`px-3 py-1.5 text-sm rounded-lg border transition-colors ${
                     selectedDifficulty === difficulty
-                      ? difficulty === 'beginner'
+                      ? difficulty === TemplateDifficulty.BEGINNER
                         ? 'bg-green-600 text-white border-green-600'
-                        : difficulty === 'intermediate'
+                        : difficulty === TemplateDifficulty.INTERMEDIATE
                           ? 'bg-amber-500 text-white border-amber-500'
                           : 'bg-red-600 text-white border-red-600'
                       : 'bg-white dark:bg-gray-900 border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400 hover:border-primary-400'

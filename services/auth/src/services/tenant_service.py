@@ -177,7 +177,7 @@ class TenantService:
         result = await self.db.execute(stmt)
         creds_list = result.scalars().all()
 
-        items = []
+        items: list[AlpacaCredentialsListItem] = []
         for creds in creds_list:
             # Decrypt just to get prefix, then mask
             api_key = decrypt_value(creds.api_key_encrypted)

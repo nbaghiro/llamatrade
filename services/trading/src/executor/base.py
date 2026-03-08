@@ -22,6 +22,7 @@ from llamatrade_proto.generated.trading_pb2 import (
     ORDER_STATUS_PENDING,
     ORDER_STATUS_REJECTED,
     ORDER_STATUS_SUBMITTED,
+    OrderStatus,
 )
 
 from src.metrics import record_order_submission
@@ -298,16 +299,16 @@ class OrderSubmissionMixin:
         )
 
     @staticmethod
-    def _map_alpaca_status(alpaca_status: str) -> int:
+    def _map_alpaca_status(alpaca_status: str) -> OrderStatus.ValueType:
         """Map Alpaca order status to OrderStatus proto value.
 
         Args:
             alpaca_status: Status string from Alpaca API.
 
         Returns:
-            OrderStatus proto value (int).
+            OrderStatus proto value.
         """
-        mapping: dict[str, int] = {
+        mapping: dict[str, OrderStatus.ValueType] = {
             "new": ORDER_STATUS_SUBMITTED,
             "accepted": ORDER_STATUS_ACCEPTED,
             "pending_new": ORDER_STATUS_PENDING,

@@ -49,6 +49,32 @@ enum AlertConditionType {
   ALERT_CONDITION_TYPE_STRATEGY_SIGNAL = 8;
 }
 
+// Alert status
+enum AlertStatus {
+  ALERT_STATUS_UNSPECIFIED = 0;
+  ALERT_STATUS_ACTIVE = 1;
+  ALERT_STATUS_TRIGGERED = 2;
+  ALERT_STATUS_DISABLED = 3;
+}
+
+// Notification delivery status
+enum NotificationStatus {
+  NOTIFICATION_STATUS_UNSPECIFIED = 0;
+  NOTIFICATION_STATUS_PENDING = 1;
+  NOTIFICATION_STATUS_SENT = 2;
+  NOTIFICATION_STATUS_FAILED = 3;
+  NOTIFICATION_STATUS_READ = 4;
+}
+
+// Notification priority
+enum NotificationPriority {
+  NOTIFICATION_PRIORITY_UNSPECIFIED = 0;
+  NOTIFICATION_PRIORITY_LOW = 1;
+  NOTIFICATION_PRIORITY_MEDIUM = 2;
+  NOTIFICATION_PRIORITY_HIGH = 3;
+  NOTIFICATION_PRIORITY_CRITICAL = 4;
+}
+
 // =============================================================================
 // MESSAGES
 // =============================================================================

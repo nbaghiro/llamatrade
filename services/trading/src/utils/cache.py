@@ -122,7 +122,7 @@ class AsyncTTLCache:
                 if key_builder:
                     key = f"{func.__name__}:{key_builder(*args, **kwargs)}"
                 else:
-                    key = self._build_key(func.__name__, args, kwargs)
+                    key = self.build_key(func.__name__, args, kwargs)
 
                 # Try to get from cache
                 cached_value = await self.get(key)
@@ -139,9 +139,11 @@ class AsyncTTLCache:
 
             # Attach cache reference for direct access
             wrapper.cache = self  # type: ignore[attr-defined]
-            wrapper.cache_key_builder = key_builder or (  # type: ignore[attr-defined]
-                lambda *a, **kw: self._build_key(func.__name__, a, kw)
-            )
+
+            def _default_key_builder(*a: Any, **kw: Any) -> str:
+                return self.build_key(func.__name__, a, kw)
+
+            wrapper.cache_key_builder = key_builder or _default_key_builder  # type: ignore[attr-defined]
 
             return wrapper
 
@@ -294,7 +296,7 @@ class AsyncTTLCache:
         del self._cache[oldest_key]
         self._stats.evictions += 1
 
-    def _build_key(self, func_name: str, args: tuple[Any, ...], kwargs: dict[str, Any]) -> str:
+    def build_key(self, func_name: str, args: tuple[Any, ...], kwargs: dict[str, Any]) -> str:
         """Build a cache key from function name and arguments.
 
         Args:
@@ -383,7 +385,7 @@ def async_ttl_cache(
             if key_builder:
                 key = f"{func.__name__}:{key_builder(*args, **kwargs)}"
             else:
-                key = func_cache._build_key(func.__name__, args, kwargs)
+                key = func_cache.build_key(func.__name__, args, kwargs)
 
             # Try to get from cache
             cached_value = await func_cache.get(key)
@@ -407,7 +409,7 @@ def async_ttl_cache(
             if key_builder:
                 key = f"{func.__name__}:{key_builder(*args, **kwargs)}"
             else:
-                key = func_cache._build_key(func.__name__, args, kwargs)
+                key = func_cache.build_key(func.__name__, args, kwargs)
             return await func_cache.invalidate(key)
 
         wrapper.cache_clear = cache_clear  # type: ignore[attr-defined]

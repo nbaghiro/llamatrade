@@ -334,17 +334,17 @@ class TradingHoursChecker:
         next_close = self.get_next_close(ts)
         return (next_close - ts).total_seconds()
 
-    def is_early_close_day(self, date: datetime | None = None) -> bool:
+    def is_early_close_day(self, check_date: datetime | None = None) -> bool:
         """Check if a given date is an early close day (e.g., day before holiday).
 
         Args:
-            date: Date to check. Defaults to today.
+            check_date: Date to check. Defaults to today.
 
         Returns:
             True if the market closes early on this day.
         """
-        ts = date or datetime.now(ET)
-        ts_date = ts.date() if isinstance(ts, datetime) else ts
+        ts = check_date or datetime.now(ET)
+        ts_date = ts.date()
 
         if not self._calendar.is_session(ts_date):
             return False
@@ -352,7 +352,7 @@ class TradingHoursChecker:
         # Check if the session has early close
         try:
             session = self._calendar.session_open_close(ts_date)
-            close_time = session.close.time()
+            close_time = session[1].time()
             return close_time < self.config.regular_close
         except Exception:
             return False

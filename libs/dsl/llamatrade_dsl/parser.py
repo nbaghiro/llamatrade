@@ -423,9 +423,15 @@ class Parser:
         self._expect("LPAREN")
 
         tok = self._current()
-        if tok is None or tok[0] != "SYMBOL" or tok[1] not in ("top", "bottom"):
+        if tok is None or tok[0] != "SYMBOL":
             raise ParseError("Expected 'top' or 'bottom' in :select")
-        direction = cast(SelectDirection, tok[1])
+        direction: SelectDirection
+        if tok[1] == "top":
+            direction = "top"
+        elif tok[1] == "bottom":
+            direction = "bottom"
+        else:
+            raise ParseError("Expected 'top' or 'bottom' in :select")
         self.pos += 1
 
         tok = self._current()
@@ -563,10 +569,23 @@ class Parser:
         self.pos += 1
 
         field: PriceField = "close"
-        if self._current() and self._current()[0] == "KEYWORD":  # type: ignore[index]
-            kw = self._current()[1][1:]  # type: ignore[index]
-            if kw in ("close", "open", "high", "low", "volume"):
-                field = cast(PriceField, kw)
+        current = self._current()
+        if current and current[0] == "KEYWORD":
+            kw = current[1][1:]
+            if kw == "close":
+                field = "close"
+                self.pos += 1
+            elif kw == "open":
+                field = "open"
+                self.pos += 1
+            elif kw == "high":
+                field = "high"
+                self.pos += 1
+            elif kw == "low":
+                field = "low"
+                self.pos += 1
+            elif kw == "volume":
+                field = "volume"
                 self.pos += 1
 
         self._expect("RPAREN")
@@ -592,8 +611,9 @@ class Parser:
 
         # Parse optional output keyword
         output: str | None = None
-        if self._current() and self._current()[0] == "KEYWORD":  # type: ignore[index]
-            output = self._current()[1][1:]  # type: ignore[index]
+        current = self._current()
+        if current and current[0] == "KEYWORD":
+            output = str(current[1][1:])
             self.pos += 1
 
         self._expect("RPAREN")

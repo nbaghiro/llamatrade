@@ -23,8 +23,6 @@ from llamatrade_db.models import (
     TradingSession,
     User,
 )
-from llamatrade_db.models.strategy import StrategyType
-
 # Backtest enums (re-exported for tests)
 from llamatrade_proto.generated.backtest_pb2 import (  # noqa: F401
     BACKTEST_STATUS_COMPLETED,
@@ -148,7 +146,6 @@ class StrategyFactory:
         id: UUID | None = None,
         name: str = "Test Strategy",
         description: str | None = "A test trading strategy",
-        strategy_type: StrategyType = StrategyType.MOMENTUM,
         status: int = STRATEGY_STATUS_DRAFT,  # Proto int: DRAFT=1
         is_public: bool = False,
         current_version: int = 1,
@@ -160,7 +157,6 @@ class StrategyFactory:
             created_by=created_by,
             name=name,
             description=description,
-            strategy_type=strategy_type,
             status=status,
             is_public=is_public,
             current_version=current_version,
@@ -173,6 +169,7 @@ class StrategyVersionFactory:
     @staticmethod
     def create(
         *,
+        tenant_id: UUID,
         strategy_id: UUID,
         created_by: UUID,
         id: UUID | None = None,
@@ -204,6 +201,7 @@ class StrategyVersionFactory:
 
         return StrategyVersion(
             id=id or uuid4(),
+            tenant_id=tenant_id,
             strategy_id=strategy_id,
             version=version,
             config_sexpr=config_sexpr or default_config_sexpr,

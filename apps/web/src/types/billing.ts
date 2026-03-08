@@ -4,16 +4,14 @@
 
 // Import enum types from proto-generated code (single source of truth)
 import {
+  BillingInterval,
+  InvoiceStatus,
   PlanTier,
   SubscriptionStatus,
-  BillingInterval,
 } from '../generated/proto/billing_pb';
 
 // Re-export proto enums
-export { PlanTier, SubscriptionStatus, BillingInterval };
-
-// DEPRECATED: Use BillingInterval instead - kept for backward compatibility
-export type BillingCycle = 'monthly' | 'yearly';
+export { BillingInterval, InvoiceStatus, PlanTier, SubscriptionStatus };
 
 // ============================================
 // Enum Display Helpers
@@ -60,14 +58,21 @@ export function getBillingIntervalLabel(interval: BillingInterval): string {
   }
 }
 
-// Convert legacy BillingCycle to BillingInterval
-export function billingCycleToInterval(cycle: BillingCycle): BillingInterval {
-  return cycle === 'monthly' ? BillingInterval.MONTHLY : BillingInterval.YEARLY;
-}
-
-// Convert BillingInterval to legacy BillingCycle string
-export function billingIntervalToCycle(interval: BillingInterval): BillingCycle {
-  return interval === BillingInterval.MONTHLY ? 'monthly' : 'yearly';
+export function getInvoiceStatusLabel(status: InvoiceStatus): string {
+  switch (status) {
+    case InvoiceStatus.DRAFT:
+      return 'Draft';
+    case InvoiceStatus.OPEN:
+      return 'Open';
+    case InvoiceStatus.PAID:
+      return 'Paid';
+    case InvoiceStatus.VOID:
+      return 'Void';
+    case InvoiceStatus.UNCOLLECTIBLE:
+      return 'Uncollectible';
+    default:
+      return 'Unknown';
+  }
 }
 
 export interface PlanFeatures {
@@ -104,7 +109,7 @@ export interface Subscription {
   tenant_id: string;
   plan: Plan;
   status: SubscriptionStatus;
-  billing_cycle: BillingCycle;
+  billing_cycle: BillingInterval;
   current_period_start: string;
   current_period_end: string;
   cancel_at_period_end: boolean;
@@ -133,7 +138,7 @@ export interface Invoice {
   id: string;
   amount: number;
   currency: string;
-  status: string;
+  status: InvoiceStatus;
   period_start: string;
   period_end: string;
   paid_at: string | null;
@@ -145,7 +150,7 @@ export interface Invoice {
 export interface CreateSubscriptionRequest {
   plan_id: string;
   payment_method_id: string;
-  billing_cycle: BillingCycle;
+  billing_cycle: BillingInterval;
 }
 
 export interface UpdateSubscriptionRequest {

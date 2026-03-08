@@ -118,9 +118,15 @@ class VectorizedBacktestEngine:
         _entry_prices = np.zeros((num_symbols, num_bars), dtype=np.float64)  # TODO
         equity = np.zeros(num_bars, dtype=np.float64)
 
+        # This engine requires signal functions; validate before use
+        entry_fn = strategy.entry_fn
+        exit_fn = strategy.exit_fn
+        if entry_fn is None or exit_fn is None:
+            raise ValueError("VectorizedBacktestEngine requires strategy with entry_fn and exit_fn")
+
         # Get entry/exit signals as boolean arrays (num_symbols, num_bars)
-        entry_signals = strategy.entry_fn(bars, strategy.indicators)
-        exit_signals = strategy.exit_fn(bars, strategy.indicators)
+        entry_signals = entry_fn(bars, strategy.indicators)
+        exit_signals = exit_fn(bars, strategy.indicators)
 
         # Note: Risk exits (stop-loss/take-profit) are applied during the simulation loop
         # below, where we have actual entry prices. Pre-computing them here would use

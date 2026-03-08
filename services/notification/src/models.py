@@ -1,39 +1,58 @@
 """Notification Service - Pydantic schemas."""
 
 from datetime import datetime
-from enum import StrEnum
 from typing import TypedDict, cast
 from uuid import UUID
 
 from pydantic import BaseModel, Field
 
 from llamatrade_proto.generated.notification_pb2 import (
+    ALERT_STATUS_ACTIVE,
+    ALERT_STATUS_DISABLED,
+    ALERT_STATUS_TRIGGERED,
     CHANNEL_TYPE_EMAIL,
+    NOTIFICATION_PRIORITY_CRITICAL,
+    NOTIFICATION_PRIORITY_HIGH,
+    NOTIFICATION_PRIORITY_LOW,
+    NOTIFICATION_PRIORITY_MEDIUM,
+    NOTIFICATION_STATUS_FAILED,
+    NOTIFICATION_STATUS_PENDING,
+    NOTIFICATION_STATUS_READ,
+    NOTIFICATION_STATUS_SENT,
 )
 from llamatrade_proto.generated.notification_pb2 import (
     AlertConditionType as AlertConditionTypeEnum,
 )
 from llamatrade_proto.generated.notification_pb2 import (
+    AlertStatus as AlertStatusEnum,
+)
+from llamatrade_proto.generated.notification_pb2 import (
     ChannelType as ChannelTypeEnum,
+)
+from llamatrade_proto.generated.notification_pb2 import (
+    NotificationPriority as NotificationPriorityEnum,
+)
+from llamatrade_proto.generated.notification_pb2 import (
+    NotificationStatus as NotificationStatusEnum,
 )
 from llamatrade_proto.generated.notification_pb2 import (
     NotificationType as NotificationTypeEnum,
 )
 
-# ===================
-# DB-only status constants (no proto definition)
-# ===================
-
-# AlertStatus - used for tracking alert state
-ALERT_STATUS_ACTIVE = 1
-ALERT_STATUS_TRIGGERED = 2
-ALERT_STATUS_DISABLED = 3
-
-# NotificationStatus - used for tracking notification delivery
-NOTIFICATION_STATUS_PENDING = 1
-NOTIFICATION_STATUS_SENT = 2
-NOTIFICATION_STATUS_FAILED = 3
-NOTIFICATION_STATUS_READ = 4
+# Re-export proto constants for backwards compatibility
+__all__ = [
+    "ALERT_STATUS_ACTIVE",
+    "ALERT_STATUS_TRIGGERED",
+    "ALERT_STATUS_DISABLED",
+    "NOTIFICATION_STATUS_PENDING",
+    "NOTIFICATION_STATUS_SENT",
+    "NOTIFICATION_STATUS_FAILED",
+    "NOTIFICATION_STATUS_READ",
+    "NOTIFICATION_PRIORITY_LOW",
+    "NOTIFICATION_PRIORITY_MEDIUM",
+    "NOTIFICATION_PRIORITY_HIGH",
+    "NOTIFICATION_PRIORITY_CRITICAL",
+]
 
 # ===================
 # Conversion helpers: proto int -> str (for display/API)
@@ -42,24 +61,14 @@ NOTIFICATION_STATUS_READ = 4
 _CHANNEL_TYPE_PREFIX = "CHANNEL_TYPE_"
 _NOTIFICATION_TYPE_PREFIX = "NOTIFICATION_TYPE_"
 _ALERT_CONDITION_TYPE_PREFIX = "ALERT_CONDITION_TYPE_"
-
-_ALERT_STATUS_TO_STR: dict[int, str] = {
-    ALERT_STATUS_ACTIVE: "active",
-    ALERT_STATUS_TRIGGERED: "triggered",
-    ALERT_STATUS_DISABLED: "disabled",
-}
-
-_NOTIFICATION_STATUS_TO_STR: dict[int, str] = {
-    NOTIFICATION_STATUS_PENDING: "pending",
-    NOTIFICATION_STATUS_SENT: "sent",
-    NOTIFICATION_STATUS_FAILED: "failed",
-    NOTIFICATION_STATUS_READ: "read",
-}
+_ALERT_STATUS_PREFIX = "ALERT_STATUS_"
+_NOTIFICATION_STATUS_PREFIX = "NOTIFICATION_STATUS_"
+_NOTIFICATION_PRIORITY_PREFIX = "NOTIFICATION_PRIORITY_"
 
 
 def channel_type_to_str(value: int) -> str:
     """Convert ChannelType proto int to string."""
-    name = ChannelTypeEnum.Name(value)
+    name = ChannelTypeEnum.Name(cast(ChannelTypeEnum.ValueType, value))
     if name.startswith(_CHANNEL_TYPE_PREFIX):
         return name[len(_CHANNEL_TYPE_PREFIX) :].lower()
     return name.lower()
@@ -67,7 +76,7 @@ def channel_type_to_str(value: int) -> str:
 
 def notification_type_to_str(value: int) -> str:
     """Convert NotificationType proto int to string."""
-    name = NotificationTypeEnum.Name(value)
+    name = NotificationTypeEnum.Name(cast(NotificationTypeEnum.ValueType, value))
     if name.startswith(_NOTIFICATION_TYPE_PREFIX):
         return name[len(_NOTIFICATION_TYPE_PREFIX) :].lower()
     return name.lower()
@@ -75,20 +84,34 @@ def notification_type_to_str(value: int) -> str:
 
 def alert_condition_type_to_str(value: int) -> str:
     """Convert AlertConditionType proto int to string."""
-    name = AlertConditionTypeEnum.Name(value)
+    name = AlertConditionTypeEnum.Name(cast(AlertConditionTypeEnum.ValueType, value))
     if name.startswith(_ALERT_CONDITION_TYPE_PREFIX):
         return name[len(_ALERT_CONDITION_TYPE_PREFIX) :].lower()
     return name.lower()
 
 
 def alert_status_to_str(value: int) -> str:
-    """Convert AlertStatus int to string."""
-    return _ALERT_STATUS_TO_STR.get(value, "unknown")
+    """Convert AlertStatus proto int to string."""
+    name = AlertStatusEnum.Name(cast(AlertStatusEnum.ValueType, value))
+    if name.startswith(_ALERT_STATUS_PREFIX):
+        return name[len(_ALERT_STATUS_PREFIX) :].lower()
+    return name.lower()
 
 
 def notification_status_to_str(value: int) -> str:
-    """Convert NotificationStatus int to string."""
-    return _NOTIFICATION_STATUS_TO_STR.get(value, "unknown")
+    """Convert NotificationStatus proto int to string."""
+    name = NotificationStatusEnum.Name(cast(NotificationStatusEnum.ValueType, value))
+    if name.startswith(_NOTIFICATION_STATUS_PREFIX):
+        return name[len(_NOTIFICATION_STATUS_PREFIX) :].lower()
+    return name.lower()
+
+
+def notification_priority_to_str(value: int) -> str:
+    """Convert NotificationPriority proto int to string."""
+    name = NotificationPriorityEnum.Name(cast(NotificationPriorityEnum.ValueType, value))
+    if name.startswith(_NOTIFICATION_PRIORITY_PREFIX):
+        return name[len(_NOTIFICATION_PRIORITY_PREFIX) :].lower()
+    return name.lower()
 
 
 class EmailConfig(TypedDict, total=False):
@@ -133,13 +156,7 @@ class SlackConfig(TypedDict, total=False):
 ChannelConfigUnion = EmailConfig | SMSConfig | PushConfig | WebhookChannelConfig | SlackConfig
 
 
-class NotificationPriority(StrEnum):
-    """Notification priority (service-specific, not proto-defined)."""
-
-    LOW = "low"
-    MEDIUM = "medium"
-    HIGH = "high"
-    CRITICAL = "critical"
+# NotificationPriority is now imported from proto as NotificationPriorityEnum
 
 
 class AlertCreate(BaseModel):
@@ -167,10 +184,10 @@ class AlertResponse(BaseModel):
 class NotificationResponse(BaseModel):
     id: UUID
     channel: int  # ChannelType proto value
-    priority: NotificationPriority
+    priority: int  # NotificationPriority proto value
     subject: str
     message: str
-    status: int  # NotificationStatus value (DB-only)
+    status: int  # NotificationStatus proto value
     sent_at: datetime | None
     delivered_at: datetime | None
     created_at: datetime

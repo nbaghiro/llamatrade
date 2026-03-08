@@ -15,7 +15,7 @@ from llamatrade_proto.generated.strategy_pb2 import (
     STRATEGY_STATUS_PAUSED,
 )
 
-from src.grpc.servicer import AnyContext, StrategyServicer
+from src.grpc.servicer import StrategyServicer
 from src.models import (
     StrategyConfigJSON,
     StrategyDetailResponse,
@@ -50,9 +50,9 @@ VALID_STRATEGY_SEXPR = """
 
 
 @pytest.fixture
-def grpc_context() -> AnyContext:
+def grpc_context() -> RequestContext:
     """Create a mock gRPC context."""
-    return cast(AnyContext, MagicMock(spec=RequestContext))
+    return cast(RequestContext, MagicMock(spec=RequestContext))
 
 
 class MockStrategyServicer(StrategyServicer):
@@ -132,7 +132,7 @@ class TestTenantContextValidation:
     """Tests for tenant context validation."""
 
     async def test_create_strategy_requires_valid_tenant_context(
-        self, strategy_servicer: MockStrategyServicer, grpc_context: AnyContext
+        self, strategy_servicer: MockStrategyServicer, grpc_context: RequestContext
     ) -> None:
         """Test that create_strategy requires valid tenant context."""
         from llamatrade_proto.generated import common_pb2, strategy_pb2
@@ -152,7 +152,7 @@ class TestTenantContextValidation:
         assert "UNAUTHENTICATED" in str(exc_info.value.code)
 
     async def test_create_strategy_rejects_nil_uuid(
-        self, strategy_servicer: MockStrategyServicer, grpc_context: AnyContext
+        self, strategy_servicer: MockStrategyServicer, grpc_context: RequestContext
     ) -> None:
         """Test that create_strategy rejects nil UUIDs."""
         from llamatrade_proto.generated import common_pb2, strategy_pb2
@@ -172,7 +172,7 @@ class TestTenantContextValidation:
         assert "UNAUTHENTICATED" in str(exc_info.value.code)
 
     async def test_create_strategy_rejects_invalid_uuid(
-        self, strategy_servicer: MockStrategyServicer, grpc_context: AnyContext
+        self, strategy_servicer: MockStrategyServicer, grpc_context: RequestContext
     ) -> None:
         """Test that create_strategy rejects invalid UUID format."""
         from llamatrade_proto.generated import common_pb2, strategy_pb2
@@ -196,7 +196,7 @@ class TestCreateStrategy:
     """Tests for create_strategy gRPC method."""
 
     async def test_create_strategy_success(
-        self, strategy_servicer: MockStrategyServicer, grpc_context: AnyContext
+        self, strategy_servicer: MockStrategyServicer, grpc_context: RequestContext
     ) -> None:
         """Test creating a strategy successfully."""
         from llamatrade_proto.generated import common_pb2, strategy_pb2
@@ -224,7 +224,7 @@ class TestCreateStrategy:
             mock_service.create_strategy.assert_called_once()
 
     async def test_create_strategy_invalid_config(
-        self, strategy_servicer: MockStrategyServicer, grpc_context: AnyContext
+        self, strategy_servicer: MockStrategyServicer, grpc_context: RequestContext
     ) -> None:
         """Test creating a strategy with invalid config raises error."""
         from llamatrade_proto.generated import common_pb2, strategy_pb2
@@ -254,7 +254,7 @@ class TestGetStrategy:
     """Tests for get_strategy gRPC method."""
 
     async def test_get_strategy_success(
-        self, strategy_servicer: MockStrategyServicer, grpc_context: AnyContext
+        self, strategy_servicer: MockStrategyServicer, grpc_context: RequestContext
     ) -> None:
         """Test getting a strategy by ID."""
         from llamatrade_proto.generated import common_pb2, strategy_pb2
@@ -279,7 +279,7 @@ class TestGetStrategy:
             assert response.strategy.name == "Test Strategy"
 
     async def test_get_strategy_not_found(
-        self, strategy_servicer: MockStrategyServicer, grpc_context: AnyContext
+        self, strategy_servicer: MockStrategyServicer, grpc_context: RequestContext
     ) -> None:
         """Test getting a nonexistent strategy returns NOT_FOUND."""
         from llamatrade_proto.generated import common_pb2, strategy_pb2
@@ -302,7 +302,7 @@ class TestGetStrategy:
             assert "NOT_FOUND" in str(exc_info.value.code)
 
     async def test_get_strategy_with_version(
-        self, strategy_servicer: MockStrategyServicer, grpc_context: AnyContext
+        self, strategy_servicer: MockStrategyServicer, grpc_context: RequestContext
     ) -> None:
         """Test getting a specific version of a strategy."""
         from llamatrade_proto.generated import common_pb2, strategy_pb2
@@ -334,7 +334,7 @@ class TestListStrategies:
     """Tests for list_strategies gRPC method."""
 
     async def test_list_strategies_empty(
-        self, strategy_servicer: MockStrategyServicer, grpc_context: AnyContext
+        self, strategy_servicer: MockStrategyServicer, grpc_context: RequestContext
     ) -> None:
         """Test listing strategies returns empty when none exist."""
         from llamatrade_proto.generated import common_pb2, strategy_pb2
@@ -356,7 +356,7 @@ class TestListStrategies:
             assert response.pagination.total_items == 0
 
     async def test_list_strategies_with_data(
-        self, strategy_servicer: MockStrategyServicer, grpc_context: AnyContext
+        self, strategy_servicer: MockStrategyServicer, grpc_context: RequestContext
     ) -> None:
         """Test listing strategies returns stored strategies."""
         from llamatrade_proto.generated import common_pb2, strategy_pb2
@@ -383,7 +383,7 @@ class TestListStrategies:
             assert response.pagination.total_items == 2
 
     async def test_list_strategies_pagination(
-        self, strategy_servicer: MockStrategyServicer, grpc_context: AnyContext
+        self, strategy_servicer: MockStrategyServicer, grpc_context: RequestContext
     ) -> None:
         """Test pagination of strategies."""
         from llamatrade_proto.generated import common_pb2, strategy_pb2
@@ -410,7 +410,7 @@ class TestListStrategies:
             assert response.pagination.has_previous is True
 
     async def test_list_strategies_filter_by_status(
-        self, strategy_servicer: MockStrategyServicer, grpc_context: AnyContext
+        self, strategy_servicer: MockStrategyServicer, grpc_context: RequestContext
     ) -> None:
         """Test filtering strategies by status."""
         from llamatrade_proto.generated import common_pb2, strategy_pb2
@@ -438,7 +438,7 @@ class TestUpdateStrategy:
     """Tests for update_strategy gRPC method."""
 
     async def test_update_strategy_success(
-        self, strategy_servicer: MockStrategyServicer, grpc_context: AnyContext
+        self, strategy_servicer: MockStrategyServicer, grpc_context: RequestContext
     ) -> None:
         """Test updating a strategy successfully."""
         from llamatrade_proto.generated import common_pb2, strategy_pb2
@@ -463,7 +463,7 @@ class TestUpdateStrategy:
             assert response.strategy.name == "Updated Strategy"
 
     async def test_update_strategy_not_found(
-        self, strategy_servicer: MockStrategyServicer, grpc_context: AnyContext
+        self, strategy_servicer: MockStrategyServicer, grpc_context: RequestContext
     ) -> None:
         """Test updating a nonexistent strategy returns NOT_FOUND."""
         from llamatrade_proto.generated import common_pb2, strategy_pb2
@@ -491,7 +491,7 @@ class TestDeleteStrategy:
     """Tests for delete_strategy gRPC method."""
 
     async def test_delete_strategy_success(
-        self, strategy_servicer: MockStrategyServicer, grpc_context: AnyContext
+        self, strategy_servicer: MockStrategyServicer, grpc_context: RequestContext
     ) -> None:
         """Test deleting a strategy successfully."""
         from llamatrade_proto.generated import common_pb2, strategy_pb2
@@ -513,7 +513,7 @@ class TestDeleteStrategy:
             assert response.success is True
 
     async def test_delete_strategy_not_found(
-        self, strategy_servicer: MockStrategyServicer, grpc_context: AnyContext
+        self, strategy_servicer: MockStrategyServicer, grpc_context: RequestContext
     ) -> None:
         """Test deleting a nonexistent strategy returns NOT_FOUND."""
         from llamatrade_proto.generated import common_pb2, strategy_pb2
@@ -540,7 +540,7 @@ class TestCompileStrategy:
     """Tests for compile_strategy gRPC method."""
 
     async def test_compile_strategy_valid(
-        self, strategy_servicer: MockStrategyServicer, grpc_context: AnyContext
+        self, strategy_servicer: MockStrategyServicer, grpc_context: RequestContext
     ) -> None:
         """Test compiling a valid strategy."""
         from llamatrade_proto.generated import common_pb2, strategy_pb2
@@ -567,7 +567,7 @@ class TestCompileStrategy:
             assert len(response.result.errors) == 0
 
     async def test_compile_strategy_invalid(
-        self, strategy_servicer: MockStrategyServicer, grpc_context: AnyContext
+        self, strategy_servicer: MockStrategyServicer, grpc_context: RequestContext
     ) -> None:
         """Test compiling an invalid strategy."""
         from llamatrade_proto.generated import common_pb2, strategy_pb2
@@ -602,7 +602,7 @@ class TestUpdateStrategyStatus:
     """Tests for update_strategy_status gRPC method."""
 
     async def test_activate_strategy(
-        self, strategy_servicer: MockStrategyServicer, grpc_context: AnyContext
+        self, strategy_servicer: MockStrategyServicer, grpc_context: RequestContext
     ) -> None:
         """Test activating a strategy."""
         from llamatrade_proto.generated import common_pb2, strategy_pb2
@@ -629,7 +629,7 @@ class TestUpdateStrategyStatus:
             mock_service.activate_strategy.assert_called_once()
 
     async def test_pause_strategy(
-        self, strategy_servicer: MockStrategyServicer, grpc_context: AnyContext
+        self, strategy_servicer: MockStrategyServicer, grpc_context: RequestContext
     ) -> None:
         """Test pausing a strategy."""
         from llamatrade_proto.generated import common_pb2, strategy_pb2
@@ -660,7 +660,7 @@ class TestListStrategyVersions:
     """Tests for list_strategy_versions gRPC method."""
 
     async def test_list_versions_success(
-        self, strategy_servicer: MockStrategyServicer, grpc_context: AnyContext
+        self, strategy_servicer: MockStrategyServicer, grpc_context: RequestContext
     ) -> None:
         """Test listing strategy versions."""
         from llamatrade_proto.generated import common_pb2, strategy_pb2
@@ -711,7 +711,7 @@ class TestCloneStrategy:
     """Tests for clone_strategy gRPC method."""
 
     async def test_clone_strategy_success(
-        self, strategy_servicer: MockStrategyServicer, grpc_context: AnyContext
+        self, strategy_servicer: MockStrategyServicer, grpc_context: RequestContext
     ) -> None:
         """Test cloning a strategy successfully."""
         from llamatrade_proto.generated import common_pb2, strategy_pb2
@@ -737,7 +737,7 @@ class TestCloneStrategy:
             mock_service.clone_strategy.assert_called_once()
 
     async def test_clone_strategy_not_found(
-        self, strategy_servicer: MockStrategyServicer, grpc_context: AnyContext
+        self, strategy_servicer: MockStrategyServicer, grpc_context: RequestContext
     ) -> None:
         """Test cloning a strategy that doesn't exist."""
         from llamatrade_proto.generated import common_pb2, strategy_pb2
@@ -761,7 +761,7 @@ class TestCloneStrategy:
             assert "NOT_FOUND" in str(exc_info.value.code)
 
     async def test_clone_strategy_requires_new_name(
-        self, strategy_servicer: MockStrategyServicer, grpc_context: AnyContext
+        self, strategy_servicer: MockStrategyServicer, grpc_context: RequestContext
     ) -> None:
         """Test that cloning requires a new name."""
         from llamatrade_proto.generated import common_pb2, strategy_pb2
@@ -785,7 +785,7 @@ class TestExecutionManagement:
     """Tests for execution management gRPC methods."""
 
     async def test_create_execution_success(
-        self, strategy_servicer: MockStrategyServicer, grpc_context: AnyContext
+        self, strategy_servicer: MockStrategyServicer, grpc_context: RequestContext
     ) -> None:
         """Test creating an execution successfully."""
         from llamatrade_proto.generated import common_pb2, strategy_pb2
@@ -829,7 +829,7 @@ class TestExecutionManagement:
             assert response.execution.status == common_pb2.EXECUTION_STATUS_PENDING
 
     async def test_get_execution_success(
-        self, strategy_servicer: MockStrategyServicer, grpc_context: AnyContext
+        self, strategy_servicer: MockStrategyServicer, grpc_context: RequestContext
     ) -> None:
         """Test getting an execution by ID."""
         from llamatrade_proto.generated import common_pb2, strategy_pb2
@@ -872,7 +872,7 @@ class TestExecutionManagement:
             assert response.execution.status == common_pb2.EXECUTION_STATUS_RUNNING
 
     async def test_get_execution_not_found(
-        self, strategy_servicer: MockStrategyServicer, grpc_context: AnyContext
+        self, strategy_servicer: MockStrategyServicer, grpc_context: RequestContext
     ) -> None:
         """Test getting a non-existent execution."""
         from llamatrade_proto.generated import common_pb2, strategy_pb2
@@ -895,7 +895,7 @@ class TestExecutionManagement:
             assert "NOT_FOUND" in str(exc_info.value.code)
 
     async def test_list_executions_success(
-        self, strategy_servicer: MockStrategyServicer, grpc_context: AnyContext
+        self, strategy_servicer: MockStrategyServicer, grpc_context: RequestContext
     ) -> None:
         """Test listing executions."""
         from llamatrade_proto.generated import common_pb2, strategy_pb2
@@ -939,7 +939,7 @@ class TestExecutionManagement:
             assert response.pagination.total_items == 1
 
     async def test_start_execution_success(
-        self, strategy_servicer: MockStrategyServicer, grpc_context: AnyContext
+        self, strategy_servicer: MockStrategyServicer, grpc_context: RequestContext
     ) -> None:
         """Test starting a pending execution."""
         from llamatrade_proto.generated import common_pb2, strategy_pb2
@@ -982,7 +982,7 @@ class TestExecutionManagement:
             assert response.execution.started_at.seconds > 0
 
     async def test_start_execution_invalid_state(
-        self, strategy_servicer: MockStrategyServicer, grpc_context: AnyContext
+        self, strategy_servicer: MockStrategyServicer, grpc_context: RequestContext
     ) -> None:
         """Test starting an execution that's not pending."""
         from llamatrade_proto.generated import common_pb2, strategy_pb2
@@ -1007,7 +1007,7 @@ class TestExecutionManagement:
             assert "FAILED_PRECONDITION" in str(exc_info.value.code)
 
     async def test_pause_execution_success(
-        self, strategy_servicer: MockStrategyServicer, grpc_context: AnyContext
+        self, strategy_servicer: MockStrategyServicer, grpc_context: RequestContext
     ) -> None:
         """Test pausing a running execution."""
         from llamatrade_proto.generated import common_pb2, strategy_pb2
@@ -1049,7 +1049,7 @@ class TestExecutionManagement:
             assert response.execution.status == common_pb2.EXECUTION_STATUS_PAUSED
 
     async def test_stop_execution_success(
-        self, strategy_servicer: MockStrategyServicer, grpc_context: AnyContext
+        self, strategy_servicer: MockStrategyServicer, grpc_context: RequestContext
     ) -> None:
         """Test stopping an execution."""
         from llamatrade_proto.generated import common_pb2, strategy_pb2

@@ -2,7 +2,7 @@
 
 from datetime import datetime
 from enum import IntEnum
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, Field
@@ -15,6 +15,8 @@ from llamatrade_proto.generated.common_pb2 import (
     EXECUTION_STATUS_PENDING,
     EXECUTION_STATUS_RUNNING,
     EXECUTION_STATUS_STOPPED,
+    ExecutionMode,
+    ExecutionStatus,
 )
 from llamatrade_proto.generated.trading_pb2 import (
     ORDER_SIDE_BUY,
@@ -40,6 +42,11 @@ from llamatrade_proto.generated.trading_pb2 import (
     TIME_IN_FORCE_GTC,
     TIME_IN_FORCE_IOC,
     TIME_IN_FORCE_OPG,
+    OrderSide,
+    OrderStatus,
+    OrderType,
+    PositionSide,
+    TimeInForce,
 )
 
 
@@ -111,60 +118,74 @@ _BRACKET_TYPE_TO_STR: dict[int, str] = {
 }
 
 
-def order_side_to_str(value: int) -> str:
+def order_side_to_str(value: OrderSide.ValueType) -> Literal["buy", "sell"]:
     """Convert OrderSide proto value to string for Alpaca API."""
-    return _ORDER_SIDE_TO_STR.get(value, "buy")
+    return "sell" if value == ORDER_SIDE_SELL else "buy"
 
 
-def order_type_to_str(value: int) -> str:
+def order_type_to_str(
+    value: OrderType.ValueType,
+) -> Literal["market", "limit", "stop", "stop_limit"]:
     """Convert OrderType proto value to string for Alpaca API."""
-    return _ORDER_TYPE_TO_STR.get(value, "market")
+    mapping: dict[int, Literal["market", "limit", "stop", "stop_limit"]] = {
+        ORDER_TYPE_MARKET: "market",
+        ORDER_TYPE_LIMIT: "limit",
+        ORDER_TYPE_STOP: "stop",
+        ORDER_TYPE_STOP_LIMIT: "stop_limit",
+    }
+    return mapping.get(value, "market")
 
 
-def order_status_to_str(value: int) -> str:
+def order_status_to_str(value: OrderStatus.ValueType) -> str:
     """Convert OrderStatus proto value to string."""
     return _ORDER_STATUS_TO_STR.get(value, "pending")
 
 
-def time_in_force_to_str(value: int) -> str:
+def time_in_force_to_str(value: TimeInForce.ValueType) -> Literal["day", "gtc", "ioc", "fok"]:
     """Convert TimeInForce proto value to string for Alpaca API."""
-    return _TIME_IN_FORCE_TO_STR.get(value, "day")
+    mapping: dict[int, Literal["day", "gtc", "ioc", "fok"]] = {
+        TIME_IN_FORCE_DAY: "day",
+        TIME_IN_FORCE_GTC: "gtc",
+        TIME_IN_FORCE_IOC: "ioc",
+        TIME_IN_FORCE_FOK: "fok",
+    }
+    return mapping.get(value, "day")
 
 
-def trading_mode_to_str(value: int) -> str:
+def trading_mode_to_str(value: ExecutionMode.ValueType) -> str:
     """Convert ExecutionMode proto value to string."""
     return _EXECUTION_MODE_TO_STR.get(value, "paper")
 
 
-def session_status_to_str(value: int) -> str:
+def session_status_to_str(value: ExecutionStatus.ValueType) -> str:
     """Convert ExecutionStatus proto value to string."""
     return _EXECUTION_STATUS_TO_STR.get(value, "pending")
 
 
-def position_side_to_str(value: int) -> str:
+def position_side_to_str(value: PositionSide.ValueType) -> str:
     """Convert PositionSide proto value to string."""
     return _POSITION_SIDE_TO_STR.get(value, "long")
 
 
-def bracket_type_to_str(value: BracketType | int) -> str:
+def bracket_type_to_str(value: BracketType | int) -> Literal["stop_loss", "take_profit"]:
     """Convert BracketType to string for Alpaca API."""
-    return _BRACKET_TYPE_TO_STR.get(int(value), "stop_loss")
+    return "take_profit" if int(value) == BracketType.TAKE_PROFIT else "stop_loss"
 
 
 class OrderCreate(BaseModel):
     symbol: str
-    side: int  # OrderSide proto value
+    side: OrderSide.ValueType
     qty: float = Field(..., gt=0)
-    order_type: int = ORDER_TYPE_MARKET  # OrderType proto value
+    order_type: OrderType.ValueType = ORDER_TYPE_MARKET
     limit_price: float | None = None
     stop_price: float | None = None
     trail_percent: float | None = None
-    time_in_force: int = TIME_IN_FORCE_DAY  # TimeInForce proto value
+    time_in_force: TimeInForce.ValueType = TIME_IN_FORCE_DAY
     extended_hours: bool = False
     # Bracket order fields (stop-loss/take-profit)
     stop_loss_price: float | None = None
     take_profit_price: float | None = None
-    bracket_time_in_force: int = TIME_IN_FORCE_GTC
+    bracket_time_in_force: TimeInForce.ValueType = TIME_IN_FORCE_GTC
 
 
 class BracketOrderInfo(BaseModel):
@@ -179,12 +200,12 @@ class OrderResponse(BaseModel):
     client_order_id: str | None = None
     alpaca_order_id: str | None = None
     symbol: str
-    side: int  # OrderSide proto value
+    side: OrderSide.ValueType
     qty: float
-    order_type: int  # OrderType proto value
+    order_type: OrderType.ValueType
     limit_price: float | None = None
     stop_price: float | None = None
-    status: int  # OrderStatus proto value
+    status: OrderStatus.ValueType
     filled_qty: float = 0
     filled_avg_price: float | None = None
     submitted_at: datetime
@@ -201,7 +222,7 @@ class SessionCreate(BaseModel):
     strategy_id: UUID
     credentials_id: UUID
     name: str = Field(..., min_length=1, max_length=100)
-    mode: int = EXECUTION_MODE_PAPER  # ExecutionMode proto value
+    mode: ExecutionMode.ValueType = EXECUTION_MODE_PAPER
     strategy_version: int | None = None
     symbols: list[str] | None = None
     config: dict[str, Any] | None = None
@@ -211,8 +232,8 @@ class SessionResponse(BaseModel):
     id: UUID
     tenant_id: UUID
     strategy_id: UUID
-    mode: int  # ExecutionMode proto value
-    status: int  # ExecutionStatus proto value
+    mode: ExecutionMode.ValueType
+    status: ExecutionStatus.ValueType
     started_at: datetime
     stopped_at: datetime | None = None
     pnl: float = 0

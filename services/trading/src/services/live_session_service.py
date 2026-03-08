@@ -25,6 +25,7 @@ from llamatrade_db import get_db
 from llamatrade_db.models.auth import AlpacaCredentials
 from llamatrade_db.models.billing import Plan, Subscription
 from llamatrade_db.models.strategy import StrategyVersion
+from llamatrade_proto.generated.billing_pb2 import PLAN_TIER_FREE
 from llamatrade_proto.generated.common_pb2 import (
     EXECUTION_MODE_LIVE,
 )
@@ -344,7 +345,7 @@ class LiveSessionService(SessionService):
         # For LIVE trading, require paid plan (not free tier)
         if mode == EXECUTION_MODE_LIVE:
             plan = await self._get_plan(subscription.plan_id)
-            if plan and plan.tier.lower() == "free":
+            if plan and plan.tier == PLAN_TIER_FREE:
                 raise ValueError(
                     "Live trading requires a paid subscription. "
                     "Please upgrade to Starter or Pro plan."

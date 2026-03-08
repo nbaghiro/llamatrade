@@ -8,7 +8,7 @@ This module uses the shared indicator implementations from llamatrade_compiler.p
 
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import date, datetime
+from datetime import date
 
 # Import from allocation-based compiler
 from llamatrade_compiler import Bar, CompiledStrategy, compile_strategy
@@ -86,17 +86,18 @@ def should_rebalance(
             # Rebalance when year changes
             return current_date.year != last_rebalance.year
 
-        case _:
-            # Unknown frequency, default to daily
-            return current_date > last_rebalance
+
+def _empty_float_dict() -> dict[str, float]:
+    """Factory for empty string-to-float dict."""
+    return {}
 
 
 @dataclass
 class AllocationState:
     """Mutable state for allocation-based strategy evaluation."""
 
-    current_weights: dict[str, float] = field(default_factory=dict)
-    target_weights: dict[str, float] = field(default_factory=dict)
+    current_weights: dict[str, float] = field(default_factory=_empty_float_dict)
+    target_weights: dict[str, float] = field(default_factory=_empty_float_dict)
     last_rebalance: date | None = None
     rebalance_frequency: RebalanceFrequency | None = None
 
@@ -168,14 +169,7 @@ def create_strategy_function(
         Only generates signals when rebalancing is due according to frequency.
         """
         # Get current date from bar timestamp
-        bar_timestamp = bar["timestamp"]
-        if isinstance(bar_timestamp, datetime):
-            current_date = bar_timestamp.date()
-        elif isinstance(bar_timestamp, date):
-            current_date = bar_timestamp
-        else:
-            # Try parsing as string
-            current_date = datetime.fromisoformat(str(bar_timestamp)).date()
+        current_date = bar["timestamp"].date()
 
         # Check if we should rebalance
         if not should_rebalance(
@@ -348,13 +342,7 @@ def create_multi_symbol_strategy(
 
         # Get current date from any bar
         first_bar = next(iter(bars_dict.values()))
-        bar_timestamp = first_bar["timestamp"]
-        if isinstance(bar_timestamp, datetime):
-            current_date = bar_timestamp.date()
-        elif isinstance(bar_timestamp, date):
-            current_date = bar_timestamp
-        else:
-            current_date = datetime.fromisoformat(str(bar_timestamp)).date()
+        current_date = first_bar["timestamp"].date()
 
         # Check if we should rebalance
         if not should_rebalance(

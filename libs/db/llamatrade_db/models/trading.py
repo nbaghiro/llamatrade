@@ -29,6 +29,7 @@ from llamatrade_db.models._enum_types import (
     SessionStatusType,
     TimeInForceType,
 )
+from llamatrade_proto.generated import common_pb2, trading_pb2
 
 
 class TradingSession(Base, UUIDPrimaryKeyMixin, TenantMixin, TimestampMixin):
@@ -44,8 +45,12 @@ class TradingSession(Base, UUIDPrimaryKeyMixin, TenantMixin, TimestampMixin):
     strategy_version: Mapped[int] = mapped_column(Integer, nullable=False)
     credentials_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
-    mode: Mapped[int] = mapped_column(ExecutionModeType(), nullable=False)
-    status: Mapped[int] = mapped_column(SessionStatusType(), default=3, nullable=False)  # STOPPED=3
+    mode: Mapped[common_pb2.ExecutionMode.ValueType] = mapped_column(
+        ExecutionModeType(), nullable=False
+    )
+    status: Mapped[common_pb2.ExecutionStatus.ValueType] = mapped_column(
+        SessionStatusType(), default=3, nullable=False
+    )  # STOPPED=3
     config: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
     symbols: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -77,9 +82,13 @@ class Order(Base, UUIDPrimaryKeyMixin, TenantMixin, TimestampMixin):
     alpaca_order_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
     client_order_id: Mapped[str] = mapped_column(String(100), nullable=False)
     symbol: Mapped[str] = mapped_column(String(20), nullable=False)
-    side: Mapped[int] = mapped_column(OrderSideType(), nullable=False)
-    order_type: Mapped[int] = mapped_column(OrderTypeType(), nullable=False)
-    time_in_force: Mapped[int] = mapped_column(TimeInForceType(), nullable=False)
+    side: Mapped[trading_pb2.OrderSide.ValueType] = mapped_column(OrderSideType(), nullable=False)
+    order_type: Mapped[trading_pb2.OrderType.ValueType] = mapped_column(
+        OrderTypeType(), nullable=False
+    )
+    time_in_force: Mapped[trading_pb2.TimeInForce.ValueType] = mapped_column(
+        TimeInForceType(), nullable=False
+    )
     qty: Mapped[Decimal] = mapped_column(Numeric(precision=18, scale=8), nullable=False)
     limit_price: Mapped[Decimal | None] = mapped_column(
         Numeric(precision=18, scale=8), nullable=True
@@ -87,7 +96,9 @@ class Order(Base, UUIDPrimaryKeyMixin, TenantMixin, TimestampMixin):
     stop_price: Mapped[Decimal | None] = mapped_column(
         Numeric(precision=18, scale=8), nullable=True
     )
-    status: Mapped[int] = mapped_column(OrderStatusType(), nullable=False)
+    status: Mapped[trading_pb2.OrderStatus.ValueType] = mapped_column(
+        OrderStatusType(), nullable=False
+    )
     filled_qty: Mapped[Decimal] = mapped_column(
         Numeric(precision=18, scale=8), default=Decimal("0"), nullable=False
     )
@@ -138,7 +149,9 @@ class Position(Base, UUIDPrimaryKeyMixin, TenantMixin, TimestampMixin):
         PG_UUID(as_uuid=True), ForeignKey("trading_sessions.id"), nullable=False
     )
     symbol: Mapped[str] = mapped_column(String(20), nullable=False)
-    side: Mapped[int] = mapped_column(PositionSideType(), nullable=False)
+    side: Mapped[trading_pb2.PositionSide.ValueType] = mapped_column(
+        PositionSideType(), nullable=False
+    )
     qty: Mapped[Decimal] = mapped_column(Numeric(precision=18, scale=8), nullable=False)
     avg_entry_price: Mapped[Decimal] = mapped_column(Numeric(precision=18, scale=8), nullable=False)
     current_price: Mapped[Decimal | None] = mapped_column(

@@ -53,13 +53,15 @@ async def test_strategy_with_versions(
     # Create versions
     for version_num in range(1, 4):
         version = StrategyVersionFactory.create(
+            tenant_id=test_tenant.id,
             strategy_id=strategy.id,
             created_by=test_user.id,
             version=version_num,
             changelog=f"Version {version_num} changes",
-            config={
+            config_json={
                 "symbols": ["AAPL"],
                 "version_specific_param": version_num,
+                "timeframe": "1D",
             },
         )
         db_session.add(version)
@@ -116,21 +118,23 @@ async def public_strategy(
 
 
 @pytest.fixture
-async def inactive_strategy(
+async def archived_strategy(
     db_session: AsyncSession,
     test_tenant: Tenant,
     test_user: User,
 ) -> Strategy:
-    """Create an inactive strategy.
+    """Create an archived strategy.
 
     Returns:
-        Strategy model instance with is_active=False
+        Strategy model instance with ARCHIVED status
     """
+    from tests.factories import STRATEGY_STATUS_ARCHIVED
+
     strategy = StrategyFactory.create(
         tenant_id=test_tenant.id,
         created_by=test_user.id,
-        name="Inactive Strategy",
-        is_active=False,
+        name="Archived Strategy",
+        status=STRATEGY_STATUS_ARCHIVED,
     )
     db_session.add(strategy)
     await db_session.flush()

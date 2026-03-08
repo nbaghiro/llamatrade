@@ -9,7 +9,7 @@ Respects the rebalance frequency defined in the strategy.
 
 import logging
 from collections.abc import Sequence
-from datetime import date, datetime
+from datetime import date
 
 from llamatrade_compiler import Bar, CompiledStrategy, compile_strategy
 from llamatrade_compiler.extractor import get_required_symbols
@@ -74,10 +74,6 @@ def should_rebalance(
         case "annually":
             # Rebalance when year changes
             return current_date.year != last_rebalance.year
-
-        case _:
-            # Unknown frequency, default to daily
-            return current_date > last_rebalance
 
 
 class StrategyAdapter:
@@ -175,14 +171,7 @@ class StrategyAdapter:
 
         # Get current date from latest bar
         latest_bar = bars[-1]
-        bar_timestamp = latest_bar.timestamp
-        if isinstance(bar_timestamp, datetime):
-            current_date = bar_timestamp.date()
-        elif isinstance(bar_timestamp, date):
-            current_date = bar_timestamp
-        else:
-            # Try parsing as string
-            current_date = datetime.fromisoformat(str(bar_timestamp)).date()
+        current_date = latest_bar.timestamp.date()
 
         # Check if we should rebalance today
         if not should_rebalance(current_date, self._last_rebalance, self._rebalance_freq):
@@ -327,10 +316,10 @@ class StrategyAdapter:
         compiled = self._per_symbol[symbol]
 
         # Get indicator cache if available
-        if not hasattr(compiled, "_indicator_cache"):
+        if not hasattr(compiled, "indicator_cache"):
             return {}
 
-        cache = compiled._indicator_cache
+        cache = compiled.indicator_cache
 
         # Get the last value from each indicator array
         result: dict[str, float] = {}

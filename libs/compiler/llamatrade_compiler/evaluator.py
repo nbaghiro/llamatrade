@@ -13,7 +13,6 @@ from llamatrade_dsl import (
     Crossover,
     Indicator,
     LogicalOp,
-    Metric,
     NumericLiteral,
     Price,
     Value,
@@ -119,10 +118,8 @@ def _resolve_value(value: Value, state: EvaluationState) -> float:
     if isinstance(value, Indicator):
         return state.get_indicator_value(value)
 
-    if isinstance(value, Metric):
-        return state.get_metric_value(value)
-
-    raise EvaluationError(f"Cannot resolve value: {type(value)}")
+    # value is Metric (the only remaining type in the Value union)
+    return state.get_metric_value(value)
 
 
 def _get_prev_value(value: Value, state: EvaluationState) -> float:
@@ -136,11 +133,8 @@ def _get_prev_value(value: Value, state: EvaluationState) -> float:
     if isinstance(value, Indicator):
         return state.get_prev_indicator_value(value)
 
-    if isinstance(value, Metric):
-        # Metrics typically don't have prev value - use current
-        return state.get_metric_value(value)
-
-    raise EvaluationError(f"Cannot get previous value of: {type(value)}")
+    # value is Metric - metrics typically don't have prev value, use current
+    return state.get_metric_value(value)
 
 
 def _evaluate_comparison(comparison: Comparison, state: EvaluationState) -> bool:
@@ -157,12 +151,10 @@ def _evaluate_comparison(comparison: Comparison, state: EvaluationState) -> bool
         return left_val >= right_val
     if op == "<=":
         return left_val <= right_val
-    if op == "=" or op == "==":
+    if op == "=":
         return left_val == right_val
-    if op == "!=":
-        return left_val != right_val
-
-    raise EvaluationError(f"Unknown comparison operator: {op}")
+    # op must be "!=" at this point
+    return left_val != right_val
 
 
 def _evaluate_crossover(crossover: Crossover, state: EvaluationState) -> bool:
@@ -223,10 +215,8 @@ def evaluate_condition(condition: Condition, state: EvaluationState) -> bool:
     if isinstance(condition, Crossover):
         return _evaluate_crossover(condition, state)
 
-    if isinstance(condition, LogicalOp):
-        return _evaluate_logical(condition, state)
-
-    raise EvaluationError(f"Cannot evaluate condition: {type(condition)}")
+    # condition is LogicalOp (the only remaining type in the Condition union)
+    return _evaluate_logical(condition, state)
 
 
 def evaluate_condition_safe(condition: Condition, state: EvaluationState) -> bool:
@@ -275,10 +265,10 @@ def evaluate_condition_vectorized(
             return left >= right
         if op == "<=":
             return left <= right
-        if op == "=" or op == "==":
+        if op == "=":
             return left == right
-        if op == "!=":
-            return left != right
+        # op must be "!=" at this point
+        return left != right
 
     if isinstance(condition, Crossover):
         fast = _get_vectorized_value(condition.fast, indicator_data, price_data)
@@ -294,23 +284,21 @@ def evaluate_condition_vectorized(
         else:
             return (prev_fast >= prev_slow) & (fast < slow)
 
-    if isinstance(condition, LogicalOp):
-        if condition.operator == "and":
-            result = np.ones(len(price_data[next(iter(price_data))]["close"]), dtype=bool)
-            for operand in condition.operands:
-                result &= evaluate_condition_vectorized(operand, indicator_data, price_data)
-            return result
+    # condition is LogicalOp (the only remaining type in the Condition union)
+    if condition.operator == "and":
+        result = np.ones(len(price_data[next(iter(price_data))]["close"]), dtype=bool)
+        for operand in condition.operands:
+            result &= evaluate_condition_vectorized(operand, indicator_data, price_data)
+        return result
 
-        if condition.operator == "or":
-            result = np.zeros(len(price_data[next(iter(price_data))]["close"]), dtype=bool)
-            for operand in condition.operands:
-                result |= evaluate_condition_vectorized(operand, indicator_data, price_data)
-            return result
+    if condition.operator == "or":
+        result = np.zeros(len(price_data[next(iter(price_data))]["close"]), dtype=bool)
+        for operand in condition.operands:
+            result |= evaluate_condition_vectorized(operand, indicator_data, price_data)
+        return result
 
-        if condition.operator == "not":
-            return ~evaluate_condition_vectorized(condition.operands[0], indicator_data, price_data)
-
-    raise EvaluationError(f"Cannot vectorize condition: {type(condition)}")
+    # condition.operator is "not"
+    return ~evaluate_condition_vectorized(condition.operands[0], indicator_data, price_data)
 
 
 def _get_vectorized_value(

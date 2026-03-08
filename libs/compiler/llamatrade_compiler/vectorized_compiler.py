@@ -5,6 +5,7 @@ Uses the shared indicator implementations from pipeline.py.
 """
 
 from collections.abc import Callable
+from typing import cast
 
 import numpy as np
 
@@ -38,7 +39,6 @@ from llamatrade_dsl import (
     Group,
     If,
     Indicator,
-    LogicalOp,
     NumericLiteral,
     ParseError,
     Price,
@@ -158,7 +158,8 @@ def _extract_indicators_from_condition(
         _extract_indicators_from_value(condition.fast, bars, indicators)
         _extract_indicators_from_value(condition.slow, bars, indicators)
 
-    elif isinstance(condition, LogicalOp):
+    else:
+        # condition is LogicalOp (the only remaining type in the Condition union)
         for operand in condition.operands:
             _extract_indicators_from_condition(operand, bars, indicators)
 
@@ -330,10 +331,8 @@ def _evaluate_block_vectorized(
     if isinstance(block, If):
         return _evaluate_if_vectorized(block, bars, indicators, num_bars)
 
-    if isinstance(block, Filter):
-        return _evaluate_filter_vectorized(block, bars, indicators, num_bars)
-
-    return {}
+    # block is Filter (the only remaining type in the Block union)
+    return _evaluate_filter_vectorized(block, bars, indicators, num_bars)
 
 
 def _evaluate_children_vectorized(
@@ -454,10 +453,10 @@ def _evaluate_condition_vectorized(
             return left >= right
         if op == "<=":
             return left <= right
-        if op == "=" or op == "==":
+        if op == "=":
             return left == right
-        if op == "!=":
-            return left != right
+        # op must be "!=" at this point
+        return left != right
 
     if isinstance(condition, Crossover):
         fast = _get_vectorized_value(condition.fast, bars, indicators)
@@ -473,23 +472,21 @@ def _evaluate_condition_vectorized(
         else:
             return (prev_fast >= prev_slow) & (fast < slow)
 
-    if isinstance(condition, LogicalOp):
-        if condition.operator == "and":
-            result = np.ones(num_bars, dtype=bool)
-            for operand in condition.operands:
-                result &= _evaluate_condition_vectorized(operand, bars, indicators)
-            return result
+    # condition is LogicalOp (the only remaining type in the Condition union)
+    if condition.operator == "and":
+        result = np.ones(num_bars, dtype=bool)
+        for operand in condition.operands:
+            result &= _evaluate_condition_vectorized(operand, bars, indicators)
+        return result
 
-        if condition.operator == "or":
-            result = np.zeros(num_bars, dtype=bool)
-            for operand in condition.operands:
-                result |= _evaluate_condition_vectorized(operand, bars, indicators)
-            return result
+    if condition.operator == "or":
+        result = np.zeros(num_bars, dtype=bool)
+        for operand in condition.operands:
+            result |= _evaluate_condition_vectorized(operand, bars, indicators)
+        return result
 
-        if condition.operator == "not":
-            return ~_evaluate_condition_vectorized(condition.operands[0], bars, indicators)
-
-    return np.zeros(num_bars, dtype=bool)
+    # condition.operator is "not"
+    return ~_evaluate_condition_vectorized(condition.operands[0], bars, indicators)
 
 
 def _get_vectorized_value(
@@ -501,7 +498,7 @@ def _get_vectorized_value(
     num_bars = bars["closes"].shape[1]
 
     if isinstance(value, NumericLiteral):
-        return np.full(num_bars, value.value)
+        return cast(np.ndarray, np.full(num_bars, value.value, dtype=np.float64))
 
     if isinstance(value, Price):
         # For now, use first symbol (would need symbol mapping for multi-symbol)
@@ -521,6 +518,7 @@ def _get_vectorized_value(
         key = _build_indicator_key(value)
         if key in indicators:
             return indicators[key]
-        return np.zeros(num_bars)
+        return cast(np.ndarray, np.zeros(num_bars, dtype=np.float64))
 
-    return np.zeros(num_bars)
+    # value is Metric (the only remaining type in the Value union)
+    return cast(np.ndarray, np.zeros(num_bars, dtype=np.float64))

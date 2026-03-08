@@ -301,11 +301,26 @@ export const themes = {
 
 export type ThemeName = keyof typeof themes;
 
-// Current active theme - change this to switch themes
-let currentTheme: ThemeName = 'greenBlue';
+const STORAGE_KEY = 'strategy-builder-theme';
+const DEFAULT_THEME: ThemeName = 'greenBlue';
+
+// Initialize from localStorage with fallback to default
+function loadThemeFromStorage(): ThemeName {
+  if (typeof window === 'undefined') return DEFAULT_THEME;
+  const stored = localStorage.getItem(STORAGE_KEY);
+  if (stored && stored in themes) {
+    return stored as ThemeName;
+  }
+  return DEFAULT_THEME;
+}
+
+// Current active theme - persisted to localStorage
+let currentTheme: ThemeName = loadThemeFromStorage();
 
 export function setTheme(name: ThemeName): void {
   currentTheme = name;
+  // Persist to localStorage
+  localStorage.setItem(STORAGE_KEY, name);
   // Trigger re-render by dispatching a custom event
   window.dispatchEvent(new CustomEvent('theme-change', { detail: name }));
 }
@@ -321,53 +336,3 @@ export function getCurrentThemeName(): ThemeName {
 export function getThemeNames(): ThemeName[] {
   return Object.keys(themes) as ThemeName[];
 }
-
-// =============================================================================
-// BACKWARDS-COMPATIBLE EXPORTS (use getTheme() for dynamic access)
-// =============================================================================
-
-// These are kept for backwards compatibility but now pull from the active theme
-export function getWeightColors(_method: string): BlockColorScheme {
-  return getTheme().weight;
-}
-
-export function getIfColors(_hasIndicator: boolean): BlockColorScheme {
-  return getTheme().ifBlock;
-}
-
-// Static exports that reference current theme
-export const weightColors: Record<string, BlockColorScheme> = {
-  get specified() { return getTheme().weight; },
-  get equal() { return getTheme().weight; },
-  get momentum() { return getTheme().weight; },
-  get dynamic() { return getTheme().weight; },
-};
-
-export const ifColors: Record<string, BlockColorScheme> = {
-  get price() { return getTheme().ifBlock; },
-  get indicator() { return getTheme().ifBlock; },
-};
-
-export const elseColors: BlockColorScheme = new Proxy({} as BlockColorScheme, {
-  get(_, prop) { return getTheme().elseBlock[prop as keyof BlockColorScheme]; },
-});
-
-export const filterColors: BlockColorScheme = new Proxy({} as BlockColorScheme, {
-  get(_, prop) { return getTheme().filter[prop as keyof BlockColorScheme]; },
-});
-
-export const groupColors = new Proxy({} as ThemeColors['group'], {
-  get(_, prop) { return getTheme().group[prop as keyof ThemeColors['group']]; },
-});
-
-export const assetColors = new Proxy({} as ThemeColors['asset'], {
-  get(_, prop) { return getTheme().asset[prop as keyof ThemeColors['asset']]; },
-});
-
-export const allocationBadgeColors = new Proxy({} as { bg: string; text: string }, {
-  get(_, prop) { return getTheme().allocation[prop as keyof { bg: string; text: string }]; },
-});
-
-export const pickerColors = new Proxy({} as ThemeColors['picker'], {
-  get(_, prop) { return getTheme().picker[prop as keyof ThemeColors['picker']]; },
-});

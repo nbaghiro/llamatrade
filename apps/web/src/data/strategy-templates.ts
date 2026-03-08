@@ -2,33 +2,17 @@
  * Strategy Templates - Type definitions
  *
  * Templates are fetched from backend API (single source of truth).
- * This file only contains type definitions used by the frontend.
+ * This file only contains display helpers for proto enum types.
  */
 
-/**
- * Template Category - Primary classification by investment approach
- */
-export type TemplateCategory =
-  | 'buy-and-hold'
-  | 'tactical'
-  | 'factor'
-  | 'income'
-  | 'trend'
-  | 'mean-reversion'
-  | 'alternatives';
+import {
+  AssetClass,
+  TemplateCategory,
+  TemplateDifficulty,
+} from '../generated/proto/strategy_pb';
 
-/**
- * Asset Class - What the strategy primarily invests in
- */
-export type AssetClass =
-  | 'equity'
-  | 'fixed-income'
-  | 'multi-asset'
-  | 'crypto'
-  | 'commodity'
-  | 'options';
-
-export type TemplateDifficulty = 'beginner' | 'intermediate' | 'advanced';
+// Re-export proto enums for convenience
+export { AssetClass, TemplateCategory, TemplateDifficulty };
 
 /**
  * Strategy template as returned by the backend API
@@ -37,7 +21,6 @@ export interface StrategyTemplate {
   id: string;
   name: string;
   description: string;
-  strategy_type: string;
   category: TemplateCategory;
   asset_class: AssetClass;
   config_sexpr: string;
@@ -50,38 +33,44 @@ export interface StrategyTemplate {
  * Category display labels
  */
 export const CATEGORY_LABELS: Record<TemplateCategory, string> = {
-  'buy-and-hold': 'Buy & Hold',
-  tactical: 'Tactical',
-  factor: 'Factor',
-  income: 'Income',
-  trend: 'Trend',
-  'mean-reversion': 'Mean Reversion',
-  alternatives: 'Alternatives',
+  [TemplateCategory.UNSPECIFIED]: 'Unknown',
+  [TemplateCategory.BUY_AND_HOLD]: 'Buy & Hold',
+  [TemplateCategory.TACTICAL]: 'Tactical',
+  [TemplateCategory.FACTOR]: 'Factor',
+  [TemplateCategory.INCOME]: 'Income',
+  [TemplateCategory.TREND]: 'Trend',
+  [TemplateCategory.MEAN_REVERSION]: 'Mean Reversion',
+  [TemplateCategory.ALTERNATIVES]: 'Alternatives',
 };
 
 /**
- * All available categories
+ * All available categories (excluding UNSPECIFIED)
  */
 export const ALL_CATEGORIES: TemplateCategory[] = [
-  'buy-and-hold',
-  'tactical',
-  'factor',
-  'income',
-  'trend',
-  'mean-reversion',
-  'alternatives',
+  TemplateCategory.BUY_AND_HOLD,
+  TemplateCategory.TACTICAL,
+  TemplateCategory.FACTOR,
+  TemplateCategory.INCOME,
+  TemplateCategory.TREND,
+  TemplateCategory.MEAN_REVERSION,
+  TemplateCategory.ALTERNATIVES,
 ];
 
 /**
  * Difficulty display labels
  */
 export const DIFFICULTY_LABELS: Record<TemplateDifficulty, string> = {
-  beginner: 'Beginner',
-  intermediate: 'Intermediate',
-  advanced: 'Advanced',
+  [TemplateDifficulty.UNSPECIFIED]: 'Unknown',
+  [TemplateDifficulty.BEGINNER]: 'Beginner',
+  [TemplateDifficulty.INTERMEDIATE]: 'Intermediate',
+  [TemplateDifficulty.ADVANCED]: 'Advanced',
 };
 
 /**
- * All difficulty levels
+ * All difficulty levels (excluding UNSPECIFIED)
  */
-export const ALL_DIFFICULTIES: TemplateDifficulty[] = ['beginner', 'intermediate', 'advanced'];
+export const ALL_DIFFICULTIES: TemplateDifficulty[] = [
+  TemplateDifficulty.BEGINNER,
+  TemplateDifficulty.INTERMEDIATE,
+  TemplateDifficulty.ADVANCED,
+];

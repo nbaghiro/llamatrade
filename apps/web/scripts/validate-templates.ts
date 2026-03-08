@@ -72,9 +72,9 @@ function validateTemplate(template: TemplateData): TemplateIssue[] {
     return issues;
   }
 
-  // Run legacy validation
-  const legacyResult = validateTree(parsed.tree);
-  for (const error of legacyResult.errors) {
+  // Run structural validation (root block, parent references)
+  const structuralResult = validateTree(parsed.tree);
+  for (const error of structuralResult.errors) {
     issues.push({
       templateId: template.id,
       templateName: template.name,
@@ -84,11 +84,11 @@ function validateTemplate(template: TemplateData): TemplateIssue[] {
     });
   }
 
-  // Run comprehensive validation
+  // Run content validation (block rules, required fields)
   const result = validateStrategy(parsed.tree);
 
   for (const error of result.errors) {
-    // Avoid duplicates from legacy validation
+    // Avoid duplicates from structural validation
     if (!issues.some(i => i.message === error.message)) {
       issues.push({
         templateId: template.id,
