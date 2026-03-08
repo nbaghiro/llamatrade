@@ -72,45 +72,6 @@ LlamaTrade is a SaaS algorithmic trading platform enabling users to create custo
 - No API gateway required for local development
 - Services communicate with each other via internal gRPC
 
-### GKE Deployment Architecture
-
-```
-                    ┌─────────────────────────────────────────┐
-                    │           GCP Cloud CDN                 │
-                    └───────────────────┬─────────────────────┘
-                                        │
-                    ┌───────────────────▼─────────────────────┐
-                    │        GCP Load Balancer (L7)           │
-                    │     (SSL termination, path routing)     │
-                    └───────────────────┬─────────────────────┘
-                                        │
-          ┌─────────────────────────────┼─────────────────────────────┐
-          │                             │                             │
-          ▼                             ▼                             ▼
-    ┌───────────┐          ┌────────────────────────┐         ┌───────────┐
-    │ /         │          │ /api/v1/auth/*    →    │         │ /ws/*     │
-    │ Frontend  │          │ /api/v1/strategy/* →   │         │ Connect   │
-    │ (nginx)   │          │ /api/v1/trading/*  →   │         │ Streams   │
-    └───────────┘          │ (path-based routing)   │         └───────────┘
-                           └────────────────────────┘
-                                        │
-                    ┌───────────────────┼───────────────────┐
-                    │                   │                   │
-                    ▼                   ▼                   ▼
-              ┌──────────┐       ┌──────────┐       ┌──────────┐
-              │ Auth     │       │ Strategy │       │ Trading  │ ...
-              │ Service  │       │ Service  │       │ Service  │
-              └──────────┘       └──────────┘       └──────────┘
-                    │                   │                   │
-          ┌─────────┴───────────────────┴───────────────────┴─────────┐
-          │                                                           │
-          ▼                                                           ▼
-    ┌───────────────┐                                        ┌───────────────┐
-    │  Cloud SQL    │                                        │  Memorystore  │
-    │  (PostgreSQL) │                                        │  (Redis)      │
-    └───────────────┘                                        └───────────────┘
-```
-
 ---
 
 ## Services
@@ -308,11 +269,12 @@ llamatrade/
 │   └── billing/                # Subscriptions (Stripe)
 │
 ├── libs/                       # Shared libraries
+│   ├── alpaca/                 # Alpaca API client wrapper
 │   ├── common/                 # Middleware, utilities
+│   ├── compiler/               # Strategy compiler
 │   ├── db/                     # SQLAlchemy models
-│   ├── dsl/                    # Strategy DSL parser/compiler
-│   ├── grpc/                   # gRPC clients & generated code
-│   └── proto/                  # Protocol buffer definitions
+│   ├── dsl/                    # Strategy DSL parser
+│   └── proto/                  # Proto definitions & generated code
 │
 ├── infrastructure/             # Deployment configs
 │   ├── docker/                 # Docker Compose files

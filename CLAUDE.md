@@ -224,10 +224,11 @@ apps/web/src/
 
 ### Shared Libraries
 
+- `libs/alpaca`: Alpaca API client wrapper — import as `llamatrade_alpaca`
 - `libs/common`: Middleware, shared models, utilities — import as `llamatrade_common`
+- `libs/compiler`: Strategy compiler — import as `llamatrade_compiler`
 - `libs/db`: SQLAlchemy models, database config — import as `llamatrade_db`
 - `libs/dsl`: Strategy DSL parser — import as `llamatrade_dsl`
-- `libs/compiler`: Strategy compiler — import as `llamatrade_compiler`
 - `libs/proto`: Protobuf definitions + generated Connect code — import as `llamatrade_proto`
 - Changes to libs affect ALL services — test thoroughly
 
