@@ -635,3 +635,83 @@ The market data service provides a production-ready data layer with:
 7. **Centralized Data**: Single source of truth for all market data in the system
 
 Architecture separates concerns: Servicer (gRPC) → Service (business logic) → Alpaca Client (REST) / Stream (WebSocket) → Cache (Redis).
+
+---
+
+## Testing
+
+### Test Structure
+
+```
+tests/
+├── conftest.py                    # Shared fixtures (~6000 lines)
+├── test_alpaca_errors.py          # Alpaca error handling tests
+├── test_alpaca_stream.py          # WebSocket streaming tests (~21k lines)
+├── test_auth_validation.py        # Authentication validation tests
+├── test_cache.py                  # Redis cache tests (~14k lines)
+├── test_grpc_servicer.py          # gRPC endpoint tests (~19k lines)
+├── test_grpc_streaming.py         # gRPC streaming tests (~16k lines)
+├── test_health.py                 # Health check tests
+├── test_market_data_service.py    # Service layer tests (~11k lines)
+├── test_metrics.py                # Prometheus metrics tests
+├── test_stream_bridge.py          # Subscription aggregation tests
+├── test_stream_manager.py         # Client management tests (~16k lines)
+└── test_streaming_integration.py  # End-to-end streaming tests (~14k lines)
+```
+
+### Running Tests
+
+```bash
+# Run all tests
+cd services/market-data && pytest
+
+# Run with coverage
+pytest --cov=src --cov-report=term-missing
+
+# Run specific test file
+pytest tests/test_cache.py
+
+# Run specific test
+pytest tests/test_cache.py::test_redis_get_bars_cached
+```
+
+### Key Test Scenarios
+
+- **Historical bars**: Fetch, cache, pagination
+- **Snapshots**: Latest trade, quote, daily bar
+- **Streaming**: Bar/quote/trade subscription, multi-client
+- **Caching**: Cache hit/miss, TTL expiration, invalidation
+- **Resilience**: Rate limiting, circuit breaker, reconnection
+- **Error handling**: Alpaca errors, timeout, authentication
+
+---
+
+## Current Implementation Status
+
+> **Project Stage:** Production-Ready (95%)
+
+### What's Real (Implemented) ✓
+
+- [x] **gRPC/Connect Endpoints**: GetHistoricalBars, GetMultiBars, GetSnapshot, GetSnapshots, GetMarketStatus, StreamBars, StreamQuotes, StreamTrades
+- [x] **Alpaca REST Client**: Full integration with authentication
+- [x] **Alpaca WebSocket**: Real-time streaming with auto-reconnect
+- [x] **Redis Caching**: Multi-tier caching with TTLs
+- [x] **Stream Bridge**: Efficient subscription aggregation
+- [x] **Stream Manager**: Multi-client connection handling
+- [x] **Rate Limiting**: Token bucket rate limiter
+- [x] **Circuit Breaker**: Prevent cascade failures
+- [x] **Prometheus Metrics**: `/metrics` endpoint
+- [x] **Health Check**: Standard `/health` endpoint
+
+### What's Stubbed or Partial (TODO) ✗
+
+- [ ] **Pre-2016 Data**: Only Alpaca data available (2016+)
+- [ ] **Extended Hours**: Pre/post-market data not fully tested
+- [ ] **International Markets**: US equities only
+
+### Known Limitations
+
+- **Data Range**: Alpaca data starts from 2016
+- **Markets**: US equities only (no forex, crypto, international)
+- **Extended Hours**: Available but not all features tested
+- **Redis Optional**: Service works without Redis but no caching

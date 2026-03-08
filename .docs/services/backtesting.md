@@ -134,6 +134,81 @@ A core product requirement is **speed at scale**. The system achieves sub-minute
 
 ---
 
+## Directory Structure
+
+```
+services/backtest/
+├── src/
+│   ├── main.py                    # FastAPI app with Connect protocol mount
+│   ├── models.py                  # Pydantic schemas (BacktestResponse, Metrics)
+│   ├── progress.py                # Progress tracking and Redis pub/sub
+│   ├── celery_app.py              # Celery configuration and task routing
+│   │
+│   ├── grpc/
+│   │   ├── __init__.py
+│   │   └── servicer.py            # Connect/gRPC servicer (420 lines)
+│   │
+│   ├── services/
+│   │   └── backtest_service.py    # Business logic (987 lines)
+│   │
+│   ├── engine/
+│   │   ├── __init__.py
+│   │   ├── backtester.py          # Core backtest engine (vectorized)
+│   │   ├── benchmarks.py          # Benchmark calculations (SPY, alpha/beta)
+│   │   ├── metrics.py             # Performance metric calculations
+│   │   ├── strategy_adapter.py    # S-expression strategy compilation
+│   │   ├── strategy_compiler.py   # DSL to executable function
+│   │   ├── validation.py          # Input validation
+│   │   └── vectorized_engine.py   # NumPy-based fast simulation
+│   │
+│   ├── workers/
+│   │   ├── __init__.py
+│   │   ├── tasks.py               # Task definitions
+│   │   └── celery_tasks.py        # Celery async tasks
+│   │
+│   ├── cache/
+│   │   └── indicator_cache.py     # Redis-based indicator caching
+│   │
+│   └── clients/
+│       └── __init__.py            # Service clients (market-data)
+│
+└── tests/
+    ├── conftest.py                # Shared fixtures
+    ├── test_backtest_service.py   # Service layer tests
+    ├── test_backtester.py         # Engine tests
+    ├── test_benchmarks.py         # Benchmark calculation tests
+    ├── test_celery_tasks.py       # Async task tests
+    ├── test_grpc_servicer.py      # gRPC endpoint tests
+    ├── test_grpc_streaming.py     # Progress streaming tests
+    ├── test_health.py             # Health check tests
+    ├── test_indicator_cache.py    # Cache tests
+    ├── test_market_data.py        # Market data client tests
+    ├── test_models.py             # Schema validation tests
+    ├── test_progress.py           # Progress tracking tests
+    ├── test_strategy_adapter.py   # Strategy compilation tests
+    └── test_validation.py         # Input validation tests
+```
+
+---
+
+## Core Components
+
+| Component | File | Responsibility |
+|-----------|------|----------------|
+| **BacktestServicer** | `grpc/servicer.py` | Connect/gRPC endpoint handler for all RPC methods |
+| **BacktestService** | `services/backtest_service.py` | Business logic: create, run, cancel, retry backtests |
+| **BacktestEngine** | `engine/backtester.py` | Core simulation engine with vectorized processing |
+| **VectorizedEngine** | `engine/vectorized_engine.py` | NumPy-based fast simulation for large datasets |
+| **BenchmarkCalculator** | `engine/benchmarks.py` | SPY buy & hold, alpha, beta, information ratio |
+| **MetricsCalculator** | `engine/metrics.py` | Sharpe, Sortino, drawdown, win rate calculations |
+| **StrategyAdapter** | `engine/strategy_adapter.py` | Compiles S-expression DSL to executable function |
+| **ProgressPublisher** | `progress.py` | Publishes progress to Redis pub/sub |
+| **ProgressSubscriber** | `progress.py` | Subscribes to progress updates for streaming |
+| **GRPCMarketDataClient** | `services/backtest_service.py` | Fetches historical bars from market-data service |
+| **Celery Tasks** | `workers/celery_tasks.py` | Async backtest execution via Celery workers |
+
+---
+
 ## Historical Data Sources
 
 Alpaca provides data from ~2016 onwards. For backtests starting in 1980, additional sources are required:
@@ -776,6 +851,217 @@ ws.onmessage = (event) => {
   updateStatusMessage(data.message);
 };
 ```
+
+---
+
+## Configuration
+
+### Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `DATABASE_URL` | Required | PostgreSQL connection string |
+| `REDIS_URL` | `redis://localhost:6379/0` | Redis for caching and pub/sub |
+| `CORS_ORIGINS` | `http://localhost:8800,...` | Allowed CORS origins |
+| `MARKET_DATA_GRPC_TARGET` | `market-data:8840` | Market data service address |
+| `BACKTEST_USE_CELERY` | `false` | Enable async Celery execution |
+
+### Celery Configuration
+
+```python
+celery_app.conf.update(
+    task_soft_time_limit=300,        # 5 minutes soft limit
+    task_time_limit=600,             # 10 minutes hard limit
+    task_acks_late=True,             # Acknowledge after completion
+    task_reject_on_worker_lost=True, # Reject if worker dies
+    task_default_retry_delay=60,     # Wait 60s before retry
+    task_max_retries=3,              # Max 3 retries
+    result_expires=86400,            # Results expire after 24h
+    worker_prefetch_multiplier=1,    # Fair scheduling
+    worker_concurrency=4,            # 4 concurrent workers
+)
+```
+
+### Port
+
+| Service | Port |
+|---------|------|
+| Backtest Service | 8830 |
+
+---
+
+## Health Check
+
+### Endpoint
+
+```http
+GET /health
+```
+
+### Response
+
+```json
+{
+  "status": "healthy",
+  "service": "backtest",
+  "version": "0.1.0"
+}
+```
+
+---
+
+## Startup/Shutdown Sequence
+
+### Startup
+
+```
+1. Load environment configuration
+2. Initialize logging
+3. Create FastAPI application with lifespan handler
+4. In lifespan:
+   a. Import Connect ASGI application from proto
+   b. Create BacktestServicer instance
+   c. Mount Connect app at root path
+5. Add CORS middleware
+6. Register health check endpoint
+7. Start accepting requests
+```
+
+### Celery Worker Startup
+
+```
+1. Load celery_app configuration
+2. Connect to Redis broker
+3. Register task routes (backtest queue)
+4. Start worker pool (default 4 concurrent)
+5. Begin consuming tasks from queue
+```
+
+### Shutdown
+
+```
+1. Stop accepting new requests
+2. Wait for active backtests to complete (soft timeout)
+3. Cancel running Celery tasks if needed
+4. Close Redis connections (publisher, subscriber)
+5. Close market data gRPC client
+6. Close database connections
+```
+
+---
+
+## Testing
+
+### Test Structure
+
+```
+tests/
+├── conftest.py                    # Fixtures: mock DB, clients, sample data
+├── test_backtest_service.py       # Service layer unit tests
+├── test_backtest_service_extended.py # Extended service tests
+├── test_backtester.py             # Engine unit tests
+├── test_benchmarks.py             # Benchmark calculation tests
+├── test_celery_tasks.py           # Async task tests
+├── test_grpc_servicer.py          # gRPC endpoint tests
+├── test_grpc_streaming.py         # Progress streaming tests
+├── test_health.py                 # Health check tests
+├── test_indicator_cache.py        # Redis cache tests
+├── test_market_data.py            # Market data client tests
+├── test_models.py                 # Pydantic schema tests
+├── test_progress.py               # Progress tracking tests
+├── test_progress_extended.py      # Extended progress tests
+├── test_strategy_adapter.py       # Strategy compilation tests
+└── test_validation.py             # Input validation tests
+```
+
+### Running Tests
+
+```bash
+# Run all tests
+cd services/backtest && pytest
+
+# Run with coverage
+pytest --cov=src --cov-report=term-missing
+
+# Run specific test file
+pytest tests/test_backtester.py
+
+# Run specific test
+pytest tests/test_backtester.py::test_engine_run_simple
+```
+
+### Key Test Fixtures
+
+```python
+@pytest.fixture
+def mock_db():
+    """Mock async database session."""
+    db = AsyncMock()
+    db.commit = AsyncMock()
+    db.refresh = AsyncMock()
+    db.execute = AsyncMock()
+    return db
+
+@pytest.fixture
+def mock_market_data_client():
+    """Mock market data client."""
+    client = AsyncMock()
+    client.fetch_bars = AsyncMock(return_value={})
+    return client
+
+@pytest.fixture
+def sample_bars():
+    """30 days of OHLCV data for AAPL."""
+    # Returns {"AAPL": [{timestamp, open, high, low, close, volume}, ...]}
+```
+
+### Key Test Scenarios
+
+- **Happy path**: Create backtest, run simulation, verify metrics
+- **Strategy compilation**: S-expression DSL to executable function
+- **Benchmark comparison**: SPY buy & hold, alpha/beta calculation
+- **Progress streaming**: Redis pub/sub updates during execution
+- **Error handling**: Invalid symbols, missing data, timeout
+- **Cancellation**: Cancel running backtest, verify status update
+- **Celery tasks**: Async execution, retry on failure
+
+---
+
+## Current Implementation Status
+
+> **Project Stage:** Early Development
+
+### What's Real (Implemented) ✓
+
+- [x] **Core Engine**: Vectorized backtest engine with NumPy
+- [x] **Strategy Adapter**: S-expression DSL compilation
+- [x] **Metrics Calculation**: Sharpe, Sortino, drawdown, win rate
+- [x] **Benchmark Comparison**: SPY buy & hold, alpha, beta, information ratio
+- [x] **Progress Streaming**: Redis pub/sub with ETA calculation
+- [x] **gRPC/Connect Endpoints**: RunBacktest, GetBacktest, ListBacktests, CancelBacktest, StreamBacktestProgress, CompareBacktests
+- [x] **Database Persistence**: Backtest and BacktestResult models
+- [x] **Market Data Integration**: gRPC client to market-data service
+- [x] **Celery Integration**: Async task queue (optional)
+- [x] **Health Check**: Standard `/health` endpoint
+
+### What's Stubbed or Partial (TODO) ✗
+
+- [ ] **Walk-Forward Optimization**: Documented but not implemented
+- [ ] **Monte Carlo Simulation**: Documented but not implemented
+- [ ] **Parallel Symbol Processing**: Architecture designed, not built
+- [ ] **Multi-Level Cache (L3/L4)**: TimescaleDB and GCS/Parquet cold storage
+- [ ] **Historical Data Sources**: Only Alpaca (2016+), pre-2016 sources not integrated
+- [ ] **WebSocket Progress**: Currently polling-based via Connect streaming
+- [ ] **Custom Benchmarks**: Only SPY buy & hold implemented
+- [ ] **Intraday Timeframes**: Daily bars only
+
+### Known Limitations
+
+- **Data range**: Limited to Alpaca data (2016-present)
+- **Markets**: US equities only
+- **Timeframes**: Daily bars only (no intraday)
+- **Benchmarks**: SPY only (no custom benchmarks yet)
+- **Scale**: Tested up to ~50 symbols × 5 years; larger scales untested
 
 ---
 

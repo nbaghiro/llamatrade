@@ -1217,3 +1217,163 @@ The strategy service provides a complete strategy management system with:
 9. **Clean API**: gRPC/Connect protocol for type-safe communication
 
 Architecture separates concerns: Servicer (gRPC) → Service (business logic) → DSL (parsing/validation) → Compiler (execution) → Database (persistence).
+
+---
+
+## Error Handling
+
+### DSL Parsing Errors
+
+Parse errors include position information for debugging:
+
+```python
+# Example parse error
+ParseError(
+    message="Unexpected token ')'",
+    line=5,
+    column=12,
+    source="(strategy :entry )",
+)
+```
+
+### Validation Errors
+
+Validation errors are returned in `ValidationResult`:
+
+```python
+ValidationResult(
+    valid=False,
+    errors=[
+        "Missing required field: :symbols",
+        "Invalid timeframe '1X', must be one of: 1m, 5m, 15m, 30m, 1H, 4H, 1D, 1W, 1M",
+        "Indicator 'sma' requires 2 arguments, got 1",
+    ],
+    warnings=[
+        "Position size 50% may be too aggressive",
+    ],
+)
+```
+
+### gRPC Status Codes
+
+| Status Code | When Raised | Example |
+|-------------|-------------|---------|
+| `INVALID_ARGUMENT` | Invalid DSL syntax or validation failure | Parse error, missing fields |
+| `NOT_FOUND` | Strategy or version not found | Get non-existent strategy |
+| `ALREADY_EXISTS` | Strategy with same name exists | Create duplicate strategy |
+| `INTERNAL` | Unexpected server error | Database connection failure |
+
+### Error Response Format
+
+```json
+{
+  "code": "INVALID_ARGUMENT",
+  "message": "Strategy validation failed",
+  "details": [
+    {"field": "entry", "error": "Invalid indicator: 'sma' requires period parameter"}
+  ]
+}
+```
+
+---
+
+## Startup/Shutdown Sequence
+
+### Startup
+
+```
+1. Load environment configuration (DATABASE_URL, CORS_ORIGINS)
+2. Initialize logging
+3. Create FastAPI application with lifespan handler
+4. In lifespan:
+   a. Import Connect ASGI application from proto
+   b. Create StrategyServicer instance
+   c. Mount Connect app at root path
+5. Add CORS middleware
+6. Register health check endpoint (/health)
+7. Start accepting requests
+```
+
+### Shutdown
+
+```
+1. Stop accepting new requests
+2. Wait for active strategy operations to complete
+3. Close database connections (via session maker)
+4. FastAPI cleanup
+```
+
+---
+
+## Testing
+
+### Test Structure
+
+```
+tests/
+├── conftest.py                 # Shared fixtures (~5300 lines)
+├── test_base_strategy.py       # Base strategy class tests
+├── test_grpc_servicer.py       # gRPC endpoint tests (~42k lines)
+├── test_health.py              # Health check tests
+├── test_indicator_service.py   # Indicator metadata tests
+├── test_strategy_service.py    # Strategy CRUD tests (~40k lines)
+└── test_template_service.py    # Template library tests
+```
+
+### Running Tests
+
+```bash
+# Run all tests
+cd services/strategy && pytest
+
+# Run with coverage
+pytest --cov=src --cov-report=term-missing
+
+# Run specific test file
+pytest tests/test_strategy_service.py
+
+# Run specific test
+pytest tests/test_strategy_service.py::test_create_strategy_success
+```
+
+### Key Test Scenarios
+
+- **Strategy CRUD**: Create, read, update, delete with validation
+- **DSL parsing**: Valid/invalid S-expressions, edge cases
+- **Version management**: Create new versions, list versions
+- **Indicator validation**: Parameter counts, output selectors
+- **Template instantiation**: Generate strategy from template
+- **Multi-tenancy**: Tenant isolation, cross-tenant access prevention
+- **Compilation**: Extract indicators, compute lookback requirements
+
+---
+
+## Current Implementation Status
+
+> **Project Stage:** Early Development
+
+### What's Real (Implemented) ✓
+
+- [x] **gRPC/Connect Endpoints**: CreateStrategy, GetStrategy, ListStrategies, UpdateStrategy, DeleteStrategy, CompileStrategy, ValidateStrategy, ListStrategyVersions, UpdateStrategyStatus
+- [x] **Strategy Service**: Full CRUD with version management
+- [x] **DSL Parser**: Complete S-expression parsing (`llamatrade_dsl`)
+- [x] **DSL Validator**: Semantic validation with error messages
+- [x] **Indicator Library**: 20+ indicators (SMA, EMA, RSI, MACD, etc.)
+- [x] **Template Service**: 10 pre-built strategy templates
+- [x] **Indicator Service**: Indicator metadata (params, outputs)
+- [x] **Compiler Pipeline**: Indicator extraction, lookback calculation
+- [x] **Health Check**: Standard `/health` endpoint
+
+### What's Stubbed or Partial (TODO) ✗
+
+- [ ] **Deployment Management**: Create/track deployments to paper/live
+- [ ] **Live Strategy Execution**: Connecting to trading service
+- [ ] **Strategy Performance Tracking**: Historical execution metrics
+- [ ] **Strategy Marketplace**: Share/discover strategies
+- [ ] **Code-Based Strategies**: Python class strategies (vs DSL only)
+
+### Known Limitations
+
+- **Execution**: Strategies can be created and backtested but not yet live-traded
+- **Indicators**: No custom indicator creation (fixed library)
+- **Deployments**: Deployment tracking exists in schema but not fully implemented

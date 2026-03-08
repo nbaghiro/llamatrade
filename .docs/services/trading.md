@@ -648,3 +648,177 @@ The trading service provides a production-ready order execution engine with:
 7. **Clean API**: gRPC/Connect protocol for type-safe communication
 
 Architecture separates concerns: Servicer (gRPC) → OrderExecutor (business logic) → RiskManager (validation) → AlpacaClient (broker) → Database (persistence).
+
+---
+
+## Error Handling
+
+### gRPC Status Codes
+
+| Status Code | When Raised | Example |
+|-------------|-------------|---------|
+| `INVALID_ARGUMENT` | Risk check violation | Order value exceeds limit |
+| `FAILED_PRECONDITION` | Alpaca submission failed | Insufficient buying power |
+| `NOT_FOUND` | Order or position not found | Get non-existent order |
+| `INTERNAL` | Unexpected server error | Database connection failure |
+
+### Risk Check Errors
+
+When `RiskManager.check_order()` fails, the response includes violation details:
+
+```python
+# Example risk violation
+await context.abort(
+    grpc.StatusCode.INVALID_ARGUMENT,
+    "Risk check failed: Order value $6,000 exceeds limit $5,000"
+)
+```
+
+### Alpaca API Errors
+
+Alpaca errors are mapped to appropriate responses:
+
+| Alpaca Error | Trading Service Response |
+|--------------|-------------------------|
+| `insufficient_balance` | `FAILED_PRECONDITION` |
+| `invalid_symbol` | `INVALID_ARGUMENT` |
+| `market_closed` | `FAILED_PRECONDITION` |
+| `rate_limit` | Retry with backoff |
+| Connection error | `INTERNAL` with retry |
+
+### Error Response Format
+
+```json
+{
+  "code": "INVALID_ARGUMENT",
+  "message": "Risk check failed: Order value $6,000 exceeds limit $5,000",
+  "details": []
+}
+```
+
+---
+
+## Startup/Shutdown Sequence
+
+### Startup
+
+```
+1. Load environment configuration (Alpaca keys, database URL)
+2. Initialize logging and Prometheus metrics
+3. Create FastAPI application with lifespan handler
+4. In lifespan:
+   a. Import Connect ASGI application from proto
+   b. Create TradingServicer instance
+   c. Mount Connect app at root path
+5. Add CORS middleware
+6. Register health check endpoint (/health)
+7. Register metrics endpoint (/metrics)
+8. Start accepting requests
+```
+
+### Shutdown
+
+```
+1. Stop accepting new requests
+2. Wait for active order submissions to complete
+3. Close Alpaca client connections
+4. Close market-data client connections
+5. Close database connections
+6. Flush Prometheus metrics
+```
+
+---
+
+## Testing
+
+### Test Structure
+
+```
+tests/
+├── conftest.py                    # Shared fixtures (~7600 lines)
+├── test_alert_service.py          # Alert service tests
+├── test_audit_service.py          # Audit logging tests
+├── test_bar_stream.py             # Bar data streaming tests
+├── test_base_executor.py          # Base executor tests
+├── test_bracket_orders.py         # Bracket order tests
+├── test_cache.py                  # Cache layer tests
+├── test_circuit_breaker.py        # Circuit breaker tests
+├── test_compiler_adapter.py       # Strategy compilation tests
+├── test_concurrency.py            # Concurrent execution tests
+├── test_event_sourced_executor.py # Event sourcing tests
+├── test_events.py                 # Event handling tests
+├── test_fill_handling.py          # Order fill tests
+├── test_grpc_servicer.py          # gRPC endpoint tests
+├── test_health.py                 # Health check tests
+├── test_live_session_service.py   # Live session tests
+├── test_market_data_client.py     # Market data client tests
+├── test_metrics.py                # Prometheus metrics tests
+├── test_order_executor.py         # Order executor tests
+├── test_position_service.py       # Position service tests
+├── test_risk_manager.py           # Risk manager tests (~30k lines)
+├── test_runner.py                 # Strategy runner tests
+├── test_session_service.py        # Session service tests
+├── test_streaming_endpoints.py    # Streaming endpoint tests
+├── test_streaming.py              # Streaming tests
+├── test_trade_stream.py           # Trade streaming tests
+└── test_trading_hours.py          # Market hours tests
+```
+
+### Running Tests
+
+```bash
+# Run all tests
+cd services/trading && pytest
+
+# Run with coverage
+pytest --cov=src --cov-report=term-missing
+
+# Run specific test file
+pytest tests/test_order_executor.py
+
+# Run specific test
+pytest tests/test_order_executor.py::test_submit_order_success
+```
+
+### Key Test Scenarios
+
+- **Order submission**: Happy path, risk violations, Alpaca errors
+- **Risk checks**: Each of the 5 risk checks individually
+- **Position tracking**: Open, close, P&L calculation
+- **Streaming**: Order updates, position updates
+- **Circuit breaker**: Broker failure handling
+- **Concurrent execution**: Race condition handling
+- **Event sourcing**: Order lifecycle events
+
+---
+
+## Current Implementation Status
+
+> **Project Stage:** Early Development
+
+### What's Real (Implemented) ✓
+
+- [x] **gRPC/Connect Endpoints**: SubmitOrder, CancelOrder, GetOrder, ListOrders, GetPosition, ListPositions, ClosePosition
+- [x] **Order Executor**: Order submission pipeline with Alpaca integration
+- [x] **Risk Manager**: 5-layer validation pipeline
+- [x] **Position Service**: Local position tracking with P&L
+- [x] **Alpaca Client**: REST client for paper/live trading
+- [x] **Market Data Client**: HTTP client for price fetching
+- [x] **Health Check**: Standard `/health` endpoint
+- [x] **Prometheus Metrics**: `/metrics` endpoint
+
+### What's Stubbed or Partial (TODO) ✗
+
+- [ ] **Real-Time Streaming**: `StreamOrderUpdates`, `StreamPositionUpdates` - stubs
+- [ ] **Alpaca WebSocket**: Real-time order/trade updates from Alpaca
+- [ ] **Session Management**: Trading session lifecycle (start/stop/pause)
+- [ ] **Strategy Execution**: Automated strategy-driven trading
+- [ ] **Order Sync**: Periodic sync with Alpaca order status
+- [ ] **Extended Hours**: Pre/post-market trading support
+
+### Known Limitations
+
+- **Streaming**: Currently polling-based, not real-time
+- **Sessions**: Manual order placement only, no automated strategy execution
+- **Order Types**: Basic types only (market, limit), no complex orders
+- **Markets**: US equities only via Alpaca

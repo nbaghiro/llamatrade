@@ -588,3 +588,132 @@ The portfolio service provides a comprehensive portfolio management layer with:
 7. **Database Persistence**: SQLAlchemy async with PostgreSQL
 
 Architecture separates concerns: Servicer (gRPC) → Services (business logic) → MarketDataClient (price enrichment) → Database (persistence).
+
+---
+
+## Error Handling
+
+### gRPC Status Codes
+
+| Status Code | When Raised | Example |
+|-------------|-------------|---------|
+| `NOT_FOUND` | Portfolio or transaction not found | Get non-existent portfolio |
+| `INVALID_ARGUMENT` | Invalid request parameters | Invalid transaction type |
+| `INTERNAL` | Unexpected server error | Database connection failure |
+
+### P&L Calculation Edge Cases
+
+```python
+# Handle division by zero in percentage calculations
+def _calculate_pnl_percent(unrealized_pnl: float, cost_basis: float) -> float:
+    if cost_basis == 0:
+        return 0.0
+    return (unrealized_pnl / cost_basis) * 100
+
+# Handle empty history for performance metrics
+if len(history) < 2:
+    return PerformanceMetrics(
+        sharpe_ratio=0.0,
+        sortino_ratio=0.0,
+        max_drawdown=0.0,
+        ...
+    )
+```
+
+### Market Data Failures
+
+Price enrichment failures are handled gracefully:
+
+```python
+async def get_prices(symbols: list[str]) -> dict[str, float]:
+    prices = {}
+    for symbol in symbols:
+        try:
+            prices[symbol] = await self.get_latest_price(symbol)
+        except Exception:
+            # Use last known price from position data
+            prices[symbol] = 0.0
+    return prices
+```
+
+### Error Response Format
+
+```json
+{
+  "code": "NOT_FOUND",
+  "message": "Portfolio not found for tenant",
+  "details": []
+}
+```
+
+---
+
+## Testing
+
+### Test Structure
+
+```
+tests/
+├── conftest.py                    # Shared fixtures (~5200 lines)
+├── test_grpc_servicer.py          # gRPC endpoint tests
+├── test_health.py                 # Health check tests
+├── test_performance_service.py    # Performance metrics tests
+├── test_portfolio_service.py      # Portfolio service tests
+└── test_transaction_service.py    # Transaction CRUD tests (~20k lines)
+```
+
+### Running Tests
+
+```bash
+# Run all tests
+cd services/portfolio && pytest
+
+# Run with coverage
+pytest --cov=src --cov-report=term-missing
+
+# Run specific test file
+pytest tests/test_performance_service.py
+
+# Run specific test
+pytest tests/test_performance_service.py::test_calculate_sharpe_ratio
+```
+
+### Key Test Scenarios
+
+- **Portfolio summary**: Position aggregation, P&L calculation
+- **Price enrichment**: Market data integration, fallback handling
+- **Performance metrics**: Sharpe, Sortino, drawdown calculations
+- **Transaction recording**: Buy/sell, deposits, withdrawals
+- **Asset allocation**: Category breakdown, percentage calculation
+- **Edge cases**: Empty portfolio, zero cost basis, no history
+
+---
+
+## Current Implementation Status
+
+> **Project Stage:** Early Development
+
+### What's Real (Implemented) ✓
+
+- [x] **gRPC/Connect Endpoints**: GetPortfolio, ListPortfolios, GetPerformance, GetAssetAllocation, GetPositions, ListTransactions, RecordTransaction, SyncPortfolio
+- [x] **Portfolio Service**: Summary, position aggregation, price enrichment
+- [x] **Performance Service**: Sharpe, Sortino, max drawdown, volatility
+- [x] **Transaction Service**: CRUD operations, P&L calculation
+- [x] **Market Data Client**: HTTP client for price fetching
+- [x] **Health Check**: Standard `/health` endpoint
+
+### What's Stubbed or Partial (TODO) ✗
+
+- [ ] **Real-Time Streaming**: No streaming endpoint for portfolio updates
+- [ ] **Trading Sync**: `SyncPortfolio` implementation incomplete
+- [ ] **Historical Snapshots**: Daily snapshot generation not automated
+- [ ] **Benchmark Comparison**: No SPY comparison in portfolio performance
+- [ ] **Tax Lot Tracking**: FIFO/LIFO cost basis not implemented
+- [ ] **Multi-Currency**: USD only, no forex support
+
+### Known Limitations
+
+- **Prices**: Requires market-data service for valuation
+- **Sync**: Manual sync required after trades
+- **History**: No automated daily snapshot generation
+- **Asset Classes**: Stocks only, no bonds/options/crypto
