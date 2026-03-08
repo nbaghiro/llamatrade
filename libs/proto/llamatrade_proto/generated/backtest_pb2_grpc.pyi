@@ -3,18 +3,23 @@
 isort:skip_file
 """
 
-import abc as _abc_1
-import typing as _typing
 from collections import abc as _abc
-from typing import Self as _Self
-
+from grpc import aio as _aio
+import abc as _abc_1
 import backtest_pb2 as _backtest_pb2
 import grpc as _grpc
-from grpc import aio as _aio
+import sys
+import typing as _typing
+
+if sys.version_info >= (3, 11):
+    from typing import Self as _Self
+else:
+    from typing_extensions import Self as _Self
 
 _T = _typing.TypeVar("_T")
 
 class _MaybeAsyncIterator(_abc.AsyncIterator[_T], _abc.Iterator[_T], metaclass=_abc_1.ABCMeta): ...
+
 class _ServicerContext(_grpc.ServicerContext, _aio.ServicerContext):  # type: ignore[misc, type-arg]
     ...
 
@@ -31,26 +36,14 @@ class BacktestServiceStub:
     def __new__(cls, channel: _grpc.Channel) -> _Self: ...
     @_typing.overload
     def __new__(cls, channel: _aio.Channel) -> BacktestServiceAsyncStub: ...
-    RunBacktest: _grpc.UnaryUnaryMultiCallable[
-        _backtest_pb2.RunBacktestRequest, _backtest_pb2.RunBacktestResponse
-    ]
+    RunBacktest: _grpc.UnaryUnaryMultiCallable[_backtest_pb2.RunBacktestRequest, _backtest_pb2.RunBacktestResponse]
     """Backtest management"""
-    GetBacktest: _grpc.UnaryUnaryMultiCallable[
-        _backtest_pb2.GetBacktestRequest, _backtest_pb2.GetBacktestResponse
-    ]
-    ListBacktests: _grpc.UnaryUnaryMultiCallable[
-        _backtest_pb2.ListBacktestsRequest, _backtest_pb2.ListBacktestsResponse
-    ]
-    CancelBacktest: _grpc.UnaryUnaryMultiCallable[
-        _backtest_pb2.CancelBacktestRequest, _backtest_pb2.CancelBacktestResponse
-    ]
-    StreamBacktestProgress: _grpc.UnaryStreamMultiCallable[
-        _backtest_pb2.StreamBacktestProgressRequest, _backtest_pb2.BacktestProgressUpdate
-    ]
+    GetBacktest: _grpc.UnaryUnaryMultiCallable[_backtest_pb2.GetBacktestRequest, _backtest_pb2.GetBacktestResponse]
+    ListBacktests: _grpc.UnaryUnaryMultiCallable[_backtest_pb2.ListBacktestsRequest, _backtest_pb2.ListBacktestsResponse]
+    CancelBacktest: _grpc.UnaryUnaryMultiCallable[_backtest_pb2.CancelBacktestRequest, _backtest_pb2.CancelBacktestResponse]
+    StreamBacktestProgress: _grpc.UnaryStreamMultiCallable[_backtest_pb2.StreamBacktestProgressRequest, _backtest_pb2.BacktestProgressUpdate]
     """Real-time progress"""
-    CompareBacktests: _grpc.UnaryUnaryMultiCallable[
-        _backtest_pb2.CompareBacktestsRequest, _backtest_pb2.CompareBacktestsResponse
-    ]
+    CompareBacktests: _grpc.UnaryUnaryMultiCallable[_backtest_pb2.CompareBacktestsRequest, _backtest_pb2.CompareBacktestsResponse]
     """Analysis"""
 
 @_typing.type_check_only
@@ -61,26 +54,14 @@ class BacktestServiceAsyncStub(BacktestServiceStub):
     """
 
     def __init__(self, channel: _aio.Channel) -> None: ...
-    RunBacktest: _aio.UnaryUnaryMultiCallable[
-        _backtest_pb2.RunBacktestRequest, _backtest_pb2.RunBacktestResponse
-    ]  # type: ignore[assignment]
+    RunBacktest: _aio.UnaryUnaryMultiCallable[_backtest_pb2.RunBacktestRequest, _backtest_pb2.RunBacktestResponse]  # type: ignore[assignment]
     """Backtest management"""
-    GetBacktest: _aio.UnaryUnaryMultiCallable[
-        _backtest_pb2.GetBacktestRequest, _backtest_pb2.GetBacktestResponse
-    ]  # type: ignore[assignment]
-    ListBacktests: _aio.UnaryUnaryMultiCallable[
-        _backtest_pb2.ListBacktestsRequest, _backtest_pb2.ListBacktestsResponse
-    ]  # type: ignore[assignment]
-    CancelBacktest: _aio.UnaryUnaryMultiCallable[
-        _backtest_pb2.CancelBacktestRequest, _backtest_pb2.CancelBacktestResponse
-    ]  # type: ignore[assignment]
-    StreamBacktestProgress: _aio.UnaryStreamMultiCallable[
-        _backtest_pb2.StreamBacktestProgressRequest, _backtest_pb2.BacktestProgressUpdate
-    ]  # type: ignore[assignment]
+    GetBacktest: _aio.UnaryUnaryMultiCallable[_backtest_pb2.GetBacktestRequest, _backtest_pb2.GetBacktestResponse]  # type: ignore[assignment]
+    ListBacktests: _aio.UnaryUnaryMultiCallable[_backtest_pb2.ListBacktestsRequest, _backtest_pb2.ListBacktestsResponse]  # type: ignore[assignment]
+    CancelBacktest: _aio.UnaryUnaryMultiCallable[_backtest_pb2.CancelBacktestRequest, _backtest_pb2.CancelBacktestResponse]  # type: ignore[assignment]
+    StreamBacktestProgress: _aio.UnaryStreamMultiCallable[_backtest_pb2.StreamBacktestProgressRequest, _backtest_pb2.BacktestProgressUpdate]  # type: ignore[assignment]
     """Real-time progress"""
-    CompareBacktests: _aio.UnaryUnaryMultiCallable[
-        _backtest_pb2.CompareBacktestsRequest, _backtest_pb2.CompareBacktestsResponse
-    ]  # type: ignore[assignment]
+    CompareBacktests: _aio.UnaryUnaryMultiCallable[_backtest_pb2.CompareBacktestsRequest, _backtest_pb2.CompareBacktestsResponse]  # type: ignore[assignment]
     """Analysis"""
 
 class BacktestServiceServicer(metaclass=_abc_1.ABCMeta):
@@ -94,7 +75,7 @@ class BacktestServiceServicer(metaclass=_abc_1.ABCMeta):
         self,
         request: _backtest_pb2.RunBacktestRequest,
         context: _ServicerContext,
-    ) -> _backtest_pb2.RunBacktestResponse | _abc.Awaitable[_backtest_pb2.RunBacktestResponse]:
+    ) -> _typing.Union[_backtest_pb2.RunBacktestResponse, _abc.Awaitable[_backtest_pb2.RunBacktestResponse]]:
         """Backtest management"""
 
     @_abc_1.abstractmethod
@@ -102,32 +83,28 @@ class BacktestServiceServicer(metaclass=_abc_1.ABCMeta):
         self,
         request: _backtest_pb2.GetBacktestRequest,
         context: _ServicerContext,
-    ) -> _backtest_pb2.GetBacktestResponse | _abc.Awaitable[_backtest_pb2.GetBacktestResponse]: ...
+    ) -> _typing.Union[_backtest_pb2.GetBacktestResponse, _abc.Awaitable[_backtest_pb2.GetBacktestResponse]]: ...
+
     @_abc_1.abstractmethod
     def ListBacktests(
         self,
         request: _backtest_pb2.ListBacktestsRequest,
         context: _ServicerContext,
-    ) -> (
-        _backtest_pb2.ListBacktestsResponse | _abc.Awaitable[_backtest_pb2.ListBacktestsResponse]
-    ): ...
+    ) -> _typing.Union[_backtest_pb2.ListBacktestsResponse, _abc.Awaitable[_backtest_pb2.ListBacktestsResponse]]: ...
+
     @_abc_1.abstractmethod
     def CancelBacktest(
         self,
         request: _backtest_pb2.CancelBacktestRequest,
         context: _ServicerContext,
-    ) -> (
-        _backtest_pb2.CancelBacktestResponse | _abc.Awaitable[_backtest_pb2.CancelBacktestResponse]
-    ): ...
+    ) -> _typing.Union[_backtest_pb2.CancelBacktestResponse, _abc.Awaitable[_backtest_pb2.CancelBacktestResponse]]: ...
+
     @_abc_1.abstractmethod
     def StreamBacktestProgress(
         self,
         request: _backtest_pb2.StreamBacktestProgressRequest,
         context: _ServicerContext,
-    ) -> (
-        _abc.Iterator[_backtest_pb2.BacktestProgressUpdate]
-        | _abc.AsyncIterator[_backtest_pb2.BacktestProgressUpdate]
-    ):
+    ) -> _typing.Union[_abc.Iterator[_backtest_pb2.BacktestProgressUpdate], _abc.AsyncIterator[_backtest_pb2.BacktestProgressUpdate]]:
         """Real-time progress"""
 
     @_abc_1.abstractmethod
@@ -135,12 +112,7 @@ class BacktestServiceServicer(metaclass=_abc_1.ABCMeta):
         self,
         request: _backtest_pb2.CompareBacktestsRequest,
         context: _ServicerContext,
-    ) -> (
-        _backtest_pb2.CompareBacktestsResponse
-        | _abc.Awaitable[_backtest_pb2.CompareBacktestsResponse]
-    ):
+    ) -> _typing.Union[_backtest_pb2.CompareBacktestsResponse, _abc.Awaitable[_backtest_pb2.CompareBacktestsResponse]]:
         """Analysis"""
 
-def add_BacktestServiceServicer_to_server(
-    servicer: BacktestServiceServicer, server: _grpc.Server | _aio.Server
-) -> None: ...
+def add_BacktestServiceServicer_to_server(servicer: BacktestServiceServicer, server: _typing.Union[_grpc.Server, _aio.Server]) -> None: ...

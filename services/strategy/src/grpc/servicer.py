@@ -761,6 +761,83 @@ class StrategyServicer:
         except ValueError as e:
             raise ConnectError(Code.FAILED_PRECONDITION, str(e))
 
+    async def list_templates(
+        self,
+        request: strategy_pb2.ListTemplatesRequest,
+        ctx: AnyContext,
+    ) -> strategy_pb2.ListTemplatesResponse:
+        """List available strategy templates.
+
+        Templates are pre-built strategy definitions that users can use as starting points.
+        No authentication required - templates are public.
+        """
+        from src.models import AssetClass, TemplateCategory
+        from src.services.template_service import get_template_service
+
+        template_service = get_template_service()
+
+        # Map string filters to enums
+        category = TemplateCategory(request.category) if request.category else None
+        asset_class = AssetClass(request.asset_class) if request.asset_class else None
+        difficulty = request.difficulty if request.difficulty else None
+
+        templates = await template_service.list_templates(
+            category=category,
+            asset_class=asset_class,
+            difficulty=difficulty,
+        )
+
+        return strategy_pb2.ListTemplatesResponse(
+            templates=[
+                strategy_pb2.StrategyTemplate(
+                    id=t.id,
+                    name=t.name,
+                    description=t.description or "",
+                    strategy_type=str(t.strategy_type),
+                    category=str(t.category),
+                    asset_class=str(t.asset_class),
+                    config_sexpr=t.config_sexpr,
+                    tags=t.tags,
+                    difficulty=t.difficulty,
+                )
+                for t in templates
+            ],
+        )
+
+    async def get_template(
+        self,
+        request: strategy_pb2.GetTemplateRequest,
+        ctx: AnyContext,
+    ) -> strategy_pb2.GetTemplateResponse:
+        """Get a specific template by ID.
+
+        No authentication required - templates are public.
+        """
+        from src.services.template_service import get_template_service
+
+        template_service = get_template_service()
+        template = await template_service.get_template(request.template_id)
+
+        if not template:
+            raise ConnectError(
+                Code.NOT_FOUND,
+                f"Template not found: {request.template_id}",
+            )
+
+        return strategy_pb2.GetTemplateResponse(
+            template=strategy_pb2.StrategyTemplate(
+                id=template.id,
+                name=template.name,
+                description=template.description or "",
+                strategy_type=str(template.strategy_type),
+                category=str(template.category),
+                asset_class=str(template.asset_class),
+                config_sexpr=template.config_sexpr,
+                tags=template.tags,
+                difficulty=template.difficulty,
+            ),
+        )
+
     # ===================
     # Helper methods
     # ===================

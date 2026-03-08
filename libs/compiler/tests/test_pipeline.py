@@ -315,17 +315,17 @@ class TestMACD:
             symbol="SPY",
             source="close",
             params=(12, 26, 9),
-            output_key="macd_close_12_26_9_line",
+            output_key="macd_SPY_close_12_26_9_line",
             output_field="line",
             required_bars=26,
         )
 
         result = compute_indicator(spec, sample_prices)
 
-        # Should have line, signal, and histogram
-        assert "macd_close_12_26_9_line" in result
-        assert "macd_close_12_26_9_signal" in result
-        assert "macd_close_12_26_9_histogram" in result
+        # Should have line, signal, and histogram (with symbol in key)
+        assert "macd_SPY_close_12_26_9_line" in result
+        assert "macd_SPY_close_12_26_9_signal" in result
+        assert "macd_SPY_close_12_26_9_histogram" in result
 
     def test_macd_histogram_equals_line_minus_signal(self, sample_prices: PriceData) -> None:
         """Test MACD histogram = line - signal."""
@@ -334,16 +334,16 @@ class TestMACD:
             symbol="SPY",
             source="close",
             params=(12, 26, 9),
-            output_key="macd_close_12_26_9_line",
+            output_key="macd_SPY_close_12_26_9_line",
             output_field="line",
             required_bars=26,
         )
 
         result = compute_indicator(spec, sample_prices)
 
-        line = result["macd_close_12_26_9_line"]
-        signal = result["macd_close_12_26_9_signal"]
-        histogram = result["macd_close_12_26_9_histogram"]
+        line = result["macd_SPY_close_12_26_9_line"]
+        signal = result["macd_SPY_close_12_26_9_signal"]
+        histogram = result["macd_SPY_close_12_26_9_histogram"]
 
         # Where all three are valid, histogram should equal line - signal
         valid_mask = ~(np.isnan(line) | np.isnan(signal) | np.isnan(histogram))
@@ -359,13 +359,13 @@ class TestMACD:
             symbol="SPY",
             source="close",
             params=(12, 26, 9),
-            output_key="macd_close_12_26_9_signal",
+            output_key="macd_SPY_close_12_26_9_signal",
             output_field="signal",
             required_bars=26,
         )
 
         result = compute_indicator(spec, sample_prices)
-        assert "macd_close_12_26_9_signal" in result
+        assert "macd_SPY_close_12_26_9_signal" in result
 
     def test_macd_histogram_output(self, sample_prices: PriceData) -> None:
         """Test MACD with histogram output field."""
@@ -374,13 +374,13 @@ class TestMACD:
             symbol="SPY",
             source="close",
             params=(12, 26, 9),
-            output_key="macd_close_12_26_9_histogram",
+            output_key="macd_SPY_close_12_26_9_histogram",
             output_field="histogram",
             required_bars=26,
         )
 
         result = compute_indicator(spec, sample_prices)
-        assert "macd_close_12_26_9_histogram" in result
+        assert "macd_SPY_close_12_26_9_histogram" in result
 
 
 class TestBollingerBands:
@@ -393,16 +393,16 @@ class TestBollingerBands:
             symbol="SPY",
             source="close",
             params=(20, 2.0),
-            output_key="bbands_close_20_2.0_upper",
+            output_key="bbands_SPY_close_20_2.0_upper",
             output_field="upper",
             required_bars=20,
         )
 
         result = compute_indicator(spec, sample_prices)
 
-        assert "bbands_close_20_2.0_upper" in result
-        assert "bbands_close_20_2.0_middle" in result
-        assert "bbands_close_20_2.0_lower" in result
+        assert "bbands_SPY_close_20_2.0_upper" in result
+        assert "bbands_SPY_close_20_2.0_middle" in result
+        assert "bbands_SPY_close_20_2.0_lower" in result
 
     def test_bollinger_bands_symmetry(self, sample_prices: PriceData) -> None:
         """Test Bollinger Bands are symmetric around middle."""
@@ -411,16 +411,16 @@ class TestBollingerBands:
             symbol="SPY",
             source="close",
             params=(20, 2.0),
-            output_key="bbands_close_20_2.0_middle",
+            output_key="bbands_SPY_close_20_2.0_middle",
             output_field="middle",
             required_bars=20,
         )
 
         result = compute_indicator(spec, sample_prices)
 
-        upper = result["bbands_close_20_2.0_upper"]
-        middle = result["bbands_close_20_2.0_middle"]
-        lower = result["bbands_close_20_2.0_lower"]
+        upper = result["bbands_SPY_close_20_2.0_upper"]
+        middle = result["bbands_SPY_close_20_2.0_middle"]
+        lower = result["bbands_SPY_close_20_2.0_lower"]
 
         # upper - middle should equal middle - lower
         valid_mask = ~(np.isnan(upper) | np.isnan(middle) | np.isnan(lower))
@@ -436,16 +436,16 @@ class TestBollingerBands:
             symbol="SPY",
             source="close",
             params=(20, 2.0),
-            output_key="bbands_close_20_2.0_upper",
+            output_key="bbands_SPY_close_20_2.0_upper",
             output_field="upper",
             required_bars=20,
         )
 
         result = compute_indicator(spec, sample_prices)
 
-        upper = result["bbands_close_20_2.0_upper"]
-        middle = result["bbands_close_20_2.0_middle"]
-        lower = result["bbands_close_20_2.0_lower"]
+        upper = result["bbands_SPY_close_20_2.0_upper"]
+        middle = result["bbands_SPY_close_20_2.0_middle"]
+        lower = result["bbands_SPY_close_20_2.0_lower"]
 
         valid_mask = ~(np.isnan(upper) | np.isnan(middle) | np.isnan(lower))
         assert np.all(upper[valid_mask] >= middle[valid_mask])
@@ -504,16 +504,16 @@ class TestADX:
             symbol="SPY",
             source="close",
             params=(14,),
-            output_key="adx_close_14_value",
+            output_key="adx_SPY_close_14_value",
             output_field="value",
             required_bars=15,
         )
 
         result = compute_indicator(spec, sample_prices)
 
-        assert "adx_close_14_value" in result
-        assert "adx_close_14_plus_di" in result
-        assert "adx_close_14_minus_di" in result
+        assert "adx_SPY_close_14_value" in result
+        assert "adx_SPY_close_14_plus_di" in result
+        assert "adx_SPY_close_14_minus_di" in result
 
     def test_adx_range(self, sample_prices: PriceData) -> None:
         """Test ADX values are in valid range (0-100)."""
@@ -522,13 +522,13 @@ class TestADX:
             symbol="SPY",
             source="close",
             params=(14,),
-            output_key="adx_close_14_value",
+            output_key="adx_SPY_close_14_value",
             output_field="value",
             required_bars=15,
         )
 
         result = compute_indicator(spec, sample_prices)
-        adx = result["adx_close_14_value"]
+        adx = result["adx_SPY_close_14_value"]
 
         valid_adx = adx[~np.isnan(adx)]
         assert np.all(valid_adx >= 0)
@@ -541,14 +541,14 @@ class TestADX:
             symbol="SPY",
             source="close",
             params=(14,),
-            output_key="adx_close_14_value",
+            output_key="adx_SPY_close_14_value",
             output_field="value",
             required_bars=15,
         )
 
         result = compute_indicator(spec, sample_prices)
-        plus_di = result["adx_close_14_plus_di"]
-        minus_di = result["adx_close_14_minus_di"]
+        plus_di = result["adx_SPY_close_14_plus_di"]
+        minus_di = result["adx_SPY_close_14_minus_di"]
 
         valid_plus = plus_di[~np.isnan(plus_di)]
         valid_minus = minus_di[~np.isnan(minus_di)]
@@ -567,15 +567,15 @@ class TestStochastic:
             symbol="SPY",
             source="close",
             params=(14, 3, 3),
-            output_key="stoch_close_14_3_3_k",
+            output_key="stoch_SPY_close_14_3_3_k",
             output_field="k",
             required_bars=14,
         )
 
         result = compute_indicator(spec, sample_prices)
 
-        assert "stoch_close_14_3_3_k" in result
-        assert "stoch_close_14_3_3_d" in result
+        assert "stoch_SPY_close_14_3_3_k" in result
+        assert "stoch_SPY_close_14_3_3_d" in result
 
     def test_stochastic_range(self, sample_prices: PriceData) -> None:
         """Test Stochastic values are in range 0-100."""
@@ -584,14 +584,14 @@ class TestStochastic:
             symbol="SPY",
             source="close",
             params=(14, 3, 3),
-            output_key="stoch_close_14_3_3_k",
+            output_key="stoch_SPY_close_14_3_3_k",
             output_field="k",
             required_bars=14,
         )
 
         result = compute_indicator(spec, sample_prices)
-        k = result["stoch_close_14_3_3_k"]
-        d = result["stoch_close_14_3_3_d"]
+        k = result["stoch_SPY_close_14_3_3_k"]
+        d = result["stoch_SPY_close_14_3_3_d"]
 
         valid_k = k[~np.isnan(k)]
         valid_d = d[~np.isnan(d)]
@@ -865,16 +865,16 @@ class TestKeltner:
             symbol="SPY",
             source="close",
             params=(20, 2.0),
-            output_key="keltner_close_20_2.0_middle",
+            output_key="keltner_SPY_close_20_2.0_middle",
             output_field="middle",
             required_bars=20,
         )
 
         result = compute_indicator(spec, sample_prices)
 
-        assert "keltner_close_20_2.0_upper" in result
-        assert "keltner_close_20_2.0_middle" in result
-        assert "keltner_close_20_2.0_lower" in result
+        assert "keltner_SPY_close_20_2.0_upper" in result
+        assert "keltner_SPY_close_20_2.0_middle" in result
+        assert "keltner_SPY_close_20_2.0_lower" in result
 
     def test_keltner_order(self, sample_prices: PriceData) -> None:
         """Test upper >= middle >= lower."""
@@ -883,16 +883,16 @@ class TestKeltner:
             symbol="SPY",
             source="close",
             params=(20, 2.0),
-            output_key="keltner_close_20_2.0_middle",
+            output_key="keltner_SPY_close_20_2.0_middle",
             output_field="middle",
             required_bars=20,
         )
 
         result = compute_indicator(spec, sample_prices)
 
-        upper = result["keltner_close_20_2.0_upper"]
-        middle = result["keltner_close_20_2.0_middle"]
-        lower = result["keltner_close_20_2.0_lower"]
+        upper = result["keltner_SPY_close_20_2.0_upper"]
+        middle = result["keltner_SPY_close_20_2.0_middle"]
+        lower = result["keltner_SPY_close_20_2.0_lower"]
 
         valid_mask = ~(np.isnan(upper) | np.isnan(middle) | np.isnan(lower))
         assert np.all(upper[valid_mask] >= middle[valid_mask])
@@ -909,15 +909,15 @@ class TestDonchian:
             symbol="SPY",
             source="close",
             params=(20,),
-            output_key="donchian_close_20_upper",
+            output_key="donchian_SPY_close_20_upper",
             output_field="upper",
             required_bars=20,
         )
 
         result = compute_indicator(spec, sample_prices)
 
-        assert "donchian_close_20_upper" in result
-        assert "donchian_close_20_lower" in result
+        assert "donchian_SPY_close_20_upper" in result
+        assert "donchian_SPY_close_20_lower" in result
 
     def test_donchian_values(self, sample_prices: PriceData) -> None:
         """Test Donchian Channel values are max/min of period."""
@@ -926,15 +926,15 @@ class TestDonchian:
             symbol="SPY",
             source="close",
             params=(20,),
-            output_key="donchian_close_20_upper",
+            output_key="donchian_SPY_close_20_upper",
             output_field="upper",
             required_bars=20,
         )
 
         result = compute_indicator(spec, sample_prices)
 
-        upper = result["donchian_close_20_upper"]
-        lower = result["donchian_close_20_lower"]
+        upper = result["donchian_SPY_close_20_upper"]
+        lower = result["donchian_SPY_close_20_lower"]
 
         # At index 19, upper should be max of first 20 highs
         expected_upper = np.max(sample_prices.high[:20])
@@ -1130,3 +1130,633 @@ class TestComputeAllIndicators:
         assert "sma_close_20" in result
         assert "rsi_close_14" in result
         assert "ema_close_10" in result
+
+
+class TestMultiOutputDefaults:
+    """Tests for multi-output indicator default behavior."""
+
+    def test_macd_default_to_line(self, sample_prices: PriceData) -> None:
+        """Test MACD defaults to line output when output_field is None."""
+        spec = IndicatorSpec(
+            indicator_type="macd",
+            symbol="SPY",
+            source="close",
+            params=(12, 26, 9),
+            output_key="macd_SPY_close_12_26_9",
+            output_field=None,  # No output specified
+            required_bars=26,
+        )
+
+        result = compute_indicator(spec, sample_prices)
+
+        # Should have all outputs
+        assert "macd_SPY_close_12_26_9" in result  # Default (line)
+        assert "macd_SPY_close_12_26_9_signal" in result
+        assert "macd_SPY_close_12_26_9_histogram" in result
+
+        # Default key should contain line values
+        line = result["macd_SPY_close_12_26_9"]
+        valid_line = line[~np.isnan(line)]
+        assert len(valid_line) > 0
+
+    def test_bbands_default_to_middle(self, sample_prices: PriceData) -> None:
+        """Test Bollinger Bands defaults to middle when output_field is None."""
+        spec = IndicatorSpec(
+            indicator_type="bbands",
+            symbol="SPY",
+            source="close",
+            params=(20, 2.0),
+            output_key="bbands_SPY_close_20_2.0",
+            output_field=None,  # No output specified
+            required_bars=20,
+        )
+
+        result = compute_indicator(spec, sample_prices)
+
+        # Should have all outputs
+        assert "bbands_SPY_close_20_2.0" in result  # Default (middle)
+        assert "bbands_SPY_close_20_2.0_upper" in result
+        assert "bbands_SPY_close_20_2.0_lower" in result
+
+    def test_stoch_default_to_k(self, sample_prices: PriceData) -> None:
+        """Test Stochastic defaults to K when output_field is None."""
+        spec = IndicatorSpec(
+            indicator_type="stoch",
+            symbol="SPY",
+            source="close",
+            params=(14, 3, 3),
+            output_key="stoch_SPY_close_14_3_3",
+            output_field=None,  # No output specified
+            required_bars=14,
+        )
+
+        result = compute_indicator(spec, sample_prices)
+
+        # Should have K and D outputs
+        assert "stoch_SPY_close_14_3_3" in result  # Default (k)
+        assert "stoch_SPY_close_14_3_3_d" in result
+
+    def test_adx_default_to_value(self, sample_prices: PriceData) -> None:
+        """Test ADX defaults to value when output_field is None."""
+        spec = IndicatorSpec(
+            indicator_type="adx",
+            symbol="SPY",
+            source="close",
+            params=(14,),
+            output_key="adx_SPY_close_14",
+            output_field=None,  # No output specified
+            required_bars=15,
+        )
+
+        result = compute_indicator(spec, sample_prices)
+
+        # Should have all outputs
+        assert "adx_SPY_close_14" in result  # Default (value)
+        assert "adx_SPY_close_14_plus_di" in result
+        assert "adx_SPY_close_14_minus_di" in result
+
+    def test_keltner_default_to_middle(self, sample_prices: PriceData) -> None:
+        """Test Keltner defaults to middle when output_field is None."""
+        spec = IndicatorSpec(
+            indicator_type="keltner",
+            symbol="SPY",
+            source="close",
+            params=(20, 2.0),
+            output_key="keltner_SPY_close_20_2.0_default",
+            output_field=None,  # No output specified
+            required_bars=20,
+        )
+
+        result = compute_indicator(spec, sample_prices)
+
+        # Should have all outputs
+        assert "keltner_SPY_close_20_2.0_default" in result  # Default (middle)
+        assert "keltner_SPY_close_20_2.0_upper" in result
+        assert "keltner_SPY_close_20_2.0_middle" in result
+        assert "keltner_SPY_close_20_2.0_lower" in result
+
+        # Default key should have same values as middle
+        np.testing.assert_array_equal(
+            result["keltner_SPY_close_20_2.0_default"],
+            result["keltner_SPY_close_20_2.0_middle"],
+        )
+
+    def test_donchian_default_to_upper(self, sample_prices: PriceData) -> None:
+        """Test Donchian defaults to upper when output_field is None."""
+        spec = IndicatorSpec(
+            indicator_type="donchian",
+            symbol="SPY",
+            source="close",
+            params=(20,),
+            output_key="donchian_SPY_close_20_default",
+            output_field=None,  # No output specified
+            required_bars=20,
+        )
+
+        result = compute_indicator(spec, sample_prices)
+
+        # Should have upper and lower outputs
+        assert "donchian_SPY_close_20_default" in result  # Default (upper)
+        assert "donchian_SPY_close_20_upper" in result
+        assert "donchian_SPY_close_20_lower" in result
+
+        # Default key should have same values as upper
+        np.testing.assert_array_equal(
+            result["donchian_SPY_close_20_default"],
+            result["donchian_SPY_close_20_upper"],
+        )
+
+
+class TestEdgeCases:
+    """Tests for edge cases and boundary conditions."""
+
+    def test_empty_price_data(self) -> None:
+        """Test indicators handle empty price data gracefully."""
+        prices = PriceData(
+            open=np.array([]),
+            high=np.array([]),
+            low=np.array([]),
+            close=np.array([]),
+            volume=np.array([], dtype=int),
+        )
+
+        spec = IndicatorSpec(
+            indicator_type="sma",
+            symbol="SPY",
+            source="close",
+            params=(20,),
+            output_key="sma_close_20",
+            output_field=None,
+            required_bars=20,
+        )
+
+        result = compute_indicator(spec, prices)
+        assert "sma_close_20" in result
+        assert len(result["sma_close_20"]) == 0
+
+    def test_single_element_array(self) -> None:
+        """Test indicators handle single-element arrays."""
+        prices = PriceData(
+            open=np.array([100.0]),
+            high=np.array([101.0]),
+            low=np.array([99.0]),
+            close=np.array([100.5]),
+            volume=np.array([1000]),
+        )
+
+        spec = IndicatorSpec(
+            indicator_type="sma",
+            symbol="SPY",
+            source="close",
+            params=(20,),
+            output_key="sma_close_20",
+            output_field=None,
+            required_bars=20,
+        )
+
+        result = compute_indicator(spec, prices)
+        # Single element with period 20 should be NaN
+        assert np.all(np.isnan(result["sma_close_20"]))
+
+    def test_period_equals_data_length(self) -> None:
+        """Test indicator when period exactly equals data length."""
+        prices = PriceData(
+            open=np.array([100.0, 101.0, 102.0, 103.0, 104.0]),
+            high=np.array([101.0, 102.0, 103.0, 104.0, 105.0]),
+            low=np.array([99.0, 100.0, 101.0, 102.0, 103.0]),
+            close=np.array([100.5, 101.5, 102.5, 103.5, 104.5]),
+            volume=np.array([1000, 2000, 3000, 4000, 5000]),
+        )
+
+        spec = IndicatorSpec(
+            indicator_type="sma",
+            symbol="SPY",
+            source="close",
+            params=(5,),
+            output_key="sma_close_5",
+            output_field=None,
+            required_bars=5,
+        )
+
+        result = compute_indicator(spec, prices)
+        sma = result["sma_close_5"]
+
+        # Only last value should be valid
+        assert np.all(np.isnan(sma[:4]))
+        assert not np.isnan(sma[4])
+        assert sma[4] == pytest.approx(np.mean([100.5, 101.5, 102.5, 103.5, 104.5]))
+
+    def test_period_exceeds_data_length(self) -> None:
+        """Test indicator when period exceeds data length."""
+        prices = PriceData(
+            open=np.array([100.0, 101.0, 102.0]),
+            high=np.array([101.0, 102.0, 103.0]),
+            low=np.array([99.0, 100.0, 101.0]),
+            close=np.array([100.5, 101.5, 102.5]),
+            volume=np.array([1000, 2000, 3000]),
+        )
+
+        spec = IndicatorSpec(
+            indicator_type="sma",
+            symbol="SPY",
+            source="close",
+            params=(10,),  # Period 10 > 3 data points
+            output_key="sma_close_10",
+            output_field=None,
+            required_bars=10,
+        )
+
+        result = compute_indicator(spec, prices)
+        # All values should be NaN
+        assert np.all(np.isnan(result["sma_close_10"]))
+
+    def test_period_one(self) -> None:
+        """Test indicator with period of 1."""
+        prices = PriceData(
+            open=np.array([100.0, 101.0, 102.0]),
+            high=np.array([101.0, 102.0, 103.0]),
+            low=np.array([99.0, 100.0, 101.0]),
+            close=np.array([100.5, 101.5, 102.5]),
+            volume=np.array([1000, 2000, 3000]),
+        )
+
+        spec = IndicatorSpec(
+            indicator_type="sma",
+            symbol="SPY",
+            source="close",
+            params=(1,),
+            output_key="sma_close_1",
+            output_field=None,
+            required_bars=1,
+        )
+
+        result = compute_indicator(spec, prices)
+        # SMA with period 1 should equal the close prices
+        np.testing.assert_array_almost_equal(
+            result["sma_close_1"],
+            prices.close,
+        )
+
+    def test_all_nan_input(self) -> None:
+        """Test indicators handle all-NaN input."""
+        prices = PriceData(
+            open=np.array([np.nan, np.nan, np.nan]),
+            high=np.array([np.nan, np.nan, np.nan]),
+            low=np.array([np.nan, np.nan, np.nan]),
+            close=np.array([np.nan, np.nan, np.nan]),
+            volume=np.array([0, 0, 0]),
+        )
+
+        spec = IndicatorSpec(
+            indicator_type="sma",
+            symbol="SPY",
+            source="close",
+            params=(2,),
+            output_key="sma_close_2",
+            output_field=None,
+            required_bars=2,
+        )
+
+        result = compute_indicator(spec, prices)
+        # All NaN input should produce all NaN output
+        assert np.all(np.isnan(result["sma_close_2"]))
+
+    def test_partial_nan_input(self) -> None:
+        """Test indicators handle partial NaN input."""
+        prices = PriceData(
+            open=np.array([100.0, np.nan, 102.0, 103.0, 104.0]),
+            high=np.array([101.0, np.nan, 103.0, 104.0, 105.0]),
+            low=np.array([99.0, np.nan, 101.0, 102.0, 103.0]),
+            close=np.array([100.5, np.nan, 102.5, 103.5, 104.5]),
+            volume=np.array([1000, 0, 3000, 4000, 5000]),
+        )
+
+        spec = IndicatorSpec(
+            indicator_type="sma",
+            symbol="SPY",
+            source="close",
+            params=(3,),
+            output_key="sma_close_3",
+            output_field=None,
+            required_bars=3,
+        )
+
+        result = compute_indicator(spec, prices)
+        # NaN should propagate through the calculation
+        sma = result["sma_close_3"]
+        # Windows containing NaN should produce NaN
+        assert np.isnan(sma[2])  # Window includes NaN at index 1
+
+    def test_flat_prices(self) -> None:
+        """Test indicators with constant (flat) prices."""
+        flat_price = 100.0
+        prices = PriceData(
+            open=np.full(50, flat_price),
+            high=np.full(50, flat_price),
+            low=np.full(50, flat_price),
+            close=np.full(50, flat_price),
+            volume=np.full(50, 1000),
+        )
+
+        # SMA should equal the flat price
+        sma_spec = IndicatorSpec(
+            indicator_type="sma",
+            symbol="SPY",
+            source="close",
+            params=(20,),
+            output_key="sma_close_20",
+            output_field=None,
+            required_bars=20,
+        )
+        sma_result = compute_indicator(sma_spec, prices)
+        valid_sma = sma_result["sma_close_20"][~np.isnan(sma_result["sma_close_20"])]
+        np.testing.assert_array_almost_equal(valid_sma, np.full(len(valid_sma), flat_price))
+
+        # RSI should be 50 (no gains or losses) or NaN
+        rsi_spec = IndicatorSpec(
+            indicator_type="rsi",
+            symbol="SPY",
+            source="close",
+            params=(14,),
+            output_key="rsi_close_14",
+            output_field=None,
+            required_bars=15,
+        )
+        rsi_result = compute_indicator(rsi_spec, prices)
+        valid_rsi = rsi_result["rsi_close_14"][~np.isnan(rsi_result["rsi_close_14"])]
+        # Flat prices mean no change, so RSI calculation may produce 50 or NaN
+        if len(valid_rsi) > 0:
+            # With no gains or losses, RSI is undefined (0/0), implementations vary
+            pass  # Just verify no crash
+
+        # Standard deviation should be 0
+        stddev_spec = IndicatorSpec(
+            indicator_type="stddev",
+            symbol="SPY",
+            source="close",
+            params=(20,),
+            output_key="stddev_close_20",
+            output_field=None,
+            required_bars=20,
+        )
+        stddev_result = compute_indicator(stddev_spec, prices)
+        valid_stddev = stddev_result["stddev_close_20"][~np.isnan(stddev_result["stddev_close_20"])]
+        np.testing.assert_array_almost_equal(valid_stddev, np.zeros(len(valid_stddev)))
+
+    def test_zero_volume(self) -> None:
+        """Test volume-based indicators with zero volume."""
+        prices = PriceData(
+            open=np.array([100.0, 101.0, 102.0, 103.0, 104.0]),
+            high=np.array([101.0, 102.0, 103.0, 104.0, 105.0]),
+            low=np.array([99.0, 100.0, 101.0, 102.0, 103.0]),
+            close=np.array([100.5, 101.5, 102.5, 103.5, 104.5]),
+            volume=np.array([0, 0, 0, 0, 0]),  # All zero volume
+        )
+
+        # OBV with zero volume should still work
+        obv_spec = IndicatorSpec(
+            indicator_type="obv",
+            symbol="SPY",
+            source="close",
+            params=(),
+            output_key="obv_close",
+            output_field=None,
+            required_bars=2,
+        )
+        obv_result = compute_indicator(obv_spec, prices)
+        # OBV should be 0 when all volumes are 0
+        assert obv_result["obv_close"][0] == 0
+
+    def test_very_large_values(self) -> None:
+        """Test indicators handle very large price values."""
+        large_val = 1e12
+        prices = PriceData(
+            open=np.array([large_val, large_val + 1e6, large_val + 2e6]),
+            high=np.array([large_val + 1e5, large_val + 1.1e6, large_val + 2.1e6]),
+            low=np.array([large_val - 1e5, large_val + 0.9e6, large_val + 1.9e6]),
+            close=np.array([large_val + 0.5e5, large_val + 1.05e6, large_val + 2.05e6]),
+            volume=np.array([1000000, 2000000, 3000000]),
+        )
+
+        spec = IndicatorSpec(
+            indicator_type="sma",
+            symbol="SPY",
+            source="close",
+            params=(2,),
+            output_key="sma_close_2",
+            output_field=None,
+            required_bars=2,
+        )
+
+        result = compute_indicator(spec, prices)
+        # Should not overflow or produce inf
+        valid_sma = result["sma_close_2"][~np.isnan(result["sma_close_2"])]
+        assert np.all(np.isfinite(valid_sma))
+
+    def test_very_small_values(self) -> None:
+        """Test indicators handle very small price values (penny stocks)."""
+        prices = PriceData(
+            open=np.array([0.001, 0.0011, 0.0012]),
+            high=np.array([0.0015, 0.0016, 0.0017]),
+            low=np.array([0.0005, 0.0006, 0.0007]),
+            close=np.array([0.001, 0.0012, 0.0014]),
+            volume=np.array([1000000, 2000000, 3000000]),
+        )
+
+        spec = IndicatorSpec(
+            indicator_type="sma",
+            symbol="PENNY",
+            source="close",
+            params=(2,),
+            output_key="sma_close_2",
+            output_field=None,
+            required_bars=2,
+        )
+
+        result = compute_indicator(spec, prices)
+        valid_sma = result["sma_close_2"][~np.isnan(result["sma_close_2"])]
+        # Should maintain precision
+        assert np.all(valid_sma > 0)
+        assert np.all(np.isfinite(valid_sma))
+
+    def test_negative_price_values(self) -> None:
+        """Test indicators don't crash with negative prices (invalid but possible data)."""
+        prices = PriceData(
+            open=np.array([-100.0, -99.0, -98.0]),
+            high=np.array([-99.0, -98.0, -97.0]),
+            low=np.array([-101.0, -100.0, -99.0]),
+            close=np.array([-100.5, -99.5, -98.5]),
+            volume=np.array([1000, 2000, 3000]),
+        )
+
+        spec = IndicatorSpec(
+            indicator_type="sma",
+            symbol="NEG",
+            source="close",
+            params=(2,),
+            output_key="sma_close_2",
+            output_field=None,
+            required_bars=2,
+        )
+
+        # Should not crash
+        result = compute_indicator(spec, prices)
+        assert "sma_close_2" in result
+
+    def test_rsi_all_gains(self) -> None:
+        """Test RSI with only upward price movement (all gains, no losses)."""
+        prices = PriceData(
+            open=np.arange(1.0, 51.0),
+            high=np.arange(1.5, 51.5),
+            low=np.arange(0.5, 50.5),
+            close=np.arange(1.0, 51.0),  # Strictly increasing
+            volume=np.full(50, 1000),
+        )
+
+        spec = IndicatorSpec(
+            indicator_type="rsi",
+            symbol="SPY",
+            source="close",
+            params=(14,),
+            output_key="rsi_close_14",
+            output_field=None,
+            required_bars=15,
+        )
+
+        result = compute_indicator(spec, prices)
+        valid_rsi = result["rsi_close_14"][~np.isnan(result["rsi_close_14"])]
+        # RSI should be 100 (or very close) with only gains
+        assert np.all(valid_rsi >= 99.0)
+
+    def test_rsi_all_losses(self) -> None:
+        """Test RSI with only downward price movement (all losses, no gains)."""
+        prices = PriceData(
+            open=np.arange(50.0, 0.0, -1.0),
+            high=np.arange(50.5, 0.5, -1.0),
+            low=np.arange(49.5, -0.5, -1.0),
+            close=np.arange(50.0, 0.0, -1.0),  # Strictly decreasing
+            volume=np.full(50, 1000),
+        )
+
+        spec = IndicatorSpec(
+            indicator_type="rsi",
+            symbol="SPY",
+            source="close",
+            params=(14,),
+            output_key="rsi_close_14",
+            output_field=None,
+            required_bars=15,
+        )
+
+        result = compute_indicator(spec, prices)
+        valid_rsi = result["rsi_close_14"][~np.isnan(result["rsi_close_14"])]
+        # RSI should be 0 (or very close) with only losses
+        assert np.all(valid_rsi <= 1.0)
+
+    def test_bollinger_bands_zero_stddev(self) -> None:
+        """Test Bollinger Bands with zero standard deviation (flat prices)."""
+        flat_price = 100.0
+        prices = PriceData(
+            open=np.full(30, flat_price),
+            high=np.full(30, flat_price),
+            low=np.full(30, flat_price),
+            close=np.full(30, flat_price),
+            volume=np.full(30, 1000),
+        )
+
+        spec = IndicatorSpec(
+            indicator_type="bbands",
+            symbol="SPY",
+            source="close",
+            params=(20, 2.0),
+            output_key="bbands_SPY_close_20_2.0_middle",
+            output_field="middle",
+            required_bars=20,
+        )
+
+        result = compute_indicator(spec, prices)
+
+        upper = result["bbands_SPY_close_20_2.0_upper"]
+        middle = result["bbands_SPY_close_20_2.0_middle"]
+        lower = result["bbands_SPY_close_20_2.0_lower"]
+
+        # With zero stddev, all bands should equal the middle (flat price)
+        valid_mask = ~np.isnan(upper)
+        np.testing.assert_array_almost_equal(upper[valid_mask], middle[valid_mask])
+        np.testing.assert_array_almost_equal(lower[valid_mask], middle[valid_mask])
+        np.testing.assert_array_almost_equal(
+            middle[valid_mask], np.full(np.sum(valid_mask), flat_price)
+        )
+
+    def test_macd_with_short_data(self) -> None:
+        """Test MACD with data shorter than slow period."""
+        prices = PriceData(
+            open=np.array([100.0, 101.0, 102.0, 103.0, 104.0]),
+            high=np.array([101.0, 102.0, 103.0, 104.0, 105.0]),
+            low=np.array([99.0, 100.0, 101.0, 102.0, 103.0]),
+            close=np.array([100.5, 101.5, 102.5, 103.5, 104.5]),
+            volume=np.array([1000, 2000, 3000, 4000, 5000]),
+        )
+
+        spec = IndicatorSpec(
+            indicator_type="macd",
+            symbol="SPY",
+            source="close",
+            params=(12, 26, 9),  # Slow period 26 > 5 data points
+            output_key="macd_SPY_close_12_26_9_line",
+            output_field="line",
+            required_bars=26,
+        )
+
+        result = compute_indicator(spec, prices)
+        # All values should be NaN
+        assert np.all(np.isnan(result["macd_SPY_close_12_26_9_line"]))
+
+    def test_stochastic_with_identical_high_low(self) -> None:
+        """Test Stochastic when high equals low (no range)."""
+        prices = PriceData(
+            open=np.full(20, 100.0),
+            high=np.full(20, 100.0),  # High = Low = Close
+            low=np.full(20, 100.0),
+            close=np.full(20, 100.0),
+            volume=np.full(20, 1000),
+        )
+
+        spec = IndicatorSpec(
+            indicator_type="stoch",
+            symbol="SPY",
+            source="close",
+            params=(14, 3, 3),
+            output_key="stoch_SPY_close_14_3_3_k",
+            output_field="k",
+            required_bars=14,
+        )
+
+        result = compute_indicator(spec, prices)
+        # Should not crash - may produce NaN or 50 depending on implementation
+        assert "stoch_SPY_close_14_3_3_k" in result
+
+    def test_atr_with_no_range(self) -> None:
+        """Test ATR when there's no price range (high = low = close)."""
+        prices = PriceData(
+            open=np.full(20, 100.0),
+            high=np.full(20, 100.0),
+            low=np.full(20, 100.0),
+            close=np.full(20, 100.0),
+            volume=np.full(20, 1000),
+        )
+
+        spec = IndicatorSpec(
+            indicator_type="atr",
+            symbol="SPY",
+            source="close",
+            params=(14,),
+            output_key="atr_close_14",
+            output_field=None,
+            required_bars=15,
+        )
+
+        result = compute_indicator(spec, prices)
+        valid_atr = result["atr_close_14"][~np.isnan(result["atr_close_14"])]
+        # ATR should be 0 when there's no range
+        np.testing.assert_array_almost_equal(valid_atr, np.zeros(len(valid_atr)))

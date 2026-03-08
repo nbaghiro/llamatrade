@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from typing import Literal as TypingLiteral
 from typing import cast
 
 from llamatrade_dsl.ast import (
@@ -34,6 +35,7 @@ from llamatrade_dsl.ast import (
     PriceField,
     RebalanceFrequency,
     SelectDirection,
+    SourceLocation,
     Strategy,
     Value,
     Weight,
@@ -105,6 +107,29 @@ class Parser:
         self.tokens = list(self.tokenizer.tokens)
         self.pos = 0
 
+    def _start_location(self) -> tuple[int, int, int]:
+        """Capture start position for location tracking.
+
+        Returns (start_pos, line, column) tuple.
+        """
+        if self.pos < len(self.tokens):
+            _, _, start, line, col = self.tokens[self.pos]
+            return (start, line, col)
+        return (len(self.source), 1, 1)
+
+    def _end_location(self) -> int:
+        """Get end position (character offset) from the last consumed token."""
+        if self.pos > 0 and self.pos <= len(self.tokens):
+            _, value, start, _, _ = self.tokens[self.pos - 1]
+            return start + len(value)
+        return len(self.source)
+
+    def _make_location(self, start: tuple[int, int, int]) -> SourceLocation:
+        """Create SourceLocation from start tuple and current end position."""
+        start_pos, line, col = start
+        end_pos = self._end_location()
+        return SourceLocation(line=line, column=col, start=start_pos, end=end_pos)
+
     def parse(self) -> Strategy:
         """Parse the source and return a Strategy."""
         if not self.tokens:
@@ -167,6 +192,7 @@ class Parser:
 
     def _parse_strategy(self) -> Strategy:
         """Parse (strategy "name" :rebalance ... children...)."""
+        start = self._start_location()
         self._expect("LPAREN")
         self._expect_symbol("strategy")
 
@@ -212,6 +238,7 @@ class Parser:
             rebalance=rebalance,
             benchmark=benchmark,
             description=description,
+            location=self._make_location(start),
         )
 
     def _parse_block(self) -> Block:
@@ -253,6 +280,7 @@ class Parser:
 
     def _parse_group(self) -> Group:
         """Parse (group "name" children...)."""
+        start = self._start_location()
         self._expect("LPAREN")
         self._expect_symbol("group")
 
@@ -264,10 +292,11 @@ class Parser:
 
         self._expect("RPAREN")
 
-        return Group(name=name, children=children)
+        return Group(name=name, children=children, location=self._make_location(start))
 
     def _parse_weight(self) -> Weight:
         """Parse (weight :method <method> [:lookback N] [:top N] children...)."""
+        start = self._start_location()
         self._expect("LPAREN")
         self._expect_symbol("weight")
 
@@ -308,10 +337,17 @@ class Parser:
 
         self._expect("RPAREN")
 
-        return Weight(method=method, children=children, lookback=lookback, top=top)
+        return Weight(
+            method=method,
+            children=children,
+            lookback=lookback,
+            top=top,
+            location=self._make_location(start),
+        )
 
     def _parse_asset(self) -> Asset:
         """Parse (asset SYMBOL [:weight N])."""
+        start = self._start_location()
         self._expect("LPAREN")
         self._expect_symbol("asset")
 
@@ -334,10 +370,11 @@ class Parser:
 
         self._expect("RPAREN")
 
-        return Asset(symbol=symbol, weight=weight)
+        return Asset(symbol=symbol, weight=weight, location=self._make_location(start))
 
     def _parse_if(self) -> If:
         """Parse (if condition then-block [(else else-block)])."""
+        start = self._start_location()
         self._expect("LPAREN")
         self._expect_symbol("if")
 
@@ -357,10 +394,16 @@ class Parser:
 
         self._expect("RPAREN")
 
-        return If(condition=condition, then_block=then_block, else_block=else_block)
+        return If(
+            condition=condition,
+            then_block=then_block,
+            else_block=else_block,
+            location=self._make_location(start),
+        )
 
     def _parse_filter(self) -> Filter:
         """Parse (filter :by <criteria> :select (top/bottom N) [:lookback N] children...)."""
+        start = self._start_location()
         self._expect("LPAREN")
         self._expect_symbol("filter")
 
@@ -416,10 +459,12 @@ class Parser:
             select_count=count,
             children=children,
             lookback=lookback,
+            location=self._make_location(start),
         )
 
     def _parse_condition(self) -> Condition:
         """Parse a condition expression."""
+        start = self._start_location()
         self._expect("LPAREN")
 
         tok = self._current()
@@ -440,27 +485,42 @@ class Parser:
             left = self._parse_value()
             right = self._parse_value()
             self._expect("RPAREN")
-            return Comparison(operator=cast(ComparisonOperator, op), left=left, right=right)
+            return Comparison(
+                operator=cast(ComparisonOperator, op),
+                left=left,
+                right=right,
+                location=self._make_location(start),
+            )
 
         elif op in CROSSOVER_OPS:
             direction: CrossoverDirection = "above" if op == "crosses-above" else "below"
             fast = self._parse_value()
             slow = self._parse_value()
             self._expect("RPAREN")
-            return Crossover(direction=direction, fast=fast, slow=slow)
+            return Crossover(
+                direction=direction,
+                fast=fast,
+                slow=slow,
+                location=self._make_location(start),
+            )
 
         elif op in LOGICAL_OPS:
             operands: list[Condition] = []
             while self._current() and self._current()[0] != "RPAREN":  # type: ignore[index]
                 operands.append(self._parse_condition())
             self._expect("RPAREN")
-            return LogicalOp(operator=cast(LogicalOperator, op), operands=tuple(operands))
+            return LogicalOp(
+                operator=cast(LogicalOperator, op),
+                operands=tuple(operands),
+                location=self._make_location(start),
+            )
 
         else:
             raise ParseError(f"Unknown condition operator: {op}")
 
     def _parse_value(self) -> Value:
         """Parse a value expression (literal, price, indicator, or metric)."""
+        start = self._start_location()
         tok = self._current()
         if tok is None:
             raise ParseError("Expected value")
@@ -468,7 +528,7 @@ class Parser:
         # Numeric literal
         if tok[0] == "NUMBER":
             self.pos += 1
-            return NumericLiteral(float(tok[1]))
+            return NumericLiteral(float(tok[1]), location=self._make_location(start))
 
         # Must be a function call
         if tok[0] != "LPAREN":
@@ -484,15 +544,17 @@ class Parser:
         self.pos += 1
 
         if fn_name == "price":
-            return self._parse_price_rest()
+            return self._parse_price_rest(start)
         elif fn_name in INDICATORS:
-            return self._parse_indicator_rest(fn_name)
+            return self._parse_indicator_rest(fn_name, start)
         elif fn_name in METRICS:
-            return self._parse_metric_rest(fn_name)
+            return self._parse_metric_rest(
+                cast(TypingLiteral["drawdown", "return", "volatility"], fn_name), start
+            )
         else:
             raise ParseError(f"Unknown value function: {fn_name}")
 
-    def _parse_price_rest(self) -> Price:
+    def _parse_price_rest(self, start: tuple[int, int, int]) -> Price:
         """Parse rest of (price SYMBOL [:field])."""
         tok = self._current()
         if tok is None or tok[0] != "SYMBOL":
@@ -508,9 +570,9 @@ class Parser:
                 self.pos += 1
 
         self._expect("RPAREN")
-        return Price(symbol=symbol, field=field)
+        return Price(symbol=symbol, field=field, location=self._make_location(start))
 
-    def _parse_indicator_rest(self, name: str) -> Indicator:
+    def _parse_indicator_rest(self, name: str, start: tuple[int, int, int]) -> Indicator:
         """Parse rest of (indicator SYMBOL params... [:output])."""
         tok = self._current()
         if tok is None or tok[0] != "SYMBOL":
@@ -535,9 +597,19 @@ class Parser:
             self.pos += 1
 
         self._expect("RPAREN")
-        return Indicator(name=name, symbol=symbol, params=tuple(params), output=output)
+        return Indicator(
+            name=name,
+            symbol=symbol,
+            params=tuple(params),
+            output=output,
+            location=self._make_location(start),
+        )
 
-    def _parse_metric_rest(self, name: str) -> Metric:
+    def _parse_metric_rest(
+        self,
+        name: TypingLiteral["drawdown", "return", "volatility"],
+        start: tuple[int, int, int],
+    ) -> Metric:
         """Parse rest of (metric SYMBOL [period])."""
         tok = self._current()
         if tok is None or tok[0] != "SYMBOL":
@@ -551,7 +623,12 @@ class Parser:
             self.pos += 1
 
         self._expect("RPAREN")
-        return Metric(name=name, symbol=symbol, period=period)  # type: ignore[arg-type]
+        return Metric(
+            name=name,
+            symbol=symbol,
+            period=period,
+            location=self._make_location(start),
+        )
 
     def _parse_string(self) -> str:
         """Parse a string literal."""

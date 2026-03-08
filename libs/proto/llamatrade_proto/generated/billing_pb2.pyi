@@ -3,27 +3,28 @@
 isort:skip_file
 """
 
-import builtins as builtins
-import typing as typing
 from collections import abc as abc
-
-import common_pb2 as common_pb2
 from google.protobuf import descriptor as descriptor
 from google.protobuf import message as message
 from google.protobuf.internal import containers as containers
 from google.protobuf.internal import enum_type_wrapper as enum_type_wrapper
+import builtins as builtins
+import common_pb2 as common_pb2
+import sys
+import typing as typing
 
-pass
+if sys.version_info >= (3, 10):
+    from typing import TypeAlias as _TypeAlias
+else:
+    from typing_extensions import TypeAlias as _TypeAlias
 
 DESCRIPTOR: descriptor.FileDescriptor
 
 class _SubscriptionStatus:
     ValueType = typing.NewType("ValueType", builtins.int)
-    type V = ValueType  # noqa: Y015
+    V: _TypeAlias = ValueType  # noqa: Y015
 
-class _SubscriptionStatusEnumTypeWrapper(
-    enum_type_wrapper._EnumTypeWrapper[_SubscriptionStatus.ValueType], builtins.type
-):
+class _SubscriptionStatusEnumTypeWrapper(enum_type_wrapper._EnumTypeWrapper[_SubscriptionStatus.ValueType], builtins.type):
     DESCRIPTOR: descriptor.EnumDescriptor
     SUBSCRIPTION_STATUS_UNSPECIFIED: _SubscriptionStatus.ValueType  # 0
     SUBSCRIPTION_STATUS_ACTIVE: _SubscriptionStatus.ValueType  # 1
@@ -49,11 +50,9 @@ SUBSCRIPTION_STATUS_PAUSED: SubscriptionStatus.ValueType  # 5
 
 class _PlanTier:
     ValueType = typing.NewType("ValueType", builtins.int)
-    type V = ValueType  # noqa: Y015
+    V: _TypeAlias = ValueType  # noqa: Y015
 
-class _PlanTierEnumTypeWrapper(
-    enum_type_wrapper._EnumTypeWrapper[_PlanTier.ValueType], builtins.type
-):
+class _PlanTierEnumTypeWrapper(enum_type_wrapper._EnumTypeWrapper[_PlanTier.ValueType], builtins.type):
     DESCRIPTOR: descriptor.EnumDescriptor
     PLAN_TIER_UNSPECIFIED: _PlanTier.ValueType  # 0
     PLAN_TIER_FREE: _PlanTier.ValueType  # 1
@@ -70,11 +69,9 @@ PLAN_TIER_PRO: PlanTier.ValueType  # 3
 
 class _BillingInterval:
     ValueType = typing.NewType("ValueType", builtins.int)
-    type V = ValueType  # noqa: Y015
+    V: _TypeAlias = ValueType  # noqa: Y015
 
-class _BillingIntervalEnumTypeWrapper(
-    enum_type_wrapper._EnumTypeWrapper[_BillingInterval.ValueType], builtins.type
-):
+class _BillingIntervalEnumTypeWrapper(enum_type_wrapper._EnumTypeWrapper[_BillingInterval.ValueType], builtins.type):
     DESCRIPTOR: descriptor.EnumDescriptor
     BILLING_INTERVAL_UNSPECIFIED: _BillingInterval.ValueType  # 0
     BILLING_INTERVAL_MONTHLY: _BillingInterval.ValueType  # 1
@@ -149,38 +146,9 @@ class Plan(message.Message):
         api_access: builtins.bool = ...,
         priority_support: builtins.bool = ...,
     ) -> None: ...
-    type _HasFieldArgType = typing.Literal[
-        "monthly_price", b"monthly_price", "yearly_price", b"yearly_price"
-    ]  # noqa: Y015
+    _HasFieldArgType: _TypeAlias = typing.Literal["monthly_price", b"monthly_price", "yearly_price", b"yearly_price"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    type _ClearFieldArgType = typing.Literal[
-        "api_access",
-        b"api_access",
-        "data_retention_days",
-        b"data_retention_days",
-        "description",
-        b"description",
-        "features",
-        b"features",
-        "id",
-        b"id",
-        "max_backtests_per_month",
-        b"max_backtests_per_month",
-        "max_live_sessions",
-        b"max_live_sessions",
-        "max_strategies",
-        b"max_strategies",
-        "monthly_price",
-        b"monthly_price",
-        "name",
-        b"name",
-        "priority_support",
-        b"priority_support",
-        "tier",
-        b"tier",
-        "yearly_price",
-        b"yearly_price",
-    ]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["api_access", b"api_access", "data_retention_days", b"data_retention_days", "description", b"description", "features", b"features", "id", b"id", "max_backtests_per_month", b"max_backtests_per_month", "max_live_sessions", b"max_live_sessions", "max_strategies", b"max_strategies", "monthly_price", b"monthly_price", "name", b"name", "priority_support", b"priority_support", "tier", b"tier", "yearly_price", b"yearly_price"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -262,63 +230,9 @@ class Subscription(message.Message):
         created_at: common_pb2.Timestamp | None = ...,
         updated_at: common_pb2.Timestamp | None = ...,
     ) -> None: ...
-    type _HasFieldArgType = typing.Literal[
-        "canceled_at",
-        b"canceled_at",
-        "created_at",
-        b"created_at",
-        "current_period_end",
-        b"current_period_end",
-        "current_period_start",
-        b"current_period_start",
-        "current_price",
-        b"current_price",
-        "plan",
-        b"plan",
-        "trial_end",
-        b"trial_end",
-        "updated_at",
-        b"updated_at",
-    ]  # noqa: Y015
+    _HasFieldArgType: _TypeAlias = typing.Literal["canceled_at", b"canceled_at", "created_at", b"created_at", "current_period_end", b"current_period_end", "current_period_start", b"current_period_start", "current_price", b"current_price", "plan", b"plan", "trial_end", b"trial_end", "updated_at", b"updated_at"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    type _ClearFieldArgType = typing.Literal[
-        "cancel_at_period_end",
-        b"cancel_at_period_end",
-        "canceled_at",
-        b"canceled_at",
-        "cancellation_reason",
-        b"cancellation_reason",
-        "created_at",
-        b"created_at",
-        "current_period_end",
-        b"current_period_end",
-        "current_period_start",
-        b"current_period_start",
-        "current_price",
-        b"current_price",
-        "id",
-        b"id",
-        "interval",
-        b"interval",
-        "is_trial",
-        b"is_trial",
-        "plan",
-        b"plan",
-        "plan_id",
-        b"plan_id",
-        "status",
-        b"status",
-        "stripe_customer_id",
-        b"stripe_customer_id",
-        "stripe_subscription_id",
-        b"stripe_subscription_id",
-        "tenant_id",
-        b"tenant_id",
-        "trial_end",
-        b"trial_end",
-        "updated_at",
-        b"updated_at",
-    ]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["cancel_at_period_end", b"cancel_at_period_end", "canceled_at", b"canceled_at", "cancellation_reason", b"cancellation_reason", "created_at", b"created_at", "current_period_end", b"current_period_end", "current_period_start", b"current_period_start", "current_price", b"current_price", "id", b"id", "interval", b"interval", "is_trial", b"is_trial", "plan", b"plan", "plan_id", b"plan_id", "status", b"status", "stripe_customer_id", b"stripe_customer_id", "stripe_subscription_id", b"stripe_subscription_id", "tenant_id", b"tenant_id", "trial_end", b"trial_end", "updated_at", b"updated_at"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -378,38 +292,9 @@ class Usage(message.Message):
         period_start: common_pb2.Timestamp | None = ...,
         period_end: common_pb2.Timestamp | None = ...,
     ) -> None: ...
-    type _HasFieldArgType = typing.Literal[
-        "period_end", b"period_end", "period_start", b"period_start"
-    ]  # noqa: Y015
+    _HasFieldArgType: _TypeAlias = typing.Literal["period_end", b"period_end", "period_start", b"period_start"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    type _ClearFieldArgType = typing.Literal[
-        "active_strategies",
-        b"active_strategies",
-        "api_calls",
-        b"api_calls",
-        "backtest_compute_minutes",
-        b"backtest_compute_minutes",
-        "backtests_run",
-        b"backtests_run",
-        "live_sessions",
-        b"live_sessions",
-        "market_data_requests",
-        b"market_data_requests",
-        "orders_placed",
-        b"orders_placed",
-        "period_end",
-        b"period_end",
-        "period_id",
-        b"period_id",
-        "period_start",
-        b"period_start",
-        "storage_bytes",
-        b"storage_bytes",
-        "strategies_created",
-        b"strategies_created",
-        "tenant_id",
-        b"tenant_id",
-    ]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["active_strategies", b"active_strategies", "api_calls", b"api_calls", "backtest_compute_minutes", b"backtest_compute_minutes", "backtests_run", b"backtests_run", "live_sessions", b"live_sessions", "market_data_requests", b"market_data_requests", "orders_placed", b"orders_placed", "period_end", b"period_end", "period_id", b"period_id", "period_start", b"period_start", "storage_bytes", b"storage_bytes", "strategies_created", b"strategies_created", "tenant_id", b"tenant_id"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -473,53 +358,9 @@ class Invoice(message.Message):
         stripe_invoice_id: builtins.str = ...,
         items: abc.Iterable[InvoiceItem] | None = ...,
     ) -> None: ...
-    type _HasFieldArgType = typing.Literal[
-        "amount",
-        b"amount",
-        "amount_paid",
-        b"amount_paid",
-        "amount_remaining",
-        b"amount_remaining",
-        "due_date",
-        b"due_date",
-        "paid_at",
-        b"paid_at",
-        "period_end",
-        b"period_end",
-        "period_start",
-        b"period_start",
-    ]  # noqa: Y015
+    _HasFieldArgType: _TypeAlias = typing.Literal["amount", b"amount", "amount_paid", b"amount_paid", "amount_remaining", b"amount_remaining", "due_date", b"due_date", "paid_at", b"paid_at", "period_end", b"period_end", "period_start", b"period_start"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    type _ClearFieldArgType = typing.Literal[
-        "amount",
-        b"amount",
-        "amount_paid",
-        b"amount_paid",
-        "amount_remaining",
-        b"amount_remaining",
-        "due_date",
-        b"due_date",
-        "id",
-        b"id",
-        "items",
-        b"items",
-        "paid_at",
-        b"paid_at",
-        "pdf_url",
-        b"pdf_url",
-        "period_end",
-        b"period_end",
-        "period_start",
-        b"period_start",
-        "status",
-        b"status",
-        "stripe_invoice_id",
-        b"stripe_invoice_id",
-        "subscription_id",
-        b"subscription_id",
-        "tenant_id",
-        b"tenant_id",
-    ]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["amount", b"amount", "amount_paid", b"amount_paid", "amount_remaining", b"amount_remaining", "due_date", b"due_date", "id", b"id", "items", b"items", "paid_at", b"paid_at", "pdf_url", b"pdf_url", "period_end", b"period_end", "period_start", b"period_start", "status", b"status", "stripe_invoice_id", b"stripe_invoice_id", "subscription_id", b"subscription_id", "tenant_id", b"tenant_id"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -544,18 +385,9 @@ class InvoiceItem(message.Message):
         unit_price: common_pb2.Money | None = ...,
         amount: common_pb2.Money | None = ...,
     ) -> None: ...
-    type _HasFieldArgType = typing.Literal["amount", b"amount", "unit_price", b"unit_price"]  # noqa: Y015
+    _HasFieldArgType: _TypeAlias = typing.Literal["amount", b"amount", "unit_price", b"unit_price"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    type _ClearFieldArgType = typing.Literal[
-        "amount",
-        b"amount",
-        "description",
-        b"description",
-        "quantity",
-        b"quantity",
-        "unit_price",
-        b"unit_price",
-    ]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["amount", b"amount", "description", b"description", "quantity", b"quantity", "unit_price", b"unit_price"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -595,26 +427,9 @@ class PaymentMethod(message.Message):
         card_exp_year: builtins.int = ...,
         created_at: common_pb2.Timestamp | None = ...,
     ) -> None: ...
-    type _HasFieldArgType = typing.Literal["created_at", b"created_at"]  # noqa: Y015
+    _HasFieldArgType: _TypeAlias = typing.Literal["created_at", b"created_at"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    type _ClearFieldArgType = typing.Literal[
-        "card_brand",
-        b"card_brand",
-        "card_exp_month",
-        b"card_exp_month",
-        "card_exp_year",
-        b"card_exp_year",
-        "card_last4",
-        b"card_last4",
-        "created_at",
-        b"created_at",
-        "id",
-        b"id",
-        "is_default",
-        b"is_default",
-        "type",
-        b"type",
-    ]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["card_brand", b"card_brand", "card_exp_month", b"card_exp_month", "card_exp_year", b"card_exp_year", "card_last4", b"card_last4", "created_at", b"created_at", "id", b"id", "is_default", b"is_default", "type", b"type"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -636,9 +451,9 @@ class GetSubscriptionRequest(message.Message):
         *,
         context: common_pb2.TenantContext | None = ...,
     ) -> None: ...
-    type _HasFieldArgType = typing.Literal["context", b"context"]  # noqa: Y015
+    _HasFieldArgType: _TypeAlias = typing.Literal["context", b"context"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    type _ClearFieldArgType = typing.Literal["context", b"context"]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["context", b"context"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -653,9 +468,9 @@ class GetSubscriptionResponse(message.Message):
         *,
         subscription: Subscription | None = ...,
     ) -> None: ...
-    type _HasFieldArgType = typing.Literal["subscription", b"subscription"]  # noqa: Y015
+    _HasFieldArgType: _TypeAlias = typing.Literal["subscription", b"subscription"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    type _ClearFieldArgType = typing.Literal["subscription", b"subscription"]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["subscription", b"subscription"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -684,20 +499,9 @@ class CreateSubscriptionRequest(message.Message):
         payment_method_id: builtins.str = ...,
         promo_code: builtins.str = ...,
     ) -> None: ...
-    type _HasFieldArgType = typing.Literal["context", b"context"]  # noqa: Y015
+    _HasFieldArgType: _TypeAlias = typing.Literal["context", b"context"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    type _ClearFieldArgType = typing.Literal[
-        "context",
-        b"context",
-        "interval",
-        b"interval",
-        "payment_method_id",
-        b"payment_method_id",
-        "plan_id",
-        b"plan_id",
-        "promo_code",
-        b"promo_code",
-    ]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["context", b"context", "interval", b"interval", "payment_method_id", b"payment_method_id", "plan_id", b"plan_id", "promo_code", b"promo_code"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -716,11 +520,9 @@ class CreateSubscriptionResponse(message.Message):
         subscription: Subscription | None = ...,
         checkout_url: builtins.str = ...,
     ) -> None: ...
-    type _HasFieldArgType = typing.Literal["subscription", b"subscription"]  # noqa: Y015
+    _HasFieldArgType: _TypeAlias = typing.Literal["subscription", b"subscription"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    type _ClearFieldArgType = typing.Literal[
-        "checkout_url", b"checkout_url", "subscription", b"subscription"
-    ]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["checkout_url", b"checkout_url", "subscription", b"subscription"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -746,11 +548,9 @@ class UpdateSubscriptionRequest(message.Message):
         interval: BillingInterval.ValueType = ...,
         prorate: builtins.bool = ...,
     ) -> None: ...
-    type _HasFieldArgType = typing.Literal["context", b"context"]  # noqa: Y015
+    _HasFieldArgType: _TypeAlias = typing.Literal["context", b"context"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    type _ClearFieldArgType = typing.Literal[
-        "context", b"context", "interval", b"interval", "plan_id", b"plan_id", "prorate", b"prorate"
-    ]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["context", b"context", "interval", b"interval", "plan_id", b"plan_id", "prorate", b"prorate"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -765,9 +565,9 @@ class UpdateSubscriptionResponse(message.Message):
         *,
         subscription: Subscription | None = ...,
     ) -> None: ...
-    type _HasFieldArgType = typing.Literal["subscription", b"subscription"]  # noqa: Y015
+    _HasFieldArgType: _TypeAlias = typing.Literal["subscription", b"subscription"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    type _ClearFieldArgType = typing.Literal["subscription", b"subscription"]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["subscription", b"subscription"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -791,11 +591,9 @@ class CancelSubscriptionRequest(message.Message):
         cancel_immediately: builtins.bool = ...,
         reason: builtins.str = ...,
     ) -> None: ...
-    type _HasFieldArgType = typing.Literal["context", b"context"]  # noqa: Y015
+    _HasFieldArgType: _TypeAlias = typing.Literal["context", b"context"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    type _ClearFieldArgType = typing.Literal[
-        "cancel_immediately", b"cancel_immediately", "context", b"context", "reason", b"reason"
-    ]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["cancel_immediately", b"cancel_immediately", "context", b"context", "reason", b"reason"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -810,9 +608,9 @@ class CancelSubscriptionResponse(message.Message):
         *,
         subscription: Subscription | None = ...,
     ) -> None: ...
-    type _HasFieldArgType = typing.Literal["subscription", b"subscription"]  # noqa: Y015
+    _HasFieldArgType: _TypeAlias = typing.Literal["subscription", b"subscription"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    type _ClearFieldArgType = typing.Literal["subscription", b"subscription"]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["subscription", b"subscription"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -829,9 +627,9 @@ class ResumeSubscriptionRequest(message.Message):
         *,
         context: common_pb2.TenantContext | None = ...,
     ) -> None: ...
-    type _HasFieldArgType = typing.Literal["context", b"context"]  # noqa: Y015
+    _HasFieldArgType: _TypeAlias = typing.Literal["context", b"context"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    type _ClearFieldArgType = typing.Literal["context", b"context"]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["context", b"context"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -846,9 +644,9 @@ class ResumeSubscriptionResponse(message.Message):
         *,
         subscription: Subscription | None = ...,
     ) -> None: ...
-    type _HasFieldArgType = typing.Literal["subscription", b"subscription"]  # noqa: Y015
+    _HasFieldArgType: _TypeAlias = typing.Literal["subscription", b"subscription"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    type _ClearFieldArgType = typing.Literal["subscription", b"subscription"]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["subscription", b"subscription"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -869,9 +667,9 @@ class GetUsageRequest(message.Message):
         context: common_pb2.TenantContext | None = ...,
         period_id: builtins.str = ...,
     ) -> None: ...
-    type _HasFieldArgType = typing.Literal["context", b"context"]  # noqa: Y015
+    _HasFieldArgType: _TypeAlias = typing.Literal["context", b"context"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    type _ClearFieldArgType = typing.Literal["context", b"context", "period_id", b"period_id"]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["context", b"context", "period_id", b"period_id"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -892,9 +690,9 @@ class GetUsageResponse(message.Message):
         usage: Usage | None = ...,
         limit: Usage | None = ...,
     ) -> None: ...
-    type _HasFieldArgType = typing.Literal["limit", b"limit", "usage", b"usage"]  # noqa: Y015
+    _HasFieldArgType: _TypeAlias = typing.Literal["limit", b"limit", "usage", b"usage"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    type _ClearFieldArgType = typing.Literal["limit", b"limit", "usage", b"usage"]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["limit", b"limit", "usage", b"usage"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -915,9 +713,9 @@ class ListInvoicesRequest(message.Message):
         context: common_pb2.TenantContext | None = ...,
         pagination: common_pb2.PaginationRequest | None = ...,
     ) -> None: ...
-    type _HasFieldArgType = typing.Literal["context", b"context", "pagination", b"pagination"]  # noqa: Y015
+    _HasFieldArgType: _TypeAlias = typing.Literal["context", b"context", "pagination", b"pagination"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    type _ClearFieldArgType = typing.Literal["context", b"context", "pagination", b"pagination"]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["context", b"context", "pagination", b"pagination"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -936,9 +734,9 @@ class ListInvoicesResponse(message.Message):
         invoices: abc.Iterable[Invoice] | None = ...,
         pagination: common_pb2.PaginationResponse | None = ...,
     ) -> None: ...
-    type _HasFieldArgType = typing.Literal["pagination", b"pagination"]  # noqa: Y015
+    _HasFieldArgType: _TypeAlias = typing.Literal["pagination", b"pagination"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    type _ClearFieldArgType = typing.Literal["invoices", b"invoices", "pagination", b"pagination"]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["invoices", b"invoices", "pagination", b"pagination"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -958,9 +756,9 @@ class GetInvoiceRequest(message.Message):
         context: common_pb2.TenantContext | None = ...,
         invoice_id: builtins.str = ...,
     ) -> None: ...
-    type _HasFieldArgType = typing.Literal["context", b"context"]  # noqa: Y015
+    _HasFieldArgType: _TypeAlias = typing.Literal["context", b"context"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    type _ClearFieldArgType = typing.Literal["context", b"context", "invoice_id", b"invoice_id"]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["context", b"context", "invoice_id", b"invoice_id"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -975,9 +773,9 @@ class GetInvoiceResponse(message.Message):
         *,
         invoice: Invoice | None = ...,
     ) -> None: ...
-    type _HasFieldArgType = typing.Literal["invoice", b"invoice"]  # noqa: Y015
+    _HasFieldArgType: _TypeAlias = typing.Literal["invoice", b"invoice"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    type _ClearFieldArgType = typing.Literal["invoice", b"invoice"]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["invoice", b"invoice"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -994,9 +792,9 @@ class ListPlansRequest(message.Message):
         *,
         context: common_pb2.TenantContext | None = ...,
     ) -> None: ...
-    type _HasFieldArgType = typing.Literal["context", b"context"]  # noqa: Y015
+    _HasFieldArgType: _TypeAlias = typing.Literal["context", b"context"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    type _ClearFieldArgType = typing.Literal["context", b"context"]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["context", b"context"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -1011,7 +809,7 @@ class ListPlansResponse(message.Message):
         *,
         plans: abc.Iterable[Plan] | None = ...,
     ) -> None: ...
-    type _ClearFieldArgType = typing.Literal["plans", b"plans"]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["plans", b"plans"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -1028,9 +826,9 @@ class ListPaymentMethodsRequest(message.Message):
         *,
         context: common_pb2.TenantContext | None = ...,
     ) -> None: ...
-    type _HasFieldArgType = typing.Literal["context", b"context"]  # noqa: Y015
+    _HasFieldArgType: _TypeAlias = typing.Literal["context", b"context"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    type _ClearFieldArgType = typing.Literal["context", b"context"]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["context", b"context"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -1045,7 +843,7 @@ class ListPaymentMethodsResponse(message.Message):
         *,
         payment_methods: abc.Iterable[PaymentMethod] | None = ...,
     ) -> None: ...
-    type _ClearFieldArgType = typing.Literal["payment_methods", b"payment_methods"]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["payment_methods", b"payment_methods"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -1069,16 +867,9 @@ class AddPaymentMethodRequest(message.Message):
         setup_intent_id: builtins.str = ...,
         set_as_default: builtins.bool = ...,
     ) -> None: ...
-    type _HasFieldArgType = typing.Literal["context", b"context"]  # noqa: Y015
+    _HasFieldArgType: _TypeAlias = typing.Literal["context", b"context"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    type _ClearFieldArgType = typing.Literal[
-        "context",
-        b"context",
-        "set_as_default",
-        b"set_as_default",
-        "setup_intent_id",
-        b"setup_intent_id",
-    ]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["context", b"context", "set_as_default", b"set_as_default", "setup_intent_id", b"setup_intent_id"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -1093,9 +884,9 @@ class AddPaymentMethodResponse(message.Message):
         *,
         payment_method: PaymentMethod | None = ...,
     ) -> None: ...
-    type _HasFieldArgType = typing.Literal["payment_method", b"payment_method"]  # noqa: Y015
+    _HasFieldArgType: _TypeAlias = typing.Literal["payment_method", b"payment_method"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    type _ClearFieldArgType = typing.Literal["payment_method", b"payment_method"]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["payment_method", b"payment_method"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -1115,11 +906,9 @@ class RemovePaymentMethodRequest(message.Message):
         context: common_pb2.TenantContext | None = ...,
         payment_method_id: builtins.str = ...,
     ) -> None: ...
-    type _HasFieldArgType = typing.Literal["context", b"context"]  # noqa: Y015
+    _HasFieldArgType: _TypeAlias = typing.Literal["context", b"context"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    type _ClearFieldArgType = typing.Literal[
-        "context", b"context", "payment_method_id", b"payment_method_id"
-    ]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["context", b"context", "payment_method_id", b"payment_method_id"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -1133,7 +922,7 @@ class RemovePaymentMethodResponse(message.Message):
         *,
         success: builtins.bool = ...,
     ) -> None: ...
-    type _ClearFieldArgType = typing.Literal["success", b"success"]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["success", b"success"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -1162,20 +951,9 @@ class CreateCheckoutSessionRequest(message.Message):
         success_url: builtins.str = ...,
         cancel_url: builtins.str = ...,
     ) -> None: ...
-    type _HasFieldArgType = typing.Literal["context", b"context"]  # noqa: Y015
+    _HasFieldArgType: _TypeAlias = typing.Literal["context", b"context"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    type _ClearFieldArgType = typing.Literal[
-        "cancel_url",
-        b"cancel_url",
-        "context",
-        b"context",
-        "interval",
-        b"interval",
-        "plan_id",
-        b"plan_id",
-        "success_url",
-        b"success_url",
-    ]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["cancel_url", b"cancel_url", "context", b"context", "interval", b"interval", "plan_id", b"plan_id", "success_url", b"success_url"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -1192,9 +970,7 @@ class CreateCheckoutSessionResponse(message.Message):
         checkout_url: builtins.str = ...,
         session_id: builtins.str = ...,
     ) -> None: ...
-    type _ClearFieldArgType = typing.Literal[
-        "checkout_url", b"checkout_url", "session_id", b"session_id"
-    ]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["checkout_url", b"checkout_url", "session_id", b"session_id"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -1214,9 +990,9 @@ class CreatePortalSessionRequest(message.Message):
         context: common_pb2.TenantContext | None = ...,
         return_url: builtins.str = ...,
     ) -> None: ...
-    type _HasFieldArgType = typing.Literal["context", b"context"]  # noqa: Y015
+    _HasFieldArgType: _TypeAlias = typing.Literal["context", b"context"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    type _ClearFieldArgType = typing.Literal["context", b"context", "return_url", b"return_url"]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["context", b"context", "return_url", b"return_url"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -1230,5 +1006,5 @@ class CreatePortalSessionResponse(message.Message):
         *,
         portal_url: builtins.str = ...,
     ) -> None: ...
-    type _ClearFieldArgType = typing.Literal["portal_url", b"portal_url"]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["portal_url", b"portal_url"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...

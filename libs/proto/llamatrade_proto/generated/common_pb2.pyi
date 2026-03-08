@@ -3,26 +3,27 @@
 isort:skip_file
 """
 
-import builtins as builtins
-import typing as typing
 from collections import abc as abc
-
 from google.protobuf import descriptor as descriptor
 from google.protobuf import message as message
 from google.protobuf.internal import containers as containers
 from google.protobuf.internal import enum_type_wrapper as enum_type_wrapper
+import builtins as builtins
+import sys
+import typing as typing
 
-pass
+if sys.version_info >= (3, 10):
+    from typing import TypeAlias as _TypeAlias
+else:
+    from typing_extensions import TypeAlias as _TypeAlias
 
 DESCRIPTOR: descriptor.FileDescriptor
 
 class _SortDirection:
     ValueType = typing.NewType("ValueType", builtins.int)
-    type V = ValueType  # noqa: Y015
+    V: _TypeAlias = ValueType  # noqa: Y015
 
-class _SortDirectionEnumTypeWrapper(
-    enum_type_wrapper._EnumTypeWrapper[_SortDirection.ValueType], builtins.type
-):
+class _SortDirectionEnumTypeWrapper(enum_type_wrapper._EnumTypeWrapper[_SortDirection.ValueType], builtins.type):
     DESCRIPTOR: descriptor.EnumDescriptor
     SORT_DIRECTION_UNSPECIFIED: _SortDirection.ValueType  # 0
     SORT_DIRECTION_ASC: _SortDirection.ValueType  # 1
@@ -37,11 +38,9 @@ SORT_DIRECTION_DESC: SortDirection.ValueType  # 2
 
 class _ExecutionMode:
     ValueType = typing.NewType("ValueType", builtins.int)
-    type V = ValueType  # noqa: Y015
+    V: _TypeAlias = ValueType  # noqa: Y015
 
-class _ExecutionModeEnumTypeWrapper(
-    enum_type_wrapper._EnumTypeWrapper[_ExecutionMode.ValueType], builtins.type
-):
+class _ExecutionModeEnumTypeWrapper(enum_type_wrapper._EnumTypeWrapper[_ExecutionMode.ValueType], builtins.type):
     DESCRIPTOR: descriptor.EnumDescriptor
     EXECUTION_MODE_UNSPECIFIED: _ExecutionMode.ValueType  # 0
     EXECUTION_MODE_PAPER: _ExecutionMode.ValueType  # 1
@@ -60,11 +59,9 @@ EXECUTION_MODE_LIVE: ExecutionMode.ValueType  # 2
 
 class _ExecutionStatus:
     ValueType = typing.NewType("ValueType", builtins.int)
-    type V = ValueType  # noqa: Y015
+    V: _TypeAlias = ValueType  # noqa: Y015
 
-class _ExecutionStatusEnumTypeWrapper(
-    enum_type_wrapper._EnumTypeWrapper[_ExecutionStatus.ValueType], builtins.type
-):
+class _ExecutionStatusEnumTypeWrapper(enum_type_wrapper._EnumTypeWrapper[_ExecutionStatus.ValueType], builtins.type):
     DESCRIPTOR: descriptor.EnumDescriptor
     EXECUTION_STATUS_UNSPECIFIED: _ExecutionStatus.ValueType  # 0
     EXECUTION_STATUS_PENDING: _ExecutionStatus.ValueType  # 1
@@ -106,7 +103,7 @@ class UUID(message.Message):
         *,
         value: builtins.str = ...,
     ) -> None: ...
-    type _ClearFieldArgType = typing.Literal["value", b"value"]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["value", b"value"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -125,7 +122,7 @@ class Timestamp(message.Message):
         seconds: builtins.int = ...,
         nanos: builtins.int = ...,
     ) -> None: ...
-    type _ClearFieldArgType = typing.Literal["nanos", b"nanos", "seconds", b"seconds"]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["nanos", b"nanos", "seconds", b"seconds"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -146,7 +143,7 @@ class Money(message.Message):
         currency: builtins.str = ...,
         amount: builtins.str = ...,
     ) -> None: ...
-    type _ClearFieldArgType = typing.Literal["amount", b"amount", "currency", b"currency"]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["amount", b"amount", "currency", b"currency"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -163,7 +160,7 @@ class Decimal(message.Message):
         *,
         value: builtins.str = ...,
     ) -> None: ...
-    type _ClearFieldArgType = typing.Literal["value", b"value"]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["value", b"value"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -184,7 +181,7 @@ class PaginationRequest(message.Message):
         page: builtins.int = ...,
         page_size: builtins.int = ...,
     ) -> None: ...
-    type _ClearFieldArgType = typing.Literal["page", b"page", "page_size", b"page_size"]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["page", b"page", "page_size", b"page_size"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -215,20 +212,7 @@ class PaginationResponse(message.Message):
         has_next: builtins.bool = ...,
         has_previous: builtins.bool = ...,
     ) -> None: ...
-    type _ClearFieldArgType = typing.Literal[
-        "current_page",
-        b"current_page",
-        "has_next",
-        b"has_next",
-        "has_previous",
-        b"has_previous",
-        "page_size",
-        b"page_size",
-        "total_items",
-        b"total_items",
-        "total_pages",
-        b"total_pages",
-    ]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["current_page", b"current_page", "has_next", b"has_next", "has_previous", b"has_previous", "page_size", b"page_size", "total_items", b"total_items", "total_pages", b"total_pages"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -251,9 +235,7 @@ class TenantContext(message.Message):
         user_id: builtins.str = ...,
         roles: abc.Iterable[builtins.str] | None = ...,
     ) -> None: ...
-    type _ClearFieldArgType = typing.Literal[
-        "roles", b"roles", "tenant_id", b"tenant_id", "user_id", b"user_id"
-    ]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["roles", b"roles", "tenant_id", b"tenant_id", "user_id", b"user_id"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -276,7 +258,7 @@ class Error(message.Message):
             key: builtins.str = ...,
             value: builtins.str = ...,
         ) -> None: ...
-        type _ClearFieldArgType = typing.Literal["key", b"key", "value", b"value"]  # noqa: Y015
+        _ClearFieldArgType: _TypeAlias = typing.Literal["key", b"key", "value", b"value"]  # noqa: Y015
         def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
     CODE_FIELD_NUMBER: builtins.int
@@ -297,9 +279,7 @@ class Error(message.Message):
         message: builtins.str = ...,
         details: abc.Mapping[builtins.str, builtins.str] | None = ...,
     ) -> None: ...
-    type _ClearFieldArgType = typing.Literal[
-        "code", b"code", "details", b"details", "message", b"message"
-    ]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["code", b"code", "details", b"details", "message", b"message"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -330,9 +310,9 @@ class TimeRange(message.Message):
         start: Timestamp | None = ...,
         end: Timestamp | None = ...,
     ) -> None: ...
-    type _HasFieldArgType = typing.Literal["end", b"end", "start", b"start"]  # noqa: Y015
+    _HasFieldArgType: _TypeAlias = typing.Literal["end", b"end", "start", b"start"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    type _ClearFieldArgType = typing.Literal["end", b"end", "start", b"start"]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["end", b"end", "start", b"start"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -351,5 +331,5 @@ class SortSpec(message.Message):
         field: builtins.str = ...,
         direction: SortDirection.ValueType = ...,
     ) -> None: ...
-    type _ClearFieldArgType = typing.Literal["direction", b"direction", "field", b"field"]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["direction", b"direction", "field", b"field"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...

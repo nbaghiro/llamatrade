@@ -17,7 +17,18 @@ from enum import Enum as PyEnum
 from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
-from sqlalchemy import Boolean, Enum, ForeignKey, Index, Integer, Numeric, String, Text
+from sqlalchemy import (
+    Boolean,
+    CheckConstraint,
+    Enum,
+    ForeignKey,
+    Index,
+    Integer,
+    Numeric,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -56,6 +67,7 @@ class Strategy(Base, UUIDPrimaryKeyMixin, TenantMixin, TimestampMixin):
 
     __tablename__ = "strategies"
     __table_args__ = (
+        UniqueConstraint("tenant_id", "name", name="uq_strategy_tenant_name"),
         Index("ix_strategies_tenant_name", "tenant_id", "name"),
         Index("ix_strategies_tenant_status", "tenant_id", "status"),
         Index("ix_strategies_tenant_type", "tenant_id", "strategy_type"),
@@ -87,19 +99,25 @@ class Strategy(Base, UUIDPrimaryKeyMixin, TenantMixin, TimestampMixin):
     )
 
 
-class StrategyVersion(Base, UUIDPrimaryKeyMixin, TimestampMixin):
+class StrategyVersion(Base, UUIDPrimaryKeyMixin, TenantMixin, TimestampMixin):
     """
     Immutable version snapshot of a strategy configuration.
 
     Each time a strategy's configuration changes, a new version is created.
     The config_sexpr field stores the canonical S-expression format, while
     config_json stores a parsed JSON representation for querying.
+
+    tenant_id is included for defense-in-depth tenant isolation, even though
+    versions are already associated with tenant-scoped strategies via strategy_id.
     """
 
     __tablename__ = "strategy_versions"
     __table_args__ = (
+        UniqueConstraint("strategy_id", "version", name="uq_version_strategy_version"),
+        CheckConstraint("version > 0", name="ck_version_positive"),
         Index("ix_strategy_versions_strategy_version", "strategy_id", "version", unique=True),
         Index("ix_strategy_versions_symbols", "symbols", postgresql_using="gin"),
+        Index("ix_strategy_versions_tenant", "tenant_id"),
     )
 
     strategy_id: Mapped[UUID] = mapped_column(

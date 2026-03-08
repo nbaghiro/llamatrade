@@ -3,19 +3,81 @@
 Bridges the llamatrade-compiler library's allocation-based CompiledStrategy
 with the trading service's StrategyRunner protocol by converting target
 allocations to buy/sell signals.
+
+Respects the rebalance frequency defined in the strategy.
 """
 
 import logging
 from collections.abc import Sequence
+from datetime import date, datetime
 
 from llamatrade_compiler import Bar, CompiledStrategy, compile_strategy
 from llamatrade_compiler.extractor import get_required_symbols
-from llamatrade_dsl import Strategy, parse_strategy, validate_strategy
+from llamatrade_dsl import RebalanceFrequency, Strategy, parse_strategy, validate_strategy
 
 from src.runner.bar_stream import BarData
 from src.runner.runner import Position, Signal
 
 logger = logging.getLogger(__name__)
+
+
+def should_rebalance(
+    current_date: date,
+    last_rebalance: date | None,
+    frequency: RebalanceFrequency | None,
+) -> bool:
+    """Determine if rebalancing should occur based on frequency.
+
+    Args:
+        current_date: The current trading date
+        last_rebalance: Date of the last rebalance (None if never)
+        frequency: Rebalance frequency (daily, weekly, monthly, quarterly, annually)
+
+    Returns:
+        True if rebalancing should occur, False otherwise
+    """
+    # First bar always triggers rebalance
+    if last_rebalance is None:
+        return True
+
+    # Same day never triggers rebalance
+    if current_date == last_rebalance:
+        return False
+
+    # Default to daily if not specified
+    freq = frequency or "daily"
+
+    match freq:
+        case "daily":
+            # Rebalance every trading day
+            return current_date > last_rebalance
+
+        case "weekly":
+            # Rebalance on Monday (weekday 0) or if more than 7 days passed
+            is_monday = current_date.weekday() == 0
+            days_passed = (current_date - last_rebalance).days
+            return is_monday and days_passed >= 1
+
+        case "monthly":
+            # Rebalance when month changes
+            return (
+                current_date.month != last_rebalance.month
+                or current_date.year != last_rebalance.year
+            )
+
+        case "quarterly":
+            # Rebalance when quarter changes (months 1,4,7,10)
+            current_quarter = (current_date.month - 1) // 3
+            last_quarter = (last_rebalance.month - 1) // 3
+            return current_quarter != last_quarter or current_date.year != last_rebalance.year
+
+        case "annually":
+            # Rebalance when year changes
+            return current_date.year != last_rebalance.year
+
+        case _:
+            # Unknown frequency, default to daily
+            return current_date > last_rebalance
 
 
 class StrategyAdapter:
@@ -77,10 +139,15 @@ class StrategyAdapter:
         # Track current allocations per symbol
         self._current_weights: dict[str, float] = {}
 
+        # Track rebalancing state
+        self._last_rebalance: date | None = None
+        self._rebalance_freq: RebalanceFrequency | None = self._ast.rebalance
+
         logger.info(
             f"Compiled strategy '{self._template.name}' with "
             f"{len(self._template.indicators)} indicators, "
-            f"min_bars={self._template.min_bars}"
+            f"min_bars={self._template.min_bars}, "
+            f"rebalance={self._rebalance_freq or 'daily'}"
         )
 
     def __call__(
@@ -91,6 +158,8 @@ class StrategyAdapter:
         equity: float,
     ) -> Signal | None:
         """Evaluate strategy and return signal if any.
+
+        Respects the rebalance frequency - only generates signals on rebalance days.
 
         Args:
             symbol: The trading symbol
@@ -104,6 +173,22 @@ class StrategyAdapter:
         if not bars:
             return None
 
+        # Get current date from latest bar
+        latest_bar = bars[-1]
+        bar_timestamp = latest_bar.timestamp
+        if isinstance(bar_timestamp, datetime):
+            current_date = bar_timestamp.date()
+        elif isinstance(bar_timestamp, date):
+            current_date = bar_timestamp
+        else:
+            # Try parsing as string
+            current_date = datetime.fromisoformat(str(bar_timestamp)).date()
+
+        # Check if we should rebalance today
+        if not should_rebalance(current_date, self._last_rebalance, self._rebalance_freq):
+            # Not a rebalance day - no signals
+            return None
+
         # Get or create per-symbol compiled strategy
         # Each symbol needs its own state (bar history, indicator cache, etc.)
         if symbol not in self._per_symbol:
@@ -113,7 +198,6 @@ class StrategyAdapter:
         compiled = self._per_symbol[symbol]
 
         # Convert latest BarData to compiler's Bar format
-        latest_bar = bars[-1]
         compiler_bar = self._convert_bar(latest_bar)
 
         # Initialize with historical bars on first call for this symbol
@@ -143,6 +227,8 @@ class StrategyAdapter:
         # Determine if we need to generate a signal
         has_position = position is not None
 
+        signal: Signal | None = None
+
         if target_weight > 0 and not has_position:
             # Target allocation - generate buy signal
             position_value = equity * (target_weight / 100)
@@ -150,7 +236,7 @@ class StrategyAdapter:
 
             if quantity > 0:
                 self._current_weights[symbol] = target_weight
-                return Signal(
+                signal = Signal(
                     type="buy",
                     symbol=symbol,
                     quantity=quantity,
@@ -160,16 +246,18 @@ class StrategyAdapter:
         elif target_weight == 0 and has_position:
             # Zero allocation - generate sell signal
             self._current_weights[symbol] = 0.0
-            return Signal(
+            signal = Signal(
                 type="sell",
                 symbol=symbol,
                 quantity=position.quantity,
                 price=current_price,
             )
 
-        # Update weight tracking
+        # Update weight tracking and rebalance date
         self._current_weights[symbol] = target_weight
-        return None
+        self._last_rebalance = current_date
+
+        return signal
 
     def _convert_bar(self, bar: BarData) -> Bar:
         """Convert runner BarData to compiler Bar."""
@@ -200,6 +288,7 @@ class StrategyAdapter:
             self._per_symbol.clear()
             self._initialized_symbols.clear()
             self._current_weights.clear()
+            self._last_rebalance = None
 
     @property
     def name(self) -> str:

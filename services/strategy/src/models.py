@@ -94,13 +94,48 @@ class IndicatorParamInfo(TypedDict):
 
 
 class StrategyType(StrEnum):
-    """Strategy types (business categorization, not proto-defined)."""
+    """Strategy types (business categorization, not proto-defined).
 
+    Trading mechanism categories:
+    - ALLOCATION: Static buy-and-hold allocations with rebalancing
+    - TREND_FOLLOWING: Trend-following strategies (MA crossover, breakout)
+    - MEAN_REVERSION: Counter-trend strategies (RSI, Bollinger)
+    - MOMENTUM: Momentum-based rotation and factor strategies
+    - REGIME: Regime-based tactical switching (VIX, risk-on/off)
+    - BREAKOUT: Breakout and channel strategies
+    - CUSTOM: Other strategies that don't fit above categories
+    """
+
+    ALLOCATION = "allocation"
     TREND_FOLLOWING = "trend_following"
     MEAN_REVERSION = "mean_reversion"
     MOMENTUM = "momentum"
+    REGIME = "regime"
     BREAKOUT = "breakout"
     CUSTOM = "custom"
+
+
+class TemplateCategory(StrEnum):
+    """Template category - primary classification by investment approach."""
+
+    BUY_AND_HOLD = "buy-and-hold"
+    TACTICAL = "tactical"
+    FACTOR = "factor"
+    INCOME = "income"
+    TREND = "trend"
+    MEAN_REVERSION = "mean-reversion"
+    ALTERNATIVES = "alternatives"
+
+
+class AssetClass(StrEnum):
+    """Asset class - what the strategy primarily invests in."""
+
+    EQUITY = "equity"
+    FIXED_INCOME = "fixed-income"
+    MULTI_ASSET = "multi-asset"
+    CRYPTO = "crypto"
+    COMMODITY = "commodity"
+    OPTIONS = "options"
 
 
 # ===================
@@ -276,6 +311,8 @@ class TemplateResponse(BaseModel):
     name: str
     description: str | None
     strategy_type: StrategyType
+    category: TemplateCategory
+    asset_class: AssetClass
     config_sexpr: str
     config_json: StrategyConfigJSON
     tags: list[str] = Field(default_factory=list)

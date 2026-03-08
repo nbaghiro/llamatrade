@@ -263,44 +263,46 @@ function operandToDSL(operand: ConditionOperand): string {
 
   // Indicator
   const ind = operand;
-  const source = ind.source || 'close';
+  const symbol = ind.symbol;
 
+  // Multi-output indicators use :output syntax, e.g., (macd SPY 12 26 9 :signal)
   switch (ind.indicator) {
     case 'sma':
-      return `(sma ${source} ${ind.period || 20})`;
+      return `(sma ${symbol} ${ind.period || 20})`;
     case 'ema':
-      return `(ema ${source} ${ind.period || 20})`;
+      return `(ema ${symbol} ${ind.period || 20})`;
     case 'rsi':
-      return `(rsi ${source} ${ind.period || 14})`;
+      return `(rsi ${symbol} ${ind.period || 14})`;
     case 'macd_line':
-      return `(macd-line ${source} ${ind.fastPeriod || 12} ${ind.slowPeriod || 26} ${ind.signalPeriod || 9})`;
+      return `(macd ${symbol} ${ind.fastPeriod || 12} ${ind.slowPeriod || 26} ${ind.signalPeriod || 9} :line)`;
     case 'macd_signal':
-      return `(macd-signal ${source} ${ind.fastPeriod || 12} ${ind.slowPeriod || 26} ${ind.signalPeriod || 9})`;
+      return `(macd ${symbol} ${ind.fastPeriod || 12} ${ind.slowPeriod || 26} ${ind.signalPeriod || 9} :signal)`;
     case 'bb_upper':
-      return `(bb-upper ${source} ${ind.period || 20} ${ind.stdDev || 2.0})`;
+      return `(bbands ${symbol} ${ind.period || 20} ${ind.stdDev || 2.0} :upper)`;
     case 'bb_middle':
-      return `(bb-middle ${source} ${ind.period || 20} ${ind.stdDev || 2.0})`;
+      return `(bbands ${symbol} ${ind.period || 20} ${ind.stdDev || 2.0} :middle)`;
     case 'bb_lower':
-      return `(bb-lower ${source} ${ind.period || 20} ${ind.stdDev || 2.0})`;
+      return `(bbands ${symbol} ${ind.period || 20} ${ind.stdDev || 2.0} :lower)`;
     case 'atr':
-      return `(atr high low close ${ind.period || 14})`;
+      return `(atr ${symbol} ${ind.period || 14})`;
     case 'adx':
-      return `(adx high low close ${ind.period || 14})`;
+      return `(adx ${symbol} ${ind.period || 14})`;
     case 'stochastic_k':
+      return `(stoch ${symbol} ${ind.period || 14} 3 3 :k)`;
     case 'stochastic_d':
-      return `(stochastic high low close ${ind.period || 14} 3 3)`;
+      return `(stoch ${symbol} ${ind.period || 14} 3 3 :d)`;
     case 'cci':
-      return `(cci ${source} ${ind.period || 20})`;
+      return `(cci ${symbol} ${ind.period || 20})`;
     case 'williams_r':
-      return `(williams-r high low close ${ind.period || 14})`;
+      return `(williams-r ${symbol} ${ind.period || 14})`;
     case 'obv':
-      return `(obv close volume)`;
+      return `(obv ${symbol})`;
     case 'mfi':
-      return `(mfi high low close volume ${ind.period || 14})`;
+      return `(mfi ${symbol} ${ind.period || 14})`;
     case 'vwap':
-      return `(vwap close volume)`;
+      return `(vwap ${symbol})`;
     default:
-      return `(${ind.indicator} ${source})`;
+      return `(${ind.indicator} ${symbol})`;
   }
 }
 
@@ -736,13 +738,24 @@ export function fromDSL(
 // Validation
 // ============================================
 
+// Import comprehensive validation module
+import {
+  validateStrategy,
+  type ValidationIssue as ComprehensiveIssue,
+  type ValidationResult as ComprehensiveResult,
+} from './validation';
+
 /**
  * Validate a strategy tree before saving
+ *
+ * Uses the comprehensive validation module but maintains backward compatibility
+ * with the original ValidationResult interface.
  */
 export function validateTree(tree: StrategyTree): ValidationResult {
   const errors: ValidationError[] = [];
   const warnings: ValidationError[] = [];
 
+  // Basic root check (not covered by validation module)
   const root = tree.blocks[tree.rootId];
   if (!root || root.type !== 'root') {
     errors.push({
@@ -752,18 +765,8 @@ export function validateTree(tree: StrategyTree): ValidationResult {
     return { valid: false, errors, warnings };
   }
 
-  // Check for at least one asset
-  const hasAssets = Object.values(tree.blocks).some((b) => isAssetBlock(b));
-  if (!hasAssets) {
-    errors.push({
-      message: 'Strategy must contain at least one asset',
-      severity: 'error',
-    });
-  }
-
-  // Validate each block
+  // Check parent references (not covered by validation module)
   for (const block of Object.values(tree.blocks)) {
-    // Check parent exists
     if (block.parentId !== null && !tree.blocks[block.parentId]) {
       errors.push({
         blockId: block.id,
@@ -771,69 +774,21 @@ export function validateTree(tree: StrategyTree): ValidationResult {
         severity: 'error',
       });
     }
-
-    // Validate weight blocks
-    if (isWeightBlock(block)) {
-      if (block.method === 'specified') {
-        // Check allocations sum to 100
-        const total = Object.values(block.allocations).reduce((sum, v) => sum + v, 0);
-        if (Math.abs(total - 100) > 0.01 && block.childIds.length > 0) {
-          warnings.push({
-            blockId: block.id,
-            message: `Weight allocations sum to ${total}%, not 100%`,
-            severity: 'warning',
-          });
-        }
-      }
-    }
-
-    // Validate IF blocks
-    if (isIfBlock(block)) {
-      if (!block.condition) {
-        errors.push({
-          blockId: block.id,
-          message: 'IF block must have a condition',
-          severity: 'error',
-        });
-      }
-    }
-
-    // Validate filter blocks
-    if (isFilterBlock(block)) {
-      if (block.config.count < 1) {
-        errors.push({
-          blockId: block.id,
-          message: 'Filter must select at least 1 asset',
-          severity: 'error',
-        });
-      }
-    }
   }
 
-  // Check for orphan blocks
-  const reachable = new Set<BlockId>();
-  function markReachable(id: BlockId): void {
-    if (reachable.has(id)) return;
-    reachable.add(id);
-    const block = tree.blocks[id];
-    if (block && hasChildren(block)) {
-      const parentBlock = block as { childIds: BlockId[] };
-      for (const childId of parentBlock.childIds) {
-        markReachable(childId);
-      }
-    }
-  }
-  markReachable(tree.rootId);
+  // Run comprehensive validation
+  const result = validateStrategy(tree);
 
-  for (const id of Object.keys(tree.blocks)) {
-    if (!reachable.has(id)) {
-      warnings.push({
-        blockId: id,
-        message: `Block "${id}" is not reachable from root`,
-        severity: 'warning',
-      });
-    }
-  }
+  // Convert comprehensive issues to legacy format
+  const mapIssue = (issue: ComprehensiveIssue): ValidationError => ({
+    blockId: issue.blockId,
+    field: issue.field,
+    message: issue.message,
+    severity: issue.severity,
+  });
+
+  errors.push(...result.errors.map(mapIssue));
+  warnings.push(...result.warnings.map(mapIssue));
 
   return {
     valid: errors.length === 0,
@@ -841,6 +796,18 @@ export function validateTree(tree: StrategyTree): ValidationResult {
     warnings,
   };
 }
+
+/**
+ * Get comprehensive validation result with all issue details
+ * Use this for UI components that need suggestions and rule IDs
+ */
+export function validateTreeComprehensive(tree: StrategyTree): ComprehensiveResult {
+  return validateStrategy(tree);
+}
+
+// Re-export validation utilities for convenience
+export { validateStrategy, getBlockIssues, blockHasError, blockHasWarning } from './validation';
+export type { ValidationIssue as ComprehensiveValidationIssue } from './validation';
 
 // ============================================
 // S-Expression DSL Parsing (config_sexpr → Block Tree)
@@ -1146,6 +1113,43 @@ function parseConditionExpr(expr: unknown[], defaultSymbol: string): ParsedCondi
 }
 
 /**
+ * Helper to check if a string is an uppercase ticker symbol (like BTC, SPY, ETH)
+ */
+function isTickerSymbol(str: string): boolean {
+  return /^[A-Z][A-Z0-9]*$/.test(str);
+}
+
+/**
+ * Helper to check if a string is a price source (close, open, high, low, volume)
+ */
+function isPriceSource(str: string): boolean {
+  return ['close', 'open', 'high', 'low', 'volume'].includes(str.toLowerCase());
+}
+
+/**
+ * Extract symbol from indicator arguments.
+ * Templates use: (sma BTC 50) or (sma close 200)
+ * - If first arg is uppercase ticker (BTC), use it as symbol
+ * - If first arg is lowercase source (close), use defaultSymbol
+ * Returns: { symbol, periodArgIndex } where periodArgIndex points to the period argument
+ */
+function extractSymbolFromIndicatorArgs(
+  args: unknown[],
+  defaultSymbol: string
+): { symbol: string; periodArgIndex: number } {
+  const firstArg = args[0];
+  if (typeof firstArg === 'string') {
+    // Check if it's an uppercase ticker (e.g., BTC, SPY, ETH)
+    if (isTickerSymbol(firstArg)) {
+      return { symbol: firstArg, periodArgIndex: 1 };
+    }
+    // It's a source (close, open, etc.) - use default symbol
+    return { symbol: defaultSymbol, periodArgIndex: 1 };
+  }
+  return { symbol: defaultSymbol, periodArgIndex: 0 };
+}
+
+/**
  * Parse an operand (indicator call, price, or number)
  */
 function parseOperand(expr: unknown, defaultSymbol: string): ConditionOperand | null {
@@ -1176,109 +1180,165 @@ function parseOperand(expr: unknown, defaultSymbol: string): ConditionOperand | 
     return null;
   }
 
-  // Indicator call like (rsi close 14)
+  // Indicator call or price expression like (rsi SPY 14) or (price BTC)
   if (Array.isArray(expr) && expr.length >= 2) {
     const [indicator, ...args] = expr;
 
+    // Handle (price SYMBOL) syntax - e.g., (price BTC) or (price SPY)
+    if (indicator === 'price') {
+      const firstArg = args[0];
+      let symbol = defaultSymbol;
+      let field: 'close' | 'open' | 'high' | 'low' = 'close';
+
+      if (typeof firstArg === 'string') {
+        if (isTickerSymbol(firstArg)) {
+          symbol = firstArg;
+        } else if (isPriceSource(firstArg)) {
+          field = firstArg.toLowerCase() as 'close' | 'open' | 'high' | 'low';
+        }
+      }
+      return { type: 'price', symbol, field };
+    }
+
     switch (indicator) {
       case 'rsi': {
-        // (rsi close 14)
-        const period = typeof args[1] === 'number' ? args[1] : 14;
+        // (rsi SPY 14) or (rsi close 14) - first arg can be symbol or source
+        const { symbol, periodArgIndex } = extractSymbolFromIndicatorArgs(args, defaultSymbol);
+        const period = typeof args[periodArgIndex] === 'number' ? args[periodArgIndex] : 14;
         return {
           type: 'indicator',
           indicator: 'rsi',
           period,
-          symbol: defaultSymbol,
+          symbol,
           source: 'close',
         };
       }
       case 'sma': {
-        // (sma close 200)
-        const period = typeof args[1] === 'number' ? args[1] : 20;
+        // (sma BTC 50) or (sma close 200)
+        const { symbol, periodArgIndex } = extractSymbolFromIndicatorArgs(args, defaultSymbol);
+        const period = typeof args[periodArgIndex] === 'number' ? args[periodArgIndex] : 20;
         return {
           type: 'indicator',
           indicator: 'sma',
           period,
-          symbol: defaultSymbol,
+          symbol,
           source: 'close',
         };
       }
       case 'ema': {
-        // (ema close 20)
-        const period = typeof args[1] === 'number' ? args[1] : 20;
+        // (ema ETH 20) or (ema close 20)
+        const { symbol, periodArgIndex } = extractSymbolFromIndicatorArgs(args, defaultSymbol);
+        const period = typeof args[periodArgIndex] === 'number' ? args[periodArgIndex] : 20;
         return {
           type: 'indicator',
           indicator: 'ema',
           period,
-          symbol: defaultSymbol,
+          symbol,
           source: 'close',
         };
       }
+      case 'macd':
       case 'macd-line': {
-        // (macd-line close 12 26 9)
+        // (macd SPY 12 26 9 :line) or (macd-line close 12 26 9)
+        const { symbol, periodArgIndex } = extractSymbolFromIndicatorArgs(args, defaultSymbol);
         return {
           type: 'indicator',
           indicator: 'macd_line',
-          symbol: defaultSymbol,
-          fastPeriod: typeof args[1] === 'number' ? args[1] : 12,
-          slowPeriod: typeof args[2] === 'number' ? args[2] : 26,
-          signalPeriod: typeof args[3] === 'number' ? args[3] : 9,
+          symbol,
+          fastPeriod: typeof args[periodArgIndex] === 'number' ? args[periodArgIndex] : 12,
+          slowPeriod: typeof args[periodArgIndex + 1] === 'number' ? args[periodArgIndex + 1] : 26,
+          signalPeriod: typeof args[periodArgIndex + 2] === 'number' ? args[periodArgIndex + 2] : 9,
         };
       }
       case 'macd-signal': {
+        const { symbol, periodArgIndex } = extractSymbolFromIndicatorArgs(args, defaultSymbol);
         return {
           type: 'indicator',
           indicator: 'macd_signal',
-          symbol: defaultSymbol,
-          fastPeriod: typeof args[1] === 'number' ? args[1] : 12,
-          slowPeriod: typeof args[2] === 'number' ? args[2] : 26,
-          signalPeriod: typeof args[3] === 'number' ? args[3] : 9,
+          symbol,
+          fastPeriod: typeof args[periodArgIndex] === 'number' ? args[periodArgIndex] : 12,
+          slowPeriod: typeof args[periodArgIndex + 1] === 'number' ? args[periodArgIndex + 1] : 26,
+          signalPeriod: typeof args[periodArgIndex + 2] === 'number' ? args[periodArgIndex + 2] : 9,
         };
       }
+      case 'bbands':
       case 'bb-upper':
       case 'bb-middle':
       case 'bb-lower': {
-        const period = typeof args[1] === 'number' ? args[1] : 20;
-        const stdDev = typeof args[2] === 'number' ? args[2] : 2.0;
-        const indicatorName = indicator === 'bb-upper' ? 'bb_upper'
-          : indicator === 'bb-middle' ? 'bb_middle'
-          : 'bb_lower';
+        // (bbands SPY 20 2 :upper) or (bb-upper close 20 2)
+        const { symbol, periodArgIndex } = extractSymbolFromIndicatorArgs(args, defaultSymbol);
+        const period = typeof args[periodArgIndex] === 'number' ? args[periodArgIndex] : 20;
+        const stdDev = typeof args[periodArgIndex + 1] === 'number' ? args[periodArgIndex + 1] : 2.0;
+        let indicatorName: 'bb_upper' | 'bb_middle' | 'bb_lower' = 'bb_middle';
+        if (indicator === 'bb-upper') indicatorName = 'bb_upper';
+        else if (indicator === 'bb-lower') indicatorName = 'bb_lower';
+        else if (indicator === 'bbands') {
+          // Check for :output parameter
+          const outputIdx = args.findIndex(a => a === ':output' || a === ':upper' || a === ':middle' || a === ':lower');
+          if (outputIdx !== -1) {
+            const output = args[outputIdx] === ':output' ? args[outputIdx + 1] : String(args[outputIdx]).slice(1);
+            if (output === 'upper') indicatorName = 'bb_upper';
+            else if (output === 'lower') indicatorName = 'bb_lower';
+          }
+        }
         return {
           type: 'indicator',
           indicator: indicatorName,
           period,
           stdDev,
-          symbol: defaultSymbol,
+          symbol,
           source: 'close',
         };
       }
       case 'adx': {
-        // (adx high low close 14)
-        const period = typeof args[3] === 'number' ? args[3] : 14;
+        // (adx SPY 14) or (adx high low close 14)
+        const { symbol, periodArgIndex } = extractSymbolFromIndicatorArgs(args, defaultSymbol);
+        // If first arg is symbol, period is at index 1; otherwise it's at index 3 (after high, low, close)
+        const period = typeof args[periodArgIndex] === 'number'
+          ? args[periodArgIndex]
+          : typeof args[3] === 'number' ? args[3] : 14;
         return {
           type: 'indicator',
           indicator: 'adx',
           period,
-          symbol: defaultSymbol,
+          symbol,
         };
       }
       case 'atr': {
-        const period = typeof args[3] === 'number' ? args[3] : 14;
+        // (atr SPY 14) or (atr high low close 14)
+        const { symbol, periodArgIndex } = extractSymbolFromIndicatorArgs(args, defaultSymbol);
+        const period = typeof args[periodArgIndex] === 'number'
+          ? args[periodArgIndex]
+          : typeof args[3] === 'number' ? args[3] : 14;
         return {
           type: 'indicator',
           indicator: 'atr',
           period,
-          symbol: defaultSymbol,
+          symbol,
         };
       }
+      case 'momentum':
       case 'roc': {
-        // (roc close 252)
-        const period = typeof args[1] === 'number' ? args[1] : 252;
+        // (momentum SPY 90) or (roc close 252)
+        const { symbol, periodArgIndex } = extractSymbolFromIndicatorArgs(args, defaultSymbol);
+        const period = typeof args[periodArgIndex] === 'number' ? args[periodArgIndex] : 252;
         return {
           type: 'indicator',
-          indicator: 'sma', // Use SMA as placeholder for ROC
+          indicator: 'sma', // Use SMA as placeholder for momentum/ROC
           period,
-          symbol: defaultSymbol,
+          symbol,
+          source: 'close',
+        };
+      }
+      case 'donchian': {
+        // (donchian SPY 20 :output upper)
+        const { symbol, periodArgIndex } = extractSymbolFromIndicatorArgs(args, defaultSymbol);
+        const period = typeof args[periodArgIndex] === 'number' ? args[periodArgIndex] : 20;
+        return {
+          type: 'indicator',
+          indicator: 'sma', // Use SMA as placeholder for Donchian
+          period,
+          symbol,
           source: 'close',
         };
       }
@@ -1379,8 +1439,8 @@ export function fromDSLString(dslString: string): ParsedDSL | null {
 
       // Nested blocks
       if (Array.isArray(item)) {
-        const childId = parseBlockFromExpr(item, rootId, blocks);
-        if (childId) {
+        const childIds = parseBlockFromExpr(item, rootId, blocks);
+        for (const childId of childIds) {
           root.childIds.push(childId);
         }
       }
@@ -1396,30 +1456,30 @@ export function fromDSLString(dslString: string): ParsedDSL | null {
 
 /**
  * Parse a block expression and add it to the blocks map
- * Returns the block ID or null if parsing failed
+ * Returns an array of block IDs (usually one, but IF blocks may return [ifId, elseId])
  */
 function parseBlockFromExpr(
   expr: unknown[],
   parentId: BlockId,
   blocks: Record<BlockId, Block>
-): BlockId | null {
-  if (!Array.isArray(expr) || expr.length === 0) return null;
+): BlockId[] {
+  if (!Array.isArray(expr) || expr.length === 0) return [];
 
   const blockType = expr[0];
 
   switch (blockType) {
     case 'asset':
-      return parseAssetExpr(expr, parentId, blocks);
+      return [parseAssetExpr(expr, parentId, blocks)];
     case 'weight':
-      return parseWeightExpr(expr, parentId, blocks);
+      return [parseWeightExpr(expr, parentId, blocks)];
     case 'group':
-      return parseGroupExpr(expr, parentId, blocks);
+      return [parseGroupExpr(expr, parentId, blocks)];
     case 'if':
-      return parseIfExpr(expr, parentId, blocks);
+      return parseIfExpr(expr, parentId, blocks); // Returns [ifId] or [ifId, elseId]
     case 'filter':
-      return parseFilterExpr(expr, parentId, blocks);
+      return [parseFilterExpr(expr, parentId, blocks)];
     default:
-      return null;
+      return [];
   }
 }
 
@@ -1508,9 +1568,22 @@ function parseWeightExpr(
           }
         }
       } else {
-        const childId = parseBlockFromExpr(item, id, blocks);
-        if (childId) {
+        const childIds = parseBlockFromExpr(item, id, blocks);
+        // Add all returned IDs (IF blocks may return [ifId, elseId])
+        for (const childId of childIds) {
           weightBlock.childIds.push(childId);
+        }
+
+        // Extract :weight from any child block type (groups, filters, etc.)
+        // Handles syntax like: (group "Name" :weight 50 children...)
+        for (let j = 1; j < item.length; j++) {
+          if (item[j] === ':weight' && typeof item[j + 1] === 'number') {
+            // Apply weight to the first child ID (the primary block, not else block)
+            if (childIds.length > 0) {
+              weightBlock.allocations[childIds[0]] = item[j + 1];
+            }
+            break;
+          }
         }
       }
     }
@@ -1543,12 +1616,12 @@ function parseGroupExpr(
   };
   blocks[id] = groupBlock;
 
-  // Now parse children - parseIfExpr can push else blocks to groupBlock.childIds
+  // Parse children - IF blocks may return [ifId, elseId]
   for (let i = 2; i < expr.length; i++) {
     const item = expr[i];
     if (Array.isArray(item)) {
-      const childId = parseBlockFromExpr(item, id, blocks);
-      if (childId) {
+      const childIds = parseBlockFromExpr(item, id, blocks);
+      for (const childId of childIds) {
         groupBlock.childIds.push(childId);
       }
     }
@@ -1562,12 +1635,14 @@ function parseGroupExpr(
  * Handles two formats:
  * 1. (if CONDITION (then ...) (else ...)) - explicit then wrapper
  * 2. (if CONDITION BLOCK (else ...)) - direct then block without wrapper
+ *
+ * Returns [ifId] or [ifId, elseId] to ensure correct ordering in parent
  */
 function parseIfExpr(
   expr: unknown[],
   parentId: BlockId,
   blocks: Record<BlockId, Block>
-): BlockId {
+): BlockId[] {
   const ifId = generateBlockId();
   const ifChildIds: BlockId[] = [];
   const elseChildIds: BlockId[] = [];
@@ -1582,19 +1657,19 @@ function parseIfExpr(
       // Explicit (then ...) wrapper - parse children
       for (let j = 1; j < item.length; j++) {
         if (Array.isArray(item[j])) {
-          const childId = parseBlockFromExpr(item[j], ifId, blocks);
-          if (childId) {
+          const childIds = parseBlockFromExpr(item[j], ifId, blocks);
+          for (const childId of childIds) {
             ifChildIds.push(childId);
           }
         }
       }
     } else if (item[0] === 'else') {
       // Parse else children (we'll create the else block later)
+      // Use a placeholder parent ID that we'll fix after creating the else block
       for (let j = 1; j < item.length; j++) {
         if (Array.isArray(item[j])) {
-          // Placeholder parent - will be updated
-          const childId = parseBlockFromExpr(item[j], ifId, blocks);
-          if (childId) {
+          const childIds = parseBlockFromExpr(item[j], ifId, blocks);
+          for (const childId of childIds) {
             elseChildIds.push(childId);
           }
         }
@@ -1605,8 +1680,8 @@ function parseIfExpr(
     } else {
       // Any other block after condition is the then-block content (no wrapper)
       // This handles: (if CONDITION (weight ...) (else ...))
-      const childId = parseBlockFromExpr(item, ifId, blocks);
-      if (childId) {
+      const childIds = parseBlockFromExpr(item, ifId, blocks);
+      for (const childId of childIds) {
         ifChildIds.push(childId);
       }
     }
@@ -1644,11 +1719,11 @@ function parseIfExpr(
   };
   blocks[ifId] = ifBlock;
 
-  // Create else block
+  // Create else block if there are else children
   if (elseChildIds.length > 0) {
     const elseId = generateBlockId();
 
-    // Update else children to have correct parent
+    // Update else children to have correct parent (the else block)
     for (const childId of elseChildIds) {
       const child = blocks[childId];
       if (child) {
@@ -1665,14 +1740,12 @@ function parseIfExpr(
     };
     blocks[elseId] = elseBlock;
 
-    // Add else block to parent's children
-    const parent = blocks[parentId];
-    if (parent && hasChildren(parent)) {
-      parent.childIds.push(elseId);
-    }
+    // Return both IF and ELSE IDs in correct order
+    // The caller will add them to parent.childIds in this order
+    return [ifId, elseId];
   }
 
-  return ifId;
+  return [ifId];
 }
 
 /**

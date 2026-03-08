@@ -1,5 +1,12 @@
 """LlamaTrade Common Library - Shared utilities and models."""
 
+from llamatrade_common.errors import (
+    DSLError,
+    DSLErrorCode,
+    classify_error,
+    create_dsl_error,
+    grpc_status_from_dsl_code,
+)
 from llamatrade_common.events import Event, EventType
 from llamatrade_common.health import HealthChecker, HealthStatus, check_postgres, check_redis
 from llamatrade_common.logging import (
@@ -45,6 +52,12 @@ __all__ = [
     # Events
     "Event",
     "EventType",
+    # Errors
+    "DSLError",
+    "DSLErrorCode",
+    "classify_error",
+    "create_dsl_error",
+    "grpc_status_from_dsl_code",
     # Utils
     "generate_uuid",
     "utc_now",

@@ -3,27 +3,28 @@
 isort:skip_file
 """
 
-import builtins as builtins
-import typing as typing
 from collections import abc as abc
-
-import common_pb2 as common_pb2
 from google.protobuf import descriptor as descriptor
 from google.protobuf import message as message
 from google.protobuf.internal import containers as containers
 from google.protobuf.internal import enum_type_wrapper as enum_type_wrapper
+import builtins as builtins
+import common_pb2 as common_pb2
+import sys
+import typing as typing
 
-pass
+if sys.version_info >= (3, 10):
+    from typing import TypeAlias as _TypeAlias
+else:
+    from typing_extensions import TypeAlias as _TypeAlias
 
 DESCRIPTOR: descriptor.FileDescriptor
 
 class _Timeframe:
     ValueType = typing.NewType("ValueType", builtins.int)
-    type V = ValueType  # noqa: Y015
+    V: _TypeAlias = ValueType  # noqa: Y015
 
-class _TimeframeEnumTypeWrapper(
-    enum_type_wrapper._EnumTypeWrapper[_Timeframe.ValueType], builtins.type
-):
+class _TimeframeEnumTypeWrapper(enum_type_wrapper._EnumTypeWrapper[_Timeframe.ValueType], builtins.type):
     DESCRIPTOR: descriptor.EnumDescriptor
     TIMEFRAME_UNSPECIFIED: _Timeframe.ValueType  # 0
     TIMEFRAME_1MIN: _Timeframe.ValueType  # 1
@@ -57,11 +58,9 @@ TIMEFRAME_1MONTH: Timeframe.ValueType  # 9
 
 class _MarketStatus:
     ValueType = typing.NewType("ValueType", builtins.int)
-    type V = ValueType  # noqa: Y015
+    V: _TypeAlias = ValueType  # noqa: Y015
 
-class _MarketStatusEnumTypeWrapper(
-    enum_type_wrapper._EnumTypeWrapper[_MarketStatus.ValueType], builtins.type
-):
+class _MarketStatusEnumTypeWrapper(enum_type_wrapper._EnumTypeWrapper[_MarketStatus.ValueType], builtins.type):
     DESCRIPTOR: descriptor.EnumDescriptor
     MARKET_STATUS_UNSPECIFIED: _MarketStatus.ValueType  # 0
     MARKET_STATUS_OPEN: _MarketStatus.ValueType  # 1
@@ -128,41 +127,9 @@ class Bar(message.Message):
         trade_count: builtins.int = ...,
         vwap: common_pb2.Decimal | None = ...,
     ) -> None: ...
-    type _HasFieldArgType = typing.Literal[
-        "close",
-        b"close",
-        "high",
-        b"high",
-        "low",
-        b"low",
-        "open",
-        b"open",
-        "timestamp",
-        b"timestamp",
-        "vwap",
-        b"vwap",
-    ]  # noqa: Y015
+    _HasFieldArgType: _TypeAlias = typing.Literal["close", b"close", "high", b"high", "low", b"low", "open", b"open", "timestamp", b"timestamp", "vwap", b"vwap"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    type _ClearFieldArgType = typing.Literal[
-        "close",
-        b"close",
-        "high",
-        b"high",
-        "low",
-        b"low",
-        "open",
-        b"open",
-        "symbol",
-        b"symbol",
-        "timestamp",
-        b"timestamp",
-        "trade_count",
-        b"trade_count",
-        "volume",
-        b"volume",
-        "vwap",
-        b"vwap",
-    ]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["close", b"close", "high", b"high", "low", b"low", "open", b"open", "symbol", b"symbol", "timestamp", b"timestamp", "trade_count", b"trade_count", "volume", b"volume", "vwap", b"vwap"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -202,28 +169,9 @@ class Quote(message.Message):
         bid_exchange: builtins.str = ...,
         ask_exchange: builtins.str = ...,
     ) -> None: ...
-    type _HasFieldArgType = typing.Literal[
-        "ask_price", b"ask_price", "bid_price", b"bid_price", "timestamp", b"timestamp"
-    ]  # noqa: Y015
+    _HasFieldArgType: _TypeAlias = typing.Literal["ask_price", b"ask_price", "bid_price", b"bid_price", "timestamp", b"timestamp"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    type _ClearFieldArgType = typing.Literal[
-        "ask_exchange",
-        b"ask_exchange",
-        "ask_price",
-        b"ask_price",
-        "ask_size",
-        b"ask_size",
-        "bid_exchange",
-        b"bid_exchange",
-        "bid_price",
-        b"bid_price",
-        "bid_size",
-        b"bid_size",
-        "symbol",
-        b"symbol",
-        "timestamp",
-        b"timestamp",
-    ]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["ask_exchange", b"ask_exchange", "ask_price", b"ask_price", "ask_size", b"ask_size", "bid_exchange", b"bid_exchange", "bid_price", b"bid_price", "bid_size", b"bid_size", "symbol", b"symbol", "timestamp", b"timestamp"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -260,24 +208,9 @@ class Trade(message.Message):
         trade_id: builtins.str = ...,
         conditions: abc.Iterable[builtins.str] | None = ...,
     ) -> None: ...
-    type _HasFieldArgType = typing.Literal["price", b"price", "timestamp", b"timestamp"]  # noqa: Y015
+    _HasFieldArgType: _TypeAlias = typing.Literal["price", b"price", "timestamp", b"timestamp"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    type _ClearFieldArgType = typing.Literal[
-        "conditions",
-        b"conditions",
-        "exchange",
-        b"exchange",
-        "price",
-        b"price",
-        "size",
-        b"size",
-        "symbol",
-        b"symbol",
-        "timestamp",
-        b"timestamp",
-        "trade_id",
-        b"trade_id",
-    ]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["conditions", b"conditions", "exchange", b"exchange", "price", b"price", "size", b"size", "symbol", b"symbol", "timestamp", b"timestamp", "trade_id", b"trade_id"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -321,41 +254,9 @@ class Snapshot(message.Message):
         change: common_pb2.Decimal | None = ...,
         change_percent: common_pb2.Decimal | None = ...,
     ) -> None: ...
-    type _HasFieldArgType = typing.Literal[
-        "change",
-        b"change",
-        "change_percent",
-        b"change_percent",
-        "daily_bar",
-        b"daily_bar",
-        "latest_bar",
-        b"latest_bar",
-        "latest_quote",
-        b"latest_quote",
-        "latest_trade",
-        b"latest_trade",
-        "previous_daily_bar",
-        b"previous_daily_bar",
-    ]  # noqa: Y015
+    _HasFieldArgType: _TypeAlias = typing.Literal["change", b"change", "change_percent", b"change_percent", "daily_bar", b"daily_bar", "latest_bar", b"latest_bar", "latest_quote", b"latest_quote", "latest_trade", b"latest_trade", "previous_daily_bar", b"previous_daily_bar"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    type _ClearFieldArgType = typing.Literal[
-        "change",
-        b"change",
-        "change_percent",
-        b"change_percent",
-        "daily_bar",
-        b"daily_bar",
-        "latest_bar",
-        b"latest_bar",
-        "latest_quote",
-        b"latest_quote",
-        "latest_trade",
-        b"latest_trade",
-        "previous_daily_bar",
-        b"previous_daily_bar",
-        "symbol",
-        b"symbol",
-    ]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["change", b"change", "change_percent", b"change_percent", "daily_bar", b"daily_bar", "latest_bar", b"latest_bar", "latest_quote", b"latest_quote", "latest_trade", b"latest_trade", "previous_daily_bar", b"previous_daily_bar", "symbol", b"symbol"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -380,7 +281,7 @@ class StreamBarsRequest(message.Message):
         symbols: abc.Iterable[builtins.str] | None = ...,
         timeframe: Timeframe.ValueType = ...,
     ) -> None: ...
-    type _ClearFieldArgType = typing.Literal["symbols", b"symbols", "timeframe", b"timeframe"]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["symbols", b"symbols", "timeframe", b"timeframe"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -414,24 +315,9 @@ class GetHistoricalBarsRequest(message.Message):
         pagination: common_pb2.PaginationRequest | None = ...,
         adjust_for_splits: builtins.bool = ...,
     ) -> None: ...
-    type _HasFieldArgType = typing.Literal[
-        "end", b"end", "pagination", b"pagination", "start", b"start"
-    ]  # noqa: Y015
+    _HasFieldArgType: _TypeAlias = typing.Literal["end", b"end", "pagination", b"pagination", "start", b"start"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    type _ClearFieldArgType = typing.Literal[
-        "adjust_for_splits",
-        b"adjust_for_splits",
-        "end",
-        b"end",
-        "pagination",
-        b"pagination",
-        "start",
-        b"start",
-        "symbol",
-        b"symbol",
-        "timeframe",
-        b"timeframe",
-    ]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["adjust_for_splits", b"adjust_for_splits", "end", b"end", "pagination", b"pagination", "start", b"start", "symbol", b"symbol", "timeframe", b"timeframe"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -453,11 +339,9 @@ class GetHistoricalBarsResponse(message.Message):
         next_page_token: builtins.str = ...,
         pagination: common_pb2.PaginationResponse | None = ...,
     ) -> None: ...
-    type _HasFieldArgType = typing.Literal["pagination", b"pagination"]  # noqa: Y015
+    _HasFieldArgType: _TypeAlias = typing.Literal["pagination", b"pagination"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    type _ClearFieldArgType = typing.Literal[
-        "bars", b"bars", "next_page_token", b"next_page_token", "pagination", b"pagination"
-    ]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["bars", b"bars", "next_page_token", b"next_page_token", "pagination", b"pagination"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -488,20 +372,9 @@ class GetMultiBarsRequest(message.Message):
         timeframe: Timeframe.ValueType = ...,
         limit: builtins.int = ...,
     ) -> None: ...
-    type _HasFieldArgType = typing.Literal["end", b"end", "start", b"start"]  # noqa: Y015
+    _HasFieldArgType: _TypeAlias = typing.Literal["end", b"end", "start", b"start"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    type _ClearFieldArgType = typing.Literal[
-        "end",
-        b"end",
-        "limit",
-        b"limit",
-        "start",
-        b"start",
-        "symbols",
-        b"symbols",
-        "timeframe",
-        b"timeframe",
-    ]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["end", b"end", "limit", b"limit", "start", b"start", "symbols", b"symbols", "timeframe", b"timeframe"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -523,9 +396,9 @@ class GetMultiBarsResponse(message.Message):
             key: builtins.str = ...,
             value: BarList | None = ...,
         ) -> None: ...
-        type _HasFieldArgType = typing.Literal["value", b"value"]  # noqa: Y015
+        _HasFieldArgType: _TypeAlias = typing.Literal["value", b"value"]  # noqa: Y015
         def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-        type _ClearFieldArgType = typing.Literal["key", b"key", "value", b"value"]  # noqa: Y015
+        _ClearFieldArgType: _TypeAlias = typing.Literal["key", b"key", "value", b"value"]  # noqa: Y015
         def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
     BARS_FIELD_NUMBER: builtins.int
@@ -536,7 +409,7 @@ class GetMultiBarsResponse(message.Message):
         *,
         bars: abc.Mapping[builtins.str, BarList] | None = ...,
     ) -> None: ...
-    type _ClearFieldArgType = typing.Literal["bars", b"bars"]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["bars", b"bars"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -551,7 +424,7 @@ class BarList(message.Message):
         *,
         bars: abc.Iterable[Bar] | None = ...,
     ) -> None: ...
-    type _ClearFieldArgType = typing.Literal["bars", b"bars"]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["bars", b"bars"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -568,7 +441,7 @@ class StreamQuotesRequest(message.Message):
         *,
         symbols: abc.Iterable[builtins.str] | None = ...,
     ) -> None: ...
-    type _ClearFieldArgType = typing.Literal["symbols", b"symbols"]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["symbols", b"symbols"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -585,7 +458,7 @@ class StreamTradesRequest(message.Message):
         *,
         symbols: abc.Iterable[builtins.str] | None = ...,
     ) -> None: ...
-    type _ClearFieldArgType = typing.Literal["symbols", b"symbols"]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["symbols", b"symbols"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -601,7 +474,7 @@ class GetSnapshotRequest(message.Message):
         *,
         symbol: builtins.str = ...,
     ) -> None: ...
-    type _ClearFieldArgType = typing.Literal["symbol", b"symbol"]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["symbol", b"symbol"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -616,7 +489,7 @@ class GetSnapshotsRequest(message.Message):
         *,
         symbols: abc.Iterable[builtins.str] | None = ...,
     ) -> None: ...
-    type _ClearFieldArgType = typing.Literal["symbols", b"symbols"]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["symbols", b"symbols"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -638,9 +511,9 @@ class GetSnapshotsResponse(message.Message):
             key: builtins.str = ...,
             value: Snapshot | None = ...,
         ) -> None: ...
-        type _HasFieldArgType = typing.Literal["value", b"value"]  # noqa: Y015
+        _HasFieldArgType: _TypeAlias = typing.Literal["value", b"value"]  # noqa: Y015
         def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-        type _ClearFieldArgType = typing.Literal["key", b"key", "value", b"value"]  # noqa: Y015
+        _ClearFieldArgType: _TypeAlias = typing.Literal["key", b"key", "value", b"value"]  # noqa: Y015
         def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
     SNAPSHOTS_FIELD_NUMBER: builtins.int
@@ -651,7 +524,7 @@ class GetSnapshotsResponse(message.Message):
         *,
         snapshots: abc.Mapping[builtins.str, Snapshot] | None = ...,
     ) -> None: ...
-    type _ClearFieldArgType = typing.Literal["snapshots", b"snapshots"]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["snapshots", b"snapshots"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -683,9 +556,7 @@ class GetMarketStatusResponse(message.Message):
         next_open: common_pb2.Timestamp | None = ...,
         next_close: common_pb2.Timestamp | None = ...,
     ) -> None: ...
-    type _HasFieldArgType = typing.Literal["next_close", b"next_close", "next_open", b"next_open"]  # noqa: Y015
+    _HasFieldArgType: _TypeAlias = typing.Literal["next_close", b"next_close", "next_open", b"next_open"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    type _ClearFieldArgType = typing.Literal[
-        "next_close", b"next_close", "next_open", b"next_open", "status", b"status"
-    ]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["next_close", b"next_close", "next_open", b"next_open", "status", b"status"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...

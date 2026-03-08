@@ -11,6 +11,7 @@ import {
   conditionToText,
   validateTree,
 } from '../services/strategy-serializer';
+import { validateStrategy, type ValidationResult, type ValidationIssue } from '../services/validation';
 import type { StrategyType } from '../types/strategy';
 import type {
   BlockId,
@@ -29,11 +30,20 @@ import { hasChildren } from '../types/strategy-builder';
 
 import { getTenantContext } from './auth';
 
+// Re-export validation types for consumers
+export type { ValidationResult, ValidationIssue };
+
 // Enable immer support for Map and Set
 enableMapSet();
 
 // Maximum history entries for undo/redo
 const MAX_HISTORY = 50;
+
+// Debounce delay for auto-save (in milliseconds)
+const DEBOUNCE_SAVE_MS = 2000;
+
+// Debounce timer reference
+let saveDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 
 // Create demo strategy with all block types
 function createInitialState(): { tree: StrategyTree; expandedBlocks: Set<BlockId> } {
@@ -225,10 +235,19 @@ interface StrategyBuilderState {
   timeframe: string;
   isDirty: boolean;
 
+  // Version tracking for optimistic locking
+  serverVersion: number;        // Version from last load/save
+  lastSavedAt: number | null;   // Timestamp of last successful save
+  conflictDetected: boolean;    // True if server has newer version
+
   // Async state
   loading: boolean;
   saving: boolean;
   error: string | null;
+
+  // Real-time validation state
+  validationResult: ValidationResult;
+  isValid: boolean;
 
   // Block CRUD operations
   addAsset: (
@@ -274,6 +293,9 @@ interface StrategyBuilderState {
   loadStrategy: (id: string) => Promise<void>;
   loadTemplate: (templateId: string) => Promise<void>;
   saveStrategy: () => Promise<string | null>;
+  saveStrategyDebounced: () => void;  // Debounced save for frequent updates
+  cancelDebouncedSave: () => void;    // Cancel pending debounced save
+  resolveConflict: (useLocal: boolean) => Promise<void>;  // Handle version conflicts
   createNew: () => void;
 
   // View mode operations
@@ -282,6 +304,11 @@ interface StrategyBuilderState {
   syncTreeFromCode: () => boolean;
   getDSLCode: () => string;
   clearDSLParseError: () => void;
+
+  // Validation operations
+  getBlockErrors: (blockId: BlockId) => ValidationIssue[];
+  getBlockWarnings: (blockId: BlockId) => ValidationIssue[];
+  refreshValidation: () => void;
 
   // Utility
   getBlock: (id: BlockId) => Block | undefined;
@@ -298,6 +325,21 @@ function pushToHistory(state: StrategyBuilderState): void {
   }
   state.future = [];
 }
+
+// Helper to run validation and update state
+function runValidation(state: StrategyBuilderState): void {
+  const result = validateStrategy(state.tree);
+  state.validationResult = result;
+  state.isValid = result.valid;
+}
+
+// Initial empty validation result
+const emptyValidationResult: ValidationResult = {
+  valid: true,
+  issues: [],
+  errors: [],
+  warnings: [],
+};
 
 // Helper to add child to parent
 function addChildToParent(blocks: Record<BlockId, Block>, parentId: BlockId, childId: BlockId): void {
@@ -378,10 +420,19 @@ export const useStrategyBuilderStore = create<StrategyBuilderState>()(
     timeframe: '1D',
     isDirty: false,
 
+    // Version tracking for optimistic locking
+    serverVersion: 0,
+    lastSavedAt: null,
+    conflictDetected: false,
+
     // Async state
     loading: false,
     saving: false,
     error: null,
+
+    // Real-time validation state
+    validationResult: emptyValidationResult,
+    isValid: true,
 
       addAsset: (parentId, symbol, exchange, displayName) => {
         const id = uuidv4();
@@ -398,6 +449,7 @@ export const useStrategyBuilderStore = create<StrategyBuilderState>()(
           addChildToParent(state.tree.blocks, parentId, id);
           state.ui.expandedBlocks.add(parentId);
           state.isDirty = true;
+          runValidation(state);
         });
         return id;
       },
@@ -417,6 +469,7 @@ export const useStrategyBuilderStore = create<StrategyBuilderState>()(
           state.ui.expandedBlocks.add(parentId);
           state.ui.expandedBlocks.add(id);
           state.isDirty = true;
+          runValidation(state);
         });
         return id;
       },
@@ -438,6 +491,7 @@ export const useStrategyBuilderStore = create<StrategyBuilderState>()(
           state.ui.expandedBlocks.add(parentId);
           state.ui.expandedBlocks.add(id);
           state.isDirty = true;
+          runValidation(state);
         });
         return id;
       },
@@ -449,6 +503,7 @@ export const useStrategyBuilderStore = create<StrategyBuilderState>()(
           pushToHistory(state);
           Object.assign(block, updates);
           state.isDirty = true;
+          runValidation(state);
         });
       },
 
@@ -473,6 +528,7 @@ export const useStrategyBuilderStore = create<StrategyBuilderState>()(
           }
           state.ui.expandedBlocks.delete(id);
           state.isDirty = true;
+          runValidation(state);
         });
       },
 
@@ -483,6 +539,7 @@ export const useStrategyBuilderStore = create<StrategyBuilderState>()(
           pushToHistory(state);
           block.allocations[childId] = Math.max(0, Math.min(100, percent));
           state.isDirty = true;
+          runValidation(state);
         });
       },
 
@@ -521,6 +578,7 @@ export const useStrategyBuilderStore = create<StrategyBuilderState>()(
           state.ui.expandedBlocks.add(ifId);
           state.ui.expandedBlocks.add(elseId);
           state.isDirty = true;
+          runValidation(state);
         });
         return ifId;
       },
@@ -533,6 +591,7 @@ export const useStrategyBuilderStore = create<StrategyBuilderState>()(
           (block as IfBlock).condition = condition;
           (block as IfBlock).conditionText = conditionToText(condition);
           state.isDirty = true;
+          runValidation(state);
         });
       },
 
@@ -554,6 +613,7 @@ export const useStrategyBuilderStore = create<StrategyBuilderState>()(
           state.ui.expandedBlocks.add(parentId);
           state.ui.expandedBlocks.add(id);
           state.isDirty = true;
+          runValidation(state);
         });
         return id;
       },
@@ -566,6 +626,7 @@ export const useStrategyBuilderStore = create<StrategyBuilderState>()(
           (block as FilterBlock).config = config;
           (block as FilterBlock).displayText = filterConfigToDisplayText(config);
           state.isDirty = true;
+          runValidation(state);
         });
       },
 
@@ -597,6 +658,7 @@ export const useStrategyBuilderStore = create<StrategyBuilderState>()(
           if (!previous) return;
           state.future.push(JSON.parse(JSON.stringify(state.tree)));
           state.tree = previous;
+          runValidation(state);
         });
       },
 
@@ -606,6 +668,7 @@ export const useStrategyBuilderStore = create<StrategyBuilderState>()(
           if (!next) return;
           state.past.push(JSON.parse(JSON.stringify(state.tree)));
           state.tree = next;
+          runValidation(state);
         });
       },
 
@@ -710,6 +773,7 @@ export const useStrategyBuilderStore = create<StrategyBuilderState>()(
           }
           s.ui.expandedBlocks = expandedBlocks;
           s.dslParseError = null;
+          runValidation(s);
         });
         return true;
       },
@@ -731,6 +795,11 @@ export const useStrategyBuilderStore = create<StrategyBuilderState>()(
       },
 
       reset: () => {
+        // Cancel any pending debounced save
+        if (saveDebounceTimer) {
+          clearTimeout(saveDebounceTimer);
+          saveDebounceTimer = null;
+        }
         set((state) => {
           const newState = createInitialState();
           state.tree = newState.tree;
@@ -750,7 +819,13 @@ export const useStrategyBuilderStore = create<StrategyBuilderState>()(
           state.strategyType = 'custom';
           state.timeframe = '1D';
           state.isDirty = false;
+          state.serverVersion = 0;
+          state.lastSavedAt = null;
+          state.conflictDetected = false;
           state.error = null;
+          state.validationResult = emptyValidationResult;
+          state.isValid = true;
+          runValidation(state);
         });
       },
 
@@ -818,6 +893,11 @@ export const useStrategyBuilderStore = create<StrategyBuilderState>()(
             state.strategyType = 'custom';
             state.timeframe = strategy.timeframe;
 
+            // Track server version for optimistic locking
+            state.serverVersion = strategy.version || 1;
+            state.lastSavedAt = Date.now();
+            state.conflictDetected = false;
+
             // Convert compiled JSON to block tree
             const compiledJson = strategy.compiledJson ? JSON.parse(strategy.compiledJson) : {};
             const uiStateStr = strategy.parameters['ui_state'];
@@ -838,6 +918,7 @@ export const useStrategyBuilderStore = create<StrategyBuilderState>()(
             state.loading = false;
             state.past = [];
             state.future = [];
+            runValidation(state);
           });
         } catch {
           set((state) => {
@@ -895,6 +976,7 @@ export const useStrategyBuilderStore = create<StrategyBuilderState>()(
             state.loading = false;
             state.past = [];
             state.future = [];
+            runValidation(state);
           });
         } catch (error) {
           set((state) => {
@@ -975,19 +1057,103 @@ export const useStrategyBuilderStore = create<StrategyBuilderState>()(
             s.strategyId = savedStrategyId;
             s.isDirty = false;
             s.saving = false;
+            // Update version tracking after successful save
+            s.serverVersion += 1;
+            s.lastSavedAt = Date.now();
+            s.conflictDetected = false;
           });
 
           return savedStrategyId;
         } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : 'Failed to save strategy';
+          // Check for version conflict errors
+          const isConflict = errorMessage.includes('version') || errorMessage.includes('conflict');
           set((s) => {
-            s.error = error instanceof Error ? error.message : 'Failed to save strategy';
+            s.error = errorMessage;
             s.saving = false;
+            if (isConflict) {
+              s.conflictDetected = true;
+            }
           });
           return null;
         }
       },
 
+      // Debounced save - useful for auto-save on frequent changes
+      saveStrategyDebounced: () => {
+        // Clear any existing timer
+        if (saveDebounceTimer) {
+          clearTimeout(saveDebounceTimer);
+        }
+        // Set new timer
+        saveDebounceTimer = setTimeout(() => {
+          const { isDirty, strategyId, saving } = get();
+          // Only save if dirty, has ID (not new), and not already saving
+          if (isDirty && strategyId && !saving) {
+            get().saveStrategy();
+          }
+          saveDebounceTimer = null;
+        }, DEBOUNCE_SAVE_MS);
+      },
+
+      // Cancel any pending debounced save
+      cancelDebouncedSave: () => {
+        if (saveDebounceTimer) {
+          clearTimeout(saveDebounceTimer);
+          saveDebounceTimer = null;
+        }
+      },
+
+      // Resolve version conflict
+      resolveConflict: async (useLocal: boolean) => {
+        const state = get();
+        if (!state.conflictDetected || !state.strategyId) return;
+
+        if (useLocal) {
+          // Force save local changes, overwriting server version
+          // Clear conflict flag and try saving again
+          set((s) => {
+            s.conflictDetected = false;
+            s.error = null;
+          });
+          // Re-fetch to get latest version, then save
+          try {
+            const context = getTenantContext();
+            const response = await strategyClient.getStrategy({
+              context,
+              strategyId: state.strategyId
+            });
+            const strategy = response.strategy;
+            if (strategy) {
+              set((s) => {
+                s.serverVersion = strategy.version || 1;
+              });
+            }
+            // Now save with updated version
+            await get().saveStrategy();
+          } catch {
+            set((s) => {
+              s.error = 'Failed to resolve conflict';
+            });
+          }
+        } else {
+          // Discard local changes and reload from server
+          try {
+            await get().loadStrategy(state.strategyId);
+          } catch {
+            set((s) => {
+              s.error = 'Failed to reload strategy';
+            });
+          }
+        }
+      },
+
       createNew: () => {
+        // Cancel any pending debounced save
+        if (saveDebounceTimer) {
+          clearTimeout(saveDebounceTimer);
+          saveDebounceTimer = null;
+        }
         const rootId = uuidv4();
         set((state) => {
           state.tree = {
@@ -1018,7 +1184,30 @@ export const useStrategyBuilderStore = create<StrategyBuilderState>()(
           state.strategyType = 'custom';
           state.timeframe = '1D';
           state.isDirty = false;
+          state.serverVersion = 0;
+          state.lastSavedAt = null;
+          state.conflictDetected = false;
           state.error = null;
+          state.validationResult = emptyValidationResult;
+          state.isValid = true;
+          runValidation(state);
+        });
+      },
+
+      // Validation operations
+      getBlockErrors: (blockId) => {
+        const { validationResult } = get();
+        return validationResult.errors.filter((e) => e.blockId === blockId);
+      },
+
+      getBlockWarnings: (blockId) => {
+        const { validationResult } = get();
+        return validationResult.warnings.filter((w) => w.blockId === blockId);
+      },
+
+      refreshValidation: () => {
+        set((state) => {
+          runValidation(state);
         });
       },
     }))

@@ -31,17 +31,97 @@ from llamatrade_dsl.ast import (
 )
 
 
+def _find_similar(target: str, candidates: frozenset[str], max_results: int = 3) -> list[str]:
+    """Find similar strings from candidates using simple edit distance heuristics.
+
+    Args:
+        target: The string to match
+        candidates: Set of valid strings
+        max_results: Maximum number of suggestions to return
+
+    Returns:
+        List of similar strings, sorted by similarity
+    """
+    if not target:
+        return []
+
+    target_lower = target.lower()
+    scored: list[tuple[str, int]] = []
+
+    for candidate in candidates:
+        candidate_lower = candidate.lower()
+        score = 0
+
+        # Exact prefix match is very good
+        if candidate_lower.startswith(target_lower):
+            score += 100
+
+        # Substring match is good
+        if target_lower in candidate_lower or candidate_lower in target_lower:
+            score += 50
+
+        # Same length is slightly better
+        if len(candidate) == len(target):
+            score += 10
+
+        # Count matching characters
+        matching_chars = sum(1 for c in target_lower if c in candidate_lower)
+        score += matching_chars * 2
+
+        # Penalize length difference
+        score -= abs(len(candidate) - len(target))
+
+        if score > 0:
+            scored.append((candidate, score))
+
+    # Sort by score descending and return top results
+    scored.sort(key=lambda x: x[1], reverse=True)
+    return [s[0] for s in scored[:max_results]]
+
+
 @dataclass
 class ValidationError:
-    """A single validation error."""
+    """A single validation error with optional location and suggestions.
+
+    Attributes:
+        message: The error message
+        path: The AST path where the error occurred (e.g., "strategy.children[0].method")
+        line: Line number in source (1-indexed, if available)
+        column: Column number in source (1-indexed, if available)
+        suggestions: List of suggested fixes or valid values
+    """
 
     message: str
     path: str = ""
+    line: int | None = None
+    column: int | None = None
+    suggestions: list[str] = field(default_factory=list)
 
     def __str__(self) -> str:
+        parts = []
+
+        # Add location if available
+        if self.line is not None:
+            if self.column is not None:
+                parts.append(f"line {self.line}, column {self.column}")
+            else:
+                parts.append(f"line {self.line}")
+
+        # Add path if available
         if self.path:
-            return f"{self.path}: {self.message}"
-        return self.message
+            parts.append(self.path)
+
+        # Build message
+        if parts:
+            result = f"{': '.join(parts)}: {self.message}"
+        else:
+            result = self.message
+
+        # Add suggestions
+        if self.suggestions:
+            result += f" (did you mean: {', '.join(self.suggestions[:3])}?)"
+
+        return result
 
 
 @dataclass
@@ -124,12 +204,20 @@ class Validator:
 
     def _validate_weight(self, weight: Weight, path: str) -> None:
         """Validate a weight block."""
+        # Extract location if available
+        loc = weight.location
+        line = loc.line if loc else None
+        col = loc.column if loc else None
+
         # Method must be valid
         if weight.method not in WEIGHT_METHODS:
+            suggestions = _find_similar(weight.method, WEIGHT_METHODS)
             self._error(
-                f"Invalid weight method: {weight.method}. "
-                f"Valid options: {', '.join(sorted(WEIGHT_METHODS))}",
+                f"Invalid weight method: {weight.method}",
                 f"{path}.method",
+                line=line,
+                column=col,
+                suggestions=suggestions,
             )
 
         # Must have children
@@ -358,15 +446,28 @@ class Validator:
 
     def _validate_indicator(self, indicator: Indicator, path: str) -> None:
         """Validate an indicator value."""
+        # Extract location if available
+        loc = indicator.location
+        line = loc.line if loc else None
+        col = loc.column if loc else None
+
         if indicator.name not in INDICATORS:
+            suggestions = _find_similar(indicator.name, INDICATORS)
             self._error(
-                f"Unknown indicator: {indicator.name}. "
-                f"Valid options: {', '.join(sorted(INDICATORS))}",
+                f"Unknown indicator: {indicator.name}",
                 f"{path}.name",
+                line=line,
+                column=col,
+                suggestions=suggestions,
             )
 
         if not indicator.symbol or not indicator.symbol.strip():
-            self._error("Indicator symbol is required", f"{path}.symbol")
+            self._error(
+                "Indicator symbol is required",
+                f"{path}.symbol",
+                line=line,
+                column=col,
+            )
 
         # Validate params are positive
         for i, param in enumerate(indicator.params):
@@ -374,6 +475,8 @@ class Validator:
                 self._error(
                     f"Indicator parameter must be positive: {param}",
                     f"{path}.params[{i}]",
+                    line=line,
+                    column=col,
                 )
 
     def _validate_metric(self, metric: Metric, path: str) -> None:
@@ -390,9 +493,32 @@ class Validator:
         if metric.period is not None and metric.period <= 0:
             self._error("Metric period must be positive", f"{path}.period")
 
-    def _error(self, message: str, path: str) -> None:
-        """Record a validation error."""
-        self.errors.append(ValidationError(message, path))
+    def _error(
+        self,
+        message: str,
+        path: str,
+        line: int | None = None,
+        column: int | None = None,
+        suggestions: list[str] | None = None,
+    ) -> None:
+        """Record a validation error.
+
+        Args:
+            message: The error message
+            path: The AST path where the error occurred
+            line: Line number (if known from source location)
+            column: Column number (if known from source location)
+            suggestions: List of suggested fixes
+        """
+        self.errors.append(
+            ValidationError(
+                message=message,
+                path=path,
+                line=line,
+                column=column,
+                suggestions=suggestions or [],
+            )
+        )
 
 
 def validate(strategy: Strategy) -> ValidationResult:

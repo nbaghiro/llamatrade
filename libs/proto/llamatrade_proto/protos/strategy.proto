@@ -101,6 +101,19 @@ message ValidationResult {
   repeated string detected_indicators = 5;
 }
 
+// Strategy template (pre-built strategy definitions)
+message StrategyTemplate {
+  string id = 1;
+  string name = 2;
+  string description = 3;
+  string strategy_type = 4;     // e.g., "allocation", "momentum", "regime"
+  string category = 5;          // e.g., "buy-and-hold", "tactical", "factor"
+  string asset_class = 6;       // e.g., "equity", "multi-asset", "crypto"
+  string config_sexpr = 7;      // S-expression DSL definition
+  repeated string tags = 8;     // Additional labels
+  string difficulty = 9;        // "beginner", "intermediate", "advanced"
+}
+
 // Strategy execution (paper or live trading session)
 message StrategyExecution {
   string id = 1;
@@ -323,6 +336,26 @@ message StopExecutionResponse {
   StrategyExecution execution = 1;
 }
 
+// List templates
+message ListTemplatesRequest {
+  string category = 1;      // Optional: filter by category
+  string asset_class = 2;   // Optional: filter by asset class
+  string difficulty = 3;    // Optional: filter by difficulty
+}
+
+message ListTemplatesResponse {
+  repeated StrategyTemplate templates = 1;
+}
+
+// Get template
+message GetTemplateRequest {
+  string template_id = 1;
+}
+
+message GetTemplateResponse {
+  StrategyTemplate template = 1;
+}
+
 // =============================================================================
 // SERVICE
 // =============================================================================
@@ -347,6 +380,10 @@ service StrategyService {
 
   // Status management
   rpc UpdateStrategyStatus(UpdateStrategyStatusRequest) returns (UpdateStrategyStatusResponse);
+
+  // Template operations
+  rpc ListTemplates(ListTemplatesRequest) returns (ListTemplatesResponse);
+  rpc GetTemplate(GetTemplateRequest) returns (GetTemplateResponse);
 
   // Execution management
   rpc CreateExecution(CreateExecutionRequest) returns (CreateExecutionResponse);

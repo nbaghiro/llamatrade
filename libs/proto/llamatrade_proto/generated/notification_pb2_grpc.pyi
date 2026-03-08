@@ -3,18 +3,23 @@
 isort:skip_file
 """
 
-import abc as _abc_1
-import typing as _typing
 from collections import abc as _abc
-from typing import Self as _Self
-
+from grpc import aio as _aio
+import abc as _abc_1
 import grpc as _grpc
 import notification_pb2 as _notification_pb2
-from grpc import aio as _aio
+import sys
+import typing as _typing
+
+if sys.version_info >= (3, 11):
+    from typing import Self as _Self
+else:
+    from typing_extensions import Self as _Self
 
 _T = _typing.TypeVar("_T")
 
 class _MaybeAsyncIterator(_abc.AsyncIterator[_T], _abc.Iterator[_T], metaclass=_abc_1.ABCMeta): ...
+
 class _ServicerContext(_grpc.ServicerContext, _aio.ServicerContext):  # type: ignore[misc, type-arg]
     ...
 
@@ -31,36 +36,18 @@ class NotificationServiceStub:
     def __new__(cls, channel: _grpc.Channel) -> _Self: ...
     @_typing.overload
     def __new__(cls, channel: _aio.Channel) -> NotificationServiceAsyncStub: ...
-    ListNotifications: _grpc.UnaryUnaryMultiCallable[
-        _notification_pb2.ListNotificationsRequest, _notification_pb2.ListNotificationsResponse
-    ]
+    ListNotifications: _grpc.UnaryUnaryMultiCallable[_notification_pb2.ListNotificationsRequest, _notification_pb2.ListNotificationsResponse]
     """Notifications"""
-    MarkAsRead: _grpc.UnaryUnaryMultiCallable[
-        _notification_pb2.MarkAsReadRequest, _notification_pb2.MarkAsReadResponse
-    ]
-    ListAlerts: _grpc.UnaryUnaryMultiCallable[
-        _notification_pb2.ListAlertsRequest, _notification_pb2.ListAlertsResponse
-    ]
+    MarkAsRead: _grpc.UnaryUnaryMultiCallable[_notification_pb2.MarkAsReadRequest, _notification_pb2.MarkAsReadResponse]
+    ListAlerts: _grpc.UnaryUnaryMultiCallable[_notification_pb2.ListAlertsRequest, _notification_pb2.ListAlertsResponse]
     """Alerts"""
-    CreateAlert: _grpc.UnaryUnaryMultiCallable[
-        _notification_pb2.CreateAlertRequest, _notification_pb2.CreateAlertResponse
-    ]
-    DeleteAlert: _grpc.UnaryUnaryMultiCallable[
-        _notification_pb2.DeleteAlertRequest, _notification_pb2.DeleteAlertResponse
-    ]
-    ToggleAlert: _grpc.UnaryUnaryMultiCallable[
-        _notification_pb2.ToggleAlertRequest, _notification_pb2.ToggleAlertResponse
-    ]
-    ListChannels: _grpc.UnaryUnaryMultiCallable[
-        _notification_pb2.ListChannelsRequest, _notification_pb2.ListChannelsResponse
-    ]
+    CreateAlert: _grpc.UnaryUnaryMultiCallable[_notification_pb2.CreateAlertRequest, _notification_pb2.CreateAlertResponse]
+    DeleteAlert: _grpc.UnaryUnaryMultiCallable[_notification_pb2.DeleteAlertRequest, _notification_pb2.DeleteAlertResponse]
+    ToggleAlert: _grpc.UnaryUnaryMultiCallable[_notification_pb2.ToggleAlertRequest, _notification_pb2.ToggleAlertResponse]
+    ListChannels: _grpc.UnaryUnaryMultiCallable[_notification_pb2.ListChannelsRequest, _notification_pb2.ListChannelsResponse]
     """Channels"""
-    UpdateChannel: _grpc.UnaryUnaryMultiCallable[
-        _notification_pb2.UpdateChannelRequest, _notification_pb2.UpdateChannelResponse
-    ]
-    TestChannel: _grpc.UnaryUnaryMultiCallable[
-        _notification_pb2.TestChannelRequest, _notification_pb2.TestChannelResponse
-    ]
+    UpdateChannel: _grpc.UnaryUnaryMultiCallable[_notification_pb2.UpdateChannelRequest, _notification_pb2.UpdateChannelResponse]
+    TestChannel: _grpc.UnaryUnaryMultiCallable[_notification_pb2.TestChannelRequest, _notification_pb2.TestChannelResponse]
 
 @_typing.type_check_only
 class NotificationServiceAsyncStub(NotificationServiceStub):
@@ -70,36 +57,18 @@ class NotificationServiceAsyncStub(NotificationServiceStub):
     """
 
     def __init__(self, channel: _aio.Channel) -> None: ...
-    ListNotifications: _aio.UnaryUnaryMultiCallable[
-        _notification_pb2.ListNotificationsRequest, _notification_pb2.ListNotificationsResponse
-    ]  # type: ignore[assignment]
+    ListNotifications: _aio.UnaryUnaryMultiCallable[_notification_pb2.ListNotificationsRequest, _notification_pb2.ListNotificationsResponse]  # type: ignore[assignment]
     """Notifications"""
-    MarkAsRead: _aio.UnaryUnaryMultiCallable[
-        _notification_pb2.MarkAsReadRequest, _notification_pb2.MarkAsReadResponse
-    ]  # type: ignore[assignment]
-    ListAlerts: _aio.UnaryUnaryMultiCallable[
-        _notification_pb2.ListAlertsRequest, _notification_pb2.ListAlertsResponse
-    ]  # type: ignore[assignment]
+    MarkAsRead: _aio.UnaryUnaryMultiCallable[_notification_pb2.MarkAsReadRequest, _notification_pb2.MarkAsReadResponse]  # type: ignore[assignment]
+    ListAlerts: _aio.UnaryUnaryMultiCallable[_notification_pb2.ListAlertsRequest, _notification_pb2.ListAlertsResponse]  # type: ignore[assignment]
     """Alerts"""
-    CreateAlert: _aio.UnaryUnaryMultiCallable[
-        _notification_pb2.CreateAlertRequest, _notification_pb2.CreateAlertResponse
-    ]  # type: ignore[assignment]
-    DeleteAlert: _aio.UnaryUnaryMultiCallable[
-        _notification_pb2.DeleteAlertRequest, _notification_pb2.DeleteAlertResponse
-    ]  # type: ignore[assignment]
-    ToggleAlert: _aio.UnaryUnaryMultiCallable[
-        _notification_pb2.ToggleAlertRequest, _notification_pb2.ToggleAlertResponse
-    ]  # type: ignore[assignment]
-    ListChannels: _aio.UnaryUnaryMultiCallable[
-        _notification_pb2.ListChannelsRequest, _notification_pb2.ListChannelsResponse
-    ]  # type: ignore[assignment]
+    CreateAlert: _aio.UnaryUnaryMultiCallable[_notification_pb2.CreateAlertRequest, _notification_pb2.CreateAlertResponse]  # type: ignore[assignment]
+    DeleteAlert: _aio.UnaryUnaryMultiCallable[_notification_pb2.DeleteAlertRequest, _notification_pb2.DeleteAlertResponse]  # type: ignore[assignment]
+    ToggleAlert: _aio.UnaryUnaryMultiCallable[_notification_pb2.ToggleAlertRequest, _notification_pb2.ToggleAlertResponse]  # type: ignore[assignment]
+    ListChannels: _aio.UnaryUnaryMultiCallable[_notification_pb2.ListChannelsRequest, _notification_pb2.ListChannelsResponse]  # type: ignore[assignment]
     """Channels"""
-    UpdateChannel: _aio.UnaryUnaryMultiCallable[
-        _notification_pb2.UpdateChannelRequest, _notification_pb2.UpdateChannelResponse
-    ]  # type: ignore[assignment]
-    TestChannel: _aio.UnaryUnaryMultiCallable[
-        _notification_pb2.TestChannelRequest, _notification_pb2.TestChannelResponse
-    ]  # type: ignore[assignment]
+    UpdateChannel: _aio.UnaryUnaryMultiCallable[_notification_pb2.UpdateChannelRequest, _notification_pb2.UpdateChannelResponse]  # type: ignore[assignment]
+    TestChannel: _aio.UnaryUnaryMultiCallable[_notification_pb2.TestChannelRequest, _notification_pb2.TestChannelResponse]  # type: ignore[assignment]
 
 class NotificationServiceServicer(metaclass=_abc_1.ABCMeta):
     """=============================================================================
@@ -112,10 +81,7 @@ class NotificationServiceServicer(metaclass=_abc_1.ABCMeta):
         self,
         request: _notification_pb2.ListNotificationsRequest,
         context: _ServicerContext,
-    ) -> (
-        _notification_pb2.ListNotificationsResponse
-        | _abc.Awaitable[_notification_pb2.ListNotificationsResponse]
-    ):
+    ) -> _typing.Union[_notification_pb2.ListNotificationsResponse, _abc.Awaitable[_notification_pb2.ListNotificationsResponse]]:
         """Notifications"""
 
     @_abc_1.abstractmethod
@@ -123,17 +89,14 @@ class NotificationServiceServicer(metaclass=_abc_1.ABCMeta):
         self,
         request: _notification_pb2.MarkAsReadRequest,
         context: _ServicerContext,
-    ) -> (
-        _notification_pb2.MarkAsReadResponse | _abc.Awaitable[_notification_pb2.MarkAsReadResponse]
-    ): ...
+    ) -> _typing.Union[_notification_pb2.MarkAsReadResponse, _abc.Awaitable[_notification_pb2.MarkAsReadResponse]]: ...
+
     @_abc_1.abstractmethod
     def ListAlerts(
         self,
         request: _notification_pb2.ListAlertsRequest,
         context: _ServicerContext,
-    ) -> (
-        _notification_pb2.ListAlertsResponse | _abc.Awaitable[_notification_pb2.ListAlertsResponse]
-    ):
+    ) -> _typing.Union[_notification_pb2.ListAlertsResponse, _abc.Awaitable[_notification_pb2.ListAlertsResponse]]:
         """Alerts"""
 
     @_abc_1.abstractmethod
@@ -141,37 +104,28 @@ class NotificationServiceServicer(metaclass=_abc_1.ABCMeta):
         self,
         request: _notification_pb2.CreateAlertRequest,
         context: _ServicerContext,
-    ) -> (
-        _notification_pb2.CreateAlertResponse
-        | _abc.Awaitable[_notification_pb2.CreateAlertResponse]
-    ): ...
+    ) -> _typing.Union[_notification_pb2.CreateAlertResponse, _abc.Awaitable[_notification_pb2.CreateAlertResponse]]: ...
+
     @_abc_1.abstractmethod
     def DeleteAlert(
         self,
         request: _notification_pb2.DeleteAlertRequest,
         context: _ServicerContext,
-    ) -> (
-        _notification_pb2.DeleteAlertResponse
-        | _abc.Awaitable[_notification_pb2.DeleteAlertResponse]
-    ): ...
+    ) -> _typing.Union[_notification_pb2.DeleteAlertResponse, _abc.Awaitable[_notification_pb2.DeleteAlertResponse]]: ...
+
     @_abc_1.abstractmethod
     def ToggleAlert(
         self,
         request: _notification_pb2.ToggleAlertRequest,
         context: _ServicerContext,
-    ) -> (
-        _notification_pb2.ToggleAlertResponse
-        | _abc.Awaitable[_notification_pb2.ToggleAlertResponse]
-    ): ...
+    ) -> _typing.Union[_notification_pb2.ToggleAlertResponse, _abc.Awaitable[_notification_pb2.ToggleAlertResponse]]: ...
+
     @_abc_1.abstractmethod
     def ListChannels(
         self,
         request: _notification_pb2.ListChannelsRequest,
         context: _ServicerContext,
-    ) -> (
-        _notification_pb2.ListChannelsResponse
-        | _abc.Awaitable[_notification_pb2.ListChannelsResponse]
-    ):
+    ) -> _typing.Union[_notification_pb2.ListChannelsResponse, _abc.Awaitable[_notification_pb2.ListChannelsResponse]]:
         """Channels"""
 
     @_abc_1.abstractmethod
@@ -179,20 +133,13 @@ class NotificationServiceServicer(metaclass=_abc_1.ABCMeta):
         self,
         request: _notification_pb2.UpdateChannelRequest,
         context: _ServicerContext,
-    ) -> (
-        _notification_pb2.UpdateChannelResponse
-        | _abc.Awaitable[_notification_pb2.UpdateChannelResponse]
-    ): ...
+    ) -> _typing.Union[_notification_pb2.UpdateChannelResponse, _abc.Awaitable[_notification_pb2.UpdateChannelResponse]]: ...
+
     @_abc_1.abstractmethod
     def TestChannel(
         self,
         request: _notification_pb2.TestChannelRequest,
         context: _ServicerContext,
-    ) -> (
-        _notification_pb2.TestChannelResponse
-        | _abc.Awaitable[_notification_pb2.TestChannelResponse]
-    ): ...
+    ) -> _typing.Union[_notification_pb2.TestChannelResponse, _abc.Awaitable[_notification_pb2.TestChannelResponse]]: ...
 
-def add_NotificationServiceServicer_to_server(
-    servicer: NotificationServiceServicer, server: _grpc.Server | _aio.Server
-) -> None: ...
+def add_NotificationServiceServicer_to_server(servicer: NotificationServiceServicer, server: _typing.Union[_grpc.Server, _aio.Server]) -> None: ...

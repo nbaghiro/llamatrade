@@ -480,18 +480,19 @@ def compute_indicator(spec: IndicatorSpec, prices: PriceData) -> dict[str, np.nd
         line, sig, hist = _macd(source, fast, slow, signal)
 
         # Store all outputs with base key
-        base_key = f"macd_{spec.source}_{fast}_{slow}_{signal}"
+        base_key = f"macd_{spec.symbol}_{spec.source}_{fast}_{slow}_{signal}"
         results[f"{base_key}_line"] = line
         results[f"{base_key}_signal"] = sig
         results[f"{base_key}_histogram"] = hist
 
-        # Also store the specific output requested
-        if spec.output_field == "line":
-            results[spec.output_key] = line
-        elif spec.output_field == "signal":
+        # Store the specific output requested (default to line)
+        if spec.output_field == "signal":
             results[spec.output_key] = sig
         elif spec.output_field == "histogram":
             results[spec.output_key] = hist
+        else:
+            # Default to line if no output specified or output is "line"
+            results[spec.output_key] = line
 
     elif indicator_type == "bbands":
         source = prices.get_source(spec.source)
@@ -499,17 +500,19 @@ def compute_indicator(spec: IndicatorSpec, prices: PriceData) -> dict[str, np.nd
         std_mult = float(params[1]) if len(params) > 1 else 2.0
         upper, middle, lower = _bollinger_bands(source, period, std_mult)
 
-        base_key = f"bbands_{spec.source}_{period}_{std_mult}"
+        base_key = f"bbands_{spec.symbol}_{spec.source}_{period}_{std_mult}"
         results[f"{base_key}_upper"] = upper
         results[f"{base_key}_middle"] = middle
         results[f"{base_key}_lower"] = lower
 
+        # Store the specific output requested (default to middle)
         if spec.output_field == "upper":
             results[spec.output_key] = upper
-        elif spec.output_field == "middle":
-            results[spec.output_key] = middle
         elif spec.output_field == "lower":
             results[spec.output_key] = lower
+        else:
+            # Default to middle if no output specified or output is "middle"
+            results[spec.output_key] = middle
 
     elif indicator_type == "atr":
         period = int(params[0]) if params else 14
@@ -520,17 +523,19 @@ def compute_indicator(spec: IndicatorSpec, prices: PriceData) -> dict[str, np.nd
         period = int(params[0]) if params else 14
         adx, plus_di, minus_di = _adx(prices.high, prices.low, prices.close, period)
 
-        base_key = f"adx_{spec.source}_{period}"
+        base_key = f"adx_{spec.symbol}_{spec.source}_{period}"
         results[f"{base_key}_value"] = adx
         results[f"{base_key}_plus_di"] = plus_di
         results[f"{base_key}_minus_di"] = minus_di
 
-        if spec.output_field == "value" or spec.output_field is None:
-            results[spec.output_key] = adx
-        elif spec.output_field == "plus_di":
+        # Store the specific output requested (default to value)
+        if spec.output_field == "plus_di":
             results[spec.output_key] = plus_di
         elif spec.output_field == "minus_di":
             results[spec.output_key] = minus_di
+        else:
+            # Default to ADX value if no output specified or output is "value"
+            results[spec.output_key] = adx
 
     elif indicator_type == "stoch":
         k_period = int(params[0]) if len(params) > 0 else 14
@@ -538,14 +543,16 @@ def compute_indicator(spec: IndicatorSpec, prices: PriceData) -> dict[str, np.nd
         smooth = int(params[2]) if len(params) > 2 else 3
         k, d = _stochastic(prices.high, prices.low, prices.close, k_period, d_period, smooth)
 
-        base_key = f"stoch_{spec.source}_{k_period}_{d_period}_{smooth}"
+        base_key = f"stoch_{spec.symbol}_{spec.source}_{k_period}_{d_period}_{smooth}"
         results[f"{base_key}_k"] = k
         results[f"{base_key}_d"] = d
 
-        if spec.output_field == "k":
-            results[spec.output_key] = k
-        elif spec.output_field == "d":
+        # Store the specific output requested (default to %K)
+        if spec.output_field == "d":
             results[spec.output_key] = d
+        else:
+            # Default to %K if no output specified or output is "k"
+            results[spec.output_key] = k
 
     elif indicator_type == "cci":
         period = int(params[0]) if params else 20
@@ -575,30 +582,34 @@ def compute_indicator(spec: IndicatorSpec, prices: PriceData) -> dict[str, np.nd
         atr_mult = float(params[1]) if len(params) > 1 else 2.0
         upper, middle, lower = _keltner(prices.high, prices.low, prices.close, ema_period, atr_mult)
 
-        base_key = f"keltner_{spec.source}_{ema_period}_{atr_mult}"
+        base_key = f"keltner_{spec.symbol}_{spec.source}_{ema_period}_{atr_mult}"
         results[f"{base_key}_upper"] = upper
         results[f"{base_key}_middle"] = middle
         results[f"{base_key}_lower"] = lower
 
+        # Store the specific output requested (default to middle)
         if spec.output_field == "upper":
             results[spec.output_key] = upper
-        elif spec.output_field == "middle":
-            results[spec.output_key] = middle
         elif spec.output_field == "lower":
             results[spec.output_key] = lower
+        else:
+            # Default to middle if no output specified or output is "middle"
+            results[spec.output_key] = middle
 
     elif indicator_type == "donchian":
         period = int(params[0]) if params else 20
         upper, lower = _donchian(prices.high, prices.low, period)
 
-        base_key = f"donchian_{spec.source}_{period}"
+        base_key = f"donchian_{spec.symbol}_{spec.source}_{period}"
         results[f"{base_key}_upper"] = upper
         results[f"{base_key}_lower"] = lower
 
-        if spec.output_field == "upper":
-            results[spec.output_key] = upper
-        elif spec.output_field == "lower":
+        # Store the specific output requested (default to upper)
+        if spec.output_field == "lower":
             results[spec.output_key] = lower
+        else:
+            # Default to upper if no output specified or output is "upper"
+            results[spec.output_key] = upper
 
     elif indicator_type == "stddev":
         source = prices.get_source(spec.source)

@@ -21,6 +21,8 @@ from llamatrade_compiler.evaluator import (
     evaluate_condition,
     evaluate_condition_safe,
     evaluate_condition_vectorized,
+    normalize_weights,
+    safe_divide,
 )
 from llamatrade_compiler.extractor import (
     IndicatorSpec,
@@ -77,4 +79,7 @@ __all__ = [
     "get_max_lookback",
     "get_required_sources",
     "get_required_symbols",
+    # Helper functions
+    "normalize_weights",
+    "safe_divide",
 ]

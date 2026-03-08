@@ -119,6 +119,26 @@ export async function listStrategyVersions(strategyId: string, pagination?: { pa
 }
 
 // ============================================
+// Template Operations
+// ============================================
+
+export async function listTemplates(params: {
+  category?: string;
+  assetClass?: string;
+  difficulty?: string;
+} = {}) {
+  return strategyClient.listTemplates({
+    category: params.category,
+    assetClass: params.assetClass,
+    difficulty: params.difficulty,
+  });
+}
+
+export async function getTemplate(templateId: string) {
+  return strategyClient.getTemplate({ templateId });
+}
+
+// ============================================
 // Re-exports for convenience
 // ============================================
 
@@ -143,6 +163,10 @@ export const strategyApi = {
 
   // Versions
   listVersions: listStrategyVersions,
+
+  // Templates
+  listTemplates,
+  getTemplate,
 };
 
 export default strategyApi;

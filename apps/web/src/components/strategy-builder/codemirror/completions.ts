@@ -78,24 +78,43 @@ const rebalanceFrequencies: Completion[] = [
 ];
 
 // Indicator completions
+// Syntax: (indicator SYMBOL params... [:output])
+// Multi-output indicators support :output specifier for specific outputs
 const indicators: Completion[] = [
-  { label: 'sma', type: 'function', info: 'Simple Moving Average', detail: '(sma source period)' },
-  { label: 'ema', type: 'function', info: 'Exponential Moving Average', detail: '(ema source period)' },
-  { label: 'rsi', type: 'function', info: 'Relative Strength Index', detail: '(rsi source period)' },
-  { label: 'macd-line', type: 'function', info: 'MACD Line', detail: '(macd-line source fast slow signal)' },
-  { label: 'macd-signal', type: 'function', info: 'MACD Signal', detail: '(macd-signal source fast slow signal)' },
-  { label: 'bb-upper', type: 'function', info: 'Bollinger Band Upper', detail: '(bb-upper source period stddev)' },
-  { label: 'bb-middle', type: 'function', info: 'Bollinger Band Middle', detail: '(bb-middle source period stddev)' },
-  { label: 'bb-lower', type: 'function', info: 'Bollinger Band Lower', detail: '(bb-lower source period stddev)' },
-  { label: 'atr', type: 'function', info: 'Average True Range', detail: '(atr high low close period)' },
-  { label: 'adx', type: 'function', info: 'Average Directional Index', detail: '(adx high low close period)' },
-  { label: 'stochastic', type: 'function', info: 'Stochastic Oscillator', detail: '(stochastic high low close k d)' },
-  { label: 'cci', type: 'function', info: 'Commodity Channel Index', detail: '(cci source period)' },
-  { label: 'williams-r', type: 'function', info: 'Williams %R', detail: '(williams-r high low close period)' },
-  { label: 'obv', type: 'function', info: 'On-Balance Volume', detail: '(obv close volume)' },
-  { label: 'mfi', type: 'function', info: 'Money Flow Index', detail: '(mfi high low close volume period)' },
-  { label: 'vwap', type: 'function', info: 'Volume Weighted Avg Price', detail: '(vwap close volume)' },
-  { label: 'roc', type: 'function', info: 'Rate of Change', detail: '(roc source period)' },
+  // Simple moving averages
+  { label: 'sma', type: 'function', info: 'Simple Moving Average', detail: '(sma SYMBOL period)' },
+  { label: 'ema', type: 'function', info: 'Exponential Moving Average', detail: '(ema SYMBOL period)' },
+
+  // Momentum indicators
+  { label: 'rsi', type: 'function', info: 'Relative Strength Index (0-100)', detail: '(rsi SYMBOL period)' },
+  { label: 'cci', type: 'function', info: 'Commodity Channel Index', detail: '(cci SYMBOL period)' },
+  { label: 'williams-r', type: 'function', info: 'Williams %R (-100 to 0)', detail: '(williams-r SYMBOL period)' },
+  { label: 'momentum', type: 'function', info: 'Price Momentum', detail: '(momentum SYMBOL period)' },
+
+  // Multi-output: MACD - outputs: :line (default), :signal, :histogram
+  { label: 'macd', type: 'function', info: 'MACD (outputs: :line :signal :histogram)', detail: '(macd SYMBOL fast slow signal [:output])' },
+
+  // Multi-output: Bollinger Bands - outputs: :upper, :middle (default), :lower
+  { label: 'bbands', type: 'function', info: 'Bollinger Bands (outputs: :upper :middle :lower)', detail: '(bbands SYMBOL period stddev [:output])' },
+
+  // Multi-output: Stochastic - outputs: :k (default), :d
+  { label: 'stoch', type: 'function', info: 'Stochastic Oscillator (outputs: :k :d)', detail: '(stoch SYMBOL k_period d_period [:output])' },
+
+  // Multi-output: ADX - outputs: :value (default), :plus_di, :minus_di
+  { label: 'adx', type: 'function', info: 'Average Directional Index (outputs: :value :plus_di :minus_di)', detail: '(adx SYMBOL period [:output])' },
+
+  // Volatility indicators
+  { label: 'atr', type: 'function', info: 'Average True Range', detail: '(atr SYMBOL period)' },
+  { label: 'stddev', type: 'function', info: 'Standard Deviation', detail: '(stddev SYMBOL period)' },
+
+  // Channel indicators - outputs: :upper, :middle, :lower
+  { label: 'keltner', type: 'function', info: 'Keltner Channel (outputs: :upper :middle :lower)', detail: '(keltner SYMBOL period multiplier [:output])' },
+  { label: 'donchian', type: 'function', info: 'Donchian Channel (outputs: :upper :middle :lower)', detail: '(donchian SYMBOL period [:output])' },
+
+  // Volume indicators
+  { label: 'obv', type: 'function', info: 'On-Balance Volume', detail: '(obv SYMBOL)' },
+  { label: 'mfi', type: 'function', info: 'Money Flow Index (0-100)', detail: '(mfi SYMBOL period)' },
+  { label: 'vwap', type: 'function', info: 'Volume Weighted Average Price', detail: '(vwap SYMBOL)' },
 ];
 
 // Price fields

@@ -12,7 +12,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file strategy.proto.
  */
 export const file_strategy: GenFile = /*@__PURE__*/
-  fileDesc("Cg5zdHJhdGVneS5wcm90bxIKbGxhbWF0cmFkZSKQBQoIU3RyYXRlZ3kSCgoCaWQYASABKAkSEQoJdGVuYW50X2lkGAIgASgJEgwKBG5hbWUYAyABKAkSEwoLZGVzY3JpcHRpb24YBCABKAkSKgoGc3RhdHVzGAUgASgOMhoubGxhbWF0cmFkZS5TdHJhdGVneVN0YXR1cxIPCgd2ZXJzaW9uGAYgASgFEhAKCGRzbF9jb2RlGAcgASgJEhUKDWNvbXBpbGVkX2pzb24YCCABKAkSEwoLdGVtcGxhdGVfaWQYCSABKAkSQQoPdGVtcGxhdGVfcGFyYW1zGAogAygLMigubGxhbWF0cmFkZS5TdHJhdGVneS5UZW1wbGF0ZVBhcmFtc0VudHJ5Eg8KB3N5bWJvbHMYCyADKAkSEQoJdGltZWZyYW1lGAwgASgJEjgKCnBhcmFtZXRlcnMYDSADKAsyJC5sbGFtYXRyYWRlLlN0cmF0ZWd5LlBhcmFtZXRlcnNFbnRyeRISCgpjcmVhdGVkX2J5GA4gASgJEikKCmNyZWF0ZWRfYXQYDyABKAsyFS5sbGFtYXRyYWRlLlRpbWVzdGFtcBIpCgp1cGRhdGVkX2F0GBAgASgLMhUubGxhbWF0cmFkZS5UaW1lc3RhbXASKAoLYmVzdF9zaGFycGUYESABKAsyEy5sbGFtYXRyYWRlLkRlY2ltYWwSKAoLYmVzdF9yZXR1cm4YEiABKAsyEy5sbGFtYXRyYWRlLkRlY2ltYWwaNQoTVGVtcGxhdGVQYXJhbXNFbnRyeRILCgNrZXkYASABKAkSDQoFdmFsdWUYAiABKAk6AjgBGjEKD1BhcmFtZXRlcnNFbnRyeRILCgNrZXkYASABKAkSDQoFdmFsdWUYAiABKAk6AjgBIqsCCg9TdHJhdGVneVZlcnNpb24SEwoLc3RyYXRlZ3lfaWQYASABKAkSDwoHdmVyc2lvbhgCIAEoBRIQCghkc2xfY29kZRgDIAEoCRIVCg1jb21waWxlZF9qc29uGAQgASgJEj8KCnBhcmFtZXRlcnMYBSADKAsyKy5sbGFtYXRyYWRlLlN0cmF0ZWd5VmVyc2lvbi5QYXJhbWV0ZXJzRW50cnkSFgoOY2hhbmdlX3N1bW1hcnkYBiABKAkSEgoKY3JlYXRlZF9ieRgHIAEoCRIpCgpjcmVhdGVkX2F0GAggASgLMhUubGxhbWF0cmFkZS5UaW1lc3RhbXAaMQoPUGFyYW1ldGVyc0VudHJ5EgsKA2tleRgBIAEoCRINCgV2YWx1ZRgCIAEoCToCOAEimwEKEUNvbXBpbGF0aW9uUmVzdWx0Eg8KB3N1Y2Nlc3MYASABKAgSFQoNY29tcGlsZWRfanNvbhgCIAEoCRIsCgZlcnJvcnMYAyADKAsyHC5sbGFtYXRyYWRlLkNvbXBpbGF0aW9uRXJyb3ISMAoId2FybmluZ3MYBCADKAsyHi5sbGFtYXRyYWRlLkNvbXBpbGF0aW9uV2FybmluZyJPChBDb21waWxhdGlvbkVycm9yEgwKBGxpbmUYASABKAUSDgoGY29sdW1uGAIgASgFEg8KB21lc3NhZ2UYAyABKAkSDAoEY29kZRgEIAEoCSJRChJDb21waWxhdGlvbldhcm5pbmcSDAoEbGluZRgBIAEoBRIOCgZjb2x1bW4YAiABKAUSDwoHbWVzc2FnZRgDIAEoCRIMCgRjb2RlGAQgASgJIrgBChBWYWxpZGF0aW9uUmVzdWx0Eg0KBXZhbGlkGAEgASgIEiwKBmVycm9ycxgCIAMoCzIcLmxsYW1hdHJhZGUuQ29tcGlsYXRpb25FcnJvchIwCgh3YXJuaW5ncxgDIAMoCzIeLmxsYW1hdHJhZGUuQ29tcGlsYXRpb25XYXJuaW5nEhgKEGRldGVjdGVkX3N5bWJvbHMYBCADKAkSGwoTZGV0ZWN0ZWRfaW5kaWNhdG9ycxgFIAMoCSKYBAoRU3RyYXRlZ3lFeGVjdXRpb24SCgoCaWQYASABKAkSEwoLc3RyYXRlZ3lfaWQYAiABKAkSEQoJdGVuYW50X2lkGAMgASgJEg8KB3ZlcnNpb24YBCABKAUSJwoEbW9kZRgFIAEoDjIZLmxsYW1hdHJhZGUuRXhlY3V0aW9uTW9kZRIrCgZzdGF0dXMYBiABKA4yGy5sbGFtYXRyYWRlLkV4ZWN1dGlvblN0YXR1cxIPCgdzeW1ib2xzGAcgAygJEhEKCXRpbWVmcmFtZRgIIAEoCRJKCg9jb25maWdfb3ZlcnJpZGUYCSADKAsyMS5sbGFtYXRyYWRlLlN0cmF0ZWd5RXhlY3V0aW9uLkNvbmZpZ092ZXJyaWRlRW50cnkSKQoKc3RhcnRlZF9hdBgKIAEoCzIVLmxsYW1hdHJhZGUuVGltZXN0YW1wEikKCnN0b3BwZWRfYXQYCyABKAsyFS5sbGFtYXRyYWRlLlRpbWVzdGFtcBIVCg1lcnJvcl9tZXNzYWdlGAwgASgJEikKCmNyZWF0ZWRfYXQYDSABKAsyFS5sbGFtYXRyYWRlLlRpbWVzdGFtcBIpCgp1cGRhdGVkX2F0GA4gASgLMhUubGxhbWF0cmFkZS5UaW1lc3RhbXAaNQoTQ29uZmlnT3ZlcnJpZGVFbnRyeRILCgNrZXkYASABKAkSDQoFdmFsdWUYAiABKAk6AjgBImYKEkdldFN0cmF0ZWd5UmVxdWVzdBIqCgdjb250ZXh0GAEgASgLMhkubGxhbWF0cmFkZS5UZW5hbnRDb250ZXh0EhMKC3N0cmF0ZWd5X2lkGAIgASgJEg8KB3ZlcnNpb24YAyABKAUiPQoTR2V0U3RyYXRlZ3lSZXNwb25zZRImCghzdHJhdGVneRgBIAEoCzIULmxsYW1hdHJhZGUuU3RyYXRlZ3ki2AEKFUxpc3RTdHJhdGVnaWVzUmVxdWVzdBIqCgdjb250ZXh0GAEgASgLMhkubGxhbWF0cmFkZS5UZW5hbnRDb250ZXh0EiwKCHN0YXR1c2VzGAIgAygOMhoubGxhbWF0cmFkZS5TdHJhdGVneVN0YXR1cxIOCgZzZWFyY2gYAyABKAkSMQoKcGFnaW5hdGlvbhgEIAEoCzIdLmxsYW1hdHJhZGUuUGFnaW5hdGlvblJlcXVlc3QSIgoEc29ydBgFIAEoCzIULmxsYW1hdHJhZGUuU29ydFNwZWMidgoWTGlzdFN0cmF0ZWdpZXNSZXNwb25zZRIoCgpzdHJhdGVnaWVzGAEgAygLMhQubGxhbWF0cmFkZS5TdHJhdGVneRIyCgpwYWdpbmF0aW9uGAIgASgLMh4ubGxhbWF0cmFkZS5QYWdpbmF0aW9uUmVzcG9uc2UisgMKFUNyZWF0ZVN0cmF0ZWd5UmVxdWVzdBIqCgdjb250ZXh0GAEgASgLMhkubGxhbWF0cmFkZS5UZW5hbnRDb250ZXh0EgwKBG5hbWUYAiABKAkSEwoLZGVzY3JpcHRpb24YAyABKAkSEAoIZHNsX2NvZGUYBCABKAkSEwoLdGVtcGxhdGVfaWQYBSABKAkSTgoPdGVtcGxhdGVfcGFyYW1zGAYgAygLMjUubGxhbWF0cmFkZS5DcmVhdGVTdHJhdGVneVJlcXVlc3QuVGVtcGxhdGVQYXJhbXNFbnRyeRIPCgdzeW1ib2xzGAcgAygJEhEKCXRpbWVmcmFtZRgIIAEoCRJFCgpwYXJhbWV0ZXJzGAkgAygLMjEubGxhbWF0cmFkZS5DcmVhdGVTdHJhdGVneVJlcXVlc3QuUGFyYW1ldGVyc0VudHJ5GjUKE1RlbXBsYXRlUGFyYW1zRW50cnkSCwoDa2V5GAEgASgJEg0KBXZhbHVlGAIgASgJOgI4ARoxCg9QYXJhbWV0ZXJzRW50cnkSCwoDa2V5GAEgASgJEg0KBXZhbHVlGAIgASgJOgI4ASJAChZDcmVhdGVTdHJhdGVneVJlc3BvbnNlEiYKCHN0cmF0ZWd5GAEgASgLMhQubGxhbWF0cmFkZS5TdHJhdGVneSLDAgoVVXBkYXRlU3RyYXRlZ3lSZXF1ZXN0EioKB2NvbnRleHQYASABKAsyGS5sbGFtYXRyYWRlLlRlbmFudENvbnRleHQSEwoLc3RyYXRlZ3lfaWQYAiABKAkSDAoEbmFtZRgDIAEoCRITCgtkZXNjcmlwdGlvbhgEIAEoCRIQCghkc2xfY29kZRgFIAEoCRIPCgdzeW1ib2xzGAYgAygJEhEKCXRpbWVmcmFtZRgHIAEoCRJFCgpwYXJhbWV0ZXJzGAggAygLMjEubGxhbWF0cmFkZS5VcGRhdGVTdHJhdGVneVJlcXVlc3QuUGFyYW1ldGVyc0VudHJ5EhYKDmNoYW5nZV9zdW1tYXJ5GAkgASgJGjEKD1BhcmFtZXRlcnNFbnRyeRILCgNrZXkYASABKAkSDQoFdmFsdWUYAiABKAk6AjgBIkAKFlVwZGF0ZVN0cmF0ZWd5UmVzcG9uc2USJgoIc3RyYXRlZ3kYASABKAsyFC5sbGFtYXRyYWRlLlN0cmF0ZWd5IlgKFURlbGV0ZVN0cmF0ZWd5UmVxdWVzdBIqCgdjb250ZXh0GAEgASgLMhkubGxhbWF0cmFkZS5UZW5hbnRDb250ZXh0EhMKC3N0cmF0ZWd5X2lkGAIgASgJIikKFkRlbGV0ZVN0cmF0ZWd5UmVzcG9uc2USDwoHc3VjY2VzcxgBIAEoCCJtChZDb21waWxlU3RyYXRlZ3lSZXF1ZXN0EioKB2NvbnRleHQYASABKAsyGS5sbGFtYXRyYWRlLlRlbmFudENvbnRleHQSEAoIZHNsX2NvZGUYAiABKAkSFQoNdmFsaWRhdGVfb25seRgDIAEoCCJIChdDb21waWxlU3RyYXRlZ3lSZXNwb25zZRItCgZyZXN1bHQYASABKAsyHS5sbGFtYXRyYWRlLkNvbXBpbGF0aW9uUmVzdWx0ImsKF1ZhbGlkYXRlU3RyYXRlZ3lSZXF1ZXN0EioKB2NvbnRleHQYASABKAsyGS5sbGFtYXRyYWRlLlRlbmFudENvbnRleHQSEwoLc3RyYXRlZ3lfaWQYAiABKAkSDwoHdmVyc2lvbhgDIAEoBSJIChhWYWxpZGF0ZVN0cmF0ZWd5UmVzcG9uc2USLAoGcmVzdWx0GAEgASgLMhwubGxhbWF0cmFkZS5WYWxpZGF0aW9uUmVzdWx0IpEBChtMaXN0U3RyYXRlZ3lWZXJzaW9uc1JlcXVlc3QSKgoHY29udGV4dBgBIAEoCzIZLmxsYW1hdHJhZGUuVGVuYW50Q29udGV4dBITCgtzdHJhdGVneV9pZBgCIAEoCRIxCgpwYWdpbmF0aW9uGAMgASgLMh0ubGxhbWF0cmFkZS5QYWdpbmF0aW9uUmVxdWVzdCKBAQocTGlzdFN0cmF0ZWd5VmVyc2lvbnNSZXNwb25zZRItCgh2ZXJzaW9ucxgBIAMoCzIbLmxsYW1hdHJhZGUuU3RyYXRlZ3lWZXJzaW9uEjIKCnBhZ2luYXRpb24YAiABKAsyHi5sbGFtYXRyYWRlLlBhZ2luYXRpb25SZXNwb25zZSKKAQobVXBkYXRlU3RyYXRlZ3lTdGF0dXNSZXF1ZXN0EioKB2NvbnRleHQYASABKAsyGS5sbGFtYXRyYWRlLlRlbmFudENvbnRleHQSEwoLc3RyYXRlZ3lfaWQYAiABKAkSKgoGc3RhdHVzGAMgASgOMhoubGxhbWF0cmFkZS5TdHJhdGVneVN0YXR1cyJGChxVcGRhdGVTdHJhdGVneVN0YXR1c1Jlc3BvbnNlEiYKCHN0cmF0ZWd5GAEgASgLMhQubGxhbWF0cmFkZS5TdHJhdGVneSJ6ChRDbG9uZVN0cmF0ZWd5UmVxdWVzdBIqCgdjb250ZXh0GAEgASgLMhkubGxhbWF0cmFkZS5UZW5hbnRDb250ZXh0EhMKC3N0cmF0ZWd5X2lkGAIgASgJEhAKCG5ld19uYW1lGAMgASgJEg8KB3ZlcnNpb24YBCABKAUiPwoVQ2xvbmVTdHJhdGVneVJlc3BvbnNlEiYKCHN0cmF0ZWd5GAEgASgLMhQubGxhbWF0cmFkZS5TdHJhdGVneSKbAgoWQ3JlYXRlRXhlY3V0aW9uUmVxdWVzdBIqCgdjb250ZXh0GAEgASgLMhkubGxhbWF0cmFkZS5UZW5hbnRDb250ZXh0EhMKC3N0cmF0ZWd5X2lkGAIgASgJEg8KB3ZlcnNpb24YAyABKAUSJwoEbW9kZRgEIAEoDjIZLmxsYW1hdHJhZGUuRXhlY3V0aW9uTW9kZRJPCg9jb25maWdfb3ZlcnJpZGUYBSADKAsyNi5sbGFtYXRyYWRlLkNyZWF0ZUV4ZWN1dGlvblJlcXVlc3QuQ29uZmlnT3ZlcnJpZGVFbnRyeRo1ChNDb25maWdPdmVycmlkZUVudHJ5EgsKA2tleRgBIAEoCRINCgV2YWx1ZRgCIAEoCToCOAEiSwoXQ3JlYXRlRXhlY3V0aW9uUmVzcG9uc2USMAoJZXhlY3V0aW9uGAEgASgLMh0ubGxhbWF0cmFkZS5TdHJhdGVneUV4ZWN1dGlvbiJXChNHZXRFeGVjdXRpb25SZXF1ZXN0EioKB2NvbnRleHQYASABKAsyGS5sbGFtYXRyYWRlLlRlbmFudENvbnRleHQSFAoMZXhlY3V0aW9uX2lkGAIgASgJIkgKFEdldEV4ZWN1dGlvblJlc3BvbnNlEjAKCWV4ZWN1dGlvbhgBIAEoCzIdLmxsYW1hdHJhZGUuU3RyYXRlZ3lFeGVjdXRpb24i5AEKFUxpc3RFeGVjdXRpb25zUmVxdWVzdBIqCgdjb250ZXh0GAEgASgLMhkubGxhbWF0cmFkZS5UZW5hbnRDb250ZXh0EhMKC3N0cmF0ZWd5X2lkGAIgASgJEi0KCHN0YXR1c2VzGAMgAygOMhsubGxhbWF0cmFkZS5FeGVjdXRpb25TdGF0dXMSKAoFbW9kZXMYBCADKA4yGS5sbGFtYXRyYWRlLkV4ZWN1dGlvbk1vZGUSMQoKcGFnaW5hdGlvbhgFIAEoCzIdLmxsYW1hdHJhZGUuUGFnaW5hdGlvblJlcXVlc3QifwoWTGlzdEV4ZWN1dGlvbnNSZXNwb25zZRIxCgpleGVjdXRpb25zGAEgAygLMh0ubGxhbWF0cmFkZS5TdHJhdGVneUV4ZWN1dGlvbhIyCgpwYWdpbmF0aW9uGAIgASgLMh4ubGxhbWF0cmFkZS5QYWdpbmF0aW9uUmVzcG9uc2UiWQoVU3RhcnRFeGVjdXRpb25SZXF1ZXN0EioKB2NvbnRleHQYASABKAsyGS5sbGFtYXRyYWRlLlRlbmFudENvbnRleHQSFAoMZXhlY3V0aW9uX2lkGAIgASgJIkoKFlN0YXJ0RXhlY3V0aW9uUmVzcG9uc2USMAoJZXhlY3V0aW9uGAEgASgLMh0ubGxhbWF0cmFkZS5TdHJhdGVneUV4ZWN1dGlvbiJZChVQYXVzZUV4ZWN1dGlvblJlcXVlc3QSKgoHY29udGV4dBgBIAEoCzIZLmxsYW1hdHJhZGUuVGVuYW50Q29udGV4dBIUCgxleGVjdXRpb25faWQYAiABKAkiSgoWUGF1c2VFeGVjdXRpb25SZXNwb25zZRIwCglleGVjdXRpb24YASABKAsyHS5sbGFtYXRyYWRlLlN0cmF0ZWd5RXhlY3V0aW9uImgKFFN0b3BFeGVjdXRpb25SZXF1ZXN0EioKB2NvbnRleHQYASABKAsyGS5sbGFtYXRyYWRlLlRlbmFudENvbnRleHQSFAoMZXhlY3V0aW9uX2lkGAIgASgJEg4KBnJlYXNvbhgDIAEoCSJJChVTdG9wRXhlY3V0aW9uUmVzcG9uc2USMAoJZXhlY3V0aW9uGAEgASgLMh0ubGxhbWF0cmFkZS5TdHJhdGVneUV4ZWN1dGlvbiqiAQoOU3RyYXRlZ3lTdGF0dXMSHwobU1RSQVRFR1lfU1RBVFVTX1VOU1BFQ0lGSUVEEAASGQoVU1RSQVRFR1lfU1RBVFVTX0RSQUZUEAESGgoWU1RSQVRFR1lfU1RBVFVTX0FDVElWRRACEhoKFlNUUkFURUdZX1NUQVRVU19QQVVTRUQQAxIcChhTVFJBVEVHWV9TVEFUVVNfQVJDSElWRUQQBDK8CwoPU3RyYXRlZ3lTZXJ2aWNlEk4KC0dldFN0cmF0ZWd5Eh4ubGxhbWF0cmFkZS5HZXRTdHJhdGVneVJlcXVlc3QaHy5sbGFtYXRyYWRlLkdldFN0cmF0ZWd5UmVzcG9uc2USVwoOTGlzdFN0cmF0ZWdpZXMSIS5sbGFtYXRyYWRlLkxpc3RTdHJhdGVnaWVzUmVxdWVzdBoiLmxsYW1hdHJhZGUuTGlzdFN0cmF0ZWdpZXNSZXNwb25zZRJXCg5DcmVhdGVTdHJhdGVneRIhLmxsYW1hdHJhZGUuQ3JlYXRlU3RyYXRlZ3lSZXF1ZXN0GiIubGxhbWF0cmFkZS5DcmVhdGVTdHJhdGVneVJlc3BvbnNlElcKDlVwZGF0ZVN0cmF0ZWd5EiEubGxhbWF0cmFkZS5VcGRhdGVTdHJhdGVneVJlcXVlc3QaIi5sbGFtYXRyYWRlLlVwZGF0ZVN0cmF0ZWd5UmVzcG9uc2USVwoORGVsZXRlU3RyYXRlZ3kSIS5sbGFtYXRyYWRlLkRlbGV0ZVN0cmF0ZWd5UmVxdWVzdBoiLmxsYW1hdHJhZGUuRGVsZXRlU3RyYXRlZ3lSZXNwb25zZRJUCg1DbG9uZVN0cmF0ZWd5EiAubGxhbWF0cmFkZS5DbG9uZVN0cmF0ZWd5UmVxdWVzdBohLmxsYW1hdHJhZGUuQ2xvbmVTdHJhdGVneVJlc3BvbnNlEloKD0NvbXBpbGVTdHJhdGVneRIiLmxsYW1hdHJhZGUuQ29tcGlsZVN0cmF0ZWd5UmVxdWVzdBojLmxsYW1hdHJhZGUuQ29tcGlsZVN0cmF0ZWd5UmVzcG9uc2USXQoQVmFsaWRhdGVTdHJhdGVneRIjLmxsYW1hdHJhZGUuVmFsaWRhdGVTdHJhdGVneVJlcXVlc3QaJC5sbGFtYXRyYWRlLlZhbGlkYXRlU3RyYXRlZ3lSZXNwb25zZRJpChRMaXN0U3RyYXRlZ3lWZXJzaW9ucxInLmxsYW1hdHJhZGUuTGlzdFN0cmF0ZWd5VmVyc2lvbnNSZXF1ZXN0GigubGxhbWF0cmFkZS5MaXN0U3RyYXRlZ3lWZXJzaW9uc1Jlc3BvbnNlEmkKFFVwZGF0ZVN0cmF0ZWd5U3RhdHVzEicubGxhbWF0cmFkZS5VcGRhdGVTdHJhdGVneVN0YXR1c1JlcXVlc3QaKC5sbGFtYXRyYWRlLlVwZGF0ZVN0cmF0ZWd5U3RhdHVzUmVzcG9uc2USWgoPQ3JlYXRlRXhlY3V0aW9uEiIubGxhbWF0cmFkZS5DcmVhdGVFeGVjdXRpb25SZXF1ZXN0GiMubGxhbWF0cmFkZS5DcmVhdGVFeGVjdXRpb25SZXNwb25zZRJRCgxHZXRFeGVjdXRpb24SHy5sbGFtYXRyYWRlLkdldEV4ZWN1dGlvblJlcXVlc3QaIC5sbGFtYXRyYWRlLkdldEV4ZWN1dGlvblJlc3BvbnNlElcKDkxpc3RFeGVjdXRpb25zEiEubGxhbWF0cmFkZS5MaXN0RXhlY3V0aW9uc1JlcXVlc3QaIi5sbGFtYXRyYWRlLkxpc3RFeGVjdXRpb25zUmVzcG9uc2USVwoOU3RhcnRFeGVjdXRpb24SIS5sbGFtYXRyYWRlLlN0YXJ0RXhlY3V0aW9uUmVxdWVzdBoiLmxsYW1hdHJhZGUuU3RhcnRFeGVjdXRpb25SZXNwb25zZRJXCg5QYXVzZUV4ZWN1dGlvbhIhLmxsYW1hdHJhZGUuUGF1c2VFeGVjdXRpb25SZXF1ZXN0GiIubGxhbWF0cmFkZS5QYXVzZUV4ZWN1dGlvblJlc3BvbnNlElQKDVN0b3BFeGVjdXRpb24SIC5sbGFtYXRyYWRlLlN0b3BFeGVjdXRpb25SZXF1ZXN0GiEubGxhbWF0cmFkZS5TdG9wRXhlY3V0aW9uUmVzcG9uc2VCiQEKDmNvbS5sbGFtYXRyYWRlQg1TdHJhdGVneVByb3RvUAFaIGdpdGh1Yi5jb20vbGxhbWF0cmFkZS9hcGkvZ2VuL2dvogIDTFhYqgIKTGxhbWF0cmFkZcoCCkxsYW1hdHJhZGXiAhZMbGFtYXRyYWRlXEdQQk1ldGFkYXRh6gIKTGxhbWF0cmFkZWIGcHJvdG8z", [file_common]);
+  fileDesc("Cg5zdHJhdGVneS5wcm90bxIKbGxhbWF0cmFkZSKQBQoIU3RyYXRlZ3kSCgoCaWQYASABKAkSEQoJdGVuYW50X2lkGAIgASgJEgwKBG5hbWUYAyABKAkSEwoLZGVzY3JpcHRpb24YBCABKAkSKgoGc3RhdHVzGAUgASgOMhoubGxhbWF0cmFkZS5TdHJhdGVneVN0YXR1cxIPCgd2ZXJzaW9uGAYgASgFEhAKCGRzbF9jb2RlGAcgASgJEhUKDWNvbXBpbGVkX2pzb24YCCABKAkSEwoLdGVtcGxhdGVfaWQYCSABKAkSQQoPdGVtcGxhdGVfcGFyYW1zGAogAygLMigubGxhbWF0cmFkZS5TdHJhdGVneS5UZW1wbGF0ZVBhcmFtc0VudHJ5Eg8KB3N5bWJvbHMYCyADKAkSEQoJdGltZWZyYW1lGAwgASgJEjgKCnBhcmFtZXRlcnMYDSADKAsyJC5sbGFtYXRyYWRlLlN0cmF0ZWd5LlBhcmFtZXRlcnNFbnRyeRISCgpjcmVhdGVkX2J5GA4gASgJEikKCmNyZWF0ZWRfYXQYDyABKAsyFS5sbGFtYXRyYWRlLlRpbWVzdGFtcBIpCgp1cGRhdGVkX2F0GBAgASgLMhUubGxhbWF0cmFkZS5UaW1lc3RhbXASKAoLYmVzdF9zaGFycGUYESABKAsyEy5sbGFtYXRyYWRlLkRlY2ltYWwSKAoLYmVzdF9yZXR1cm4YEiABKAsyEy5sbGFtYXRyYWRlLkRlY2ltYWwaNQoTVGVtcGxhdGVQYXJhbXNFbnRyeRILCgNrZXkYASABKAkSDQoFdmFsdWUYAiABKAk6AjgBGjEKD1BhcmFtZXRlcnNFbnRyeRILCgNrZXkYASABKAkSDQoFdmFsdWUYAiABKAk6AjgBIqsCCg9TdHJhdGVneVZlcnNpb24SEwoLc3RyYXRlZ3lfaWQYASABKAkSDwoHdmVyc2lvbhgCIAEoBRIQCghkc2xfY29kZRgDIAEoCRIVCg1jb21waWxlZF9qc29uGAQgASgJEj8KCnBhcmFtZXRlcnMYBSADKAsyKy5sbGFtYXRyYWRlLlN0cmF0ZWd5VmVyc2lvbi5QYXJhbWV0ZXJzRW50cnkSFgoOY2hhbmdlX3N1bW1hcnkYBiABKAkSEgoKY3JlYXRlZF9ieRgHIAEoCRIpCgpjcmVhdGVkX2F0GAggASgLMhUubGxhbWF0cmFkZS5UaW1lc3RhbXAaMQoPUGFyYW1ldGVyc0VudHJ5EgsKA2tleRgBIAEoCRINCgV2YWx1ZRgCIAEoCToCOAEimwEKEUNvbXBpbGF0aW9uUmVzdWx0Eg8KB3N1Y2Nlc3MYASABKAgSFQoNY29tcGlsZWRfanNvbhgCIAEoCRIsCgZlcnJvcnMYAyADKAsyHC5sbGFtYXRyYWRlLkNvbXBpbGF0aW9uRXJyb3ISMAoId2FybmluZ3MYBCADKAsyHi5sbGFtYXRyYWRlLkNvbXBpbGF0aW9uV2FybmluZyJPChBDb21waWxhdGlvbkVycm9yEgwKBGxpbmUYASABKAUSDgoGY29sdW1uGAIgASgFEg8KB21lc3NhZ2UYAyABKAkSDAoEY29kZRgEIAEoCSJRChJDb21waWxhdGlvbldhcm5pbmcSDAoEbGluZRgBIAEoBRIOCgZjb2x1bW4YAiABKAUSDwoHbWVzc2FnZRgDIAEoCRIMCgRjb2RlGAQgASgJIrgBChBWYWxpZGF0aW9uUmVzdWx0Eg0KBXZhbGlkGAEgASgIEiwKBmVycm9ycxgCIAMoCzIcLmxsYW1hdHJhZGUuQ29tcGlsYXRpb25FcnJvchIwCgh3YXJuaW5ncxgDIAMoCzIeLmxsYW1hdHJhZGUuQ29tcGlsYXRpb25XYXJuaW5nEhgKEGRldGVjdGVkX3N5bWJvbHMYBCADKAkSGwoTZGV0ZWN0ZWRfaW5kaWNhdG9ycxgFIAMoCSK3AQoQU3RyYXRlZ3lUZW1wbGF0ZRIKCgJpZBgBIAEoCRIMCgRuYW1lGAIgASgJEhMKC2Rlc2NyaXB0aW9uGAMgASgJEhUKDXN0cmF0ZWd5X3R5cGUYBCABKAkSEAoIY2F0ZWdvcnkYBSABKAkSEwoLYXNzZXRfY2xhc3MYBiABKAkSFAoMY29uZmlnX3NleHByGAcgASgJEgwKBHRhZ3MYCCADKAkSEgoKZGlmZmljdWx0eRgJIAEoCSKYBAoRU3RyYXRlZ3lFeGVjdXRpb24SCgoCaWQYASABKAkSEwoLc3RyYXRlZ3lfaWQYAiABKAkSEQoJdGVuYW50X2lkGAMgASgJEg8KB3ZlcnNpb24YBCABKAUSJwoEbW9kZRgFIAEoDjIZLmxsYW1hdHJhZGUuRXhlY3V0aW9uTW9kZRIrCgZzdGF0dXMYBiABKA4yGy5sbGFtYXRyYWRlLkV4ZWN1dGlvblN0YXR1cxIPCgdzeW1ib2xzGAcgAygJEhEKCXRpbWVmcmFtZRgIIAEoCRJKCg9jb25maWdfb3ZlcnJpZGUYCSADKAsyMS5sbGFtYXRyYWRlLlN0cmF0ZWd5RXhlY3V0aW9uLkNvbmZpZ092ZXJyaWRlRW50cnkSKQoKc3RhcnRlZF9hdBgKIAEoCzIVLmxsYW1hdHJhZGUuVGltZXN0YW1wEikKCnN0b3BwZWRfYXQYCyABKAsyFS5sbGFtYXRyYWRlLlRpbWVzdGFtcBIVCg1lcnJvcl9tZXNzYWdlGAwgASgJEikKCmNyZWF0ZWRfYXQYDSABKAsyFS5sbGFtYXRyYWRlLlRpbWVzdGFtcBIpCgp1cGRhdGVkX2F0GA4gASgLMhUubGxhbWF0cmFkZS5UaW1lc3RhbXAaNQoTQ29uZmlnT3ZlcnJpZGVFbnRyeRILCgNrZXkYASABKAkSDQoFdmFsdWUYAiABKAk6AjgBImYKEkdldFN0cmF0ZWd5UmVxdWVzdBIqCgdjb250ZXh0GAEgASgLMhkubGxhbWF0cmFkZS5UZW5hbnRDb250ZXh0EhMKC3N0cmF0ZWd5X2lkGAIgASgJEg8KB3ZlcnNpb24YAyABKAUiPQoTR2V0U3RyYXRlZ3lSZXNwb25zZRImCghzdHJhdGVneRgBIAEoCzIULmxsYW1hdHJhZGUuU3RyYXRlZ3ki2AEKFUxpc3RTdHJhdGVnaWVzUmVxdWVzdBIqCgdjb250ZXh0GAEgASgLMhkubGxhbWF0cmFkZS5UZW5hbnRDb250ZXh0EiwKCHN0YXR1c2VzGAIgAygOMhoubGxhbWF0cmFkZS5TdHJhdGVneVN0YXR1cxIOCgZzZWFyY2gYAyABKAkSMQoKcGFnaW5hdGlvbhgEIAEoCzIdLmxsYW1hdHJhZGUuUGFnaW5hdGlvblJlcXVlc3QSIgoEc29ydBgFIAEoCzIULmxsYW1hdHJhZGUuU29ydFNwZWMidgoWTGlzdFN0cmF0ZWdpZXNSZXNwb25zZRIoCgpzdHJhdGVnaWVzGAEgAygLMhQubGxhbWF0cmFkZS5TdHJhdGVneRIyCgpwYWdpbmF0aW9uGAIgASgLMh4ubGxhbWF0cmFkZS5QYWdpbmF0aW9uUmVzcG9uc2UisgMKFUNyZWF0ZVN0cmF0ZWd5UmVxdWVzdBIqCgdjb250ZXh0GAEgASgLMhkubGxhbWF0cmFkZS5UZW5hbnRDb250ZXh0EgwKBG5hbWUYAiABKAkSEwoLZGVzY3JpcHRpb24YAyABKAkSEAoIZHNsX2NvZGUYBCABKAkSEwoLdGVtcGxhdGVfaWQYBSABKAkSTgoPdGVtcGxhdGVfcGFyYW1zGAYgAygLMjUubGxhbWF0cmFkZS5DcmVhdGVTdHJhdGVneVJlcXVlc3QuVGVtcGxhdGVQYXJhbXNFbnRyeRIPCgdzeW1ib2xzGAcgAygJEhEKCXRpbWVmcmFtZRgIIAEoCRJFCgpwYXJhbWV0ZXJzGAkgAygLMjEubGxhbWF0cmFkZS5DcmVhdGVTdHJhdGVneVJlcXVlc3QuUGFyYW1ldGVyc0VudHJ5GjUKE1RlbXBsYXRlUGFyYW1zRW50cnkSCwoDa2V5GAEgASgJEg0KBXZhbHVlGAIgASgJOgI4ARoxCg9QYXJhbWV0ZXJzRW50cnkSCwoDa2V5GAEgASgJEg0KBXZhbHVlGAIgASgJOgI4ASJAChZDcmVhdGVTdHJhdGVneVJlc3BvbnNlEiYKCHN0cmF0ZWd5GAEgASgLMhQubGxhbWF0cmFkZS5TdHJhdGVneSLDAgoVVXBkYXRlU3RyYXRlZ3lSZXF1ZXN0EioKB2NvbnRleHQYASABKAsyGS5sbGFtYXRyYWRlLlRlbmFudENvbnRleHQSEwoLc3RyYXRlZ3lfaWQYAiABKAkSDAoEbmFtZRgDIAEoCRITCgtkZXNjcmlwdGlvbhgEIAEoCRIQCghkc2xfY29kZRgFIAEoCRIPCgdzeW1ib2xzGAYgAygJEhEKCXRpbWVmcmFtZRgHIAEoCRJFCgpwYXJhbWV0ZXJzGAggAygLMjEubGxhbWF0cmFkZS5VcGRhdGVTdHJhdGVneVJlcXVlc3QuUGFyYW1ldGVyc0VudHJ5EhYKDmNoYW5nZV9zdW1tYXJ5GAkgASgJGjEKD1BhcmFtZXRlcnNFbnRyeRILCgNrZXkYASABKAkSDQoFdmFsdWUYAiABKAk6AjgBIkAKFlVwZGF0ZVN0cmF0ZWd5UmVzcG9uc2USJgoIc3RyYXRlZ3kYASABKAsyFC5sbGFtYXRyYWRlLlN0cmF0ZWd5IlgKFURlbGV0ZVN0cmF0ZWd5UmVxdWVzdBIqCgdjb250ZXh0GAEgASgLMhkubGxhbWF0cmFkZS5UZW5hbnRDb250ZXh0EhMKC3N0cmF0ZWd5X2lkGAIgASgJIikKFkRlbGV0ZVN0cmF0ZWd5UmVzcG9uc2USDwoHc3VjY2VzcxgBIAEoCCJtChZDb21waWxlU3RyYXRlZ3lSZXF1ZXN0EioKB2NvbnRleHQYASABKAsyGS5sbGFtYXRyYWRlLlRlbmFudENvbnRleHQSEAoIZHNsX2NvZGUYAiABKAkSFQoNdmFsaWRhdGVfb25seRgDIAEoCCJIChdDb21waWxlU3RyYXRlZ3lSZXNwb25zZRItCgZyZXN1bHQYASABKAsyHS5sbGFtYXRyYWRlLkNvbXBpbGF0aW9uUmVzdWx0ImsKF1ZhbGlkYXRlU3RyYXRlZ3lSZXF1ZXN0EioKB2NvbnRleHQYASABKAsyGS5sbGFtYXRyYWRlLlRlbmFudENvbnRleHQSEwoLc3RyYXRlZ3lfaWQYAiABKAkSDwoHdmVyc2lvbhgDIAEoBSJIChhWYWxpZGF0ZVN0cmF0ZWd5UmVzcG9uc2USLAoGcmVzdWx0GAEgASgLMhwubGxhbWF0cmFkZS5WYWxpZGF0aW9uUmVzdWx0IpEBChtMaXN0U3RyYXRlZ3lWZXJzaW9uc1JlcXVlc3QSKgoHY29udGV4dBgBIAEoCzIZLmxsYW1hdHJhZGUuVGVuYW50Q29udGV4dBITCgtzdHJhdGVneV9pZBgCIAEoCRIxCgpwYWdpbmF0aW9uGAMgASgLMh0ubGxhbWF0cmFkZS5QYWdpbmF0aW9uUmVxdWVzdCKBAQocTGlzdFN0cmF0ZWd5VmVyc2lvbnNSZXNwb25zZRItCgh2ZXJzaW9ucxgBIAMoCzIbLmxsYW1hdHJhZGUuU3RyYXRlZ3lWZXJzaW9uEjIKCnBhZ2luYXRpb24YAiABKAsyHi5sbGFtYXRyYWRlLlBhZ2luYXRpb25SZXNwb25zZSKKAQobVXBkYXRlU3RyYXRlZ3lTdGF0dXNSZXF1ZXN0EioKB2NvbnRleHQYASABKAsyGS5sbGFtYXRyYWRlLlRlbmFudENvbnRleHQSEwoLc3RyYXRlZ3lfaWQYAiABKAkSKgoGc3RhdHVzGAMgASgOMhoubGxhbWF0cmFkZS5TdHJhdGVneVN0YXR1cyJGChxVcGRhdGVTdHJhdGVneVN0YXR1c1Jlc3BvbnNlEiYKCHN0cmF0ZWd5GAEgASgLMhQubGxhbWF0cmFkZS5TdHJhdGVneSJ6ChRDbG9uZVN0cmF0ZWd5UmVxdWVzdBIqCgdjb250ZXh0GAEgASgLMhkubGxhbWF0cmFkZS5UZW5hbnRDb250ZXh0EhMKC3N0cmF0ZWd5X2lkGAIgASgJEhAKCG5ld19uYW1lGAMgASgJEg8KB3ZlcnNpb24YBCABKAUiPwoVQ2xvbmVTdHJhdGVneVJlc3BvbnNlEiYKCHN0cmF0ZWd5GAEgASgLMhQubGxhbWF0cmFkZS5TdHJhdGVneSKbAgoWQ3JlYXRlRXhlY3V0aW9uUmVxdWVzdBIqCgdjb250ZXh0GAEgASgLMhkubGxhbWF0cmFkZS5UZW5hbnRDb250ZXh0EhMKC3N0cmF0ZWd5X2lkGAIgASgJEg8KB3ZlcnNpb24YAyABKAUSJwoEbW9kZRgEIAEoDjIZLmxsYW1hdHJhZGUuRXhlY3V0aW9uTW9kZRJPCg9jb25maWdfb3ZlcnJpZGUYBSADKAsyNi5sbGFtYXRyYWRlLkNyZWF0ZUV4ZWN1dGlvblJlcXVlc3QuQ29uZmlnT3ZlcnJpZGVFbnRyeRo1ChNDb25maWdPdmVycmlkZUVudHJ5EgsKA2tleRgBIAEoCRINCgV2YWx1ZRgCIAEoCToCOAEiSwoXQ3JlYXRlRXhlY3V0aW9uUmVzcG9uc2USMAoJZXhlY3V0aW9uGAEgASgLMh0ubGxhbWF0cmFkZS5TdHJhdGVneUV4ZWN1dGlvbiJXChNHZXRFeGVjdXRpb25SZXF1ZXN0EioKB2NvbnRleHQYASABKAsyGS5sbGFtYXRyYWRlLlRlbmFudENvbnRleHQSFAoMZXhlY3V0aW9uX2lkGAIgASgJIkgKFEdldEV4ZWN1dGlvblJlc3BvbnNlEjAKCWV4ZWN1dGlvbhgBIAEoCzIdLmxsYW1hdHJhZGUuU3RyYXRlZ3lFeGVjdXRpb24i5AEKFUxpc3RFeGVjdXRpb25zUmVxdWVzdBIqCgdjb250ZXh0GAEgASgLMhkubGxhbWF0cmFkZS5UZW5hbnRDb250ZXh0EhMKC3N0cmF0ZWd5X2lkGAIgASgJEi0KCHN0YXR1c2VzGAMgAygOMhsubGxhbWF0cmFkZS5FeGVjdXRpb25TdGF0dXMSKAoFbW9kZXMYBCADKA4yGS5sbGFtYXRyYWRlLkV4ZWN1dGlvbk1vZGUSMQoKcGFnaW5hdGlvbhgFIAEoCzIdLmxsYW1hdHJhZGUuUGFnaW5hdGlvblJlcXVlc3QifwoWTGlzdEV4ZWN1dGlvbnNSZXNwb25zZRIxCgpleGVjdXRpb25zGAEgAygLMh0ubGxhbWF0cmFkZS5TdHJhdGVneUV4ZWN1dGlvbhIyCgpwYWdpbmF0aW9uGAIgASgLMh4ubGxhbWF0cmFkZS5QYWdpbmF0aW9uUmVzcG9uc2UiWQoVU3RhcnRFeGVjdXRpb25SZXF1ZXN0EioKB2NvbnRleHQYASABKAsyGS5sbGFtYXRyYWRlLlRlbmFudENvbnRleHQSFAoMZXhlY3V0aW9uX2lkGAIgASgJIkoKFlN0YXJ0RXhlY3V0aW9uUmVzcG9uc2USMAoJZXhlY3V0aW9uGAEgASgLMh0ubGxhbWF0cmFkZS5TdHJhdGVneUV4ZWN1dGlvbiJZChVQYXVzZUV4ZWN1dGlvblJlcXVlc3QSKgoHY29udGV4dBgBIAEoCzIZLmxsYW1hdHJhZGUuVGVuYW50Q29udGV4dBIUCgxleGVjdXRpb25faWQYAiABKAkiSgoWUGF1c2VFeGVjdXRpb25SZXNwb25zZRIwCglleGVjdXRpb24YASABKAsyHS5sbGFtYXRyYWRlLlN0cmF0ZWd5RXhlY3V0aW9uImgKFFN0b3BFeGVjdXRpb25SZXF1ZXN0EioKB2NvbnRleHQYASABKAsyGS5sbGFtYXRyYWRlLlRlbmFudENvbnRleHQSFAoMZXhlY3V0aW9uX2lkGAIgASgJEg4KBnJlYXNvbhgDIAEoCSJJChVTdG9wRXhlY3V0aW9uUmVzcG9uc2USMAoJZXhlY3V0aW9uGAEgASgLMh0ubGxhbWF0cmFkZS5TdHJhdGVneUV4ZWN1dGlvbiJRChRMaXN0VGVtcGxhdGVzUmVxdWVzdBIQCghjYXRlZ29yeRgBIAEoCRITCgthc3NldF9jbGFzcxgCIAEoCRISCgpkaWZmaWN1bHR5GAMgASgJIkgKFUxpc3RUZW1wbGF0ZXNSZXNwb25zZRIvCgl0ZW1wbGF0ZXMYASADKAsyHC5sbGFtYXRyYWRlLlN0cmF0ZWd5VGVtcGxhdGUiKQoSR2V0VGVtcGxhdGVSZXF1ZXN0EhMKC3RlbXBsYXRlX2lkGAEgASgJIkUKE0dldFRlbXBsYXRlUmVzcG9uc2USLgoIdGVtcGxhdGUYASABKAsyHC5sbGFtYXRyYWRlLlN0cmF0ZWd5VGVtcGxhdGUqogEKDlN0cmF0ZWd5U3RhdHVzEh8KG1NUUkFURUdZX1NUQVRVU19VTlNQRUNJRklFRBAAEhkKFVNUUkFURUdZX1NUQVRVU19EUkFGVBABEhoKFlNUUkFURUdZX1NUQVRVU19BQ1RJVkUQAhIaChZTVFJBVEVHWV9TVEFUVVNfUEFVU0VEEAMSHAoYU1RSQVRFR1lfU1RBVFVTX0FSQ0hJVkVEEAQy4gwKD1N0cmF0ZWd5U2VydmljZRJOCgtHZXRTdHJhdGVneRIeLmxsYW1hdHJhZGUuR2V0U3RyYXRlZ3lSZXF1ZXN0Gh8ubGxhbWF0cmFkZS5HZXRTdHJhdGVneVJlc3BvbnNlElcKDkxpc3RTdHJhdGVnaWVzEiEubGxhbWF0cmFkZS5MaXN0U3RyYXRlZ2llc1JlcXVlc3QaIi5sbGFtYXRyYWRlLkxpc3RTdHJhdGVnaWVzUmVzcG9uc2USVwoOQ3JlYXRlU3RyYXRlZ3kSIS5sbGFtYXRyYWRlLkNyZWF0ZVN0cmF0ZWd5UmVxdWVzdBoiLmxsYW1hdHJhZGUuQ3JlYXRlU3RyYXRlZ3lSZXNwb25zZRJXCg5VcGRhdGVTdHJhdGVneRIhLmxsYW1hdHJhZGUuVXBkYXRlU3RyYXRlZ3lSZXF1ZXN0GiIubGxhbWF0cmFkZS5VcGRhdGVTdHJhdGVneVJlc3BvbnNlElcKDkRlbGV0ZVN0cmF0ZWd5EiEubGxhbWF0cmFkZS5EZWxldGVTdHJhdGVneVJlcXVlc3QaIi5sbGFtYXRyYWRlLkRlbGV0ZVN0cmF0ZWd5UmVzcG9uc2USVAoNQ2xvbmVTdHJhdGVneRIgLmxsYW1hdHJhZGUuQ2xvbmVTdHJhdGVneVJlcXVlc3QaIS5sbGFtYXRyYWRlLkNsb25lU3RyYXRlZ3lSZXNwb25zZRJaCg9Db21waWxlU3RyYXRlZ3kSIi5sbGFtYXRyYWRlLkNvbXBpbGVTdHJhdGVneVJlcXVlc3QaIy5sbGFtYXRyYWRlLkNvbXBpbGVTdHJhdGVneVJlc3BvbnNlEl0KEFZhbGlkYXRlU3RyYXRlZ3kSIy5sbGFtYXRyYWRlLlZhbGlkYXRlU3RyYXRlZ3lSZXF1ZXN0GiQubGxhbWF0cmFkZS5WYWxpZGF0ZVN0cmF0ZWd5UmVzcG9uc2USaQoUTGlzdFN0cmF0ZWd5VmVyc2lvbnMSJy5sbGFtYXRyYWRlLkxpc3RTdHJhdGVneVZlcnNpb25zUmVxdWVzdBooLmxsYW1hdHJhZGUuTGlzdFN0cmF0ZWd5VmVyc2lvbnNSZXNwb25zZRJpChRVcGRhdGVTdHJhdGVneVN0YXR1cxInLmxsYW1hdHJhZGUuVXBkYXRlU3RyYXRlZ3lTdGF0dXNSZXF1ZXN0GigubGxhbWF0cmFkZS5VcGRhdGVTdHJhdGVneVN0YXR1c1Jlc3BvbnNlElQKDUxpc3RUZW1wbGF0ZXMSIC5sbGFtYXRyYWRlLkxpc3RUZW1wbGF0ZXNSZXF1ZXN0GiEubGxhbWF0cmFkZS5MaXN0VGVtcGxhdGVzUmVzcG9uc2USTgoLR2V0VGVtcGxhdGUSHi5sbGFtYXRyYWRlLkdldFRlbXBsYXRlUmVxdWVzdBofLmxsYW1hdHJhZGUuR2V0VGVtcGxhdGVSZXNwb25zZRJaCg9DcmVhdGVFeGVjdXRpb24SIi5sbGFtYXRyYWRlLkNyZWF0ZUV4ZWN1dGlvblJlcXVlc3QaIy5sbGFtYXRyYWRlLkNyZWF0ZUV4ZWN1dGlvblJlc3BvbnNlElEKDEdldEV4ZWN1dGlvbhIfLmxsYW1hdHJhZGUuR2V0RXhlY3V0aW9uUmVxdWVzdBogLmxsYW1hdHJhZGUuR2V0RXhlY3V0aW9uUmVzcG9uc2USVwoOTGlzdEV4ZWN1dGlvbnMSIS5sbGFtYXRyYWRlLkxpc3RFeGVjdXRpb25zUmVxdWVzdBoiLmxsYW1hdHJhZGUuTGlzdEV4ZWN1dGlvbnNSZXNwb25zZRJXCg5TdGFydEV4ZWN1dGlvbhIhLmxsYW1hdHJhZGUuU3RhcnRFeGVjdXRpb25SZXF1ZXN0GiIubGxhbWF0cmFkZS5TdGFydEV4ZWN1dGlvblJlc3BvbnNlElcKDlBhdXNlRXhlY3V0aW9uEiEubGxhbWF0cmFkZS5QYXVzZUV4ZWN1dGlvblJlcXVlc3QaIi5sbGFtYXRyYWRlLlBhdXNlRXhlY3V0aW9uUmVzcG9uc2USVAoNU3RvcEV4ZWN1dGlvbhIgLmxsYW1hdHJhZGUuU3RvcEV4ZWN1dGlvblJlcXVlc3QaIS5sbGFtYXRyYWRlLlN0b3BFeGVjdXRpb25SZXNwb25zZUKJAQoOY29tLmxsYW1hdHJhZGVCDVN0cmF0ZWd5UHJvdG9QAVogZ2l0aHViLmNvbS9sbGFtYXRyYWRlL2FwaS9nZW4vZ2+iAgNMWFiqAgpMbGFtYXRyYWRlygIKTGxhbWF0cmFkZeICFkxsYW1hdHJhZGVcR1BCTWV0YWRhdGHqAgpMbGFtYXRyYWRlYgZwcm90bzM", [file_common]);
 
 /**
  * Strategy definition
@@ -322,6 +322,77 @@ export const ValidationResultSchema: GenMessage<ValidationResult> = /*@__PURE__*
   messageDesc(file_strategy, 5);
 
 /**
+ * Strategy template (pre-built strategy definitions)
+ *
+ * @generated from message llamatrade.StrategyTemplate
+ */
+export type StrategyTemplate = Message<"llamatrade.StrategyTemplate"> & {
+  /**
+   * @generated from field: string id = 1;
+   */
+  id: string;
+
+  /**
+   * @generated from field: string name = 2;
+   */
+  name: string;
+
+  /**
+   * @generated from field: string description = 3;
+   */
+  description: string;
+
+  /**
+   * e.g., "allocation", "momentum", "regime"
+   *
+   * @generated from field: string strategy_type = 4;
+   */
+  strategyType: string;
+
+  /**
+   * e.g., "buy-and-hold", "tactical", "factor"
+   *
+   * @generated from field: string category = 5;
+   */
+  category: string;
+
+  /**
+   * e.g., "equity", "multi-asset", "crypto"
+   *
+   * @generated from field: string asset_class = 6;
+   */
+  assetClass: string;
+
+  /**
+   * S-expression DSL definition
+   *
+   * @generated from field: string config_sexpr = 7;
+   */
+  configSexpr: string;
+
+  /**
+   * Additional labels
+   *
+   * @generated from field: repeated string tags = 8;
+   */
+  tags: string[];
+
+  /**
+   * "beginner", "intermediate", "advanced"
+   *
+   * @generated from field: string difficulty = 9;
+   */
+  difficulty: string;
+};
+
+/**
+ * Describes the message llamatrade.StrategyTemplate.
+ * Use `create(StrategyTemplateSchema)` to create a new message.
+ */
+export const StrategyTemplateSchema: GenMessage<StrategyTemplate> = /*@__PURE__*/
+  messageDesc(file_strategy, 6);
+
+/**
  * Strategy execution (paper or live trading session)
  *
  * @generated from message llamatrade.StrategyExecution
@@ -411,7 +482,7 @@ export type StrategyExecution = Message<"llamatrade.StrategyExecution"> & {
  * Use `create(StrategyExecutionSchema)` to create a new message.
  */
 export const StrategyExecutionSchema: GenMessage<StrategyExecution> = /*@__PURE__*/
-  messageDesc(file_strategy, 6);
+  messageDesc(file_strategy, 7);
 
 /**
  * Get strategy
@@ -442,7 +513,7 @@ export type GetStrategyRequest = Message<"llamatrade.GetStrategyRequest"> & {
  * Use `create(GetStrategyRequestSchema)` to create a new message.
  */
 export const GetStrategyRequestSchema: GenMessage<GetStrategyRequest> = /*@__PURE__*/
-  messageDesc(file_strategy, 7);
+  messageDesc(file_strategy, 8);
 
 /**
  * @generated from message llamatrade.GetStrategyResponse
@@ -459,7 +530,7 @@ export type GetStrategyResponse = Message<"llamatrade.GetStrategyResponse"> & {
  * Use `create(GetStrategyResponseSchema)` to create a new message.
  */
 export const GetStrategyResponseSchema: GenMessage<GetStrategyResponse> = /*@__PURE__*/
-  messageDesc(file_strategy, 8);
+  messageDesc(file_strategy, 9);
 
 /**
  * List strategies
@@ -500,7 +571,7 @@ export type ListStrategiesRequest = Message<"llamatrade.ListStrategiesRequest"> 
  * Use `create(ListStrategiesRequestSchema)` to create a new message.
  */
 export const ListStrategiesRequestSchema: GenMessage<ListStrategiesRequest> = /*@__PURE__*/
-  messageDesc(file_strategy, 9);
+  messageDesc(file_strategy, 10);
 
 /**
  * @generated from message llamatrade.ListStrategiesResponse
@@ -522,7 +593,7 @@ export type ListStrategiesResponse = Message<"llamatrade.ListStrategiesResponse"
  * Use `create(ListStrategiesResponseSchema)` to create a new message.
  */
 export const ListStrategiesResponseSchema: GenMessage<ListStrategiesResponse> = /*@__PURE__*/
-  messageDesc(file_strategy, 10);
+  messageDesc(file_strategy, 11);
 
 /**
  * Create strategy
@@ -583,7 +654,7 @@ export type CreateStrategyRequest = Message<"llamatrade.CreateStrategyRequest"> 
  * Use `create(CreateStrategyRequestSchema)` to create a new message.
  */
 export const CreateStrategyRequestSchema: GenMessage<CreateStrategyRequest> = /*@__PURE__*/
-  messageDesc(file_strategy, 11);
+  messageDesc(file_strategy, 12);
 
 /**
  * @generated from message llamatrade.CreateStrategyResponse
@@ -600,7 +671,7 @@ export type CreateStrategyResponse = Message<"llamatrade.CreateStrategyResponse"
  * Use `create(CreateStrategyResponseSchema)` to create a new message.
  */
 export const CreateStrategyResponseSchema: GenMessage<CreateStrategyResponse> = /*@__PURE__*/
-  messageDesc(file_strategy, 12);
+  messageDesc(file_strategy, 13);
 
 /**
  * Update strategy
@@ -661,7 +732,7 @@ export type UpdateStrategyRequest = Message<"llamatrade.UpdateStrategyRequest"> 
  * Use `create(UpdateStrategyRequestSchema)` to create a new message.
  */
 export const UpdateStrategyRequestSchema: GenMessage<UpdateStrategyRequest> = /*@__PURE__*/
-  messageDesc(file_strategy, 13);
+  messageDesc(file_strategy, 14);
 
 /**
  * @generated from message llamatrade.UpdateStrategyResponse
@@ -678,7 +749,7 @@ export type UpdateStrategyResponse = Message<"llamatrade.UpdateStrategyResponse"
  * Use `create(UpdateStrategyResponseSchema)` to create a new message.
  */
 export const UpdateStrategyResponseSchema: GenMessage<UpdateStrategyResponse> = /*@__PURE__*/
-  messageDesc(file_strategy, 14);
+  messageDesc(file_strategy, 15);
 
 /**
  * Delete strategy
@@ -702,7 +773,7 @@ export type DeleteStrategyRequest = Message<"llamatrade.DeleteStrategyRequest"> 
  * Use `create(DeleteStrategyRequestSchema)` to create a new message.
  */
 export const DeleteStrategyRequestSchema: GenMessage<DeleteStrategyRequest> = /*@__PURE__*/
-  messageDesc(file_strategy, 15);
+  messageDesc(file_strategy, 16);
 
 /**
  * @generated from message llamatrade.DeleteStrategyResponse
@@ -719,7 +790,7 @@ export type DeleteStrategyResponse = Message<"llamatrade.DeleteStrategyResponse"
  * Use `create(DeleteStrategyResponseSchema)` to create a new message.
  */
 export const DeleteStrategyResponseSchema: GenMessage<DeleteStrategyResponse> = /*@__PURE__*/
-  messageDesc(file_strategy, 16);
+  messageDesc(file_strategy, 17);
 
 /**
  * Compile DSL strategy
@@ -750,7 +821,7 @@ export type CompileStrategyRequest = Message<"llamatrade.CompileStrategyRequest"
  * Use `create(CompileStrategyRequestSchema)` to create a new message.
  */
 export const CompileStrategyRequestSchema: GenMessage<CompileStrategyRequest> = /*@__PURE__*/
-  messageDesc(file_strategy, 17);
+  messageDesc(file_strategy, 18);
 
 /**
  * @generated from message llamatrade.CompileStrategyResponse
@@ -767,7 +838,7 @@ export type CompileStrategyResponse = Message<"llamatrade.CompileStrategyRespons
  * Use `create(CompileStrategyResponseSchema)` to create a new message.
  */
 export const CompileStrategyResponseSchema: GenMessage<CompileStrategyResponse> = /*@__PURE__*/
-  messageDesc(file_strategy, 18);
+  messageDesc(file_strategy, 19);
 
 /**
  * Validate strategy
@@ -796,7 +867,7 @@ export type ValidateStrategyRequest = Message<"llamatrade.ValidateStrategyReques
  * Use `create(ValidateStrategyRequestSchema)` to create a new message.
  */
 export const ValidateStrategyRequestSchema: GenMessage<ValidateStrategyRequest> = /*@__PURE__*/
-  messageDesc(file_strategy, 19);
+  messageDesc(file_strategy, 20);
 
 /**
  * @generated from message llamatrade.ValidateStrategyResponse
@@ -813,7 +884,7 @@ export type ValidateStrategyResponse = Message<"llamatrade.ValidateStrategyRespo
  * Use `create(ValidateStrategyResponseSchema)` to create a new message.
  */
 export const ValidateStrategyResponseSchema: GenMessage<ValidateStrategyResponse> = /*@__PURE__*/
-  messageDesc(file_strategy, 20);
+  messageDesc(file_strategy, 21);
 
 /**
  * Get strategy versions
@@ -842,7 +913,7 @@ export type ListStrategyVersionsRequest = Message<"llamatrade.ListStrategyVersio
  * Use `create(ListStrategyVersionsRequestSchema)` to create a new message.
  */
 export const ListStrategyVersionsRequestSchema: GenMessage<ListStrategyVersionsRequest> = /*@__PURE__*/
-  messageDesc(file_strategy, 21);
+  messageDesc(file_strategy, 22);
 
 /**
  * @generated from message llamatrade.ListStrategyVersionsResponse
@@ -864,7 +935,7 @@ export type ListStrategyVersionsResponse = Message<"llamatrade.ListStrategyVersi
  * Use `create(ListStrategyVersionsResponseSchema)` to create a new message.
  */
 export const ListStrategyVersionsResponseSchema: GenMessage<ListStrategyVersionsResponse> = /*@__PURE__*/
-  messageDesc(file_strategy, 22);
+  messageDesc(file_strategy, 23);
 
 /**
  * Update strategy status
@@ -893,7 +964,7 @@ export type UpdateStrategyStatusRequest = Message<"llamatrade.UpdateStrategyStat
  * Use `create(UpdateStrategyStatusRequestSchema)` to create a new message.
  */
 export const UpdateStrategyStatusRequestSchema: GenMessage<UpdateStrategyStatusRequest> = /*@__PURE__*/
-  messageDesc(file_strategy, 23);
+  messageDesc(file_strategy, 24);
 
 /**
  * @generated from message llamatrade.UpdateStrategyStatusResponse
@@ -910,7 +981,7 @@ export type UpdateStrategyStatusResponse = Message<"llamatrade.UpdateStrategySta
  * Use `create(UpdateStrategyStatusResponseSchema)` to create a new message.
  */
 export const UpdateStrategyStatusResponseSchema: GenMessage<UpdateStrategyStatusResponse> = /*@__PURE__*/
-  messageDesc(file_strategy, 24);
+  messageDesc(file_strategy, 25);
 
 /**
  * Clone strategy
@@ -948,7 +1019,7 @@ export type CloneStrategyRequest = Message<"llamatrade.CloneStrategyRequest"> & 
  * Use `create(CloneStrategyRequestSchema)` to create a new message.
  */
 export const CloneStrategyRequestSchema: GenMessage<CloneStrategyRequest> = /*@__PURE__*/
-  messageDesc(file_strategy, 25);
+  messageDesc(file_strategy, 26);
 
 /**
  * @generated from message llamatrade.CloneStrategyResponse
@@ -965,7 +1036,7 @@ export type CloneStrategyResponse = Message<"llamatrade.CloneStrategyResponse"> 
  * Use `create(CloneStrategyResponseSchema)` to create a new message.
  */
 export const CloneStrategyResponseSchema: GenMessage<CloneStrategyResponse> = /*@__PURE__*/
-  messageDesc(file_strategy, 26);
+  messageDesc(file_strategy, 27);
 
 /**
  * Create execution
@@ -1008,7 +1079,7 @@ export type CreateExecutionRequest = Message<"llamatrade.CreateExecutionRequest"
  * Use `create(CreateExecutionRequestSchema)` to create a new message.
  */
 export const CreateExecutionRequestSchema: GenMessage<CreateExecutionRequest> = /*@__PURE__*/
-  messageDesc(file_strategy, 27);
+  messageDesc(file_strategy, 28);
 
 /**
  * @generated from message llamatrade.CreateExecutionResponse
@@ -1025,7 +1096,7 @@ export type CreateExecutionResponse = Message<"llamatrade.CreateExecutionRespons
  * Use `create(CreateExecutionResponseSchema)` to create a new message.
  */
 export const CreateExecutionResponseSchema: GenMessage<CreateExecutionResponse> = /*@__PURE__*/
-  messageDesc(file_strategy, 28);
+  messageDesc(file_strategy, 29);
 
 /**
  * Get execution
@@ -1049,7 +1120,7 @@ export type GetExecutionRequest = Message<"llamatrade.GetExecutionRequest"> & {
  * Use `create(GetExecutionRequestSchema)` to create a new message.
  */
 export const GetExecutionRequestSchema: GenMessage<GetExecutionRequest> = /*@__PURE__*/
-  messageDesc(file_strategy, 29);
+  messageDesc(file_strategy, 30);
 
 /**
  * @generated from message llamatrade.GetExecutionResponse
@@ -1066,7 +1137,7 @@ export type GetExecutionResponse = Message<"llamatrade.GetExecutionResponse"> & 
  * Use `create(GetExecutionResponseSchema)` to create a new message.
  */
 export const GetExecutionResponseSchema: GenMessage<GetExecutionResponse> = /*@__PURE__*/
-  messageDesc(file_strategy, 30);
+  messageDesc(file_strategy, 31);
 
 /**
  * List executions
@@ -1111,7 +1182,7 @@ export type ListExecutionsRequest = Message<"llamatrade.ListExecutionsRequest"> 
  * Use `create(ListExecutionsRequestSchema)` to create a new message.
  */
 export const ListExecutionsRequestSchema: GenMessage<ListExecutionsRequest> = /*@__PURE__*/
-  messageDesc(file_strategy, 31);
+  messageDesc(file_strategy, 32);
 
 /**
  * @generated from message llamatrade.ListExecutionsResponse
@@ -1133,7 +1204,7 @@ export type ListExecutionsResponse = Message<"llamatrade.ListExecutionsResponse"
  * Use `create(ListExecutionsResponseSchema)` to create a new message.
  */
 export const ListExecutionsResponseSchema: GenMessage<ListExecutionsResponse> = /*@__PURE__*/
-  messageDesc(file_strategy, 32);
+  messageDesc(file_strategy, 33);
 
 /**
  * Start execution
@@ -1157,7 +1228,7 @@ export type StartExecutionRequest = Message<"llamatrade.StartExecutionRequest"> 
  * Use `create(StartExecutionRequestSchema)` to create a new message.
  */
 export const StartExecutionRequestSchema: GenMessage<StartExecutionRequest> = /*@__PURE__*/
-  messageDesc(file_strategy, 33);
+  messageDesc(file_strategy, 34);
 
 /**
  * @generated from message llamatrade.StartExecutionResponse
@@ -1174,7 +1245,7 @@ export type StartExecutionResponse = Message<"llamatrade.StartExecutionResponse"
  * Use `create(StartExecutionResponseSchema)` to create a new message.
  */
 export const StartExecutionResponseSchema: GenMessage<StartExecutionResponse> = /*@__PURE__*/
-  messageDesc(file_strategy, 34);
+  messageDesc(file_strategy, 35);
 
 /**
  * Pause execution
@@ -1198,7 +1269,7 @@ export type PauseExecutionRequest = Message<"llamatrade.PauseExecutionRequest"> 
  * Use `create(PauseExecutionRequestSchema)` to create a new message.
  */
 export const PauseExecutionRequestSchema: GenMessage<PauseExecutionRequest> = /*@__PURE__*/
-  messageDesc(file_strategy, 35);
+  messageDesc(file_strategy, 36);
 
 /**
  * @generated from message llamatrade.PauseExecutionResponse
@@ -1215,7 +1286,7 @@ export type PauseExecutionResponse = Message<"llamatrade.PauseExecutionResponse"
  * Use `create(PauseExecutionResponseSchema)` to create a new message.
  */
 export const PauseExecutionResponseSchema: GenMessage<PauseExecutionResponse> = /*@__PURE__*/
-  messageDesc(file_strategy, 36);
+  messageDesc(file_strategy, 37);
 
 /**
  * Stop execution
@@ -1246,7 +1317,7 @@ export type StopExecutionRequest = Message<"llamatrade.StopExecutionRequest"> & 
  * Use `create(StopExecutionRequestSchema)` to create a new message.
  */
 export const StopExecutionRequestSchema: GenMessage<StopExecutionRequest> = /*@__PURE__*/
-  messageDesc(file_strategy, 37);
+  messageDesc(file_strategy, 38);
 
 /**
  * @generated from message llamatrade.StopExecutionResponse
@@ -1263,7 +1334,95 @@ export type StopExecutionResponse = Message<"llamatrade.StopExecutionResponse"> 
  * Use `create(StopExecutionResponseSchema)` to create a new message.
  */
 export const StopExecutionResponseSchema: GenMessage<StopExecutionResponse> = /*@__PURE__*/
-  messageDesc(file_strategy, 38);
+  messageDesc(file_strategy, 39);
+
+/**
+ * List templates
+ *
+ * @generated from message llamatrade.ListTemplatesRequest
+ */
+export type ListTemplatesRequest = Message<"llamatrade.ListTemplatesRequest"> & {
+  /**
+   * Optional: filter by category
+   *
+   * @generated from field: string category = 1;
+   */
+  category: string;
+
+  /**
+   * Optional: filter by asset class
+   *
+   * @generated from field: string asset_class = 2;
+   */
+  assetClass: string;
+
+  /**
+   * Optional: filter by difficulty
+   *
+   * @generated from field: string difficulty = 3;
+   */
+  difficulty: string;
+};
+
+/**
+ * Describes the message llamatrade.ListTemplatesRequest.
+ * Use `create(ListTemplatesRequestSchema)` to create a new message.
+ */
+export const ListTemplatesRequestSchema: GenMessage<ListTemplatesRequest> = /*@__PURE__*/
+  messageDesc(file_strategy, 40);
+
+/**
+ * @generated from message llamatrade.ListTemplatesResponse
+ */
+export type ListTemplatesResponse = Message<"llamatrade.ListTemplatesResponse"> & {
+  /**
+   * @generated from field: repeated llamatrade.StrategyTemplate templates = 1;
+   */
+  templates: StrategyTemplate[];
+};
+
+/**
+ * Describes the message llamatrade.ListTemplatesResponse.
+ * Use `create(ListTemplatesResponseSchema)` to create a new message.
+ */
+export const ListTemplatesResponseSchema: GenMessage<ListTemplatesResponse> = /*@__PURE__*/
+  messageDesc(file_strategy, 41);
+
+/**
+ * Get template
+ *
+ * @generated from message llamatrade.GetTemplateRequest
+ */
+export type GetTemplateRequest = Message<"llamatrade.GetTemplateRequest"> & {
+  /**
+   * @generated from field: string template_id = 1;
+   */
+  templateId: string;
+};
+
+/**
+ * Describes the message llamatrade.GetTemplateRequest.
+ * Use `create(GetTemplateRequestSchema)` to create a new message.
+ */
+export const GetTemplateRequestSchema: GenMessage<GetTemplateRequest> = /*@__PURE__*/
+  messageDesc(file_strategy, 42);
+
+/**
+ * @generated from message llamatrade.GetTemplateResponse
+ */
+export type GetTemplateResponse = Message<"llamatrade.GetTemplateResponse"> & {
+  /**
+   * @generated from field: llamatrade.StrategyTemplate template = 1;
+   */
+  template?: StrategyTemplate;
+};
+
+/**
+ * Describes the message llamatrade.GetTemplateResponse.
+ * Use `create(GetTemplateResponseSchema)` to create a new message.
+ */
+export const GetTemplateResponseSchema: GenMessage<GetTemplateResponse> = /*@__PURE__*/
+  messageDesc(file_strategy, 43);
 
 /**
  * Strategy status
@@ -1398,6 +1557,24 @@ export const StrategyService: GenService<{
     output: typeof UpdateStrategyStatusResponseSchema;
   },
   /**
+   * Template operations
+   *
+   * @generated from rpc llamatrade.StrategyService.ListTemplates
+   */
+  listTemplates: {
+    methodKind: "unary";
+    input: typeof ListTemplatesRequestSchema;
+    output: typeof ListTemplatesResponseSchema;
+  },
+  /**
+   * @generated from rpc llamatrade.StrategyService.GetTemplate
+   */
+  getTemplate: {
+    methodKind: "unary";
+    input: typeof GetTemplateRequestSchema;
+    output: typeof GetTemplateResponseSchema;
+  },
+  /**
    * Execution management
    *
    * @generated from rpc llamatrade.StrategyService.CreateExecution
@@ -1449,4 +1626,3 @@ export const StrategyService: GenService<{
   },
 }> = /*@__PURE__*/
   serviceDesc(file_strategy, 0);
-

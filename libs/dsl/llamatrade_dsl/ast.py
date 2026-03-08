@@ -29,6 +29,31 @@ from dataclasses import dataclass, field
 from typing import Literal as TypingLiteral
 
 # =============================================================================
+# Source Location (for error reporting)
+# =============================================================================
+
+
+@dataclass(frozen=True, slots=True)
+class SourceLocation:
+    """Source code location for error reporting.
+
+    Attributes:
+        line: 1-indexed line number
+        column: 1-indexed column number
+        start: 0-indexed character offset from start of source
+        end: 0-indexed character offset of end position (exclusive)
+    """
+
+    line: int
+    column: int
+    start: int
+    end: int
+
+    def __repr__(self) -> str:
+        return f"line {self.line}, col {self.column}"
+
+
+# =============================================================================
 # Type Aliases
 # =============================================================================
 
@@ -66,6 +91,7 @@ class NumericLiteral:
     """Constant numeric value."""
 
     value: float
+    location: SourceLocation | None = None
 
     def __repr__(self) -> str:
         if self.value == int(self.value):
@@ -84,6 +110,7 @@ class Price:
 
     symbol: str
     field: PriceField = "close"
+    location: SourceLocation | None = None
 
     def __repr__(self) -> str:
         if self.field == "close":
@@ -106,6 +133,7 @@ class Indicator:
     symbol: str
     params: tuple[int | float, ...] = ()
     output: str | None = None
+    location: SourceLocation | None = None
 
     def __repr__(self) -> str:
         parts = [self.name, self.symbol]
@@ -127,6 +155,7 @@ class Metric:
     name: TypingLiteral["drawdown", "return", "volatility"]
     symbol: str
     period: int | None = None
+    location: SourceLocation | None = None
 
     def __repr__(self) -> str:
         if self.period:
@@ -156,6 +185,7 @@ class Comparison:
     operator: ComparisonOperator
     left: Value
     right: Value
+    location: SourceLocation | None = None
 
     def __repr__(self) -> str:
         return f"({self.operator} {self.left!r} {self.right!r})"
@@ -173,6 +203,7 @@ class Crossover:
     direction: CrossoverDirection
     fast: Value
     slow: Value
+    location: SourceLocation | None = None
 
     def __repr__(self) -> str:
         op = f"crosses-{self.direction}"
@@ -191,6 +222,7 @@ class LogicalOp:
 
     operator: LogicalOperator
     operands: tuple[Condition, ...]
+    location: SourceLocation | None = None
 
     def __repr__(self) -> str:
         ops = " ".join(repr(op) for op in self.operands)
@@ -217,6 +249,7 @@ class Asset:
 
     symbol: str
     weight: float | None = None
+    location: SourceLocation | None = None
 
     def __repr__(self) -> str:
         if self.weight is not None:
@@ -245,6 +278,7 @@ class Weight:
     children: list[Block] = field(default_factory=list)
     lookback: int | None = None
     top: int | None = None
+    location: SourceLocation | None = None
 
     def __repr__(self) -> str:
         parts = [f":method {self.method}"]
@@ -271,6 +305,7 @@ class Group:
 
     name: str
     children: list[Block] = field(default_factory=list)
+    location: SourceLocation | None = None
 
     def __repr__(self) -> str:
         children_str = " ".join(repr(c) for c in self.children)
@@ -291,6 +326,7 @@ class If:
     condition: Condition
     then_block: Block
     else_block: Block | None = None
+    location: SourceLocation | None = None
 
     def __repr__(self) -> str:
         result = f"(if {self.condition!r} {self.then_block!r}"
@@ -320,6 +356,7 @@ class Filter:
     select_count: int
     children: list[Block] = field(default_factory=list)
     lookback: int | None = None
+    location: SourceLocation | None = None
 
     def __repr__(self) -> str:
         parts = [f":by {self.by}", f":select ({self.select_direction} {self.select_count})"]
@@ -347,6 +384,7 @@ class Strategy:
     rebalance: RebalanceFrequency | None = None
     benchmark: str | None = None
     description: str | None = None
+    location: SourceLocation | None = None
 
     def __repr__(self) -> str:
         parts = [f'"{self.name}"']
@@ -397,6 +435,7 @@ LOGICAL_OPS: frozenset[str] = frozenset({"and", "or", "not"})
 CROSSOVER_OPS: frozenset[str] = frozenset({"crosses-above", "crosses-below"})
 
 # Supported indicators for conditions
+# This is the single source of truth - extractor.py imports from here
 INDICATORS: frozenset[str] = frozenset(
     {
         "sma",
@@ -410,6 +449,13 @@ INDICATORS: frozenset[str] = frozenset(
         "cci",
         "obv",
         "vwap",
+        # Additional indicators (sync with extractor.py INDICATOR_LOOKBACKS)
+        "mfi",
+        "williams-r",
+        "keltner",
+        "donchian",
+        "stddev",
+        "momentum",
     }
 )
 

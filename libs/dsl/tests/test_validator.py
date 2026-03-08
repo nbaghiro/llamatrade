@@ -182,7 +182,7 @@ class TestValidateWeight:
         )
         result = validate(strategy)
         assert not result.valid
-        assert any("exceeds number of children" in str(e) for e in result.errors)
+        assert any("exceeds children" in str(e) for e in result.errors)
 
     def test_weight_no_children(self):
         strategy = Strategy(

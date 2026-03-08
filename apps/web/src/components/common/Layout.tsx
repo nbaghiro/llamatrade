@@ -40,7 +40,7 @@ export default function Layout() {
         {/* Left: Logo + Nav */}
         <div className="flex items-center gap-1">
           {/* Logo */}
-          <NavLink to="/dashboard" className="px-3 py-2 mr-4">
+          <NavLink to="/portfolio" className="px-3 py-2 mr-4">
             <Logo size={28} showText />
           </NavLink>
 

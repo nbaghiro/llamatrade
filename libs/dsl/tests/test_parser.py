@@ -14,6 +14,7 @@ from llamatrade_dsl import (
     NumericLiteral,
     ParseError,
     Price,
+    SourceLocation,
     Strategy,
     Weight,
     parse,
@@ -409,3 +410,135 @@ class TestParseStrategyAlias:
         result = parse_strategy(source)
         assert isinstance(result, Strategy)
         assert result.name == "Test"
+
+
+class TestSourceLocation:
+    """Test source location tracking in AST nodes."""
+
+    def test_strategy_location(self):
+        source = '(strategy "Test" (asset VTI :weight 100))'
+        result = parse(source)
+
+        assert result.location is not None
+        assert isinstance(result.location, SourceLocation)
+        assert result.location.line == 1
+        assert result.location.column == 1
+        assert result.location.start == 0
+        assert result.location.end == len(source)
+
+    def test_asset_location(self):
+        source = '(strategy "Test" (asset VTI :weight 100))'
+        result = parse(source)
+        asset = result.children[0]
+
+        assert asset.location is not None
+        assert asset.location.line == 1
+        # Asset starts at column 18 (0-indexed position 17)
+        assert asset.location.column == 18
+
+    def test_multiline_locations(self):
+        source = """(strategy "Test"
+  :rebalance monthly
+  (asset VTI :weight 100))"""
+        result = parse(source)
+
+        # Strategy starts at line 1
+        assert result.location is not None
+        assert result.location.line == 1
+
+        # Asset starts at line 3
+        asset = result.children[0]
+        assert asset.location is not None
+        assert asset.location.line == 3
+
+    def test_condition_locations(self):
+        source = '(strategy "Test" (if (> 50 30) (asset VTI :weight 100)))'
+        result = parse(source)
+        if_block = result.children[0]
+
+        assert if_block.location is not None
+        assert if_block.condition.location is not None
+        # Condition starts at position of "("
+        assert if_block.condition.location.column == 22
+
+    def test_indicator_location(self):
+        source = '(strategy "Test" (if (> (sma SPY 50) 200) (asset VTI :weight 100)))'
+        result = parse(source)
+        if_block = result.children[0]
+        indicator = if_block.condition.left
+
+        assert isinstance(indicator, Indicator)
+        assert indicator.location is not None
+        assert indicator.location.column == 25
+
+    def test_weight_block_location(self):
+        source = """(strategy "Test"
+  (weight :method equal
+    (asset VTI)
+    (asset BND)))"""
+        result = parse(source)
+        weight = result.children[0]
+
+        assert isinstance(weight, Weight)
+        assert weight.location is not None
+        assert weight.location.line == 2
+
+    def test_group_location(self):
+        source = """(strategy "Test"
+  (group "Equities"
+    (asset VTI :weight 100)))"""
+        result = parse(source)
+        group = result.children[0]
+
+        assert isinstance(group, Group)
+        assert group.location is not None
+        assert group.location.line == 2
+
+    def test_filter_location(self):
+        source = """(strategy "Test"
+  (filter :by momentum :select (top 3)
+    (asset VTI)))"""
+        result = parse(source)
+        filter_block = result.children[0]
+
+        assert isinstance(filter_block, Filter)
+        assert filter_block.location is not None
+        assert filter_block.location.line == 2
+
+    def test_numeric_literal_location(self):
+        source = '(strategy "Test" (if (> 100 50) (asset VTI :weight 100)))'
+        result = parse(source)
+        if_block = result.children[0]
+        left = if_block.condition.left
+
+        assert isinstance(left, NumericLiteral)
+        assert left.location is not None
+
+    def test_price_location(self):
+        source = '(strategy "Test" (if (> (price SPY) 100) (asset VTI :weight 100)))'
+        result = parse(source)
+        if_block = result.children[0]
+        left = if_block.condition.left
+
+        assert isinstance(left, Price)
+        assert left.location is not None
+
+    def test_crossover_location(self):
+        source = '(strategy "Test" (if (crosses-above (sma SPY 50) (sma SPY 200)) (asset VTI :weight 100)))'
+        result = parse(source)
+        if_block = result.children[0]
+
+        assert isinstance(if_block.condition, Crossover)
+        assert if_block.condition.location is not None
+
+    def test_logical_op_location(self):
+        source = '(strategy "Test" (if (and (> 10 5) (< 3 7)) (asset VTI :weight 100)))'
+        result = parse(source)
+        if_block = result.children[0]
+
+        assert isinstance(if_block.condition, LogicalOp)
+        assert if_block.condition.location is not None
+
+    def test_location_repr(self):
+        loc = SourceLocation(line=5, column=10, start=42, end=50)
+        assert repr(loc) == "line 5, col 10"

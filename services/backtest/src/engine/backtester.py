@@ -471,6 +471,93 @@ class BacktestEngine:
             exposure_time=exposure_time,
         )
 
+    def run_multi_symbol(
+        self,
+        bars: dict[str, list[BarData]],
+        strategy_fn: Callable[[BacktestEngine, dict[str, BarData]], list[SignalData]],
+        start_date: datetime,
+        end_date: datetime,
+        progress_callback: ProgressCallback | None = None,
+    ) -> BacktestResult:
+        """Run a backtest with multi-symbol strategy evaluation.
+
+        Unlike `run()` which calls the strategy per-symbol, this method collects
+        all symbols' bars for each date and passes them to the strategy at once.
+        This enables proper cross-symbol comparisons for portfolio allocation.
+
+        Args:
+            bars: Historical bar data by symbol
+            strategy_fn: Strategy function that takes (engine, bars_dict) and returns signals
+                         where bars_dict is {symbol: BarData} for all symbols on current date
+            start_date: Start date for the backtest
+            end_date: End date for the backtest
+            progress_callback: Optional callback for progress updates
+
+        Returns:
+            BacktestResult with metrics and trades
+        """
+        self.reset()
+
+        # Get all dates in range
+        all_dates: set[datetime] = set()
+        for symbol_bars in bars.values():
+            for b in symbol_bars:
+                bar_date = b["timestamp"]
+                if start_date <= bar_date <= end_date:
+                    all_dates.add(bar_date)
+
+        # Sort dates
+        sorted_dates: list[datetime] = sorted(all_dates)
+        total_bars = len(sorted_dates)
+
+        # Index bars by date for efficient lookup
+        bars_by_date: dict[datetime, dict[str, BarData]] = {}
+        for symbol, symbol_bars in bars.items():
+            for bar in symbol_bars:
+                bar_date = bar["timestamp"]
+                if start_date <= bar_date <= end_date:
+                    if bar_date not in bars_by_date:
+                        bars_by_date[bar_date] = {}
+                    bars_by_date[bar_date][symbol] = bar
+
+        # Process each date with all symbols at once
+        for bar_idx, date in enumerate(sorted_dates):
+            self._current_date = date
+            self._total_days += 1
+
+            # Get all bars for this date
+            date_bars = bars_by_date.get(date, {})
+
+            if date_bars:
+                # Get signals from strategy with all symbols' bars
+                signals = strategy_fn(self, date_bars)
+
+                # Process signals
+                for signal in signals:
+                    # Find the bar for this signal's symbol
+                    symbol = signal.get("symbol", "")
+                    bar = date_bars.get(symbol)
+                    if bar:
+                        self._process_signal(signal, bar)
+
+            # Track days with position
+            if self.positions:
+                self._days_with_position += 1
+
+            # Record equity
+            equity = self._calculate_equity(bars, date)
+            self.equity_curve.append((date, equity))
+
+            # Report progress
+            if progress_callback is not None:
+                progress_callback(bar_idx + 1, total_bars, date)
+
+        # Close all remaining positions at the end
+        self._close_all_positions(bars, end_date)
+
+        # Calculate metrics
+        return self._calculate_results()
+
     # Convenience methods for strategies
     def get_position(self, symbol: str) -> Position | None:
         """Get current position for a symbol."""

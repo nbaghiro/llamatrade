@@ -26,6 +26,77 @@ class EvaluationError(Exception):
     pass
 
 
+def safe_divide(numerator: float, denominator: float, default: float = 0.0) -> float:
+    """Safely divide two numbers, returning default on division by zero or NaN.
+
+    Args:
+        numerator: The numerator
+        denominator: The denominator
+        default: Value to return if division is undefined
+
+    Returns:
+        Result of division or default value
+    """
+    if denominator == 0.0 or np.isnan(denominator) or np.isnan(numerator):
+        return default
+    result = numerator / denominator
+    if np.isnan(result) or np.isinf(result):
+        return default
+    return result
+
+
+def normalize_weights(
+    weights: dict[str, float],
+    fallback_to_equal: bool = True,
+) -> dict[str, float]:
+    """Normalize weights to sum to 100%, handling edge cases.
+
+    Args:
+        weights: Dictionary of symbol -> weight
+        fallback_to_equal: If True, use equal weights when normalization fails
+
+    Returns:
+        Normalized weights summing to 100%
+
+    Examples:
+        >>> normalize_weights({"A": 60, "B": 40})
+        {"A": 60.0, "B": 40.0}  # Already normalized
+
+        >>> normalize_weights({"A": 30, "B": 30})
+        {"A": 50.0, "B": 50.0}  # Scaled to 100%
+
+        >>> normalize_weights({"A": 0, "B": 0})
+        {"A": 50.0, "B": 50.0}  # Fallback to equal weights
+
+        >>> normalize_weights({})
+        {}  # Empty input returns empty
+    """
+    if not weights:
+        return {}
+
+    # Filter out NaN and negative weights
+    valid_weights = {k: v for k, v in weights.items() if not np.isnan(v) and v >= 0}
+
+    if not valid_weights:
+        if fallback_to_equal:
+            # Return equal weights for all original symbols
+            equal_weight = 100.0 / len(weights)
+            return {k: equal_weight for k in weights}
+        return {k: 0.0 for k in weights}
+
+    total = sum(valid_weights.values())
+
+    if total == 0.0 or np.isnan(total):
+        if fallback_to_equal:
+            # Return equal weights
+            equal_weight = 100.0 / len(valid_weights)
+            return {k: equal_weight for k in valid_weights}
+        return {k: 0.0 for k in valid_weights}
+
+    # Normalize to 100%
+    return {k: safe_divide(v * 100.0, total, 0.0) for k, v in valid_weights.items()}
+
+
 def _resolve_value(value: Value, state: EvaluationState) -> float:
     """Resolve a Value node to a numeric value.
 

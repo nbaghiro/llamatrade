@@ -34,6 +34,8 @@ from llamatrade_dsl.ast import (
     PriceField,
     RebalanceFrequency,
     SelectDirection,
+    # Source location for error reporting
+    SourceLocation,
     Strategy,
     Value,
     Weight,
@@ -69,6 +71,8 @@ __all__ = [
     "Indicator",
     "Metric",
     "Value",
+    # Source location
+    "SourceLocation",
     # Type aliases
     "RebalanceFrequency",
     "WeightMethod",

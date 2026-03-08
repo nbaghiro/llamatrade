@@ -1,13 +1,19 @@
-import { ArrowLeft, ArrowRight, Plus, Search } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { ArrowLeft, ArrowRight, Loader2, Plus, Search } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 
 import { generateBenchmarkData, generateChartData } from '../../data/demo-strategies';
 import {
-  STRATEGY_TEMPLATES,
+  ALL_CATEGORIES,
+  ALL_DIFFICULTIES,
+  CATEGORY_LABELS,
+  DIFFICULTY_LABELS,
   type StrategyTemplate,
   type TemplateCategory,
+  type TemplateDifficulty,
 } from '../../data/strategy-templates';
+import { listTemplates } from '../../services/strategy';
+import { fromDSLString } from '../../services/strategy-serializer';
 import { useStrategyBuilderStore } from '../../store/strategy-builder';
 import type { BlockId } from '../../types/strategy-builder';
 import { hasChildren } from '../../types/strategy-builder';
@@ -19,24 +25,15 @@ const DIFFICULTY_COLORS: Record<string, string> = {
 };
 
 const CATEGORY_COLORS: Record<string, string> = {
-  passive: 'bg-slate-100 text-slate-700 dark:bg-slate-900/30 dark:text-slate-400',
-  income: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400',
-  growth: 'bg-cyan-100 text-cyan-700 dark:bg-cyan-900/30 dark:text-cyan-400',
-  'all-weather': 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
+  'buy-and-hold': 'bg-slate-100 text-slate-700 dark:bg-slate-900/30 dark:text-slate-400',
   tactical: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
   factor: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400',
+  income: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400',
+  trend: 'bg-cyan-100 text-cyan-700 dark:bg-cyan-900/30 dark:text-cyan-400',
+  'mean-reversion': 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400',
+  alternatives: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400',
 };
 
-const CATEGORY_LABELS: Record<TemplateCategory, string> = {
-  passive: 'Passive',
-  income: 'Income',
-  growth: 'Growth',
-  'all-weather': 'All-Weather',
-  tactical: 'Tactical',
-  factor: 'Factor',
-};
-
-const ALL_CATEGORIES: TemplateCategory[] = ['passive', 'income', 'growth', 'all-weather', 'tactical', 'factor'];
 
 function MiniChart({
   data,
@@ -174,17 +171,54 @@ export function NewStrategyPage() {
   const { createNew } = useStrategyBuilderStore();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<TemplateCategory | 'all'>('all');
+  const [selectedDifficulty, setSelectedDifficulty] = useState<TemplateDifficulty | 'all'>('all');
+
+  // Template state - fetched from API
+  const [templates, setTemplates] = useState<StrategyTemplate[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  // Fetch templates on mount
+  useEffect(() => {
+    async function fetchTemplates() {
+      try {
+        setLoading(true);
+        setError(null);
+        const response = await listTemplates();
+        // Map proto response to StrategyTemplate type
+        const mappedTemplates: StrategyTemplate[] = response.templates.map((t) => ({
+          id: t.id,
+          name: t.name,
+          description: t.description,
+          strategy_type: t.strategyType,
+          category: t.category as TemplateCategory,
+          asset_class: t.assetClass as StrategyTemplate['asset_class'],
+          config_sexpr: t.configSexpr,
+          config_json: {},
+          tags: [...t.tags],
+          difficulty: t.difficulty as TemplateDifficulty,
+        }));
+        setTemplates(mappedTemplates);
+      } catch {
+        setError('Failed to load templates. Please try again.');
+      } finally {
+        setLoading(false);
+      }
+    }
+    fetchTemplates();
+  }, []);
 
   const filteredTemplates = useMemo(() => {
-    return STRATEGY_TEMPLATES.filter((template) => {
+    return templates.filter((template) => {
       const matchesSearch =
         searchQuery === '' ||
         template.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
         template.description.toLowerCase().includes(searchQuery.toLowerCase());
       const matchesCategory = selectedCategory === 'all' || template.category === selectedCategory;
-      return matchesSearch && matchesCategory;
+      const matchesDifficulty = selectedDifficulty === 'all' || template.difficulty === selectedDifficulty;
+      return matchesSearch && matchesCategory && matchesDifficulty;
     });
-  }, [searchQuery, selectedCategory]);
+  }, [templates, searchQuery, selectedCategory, selectedDifficulty]);
 
   const handleStartBlank = () => {
     createNew();
@@ -192,7 +226,21 @@ export function NewStrategyPage() {
   };
 
   const handleSelectTemplate = (template: StrategyTemplate) => {
-    const tree = template.createTree();
+    // Parse the S-expression DSL into a block tree
+    const parseResult = fromDSLString(template.config_sexpr);
+
+    if (!parseResult) {
+      // Fallback: create empty strategy with just the name if DSL parsing fails
+      createNew();
+      useStrategyBuilderStore.setState({
+        strategyName: template.name,
+        strategyDescription: template.description,
+      });
+      navigate('/strategies/builder');
+      return;
+    }
+
+    const { tree, metadata } = parseResult;
 
     const expandedBlocks = new Set<BlockId>();
     for (const block of Object.values(tree.blocks)) {
@@ -211,10 +259,10 @@ export function NewStrategyPage() {
       past: [],
       future: [],
       strategyId: null,
-      strategyName: template.name,
+      strategyName: metadata.name || template.name,
       strategyDescription: template.description,
       strategyType: 'custom',
-      timeframe: '1D',
+      timeframe: metadata.timeframe || '1D',
       isDirty: true,
       loading: false,
       error: null,
@@ -285,9 +333,58 @@ export function NewStrategyPage() {
               </button>
             ))}
           </div>
+
+          {/* Vertical Separator */}
+          <div className="w-px h-8 bg-gray-300 dark:bg-gray-600 mx-2" />
+
+          {/* Difficulty Filter */}
+          <div className="flex flex-wrap gap-2">
+            <span className="text-xs text-gray-400 dark:text-gray-500 self-center mr-1 uppercase tracking-wide">
+              Level
+            </span>
+            {ALL_DIFFICULTIES.map((difficulty) => (
+              <button
+                key={difficulty}
+                onClick={() => setSelectedDifficulty(selectedDifficulty === difficulty ? 'all' : difficulty)}
+                className={`px-3 py-1.5 text-sm rounded-lg border transition-colors ${
+                  selectedDifficulty === difficulty
+                    ? difficulty === 'beginner'
+                      ? 'bg-green-600 text-white border-green-600'
+                      : difficulty === 'intermediate'
+                        ? 'bg-amber-500 text-white border-amber-500'
+                        : 'bg-red-600 text-white border-red-600'
+                    : 'bg-white dark:bg-gray-900 border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400 hover:border-primary-400'
+                }`}
+              >
+                {DIFFICULTY_LABELS[difficulty]}
+              </button>
+            ))}
+          </div>
         </div>
 
+        {/* Loading State */}
+        {loading && (
+          <div className="flex items-center justify-center py-20">
+            <Loader2 className="w-8 h-8 text-primary-500 animate-spin" />
+            <span className="ml-3 text-gray-500 dark:text-gray-400">Loading templates...</span>
+          </div>
+        )}
+
+        {/* Error State */}
+        {error && !loading && (
+          <div className="text-center py-12">
+            <p className="text-red-500 dark:text-red-400">{error}</p>
+            <button
+              onClick={() => window.location.reload()}
+              className="mt-4 px-4 py-2 text-sm bg-primary-600 text-white rounded-lg hover:bg-primary-700"
+            >
+              Retry
+            </button>
+          </div>
+        )}
+
         {/* Template Grid with Blank Card as first item */}
+        {!loading && !error && (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
           {/* Blank Strategy Ghost Card */}
           <button
@@ -334,9 +431,10 @@ export function NewStrategyPage() {
             />
           ))}
         </div>
+        )}
 
         {/* Empty state when no templates match */}
-        {filteredTemplates.length === 0 && searchQuery && (
+        {!loading && !error && filteredTemplates.length === 0 && searchQuery && (
           <div className="text-center py-12">
             <p className="text-gray-500 dark:text-gray-400">No templates match your search.</p>
           </div>

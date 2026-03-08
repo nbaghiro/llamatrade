@@ -113,8 +113,11 @@ class StrategyService:
 
         Parses and validates the S-expression, creates the strategy record,
         and creates the initial version (v1).
+
+        Uses a nested transaction (savepoint) to ensure atomicity - if version
+        creation fails, the strategy creation is rolled back.
         """
-        # Parse and validate S-expression
+        # Parse and validate S-expression (do this before starting transaction)
         try:
             ast = parse_strategy(data.config_sexpr)
         except ParseError as e:
@@ -135,32 +138,36 @@ class StrategyService:
         # Allocation strategies default to CUSTOM type
         db_type = DBStrategyType.CUSTOM
 
-        # Create strategy record
-        strategy = Strategy(
-            tenant_id=tenant_id,
-            name=data.name,
-            description=data.description,
-            strategy_type=db_type,
-            status=STRATEGY_STATUS_DRAFT,
-            current_version=1,
-            created_by=user_id,
-        )
-        self.db.add(strategy)
-        await self.db.flush()  # Get ID before creating version
+        # Use nested transaction for atomicity (strategy + version created together)
+        async with self.db.begin_nested():
+            # Create strategy record
+            strategy = Strategy(
+                tenant_id=tenant_id,
+                name=data.name,
+                description=data.description,
+                strategy_type=db_type,
+                status=STRATEGY_STATUS_DRAFT,
+                current_version=1,
+                created_by=user_id,
+            )
+            self.db.add(strategy)
+            await self.db.flush()  # Get ID before creating version
 
-        # Create version 1
-        config_json = to_json(ast)
-        version = StrategyVersion(
-            strategy_id=strategy.id,
-            version=1,
-            config_sexpr=data.config_sexpr,
-            config_json=config_json,
-            symbols=symbols,
-            timeframe=timeframe,
-            parameters=data.parameters or {},
-            created_by=user_id,
-        )
-        self.db.add(version)
+            # Create version 1
+            config_json = to_json(ast)
+            version = StrategyVersion(
+                tenant_id=tenant_id,  # Defense-in-depth tenant isolation
+                strategy_id=strategy.id,
+                version=1,
+                config_sexpr=data.config_sexpr,
+                config_json=config_json,
+                symbols=symbols,
+                timeframe=timeframe,
+                parameters=data.parameters or {},
+                created_by=user_id,
+            )
+            self.db.add(version)
+
         await self.db.commit()
         await self.db.refresh(strategy)
 
@@ -270,6 +277,9 @@ class StrategyService:
         If config_sexpr is provided, creates a new version.
         Otherwise, only updates metadata fields.
 
+        Uses a nested transaction (savepoint) to ensure atomicity - if version
+        creation fails, the strategy update is rolled back.
+
         Raises:
             ValueError: If status transition is invalid or config is invalid.
         """
@@ -277,20 +287,8 @@ class StrategyService:
         if not strategy:
             return None
 
-        # Update metadata
-        if data.name is not None:
-            strategy.name = data.name
-        if data.description is not None:
-            strategy.description = data.description
-
-        # Validate and apply status change (both are proto int values)
-        if data.status is not None:
-            is_valid, error_msg = _validate_status_transition(strategy.status, data.status)
-            if not is_valid:
-                raise ValueError(error_msg)
-            strategy.status = data.status
-
-        # If config changed, create new version
+        # Parse and validate config before starting transaction
+        ast = None
         if data.config_sexpr is not None:
             try:
                 ast = parse_strategy(data.config_sexpr)
@@ -301,26 +299,47 @@ class StrategyService:
                 error_messages = [str(e) for e in validation.errors]
                 raise ValueError(f"Invalid strategy: {'; '.join(error_messages)}")
 
-            new_version_num = strategy.current_version + 1
-            config_json = to_json(ast)
+        # Validate status transition before starting transaction
+        if data.status is not None:
+            is_valid, error_msg = _validate_status_transition(strategy.status, data.status)
+            if not is_valid:
+                raise ValueError(error_msg)
 
-            # Extract symbols and timeframe from allocation strategy
-            symbols = list(get_required_symbols(ast))
-            timeframe = _rebalance_to_timeframe(ast.rebalance)
+        # Use nested transaction for atomicity (strategy update + version created together)
+        async with self.db.begin_nested():
+            # Update metadata
+            if data.name is not None:
+                strategy.name = data.name
+            if data.description is not None:
+                strategy.description = data.description
 
-            version = StrategyVersion(
-                strategy_id=strategy.id,
-                version=new_version_num,
-                config_sexpr=data.config_sexpr,
-                config_json=config_json,
-                symbols=symbols,
-                timeframe=timeframe,
-                parameters=data.parameters or {},
-                changelog=data.changelog,  # Persist change summary
-                created_by=user_id,
-            )
-            self.db.add(version)
-            strategy.current_version = new_version_num
+            # Apply validated status change
+            if data.status is not None:
+                strategy.status = data.status
+
+            # If config changed, create new version
+            if ast is not None:
+                new_version_num = strategy.current_version + 1
+                config_json = to_json(ast)
+
+                # Extract symbols and timeframe from allocation strategy
+                symbols = list(get_required_symbols(ast))
+                timeframe = _rebalance_to_timeframe(ast.rebalance)
+
+                version = StrategyVersion(
+                    tenant_id=tenant_id,  # Defense-in-depth tenant isolation
+                    strategy_id=strategy.id,
+                    version=new_version_num,
+                    config_sexpr=data.config_sexpr,
+                    config_json=config_json,
+                    symbols=symbols,
+                    timeframe=timeframe,
+                    parameters=data.parameters or {},
+                    changelog=data.changelog,  # Persist change summary
+                    created_by=user_id,
+                )
+                self.db.add(version)
+                strategy.current_version = new_version_num
 
         await self.db.commit()
         await self.db.refresh(strategy)
@@ -588,7 +607,10 @@ class StrategyService:
         strategy_id: UUID,
         data: ExecutionCreate,
     ) -> ExecutionResponse | None:
-        """Create a new execution for a strategy."""
+        """Create a new execution for a strategy.
+
+        Uses a nested transaction (savepoint) to ensure atomicity.
+        """
         strategy = await self._get_strategy_by_id(tenant_id, strategy_id)
         if not strategy:
             return None
@@ -600,15 +622,17 @@ class StrategyService:
         if not v:
             raise ValueError(f"Version {version} not found")
 
-        execution = StrategyExecution(
-            tenant_id=tenant_id,
-            strategy_id=strategy_id,
-            version=version,
-            mode=data.mode,  # Already proto int
-            status=EXECUTION_STATUS_PENDING,
-            config_override=data.config_override,
-        )
-        self.db.add(execution)
+        async with self.db.begin_nested():
+            execution = StrategyExecution(
+                tenant_id=tenant_id,
+                strategy_id=strategy_id,
+                version=version,
+                mode=data.mode,  # Already proto int
+                status=EXECUTION_STATUS_PENDING,
+                config_override=data.config_override,
+            )
+            self.db.add(execution)
+
         await self.db.commit()
         await self.db.refresh(execution)
 
@@ -809,13 +833,13 @@ class StrategyService:
     ) -> StrategyVersion | None:
         """Get a specific version with tenant isolation.
 
-        Joins with Strategy table to ensure the version belongs to a strategy
-        owned by the specified tenant, preventing data leakage if strategy_id
-        is guessed.
+        Uses direct tenant_id filter on StrategyVersion for defense-in-depth,
+        in addition to joining with Strategy table to verify ownership.
         """
         stmt = (
             select(StrategyVersion)
             .join(Strategy, StrategyVersion.strategy_id == Strategy.id)
+            .where(StrategyVersion.tenant_id == tenant_id)
             .where(Strategy.tenant_id == tenant_id)
             .where(StrategyVersion.strategy_id == strategy_id)
             .where(StrategyVersion.version == version)

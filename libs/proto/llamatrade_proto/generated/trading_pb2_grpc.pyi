@@ -3,18 +3,23 @@
 isort:skip_file
 """
 
-import abc as _abc_1
-import typing as _typing
 from collections import abc as _abc
-from typing import Self as _Self
-
-import grpc as _grpc
-import trading_pb2 as _trading_pb2
 from grpc import aio as _aio
+import abc as _abc_1
+import grpc as _grpc
+import sys
+import trading_pb2 as _trading_pb2
+import typing as _typing
+
+if sys.version_info >= (3, 11):
+    from typing import Self as _Self
+else:
+    from typing_extensions import Self as _Self
 
 _T = _typing.TypeVar("_T")
 
 class _MaybeAsyncIterator(_abc.AsyncIterator[_T], _abc.Iterator[_T], metaclass=_abc_1.ABCMeta): ...
+
 class _ServicerContext(_grpc.ServicerContext, _aio.ServicerContext):  # type: ignore[misc, type-arg]
     ...
 
@@ -31,36 +36,18 @@ class TradingServiceStub:
     def __new__(cls, channel: _grpc.Channel) -> _Self: ...
     @_typing.overload
     def __new__(cls, channel: _aio.Channel) -> TradingServiceAsyncStub: ...
-    SubmitOrder: _grpc.UnaryUnaryMultiCallable[
-        _trading_pb2.SubmitOrderRequest, _trading_pb2.SubmitOrderResponse
-    ]
+    SubmitOrder: _grpc.UnaryUnaryMultiCallable[_trading_pb2.SubmitOrderRequest, _trading_pb2.SubmitOrderResponse]
     """Order management"""
-    CancelOrder: _grpc.UnaryUnaryMultiCallable[
-        _trading_pb2.CancelOrderRequest, _trading_pb2.CancelOrderResponse
-    ]
-    GetOrder: _grpc.UnaryUnaryMultiCallable[
-        _trading_pb2.GetOrderRequest, _trading_pb2.GetOrderResponse
-    ]
-    ListOrders: _grpc.UnaryUnaryMultiCallable[
-        _trading_pb2.ListOrdersRequest, _trading_pb2.ListOrdersResponse
-    ]
-    GetPosition: _grpc.UnaryUnaryMultiCallable[
-        _trading_pb2.GetPositionRequest, _trading_pb2.GetPositionResponse
-    ]
+    CancelOrder: _grpc.UnaryUnaryMultiCallable[_trading_pb2.CancelOrderRequest, _trading_pb2.CancelOrderResponse]
+    GetOrder: _grpc.UnaryUnaryMultiCallable[_trading_pb2.GetOrderRequest, _trading_pb2.GetOrderResponse]
+    ListOrders: _grpc.UnaryUnaryMultiCallable[_trading_pb2.ListOrdersRequest, _trading_pb2.ListOrdersResponse]
+    GetPosition: _grpc.UnaryUnaryMultiCallable[_trading_pb2.GetPositionRequest, _trading_pb2.GetPositionResponse]
     """Position management"""
-    ListPositions: _grpc.UnaryUnaryMultiCallable[
-        _trading_pb2.ListPositionsRequest, _trading_pb2.ListPositionsResponse
-    ]
-    ClosePosition: _grpc.UnaryUnaryMultiCallable[
-        _trading_pb2.ClosePositionRequest, _trading_pb2.ClosePositionResponse
-    ]
-    StreamOrderUpdates: _grpc.UnaryStreamMultiCallable[
-        _trading_pb2.StreamOrderUpdatesRequest, _trading_pb2.OrderUpdate
-    ]
+    ListPositions: _grpc.UnaryUnaryMultiCallable[_trading_pb2.ListPositionsRequest, _trading_pb2.ListPositionsResponse]
+    ClosePosition: _grpc.UnaryUnaryMultiCallable[_trading_pb2.ClosePositionRequest, _trading_pb2.ClosePositionResponse]
+    StreamOrderUpdates: _grpc.UnaryStreamMultiCallable[_trading_pb2.StreamOrderUpdatesRequest, _trading_pb2.OrderUpdate]
     """Real-time updates"""
-    StreamPositionUpdates: _grpc.UnaryStreamMultiCallable[
-        _trading_pb2.StreamPositionUpdatesRequest, _trading_pb2.PositionUpdate
-    ]
+    StreamPositionUpdates: _grpc.UnaryStreamMultiCallable[_trading_pb2.StreamPositionUpdatesRequest, _trading_pb2.PositionUpdate]
 
 @_typing.type_check_only
 class TradingServiceAsyncStub(TradingServiceStub):
@@ -70,36 +57,18 @@ class TradingServiceAsyncStub(TradingServiceStub):
     """
 
     def __init__(self, channel: _aio.Channel) -> None: ...
-    SubmitOrder: _aio.UnaryUnaryMultiCallable[
-        _trading_pb2.SubmitOrderRequest, _trading_pb2.SubmitOrderResponse
-    ]  # type: ignore[assignment]
+    SubmitOrder: _aio.UnaryUnaryMultiCallable[_trading_pb2.SubmitOrderRequest, _trading_pb2.SubmitOrderResponse]  # type: ignore[assignment]
     """Order management"""
-    CancelOrder: _aio.UnaryUnaryMultiCallable[
-        _trading_pb2.CancelOrderRequest, _trading_pb2.CancelOrderResponse
-    ]  # type: ignore[assignment]
-    GetOrder: _aio.UnaryUnaryMultiCallable[
-        _trading_pb2.GetOrderRequest, _trading_pb2.GetOrderResponse
-    ]  # type: ignore[assignment]
-    ListOrders: _aio.UnaryUnaryMultiCallable[
-        _trading_pb2.ListOrdersRequest, _trading_pb2.ListOrdersResponse
-    ]  # type: ignore[assignment]
-    GetPosition: _aio.UnaryUnaryMultiCallable[
-        _trading_pb2.GetPositionRequest, _trading_pb2.GetPositionResponse
-    ]  # type: ignore[assignment]
+    CancelOrder: _aio.UnaryUnaryMultiCallable[_trading_pb2.CancelOrderRequest, _trading_pb2.CancelOrderResponse]  # type: ignore[assignment]
+    GetOrder: _aio.UnaryUnaryMultiCallable[_trading_pb2.GetOrderRequest, _trading_pb2.GetOrderResponse]  # type: ignore[assignment]
+    ListOrders: _aio.UnaryUnaryMultiCallable[_trading_pb2.ListOrdersRequest, _trading_pb2.ListOrdersResponse]  # type: ignore[assignment]
+    GetPosition: _aio.UnaryUnaryMultiCallable[_trading_pb2.GetPositionRequest, _trading_pb2.GetPositionResponse]  # type: ignore[assignment]
     """Position management"""
-    ListPositions: _aio.UnaryUnaryMultiCallable[
-        _trading_pb2.ListPositionsRequest, _trading_pb2.ListPositionsResponse
-    ]  # type: ignore[assignment]
-    ClosePosition: _aio.UnaryUnaryMultiCallable[
-        _trading_pb2.ClosePositionRequest, _trading_pb2.ClosePositionResponse
-    ]  # type: ignore[assignment]
-    StreamOrderUpdates: _aio.UnaryStreamMultiCallable[
-        _trading_pb2.StreamOrderUpdatesRequest, _trading_pb2.OrderUpdate
-    ]  # type: ignore[assignment]
+    ListPositions: _aio.UnaryUnaryMultiCallable[_trading_pb2.ListPositionsRequest, _trading_pb2.ListPositionsResponse]  # type: ignore[assignment]
+    ClosePosition: _aio.UnaryUnaryMultiCallable[_trading_pb2.ClosePositionRequest, _trading_pb2.ClosePositionResponse]  # type: ignore[assignment]
+    StreamOrderUpdates: _aio.UnaryStreamMultiCallable[_trading_pb2.StreamOrderUpdatesRequest, _trading_pb2.OrderUpdate]  # type: ignore[assignment]
     """Real-time updates"""
-    StreamPositionUpdates: _aio.UnaryStreamMultiCallable[
-        _trading_pb2.StreamPositionUpdatesRequest, _trading_pb2.PositionUpdate
-    ]  # type: ignore[assignment]
+    StreamPositionUpdates: _aio.UnaryStreamMultiCallable[_trading_pb2.StreamPositionUpdatesRequest, _trading_pb2.PositionUpdate]  # type: ignore[assignment]
 
 class TradingServiceServicer(metaclass=_abc_1.ABCMeta):
     """=============================================================================
@@ -112,7 +81,7 @@ class TradingServiceServicer(metaclass=_abc_1.ABCMeta):
         self,
         request: _trading_pb2.SubmitOrderRequest,
         context: _ServicerContext,
-    ) -> _trading_pb2.SubmitOrderResponse | _abc.Awaitable[_trading_pb2.SubmitOrderResponse]:
+    ) -> _typing.Union[_trading_pb2.SubmitOrderResponse, _abc.Awaitable[_trading_pb2.SubmitOrderResponse]]:
         """Order management"""
 
     @_abc_1.abstractmethod
@@ -120,25 +89,28 @@ class TradingServiceServicer(metaclass=_abc_1.ABCMeta):
         self,
         request: _trading_pb2.CancelOrderRequest,
         context: _ServicerContext,
-    ) -> _trading_pb2.CancelOrderResponse | _abc.Awaitable[_trading_pb2.CancelOrderResponse]: ...
+    ) -> _typing.Union[_trading_pb2.CancelOrderResponse, _abc.Awaitable[_trading_pb2.CancelOrderResponse]]: ...
+
     @_abc_1.abstractmethod
     def GetOrder(
         self,
         request: _trading_pb2.GetOrderRequest,
         context: _ServicerContext,
-    ) -> _trading_pb2.GetOrderResponse | _abc.Awaitable[_trading_pb2.GetOrderResponse]: ...
+    ) -> _typing.Union[_trading_pb2.GetOrderResponse, _abc.Awaitable[_trading_pb2.GetOrderResponse]]: ...
+
     @_abc_1.abstractmethod
     def ListOrders(
         self,
         request: _trading_pb2.ListOrdersRequest,
         context: _ServicerContext,
-    ) -> _trading_pb2.ListOrdersResponse | _abc.Awaitable[_trading_pb2.ListOrdersResponse]: ...
+    ) -> _typing.Union[_trading_pb2.ListOrdersResponse, _abc.Awaitable[_trading_pb2.ListOrdersResponse]]: ...
+
     @_abc_1.abstractmethod
     def GetPosition(
         self,
         request: _trading_pb2.GetPositionRequest,
         context: _ServicerContext,
-    ) -> _trading_pb2.GetPositionResponse | _abc.Awaitable[_trading_pb2.GetPositionResponse]:
+    ) -> _typing.Union[_trading_pb2.GetPositionResponse, _abc.Awaitable[_trading_pb2.GetPositionResponse]]:
         """Position management"""
 
     @_abc_1.abstractmethod
@@ -146,23 +118,21 @@ class TradingServiceServicer(metaclass=_abc_1.ABCMeta):
         self,
         request: _trading_pb2.ListPositionsRequest,
         context: _ServicerContext,
-    ) -> (
-        _trading_pb2.ListPositionsResponse | _abc.Awaitable[_trading_pb2.ListPositionsResponse]
-    ): ...
+    ) -> _typing.Union[_trading_pb2.ListPositionsResponse, _abc.Awaitable[_trading_pb2.ListPositionsResponse]]: ...
+
     @_abc_1.abstractmethod
     def ClosePosition(
         self,
         request: _trading_pb2.ClosePositionRequest,
         context: _ServicerContext,
-    ) -> (
-        _trading_pb2.ClosePositionResponse | _abc.Awaitable[_trading_pb2.ClosePositionResponse]
-    ): ...
+    ) -> _typing.Union[_trading_pb2.ClosePositionResponse, _abc.Awaitable[_trading_pb2.ClosePositionResponse]]: ...
+
     @_abc_1.abstractmethod
     def StreamOrderUpdates(
         self,
         request: _trading_pb2.StreamOrderUpdatesRequest,
         context: _ServicerContext,
-    ) -> _abc.Iterator[_trading_pb2.OrderUpdate] | _abc.AsyncIterator[_trading_pb2.OrderUpdate]:
+    ) -> _typing.Union[_abc.Iterator[_trading_pb2.OrderUpdate], _abc.AsyncIterator[_trading_pb2.OrderUpdate]]:
         """Real-time updates"""
 
     @_abc_1.abstractmethod
@@ -170,10 +140,6 @@ class TradingServiceServicer(metaclass=_abc_1.ABCMeta):
         self,
         request: _trading_pb2.StreamPositionUpdatesRequest,
         context: _ServicerContext,
-    ) -> (
-        _abc.Iterator[_trading_pb2.PositionUpdate] | _abc.AsyncIterator[_trading_pb2.PositionUpdate]
-    ): ...
+    ) -> _typing.Union[_abc.Iterator[_trading_pb2.PositionUpdate], _abc.AsyncIterator[_trading_pb2.PositionUpdate]]: ...
 
-def add_TradingServiceServicer_to_server(
-    servicer: TradingServiceServicer, server: _grpc.Server | _aio.Server
-) -> None: ...
+def add_TradingServiceServicer_to_server(servicer: TradingServiceServicer, server: _typing.Union[_grpc.Server, _aio.Server]) -> None: ...

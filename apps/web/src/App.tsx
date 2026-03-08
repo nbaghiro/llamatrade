@@ -42,7 +42,7 @@ export default function App() {
           </ProtectedRoute>
         }
       >
-        <Route index element={<Navigate to="/dashboard" replace />} />
+        <Route index element={<Navigate to="/portfolio" replace />} />
         <Route path="dashboard" element={<DashboardPage />} />
         <Route path="strategies" element={<StrategiesPage />} />
         <Route path="strategies/new" element={<NewStrategyPage />} />
