@@ -2,6 +2,7 @@
 """Tests for benchmark calculations."""
 
 from datetime import UTC, datetime, timedelta
+from unittest.mock import AsyncMock
 
 import numpy as np
 import pytest
@@ -9,6 +10,7 @@ import pytest
 from src.engine.benchmarks import (
     BenchmarkCalculator,
     BenchmarkMetrics,
+    fetch_benchmark_data,
 )
 
 
@@ -268,3 +270,89 @@ class TestCustomWeights:
 
         # 100% stocks should equal SPY buy & hold
         assert portfolio_return == pytest.approx(spy_return, rel=0.01)
+
+
+class TestFetchBenchmarkDataAvailability:
+    """Tests for fetch_benchmark_data availability flag."""
+
+    @pytest.mark.asyncio
+    async def test_fetch_benchmark_data_returns_availability_flag_success(self):
+        """Test that fetch_benchmark_data returns True when SPY data is available."""
+        mock_client = AsyncMock()
+        mock_client.fetch_bars = AsyncMock(
+            return_value={
+                "SPY": [
+                    {"timestamp": datetime(2024, 1, 1, tzinfo=UTC), "close": 450.0},
+                    {"timestamp": datetime(2024, 1, 2, tzinfo=UTC), "close": 452.0},
+                ],
+                "BND": [
+                    {"timestamp": datetime(2024, 1, 1, tzinfo=UTC), "close": 75.0},
+                    {"timestamp": datetime(2024, 1, 2, tzinfo=UTC), "close": 75.5},
+                ],
+            }
+        )
+
+        spy_bars, bond_bars, available = await fetch_benchmark_data(
+            mock_client,
+            start_date=datetime(2024, 1, 1, tzinfo=UTC),
+            end_date=datetime(2024, 1, 31, tzinfo=UTC),
+        )
+
+        assert available is True
+        assert len(spy_bars) == 2
+        assert bond_bars is not None
+        assert len(bond_bars) == 2
+
+    @pytest.mark.asyncio
+    async def test_fetch_benchmark_data_returns_unavailable_when_empty(self):
+        """Test that fetch_benchmark_data returns False when SPY data is empty."""
+        mock_client = AsyncMock()
+        mock_client.fetch_bars = AsyncMock(return_value={"SPY": [], "BND": []})
+
+        spy_bars, bond_bars, available = await fetch_benchmark_data(
+            mock_client,
+            start_date=datetime(2024, 1, 1, tzinfo=UTC),
+            end_date=datetime(2024, 1, 31, tzinfo=UTC),
+        )
+
+        assert available is False
+        assert len(spy_bars) == 0
+        assert bond_bars is None
+
+    @pytest.mark.asyncio
+    async def test_fetch_benchmark_data_returns_unavailable_on_error(self):
+        """Test that fetch_benchmark_data returns False when an exception occurs."""
+        mock_client = AsyncMock()
+        mock_client.fetch_bars = AsyncMock(side_effect=Exception("API Error"))
+
+        spy_bars, bond_bars, available = await fetch_benchmark_data(
+            mock_client,
+            start_date=datetime(2024, 1, 1, tzinfo=UTC),
+            end_date=datetime(2024, 1, 31, tzinfo=UTC),
+        )
+
+        assert available is False
+        assert len(spy_bars) == 0
+        assert bond_bars is None
+
+    @pytest.mark.asyncio
+    async def test_fetch_benchmark_data_available_with_spy_only(self):
+        """Test that benchmark is available with just SPY data (no bonds)."""
+        mock_client = AsyncMock()
+        mock_client.fetch_bars = AsyncMock(
+            return_value={
+                "SPY": [
+                    {"timestamp": datetime(2024, 1, 1, tzinfo=UTC), "close": 450.0},
+                ],
+            }
+        )
+
+        spy_bars, bond_bars, available = await fetch_benchmark_data(
+            mock_client,
+            start_date=datetime(2024, 1, 1, tzinfo=UTC),
+            end_date=datetime(2024, 1, 31, tzinfo=UTC),
+        )
+
+        assert available is True
+        assert len(spy_bars) == 1
+        assert bond_bars is None

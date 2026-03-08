@@ -11,9 +11,6 @@ from connectrpc.errors import ConnectError
 from connectrpc.request import RequestContext
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-# Type alias for generic request context (accepts any request/response types)
-type AnyContext = RequestContext[object, object]
-
 from llamatrade_proto.generated import common_pb2, strategy_pb2
 from llamatrade_proto.generated.common_pb2 import EXECUTION_MODE_PAPER
 from llamatrade_proto.generated.strategy_pb2 import (
@@ -22,6 +19,7 @@ from llamatrade_proto.generated.strategy_pb2 import (
     STRATEGY_STATUS_PAUSED,
 )
 
+from src.grpc.error_handler import handle_service_errors, parse_uuid
 from src.models import (
     ExecutionResponse,
     StrategyDetailResponse,
@@ -84,16 +82,17 @@ class StrategyServicer:
         session: AsyncSession = self._session_maker()
         return session
 
+    @handle_service_errors
     async def get_strategy(
         self,
         request: strategy_pb2.GetStrategyRequest,
-        ctx: AnyContext,
+        ctx: RequestContext,
     ) -> strategy_pb2.GetStrategyResponse:
         """Get a strategy by ID."""
         from src.services.strategy_service import StrategyService
 
         tenant_id, _ = _validate_tenant_context(request.context)
-        strategy_id = UUID(request.strategy_id)
+        strategy_id = parse_uuid(request.strategy_id, "strategy_id")
 
         async with await self._get_db() as db:
             service = StrategyService(db)
@@ -120,10 +119,11 @@ class StrategyServicer:
                 strategy=self._to_proto_strategy(strategy),
             )
 
+    @handle_service_errors
     async def list_strategies(
         self,
         request: strategy_pb2.ListStrategiesRequest,
-        ctx: AnyContext,
+        ctx: RequestContext,
     ) -> strategy_pb2.ListStrategiesResponse:
         """List strategies for a tenant with filtering, search, and sort."""
         from src.services.strategy_service import StrategyService
@@ -176,10 +176,11 @@ class StrategyServicer:
                 ),
             )
 
+    @handle_service_errors
     async def create_strategy(
         self,
         request: strategy_pb2.CreateStrategyRequest,
-        ctx: AnyContext,
+        ctx: RequestContext,
     ) -> strategy_pb2.CreateStrategyResponse:
         """Create a new strategy.
 
@@ -228,19 +229,21 @@ class StrategyServicer:
                     strategy=self._to_proto_strategy(strategy),
                 )
         except ValueError as e:
+            # Validation errors are invalid arguments
             raise ConnectError(Code.INVALID_ARGUMENT, str(e))
 
+    @handle_service_errors
     async def update_strategy(
         self,
         request: strategy_pb2.UpdateStrategyRequest,
-        ctx: AnyContext,
+        ctx: RequestContext,
     ) -> strategy_pb2.UpdateStrategyResponse:
         """Update an existing strategy."""
         from src.models import StrategyUpdate
         from src.services.strategy_service import StrategyService
 
         tenant_id, user_id = _validate_tenant_context(request.context)
-        strategy_id = UUID(request.strategy_id)
+        strategy_id = parse_uuid(request.strategy_id, "strategy_id")
 
         # Build update data
         # Convert proto map to dict
@@ -273,18 +276,20 @@ class StrategyServicer:
                     strategy=self._to_proto_strategy(strategy),
                 )
         except ValueError as e:
+            # Validation errors are invalid arguments
             raise ConnectError(Code.INVALID_ARGUMENT, str(e))
 
+    @handle_service_errors
     async def delete_strategy(
         self,
         request: strategy_pb2.DeleteStrategyRequest,
-        ctx: AnyContext,
+        ctx: RequestContext,
     ) -> strategy_pb2.DeleteStrategyResponse:
         """Delete (archive) a strategy."""
         from src.services.strategy_service import StrategyService
 
         tenant_id, _ = _validate_tenant_context(request.context)
-        strategy_id = UUID(request.strategy_id)
+        strategy_id = parse_uuid(request.strategy_id, "strategy_id")
 
         async with await self._get_db() as db:
             service = StrategyService(db)
@@ -298,10 +303,11 @@ class StrategyServicer:
 
             return strategy_pb2.DeleteStrategyResponse(success=True)
 
+    @handle_service_errors
     async def compile_strategy(
         self,
         request: strategy_pb2.CompileStrategyRequest,
-        ctx: AnyContext,
+        ctx: RequestContext,
     ) -> strategy_pb2.CompileStrategyResponse:
         """Compile/validate DSL code."""
         from src.services.strategy_service import StrategyService
@@ -351,16 +357,17 @@ class StrategyServicer:
 
             return strategy_pb2.CompileStrategyResponse(result=result)
 
+    @handle_service_errors
     async def validate_strategy(
         self,
         request: strategy_pb2.ValidateStrategyRequest,
-        ctx: AnyContext,
+        ctx: RequestContext,
     ) -> strategy_pb2.ValidateStrategyResponse:
         """Validate an existing strategy."""
         from src.services.strategy_service import StrategyService
 
         tenant_id, _ = _validate_tenant_context(request.context)
-        strategy_id = UUID(request.strategy_id)
+        strategy_id = parse_uuid(request.strategy_id, "strategy_id")
 
         async with await self._get_db() as db:
             service = StrategyService(db)
@@ -405,16 +412,17 @@ class StrategyServicer:
                 ),
             )
 
+    @handle_service_errors
     async def list_strategy_versions(
         self,
         request: strategy_pb2.ListStrategyVersionsRequest,
-        ctx: AnyContext,
+        ctx: RequestContext,
     ) -> strategy_pb2.ListStrategyVersionsResponse:
         """List versions of a strategy."""
         from src.services.strategy_service import StrategyService
 
         tenant_id, _ = _validate_tenant_context(request.context)
-        strategy_id = UUID(request.strategy_id)
+        strategy_id = parse_uuid(request.strategy_id, "strategy_id")
 
         page = request.pagination.page if request.HasField("pagination") else 1
         page_size = request.pagination.page_size if request.HasField("pagination") else 20
@@ -443,10 +451,11 @@ class StrategyServicer:
                 ),
             )
 
+    @handle_service_errors
     async def update_strategy_status(
         self,
         request: strategy_pb2.UpdateStrategyStatusRequest,
-        ctx: AnyContext,
+        ctx: RequestContext,
     ) -> strategy_pb2.UpdateStrategyStatusResponse:
         """Update strategy status.
 
@@ -460,7 +469,7 @@ class StrategyServicer:
         from src.services.strategy_service import StrategyService
 
         tenant_id, user_id = _validate_tenant_context(request.context)
-        strategy_id = UUID(request.strategy_id)
+        strategy_id = parse_uuid(request.strategy_id, "strategy_id")
 
         # Use proto int value directly
         status = request.status
@@ -499,18 +508,20 @@ class StrategyServicer:
                     strategy=self._to_proto_strategy(full_strategy) if full_strategy else None,
                 )
         except ValueError as e:
+            # Status transition validation errors
             raise ConnectError(Code.INVALID_ARGUMENT, str(e))
 
+    @handle_service_errors
     async def clone_strategy(
         self,
         request: strategy_pb2.CloneStrategyRequest,
-        ctx: AnyContext,
+        ctx: RequestContext,
     ) -> strategy_pb2.CloneStrategyResponse:
         """Clone a strategy with a new name."""
         from src.services.strategy_service import StrategyService
 
         tenant_id, user_id = _validate_tenant_context(request.context)
-        strategy_id = UUID(request.strategy_id)
+        strategy_id = parse_uuid(request.strategy_id, "strategy_id")
 
         if not request.new_name:
             raise ConnectError(Code.INVALID_ARGUMENT, "new_name is required")
@@ -558,17 +569,18 @@ class StrategyServicer:
                 strategy=self._to_proto_strategy(strategy),
             )
 
+    @handle_service_errors
     async def create_execution(
         self,
         request: strategy_pb2.CreateExecutionRequest,
-        ctx: AnyContext,
+        ctx: RequestContext,
     ) -> strategy_pb2.CreateExecutionResponse:
         """Create a new execution for a strategy."""
         from src.models import ExecutionCreate
         from src.services.strategy_service import StrategyService
 
         tenant_id, _ = _validate_tenant_context(request.context)
-        strategy_id = UUID(request.strategy_id)
+        strategy_id = parse_uuid(request.strategy_id, "strategy_id")
 
         # Use proto mode directly (int), default to PAPER
         mode = request.mode if request.mode > 0 else EXECUTION_MODE_PAPER
@@ -582,37 +594,35 @@ class StrategyServicer:
             config_override=config_override,  # type: ignore[arg-type]
         )
 
-        try:
-            async with await self._get_db() as db:
-                service = StrategyService(db)
-                execution = await service.create_execution(
-                    tenant_id=tenant_id,
-                    strategy_id=strategy_id,
-                    data=create_data,
+        async with await self._get_db() as db:
+            service = StrategyService(db)
+            execution = await service.create_execution(
+                tenant_id=tenant_id,
+                strategy_id=strategy_id,
+                data=create_data,
+            )
+
+            if not execution:
+                raise ConnectError(
+                    Code.NOT_FOUND,
+                    f"Strategy not found: {request.strategy_id}",
                 )
 
-                if not execution:
-                    raise ConnectError(
-                        Code.NOT_FOUND,
-                        f"Strategy not found: {request.strategy_id}",
-                    )
+            return strategy_pb2.CreateExecutionResponse(
+                execution=self._to_proto_execution(execution),
+            )
 
-                return strategy_pb2.CreateExecutionResponse(
-                    execution=self._to_proto_execution(execution),
-                )
-        except ValueError as e:
-            raise ConnectError(Code.INVALID_ARGUMENT, str(e))
-
+    @handle_service_errors
     async def get_execution(
         self,
         request: strategy_pb2.GetExecutionRequest,
-        ctx: AnyContext,
+        ctx: RequestContext,
     ) -> strategy_pb2.GetExecutionResponse:
         """Get an execution by ID."""
         from src.services.strategy_service import StrategyService
 
         tenant_id, _ = _validate_tenant_context(request.context)
-        execution_id = UUID(request.execution_id)
+        execution_id = parse_uuid(request.execution_id, "execution_id")
 
         async with await self._get_db() as db:
             service = StrategyService(db)
@@ -628,10 +638,11 @@ class StrategyServicer:
                 execution=self._to_proto_execution(execution),
             )
 
+    @handle_service_errors
     async def list_executions(
         self,
         request: strategy_pb2.ListExecutionsRequest,
-        ctx: AnyContext,
+        ctx: RequestContext,
     ) -> strategy_pb2.ListExecutionsResponse:
         """List executions with optional filters."""
         from src.services.strategy_service import StrategyService
@@ -639,7 +650,9 @@ class StrategyServicer:
         tenant_id, _ = _validate_tenant_context(request.context)
 
         # Map filters - pass proto int values directly
-        strategy_id = UUID(request.strategy_id) if request.strategy_id else None
+        strategy_id = (
+            parse_uuid(request.strategy_id, "strategy_id") if request.strategy_id else None
+        )
         status = request.statuses[0] if request.statuses else None
         mode = request.modes[0] if request.modes else None
 
@@ -671,16 +684,17 @@ class StrategyServicer:
                 ),
             )
 
+    @handle_service_errors
     async def start_execution(
         self,
         request: strategy_pb2.StartExecutionRequest,
-        ctx: AnyContext,
+        ctx: RequestContext,
     ) -> strategy_pb2.StartExecutionResponse:
         """Start a pending execution."""
         from src.services.strategy_service import StrategyService
 
         tenant_id, _ = _validate_tenant_context(request.context)
-        execution_id = UUID(request.execution_id)
+        execution_id = parse_uuid(request.execution_id, "execution_id")
 
         try:
             async with await self._get_db() as db:
@@ -697,18 +711,20 @@ class StrategyServicer:
                     execution=self._to_proto_execution(execution),
                 )
         except ValueError as e:
+            # State transition errors are precondition failures
             raise ConnectError(Code.FAILED_PRECONDITION, str(e))
 
+    @handle_service_errors
     async def pause_execution(
         self,
         request: strategy_pb2.PauseExecutionRequest,
-        ctx: AnyContext,
+        ctx: RequestContext,
     ) -> strategy_pb2.PauseExecutionResponse:
         """Pause a running execution."""
         from src.services.strategy_service import StrategyService
 
         tenant_id, _ = _validate_tenant_context(request.context)
-        execution_id = UUID(request.execution_id)
+        execution_id = parse_uuid(request.execution_id, "execution_id")
 
         try:
             async with await self._get_db() as db:
@@ -725,18 +741,20 @@ class StrategyServicer:
                     execution=self._to_proto_execution(execution),
                 )
         except ValueError as e:
+            # State transition errors are precondition failures
             raise ConnectError(Code.FAILED_PRECONDITION, str(e))
 
+    @handle_service_errors
     async def stop_execution(
         self,
         request: strategy_pb2.StopExecutionRequest,
-        ctx: AnyContext,
+        ctx: RequestContext,
     ) -> strategy_pb2.StopExecutionResponse:
         """Stop an execution."""
         from src.services.strategy_service import StrategyService
 
         tenant_id, _ = _validate_tenant_context(request.context)
-        execution_id = UUID(request.execution_id)
+        execution_id = parse_uuid(request.execution_id, "execution_id")
 
         reason = request.reason if request.reason else None
 
@@ -759,12 +777,14 @@ class StrategyServicer:
                     execution=self._to_proto_execution(execution),
                 )
         except ValueError as e:
+            # State transition errors are precondition failures
             raise ConnectError(Code.FAILED_PRECONDITION, str(e))
 
+    @handle_service_errors
     async def list_templates(
         self,
         request: strategy_pb2.ListTemplatesRequest,
-        ctx: AnyContext,
+        ctx: RequestContext,
     ) -> strategy_pb2.ListTemplatesResponse:
         """List available strategy templates.
 
@@ -804,10 +824,11 @@ class StrategyServicer:
             ],
         )
 
+    @handle_service_errors
     async def get_template(
         self,
         request: strategy_pb2.GetTemplateRequest,
-        ctx: AnyContext,
+        ctx: RequestContext,
     ) -> strategy_pb2.GetTemplateResponse:
         """Get a specific template by ID.
 

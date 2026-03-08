@@ -26,10 +26,13 @@ TEST_BACKTEST_ID = UUID("44444444-4444-4444-4444-444444444444")
 @pytest.fixture
 def mock_strategy():
     """Create a mock strategy object."""
+    from llamatrade_proto.generated.strategy_pb2 import STRATEGY_STATUS_ACTIVE
+
     strategy = MagicMock()
     strategy.id = TEST_STRATEGY_ID
     strategy.tenant_id = TEST_TENANT_ID
     strategy.current_version = 1
+    strategy.status = STRATEGY_STATUS_ACTIVE
     return strategy
 
 
@@ -758,3 +761,147 @@ class TestBacktestServiceSymbolValidation:
         error_msg = str(exc_info.value)
         assert "INVALID1" in error_msg
         assert "INVALID2" in error_msg
+
+
+class TestBacktestServiceStrategyStatus:
+    """Tests for strategy status enforcement."""
+
+    @pytest.mark.asyncio
+    async def test_create_backtest_rejects_draft_strategy(
+        self, mock_db, mock_strategy, mock_strategy_version
+    ):
+        """Test that DRAFT strategies cannot be backtested."""
+        from llamatrade_proto.generated.strategy_pb2 import STRATEGY_STATUS_DRAFT
+
+        mock_strategy.status = STRATEGY_STATUS_DRAFT
+        mock_db.execute.return_value = MagicMock(
+            scalar_one_or_none=MagicMock(return_value=mock_strategy)
+        )
+
+        service = BacktestService(mock_db)
+
+        with pytest.raises(ValueError) as exc_info:
+            await service.create_backtest(
+                tenant_id=TEST_TENANT_ID,
+                user_id=TEST_USER_ID,
+                strategy_id=TEST_STRATEGY_ID,
+                strategy_version=None,
+                name="Test Backtest",
+                start_date=date(2024, 1, 1),
+                end_date=date(2024, 6, 30),
+                initial_capital=100000.0,
+                symbols=["AAPL"],
+                commission=0.001,
+                slippage=0.001,
+            )
+
+        assert "STRATEGY_STATUS_DRAFT" in str(exc_info.value)
+        assert "ACTIVE or PAUSED" in str(exc_info.value)
+
+    @pytest.mark.asyncio
+    async def test_create_backtest_rejects_archived_strategy(
+        self, mock_db, mock_strategy, mock_strategy_version
+    ):
+        """Test that ARCHIVED strategies cannot be backtested."""
+        from llamatrade_proto.generated.strategy_pb2 import STRATEGY_STATUS_ARCHIVED
+
+        mock_strategy.status = STRATEGY_STATUS_ARCHIVED
+        mock_db.execute.return_value = MagicMock(
+            scalar_one_or_none=MagicMock(return_value=mock_strategy)
+        )
+
+        service = BacktestService(mock_db)
+
+        with pytest.raises(ValueError) as exc_info:
+            await service.create_backtest(
+                tenant_id=TEST_TENANT_ID,
+                user_id=TEST_USER_ID,
+                strategy_id=TEST_STRATEGY_ID,
+                strategy_version=None,
+                name="Test Backtest",
+                start_date=date(2024, 1, 1),
+                end_date=date(2024, 6, 30),
+                initial_capital=100000.0,
+                symbols=["AAPL"],
+                commission=0.001,
+                slippage=0.001,
+            )
+
+        assert "STRATEGY_STATUS_ARCHIVED" in str(exc_info.value)
+        assert "ACTIVE or PAUSED" in str(exc_info.value)
+
+    @pytest.mark.asyncio
+    async def test_create_backtest_allows_active_strategy(
+        self, mock_db, mock_strategy, mock_strategy_version
+    ):
+        """Test that ACTIVE strategies can be backtested."""
+        from llamatrade_proto.generated.strategy_pb2 import STRATEGY_STATUS_ACTIVE
+
+        mock_strategy.status = STRATEGY_STATUS_ACTIVE
+        mock_db.execute.side_effect = [
+            MagicMock(scalar_one_or_none=MagicMock(return_value=mock_strategy)),
+            MagicMock(scalar_one_or_none=MagicMock(return_value=mock_strategy_version)),
+        ]
+
+        def capture_add(obj):
+            obj.id = TEST_BACKTEST_ID
+            obj.created_at = datetime.now(UTC)
+
+        mock_db.add.side_effect = capture_add
+
+        service = BacktestService(mock_db)
+
+        result = await service.create_backtest(
+            tenant_id=TEST_TENANT_ID,
+            user_id=TEST_USER_ID,
+            strategy_id=TEST_STRATEGY_ID,
+            strategy_version=None,
+            name="Test Backtest",
+            start_date=date(2024, 1, 1),
+            end_date=date(2024, 6, 30),
+            initial_capital=100000.0,
+            symbols=["AAPL"],
+            commission=0.001,
+            slippage=0.001,
+        )
+
+        assert result is not None
+        mock_db.add.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_create_backtest_allows_paused_strategy(
+        self, mock_db, mock_strategy, mock_strategy_version
+    ):
+        """Test that PAUSED strategies can be backtested."""
+        from llamatrade_proto.generated.strategy_pb2 import STRATEGY_STATUS_PAUSED
+
+        mock_strategy.status = STRATEGY_STATUS_PAUSED
+        mock_db.execute.side_effect = [
+            MagicMock(scalar_one_or_none=MagicMock(return_value=mock_strategy)),
+            MagicMock(scalar_one_or_none=MagicMock(return_value=mock_strategy_version)),
+        ]
+
+        def capture_add(obj):
+            obj.id = TEST_BACKTEST_ID
+            obj.created_at = datetime.now(UTC)
+
+        mock_db.add.side_effect = capture_add
+
+        service = BacktestService(mock_db)
+
+        result = await service.create_backtest(
+            tenant_id=TEST_TENANT_ID,
+            user_id=TEST_USER_ID,
+            strategy_id=TEST_STRATEGY_ID,
+            strategy_version=None,
+            name="Test Backtest",
+            start_date=date(2024, 1, 1),
+            end_date=date(2024, 6, 30),
+            initial_capital=100000.0,
+            symbols=["AAPL"],
+            commission=0.001,
+            slippage=0.001,
+        )
+
+        assert result is not None
+        mock_db.add.assert_called_once()

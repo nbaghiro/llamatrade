@@ -344,7 +344,7 @@ async def fetch_benchmark_data(
     start_date: datetime,
     end_date: datetime,
     timeframe: str = "1D",
-) -> tuple[list[BenchmarkBarData], list[BenchmarkBarData] | None]:
+) -> tuple[list[BenchmarkBarData], list[BenchmarkBarData] | None, bool]:
     """Fetch benchmark data (SPY and BND) from market data service.
 
     Args:
@@ -354,7 +354,8 @@ async def fetch_benchmark_data(
         timeframe: Timeframe (default daily)
 
     Returns:
-        Tuple of (spy_bars, bond_bars)
+        Tuple of (spy_bars, bond_bars, benchmark_available).
+        benchmark_available is True if SPY data was successfully fetched with at least one bar.
     """
     try:
         # Fetch SPY
@@ -396,7 +397,10 @@ async def fetch_benchmark_data(
                 }
             )
 
-        return spy_bars, bond_bars_list if bond_bars_list else None
+        # Benchmark is considered available if we have at least one SPY bar
+        benchmark_available = len(spy_bars) > 0
+        return spy_bars, bond_bars_list if bond_bars_list else None, benchmark_available
 
     except Exception:
-        return [], None
+        # On error, explicitly mark benchmark as unavailable
+        return [], None, False

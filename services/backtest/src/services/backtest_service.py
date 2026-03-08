@@ -20,6 +20,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from llamatrade_db import get_db
 from llamatrade_db.models.backtest import Backtest, BacktestResult
 from llamatrade_db.models.strategy import Strategy, StrategyVersion
+from llamatrade_proto.generated.strategy_pb2 import (
+    STRATEGY_STATUS_ACTIVE,
+    STRATEGY_STATUS_PAUSED,
+    StrategyStatus,
+)
 
 from src.engine.backtester import BacktestConfig, BacktestEngine
 from src.engine.benchmarks import BenchmarkBarData, BenchmarkCalculator
@@ -268,6 +273,14 @@ class BacktestService:
         strategy = await self._get_strategy(tenant_id, strategy_id)
         if not strategy:
             raise ValueError(f"Strategy {strategy_id} not found")
+
+        # Verify strategy is in a runnable state (not DRAFT or ARCHIVED)
+        if strategy.status not in (STRATEGY_STATUS_ACTIVE, STRATEGY_STATUS_PAUSED):
+            status_name = StrategyStatus.Name(strategy.status)
+            raise ValueError(
+                f"Cannot backtest strategy with status {status_name}. "
+                "Strategy must be ACTIVE or PAUSED."
+            )
 
         # Use current version if not specified
         version = strategy_version or strategy.current_version
@@ -940,6 +953,11 @@ class BacktestService:
         information_ratio = float(r.information_ratio) if r.information_ratio else 0
         excess_return = float(r.total_return) - benchmark_return
 
+        # Infer benchmark data availability from the stored data
+        # Benchmark is considered available if we have benchmark equity curve data
+        # or if benchmark_return is non-zero
+        benchmark_data_available = bool(raw_benchmark_curve) or benchmark_return != 0
+
         metrics = BacktestMetrics(
             total_return=float(r.total_return),
             annual_return=float(r.annual_return),
@@ -965,6 +983,7 @@ class BacktestService:
             beta=beta,
             information_ratio=information_ratio,
             excess_return=excess_return,
+            benchmark_data_available=benchmark_data_available,
         )
 
         return BacktestResultResponse(

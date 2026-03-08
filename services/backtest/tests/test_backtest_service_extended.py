@@ -90,10 +90,13 @@ def mock_backtest():
 @pytest.fixture
 def mock_strategy():
     """Create a mock strategy object."""
+    from llamatrade_proto.generated.strategy_pb2 import STRATEGY_STATUS_ACTIVE
+
     strategy = MagicMock()
     strategy.id = TEST_STRATEGY_ID
     strategy.tenant_id = TEST_TENANT_ID
     strategy.current_version = 1
+    strategy.status = STRATEGY_STATUS_ACTIVE
     return strategy
 
 

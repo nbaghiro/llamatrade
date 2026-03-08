@@ -87,6 +87,9 @@ class BacktestMetrics(BaseModel):
     beta: float = 0
     information_ratio: float = 0
     excess_return: float = 0
+    # Indicates whether benchmark data was successfully fetched
+    # When False, benchmark metrics (benchmark_return, alpha, beta, etc.) are defaults
+    benchmark_data_available: bool = True
 
 
 class TradeRecord(BaseModel):

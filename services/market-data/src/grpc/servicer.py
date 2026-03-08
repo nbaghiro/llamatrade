@@ -178,6 +178,7 @@ class MarketDataServicer:
                 market_data_pb2.TIMEFRAME_4HOUR: Timeframe.HOUR_4,
                 market_data_pb2.TIMEFRAME_1DAY: Timeframe.DAY_1,
                 market_data_pb2.TIMEFRAME_1WEEK: Timeframe.WEEK_1,
+                market_data_pb2.TIMEFRAME_1MONTH: Timeframe.MONTH_1,
             }
         except ImportError:
             logger.warning("gRPC generated code not available - using fallback")

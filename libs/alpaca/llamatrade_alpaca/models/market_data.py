@@ -18,6 +18,7 @@ class Timeframe(StrEnum):
     HOUR_4 = "4Hour"
     DAY_1 = "1Day"
     WEEK_1 = "1Week"
+    MONTH_1 = "1Month"
 
 
 class Bar(BaseModel):

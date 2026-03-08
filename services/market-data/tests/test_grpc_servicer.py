@@ -574,3 +574,61 @@ class TestHelperMethods:
         """Test that timeframe map is properly initialized."""
         # The servicer should have initialized the map (or it's empty due to import issues)
         assert hasattr(servicer, "_TIMEFRAME_MAP")
+
+
+class TestTimeframeMapping:
+    """Tests for timeframe enum mapping."""
+
+    async def test_get_historical_bars_monthly_timeframe(self, servicer, mock_context, sample_bar):
+        """Test monthly timeframe mapping (TIMEFRAME_1MONTH)."""
+        from src.models import Timeframe
+
+        mock_client = MagicMock()
+        mock_client.get_bars = AsyncMock(return_value=[sample_bar])
+
+        with patch("src.grpc.servicer.get_market_data_client_async", return_value=mock_client):
+            # 9 = TIMEFRAME_1MONTH in proto enum
+            request = MockGetHistoricalBarsRequest(symbol="AAPL", timeframe=9)
+            response = await servicer.get_historical_bars(request, mock_context)
+
+            assert response is not None
+            mock_client.get_bars.assert_called_once()
+            call_kwargs = mock_client.get_bars.call_args.kwargs
+            # Verify the timeframe was mapped to MONTH_1
+            assert call_kwargs["timeframe"] == Timeframe.MONTH_1
+
+    def test_timeframe_map_contains_monthly(self, servicer):
+        """Test that timeframe map includes TIMEFRAME_1MONTH."""
+        from llamatrade_proto.generated import market_data_pb2
+
+        from src.models import Timeframe
+
+        # Ensure the map is initialized
+        servicer._init_timeframe_map()
+
+        # Check that MONTH_1 is mapped
+        assert market_data_pb2.TIMEFRAME_1MONTH in servicer._TIMEFRAME_MAP
+        assert servicer._TIMEFRAME_MAP[market_data_pb2.TIMEFRAME_1MONTH] == Timeframe.MONTH_1
+
+    def test_all_timeframes_mapped(self, servicer):
+        """Test that all proto timeframes have mappings."""
+        from llamatrade_proto.generated import market_data_pb2
+
+        from src.models import Timeframe
+
+        servicer._init_timeframe_map()
+
+        expected_mappings = {
+            market_data_pb2.TIMEFRAME_1MIN: Timeframe.MINUTE_1,
+            market_data_pb2.TIMEFRAME_5MIN: Timeframe.MINUTE_5,
+            market_data_pb2.TIMEFRAME_15MIN: Timeframe.MINUTE_15,
+            market_data_pb2.TIMEFRAME_30MIN: Timeframe.MINUTE_30,
+            market_data_pb2.TIMEFRAME_1HOUR: Timeframe.HOUR_1,
+            market_data_pb2.TIMEFRAME_4HOUR: Timeframe.HOUR_4,
+            market_data_pb2.TIMEFRAME_1DAY: Timeframe.DAY_1,
+            market_data_pb2.TIMEFRAME_1WEEK: Timeframe.WEEK_1,
+            market_data_pb2.TIMEFRAME_1MONTH: Timeframe.MONTH_1,
+        }
+
+        for proto_tf, expected_internal in expected_mappings.items():
+            assert servicer._TIMEFRAME_MAP.get(proto_tf) == expected_internal
