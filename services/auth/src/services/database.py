@@ -1,6 +1,6 @@
 """Database connection and session management.
 
-Re-exports from the shared libs/db package for backward compatibility.
+Re-exports from the shared libs/db package.
 """
 
 from llamatrade_db import (
@@ -14,8 +14,6 @@ from llamatrade_db import (
     get_session_maker,
     init_db,
 )
-
-# Re-export commonly used session components
 from llamatrade_db.session import get_database_url
 
 __all__ = [

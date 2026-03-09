@@ -42,20 +42,13 @@ import numpy as np
 from llamatrade_compiler import (
     VectorizedBarData,
     VectorizedCompiledStrategy,
-    prepare_vectorized_bars,
 )
 
 from src.engine.backtester import BacktestConfig, BacktestResult, Trade
 
-# Re-export for backward compatibility
-CompiledStrategy = VectorizedCompiledStrategy
-
-# Re-export prepare_vectorized_bars for backward compatibility
 __all__ = [
     "VectorizedBacktestEngine",
     "VectorizedBarData",
-    "CompiledStrategy",
-    "prepare_vectorized_bars",
 ]
 
 
@@ -245,49 +238,6 @@ class VectorizedBacktestEngine:
             total_days=num_bars,
             risk_free_rate=self.config.risk_free_rate,
         )
-
-    def _apply_risk_exits(
-        self,
-        exit_signals: np.ndarray,
-        closes: np.ndarray,
-        entry_prices: np.ndarray,
-        positions: np.ndarray,
-        stop_loss_pct: float | None,
-        take_profit_pct: float | None,
-    ) -> np.ndarray:
-        """Apply stop-loss and take-profit exits vectorized.
-
-        .. deprecated::
-            This method is no longer used internally. Risk exits are now
-            computed during the simulation loop where actual entry prices
-            are available. Kept for backward compatibility with external code.
-
-        Note: For this to work correctly, entry_prices must be pre-populated
-        with actual entry prices for each position, which requires knowing
-        entry points before simulation (not possible in general case).
-        """
-        result = exit_signals.copy()
-
-        if stop_loss_pct is not None:
-            # Calculate PnL percentage
-            with np.errstate(divide="ignore", invalid="ignore"):
-                pnl_pct = np.where(
-                    entry_prices > 0,
-                    (closes - entry_prices) / entry_prices * 100,
-                    0,
-                )
-            result |= (pnl_pct <= -stop_loss_pct) & (positions > 0)
-
-        if take_profit_pct is not None:
-            with np.errstate(divide="ignore", invalid="ignore"):
-                pnl_pct = np.where(
-                    entry_prices > 0,
-                    (closes - entry_prices) / entry_prices * 100,
-                    0,
-                )
-            result |= (pnl_pct >= take_profit_pct) & (positions > 0)
-
-        return result
 
     def _idx_to_datetime(self, timestamps: np.ndarray, idx: int) -> datetime:
         """Convert numpy datetime64 to Python datetime.

@@ -15,8 +15,7 @@ celery_app = Celery(
 )
 
 # Celery configuration
-# pyright: reportUnknownMemberType=false
-celery_app.conf.update(  # type: ignore[union-attr]
+celery_app.conf.update(
     # Task execution settings
     task_soft_time_limit=300,  # 5 minutes soft limit
     task_time_limit=600,  # 10 minutes hard limit
@@ -41,7 +40,7 @@ celery_app.conf.update(  # type: ignore[union-attr]
 )
 
 # Task routing for different queues
-celery_app.conf.task_routes = {  # type: ignore[union-attr]
+celery_app.conf.task_routes = {
     "src.workers.celery_tasks.run_backtest_task": {"queue": "backtest"},
     "src.workers.celery_tasks.run_symbol_chunk": {"queue": "backtest"},
     "src.workers.celery_tasks.merge_results": {"queue": "backtest"},

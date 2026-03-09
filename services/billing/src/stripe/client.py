@@ -96,10 +96,7 @@ class StripeClient:
         """Get existing customer by metadata or create new one."""
         try:
             # Search for existing customer with this tenant_id
-            # pyright: ignore[reportUnknownMemberType] - stripe library has incomplete type stubs
-            customers = Customer.search(  # pyright: ignore[reportUnknownMemberType]
-                query=f"metadata['tenant_id']:'{tenant_id}'"
-            )
+            customers = Customer.search(query=f"metadata['tenant_id']:'{tenant_id}'")
             if customers.data:
                 return str(customers.data[0].id)
 
@@ -239,7 +236,7 @@ class StripeClient:
             if trial_days > 0:
                 params["trial_period_days"] = trial_days
 
-            subscription = Subscription.create(**params)  # pyright: ignore[reportUnknownArgumentType]
+            subscription = Subscription.create(**params)
             return self._subscription_to_result(subscription)
         except stripe.StripeError as e:
             logger.error(f"Stripe error creating subscription: {e}")
@@ -360,11 +357,7 @@ class StripeClient:
     ) -> Event:
         """Verify webhook signature and return the event."""
         try:
-            # stripe.Webhook.construct_event is not fully typed in stripe-python
-            # pyright: ignore[reportUnknownMemberType] - stripe library has incomplete type stubs
-            event: Event = stripe.Webhook.construct_event(  # pyright: ignore[reportUnknownMemberType]
-                payload, sig_header, webhook_secret
-            )
+            event = stripe.Webhook.construct_event(payload, sig_header, webhook_secret)
             return event
         except stripe.SignatureVerificationError as e:
             logger.error(f"Webhook signature verification failed: {e}")

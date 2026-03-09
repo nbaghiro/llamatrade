@@ -10,6 +10,9 @@ from decimal import Decimal
 from enum import Enum
 from typing import TYPE_CHECKING
 
+import grpc
+import grpc.aio
+
 from llamatrade_proto.clients.auth import TenantContext
 from llamatrade_proto.clients.base import BaseGRPCClient
 
@@ -124,7 +127,7 @@ class BacktestRun:
     tenant_id: str
     strategy_id: str
     strategy_version: int
-    config: BacktestConfig
+    config: BacktestConfig | None
     status: BacktestStatus
     status_message: str | None
     progress_percent: int
@@ -173,8 +176,8 @@ class BacktestClient(BaseGRPCClient):
         target: str = "backtest:8830",
         *,
         secure: bool = False,
-        credentials: object | None = None,
-        interceptors: list[object] | None = None,
+        credentials: grpc.ChannelCredentials | None = None,
+        interceptors: list[grpc.aio.ClientInterceptor] | None = None,
         options: list[tuple[str, str | int | bool]] | None = None,
     ) -> None:
         """Initialize the Backtest client.
@@ -189,8 +192,8 @@ class BacktestClient(BaseGRPCClient):
         super().__init__(
             target,
             secure=secure,
-            credentials=credentials,  # type: ignore[arg-type]
-            interceptors=interceptors,  # type: ignore[arg-type]
+            credentials=credentials,
+            interceptors=interceptors,
             options=options,
         )
         self._stub: backtest_pb2_grpc.BacktestServiceStub | None = None
@@ -432,7 +435,7 @@ class BacktestClient(BaseGRPCClient):
             tenant_id=proto.tenant_id,
             strategy_id=proto.strategy_id,
             strategy_version=proto.strategy_version,
-            config=config,  # type: ignore[arg-type]
+            config=config,
             status=status_map.get(proto.status, BacktestStatus.PENDING),
             status_message=proto.status_message if proto.status_message else None,
             progress_percent=proto.progress_percent,

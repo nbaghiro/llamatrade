@@ -203,12 +203,14 @@ def setup_observability(
 
     # Add metrics endpoint
     @app.get("/metrics", include_in_schema=False)
-    async def metrics_endpoint() -> Response:  # pyright: ignore[reportUnusedFunction]
+    async def metrics_endpoint() -> Response:
         """Prometheus metrics endpoint."""
         return Response(
             content=get_metrics(),
             media_type="text/plain; charset=utf-8",
         )
+
+    _ = metrics_endpoint  # Registered via decorator
 
     logger.info(
         "Observability configured: service=%s version=%s env=%s",

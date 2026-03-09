@@ -49,13 +49,13 @@ class TradingEventSubscriber:
             redis_url: Redis connection URL. Defaults to REDIS_URL env var.
         """
         self.redis_url = redis_url or REDIS_URL
-        self._redis: aioredis.Redis | None = None  # type: ignore[type-arg]
+        self._redis: aioredis.Redis | None = None
         self._pubsub: PubSub | None = None
 
-    async def _get_redis(self) -> aioredis.Redis:  # type: ignore[type-arg]
+    async def _get_redis(self) -> aioredis.Redis:
         """Get or create Redis connection."""
         if self._redis is None:
-            self._redis = await aioredis.from_url(self.redis_url)  # type: ignore[no-untyped-call]
+            self._redis = await aioredis.from_url(self.redis_url)
         return self._redis
 
     async def subscribe_orders(
@@ -76,15 +76,15 @@ class TradingEventSubscriber:
             OrderUpdate objects.
         """
         redis = await self._get_redis()
-        pubsub: PubSub = redis.pubsub()  # type: ignore[no-untyped-call]
+        pubsub: PubSub = redis.pubsub()
         channel = f"trading:orders:{session_id}"
 
-        await pubsub.subscribe(channel)  # type: ignore[no-untyped-call]
+        await pubsub.subscribe(channel)
         logger.debug(f"Subscribed to {channel}")
 
         try:
             while True:
-                message = await pubsub.get_message(  # type: ignore[no-untyped-call]
+                message = await pubsub.get_message(
                     ignore_subscribe_messages=True,
                     timeout=timeout,
                 )
@@ -101,7 +101,7 @@ class TradingEventSubscriber:
                     data = cast(dict[str, object], json.loads(raw_data))
                     yield self._parse_order_update(data)
         finally:
-            await pubsub.unsubscribe(channel)  # type: ignore[no-untyped-call]
+            await pubsub.unsubscribe(channel)
             await pubsub.close()
             logger.debug(f"Unsubscribed from {channel}")
 
@@ -123,15 +123,15 @@ class TradingEventSubscriber:
             PositionUpdate objects.
         """
         redis = await self._get_redis()
-        pubsub: PubSub = redis.pubsub()  # type: ignore[no-untyped-call]
+        pubsub: PubSub = redis.pubsub()
         channel = f"trading:positions:{session_id}"
 
-        await pubsub.subscribe(channel)  # type: ignore[no-untyped-call]
+        await pubsub.subscribe(channel)
         logger.debug(f"Subscribed to {channel}")
 
         try:
             while True:
-                message = await pubsub.get_message(  # type: ignore[no-untyped-call]
+                message = await pubsub.get_message(
                     ignore_subscribe_messages=True,
                     timeout=timeout,
                 )
@@ -148,7 +148,7 @@ class TradingEventSubscriber:
                     data = cast(dict[str, object], json.loads(raw_data))
                     yield self._parse_position_update(data)
         finally:
-            await pubsub.unsubscribe(channel)  # type: ignore[no-untyped-call]
+            await pubsub.unsubscribe(channel)
             await pubsub.close()
             logger.debug(f"Unsubscribed from {channel}")
 
@@ -169,16 +169,16 @@ class TradingEventSubscriber:
             OrderUpdate or PositionUpdate objects.
         """
         redis = await self._get_redis()
-        pubsub: PubSub = redis.pubsub()  # type: ignore[no-untyped-call]
+        pubsub: PubSub = redis.pubsub()
         order_channel = f"trading:orders:{session_id}"
         position_channel = f"trading:positions:{session_id}"
 
-        await pubsub.subscribe(order_channel, position_channel)  # type: ignore[no-untyped-call]
+        await pubsub.subscribe(order_channel, position_channel)
         logger.debug(f"Subscribed to {order_channel} and {position_channel}")
 
         try:
             while True:
-                message = await pubsub.get_message(  # type: ignore[no-untyped-call]
+                message = await pubsub.get_message(
                     ignore_subscribe_messages=True,
                     timeout=timeout,
                 )
@@ -200,7 +200,7 @@ class TradingEventSubscriber:
                     else:
                         yield self._parse_position_update(data)
         finally:
-            await pubsub.unsubscribe(order_channel, position_channel)  # type: ignore[no-untyped-call]
+            await pubsub.unsubscribe(order_channel, position_channel)
             await pubsub.close()
             logger.debug("Unsubscribed from all channels")
 

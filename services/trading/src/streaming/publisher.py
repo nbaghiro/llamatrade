@@ -135,12 +135,12 @@ class TradingEventPublisher:
             redis_url: Redis connection URL. Defaults to REDIS_URL env var.
         """
         self.redis_url = redis_url or REDIS_URL
-        self._redis: aioredis.Redis | None = None  # type: ignore[type-arg]
+        self._redis: aioredis.Redis | None = None
 
-    async def _get_redis(self) -> aioredis.Redis:  # type: ignore[type-arg]
+    async def _get_redis(self) -> aioredis.Redis:
         """Get or create Redis connection."""
         if self._redis is None:
-            self._redis = await aioredis.from_url(self.redis_url)  # type: ignore[no-untyped-call]
+            self._redis = await aioredis.from_url(self.redis_url)
         return self._redis
 
     async def publish_order_update(
@@ -160,7 +160,7 @@ class TradingEventPublisher:
         redis = await self._get_redis()
         channel = f"trading:orders:{session_id}"
         message = json.dumps(order.to_dict(), default=_serialize_uuid)
-        result: int = await redis.publish(channel, message)  # type: ignore[no-untyped-call]
+        result: int = await redis.publish(channel, message)
         logger.debug(
             f"Published order update to {channel}",
             extra={"order_id": order.order_id, "status": order.status, "subscribers": result},
@@ -184,7 +184,7 @@ class TradingEventPublisher:
         redis = await self._get_redis()
         channel = f"trading:positions:{session_id}"
         message = json.dumps(position.to_dict(), default=_serialize_uuid)
-        result: int = await redis.publish(channel, message)  # type: ignore[no-untyped-call]
+        result: int = await redis.publish(channel, message)
         logger.debug(
             f"Published position update to {channel}",
             extra={"symbol": position.symbol, "qty": position.qty, "subscribers": result},

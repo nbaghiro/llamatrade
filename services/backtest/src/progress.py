@@ -118,11 +118,11 @@ class ProgressPublisher:
 
     def __init__(self, redis_url: str | None = None):
         self.redis_url = redis_url or REDIS_URL
-        self._redis: aioredis.Redis | None = None  # type: ignore[type-arg]
+        self._redis: aioredis.Redis | None = None
 
-    async def _get_redis(self) -> aioredis.Redis:  # type: ignore[type-arg]
+    async def _get_redis(self) -> aioredis.Redis:
         if self._redis is None:
-            self._redis = await aioredis.from_url(self.redis_url)  # type: ignore[no-untyped-call]
+            self._redis = await aioredis.from_url(self.redis_url)
         return self._redis
 
     async def publish(
@@ -140,7 +140,7 @@ class ProgressPublisher:
             message=message,
             eta_seconds=eta_seconds,
         )
-        await redis.publish(  # type: ignore[no-untyped-call]
+        await redis.publish(
             f"backtest:progress:{backtest_id}",
             json.dumps(update.to_dict()),
         )
@@ -157,12 +157,12 @@ class ProgressSubscriber:
 
     def __init__(self, redis_url: str | None = None):
         self.redis_url = redis_url or REDIS_URL
-        self._redis: aioredis.Redis | None = None  # type: ignore[type-arg]
+        self._redis: aioredis.Redis | None = None
         self._pubsub: PubSub | None = None
 
-    async def _get_redis(self) -> aioredis.Redis:  # type: ignore[type-arg]
+    async def _get_redis(self) -> aioredis.Redis:
         if self._redis is None:
-            self._redis = await aioredis.from_url(self.redis_url)  # type: ignore[no-untyped-call]
+            self._redis = await aioredis.from_url(self.redis_url)
         return self._redis
 
     async def subscribe(self, backtest_id: str) -> AsyncIterator[ProgressUpdate]:
@@ -171,15 +171,15 @@ class ProgressSubscriber:
         Yields ProgressUpdate objects as they come in.
         """
         redis = await self._get_redis()
-        pubsub: PubSub = redis.pubsub()  # type: ignore[no-untyped-call]
+        pubsub: PubSub = redis.pubsub()
         self._pubsub = pubsub
         channel = f"backtest:progress:{backtest_id}"
 
-        await pubsub.subscribe(channel)  # type: ignore[no-untyped-call]
+        await pubsub.subscribe(channel)
 
         try:
-            async for message in pubsub.listen():  # type: ignore[no-untyped-call]
-                msg = cast(dict[str, object], message)
+            async for raw_message in pubsub.listen():
+                msg: dict[str, object] = cast(dict[str, object], raw_message)
                 if msg["type"] == "message":
                     raw_data = cast(str | bytes, msg["data"])
                     data = cast(dict[str, object], json.loads(raw_data))
@@ -198,7 +198,7 @@ class ProgressSubscriber:
                     if progress >= 100:
                         break
         finally:
-            await pubsub.unsubscribe(channel)  # type: ignore[no-untyped-call]
+            await pubsub.unsubscribe(channel)
 
     async def close(self) -> None:
         """Close the Redis connection."""

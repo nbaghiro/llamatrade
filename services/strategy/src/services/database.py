@@ -1,6 +1,6 @@
 """Database connection and session management.
 
-Re-exports from the shared libs/db package for backward compatibility.
+Re-exports from the shared libs/db package.
 """
 
 from llamatrade_db import (

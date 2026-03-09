@@ -23,6 +23,7 @@ from llamatrade_db.models import (
     TradingSession,
     User,
 )
+
 # Backtest enums (re-exported for tests)
 from llamatrade_proto.generated.backtest_pb2 import (  # noqa: F401
     BACKTEST_STATUS_COMPLETED,
@@ -65,7 +66,7 @@ from llamatrade_proto.generated.trading_pb2 import (  # noqa: F401
     TIME_IN_FORCE_DAY,
 )
 
-# Legacy aliases for SESSION_STATUS (mapped to EXECUTION_STATUS in proto)
+# Aliases for SESSION_STATUS (mapped to EXECUTION_STATUS in proto)
 SESSION_STATUS_ACTIVE = EXECUTION_STATUS_RUNNING
 SESSION_STATUS_PAUSED = EXECUTION_STATUS_PAUSED
 SESSION_STATUS_STOPPED = EXECUTION_STATUS_STOPPED

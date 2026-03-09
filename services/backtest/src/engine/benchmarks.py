@@ -368,6 +368,15 @@ async def fetch_benchmark_data(
 
         def _to_float(val: object) -> float:
             """Safely convert to float."""
+            if val is None:
+                return 0.0
+            if isinstance(val, (int, float)):
+                return float(val)
+            if isinstance(val, str):
+                try:
+                    return float(val)
+                except ValueError:
+                    return 0.0
             try:
                 return float(val)  # type: ignore[arg-type]
             except TypeError, ValueError:

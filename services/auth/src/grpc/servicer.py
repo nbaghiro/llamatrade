@@ -140,8 +140,7 @@ class AuthServicer:
                     return auth_pb2.ValidateAPIKeyResponse(valid=False)
 
                 # Check required scopes
-                # db_key.scopes is typed as list | None in the model (untyped JSONB)
-                scopes_raw: list[str] | None = db_key.scopes  # type: ignore[assignment]
+                scopes_raw: list[str] | None = db_key.scopes
                 granted_scopes: list[str] = list(scopes_raw) if scopes_raw else []
                 if required_scopes:
                     has_all_scopes = all(scope in granted_scopes for scope in required_scopes)
@@ -310,8 +309,9 @@ class AuthServicer:
                     f"Tenant not found: {request.tenant_id}",
                 )
 
-            # tenant.settings is typed as dict | None in the model (untyped JSONB)
-            settings: dict[str, str] = tenant.settings if tenant.settings else {}  # type: ignore[assignment]
+            # tenant.settings is dict[str, Any] | None, convert to string values for proto
+            raw_settings = tenant.settings or {}
+            settings: dict[str, str] = {k: str(v) for k, v in raw_settings.items()}
 
             return auth_pb2.GetTenantResponse(
                 tenant=auth_pb2.Tenant(

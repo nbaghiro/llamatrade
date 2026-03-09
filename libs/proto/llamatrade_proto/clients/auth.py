@@ -7,6 +7,9 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import TYPE_CHECKING
 
+import grpc
+import grpc.aio
+
 from llamatrade_proto.clients.base import BaseGRPCClient
 
 if TYPE_CHECKING:
@@ -113,8 +116,8 @@ class AuthClient(BaseGRPCClient):
         target: str = "auth:8810",
         *,
         secure: bool = False,
-        credentials: object | None = None,
-        interceptors: list[object] | None = None,
+        credentials: grpc.ChannelCredentials | None = None,
+        interceptors: list[grpc.aio.ClientInterceptor] | None = None,
         options: list[tuple[str, str | int | bool]] | None = None,
     ) -> None:
         """Initialize the Auth client.
@@ -129,8 +132,8 @@ class AuthClient(BaseGRPCClient):
         super().__init__(
             target,
             secure=secure,
-            credentials=credentials,  # type: ignore[arg-type]
-            interceptors=interceptors,  # type: ignore[arg-type]
+            credentials=credentials,
+            interceptors=interceptors,
             options=options,
         )
         self._stub: auth_pb2_grpc.AuthServiceStub | None = None

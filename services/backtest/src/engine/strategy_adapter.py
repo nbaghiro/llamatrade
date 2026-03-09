@@ -22,7 +22,6 @@ from llamatrade_dsl import RebalanceFrequency, parse_strategy, validate_strategy
 
 from src.engine.backtester import BacktestEngine, BarData, SignalData
 
-# Re-export for backward compatibility
 __all__ = [
     "create_strategy_function",
     "create_multi_symbol_strategy",

@@ -95,7 +95,7 @@ def _compile_allocation(
         indicators: dict[str, np.ndarray],
     ) -> dict[str, np.ndarray]:
         # Compute required indicators
-        computed_indicators = _compute_all_indicators(strategy, bars)
+        computed_indicators = compute_all_indicators(strategy, bars)
         indicators.update(computed_indicators)
 
         # Evaluate allocation from strategy tree
@@ -105,7 +105,7 @@ def _compile_allocation(
     return allocation_fn
 
 
-def _compute_all_indicators(
+def compute_all_indicators(
     strategy: Strategy,
     bars: VectorizedBarData,
 ) -> dict[str, np.ndarray]:
@@ -173,7 +173,7 @@ def _extract_indicators_from_value(
     if not isinstance(value, Indicator):
         return
 
-    key = _build_indicator_key(value)
+    key = build_indicator_key(value)
     if key in indicators:
         return
 
@@ -183,7 +183,7 @@ def _extract_indicators_from_value(
     lows = bars["lows"][0]
     volumes = bars["volumes"][0]
 
-    result = _compute_single_indicator(
+    result = compute_single_indicator(
         value.name,
         closes,
         highs,
@@ -196,7 +196,7 @@ def _extract_indicators_from_value(
     indicators[key] = result
 
 
-def _compute_single_indicator(
+def compute_single_indicator(
     indicator_type: str,
     source_data: np.ndarray,
     highs: np.ndarray,
@@ -298,7 +298,7 @@ def _compute_single_indicator(
         return sma(source_data, period)
 
 
-def _build_indicator_key(indicator: Indicator) -> str:
+def build_indicator_key(indicator: Indicator) -> str:
     """Build indicator cache key."""
     parts = [indicator.name, indicator.symbol, "close"]
     parts.extend(str(p) for p in indicator.params)
@@ -395,7 +395,7 @@ def _evaluate_if_vectorized(
 ) -> dict[str, np.ndarray]:
     """Evaluate an If block with vectorized condition."""
     # Evaluate condition for all bars
-    condition_mask = _evaluate_condition_vectorized(if_block.condition, bars, indicators)
+    condition_mask = evaluate_condition_vectorized(if_block.condition, bars, indicators)
 
     # Get then and else weights
     then_weights = _evaluate_block_vectorized(if_block.then_block, bars, indicators, num_bars)
@@ -429,7 +429,7 @@ def _evaluate_filter_vectorized(
     return _evaluate_children_vectorized(filter_block.children, bars, indicators, num_bars)
 
 
-def _evaluate_condition_vectorized(
+def evaluate_condition_vectorized(
     condition: Condition,
     bars: VectorizedBarData,
     indicators: dict[str, np.ndarray],
@@ -441,8 +441,8 @@ def _evaluate_condition_vectorized(
     num_bars = bars["closes"].shape[1]
 
     if isinstance(condition, Comparison):
-        left = _get_vectorized_value(condition.left, bars, indicators)
-        right = _get_vectorized_value(condition.right, bars, indicators)
+        left = get_vectorized_value(condition.left, bars, indicators)
+        right = get_vectorized_value(condition.right, bars, indicators)
 
         op = condition.operator
         if op == ">":
@@ -459,8 +459,8 @@ def _evaluate_condition_vectorized(
         return left != right
 
     if isinstance(condition, Crossover):
-        fast = _get_vectorized_value(condition.fast, bars, indicators)
-        slow = _get_vectorized_value(condition.slow, bars, indicators)
+        fast = get_vectorized_value(condition.fast, bars, indicators)
+        slow = get_vectorized_value(condition.slow, bars, indicators)
 
         prev_fast = np.roll(fast, 1)
         prev_slow = np.roll(slow, 1)
@@ -476,20 +476,20 @@ def _evaluate_condition_vectorized(
     if condition.operator == "and":
         result = np.ones(num_bars, dtype=bool)
         for operand in condition.operands:
-            result &= _evaluate_condition_vectorized(operand, bars, indicators)
+            result &= evaluate_condition_vectorized(operand, bars, indicators)
         return result
 
     if condition.operator == "or":
         result = np.zeros(num_bars, dtype=bool)
         for operand in condition.operands:
-            result |= _evaluate_condition_vectorized(operand, bars, indicators)
+            result |= evaluate_condition_vectorized(operand, bars, indicators)
         return result
 
     # condition.operator is "not"
-    return ~_evaluate_condition_vectorized(condition.operands[0], bars, indicators)
+    return ~evaluate_condition_vectorized(condition.operands[0], bars, indicators)
 
 
-def _get_vectorized_value(
+def get_vectorized_value(
     value: Value,
     bars: VectorizedBarData,
     indicators: dict[str, np.ndarray],
@@ -515,7 +515,7 @@ def _get_vectorized_value(
         return bars["closes"][0]
 
     if isinstance(value, Indicator):
-        key = _build_indicator_key(value)
+        key = build_indicator_key(value)
         if key in indicators:
             return indicators[key]
         return cast(np.ndarray, np.zeros(num_bars, dtype=np.float64))

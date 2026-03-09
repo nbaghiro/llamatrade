@@ -52,7 +52,4 @@ export const billingApi = {
     billingClient.createPortalSession({ returnUrl }),
 };
 
-// Re-export enums
-export { BillingInterval };
-
 export default billingApi;

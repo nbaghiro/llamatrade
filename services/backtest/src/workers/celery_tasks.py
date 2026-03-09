@@ -11,7 +11,7 @@ from typing import cast
 from uuid import UUID
 
 import redis
-from celery import Task, shared_task  # type: ignore[import-untyped]
+from celery import shared_task
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
@@ -41,9 +41,9 @@ DATABASE_URL = os.getenv(
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 
 
-def _get_redis() -> redis.Redis:  # type: ignore[type-arg]
+def _get_redis() -> redis.Redis:
     """Get Redis client for progress updates."""
-    return redis.from_url(REDIS_URL)  # type: ignore[return-value]
+    return redis.from_url(REDIS_URL)
 
 
 def _publish_progress(
@@ -62,7 +62,7 @@ def _publish_progress(
             "eta_seconds": eta_seconds,
             "timestamp": datetime.now(UTC).isoformat(),
         }
-        r.publish(f"backtest:progress:{backtest_id}", json.dumps(payload))  # type: ignore[union-attr]
+        r.publish(f"backtest:progress:{backtest_id}", json.dumps(payload))
     except Exception as e:
         logger.warning(f"Failed to publish progress: {e}")
 
@@ -304,7 +304,9 @@ async def _run_backtest_async(
     autoretry_for=(MarketDataError,),
     retry_backoff=True,
 )
-def run_backtest_task(self: Task, backtest_id: str, tenant_id: str) -> dict[str, str | float | int]:
+def run_backtest_task(
+    self: object, backtest_id: str, tenant_id: str
+) -> dict[str, str | float | int]:
     """Execute a backtest as a Celery task.
 
     Args:
@@ -328,7 +330,7 @@ def run_backtest_task(self: Task, backtest_id: str, tenant_id: str) -> dict[str,
 
 @shared_task(bind=True, max_retries=2, default_retry_delay=30)
 def run_symbol_chunk(
-    self: Task,
+    self: object,
     backtest_id: str,
     tenant_id: str,
     symbols: list[str],
@@ -445,7 +447,7 @@ def run_symbol_chunk(
 
 @shared_task(bind=True)
 def merge_results(
-    self: Task, results: list[dict[str, object]], backtest_id: str, tenant_id: str
+    self: object, results: list[dict[str, object]], backtest_id: str, tenant_id: str
 ) -> dict[str, object]:
     """Merge results from parallel symbol chunks.
 
@@ -474,6 +476,14 @@ def merge_results(
         """Safely convert object to float."""
         if val is None:
             return default
+        if isinstance(val, (int, float)):
+            return float(val)
+        if isinstance(val, str):
+            try:
+                return float(val)
+            except ValueError:
+                return default
+        # For other types, try conversion
         try:
             return float(val)  # type: ignore[arg-type]
         except TypeError, ValueError:
@@ -682,8 +692,8 @@ def queue_parallel_backtest(
     Returns:
         Celery group task ID
     """
-    from celery import chord  # type: ignore[import-untyped]
-    from celery.canvas import Signature  # type: ignore[import-untyped]
+    from celery import chord
+    from celery.canvas import Signature
 
     # Calculate capital per chunk (proportional to symbol count)
     num_symbols = len(symbols)
@@ -694,7 +704,7 @@ def queue_parallel_backtest(
         # Allocate capital proportionally
         chunk_capital = initial_capital * len(chunk_symbols) / num_symbols
 
-        task = run_symbol_chunk.s(  # type: ignore[attr-defined]
+        task = run_symbol_chunk.s(
             backtest_id=backtest_id,
             tenant_id=tenant_id,
             symbols=chunk_symbols,
@@ -706,12 +716,12 @@ def queue_parallel_backtest(
             commission=commission,
             slippage=slippage,
         )
-        chunk_tasks.append(task)  # type: ignore[arg-type]
+        chunk_tasks.append(task)
 
     # Use chord to run chunks in parallel, then merge
-    callback: Signature = merge_results.s(backtest_id, tenant_id)  # type: ignore[attr-defined]
+    callback: Signature = merge_results.s(backtest_id, tenant_id)
     job = chord(chunk_tasks, callback)
-    result = job.apply_async()  # type: ignore[union-attr]
+    result = job.apply_async()
 
     logger.info(f"Queued parallel backtest {backtest_id} with {len(chunks)} chunks")
-    return str(result.id)  # type: ignore[union-attr]
+    return str(result.id)

@@ -10,6 +10,9 @@ from decimal import Decimal
 from enum import Enum
 from typing import TYPE_CHECKING
 
+import grpc
+import grpc.aio
+
 from llamatrade_proto.clients.auth import TenantContext
 from llamatrade_proto.clients.base import BaseGRPCClient
 
@@ -127,8 +130,8 @@ class TradingClient(BaseGRPCClient):
         target: str = "trading:8850",
         *,
         secure: bool = False,
-        credentials: object | None = None,
-        interceptors: list[object] | None = None,
+        credentials: grpc.ChannelCredentials | None = None,
+        interceptors: list[grpc.aio.ClientInterceptor] | None = None,
         options: list[tuple[str, str | int | bool]] | None = None,
     ) -> None:
         """Initialize the Trading client.
@@ -143,8 +146,8 @@ class TradingClient(BaseGRPCClient):
         super().__init__(
             target,
             secure=secure,
-            credentials=credentials,  # type: ignore[arg-type]
-            interceptors=interceptors,  # type: ignore[arg-type]
+            credentials=credentials,
+            interceptors=interceptors,
             options=options,
         )
         self._stub: trading_pb2_grpc.TradingServiceStub | None = None

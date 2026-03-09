@@ -7,18 +7,7 @@ from uuid import UUID
 from pydantic import BaseModel, Field
 
 from llamatrade_proto.generated.notification_pb2 import (
-    ALERT_STATUS_ACTIVE,
-    ALERT_STATUS_DISABLED,
-    ALERT_STATUS_TRIGGERED,
     CHANNEL_TYPE_EMAIL,
-    NOTIFICATION_PRIORITY_CRITICAL,
-    NOTIFICATION_PRIORITY_HIGH,
-    NOTIFICATION_PRIORITY_LOW,
-    NOTIFICATION_PRIORITY_MEDIUM,
-    NOTIFICATION_STATUS_FAILED,
-    NOTIFICATION_STATUS_PENDING,
-    NOTIFICATION_STATUS_READ,
-    NOTIFICATION_STATUS_SENT,
 )
 from llamatrade_proto.generated.notification_pb2 import (
     AlertConditionType as AlertConditionTypeEnum,
@@ -38,21 +27,6 @@ from llamatrade_proto.generated.notification_pb2 import (
 from llamatrade_proto.generated.notification_pb2 import (
     NotificationType as NotificationTypeEnum,
 )
-
-# Re-export proto constants for backwards compatibility
-__all__ = [
-    "ALERT_STATUS_ACTIVE",
-    "ALERT_STATUS_TRIGGERED",
-    "ALERT_STATUS_DISABLED",
-    "NOTIFICATION_STATUS_PENDING",
-    "NOTIFICATION_STATUS_SENT",
-    "NOTIFICATION_STATUS_FAILED",
-    "NOTIFICATION_STATUS_READ",
-    "NOTIFICATION_PRIORITY_LOW",
-    "NOTIFICATION_PRIORITY_MEDIUM",
-    "NOTIFICATION_PRIORITY_HIGH",
-    "NOTIFICATION_PRIORITY_CRITICAL",
-]
 
 # ===================
 # Conversion helpers: proto int -> str (for display/API)

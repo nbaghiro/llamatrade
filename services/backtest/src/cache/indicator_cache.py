@@ -60,7 +60,7 @@ class IndicatorCache:
     def _get_redis(self) -> redis.Redis:  # type: ignore[type-arg]
         """Get Redis client (lazy initialization)."""
         if self._redis is None:
-            self._redis = redis.from_url(self.redis_url)  # type: ignore[reportUnknownMemberType]
+            self._redis = redis.from_url(self.redis_url)
         return self._redis
 
     def _build_key(
@@ -272,11 +272,12 @@ class IndicatorCache:
             else:
                 pattern = f"{self.KEY_PREFIX}:*"
 
-            keys: list[bytes] = list(r.scan_iter(match=pattern))  # type: ignore[reportUnknownMemberType, reportUnknownArgumentType]
+            keys: list[bytes] = list(r.scan_iter(match=pattern))
             if keys:
                 # r.delete returns int for sync redis
-                deleted: int = r.delete(*keys)  # type: ignore[reportAssignmentType]
-                return deleted if deleted else 0
+                deleted = r.delete(*keys)
+                # Sync redis.delete() returns int, but stubs are union with Awaitable
+                return deleted if isinstance(deleted, int) else 0
             return 0
 
         except Exception as e:

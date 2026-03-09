@@ -137,6 +137,12 @@ exclude = [
 # Type checking settings
 reportMissingImports = true
 reportMissingTypeStubs = false
+# Third-party libraries (redis, stripe, celery) have incomplete stubs with Unknown types
+# These settings suppress errors that stem from library type stub quality, not code quality
+reportUnknownMemberType = false
+reportUnknownVariableType = false
+reportUnknownArgumentType = false
+reportUnknownParameterType = false
 # Extra paths for editable installs (Pyright doesn't read .pth files)
 extraPaths = [
     "libs/alpaca",

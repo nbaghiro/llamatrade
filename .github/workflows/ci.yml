@@ -36,8 +36,29 @@ jobs:
       - name: Run ruff (format check)
         run: ruff format --config pyproject.toml --check services/ libs/
 
+      - name: Install dependencies for type checking
+        run: |
+          python -m venv .venv
+          .venv/bin/pip install --upgrade pip
+          # Install all libs (needed for type checking)
+          .venv/bin/pip install -e libs/alpaca
+          .venv/bin/pip install -e libs/common
+          .venv/bin/pip install -e libs/db
+          .venv/bin/pip install -e libs/dsl
+          .venv/bin/pip install -e libs/compiler
+          .venv/bin/pip install -e libs/proto
+          # Install all services (to resolve their dependencies)
+          .venv/bin/pip install -e services/auth
+          .venv/bin/pip install -e services/backtest[dev]
+          .venv/bin/pip install -e services/billing
+          .venv/bin/pip install -e services/market-data
+          .venv/bin/pip install -e services/notification
+          .venv/bin/pip install -e services/portfolio
+          .venv/bin/pip install -e services/strategy
+          .venv/bin/pip install -e services/trading
+
       - name: Run Pyright (type check)
-        run: npx pyright services/ libs/
+        run: npx pyright
 
   test-backend:
     name: Test Backend

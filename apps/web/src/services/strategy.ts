@@ -10,7 +10,6 @@ import {
   StrategyStatus,
   TemplateCategory,
   TemplateDifficulty,
-  type Strategy,
 } from '../generated/proto/strategy_pb';
 
 import { strategyClient } from './grpc-client';
@@ -140,13 +139,6 @@ export async function listTemplates(params: {
 export async function getTemplate(templateId: string) {
   return strategyClient.getTemplate({ templateId });
 }
-
-// ============================================
-// Re-exports for convenience
-// ============================================
-
-export { StrategyStatus };
-export type { Strategy };
 
 // ============================================
 // Convenience exports

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+from typing import cast
 from uuid import UUID
 
 from connectrpc.code import Code
@@ -21,6 +22,7 @@ from llamatrade_proto.generated.strategy_pb2 import (
 
 from src.grpc.error_handler import handle_service_errors, parse_uuid
 from src.models import (
+    ConfigOverride,
     ExecutionResponse,
     StrategyDetailResponse,
     StrategyResponse,
@@ -586,12 +588,15 @@ class StrategyServicer:
         mode = request.mode if request.mode > 0 else EXECUTION_MODE_PAPER
 
         # Build config override from proto map
-        config_override = dict(request.config_override) if request.config_override else None
+        # Cast to ConfigOverride since TypedDict is total=False (all keys optional)
+        config_override: ConfigOverride | None = (
+            cast(ConfigOverride, dict(request.config_override)) if request.config_override else None
+        )
 
         create_data = ExecutionCreate(
             version=request.version if request.version > 0 else None,
             mode=mode,
-            config_override=config_override,  # type: ignore[arg-type]
+            config_override=config_override,
         )
 
         async with await self._get_db() as db:

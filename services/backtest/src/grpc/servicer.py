@@ -417,3 +417,12 @@ class BacktestServicer:
             )
 
         return proto
+
+    # Connect protocol expects snake_case method names
+    # These aliases provide compatibility with both gRPC and Connect
+    run_backtest = RunBacktest
+    get_backtest = GetBacktest
+    list_backtests = ListBacktests
+    cancel_backtest = CancelBacktest
+    stream_backtest_progress = StreamBacktestProgress
+    compare_backtests = CompareBacktests

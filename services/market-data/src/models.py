@@ -10,7 +10,7 @@ from typing import TypedDict
 
 from pydantic import BaseModel, Field
 
-# Re-export shared models and errors for backward compatibility
+# Re-export shared models and errors for convenience
 from llamatrade_alpaca import (
     AlpacaError,
     AlpacaRateLimitError,

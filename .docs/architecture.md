@@ -695,7 +695,6 @@ function getOrderSideLabel(side: OrderSide): string {
 1. **Proto is source of truth** — never define duplicate enums in Python/TypeScript
 2. **Use integer values internally** — comparisons, storage, and cross-service calls
 3. **Convert to strings only at boundaries** — external APIs (Alpaca), user display
-4. **Deprecated StrEnums** — legacy StrEnum classes are kept for backward compatibility but marked DEPRECATED
 
 ### Request Flow Example
 

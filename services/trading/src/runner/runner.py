@@ -580,7 +580,7 @@ class StrategyRunner:
                 self._orders_submitted += 1
                 logger.info(f"Order submitted (event-sourced): {order_id}")
             else:
-                # Legacy path - uses OrderExecutor directly
+                # Direct OrderExecutor path (when event sourcing disabled)
                 # Run risk checks (event-sourced executor does this internally)
                 risk_result = await self.risk_manager.check_order(
                     tenant_id=self.config.tenant_id,

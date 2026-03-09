@@ -1,10 +1,11 @@
 """Redis cache utilities for market data."""
 
 import asyncio
+import inspect
 import json
 import logging
 import os
-from collections.abc import Awaitable, Sequence
+from collections.abc import Sequence
 from datetime import date, datetime, timedelta
 from typing import TypeVar
 
@@ -200,8 +201,9 @@ class MarketDataCache:
     async def health_check(self) -> bool:
         """Check if Redis connection is healthy."""
         try:
-            result = self._redis.ping()  # pyright: ignore[reportUnknownMemberType]
-            if isinstance(result, Awaitable):
+            result = self._redis.ping()
+            # ping() returns Awaitable[bool] from async client
+            if inspect.isawaitable(result):
                 await result
             return True
         except RedisError:
@@ -238,12 +240,10 @@ async def init_cache() -> MarketDataCache | None:
         redis_url = os.getenv("REDIS_URL", "redis://localhost:6379")
 
         try:
-            redis_client = Redis.from_url(  # pyright: ignore[reportUnknownMemberType]
-                redis_url, decode_responses=False
-            )
-            # Test connection
-            result = redis_client.ping()  # pyright: ignore[reportUnknownMemberType]
-            if isinstance(result, Awaitable):
+            redis_client = Redis.from_url(redis_url, decode_responses=False)
+            # Test connection - ping() returns Awaitable[bool] from async client
+            result = redis_client.ping()
+            if inspect.isawaitable(result):
                 await result
             _cache = MarketDataCache(redis_client)
             logger.info(f"Redis cache connected: {redis_url}")
@@ -263,7 +263,7 @@ async def close_cache() -> None:
     async with _get_cache_lock():
         if _cache is not None:
             try:
-                await _cache.redis.aclose()  # type: ignore[attr-defined]
+                await _cache.redis.close()
                 logger.info("Redis cache connection closed")
             except RedisError as e:
                 logger.warning(f"Error closing Redis connection: {e}")

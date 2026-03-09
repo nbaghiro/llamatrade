@@ -5,7 +5,7 @@ import os
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from types import TracebackType
-from typing import TYPE_CHECKING, Protocol, cast
+from typing import TYPE_CHECKING, Protocol, cast, runtime_checkable
 from uuid import UUID
 
 import numpy as np
@@ -48,7 +48,7 @@ from src.progress import BacktestProgressReporter
 
 # Feature flags
 
-# Status string to proto int mapping (for DB compatibility during migration)
+# Status string to proto int mapping
 _STATUS_STR_TO_PROTO: dict[str, int] = {
     "pending": BACKTEST_STATUS_PENDING,
     "running": BACKTEST_STATUS_RUNNING,
@@ -430,7 +430,7 @@ class BacktestService:
                 await reporter.publish_phase("Validating symbols", 5)
 
             # Cast symbols since JSONB returns untyped list
-            symbols_list: list[str] = backtest.symbols  # type: ignore[assignment]
+            symbols_list: list[str] = backtest.symbols
             symbols_to_validate = list(symbols_list)
             if include_benchmark and benchmark_symbol:
                 symbols_to_validate.append(benchmark_symbol)
@@ -478,7 +478,12 @@ class BacktestService:
                 raise ValueError("No market data available for specified period")
 
             # Separate strategy bars from benchmark bars
-            bars = {s: all_bars[s] for s in symbols_list if s in all_bars}
+            # Cast to BarData since market_data_client returns properly structured dicts
+            from src.engine.backtester import BarData
+
+            bars: dict[str, list[BarData]] = {
+                s: cast(list[BarData], all_bars[s]) for s in symbols_list if s in all_bars
+            }
 
             # Calculate total bars for progress tracking
             total_bars = sum(len(symbol_bars) for symbol_bars in bars.values())
@@ -487,14 +492,27 @@ class BacktestService:
                 await reporter.publish_phase("Running simulation", 40)
 
             # Run backtest with progress callback
+            @runtime_checkable
+            class _SupportsFloat(Protocol):
+                def __float__(self) -> float: ...
+
             def _safe_float(val: object, default: float = 0.0) -> float:
                 """Safely convert object to float."""
                 if val is None:
                     return default
-                try:
-                    return float(val)  # type: ignore[arg-type]
-                except TypeError, ValueError:
-                    return default
+                if isinstance(val, (int, float)):
+                    return float(val)
+                if isinstance(val, str):
+                    try:
+                        return float(val)
+                    except ValueError:
+                        return default
+                if isinstance(val, _SupportsFloat):
+                    try:
+                        return float(val)
+                    except TypeError, ValueError:
+                        return default
+                return default
 
             backtest_config = BacktestConfig(
                 initial_capital=float(backtest.initial_capital),
@@ -507,7 +525,7 @@ class BacktestService:
             progress_callback = reporter.create_engine_callback() if reporter else None
 
             result = engine.run(
-                bars=bars,  # type: ignore[arg-type]
+                bars=bars,
                 strategy_fn=strategy_fn,
                 start_date=datetime.combine(backtest.start_date, datetime.min.time()),
                 end_date=datetime.combine(backtest.end_date, datetime.max.time()),
@@ -733,12 +751,12 @@ class BacktestService:
         if backtest.status != BACKTEST_STATUS_PENDING:
             raise ValueError(f"Backtest is {backtest.status}, cannot queue")
 
-        # Queue the task - celery types are incomplete
-        # pyright: ignore[reportUnknownMemberType,reportUnknownVariableType]
-        task = celery_tasks.run_backtest_task.delay(  # type: ignore[attr-defined]
-            str(backtest_id), str(tenant_id)
-        )
-        return str(task.id)  # type: ignore[union-attr]
+        # Queue the task
+        # Celery's @shared_task returns a task object with delay() method,
+        # but type stubs are incomplete. Access via getattr for type safety.
+        run_task = getattr(celery_tasks, "run_backtest_task")
+        task = run_task.delay(str(backtest_id), str(tenant_id))
+        return str(task.id)
 
     async def get_task_status(self, task_id: str) -> dict[str, object]:
         """Get the status of a Celery task.
@@ -749,14 +767,13 @@ class BacktestService:
         from src.celery_app import celery_app
 
         # Celery types are incomplete
-        # pyright: ignore[reportUnknownMemberType,reportUnknownVariableType]
-        result = celery_app.AsyncResult(task_id)  # type: ignore[attr-defined]
-        status: str = str(result.status)  # type: ignore[union-attr]
-        is_ready: bool = bool(result.ready())  # type: ignore[union-attr]
+        result = celery_app.AsyncResult(task_id)
+        status: str = str(result.status)
+        is_ready: bool = bool(result.ready())
         return {
             "task_id": task_id,
             "status": status,
-            "result": result.result if is_ready else None,  # type: ignore[union-attr]
+            "result": result.result if is_ready else None,
         }
 
     # ===================
@@ -860,10 +877,14 @@ class BacktestService:
             """Safely convert object to float."""
             if val is None:
                 return default
-            try:
-                return float(val)  # type: ignore[arg-type]
-            except TypeError, ValueError:
-                return default
+            if isinstance(val, (int, float)):
+                return float(val)
+            if isinstance(val, str):
+                try:
+                    return float(val)
+                except ValueError:
+                    return default
+            return default
 
         # Build equity curve
         equity_curve: list[EquityPoint] = []
@@ -900,10 +921,14 @@ class BacktestService:
             """Safely convert object to float."""
             if val is None:
                 return default
-            try:
-                return float(val)  # type: ignore[arg-type]
-            except TypeError, ValueError:
-                return default
+            if isinstance(val, (int, float)):
+                return float(val)
+            if isinstance(val, str):
+                try:
+                    return float(val)
+                except ValueError:
+                    return default
+            return default
 
         trades: list[TradeRecord] = []
         if raw_trades:
@@ -946,7 +971,7 @@ class BacktestService:
                 holding_periods.append(delta.days)
         avg_holding = sum(holding_periods) / len(holding_periods) if holding_periods else 0
 
-        # Extract benchmark metrics with defaults for backward compatibility (Phase 5)
+        # Extract benchmark metrics with defaults
         benchmark_return = float(r.benchmark_return) if r.benchmark_return else 0
         benchmark_symbol = r.benchmark_symbol or "SPY"
         alpha = float(r.alpha) if r.alpha else 0

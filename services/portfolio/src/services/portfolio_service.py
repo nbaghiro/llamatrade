@@ -2,7 +2,7 @@
 
 from datetime import UTC, datetime
 from decimal import Decimal
-from typing import cast
+from typing import Protocol, cast, runtime_checkable
 from uuid import UUID
 
 from fastapi import Depends
@@ -16,14 +16,31 @@ from src.clients.market_data import MarketDataClient, get_market_data_client
 from src.models import PortfolioSummary, PositionResponse
 
 
+@runtime_checkable
+class SupportsFloat(Protocol):
+    """Protocol for objects that support __float__."""
+
+    def __float__(self) -> float: ...
+
+
 def _safe_float(val: object, default: float = 0.0) -> float:
     """Safely convert object to float."""
     if val is None:
         return default
-    try:
-        return float(val)  # type: ignore[arg-type]
-    except TypeError, ValueError:
-        return default
+    if isinstance(val, (int, float)):
+        return float(val)
+    if isinstance(val, str):
+        try:
+            return float(val)
+        except ValueError:
+            return default
+    # For objects with __float__ method (Decimal, etc.)
+    if isinstance(val, SupportsFloat):
+        try:
+            return float(val)
+        except TypeError, ValueError:
+            return default
+    return default
 
 
 class PortfolioService:

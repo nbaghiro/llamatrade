@@ -266,7 +266,7 @@ class EvaluationState:
         parts.extend(str(p) for p in indicator.params)
         return "_".join(parts)
 
-    # Legacy methods for backwards compatibility
+    # Convenience methods for position state
 
     def has_position(self) -> bool:
         """Check if there is a current position."""
@@ -293,18 +293,18 @@ class EvaluationState:
         else:
             return ((entry_price - current_price) / entry_price) * 100
 
-    # Legacy single-bar interface (for backwards compatibility)
+    # Single-bar convenience properties (for single-symbol strategies)
 
     @property
     def current_bar(self) -> Bar | None:
-        """Get first current bar (legacy interface)."""
+        """Get first current bar (for single-symbol strategies)."""
         if self.current_bars:
             return next(iter(self.current_bars.values()))
         return None
 
     @property
     def prev_bar(self) -> Bar | None:
-        """Get first previous bar (legacy interface)."""
+        """Get first previous bar (for single-symbol strategies)."""
         if self.prev_bars:
             return next(iter(self.prev_bars.values()))
         return None

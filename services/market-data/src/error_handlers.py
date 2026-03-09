@@ -32,9 +32,7 @@ def register_error_handlers(app: FastAPI) -> None:
     """
 
     @app.exception_handler(SymbolNotFoundError)
-    async def symbol_not_found_handler(  # pyright: ignore[reportUnusedFunction]
-        request: Request, exc: SymbolNotFoundError
-    ) -> JSONResponse:
+    async def symbol_not_found_handler(request: Request, exc: SymbolNotFoundError) -> JSONResponse:
         """Handle symbol not found errors (404)."""
         logger.warning(
             f"Symbol not found: {exc.symbol}",
@@ -50,9 +48,7 @@ def register_error_handlers(app: FastAPI) -> None:
         )
 
     @app.exception_handler(InvalidRequestError)
-    async def invalid_request_handler(  # pyright: ignore[reportUnusedFunction]
-        request: Request, exc: InvalidRequestError
-    ) -> JSONResponse:
+    async def invalid_request_handler(request: Request, exc: InvalidRequestError) -> JSONResponse:
         """Handle invalid request errors (400)."""
         logger.warning(
             f"Invalid request: {exc.message}",
@@ -67,9 +63,7 @@ def register_error_handlers(app: FastAPI) -> None:
         )
 
     @app.exception_handler(AlpacaRateLimitError)
-    async def rate_limit_handler(  # pyright: ignore[reportUnusedFunction]
-        request: Request, exc: AlpacaRateLimitError
-    ) -> JSONResponse:
+    async def rate_limit_handler(request: Request, exc: AlpacaRateLimitError) -> JSONResponse:
         """Handle rate limit errors (503 with Retry-After).
 
         We return 503 (Service Unavailable) instead of 429 because:
@@ -97,9 +91,7 @@ def register_error_handlers(app: FastAPI) -> None:
         )
 
     @app.exception_handler(AlpacaServerError)
-    async def alpaca_server_error_handler(  # pyright: ignore[reportUnusedFunction]
-        request: Request, exc: AlpacaServerError
-    ) -> JSONResponse:
+    async def alpaca_server_error_handler(request: Request, exc: AlpacaServerError) -> JSONResponse:
         """Handle Alpaca server errors (502 Bad Gateway)."""
         logger.error(
             f"Alpaca server error: {exc.message}",
@@ -114,9 +106,7 @@ def register_error_handlers(app: FastAPI) -> None:
         )
 
     @app.exception_handler(CircuitOpenError)
-    async def circuit_open_handler(  # pyright: ignore[reportUnusedFunction]
-        request: Request, exc: CircuitOpenError
-    ) -> JSONResponse:
+    async def circuit_open_handler(request: Request, exc: CircuitOpenError) -> JSONResponse:
         """Handle circuit breaker open errors (503)."""
         logger.warning(
             "Circuit breaker open",
@@ -133,9 +123,7 @@ def register_error_handlers(app: FastAPI) -> None:
         )
 
     @app.exception_handler(AlpacaError)
-    async def alpaca_error_handler(  # pyright: ignore[reportUnusedFunction]
-        request: Request, exc: AlpacaError
-    ) -> JSONResponse:
+    async def alpaca_error_handler(request: Request, exc: AlpacaError) -> JSONResponse:
         """Catch-all handler for any other Alpaca errors."""
         logger.error(
             f"Alpaca error: {exc.message}",
@@ -148,3 +136,13 @@ def register_error_handlers(app: FastAPI) -> None:
                 "message": exc.message,
             },
         )
+
+    # Mark handlers as used (they're registered via decorators)
+    _ = (
+        symbol_not_found_handler,
+        invalid_request_handler,
+        rate_limit_handler,
+        alpaca_server_error_handler,
+        circuit_open_handler,
+        alpaca_error_handler,
+    )

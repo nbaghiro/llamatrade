@@ -227,7 +227,7 @@ class Parser:
 
         # Parse child blocks
         children: list[Block] = []
-        while self._current() and self._current()[0] != "RPAREN":  # type: ignore[index]
+        while (tok := self._current()) is not None and tok[0] != "RPAREN":
             children.append(self._parse_block())
 
         self._expect("RPAREN")
@@ -287,7 +287,7 @@ class Parser:
         name = self._parse_string()
 
         children: list[Block] = []
-        while self._current() and self._current()[0] != "RPAREN":  # type: ignore[index]
+        while (tok := self._current()) is not None and tok[0] != "RPAREN":
             children.append(self._parse_block())
 
         self._expect("RPAREN")
@@ -332,7 +332,7 @@ class Parser:
 
         # Parse children
         children: list[Block] = []
-        while self._current() and self._current()[0] != "RPAREN":  # type: ignore[index]
+        while (tok := self._current()) is not None and tok[0] != "RPAREN":
             children.append(self._parse_block())
 
         self._expect("RPAREN")
@@ -454,7 +454,7 @@ class Parser:
 
         # Parse children
         children: list[Block] = []
-        while self._current() and self._current()[0] != "RPAREN":  # type: ignore[index]
+        while (tok := self._current()) is not None and tok[0] != "RPAREN":
             children.append(self._parse_block())
 
         self._expect("RPAREN")
@@ -512,7 +512,7 @@ class Parser:
 
         elif op in LOGICAL_OPS:
             operands: list[Condition] = []
-            while self._current() and self._current()[0] != "RPAREN":  # type: ignore[index]
+            while (current := self._current()) is not None and current[0] != "RPAREN":
                 operands.append(self._parse_condition())
             self._expect("RPAREN")
             return LogicalOp(
@@ -601,12 +601,11 @@ class Parser:
 
         # Parse numeric parameters
         params: list[int | float] = []
-        while self._current() and self._current()[0] == "NUMBER":  # type: ignore[index]
-            tok = self._current()
-            if "." in tok[1]:  # type: ignore[index]
-                params.append(float(tok[1]))  # type: ignore[index]
+        while (num_tok := self._current()) is not None and num_tok[0] == "NUMBER":
+            if "." in num_tok[1]:
+                params.append(float(num_tok[1]))
             else:
-                params.append(int(tok[1]))  # type: ignore[index]
+                params.append(int(num_tok[1]))
             self.pos += 1
 
         # Parse optional output keyword
@@ -638,8 +637,9 @@ class Parser:
         self.pos += 1
 
         period: int | None = None
-        if self._current() and self._current()[0] == "NUMBER":  # type: ignore[index]
-            period = int(self._current()[1])  # type: ignore[index]
+        period_tok = self._current()
+        if period_tok is not None and period_tok[0] == "NUMBER":
+            period = int(period_tok[1])
             self.pos += 1
 
         self._expect("RPAREN")

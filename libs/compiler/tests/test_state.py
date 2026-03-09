@@ -507,8 +507,8 @@ class TestEvaluationStatePosition:
         assert pnl == pytest.approx(10.0)  # 10% profit for short
 
 
-class TestEvaluationStateLegacyInterface:
-    """Tests for legacy single-bar interface."""
+class TestEvaluationStateSingleBarInterface:
+    """Tests for single-bar convenience interface."""
 
     def test_current_bar_property(self, sample_bar: Bar, prev_bar: Bar) -> None:
         """Test current_bar property returns first bar."""

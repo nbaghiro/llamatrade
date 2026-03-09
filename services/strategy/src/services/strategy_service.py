@@ -61,7 +61,7 @@ def _rebalance_to_timeframe(rebalance: str | None) -> str:
     """Convert rebalance frequency to a timeframe string.
 
     Allocation strategies use rebalance frequency instead of intraday timeframes.
-    We map to daily-level timeframes for backward compatibility with the DB schema.
+    We map to daily-level timeframes for the DB schema.
     """
     mapping = {
         "daily": "1D",
@@ -127,8 +127,7 @@ class StrategyService:
         # Extract symbols from the allocation strategy
         symbols = list(get_required_symbols(ast))
 
-        # Map rebalance frequency to a timeframe for backward compatibility
-        # Allocation strategies use rebalance frequency instead of intraday timeframes
+        # Map rebalance frequency to a timeframe for DB storage
         timeframe = _rebalance_to_timeframe(ast.rebalance)
 
         # Use nested transaction for atomicity (strategy + version created together)

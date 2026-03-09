@@ -232,7 +232,7 @@ class HealthChecker:
         router = APIRouter(tags=["Health"])
 
         @router.get("/health", response_model=HealthCheckResponse)
-        async def health_check(  # pyright: ignore[reportUnusedFunction]
+        async def health_check(
             response: Response,
         ) -> HealthCheckResponse:
             """Full health check including all dependencies."""
@@ -252,7 +252,7 @@ class HealthChecker:
             )
 
         @router.get("/health/live")
-        async def liveness_probe() -> dict[str, str]:  # pyright: ignore[reportUnusedFunction]
+        async def liveness_probe() -> dict[str, str]:
             """Kubernetes liveness probe.
 
             Always returns 200 if the process is running.
@@ -260,7 +260,7 @@ class HealthChecker:
             return {"status": "ok"}
 
         @router.get("/health/ready")
-        async def readiness_probe(  # pyright: ignore[reportUnusedFunction]
+        async def readiness_probe(
             response: Response,
         ) -> dict[str, str | dict[str, CheckResultDict]]:
             """Kubernetes readiness probe.
@@ -275,6 +275,8 @@ class HealthChecker:
 
             return {"status": "ready", "checks": checks}
 
+        # Mark handlers as used (they're registered via decorators)
+        _ = (health_check, liveness_probe, readiness_probe)
         return router
 
 
@@ -316,14 +318,19 @@ async def check_redis(redis_url: str) -> bool:
         True if healthy
     """
     try:
+        import inspect
+
         from redis.asyncio import Redis
 
-        client = Redis.from_url(redis_url)  # pyright: ignore[reportUnknownMemberType]
+        client = Redis.from_url(redis_url)
         try:
-            await client.ping()  # pyright: ignore[reportUnknownMemberType, reportGeneralTypeIssues]
+            # ping() returns Awaitable[bool] from async client
+            result = client.ping()
+            if inspect.isawaitable(result):
+                await result
             return True
         finally:
-            await client.aclose()  # type: ignore[attr-defined]
+            await client.aclose()
     except Exception as e:
         logger.warning("Redis health check failed: %s", e)
         return False
