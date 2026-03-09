@@ -20,7 +20,6 @@ from src.models import (
     StrategyConfigJSON,
     StrategyDetailResponse,
     StrategyResponse,
-    StrategyType,
 )
 
 pytestmark = pytest.mark.asyncio
@@ -83,7 +82,6 @@ def make_strategy_response(
     name: str = "Test Strategy",
     description: str = "A test strategy",
     status: int = STRATEGY_STATUS_DRAFT,
-    strategy_type: str = "momentum",
     current_version: int = 1,
     config_sexpr: str = VALID_STRATEGY_SEXPR,
     config_json: StrategyConfigJSON | None = None,
@@ -96,7 +94,6 @@ def make_strategy_response(
         name=name,
         description=description,
         status=int(status),
-        strategy_type=StrategyType(strategy_type) if strategy_type else StrategyType.CUSTOM,
         current_version=current_version,
         config_sexpr=config_sexpr,
         config_json=config_json if config_json is not None else {},
@@ -112,7 +109,6 @@ def make_strategy_summary(
     name: str = "Test Strategy",
     description: str = "A test strategy",
     status: int = STRATEGY_STATUS_DRAFT,
-    strategy_type: str = "momentum",
     current_version: int = 1,
 ) -> StrategyResponse:
     """Create a mock strategy summary response."""
@@ -121,7 +117,6 @@ def make_strategy_summary(
         name=name,
         description=description,
         status=int(status),
-        strategy_type=StrategyType(strategy_type) if strategy_type else StrategyType.CUSTOM,
         current_version=current_version,
         created_at=datetime.now(UTC),
         updated_at=datetime.now(UTC),

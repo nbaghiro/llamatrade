@@ -4,7 +4,19 @@
 
 import pytest
 
-from src.models import IndicatorType
+from llamatrade_proto.generated.strategy_pb2 import (
+    INDICATOR_TYPE_ATR,
+    INDICATOR_TYPE_BOLLINGER_BANDS,
+    INDICATOR_TYPE_EMA,
+    INDICATOR_TYPE_MACD,
+    INDICATOR_TYPE_MFI,
+    INDICATOR_TYPE_OBV,
+    INDICATOR_TYPE_RSI,
+    INDICATOR_TYPE_SMA,
+    INDICATOR_TYPE_STOCHASTIC,
+    INDICATOR_TYPE_VWAP,
+)
+
 from src.services.indicator_service import (
     CATEGORIES,
     INDICATORS,
@@ -67,12 +79,12 @@ class TestIndicatorsDict:
     def test_contains_all_indicator_types(self) -> None:
         """Test that INDICATORS contains entries for all expected types."""
         expected_types = [
-            IndicatorType.SMA,
-            IndicatorType.EMA,
-            IndicatorType.MACD,
-            IndicatorType.RSI,
-            IndicatorType.BOLLINGER_BANDS,
-            IndicatorType.ATR,
+            INDICATOR_TYPE_SMA,
+            INDICATOR_TYPE_EMA,
+            INDICATOR_TYPE_MACD,
+            INDICATOR_TYPE_RSI,
+            INDICATOR_TYPE_BOLLINGER_BANDS,
+            INDICATOR_TYPE_ATR,
         ]
 
         for indicator_type in expected_types:
@@ -80,9 +92,9 @@ class TestIndicatorsDict:
 
     def test_sma_indicator_info(self) -> None:
         """Test SMA indicator metadata."""
-        sma = INDICATORS[IndicatorType.SMA]
+        sma = INDICATORS[INDICATOR_TYPE_SMA]
 
-        assert sma.type == IndicatorType.SMA
+        assert sma.type == INDICATOR_TYPE_SMA
         assert sma.name == "Simple Moving Average"
         assert sma.category == "trend"
         assert len(sma.params) == 1
@@ -91,7 +103,7 @@ class TestIndicatorsDict:
 
     def test_macd_indicator_has_multiple_params(self) -> None:
         """Test MACD indicator has multiple parameters."""
-        macd = INDICATORS[IndicatorType.MACD]
+        macd = INDICATORS[INDICATOR_TYPE_MACD]
 
         assert len(macd.params) == 3
         param_names = [p["name"] for p in macd.params]
@@ -101,13 +113,13 @@ class TestIndicatorsDict:
 
     def test_macd_indicator_has_multiple_outputs(self) -> None:
         """Test MACD indicator has multiple outputs."""
-        macd = INDICATORS[IndicatorType.MACD]
+        macd = INDICATORS[INDICATOR_TYPE_MACD]
 
         assert macd.outputs == ["line", "signal", "histogram"]
 
     def test_bollinger_bands_params(self) -> None:
         """Test Bollinger Bands has correct params."""
-        bb = INDICATORS[IndicatorType.BOLLINGER_BANDS]
+        bb = INDICATORS[INDICATOR_TYPE_BOLLINGER_BANDS]
 
         assert len(bb.params) == 2
         assert bb.params[0]["name"] == "period"
@@ -117,9 +129,9 @@ class TestIndicatorsDict:
 
     def test_volume_indicators_exist(self) -> None:
         """Test volume category indicators."""
-        obv = INDICATORS[IndicatorType.OBV]
-        mfi = INDICATORS[IndicatorType.MFI]
-        vwap = INDICATORS[IndicatorType.VWAP]
+        obv = INDICATORS[INDICATOR_TYPE_OBV]
+        mfi = INDICATORS[INDICATOR_TYPE_MFI]
+        vwap = INDICATORS[INDICATOR_TYPE_VWAP]
 
         assert obv.category == "volume"
         assert mfi.category == "volume"
@@ -127,7 +139,7 @@ class TestIndicatorsDict:
 
     def test_obv_has_no_params(self) -> None:
         """Test OBV has no parameters."""
-        obv = INDICATORS[IndicatorType.OBV]
+        obv = INDICATORS[INDICATOR_TYPE_OBV]
 
         assert len(obv.params) == 0
 
@@ -208,28 +220,23 @@ class TestGetIndicator:
 
     async def test_get_indicator_found(self, indicator_service: IndicatorService) -> None:
         """Test getting an existing indicator."""
-        indicator = await indicator_service.get_indicator(IndicatorType.RSI)
+        indicator = await indicator_service.get_indicator(INDICATOR_TYPE_RSI)
 
         assert indicator is not None
-        assert indicator.type == IndicatorType.RSI
+        assert indicator.type == INDICATOR_TYPE_RSI
         assert indicator.name == "Relative Strength Index"
         assert indicator.category == "momentum"
 
     async def test_get_indicator_not_found(self, indicator_service: IndicatorService) -> None:
         """Test getting a non-existent indicator returns None."""
-        # Use a mock type that doesn't exist in the dict
-        # Since IndicatorType is an enum, we need to test with all valid types
-        # All valid types should return something
-        for indicator_type in IndicatorType:
-            result = await indicator_service.get_indicator(indicator_type)
-            if indicator_type in INDICATORS:
-                assert result is not None
-            else:
-                assert result is None
+        # Use an invalid indicator type value
+        result = await indicator_service.get_indicator(9999)
+
+        assert result is None
 
     async def test_get_stochastic_indicator(self, indicator_service: IndicatorService) -> None:
         """Test getting Stochastic indicator details."""
-        indicator = await indicator_service.get_indicator(IndicatorType.STOCHASTIC)
+        indicator = await indicator_service.get_indicator(INDICATOR_TYPE_STOCHASTIC)
 
         assert indicator is not None
         assert len(indicator.params) == 3

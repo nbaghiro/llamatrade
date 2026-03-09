@@ -6,6 +6,9 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
+# Re-export StrategyType from db models for backward compatibility
+from llamatrade_db.models.strategy import StrategyType
+
 # Import proto enum types for proper typing
 from llamatrade_proto.generated.common_pb2 import (
     EXECUTION_MODE_PAPER,
@@ -19,6 +22,8 @@ from llamatrade_proto.generated.strategy_pb2 import (
     TemplateCategory,
     TemplateDifficulty,
 )
+
+__all__ = ["StrategyType"]
 
 # Proto enum prefixes for string conversion
 _STRATEGY_STATUS_PREFIX = "STRATEGY_STATUS_"

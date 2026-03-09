@@ -3,14 +3,17 @@
 Enum columns use PostgreSQL native ENUM types with TypeDecorators for transparent
 conversion between proto int values and DB enum strings.
 
-All enums are now proto-defined. See libs/db/llamatrade_db/models/_enum_types.py
-for TypeDecorator implementations.
+StrategyType remains as a Python Enum because it represents business categories
+(TREND_FOLLOWING, MOMENTUM, etc.) which are not proto-defined.
+
+See libs/db/llamatrade_db/models/_enum_types.py for TypeDecorator implementations.
 """
 
 from __future__ import annotations
 
 from datetime import datetime
 from decimal import Decimal
+from enum import Enum as PyEnum
 from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
@@ -45,6 +48,16 @@ if TYPE_CHECKING:
         StrategyPerformanceMetrics,
         StrategyPerformanceSnapshot,
     )
+
+
+class StrategyType(PyEnum):
+    """Types of trading strategies (business categorization, not proto-defined)."""
+
+    TREND_FOLLOWING = "trend_following"
+    MEAN_REVERSION = "mean_reversion"
+    MOMENTUM = "momentum"
+    BREAKOUT = "breakout"
+    CUSTOM = "custom"
 
 
 class Strategy(Base, UUIDPrimaryKeyMixin, TenantMixin, TimestampMixin):

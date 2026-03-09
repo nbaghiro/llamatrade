@@ -63,3 +63,4 @@ exclude_lines = [
 venvPath = "../.."
 venv = ".venv"
 pythonVersion = "3.14"
+exclude = ["tests/**", "**/__pycache__"]

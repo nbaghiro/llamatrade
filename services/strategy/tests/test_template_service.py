@@ -2,7 +2,15 @@
 
 import pytest
 
-from src.models import StrategyType
+from llamatrade_proto.generated.strategy_pb2 import (
+    TEMPLATE_CATEGORY_BUY_AND_HOLD,
+    TEMPLATE_CATEGORY_MEAN_REVERSION,
+    TEMPLATE_CATEGORY_TREND,
+    TEMPLATE_DIFFICULTY_ADVANCED,
+    TEMPLATE_DIFFICULTY_BEGINNER,
+    TEMPLATE_DIFFICULTY_INTERMEDIATE,
+)
+
 from src.services.template_service import (
     TEMPLATES,
     TemplateService,
@@ -29,34 +37,34 @@ class TestTemplatesDict:
         assert "ma-crossover" in TEMPLATES
         ma = TEMPLATES["ma-crossover"]
         assert ma["name"] == "Moving Average Crossover"
-        assert ma["strategy_type"] == StrategyType.TREND_FOLLOWING
-        assert ma["difficulty"] == "beginner"
+        assert ma["category"] == TEMPLATE_CATEGORY_TREND
+        assert ma["difficulty"] == TEMPLATE_DIFFICULTY_BEGINNER
 
     def test_contains_rsi_mean_reversion(self) -> None:
         """Test TEMPLATES contains RSI mean reversion template."""
         assert "rsi-mean-reversion" in TEMPLATES
         rsi = TEMPLATES["rsi-mean-reversion"]
-        assert rsi["strategy_type"] == StrategyType.MEAN_REVERSION
+        assert rsi["category"] == TEMPLATE_CATEGORY_MEAN_REVERSION
         assert "rsi" in rsi["tags"]
 
     def test_contains_macd_strategy(self) -> None:
         """Test TEMPLATES contains MACD strategy template."""
         assert "macd-strategy" in TEMPLATES
         macd = TEMPLATES["macd-strategy"]
-        assert macd["strategy_type"] == StrategyType.MOMENTUM
+        assert macd["category"] == TEMPLATE_CATEGORY_MEAN_REVERSION
 
     def test_contains_bollinger_bounce(self) -> None:
         """Test TEMPLATES contains Bollinger bounce template."""
         assert "bollinger-bounce" in TEMPLATES
         bb = TEMPLATES["bollinger-bounce"]
-        assert bb["difficulty"] == "intermediate"
+        assert bb["difficulty"] == TEMPLATE_DIFFICULTY_INTERMEDIATE
 
     def test_contains_donchian_breakout(self) -> None:
         """Test TEMPLATES contains Donchian breakout template."""
         assert "donchian-breakout" in TEMPLATES
         dc = TEMPLATES["donchian-breakout"]
-        assert dc["strategy_type"] == StrategyType.BREAKOUT
-        assert dc["difficulty"] == "advanced"
+        assert dc["category"] == TEMPLATE_CATEGORY_TREND
+        assert dc["difficulty"] == TEMPLATE_DIFFICULTY_ADVANCED
 
     def test_all_templates_have_required_fields(self) -> None:
         """Test all templates have required fields."""
@@ -64,7 +72,8 @@ class TestTemplatesDict:
             "id",
             "name",
             "description",
-            "strategy_type",
+            "category",
+            "asset_class",
             "tags",
             "difficulty",
             "config_sexpr",
@@ -81,8 +90,12 @@ class TestTemplatesDict:
             assert config.strip().startswith("(strategy")
 
     def test_difficulty_levels_valid(self) -> None:
-        """Test all templates have valid difficulty levels."""
-        valid_difficulties = ["beginner", "intermediate", "advanced"]
+        """Test all templates have valid difficulty levels (proto enum values)."""
+        valid_difficulties = [
+            TEMPLATE_DIFFICULTY_BEGINNER,
+            TEMPLATE_DIFFICULTY_INTERMEDIATE,
+            TEMPLATE_DIFFICULTY_ADVANCED,
+        ]
 
         for _, template in TEMPLATES.items():
             assert template["difficulty"] in valid_difficulties
@@ -100,50 +113,51 @@ class TestListTemplates:
 
         assert len(templates) == len(TEMPLATES)
 
-    async def test_list_templates_by_strategy_type(self, template_service: TemplateService) -> None:
-        """Test filtering templates by strategy type."""
+    async def test_list_templates_by_category(self, template_service: TemplateService) -> None:
+        """Test filtering templates by category."""
         mean_reversion = await template_service.list_templates(
-            strategy_type=StrategyType.MEAN_REVERSION
+            category=TEMPLATE_CATEGORY_MEAN_REVERSION
         )
 
         assert len(mean_reversion) > 0
         for template in mean_reversion:
-            assert template.strategy_type == StrategyType.MEAN_REVERSION
+            assert template.category == TEMPLATE_CATEGORY_MEAN_REVERSION
 
     async def test_list_templates_by_difficulty_beginner(
         self, template_service: TemplateService
     ) -> None:
         """Test filtering templates by beginner difficulty."""
-        beginner = await template_service.list_templates(difficulty="beginner")
+        beginner = await template_service.list_templates(difficulty=TEMPLATE_DIFFICULTY_BEGINNER)
 
         assert len(beginner) > 0
         for template in beginner:
-            assert template.difficulty == "beginner"
+            assert template.difficulty == TEMPLATE_DIFFICULTY_BEGINNER
 
     async def test_list_templates_by_difficulty_advanced(
         self, template_service: TemplateService
     ) -> None:
         """Test filtering templates by advanced difficulty."""
-        advanced = await template_service.list_templates(difficulty="advanced")
+        advanced = await template_service.list_templates(difficulty=TEMPLATE_DIFFICULTY_ADVANCED)
 
         assert len(advanced) > 0
         for template in advanced:
-            assert template.difficulty == "advanced"
+            assert template.difficulty == TEMPLATE_DIFFICULTY_ADVANCED
 
     async def test_list_templates_combined_filters(self, template_service: TemplateService) -> None:
-        """Test filtering by both type and difficulty."""
+        """Test filtering by both category and difficulty."""
         result = await template_service.list_templates(
-            strategy_type=StrategyType.MEAN_REVERSION,
-            difficulty="intermediate",
+            category=TEMPLATE_CATEGORY_BUY_AND_HOLD,
+            difficulty=TEMPLATE_DIFFICULTY_BEGINNER,
         )
 
         for template in result:
-            assert template.strategy_type == StrategyType.MEAN_REVERSION
-            assert template.difficulty == "intermediate"
+            assert template.category == TEMPLATE_CATEGORY_BUY_AND_HOLD
+            assert template.difficulty == TEMPLATE_DIFFICULTY_BEGINNER
 
     async def test_list_templates_no_matches(self, template_service: TemplateService) -> None:
-        """Test filtering with no matching templates."""
-        result = await template_service.list_templates(difficulty="expert")
+        """Test filtering with category that has no templates returns empty."""
+        # Use an invalid category value to ensure no matches
+        result = await template_service.list_templates(category=9999)
 
         assert result == []
 
@@ -155,7 +169,7 @@ class TestListTemplates:
             assert template.id is not None
             assert template.name is not None
             assert template.description is not None
-            assert template.strategy_type is not None
+            assert template.category is not None
             assert template.config_sexpr is not None
             assert template.tags is not None
             assert template.difficulty is not None
@@ -174,7 +188,7 @@ class TestGetTemplate:
         assert template is not None
         assert template.id == "ma-crossover"
         assert template.name == "Moving Average Crossover"
-        assert template.strategy_type == StrategyType.TREND_FOLLOWING
+        assert template.category == TEMPLATE_CATEGORY_TREND
 
     async def test_get_template_not_found(self, template_service: TemplateService) -> None:
         """Test getting a non-existent template."""

@@ -129,7 +129,7 @@ if [[ "$RUN_LINT" == "true" && "$RUN_BACKEND" == "true" ]]; then
 
     # Ensure dependencies are installed for type checking
     print_step "Syncing dependencies"
-    uv sync --all-packages --quiet
+    uv sync --all-packages --all-extras --quiet
 
     # Run Pyright for type checking (configured in pyproject.toml)
     # Note: Don't specify paths - let pyright use include/exclude from pyproject.toml
