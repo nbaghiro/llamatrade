@@ -1,7 +1,5 @@
 """Tests for performance service."""
 
-# pyright: reportPrivateUsage=false
-
 from datetime import date, timedelta
 from unittest.mock import AsyncMock, MagicMock
 from uuid import UUID

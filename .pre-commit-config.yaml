@@ -2,12 +2,22 @@
 # Install: pip install pre-commit && pre-commit install
 
 repos:
+  # Check for suppression comments (must run first)
+  - repo: local
+    hooks:
+      - id: no-suppressions
+        name: No lint/type suppression comments
+        entry: ./scripts/check-no-suppressions.sh
+        language: script
+        files: ^(services|libs)/.*\.py$
+        pass_filenames: false
+
   # Python linting with Ruff
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.15.2
     hooks:
       - id: ruff
-        args: [--fix, --config=pyproject.toml]
+        args: [--fix, --ignore-noqa, --config=pyproject.toml]
         files: ^(services|libs)/
         exclude: ^(libs/proto/llamatrade_proto/generated/|libs/proto/connectrpc/)
       - id: ruff-format

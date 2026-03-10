@@ -84,7 +84,9 @@ async def client():
 @pytest.fixture
 def sample_backtest_response(backtest_id, tenant_id, strategy_id):
     """Sample backtest response for testing."""
-    from src.models import BACKTEST_STATUS_PENDING, BacktestResponse
+    from llamatrade_proto.generated.backtest_pb2 import BACKTEST_STATUS_PENDING
+
+    from src.models import BacktestResponse
 
     return BacktestResponse(
         id=backtest_id,

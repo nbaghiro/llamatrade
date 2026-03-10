@@ -1,4 +1,3 @@
-# pyright: reportOperatorIssue=false
 """Tests for backtest Pydantic models."""
 
 from datetime import datetime

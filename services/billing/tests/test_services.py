@@ -1,6 +1,3 @@
-# pyright: reportPrivateUsage=false
-# pyright: reportArgumentType=false
-# pyright: reportUnknownLambdaType=false
 """Unit tests for billing services."""
 
 from datetime import UTC, datetime, timedelta

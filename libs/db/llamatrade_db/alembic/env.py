@@ -12,8 +12,7 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 from llamatrade_db.base import Base
 
 # Import all models to register them with metadata
-# pyright: reportUnusedImport=false
-from llamatrade_db.models import (  # noqa: F401
+from llamatrade_db.models import (
     Alert,
     AlpacaCredentials,
     APIKey,
@@ -42,6 +41,37 @@ from llamatrade_db.models import (  # noqa: F401
     User,
     Webhook,
 )
+
+# Ensure all models are registered with Base.metadata for autogenerate
+_imported_models = [
+    Alert,
+    AlpacaCredentials,
+    APIKey,
+    Backtest,
+    BacktestResult,
+    Bar,
+    Invoice,
+    Notification,
+    NotificationChannel,
+    Order,
+    PerformanceMetrics,
+    Plan,
+    PortfolioHistory,
+    PortfolioSummary,
+    Position,
+    Quote,
+    Strategy,
+    StrategyTemplate,
+    StrategyVersion,
+    Subscription,
+    Tenant,
+    Trade,
+    TradingSession,
+    Transaction,
+    UsageRecord,
+    User,
+    Webhook,
+]
 
 # Alembic Config object
 config = context.config

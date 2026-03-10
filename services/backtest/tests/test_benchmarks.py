@@ -1,4 +1,3 @@
-# pyright: reportArgumentType=false
 """Tests for benchmark calculations."""
 
 from datetime import UTC, datetime, timedelta

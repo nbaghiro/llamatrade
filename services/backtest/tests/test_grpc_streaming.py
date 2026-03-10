@@ -1,11 +1,10 @@
-# pyright: reportOperatorIssue=false
 """Tests for gRPC streaming in backtest service."""
 
 import json
 
 import pytest
 
-from src.models import (
+from llamatrade_proto.generated.backtest_pb2 import (
     BACKTEST_STATUS_CANCELLED,
     BACKTEST_STATUS_COMPLETED,
     BACKTEST_STATUS_FAILED,
@@ -13,6 +12,7 @@ from src.models import (
     BACKTEST_STATUS_RUNNING,
     BacktestStatus,
 )
+
 from src.progress import ProgressUpdate
 
 

@@ -1,4 +1,3 @@
-# pyright: reportOperatorIssue=false
 """Tests for progress tracking module."""
 
 import json

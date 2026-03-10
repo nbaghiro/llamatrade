@@ -96,7 +96,7 @@ class TestBaseGRPCClientChannel:
             mock_channel = MagicMock()
             mock_insecure.return_value = mock_channel
 
-            _channel = client._create_channel()  # noqa: F841
+            client._create_channel()
 
             mock_insecure.assert_called_once_with(
                 "localhost:8810",
@@ -115,7 +115,7 @@ class TestBaseGRPCClientChannel:
                 mock_channel = MagicMock()
                 mock_secure.return_value = mock_channel
 
-                _channel = client._create_channel()  # noqa: F841
+                client._create_channel()
 
                 mock_ssl_creds.assert_called_once()
                 mock_secure.assert_called_once_with(
@@ -134,7 +134,7 @@ class TestBaseGRPCClientChannel:
             mock_channel = MagicMock()
             mock_secure.return_value = mock_channel
 
-            _channel = client._create_channel()  # noqa: F841
+            client._create_channel()
 
             mock_secure.assert_called_once_with(
                 "localhost:8810",

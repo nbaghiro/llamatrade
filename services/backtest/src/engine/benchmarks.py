@@ -9,7 +9,7 @@ Provides reference benchmarks and relative performance metrics:
 
 from dataclasses import dataclass
 from datetime import datetime
-from typing import TYPE_CHECKING, TypedDict
+from typing import TYPE_CHECKING, SupportsFloat, TypedDict, cast
 
 import numpy as np
 
@@ -377,10 +377,13 @@ async def fetch_benchmark_data(
                     return float(val)
                 except ValueError:
                     return 0.0
-            try:
-                return float(val)  # type: ignore[arg-type]
-            except TypeError, ValueError:
-                return 0.0
+            # For SupportsFloat or other convertible types
+            if hasattr(val, "__float__"):
+                try:
+                    return float(cast(SupportsFloat, val))
+                except TypeError, ValueError:
+                    return 0.0
+            return 0.0
 
         spy_bars: list[BenchmarkBarData] = []
         for b in bars.get("SPY", []):

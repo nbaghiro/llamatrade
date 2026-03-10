@@ -417,7 +417,7 @@ class LiveSessionService(SessionService):
             select(AlpacaCredentials)
             .where(AlpacaCredentials.id == credentials_id)
             .where(AlpacaCredentials.tenant_id == tenant_id)  # Tenant isolation
-            .where(AlpacaCredentials.is_active == True)  # noqa: E712
+            .where(AlpacaCredentials.is_active.is_(True))
         )
         result = await self.db.execute(stmt)
         creds = result.scalar_one_or_none()

@@ -17,10 +17,15 @@ Example:
 from __future__ import annotations
 
 import logging
-from collections.abc import Iterable
-from typing import Protocol, runtime_checkable
+from collections.abc import Awaitable, Callable, Iterable
+from typing import Any, Protocol, runtime_checkable
 
 logger = logging.getLogger(__name__)
+
+# ASGI type aliases
+Scope = dict[str, Any]
+Receive = Callable[[], Awaitable[dict[str, Any]]]
+Send = Callable[[dict[str, Any]], Awaitable[None]]
 
 
 @runtime_checkable
@@ -29,9 +34,9 @@ class ASGIApplication(Protocol):
 
     async def __call__(
         self,
-        scope: dict,
-        receive: object,
-        send: object,
+        scope: Scope,
+        receive: Receive,
+        send: Send,
     ) -> None:
         """Handle ASGI request."""
         ...
@@ -97,9 +102,9 @@ class CombinedConnectApp:
 
     async def __call__(
         self,
-        scope: dict,
-        receive: object,
-        send: object,
+        scope: Scope,
+        receive: Receive,
+        send: Send,
     ) -> None:
         """Route request to appropriate service.
 
@@ -123,17 +128,17 @@ class CombinedConnectApp:
         # No app handled the request - return 404
         await self._send_404(scope, send)
 
-    async def _send_404(self, scope: dict, send: object) -> None:
+    async def _send_404(self, scope: Scope, send: Send) -> None:
         """Send 404 Not Found response."""
         await send(
-            {  # type: ignore[operator]
+            {
                 "type": "http.response.start",
                 "status": 404,
                 "headers": [[b"content-type", b"text/plain"]],
             }
         )
         await send(
-            {  # type: ignore[operator]
+            {
                 "type": "http.response.body",
                 "body": b"Not Found",
             }

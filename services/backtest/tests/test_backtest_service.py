@@ -7,13 +7,14 @@ from uuid import UUID, uuid4
 
 import pytest
 
-from src.models import (
+from llamatrade_proto.generated.backtest_pb2 import (
     BACKTEST_STATUS_CANCELLED,
     BACKTEST_STATUS_COMPLETED,
     BACKTEST_STATUS_FAILED,
     BACKTEST_STATUS_PENDING,
     BACKTEST_STATUS_RUNNING,
 )
+
 from src.services.backtest_service import BacktestService
 
 # Test UUIDs

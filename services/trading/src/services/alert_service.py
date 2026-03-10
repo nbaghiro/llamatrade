@@ -571,7 +571,7 @@ class AlertService:
             return []
 
         stmt = (
-            select(Webhook).where(Webhook.tenant_id == tenant_id).where(Webhook.is_active == True)  # noqa: E712
+            select(Webhook).where(Webhook.tenant_id == tenant_id).where(Webhook.is_active.is_(True))
         )
         result = await self.db.execute(stmt)
         return list(result.scalars().all())

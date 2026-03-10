@@ -16,63 +16,105 @@ from . import strategy_pb2 as strategy__pb2
 
 
 class StrategyService(Protocol):
-    async def get_strategy(self, request: strategy__pb2.GetStrategyRequest, ctx: RequestContext) -> strategy__pb2.GetStrategyResponse:
+    async def get_strategy(
+        self, request: strategy__pb2.GetStrategyRequest, ctx: RequestContext
+    ) -> strategy__pb2.GetStrategyResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
-    async def list_strategies(self, request: strategy__pb2.ListStrategiesRequest, ctx: RequestContext) -> strategy__pb2.ListStrategiesResponse:
+    async def list_strategies(
+        self, request: strategy__pb2.ListStrategiesRequest, ctx: RequestContext
+    ) -> strategy__pb2.ListStrategiesResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
-    async def create_strategy(self, request: strategy__pb2.CreateStrategyRequest, ctx: RequestContext) -> strategy__pb2.CreateStrategyResponse:
+    async def create_strategy(
+        self, request: strategy__pb2.CreateStrategyRequest, ctx: RequestContext
+    ) -> strategy__pb2.CreateStrategyResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
-    async def update_strategy(self, request: strategy__pb2.UpdateStrategyRequest, ctx: RequestContext) -> strategy__pb2.UpdateStrategyResponse:
+    async def update_strategy(
+        self, request: strategy__pb2.UpdateStrategyRequest, ctx: RequestContext
+    ) -> strategy__pb2.UpdateStrategyResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
-    async def delete_strategy(self, request: strategy__pb2.DeleteStrategyRequest, ctx: RequestContext) -> strategy__pb2.DeleteStrategyResponse:
+    async def delete_strategy(
+        self, request: strategy__pb2.DeleteStrategyRequest, ctx: RequestContext
+    ) -> strategy__pb2.DeleteStrategyResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
-    async def clone_strategy(self, request: strategy__pb2.CloneStrategyRequest, ctx: RequestContext) -> strategy__pb2.CloneStrategyResponse:
+    async def clone_strategy(
+        self, request: strategy__pb2.CloneStrategyRequest, ctx: RequestContext
+    ) -> strategy__pb2.CloneStrategyResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
-    async def compile_strategy(self, request: strategy__pb2.CompileStrategyRequest, ctx: RequestContext) -> strategy__pb2.CompileStrategyResponse:
+    async def compile_strategy(
+        self, request: strategy__pb2.CompileStrategyRequest, ctx: RequestContext
+    ) -> strategy__pb2.CompileStrategyResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
-    async def validate_strategy(self, request: strategy__pb2.ValidateStrategyRequest, ctx: RequestContext) -> strategy__pb2.ValidateStrategyResponse:
+    async def validate_strategy(
+        self, request: strategy__pb2.ValidateStrategyRequest, ctx: RequestContext
+    ) -> strategy__pb2.ValidateStrategyResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
-    async def list_strategy_versions(self, request: strategy__pb2.ListStrategyVersionsRequest, ctx: RequestContext) -> strategy__pb2.ListStrategyVersionsResponse:
+    async def list_strategy_versions(
+        self, request: strategy__pb2.ListStrategyVersionsRequest, ctx: RequestContext
+    ) -> strategy__pb2.ListStrategyVersionsResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
-    async def update_strategy_status(self, request: strategy__pb2.UpdateStrategyStatusRequest, ctx: RequestContext) -> strategy__pb2.UpdateStrategyStatusResponse:
+    async def update_strategy_status(
+        self, request: strategy__pb2.UpdateStrategyStatusRequest, ctx: RequestContext
+    ) -> strategy__pb2.UpdateStrategyStatusResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
-    async def list_templates(self, request: strategy__pb2.ListTemplatesRequest, ctx: RequestContext) -> strategy__pb2.ListTemplatesResponse:
+    async def list_templates(
+        self, request: strategy__pb2.ListTemplatesRequest, ctx: RequestContext
+    ) -> strategy__pb2.ListTemplatesResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
-    async def get_template(self, request: strategy__pb2.GetTemplateRequest, ctx: RequestContext) -> strategy__pb2.GetTemplateResponse:
+    async def get_template(
+        self, request: strategy__pb2.GetTemplateRequest, ctx: RequestContext
+    ) -> strategy__pb2.GetTemplateResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
-    async def create_execution(self, request: strategy__pb2.CreateExecutionRequest, ctx: RequestContext) -> strategy__pb2.CreateExecutionResponse:
+    async def create_execution(
+        self, request: strategy__pb2.CreateExecutionRequest, ctx: RequestContext
+    ) -> strategy__pb2.CreateExecutionResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
-    async def get_execution(self, request: strategy__pb2.GetExecutionRequest, ctx: RequestContext) -> strategy__pb2.GetExecutionResponse:
+    async def get_execution(
+        self, request: strategy__pb2.GetExecutionRequest, ctx: RequestContext
+    ) -> strategy__pb2.GetExecutionResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
-    async def list_executions(self, request: strategy__pb2.ListExecutionsRequest, ctx: RequestContext) -> strategy__pb2.ListExecutionsResponse:
+    async def list_executions(
+        self, request: strategy__pb2.ListExecutionsRequest, ctx: RequestContext
+    ) -> strategy__pb2.ListExecutionsResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
-    async def start_execution(self, request: strategy__pb2.StartExecutionRequest, ctx: RequestContext) -> strategy__pb2.StartExecutionResponse:
+    async def start_execution(
+        self, request: strategy__pb2.StartExecutionRequest, ctx: RequestContext
+    ) -> strategy__pb2.StartExecutionResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
-    async def pause_execution(self, request: strategy__pb2.PauseExecutionRequest, ctx: RequestContext) -> strategy__pb2.PauseExecutionResponse:
+    async def pause_execution(
+        self, request: strategy__pb2.PauseExecutionRequest, ctx: RequestContext
+    ) -> strategy__pb2.PauseExecutionResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
-    async def stop_execution(self, request: strategy__pb2.StopExecutionRequest, ctx: RequestContext) -> strategy__pb2.StopExecutionResponse:
+    async def stop_execution(
+        self, request: strategy__pb2.StopExecutionRequest, ctx: RequestContext
+    ) -> strategy__pb2.StopExecutionResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
 
 class StrategyServiceASGIApplication(ConnectASGIApplication[StrategyService]):
-    def __init__(self, service: StrategyService | AsyncGenerator[StrategyService], *, interceptors: Iterable[Interceptor]=(), read_max_bytes: int | None = None) -> None:
+    def __init__(
+        self,
+        service: StrategyService | AsyncGenerator[StrategyService],
+        *,
+        interceptors: Iterable[Interceptor] = (),
+        read_max_bytes: int | None = None,
+    ) -> None:
         super().__init__(
             service=service,
             endpoints=lambda svc: {
@@ -630,46 +672,104 @@ class StrategyServiceClient(ConnectClient):
 
 
 class StrategyServiceSync(Protocol):
-    def get_strategy(self, request: strategy__pb2.GetStrategyRequest, ctx: RequestContext) -> strategy__pb2.GetStrategyResponse:
+    def get_strategy(
+        self, request: strategy__pb2.GetStrategyRequest, ctx: RequestContext
+    ) -> strategy__pb2.GetStrategyResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
-    def list_strategies(self, request: strategy__pb2.ListStrategiesRequest, ctx: RequestContext) -> strategy__pb2.ListStrategiesResponse:
+
+    def list_strategies(
+        self, request: strategy__pb2.ListStrategiesRequest, ctx: RequestContext
+    ) -> strategy__pb2.ListStrategiesResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
-    def create_strategy(self, request: strategy__pb2.CreateStrategyRequest, ctx: RequestContext) -> strategy__pb2.CreateStrategyResponse:
+
+    def create_strategy(
+        self, request: strategy__pb2.CreateStrategyRequest, ctx: RequestContext
+    ) -> strategy__pb2.CreateStrategyResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
-    def update_strategy(self, request: strategy__pb2.UpdateStrategyRequest, ctx: RequestContext) -> strategy__pb2.UpdateStrategyResponse:
+
+    def update_strategy(
+        self, request: strategy__pb2.UpdateStrategyRequest, ctx: RequestContext
+    ) -> strategy__pb2.UpdateStrategyResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
-    def delete_strategy(self, request: strategy__pb2.DeleteStrategyRequest, ctx: RequestContext) -> strategy__pb2.DeleteStrategyResponse:
+
+    def delete_strategy(
+        self, request: strategy__pb2.DeleteStrategyRequest, ctx: RequestContext
+    ) -> strategy__pb2.DeleteStrategyResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
-    def clone_strategy(self, request: strategy__pb2.CloneStrategyRequest, ctx: RequestContext) -> strategy__pb2.CloneStrategyResponse:
+
+    def clone_strategy(
+        self, request: strategy__pb2.CloneStrategyRequest, ctx: RequestContext
+    ) -> strategy__pb2.CloneStrategyResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
-    def compile_strategy(self, request: strategy__pb2.CompileStrategyRequest, ctx: RequestContext) -> strategy__pb2.CompileStrategyResponse:
+
+    def compile_strategy(
+        self, request: strategy__pb2.CompileStrategyRequest, ctx: RequestContext
+    ) -> strategy__pb2.CompileStrategyResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
-    def validate_strategy(self, request: strategy__pb2.ValidateStrategyRequest, ctx: RequestContext) -> strategy__pb2.ValidateStrategyResponse:
+
+    def validate_strategy(
+        self, request: strategy__pb2.ValidateStrategyRequest, ctx: RequestContext
+    ) -> strategy__pb2.ValidateStrategyResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
-    def list_strategy_versions(self, request: strategy__pb2.ListStrategyVersionsRequest, ctx: RequestContext) -> strategy__pb2.ListStrategyVersionsResponse:
+
+    def list_strategy_versions(
+        self, request: strategy__pb2.ListStrategyVersionsRequest, ctx: RequestContext
+    ) -> strategy__pb2.ListStrategyVersionsResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
-    def update_strategy_status(self, request: strategy__pb2.UpdateStrategyStatusRequest, ctx: RequestContext) -> strategy__pb2.UpdateStrategyStatusResponse:
+
+    def update_strategy_status(
+        self, request: strategy__pb2.UpdateStrategyStatusRequest, ctx: RequestContext
+    ) -> strategy__pb2.UpdateStrategyStatusResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
-    def list_templates(self, request: strategy__pb2.ListTemplatesRequest, ctx: RequestContext) -> strategy__pb2.ListTemplatesResponse:
+
+    def list_templates(
+        self, request: strategy__pb2.ListTemplatesRequest, ctx: RequestContext
+    ) -> strategy__pb2.ListTemplatesResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
-    def get_template(self, request: strategy__pb2.GetTemplateRequest, ctx: RequestContext) -> strategy__pb2.GetTemplateResponse:
+
+    def get_template(
+        self, request: strategy__pb2.GetTemplateRequest, ctx: RequestContext
+    ) -> strategy__pb2.GetTemplateResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
-    def create_execution(self, request: strategy__pb2.CreateExecutionRequest, ctx: RequestContext) -> strategy__pb2.CreateExecutionResponse:
+
+    def create_execution(
+        self, request: strategy__pb2.CreateExecutionRequest, ctx: RequestContext
+    ) -> strategy__pb2.CreateExecutionResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
-    def get_execution(self, request: strategy__pb2.GetExecutionRequest, ctx: RequestContext) -> strategy__pb2.GetExecutionResponse:
+
+    def get_execution(
+        self, request: strategy__pb2.GetExecutionRequest, ctx: RequestContext
+    ) -> strategy__pb2.GetExecutionResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
-    def list_executions(self, request: strategy__pb2.ListExecutionsRequest, ctx: RequestContext) -> strategy__pb2.ListExecutionsResponse:
+
+    def list_executions(
+        self, request: strategy__pb2.ListExecutionsRequest, ctx: RequestContext
+    ) -> strategy__pb2.ListExecutionsResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
-    def start_execution(self, request: strategy__pb2.StartExecutionRequest, ctx: RequestContext) -> strategy__pb2.StartExecutionResponse:
+
+    def start_execution(
+        self, request: strategy__pb2.StartExecutionRequest, ctx: RequestContext
+    ) -> strategy__pb2.StartExecutionResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
-    def pause_execution(self, request: strategy__pb2.PauseExecutionRequest, ctx: RequestContext) -> strategy__pb2.PauseExecutionResponse:
+
+    def pause_execution(
+        self, request: strategy__pb2.PauseExecutionRequest, ctx: RequestContext
+    ) -> strategy__pb2.PauseExecutionResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
-    def stop_execution(self, request: strategy__pb2.StopExecutionRequest, ctx: RequestContext) -> strategy__pb2.StopExecutionResponse:
+
+    def stop_execution(
+        self, request: strategy__pb2.StopExecutionRequest, ctx: RequestContext
+    ) -> strategy__pb2.StopExecutionResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
 
 class StrategyServiceWSGIApplication(ConnectWSGIApplication):
-    def __init__(self, service: StrategyServiceSync, interceptors: Iterable[InterceptorSync]=(), read_max_bytes: int | None = None) -> None:
+    def __init__(
+        self,
+        service: StrategyServiceSync,
+        interceptors: Iterable[InterceptorSync] = (),
+        read_max_bytes: int | None = None,
+    ) -> None:
         super().__init__(
             endpoints={
                 "/llamatrade.StrategyService/GetStrategy": EndpointSync.unary(

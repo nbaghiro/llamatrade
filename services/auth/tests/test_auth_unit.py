@@ -1,4 +1,3 @@
-# pyright: reportPrivateUsage=false
 """Unit tests for auth service layer.
 
 These tests verify the AuthService business logic without HTTP/gRPC layer.

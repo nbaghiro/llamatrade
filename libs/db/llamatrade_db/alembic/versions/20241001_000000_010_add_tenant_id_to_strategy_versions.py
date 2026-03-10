@@ -1,7 +1,7 @@
 """Add tenant_id column to strategy_versions table for defense-in-depth tenant isolation.
 
 Revision ID: 010
-Revises: 009
+Revises: 009_postgres_enums
 Create Date: 2024-10-01 00:00:00.000000
 
 """
@@ -14,7 +14,7 @@ from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
 revision: str = "010"
-down_revision: str | None = "009"
+down_revision: str | None = "009_postgres_enums"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

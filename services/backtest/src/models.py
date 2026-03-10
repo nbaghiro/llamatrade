@@ -6,24 +6,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator
 
-from llamatrade_proto.generated.backtest_pb2 import (
-    BACKTEST_STATUS_CANCELLED,
-    BACKTEST_STATUS_COMPLETED,
-    BACKTEST_STATUS_FAILED,
-    BACKTEST_STATUS_PENDING,
-    BACKTEST_STATUS_RUNNING,
-    BacktestStatus,
-)
-
-# Re-export proto constants for convenience
-__all__ = [
-    "BACKTEST_STATUS_CANCELLED",
-    "BACKTEST_STATUS_COMPLETED",
-    "BACKTEST_STATUS_FAILED",
-    "BACKTEST_STATUS_PENDING",
-    "BACKTEST_STATUS_RUNNING",
-    "BacktestStatus",
-]
+from llamatrade_proto.generated.backtest_pb2 import BacktestStatus
 
 # ===================
 # Conversion helpers: proto ValueType -> str (for display/API)

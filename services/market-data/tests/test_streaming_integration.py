@@ -1,4 +1,3 @@
-# pyright: reportGeneralTypeIssues=false
 """End-to-end integration tests for streaming infrastructure.
 
 These tests verify that data flows correctly through the entire streaming pipeline:

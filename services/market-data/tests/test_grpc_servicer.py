@@ -109,60 +109,51 @@ class MockPagination:
         self.page_size = page_size
 
 
-class MockGetHistoricalBarsRequest:
-    def __init__(
-        self,
-        symbol="AAPL",
-        start_seconds=1705315200,
-        end_seconds=None,
-        timeframe=7,  # TIMEFRAME_1DAY
-        pagination=None,
-    ):
-        self.symbol = symbol
-        self.start = MockTimestamp(seconds=start_seconds)
-        self._end = MockTimestamp(seconds=end_seconds) if end_seconds else None
-        self.timeframe = timeframe
-        self._pagination = pagination
+def create_mock_historical_bars_request(
+    symbol: str = "AAPL",
+    start_seconds: int = 1705315200,
+    end_seconds: int | None = None,
+    timeframe: int = 7,  # TIMEFRAME_1DAY
+    pagination: MockPagination | None = None,
+) -> MagicMock:
+    """Create a mock GetHistoricalBarsRequest."""
+    mock = MagicMock()
+    mock.symbol = symbol
+    mock.start = MockTimestamp(seconds=start_seconds)
+    mock.timeframe = timeframe
 
-    def HasField(self, field):  # noqa: N802
-        if field == "end":
-            return self._end is not None
-        if field == "pagination":
-            return self._pagination is not None
-        return False
+    # Configure end and pagination with proper HasField behavior
+    end_value = MockTimestamp(seconds=end_seconds) if end_seconds else None
+    mock.end = end_value
+    mock.pagination = pagination
+    mock.HasField = lambda field: {
+        "end": end_value is not None,
+        "pagination": pagination is not None,
+    }.get(field, False)
 
-    @property
-    def end(self):
-        return self._end
-
-    @property
-    def pagination(self):
-        return self._pagination
+    return mock
 
 
-class MockGetMultiBarsRequest:
-    def __init__(
-        self,
-        symbols=None,
-        start_seconds=1705315200,
-        end_seconds=None,
-        timeframe=7,
-        limit=1000,
-    ):
-        self.symbols = symbols or ["AAPL", "GOOGL"]
-        self.start = MockTimestamp(seconds=start_seconds)
-        self._end = MockTimestamp(seconds=end_seconds) if end_seconds else None
-        self.timeframe = timeframe
-        self.limit = limit
+def create_mock_multi_bars_request(
+    symbols: list[str] | None = None,
+    start_seconds: int = 1705315200,
+    end_seconds: int | None = None,
+    timeframe: int = 7,
+    limit: int = 1000,
+) -> MagicMock:
+    """Create a mock GetMultiBarsRequest."""
+    mock = MagicMock()
+    mock.symbols = symbols or ["AAPL", "GOOGL"]
+    mock.start = MockTimestamp(seconds=start_seconds)
+    mock.timeframe = timeframe
+    mock.limit = limit
 
-    def HasField(self, field):  # noqa: N802
-        if field == "end":
-            return self._end is not None
-        return False
+    # Configure end with proper HasField behavior
+    end_value = MockTimestamp(seconds=end_seconds) if end_seconds else None
+    mock.end = end_value
+    mock.HasField = lambda field: {"end": end_value is not None}.get(field, False)
 
-    @property
-    def end(self):
-        return self._end
+    return mock
 
 
 class MockGetSnapshotRequest:
@@ -206,7 +197,7 @@ class TestGetHistoricalBars:
         mock_client.get_bars = AsyncMock(return_value=[sample_bar])
 
         with patch("src.grpc.servicer.get_market_data_client_async", return_value=mock_client):
-            request = MockGetHistoricalBarsRequest(symbol="AAPL")
+            request = create_mock_historical_bars_request(symbol="AAPL")
             response = await servicer.get_historical_bars(request, mock_context)
 
             assert response is not None
@@ -221,7 +212,7 @@ class TestGetHistoricalBars:
         mock_client.get_bars = AsyncMock(return_value=[sample_bar])
 
         with patch("src.grpc.servicer.get_market_data_client_async", return_value=mock_client):
-            request = MockGetHistoricalBarsRequest(
+            request = create_mock_historical_bars_request(
                 symbol="AAPL",
                 pagination=MockPagination(page_size=500),
             )
@@ -237,7 +228,7 @@ class TestGetHistoricalBars:
         mock_client.get_bars = AsyncMock(side_effect=Exception("API error"))
 
         with patch("src.grpc.servicer.get_market_data_client_async", return_value=mock_client):
-            request = MockGetHistoricalBarsRequest(symbol="AAPL")
+            request = create_mock_historical_bars_request(symbol="AAPL")
 
             with pytest.raises(ConnectError, match="Failed to fetch historical bars"):
                 await servicer.get_historical_bars(request, mock_context)
@@ -257,7 +248,7 @@ class TestGetMultiBars:
         )
 
         with patch("src.grpc.servicer.get_market_data_client_async", return_value=mock_client):
-            request = MockGetMultiBarsRequest(symbols=["AAPL", "GOOGL"])
+            request = create_mock_multi_bars_request(symbols=["AAPL", "GOOGL"])
             response = await servicer.get_multi_bars(request, mock_context)
 
             assert response is not None
@@ -271,7 +262,7 @@ class TestGetMultiBars:
         mock_client.get_multi_bars = AsyncMock(return_value={"AAPL": [sample_bar]})
 
         with patch("src.grpc.servicer.get_market_data_client_async", return_value=mock_client):
-            request = MockGetMultiBarsRequest(symbols=["AAPL"], limit=500)
+            request = create_mock_multi_bars_request(symbols=["AAPL"], limit=500)
             response = await servicer.get_multi_bars(request, mock_context)
 
             assert response is not None
@@ -284,7 +275,7 @@ class TestGetMultiBars:
         mock_client.get_multi_bars = AsyncMock(side_effect=Exception("API error"))
 
         with patch("src.grpc.servicer.get_market_data_client_async", return_value=mock_client):
-            request = MockGetMultiBarsRequest(symbols=["AAPL"])
+            request = create_mock_multi_bars_request(symbols=["AAPL"])
 
             with pytest.raises(ConnectError, match="Failed to fetch multi bars"):
                 await servicer.get_multi_bars(request, mock_context)
@@ -588,7 +579,7 @@ class TestTimeframeMapping:
 
         with patch("src.grpc.servicer.get_market_data_client_async", return_value=mock_client):
             # 9 = TIMEFRAME_1MONTH in proto enum
-            request = MockGetHistoricalBarsRequest(symbol="AAPL", timeframe=9)
+            request = create_mock_historical_bars_request(symbol="AAPL", timeframe=9)
             response = await servicer.get_historical_bars(request, mock_context)
 
             assert response is not None

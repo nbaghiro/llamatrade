@@ -1,7 +1,5 @@
 """Tests for TransactionService."""
 
-# pyright: reportPrivateUsage=false
-
 from datetime import UTC, datetime
 from decimal import Decimal
 from unittest.mock import AsyncMock, MagicMock, patch

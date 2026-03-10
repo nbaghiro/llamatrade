@@ -1,4 +1,3 @@
-# pyright: reportArgumentType=false
 """Tests for the backtest engine."""
 
 from datetime import UTC, datetime, timedelta

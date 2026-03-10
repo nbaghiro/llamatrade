@@ -1,4 +1,3 @@
-# pyright: reportArgumentType=false
 """Tests for backtest gRPC servicer methods."""
 
 from datetime import UTC, datetime
@@ -8,12 +7,13 @@ from uuid import UUID, uuid4
 import grpc.aio
 import pytest
 
-from src.models import (
+from llamatrade_proto.generated.backtest_pb2 import (
     BACKTEST_STATUS_CANCELLED,
     BACKTEST_STATUS_COMPLETED,
     BACKTEST_STATUS_PENDING,
-    BacktestResponse,
 )
+
+from src.models import BacktestResponse
 
 # Test UUIDs
 TEST_TENANT_ID = UUID("11111111-1111-1111-1111-111111111111")

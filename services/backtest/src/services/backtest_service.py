@@ -20,6 +20,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from llamatrade_db import get_db
 from llamatrade_db.models.backtest import Backtest, BacktestResult
 from llamatrade_db.models.strategy import Strategy, StrategyVersion
+from llamatrade_proto.generated.backtest_pb2 import (
+    BACKTEST_STATUS_CANCELLED,
+    BACKTEST_STATUS_COMPLETED,
+    BACKTEST_STATUS_FAILED,
+    BACKTEST_STATUS_PENDING,
+    BACKTEST_STATUS_RUNNING,
+    BacktestStatus,
+)
 from llamatrade_proto.generated.strategy_pb2 import (
     STRATEGY_STATUS_ACTIVE,
     STRATEGY_STATUS_PAUSED,
@@ -30,16 +38,10 @@ from src.engine.backtester import BacktestConfig, BacktestEngine
 from src.engine.benchmarks import BenchmarkBarData, BenchmarkCalculator
 from src.engine.strategy_adapter import create_strategy_function
 from src.models import (
-    BACKTEST_STATUS_CANCELLED,
-    BACKTEST_STATUS_COMPLETED,
-    BACKTEST_STATUS_FAILED,
-    BACKTEST_STATUS_PENDING,
-    BACKTEST_STATUS_RUNNING,
     VALID_TIMEFRAMES,
     BacktestMetrics,
     BacktestResponse,
     BacktestResultResponse,
-    BacktestStatus,
     BenchmarkEquityPoint,
     EquityPoint,
     TradeRecord,
@@ -863,98 +865,97 @@ class BacktestService:
             completed_at=b.completed_at,
         )
 
-    def _to_result_response(  # noqa: C901
-        self, b: Backtest, r: BacktestResult
-    ) -> BacktestResultResponse:
-        """Convert backtest result to response."""
-        # SQLAlchemy JSONB columns return untyped structures, cast to expected types
-        raw_equity_curve = cast(list[dict[str, object]] | None, r.equity_curve)
-        raw_benchmark_curve = cast(list[dict[str, object]] | None, r.benchmark_equity_curve)
-        raw_trades = cast(list[dict[str, object]] | None, r.trades)
-        raw_monthly_returns = cast(dict[str, float] | None, r.monthly_returns)
-
-        def _result_safe_float(val: object, default: float = 0.0) -> float:
-            """Safely convert object to float."""
-            if val is None:
-                return default
-            if isinstance(val, (int, float)):
-                return float(val)
-            if isinstance(val, str):
-                try:
-                    return float(val)
-                except ValueError:
-                    return default
+    @staticmethod
+    def _safe_float(val: object, default: float = 0.0) -> float:
+        """Safely convert object to float."""
+        if val is None:
             return default
+        if isinstance(val, (int, float)):
+            return float(val)
+        if isinstance(val, str):
+            try:
+                return float(val)
+            except ValueError:
+                return default
+        return default
 
-        # Build equity curve
+    def _build_equity_curve(
+        self, raw_curve: list[dict[str, object]] | None, initial_capital: float
+    ) -> list[EquityPoint]:
+        """Build equity curve with drawdown calculations."""
+        if not raw_curve:
+            return []
+
         equity_curve: list[EquityPoint] = []
-        if raw_equity_curve:
-            peak = float(b.initial_capital)
-            for point in raw_equity_curve:
-                equity = _result_safe_float(point.get("equity", 0))
-                peak = max(peak, equity)
-                drawdown = peak - equity
-                drawdown_pct = (drawdown / peak) if peak > 0 else 0
+        peak = initial_capital
 
-                equity_curve.append(
-                    EquityPoint(
-                        date=datetime.fromisoformat(str(point["date"])),
-                        equity=equity,
-                        drawdown=drawdown,
-                        drawdown_percent=drawdown_pct * 100,
-                    )
+        for point in raw_curve:
+            equity = self._safe_float(point.get("equity", 0))
+            peak = max(peak, equity)
+            drawdown = peak - equity
+            drawdown_pct = (drawdown / peak) if peak > 0 else 0
+
+            equity_curve.append(
+                EquityPoint(
+                    date=datetime.fromisoformat(str(point["date"])),
+                    equity=equity,
+                    drawdown=drawdown,
+                    drawdown_percent=drawdown_pct * 100,
                 )
+            )
 
-        # Build benchmark equity curve (Phase 5)
-        benchmark_equity_curve: list[BenchmarkEquityPoint] = []
-        if raw_benchmark_curve:
-            for point in raw_benchmark_curve:
-                benchmark_equity_curve.append(
-                    BenchmarkEquityPoint(
-                        date=datetime.fromisoformat(str(point["date"])),
-                        equity=_result_safe_float(point.get("equity", 0)),
-                    )
-                )
+        return equity_curve
 
-        # Build trades
-        def _safe_float(val: object, default: float = 0.0) -> float:
-            """Safely convert object to float."""
-            if val is None:
-                return default
-            if isinstance(val, (int, float)):
-                return float(val)
-            if isinstance(val, str):
-                try:
-                    return float(val)
-                except ValueError:
-                    return default
-            return default
+    def _build_benchmark_curve(
+        self, raw_curve: list[dict[str, object]] | None
+    ) -> list[BenchmarkEquityPoint]:
+        """Build benchmark equity curve."""
+        if not raw_curve:
+            return []
+
+        return [
+            BenchmarkEquityPoint(
+                date=datetime.fromisoformat(str(point["date"])),
+                equity=self._safe_float(point.get("equity", 0)),
+            )
+            for point in raw_curve
+        ]
+
+    def _build_trades(self, raw_trades: list[dict[str, object]] | None) -> list[TradeRecord]:
+        """Build trade records from raw data."""
+        if not raw_trades:
+            return []
 
         trades: list[TradeRecord] = []
-        if raw_trades:
-            for t in raw_trades:
-                exit_date_val = t.get("exit_date")
-                exit_price_val = t.get("exit_price")
-                trades.append(
-                    TradeRecord(
-                        entry_date=datetime.fromisoformat(str(t["entry_date"])),
-                        exit_date=datetime.fromisoformat(str(exit_date_val))
-                        if exit_date_val
-                        else None,
-                        symbol=str(t["symbol"]),
-                        side=str(t["side"]),
-                        entry_price=_safe_float(t["entry_price"]),
-                        exit_price=_safe_float(exit_price_val)
-                        if exit_price_val is not None
-                        else None,
-                        quantity=_safe_float(t["quantity"]),
-                        pnl=_safe_float(t.get("pnl", 0)),
-                        pnl_percent=_safe_float(t.get("pnl_percent", 0)),
-                        commission=_safe_float(t.get("commission", 0)),
-                    )
+        for t in raw_trades:
+            exit_date_val = t.get("exit_date")
+            exit_price_val = t.get("exit_price")
+            trades.append(
+                TradeRecord(
+                    entry_date=datetime.fromisoformat(str(t["entry_date"])),
+                    exit_date=datetime.fromisoformat(str(exit_date_val)) if exit_date_val else None,
+                    symbol=str(t["symbol"]),
+                    side=str(t["side"]),
+                    entry_price=self._safe_float(t["entry_price"]),
+                    exit_price=self._safe_float(exit_price_val)
+                    if exit_price_val is not None
+                    else None,
+                    quantity=self._safe_float(t["quantity"]),
+                    pnl=self._safe_float(t.get("pnl", 0)),
+                    pnl_percent=self._safe_float(t.get("pnl_percent", 0)),
+                    commission=self._safe_float(t.get("commission", 0)),
                 )
+            )
+        return trades
 
-        # Calculate additional metrics
+    def _build_metrics(
+        self,
+        r: BacktestResult,
+        trades: list[TradeRecord],
+        benchmark_curve_available: bool,
+    ) -> BacktestMetrics:
+        """Build metrics from result and trade data."""
+        # Calculate trade statistics
         wins = [t for t in trades if t.pnl > 0]
         losses = [t for t in trades if t.pnl <= 0]
 
@@ -964,27 +965,19 @@ class BacktestService:
         largest_loss = abs(min((t.pnl for t in losses), default=0))
 
         # Average holding period in days
-        holding_periods: list[int] = []
-        for t in trades:
-            if t.exit_date:
-                delta = t.exit_date - t.entry_date
-                holding_periods.append(delta.days)
+        holding_periods = [(t.exit_date - t.entry_date).days for t in trades if t.exit_date]
         avg_holding = sum(holding_periods) / len(holding_periods) if holding_periods else 0
 
-        # Extract benchmark metrics with defaults
+        # Benchmark metrics
         benchmark_return = float(r.benchmark_return) if r.benchmark_return else 0
         benchmark_symbol = r.benchmark_symbol or "SPY"
         alpha = float(r.alpha) if r.alpha else 0
         beta = float(r.beta) if r.beta else 0
         information_ratio = float(r.information_ratio) if r.information_ratio else 0
         excess_return = float(r.total_return) - benchmark_return
+        benchmark_data_available = benchmark_curve_available or benchmark_return != 0
 
-        # Infer benchmark data availability from the stored data
-        # Benchmark is considered available if we have benchmark equity curve data
-        # or if benchmark_return is non-zero
-        benchmark_data_available = bool(raw_benchmark_curve) or benchmark_return != 0
-
-        metrics = BacktestMetrics(
+        return BacktestMetrics(
             total_return=float(r.total_return),
             annual_return=float(r.annual_return),
             sharpe_ratio=float(r.sharpe_ratio),
@@ -1002,7 +995,6 @@ class BacktestService:
             largest_loss=largest_loss,
             avg_holding_period=avg_holding,
             exposure_time=float(r.exposure_time) if r.exposure_time else 0,
-            # Benchmark comparison metrics (Phase 5)
             benchmark_return=benchmark_return,
             benchmark_symbol=benchmark_symbol,
             alpha=alpha,
@@ -1012,6 +1004,19 @@ class BacktestService:
             benchmark_data_available=benchmark_data_available,
         )
 
+    def _to_result_response(self, b: Backtest, r: BacktestResult) -> BacktestResultResponse:
+        """Convert backtest result to response."""
+        # SQLAlchemy JSONB columns return untyped structures, cast to expected types
+        raw_equity_curve = cast(list[dict[str, object]] | None, r.equity_curve)
+        raw_benchmark_curve = cast(list[dict[str, object]] | None, r.benchmark_equity_curve)
+        raw_trades = cast(list[dict[str, object]] | None, r.trades)
+        raw_monthly_returns = cast(dict[str, float] | None, r.monthly_returns)
+
+        equity_curve = self._build_equity_curve(raw_equity_curve, float(b.initial_capital))
+        benchmark_curve = self._build_benchmark_curve(raw_benchmark_curve)
+        trades = self._build_trades(raw_trades)
+        metrics = self._build_metrics(r, trades, bool(raw_benchmark_curve))
+
         return BacktestResultResponse(
             id=r.id,
             backtest_id=b.id,
@@ -1020,7 +1025,7 @@ class BacktestService:
             trades=trades,
             monthly_returns=raw_monthly_returns or {},
             created_at=r.created_at,
-            benchmark_equity_curve=benchmark_equity_curve,
+            benchmark_equity_curve=benchmark_curve,
         )
 
 

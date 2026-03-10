@@ -10,12 +10,13 @@ import os
 # Register fixture plugins for integration tests
 # Only loaded when running from root directory (tests.integration is in path)
 try:
-    import tests.integration.fixtures.auth  # noqa: F401
-    import tests.integration.fixtures.strategies  # noqa: F401
-
+    # pytest_plugins handles module loading - no separate imports needed
     pytest_plugins = [
         "tests.integration.fixtures.auth",
+        "tests.integration.fixtures.backtest",
+        "tests.integration.fixtures.orders",
         "tests.integration.fixtures.strategies",
+        "tests.integration.fixtures.trading",
     ]
 except ImportError:
     # Running service tests independently - fixtures not needed

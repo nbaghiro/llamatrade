@@ -160,7 +160,7 @@ class PositionService:
             select(Position)
             .where(Position.tenant_id == tenant_id)
             .where(Position.session_id == session_id)
-            .where(Position.is_open == True)  # noqa: E712
+            .where(Position.is_open.is_(True))
             .order_by(Position.opened_at)
         )
         result = await self.db.execute(stmt)
@@ -191,7 +191,7 @@ class PositionService:
         )
 
         if not include_closed:
-            stmt = stmt.where(Position.is_open == True)  # noqa: E712
+            stmt = stmt.where(Position.is_open.is_(True))
 
         stmt = stmt.order_by(Position.opened_at)
 
@@ -286,7 +286,7 @@ class PositionService:
             select(func.sum(Position.unrealized_pl))
             .where(Position.tenant_id == tenant_id)
             .where(Position.session_id == session_id)
-            .where(Position.is_open == True)  # noqa: E712
+            .where(Position.is_open.is_(True))
         )
         unrealized_result = await self.db.execute(unrealized_stmt)
         unrealized_pnl = unrealized_result.scalar() or Decimal("0")
@@ -312,7 +312,7 @@ class PositionService:
             .select_from(Position)
             .where(Position.tenant_id == tenant_id)
             .where(Position.session_id == session_id)
-            .where(Position.is_open == False)  # noqa: E712
+            .where(Position.is_open.is_(False))
         )
         result = await self.db.execute(stmt)
         return result.scalar() or 0
@@ -333,7 +333,7 @@ class PositionService:
             .where(Position.tenant_id == tenant_id)
             .where(Position.session_id == session_id)
             .where(Position.symbol == symbol)
-            .where(Position.is_open == True)  # noqa: E712
+            .where(Position.is_open.is_(True))
         )
         result = await self.db.execute(stmt)
         return result.scalar_one_or_none()
@@ -348,7 +348,7 @@ class PositionService:
             select(Position)
             .where(Position.tenant_id == tenant_id)
             .where(Position.session_id == session_id)
-            .where(Position.is_open == True)  # noqa: E712
+            .where(Position.is_open.is_(True))
         )
         result = await self.db.execute(stmt)
         return list(result.scalars().all())

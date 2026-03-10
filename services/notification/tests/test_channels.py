@@ -1,8 +1,5 @@
 """Tests for channel gRPC servicer methods."""
 
-# pyright: reportPrivateUsage=false
-# pyright: reportArgumentType=false
-
 from datetime import UTC, datetime
 from typing import Any
 from uuid import uuid4

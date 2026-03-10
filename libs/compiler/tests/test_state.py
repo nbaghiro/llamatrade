@@ -109,7 +109,7 @@ class TestPosition:
         )
 
         with pytest.raises(AttributeError):
-            position.quantity = 200.0  # type: ignore[misc]
+            position.quantity = 200.0
 
     def test_position_equality(self) -> None:
         """Test Position equality comparison."""

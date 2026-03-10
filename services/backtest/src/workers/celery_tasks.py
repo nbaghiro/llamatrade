@@ -483,11 +483,15 @@ def merge_results(
                 return float(val)
             except ValueError:
                 return default
-        # For other types, try conversion
-        try:
-            return float(val)  # type: ignore[arg-type]
-        except TypeError, ValueError:
-            return default
+        # For objects with __float__ method (Decimal, etc.)
+        if hasattr(val, "__float__"):
+            from typing import SupportsFloat
+
+            try:
+                return float(cast(SupportsFloat, val))
+            except TypeError, ValueError:
+                return default
+        return default
 
     # Combine all trades
     all_trades: list[dict[str, object]] = []

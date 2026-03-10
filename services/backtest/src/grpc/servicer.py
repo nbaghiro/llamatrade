@@ -265,12 +265,12 @@ class BacktestServicer:
     ) -> AsyncIterator[backtest_pb2.BacktestProgressUpdate]:
         """Stream backtest progress updates via Redis pub/sub."""
         from llamatrade_proto.generated import backtest_pb2, common_pb2
-
-        from src.models import (
+        from llamatrade_proto.generated.backtest_pb2 import (
             BACKTEST_STATUS_CANCELLED,
             BACKTEST_STATUS_COMPLETED,
             BACKTEST_STATUS_FAILED,
         )
+
         from src.progress import ProgressSubscriber
 
         tenant_id = request.context.tenant_id

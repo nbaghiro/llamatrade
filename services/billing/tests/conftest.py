@@ -242,7 +242,7 @@ class MockStripeClient:
         """Mock webhook verification."""
         import json
 
-        return json.loads(payload)  # type: ignore[no-any-return]
+        return json.loads(payload)
 
 
 # ===================

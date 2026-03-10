@@ -1,5 +1,3 @@
-# pyright: reportPrivateUsage=false
-# pyright: reportArgumentType=false
 """Tests for Billing gRPC servicer.
 
 Tests the BillingServicer directly without HTTP layer.

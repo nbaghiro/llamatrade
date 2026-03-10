@@ -126,7 +126,7 @@ class AuthServicer:
                 result = await db.execute(
                     select(APIKey).where(
                         APIKey.key_prefix == key_prefix,
-                        APIKey.is_active == True,  # noqa: E712
+                        APIKey.is_active.is_(True),
                     )
                 )
                 db_key = result.scalar_one_or_none()
@@ -201,7 +201,7 @@ class AuthServicer:
             result = await db.execute(
                 select(User).where(
                     User.id == UUID(user_id),
-                    User.is_active == True,  # noqa: E712
+                    User.is_active.is_(True),
                 )
             )
             user = result.scalar_one_or_none()

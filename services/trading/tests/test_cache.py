@@ -267,7 +267,7 @@ class TestAsyncTTLCacheDecorator:
         assert call_count == 1
 
         # Clear cache
-        cached_func.cache_clear()  # type: ignore
+        cached_func.cache_clear()
 
         # Should call function again
         await cached_func(5)
@@ -287,7 +287,7 @@ class TestAsyncTTLCacheDecorator:
         assert call_count == 1
 
         # Invalidate specific entry
-        result = await cached_func.cache_invalidate(5)  # type: ignore
+        result = await cached_func.cache_invalidate(5)
         assert result is True
 
         # Should call function again

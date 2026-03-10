@@ -7,7 +7,7 @@ database operations, and custom business metrics.
 from __future__ import annotations
 
 import time
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from functools import wraps
 from types import TracebackType
 from typing import ParamSpec, TypeVar, cast
@@ -193,10 +193,10 @@ def time_function(
         async def async_wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
             start_time = time.perf_counter()
             try:
-                # func is an async function, so we await it
+                # func is an async function, so we await the coroutine it returns
                 coro = func(*args, **kwargs)
-                result = await coro  # type: ignore[misc]
-                return cast(R, result)
+                result = await cast(Awaitable[R], coro)
+                return result
             finally:
                 duration = time.perf_counter() - start_time
                 metric.labels(**labels).observe(duration)

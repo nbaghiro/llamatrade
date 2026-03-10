@@ -117,11 +117,15 @@ echo "Project root: $PROJECT_ROOT"
 if [[ "$RUN_LINT" == "true" && "$RUN_BACKEND" == "true" ]]; then
     print_header "Python Linting"
 
+    # Check for suppression comments (# noqa, # type: ignore, # pyright:)
+    run_step "No suppression comments" ./scripts/check-no-suppressions.sh
+
     if [[ "$FIX_MODE" == "true" ]]; then
         run_step "Ruff lint (with fixes)" ruff check --fix --config pyproject.toml services/ libs/ || true
         run_step "Ruff format" ruff format --config pyproject.toml services/ libs/ || true
     else
-        run_step "Ruff lint" ruff check --config pyproject.toml services/ libs/
+        # --ignore-noqa ensures noqa comments don't suppress errors (fix the root cause instead)
+        run_step "Ruff lint" ruff check --config pyproject.toml --ignore-noqa services/ libs/
         run_step "Ruff format check" ruff format --config pyproject.toml --check services/ libs/
     fi
 

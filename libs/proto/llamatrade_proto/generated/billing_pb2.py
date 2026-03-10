@@ -4,18 +4,15 @@
 # source: billing.proto
 # Protobuf Python Version: 6.30.2
 """Generated protocol buffer code."""
+
 from google.protobuf import descriptor as _descriptor
 from google.protobuf import descriptor_pool as _descriptor_pool
 from google.protobuf import runtime_version as _runtime_version
 from google.protobuf import symbol_database as _symbol_database
 from google.protobuf.internal import builder as _builder
+
 _runtime_version.ValidateProtobufRuntimeVersion(
-    _runtime_version.Domain.PUBLIC,
-    6,
-    30,
-    2,
-    '',
-    'billing.proto'
+    _runtime_version.Domain.PUBLIC, 6, 30, 2, "", "billing.proto"
 )
 # @@protoc_insertion_point(imports)
 
@@ -25,90 +22,94 @@ _sym_db = _symbol_database.Default()
 from . import common_pb2 as common__pb2
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\rbilling.proto\x12\nllamatrade\x1a\x0c\x63ommon.proto\"\x84\x04\n\x04Plan\x12\x0e\n\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n\x04name\x18\x02 \x01(\tR\x04name\x12(\n\x04tier\x18\x03 \x01(\x0e\x32\x14.llamatrade.PlanTierR\x04tier\x12 \n\x0b\x64\x65scription\x18\x04 \x01(\tR\x0b\x64\x65scription\x12\x36\n\rmonthly_price\x18\x05 \x01(\x0b\x32\x11.llamatrade.MoneyR\x0cmonthlyPrice\x12\x34\n\x0cyearly_price\x18\x06 \x01(\x0b\x32\x11.llamatrade.MoneyR\x0byearlyPrice\x12%\n\x0emax_strategies\x18\x07 \x01(\x05R\rmaxStrategies\x12\x35\n\x17max_backtests_per_month\x18\x08 \x01(\x05R\x14maxBacktestsPerMonth\x12*\n\x11max_live_sessions\x18\t \x01(\x05R\x0fmaxLiveSessions\x12.\n\x13\x64\x61ta_retention_days\x18\n \x01(\x05R\x11\x64\x61taRetentionDays\x12\x1a\n\x08\x66\x65\x61tures\x18\x0b \x03(\tR\x08\x66\x65\x61tures\x12\x1d\n\napi_access\x18\x0c \x01(\x08R\tapiAccess\x12)\n\x10priority_support\x18\r \x01(\x08R\x0fprioritySupport\"\xea\x06\n\x0cSubscription\x12\x0e\n\x02id\x18\x01 \x01(\tR\x02id\x12\x1b\n\ttenant_id\x18\x02 \x01(\tR\x08tenantId\x12\x17\n\x07plan_id\x18\x03 \x01(\tR\x06planId\x12$\n\x04plan\x18\x04 \x01(\x0b\x32\x10.llamatrade.PlanR\x04plan\x12\x36\n\x06status\x18\x05 \x01(\x0e\x32\x1e.llamatrade.SubscriptionStatusR\x06status\x12\x37\n\x08interval\x18\x06 \x01(\x0e\x32\x1b.llamatrade.BillingIntervalR\x08interval\x12\x36\n\rcurrent_price\x18\x07 \x01(\x0b\x32\x11.llamatrade.MoneyR\x0c\x63urrentPrice\x12G\n\x14\x63urrent_period_start\x18\x08 \x01(\x0b\x32\x15.llamatrade.TimestampR\x12\x63urrentPeriodStart\x12\x43\n\x12\x63urrent_period_end\x18\t \x01(\x0b\x32\x15.llamatrade.TimestampR\x10\x63urrentPeriodEnd\x12\x19\n\x08is_trial\x18\n \x01(\x08R\x07isTrial\x12\x32\n\ttrial_end\x18\x0b \x01(\x0b\x32\x15.llamatrade.TimestampR\x08trialEnd\x12/\n\x14\x63\x61ncel_at_period_end\x18\x0c \x01(\x08R\x11\x63\x61ncelAtPeriodEnd\x12\x36\n\x0b\x63\x61nceled_at\x18\r \x01(\x0b\x32\x15.llamatrade.TimestampR\ncanceledAt\x12/\n\x13\x63\x61ncellation_reason\x18\x0e \x01(\tR\x12\x63\x61ncellationReason\x12\x34\n\x16stripe_subscription_id\x18\x0f \x01(\tR\x14stripeSubscriptionId\x12,\n\x12stripe_customer_id\x18\x10 \x01(\tR\x10stripeCustomerId\x12\x34\n\ncreated_at\x18\x11 \x01(\x0b\x32\x15.llamatrade.TimestampR\tcreatedAt\x12\x34\n\nupdated_at\x18\x12 \x01(\x0b\x32\x15.llamatrade.TimestampR\tupdatedAt\"\xaa\x04\n\x05Usage\x12\x1b\n\ttenant_id\x18\x01 \x01(\tR\x08tenantId\x12\x1b\n\tperiod_id\x18\x02 \x01(\tR\x08periodId\x12-\n\x12strategies_created\x18\x03 \x01(\x05R\x11strategiesCreated\x12+\n\x11\x61\x63tive_strategies\x18\x04 \x01(\x05R\x10\x61\x63tiveStrategies\x12#\n\rbacktests_run\x18\x05 \x01(\x05R\x0c\x62\x61\x63ktestsRun\x12\x38\n\x18\x62\x61\x63ktest_compute_minutes\x18\x06 \x01(\x05R\x16\x62\x61\x63ktestComputeMinutes\x12#\n\rlive_sessions\x18\x07 \x01(\x05R\x0cliveSessions\x12#\n\rorders_placed\x18\x08 \x01(\x05R\x0cordersPlaced\x12\x30\n\x14market_data_requests\x18\t \x01(\x03R\x12marketDataRequests\x12#\n\rstorage_bytes\x18\n \x01(\x03R\x0cstorageBytes\x12\x1b\n\tapi_calls\x18\x0b \x01(\x03R\x08\x61piCalls\x12\x38\n\x0cperiod_start\x18\x0c \x01(\x0b\x32\x15.llamatrade.TimestampR\x0bperiodStart\x12\x34\n\nperiod_end\x18\r \x01(\x0b\x32\x15.llamatrade.TimestampR\tperiodEnd\"\xf5\x04\n\x07Invoice\x12\x0e\n\x02id\x18\x01 \x01(\tR\x02id\x12\x1b\n\ttenant_id\x18\x02 \x01(\tR\x08tenantId\x12\'\n\x0fsubscription_id\x18\x03 \x01(\tR\x0esubscriptionId\x12)\n\x06\x61mount\x18\x04 \x01(\x0b\x32\x11.llamatrade.MoneyR\x06\x61mount\x12\x32\n\x0b\x61mount_paid\x18\x05 \x01(\x0b\x32\x11.llamatrade.MoneyR\namountPaid\x12<\n\x10\x61mount_remaining\x18\x06 \x01(\x0b\x32\x11.llamatrade.MoneyR\x0f\x61mountRemaining\x12\x31\n\x06status\x18\x07 \x01(\x0e\x32\x19.llamatrade.InvoiceStatusR\x06status\x12\x38\n\x0cperiod_start\x18\x08 \x01(\x0b\x32\x15.llamatrade.TimestampR\x0bperiodStart\x12\x34\n\nperiod_end\x18\t \x01(\x0b\x32\x15.llamatrade.TimestampR\tperiodEnd\x12\x30\n\x08\x64ue_date\x18\n \x01(\x0b\x32\x15.llamatrade.TimestampR\x07\x64ueDate\x12.\n\x07paid_at\x18\x0b \x01(\x0b\x32\x15.llamatrade.TimestampR\x06paidAt\x12\x17\n\x07pdf_url\x18\x0c \x01(\tR\x06pdfUrl\x12*\n\x11stripe_invoice_id\x18\r \x01(\tR\x0fstripeInvoiceId\x12-\n\x05items\x18\x0e \x03(\x0b\x32\x17.llamatrade.InvoiceItemR\x05items\"\xa8\x01\n\x0bInvoiceItem\x12 \n\x0b\x64\x65scription\x18\x01 \x01(\tR\x0b\x64\x65scription\x12\x1a\n\x08quantity\x18\x02 \x01(\x05R\x08quantity\x12\x30\n\nunit_price\x18\x03 \x01(\x0b\x32\x11.llamatrade.MoneyR\tunitPrice\x12)\n\x06\x61mount\x18\x04 \x01(\x0b\x32\x11.llamatrade.MoneyR\x06\x61mount\"\x90\x02\n\rPaymentMethod\x12\x0e\n\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n\x04type\x18\x02 \x01(\tR\x04type\x12\x1d\n\nis_default\x18\x03 \x01(\x08R\tisDefault\x12\x1d\n\ncard_brand\x18\x04 \x01(\tR\tcardBrand\x12\x1d\n\ncard_last4\x18\x05 \x01(\tR\tcardLast4\x12$\n\x0e\x63\x61rd_exp_month\x18\x06 \x01(\x05R\x0c\x63\x61rdExpMonth\x12\"\n\rcard_exp_year\x18\x07 \x01(\x05R\x0b\x63\x61rdExpYear\x12\x34\n\ncreated_at\x18\x08 \x01(\x0b\x32\x15.llamatrade.TimestampR\tcreatedAt\"M\n\x16GetSubscriptionRequest\x12\x33\n\x07\x63ontext\x18\x01 \x01(\x0b\x32\x19.llamatrade.TenantContextR\x07\x63ontext\"W\n\x17GetSubscriptionResponse\x12<\n\x0csubscription\x18\x01 \x01(\x0b\x32\x18.llamatrade.SubscriptionR\x0csubscription\"\xed\x01\n\x19\x43reateSubscriptionRequest\x12\x33\n\x07\x63ontext\x18\x01 \x01(\x0b\x32\x19.llamatrade.TenantContextR\x07\x63ontext\x12\x17\n\x07plan_id\x18\x02 \x01(\tR\x06planId\x12\x37\n\x08interval\x18\x03 \x01(\x0e\x32\x1b.llamatrade.BillingIntervalR\x08interval\x12*\n\x11payment_method_id\x18\x04 \x01(\tR\x0fpaymentMethodId\x12\x1d\n\npromo_code\x18\x05 \x01(\tR\tpromoCode\"}\n\x1a\x43reateSubscriptionResponse\x12<\n\x0csubscription\x18\x01 \x01(\x0b\x32\x18.llamatrade.SubscriptionR\x0csubscription\x12!\n\x0c\x63heckout_url\x18\x02 \x01(\tR\x0b\x63heckoutUrl\"\xbc\x01\n\x19UpdateSubscriptionRequest\x12\x33\n\x07\x63ontext\x18\x01 \x01(\x0b\x32\x19.llamatrade.TenantContextR\x07\x63ontext\x12\x17\n\x07plan_id\x18\x02 \x01(\tR\x06planId\x12\x37\n\x08interval\x18\x03 \x01(\x0e\x32\x1b.llamatrade.BillingIntervalR\x08interval\x12\x18\n\x07prorate\x18\x04 \x01(\x08R\x07prorate\"Z\n\x1aUpdateSubscriptionResponse\x12<\n\x0csubscription\x18\x01 \x01(\x0b\x32\x18.llamatrade.SubscriptionR\x0csubscription\"\x97\x01\n\x19\x43\x61ncelSubscriptionRequest\x12\x33\n\x07\x63ontext\x18\x01 \x01(\x0b\x32\x19.llamatrade.TenantContextR\x07\x63ontext\x12-\n\x12\x63\x61ncel_immediately\x18\x02 \x01(\x08R\x11\x63\x61ncelImmediately\x12\x16\n\x06reason\x18\x03 \x01(\tR\x06reason\"Z\n\x1a\x43\x61ncelSubscriptionResponse\x12<\n\x0csubscription\x18\x01 \x01(\x0b\x32\x18.llamatrade.SubscriptionR\x0csubscription\"P\n\x19ResumeSubscriptionRequest\x12\x33\n\x07\x63ontext\x18\x01 \x01(\x0b\x32\x19.llamatrade.TenantContextR\x07\x63ontext\"Z\n\x1aResumeSubscriptionResponse\x12<\n\x0csubscription\x18\x01 \x01(\x0b\x32\x18.llamatrade.SubscriptionR\x0csubscription\"c\n\x0fGetUsageRequest\x12\x33\n\x07\x63ontext\x18\x01 \x01(\x0b\x32\x19.llamatrade.TenantContextR\x07\x63ontext\x12\x1b\n\tperiod_id\x18\x02 \x01(\tR\x08periodId\"d\n\x10GetUsageResponse\x12\'\n\x05usage\x18\x01 \x01(\x0b\x32\x11.llamatrade.UsageR\x05usage\x12\'\n\x05limit\x18\x02 \x01(\x0b\x32\x11.llamatrade.UsageR\x05limit\"\x89\x01\n\x13ListInvoicesRequest\x12\x33\n\x07\x63ontext\x18\x01 \x01(\x0b\x32\x19.llamatrade.TenantContextR\x07\x63ontext\x12=\n\npagination\x18\x02 \x01(\x0b\x32\x1d.llamatrade.PaginationRequestR\npagination\"\x87\x01\n\x14ListInvoicesResponse\x12/\n\x08invoices\x18\x01 \x03(\x0b\x32\x13.llamatrade.InvoiceR\x08invoices\x12>\n\npagination\x18\x02 \x01(\x0b\x32\x1e.llamatrade.PaginationResponseR\npagination\"g\n\x11GetInvoiceRequest\x12\x33\n\x07\x63ontext\x18\x01 \x01(\x0b\x32\x19.llamatrade.TenantContextR\x07\x63ontext\x12\x1d\n\ninvoice_id\x18\x02 \x01(\tR\tinvoiceId\"C\n\x12GetInvoiceResponse\x12-\n\x07invoice\x18\x01 \x01(\x0b\x32\x13.llamatrade.InvoiceR\x07invoice\"G\n\x10ListPlansRequest\x12\x33\n\x07\x63ontext\x18\x01 \x01(\x0b\x32\x19.llamatrade.TenantContextR\x07\x63ontext\";\n\x11ListPlansResponse\x12&\n\x05plans\x18\x01 \x03(\x0b\x32\x10.llamatrade.PlanR\x05plans\"P\n\x19ListPaymentMethodsRequest\x12\x33\n\x07\x63ontext\x18\x01 \x01(\x0b\x32\x19.llamatrade.TenantContextR\x07\x63ontext\"`\n\x1aListPaymentMethodsResponse\x12\x42\n\x0fpayment_methods\x18\x01 \x03(\x0b\x32\x19.llamatrade.PaymentMethodR\x0epaymentMethods\"\x9c\x01\n\x17\x41\x64\x64PaymentMethodRequest\x12\x33\n\x07\x63ontext\x18\x01 \x01(\x0b\x32\x19.llamatrade.TenantContextR\x07\x63ontext\x12&\n\x0fsetup_intent_id\x18\x02 \x01(\tR\rsetupIntentId\x12$\n\x0eset_as_default\x18\x03 \x01(\x08R\x0csetAsDefault\"\\\n\x18\x41\x64\x64PaymentMethodResponse\x12@\n\x0epayment_method\x18\x01 \x01(\x0b\x32\x19.llamatrade.PaymentMethodR\rpaymentMethod\"}\n\x1aRemovePaymentMethodRequest\x12\x33\n\x07\x63ontext\x18\x01 \x01(\x0b\x32\x19.llamatrade.TenantContextR\x07\x63ontext\x12*\n\x11payment_method_id\x18\x02 \x01(\tR\x0fpaymentMethodId\"7\n\x1bRemovePaymentMethodResponse\x12\x18\n\x07success\x18\x01 \x01(\x08R\x07success\"\xe5\x01\n\x1c\x43reateCheckoutSessionRequest\x12\x33\n\x07\x63ontext\x18\x01 \x01(\x0b\x32\x19.llamatrade.TenantContextR\x07\x63ontext\x12\x17\n\x07plan_id\x18\x02 \x01(\tR\x06planId\x12\x37\n\x08interval\x18\x03 \x01(\x0e\x32\x1b.llamatrade.BillingIntervalR\x08interval\x12\x1f\n\x0bsuccess_url\x18\x04 \x01(\tR\nsuccessUrl\x12\x1d\n\ncancel_url\x18\x05 \x01(\tR\tcancelUrl\"a\n\x1d\x43reateCheckoutSessionResponse\x12!\n\x0c\x63heckout_url\x18\x01 \x01(\tR\x0b\x63heckoutUrl\x12\x1d\n\nsession_id\x18\x02 \x01(\tR\tsessionId\"p\n\x1a\x43reatePortalSessionRequest\x12\x33\n\x07\x63ontext\x18\x01 \x01(\x0b\x32\x19.llamatrade.TenantContextR\x07\x63ontext\x12\x1d\n\nreturn_url\x18\x02 \x01(\tR\treturnUrl\"<\n\x1b\x43reatePortalSessionResponse\x12\x1d\n\nportal_url\x18\x01 \x01(\tR\tportalUrl*\xdf\x01\n\x12SubscriptionStatus\x12#\n\x1fSUBSCRIPTION_STATUS_UNSPECIFIED\x10\x00\x12\x1e\n\x1aSUBSCRIPTION_STATUS_ACTIVE\x10\x01\x12 \n\x1cSUBSCRIPTION_STATUS_PAST_DUE\x10\x02\x12 \n\x1cSUBSCRIPTION_STATUS_CANCELED\x10\x03\x12 \n\x1cSUBSCRIPTION_STATUS_TRIALING\x10\x04\x12\x1e\n\x1aSUBSCRIPTION_STATUS_PAUSED\x10\x05*c\n\x08PlanTier\x12\x19\n\x15PLAN_TIER_UNSPECIFIED\x10\x00\x12\x12\n\x0ePLAN_TIER_FREE\x10\x01\x12\x15\n\x11PLAN_TIER_STARTER\x10\x02\x12\x11\n\rPLAN_TIER_PRO\x10\x03*n\n\x0f\x42illingInterval\x12 \n\x1c\x42ILLING_INTERVAL_UNSPECIFIED\x10\x00\x12\x1c\n\x18\x42ILLING_INTERVAL_MONTHLY\x10\x01\x12\x1b\n\x17\x42ILLING_INTERVAL_YEARLY\x10\x02*\xb6\x01\n\rInvoiceStatus\x12\x1e\n\x1aINVOICE_STATUS_UNSPECIFIED\x10\x00\x12\x18\n\x14INVOICE_STATUS_DRAFT\x10\x01\x12\x17\n\x13INVOICE_STATUS_OPEN\x10\x02\x12\x17\n\x13INVOICE_STATUS_PAID\x10\x03\x12\x17\n\x13INVOICE_STATUS_VOID\x10\x04\x12 \n\x1cINVOICE_STATUS_UNCOLLECTIBLE\x10\x05\x32\xb3\n\n\x0e\x42illingService\x12Z\n\x0fGetSubscription\x12\".llamatrade.GetSubscriptionRequest\x1a#.llamatrade.GetSubscriptionResponse\x12\x63\n\x12\x43reateSubscription\x12%.llamatrade.CreateSubscriptionRequest\x1a&.llamatrade.CreateSubscriptionResponse\x12\x63\n\x12UpdateSubscription\x12%.llamatrade.UpdateSubscriptionRequest\x1a&.llamatrade.UpdateSubscriptionResponse\x12\x63\n\x12\x43\x61ncelSubscription\x12%.llamatrade.CancelSubscriptionRequest\x1a&.llamatrade.CancelSubscriptionResponse\x12\x63\n\x12ResumeSubscription\x12%.llamatrade.ResumeSubscriptionRequest\x1a&.llamatrade.ResumeSubscriptionResponse\x12\x45\n\x08GetUsage\x12\x1b.llamatrade.GetUsageRequest\x1a\x1c.llamatrade.GetUsageResponse\x12Q\n\x0cListInvoices\x12\x1f.llamatrade.ListInvoicesRequest\x1a .llamatrade.ListInvoicesResponse\x12K\n\nGetInvoice\x12\x1d.llamatrade.GetInvoiceRequest\x1a\x1e.llamatrade.GetInvoiceResponse\x12H\n\tListPlans\x12\x1c.llamatrade.ListPlansRequest\x1a\x1d.llamatrade.ListPlansResponse\x12\x63\n\x12ListPaymentMethods\x12%.llamatrade.ListPaymentMethodsRequest\x1a&.llamatrade.ListPaymentMethodsResponse\x12]\n\x10\x41\x64\x64PaymentMethod\x12#.llamatrade.AddPaymentMethodRequest\x1a$.llamatrade.AddPaymentMethodResponse\x12\x66\n\x13RemovePaymentMethod\x12&.llamatrade.RemovePaymentMethodRequest\x1a\'.llamatrade.RemovePaymentMethodResponse\x12l\n\x15\x43reateCheckoutSession\x12(.llamatrade.CreateCheckoutSessionRequest\x1a).llamatrade.CreateCheckoutSessionResponse\x12\x66\n\x13\x43reatePortalSession\x12&.llamatrade.CreatePortalSessionRequest\x1a\'.llamatrade.CreatePortalSessionResponseB\x88\x01\n\x0e\x63om.llamatradeB\x0c\x42illingProtoP\x01Z github.com/llamatrade/api/gen/go\xa2\x02\x03LXX\xaa\x02\nLlamatrade\xca\x02\nLlamatrade\xe2\x02\x16Llamatrade\\GPBMetadata\xea\x02\nLlamatradeb\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(
+    b'\n\rbilling.proto\x12\nllamatrade\x1a\x0c\x63ommon.proto"\x84\x04\n\x04Plan\x12\x0e\n\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n\x04name\x18\x02 \x01(\tR\x04name\x12(\n\x04tier\x18\x03 \x01(\x0e\x32\x14.llamatrade.PlanTierR\x04tier\x12 \n\x0b\x64\x65scription\x18\x04 \x01(\tR\x0b\x64\x65scription\x12\x36\n\rmonthly_price\x18\x05 \x01(\x0b\x32\x11.llamatrade.MoneyR\x0cmonthlyPrice\x12\x34\n\x0cyearly_price\x18\x06 \x01(\x0b\x32\x11.llamatrade.MoneyR\x0byearlyPrice\x12%\n\x0emax_strategies\x18\x07 \x01(\x05R\rmaxStrategies\x12\x35\n\x17max_backtests_per_month\x18\x08 \x01(\x05R\x14maxBacktestsPerMonth\x12*\n\x11max_live_sessions\x18\t \x01(\x05R\x0fmaxLiveSessions\x12.\n\x13\x64\x61ta_retention_days\x18\n \x01(\x05R\x11\x64\x61taRetentionDays\x12\x1a\n\x08\x66\x65\x61tures\x18\x0b \x03(\tR\x08\x66\x65\x61tures\x12\x1d\n\napi_access\x18\x0c \x01(\x08R\tapiAccess\x12)\n\x10priority_support\x18\r \x01(\x08R\x0fprioritySupport"\xea\x06\n\x0cSubscription\x12\x0e\n\x02id\x18\x01 \x01(\tR\x02id\x12\x1b\n\ttenant_id\x18\x02 \x01(\tR\x08tenantId\x12\x17\n\x07plan_id\x18\x03 \x01(\tR\x06planId\x12$\n\x04plan\x18\x04 \x01(\x0b\x32\x10.llamatrade.PlanR\x04plan\x12\x36\n\x06status\x18\x05 \x01(\x0e\x32\x1e.llamatrade.SubscriptionStatusR\x06status\x12\x37\n\x08interval\x18\x06 \x01(\x0e\x32\x1b.llamatrade.BillingIntervalR\x08interval\x12\x36\n\rcurrent_price\x18\x07 \x01(\x0b\x32\x11.llamatrade.MoneyR\x0c\x63urrentPrice\x12G\n\x14\x63urrent_period_start\x18\x08 \x01(\x0b\x32\x15.llamatrade.TimestampR\x12\x63urrentPeriodStart\x12\x43\n\x12\x63urrent_period_end\x18\t \x01(\x0b\x32\x15.llamatrade.TimestampR\x10\x63urrentPeriodEnd\x12\x19\n\x08is_trial\x18\n \x01(\x08R\x07isTrial\x12\x32\n\ttrial_end\x18\x0b \x01(\x0b\x32\x15.llamatrade.TimestampR\x08trialEnd\x12/\n\x14\x63\x61ncel_at_period_end\x18\x0c \x01(\x08R\x11\x63\x61ncelAtPeriodEnd\x12\x36\n\x0b\x63\x61nceled_at\x18\r \x01(\x0b\x32\x15.llamatrade.TimestampR\ncanceledAt\x12/\n\x13\x63\x61ncellation_reason\x18\x0e \x01(\tR\x12\x63\x61ncellationReason\x12\x34\n\x16stripe_subscription_id\x18\x0f \x01(\tR\x14stripeSubscriptionId\x12,\n\x12stripe_customer_id\x18\x10 \x01(\tR\x10stripeCustomerId\x12\x34\n\ncreated_at\x18\x11 \x01(\x0b\x32\x15.llamatrade.TimestampR\tcreatedAt\x12\x34\n\nupdated_at\x18\x12 \x01(\x0b\x32\x15.llamatrade.TimestampR\tupdatedAt"\xaa\x04\n\x05Usage\x12\x1b\n\ttenant_id\x18\x01 \x01(\tR\x08tenantId\x12\x1b\n\tperiod_id\x18\x02 \x01(\tR\x08periodId\x12-\n\x12strategies_created\x18\x03 \x01(\x05R\x11strategiesCreated\x12+\n\x11\x61\x63tive_strategies\x18\x04 \x01(\x05R\x10\x61\x63tiveStrategies\x12#\n\rbacktests_run\x18\x05 \x01(\x05R\x0c\x62\x61\x63ktestsRun\x12\x38\n\x18\x62\x61\x63ktest_compute_minutes\x18\x06 \x01(\x05R\x16\x62\x61\x63ktestComputeMinutes\x12#\n\rlive_sessions\x18\x07 \x01(\x05R\x0cliveSessions\x12#\n\rorders_placed\x18\x08 \x01(\x05R\x0cordersPlaced\x12\x30\n\x14market_data_requests\x18\t \x01(\x03R\x12marketDataRequests\x12#\n\rstorage_bytes\x18\n \x01(\x03R\x0cstorageBytes\x12\x1b\n\tapi_calls\x18\x0b \x01(\x03R\x08\x61piCalls\x12\x38\n\x0cperiod_start\x18\x0c \x01(\x0b\x32\x15.llamatrade.TimestampR\x0bperiodStart\x12\x34\n\nperiod_end\x18\r \x01(\x0b\x32\x15.llamatrade.TimestampR\tperiodEnd"\xf5\x04\n\x07Invoice\x12\x0e\n\x02id\x18\x01 \x01(\tR\x02id\x12\x1b\n\ttenant_id\x18\x02 \x01(\tR\x08tenantId\x12\'\n\x0fsubscription_id\x18\x03 \x01(\tR\x0esubscriptionId\x12)\n\x06\x61mount\x18\x04 \x01(\x0b\x32\x11.llamatrade.MoneyR\x06\x61mount\x12\x32\n\x0b\x61mount_paid\x18\x05 \x01(\x0b\x32\x11.llamatrade.MoneyR\namountPaid\x12<\n\x10\x61mount_remaining\x18\x06 \x01(\x0b\x32\x11.llamatrade.MoneyR\x0f\x61mountRemaining\x12\x31\n\x06status\x18\x07 \x01(\x0e\x32\x19.llamatrade.InvoiceStatusR\x06status\x12\x38\n\x0cperiod_start\x18\x08 \x01(\x0b\x32\x15.llamatrade.TimestampR\x0bperiodStart\x12\x34\n\nperiod_end\x18\t \x01(\x0b\x32\x15.llamatrade.TimestampR\tperiodEnd\x12\x30\n\x08\x64ue_date\x18\n \x01(\x0b\x32\x15.llamatrade.TimestampR\x07\x64ueDate\x12.\n\x07paid_at\x18\x0b \x01(\x0b\x32\x15.llamatrade.TimestampR\x06paidAt\x12\x17\n\x07pdf_url\x18\x0c \x01(\tR\x06pdfUrl\x12*\n\x11stripe_invoice_id\x18\r \x01(\tR\x0fstripeInvoiceId\x12-\n\x05items\x18\x0e \x03(\x0b\x32\x17.llamatrade.InvoiceItemR\x05items"\xa8\x01\n\x0bInvoiceItem\x12 \n\x0b\x64\x65scription\x18\x01 \x01(\tR\x0b\x64\x65scription\x12\x1a\n\x08quantity\x18\x02 \x01(\x05R\x08quantity\x12\x30\n\nunit_price\x18\x03 \x01(\x0b\x32\x11.llamatrade.MoneyR\tunitPrice\x12)\n\x06\x61mount\x18\x04 \x01(\x0b\x32\x11.llamatrade.MoneyR\x06\x61mount"\x90\x02\n\rPaymentMethod\x12\x0e\n\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n\x04type\x18\x02 \x01(\tR\x04type\x12\x1d\n\nis_default\x18\x03 \x01(\x08R\tisDefault\x12\x1d\n\ncard_brand\x18\x04 \x01(\tR\tcardBrand\x12\x1d\n\ncard_last4\x18\x05 \x01(\tR\tcardLast4\x12$\n\x0e\x63\x61rd_exp_month\x18\x06 \x01(\x05R\x0c\x63\x61rdExpMonth\x12"\n\rcard_exp_year\x18\x07 \x01(\x05R\x0b\x63\x61rdExpYear\x12\x34\n\ncreated_at\x18\x08 \x01(\x0b\x32\x15.llamatrade.TimestampR\tcreatedAt"M\n\x16GetSubscriptionRequest\x12\x33\n\x07\x63ontext\x18\x01 \x01(\x0b\x32\x19.llamatrade.TenantContextR\x07\x63ontext"W\n\x17GetSubscriptionResponse\x12<\n\x0csubscription\x18\x01 \x01(\x0b\x32\x18.llamatrade.SubscriptionR\x0csubscription"\xed\x01\n\x19\x43reateSubscriptionRequest\x12\x33\n\x07\x63ontext\x18\x01 \x01(\x0b\x32\x19.llamatrade.TenantContextR\x07\x63ontext\x12\x17\n\x07plan_id\x18\x02 \x01(\tR\x06planId\x12\x37\n\x08interval\x18\x03 \x01(\x0e\x32\x1b.llamatrade.BillingIntervalR\x08interval\x12*\n\x11payment_method_id\x18\x04 \x01(\tR\x0fpaymentMethodId\x12\x1d\n\npromo_code\x18\x05 \x01(\tR\tpromoCode"}\n\x1a\x43reateSubscriptionResponse\x12<\n\x0csubscription\x18\x01 \x01(\x0b\x32\x18.llamatrade.SubscriptionR\x0csubscription\x12!\n\x0c\x63heckout_url\x18\x02 \x01(\tR\x0b\x63heckoutUrl"\xbc\x01\n\x19UpdateSubscriptionRequest\x12\x33\n\x07\x63ontext\x18\x01 \x01(\x0b\x32\x19.llamatrade.TenantContextR\x07\x63ontext\x12\x17\n\x07plan_id\x18\x02 \x01(\tR\x06planId\x12\x37\n\x08interval\x18\x03 \x01(\x0e\x32\x1b.llamatrade.BillingIntervalR\x08interval\x12\x18\n\x07prorate\x18\x04 \x01(\x08R\x07prorate"Z\n\x1aUpdateSubscriptionResponse\x12<\n\x0csubscription\x18\x01 \x01(\x0b\x32\x18.llamatrade.SubscriptionR\x0csubscription"\x97\x01\n\x19\x43\x61ncelSubscriptionRequest\x12\x33\n\x07\x63ontext\x18\x01 \x01(\x0b\x32\x19.llamatrade.TenantContextR\x07\x63ontext\x12-\n\x12\x63\x61ncel_immediately\x18\x02 \x01(\x08R\x11\x63\x61ncelImmediately\x12\x16\n\x06reason\x18\x03 \x01(\tR\x06reason"Z\n\x1a\x43\x61ncelSubscriptionResponse\x12<\n\x0csubscription\x18\x01 \x01(\x0b\x32\x18.llamatrade.SubscriptionR\x0csubscription"P\n\x19ResumeSubscriptionRequest\x12\x33\n\x07\x63ontext\x18\x01 \x01(\x0b\x32\x19.llamatrade.TenantContextR\x07\x63ontext"Z\n\x1aResumeSubscriptionResponse\x12<\n\x0csubscription\x18\x01 \x01(\x0b\x32\x18.llamatrade.SubscriptionR\x0csubscription"c\n\x0fGetUsageRequest\x12\x33\n\x07\x63ontext\x18\x01 \x01(\x0b\x32\x19.llamatrade.TenantContextR\x07\x63ontext\x12\x1b\n\tperiod_id\x18\x02 \x01(\tR\x08periodId"d\n\x10GetUsageResponse\x12\'\n\x05usage\x18\x01 \x01(\x0b\x32\x11.llamatrade.UsageR\x05usage\x12\'\n\x05limit\x18\x02 \x01(\x0b\x32\x11.llamatrade.UsageR\x05limit"\x89\x01\n\x13ListInvoicesRequest\x12\x33\n\x07\x63ontext\x18\x01 \x01(\x0b\x32\x19.llamatrade.TenantContextR\x07\x63ontext\x12=\n\npagination\x18\x02 \x01(\x0b\x32\x1d.llamatrade.PaginationRequestR\npagination"\x87\x01\n\x14ListInvoicesResponse\x12/\n\x08invoices\x18\x01 \x03(\x0b\x32\x13.llamatrade.InvoiceR\x08invoices\x12>\n\npagination\x18\x02 \x01(\x0b\x32\x1e.llamatrade.PaginationResponseR\npagination"g\n\x11GetInvoiceRequest\x12\x33\n\x07\x63ontext\x18\x01 \x01(\x0b\x32\x19.llamatrade.TenantContextR\x07\x63ontext\x12\x1d\n\ninvoice_id\x18\x02 \x01(\tR\tinvoiceId"C\n\x12GetInvoiceResponse\x12-\n\x07invoice\x18\x01 \x01(\x0b\x32\x13.llamatrade.InvoiceR\x07invoice"G\n\x10ListPlansRequest\x12\x33\n\x07\x63ontext\x18\x01 \x01(\x0b\x32\x19.llamatrade.TenantContextR\x07\x63ontext";\n\x11ListPlansResponse\x12&\n\x05plans\x18\x01 \x03(\x0b\x32\x10.llamatrade.PlanR\x05plans"P\n\x19ListPaymentMethodsRequest\x12\x33\n\x07\x63ontext\x18\x01 \x01(\x0b\x32\x19.llamatrade.TenantContextR\x07\x63ontext"`\n\x1aListPaymentMethodsResponse\x12\x42\n\x0fpayment_methods\x18\x01 \x03(\x0b\x32\x19.llamatrade.PaymentMethodR\x0epaymentMethods"\x9c\x01\n\x17\x41\x64\x64PaymentMethodRequest\x12\x33\n\x07\x63ontext\x18\x01 \x01(\x0b\x32\x19.llamatrade.TenantContextR\x07\x63ontext\x12&\n\x0fsetup_intent_id\x18\x02 \x01(\tR\rsetupIntentId\x12$\n\x0eset_as_default\x18\x03 \x01(\x08R\x0csetAsDefault"\\\n\x18\x41\x64\x64PaymentMethodResponse\x12@\n\x0epayment_method\x18\x01 \x01(\x0b\x32\x19.llamatrade.PaymentMethodR\rpaymentMethod"}\n\x1aRemovePaymentMethodRequest\x12\x33\n\x07\x63ontext\x18\x01 \x01(\x0b\x32\x19.llamatrade.TenantContextR\x07\x63ontext\x12*\n\x11payment_method_id\x18\x02 \x01(\tR\x0fpaymentMethodId"7\n\x1bRemovePaymentMethodResponse\x12\x18\n\x07success\x18\x01 \x01(\x08R\x07success"\xe5\x01\n\x1c\x43reateCheckoutSessionRequest\x12\x33\n\x07\x63ontext\x18\x01 \x01(\x0b\x32\x19.llamatrade.TenantContextR\x07\x63ontext\x12\x17\n\x07plan_id\x18\x02 \x01(\tR\x06planId\x12\x37\n\x08interval\x18\x03 \x01(\x0e\x32\x1b.llamatrade.BillingIntervalR\x08interval\x12\x1f\n\x0bsuccess_url\x18\x04 \x01(\tR\nsuccessUrl\x12\x1d\n\ncancel_url\x18\x05 \x01(\tR\tcancelUrl"a\n\x1d\x43reateCheckoutSessionResponse\x12!\n\x0c\x63heckout_url\x18\x01 \x01(\tR\x0b\x63heckoutUrl\x12\x1d\n\nsession_id\x18\x02 \x01(\tR\tsessionId"p\n\x1a\x43reatePortalSessionRequest\x12\x33\n\x07\x63ontext\x18\x01 \x01(\x0b\x32\x19.llamatrade.TenantContextR\x07\x63ontext\x12\x1d\n\nreturn_url\x18\x02 \x01(\tR\treturnUrl"<\n\x1b\x43reatePortalSessionResponse\x12\x1d\n\nportal_url\x18\x01 \x01(\tR\tportalUrl*\xdf\x01\n\x12SubscriptionStatus\x12#\n\x1fSUBSCRIPTION_STATUS_UNSPECIFIED\x10\x00\x12\x1e\n\x1aSUBSCRIPTION_STATUS_ACTIVE\x10\x01\x12 \n\x1cSUBSCRIPTION_STATUS_PAST_DUE\x10\x02\x12 \n\x1cSUBSCRIPTION_STATUS_CANCELED\x10\x03\x12 \n\x1cSUBSCRIPTION_STATUS_TRIALING\x10\x04\x12\x1e\n\x1aSUBSCRIPTION_STATUS_PAUSED\x10\x05*c\n\x08PlanTier\x12\x19\n\x15PLAN_TIER_UNSPECIFIED\x10\x00\x12\x12\n\x0ePLAN_TIER_FREE\x10\x01\x12\x15\n\x11PLAN_TIER_STARTER\x10\x02\x12\x11\n\rPLAN_TIER_PRO\x10\x03*n\n\x0f\x42illingInterval\x12 \n\x1c\x42ILLING_INTERVAL_UNSPECIFIED\x10\x00\x12\x1c\n\x18\x42ILLING_INTERVAL_MONTHLY\x10\x01\x12\x1b\n\x17\x42ILLING_INTERVAL_YEARLY\x10\x02*\xb6\x01\n\rInvoiceStatus\x12\x1e\n\x1aINVOICE_STATUS_UNSPECIFIED\x10\x00\x12\x18\n\x14INVOICE_STATUS_DRAFT\x10\x01\x12\x17\n\x13INVOICE_STATUS_OPEN\x10\x02\x12\x17\n\x13INVOICE_STATUS_PAID\x10\x03\x12\x17\n\x13INVOICE_STATUS_VOID\x10\x04\x12 \n\x1cINVOICE_STATUS_UNCOLLECTIBLE\x10\x05\x32\xb3\n\n\x0e\x42illingService\x12Z\n\x0fGetSubscription\x12".llamatrade.GetSubscriptionRequest\x1a#.llamatrade.GetSubscriptionResponse\x12\x63\n\x12\x43reateSubscription\x12%.llamatrade.CreateSubscriptionRequest\x1a&.llamatrade.CreateSubscriptionResponse\x12\x63\n\x12UpdateSubscription\x12%.llamatrade.UpdateSubscriptionRequest\x1a&.llamatrade.UpdateSubscriptionResponse\x12\x63\n\x12\x43\x61ncelSubscription\x12%.llamatrade.CancelSubscriptionRequest\x1a&.llamatrade.CancelSubscriptionResponse\x12\x63\n\x12ResumeSubscription\x12%.llamatrade.ResumeSubscriptionRequest\x1a&.llamatrade.ResumeSubscriptionResponse\x12\x45\n\x08GetUsage\x12\x1b.llamatrade.GetUsageRequest\x1a\x1c.llamatrade.GetUsageResponse\x12Q\n\x0cListInvoices\x12\x1f.llamatrade.ListInvoicesRequest\x1a .llamatrade.ListInvoicesResponse\x12K\n\nGetInvoice\x12\x1d.llamatrade.GetInvoiceRequest\x1a\x1e.llamatrade.GetInvoiceResponse\x12H\n\tListPlans\x12\x1c.llamatrade.ListPlansRequest\x1a\x1d.llamatrade.ListPlansResponse\x12\x63\n\x12ListPaymentMethods\x12%.llamatrade.ListPaymentMethodsRequest\x1a&.llamatrade.ListPaymentMethodsResponse\x12]\n\x10\x41\x64\x64PaymentMethod\x12#.llamatrade.AddPaymentMethodRequest\x1a$.llamatrade.AddPaymentMethodResponse\x12\x66\n\x13RemovePaymentMethod\x12&.llamatrade.RemovePaymentMethodRequest\x1a\'.llamatrade.RemovePaymentMethodResponse\x12l\n\x15\x43reateCheckoutSession\x12(.llamatrade.CreateCheckoutSessionRequest\x1a).llamatrade.CreateCheckoutSessionResponse\x12\x66\n\x13\x43reatePortalSession\x12&.llamatrade.CreatePortalSessionRequest\x1a\'.llamatrade.CreatePortalSessionResponseB\x88\x01\n\x0e\x63om.llamatradeB\x0c\x42illingProtoP\x01Z github.com/llamatrade/api/gen/go\xa2\x02\x03LXX\xaa\x02\nLlamatrade\xca\x02\nLlamatrade\xe2\x02\x16Llamatrade\\GPBMetadata\xea\x02\nLlamatradeb\x06proto3'
+)
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
-_builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, 'billing_pb2', _globals)
+_builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, "billing_pb2", _globals)
 if not _descriptor._USE_C_DESCRIPTORS:
-  _globals['DESCRIPTOR']._loaded_options = None
-  _globals['DESCRIPTOR']._serialized_options = b'\n\016com.llamatradeB\014BillingProtoP\001Z github.com/llamatrade/api/gen/go\242\002\003LXX\252\002\nLlamatrade\312\002\nLlamatrade\342\002\026Llamatrade\\GPBMetadata\352\002\nLlamatrade'
-  _globals['_SUBSCRIPTIONSTATUS']._serialized_start=6226
-  _globals['_SUBSCRIPTIONSTATUS']._serialized_end=6449
-  _globals['_PLANTIER']._serialized_start=6451
-  _globals['_PLANTIER']._serialized_end=6550
-  _globals['_BILLINGINTERVAL']._serialized_start=6552
-  _globals['_BILLINGINTERVAL']._serialized_end=6662
-  _globals['_INVOICESTATUS']._serialized_start=6665
-  _globals['_INVOICESTATUS']._serialized_end=6847
-  _globals['_PLAN']._serialized_start=44
-  _globals['_PLAN']._serialized_end=560
-  _globals['_SUBSCRIPTION']._serialized_start=563
-  _globals['_SUBSCRIPTION']._serialized_end=1437
-  _globals['_USAGE']._serialized_start=1440
-  _globals['_USAGE']._serialized_end=1994
-  _globals['_INVOICE']._serialized_start=1997
-  _globals['_INVOICE']._serialized_end=2626
-  _globals['_INVOICEITEM']._serialized_start=2629
-  _globals['_INVOICEITEM']._serialized_end=2797
-  _globals['_PAYMENTMETHOD']._serialized_start=2800
-  _globals['_PAYMENTMETHOD']._serialized_end=3072
-  _globals['_GETSUBSCRIPTIONREQUEST']._serialized_start=3074
-  _globals['_GETSUBSCRIPTIONREQUEST']._serialized_end=3151
-  _globals['_GETSUBSCRIPTIONRESPONSE']._serialized_start=3153
-  _globals['_GETSUBSCRIPTIONRESPONSE']._serialized_end=3240
-  _globals['_CREATESUBSCRIPTIONREQUEST']._serialized_start=3243
-  _globals['_CREATESUBSCRIPTIONREQUEST']._serialized_end=3480
-  _globals['_CREATESUBSCRIPTIONRESPONSE']._serialized_start=3482
-  _globals['_CREATESUBSCRIPTIONRESPONSE']._serialized_end=3607
-  _globals['_UPDATESUBSCRIPTIONREQUEST']._serialized_start=3610
-  _globals['_UPDATESUBSCRIPTIONREQUEST']._serialized_end=3798
-  _globals['_UPDATESUBSCRIPTIONRESPONSE']._serialized_start=3800
-  _globals['_UPDATESUBSCRIPTIONRESPONSE']._serialized_end=3890
-  _globals['_CANCELSUBSCRIPTIONREQUEST']._serialized_start=3893
-  _globals['_CANCELSUBSCRIPTIONREQUEST']._serialized_end=4044
-  _globals['_CANCELSUBSCRIPTIONRESPONSE']._serialized_start=4046
-  _globals['_CANCELSUBSCRIPTIONRESPONSE']._serialized_end=4136
-  _globals['_RESUMESUBSCRIPTIONREQUEST']._serialized_start=4138
-  _globals['_RESUMESUBSCRIPTIONREQUEST']._serialized_end=4218
-  _globals['_RESUMESUBSCRIPTIONRESPONSE']._serialized_start=4220
-  _globals['_RESUMESUBSCRIPTIONRESPONSE']._serialized_end=4310
-  _globals['_GETUSAGEREQUEST']._serialized_start=4312
-  _globals['_GETUSAGEREQUEST']._serialized_end=4411
-  _globals['_GETUSAGERESPONSE']._serialized_start=4413
-  _globals['_GETUSAGERESPONSE']._serialized_end=4513
-  _globals['_LISTINVOICESREQUEST']._serialized_start=4516
-  _globals['_LISTINVOICESREQUEST']._serialized_end=4653
-  _globals['_LISTINVOICESRESPONSE']._serialized_start=4656
-  _globals['_LISTINVOICESRESPONSE']._serialized_end=4791
-  _globals['_GETINVOICEREQUEST']._serialized_start=4793
-  _globals['_GETINVOICEREQUEST']._serialized_end=4896
-  _globals['_GETINVOICERESPONSE']._serialized_start=4898
-  _globals['_GETINVOICERESPONSE']._serialized_end=4965
-  _globals['_LISTPLANSREQUEST']._serialized_start=4967
-  _globals['_LISTPLANSREQUEST']._serialized_end=5038
-  _globals['_LISTPLANSRESPONSE']._serialized_start=5040
-  _globals['_LISTPLANSRESPONSE']._serialized_end=5099
-  _globals['_LISTPAYMENTMETHODSREQUEST']._serialized_start=5101
-  _globals['_LISTPAYMENTMETHODSREQUEST']._serialized_end=5181
-  _globals['_LISTPAYMENTMETHODSRESPONSE']._serialized_start=5183
-  _globals['_LISTPAYMENTMETHODSRESPONSE']._serialized_end=5279
-  _globals['_ADDPAYMENTMETHODREQUEST']._serialized_start=5282
-  _globals['_ADDPAYMENTMETHODREQUEST']._serialized_end=5438
-  _globals['_ADDPAYMENTMETHODRESPONSE']._serialized_start=5440
-  _globals['_ADDPAYMENTMETHODRESPONSE']._serialized_end=5532
-  _globals['_REMOVEPAYMENTMETHODREQUEST']._serialized_start=5534
-  _globals['_REMOVEPAYMENTMETHODREQUEST']._serialized_end=5659
-  _globals['_REMOVEPAYMENTMETHODRESPONSE']._serialized_start=5661
-  _globals['_REMOVEPAYMENTMETHODRESPONSE']._serialized_end=5716
-  _globals['_CREATECHECKOUTSESSIONREQUEST']._serialized_start=5719
-  _globals['_CREATECHECKOUTSESSIONREQUEST']._serialized_end=5948
-  _globals['_CREATECHECKOUTSESSIONRESPONSE']._serialized_start=5950
-  _globals['_CREATECHECKOUTSESSIONRESPONSE']._serialized_end=6047
-  _globals['_CREATEPORTALSESSIONREQUEST']._serialized_start=6049
-  _globals['_CREATEPORTALSESSIONREQUEST']._serialized_end=6161
-  _globals['_CREATEPORTALSESSIONRESPONSE']._serialized_start=6163
-  _globals['_CREATEPORTALSESSIONRESPONSE']._serialized_end=6223
-  _globals['_BILLINGSERVICE']._serialized_start=6850
-  _globals['_BILLINGSERVICE']._serialized_end=8181
+    _globals["DESCRIPTOR"]._loaded_options = None
+    _globals[
+        "DESCRIPTOR"
+    ]._serialized_options = b"\n\016com.llamatradeB\014BillingProtoP\001Z github.com/llamatrade/api/gen/go\242\002\003LXX\252\002\nLlamatrade\312\002\nLlamatrade\342\002\026Llamatrade\\GPBMetadata\352\002\nLlamatrade"
+    _globals["_SUBSCRIPTIONSTATUS"]._serialized_start = 6226
+    _globals["_SUBSCRIPTIONSTATUS"]._serialized_end = 6449
+    _globals["_PLANTIER"]._serialized_start = 6451
+    _globals["_PLANTIER"]._serialized_end = 6550
+    _globals["_BILLINGINTERVAL"]._serialized_start = 6552
+    _globals["_BILLINGINTERVAL"]._serialized_end = 6662
+    _globals["_INVOICESTATUS"]._serialized_start = 6665
+    _globals["_INVOICESTATUS"]._serialized_end = 6847
+    _globals["_PLAN"]._serialized_start = 44
+    _globals["_PLAN"]._serialized_end = 560
+    _globals["_SUBSCRIPTION"]._serialized_start = 563
+    _globals["_SUBSCRIPTION"]._serialized_end = 1437
+    _globals["_USAGE"]._serialized_start = 1440
+    _globals["_USAGE"]._serialized_end = 1994
+    _globals["_INVOICE"]._serialized_start = 1997
+    _globals["_INVOICE"]._serialized_end = 2626
+    _globals["_INVOICEITEM"]._serialized_start = 2629
+    _globals["_INVOICEITEM"]._serialized_end = 2797
+    _globals["_PAYMENTMETHOD"]._serialized_start = 2800
+    _globals["_PAYMENTMETHOD"]._serialized_end = 3072
+    _globals["_GETSUBSCRIPTIONREQUEST"]._serialized_start = 3074
+    _globals["_GETSUBSCRIPTIONREQUEST"]._serialized_end = 3151
+    _globals["_GETSUBSCRIPTIONRESPONSE"]._serialized_start = 3153
+    _globals["_GETSUBSCRIPTIONRESPONSE"]._serialized_end = 3240
+    _globals["_CREATESUBSCRIPTIONREQUEST"]._serialized_start = 3243
+    _globals["_CREATESUBSCRIPTIONREQUEST"]._serialized_end = 3480
+    _globals["_CREATESUBSCRIPTIONRESPONSE"]._serialized_start = 3482
+    _globals["_CREATESUBSCRIPTIONRESPONSE"]._serialized_end = 3607
+    _globals["_UPDATESUBSCRIPTIONREQUEST"]._serialized_start = 3610
+    _globals["_UPDATESUBSCRIPTIONREQUEST"]._serialized_end = 3798
+    _globals["_UPDATESUBSCRIPTIONRESPONSE"]._serialized_start = 3800
+    _globals["_UPDATESUBSCRIPTIONRESPONSE"]._serialized_end = 3890
+    _globals["_CANCELSUBSCRIPTIONREQUEST"]._serialized_start = 3893
+    _globals["_CANCELSUBSCRIPTIONREQUEST"]._serialized_end = 4044
+    _globals["_CANCELSUBSCRIPTIONRESPONSE"]._serialized_start = 4046
+    _globals["_CANCELSUBSCRIPTIONRESPONSE"]._serialized_end = 4136
+    _globals["_RESUMESUBSCRIPTIONREQUEST"]._serialized_start = 4138
+    _globals["_RESUMESUBSCRIPTIONREQUEST"]._serialized_end = 4218
+    _globals["_RESUMESUBSCRIPTIONRESPONSE"]._serialized_start = 4220
+    _globals["_RESUMESUBSCRIPTIONRESPONSE"]._serialized_end = 4310
+    _globals["_GETUSAGEREQUEST"]._serialized_start = 4312
+    _globals["_GETUSAGEREQUEST"]._serialized_end = 4411
+    _globals["_GETUSAGERESPONSE"]._serialized_start = 4413
+    _globals["_GETUSAGERESPONSE"]._serialized_end = 4513
+    _globals["_LISTINVOICESREQUEST"]._serialized_start = 4516
+    _globals["_LISTINVOICESREQUEST"]._serialized_end = 4653
+    _globals["_LISTINVOICESRESPONSE"]._serialized_start = 4656
+    _globals["_LISTINVOICESRESPONSE"]._serialized_end = 4791
+    _globals["_GETINVOICEREQUEST"]._serialized_start = 4793
+    _globals["_GETINVOICEREQUEST"]._serialized_end = 4896
+    _globals["_GETINVOICERESPONSE"]._serialized_start = 4898
+    _globals["_GETINVOICERESPONSE"]._serialized_end = 4965
+    _globals["_LISTPLANSREQUEST"]._serialized_start = 4967
+    _globals["_LISTPLANSREQUEST"]._serialized_end = 5038
+    _globals["_LISTPLANSRESPONSE"]._serialized_start = 5040
+    _globals["_LISTPLANSRESPONSE"]._serialized_end = 5099
+    _globals["_LISTPAYMENTMETHODSREQUEST"]._serialized_start = 5101
+    _globals["_LISTPAYMENTMETHODSREQUEST"]._serialized_end = 5181
+    _globals["_LISTPAYMENTMETHODSRESPONSE"]._serialized_start = 5183
+    _globals["_LISTPAYMENTMETHODSRESPONSE"]._serialized_end = 5279
+    _globals["_ADDPAYMENTMETHODREQUEST"]._serialized_start = 5282
+    _globals["_ADDPAYMENTMETHODREQUEST"]._serialized_end = 5438
+    _globals["_ADDPAYMENTMETHODRESPONSE"]._serialized_start = 5440
+    _globals["_ADDPAYMENTMETHODRESPONSE"]._serialized_end = 5532
+    _globals["_REMOVEPAYMENTMETHODREQUEST"]._serialized_start = 5534
+    _globals["_REMOVEPAYMENTMETHODREQUEST"]._serialized_end = 5659
+    _globals["_REMOVEPAYMENTMETHODRESPONSE"]._serialized_start = 5661
+    _globals["_REMOVEPAYMENTMETHODRESPONSE"]._serialized_end = 5716
+    _globals["_CREATECHECKOUTSESSIONREQUEST"]._serialized_start = 5719
+    _globals["_CREATECHECKOUTSESSIONREQUEST"]._serialized_end = 5948
+    _globals["_CREATECHECKOUTSESSIONRESPONSE"]._serialized_start = 5950
+    _globals["_CREATECHECKOUTSESSIONRESPONSE"]._serialized_end = 6047
+    _globals["_CREATEPORTALSESSIONREQUEST"]._serialized_start = 6049
+    _globals["_CREATEPORTALSESSIONREQUEST"]._serialized_end = 6161
+    _globals["_CREATEPORTALSESSIONRESPONSE"]._serialized_start = 6163
+    _globals["_CREATEPORTALSESSIONRESPONSE"]._serialized_end = 6223
+    _globals["_BILLINGSERVICE"]._serialized_start = 6850
+    _globals["_BILLINGSERVICE"]._serialized_end = 8181
 # @@protoc_insertion_point(module_scope)

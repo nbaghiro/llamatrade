@@ -1,4 +1,3 @@
-# pyright: reportPrivateUsage=false
 """Tests for UserService."""
 
 from datetime import UTC, datetime

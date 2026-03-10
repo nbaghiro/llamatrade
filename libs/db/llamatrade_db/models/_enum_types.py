@@ -16,7 +16,7 @@ Usage in DB models:
 """
 
 from enum import StrEnum
-from typing import Generic, TypeVar
+from typing import Generic, TypeVar, cast
 
 from sqlalchemy import Dialect, Enum
 from sqlalchemy.types import TypeDecorator
@@ -295,8 +295,8 @@ class _ProtoEnumType(TypeDecorator[T], Generic[T]):
         for member in self._str_enum:
             if member.value == str_value:
                 # Cast to T since we know the mapping produces valid proto values
-                return self._str_to_int.get(member, 0)  # type: ignore[return-value]
-        return 0  # type: ignore[return-value]
+                return cast(T, self._str_to_int.get(member, 0))
+        return cast(T, 0)
 
     def coerce_compared_value(self, op: object, value: object) -> TypeDecorator[T] | None:
         """Ensure comparison values are coerced through this TypeDecorator."""

@@ -21,7 +21,7 @@ Proto enum value mappings:
 - NotificationPriority: LOW=1, MEDIUM=2, HIGH=3, CRITICAL=4
 
 Revision ID: 012_consolidate_strategy_enums
-Revises: 011_database_constraints
+Revises: 011
 Create Date: 2025-03-08
 
 """
@@ -33,7 +33,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "012_consolidate_strategy_enums"
-down_revision: str | None = "011_database_constraints"
+down_revision: str | None = "011"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

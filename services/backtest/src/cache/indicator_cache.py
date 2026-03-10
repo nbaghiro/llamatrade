@@ -53,11 +53,11 @@ class IndicatorCache:
         """
         self.redis_url = redis_url or REDIS_URL
         self.ttl = ttl
-        self._redis: redis.Redis | None = None  # type: ignore[type-arg]
+        self._redis: redis.Redis | None = None
         self._hits = 0
         self._misses = 0
 
-    def _get_redis(self) -> redis.Redis:  # type: ignore[type-arg]
+    def _get_redis(self) -> redis.Redis:
         """Get Redis client (lazy initialization)."""
         if self._redis is None:
             self._redis = redis.from_url(self.redis_url)

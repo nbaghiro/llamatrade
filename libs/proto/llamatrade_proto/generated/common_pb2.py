@@ -4,64 +4,63 @@
 # source: common.proto
 # Protobuf Python Version: 6.30.2
 """Generated protocol buffer code."""
+
 from google.protobuf import descriptor as _descriptor
 from google.protobuf import descriptor_pool as _descriptor_pool
 from google.protobuf import runtime_version as _runtime_version
 from google.protobuf import symbol_database as _symbol_database
 from google.protobuf.internal import builder as _builder
+
 _runtime_version.ValidateProtobufRuntimeVersion(
-    _runtime_version.Domain.PUBLIC,
-    6,
-    30,
-    2,
-    '',
-    'common.proto'
+    _runtime_version.Domain.PUBLIC, 6, 30, 2, "", "common.proto"
 )
 # @@protoc_insertion_point(imports)
 
 _sym_db = _symbol_database.Default()
 
 
-
-
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x0c\x63ommon.proto\x12\nllamatrade\"\x1c\n\x04UUID\x12\x14\n\x05value\x18\x01 \x01(\tR\x05value\";\n\tTimestamp\x12\x18\n\x07seconds\x18\x01 \x01(\x03R\x07seconds\x12\x14\n\x05nanos\x18\x02 \x01(\x05R\x05nanos\";\n\x05Money\x12\x1a\n\x08\x63urrency\x18\x01 \x01(\tR\x08\x63urrency\x12\x16\n\x06\x61mount\x18\x02 \x01(\tR\x06\x61mount\"\x1f\n\x07\x44\x65\x63imal\x12\x14\n\x05value\x18\x01 \x01(\tR\x05value\"D\n\x11PaginationRequest\x12\x12\n\x04page\x18\x01 \x01(\x05R\x04page\x12\x1b\n\tpage_size\x18\x02 \x01(\x05R\x08pageSize\"\xd4\x01\n\x12PaginationResponse\x12\x1f\n\x0btotal_items\x18\x01 \x01(\x05R\ntotalItems\x12\x1f\n\x0btotal_pages\x18\x02 \x01(\x05R\ntotalPages\x12!\n\x0c\x63urrent_page\x18\x03 \x01(\x05R\x0b\x63urrentPage\x12\x1b\n\tpage_size\x18\x04 \x01(\x05R\x08pageSize\x12\x19\n\x08has_next\x18\x05 \x01(\x08R\x07hasNext\x12!\n\x0chas_previous\x18\x06 \x01(\x08R\x0bhasPrevious\"[\n\rTenantContext\x12\x1b\n\ttenant_id\x18\x01 \x01(\tR\x08tenantId\x12\x17\n\x07user_id\x18\x02 \x01(\tR\x06userId\x12\x14\n\x05roles\x18\x03 \x03(\tR\x05roles\"\xab\x01\n\x05\x45rror\x12\x12\n\x04\x63ode\x18\x01 \x01(\tR\x04\x63ode\x12\x18\n\x07message\x18\x02 \x01(\tR\x07message\x12\x38\n\x07\x64\x65tails\x18\x03 \x03(\x0b\x32\x1e.llamatrade.Error.DetailsEntryR\x07\x64\x65tails\x1a:\n\x0c\x44\x65tailsEntry\x12\x10\n\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n\x05value\x18\x02 \x01(\tR\x05value:\x02\x38\x01\"\x07\n\x05\x45mpty\"a\n\tTimeRange\x12+\n\x05start\x18\x01 \x01(\x0b\x32\x15.llamatrade.TimestampR\x05start\x12\'\n\x03\x65nd\x18\x02 \x01(\x0b\x32\x15.llamatrade.TimestampR\x03\x65nd\"Y\n\x08SortSpec\x12\x14\n\x05\x66ield\x18\x01 \x01(\tR\x05\x66ield\x12\x37\n\tdirection\x18\x02 \x01(\x0e\x32\x19.llamatrade.SortDirectionR\tdirection*`\n\rSortDirection\x12\x1e\n\x1aSORT_DIRECTION_UNSPECIFIED\x10\x00\x12\x16\n\x12SORT_DIRECTION_ASC\x10\x01\x12\x17\n\x13SORT_DIRECTION_DESC\x10\x02*b\n\rExecutionMode\x12\x1e\n\x1a\x45XECUTION_MODE_UNSPECIFIED\x10\x00\x12\x18\n\x14\x45XECUTION_MODE_PAPER\x10\x01\x12\x17\n\x13\x45XECUTION_MODE_LIVE\x10\x02*\xc6\x01\n\x0f\x45xecutionStatus\x12 \n\x1c\x45XECUTION_STATUS_UNSPECIFIED\x10\x00\x12\x1c\n\x18\x45XECUTION_STATUS_PENDING\x10\x01\x12\x1c\n\x18\x45XECUTION_STATUS_RUNNING\x10\x02\x12\x1b\n\x17\x45XECUTION_STATUS_PAUSED\x10\x03\x12\x1c\n\x18\x45XECUTION_STATUS_STOPPED\x10\x04\x12\x1a\n\x16\x45XECUTION_STATUS_ERROR\x10\x05\x42\x87\x01\n\x0e\x63om.llamatradeB\x0b\x43ommonProtoP\x01Z github.com/llamatrade/api/gen/go\xa2\x02\x03LXX\xaa\x02\nLlamatrade\xca\x02\nLlamatrade\xe2\x02\x16Llamatrade\\GPBMetadata\xea\x02\nLlamatradeb\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(
+    b'\n\x0c\x63ommon.proto\x12\nllamatrade"\x1c\n\x04UUID\x12\x14\n\x05value\x18\x01 \x01(\tR\x05value";\n\tTimestamp\x12\x18\n\x07seconds\x18\x01 \x01(\x03R\x07seconds\x12\x14\n\x05nanos\x18\x02 \x01(\x05R\x05nanos";\n\x05Money\x12\x1a\n\x08\x63urrency\x18\x01 \x01(\tR\x08\x63urrency\x12\x16\n\x06\x61mount\x18\x02 \x01(\tR\x06\x61mount"\x1f\n\x07\x44\x65\x63imal\x12\x14\n\x05value\x18\x01 \x01(\tR\x05value"D\n\x11PaginationRequest\x12\x12\n\x04page\x18\x01 \x01(\x05R\x04page\x12\x1b\n\tpage_size\x18\x02 \x01(\x05R\x08pageSize"\xd4\x01\n\x12PaginationResponse\x12\x1f\n\x0btotal_items\x18\x01 \x01(\x05R\ntotalItems\x12\x1f\n\x0btotal_pages\x18\x02 \x01(\x05R\ntotalPages\x12!\n\x0c\x63urrent_page\x18\x03 \x01(\x05R\x0b\x63urrentPage\x12\x1b\n\tpage_size\x18\x04 \x01(\x05R\x08pageSize\x12\x19\n\x08has_next\x18\x05 \x01(\x08R\x07hasNext\x12!\n\x0chas_previous\x18\x06 \x01(\x08R\x0bhasPrevious"[\n\rTenantContext\x12\x1b\n\ttenant_id\x18\x01 \x01(\tR\x08tenantId\x12\x17\n\x07user_id\x18\x02 \x01(\tR\x06userId\x12\x14\n\x05roles\x18\x03 \x03(\tR\x05roles"\xab\x01\n\x05\x45rror\x12\x12\n\x04\x63ode\x18\x01 \x01(\tR\x04\x63ode\x12\x18\n\x07message\x18\x02 \x01(\tR\x07message\x12\x38\n\x07\x64\x65tails\x18\x03 \x03(\x0b\x32\x1e.llamatrade.Error.DetailsEntryR\x07\x64\x65tails\x1a:\n\x0c\x44\x65tailsEntry\x12\x10\n\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n\x05value\x18\x02 \x01(\tR\x05value:\x02\x38\x01"\x07\n\x05\x45mpty"a\n\tTimeRange\x12+\n\x05start\x18\x01 \x01(\x0b\x32\x15.llamatrade.TimestampR\x05start\x12\'\n\x03\x65nd\x18\x02 \x01(\x0b\x32\x15.llamatrade.TimestampR\x03\x65nd"Y\n\x08SortSpec\x12\x14\n\x05\x66ield\x18\x01 \x01(\tR\x05\x66ield\x12\x37\n\tdirection\x18\x02 \x01(\x0e\x32\x19.llamatrade.SortDirectionR\tdirection*`\n\rSortDirection\x12\x1e\n\x1aSORT_DIRECTION_UNSPECIFIED\x10\x00\x12\x16\n\x12SORT_DIRECTION_ASC\x10\x01\x12\x17\n\x13SORT_DIRECTION_DESC\x10\x02*b\n\rExecutionMode\x12\x1e\n\x1a\x45XECUTION_MODE_UNSPECIFIED\x10\x00\x12\x18\n\x14\x45XECUTION_MODE_PAPER\x10\x01\x12\x17\n\x13\x45XECUTION_MODE_LIVE\x10\x02*\xc6\x01\n\x0f\x45xecutionStatus\x12 \n\x1c\x45XECUTION_STATUS_UNSPECIFIED\x10\x00\x12\x1c\n\x18\x45XECUTION_STATUS_PENDING\x10\x01\x12\x1c\n\x18\x45XECUTION_STATUS_RUNNING\x10\x02\x12\x1b\n\x17\x45XECUTION_STATUS_PAUSED\x10\x03\x12\x1c\n\x18\x45XECUTION_STATUS_STOPPED\x10\x04\x12\x1a\n\x16\x45XECUTION_STATUS_ERROR\x10\x05\x42\x87\x01\n\x0e\x63om.llamatradeB\x0b\x43ommonProtoP\x01Z github.com/llamatrade/api/gen/go\xa2\x02\x03LXX\xaa\x02\nLlamatrade\xca\x02\nLlamatrade\xe2\x02\x16Llamatrade\\GPBMetadata\xea\x02\nLlamatradeb\x06proto3'
+)
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
-_builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, 'common_pb2', _globals)
+_builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, "common_pb2", _globals)
 if not _descriptor._USE_C_DESCRIPTORS:
-  _globals['DESCRIPTOR']._loaded_options = None
-  _globals['DESCRIPTOR']._serialized_options = b'\n\016com.llamatradeB\013CommonProtoP\001Z github.com/llamatrade/api/gen/go\242\002\003LXX\252\002\nLlamatrade\312\002\nLlamatrade\342\002\026Llamatrade\\GPBMetadata\352\002\nLlamatrade'
-  _globals['_ERROR_DETAILSENTRY']._loaded_options = None
-  _globals['_ERROR_DETAILSENTRY']._serialized_options = b'8\001'
-  _globals['_SORTDIRECTION']._serialized_start=964
-  _globals['_SORTDIRECTION']._serialized_end=1060
-  _globals['_EXECUTIONMODE']._serialized_start=1062
-  _globals['_EXECUTIONMODE']._serialized_end=1160
-  _globals['_EXECUTIONSTATUS']._serialized_start=1163
-  _globals['_EXECUTIONSTATUS']._serialized_end=1361
-  _globals['_UUID']._serialized_start=28
-  _globals['_UUID']._serialized_end=56
-  _globals['_TIMESTAMP']._serialized_start=58
-  _globals['_TIMESTAMP']._serialized_end=117
-  _globals['_MONEY']._serialized_start=119
-  _globals['_MONEY']._serialized_end=178
-  _globals['_DECIMAL']._serialized_start=180
-  _globals['_DECIMAL']._serialized_end=211
-  _globals['_PAGINATIONREQUEST']._serialized_start=213
-  _globals['_PAGINATIONREQUEST']._serialized_end=281
-  _globals['_PAGINATIONRESPONSE']._serialized_start=284
-  _globals['_PAGINATIONRESPONSE']._serialized_end=496
-  _globals['_TENANTCONTEXT']._serialized_start=498
-  _globals['_TENANTCONTEXT']._serialized_end=589
-  _globals['_ERROR']._serialized_start=592
-  _globals['_ERROR']._serialized_end=763
-  _globals['_ERROR_DETAILSENTRY']._serialized_start=705
-  _globals['_ERROR_DETAILSENTRY']._serialized_end=763
-  _globals['_EMPTY']._serialized_start=765
-  _globals['_EMPTY']._serialized_end=772
-  _globals['_TIMERANGE']._serialized_start=774
-  _globals['_TIMERANGE']._serialized_end=871
-  _globals['_SORTSPEC']._serialized_start=873
-  _globals['_SORTSPEC']._serialized_end=962
+    _globals["DESCRIPTOR"]._loaded_options = None
+    _globals[
+        "DESCRIPTOR"
+    ]._serialized_options = b"\n\016com.llamatradeB\013CommonProtoP\001Z github.com/llamatrade/api/gen/go\242\002\003LXX\252\002\nLlamatrade\312\002\nLlamatrade\342\002\026Llamatrade\\GPBMetadata\352\002\nLlamatrade"
+    _globals["_ERROR_DETAILSENTRY"]._loaded_options = None
+    _globals["_ERROR_DETAILSENTRY"]._serialized_options = b"8\001"
+    _globals["_SORTDIRECTION"]._serialized_start = 964
+    _globals["_SORTDIRECTION"]._serialized_end = 1060
+    _globals["_EXECUTIONMODE"]._serialized_start = 1062
+    _globals["_EXECUTIONMODE"]._serialized_end = 1160
+    _globals["_EXECUTIONSTATUS"]._serialized_start = 1163
+    _globals["_EXECUTIONSTATUS"]._serialized_end = 1361
+    _globals["_UUID"]._serialized_start = 28
+    _globals["_UUID"]._serialized_end = 56
+    _globals["_TIMESTAMP"]._serialized_start = 58
+    _globals["_TIMESTAMP"]._serialized_end = 117
+    _globals["_MONEY"]._serialized_start = 119
+    _globals["_MONEY"]._serialized_end = 178
+    _globals["_DECIMAL"]._serialized_start = 180
+    _globals["_DECIMAL"]._serialized_end = 211
+    _globals["_PAGINATIONREQUEST"]._serialized_start = 213
+    _globals["_PAGINATIONREQUEST"]._serialized_end = 281
+    _globals["_PAGINATIONRESPONSE"]._serialized_start = 284
+    _globals["_PAGINATIONRESPONSE"]._serialized_end = 496
+    _globals["_TENANTCONTEXT"]._serialized_start = 498
+    _globals["_TENANTCONTEXT"]._serialized_end = 589
+    _globals["_ERROR"]._serialized_start = 592
+    _globals["_ERROR"]._serialized_end = 763
+    _globals["_ERROR_DETAILSENTRY"]._serialized_start = 705
+    _globals["_ERROR_DETAILSENTRY"]._serialized_end = 763
+    _globals["_EMPTY"]._serialized_start = 765
+    _globals["_EMPTY"]._serialized_end = 772
+    _globals["_TIMERANGE"]._serialized_start = 774
+    _globals["_TIMERANGE"]._serialized_end = 871
+    _globals["_SORTSPEC"]._serialized_start = 873
+    _globals["_SORTSPEC"]._serialized_end = 962
 # @@protoc_insertion_point(module_scope)

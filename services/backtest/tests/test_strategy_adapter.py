@@ -1,5 +1,3 @@
-# pyright: reportPrivateUsage=false
-# pyright: reportAttributeAccessIssue=false
 """Tests for strategy adapter - bridges allocation DSL strategies with backtest engine."""
 
 from datetime import UTC, date, datetime, timedelta

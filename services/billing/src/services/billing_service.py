@@ -126,7 +126,7 @@ class BillingService:
     async def list_plans(self) -> list[PlanResponse]:
         """List all available plans."""
         result = await self.db.execute(
-            select(Plan).where(Plan.is_active == True).order_by(Plan.sort_order)  # noqa: E712
+            select(Plan).where(Plan.is_active.is_(True)).order_by(Plan.sort_order)
         )
         plans = result.scalars().all()
 
@@ -429,7 +429,7 @@ class BillingService:
             select(Subscription)
             .options(selectinload(Subscription.plan))
             .where(Subscription.tenant_id == tenant_id)
-            .where(Subscription.cancel_at_period_end == True)  # noqa: E712
+            .where(Subscription.cancel_at_period_end.is_(True))
             .where(Subscription.status.in_(["active", "trialing"]))
         )
         subscription = result.scalar_one_or_none()

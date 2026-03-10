@@ -1,4 +1,3 @@
-# pyright: reportPrivateUsage=false
 """Tests for TenantService."""
 
 from typing import Any

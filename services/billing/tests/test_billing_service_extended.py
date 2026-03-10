@@ -1,4 +1,3 @@
-# pyright: reportPrivateUsage=false
 """Extended tests for BillingService to improve coverage."""
 
 from datetime import UTC, datetime, timedelta

@@ -16,42 +16,70 @@ from . import portfolio_pb2 as portfolio__pb2
 
 
 class PortfolioService(Protocol):
-    async def get_portfolio(self, request: portfolio__pb2.GetPortfolioRequest, ctx: RequestContext) -> portfolio__pb2.GetPortfolioResponse:
+    async def get_portfolio(
+        self, request: portfolio__pb2.GetPortfolioRequest, ctx: RequestContext
+    ) -> portfolio__pb2.GetPortfolioResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
-    async def list_portfolios(self, request: portfolio__pb2.ListPortfoliosRequest, ctx: RequestContext) -> portfolio__pb2.ListPortfoliosResponse:
+    async def list_portfolios(
+        self, request: portfolio__pb2.ListPortfoliosRequest, ctx: RequestContext
+    ) -> portfolio__pb2.ListPortfoliosResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
-    async def get_performance(self, request: portfolio__pb2.GetPerformanceRequest, ctx: RequestContext) -> portfolio__pb2.GetPerformanceResponse:
+    async def get_performance(
+        self, request: portfolio__pb2.GetPerformanceRequest, ctx: RequestContext
+    ) -> portfolio__pb2.GetPerformanceResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
-    async def get_asset_allocation(self, request: portfolio__pb2.GetAssetAllocationRequest, ctx: RequestContext) -> portfolio__pb2.GetAssetAllocationResponse:
+    async def get_asset_allocation(
+        self, request: portfolio__pb2.GetAssetAllocationRequest, ctx: RequestContext
+    ) -> portfolio__pb2.GetAssetAllocationResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
-    async def get_positions(self, request: portfolio__pb2.GetPositionsRequest, ctx: RequestContext) -> portfolio__pb2.GetPositionsResponse:
+    async def get_positions(
+        self, request: portfolio__pb2.GetPositionsRequest, ctx: RequestContext
+    ) -> portfolio__pb2.GetPositionsResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
-    async def list_transactions(self, request: portfolio__pb2.ListTransactionsRequest, ctx: RequestContext) -> portfolio__pb2.ListTransactionsResponse:
+    async def list_transactions(
+        self, request: portfolio__pb2.ListTransactionsRequest, ctx: RequestContext
+    ) -> portfolio__pb2.ListTransactionsResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
-    async def record_transaction(self, request: portfolio__pb2.RecordTransactionRequest, ctx: RequestContext) -> portfolio__pb2.RecordTransactionResponse:
+    async def record_transaction(
+        self, request: portfolio__pb2.RecordTransactionRequest, ctx: RequestContext
+    ) -> portfolio__pb2.RecordTransactionResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
-    async def sync_portfolio(self, request: portfolio__pb2.SyncPortfolioRequest, ctx: RequestContext) -> portfolio__pb2.SyncPortfolioResponse:
+    async def sync_portfolio(
+        self, request: portfolio__pb2.SyncPortfolioRequest, ctx: RequestContext
+    ) -> portfolio__pb2.SyncPortfolioResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
-    async def list_strategy_performance(self, request: portfolio__pb2.ListStrategyPerformanceRequest, ctx: RequestContext) -> portfolio__pb2.ListStrategyPerformanceResponse:
+    async def list_strategy_performance(
+        self, request: portfolio__pb2.ListStrategyPerformanceRequest, ctx: RequestContext
+    ) -> portfolio__pb2.ListStrategyPerformanceResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
-    async def get_strategy_performance(self, request: portfolio__pb2.GetStrategyPerformanceRequest, ctx: RequestContext) -> portfolio__pb2.GetStrategyPerformanceResponse:
+    async def get_strategy_performance(
+        self, request: portfolio__pb2.GetStrategyPerformanceRequest, ctx: RequestContext
+    ) -> portfolio__pb2.GetStrategyPerformanceResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
-    async def get_strategy_equity_curve(self, request: portfolio__pb2.GetStrategyEquityCurveRequest, ctx: RequestContext) -> portfolio__pb2.GetStrategyEquityCurveResponse:
+    async def get_strategy_equity_curve(
+        self, request: portfolio__pb2.GetStrategyEquityCurveRequest, ctx: RequestContext
+    ) -> portfolio__pb2.GetStrategyEquityCurveResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
 
 class PortfolioServiceASGIApplication(ConnectASGIApplication[PortfolioService]):
-    def __init__(self, service: PortfolioService | AsyncGenerator[PortfolioService], *, interceptors: Iterable[Interceptor]=(), read_max_bytes: int | None = None) -> None:
+    def __init__(
+        self,
+        service: PortfolioService | AsyncGenerator[PortfolioService],
+        *,
+        interceptors: Iterable[Interceptor] = (),
+        read_max_bytes: int | None = None,
+    ) -> None:
         super().__init__(
             service=service,
             endpoints=lambda svc: {
@@ -399,32 +427,69 @@ class PortfolioServiceClient(ConnectClient):
 
 
 class PortfolioServiceSync(Protocol):
-    def get_portfolio(self, request: portfolio__pb2.GetPortfolioRequest, ctx: RequestContext) -> portfolio__pb2.GetPortfolioResponse:
+    def get_portfolio(
+        self, request: portfolio__pb2.GetPortfolioRequest, ctx: RequestContext
+    ) -> portfolio__pb2.GetPortfolioResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
-    def list_portfolios(self, request: portfolio__pb2.ListPortfoliosRequest, ctx: RequestContext) -> portfolio__pb2.ListPortfoliosResponse:
+
+    def list_portfolios(
+        self, request: portfolio__pb2.ListPortfoliosRequest, ctx: RequestContext
+    ) -> portfolio__pb2.ListPortfoliosResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
-    def get_performance(self, request: portfolio__pb2.GetPerformanceRequest, ctx: RequestContext) -> portfolio__pb2.GetPerformanceResponse:
+
+    def get_performance(
+        self, request: portfolio__pb2.GetPerformanceRequest, ctx: RequestContext
+    ) -> portfolio__pb2.GetPerformanceResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
-    def get_asset_allocation(self, request: portfolio__pb2.GetAssetAllocationRequest, ctx: RequestContext) -> portfolio__pb2.GetAssetAllocationResponse:
+
+    def get_asset_allocation(
+        self, request: portfolio__pb2.GetAssetAllocationRequest, ctx: RequestContext
+    ) -> portfolio__pb2.GetAssetAllocationResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
-    def get_positions(self, request: portfolio__pb2.GetPositionsRequest, ctx: RequestContext) -> portfolio__pb2.GetPositionsResponse:
+
+    def get_positions(
+        self, request: portfolio__pb2.GetPositionsRequest, ctx: RequestContext
+    ) -> portfolio__pb2.GetPositionsResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
-    def list_transactions(self, request: portfolio__pb2.ListTransactionsRequest, ctx: RequestContext) -> portfolio__pb2.ListTransactionsResponse:
+
+    def list_transactions(
+        self, request: portfolio__pb2.ListTransactionsRequest, ctx: RequestContext
+    ) -> portfolio__pb2.ListTransactionsResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
-    def record_transaction(self, request: portfolio__pb2.RecordTransactionRequest, ctx: RequestContext) -> portfolio__pb2.RecordTransactionResponse:
+
+    def record_transaction(
+        self, request: portfolio__pb2.RecordTransactionRequest, ctx: RequestContext
+    ) -> portfolio__pb2.RecordTransactionResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
-    def sync_portfolio(self, request: portfolio__pb2.SyncPortfolioRequest, ctx: RequestContext) -> portfolio__pb2.SyncPortfolioResponse:
+
+    def sync_portfolio(
+        self, request: portfolio__pb2.SyncPortfolioRequest, ctx: RequestContext
+    ) -> portfolio__pb2.SyncPortfolioResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
-    def list_strategy_performance(self, request: portfolio__pb2.ListStrategyPerformanceRequest, ctx: RequestContext) -> portfolio__pb2.ListStrategyPerformanceResponse:
+
+    def list_strategy_performance(
+        self, request: portfolio__pb2.ListStrategyPerformanceRequest, ctx: RequestContext
+    ) -> portfolio__pb2.ListStrategyPerformanceResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
-    def get_strategy_performance(self, request: portfolio__pb2.GetStrategyPerformanceRequest, ctx: RequestContext) -> portfolio__pb2.GetStrategyPerformanceResponse:
+
+    def get_strategy_performance(
+        self, request: portfolio__pb2.GetStrategyPerformanceRequest, ctx: RequestContext
+    ) -> portfolio__pb2.GetStrategyPerformanceResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
-    def get_strategy_equity_curve(self, request: portfolio__pb2.GetStrategyEquityCurveRequest, ctx: RequestContext) -> portfolio__pb2.GetStrategyEquityCurveResponse:
+
+    def get_strategy_equity_curve(
+        self, request: portfolio__pb2.GetStrategyEquityCurveRequest, ctx: RequestContext
+    ) -> portfolio__pb2.GetStrategyEquityCurveResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
 
 class PortfolioServiceWSGIApplication(ConnectWSGIApplication):
-    def __init__(self, service: PortfolioServiceSync, interceptors: Iterable[InterceptorSync]=(), read_max_bytes: int | None = None) -> None:
+    def __init__(
+        self,
+        service: PortfolioServiceSync,
+        interceptors: Iterable[InterceptorSync] = (),
+        read_max_bytes: int | None = None,
+    ) -> None:
         super().__init__(
             endpoints={
                 "/llamatrade.PortfolioService/GetPortfolio": EndpointSync.unary(

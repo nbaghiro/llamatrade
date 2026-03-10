@@ -1,7 +1,5 @@
 """Tests for portfolio service."""
 
-# pyright: reportPrivateUsage=false
-
 from unittest.mock import AsyncMock, MagicMock
 from uuid import UUID
 

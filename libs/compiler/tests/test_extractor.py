@@ -92,7 +92,7 @@ class TestIndicatorSpec:
         )
 
         with pytest.raises(AttributeError):
-            spec.params = (10,)  # type: ignore[misc]
+            spec.params = (10,)
 
     def test_indicator_spec_hashable(self) -> None:
         """Test IndicatorSpec is hashable."""

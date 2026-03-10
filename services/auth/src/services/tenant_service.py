@@ -108,7 +108,7 @@ class TenantService:
             select(AlpacaCredentialsModel)
             .where(AlpacaCredentialsModel.id == credentials_id)
             .where(AlpacaCredentialsModel.tenant_id == tenant_id)  # Tenant isolation!
-            .where(AlpacaCredentialsModel.is_active == True)  # noqa: E712
+            .where(AlpacaCredentialsModel.is_active.is_(True))
         )
         result = await self.db.execute(stmt)
         creds = result.scalar_one_or_none()
@@ -161,17 +161,18 @@ class TenantService:
         )
 
     async def list_alpaca_credentials(self, tenant_id: UUID) -> list[AlpacaCredentialsListItem]:
-        """List all Alpaca credentials for a tenant (keys masked).
+        """List all active Alpaca credentials for a tenant (keys masked).
 
         Args:
             tenant_id: Tenant to list credentials for.
 
         Returns:
-            List of credentials with masked API keys.
+            List of active credentials with masked API keys.
         """
         stmt = (
             select(AlpacaCredentialsModel)
             .where(AlpacaCredentialsModel.tenant_id == tenant_id)
+            .where(AlpacaCredentialsModel.is_active.is_(True))
             .order_by(AlpacaCredentialsModel.created_at.desc())
         )
         result = await self.db.execute(stmt)

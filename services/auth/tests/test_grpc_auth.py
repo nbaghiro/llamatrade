@@ -1,5 +1,3 @@
-# pyright: reportPrivateUsage=false
-# pyright: reportArgumentType=false
 """Tests for Auth Connect servicer.
 
 Tests the AuthServicer directly without HTTP layer.
@@ -150,9 +148,9 @@ class MockAsyncSession:
         if hasattr(obj, "created_at") and getattr(obj, "created_at") is None:
             setattr(obj, "created_at", datetime.now(UTC))
         if hasattr(obj, "email"):
-            self.set_user(obj)  # type: ignore[arg-type]
+            self.set_user(obj)
         elif hasattr(obj, "slug"):
-            self.set_tenant(obj)  # type: ignore[arg-type]
+            self.set_tenant(obj)
 
     async def __aenter__(self) -> MockAsyncSession:
         return self
@@ -187,7 +185,7 @@ def auth_servicer(mock_db: MockAsyncSession) -> AuthServicer:
     async def mock_get_db() -> MockAsyncSession:
         return mock_db
 
-    servicer._get_db = mock_get_db  # type: ignore[method-assign]
+    servicer._get_db = mock_get_db
     return servicer
 
 
@@ -553,7 +551,7 @@ class TestGetCurrentUser:
                 result.scalar_one_or_none.return_value = original_tenant
             return result
 
-        mock_db.execute = mock_execute  # type: ignore[method-assign]
+        mock_db.execute = mock_execute
 
         request = auth_pb2.GetCurrentUserRequest()
         response = await auth_servicer.get_current_user(request, context)

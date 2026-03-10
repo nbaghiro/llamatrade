@@ -375,7 +375,7 @@ class RiskManager:
         stmt = (
             select(RiskConfig)
             .where(RiskConfig.tenant_id == tenant_id)
-            .where(RiskConfig.is_active == True)  # noqa: E712
+            .where(RiskConfig.is_active.is_(True))
         )
 
         if session_id:
@@ -394,7 +394,7 @@ class RiskManager:
     def _config_to_limits(self, config: RiskConfig) -> RiskLimits:
         """Convert database config to RiskLimits."""
         # Get allowed_symbols from DB model (may be None or list)
-        raw_symbols = config.allowed_symbols  # type: ignore[reportUnknownMemberType]
+        raw_symbols = config.allowed_symbols
         allowed_symbols: list[str] | None = raw_symbols if raw_symbols else None
         return RiskLimits(
             max_position_size=config.max_position_value,
@@ -470,7 +470,7 @@ class RiskManager:
             .where(Position.tenant_id == tenant_id)
             .where(Position.session_id == session_id)
             .where(Position.symbol == symbol)
-            .where(Position.is_open == True)  # noqa: E712
+            .where(Position.is_open.is_(True))
         )
         result = await self.db.execute(stmt)
         position = result.scalar_one_or_none()

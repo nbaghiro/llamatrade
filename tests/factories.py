@@ -25,7 +25,7 @@ from llamatrade_db.models import (
 )
 
 # Backtest enums (re-exported for tests)
-from llamatrade_proto.generated.backtest_pb2 import (  # noqa: F401
+from llamatrade_proto.generated.backtest_pb2 import (
     BACKTEST_STATUS_COMPLETED,
     BACKTEST_STATUS_FAILED,
     BACKTEST_STATUS_PENDING,
@@ -33,14 +33,14 @@ from llamatrade_proto.generated.backtest_pb2 import (  # noqa: F401
 )
 
 # Billing enums (re-exported for tests)
-from llamatrade_proto.generated.billing_pb2 import (  # noqa: F401
+from llamatrade_proto.generated.billing_pb2 import (
     BILLING_INTERVAL_MONTHLY,
     PLAN_TIER_STARTER,
     SUBSCRIPTION_STATUS_ACTIVE,
 )
 
 # Common enums (re-exported for tests)
-from llamatrade_proto.generated.common_pb2 import (  # noqa: F401
+from llamatrade_proto.generated.common_pb2 import (
     EXECUTION_MODE_LIVE,
     EXECUTION_MODE_PAPER,
     EXECUTION_STATUS_ERROR,
@@ -50,21 +50,85 @@ from llamatrade_proto.generated.common_pb2 import (  # noqa: F401
 )
 
 # Strategy enums (re-exported for tests)
-from llamatrade_proto.generated.strategy_pb2 import (  # noqa: F401
+from llamatrade_proto.generated.strategy_pb2 import (
     STRATEGY_STATUS_ACTIVE,
     STRATEGY_STATUS_ARCHIVED,
     STRATEGY_STATUS_DRAFT,
 )
 
 # Trading enums (re-exported for tests)
-from llamatrade_proto.generated.trading_pb2 import (  # noqa: F401
+from llamatrade_proto.generated.trading_pb2 import (
     ORDER_SIDE_BUY,
     ORDER_SIDE_SELL,
+    ORDER_STATUS_CANCELLED,
+    ORDER_STATUS_FILLED,
     ORDER_STATUS_PENDING,
+    ORDER_TYPE_LIMIT,
     ORDER_TYPE_MARKET,
     POSITION_SIDE_LONG,
+    POSITION_SIDE_SHORT,
     TIME_IN_FORCE_DAY,
 )
+
+# Explicit re-exports for ruff F401
+__all__ = [
+    # Backtest enums
+    "BACKTEST_STATUS_COMPLETED",
+    "BACKTEST_STATUS_FAILED",
+    "BACKTEST_STATUS_PENDING",
+    "BACKTEST_STATUS_RUNNING",
+    # Billing enums
+    "BILLING_INTERVAL_MONTHLY",
+    "PLAN_TIER_STARTER",
+    "SUBSCRIPTION_STATUS_ACTIVE",
+    # Common enums
+    "EXECUTION_MODE_LIVE",
+    "EXECUTION_MODE_PAPER",
+    "EXECUTION_STATUS_ERROR",
+    "EXECUTION_STATUS_PAUSED",
+    "EXECUTION_STATUS_RUNNING",
+    "EXECUTION_STATUS_STOPPED",
+    # Strategy enums
+    "STRATEGY_STATUS_ACTIVE",
+    "STRATEGY_STATUS_ARCHIVED",
+    "STRATEGY_STATUS_DRAFT",
+    # Trading enums
+    "ORDER_SIDE_BUY",
+    "ORDER_SIDE_SELL",
+    "ORDER_STATUS_CANCELLED",
+    "ORDER_STATUS_FILLED",
+    "ORDER_STATUS_PENDING",
+    "ORDER_TYPE_LIMIT",
+    "ORDER_TYPE_MARKET",
+    "POSITION_SIDE_LONG",
+    "POSITION_SIDE_SHORT",
+    "TIME_IN_FORCE_DAY",
+    # Session status aliases
+    "SESSION_STATUS_ACTIVE",
+    "SESSION_STATUS_PAUSED",
+    "SESSION_STATUS_STOPPED",
+    "SESSION_STATUS_ERROR",
+    # DB-only enums
+    "INVOICE_STATUS_DRAFT",
+    "INVOICE_STATUS_OPEN",
+    "INVOICE_STATUS_PAID",
+    "INVOICE_STATUS_VOID",
+    "INVOICE_STATUS_UNCOLLECTIBLE",
+    # Factory classes
+    "BacktestFactory",
+    "BacktestResultFactory",
+    "InvoiceFactory",
+    "OrderFactory",
+    "PaymentMethodFactory",
+    "PlanFactory",
+    "PositionFactory",
+    "StrategyFactory",
+    "StrategyVersionFactory",
+    "SubscriptionFactory",
+    "TenantFactory",
+    "TradingSessionFactory",
+    "UserFactory",
+]
 
 # Aliases for SESSION_STATUS (mapped to EXECUTION_STATUS in proto)
 SESSION_STATUS_ACTIVE = EXECUTION_STATUS_RUNNING

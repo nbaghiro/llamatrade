@@ -104,7 +104,7 @@ class TestAuthInterceptorInterceptService:
 
         mock_continuation = AsyncMock()
 
-        _result = await interceptor.intercept_service(mock_continuation, mock_handler_details)  # noqa: F841
+        await interceptor.intercept_service(mock_continuation, mock_handler_details)
 
         mock_auth_client.validate_token.assert_called_once_with("invalid-token")
         mock_continuation.assert_not_called()
@@ -251,7 +251,7 @@ class TestClientAuthInterceptorInterceptUnaryUnary:
         mock_continuation = AsyncMock(return_value="response")
         mock_request = MagicMock()
 
-        _result = await interceptor.intercept_unary_unary(  # noqa: F841
+        await interceptor.intercept_unary_unary(
             mock_continuation,
             mock_client_call_details,
             mock_request,

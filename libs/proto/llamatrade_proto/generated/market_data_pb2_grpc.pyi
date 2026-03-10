@@ -19,7 +19,6 @@ else:
 _T = _typing.TypeVar("_T")
 
 class _MaybeAsyncIterator(_abc.AsyncIterator[_T], _abc.Iterator[_T], metaclass=_abc_1.ABCMeta): ...
-
 class _ServicerContext(_grpc.ServicerContext, _aio.ServicerContext):  # type: ignore[misc, type-arg]
     ...
 
@@ -36,17 +35,33 @@ class MarketDataServiceStub:
     def __new__(cls, channel: _grpc.Channel) -> _Self: ...
     @_typing.overload
     def __new__(cls, channel: _aio.Channel) -> MarketDataServiceAsyncStub: ...
-    StreamBars: _grpc.UnaryStreamMultiCallable[_market_data_pb2.StreamBarsRequest, _market_data_pb2.Bar]
+    StreamBars: _grpc.UnaryStreamMultiCallable[
+        _market_data_pb2.StreamBarsRequest, _market_data_pb2.Bar
+    ]
     """Streaming endpoints"""
-    StreamQuotes: _grpc.UnaryStreamMultiCallable[_market_data_pb2.StreamQuotesRequest, _market_data_pb2.Quote]
-    StreamTrades: _grpc.UnaryStreamMultiCallable[_market_data_pb2.StreamTradesRequest, _market_data_pb2.Trade]
-    GetHistoricalBars: _grpc.UnaryUnaryMultiCallable[_market_data_pb2.GetHistoricalBarsRequest, _market_data_pb2.GetHistoricalBarsResponse]
+    StreamQuotes: _grpc.UnaryStreamMultiCallable[
+        _market_data_pb2.StreamQuotesRequest, _market_data_pb2.Quote
+    ]
+    StreamTrades: _grpc.UnaryStreamMultiCallable[
+        _market_data_pb2.StreamTradesRequest, _market_data_pb2.Trade
+    ]
+    GetHistoricalBars: _grpc.UnaryUnaryMultiCallable[
+        _market_data_pb2.GetHistoricalBarsRequest, _market_data_pb2.GetHistoricalBarsResponse
+    ]
     """Historical data"""
-    GetMultiBars: _grpc.UnaryUnaryMultiCallable[_market_data_pb2.GetMultiBarsRequest, _market_data_pb2.GetMultiBarsResponse]
-    GetSnapshot: _grpc.UnaryUnaryMultiCallable[_market_data_pb2.GetSnapshotRequest, _market_data_pb2.Snapshot]
+    GetMultiBars: _grpc.UnaryUnaryMultiCallable[
+        _market_data_pb2.GetMultiBarsRequest, _market_data_pb2.GetMultiBarsResponse
+    ]
+    GetSnapshot: _grpc.UnaryUnaryMultiCallable[
+        _market_data_pb2.GetSnapshotRequest, _market_data_pb2.Snapshot
+    ]
     """Snapshots"""
-    GetSnapshots: _grpc.UnaryUnaryMultiCallable[_market_data_pb2.GetSnapshotsRequest, _market_data_pb2.GetSnapshotsResponse]
-    GetMarketStatus: _grpc.UnaryUnaryMultiCallable[_market_data_pb2.GetMarketStatusRequest, _market_data_pb2.GetMarketStatusResponse]
+    GetSnapshots: _grpc.UnaryUnaryMultiCallable[
+        _market_data_pb2.GetSnapshotsRequest, _market_data_pb2.GetSnapshotsResponse
+    ]
+    GetMarketStatus: _grpc.UnaryUnaryMultiCallable[
+        _market_data_pb2.GetMarketStatusRequest, _market_data_pb2.GetMarketStatusResponse
+    ]
     """Market info"""
 
 @_typing.type_check_only
@@ -57,17 +72,33 @@ class MarketDataServiceAsyncStub(MarketDataServiceStub):
     """
 
     def __init__(self, channel: _aio.Channel) -> None: ...
-    StreamBars: _aio.UnaryStreamMultiCallable[_market_data_pb2.StreamBarsRequest, _market_data_pb2.Bar]  # type: ignore[assignment]
+    StreamBars: _aio.UnaryStreamMultiCallable[
+        _market_data_pb2.StreamBarsRequest, _market_data_pb2.Bar
+    ]  # type: ignore[assignment]
     """Streaming endpoints"""
-    StreamQuotes: _aio.UnaryStreamMultiCallable[_market_data_pb2.StreamQuotesRequest, _market_data_pb2.Quote]  # type: ignore[assignment]
-    StreamTrades: _aio.UnaryStreamMultiCallable[_market_data_pb2.StreamTradesRequest, _market_data_pb2.Trade]  # type: ignore[assignment]
-    GetHistoricalBars: _aio.UnaryUnaryMultiCallable[_market_data_pb2.GetHistoricalBarsRequest, _market_data_pb2.GetHistoricalBarsResponse]  # type: ignore[assignment]
+    StreamQuotes: _aio.UnaryStreamMultiCallable[
+        _market_data_pb2.StreamQuotesRequest, _market_data_pb2.Quote
+    ]  # type: ignore[assignment]
+    StreamTrades: _aio.UnaryStreamMultiCallable[
+        _market_data_pb2.StreamTradesRequest, _market_data_pb2.Trade
+    ]  # type: ignore[assignment]
+    GetHistoricalBars: _aio.UnaryUnaryMultiCallable[
+        _market_data_pb2.GetHistoricalBarsRequest, _market_data_pb2.GetHistoricalBarsResponse
+    ]  # type: ignore[assignment]
     """Historical data"""
-    GetMultiBars: _aio.UnaryUnaryMultiCallable[_market_data_pb2.GetMultiBarsRequest, _market_data_pb2.GetMultiBarsResponse]  # type: ignore[assignment]
-    GetSnapshot: _aio.UnaryUnaryMultiCallable[_market_data_pb2.GetSnapshotRequest, _market_data_pb2.Snapshot]  # type: ignore[assignment]
+    GetMultiBars: _aio.UnaryUnaryMultiCallable[
+        _market_data_pb2.GetMultiBarsRequest, _market_data_pb2.GetMultiBarsResponse
+    ]  # type: ignore[assignment]
+    GetSnapshot: _aio.UnaryUnaryMultiCallable[
+        _market_data_pb2.GetSnapshotRequest, _market_data_pb2.Snapshot
+    ]  # type: ignore[assignment]
     """Snapshots"""
-    GetSnapshots: _aio.UnaryUnaryMultiCallable[_market_data_pb2.GetSnapshotsRequest, _market_data_pb2.GetSnapshotsResponse]  # type: ignore[assignment]
-    GetMarketStatus: _aio.UnaryUnaryMultiCallable[_market_data_pb2.GetMarketStatusRequest, _market_data_pb2.GetMarketStatusResponse]  # type: ignore[assignment]
+    GetSnapshots: _aio.UnaryUnaryMultiCallable[
+        _market_data_pb2.GetSnapshotsRequest, _market_data_pb2.GetSnapshotsResponse
+    ]  # type: ignore[assignment]
+    GetMarketStatus: _aio.UnaryUnaryMultiCallable[
+        _market_data_pb2.GetMarketStatusRequest, _market_data_pb2.GetMarketStatusResponse
+    ]  # type: ignore[assignment]
     """Market info"""
 
 class MarketDataServiceServicer(metaclass=_abc_1.ABCMeta):
@@ -81,7 +112,9 @@ class MarketDataServiceServicer(metaclass=_abc_1.ABCMeta):
         self,
         request: _market_data_pb2.StreamBarsRequest,
         context: _ServicerContext,
-    ) -> _typing.Union[_abc.Iterator[_market_data_pb2.Bar], _abc.AsyncIterator[_market_data_pb2.Bar]]:
+    ) -> _typing.Union[
+        _abc.Iterator[_market_data_pb2.Bar], _abc.AsyncIterator[_market_data_pb2.Bar]
+    ]:
         """Streaming endpoints"""
 
     @_abc_1.abstractmethod
@@ -89,21 +122,26 @@ class MarketDataServiceServicer(metaclass=_abc_1.ABCMeta):
         self,
         request: _market_data_pb2.StreamQuotesRequest,
         context: _ServicerContext,
-    ) -> _typing.Union[_abc.Iterator[_market_data_pb2.Quote], _abc.AsyncIterator[_market_data_pb2.Quote]]: ...
-
+    ) -> _typing.Union[
+        _abc.Iterator[_market_data_pb2.Quote], _abc.AsyncIterator[_market_data_pb2.Quote]
+    ]: ...
     @_abc_1.abstractmethod
     def StreamTrades(
         self,
         request: _market_data_pb2.StreamTradesRequest,
         context: _ServicerContext,
-    ) -> _typing.Union[_abc.Iterator[_market_data_pb2.Trade], _abc.AsyncIterator[_market_data_pb2.Trade]]: ...
-
+    ) -> _typing.Union[
+        _abc.Iterator[_market_data_pb2.Trade], _abc.AsyncIterator[_market_data_pb2.Trade]
+    ]: ...
     @_abc_1.abstractmethod
     def GetHistoricalBars(
         self,
         request: _market_data_pb2.GetHistoricalBarsRequest,
         context: _ServicerContext,
-    ) -> _typing.Union[_market_data_pb2.GetHistoricalBarsResponse, _abc.Awaitable[_market_data_pb2.GetHistoricalBarsResponse]]:
+    ) -> _typing.Union[
+        _market_data_pb2.GetHistoricalBarsResponse,
+        _abc.Awaitable[_market_data_pb2.GetHistoricalBarsResponse],
+    ]:
         """Historical data"""
 
     @_abc_1.abstractmethod
@@ -111,8 +149,9 @@ class MarketDataServiceServicer(metaclass=_abc_1.ABCMeta):
         self,
         request: _market_data_pb2.GetMultiBarsRequest,
         context: _ServicerContext,
-    ) -> _typing.Union[_market_data_pb2.GetMultiBarsResponse, _abc.Awaitable[_market_data_pb2.GetMultiBarsResponse]]: ...
-
+    ) -> _typing.Union[
+        _market_data_pb2.GetMultiBarsResponse, _abc.Awaitable[_market_data_pb2.GetMultiBarsResponse]
+    ]: ...
     @_abc_1.abstractmethod
     def GetSnapshot(
         self,
@@ -126,14 +165,20 @@ class MarketDataServiceServicer(metaclass=_abc_1.ABCMeta):
         self,
         request: _market_data_pb2.GetSnapshotsRequest,
         context: _ServicerContext,
-    ) -> _typing.Union[_market_data_pb2.GetSnapshotsResponse, _abc.Awaitable[_market_data_pb2.GetSnapshotsResponse]]: ...
-
+    ) -> _typing.Union[
+        _market_data_pb2.GetSnapshotsResponse, _abc.Awaitable[_market_data_pb2.GetSnapshotsResponse]
+    ]: ...
     @_abc_1.abstractmethod
     def GetMarketStatus(
         self,
         request: _market_data_pb2.GetMarketStatusRequest,
         context: _ServicerContext,
-    ) -> _typing.Union[_market_data_pb2.GetMarketStatusResponse, _abc.Awaitable[_market_data_pb2.GetMarketStatusResponse]]:
+    ) -> _typing.Union[
+        _market_data_pb2.GetMarketStatusResponse,
+        _abc.Awaitable[_market_data_pb2.GetMarketStatusResponse],
+    ]:
         """Market info"""
 
-def add_MarketDataServiceServicer_to_server(servicer: MarketDataServiceServicer, server: _typing.Union[_grpc.Server, _aio.Server]) -> None: ...
+def add_MarketDataServiceServicer_to_server(
+    servicer: MarketDataServiceServicer, server: _typing.Union[_grpc.Server, _aio.Server]
+) -> None: ...

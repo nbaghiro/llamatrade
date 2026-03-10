@@ -13,7 +13,7 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, declared_attr, mapped_column
 TableArgsType = tuple[Any, ...]
 
 
-class Base(DeclarativeBase):  # type: ignore[misc]
+class Base(DeclarativeBase):
     """Base class for all ORM models."""
 
     pass
@@ -40,7 +40,8 @@ class TenantMixin:
     )
 
     @declared_attr.directive
-    def __table_args__(cls) -> TableArgsType:  # noqa: N805
+    @classmethod
+    def __table_args__(cls) -> TableArgsType:
         """Create index on tenant_id for efficient tenant filtering."""
         existing_args: TableArgsType | dict[str, Any] | None = getattr(
             super(), "__table_args__", None

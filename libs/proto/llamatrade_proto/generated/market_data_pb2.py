@@ -4,18 +4,15 @@
 # source: market_data.proto
 # Protobuf Python Version: 6.30.2
 """Generated protocol buffer code."""
+
 from google.protobuf import descriptor as _descriptor
 from google.protobuf import descriptor_pool as _descriptor_pool
 from google.protobuf import runtime_version as _runtime_version
 from google.protobuf import symbol_database as _symbol_database
 from google.protobuf.internal import builder as _builder
+
 _runtime_version.ValidateProtobufRuntimeVersion(
-    _runtime_version.Domain.PUBLIC,
-    6,
-    30,
-    2,
-    '',
-    'market_data.proto'
+    _runtime_version.Domain.PUBLIC, 6, 30, 2, "", "market_data.proto"
 )
 # @@protoc_insertion_point(imports)
 
@@ -25,60 +22,64 @@ _sym_db = _symbol_database.Default()
 from . import common_pb2 as common__pb2
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x11market_data.proto\x12\nllamatrade\x1a\x0c\x63ommon.proto\"\xd8\x02\n\x03\x42\x61r\x12\x16\n\x06symbol\x18\x01 \x01(\tR\x06symbol\x12\x33\n\ttimestamp\x18\x02 \x01(\x0b\x32\x15.llamatrade.TimestampR\ttimestamp\x12\'\n\x04open\x18\x03 \x01(\x0b\x32\x13.llamatrade.DecimalR\x04open\x12\'\n\x04high\x18\x04 \x01(\x0b\x32\x13.llamatrade.DecimalR\x04high\x12%\n\x03low\x18\x05 \x01(\x0b\x32\x13.llamatrade.DecimalR\x03low\x12)\n\x05\x63lose\x18\x06 \x01(\x0b\x32\x13.llamatrade.DecimalR\x05\x63lose\x12\x16\n\x06volume\x18\x07 \x01(\x03R\x06volume\x12\x1f\n\x0btrade_count\x18\x08 \x01(\x03R\ntradeCount\x12\'\n\x04vwap\x18\t \x01(\x0b\x32\x13.llamatrade.DecimalR\x04vwap\"\xb4\x02\n\x05Quote\x12\x16\n\x06symbol\x18\x01 \x01(\tR\x06symbol\x12\x33\n\ttimestamp\x18\x02 \x01(\x0b\x32\x15.llamatrade.TimestampR\ttimestamp\x12\x30\n\tbid_price\x18\x03 \x01(\x0b\x32\x13.llamatrade.DecimalR\x08\x62idPrice\x12\x19\n\x08\x62id_size\x18\x04 \x01(\x03R\x07\x62idSize\x12\x30\n\task_price\x18\x05 \x01(\x0b\x32\x13.llamatrade.DecimalR\x08\x61skPrice\x12\x19\n\x08\x61sk_size\x18\x06 \x01(\x03R\x07\x61skSize\x12!\n\x0c\x62id_exchange\x18\x07 \x01(\tR\x0b\x62idExchange\x12!\n\x0c\x61sk_exchange\x18\x08 \x01(\tR\x0b\x61skExchange\"\xea\x01\n\x05Trade\x12\x16\n\x06symbol\x18\x01 \x01(\tR\x06symbol\x12\x33\n\ttimestamp\x18\x02 \x01(\x0b\x32\x15.llamatrade.TimestampR\ttimestamp\x12)\n\x05price\x18\x03 \x01(\x0b\x32\x13.llamatrade.DecimalR\x05price\x12\x12\n\x04size\x18\x04 \x01(\x03R\x04size\x12\x1a\n\x08\x65xchange\x18\x05 \x01(\tR\x08\x65xchange\x12\x19\n\x08trade_id\x18\x06 \x01(\tR\x07tradeId\x12\x1e\n\nconditions\x18\x07 \x03(\tR\nconditions\"\x94\x03\n\x08Snapshot\x12\x16\n\x06symbol\x18\x01 \x01(\tR\x06symbol\x12.\n\nlatest_bar\x18\x02 \x01(\x0b\x32\x0f.llamatrade.BarR\tlatestBar\x12\x34\n\x0clatest_quote\x18\x03 \x01(\x0b\x32\x11.llamatrade.QuoteR\x0blatestQuote\x12\x34\n\x0clatest_trade\x18\x04 \x01(\x0b\x32\x11.llamatrade.TradeR\x0blatestTrade\x12,\n\tdaily_bar\x18\x05 \x01(\x0b\x32\x0f.llamatrade.BarR\x08\x64\x61ilyBar\x12=\n\x12previous_daily_bar\x18\x06 \x01(\x0b\x32\x0f.llamatrade.BarR\x10previousDailyBar\x12+\n\x06\x63hange\x18\x07 \x01(\x0b\x32\x13.llamatrade.DecimalR\x06\x63hange\x12:\n\x0e\x63hange_percent\x18\x08 \x01(\x0b\x32\x13.llamatrade.DecimalR\rchangePercent\"b\n\x11StreamBarsRequest\x12\x18\n\x07symbols\x18\x01 \x03(\tR\x07symbols\x12\x33\n\ttimeframe\x18\x02 \x01(\x0e\x32\x15.llamatrade.TimeframeR\ttimeframe\"\xa8\x02\n\x18GetHistoricalBarsRequest\x12\x16\n\x06symbol\x18\x01 \x01(\tR\x06symbol\x12+\n\x05start\x18\x02 \x01(\x0b\x32\x15.llamatrade.TimestampR\x05start\x12\'\n\x03\x65nd\x18\x03 \x01(\x0b\x32\x15.llamatrade.TimestampR\x03\x65nd\x12\x33\n\ttimeframe\x18\x04 \x01(\x0e\x32\x15.llamatrade.TimeframeR\ttimeframe\x12=\n\npagination\x18\x05 \x01(\x0b\x32\x1d.llamatrade.PaginationRequestR\npagination\x12*\n\x11\x61\x64just_for_splits\x18\x06 \x01(\x08R\x0f\x61\x64justForSplits\"\xa8\x01\n\x19GetHistoricalBarsResponse\x12#\n\x04\x62\x61rs\x18\x01 \x03(\x0b\x32\x0f.llamatrade.BarR\x04\x62\x61rs\x12&\n\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\x12>\n\npagination\x18\x03 \x01(\x0b\x32\x1e.llamatrade.PaginationResponseR\npagination\"\xd0\x01\n\x13GetMultiBarsRequest\x12\x18\n\x07symbols\x18\x01 \x03(\tR\x07symbols\x12+\n\x05start\x18\x02 \x01(\x0b\x32\x15.llamatrade.TimestampR\x05start\x12\'\n\x03\x65nd\x18\x03 \x01(\x0b\x32\x15.llamatrade.TimestampR\x03\x65nd\x12\x33\n\ttimeframe\x18\x04 \x01(\x0e\x32\x15.llamatrade.TimeframeR\ttimeframe\x12\x14\n\x05limit\x18\x05 \x01(\x05R\x05limit\"\xa4\x01\n\x14GetMultiBarsResponse\x12>\n\x04\x62\x61rs\x18\x01 \x03(\x0b\x32*.llamatrade.GetMultiBarsResponse.BarsEntryR\x04\x62\x61rs\x1aL\n\tBarsEntry\x12\x10\n\x03key\x18\x01 \x01(\tR\x03key\x12)\n\x05value\x18\x02 \x01(\x0b\x32\x13.llamatrade.BarListR\x05value:\x02\x38\x01\".\n\x07\x42\x61rList\x12#\n\x04\x62\x61rs\x18\x01 \x03(\x0b\x32\x0f.llamatrade.BarR\x04\x62\x61rs\"/\n\x13StreamQuotesRequest\x12\x18\n\x07symbols\x18\x01 \x03(\tR\x07symbols\"/\n\x13StreamTradesRequest\x12\x18\n\x07symbols\x18\x01 \x03(\tR\x07symbols\",\n\x12GetSnapshotRequest\x12\x16\n\x06symbol\x18\x01 \x01(\tR\x06symbol\"/\n\x13GetSnapshotsRequest\x12\x18\n\x07symbols\x18\x01 \x03(\tR\x07symbols\"\xb9\x01\n\x14GetSnapshotsResponse\x12M\n\tsnapshots\x18\x01 \x03(\x0b\x32/.llamatrade.GetSnapshotsResponse.SnapshotsEntryR\tsnapshots\x1aR\n\x0eSnapshotsEntry\x12\x10\n\x03key\x18\x01 \x01(\tR\x03key\x12*\n\x05value\x18\x02 \x01(\x0b\x32\x14.llamatrade.SnapshotR\x05value:\x02\x38\x01\"\x18\n\x16GetMarketStatusRequest\"\xb5\x01\n\x17GetMarketStatusResponse\x12\x30\n\x06status\x18\x01 \x01(\x0e\x32\x18.llamatrade.MarketStatusR\x06status\x12\x32\n\tnext_open\x18\x02 \x01(\x0b\x32\x15.llamatrade.TimestampR\x08nextOpen\x12\x34\n\nnext_close\x18\x03 \x01(\x0b\x32\x15.llamatrade.TimestampR\tnextClose*\xe1\x01\n\tTimeframe\x12\x19\n\x15TIMEFRAME_UNSPECIFIED\x10\x00\x12\x12\n\x0eTIMEFRAME_1MIN\x10\x01\x12\x12\n\x0eTIMEFRAME_5MIN\x10\x02\x12\x13\n\x0fTIMEFRAME_15MIN\x10\x03\x12\x13\n\x0fTIMEFRAME_30MIN\x10\x04\x12\x13\n\x0fTIMEFRAME_1HOUR\x10\x05\x12\x13\n\x0fTIMEFRAME_4HOUR\x10\x06\x12\x12\n\x0eTIMEFRAME_1DAY\x10\x07\x12\x13\n\x0fTIMEFRAME_1WEEK\x10\x08\x12\x14\n\x10TIMEFRAME_1MONTH\x10\t*\x9c\x01\n\x0cMarketStatus\x12\x1d\n\x19MARKET_STATUS_UNSPECIFIED\x10\x00\x12\x16\n\x12MARKET_STATUS_OPEN\x10\x01\x12\x18\n\x14MARKET_STATUS_CLOSED\x10\x02\x12\x1c\n\x18MARKET_STATUS_PRE_MARKET\x10\x03\x12\x1d\n\x19MARKET_STATUS_AFTER_HOURS\x10\x04\x32\x88\x05\n\x11MarketDataService\x12>\n\nStreamBars\x12\x1d.llamatrade.StreamBarsRequest\x1a\x0f.llamatrade.Bar0\x01\x12\x44\n\x0cStreamQuotes\x12\x1f.llamatrade.StreamQuotesRequest\x1a\x11.llamatrade.Quote0\x01\x12\x44\n\x0cStreamTrades\x12\x1f.llamatrade.StreamTradesRequest\x1a\x11.llamatrade.Trade0\x01\x12`\n\x11GetHistoricalBars\x12$.llamatrade.GetHistoricalBarsRequest\x1a%.llamatrade.GetHistoricalBarsResponse\x12Q\n\x0cGetMultiBars\x12\x1f.llamatrade.GetMultiBarsRequest\x1a .llamatrade.GetMultiBarsResponse\x12\x43\n\x0bGetSnapshot\x12\x1e.llamatrade.GetSnapshotRequest\x1a\x14.llamatrade.Snapshot\x12Q\n\x0cGetSnapshots\x12\x1f.llamatrade.GetSnapshotsRequest\x1a .llamatrade.GetSnapshotsResponse\x12Z\n\x0fGetMarketStatus\x12\".llamatrade.GetMarketStatusRequest\x1a#.llamatrade.GetMarketStatusResponseB\x8b\x01\n\x0e\x63om.llamatradeB\x0fMarketDataProtoP\x01Z github.com/llamatrade/api/gen/go\xa2\x02\x03LXX\xaa\x02\nLlamatrade\xca\x02\nLlamatrade\xe2\x02\x16Llamatrade\\GPBMetadata\xea\x02\nLlamatradeb\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(
+    b'\n\x11market_data.proto\x12\nllamatrade\x1a\x0c\x63ommon.proto"\xd8\x02\n\x03\x42\x61r\x12\x16\n\x06symbol\x18\x01 \x01(\tR\x06symbol\x12\x33\n\ttimestamp\x18\x02 \x01(\x0b\x32\x15.llamatrade.TimestampR\ttimestamp\x12\'\n\x04open\x18\x03 \x01(\x0b\x32\x13.llamatrade.DecimalR\x04open\x12\'\n\x04high\x18\x04 \x01(\x0b\x32\x13.llamatrade.DecimalR\x04high\x12%\n\x03low\x18\x05 \x01(\x0b\x32\x13.llamatrade.DecimalR\x03low\x12)\n\x05\x63lose\x18\x06 \x01(\x0b\x32\x13.llamatrade.DecimalR\x05\x63lose\x12\x16\n\x06volume\x18\x07 \x01(\x03R\x06volume\x12\x1f\n\x0btrade_count\x18\x08 \x01(\x03R\ntradeCount\x12\'\n\x04vwap\x18\t \x01(\x0b\x32\x13.llamatrade.DecimalR\x04vwap"\xb4\x02\n\x05Quote\x12\x16\n\x06symbol\x18\x01 \x01(\tR\x06symbol\x12\x33\n\ttimestamp\x18\x02 \x01(\x0b\x32\x15.llamatrade.TimestampR\ttimestamp\x12\x30\n\tbid_price\x18\x03 \x01(\x0b\x32\x13.llamatrade.DecimalR\x08\x62idPrice\x12\x19\n\x08\x62id_size\x18\x04 \x01(\x03R\x07\x62idSize\x12\x30\n\task_price\x18\x05 \x01(\x0b\x32\x13.llamatrade.DecimalR\x08\x61skPrice\x12\x19\n\x08\x61sk_size\x18\x06 \x01(\x03R\x07\x61skSize\x12!\n\x0c\x62id_exchange\x18\x07 \x01(\tR\x0b\x62idExchange\x12!\n\x0c\x61sk_exchange\x18\x08 \x01(\tR\x0b\x61skExchange"\xea\x01\n\x05Trade\x12\x16\n\x06symbol\x18\x01 \x01(\tR\x06symbol\x12\x33\n\ttimestamp\x18\x02 \x01(\x0b\x32\x15.llamatrade.TimestampR\ttimestamp\x12)\n\x05price\x18\x03 \x01(\x0b\x32\x13.llamatrade.DecimalR\x05price\x12\x12\n\x04size\x18\x04 \x01(\x03R\x04size\x12\x1a\n\x08\x65xchange\x18\x05 \x01(\tR\x08\x65xchange\x12\x19\n\x08trade_id\x18\x06 \x01(\tR\x07tradeId\x12\x1e\n\nconditions\x18\x07 \x03(\tR\nconditions"\x94\x03\n\x08Snapshot\x12\x16\n\x06symbol\x18\x01 \x01(\tR\x06symbol\x12.\n\nlatest_bar\x18\x02 \x01(\x0b\x32\x0f.llamatrade.BarR\tlatestBar\x12\x34\n\x0clatest_quote\x18\x03 \x01(\x0b\x32\x11.llamatrade.QuoteR\x0blatestQuote\x12\x34\n\x0clatest_trade\x18\x04 \x01(\x0b\x32\x11.llamatrade.TradeR\x0blatestTrade\x12,\n\tdaily_bar\x18\x05 \x01(\x0b\x32\x0f.llamatrade.BarR\x08\x64\x61ilyBar\x12=\n\x12previous_daily_bar\x18\x06 \x01(\x0b\x32\x0f.llamatrade.BarR\x10previousDailyBar\x12+\n\x06\x63hange\x18\x07 \x01(\x0b\x32\x13.llamatrade.DecimalR\x06\x63hange\x12:\n\x0e\x63hange_percent\x18\x08 \x01(\x0b\x32\x13.llamatrade.DecimalR\rchangePercent"b\n\x11StreamBarsRequest\x12\x18\n\x07symbols\x18\x01 \x03(\tR\x07symbols\x12\x33\n\ttimeframe\x18\x02 \x01(\x0e\x32\x15.llamatrade.TimeframeR\ttimeframe"\xa8\x02\n\x18GetHistoricalBarsRequest\x12\x16\n\x06symbol\x18\x01 \x01(\tR\x06symbol\x12+\n\x05start\x18\x02 \x01(\x0b\x32\x15.llamatrade.TimestampR\x05start\x12\'\n\x03\x65nd\x18\x03 \x01(\x0b\x32\x15.llamatrade.TimestampR\x03\x65nd\x12\x33\n\ttimeframe\x18\x04 \x01(\x0e\x32\x15.llamatrade.TimeframeR\ttimeframe\x12=\n\npagination\x18\x05 \x01(\x0b\x32\x1d.llamatrade.PaginationRequestR\npagination\x12*\n\x11\x61\x64just_for_splits\x18\x06 \x01(\x08R\x0f\x61\x64justForSplits"\xa8\x01\n\x19GetHistoricalBarsResponse\x12#\n\x04\x62\x61rs\x18\x01 \x03(\x0b\x32\x0f.llamatrade.BarR\x04\x62\x61rs\x12&\n\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\x12>\n\npagination\x18\x03 \x01(\x0b\x32\x1e.llamatrade.PaginationResponseR\npagination"\xd0\x01\n\x13GetMultiBarsRequest\x12\x18\n\x07symbols\x18\x01 \x03(\tR\x07symbols\x12+\n\x05start\x18\x02 \x01(\x0b\x32\x15.llamatrade.TimestampR\x05start\x12\'\n\x03\x65nd\x18\x03 \x01(\x0b\x32\x15.llamatrade.TimestampR\x03\x65nd\x12\x33\n\ttimeframe\x18\x04 \x01(\x0e\x32\x15.llamatrade.TimeframeR\ttimeframe\x12\x14\n\x05limit\x18\x05 \x01(\x05R\x05limit"\xa4\x01\n\x14GetMultiBarsResponse\x12>\n\x04\x62\x61rs\x18\x01 \x03(\x0b\x32*.llamatrade.GetMultiBarsResponse.BarsEntryR\x04\x62\x61rs\x1aL\n\tBarsEntry\x12\x10\n\x03key\x18\x01 \x01(\tR\x03key\x12)\n\x05value\x18\x02 \x01(\x0b\x32\x13.llamatrade.BarListR\x05value:\x02\x38\x01".\n\x07\x42\x61rList\x12#\n\x04\x62\x61rs\x18\x01 \x03(\x0b\x32\x0f.llamatrade.BarR\x04\x62\x61rs"/\n\x13StreamQuotesRequest\x12\x18\n\x07symbols\x18\x01 \x03(\tR\x07symbols"/\n\x13StreamTradesRequest\x12\x18\n\x07symbols\x18\x01 \x03(\tR\x07symbols",\n\x12GetSnapshotRequest\x12\x16\n\x06symbol\x18\x01 \x01(\tR\x06symbol"/\n\x13GetSnapshotsRequest\x12\x18\n\x07symbols\x18\x01 \x03(\tR\x07symbols"\xb9\x01\n\x14GetSnapshotsResponse\x12M\n\tsnapshots\x18\x01 \x03(\x0b\x32/.llamatrade.GetSnapshotsResponse.SnapshotsEntryR\tsnapshots\x1aR\n\x0eSnapshotsEntry\x12\x10\n\x03key\x18\x01 \x01(\tR\x03key\x12*\n\x05value\x18\x02 \x01(\x0b\x32\x14.llamatrade.SnapshotR\x05value:\x02\x38\x01"\x18\n\x16GetMarketStatusRequest"\xb5\x01\n\x17GetMarketStatusResponse\x12\x30\n\x06status\x18\x01 \x01(\x0e\x32\x18.llamatrade.MarketStatusR\x06status\x12\x32\n\tnext_open\x18\x02 \x01(\x0b\x32\x15.llamatrade.TimestampR\x08nextOpen\x12\x34\n\nnext_close\x18\x03 \x01(\x0b\x32\x15.llamatrade.TimestampR\tnextClose*\xe1\x01\n\tTimeframe\x12\x19\n\x15TIMEFRAME_UNSPECIFIED\x10\x00\x12\x12\n\x0eTIMEFRAME_1MIN\x10\x01\x12\x12\n\x0eTIMEFRAME_5MIN\x10\x02\x12\x13\n\x0fTIMEFRAME_15MIN\x10\x03\x12\x13\n\x0fTIMEFRAME_30MIN\x10\x04\x12\x13\n\x0fTIMEFRAME_1HOUR\x10\x05\x12\x13\n\x0fTIMEFRAME_4HOUR\x10\x06\x12\x12\n\x0eTIMEFRAME_1DAY\x10\x07\x12\x13\n\x0fTIMEFRAME_1WEEK\x10\x08\x12\x14\n\x10TIMEFRAME_1MONTH\x10\t*\x9c\x01\n\x0cMarketStatus\x12\x1d\n\x19MARKET_STATUS_UNSPECIFIED\x10\x00\x12\x16\n\x12MARKET_STATUS_OPEN\x10\x01\x12\x18\n\x14MARKET_STATUS_CLOSED\x10\x02\x12\x1c\n\x18MARKET_STATUS_PRE_MARKET\x10\x03\x12\x1d\n\x19MARKET_STATUS_AFTER_HOURS\x10\x04\x32\x88\x05\n\x11MarketDataService\x12>\n\nStreamBars\x12\x1d.llamatrade.StreamBarsRequest\x1a\x0f.llamatrade.Bar0\x01\x12\x44\n\x0cStreamQuotes\x12\x1f.llamatrade.StreamQuotesRequest\x1a\x11.llamatrade.Quote0\x01\x12\x44\n\x0cStreamTrades\x12\x1f.llamatrade.StreamTradesRequest\x1a\x11.llamatrade.Trade0\x01\x12`\n\x11GetHistoricalBars\x12$.llamatrade.GetHistoricalBarsRequest\x1a%.llamatrade.GetHistoricalBarsResponse\x12Q\n\x0cGetMultiBars\x12\x1f.llamatrade.GetMultiBarsRequest\x1a .llamatrade.GetMultiBarsResponse\x12\x43\n\x0bGetSnapshot\x12\x1e.llamatrade.GetSnapshotRequest\x1a\x14.llamatrade.Snapshot\x12Q\n\x0cGetSnapshots\x12\x1f.llamatrade.GetSnapshotsRequest\x1a .llamatrade.GetSnapshotsResponse\x12Z\n\x0fGetMarketStatus\x12".llamatrade.GetMarketStatusRequest\x1a#.llamatrade.GetMarketStatusResponseB\x8b\x01\n\x0e\x63om.llamatradeB\x0fMarketDataProtoP\x01Z github.com/llamatrade/api/gen/go\xa2\x02\x03LXX\xaa\x02\nLlamatrade\xca\x02\nLlamatrade\xe2\x02\x16Llamatrade\\GPBMetadata\xea\x02\nLlamatradeb\x06proto3'
+)
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
-_builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, 'market_data_pb2', _globals)
+_builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, "market_data_pb2", _globals)
 if not _descriptor._USE_C_DESCRIPTORS:
-  _globals['DESCRIPTOR']._loaded_options = None
-  _globals['DESCRIPTOR']._serialized_options = b'\n\016com.llamatradeB\017MarketDataProtoP\001Z github.com/llamatrade/api/gen/go\242\002\003LXX\252\002\nLlamatrade\312\002\nLlamatrade\342\002\026Llamatrade\\GPBMetadata\352\002\nLlamatrade'
-  _globals['_GETMULTIBARSRESPONSE_BARSENTRY']._loaded_options = None
-  _globals['_GETMULTIBARSRESPONSE_BARSENTRY']._serialized_options = b'8\001'
-  _globals['_GETSNAPSHOTSRESPONSE_SNAPSHOTSENTRY']._loaded_options = None
-  _globals['_GETSNAPSHOTSRESPONSE_SNAPSHOTSENTRY']._serialized_options = b'8\001'
-  _globals['_TIMEFRAME']._serialized_start=2937
-  _globals['_TIMEFRAME']._serialized_end=3162
-  _globals['_MARKETSTATUS']._serialized_start=3165
-  _globals['_MARKETSTATUS']._serialized_end=3321
-  _globals['_BAR']._serialized_start=48
-  _globals['_BAR']._serialized_end=392
-  _globals['_QUOTE']._serialized_start=395
-  _globals['_QUOTE']._serialized_end=703
-  _globals['_TRADE']._serialized_start=706
-  _globals['_TRADE']._serialized_end=940
-  _globals['_SNAPSHOT']._serialized_start=943
-  _globals['_SNAPSHOT']._serialized_end=1347
-  _globals['_STREAMBARSREQUEST']._serialized_start=1349
-  _globals['_STREAMBARSREQUEST']._serialized_end=1447
-  _globals['_GETHISTORICALBARSREQUEST']._serialized_start=1450
-  _globals['_GETHISTORICALBARSREQUEST']._serialized_end=1746
-  _globals['_GETHISTORICALBARSRESPONSE']._serialized_start=1749
-  _globals['_GETHISTORICALBARSRESPONSE']._serialized_end=1917
-  _globals['_GETMULTIBARSREQUEST']._serialized_start=1920
-  _globals['_GETMULTIBARSREQUEST']._serialized_end=2128
-  _globals['_GETMULTIBARSRESPONSE']._serialized_start=2131
-  _globals['_GETMULTIBARSRESPONSE']._serialized_end=2295
-  _globals['_GETMULTIBARSRESPONSE_BARSENTRY']._serialized_start=2219
-  _globals['_GETMULTIBARSRESPONSE_BARSENTRY']._serialized_end=2295
-  _globals['_BARLIST']._serialized_start=2297
-  _globals['_BARLIST']._serialized_end=2343
-  _globals['_STREAMQUOTESREQUEST']._serialized_start=2345
-  _globals['_STREAMQUOTESREQUEST']._serialized_end=2392
-  _globals['_STREAMTRADESREQUEST']._serialized_start=2394
-  _globals['_STREAMTRADESREQUEST']._serialized_end=2441
-  _globals['_GETSNAPSHOTREQUEST']._serialized_start=2443
-  _globals['_GETSNAPSHOTREQUEST']._serialized_end=2487
-  _globals['_GETSNAPSHOTSREQUEST']._serialized_start=2489
-  _globals['_GETSNAPSHOTSREQUEST']._serialized_end=2536
-  _globals['_GETSNAPSHOTSRESPONSE']._serialized_start=2539
-  _globals['_GETSNAPSHOTSRESPONSE']._serialized_end=2724
-  _globals['_GETSNAPSHOTSRESPONSE_SNAPSHOTSENTRY']._serialized_start=2642
-  _globals['_GETSNAPSHOTSRESPONSE_SNAPSHOTSENTRY']._serialized_end=2724
-  _globals['_GETMARKETSTATUSREQUEST']._serialized_start=2726
-  _globals['_GETMARKETSTATUSREQUEST']._serialized_end=2750
-  _globals['_GETMARKETSTATUSRESPONSE']._serialized_start=2753
-  _globals['_GETMARKETSTATUSRESPONSE']._serialized_end=2934
-  _globals['_MARKETDATASERVICE']._serialized_start=3324
-  _globals['_MARKETDATASERVICE']._serialized_end=3972
+    _globals["DESCRIPTOR"]._loaded_options = None
+    _globals[
+        "DESCRIPTOR"
+    ]._serialized_options = b"\n\016com.llamatradeB\017MarketDataProtoP\001Z github.com/llamatrade/api/gen/go\242\002\003LXX\252\002\nLlamatrade\312\002\nLlamatrade\342\002\026Llamatrade\\GPBMetadata\352\002\nLlamatrade"
+    _globals["_GETMULTIBARSRESPONSE_BARSENTRY"]._loaded_options = None
+    _globals["_GETMULTIBARSRESPONSE_BARSENTRY"]._serialized_options = b"8\001"
+    _globals["_GETSNAPSHOTSRESPONSE_SNAPSHOTSENTRY"]._loaded_options = None
+    _globals["_GETSNAPSHOTSRESPONSE_SNAPSHOTSENTRY"]._serialized_options = b"8\001"
+    _globals["_TIMEFRAME"]._serialized_start = 2937
+    _globals["_TIMEFRAME"]._serialized_end = 3162
+    _globals["_MARKETSTATUS"]._serialized_start = 3165
+    _globals["_MARKETSTATUS"]._serialized_end = 3321
+    _globals["_BAR"]._serialized_start = 48
+    _globals["_BAR"]._serialized_end = 392
+    _globals["_QUOTE"]._serialized_start = 395
+    _globals["_QUOTE"]._serialized_end = 703
+    _globals["_TRADE"]._serialized_start = 706
+    _globals["_TRADE"]._serialized_end = 940
+    _globals["_SNAPSHOT"]._serialized_start = 943
+    _globals["_SNAPSHOT"]._serialized_end = 1347
+    _globals["_STREAMBARSREQUEST"]._serialized_start = 1349
+    _globals["_STREAMBARSREQUEST"]._serialized_end = 1447
+    _globals["_GETHISTORICALBARSREQUEST"]._serialized_start = 1450
+    _globals["_GETHISTORICALBARSREQUEST"]._serialized_end = 1746
+    _globals["_GETHISTORICALBARSRESPONSE"]._serialized_start = 1749
+    _globals["_GETHISTORICALBARSRESPONSE"]._serialized_end = 1917
+    _globals["_GETMULTIBARSREQUEST"]._serialized_start = 1920
+    _globals["_GETMULTIBARSREQUEST"]._serialized_end = 2128
+    _globals["_GETMULTIBARSRESPONSE"]._serialized_start = 2131
+    _globals["_GETMULTIBARSRESPONSE"]._serialized_end = 2295
+    _globals["_GETMULTIBARSRESPONSE_BARSENTRY"]._serialized_start = 2219
+    _globals["_GETMULTIBARSRESPONSE_BARSENTRY"]._serialized_end = 2295
+    _globals["_BARLIST"]._serialized_start = 2297
+    _globals["_BARLIST"]._serialized_end = 2343
+    _globals["_STREAMQUOTESREQUEST"]._serialized_start = 2345
+    _globals["_STREAMQUOTESREQUEST"]._serialized_end = 2392
+    _globals["_STREAMTRADESREQUEST"]._serialized_start = 2394
+    _globals["_STREAMTRADESREQUEST"]._serialized_end = 2441
+    _globals["_GETSNAPSHOTREQUEST"]._serialized_start = 2443
+    _globals["_GETSNAPSHOTREQUEST"]._serialized_end = 2487
+    _globals["_GETSNAPSHOTSREQUEST"]._serialized_start = 2489
+    _globals["_GETSNAPSHOTSREQUEST"]._serialized_end = 2536
+    _globals["_GETSNAPSHOTSRESPONSE"]._serialized_start = 2539
+    _globals["_GETSNAPSHOTSRESPONSE"]._serialized_end = 2724
+    _globals["_GETSNAPSHOTSRESPONSE_SNAPSHOTSENTRY"]._serialized_start = 2642
+    _globals["_GETSNAPSHOTSRESPONSE_SNAPSHOTSENTRY"]._serialized_end = 2724
+    _globals["_GETMARKETSTATUSREQUEST"]._serialized_start = 2726
+    _globals["_GETMARKETSTATUSREQUEST"]._serialized_end = 2750
+    _globals["_GETMARKETSTATUSRESPONSE"]._serialized_start = 2753
+    _globals["_GETMARKETSTATUSRESPONSE"]._serialized_end = 2934
+    _globals["_MARKETDATASERVICE"]._serialized_start = 3324
+    _globals["_MARKETDATASERVICE"]._serialized_end = 3972
 # @@protoc_insertion_point(module_scope)

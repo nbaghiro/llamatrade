@@ -24,7 +24,7 @@ from src.events.base import TradingEvent, deserialize_event
 logger = logging.getLogger(__name__)
 
 
-class EventRecord(Base):  # type: ignore[misc]
+class EventRecord(Base):
     """SQLAlchemy model for stored events."""
 
     __tablename__ = "trading_events"

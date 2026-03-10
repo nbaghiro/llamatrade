@@ -138,12 +138,12 @@ class AsyncTTLCache:
                 return result
 
             # Attach cache reference for direct access
-            wrapper.cache = self  # type: ignore[attr-defined]
+            setattr(wrapper, "cache", self)
 
             def _default_key_builder(*a: Any, **kw: Any) -> str:
                 return self.build_key(func.__name__, a, kw)
 
-            wrapper.cache_key_builder = key_builder or _default_key_builder  # type: ignore[attr-defined]
+            setattr(wrapper, "cache_key_builder", key_builder or _default_key_builder)
 
             return wrapper
 
@@ -412,9 +412,9 @@ def async_ttl_cache(
                 key = func_cache.build_key(func.__name__, args, kwargs)
             return await func_cache.invalidate(key)
 
-        wrapper.cache_clear = cache_clear  # type: ignore[attr-defined]
-        wrapper.cache_invalidate = cache_invalidate  # type: ignore[attr-defined]
-        wrapper.cache = func_cache  # type: ignore[attr-defined]
+        setattr(wrapper, "cache_clear", cache_clear)
+        setattr(wrapper, "cache_invalidate", cache_invalidate)
+        setattr(wrapper, "cache", func_cache)
 
         return wrapper
 
