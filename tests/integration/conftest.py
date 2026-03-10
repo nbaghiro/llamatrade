@@ -62,7 +62,7 @@ def run_migrations(database_url: str) -> None:
     # Import all models to register them with Base.metadata
     # Note: Bar, Quote, Trade are imported but excluded from creation
     # because they use PostgreSQL partitioning
-    from llamatrade_db.models import (  # noqa: F401
+    from llamatrade_db.models import (
         AlpacaCredentials,
         APIKey,
         Backtest,
@@ -88,6 +88,34 @@ def run_migrations(database_url: str) -> None:
         UsageRecord,
         User,
     )
+
+    # Ensure all models are registered with Base.metadata
+    _imported_models = [
+        AlpacaCredentials,
+        APIKey,
+        Backtest,
+        BacktestResult,
+        Bar,
+        Invoice,
+        Order,
+        PaymentMethod,
+        PerformanceMetrics,
+        Plan,
+        PortfolioHistory,
+        PortfolioSummary,
+        Position,
+        Quote,
+        Strategy,
+        StrategyTemplate,
+        StrategyVersion,
+        Subscription,
+        Tenant,
+        Trade,
+        TradingSession,
+        Transaction,
+        UsageRecord,
+        User,
+    ]
 
     # Tables to exclude from creation (use PostgreSQL partitioning)
     excluded_tables = {"bars", "quotes", "trades"}

@@ -413,7 +413,7 @@ class TestStrategyQueries:
 
         # Query public only
         result = await db_session.execute(
-            select(Strategy).where(Strategy.is_public == True)  # noqa: E712
+            select(Strategy).where(Strategy.is_public.is_(True))
         )
         public = result.scalars().all()
 

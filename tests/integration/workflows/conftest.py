@@ -2,7 +2,16 @@
 
 This module provides fixtures for starting and managing service processes
 for multi-service integration tests.
+
+It also provides fixtures for loading multiple gRPC servicers in the same test.
+The key challenge is that each service has its own `src/` directory, causing module
+name conflicts when loading multiple servicers.
+
+Solution: Preload and cache servicer CLASSES at module import time, before any tests run.
+The classes retain their internal module references even after sys.path changes.
 """
+
+from __future__ import annotations
 
 import os
 import subprocess
@@ -11,9 +20,13 @@ from collections.abc import AsyncGenerator, Generator
 from contextlib import asynccontextmanager, contextmanager
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
 import httpx
 import pytest
+
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 # Service ports
 SERVICE_PORTS = {
@@ -277,3 +290,208 @@ async def create_strategy(
         raise RuntimeError(f"Strategy creation failed: {response.text}")
 
     return response.json()
+
+
+# ==========================================
+# Multi-Servicer Support (Direct gRPC)
+# ==========================================
+#
+# These fixtures allow loading multiple servicers in the same test by
+# preloading and caching the servicer classes at module import time.
+
+# Cache for servicer classes - populated at module load time
+_AUTH_SERVICER_CLASS: type | None = None
+_STRATEGY_SERVICER_CLASS: type | None = None
+_BACKTEST_SERVICER_CLASS: type | None = None
+
+
+def _clear_src_modules() -> None:
+    """Clear all src.* modules from sys.modules."""
+    modules_to_remove = [k for k in list(sys.modules.keys()) if k == "src" or k.startswith("src.")]
+    for mod in modules_to_remove:
+        del sys.modules[mod]
+
+
+def _remove_service_paths() -> None:
+    """Remove all service paths from sys.path."""
+    services = ["auth", "billing", "strategy", "backtest", "market-data", "trading", "portfolio"]
+    for svc in services:
+        svc_path = str(SERVICES_DIR / svc)
+        if svc_path in sys.path:
+            sys.path.remove(svc_path)
+
+
+def _load_auth_servicer_class() -> type:
+    """Load AuthServicer class."""
+    global _AUTH_SERVICER_CLASS
+    if _AUTH_SERVICER_CLASS is not None:
+        return _AUTH_SERVICER_CLASS
+
+    _remove_service_paths()
+    _clear_src_modules()
+
+    auth_path = str(SERVICES_DIR / "auth")
+    sys.path.insert(0, auth_path)
+
+    from src.grpc.servicer import AuthServicer
+
+    _AUTH_SERVICER_CLASS = AuthServicer
+    return AuthServicer
+
+
+def _load_strategy_servicer_class() -> type:
+    """Load StrategyServicer class."""
+    global _STRATEGY_SERVICER_CLASS
+    if _STRATEGY_SERVICER_CLASS is not None:
+        return _STRATEGY_SERVICER_CLASS
+
+    _remove_service_paths()
+    _clear_src_modules()
+
+    strategy_path = str(SERVICES_DIR / "strategy")
+    sys.path.insert(0, strategy_path)
+
+    from src.grpc.servicer import StrategyServicer
+
+    _STRATEGY_SERVICER_CLASS = StrategyServicer
+    return StrategyServicer
+
+
+def _load_backtest_servicer_class() -> type:
+    """Load BacktestServicer class."""
+    global _BACKTEST_SERVICER_CLASS
+    if _BACKTEST_SERVICER_CLASS is not None:
+        return _BACKTEST_SERVICER_CLASS
+
+    _remove_service_paths()
+    _clear_src_modules()
+
+    backtest_path = str(SERVICES_DIR / "backtest")
+    sys.path.insert(0, backtest_path)
+
+    from src.grpc.servicer import BacktestServicer
+
+    _BACKTEST_SERVICER_CLASS = BacktestServicer
+    return BacktestServicer
+
+
+def _preload_all_servicers() -> None:
+    """Preload all servicer classes at module import time.
+
+    Order matters! Each load clears previous src modules, but the cached
+    class retains its internal references to those modules.
+
+    We load in reverse dependency order so the most-used modules are loaded last
+    and remain in sys.modules for any runtime imports.
+    """
+    # Load auth first (foundational service)
+    _load_auth_servicer_class()
+
+    # Load strategy (depends on auth for context validation)
+    _load_strategy_servicer_class()
+
+    # Load backtest last (depends on strategy)
+    _load_backtest_servicer_class()
+
+
+# Preload at module import time
+_preload_all_servicers()
+
+
+class MockServicerContext:
+    """Mock ConnectRPC servicer context for testing.
+
+    Supports setting authorization headers for authenticated requests.
+    """
+
+    def __init__(self, auth_token: str | None = None) -> None:
+        self.headers: dict[str, str] = {}
+        self._cancelled = False
+        if auth_token:
+            self.headers["authorization"] = f"Bearer {auth_token}"
+
+    def cancelled(self) -> bool:
+        return self._cancelled
+
+    def invocation_metadata(self) -> list[tuple[str, str]]:
+        """Return headers as metadata tuples (gRPC style)."""
+        return list(self.headers.items())
+
+    def request_headers(self) -> dict[str, str]:
+        """Return headers dict (ConnectRPC style)."""
+        return self.headers
+
+    async def abort(self, code: str, message: str) -> None:
+        """Abort the RPC with an error code and message.
+
+        In production, this raises a ConnectError. For testing, we raise
+        a ConnectError to match the expected behavior.
+        """
+        from connectrpc.code import Code
+        from connectrpc.errors import ConnectError
+
+        # Map string codes to Code enum
+        code_map = {
+            "INVALID_ARGUMENT": Code.INVALID_ARGUMENT,
+            "NOT_FOUND": Code.NOT_FOUND,
+            "UNAUTHENTICATED": Code.UNAUTHENTICATED,
+            "PERMISSION_DENIED": Code.PERMISSION_DENIED,
+            "INTERNAL": Code.INTERNAL,
+        }
+        error_code = code_map.get(code, Code.INTERNAL)
+        raise ConnectError(error_code, message)
+
+
+@pytest.fixture
+def mock_context() -> MockServicerContext:
+    """Create a mock gRPC context."""
+    return MockServicerContext()
+
+
+@pytest.fixture
+def multi_auth_servicer(db_session: "AsyncSession") -> Any:
+    """Create an AuthServicer instance for multi-servicer tests.
+
+    Uses the preloaded class to avoid module conflicts.
+    """
+    assert _AUTH_SERVICER_CLASS is not None, "AuthServicer not loaded"
+    servicer = _AUTH_SERVICER_CLASS()
+
+    async def mock_get_db() -> "AsyncSession":
+        return db_session
+
+    servicer._get_db = mock_get_db
+    return servicer
+
+
+@pytest.fixture
+def multi_strategy_servicer(db_session: "AsyncSession") -> Any:
+    """Create a StrategyServicer instance for multi-servicer tests.
+
+    Uses the preloaded class to avoid module conflicts.
+    """
+    assert _STRATEGY_SERVICER_CLASS is not None, "StrategyServicer not loaded"
+    servicer = _STRATEGY_SERVICER_CLASS()
+
+    async def mock_get_db() -> "AsyncSession":
+        return db_session
+
+    servicer._get_db = mock_get_db
+    return servicer
+
+
+@pytest.fixture
+def multi_backtest_servicer(db_session: "AsyncSession") -> Any:
+    """Create a BacktestServicer instance for multi-servicer tests.
+
+    Uses the preloaded class to avoid module conflicts.
+    """
+    assert _BACKTEST_SERVICER_CLASS is not None, "BacktestServicer not loaded"
+    servicer = _BACKTEST_SERVICER_CLASS()
+
+    @asynccontextmanager
+    async def mock_get_db():
+        yield db_session
+
+    servicer._get_db = mock_get_db
+    return servicer

@@ -440,7 +440,7 @@ class TestPositionTracking:
             select(Position)
             .where(Position.tenant_id == TEST_TENANT_ID)
             .where(Position.symbol == "GOOGL")
-            .where(Position.is_open == True)  # noqa: E712
+            .where(Position.is_open.is_(True))
         )
         open_positions = result.scalars().all()
         assert len(open_positions) == 0
@@ -506,7 +506,7 @@ class TestRiskConfigPersistence:
             select(RiskConfig)
             .where(RiskConfig.tenant_id == TEST_TENANT_ID)
             .where(RiskConfig.session_id == TEST_SESSION_ID)
-            .where(RiskConfig.is_active == True)  # noqa: E712
+            .where(RiskConfig.is_active.is_(True))
         )
         config = result.scalar_one_or_none()
 
@@ -549,7 +549,7 @@ class TestRiskConfigPersistence:
             select(RiskConfig)
             .where(RiskConfig.tenant_id == TEST_TENANT_ID)
             .where(RiskConfig.session_id == TEST_SESSION_ID)
-            .where(RiskConfig.is_active == True)  # noqa: E712
+            .where(RiskConfig.is_active.is_(True))
         )
         active_configs = result.scalars().all()
         assert len(active_configs) == 1

@@ -28,6 +28,10 @@ class MockServicerContext:
     def __init__(self) -> None:
         self.headers: dict[str, str] = {}
 
+    def request_headers(self) -> dict[str, str]:
+        """Return headers dict (ConnectRPC style)."""
+        return self.headers
+
 
 @pytest.fixture
 def grpc_context() -> MockServicerContext:
