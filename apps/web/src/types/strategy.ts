@@ -2,6 +2,7 @@
 // These match the backend services/strategy/src/models.py schemas
 
 // Import enum types from proto-generated code (single source of truth)
+// Used within this file for display helpers and type definitions
 import {
   ExecutionMode,
   ExecutionStatus,
@@ -13,17 +14,6 @@ import {
   TemplateCategory,
   TemplateDifficulty,
 } from '../generated/proto/strategy_pb';
-
-// Re-export proto enums for use in this module
-export {
-  AssetClass,
-  ExecutionMode,
-  ExecutionStatus,
-  IndicatorType,
-  StrategyStatus,
-  TemplateCategory,
-  TemplateDifficulty,
-};
 
 // ============================================
 // Enum Display Helpers

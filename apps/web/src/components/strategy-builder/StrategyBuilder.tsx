@@ -8,13 +8,22 @@ import { CodeEditor } from './CodeEditor';
 import { LeftPanel } from './panels/LeftPanel';
 import { RightPanel } from './panels/RightPanel';
 
-export function StrategyBuilder() {
+interface StrategyBuilderProps {
+  readOnly?: boolean;
+}
+
+export function StrategyBuilder({ readOnly }: StrategyBuilderProps) {
   const { tree, ui, viewMode, deleteBlock, undo, redo, canUndo, canRedo, getBlock } = useStrategyBuilderStore();
   const rootBlock = tree.blocks[tree.rootId];
 
-  // Keyboard shortcuts
+  // Keyboard shortcuts - disabled in readOnly mode
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
+      // Disable all keyboard shortcuts in readOnly mode
+      if (readOnly) {
+        return;
+      }
+
       // Ignore if typing in an input
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
         return;
@@ -54,7 +63,7 @@ export function StrategyBuilder() {
         return;
       }
     },
-    [ui.selectedBlockId, canUndo, canRedo, undo, redo, deleteBlock, getBlock]
+    [ui.selectedBlockId, canUndo, canRedo, undo, redo, deleteBlock, getBlock, readOnly]
   );
 
   useEffect(() => {
@@ -63,22 +72,22 @@ export function StrategyBuilder() {
   }, [handleKeyDown]);
 
   return (
-    <div className="flex h-[calc(100vh-56px)] overflow-hidden bg-gray-50 dark:bg-gray-950 bg-dotted-grid p-6 gap-6">
-      {/* Left Panel - Strategy Details */}
-      <LeftPanel />
+    <div className={`flex overflow-hidden bg-gray-50 dark:bg-gray-950 bg-dotted-grid gap-6 ${readOnly ? 'h-full p-4' : 'h-[calc(100vh-56px)] p-6'}`}>
+      {/* Left Panel - Strategy Details - hidden in readOnly mode */}
+      {!readOnly && <LeftPanel />}
 
       {/* Center - Canvas or Code Editor */}
-      <div className="flex-1 min-w-0 flex flex-col overflow-hidden pt-4 px-6">
+      <div className={`flex-1 min-w-0 flex flex-col overflow-hidden ${readOnly ? 'pt-2 px-4' : 'pt-4 px-6'}`}>
         {/* Root Block - always visible */}
         {rootBlock && rootBlock.type === 'root' && (
           <div className="flex-shrink-0 mb-4">
-            <RootBlock block={rootBlock} />
+            <RootBlock block={rootBlock} readOnly={readOnly} />
           </div>
         )}
 
         {/* Main content area - tree or code editor */}
         {viewMode === 'tree' ? (
-          <Canvas />
+          <Canvas readOnly={readOnly} />
         ) : (
           <div className="flex-1 min-h-0 overflow-hidden">
             <CodeEditor />
@@ -86,8 +95,8 @@ export function StrategyBuilder() {
         )}
       </div>
 
-      {/* Right Panel - Preview */}
-      <RightPanel />
+      {/* Right Panel - Preview - hidden in readOnly mode */}
+      {!readOnly && <RightPanel />}
     </div>
   );
 }

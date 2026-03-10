@@ -98,6 +98,55 @@ class StrategyService:
     def __init__(self, db: AsyncSession):
         self.db = db
 
+    async def _generate_unique_name(self, tenant_id: UUID, base_name: str) -> str:
+        """Generate a unique strategy name by appending (1), (2), etc. if needed.
+
+        Args:
+            tenant_id: Tenant UUID for scoping the uniqueness check
+            base_name: The requested strategy name
+
+        Returns:
+            A unique name, either the original or with a numeric suffix
+        """
+        import re
+
+        # Strip any existing suffix like (1), (2) from the base name
+        suffix_pattern = re.compile(r"\s*\(\d+\)$")
+        clean_name = suffix_pattern.sub("", base_name).strip()
+
+        # Find all strategies with names matching the pattern "name" or "name (N)"
+        like_pattern = f"{clean_name}%"
+        query = select(Strategy.name).where(
+            Strategy.tenant_id == tenant_id,
+            Strategy.name.like(like_pattern),
+        )
+        result = await self.db.execute(query)
+        existing_names = {row[0] for row in result.fetchall()}
+
+        # If the exact name doesn't exist, use it
+        if base_name not in existing_names:
+            return base_name
+
+        # If clean_name doesn't exist and differs from base_name, try it
+        if clean_name != base_name and clean_name not in existing_names:
+            return clean_name
+
+        # Find the highest existing suffix number
+        max_suffix = 0
+        suffix_extract = re.compile(rf"^{re.escape(clean_name)}\s*\((\d+)\)$")
+
+        for name in existing_names:
+            if name == clean_name:
+                # Base name exists, we need at least (1)
+                max_suffix = max(max_suffix, 0)
+            else:
+                match = suffix_extract.match(name)
+                if match:
+                    max_suffix = max(max_suffix, int(match.group(1)))
+
+        # Return with the next suffix
+        return f"{clean_name} ({max_suffix + 1})"
+
     async def create_strategy(
         self,
         tenant_id: UUID,
@@ -130,12 +179,15 @@ class StrategyService:
         # Map rebalance frequency to a timeframe for DB storage
         timeframe = _rebalance_to_timeframe(ast.rebalance)
 
+        # Generate unique name (adds suffix if name already exists)
+        unique_name = await self._generate_unique_name(tenant_id, data.name)
+
         # Use nested transaction for atomicity (strategy + version created together)
         async with self.db.begin_nested():
             # Create strategy record
             strategy = Strategy(
                 tenant_id=tenant_id,
-                name=data.name,
+                name=unique_name,
                 description=data.description,
                 status=STRATEGY_STATUS_DRAFT,
                 current_version=1,
@@ -270,7 +322,9 @@ class StrategyService:
         Raises:
             ValueError: If status transition is invalid or config is invalid.
         """
-        strategy = await self._get_strategy_by_id(tenant_id, strategy_id)
+        # Use for_update=True to acquire row-level lock and prevent race conditions
+        # when multiple saves happen concurrently (e.g., rapid save clicks)
+        strategy = await self._get_strategy_by_id(tenant_id, strategy_id, for_update=True)
         if not strategy:
             return None
 
@@ -342,7 +396,7 @@ class StrategyService:
         strategy_id: UUID,
     ) -> bool:
         """Soft delete (archive) a strategy."""
-        strategy = await self._get_strategy_by_id(tenant_id, strategy_id)
+        strategy = await self._get_strategy_by_id(tenant_id, strategy_id, for_update=True)
         if not strategy:
             return False
 
@@ -360,7 +414,7 @@ class StrategyService:
         Raises:
             ValueError: If status transition is not allowed.
         """
-        strategy = await self._get_strategy_by_id(tenant_id, strategy_id)
+        strategy = await self._get_strategy_by_id(tenant_id, strategy_id, for_update=True)
         if not strategy:
             return None
 
@@ -383,7 +437,7 @@ class StrategyService:
         Raises:
             ValueError: If status transition is not allowed.
         """
-        strategy = await self._get_strategy_by_id(tenant_id, strategy_id)
+        strategy = await self._get_strategy_by_id(tenant_id, strategy_id, for_update=True)
         if not strategy:
             return None
 
@@ -805,13 +859,24 @@ class StrategyService:
     # Private helpers
     # ===================
 
-    async def _get_strategy_by_id(self, tenant_id: UUID, strategy_id: UUID) -> Strategy | None:
-        """Get strategy ensuring tenant isolation."""
+    async def _get_strategy_by_id(
+        self, tenant_id: UUID, strategy_id: UUID, for_update: bool = False
+    ) -> Strategy | None:
+        """Get strategy ensuring tenant isolation.
+
+        Args:
+            tenant_id: Tenant UUID for isolation
+            strategy_id: Strategy UUID
+            for_update: If True, acquires row-level lock (SELECT FOR UPDATE)
+                       to prevent concurrent modifications. Use when modifying.
+        """
         stmt = (
             select(Strategy)
             .where(Strategy.id == strategy_id)
             .where(Strategy.tenant_id == tenant_id)
         )
+        if for_update:
+            stmt = stmt.with_for_update()
         result = await self.db.execute(stmt)
         return result.scalar_one_or_none()
 

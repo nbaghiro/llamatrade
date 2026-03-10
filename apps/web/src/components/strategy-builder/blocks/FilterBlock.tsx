@@ -9,21 +9,24 @@ interface FilterBlockProps {
   block: FilterBlockType;
   allocationPercent?: number;
   onEditFilter?: () => void;
+  readOnly?: boolean;
 }
 
-export function FilterBlock({ block, allocationPercent, onEditFilter }: FilterBlockProps) {
+export function FilterBlock({ block, allocationPercent, onEditFilter, readOnly }: FilterBlockProps) {
   const { ui, selectBlock, toggleExpand, deleteBlock } = useStrategyBuilderStore();
   const theme = useBlockTheme();
   const filterColors = theme.filter;
   const allocationBadgeColors = theme.allocation;
-  const isSelected = ui.selectedBlockId === block.id;
+  const isSelected = !readOnly && ui.selectedBlockId === block.id;
   const isExpanded = ui.expandedBlocks.has(block.id);
 
   const universeInfo = FILTER_UNIVERSES.find((u) => u.value === block.config.universe);
 
   const handleClick = (e: React.MouseEvent) => {
     e.stopPropagation();
-    selectBlock(block.id);
+    if (!readOnly) {
+      selectBlock(block.id);
+    }
   };
 
   const handleExpandClick = (e: React.MouseEvent) => {
@@ -38,7 +41,9 @@ export function FilterBlock({ block, allocationPercent, onEditFilter }: FilterBl
 
   const handleDoubleClick = (e: React.MouseEvent) => {
     e.stopPropagation();
-    onEditFilter?.();
+    if (!readOnly) {
+      onEditFilter?.();
+    }
   };
 
   // Build compact display text: "Top 10 Momentum (6m) · S&P 500"
@@ -62,22 +67,25 @@ export function FilterBlock({ block, allocationPercent, onEditFilter }: FilterBl
       {/* Filter pill - violet inline style */}
       <div
         className={`
-          inline-flex items-center gap-1.5 pl-1.5 pr-3 py-1.5 rounded-full cursor-pointer
+          inline-flex items-center gap-1.5 py-1.5 rounded-full
           transition-all duration-150 select-none
           ${filterColors.bg} text-white text-sm
-          ${isSelected ? `ring-2 ${filterColors.ring} ring-offset-2 ring-offset-white dark:ring-offset-gray-900` : filterColors.hover}
+          ${readOnly ? 'cursor-default pl-3 pr-3' : 'cursor-pointer pl-1.5 pr-3'}
+          ${isSelected ? `ring-2 ${filterColors.ring} ring-offset-2 ring-offset-white dark:ring-offset-gray-900` : readOnly ? '' : filterColors.hover}
         `}
         onClick={handleClick}
         onDoubleClick={handleDoubleClick}
       >
-        {/* Delete button */}
-        <button
-          onClick={handleDeleteClick}
-          className={`p-0.5 rounded-full ${filterColors.hover} transition-colors`}
-          title="Delete"
-        >
-          <X className="w-3.5 h-3.5" />
-        </button>
+        {/* Delete button - hidden in readOnly mode */}
+        {!readOnly && (
+          <button
+            onClick={handleDeleteClick}
+            className={`p-0.5 rounded-full ${filterColors.hover} transition-colors`}
+            title="Delete"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        )}
 
         {/* Expand toggle */}
         <button

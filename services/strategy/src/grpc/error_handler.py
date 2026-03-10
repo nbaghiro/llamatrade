@@ -42,10 +42,31 @@ def handle_service_errors[**P, T](
             raise
         except IntegrityError as e:
             logger.warning(f"Integrity error in {func.__name__}: {e}")
-            raise ConnectError(
-                Code.FAILED_PRECONDITION,
-                "Data constraint violation. The operation conflicts with existing data.",
-            )
+            # Provide more specific error messages based on constraint
+            # Check both e.orig and e for the constraint name (different drivers format differently)
+            error_str = str(e.orig).lower() if e.orig else ""
+            error_str_full = str(e).lower()
+            combined_error = f"{error_str} {error_str_full}"
+
+            if "uq_strategy_tenant_name" in combined_error or (
+                "strategies" in combined_error
+                and "name" in combined_error
+                and "unique" in combined_error
+            ):
+                message = (
+                    "A strategy with this name already exists. Please choose a different name."
+                )
+            elif "uq_version_strategy_version" in combined_error or (
+                "strategy_versions" in combined_error
+                and "version" in combined_error
+                and "unique" in combined_error
+            ):
+                message = "Version conflict detected. Please refresh and try again."
+            else:
+                # Log the full error for debugging
+                logger.warning(f"Unknown integrity error pattern: {combined_error}")
+                message = "Data constraint violation. The operation conflicts with existing data."
+            raise ConnectError(Code.FAILED_PRECONDITION, message)
         except OperationalError as e:
             logger.error(f"Database operational error in {func.__name__}: {e}")
             raise ConnectError(

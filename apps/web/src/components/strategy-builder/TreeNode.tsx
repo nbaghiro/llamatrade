@@ -16,9 +16,10 @@ interface TreeNodeProps {
   depth?: number;
   isLast?: boolean;
   parentWeightId?: BlockId;
+  readOnly?: boolean;
 }
 
-export function TreeNode({ blockId, depth = 0, isLast = true, parentWeightId }: TreeNodeProps) {
+export function TreeNode({ blockId, depth = 0, isLast = true, parentWeightId, readOnly }: TreeNodeProps) {
   const { tree, ui } = useStrategyBuilderStore();
   const block = tree.blocks[blockId];
 
@@ -49,19 +50,19 @@ export function TreeNode({ blockId, depth = 0, isLast = true, parentWeightId }: 
   const renderBlock = () => {
     switch (block.type) {
       case 'root':
-        return <RootBlock block={block} />;
+        return <RootBlock block={block} readOnly={readOnly} />;
       case 'asset':
-        return <AssetBlock block={block} allocationPercent={allocationPercent} />;
+        return <AssetBlock block={block} allocationPercent={allocationPercent} readOnly={readOnly} />;
       case 'group':
-        return <GroupBlock block={block} allocationPercent={allocationPercent} />;
+        return <GroupBlock block={block} allocationPercent={allocationPercent} readOnly={readOnly} />;
       case 'weight':
-        return <WeightBlock block={block} allocationPercent={allocationPercent} />;
+        return <WeightBlock block={block} allocationPercent={allocationPercent} readOnly={readOnly} />;
       case 'if':
-        return <IfBlock block={block} allocationPercent={allocationPercent} />;
+        return <IfBlock block={block} allocationPercent={allocationPercent} readOnly={readOnly} />;
       case 'else':
-        return <ElseBlock block={block} allocationPercent={allocationPercent} />;
+        return <ElseBlock block={block} allocationPercent={allocationPercent} readOnly={readOnly} />;
       case 'filter':
-        return <FilterBlock block={block} allocationPercent={allocationPercent} />;
+        return <FilterBlock block={block} allocationPercent={allocationPercent} readOnly={readOnly} />;
       default:
         return null;
     }
@@ -109,17 +110,20 @@ export function TreeNode({ blockId, depth = 0, isLast = true, parentWeightId }: 
                   depth={depth + 1}
                   isLast={index === block.childIds.length - 1}
                   parentWeightId={childWeightId}
+                  readOnly={readOnly}
                 />
               ))}
             </div>
 
-            {/* Add block button */}
-            <div className="relative pl-6 mt-3">
-              {/* Connector for add button */}
-              <div className="absolute left-3 top-0 h-7 w-0.5 bg-gray-300 dark:bg-gray-600" />
-              <div className="absolute left-3 top-7 w-3 h-0.5 bg-gray-300 dark:bg-gray-600" />
-              <AddBlockButton parentId={blockId} />
-            </div>
+            {/* Add block button - hidden in readOnly mode */}
+            {!readOnly && (
+              <div className="relative pl-6 mt-3">
+                {/* Connector for add button */}
+                <div className="absolute left-3 top-0 h-7 w-0.5 bg-gray-300 dark:bg-gray-600" />
+                <div className="absolute left-3 top-7 w-3 h-0.5 bg-gray-300 dark:bg-gray-600" />
+                <AddBlockButton parentId={blockId} />
+              </div>
+            )}
           </div>
         )}
       </div>

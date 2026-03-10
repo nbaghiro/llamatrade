@@ -11,7 +11,7 @@ export default function StrategyEditorPage() {
   const navigate = useNavigate();
   const templateId = searchParams.get('template');
 
-  const { loadStrategy, loadTemplate, loading, error, clearError } =
+  const { loadStrategy, loadTemplate, createNew, loading, error, clearError, tree, isDirty } =
     useStrategyBuilderStore();
 
   useEffect(() => {
@@ -21,10 +21,32 @@ export default function StrategyEditorPage() {
     } else if (templateId) {
       // Create from template
       loadTemplate(templateId);
+    } else {
+      // New strategy without template
+      // Check if tree was already populated (e.g., from preview dialog)
+      const currentTree = useStrategyBuilderStore.getState().tree;
+      const hasContent = Object.keys(currentTree.blocks).length > 1;
+      if (!hasContent) {
+        // Only create new if tree is empty
+        createNew();
+      }
     }
-    // Note: Don't call createNew() here - state is already set by NewStrategyPage
-    // when navigating from the template picker
-  }, [id, templateId, loadStrategy, loadTemplate]);
+  }, [id, templateId, loadStrategy, loadTemplate, createNew]);
+
+  // Warn on browser refresh/close with unsaved changes
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (isDirty) {
+        e.preventDefault();
+        // Modern browsers ignore custom messages, but returnValue must be set
+        e.returnValue = '';
+        return '';
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [isDirty]);
 
   const handleBack = () => {
     navigate('/strategies');
@@ -44,8 +66,10 @@ export default function StrategyEditorPage() {
     );
   }
 
-  // Error state
-  if (error) {
+  // Error state - only show full-page error for load failures
+  // If tree has blocks beyond just root, load succeeded and save errors show inline
+  const isLoadError = error && Object.keys(tree.blocks).length <= 1;
+  if (isLoadError) {
     return (
       <div className="flex items-center justify-center h-[calc(100vh-56px)]">
         <div className="text-center max-w-md">

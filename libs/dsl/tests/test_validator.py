@@ -48,7 +48,7 @@ class TestValidateStrategy:
     def test_strategy_invalid_rebalance(self):
         strategy = Strategy(
             name="Test",
-            rebalance="invalid",  # type: ignore
+            rebalance="invalid",
             children=[Asset(symbol="VTI", weight=100)],
         )
         result = validate(strategy)

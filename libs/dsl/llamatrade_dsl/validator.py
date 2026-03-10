@@ -270,6 +270,14 @@ class Validator:
                         )
                     else:
                         total_weight += child.weight
+                elif isinstance(child, Group):
+                    if child.weight is None:
+                        self._error(
+                            "Group must have :weight when parent uses method: specified",
+                            f"{path}.children[{i}]",
+                        )
+                    else:
+                        total_weight += child.weight
 
             # Allow some tolerance for rounding
             if weight.children and abs(total_weight - 100.0) > 0.01:
@@ -278,12 +286,17 @@ class Validator:
                     f"{path}.children",
                 )
 
-        # For non-specified methods, assets should NOT have weights
+        # For non-specified methods, assets and groups should NOT have weights
         else:
             for i, child in enumerate(weight.children):
                 if isinstance(child, Asset) and child.weight is not None:
                     self._error(
                         f"Asset should not have :weight when parent uses method: {weight.method}",
+                        f"{path}.children[{i}]",
+                    )
+                elif isinstance(child, Group) and child.weight is not None:
+                    self._error(
+                        f"Group should not have :weight when parent uses method: {weight.method}",
                         f"{path}.children[{i}]",
                     )
 

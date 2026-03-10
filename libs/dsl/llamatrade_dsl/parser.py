@@ -279,12 +279,22 @@ class Parser:
             )
 
     def _parse_group(self) -> Group:
-        """Parse (group "name" children...)."""
+        """Parse (group "name" [:weight N] children...)."""
         start = self._start_location()
         self._expect("LPAREN")
         self._expect_symbol("group")
 
         name = self._parse_string()
+
+        # Parse optional :weight
+        weight: float | None = None
+        if self._peek_keyword() == "weight":
+            self.pos += 1
+            tok = self._current()
+            if tok is None or tok[0] != "NUMBER":
+                raise ParseError("Expected number for :weight")
+            weight = float(tok[1])
+            self.pos += 1
 
         children: list[Block] = []
         while (tok := self._current()) is not None and tok[0] != "RPAREN":
@@ -292,7 +302,9 @@ class Parser:
 
         self._expect("RPAREN")
 
-        return Group(name=name, children=children, location=self._make_location(start))
+        return Group(
+            name=name, children=children, weight=weight, location=self._make_location(start)
+        )
 
     def _parse_weight(self) -> Weight:
         """Parse (weight :method <method> [:lookback N] [:top N] children...)."""

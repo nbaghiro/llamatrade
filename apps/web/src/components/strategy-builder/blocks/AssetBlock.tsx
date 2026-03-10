@@ -5,18 +5,21 @@ import { useBlockTheme } from '../useTheme';
 interface AssetBlockProps {
   block: AssetBlockType;
   allocationPercent?: number;
+  readOnly?: boolean;
 }
 
-export function AssetBlock({ block, allocationPercent }: AssetBlockProps) {
+export function AssetBlock({ block, allocationPercent, readOnly }: AssetBlockProps) {
   const { ui, selectBlock } = useStrategyBuilderStore();
   const theme = useBlockTheme();
   const assetColors = theme.asset;
   const allocationBadgeColors = theme.allocation;
-  const isSelected = ui.selectedBlockId === block.id;
+  const isSelected = !readOnly && ui.selectedBlockId === block.id;
 
   const handleClick = (e: React.MouseEvent) => {
     e.stopPropagation();
-    selectBlock(block.id);
+    if (!readOnly) {
+      selectBlock(block.id);
+    }
   };
 
   return (
@@ -24,12 +27,13 @@ export function AssetBlock({ block, allocationPercent }: AssetBlockProps) {
       data-testid="asset-block"
       data-symbol={block.symbol}
       className={`
-        flex items-center gap-2 px-3 py-2.5 rounded-lg cursor-pointer
+        flex items-center gap-2 px-3 py-2.5 rounded-lg
         transition-all duration-150 select-none
         ${assetColors.bg} border
+        ${readOnly ? 'cursor-default' : 'cursor-pointer'}
         ${isSelected
           ? `${assetColors.borderSelected} ${assetColors.ringSelected}`
-          : `${assetColors.border} ${assetColors.borderHover}`
+          : `${assetColors.border} ${readOnly ? '' : assetColors.borderHover}`
         }
       `}
       onClick={handleClick}

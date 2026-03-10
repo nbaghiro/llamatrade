@@ -1250,6 +1250,6 @@ class AIStrategyGenerator:
 
 ## Related Documentation
 
+- [Strategy Execution](strategy-execution.md) - How strategies compile, evaluate, and generate orders
 - [Strategy Service](services/strategy.md) - Strategy service implementation
-- [Strategy Templates](strategy-templates.md) - Visual Strategy Builder templates
 - [Trading Strategies](trading-strategies.md) - Algorithmic trading concepts

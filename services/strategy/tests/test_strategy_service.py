@@ -183,6 +183,11 @@ class TestCreateStrategy:
 
         mock_db.refresh = AsyncMock(side_effect=set_strategy_attrs)
 
+        # Mock execute to return proper result with fetchall()
+        mock_result = MagicMock()
+        mock_result.fetchall.return_value = []  # No existing names
+        mock_db.execute = AsyncMock(return_value=mock_result)
+
         data = StrategyCreate(
             name="Test RSI Strategy",
             description="A test strategy",

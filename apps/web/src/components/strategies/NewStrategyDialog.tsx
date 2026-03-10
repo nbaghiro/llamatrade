@@ -18,10 +18,8 @@ import {
   type StrategyTemplate,
 } from '../../data/strategy-templates';
 import { listTemplates } from '../../services/strategy';
-import { fromDSLString } from '../../services/strategy-serializer';
 import { useStrategyBuilderStore } from '../../store/strategy-builder';
-import type { BlockId } from '../../types/strategy-builder';
-import { hasChildren } from '../../types/strategy-builder';
+import { useUIStore } from '../../store/ui';
 
 const DIFFICULTY_COLORS: Record<TemplateDifficulty, string> = {
   [TemplateDifficulty.UNSPECIFIED]: 'bg-gray-100 text-gray-700 dark:bg-gray-900/30 dark:text-gray-400',
@@ -166,10 +164,10 @@ function TemplateCard({ template, index, onSelect }: TemplateCardProps) {
         {/* Badges */}
         <div className="flex items-center gap-2 flex-wrap">
           <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${difficultyColor}`}>
-            {template.difficulty}
+            {DIFFICULTY_LABELS[template.difficulty] || template.difficulty}
           </span>
           <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${categoryColor}`}>
-            {template.category}
+            {CATEGORY_LABELS[template.category] || template.category}
           </span>
         </div>
       </div>
@@ -180,6 +178,7 @@ function TemplateCard({ template, index, onSelect }: TemplateCardProps) {
 export default function NewStrategyDialog({ isOpen, onClose }: NewStrategyDialogProps) {
   const navigate = useNavigate();
   const { createNew } = useStrategyBuilderStore();
+  const { openPreviewDialog, previewDialogOpen } = useUIStore();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<TemplateCategory | 'all'>('all');
   const [selectedDifficulty, setSelectedDifficulty] = useState<TemplateDifficulty | 'all'>('all');
@@ -220,19 +219,20 @@ export default function NewStrategyDialog({ isOpen, onClose }: NewStrategyDialog
     fetchTemplates();
   }, [isOpen]);
 
-  // Handle ESC key to close dialog
+  // Handle ESC key to close dialog (only if preview is not open)
   useEffect(() => {
     if (!isOpen) return;
 
     function handleKeyDown(e: KeyboardEvent) {
-      if (e.key === 'Escape') {
+      // Don't close if preview dialog is open - let preview handle ESC
+      if (e.key === 'Escape' && !previewDialogOpen) {
         onClose();
       }
     }
 
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, onClose]);
+  }, [isOpen, onClose, previewDialogOpen]);
 
   const filteredTemplates = useMemo(() => {
     return templates.filter((template) => {
@@ -253,50 +253,8 @@ export default function NewStrategyDialog({ isOpen, onClose }: NewStrategyDialog
   };
 
   const handleSelectTemplate = (template: StrategyTemplate) => {
-    // Parse the S-expression DSL into a block tree
-    const parseResult = fromDSLString(template.config_sexpr);
-
-    if (!parseResult) {
-      // Fallback: create empty strategy with just the name if DSL parsing fails
-      createNew();
-      useStrategyBuilderStore.setState({
-        strategyName: template.name,
-        strategyDescription: template.description,
-      });
-      onClose();
-      navigate('/strategies/builder');
-      return;
-    }
-
-    const { tree, metadata } = parseResult;
-
-    const expandedBlocks = new Set<BlockId>();
-    for (const block of Object.values(tree.blocks)) {
-      if (hasChildren(block)) {
-        expandedBlocks.add(block.id);
-      }
-    }
-
-    useStrategyBuilderStore.setState({
-      tree,
-      ui: {
-        selectedBlockId: null,
-        expandedBlocks,
-        editingBlockId: null,
-      },
-      past: [],
-      future: [],
-      strategyId: null,
-      strategyName: metadata.name || template.name,
-      strategyDescription: template.description,
-      timeframe: metadata.timeframe || '1D',
-      isDirty: true,
-      loading: false,
-      error: null,
-    });
-
-    onClose();
-    navigate('/strategies/builder');
+    // Open preview dialog instead of navigating directly
+    openPreviewDialog(template);
   };
 
   if (!isOpen) return null;
@@ -327,9 +285,10 @@ export default function NewStrategyDialog({ isOpen, onClose }: NewStrategyDialog
         </div>
 
         {/* Search and Filter */}
-        <div className="px-6 py-3 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50">
-          <div className="flex flex-wrap items-center gap-3">
-            <div className="relative w-64">
+        <div className="px-6 py-3 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 space-y-3">
+          {/* Row 1: Search, Categories, Count */}
+          <div className="flex items-center gap-3">
+            <div className="relative w-64 flex-shrink-0">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
               <input
                 type="text"
@@ -368,37 +327,48 @@ export default function NewStrategyDialog({ isOpen, onClose }: NewStrategyDialog
               ))}
             </div>
 
-            {/* Vertical Separator */}
-            <div className="w-px h-8 bg-gray-300 dark:bg-gray-600" />
-
-            {/* Difficulty Filter */}
-            <div className="flex flex-wrap gap-2">
-              <span className="text-xs text-gray-400 dark:text-gray-500 self-center mr-1 uppercase tracking-wide">
-                Level
+            {/* Template Count - pinned right */}
+            <div className="ml-auto flex-shrink-0">
+              <span className="text-sm text-gray-500 dark:text-gray-400">
+                {loading ? (
+                  <span className="text-gray-400">...</span>
+                ) : (
+                  <>
+                    <span className="font-semibold text-gray-700 dark:text-gray-300">{filteredTemplates.length}</span>
+                    {' '}{filteredTemplates.length === 1 ? 'template' : 'templates'}
+                  </>
+                )}
               </span>
-              {ALL_DIFFICULTIES.map((difficulty) => (
-                <button
-                  key={difficulty}
-                  onClick={() => setSelectedDifficulty(selectedDifficulty === difficulty ? 'all' : difficulty)}
-                  className={`px-3 py-1.5 text-sm rounded-lg border transition-colors ${
-                    selectedDifficulty === difficulty
-                      ? difficulty === TemplateDifficulty.BEGINNER
-                        ? 'bg-green-600 text-white border-green-600'
-                        : difficulty === TemplateDifficulty.INTERMEDIATE
-                          ? 'bg-amber-500 text-white border-amber-500'
-                          : 'bg-red-600 text-white border-red-600'
-                      : 'bg-white dark:bg-gray-900 border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400 hover:border-primary-400'
-                  }`}
-                >
-                  {DIFFICULTY_LABELS[difficulty]}
-                </button>
-              ))}
             </div>
+          </div>
+
+          {/* Row 2: Difficulty Filter */}
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-gray-400 dark:text-gray-500 mr-1 uppercase tracking-wide">
+              Level
+            </span>
+            {ALL_DIFFICULTIES.map((difficulty) => (
+              <button
+                key={difficulty}
+                onClick={() => setSelectedDifficulty(selectedDifficulty === difficulty ? 'all' : difficulty)}
+                className={`px-3 py-1.5 text-sm rounded-lg border transition-colors ${
+                  selectedDifficulty === difficulty
+                    ? difficulty === TemplateDifficulty.BEGINNER
+                      ? 'bg-green-600 text-white border-green-600'
+                      : difficulty === TemplateDifficulty.INTERMEDIATE
+                        ? 'bg-amber-500 text-white border-amber-500'
+                        : 'bg-red-600 text-white border-red-600'
+                    : 'bg-white dark:bg-gray-900 border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400 hover:border-primary-400'
+                }`}
+              >
+                {DIFFICULTY_LABELS[difficulty]}
+              </button>
+            ))}
           </div>
         </div>
 
         {/* Scrollable Content */}
-        <div className="overflow-y-auto p-6 pb-10" style={{ maxHeight: 'calc(85vh - 160px)' }}>
+        <div className="overflow-y-auto p-6 pb-16" style={{ maxHeight: 'calc(85vh - 160px)' }}>
           {/* Loading State */}
           {loading && (
             <div className="flex items-center justify-center py-20">

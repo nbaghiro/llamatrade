@@ -399,4 +399,4 @@ class TestAbstractMethodEnforcement:
     def test_cannot_instantiate_base_strategy(self) -> None:
         """Test that BaseStrategy cannot be instantiated directly."""
         with pytest.raises(TypeError):
-            BaseStrategy()  # type: ignore[abstract]
+            BaseStrategy()

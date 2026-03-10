@@ -822,3 +822,11 @@ pytest tests/test_order_executor.py::test_submit_order_success
 - **Sessions**: Manual order placement only, no automated strategy execution
 - **Order Types**: Basic types only (market, limit), no complex orders
 - **Markets**: US equities only via Alpaca
+
+---
+
+## Related Documentation
+
+- [Strategy Execution](../strategy-execution.md) - How strategies compile, evaluate, and generate orders
+- [Strategy DSL](../strategy-dsl.md) - S-expression DSL reference
+- [Market Data Service](market-data.md) - Real-time and historical market data

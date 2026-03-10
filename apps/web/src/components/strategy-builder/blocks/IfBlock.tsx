@@ -10,12 +10,13 @@ import { useBlockTheme } from '../useTheme';
 interface IfBlockProps {
   block: IfBlockType;
   allocationPercent?: number;
+  readOnly?: boolean;
 }
 
-export function IfBlock({ block }: IfBlockProps) {
+export function IfBlock({ block, readOnly }: IfBlockProps) {
   const { ui, selectBlock, toggleExpand, updateCondition, deleteBlock, tree } = useStrategyBuilderStore();
   const theme = useBlockTheme();
-  const isSelected = ui.selectedBlockId === block.id;
+  const isSelected = !readOnly && ui.selectedBlockId === block.id;
   const isExpanded = ui.expandedBlocks.has(block.id);
   const [isEditing, setIsEditing] = useState(false);
   const blockRef = useRef<HTMLDivElement>(null);
@@ -28,7 +29,9 @@ export function IfBlock({ block }: IfBlockProps) {
 
   const handleClick = (e: React.MouseEvent) => {
     e.stopPropagation();
-    selectBlock(block.id);
+    if (!readOnly) {
+      selectBlock(block.id);
+    }
   };
 
   const handleExpandClick = (e: React.MouseEvent) => {
@@ -38,7 +41,9 @@ export function IfBlock({ block }: IfBlockProps) {
 
   const handleEditClick = (e: React.MouseEvent) => {
     e.stopPropagation();
-    setIsEditing(true);
+    if (!readOnly) {
+      setIsEditing(true);
+    }
   };
 
   const handleDeleteClick = (e: React.MouseEvent) => {
@@ -74,21 +79,24 @@ export function IfBlock({ block }: IfBlockProps) {
       <div
         data-testid="if-block"
         className={`
-          inline-flex items-center gap-1.5 pl-1.5 pr-3 py-1.5 rounded-full cursor-pointer
+          inline-flex items-center gap-1.5 py-1.5 rounded-full
           transition-all duration-150 select-none
           ${colors.bg} text-white text-sm
-          ${isSelected ? `ring-2 ${colors.ring} ring-offset-2 ring-offset-white dark:ring-offset-gray-900` : colors.hover}
+          ${readOnly ? 'cursor-default pl-3 pr-3' : 'cursor-pointer pl-1.5 pr-3'}
+          ${isSelected ? `ring-2 ${colors.ring} ring-offset-2 ring-offset-white dark:ring-offset-gray-900` : readOnly ? '' : colors.hover}
         `}
         onClick={handleClick}
       >
-        {/* Delete button */}
-        <button
-          onClick={handleDeleteClick}
-          className={`p-0.5 rounded-full ${colors.hover} transition-colors`}
-          title="Delete"
-        >
-          <X className="w-3.5 h-3.5" />
-        </button>
+        {/* Delete button - hidden in readOnly mode */}
+        {!readOnly && (
+          <button
+            onClick={handleDeleteClick}
+            className={`p-0.5 rounded-full ${colors.hover} transition-colors`}
+            title="Delete"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        )}
 
         {/* Expand toggle */}
         <button
@@ -102,14 +110,16 @@ export function IfBlock({ block }: IfBlockProps) {
         <span className="font-semibold">IF</span>
         <span className="font-normal opacity-90">{displayText}</span>
 
-        {/* Edit button */}
-        <button
-          onClick={handleEditClick}
-          className={`p-0.5 rounded-full ${colors.hover} transition-colors ml-1`}
-          title="Edit condition"
-        >
-          <Pencil className="w-3 h-3" />
-        </button>
+        {/* Edit button - hidden in readOnly mode */}
+        {!readOnly && (
+          <button
+            onClick={handleEditClick}
+            className={`p-0.5 rounded-full ${colors.hover} transition-colors ml-1`}
+            title="Edit condition"
+          >
+            <Pencil className="w-3 h-3" />
+          </button>
+        )}
       </div>
 
       {/* Inline Condition Editor Popover */}

@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 
 import NewStrategyDialog from '../../components/strategies/NewStrategyDialog';
+import StrategyPreviewDialog from '../../components/strategies/StrategyPreviewDialog';
 import { useAuthStore } from '../../store/auth';
 import { useBillingStore } from '../../store/billing';
 import { useUIStore } from '../../store/ui';
@@ -143,6 +144,9 @@ export default function Layout() {
 
       {/* New Strategy Dialog (global - works from any page) */}
       <NewStrategyDialog isOpen={newStrategyDialogOpen} onClose={closeNewStrategyDialog} />
+
+      {/* Strategy Preview Dialog (global - overlays on top of New Strategy Dialog) */}
+      <StrategyPreviewDialog />
     </div>
   );
 }

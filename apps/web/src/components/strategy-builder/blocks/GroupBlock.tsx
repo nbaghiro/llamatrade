@@ -8,16 +8,17 @@ import { useBlockTheme } from '../useTheme';
 interface GroupBlockProps {
   block: GroupBlockType;
   allocationPercent?: number;
+  readOnly?: boolean;
 }
 
-export function GroupBlock({ block, allocationPercent }: GroupBlockProps) {
+export function GroupBlock({ block, allocationPercent, readOnly }: GroupBlockProps) {
   const { ui, selectBlock, toggleExpand, setEditing, updateBlock } = useStrategyBuilderStore();
   const theme = useBlockTheme();
   const groupColors = theme.group;
   const allocationBadgeColors = theme.allocation;
-  const isSelected = ui.selectedBlockId === block.id;
+  const isSelected = !readOnly && ui.selectedBlockId === block.id;
   const isExpanded = ui.expandedBlocks.has(block.id);
-  const isEditing = ui.editingBlockId === block.id;
+  const isEditing = !readOnly && ui.editingBlockId === block.id;
   const inputRef = useRef<HTMLInputElement>(null);
   const [editValue, setEditValue] = useState(block.name);
 
@@ -30,13 +31,17 @@ export function GroupBlock({ block, allocationPercent }: GroupBlockProps) {
 
   const handleClick = (e: React.MouseEvent) => {
     e.stopPropagation();
-    selectBlock(block.id);
+    if (!readOnly) {
+      selectBlock(block.id);
+    }
   };
 
   const handleDoubleClick = (e: React.MouseEvent) => {
     e.stopPropagation();
-    setEditValue(block.name);
-    setEditing(block.id);
+    if (!readOnly) {
+      setEditValue(block.name);
+      setEditing(block.id);
+    }
   };
 
   const handleExpandClick = (e: React.MouseEvent) => {
@@ -63,9 +68,10 @@ export function GroupBlock({ block, allocationPercent }: GroupBlockProps) {
   return (
     <div
       className={`
-        flex items-center gap-3 px-4 py-3 rounded-lg border ${groupColors.bg} cursor-pointer
+        flex items-center gap-3 px-4 py-3 rounded-lg border ${groupColors.bg}
         transition-all duration-150 select-none
-        ${isSelected ? `${groupColors.borderSelected} ${groupColors.ringSelected}` : `${groupColors.border} ${groupColors.borderHover}`}
+        ${readOnly ? 'cursor-default' : 'cursor-pointer'}
+        ${isSelected ? `${groupColors.borderSelected} ${groupColors.ringSelected}` : `${groupColors.border} ${readOnly ? '' : groupColors.borderHover}`}
       `}
       onClick={handleClick}
       onDoubleClick={handleDoubleClick}

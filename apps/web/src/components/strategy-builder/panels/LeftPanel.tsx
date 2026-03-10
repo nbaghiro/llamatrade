@@ -43,18 +43,41 @@ export function LeftPanel() {
     clearError,
   } = useStrategyBuilderStore();
   const [isDetailsOpen, setIsDetailsOpen] = useState(true);
+  const [showLeaveConfirm, setShowLeaveConfirm] = useState(false);
+  const [savingAndExiting, setSavingAndExiting] = useState(false);
 
   const selectedBlock = ui.selectedBlockId ? getBlock(ui.selectedBlockId) : null;
   const canDelete = selectedBlock && selectedBlock.type !== 'root';
 
   const handleBack = () => {
+    if (isDirty) {
+      setShowLeaveConfirm(true);
+    } else {
+      navigate('/strategies');
+    }
+  };
+
+  const handleDiscard = () => {
+    setShowLeaveConfirm(false);
     navigate('/strategies');
   };
 
-  const handleSave = async () => {
+  const handleSaveAndExit = async () => {
+    setSavingAndExiting(true);
     const savedId = await saveStrategy();
+    setSavingAndExiting(false);
     if (savedId) {
-      // Navigate to the saved strategy (in case it was new)
+      setShowLeaveConfirm(false);
+      navigate('/strategies');
+    }
+    // If save failed, keep dialog open so user can see error
+  };
+
+  const handleSave = async () => {
+    const wasNew = !strategyId;
+    const savedId = await saveStrategy();
+    if (savedId && wasNew) {
+      // Only navigate when creating a new strategy, not when updating
       navigate(`/strategies/${savedId}`, { replace: true });
     }
   };
@@ -226,6 +249,53 @@ export function LeftPanel() {
       <div className="mt-auto pt-4 border-t border-gray-200 dark:border-gray-700">
         <ThemeSwitcher />
       </div>
+
+      {/* Unsaved changes confirmation dialog */}
+      {showLeaveConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div
+            className="absolute inset-0 bg-black/40"
+            onClick={() => !savingAndExiting && setShowLeaveConfirm(false)}
+          />
+          <div className="relative bg-white dark:bg-gray-900 rounded-xl shadow-2xl max-w-sm w-full mx-4 overflow-hidden">
+            <div className="p-5">
+              <h2 className="text-base font-semibold text-gray-900 dark:text-gray-100">
+                Save changes?
+              </h2>
+              <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                Your changes will be lost if you do not save them.
+              </p>
+            </div>
+            <div className="flex border-t border-gray-200 dark:border-gray-700">
+              <button
+                onClick={handleDiscard}
+                disabled={savingAndExiting}
+                className="flex-1 px-4 py-3 text-sm font-medium text-red-600 dark:text-red-400 hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-50 transition-colors border-r border-gray-200 dark:border-gray-700"
+              >
+                Discard
+              </button>
+              <button
+                onClick={() => setShowLeaveConfirm(false)}
+                disabled={savingAndExiting}
+                className="flex-1 px-4 py-3 text-sm font-medium text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-50 transition-colors border-r border-gray-200 dark:border-gray-700"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSaveAndExit}
+                disabled={savingAndExiting}
+                className="flex-1 px-4 py-3 text-sm font-medium text-primary-600 dark:text-primary-400 hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-50 transition-colors flex items-center justify-center gap-1.5"
+              >
+                {savingAndExiting ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  'Save'
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

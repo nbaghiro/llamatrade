@@ -7,18 +7,21 @@ import { useBlockTheme } from '../useTheme';
 interface ElseBlockProps {
   block: ElseBlockType;
   allocationPercent?: number;
+  readOnly?: boolean;
 }
 
-export function ElseBlock({ block }: ElseBlockProps) {
+export function ElseBlock({ block, readOnly }: ElseBlockProps) {
   const { ui, selectBlock, toggleExpand, deleteBlock } = useStrategyBuilderStore();
   const theme = useBlockTheme();
   const elseColors = theme.elseBlock;
-  const isSelected = ui.selectedBlockId === block.id;
+  const isSelected = !readOnly && ui.selectedBlockId === block.id;
   const isExpanded = ui.expandedBlocks.has(block.id);
 
   const handleClick = (e: React.MouseEvent) => {
     e.stopPropagation();
-    selectBlock(block.id);
+    if (!readOnly) {
+      selectBlock(block.id);
+    }
   };
 
   const handleExpandClick = (e: React.MouseEvent) => {
@@ -37,21 +40,24 @@ export function ElseBlock({ block }: ElseBlockProps) {
       <div
         data-testid="else-block"
         className={`
-          inline-flex items-center gap-1.5 pl-1.5 pr-3 py-1.5 rounded-full cursor-pointer
+          inline-flex items-center gap-1.5 py-1.5 rounded-full
           transition-all duration-150 select-none
           ${elseColors.bg} text-white text-sm
-          ${isSelected ? `ring-2 ${elseColors.ring} ring-offset-2 ring-offset-white dark:ring-offset-gray-900` : elseColors.hover}
+          ${readOnly ? 'cursor-default pl-3 pr-3' : 'cursor-pointer pl-1.5 pr-3'}
+          ${isSelected ? `ring-2 ${elseColors.ring} ring-offset-2 ring-offset-white dark:ring-offset-gray-900` : readOnly ? '' : elseColors.hover}
         `}
         onClick={handleClick}
       >
-        {/* Delete button */}
-        <button
-          onClick={handleDeleteClick}
-          className={`p-0.5 rounded-full ${elseColors.hover} transition-colors`}
-          title="Delete"
-        >
-          <X className="w-3.5 h-3.5" />
-        </button>
+        {/* Delete button - hidden in readOnly mode */}
+        {!readOnly && (
+          <button
+            onClick={handleDeleteClick}
+            className={`p-0.5 rounded-full ${elseColors.hover} transition-colors`}
+            title="Delete"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        )}
 
         {/* Expand toggle */}
         <button

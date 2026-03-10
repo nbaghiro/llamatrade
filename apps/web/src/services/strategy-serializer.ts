@@ -253,7 +253,15 @@ export function conditionToText(condition: ConditionExpression): string {
  */
 function operandToDSL(operand: ConditionOperand): string {
   if (operand.type === 'price') {
-    return operand.field === 'current' ? 'close' : operand.field;
+    // Backend DSL expects (price SYMBOL [:field]) format
+    // Field is optional keyword - only include non-default fields
+    const field = operand.field === 'current' ? 'close' : operand.field;
+    if (field === 'close') {
+      // close is default, omit it
+      return `(price ${operand.symbol})`;
+    }
+    // Other fields need :keyword syntax
+    return `(price ${operand.symbol} :${field})`;
   }
 
   if (operand.type === 'number') {
@@ -804,9 +812,6 @@ export function validateTreeComprehensive(tree: StrategyTree): ComprehensiveResu
   return validateStrategy(tree);
 }
 
-// Re-export validation utilities for convenience
-export { validateStrategy, getBlockIssues, blockHasError, blockHasWarning } from './validation';
-export type { ValidationIssue as ComprehensiveValidationIssue } from './validation';
 
 // ============================================
 // S-Expression DSL Parsing (config_sexpr → Block Tree)

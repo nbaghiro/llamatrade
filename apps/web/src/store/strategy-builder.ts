@@ -44,164 +44,23 @@ const DEBOUNCE_SAVE_MS = 2000;
 // Debounce timer reference
 let saveDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 
-// Create demo strategy with all block types
+// Create empty initial state (just root block, no demo content)
 function createInitialState(): { tree: StrategyTree; expandedBlocks: Set<BlockId> } {
-  // Generate all IDs upfront
   const rootId = uuidv4();
-  const weightSpecifiedId = uuidv4();
-  const coreGroupId = uuidv4();
-  const growthGroupId = uuidv4();
-  const bondsGroupId = uuidv4();
-  const coreWeightId = uuidv4();
-  const growthWeightId = uuidv4();
-  const spyId = uuidv4();
-  const vtiId = uuidv4();
-  const qqqId = uuidv4();
-  const arkkId = uuidv4();
-  const bndId = uuidv4();
-  const tltId = uuidv4();
 
   const blocks: Record<BlockId, Block> = {
-    // Root
     [rootId]: {
       id: rootId,
       type: 'root',
       parentId: null,
-      name: 'Core Satellite Strategy',
-      childIds: [weightSpecifiedId],
-    },
-
-    // Top-level specified weight
-    [weightSpecifiedId]: {
-      id: weightSpecifiedId,
-      type: 'weight',
-      parentId: rootId,
-      method: 'specified',
-      allocations: {
-        [coreGroupId]: 60,
-        [growthGroupId]: 25,
-        [bondsGroupId]: 15,
-      },
-      childIds: [coreGroupId, growthGroupId, bondsGroupId],
-    },
-
-    // Core Group (60%)
-    [coreGroupId]: {
-      id: coreGroupId,
-      type: 'group',
-      parentId: weightSpecifiedId,
-      name: 'Core Holdings',
-      childIds: [coreWeightId],
-    },
-
-    // Equal weight inside Core
-    [coreWeightId]: {
-      id: coreWeightId,
-      type: 'weight',
-      parentId: coreGroupId,
-      method: 'equal',
-      allocations: {},
-      childIds: [spyId, vtiId],
-    },
-
-    // Core assets
-    [spyId]: {
-      id: spyId,
-      type: 'asset',
-      parentId: coreWeightId,
-      symbol: 'SPY',
-      exchange: 'NYSEARCA',
-      displayName: 'SPDR S&P 500 ETF Trust',
-    },
-    [vtiId]: {
-      id: vtiId,
-      type: 'asset',
-      parentId: coreWeightId,
-      symbol: 'VTI',
-      exchange: 'NYSEARCA',
-      displayName: 'Vanguard Total Stock Market ETF',
-    },
-
-    // Growth Group (25%)
-    [growthGroupId]: {
-      id: growthGroupId,
-      type: 'group',
-      parentId: weightSpecifiedId,
-      name: 'Growth',
-      childIds: [growthWeightId],
-    },
-
-    // Inverse volatility weight inside Growth
-    [growthWeightId]: {
-      id: growthWeightId,
-      type: 'weight',
-      parentId: growthGroupId,
-      method: 'inverse_volatility',
-      allocations: {},
-      lookbackDays: 30,
-      childIds: [qqqId, arkkId],
-    },
-
-    // Growth assets
-    [qqqId]: {
-      id: qqqId,
-      type: 'asset',
-      parentId: growthWeightId,
-      symbol: 'QQQ',
-      exchange: 'NASDAQ',
-      displayName: 'Invesco QQQ Trust',
-    },
-    [arkkId]: {
-      id: arkkId,
-      type: 'asset',
-      parentId: growthWeightId,
-      symbol: 'ARKK',
-      exchange: 'NYSEARCA',
-      displayName: 'ARK Innovation ETF',
-    },
-
-    // Bonds Group (15%)
-    [bondsGroupId]: {
-      id: bondsGroupId,
-      type: 'group',
-      parentId: weightSpecifiedId,
-      name: 'Bonds',
-      childIds: [bndId, tltId],
-    },
-
-    // Bond assets (directly under group, no weight)
-    [bndId]: {
-      id: bndId,
-      type: 'asset',
-      parentId: bondsGroupId,
-      symbol: 'BND',
-      exchange: 'NYSEARCA',
-      displayName: 'Vanguard Total Bond Market ETF',
-    },
-    [tltId]: {
-      id: tltId,
-      type: 'asset',
-      parentId: bondsGroupId,
-      symbol: 'TLT',
-      exchange: 'NASDAQ',
-      displayName: 'iShares 20+ Year Treasury Bond ETF',
+      name: 'New Strategy',
+      childIds: [],
     },
   };
 
-  // Expand all parent blocks by default for demo
-  const expandedBlocks = new Set([
-    rootId,
-    weightSpecifiedId,
-    coreGroupId,
-    growthGroupId,
-    bondsGroupId,
-    coreWeightId,
-    growthWeightId,
-  ]);
-
   return {
     tree: { rootId, blocks },
-    expandedBlocks,
+    expandedBlocks: new Set([rootId]),
   };
 }
 
@@ -219,6 +78,7 @@ interface StrategyBuilderState {
 
   // View mode state
   viewMode: ViewMode;
+  compactView: boolean; // Hide edit controls for cleaner view
   dslCode: string;
   dslParseError: string | null;
 
@@ -297,6 +157,7 @@ interface StrategyBuilderState {
 
   // View mode operations
   setViewMode: (mode: ViewMode) => void;
+  toggleCompactView: () => void;
   updateDSLCode: (code: string) => void;
   syncTreeFromCode: () => boolean;
   getDSLCode: () => string;
@@ -403,6 +264,7 @@ export const useStrategyBuilderStore = create<StrategyBuilderState>()(
 
     // View mode state
     viewMode: 'tree' as ViewMode,
+    compactView: false,
     dslCode: '',
     dslParseError: null,
 
@@ -704,6 +566,12 @@ export const useStrategyBuilderStore = create<StrategyBuilderState>()(
         }
       },
 
+      toggleCompactView: () => {
+        set((s) => {
+          s.compactView = !s.compactView;
+        });
+      },
+
       updateDSLCode: (code) => {
         set((state) => {
           state.dslCode = code;
@@ -1003,6 +871,7 @@ export const useStrategyBuilderStore = create<StrategyBuilderState>()(
           };
 
           let savedStrategyId: string;
+          let savedName: string = state.strategyName;
 
           if (state.strategyId) {
             // Update existing
@@ -1016,6 +885,7 @@ export const useStrategyBuilderStore = create<StrategyBuilderState>()(
               parameters,
             });
             savedStrategyId = response.strategy?.id ?? state.strategyId;
+            savedName = response.strategy?.name ?? state.strategyName;
           } else {
             // Create new
             const response = await strategyClient.createStrategy({
@@ -1030,10 +900,17 @@ export const useStrategyBuilderStore = create<StrategyBuilderState>()(
               throw new Error('Failed to create strategy');
             }
             savedStrategyId = response.strategy.id;
+            savedName = response.strategy.name;
           }
 
           set((s) => {
             s.strategyId = savedStrategyId;
+            s.strategyName = savedName;
+            // Update root block name if it was changed by backend
+            const rootBlock = s.tree.blocks[s.tree.rootId];
+            if (rootBlock && rootBlock.type === 'root') {
+              rootBlock.name = savedName;
+            }
             s.isDirty = false;
             s.saving = false;
             // Update version tracking after successful save
@@ -1135,6 +1012,8 @@ export const useStrategyBuilderStore = create<StrategyBuilderState>()(
         }
         const rootId = uuidv4();
         set((state) => {
+          state.loading = false;
+          state.saving = false;
           state.tree = {
             rootId,
             blocks: {

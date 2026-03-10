@@ -1,7 +1,5 @@
 """Tests for IndicatorService to improve coverage."""
 
-# pyright: reportPrivateUsage=false
-
 import pytest
 
 from llamatrade_proto.generated.strategy_pb2 import (

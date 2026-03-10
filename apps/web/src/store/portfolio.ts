@@ -448,6 +448,11 @@ export const usePortfolioStore = create<PortfolioState>((set) => ({
             positions: [],   // Loaded separately via getStrategyPerformance
             recentActivity: [],
           }));
+
+          // Fall back to demo data if no strategies returned
+          if (strategies.length === 0) {
+            strategies = DEMO_STRATEGIES;
+          }
         } catch {
           // gRPC unavailable, fall back to demo data
           strategies = DEMO_STRATEGIES;

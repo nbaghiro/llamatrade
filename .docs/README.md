@@ -10,7 +10,7 @@ Documentation for the LlamaTrade algorithmic trading platform.
 |----------|-------------|
 | [Architecture](architecture.md) | System design, deployment, multi-tenancy |
 | [Strategy DSL](strategy-dsl.md) | S-expression DSL reference for strategies and allocations |
-| [Strategy Templates](strategy-templates.md) | Visual Strategy Builder templates |
+| [Strategy Execution](strategy-execution.md) | How strategies compile, evaluate, and generate orders |
 | [Trading Strategies](trading-strategies.md) | Algorithmic trading concepts and approaches |
 | [Asset Classes](asset-classes.md) | Tradeable asset class reference |
 
@@ -57,6 +57,6 @@ Implementation roadmaps and task tracking.
 ## Getting Started
 
 1. **New to LlamaTrade?** Start with [Architecture](architecture.md)
-2. **Building strategies?** See [Strategy DSL](strategy-dsl.md) and [Templates](strategy-templates.md)
+2. **Building strategies?** See [Strategy DSL](strategy-dsl.md) and [Strategy Execution](strategy-execution.md)
 3. **Understanding a service?** Check the [Services](#services) section
 4. **Why a decision was made?** Check [Decisions](#decisions)

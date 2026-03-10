@@ -4,14 +4,23 @@ import { hasChildren } from '../../types/strategy-builder';
 import { AddBlockButton } from './blocks/AddBlockButton';
 import { TreeNode } from './TreeNode';
 
-export function Canvas() {
-  const { tree, ui, selectBlock } = useStrategyBuilderStore();
+interface CanvasProps {
+  readOnly?: boolean;
+}
+
+export function Canvas({ readOnly }: CanvasProps) {
+  const { tree, ui, compactView, selectBlock } = useStrategyBuilderStore();
   const rootBlock = tree.blocks[tree.rootId];
   const isExpanded = ui.expandedBlocks.has(tree.rootId);
 
+  // Combine readOnly prop with compactView state
+  const hideEditControls = readOnly || compactView;
+
   // Deselect when clicking on empty canvas area
   const handleCanvasClick = () => {
-    selectBlock(null);
+    if (!hideEditControls) {
+      selectBlock(null);
+    }
   };
 
   // Root block is rendered separately in StrategyBuilder, so we render its children here
@@ -38,17 +47,20 @@ export function Canvas() {
                 blockId={childId}
                 depth={1}
                 isLast={index === childIds.length - 1}
+                readOnly={hideEditControls}
               />
             ))}
           </div>
 
-          {/* Add block button */}
-          <div className="relative pl-6 mt-4">
-            {/* Connector for add button */}
-            <div className="absolute left-3 top-0 h-7 w-0.5 bg-gray-300 dark:bg-gray-600" />
-            <div className="absolute left-3 top-7 w-3 h-0.5 bg-gray-300 dark:bg-gray-600" />
-            <AddBlockButton parentId={tree.rootId} />
-          </div>
+          {/* Add block button - hidden in readOnly/compact mode */}
+          {!hideEditControls && (
+            <div className="relative pl-6 mt-4">
+              {/* Connector for add button */}
+              <div className="absolute left-3 top-0 h-7 w-0.5 bg-gray-300 dark:bg-gray-600" />
+              <div className="absolute left-3 top-7 w-3 h-0.5 bg-gray-300 dark:bg-gray-600" />
+              <AddBlockButton parentId={tree.rootId} />
+            </div>
+          )}
         </div>
       )}
     </div>

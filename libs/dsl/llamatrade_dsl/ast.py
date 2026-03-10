@@ -304,22 +304,29 @@ class Weight:
 class Group:
     """Organizational grouping of allocations.
 
-    Groups don't affect allocation math - they're for organization.
+    Groups can have an optional weight for use in specified-weight portfolios.
 
     Examples:
         (group "US Equities"
           (weight :method equal
             (asset VTI)
             (asset VXF)))
+
+        (group "Equities" :weight 60
+          (weight :method equal
+            (asset VTI)
+            (asset VEA)))
     """
 
     name: str
     children: list[Block] = field(default_factory=_empty_block_list)
+    weight: float | None = None
     location: SourceLocation | None = None
 
     def __repr__(self) -> str:
+        weight_str = f" :weight {self.weight}" if self.weight is not None else ""
         children_str = " ".join(repr(c) for c in self.children)
-        return f'(group "{self.name}" {children_str})'
+        return f'(group "{self.name}"{weight_str} {children_str})'
 
 
 @dataclass(slots=True)

@@ -105,6 +105,7 @@ class WeightJSON(TypedDict, total=False):
 class GroupJSON(TypedDict, total=False):
     type: str  # "group"
     name: str
+    weight: float | None
     children: list[BlockJSON]
 
 
@@ -185,11 +186,14 @@ def _block_to_json(block: Block) -> BlockJSON:
 
 def _group_to_json(group: Group) -> GroupJSON:
     """Convert Group to JSON."""
-    return {
+    result: GroupJSON = {
         "type": "group",
         "name": group.name,
         "children": [_block_to_json(c) for c in group.children],
     }
+    if group.weight is not None:
+        result["weight"] = group.weight
+    return result
 
 
 def _weight_to_json(weight: Weight) -> WeightJSON:
@@ -366,6 +370,7 @@ def _group_from_json(data: dict[str, Any]) -> Group:
     return Group(
         name=data["name"],
         children=[_block_from_json(c) for c in data.get("children", [])],
+        weight=data.get("weight"),
     )
 
 
