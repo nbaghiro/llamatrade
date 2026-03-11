@@ -137,9 +137,13 @@ class TestBuildContext:
 
     @pytest.mark.asyncio
     async def test_build_context_none(self, agent_service: AgentService, session_id: UUID) -> None:
-        """Test building context with no UI context."""
+        """Test building context with no UI context returns default ContextData."""
         context = await agent_service._build_context(session_id, None)
-        assert context is None
+        # Returns ContextData with defaults and memory hint
+        assert context is not None
+        assert context.page is None
+        assert context.strategy_name is None
+        assert context.memory_hint is not None  # Always has memory hint
 
     @pytest.mark.asyncio
     async def test_build_context_with_page(
@@ -157,26 +161,20 @@ class TestBuildContext:
     async def test_build_context_with_strategy_id(
         self, agent_service: AgentService, session_id: UUID
     ) -> None:
-        """Test building context with strategy ID."""
-        strategy_id = str(uuid4())
-        ui_context = {"page": "strategy_detail", "strategy_id": strategy_id}
+        """Test building context with strategy data from UI context."""
+        # Strategy data is passed directly from frontend in ui_context
+        ui_context = {
+            "page": "strategy_detail",
+            "strategy_name": "My Strategy",
+            "strategy_dsl": "(strategy ...)",
+        }
 
-        # Mock the strategy fetch
-        with patch.object(
-            agent_service,
-            "_fetch_strategy_context",
-            return_value={
-                "name": "My Strategy",
-                "dsl_code": "(strategy ...)",
-                "status": "active",
-                "symbols": ["VTI", "BND"],
-            },
-        ):
-            context = await agent_service._build_context(session_id, ui_context)
+        context = await agent_service._build_context(session_id, ui_context)
 
         assert context is not None
         assert context.strategy_name == "My Strategy"
-        assert context.strategy_symbols == ["VTI", "BND"]
+        assert context.strategy_dsl == "(strategy ...)"
+        assert context.page == "strategy_detail"
 
 
 class TestExtractStrategyName:
@@ -304,12 +302,13 @@ class TestStreamMessage:
         session_id: UUID,
     ) -> None:
         """Test error handling in stream_message."""
-        # Force an error by not mocking conversation history
-        with patch.object(
-            agent_service,
-            "_get_conversation_history",
-            side_effect=Exception("DB Error"),
-        ):
+
+        # Create an async generator that raises an exception
+        async def mock_error_stream(*args, **kwargs):
+            raise Exception("LLM Error")
+            yield  # Makes this an async generator (never reached)
+
+        with patch.object(agent_service.llm_client, "stream", mock_error_stream):
             events = []
             async for event in agent_service.stream_message(session_id, "Hello"):
                 events.append(event)
@@ -317,7 +316,7 @@ class TestStreamMessage:
         # Should have error event
         error_events = [e for e in events if e.get("type") == STREAM_EVENT_TYPE_ERROR]
         assert len(error_events) == 1
-        assert "DB Error" in error_events[0].get("error", "")
+        assert "LLM Error" in error_events[0].get("error", "")
 
 
 class TestProcessMessage:

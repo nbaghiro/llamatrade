@@ -48,6 +48,7 @@ jobs:
           .venv/bin/pip install -e libs/compiler
           .venv/bin/pip install -e libs/proto
           # Install all services (to resolve their dependencies)
+          .venv/bin/pip install -e services/agent
           .venv/bin/pip install -e services/auth
           .venv/bin/pip install -e services/backtest[dev]
           .venv/bin/pip install -e services/billing
@@ -118,6 +119,14 @@ jobs:
         run: |
           pip install -e services/strategy[dev]
           cd services/strategy && pytest tests -v --cov=src --cov-report=term-missing
+
+      - name: Run agent tests with coverage
+        env:
+          DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/test
+          REDIS_URL: redis://localhost:6379
+        run: |
+          pip install -e services/agent[dev]
+          cd services/agent && pytest tests -v --cov=src --cov-report=term-missing
 
   lint-frontend:
     name: Lint & Type Check Frontend

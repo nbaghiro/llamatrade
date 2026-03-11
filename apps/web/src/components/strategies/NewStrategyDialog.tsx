@@ -3,7 +3,7 @@
  * Modal for creating a new strategy - select from templates or start from scratch.
  */
 
-import { ArrowRight, Loader2, Plus, Search, X } from 'lucide-react';
+import { ArrowRight, Loader2, Plus, Search, Sparkles, X } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
@@ -18,6 +18,7 @@ import {
   type StrategyTemplate,
 } from '../../data/strategy-templates';
 import { listTemplates } from '../../services/strategy';
+import { useAgentStore } from '../../store/agent';
 import { useStrategyBuilderStore } from '../../store/strategy-builder';
 import { useUIStore } from '../../store/ui';
 
@@ -179,6 +180,7 @@ export default function NewStrategyDialog({ isOpen, onClose }: NewStrategyDialog
   const navigate = useNavigate();
   const { createNew } = useStrategyBuilderStore();
   const { openPreviewDialog, previewDialogOpen } = useUIStore();
+  const { openChat } = useAgentStore();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<TemplateCategory | 'all'>('all');
   const [selectedDifficulty, setSelectedDifficulty] = useState<TemplateDifficulty | 'all'>('all');
@@ -252,6 +254,11 @@ export default function NewStrategyDialog({ isOpen, onClose }: NewStrategyDialog
     navigate('/strategies/builder');
   };
 
+  const handleAIGenerate = () => {
+    onClose();
+    openChat();
+  };
+
   const handleSelectTemplate = (template: StrategyTemplate) => {
     // Open preview dialog instead of navigating directly
     openPreviewDialog(template);
@@ -273,7 +280,7 @@ export default function NewStrategyDialog({ isOpen, onClose }: NewStrategyDialog
               New Strategy
             </h2>
             <p className="text-sm text-gray-500 dark:text-gray-400">
-              Start from scratch or choose a template
+              Create a new strategy or choose a template
             </p>
           </div>
           <button
@@ -390,14 +397,11 @@ export default function NewStrategyDialog({ isOpen, onClose }: NewStrategyDialog
             </div>
           )}
 
-          {/* Template Grid with Blank Card as first item */}
+          {/* Template Grid with Create New Card as first item */}
           {!loading && !error && (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-              {/* Blank Strategy Ghost Card */}
-              <button
-                onClick={handleStartBlank}
-                className="group relative h-full min-h-[200px] flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-gray-300 dark:border-gray-700 hover:border-primary-400 dark:hover:border-primary-500 bg-gradient-to-br from-gray-50/50 to-gray-100/50 dark:from-gray-900/50 dark:to-gray-800/30 hover:from-primary-50/60 hover:to-primary-100/40 dark:hover:from-primary-900/20 dark:hover:to-primary-800/10 transition-all overflow-hidden"
-              >
+              {/* Create New Card - Combined Blank + AI */}
+              <div className="relative h-full min-h-[200px] flex flex-col rounded-xl border-2 border-dashed border-gray-300 dark:border-gray-700 bg-gradient-to-br from-gray-50/50 to-gray-100/50 dark:from-gray-900/50 dark:to-gray-800/30 overflow-hidden">
                 {/* Decorative background pattern */}
                 <div className="absolute inset-0 opacity-[0.03] dark:opacity-[0.05]">
                   <svg className="w-full h-full" xmlns="http://www.w3.org/2000/svg">
@@ -410,23 +414,35 @@ export default function NewStrategyDialog({ isOpen, onClose }: NewStrategyDialog
                   </svg>
                 </div>
 
-                {/* Decorative corner accents */}
-                <div className="absolute top-3 left-3 w-8 h-8 border-l-2 border-t-2 border-gray-300 dark:border-gray-600 rounded-tl-lg opacity-50 group-hover:border-primary-400 dark:group-hover:border-primary-500 transition-colors" />
-                <div className="absolute bottom-3 right-3 w-8 h-8 border-r-2 border-b-2 border-gray-300 dark:border-gray-600 rounded-br-lg opacity-50 group-hover:border-primary-400 dark:group-hover:border-primary-500 transition-colors" />
-
                 {/* Content */}
-                <div className="relative z-10 flex flex-col items-center">
-                  <div className="p-4 rounded-2xl bg-white dark:bg-gray-800 shadow-sm border border-gray-200 dark:border-gray-700 text-gray-400 dark:text-gray-500 group-hover:border-primary-300 dark:group-hover:border-primary-600 group-hover:text-primary-500 dark:group-hover:text-primary-400 group-hover:shadow-md transition-all mb-4">
-                    <Plus className="w-8 h-8" strokeWidth={1.5} />
-                  </div>
-                  <span className="font-semibold text-gray-700 dark:text-gray-300 group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors">
-                    Start from Scratch
+                <div className="relative z-10 flex flex-col items-center justify-center flex-1 p-4">
+                  <span className="text-xs uppercase tracking-wider text-gray-400 dark:text-gray-500 mb-4">
+                    Create New
                   </span>
-                  <p className="text-sm text-gray-400 dark:text-gray-500 mt-1 text-center px-4">
-                    Design your own allocation
-                  </p>
+
+                  {/* Two icon buttons side by side */}
+                  <div className="flex items-center gap-3">
+                    {/* Blank Strategy */}
+                    <button
+                      onClick={handleStartBlank}
+                      className="group p-4 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 hover:border-primary-400 dark:hover:border-primary-500 hover:bg-primary-50 dark:hover:bg-primary-900/20 hover:shadow-md transition-all"
+                      title="Start from scratch"
+                    >
+                      <Plus className="w-6 h-6 text-gray-400 dark:text-gray-500 group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors" strokeWidth={1.5} />
+                    </button>
+
+                    {/* AI Generate */}
+                    <button
+                      onClick={handleAIGenerate}
+                      className="group p-4 rounded-xl border border-transparent hover:shadow-md transition-all text-white"
+                      style={{ background: 'linear-gradient(135deg, #2563EB 0%, #0891B2 100%)' }}
+                      title="Generate with AI"
+                    >
+                      <Sparkles className="w-6 h-6" strokeWidth={1.5} />
+                    </button>
+                  </div>
                 </div>
-              </button>
+              </div>
 
               {/* Template Cards */}
               {filteredTemplates.map((template, index) => (
