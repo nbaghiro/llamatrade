@@ -22,6 +22,7 @@ from sqlalchemy import Dialect, Enum
 from sqlalchemy.types import TypeDecorator
 
 from llamatrade_proto.generated import (
+    agent_pb2,
     backtest_pb2,
     billing_pb2,
     common_pb2,
@@ -770,3 +771,118 @@ class TemplateDifficultyType(_ProtoEnumType[strategy_pb2.TemplateDifficulty.Valu
         strategy_pb2.TEMPLATE_DIFFICULTY_ADVANCED: _TemplateDifficulty.ADVANCED,
     }
     _str_to_int = {v: k for k, v in _int_to_str.items()}
+
+
+# =============================================================================
+# Agent Enums
+# =============================================================================
+
+
+class _AgentSessionStatus(StrEnum):
+    ACTIVE = "active"
+    COMPLETED = "completed"
+    ERROR = "error"
+
+
+class _MessageRole(StrEnum):
+    USER = "user"
+    ASSISTANT = "assistant"
+    SYSTEM = "system"
+
+
+class _ArtifactType(StrEnum):
+    STRATEGY = "strategy"
+
+
+class AgentSessionStatusType(_ProtoEnumType[agent_pb2.AgentSessionStatus.ValueType]):
+    impl = Enum(
+        _AgentSessionStatus,
+        name="agent_session_status",
+        create_type=False,
+        values_callable=_enum_values,
+    )
+    _str_enum = _AgentSessionStatus
+    _int_to_str = {
+        agent_pb2.AGENT_SESSION_STATUS_ACTIVE: _AgentSessionStatus.ACTIVE,
+        agent_pb2.AGENT_SESSION_STATUS_COMPLETED: _AgentSessionStatus.COMPLETED,
+        agent_pb2.AGENT_SESSION_STATUS_ERROR: _AgentSessionStatus.ERROR,
+    }
+    _str_to_int = {v: k for k, v in _int_to_str.items()}
+
+
+class MessageRoleType(_ProtoEnumType[agent_pb2.MessageRole.ValueType]):
+    impl = Enum(
+        _MessageRole,
+        name="message_role",
+        create_type=False,
+        values_callable=_enum_values,
+    )
+    _str_enum = _MessageRole
+    _int_to_str = {
+        agent_pb2.MESSAGE_ROLE_USER: _MessageRole.USER,
+        agent_pb2.MESSAGE_ROLE_ASSISTANT: _MessageRole.ASSISTANT,
+        agent_pb2.MESSAGE_ROLE_SYSTEM: _MessageRole.SYSTEM,
+    }
+    _str_to_int = {v: k for k, v in _int_to_str.items()}
+
+
+class ArtifactTypeType(_ProtoEnumType[agent_pb2.ArtifactType.ValueType]):
+    impl = Enum(
+        _ArtifactType,
+        name="artifact_type",
+        create_type=False,
+        values_callable=_enum_values,
+    )
+    _str_enum = _ArtifactType
+    _int_to_str = {
+        agent_pb2.ARTIFACT_TYPE_STRATEGY: _ArtifactType.STRATEGY,
+    }
+    _str_to_int = {v: k for k, v in _int_to_str.items()}
+
+
+# =============================================================================
+# Memory Enums (not proto-backed, used directly as StrEnum)
+# =============================================================================
+
+
+class _MemoryFactCategory(StrEnum):
+    """Internal StrEnum for memory fact categories."""
+
+    USER_PREFERENCE = "user_preference"
+    RISK_TOLERANCE = "risk_tolerance"
+    INVESTMENT_GOAL = "investment_goal"
+    ASSET_PREFERENCE = "asset_preference"
+    STRATEGY_DECISION = "strategy_decision"
+    TRADING_BEHAVIOR = "trading_behavior"
+    FEEDBACK = "feedback"
+
+
+class MemoryFactCategoryType(TypeDecorator[str]):
+    """TypeDecorator for MemoryFactCategory enum.
+
+    Unlike proto-backed enums, this converts directly between StrEnum and DB string.
+    """
+
+    impl = Enum(
+        _MemoryFactCategory,
+        name="memory_fact_category",
+        create_type=False,
+        values_callable=_enum_values,
+    )
+    cache_ok = True
+
+    def process_bind_param(
+        self, value: str | _MemoryFactCategory | None, dialect: Dialect
+    ) -> str | None:
+        """Convert to DB value."""
+        if value is None:
+            return None
+        if isinstance(value, _MemoryFactCategory):
+            return value.value
+        return value.lower()
+
+    def process_result_value(self, value: str | None, dialect: Dialect) -> str | None:
+        """Return string value from DB."""
+        if value is None:
+            return None
+        return value.value if isinstance(value, _MemoryFactCategory) else value

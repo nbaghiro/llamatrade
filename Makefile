@@ -90,7 +90,7 @@ test: test-unit test-integration
 test-unit:
 	@. .venv/bin/activate 2>/dev/null || (python3 -m venv .venv && . .venv/bin/activate); \
 	echo "=== Running unit tests for all services ==="; \
-	for svc in auth strategy billing backtest trading market-data portfolio; do \
+	for svc in auth strategy billing backtest trading market-data portfolio agent; do \
 		echo ""; \
 		echo "=== Testing $$svc ==="; \
 		(cd services/$$svc && pytest tests/ -v); \
@@ -99,7 +99,7 @@ test-unit:
 test-unit-quick:
 	@. .venv/bin/activate 2>/dev/null || (python3 -m venv .venv && . .venv/bin/activate); \
 	echo "=== Running unit tests (quick mode) ==="; \
-	for svc in auth strategy billing backtest trading market-data portfolio; do \
+	for svc in auth strategy billing backtest trading market-data portfolio agent; do \
 		echo "=== $$svc ==="; \
 		(cd services/$$svc && pytest tests/ -q); \
 	done
@@ -157,6 +157,10 @@ test-market-data:
 test-portfolio:
 	@. .venv/bin/activate 2>/dev/null || (python3 -m venv .venv && . .venv/bin/activate); \
 	cd services/portfolio && pytest tests -v
+
+test-agent:
+	@. .venv/bin/activate 2>/dev/null || (python3 -m venv .venv && . .venv/bin/activate); \
+	cd services/agent && pytest tests -v
 
 test-frontend:
 	cd apps/web && npm test -- --run --passWithNoTests
@@ -314,7 +318,7 @@ help:
 	@echo "  make test-security         - Run tenant isolation tests"
 	@echo "  make test-<service>        - Run tests for specific service"
 	@echo "                               (auth, strategy, billing, backtest,"
-	@echo "                                trading, market-data, portfolio)"
+	@echo "                                trading, market-data, portfolio, agent)"
 	@echo "  make test-frontend         - Run frontend tests"
 	@echo ""
 	@echo "Linting & Quality:"
@@ -341,3 +345,4 @@ help:
 	@echo "Service Ports (HTTP + Connect Protocol):"
 	@echo "  auth:8810  strategy:8820  backtest:8830  market-data:8840"
 	@echo "  trading:8850  portfolio:8860  notification:8870  billing:8880"
+	@echo "  agent:8890"

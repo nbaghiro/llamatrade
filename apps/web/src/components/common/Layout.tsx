@@ -1,12 +1,16 @@
-import { CreditCard, LineChart, FlaskConical, ChevronDown, LogOut, User, Wallet } from 'lucide-react';
+import { CreditCard, LineChart, FlaskConical, ChevronDown, LogOut, Sparkles, User, Wallet } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { Outlet, NavLink, useNavigate } from 'react-router-dom';
+import { Outlet, NavLink, useNavigate, useLocation, useParams } from 'react-router-dom';
+
 
 import NewStrategyDialog from '../../components/strategies/NewStrategyDialog';
 import StrategyPreviewDialog from '../../components/strategies/StrategyPreviewDialog';
+import { useAgentStore } from '../../store/agent';
 import { useAuthStore } from '../../store/auth';
 import { useBillingStore } from '../../store/billing';
+import { useStrategyBuilderStore } from '../../store/strategy-builder';
 import { useUIStore } from '../../store/ui';
+import { AgentFAB } from '../agent/AgentFAB';
 
 import Logo from './Logo';
 import { ThemeToggle } from './ThemeToggle';
@@ -19,12 +23,38 @@ const navItems = [
 
 export default function Layout() {
   const navigate = useNavigate();
+  const location = useLocation();
+  const params = useParams();
   const logout = useAuthStore((state) => state.logout);
   const user = useAuthStore((state) => state.user);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
 
   const { subscription, fetchSubscription } = useBillingStore();
   const { newStrategyDialogOpen, openNewStrategyDialog, closeNewStrategyDialog } = useUIStore();
+  const openChat = useAgentStore((state) => state.openChat);
+
+  // Get strategy builder state for context injection
+  const strategyDSL = useStrategyBuilderStore((state) => state.getDSLCode());
+  const strategyName = useStrategyBuilderStore((state) => state.strategyName);
+
+  // Extract current page for agent context
+  const getCurrentPage = (): string => {
+    const path = location.pathname;
+    if (path.startsWith('/strategies/') && params.id) return 'strategy_detail';
+    if (path === '/strategies/builder') return 'strategy_detail';
+    if (path === '/strategies' || path === '/strategies/') return 'strategy_list';
+    if (path === '/backtest') return 'backtest_results';
+    if (path === '/portfolio') return 'portfolio';
+    if (path === '/dashboard') return 'dashboard';
+    return 'general';
+  };
+
+  const currentPage = getCurrentPage();
+
+  // Only include DSL context when on strategy builder page
+  const isOnStrategyBuilder = currentPage === 'strategy_detail';
+  const contextDSL = isOnStrategyBuilder ? strategyDSL : undefined;
+  const contextStrategyName = isOnStrategyBuilder ? strategyName : undefined;
 
   useEffect(() => {
     fetchSubscription();
@@ -66,6 +96,15 @@ export default function Layout() {
             </NavLink>
           ))}
 
+          {/* Copilot button (opens dialog) */}
+          <button
+            onClick={openChat}
+            className="flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-lg transition-colors text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 hover:bg-gray-50 dark:hover:bg-gray-800"
+          >
+            <Sparkles className="w-4 h-4" />
+            <span>Copilot</span>
+          </button>
+
           {/* Create Button */}
           <div className="ml-2">
             <button
@@ -76,20 +115,26 @@ export default function Layout() {
               <ChevronDown className="w-4 h-4" />
             </button>
           </div>
+
         </div>
 
-        {/* Right: User Menu */}
-        <div className="flex items-center gap-3">
+        {/* Right: Theme Toggle + User Menu */}
+        <div className="flex items-center gap-2">
+          {/* Theme Toggle */}
+          <ThemeToggle variant="inline" />
+
+          {/* User Menu */}
           <div className="relative">
             <button
               onClick={() => setUserMenuOpen(!userMenuOpen)}
-              className="flex items-center gap-2 p-1.5 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+              className="flex items-center gap-1 p-1.5 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
             >
               <img
                 src="https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=80&h=80&fit=crop&crop=face"
                 alt="Profile"
                 className="w-8 h-8 rounded-full object-cover"
               />
+              <ChevronDown className={`w-3.5 h-3.5 text-gray-400 transition-transform ${userMenuOpen ? 'rotate-180' : ''}`} />
             </button>
 
             {/* User Dropdown */}
@@ -139,8 +184,12 @@ export default function Layout() {
         <Outlet />
       </main>
 
-      {/* Floating Theme Toggle */}
-      <ThemeToggle />
+      {/* Agent FAB (global chat access) */}
+      <AgentFAB
+        page={currentPage}
+        strategyDSL={contextDSL}
+        strategyName={contextStrategyName}
+      />
 
       {/* New Strategy Dialog (global - works from any page) */}
       <NewStrategyDialog isOpen={newStrategyDialogOpen} onClose={closeNewStrategyDialog} />

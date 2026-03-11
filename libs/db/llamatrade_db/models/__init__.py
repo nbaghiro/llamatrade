@@ -1,5 +1,15 @@
 """ORM models for LlamaTrade database."""
 
+from llamatrade_db.models.agent import (
+    AgentMemoryEmbedding,
+    AgentMemoryFact,
+    AgentMessage,
+    AgentSession,
+    AgentSessionSummary,
+    MemoryFactCategory,
+    PendingArtifact,
+    ToolCallLog,
+)
 from llamatrade_db.models.audit import (
     AuditEventType,
     AuditLog,
@@ -58,6 +68,15 @@ from llamatrade_db.models.trading import (
 )
 
 __all__ = [
+    # Agent
+    "AgentSession",
+    "AgentMessage",
+    "PendingArtifact",
+    "ToolCallLog",
+    "AgentMemoryFact",
+    "AgentMemoryEmbedding",
+    "AgentSessionSummary",
+    "MemoryFactCategory",
     # Audit
     "AuditLog",
     "AuditEventType",

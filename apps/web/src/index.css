@@ -241,9 +241,9 @@
    ============================================ */
 
 @layer utilities {
-  /* Dotted grid pattern */
+  /* Dotted grid pattern - subtle dots for backgrounds */
   .bg-dotted-grid {
-    background-image: radial-gradient(circle, theme('colors.gray.400') 1px, transparent 1px);
+    background-image: radial-gradient(circle, theme('colors.gray.300') 1px, transparent 1px);
     background-size: 24px 24px;
   }
 
@@ -254,7 +254,7 @@
   /* Canvas with grid */
   .bg-canvas {
     @apply bg-gray-50 dark:bg-gray-950;
-    background-image: radial-gradient(circle, theme('colors.gray.400') 1px, transparent 1px);
+    background-image: radial-gradient(circle, theme('colors.gray.300') 1px, transparent 1px);
     background-size: 24px 24px;
   }
 

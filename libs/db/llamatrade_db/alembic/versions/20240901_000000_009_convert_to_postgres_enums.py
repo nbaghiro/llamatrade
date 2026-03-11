@@ -251,39 +251,26 @@ def upgrade() -> None:
     # =========================================================================
 
     # Strategy.status: draft, active, paused, archived
-    # First drop old enum type if exists (from previous schema)
-    op.execute("DROP TYPE IF EXISTS strategy_status_enum CASCADE")
+    # Note: Migration 002 already created this column with strategy_status_enum type.
+    # We need to convert from that existing enum to the new strategy_status enum.
 
-    # Note: strategies.status may be integer (from previous partial migration) or string
-    # Handle both cases by checking the column type
-    op.add_column("strategies", sa.Column("status_enum", sa.String(20), nullable=True))
+    # First save the current values to a temp column
+    op.add_column("strategies", sa.Column("status_temp", sa.String(20), nullable=True))
     op.execute("""
-        UPDATE strategies SET status_enum = CASE
-            -- Handle integer values (from previous migration)
-            WHEN status::text ~ '^[0-9]+$' THEN
-                CASE status::integer
-                    WHEN 1 THEN 'draft'
-                    WHEN 2 THEN 'active'
-                    WHEN 3 THEN 'paused'
-                    WHEN 4 THEN 'archived'
-                    ELSE 'draft'
-                END
-            -- Handle string values
-            ELSE
-                CASE LOWER(status::text)
-                    WHEN 'draft' THEN 'draft'
-                    WHEN 'active' THEN 'active'
-                    WHEN 'paused' THEN 'paused'
-                    WHEN 'archived' THEN 'archived'
-                    ELSE 'draft'
-                END
-        END
+        UPDATE strategies SET status_temp = LOWER(status::text)
     """)
+
+    # Drop the column (this removes dependency on old enum type)
     op.drop_column("strategies", "status")
+
+    # Now we can safely drop the old enum type
+    op.execute("DROP TYPE IF EXISTS strategy_status_enum")
+
+    # Add new column with new enum type
     op.execute("ALTER TABLE strategies ADD COLUMN status strategy_status")
-    op.execute("UPDATE strategies SET status = status_enum::strategy_status")
+    op.execute("UPDATE strategies SET status = status_temp::strategy_status")
     op.alter_column("strategies", "status", nullable=False)
-    op.drop_column("strategies", "status_enum")
+    op.drop_column("strategies", "status_temp")
 
     # =========================================================================
     # STEP 6: CONVERT STRATEGY_EXECUTIONS TABLE

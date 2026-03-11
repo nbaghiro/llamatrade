@@ -25,9 +25,7 @@ class _TransactionType:
     ValueType = typing.NewType("ValueType", builtins.int)
     V: _TypeAlias = ValueType  # noqa: Y015
 
-class _TransactionTypeEnumTypeWrapper(
-    enum_type_wrapper._EnumTypeWrapper[_TransactionType.ValueType], builtins.type
-):
+class _TransactionTypeEnumTypeWrapper(enum_type_wrapper._EnumTypeWrapper[_TransactionType.ValueType], builtins.type):
     DESCRIPTOR: descriptor.EnumDescriptor
     TRANSACTION_TYPE_UNSPECIFIED: _TransactionType.ValueType  # 0
     TRANSACTION_TYPE_DEPOSIT: _TransactionType.ValueType  # 1
@@ -63,9 +61,7 @@ class _TimePeriod:
     ValueType = typing.NewType("ValueType", builtins.int)
     V: _TypeAlias = ValueType  # noqa: Y015
 
-class _TimePeriodEnumTypeWrapper(
-    enum_type_wrapper._EnumTypeWrapper[_TimePeriod.ValueType], builtins.type
-):
+class _TimePeriodEnumTypeWrapper(enum_type_wrapper._EnumTypeWrapper[_TimePeriod.ValueType], builtins.type):
     DESCRIPTOR: descriptor.EnumDescriptor
     TIME_PERIOD_UNSPECIFIED: _TimePeriod.ValueType  # 0
     TIME_PERIOD_1D: _TimePeriod.ValueType  # 1
@@ -191,65 +187,9 @@ class Portfolio(message.Message):
         created_at: common_pb2.Timestamp | None = ...,
         updated_at: common_pb2.Timestamp | None = ...,
     ) -> None: ...
-    _HasFieldArgType: _TypeAlias = typing.Literal[
-        "buying_power",
-        b"buying_power",
-        "cash_balance",
-        b"cash_balance",
-        "created_at",
-        b"created_at",
-        "day_return",
-        b"day_return",
-        "day_return_percent",
-        b"day_return_percent",
-        "margin_used",
-        b"margin_used",
-        "positions_value",
-        b"positions_value",
-        "total_return",
-        b"total_return",
-        "total_return_percent",
-        b"total_return_percent",
-        "total_value",
-        b"total_value",
-        "updated_at",
-        b"updated_at",
-    ]  # noqa: Y015
+    _HasFieldArgType: _TypeAlias = typing.Literal["buying_power", b"buying_power", "cash_balance", b"cash_balance", "created_at", b"created_at", "day_return", b"day_return", "day_return_percent", b"day_return_percent", "margin_used", b"margin_used", "positions_value", b"positions_value", "total_return", b"total_return", "total_return_percent", b"total_return_percent", "total_value", b"total_value", "updated_at", b"updated_at"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal[
-        "buying_power",
-        b"buying_power",
-        "cash_balance",
-        b"cash_balance",
-        "created_at",
-        b"created_at",
-        "day_return",
-        b"day_return",
-        "day_return_percent",
-        b"day_return_percent",
-        "id",
-        b"id",
-        "margin_used",
-        b"margin_used",
-        "name",
-        b"name",
-        "positions_value",
-        b"positions_value",
-        "tenant_id",
-        b"tenant_id",
-        "total_return",
-        b"total_return",
-        "total_return_percent",
-        b"total_return_percent",
-        "total_value",
-        b"total_value",
-        "trading_session_ids",
-        b"trading_session_ids",
-        "updated_at",
-        b"updated_at",
-        "user_id",
-        b"user_id",
-    ]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["buying_power", b"buying_power", "cash_balance", b"cash_balance", "created_at", b"created_at", "day_return", b"day_return", "day_return_percent", b"day_return_percent", "id", b"id", "margin_used", b"margin_used", "name", b"name", "positions_value", b"positions_value", "tenant_id", b"tenant_id", "total_return", b"total_return", "total_return_percent", b"total_return_percent", "total_value", b"total_value", "trading_session_ids", b"trading_session_ids", "updated_at", b"updated_at", "user_id", b"user_id"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -318,57 +258,9 @@ class PerformanceMetrics(message.Message):
         total_positions: builtins.int = ...,
         concentration_top5: common_pb2.Decimal | None = ...,
     ) -> None: ...
-    _HasFieldArgType: _TypeAlias = typing.Literal[
-        "alpha",
-        b"alpha",
-        "benchmark_return",
-        b"benchmark_return",
-        "beta",
-        b"beta",
-        "concentration_top5",
-        b"concentration_top5",
-        "max_drawdown",
-        b"max_drawdown",
-        "mtd_return",
-        b"mtd_return",
-        "sharpe_ratio",
-        b"sharpe_ratio",
-        "total_return",
-        b"total_return",
-        "volatility",
-        b"volatility",
-        "wtd_return",
-        b"wtd_return",
-        "ytd_return",
-        b"ytd_return",
-    ]  # noqa: Y015
+    _HasFieldArgType: _TypeAlias = typing.Literal["alpha", b"alpha", "benchmark_return", b"benchmark_return", "beta", b"beta", "concentration_top5", b"concentration_top5", "max_drawdown", b"max_drawdown", "mtd_return", b"mtd_return", "sharpe_ratio", b"sharpe_ratio", "total_return", b"total_return", "volatility", b"volatility", "wtd_return", b"wtd_return", "ytd_return", b"ytd_return"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal[
-        "alpha",
-        b"alpha",
-        "benchmark_return",
-        b"benchmark_return",
-        "beta",
-        b"beta",
-        "concentration_top5",
-        b"concentration_top5",
-        "max_drawdown",
-        b"max_drawdown",
-        "mtd_return",
-        b"mtd_return",
-        "sharpe_ratio",
-        b"sharpe_ratio",
-        "total_positions",
-        b"total_positions",
-        "total_return",
-        b"total_return",
-        "volatility",
-        b"volatility",
-        "wtd_return",
-        b"wtd_return",
-        "ytd_return",
-        b"ytd_return",
-    ]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["alpha", b"alpha", "benchmark_return", b"benchmark_return", "beta", b"beta", "concentration_top5", b"concentration_top5", "max_drawdown", b"max_drawdown", "mtd_return", b"mtd_return", "sharpe_ratio", b"sharpe_ratio", "total_positions", b"total_positions", "total_return", b"total_return", "volatility", b"volatility", "wtd_return", b"wtd_return", "ytd_return", b"ytd_return"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -405,35 +297,9 @@ class PerformancePoint(message.Message):
         cumulative_return: common_pb2.Decimal | None = ...,
         drawdown: common_pb2.Decimal | None = ...,
     ) -> None: ...
-    _HasFieldArgType: _TypeAlias = typing.Literal[
-        "benchmark_value",
-        b"benchmark_value",
-        "cumulative_return",
-        b"cumulative_return",
-        "daily_return",
-        b"daily_return",
-        "drawdown",
-        b"drawdown",
-        "portfolio_value",
-        b"portfolio_value",
-        "timestamp",
-        b"timestamp",
-    ]  # noqa: Y015
+    _HasFieldArgType: _TypeAlias = typing.Literal["benchmark_value", b"benchmark_value", "cumulative_return", b"cumulative_return", "daily_return", b"daily_return", "drawdown", b"drawdown", "portfolio_value", b"portfolio_value", "timestamp", b"timestamp"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal[
-        "benchmark_value",
-        b"benchmark_value",
-        "cumulative_return",
-        b"cumulative_return",
-        "daily_return",
-        b"daily_return",
-        "drawdown",
-        b"drawdown",
-        "portfolio_value",
-        b"portfolio_value",
-        "timestamp",
-        b"timestamp",
-    ]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["benchmark_value", b"benchmark_value", "cumulative_return", b"cumulative_return", "daily_return", b"daily_return", "drawdown", b"drawdown", "portfolio_value", b"portfolio_value", "timestamp", b"timestamp"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -488,43 +354,9 @@ class Transaction(message.Message):
         reference_id: builtins.str = ...,
         timestamp: common_pb2.Timestamp | None = ...,
     ) -> None: ...
-    _HasFieldArgType: _TypeAlias = typing.Literal[
-        "amount",
-        b"amount",
-        "fees",
-        b"fees",
-        "price",
-        b"price",
-        "quantity",
-        b"quantity",
-        "timestamp",
-        b"timestamp",
-    ]  # noqa: Y015
+    _HasFieldArgType: _TypeAlias = typing.Literal["amount", b"amount", "fees", b"fees", "price", b"price", "quantity", b"quantity", "timestamp", b"timestamp"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal[
-        "amount",
-        b"amount",
-        "description",
-        b"description",
-        "fees",
-        b"fees",
-        "id",
-        b"id",
-        "portfolio_id",
-        b"portfolio_id",
-        "price",
-        b"price",
-        "quantity",
-        b"quantity",
-        "reference_id",
-        b"reference_id",
-        "symbol",
-        b"symbol",
-        "timestamp",
-        b"timestamp",
-        "type",
-        b"type",
-    ]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["amount", b"amount", "description", b"description", "fees", b"fees", "id", b"id", "portfolio_id", b"portfolio_id", "price", b"price", "quantity", b"quantity", "reference_id", b"reference_id", "symbol", b"symbol", "timestamp", b"timestamp", "type", b"type"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -555,9 +387,7 @@ class AssetAllocation(message.Message):
     ) -> None: ...
     _HasFieldArgType: _TypeAlias = typing.Literal["percentage", b"percentage", "value", b"value"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal[
-        "category", b"category", "items", b"items", "percentage", b"percentage", "value", b"value"
-    ]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["category", b"category", "items", b"items", "percentage", b"percentage", "value", b"value"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -586,22 +416,9 @@ class AllocationItem(message.Message):
         percentage: common_pb2.Decimal | None = ...,
         return_percent: common_pb2.Decimal | None = ...,
     ) -> None: ...
-    _HasFieldArgType: _TypeAlias = typing.Literal[
-        "percentage", b"percentage", "return_percent", b"return_percent", "value", b"value"
-    ]  # noqa: Y015
+    _HasFieldArgType: _TypeAlias = typing.Literal["percentage", b"percentage", "return_percent", b"return_percent", "value", b"value"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal[
-        "name",
-        b"name",
-        "percentage",
-        b"percentage",
-        "return_percent",
-        b"return_percent",
-        "symbol",
-        b"symbol",
-        "value",
-        b"value",
-    ]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["name", b"name", "percentage", b"percentage", "return_percent", b"return_percent", "symbol", b"symbol", "value", b"value"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -668,45 +485,9 @@ class StrategyPerformanceSummary(message.Message):
         started_at: common_pb2.Timestamp | None = ...,
         updated_at: common_pb2.Timestamp | None = ...,
     ) -> None: ...
-    _HasFieldArgType: _TypeAlias = typing.Literal[
-        "allocated_capital",
-        b"allocated_capital",
-        "current_value",
-        b"current_value",
-        "returns",
-        b"returns",
-        "started_at",
-        b"started_at",
-        "updated_at",
-        b"updated_at",
-    ]  # noqa: Y015
+    _HasFieldArgType: _TypeAlias = typing.Literal["allocated_capital", b"allocated_capital", "current_value", b"current_value", "returns", b"returns", "started_at", b"started_at", "updated_at", b"updated_at"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal[
-        "allocated_capital",
-        b"allocated_capital",
-        "color",
-        b"color",
-        "current_value",
-        b"current_value",
-        "execution_id",
-        b"execution_id",
-        "mode",
-        b"mode",
-        "positions_count",
-        b"positions_count",
-        "returns",
-        b"returns",
-        "started_at",
-        b"started_at",
-        "status",
-        b"status",
-        "strategy_id",
-        b"strategy_id",
-        "strategy_name",
-        b"strategy_name",
-        "updated_at",
-        b"updated_at",
-    ]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["allocated_capital", b"allocated_capital", "color", b"color", "current_value", b"current_value", "execution_id", b"execution_id", "mode", b"mode", "positions_count", b"positions_count", "returns", b"returns", "started_at", b"started_at", "status", b"status", "strategy_id", b"strategy_id", "strategy_name", b"strategy_name", "updated_at", b"updated_at"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -767,43 +548,9 @@ class StrategyPeriodReturns(message.Message):
         return_ytd: common_pb2.Decimal | None = ...,
         return_all: common_pb2.Decimal | None = ...,
     ) -> None: ...
-    _HasFieldArgType: _TypeAlias = typing.Literal[
-        "return_1d",
-        b"return_1d",
-        "return_1m",
-        b"return_1m",
-        "return_1w",
-        b"return_1w",
-        "return_1y",
-        b"return_1y",
-        "return_3m",
-        b"return_3m",
-        "return_6m",
-        b"return_6m",
-        "return_all",
-        b"return_all",
-        "return_ytd",
-        b"return_ytd",
-    ]  # noqa: Y015
+    _HasFieldArgType: _TypeAlias = typing.Literal["return_1d", b"return_1d", "return_1m", b"return_1m", "return_1w", b"return_1w", "return_1y", b"return_1y", "return_3m", b"return_3m", "return_6m", b"return_6m", "return_all", b"return_all", "return_ytd", b"return_ytd"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal[
-        "return_1d",
-        b"return_1d",
-        "return_1m",
-        b"return_1m",
-        "return_1w",
-        b"return_1w",
-        "return_1y",
-        b"return_1y",
-        "return_3m",
-        b"return_3m",
-        "return_6m",
-        b"return_6m",
-        "return_all",
-        b"return_all",
-        "return_ytd",
-        b"return_ytd",
-    ]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["return_1d", b"return_1d", "return_1m", b"return_1m", "return_1w", b"return_1w", "return_1y", b"return_1y", "return_3m", b"return_3m", "return_6m", b"return_6m", "return_all", b"return_all", "return_ytd", b"return_ytd"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -844,31 +591,9 @@ class StrategyEquityPoint(message.Message):
         drawdown: common_pb2.Decimal | None = ...,
         benchmark_value: common_pb2.Decimal | None = ...,
     ) -> None: ...
-    _HasFieldArgType: _TypeAlias = typing.Literal[
-        "benchmark_value",
-        b"benchmark_value",
-        "drawdown",
-        b"drawdown",
-        "equity",
-        b"equity",
-        "return_percent",
-        b"return_percent",
-        "timestamp",
-        b"timestamp",
-    ]  # noqa: Y015
+    _HasFieldArgType: _TypeAlias = typing.Literal["benchmark_value", b"benchmark_value", "drawdown", b"drawdown", "equity", b"equity", "return_percent", b"return_percent", "timestamp", b"timestamp"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal[
-        "benchmark_value",
-        b"benchmark_value",
-        "drawdown",
-        b"drawdown",
-        "equity",
-        b"equity",
-        "return_percent",
-        b"return_percent",
-        "timestamp",
-        b"timestamp",
-    ]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["benchmark_value", b"benchmark_value", "drawdown", b"drawdown", "equity", b"equity", "return_percent", b"return_percent", "timestamp", b"timestamp"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -975,91 +700,9 @@ class StrategyLiveMetrics(message.Message):
         correlation: common_pb2.Decimal | None = ...,
         calculated_at: common_pb2.Timestamp | None = ...,
     ) -> None: ...
-    _HasFieldArgType: _TypeAlias = typing.Literal[
-        "alpha",
-        b"alpha",
-        "average_loss",
-        b"average_loss",
-        "average_win",
-        b"average_win",
-        "beta",
-        b"beta",
-        "calculated_at",
-        b"calculated_at",
-        "calmar_ratio",
-        b"calmar_ratio",
-        "correlation",
-        b"correlation",
-        "current_drawdown",
-        b"current_drawdown",
-        "current_equity",
-        b"current_equity",
-        "max_drawdown",
-        b"max_drawdown",
-        "peak_equity",
-        b"peak_equity",
-        "profit_factor",
-        b"profit_factor",
-        "sharpe_ratio",
-        b"sharpe_ratio",
-        "sortino_ratio",
-        b"sortino_ratio",
-        "starting_capital",
-        b"starting_capital",
-        "total_pnl",
-        b"total_pnl",
-        "volatility",
-        b"volatility",
-        "win_rate",
-        b"win_rate",
-    ]  # noqa: Y015
+    _HasFieldArgType: _TypeAlias = typing.Literal["alpha", b"alpha", "average_loss", b"average_loss", "average_win", b"average_win", "beta", b"beta", "calculated_at", b"calculated_at", "calmar_ratio", b"calmar_ratio", "correlation", b"correlation", "current_drawdown", b"current_drawdown", "current_equity", b"current_equity", "max_drawdown", b"max_drawdown", "peak_equity", b"peak_equity", "profit_factor", b"profit_factor", "sharpe_ratio", b"sharpe_ratio", "sortino_ratio", b"sortino_ratio", "starting_capital", b"starting_capital", "total_pnl", b"total_pnl", "volatility", b"volatility", "win_rate", b"win_rate"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal[
-        "alpha",
-        b"alpha",
-        "average_loss",
-        b"average_loss",
-        "average_win",
-        b"average_win",
-        "benchmark_symbol",
-        b"benchmark_symbol",
-        "beta",
-        b"beta",
-        "calculated_at",
-        b"calculated_at",
-        "calmar_ratio",
-        b"calmar_ratio",
-        "correlation",
-        b"correlation",
-        "current_drawdown",
-        b"current_drawdown",
-        "current_equity",
-        b"current_equity",
-        "losing_trades",
-        b"losing_trades",
-        "max_drawdown",
-        b"max_drawdown",
-        "peak_equity",
-        b"peak_equity",
-        "profit_factor",
-        b"profit_factor",
-        "sharpe_ratio",
-        b"sharpe_ratio",
-        "sortino_ratio",
-        b"sortino_ratio",
-        "starting_capital",
-        b"starting_capital",
-        "total_pnl",
-        b"total_pnl",
-        "total_trades",
-        b"total_trades",
-        "volatility",
-        b"volatility",
-        "win_rate",
-        b"win_rate",
-        "winning_trades",
-        b"winning_trades",
-    ]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["alpha", b"alpha", "average_loss", b"average_loss", "average_win", b"average_win", "benchmark_symbol", b"benchmark_symbol", "beta", b"beta", "calculated_at", b"calculated_at", "calmar_ratio", b"calmar_ratio", "correlation", b"correlation", "current_drawdown", b"current_drawdown", "current_equity", b"current_equity", "losing_trades", b"losing_trades", "max_drawdown", b"max_drawdown", "peak_equity", b"peak_equity", "profit_factor", b"profit_factor", "sharpe_ratio", b"sharpe_ratio", "sortino_ratio", b"sortino_ratio", "starting_capital", b"starting_capital", "total_pnl", b"total_pnl", "total_trades", b"total_trades", "volatility", b"volatility", "win_rate", b"win_rate", "winning_trades", b"winning_trades"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -1088,16 +731,7 @@ class BenchmarkData(message.Message):
     ) -> None: ...
     _HasFieldArgType: _TypeAlias = typing.Literal["total_return", b"total_return"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal[
-        "equity_curve",
-        b"equity_curve",
-        "name",
-        b"name",
-        "symbol",
-        b"symbol",
-        "total_return",
-        b"total_return",
-    ]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["equity_curve", b"equity_curve", "name", b"name", "symbol", b"symbol", "total_return", b"total_return"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -1124,9 +758,7 @@ class GetPortfolioRequest(message.Message):
     ) -> None: ...
     _HasFieldArgType: _TypeAlias = typing.Literal["context", b"context"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal[
-        "context", b"context", "portfolio_id", b"portfolio_id"
-    ]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["context", b"context", "portfolio_id", b"portfolio_id"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -1147,9 +779,7 @@ class GetPortfolioResponse(message.Message):
     ) -> None: ...
     _HasFieldArgType: _TypeAlias = typing.Literal["portfolio", b"portfolio"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal[
-        "portfolio", b"portfolio", "positions", b"positions"
-    ]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["portfolio", b"portfolio", "positions", b"positions"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -1170,13 +800,9 @@ class ListPortfoliosRequest(message.Message):
         context: common_pb2.TenantContext | None = ...,
         pagination: common_pb2.PaginationRequest | None = ...,
     ) -> None: ...
-    _HasFieldArgType: _TypeAlias = typing.Literal[
-        "context", b"context", "pagination", b"pagination"
-    ]  # noqa: Y015
+    _HasFieldArgType: _TypeAlias = typing.Literal["context", b"context", "pagination", b"pagination"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal[
-        "context", b"context", "pagination", b"pagination"
-    ]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["context", b"context", "pagination", b"pagination"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -1197,9 +823,7 @@ class ListPortfoliosResponse(message.Message):
     ) -> None: ...
     _HasFieldArgType: _TypeAlias = typing.Literal["pagination", b"pagination"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal[
-        "pagination", b"pagination", "portfolios", b"portfolios"
-    ]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["pagination", b"pagination", "portfolios", b"portfolios"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -1227,20 +851,9 @@ class GetPerformanceRequest(message.Message):
         time_range: common_pb2.TimeRange | None = ...,
         benchmark_symbol: builtins.str = ...,
     ) -> None: ...
-    _HasFieldArgType: _TypeAlias = typing.Literal[
-        "context", b"context", "time_range", b"time_range"
-    ]  # noqa: Y015
+    _HasFieldArgType: _TypeAlias = typing.Literal["context", b"context", "time_range", b"time_range"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal[
-        "benchmark_symbol",
-        b"benchmark_symbol",
-        "context",
-        b"context",
-        "portfolio_id",
-        b"portfolio_id",
-        "time_range",
-        b"time_range",
-    ]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["benchmark_symbol", b"benchmark_symbol", "context", b"context", "portfolio_id", b"portfolio_id", "time_range", b"time_range"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -1261,9 +874,7 @@ class GetPerformanceResponse(message.Message):
     ) -> None: ...
     _HasFieldArgType: _TypeAlias = typing.Literal["metrics", b"metrics"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal[
-        "metrics", b"metrics", "time_series", b"time_series"
-    ]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["metrics", b"metrics", "time_series", b"time_series"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -1298,24 +909,9 @@ class ListTransactionsRequest(message.Message):
         symbol: builtins.str = ...,
         pagination: common_pb2.PaginationRequest | None = ...,
     ) -> None: ...
-    _HasFieldArgType: _TypeAlias = typing.Literal[
-        "context", b"context", "pagination", b"pagination", "time_range", b"time_range"
-    ]  # noqa: Y015
+    _HasFieldArgType: _TypeAlias = typing.Literal["context", b"context", "pagination", b"pagination", "time_range", b"time_range"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal[
-        "context",
-        b"context",
-        "pagination",
-        b"pagination",
-        "portfolio_id",
-        b"portfolio_id",
-        "symbol",
-        b"symbol",
-        "time_range",
-        b"time_range",
-        "types",
-        b"types",
-    ]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["context", b"context", "pagination", b"pagination", "portfolio_id", b"portfolio_id", "symbol", b"symbol", "time_range", b"time_range", "types", b"types"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -1336,9 +932,7 @@ class ListTransactionsResponse(message.Message):
     ) -> None: ...
     _HasFieldArgType: _TypeAlias = typing.Literal["pagination", b"pagination"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal[
-        "pagination", b"pagination", "transactions", b"transactions"
-    ]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["pagination", b"pagination", "transactions", b"transactions"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -1382,30 +976,9 @@ class RecordTransactionRequest(message.Message):
         description: builtins.str = ...,
         reference_id: builtins.str = ...,
     ) -> None: ...
-    _HasFieldArgType: _TypeAlias = typing.Literal[
-        "context", b"context", "fees", b"fees", "price", b"price", "quantity", b"quantity"
-    ]  # noqa: Y015
+    _HasFieldArgType: _TypeAlias = typing.Literal["context", b"context", "fees", b"fees", "price", b"price", "quantity", b"quantity"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal[
-        "context",
-        b"context",
-        "description",
-        b"description",
-        "fees",
-        b"fees",
-        "portfolio_id",
-        b"portfolio_id",
-        "price",
-        b"price",
-        "quantity",
-        b"quantity",
-        "reference_id",
-        b"reference_id",
-        "symbol",
-        b"symbol",
-        "type",
-        b"type",
-    ]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["context", b"context", "description", b"description", "fees", b"fees", "portfolio_id", b"portfolio_id", "price", b"price", "quantity", b"quantity", "reference_id", b"reference_id", "symbol", b"symbol", "type", b"type"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -1444,9 +1017,7 @@ class GetAssetAllocationRequest(message.Message):
     ) -> None: ...
     _HasFieldArgType: _TypeAlias = typing.Literal["context", b"context"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal[
-        "context", b"context", "portfolio_id", b"portfolio_id"
-    ]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["context", b"context", "portfolio_id", b"portfolio_id"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -1483,9 +1054,7 @@ class GetPositionsRequest(message.Message):
     ) -> None: ...
     _HasFieldArgType: _TypeAlias = typing.Literal["context", b"context"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal[
-        "context", b"context", "portfolio_id", b"portfolio_id"
-    ]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["context", b"context", "portfolio_id", b"portfolio_id"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -1525,14 +1094,7 @@ class SyncPortfolioRequest(message.Message):
     ) -> None: ...
     _HasFieldArgType: _TypeAlias = typing.Literal["context", b"context"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal[
-        "context",
-        b"context",
-        "portfolio_id",
-        b"portfolio_id",
-        "trading_session_id",
-        b"trading_session_id",
-    ]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["context", b"context", "portfolio_id", b"portfolio_id", "trading_session_id", b"trading_session_id"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -1555,14 +1117,7 @@ class SyncPortfolioResponse(message.Message):
     ) -> None: ...
     _HasFieldArgType: _TypeAlias = typing.Literal["portfolio", b"portfolio"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal[
-        "portfolio",
-        b"portfolio",
-        "positions_synced",
-        b"positions_synced",
-        "transactions_recorded",
-        b"transactions_recorded",
-    ]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["portfolio", b"portfolio", "positions_synced", b"positions_synced", "transactions_recorded", b"transactions_recorded"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -1598,13 +1153,9 @@ class ListStrategyPerformanceRequest(message.Message):
         status: common_pb2.ExecutionStatus.ValueType = ...,
         pagination: common_pb2.PaginationRequest | None = ...,
     ) -> None: ...
-    _HasFieldArgType: _TypeAlias = typing.Literal[
-        "context", b"context", "pagination", b"pagination"
-    ]  # noqa: Y015
+    _HasFieldArgType: _TypeAlias = typing.Literal["context", b"context", "pagination", b"pagination"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal[
-        "context", b"context", "mode", b"mode", "pagination", b"pagination", "status", b"status"
-    ]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["context", b"context", "mode", b"mode", "pagination", b"pagination", "status", b"status"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -1617,9 +1168,7 @@ class ListStrategyPerformanceResponse(message.Message):
     COMBINED_RETURN_FIELD_NUMBER: builtins.int
     PAGINATION_FIELD_NUMBER: builtins.int
     @builtins.property
-    def strategies(
-        self,
-    ) -> containers.RepeatedCompositeFieldContainer[StrategyPerformanceSummary]: ...
+    def strategies(self) -> containers.RepeatedCompositeFieldContainer[StrategyPerformanceSummary]: ...
     @builtins.property
     def total_allocated(self) -> common_pb2.Decimal:
         """Aggregate metrics across all strategies"""
@@ -1639,29 +1188,9 @@ class ListStrategyPerformanceResponse(message.Message):
         combined_return: common_pb2.Decimal | None = ...,
         pagination: common_pb2.PaginationResponse | None = ...,
     ) -> None: ...
-    _HasFieldArgType: _TypeAlias = typing.Literal[
-        "combined_return",
-        b"combined_return",
-        "pagination",
-        b"pagination",
-        "total_allocated",
-        b"total_allocated",
-        "total_current_value",
-        b"total_current_value",
-    ]  # noqa: Y015
+    _HasFieldArgType: _TypeAlias = typing.Literal["combined_return", b"combined_return", "pagination", b"pagination", "total_allocated", b"total_allocated", "total_current_value", b"total_current_value"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal[
-        "combined_return",
-        b"combined_return",
-        "pagination",
-        b"pagination",
-        "strategies",
-        b"strategies",
-        "total_allocated",
-        b"total_allocated",
-        "total_current_value",
-        b"total_current_value",
-    ]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["combined_return", b"combined_return", "pagination", b"pagination", "strategies", b"strategies", "total_allocated", b"total_allocated", "total_current_value", b"total_current_value"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -1683,9 +1212,7 @@ class GetStrategyPerformanceRequest(message.Message):
     ) -> None: ...
     _HasFieldArgType: _TypeAlias = typing.Literal["context", b"context"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal[
-        "context", b"context", "execution_id", b"execution_id"
-    ]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["context", b"context", "execution_id", b"execution_id"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -1712,9 +1239,7 @@ class GetStrategyPerformanceResponse(message.Message):
     ) -> None: ...
     _HasFieldArgType: _TypeAlias = typing.Literal["metrics", b"metrics", "summary", b"summary"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal[
-        "metrics", b"metrics", "positions", b"positions", "summary", b"summary"
-    ]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["metrics", b"metrics", "positions", b"positions", "summary", b"summary"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -1746,22 +1271,9 @@ class GetStrategyEquityCurveRequest(message.Message):
         benchmark_symbol: builtins.str = ...,
         sample_interval_minutes: builtins.int = ...,
     ) -> None: ...
-    _HasFieldArgType: _TypeAlias = typing.Literal[
-        "context", b"context", "time_range", b"time_range"
-    ]  # noqa: Y015
+    _HasFieldArgType: _TypeAlias = typing.Literal["context", b"context", "time_range", b"time_range"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal[
-        "benchmark_symbol",
-        b"benchmark_symbol",
-        "context",
-        b"context",
-        "execution_id",
-        b"execution_id",
-        "sample_interval_minutes",
-        b"sample_interval_minutes",
-        "time_range",
-        b"time_range",
-    ]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["benchmark_symbol", b"benchmark_symbol", "context", b"context", "execution_id", b"execution_id", "sample_interval_minutes", b"sample_interval_minutes", "time_range", b"time_range"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -1786,16 +1298,7 @@ class GetStrategyEquityCurveResponse(message.Message):
         benchmark: BenchmarkData | None = ...,
         period_returns: StrategyPeriodReturns | None = ...,
     ) -> None: ...
-    _HasFieldArgType: _TypeAlias = typing.Literal[
-        "benchmark", b"benchmark", "period_returns", b"period_returns"
-    ]  # noqa: Y015
+    _HasFieldArgType: _TypeAlias = typing.Literal["benchmark", b"benchmark", "period_returns", b"period_returns"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal[
-        "benchmark",
-        b"benchmark",
-        "equity_curve",
-        b"equity_curve",
-        "period_returns",
-        b"period_returns",
-    ]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["benchmark", b"benchmark", "equity_curve", b"equity_curve", "period_returns", b"period_returns"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...

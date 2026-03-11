@@ -8,7 +8,8 @@ export type WeightMethod =
   | 'inverse_volatility'
   | 'market_cap'
   | 'momentum'
-  | 'min_variance';
+  | 'min_variance'
+  | 'risk_parity';
 
 // Base block interface
 interface BaseBlock {
@@ -277,6 +278,13 @@ export const WEIGHT_METHODS: WeightMethodInfo[] = [
     method: 'min_variance',
     label: 'Min Variance',
     description: 'Minimum variance optimization',
+    hasLookback: true,
+    color: { bg: 'bg-green-100 dark:bg-green-900', text: 'text-green-700 dark:text-green-300', border: 'border-green-200 dark:border-green-800' },
+  },
+  {
+    method: 'risk_parity',
+    label: 'Risk Parity',
+    description: 'Equal risk contribution weighting',
     hasLookback: true,
     color: { bg: 'bg-green-100 dark:bg-green-900', text: 'text-green-700 dark:text-green-300', border: 'border-green-200 dark:border-green-800' },
   },

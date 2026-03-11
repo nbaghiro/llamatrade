@@ -14,6 +14,7 @@
 #   portfolio:    HTTP+Connect 8860
 #   notification: HTTP+Connect 8870
 #   billing:      HTTP+Connect 8880 (includes Stripe webhooks)
+#   agent:        HTTP+Connect 8890 (AI Copilot)
 #   web:          HTTP 8800
 
 auth: .venv/bin/uvicorn src.main:app --host 0.0.0.0 --port 8810 --reload --reload-dir services/auth/src --app-dir services/auth
@@ -24,4 +25,5 @@ trading: .venv/bin/uvicorn src.main:app --host 0.0.0.0 --port 8850 --reload --re
 portfolio: .venv/bin/uvicorn src.main:app --host 0.0.0.0 --port 8860 --reload --reload-dir services/portfolio/src --app-dir services/portfolio
 notification: .venv/bin/uvicorn src.main:app --host 0.0.0.0 --port 8870 --reload --reload-dir services/notification/src --app-dir services/notification
 billing: .venv/bin/uvicorn src.main:app --host 0.0.0.0 --port 8880 --reload --reload-dir services/billing/src --app-dir services/billing
+agent: .venv/bin/uvicorn src.main:app --host 0.0.0.0 --port 8890 --reload --reload-dir services/agent/src --app-dir services/agent
 web: cd apps/web && npm run dev -- --host 0.0.0.0 --port 8800

@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 
-import { useStrategyBuilderStore } from '../../../store/strategy-builder';
+import { useStrategyBuilderStoreWithContext } from '../../../store/strategy-builder';
 import type { BlockId } from '../../../types/strategy-builder';
 
 interface PercentageBadgeProps {
@@ -9,7 +9,7 @@ interface PercentageBadgeProps {
 }
 
 export function PercentageBadge({ weightBlockId, childBlockId }: PercentageBadgeProps) {
-  const { tree, setWeightAllocation } = useStrategyBuilderStore();
+  const { tree, setWeightAllocation } = useStrategyBuilderStoreWithContext();
   const weightBlock = tree.blocks[weightBlockId];
   const [isEditing, setIsEditing] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);

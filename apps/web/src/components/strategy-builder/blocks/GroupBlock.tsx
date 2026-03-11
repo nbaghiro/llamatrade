@@ -1,7 +1,7 @@
 import { ChevronDown, ChevronRight, Layers } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 
-import { useStrategyBuilderStore } from '../../../store/strategy-builder';
+import { useStrategyBuilderStoreWithContext } from '../../../store/strategy-builder';
 import type { GroupBlock as GroupBlockType } from '../../../types/strategy-builder';
 import { useBlockTheme } from '../useTheme';
 
@@ -12,7 +12,7 @@ interface GroupBlockProps {
 }
 
 export function GroupBlock({ block, allocationPercent, readOnly }: GroupBlockProps) {
-  const { ui, selectBlock, toggleExpand, setEditing, updateBlock } = useStrategyBuilderStore();
+  const { ui, selectBlock, toggleExpand, setEditing, updateBlock } = useStrategyBuilderStoreWithContext();
   const theme = useBlockTheme();
   const groupColors = theme.group;
   const allocationBadgeColors = theme.allocation;

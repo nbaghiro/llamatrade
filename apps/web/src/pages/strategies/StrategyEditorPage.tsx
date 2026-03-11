@@ -1,5 +1,5 @@
 import { AlertCircle, ArrowLeft, Loader2 } from 'lucide-react';
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 
 import { StrategyBuilder } from '../../components/strategy-builder/StrategyBuilder';
@@ -10,16 +10,50 @@ export default function StrategyEditorPage() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const templateId = searchParams.get('template');
+  const fromCopilot = searchParams.get('from') === 'copilot';
 
-  const { loadStrategy, loadTemplate, createNew, loading, error, clearError, tree, isDirty } =
+  // Track if we've already loaded to prevent double-execution in React 18 Strict Mode
+  const hasLoadedRef = useRef(false);
+
+  const { loadStrategy, loadTemplate, loadFromDSL, createNew, loading, error, clearError, tree, isDirty } =
     useStrategyBuilderStore();
 
   useEffect(() => {
+    // Prevent double-execution in React 18 Strict Mode
+    if (hasLoadedRef.current) return;
+
     if (id) {
       // Edit existing strategy
+      hasLoadedRef.current = true;
       loadStrategy(id);
+    } else if (fromCopilot) {
+      // Load from Copilot-generated DSL in sessionStorage
+      const copilotData = sessionStorage.getItem('copilot-strategy');
+      if (copilotData) {
+        hasLoadedRef.current = true;
+        try {
+          const { dslCode, name, description } = JSON.parse(copilotData);
+          const success = loadFromDSL(dslCode, name, description);
+          if (!success) {
+            createNew();
+          }
+        } catch {
+          createNew();
+        }
+        // Clean up sessionStorage
+        sessionStorage.removeItem('copilot-strategy');
+      } else {
+        // Check if tree already has content (from previous load)
+        const currentTree = useStrategyBuilderStore.getState().tree;
+        const hasContent = Object.keys(currentTree.blocks).length > 1;
+        if (!hasContent) {
+          hasLoadedRef.current = true;
+          createNew();
+        }
+      }
     } else if (templateId) {
       // Create from template
+      hasLoadedRef.current = true;
       loadTemplate(templateId);
     } else {
       // New strategy without template
@@ -27,11 +61,18 @@ export default function StrategyEditorPage() {
       const currentTree = useStrategyBuilderStore.getState().tree;
       const hasContent = Object.keys(currentTree.blocks).length > 1;
       if (!hasContent) {
-        // Only create new if tree is empty
+        hasLoadedRef.current = true;
         createNew();
       }
     }
-  }, [id, templateId, loadStrategy, loadTemplate, createNew]);
+  }, [id, templateId, fromCopilot, loadStrategy, loadTemplate, loadFromDSL, createNew]);
+
+  // Reset the ref when navigating to a new strategy
+  useEffect(() => {
+    return () => {
+      hasLoadedRef.current = false;
+    };
+  }, [id, templateId, fromCopilot]);
 
   // Warn on browser refresh/close with unsaved changes
   useEffect(() => {

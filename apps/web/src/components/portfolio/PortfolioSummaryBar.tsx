@@ -124,7 +124,7 @@ export default function PortfolioSummaryBar({
       {/* Add Strategy Button */}
       <button
         onClick={openNewStrategyDialog}
-        className="flex items-center gap-2 px-4 py-2.5 bg-green-50 dark:bg-green-900/20 hover:bg-green-100 dark:hover:bg-green-900/30 text-green-700 dark:text-green-400 rounded-lg font-medium transition-colors border border-green-200 dark:border-green-800 shrink-0 whitespace-nowrap"
+        className="flex items-center gap-2 px-4 py-2.5 bg-green-100 dark:bg-green-900/30 hover:bg-green-200 dark:hover:bg-green-900/50 text-green-700 dark:text-green-400 rounded-lg font-medium transition-colors border border-green-300 dark:border-green-700 shrink-0 whitespace-nowrap"
       >
         <Plus className="w-4 h-4" />
         Add Strategy

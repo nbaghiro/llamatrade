@@ -131,19 +131,12 @@ def str_to_template_difficulty(value: str) -> TemplateDifficulty.ValueType | Non
         return None
 
 
-# TypedDict for strategy config JSON (parsed S-expression)
-class StrategyConfigJSON(TypedDict, total=False):
-    """JSON representation of parsed strategy S-expression."""
-
-    name: str
-    symbols: list[str]
-    timeframe: str
-    entry: str | dict[str, object]  # Condition expression
-    exit: str | dict[str, object]  # Condition expression
-    stop_loss_pct: float
-    take_profit_pct: float
-    trailing_stop_pct: float
-    sizing: dict[str, str | float]
+# Type alias for strategy config JSON (parsed S-expression)
+# Using dict[str, object] instead of TypedDict because:
+# 1. DSL produces various JSON structures (traditional strategies, allocation strategies)
+# 2. TypedDict strips unknown fields during Pydantic validation
+# 3. The actual structure depends on strategy type and DSL features
+StrategyConfigJSON = dict[str, object]
 
 
 class ConfigOverride(TypedDict, total=False):

@@ -1,6 +1,6 @@
 import { ChevronDown, X } from 'lucide-react';
 
-import { useStrategyBuilderStore } from '../../../store/strategy-builder';
+import { useStrategyBuilderStoreWithContext } from '../../../store/strategy-builder';
 import type { WeightBlock as WeightBlockType } from '../../../types/strategy-builder';
 import { getWeightMethodInfo } from '../../../types/strategy-builder';
 import { useBlockTheme } from '../useTheme';
@@ -12,7 +12,7 @@ interface WeightBlockProps {
 }
 
 export function WeightBlock({ block, allocationPercent, readOnly }: WeightBlockProps) {
-  const { ui, selectBlock, toggleExpand, deleteBlock } = useStrategyBuilderStore();
+  const { ui, selectBlock, toggleExpand, deleteBlock } = useStrategyBuilderStoreWithContext();
   const theme = useBlockTheme();
   const isSelected = !readOnly && ui.selectedBlockId === block.id;
   const isExpanded = ui.expandedBlocks.has(block.id);

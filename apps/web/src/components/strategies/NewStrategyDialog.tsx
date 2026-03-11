@@ -23,7 +23,7 @@ import { useUIStore } from '../../store/ui';
 
 const DIFFICULTY_COLORS: Record<TemplateDifficulty, string> = {
   [TemplateDifficulty.UNSPECIFIED]: 'bg-gray-100 text-gray-700 dark:bg-gray-900/30 dark:text-gray-400',
-  [TemplateDifficulty.BEGINNER]: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
+  [TemplateDifficulty.BEGINNER]: 'bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-400',
   [TemplateDifficulty.INTERMEDIATE]: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
   [TemplateDifficulty.ADVANCED]: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
 };
@@ -150,7 +150,7 @@ function TemplateCard({ template, index, onSelect }: TemplateCardProps) {
 
         {/* Title */}
         <div className="flex items-start justify-between gap-2 mb-2">
-          <h3 className="font-semibold text-gray-900 dark:text-gray-100 group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors">
+          <h3 className="font-semibold text-gray-900 dark:text-gray-100 group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors truncate">
             {template.name}
           </h3>
           <ArrowRight className="w-4 h-4 text-gray-300 dark:text-gray-600 group-hover:text-primary-500 group-hover:translate-x-1 transition-all flex-shrink-0 mt-1" />
@@ -354,7 +354,7 @@ export default function NewStrategyDialog({ isOpen, onClose }: NewStrategyDialog
                 className={`px-3 py-1.5 text-sm rounded-lg border transition-colors ${
                   selectedDifficulty === difficulty
                     ? difficulty === TemplateDifficulty.BEGINNER
-                      ? 'bg-green-600 text-white border-green-600'
+                      ? 'bg-sky-600 text-white border-sky-600'
                       : difficulty === TemplateDifficulty.INTERMEDIATE
                         ? 'bg-amber-500 text-white border-amber-500'
                         : 'bg-red-600 text-white border-red-600'

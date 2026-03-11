@@ -4,7 +4,6 @@ import { useNavigate } from 'react-router-dom';
 
 import { useStrategyBuilderStore } from '../../../store/strategy-builder';
 import { Select } from '../../common/Select';
-import { ThemeSwitcher } from '../ThemeSwitcher';
 
 const TIMEFRAME_OPTIONS = [
   { value: '1m', label: '1 Minute' },
@@ -243,11 +242,6 @@ export function LeftPanel() {
           <Share2 className="w-4 h-4" />
           <span className="text-sm">Share</span>
         </button>
-      </div>
-
-      {/* Theme Switcher */}
-      <div className="mt-auto pt-4 border-t border-gray-200 dark:border-gray-700">
-        <ThemeSwitcher />
       </div>
 
       {/* Unsaved changes confirmation dialog */}

@@ -82,6 +82,7 @@ members = [
     "libs/db",
     "libs/dsl",
     "libs/proto",
+    "services/agent",
     "services/auth",
     "services/backtest",
     "services/billing",
@@ -107,6 +108,7 @@ pythonVersion = "3.14"
 typeCheckingMode = "strict"
 # Include services and libs (explicitly listed)
 include = [
+    "services/agent/src",
     "services/auth/src",
     "services/backtest/src",
     "services/billing/src",
@@ -154,6 +156,7 @@ extraPaths = [
 ]
 # All libs available to all services (alphabetically sorted for consistency)
 executionEnvironments = [
+    { root = "services/agent", extraPaths = ["services/agent", "libs/alpaca", "libs/common", "libs/compiler", "libs/db", "libs/dsl", "libs/proto"] },
     { root = "services/auth", extraPaths = ["services/auth", "libs/alpaca", "libs/common", "libs/compiler", "libs/db", "libs/dsl", "libs/proto"] },
     { root = "services/backtest", extraPaths = ["services/backtest", "libs/alpaca", "libs/common", "libs/compiler", "libs/db", "libs/dsl", "libs/proto"] },
     { root = "services/billing", extraPaths = ["services/billing", "libs/alpaca", "libs/common", "libs/compiler", "libs/db", "libs/dsl", "libs/proto"] },

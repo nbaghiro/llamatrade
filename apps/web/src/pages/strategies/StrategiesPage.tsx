@@ -15,73 +15,13 @@ import {
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 
-import { generateChartData, generateBenchmarkData } from '../../data/demo-strategies';
+import { BacktestGallery } from '../../components/strategies/BacktestGallery';
+import { MiniChart } from '../../components/strategies/MiniChart';
+import { StrategyTreePreview } from '../../components/strategies/StrategyTreePreview';
+import { generateChartData, generateBenchmarkData, generateBacktestRuns, generateDemoMetrics } from '../../data/demo-strategies';
 import { StrategyStatus } from '../../generated/proto/strategy_pb';
 import { useStrategiesStore } from '../../store/strategies';
 import { useUIStore } from '../../store/ui';
-
-function MiniChart({
-  data,
-  benchmarkData,
-  positive,
-}: {
-  data: number[];
-  benchmarkData: number[];
-  positive: boolean;
-}) {
-  // Calculate combined min/max for both lines to share the same scale
-  const allValues = [...data, ...benchmarkData];
-  const min = Math.min(...allValues);
-  const max = Math.max(...allValues);
-  const range = max - min || 1;
-
-  const toPoints = (values: number[]) =>
-    values
-      .map((v, i) => {
-        const x = (i / (values.length - 1)) * 140;
-        const y = 40 - ((v - min) / range) * 34;
-        return `${x},${y}`;
-      })
-      .join(' ');
-
-  const strategyPoints = toPoints(data);
-  const benchmarkPoints = toPoints(benchmarkData);
-  const fillPoints = `0,40 ${strategyPoints} 140,40`;
-  const gradientId = `gradient-${positive ? 'pos' : 'neg'}-${Math.random().toString(36).slice(2)}`;
-
-  return (
-    <svg width="140" height="44" className="overflow-visible">
-      <defs>
-        <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor={positive ? '#22c55e' : '#ef4444'} stopOpacity="0.15" />
-          <stop offset="100%" stopColor={positive ? '#22c55e' : '#ef4444'} stopOpacity="0" />
-        </linearGradient>
-      </defs>
-      {/* Strategy fill area */}
-      <polygon points={fillPoints} fill={`url(#${gradientId})`} />
-      {/* Benchmark line (SPY) - dashed gray */}
-      <polyline
-        points={benchmarkPoints}
-        fill="none"
-        stroke="#9ca3af"
-        strokeWidth="1.5"
-        strokeDasharray="3,2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        className="dark:stroke-gray-500"
-      />
-      {/* Strategy line */}
-      <polyline
-        points={strategyPoints}
-        fill="none"
-        stroke={positive ? '#22c55e' : '#ef4444'}
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
 
 function StatusBadge({ status }: { status: StrategyStatus }) {
   const styleMap: Record<StrategyStatus, string> = {
@@ -192,19 +132,31 @@ export default function StrategiesPage() {
 
   // Generate chart data for each strategy (deterministic based on ID)
   const strategiesWithCharts = useMemo(() => {
-    return strategies.map((strategy) => {
+    return strategies.map((strategy, index) => {
       const seed = hashCode(strategy.id);
-      // Use bestReturn if available, otherwise default to 0
-      const returnValue = strategy.bestReturn?.value ? parseFloat(strategy.bestReturn.value) : 0;
+      // Use real values if available, otherwise generate demo metrics
+      const hasRealData = strategy.bestReturn?.value && parseFloat(strategy.bestReturn.value) !== 0;
+      const demoMetrics = generateDemoMetrics(seed, index);
+
+      const returnValue = hasRealData
+        ? parseFloat(strategy.bestReturn?.value ?? '0')
+        : demoMetrics.returnPct;
+      const sharpeValue = hasRealData && strategy.bestSharpe?.value
+        ? parseFloat(strategy.bestSharpe.value)
+        : demoMetrics.sharpeRatio;
+
       return {
         ...strategy,
         chartData: generateChartData(returnValue, seed * 31 + 7),
         benchmarkData: generateBenchmarkData(seed * 17 + 42),
         returnValue,
-        sharpeValue: strategy.bestSharpe?.value ? parseFloat(strategy.bestSharpe.value) : 0,
+        sharpeValue,
       };
     });
   }, [strategies]);
+
+  // Generate demo backtest runs for the gallery
+  const backtestRuns = useMemo(() => generateBacktestRuns(10), []);
 
   // Action handlers
   const handleDelete = useCallback(async (id: string) => {
@@ -243,28 +195,19 @@ export default function StrategiesPage() {
   }, [pauseStrategy]);
 
   return (
-    <div className="min-h-[calc(100vh-56px)] bg-gray-50 dark:bg-gray-950 bg-dotted-grid">
-      <div className="px-12 py-8">
-        {/* Header */}
-        <div className="flex items-center justify-between mb-6">
-          <div>
-            <h1 className="text-2xl font-semibold text-gray-900 dark:text-gray-100">Strategies</h1>
-            <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-              {loading ? 'Loading...' : `${strategiesWithCharts.length} ${strategiesWithCharts.length === 1 ? 'strategy' : 'strategies'}`}
-            </p>
-          </div>
-          <button
-            onClick={openNewStrategyDialog}
-            className="flex items-center gap-2 px-4 py-2.5 bg-green-50 dark:bg-green-900/20 hover:bg-green-100 dark:hover:bg-green-900/30 text-green-700 dark:text-green-400 rounded-lg font-medium transition-colors border border-green-200 dark:border-green-800"
-          >
-            <Plus className="w-4 h-4" />
-            New Strategy
-          </button>
+    <div className="h-[calc(100vh-56px)] bg-gray-50 dark:bg-gray-950 bg-dotted-grid flex flex-col overflow-hidden">
+      {/* Fixed Header */}
+      <div className="flex-shrink-0 px-6 lg:px-12 pt-4 pb-3">
+        <div className="flex items-center gap-3">
+          <h1 className="text-2xl font-semibold text-gray-900 dark:text-gray-100">Strategies</h1>
+          <span className="text-sm text-gray-500 dark:text-gray-400">
+            {loading ? 'Loading...' : `${strategiesWithCharts.length} ${strategiesWithCharts.length === 1 ? 'strategy' : 'strategies'}`}
+          </span>
         </div>
 
         {/* Error Banner */}
         {error && (
-          <div className="mb-6 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg flex items-center justify-between">
+          <div className="mt-4 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg flex items-center justify-between">
             <div className="flex items-center gap-3">
               <AlertTriangle className="w-5 h-5 text-red-600 dark:text-red-400" />
               <p className="text-sm text-red-700 dark:text-red-300">{error}</p>
@@ -295,87 +238,100 @@ export default function StrategiesPage() {
             </div>
           </div>
         )}
+      </div>
 
-        {/* Filters */}
-        <div className="flex flex-wrap items-center gap-3 mb-6">
-          <div className="relative flex-1 min-w-[200px] max-w-xs">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-            <input
-              type="text"
-              placeholder="Search strategies..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-9 pr-4 py-2 text-sm border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 placeholder:text-gray-400 focus:border-primary-500 focus:ring-1 focus:ring-primary-500 outline-none"
-            />
-          </div>
-
-          <div className="relative">
-            <select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-              className="appearance-none pl-3 pr-8 py-2 text-sm border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-gray-700 dark:text-gray-300 focus:border-primary-500 focus:ring-1 focus:ring-primary-500 outline-none cursor-pointer"
-            >
-              <option value="all">All Status</option>
-              <option value="active">Active</option>
-              <option value="draft">Draft</option>
-              <option value="paused">Paused</option>
-              <option value="archived">Archived</option>
-            </select>
-            <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
-          </div>
-
-          <div className="relative">
-            <select
-              value={typeFilter}
-              onChange={(e) => setTypeFilter(e.target.value)}
-              className="appearance-none pl-3 pr-8 py-2 text-sm border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-gray-700 dark:text-gray-300 focus:border-primary-500 focus:ring-1 focus:ring-primary-500 outline-none cursor-pointer"
-            >
-              <option value="all">All Types</option>
-              <option value="dsl">DSL</option>
-              <option value="python">Python</option>
-              <option value="template">Template</option>
-            </select>
-            <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
-          </div>
-        </div>
-
-        {/* Strategy List */}
-        <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 overflow-hidden">
-          {loading && strategiesWithCharts.length === 0 ? (
-            // Loading state
-            <div className="py-16 text-center">
-              <Loader2 className="w-8 h-8 text-primary-500 animate-spin mx-auto mb-4" />
-              <p className="text-gray-500 dark:text-gray-400">Loading strategies...</p>
+      {/* Split Panel Layout - Scrollable */}
+      <div className="flex-1 flex flex-col lg:flex-row gap-6 px-6 lg:px-12 pb-6 min-h-0">
+        {/* Left Panel: Strategy List */}
+        <div className="flex-1 min-w-0 flex flex-col min-h-0">
+          {/* Filters + New Strategy Button */}
+          <div className="flex-shrink-0 flex flex-wrap items-center gap-3 mb-4">
+            <div className="relative flex-1 min-w-[200px] max-w-xs">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+              <input
+                type="text"
+                placeholder="Search strategies..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full pl-9 pr-4 py-2 text-sm border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 placeholder:text-gray-400 focus:border-primary-500 focus:ring-1 focus:ring-primary-500 outline-none"
+              />
             </div>
-          ) : strategiesWithCharts.length === 0 ? (
-            // Empty state
-            <div className="py-16 text-center">
-              <div className="w-12 h-12 bg-gray-100 dark:bg-gray-800 rounded-xl flex items-center justify-center mx-auto mb-4">
-                <Search className="w-6 h-6 text-gray-400" />
+
+            <div className="relative">
+              <select
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value)}
+                className="appearance-none pl-3 pr-8 py-2 text-sm border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-gray-700 dark:text-gray-300 focus:border-primary-500 focus:ring-1 focus:ring-primary-500 outline-none cursor-pointer"
+              >
+                <option value="all">All Status</option>
+                <option value="active">Active</option>
+                <option value="draft">Draft</option>
+                <option value="paused">Paused</option>
+                <option value="archived">Archived</option>
+              </select>
+              <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+            </div>
+
+            <div className="relative">
+              <select
+                value={typeFilter}
+                onChange={(e) => setTypeFilter(e.target.value)}
+                className="appearance-none pl-3 pr-8 py-2 text-sm border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-gray-700 dark:text-gray-300 focus:border-primary-500 focus:ring-1 focus:ring-primary-500 outline-none cursor-pointer"
+              >
+                <option value="all">All Types</option>
+                <option value="dsl">DSL</option>
+                <option value="python">Python</option>
+                <option value="template">Template</option>
+              </select>
+              <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+            </div>
+
+            {/* Spacer */}
+            <div className="flex-1" />
+
+            {/* New Strategy Button */}
+            <button
+              onClick={openNewStrategyDialog}
+              className="flex items-center gap-2 px-4 py-2 bg-green-100 dark:bg-green-900/30 hover:bg-green-200 dark:hover:bg-green-900/50 text-green-700 dark:text-green-400 rounded-lg font-medium transition-colors border border-green-300 dark:border-green-700"
+            >
+              <Plus className="w-4 h-4" />
+              New Strategy
+            </button>
+          </div>
+
+          {/* Strategy List - Scrollable */}
+          <div className="flex-1 flex flex-col min-h-0">
+            {loading && strategiesWithCharts.length === 0 ? (
+              // Loading state
+              <div className="py-16 text-center bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800">
+                <Loader2 className="w-8 h-8 text-primary-500 animate-spin mx-auto mb-4" />
+                <p className="text-gray-500 dark:text-gray-400">Loading strategies...</p>
               </div>
-              <p className="text-gray-500 dark:text-gray-400 mb-1">No strategies found</p>
-              <p className="text-sm text-gray-400 dark:text-gray-500 mb-4">
-                {searchQuery || statusFilter !== 'all' || typeFilter !== 'all'
-                  ? 'Try adjusting your search or filters'
-                  : 'Create your first strategy to get started'}
-              </p>
-              {!searchQuery && statusFilter === 'all' && typeFilter === 'all' && (
-                <button
-                  onClick={openNewStrategyDialog}
-                  className="inline-flex items-center gap-2 px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-lg font-medium transition-colors"
-                >
-                  <Plus className="w-4 h-4" />
-                  Create Strategy
-                </button>
-              )}
-            </div>
-          ) : (
-            // Strategy list
-            <div className="divide-y divide-gray-100 dark:divide-gray-800">
+            ) : strategiesWithCharts.length === 0 ? (
+              // Empty state - show visual builder preview or filter message
+              searchQuery || statusFilter !== 'all' || typeFilter !== 'all' ? (
+                <div className="py-16 text-center bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800">
+                  <div className="w-12 h-12 bg-gray-100 dark:bg-gray-800 rounded-xl flex items-center justify-center mx-auto mb-4">
+                    <Search className="w-6 h-6 text-gray-400" />
+                  </div>
+                  <p className="text-gray-500 dark:text-gray-400 mb-1">No strategies found</p>
+                  <p className="text-sm text-gray-400 dark:text-gray-500">
+                    Try adjusting your search or filters
+                  </p>
+                </div>
+              ) : (
+                <StrategyTreePreview
+                  onCreateStrategy={openNewStrategyDialog}
+                  onBrowseTemplates={openNewStrategyDialog}
+                />
+              )
+            ) : (
+              // Strategy list - scrollable with individual cards
+              <div className="flex-1 overflow-y-auto space-y-3">
               {strategiesWithCharts.map((strategy) => (
                 <div
                   key={strategy.id}
-                  className={`flex items-center gap-6 px-6 py-4 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors group ${
+                  className={`flex items-center gap-6 px-6 py-4 bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 hover:border-gray-300 dark:hover:border-gray-700 transition-colors group ${
                     deletingId === strategy.id ? 'opacity-50' : ''
                   }`}
                 >
@@ -499,8 +455,14 @@ export default function StrategiesPage() {
                   </div>
                 </div>
               ))}
-            </div>
-          )}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Right Panel: Backtest Gallery - Hidden on mobile/tablet */}
+        <div className="hidden lg:flex lg:w-80 lg:flex-shrink-0 lg:flex-col min-h-0">
+          <BacktestGallery backtests={backtestRuns} loading={loading} />
         </div>
       </div>
     </div>

@@ -23,7 +23,7 @@ import { StrategyBuilder } from '../strategy-builder/StrategyBuilder';
 
 const DIFFICULTY_COLORS: Record<TemplateDifficulty, string> = {
   [TemplateDifficulty.UNSPECIFIED]: 'bg-gray-100 text-gray-700 dark:bg-gray-900/30 dark:text-gray-400',
-  [TemplateDifficulty.BEGINNER]: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
+  [TemplateDifficulty.BEGINNER]: 'bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-400',
   [TemplateDifficulty.INTERMEDIATE]: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
   [TemplateDifficulty.ADVANCED]: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
 };

@@ -1,6 +1,6 @@
 import { ChevronDown, X } from 'lucide-react';
 
-import { useStrategyBuilderStore } from '../../../store/strategy-builder';
+import { useStrategyBuilderStoreWithContext } from '../../../store/strategy-builder';
 import type { FilterBlock as FilterBlockType } from '../../../types/strategy-builder';
 import { FILTER_UNIVERSES } from '../../../types/strategy-builder';
 import { useBlockTheme } from '../useTheme';
@@ -13,7 +13,7 @@ interface FilterBlockProps {
 }
 
 export function FilterBlock({ block, allocationPercent, onEditFilter, readOnly }: FilterBlockProps) {
-  const { ui, selectBlock, toggleExpand, deleteBlock } = useStrategyBuilderStore();
+  const { ui, selectBlock, toggleExpand, deleteBlock } = useStrategyBuilderStoreWithContext();
   const theme = useBlockTheme();
   const filterColors = theme.filter;
   const allocationBadgeColors = theme.allocation;

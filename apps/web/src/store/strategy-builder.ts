@@ -1,6 +1,7 @@
 import { enableMapSet } from 'immer';
+import { createContext, useContext } from 'react';
 import { v4 as uuidv4 } from 'uuid';
-import { create } from 'zustand';
+import { create, createStore, useStore } from 'zustand';
 import { immer } from 'zustand/middleware/immer';
 
 import { strategyClient } from '../services/grpc-client';
@@ -34,6 +35,115 @@ export type { ValidationResult, ValidationIssue };
 
 // Enable immer support for Map and Set
 enableMapSet();
+
+// =============================================================================
+// Expand/Collapse State Persistence
+// =============================================================================
+const COLLAPSED_STORAGE_KEY = 'strategy-builder-collapsed';
+
+/**
+ * Generate a stable path for a block that survives DSL round-trips.
+ * Uses block type, name/symbol, and position in parent.
+ */
+function getBlockPath(blocks: Record<BlockId, Block>, blockId: BlockId): string {
+  const parts: string[] = [];
+  let current = blocks[blockId];
+
+  while (current) {
+    let identifier: string = current.type;
+    if (current.type === 'root' && 'name' in current) {
+      identifier = `root`;
+    } else if (current.type === 'group' && 'name' in current) {
+      identifier = `group:${current.name}`;
+    } else if (current.type === 'asset' && 'symbol' in current) {
+      identifier = `asset:${current.symbol}`;
+    } else if (current.type === 'weight' && 'method' in current) {
+      identifier = `weight:${current.method}`;
+    } else if (current.type === 'if') {
+      identifier = `if`;
+    } else if (current.type === 'else') {
+      identifier = `else`;
+    } else if (current.type === 'filter' && 'config' in current) {
+      const cfg = current.config as FilterConfig;
+      identifier = `filter:${cfg.sortBy}`;
+    }
+
+    // Add position in parent for disambiguation
+    if (current.parentId) {
+      const parent = blocks[current.parentId];
+      if (parent && 'childIds' in parent) {
+        const idx = (parent.childIds as BlockId[]).indexOf(current.id);
+        identifier += `[${idx}]`;
+      }
+    }
+
+    parts.unshift(identifier);
+    current = current.parentId ? blocks[current.parentId] : undefined as unknown as Block;
+  }
+
+  return parts.join('/');
+}
+
+/**
+ * Save collapsed block paths to localStorage for a strategy.
+ */
+function saveCollapsedState(strategyId: string | null, blocks: Record<BlockId, Block>, expandedBlocks: Set<BlockId>): void {
+  if (!strategyId) return;
+
+  try {
+    const stored = localStorage.getItem(COLLAPSED_STORAGE_KEY);
+    const allCollapsed: Record<string, string[]> = stored ? JSON.parse(stored) : {};
+
+    // Find all collapsible blocks that are NOT expanded (i.e., collapsed)
+    const collapsedPaths: string[] = [];
+    for (const block of Object.values(blocks)) {
+      if (hasChildren(block) && !expandedBlocks.has(block.id)) {
+        collapsedPaths.push(getBlockPath(blocks, block.id));
+      }
+    }
+
+    allCollapsed[strategyId] = collapsedPaths;
+    localStorage.setItem(COLLAPSED_STORAGE_KEY, JSON.stringify(allCollapsed));
+  } catch {
+    // Ignore localStorage errors
+  }
+}
+
+/**
+ * Load collapsed block paths from localStorage and return collapsed block IDs.
+ */
+function loadCollapsedState(strategyId: string | null, blocks: Record<BlockId, Block>): Set<BlockId> {
+  const collapsedIds = new Set<BlockId>();
+  if (!strategyId) return collapsedIds;
+
+  try {
+    const stored = localStorage.getItem(COLLAPSED_STORAGE_KEY);
+    if (!stored) return collapsedIds;
+
+    const allCollapsed: Record<string, string[]> = JSON.parse(stored);
+    const collapsedPaths = allCollapsed[strategyId] || [];
+
+    if (collapsedPaths.length === 0) return collapsedIds;
+
+    // Build path -> blockId map
+    const pathToId = new Map<string, BlockId>();
+    for (const block of Object.values(blocks)) {
+      pathToId.set(getBlockPath(blocks, block.id), block.id);
+    }
+
+    // Find blocks that should be collapsed
+    for (const path of collapsedPaths) {
+      const blockId = pathToId.get(path);
+      if (blockId) {
+        collapsedIds.add(blockId);
+      }
+    }
+  } catch {
+    // Ignore localStorage errors
+  }
+
+  return collapsedIds;
+}
 
 // Maximum history entries for undo/redo
 const MAX_HISTORY = 50;
@@ -149,6 +259,7 @@ interface StrategyBuilderState {
   // Backend operations
   loadStrategy: (id: string) => Promise<void>;
   loadTemplate: (templateId: string) => Promise<void>;
+  loadFromDSL: (dslCode: string, name?: string, description?: string) => boolean;
   saveStrategy: () => Promise<string | null>;
   saveStrategyDebounced: () => void;  // Debounced save for frequent updates
   cancelDebouncedSave: () => void;    // Cancel pending debounced save
@@ -502,6 +613,9 @@ export const useStrategyBuilderStore = create<StrategyBuilderState>()(
             state.ui.expandedBlocks.add(id);
           }
         });
+        // Persist collapsed state after toggle
+        const { strategyId, tree, ui } = get();
+        saveCollapsedState(strategyId, tree.blocks, ui.expandedBlocks);
       },
 
       setEditing: (id) => {
@@ -755,13 +869,20 @@ export const useStrategyBuilderStore = create<StrategyBuilderState>()(
             const tree = fromDSL(compiledJson, uiState);
             state.tree = tree;
 
-            // Expand all parent blocks
+            // Expand all parent blocks by default
             const expandedBlocks = new Set<BlockId>();
             for (const block of Object.values(tree.blocks)) {
               if (hasChildren(block)) {
                 expandedBlocks.add(block.id);
               }
             }
+
+            // Restore collapsed state from localStorage
+            const collapsedIds = loadCollapsedState(strategy.id, tree.blocks);
+            for (const id of collapsedIds) {
+              expandedBlocks.delete(id);
+            }
+
             state.ui.expandedBlocks = expandedBlocks;
 
             state.isDirty = false;
@@ -832,6 +953,52 @@ export const useStrategyBuilderStore = create<StrategyBuilderState>()(
             state.loading = false;
           });
         }
+      },
+
+      loadFromDSL: (dslCode, name, description) => {
+        // Parse the DSL string
+        const parsed = fromDSLString(dslCode);
+        if (!parsed) {
+          set((state) => {
+            state.error = 'Failed to parse strategy DSL';
+            state.loading = false;
+          });
+          return false;
+        }
+
+        const { tree, metadata } = parsed;
+
+        set((state) => {
+          state.strategyId = null; // New strategy, not saved yet
+          state.strategyName = name || metadata.name || 'Untitled Strategy';
+          state.strategyDescription = description || metadata.description || '';
+          state.timeframe = metadata.timeframe || '1D';
+
+          state.tree = tree;
+
+          // Update root block name
+          const root = tree.blocks[tree.rootId];
+          if (root && root.type === 'root') {
+            root.name = state.strategyName;
+          }
+
+          // Expand all parent blocks
+          const expandedBlocks = new Set<BlockId>();
+          for (const block of Object.values(tree.blocks)) {
+            if (hasChildren(block)) {
+              expandedBlocks.add(block.id);
+            }
+          }
+          state.ui.expandedBlocks = expandedBlocks;
+
+          state.isDirty = true; // Mark dirty since it's not saved yet
+          state.loading = false;
+          state.past = [];
+          state.future = [];
+          runValidation(state);
+        });
+
+        return true;
       },
 
       saveStrategy: async () => {
@@ -1069,3 +1236,175 @@ export const useStrategyBuilderStore = create<StrategyBuilderState>()(
       },
     }))
 );
+
+// =============================================================================
+// Scoped Store Pattern for Inline Previews
+// =============================================================================
+
+/**
+ * Type for a scoped strategy builder store instance
+ */
+export type StrategyBuilderStoreInstance = ReturnType<typeof createStrategyBuilderStore>;
+
+/**
+ * Create a new strategy builder store instance with the given initial tree.
+ * Used for inline previews that need isolated state.
+ */
+export function createStrategyBuilderStore(initialTree?: StrategyTree) {
+  // Use provided tree or create empty initial state
+  const initState = initialTree
+    ? {
+        tree: initialTree,
+        expandedBlocks: new Set(
+          Object.values(initialTree.blocks)
+            .filter((b) => hasChildren(b))
+            .map((b) => b.id)
+        ),
+      }
+    : createInitialState();
+
+  return createStore<StrategyBuilderState>()(
+    immer((set, get) => ({
+      tree: initState.tree,
+      ui: {
+        selectedBlockId: null,
+        expandedBlocks: initState.expandedBlocks,
+        editingBlockId: null,
+      },
+
+      // View mode state - always tree for inline previews
+      viewMode: 'tree' as ViewMode,
+      compactView: true, // Default to compact for inline previews
+      dslCode: '',
+      dslParseError: null,
+
+      past: [],
+      future: [],
+
+      // Strategy metadata
+      strategyId: null,
+      strategyName: initialTree?.blocks[initialTree.rootId]?.type === 'root'
+        ? (initialTree.blocks[initialTree.rootId] as { name: string }).name
+        : 'Preview Strategy',
+      strategyDescription: '',
+      timeframe: '1D',
+      isDirty: false,
+
+      // Version tracking
+      serverVersion: 0,
+      lastSavedAt: null,
+      conflictDetected: false,
+
+      // Async state
+      loading: false,
+      saving: false,
+      error: null,
+
+      // Validation state
+      validationResult: emptyValidationResult,
+      isValid: true,
+
+      // Minimal implementations for preview stores
+      // Most actions are no-ops in preview mode
+
+      addAsset: () => '',
+      addGroup: () => '',
+      addWeight: () => '',
+      updateBlock: () => {},
+      deleteBlock: () => {},
+      setWeightAllocation: () => {},
+      addCondition: () => '',
+      updateCondition: () => {},
+      addFilter: () => '',
+      updateFilter: () => {},
+
+      selectBlock: (id) => {
+        set((state) => {
+          state.ui.selectedBlockId = id;
+        });
+      },
+
+      toggleExpand: (id) => {
+        set((state) => {
+          if (state.ui.expandedBlocks.has(id)) {
+            state.ui.expandedBlocks.delete(id);
+          } else {
+            state.ui.expandedBlocks.add(id);
+          }
+        });
+      },
+
+      setEditing: () => {},
+
+      setStrategyName: () => {},
+      setStrategyDescription: () => {},
+      setTimeframe: () => {},
+
+      undo: () => {},
+      redo: () => {},
+      canUndo: () => false,
+      canRedo: () => false,
+
+      loadStrategy: async () => {},
+      loadTemplate: async () => {},
+      loadFromDSL: () => false,
+      saveStrategy: async () => null,
+      saveStrategyDebounced: () => {},
+      cancelDebouncedSave: () => {},
+      resolveConflict: async () => {},
+      createNew: () => {},
+
+      setViewMode: () => {},
+      toggleCompactView: () => {},
+      updateDSLCode: () => {},
+      syncTreeFromCode: () => false,
+      getDSLCode: () => '',
+      clearDSLParseError: () => {},
+
+      getBlockErrors: () => [],
+      getBlockWarnings: () => [],
+      refreshValidation: () => {},
+
+      getBlock: (id) => get().tree.blocks[id],
+      getParent: (id) => {
+        const block = get().tree.blocks[id];
+        if (!block || !block.parentId) return undefined;
+        const parent = get().tree.blocks[block.parentId];
+        return parent && hasChildren(parent) ? parent : undefined;
+      },
+      reset: () => {},
+      clearError: () => {},
+    }))
+  );
+}
+
+/**
+ * Context for providing a scoped strategy builder store.
+ * When provided, components using useStrategyBuilderStoreWithContext will use the scoped store.
+ */
+export const StrategyBuilderStoreContext = createContext<StrategyBuilderStoreInstance | null>(null);
+
+/**
+ * Hook to access strategy builder store, preferring scoped store if available.
+ *
+ * Uses a single useStore call with either the scoped store (from context)
+ * or the global store, avoiding conditional hook calls.
+ *
+ * @param selector - Optional selector function to extract part of the state
+ */
+export function useStrategyBuilderStoreWithContext<T = StrategyBuilderState>(
+  selector?: (state: StrategyBuilderState) => T
+): T {
+  const scopedStore = useContext(StrategyBuilderStoreContext);
+
+  // Use useStore with either scoped store or global store (as store reference)
+  // Zustand's create() returns a hook that also acts as a store reference
+  const effectiveSelector = selector ?? ((state: StrategyBuilderState) => state as unknown as T);
+
+  return useStore(scopedStore ?? useStrategyBuilderStore, effectiveSelector);
+}
+
+/**
+ * Export the state type for external use
+ */
+export type { StrategyBuilderState };

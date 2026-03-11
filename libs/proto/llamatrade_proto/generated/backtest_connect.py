@@ -16,45 +16,27 @@ from . import backtest_pb2 as backtest__pb2
 
 
 class BacktestService(Protocol):
-    async def run_backtest(
-        self, request: backtest__pb2.RunBacktestRequest, ctx: RequestContext
-    ) -> backtest__pb2.RunBacktestResponse:
+    async def run_backtest(self, request: backtest__pb2.RunBacktestRequest, ctx: RequestContext) -> backtest__pb2.RunBacktestResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
-    async def get_backtest(
-        self, request: backtest__pb2.GetBacktestRequest, ctx: RequestContext
-    ) -> backtest__pb2.GetBacktestResponse:
+    async def get_backtest(self, request: backtest__pb2.GetBacktestRequest, ctx: RequestContext) -> backtest__pb2.GetBacktestResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
-    async def list_backtests(
-        self, request: backtest__pb2.ListBacktestsRequest, ctx: RequestContext
-    ) -> backtest__pb2.ListBacktestsResponse:
+    async def list_backtests(self, request: backtest__pb2.ListBacktestsRequest, ctx: RequestContext) -> backtest__pb2.ListBacktestsResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
-    async def cancel_backtest(
-        self, request: backtest__pb2.CancelBacktestRequest, ctx: RequestContext
-    ) -> backtest__pb2.CancelBacktestResponse:
+    async def cancel_backtest(self, request: backtest__pb2.CancelBacktestRequest, ctx: RequestContext) -> backtest__pb2.CancelBacktestResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
-    def stream_backtest_progress(
-        self, request: backtest__pb2.StreamBacktestProgressRequest, ctx: RequestContext
-    ) -> AsyncIterator[backtest__pb2.BacktestProgressUpdate]:
+    def stream_backtest_progress(self, request: backtest__pb2.StreamBacktestProgressRequest, ctx: RequestContext) -> AsyncIterator[backtest__pb2.BacktestProgressUpdate]:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
-    async def compare_backtests(
-        self, request: backtest__pb2.CompareBacktestsRequest, ctx: RequestContext
-    ) -> backtest__pb2.CompareBacktestsResponse:
+    async def compare_backtests(self, request: backtest__pb2.CompareBacktestsRequest, ctx: RequestContext) -> backtest__pb2.CompareBacktestsResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
 
 class BacktestServiceASGIApplication(ConnectASGIApplication[BacktestService]):
-    def __init__(
-        self,
-        service: BacktestService | AsyncGenerator[BacktestService],
-        *,
-        interceptors: Iterable[Interceptor] = (),
-        read_max_bytes: int | None = None,
-    ) -> None:
+    def __init__(self, service: BacktestService | AsyncGenerator[BacktestService], *, interceptors: Iterable[Interceptor]=(), read_max_bytes: int | None = None) -> None:
         super().__init__(
             service=service,
             endpoints=lambda svc: {
@@ -252,44 +234,22 @@ class BacktestServiceClient(ConnectClient):
 
 
 class BacktestServiceSync(Protocol):
-    def run_backtest(
-        self, request: backtest__pb2.RunBacktestRequest, ctx: RequestContext
-    ) -> backtest__pb2.RunBacktestResponse:
+    def run_backtest(self, request: backtest__pb2.RunBacktestRequest, ctx: RequestContext) -> backtest__pb2.RunBacktestResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
-
-    def get_backtest(
-        self, request: backtest__pb2.GetBacktestRequest, ctx: RequestContext
-    ) -> backtest__pb2.GetBacktestResponse:
+    def get_backtest(self, request: backtest__pb2.GetBacktestRequest, ctx: RequestContext) -> backtest__pb2.GetBacktestResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
-
-    def list_backtests(
-        self, request: backtest__pb2.ListBacktestsRequest, ctx: RequestContext
-    ) -> backtest__pb2.ListBacktestsResponse:
+    def list_backtests(self, request: backtest__pb2.ListBacktestsRequest, ctx: RequestContext) -> backtest__pb2.ListBacktestsResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
-
-    def cancel_backtest(
-        self, request: backtest__pb2.CancelBacktestRequest, ctx: RequestContext
-    ) -> backtest__pb2.CancelBacktestResponse:
+    def cancel_backtest(self, request: backtest__pb2.CancelBacktestRequest, ctx: RequestContext) -> backtest__pb2.CancelBacktestResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
-
-    def stream_backtest_progress(
-        self, request: backtest__pb2.StreamBacktestProgressRequest, ctx: RequestContext
-    ) -> Iterator[backtest__pb2.BacktestProgressUpdate]:
+    def stream_backtest_progress(self, request: backtest__pb2.StreamBacktestProgressRequest, ctx: RequestContext) -> Iterator[backtest__pb2.BacktestProgressUpdate]:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
-
-    def compare_backtests(
-        self, request: backtest__pb2.CompareBacktestsRequest, ctx: RequestContext
-    ) -> backtest__pb2.CompareBacktestsResponse:
+    def compare_backtests(self, request: backtest__pb2.CompareBacktestsRequest, ctx: RequestContext) -> backtest__pb2.CompareBacktestsResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
 
 class BacktestServiceWSGIApplication(ConnectWSGIApplication):
-    def __init__(
-        self,
-        service: BacktestServiceSync,
-        interceptors: Iterable[InterceptorSync] = (),
-        read_max_bytes: int | None = None,
-    ) -> None:
+    def __init__(self, service: BacktestServiceSync, interceptors: Iterable[InterceptorSync]=(), read_max_bytes: int | None = None) -> None:
         super().__init__(
             endpoints={
                 "/llamatrade.BacktestService/RunBacktest": EndpointSync.unary(

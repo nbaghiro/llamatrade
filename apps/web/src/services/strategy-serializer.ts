@@ -437,7 +437,7 @@ function serializeWeightBlock(
     } else if (isIfBlock(child)) {
       lines.push(serializeIfBlock(child, tree, indent + '  '));
     } else if (isFilterBlock(child)) {
-      lines.push(serializeFilterBlock(child, indent + '  '));
+      lines.push(serializeFilterBlockWithTree(child, tree, indent + '  '));
     }
   }
 
@@ -524,7 +524,7 @@ function serializeSingleBlock(block: Block, tree: StrategyTree, indent: string):
   } else if (isIfBlock(block)) {
     return serializeIfBlock(block, tree, indent);
   } else if (isFilterBlock(block)) {
-    return serializeFilterBlock(block, indent);
+    return serializeFilterBlockWithTree(block, tree, indent);
   }
   return '';
 }
@@ -533,20 +533,18 @@ function serializeSingleBlock(block: Block, tree: StrategyTree, indent: string):
  * Serialize filter block to DSL
  * Generates: (filter :by <criteria> :select (top/bottom N) [:lookback N] children...)
  */
-function serializeFilterBlock(block: FilterBlock, indent: string): string {
+function serializeFilterBlockWithTree(block: FilterBlock, tree: StrategyTree, indent: string): string {
   const config = block.config;
   const lines: string[] = [];
 
-  // Map sortBy to filter criteria (e.g., momentum -> returns)
+  // Map sortBy to filter criteria
+  // Backend only accepts: momentum, volatility, volume
   const criteriaMap: Record<string, string> = {
-    momentum: 'returns',
+    momentum: 'momentum',
     volatility: 'volatility',
     volume: 'volume',
-    market_cap: 'market_cap',
-    rsi: 'rsi',
-    dividend_yield: 'dividend_yield',
   };
-  const criteria = criteriaMap[config.sortBy] || 'returns';
+  const criteria = criteriaMap[config.sortBy] || 'momentum';
 
   // Map period to lookback days
   const periodMap: Record<string, number> = {
@@ -559,8 +557,16 @@ function serializeFilterBlock(block: FilterBlock, indent: string): string {
 
   lines.push(`${indent}(filter :by ${criteria} :select (${config.selection} ${config.count}) :lookback ${lookback}`);
 
-  // Add children if custom symbols provided
-  if (config.customSymbols && config.customSymbols.length > 0) {
+  // First, serialize actual child blocks from childIds
+  if (block.childIds && block.childIds.length > 0) {
+    const childContent = serializeChildren(block.childIds, tree, indent + '  ');
+    if (childContent.trim()) {
+      lines.push(childContent);
+    }
+  }
+
+  // Fallback: Add custom symbols if no childIds (legacy support)
+  if ((!block.childIds || block.childIds.length === 0) && config.customSymbols && config.customSymbols.length > 0) {
     for (const symbol of config.customSymbols) {
       lines.push(`${indent}  (asset ${symbol})`);
     }
@@ -569,6 +575,7 @@ function serializeFilterBlock(block: FilterBlock, indent: string): string {
   lines.push(`${indent})`);
   return lines.join('\n');
 }
+
 
 /**
  * Serialize children of a container block
@@ -599,7 +606,7 @@ function serializeChildren(
     } else if (isIfBlock(child)) {
       lines.push(serializeIfBlock(child, tree, indent));
     } else if (isFilterBlock(child)) {
-      lines.push(serializeFilterBlock(child, indent));
+      lines.push(serializeFilterBlockWithTree(child, tree, indent));
     }
   }
 
@@ -1767,9 +1774,7 @@ function parseFilterExpr(
     const item = expr[i];
 
     if (item === ':by') {
-      const byVal = String(expr[i + 1] || 'returns');
-      // Map 'returns' back to 'momentum'
-      sortBy = byVal === 'returns' ? 'momentum' : byVal;
+      sortBy = String(expr[i + 1] || 'momentum');
       i += 2;
       continue;
     }

@@ -2,7 +2,7 @@ import { ChevronDown, Pencil, X } from 'lucide-react';
 import { useState, useRef, useEffect } from 'react';
 
 import { conditionToText } from '../../../services/strategy-serializer';
-import { useStrategyBuilderStore } from '../../../store/strategy-builder';
+import { useStrategyBuilderStoreWithContext } from '../../../store/strategy-builder';
 import type { IfBlock as IfBlockType, ConditionExpression } from '../../../types/strategy-builder';
 import { ConditionEditor } from '../panels/ConditionEditor';
 import { useBlockTheme } from '../useTheme';
@@ -14,7 +14,7 @@ interface IfBlockProps {
 }
 
 export function IfBlock({ block, readOnly }: IfBlockProps) {
-  const { ui, selectBlock, toggleExpand, updateCondition, deleteBlock, tree } = useStrategyBuilderStore();
+  const { ui, selectBlock, toggleExpand, updateCondition, deleteBlock, tree } = useStrategyBuilderStoreWithContext();
   const theme = useBlockTheme();
   const isSelected = !readOnly && ui.selectedBlockId === block.id;
   const isExpanded = ui.expandedBlocks.has(block.id);

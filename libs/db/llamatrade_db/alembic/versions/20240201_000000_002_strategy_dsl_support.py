@@ -165,14 +165,17 @@ def upgrade() -> None:
     )
 
     # Set defaults for existing rows
+    # Note: Using double colon escaping (\\:) to prevent SQLAlchemy from interpreting :name as a bind param
     op.execute(
-        """
-        UPDATE strategy_versions
-        SET config_sexpr = '(strategy :name "migrated" :symbols [] :timeframe "1D" :entry true :exit true)',
-            symbols = '[]'::jsonb,
-            timeframe = '1D'
-        WHERE config_sexpr IS NULL
-        """
+        sa.text(
+            """
+            UPDATE strategy_versions
+            SET config_sexpr = '(strategy \\:name "migrated" \\:symbols [] \\:timeframe "1D" \\:entry true \\:exit true)',
+                symbols = '[]'::jsonb,
+                timeframe = '1D'
+            WHERE config_sexpr IS NULL
+            """
+        )
     )
 
     # Make columns non-nullable
@@ -192,6 +195,20 @@ def upgrade() -> None:
     # Create strategy_deployments table
     # ===================
 
+    # Create enum references with create_type=False since we already created them above
+    deployment_env_enum_col = postgresql.ENUM(
+        "paper", "live", name="deployment_environment_enum", create_type=False
+    )
+    deployment_status_enum_col = postgresql.ENUM(
+        "pending",
+        "running",
+        "paused",
+        "stopped",
+        "error",
+        name="deployment_status_enum",
+        create_type=False,
+    )
+
     op.create_table(
         "strategy_deployments",
         sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True),
@@ -203,12 +220,12 @@ def upgrade() -> None:
             nullable=False,
         ),
         sa.Column("version", sa.Integer(), nullable=False),
-        cast(Column[str], sa.Column("environment", deployment_environment_enum, nullable=False)),
+        cast(Column[str], sa.Column("environment", deployment_env_enum_col, nullable=False)),
         cast(
             Column[str],
             sa.Column(
                 "status",
-                deployment_status_enum,
+                deployment_status_enum_col,
                 nullable=False,
                 server_default="pending",
             ),
@@ -285,12 +302,15 @@ def upgrade() -> None:
     op.alter_column("strategy_templates", "strategy_type_new", new_column_name="strategy_type")
 
     # Set default for existing rows
+    # Note: Using double colon escaping (\\:) to prevent SQLAlchemy from interpreting :name as a bind param
     op.execute(
-        """
-        UPDATE strategy_templates
-        SET config_sexpr = '(strategy :name "template" :symbols [] :timeframe "1D" :entry true :exit true)'
-        WHERE config_sexpr IS NULL
-        """
+        sa.text(
+            """
+            UPDATE strategy_templates
+            SET config_sexpr = '(strategy \\:name "template" \\:symbols [] \\:timeframe "1D" \\:entry true \\:exit true)'
+            WHERE config_sexpr IS NULL
+            """
+        )
     )
     op.alter_column("strategy_templates", "config_sexpr", nullable=False)
 

@@ -19,6 +19,7 @@ else:
 _T = _typing.TypeVar("_T")
 
 class _MaybeAsyncIterator(_abc.AsyncIterator[_T], _abc.Iterator[_T], metaclass=_abc_1.ABCMeta): ...
+
 class _ServicerContext(_grpc.ServicerContext, _aio.ServicerContext):  # type: ignore[misc, type-arg]
     ...
 
@@ -35,46 +36,23 @@ class PortfolioServiceStub:
     def __new__(cls, channel: _grpc.Channel) -> _Self: ...
     @_typing.overload
     def __new__(cls, channel: _aio.Channel) -> PortfolioServiceAsyncStub: ...
-    GetPortfolio: _grpc.UnaryUnaryMultiCallable[
-        _portfolio_pb2.GetPortfolioRequest, _portfolio_pb2.GetPortfolioResponse
-    ]
+    GetPortfolio: _grpc.UnaryUnaryMultiCallable[_portfolio_pb2.GetPortfolioRequest, _portfolio_pb2.GetPortfolioResponse]
     """Portfolio management"""
-    ListPortfolios: _grpc.UnaryUnaryMultiCallable[
-        _portfolio_pb2.ListPortfoliosRequest, _portfolio_pb2.ListPortfoliosResponse
-    ]
-    GetPerformance: _grpc.UnaryUnaryMultiCallable[
-        _portfolio_pb2.GetPerformanceRequest, _portfolio_pb2.GetPerformanceResponse
-    ]
+    ListPortfolios: _grpc.UnaryUnaryMultiCallable[_portfolio_pb2.ListPortfoliosRequest, _portfolio_pb2.ListPortfoliosResponse]
+    GetPerformance: _grpc.UnaryUnaryMultiCallable[_portfolio_pb2.GetPerformanceRequest, _portfolio_pb2.GetPerformanceResponse]
     """Performance"""
-    GetAssetAllocation: _grpc.UnaryUnaryMultiCallable[
-        _portfolio_pb2.GetAssetAllocationRequest, _portfolio_pb2.GetAssetAllocationResponse
-    ]
-    GetPositions: _grpc.UnaryUnaryMultiCallable[
-        _portfolio_pb2.GetPositionsRequest, _portfolio_pb2.GetPositionsResponse
-    ]
+    GetAssetAllocation: _grpc.UnaryUnaryMultiCallable[_portfolio_pb2.GetAssetAllocationRequest, _portfolio_pb2.GetAssetAllocationResponse]
+    GetPositions: _grpc.UnaryUnaryMultiCallable[_portfolio_pb2.GetPositionsRequest, _portfolio_pb2.GetPositionsResponse]
     """Positions"""
-    ListTransactions: _grpc.UnaryUnaryMultiCallable[
-        _portfolio_pb2.ListTransactionsRequest, _portfolio_pb2.ListTransactionsResponse
-    ]
+    ListTransactions: _grpc.UnaryUnaryMultiCallable[_portfolio_pb2.ListTransactionsRequest, _portfolio_pb2.ListTransactionsResponse]
     """Transactions"""
-    RecordTransaction: _grpc.UnaryUnaryMultiCallable[
-        _portfolio_pb2.RecordTransactionRequest, _portfolio_pb2.RecordTransactionResponse
-    ]
-    SyncPortfolio: _grpc.UnaryUnaryMultiCallable[
-        _portfolio_pb2.SyncPortfolioRequest, _portfolio_pb2.SyncPortfolioResponse
-    ]
+    RecordTransaction: _grpc.UnaryUnaryMultiCallable[_portfolio_pb2.RecordTransactionRequest, _portfolio_pb2.RecordTransactionResponse]
+    SyncPortfolio: _grpc.UnaryUnaryMultiCallable[_portfolio_pb2.SyncPortfolioRequest, _portfolio_pb2.SyncPortfolioResponse]
     """Sync with trading"""
-    ListStrategyPerformance: _grpc.UnaryUnaryMultiCallable[
-        _portfolio_pb2.ListStrategyPerformanceRequest,
-        _portfolio_pb2.ListStrategyPerformanceResponse,
-    ]
+    ListStrategyPerformance: _grpc.UnaryUnaryMultiCallable[_portfolio_pb2.ListStrategyPerformanceRequest, _portfolio_pb2.ListStrategyPerformanceResponse]
     """Strategy Performance"""
-    GetStrategyPerformance: _grpc.UnaryUnaryMultiCallable[
-        _portfolio_pb2.GetStrategyPerformanceRequest, _portfolio_pb2.GetStrategyPerformanceResponse
-    ]
-    GetStrategyEquityCurve: _grpc.UnaryUnaryMultiCallable[
-        _portfolio_pb2.GetStrategyEquityCurveRequest, _portfolio_pb2.GetStrategyEquityCurveResponse
-    ]
+    GetStrategyPerformance: _grpc.UnaryUnaryMultiCallable[_portfolio_pb2.GetStrategyPerformanceRequest, _portfolio_pb2.GetStrategyPerformanceResponse]
+    GetStrategyEquityCurve: _grpc.UnaryUnaryMultiCallable[_portfolio_pb2.GetStrategyEquityCurveRequest, _portfolio_pb2.GetStrategyEquityCurveResponse]
 
 @_typing.type_check_only
 class PortfolioServiceAsyncStub(PortfolioServiceStub):
@@ -84,46 +62,23 @@ class PortfolioServiceAsyncStub(PortfolioServiceStub):
     """
 
     def __init__(self, channel: _aio.Channel) -> None: ...
-    GetPortfolio: _aio.UnaryUnaryMultiCallable[
-        _portfolio_pb2.GetPortfolioRequest, _portfolio_pb2.GetPortfolioResponse
-    ]  # type: ignore[assignment]
+    GetPortfolio: _aio.UnaryUnaryMultiCallable[_portfolio_pb2.GetPortfolioRequest, _portfolio_pb2.GetPortfolioResponse]  # type: ignore[assignment]
     """Portfolio management"""
-    ListPortfolios: _aio.UnaryUnaryMultiCallable[
-        _portfolio_pb2.ListPortfoliosRequest, _portfolio_pb2.ListPortfoliosResponse
-    ]  # type: ignore[assignment]
-    GetPerformance: _aio.UnaryUnaryMultiCallable[
-        _portfolio_pb2.GetPerformanceRequest, _portfolio_pb2.GetPerformanceResponse
-    ]  # type: ignore[assignment]
+    ListPortfolios: _aio.UnaryUnaryMultiCallable[_portfolio_pb2.ListPortfoliosRequest, _portfolio_pb2.ListPortfoliosResponse]  # type: ignore[assignment]
+    GetPerformance: _aio.UnaryUnaryMultiCallable[_portfolio_pb2.GetPerformanceRequest, _portfolio_pb2.GetPerformanceResponse]  # type: ignore[assignment]
     """Performance"""
-    GetAssetAllocation: _aio.UnaryUnaryMultiCallable[
-        _portfolio_pb2.GetAssetAllocationRequest, _portfolio_pb2.GetAssetAllocationResponse
-    ]  # type: ignore[assignment]
-    GetPositions: _aio.UnaryUnaryMultiCallable[
-        _portfolio_pb2.GetPositionsRequest, _portfolio_pb2.GetPositionsResponse
-    ]  # type: ignore[assignment]
+    GetAssetAllocation: _aio.UnaryUnaryMultiCallable[_portfolio_pb2.GetAssetAllocationRequest, _portfolio_pb2.GetAssetAllocationResponse]  # type: ignore[assignment]
+    GetPositions: _aio.UnaryUnaryMultiCallable[_portfolio_pb2.GetPositionsRequest, _portfolio_pb2.GetPositionsResponse]  # type: ignore[assignment]
     """Positions"""
-    ListTransactions: _aio.UnaryUnaryMultiCallable[
-        _portfolio_pb2.ListTransactionsRequest, _portfolio_pb2.ListTransactionsResponse
-    ]  # type: ignore[assignment]
+    ListTransactions: _aio.UnaryUnaryMultiCallable[_portfolio_pb2.ListTransactionsRequest, _portfolio_pb2.ListTransactionsResponse]  # type: ignore[assignment]
     """Transactions"""
-    RecordTransaction: _aio.UnaryUnaryMultiCallable[
-        _portfolio_pb2.RecordTransactionRequest, _portfolio_pb2.RecordTransactionResponse
-    ]  # type: ignore[assignment]
-    SyncPortfolio: _aio.UnaryUnaryMultiCallable[
-        _portfolio_pb2.SyncPortfolioRequest, _portfolio_pb2.SyncPortfolioResponse
-    ]  # type: ignore[assignment]
+    RecordTransaction: _aio.UnaryUnaryMultiCallable[_portfolio_pb2.RecordTransactionRequest, _portfolio_pb2.RecordTransactionResponse]  # type: ignore[assignment]
+    SyncPortfolio: _aio.UnaryUnaryMultiCallable[_portfolio_pb2.SyncPortfolioRequest, _portfolio_pb2.SyncPortfolioResponse]  # type: ignore[assignment]
     """Sync with trading"""
-    ListStrategyPerformance: _aio.UnaryUnaryMultiCallable[
-        _portfolio_pb2.ListStrategyPerformanceRequest,
-        _portfolio_pb2.ListStrategyPerformanceResponse,
-    ]  # type: ignore[assignment]
+    ListStrategyPerformance: _aio.UnaryUnaryMultiCallable[_portfolio_pb2.ListStrategyPerformanceRequest, _portfolio_pb2.ListStrategyPerformanceResponse]  # type: ignore[assignment]
     """Strategy Performance"""
-    GetStrategyPerformance: _aio.UnaryUnaryMultiCallable[
-        _portfolio_pb2.GetStrategyPerformanceRequest, _portfolio_pb2.GetStrategyPerformanceResponse
-    ]  # type: ignore[assignment]
-    GetStrategyEquityCurve: _aio.UnaryUnaryMultiCallable[
-        _portfolio_pb2.GetStrategyEquityCurveRequest, _portfolio_pb2.GetStrategyEquityCurveResponse
-    ]  # type: ignore[assignment]
+    GetStrategyPerformance: _aio.UnaryUnaryMultiCallable[_portfolio_pb2.GetStrategyPerformanceRequest, _portfolio_pb2.GetStrategyPerformanceResponse]  # type: ignore[assignment]
+    GetStrategyEquityCurve: _aio.UnaryUnaryMultiCallable[_portfolio_pb2.GetStrategyEquityCurveRequest, _portfolio_pb2.GetStrategyEquityCurveResponse]  # type: ignore[assignment]
 
 class PortfolioServiceServicer(metaclass=_abc_1.ABCMeta):
     """=============================================================================
@@ -136,9 +91,7 @@ class PortfolioServiceServicer(metaclass=_abc_1.ABCMeta):
         self,
         request: _portfolio_pb2.GetPortfolioRequest,
         context: _ServicerContext,
-    ) -> _typing.Union[
-        _portfolio_pb2.GetPortfolioResponse, _abc.Awaitable[_portfolio_pb2.GetPortfolioResponse]
-    ]:
+    ) -> _typing.Union[_portfolio_pb2.GetPortfolioResponse, _abc.Awaitable[_portfolio_pb2.GetPortfolioResponse]]:
         """Portfolio management"""
 
     @_abc_1.abstractmethod
@@ -146,17 +99,14 @@ class PortfolioServiceServicer(metaclass=_abc_1.ABCMeta):
         self,
         request: _portfolio_pb2.ListPortfoliosRequest,
         context: _ServicerContext,
-    ) -> _typing.Union[
-        _portfolio_pb2.ListPortfoliosResponse, _abc.Awaitable[_portfolio_pb2.ListPortfoliosResponse]
-    ]: ...
+    ) -> _typing.Union[_portfolio_pb2.ListPortfoliosResponse, _abc.Awaitable[_portfolio_pb2.ListPortfoliosResponse]]: ...
+
     @_abc_1.abstractmethod
     def GetPerformance(
         self,
         request: _portfolio_pb2.GetPerformanceRequest,
         context: _ServicerContext,
-    ) -> _typing.Union[
-        _portfolio_pb2.GetPerformanceResponse, _abc.Awaitable[_portfolio_pb2.GetPerformanceResponse]
-    ]:
+    ) -> _typing.Union[_portfolio_pb2.GetPerformanceResponse, _abc.Awaitable[_portfolio_pb2.GetPerformanceResponse]]:
         """Performance"""
 
     @_abc_1.abstractmethod
@@ -164,18 +114,14 @@ class PortfolioServiceServicer(metaclass=_abc_1.ABCMeta):
         self,
         request: _portfolio_pb2.GetAssetAllocationRequest,
         context: _ServicerContext,
-    ) -> _typing.Union[
-        _portfolio_pb2.GetAssetAllocationResponse,
-        _abc.Awaitable[_portfolio_pb2.GetAssetAllocationResponse],
-    ]: ...
+    ) -> _typing.Union[_portfolio_pb2.GetAssetAllocationResponse, _abc.Awaitable[_portfolio_pb2.GetAssetAllocationResponse]]: ...
+
     @_abc_1.abstractmethod
     def GetPositions(
         self,
         request: _portfolio_pb2.GetPositionsRequest,
         context: _ServicerContext,
-    ) -> _typing.Union[
-        _portfolio_pb2.GetPositionsResponse, _abc.Awaitable[_portfolio_pb2.GetPositionsResponse]
-    ]:
+    ) -> _typing.Union[_portfolio_pb2.GetPositionsResponse, _abc.Awaitable[_portfolio_pb2.GetPositionsResponse]]:
         """Positions"""
 
     @_abc_1.abstractmethod
@@ -183,10 +129,7 @@ class PortfolioServiceServicer(metaclass=_abc_1.ABCMeta):
         self,
         request: _portfolio_pb2.ListTransactionsRequest,
         context: _ServicerContext,
-    ) -> _typing.Union[
-        _portfolio_pb2.ListTransactionsResponse,
-        _abc.Awaitable[_portfolio_pb2.ListTransactionsResponse],
-    ]:
+    ) -> _typing.Union[_portfolio_pb2.ListTransactionsResponse, _abc.Awaitable[_portfolio_pb2.ListTransactionsResponse]]:
         """Transactions"""
 
     @_abc_1.abstractmethod
@@ -194,18 +137,14 @@ class PortfolioServiceServicer(metaclass=_abc_1.ABCMeta):
         self,
         request: _portfolio_pb2.RecordTransactionRequest,
         context: _ServicerContext,
-    ) -> _typing.Union[
-        _portfolio_pb2.RecordTransactionResponse,
-        _abc.Awaitable[_portfolio_pb2.RecordTransactionResponse],
-    ]: ...
+    ) -> _typing.Union[_portfolio_pb2.RecordTransactionResponse, _abc.Awaitable[_portfolio_pb2.RecordTransactionResponse]]: ...
+
     @_abc_1.abstractmethod
     def SyncPortfolio(
         self,
         request: _portfolio_pb2.SyncPortfolioRequest,
         context: _ServicerContext,
-    ) -> _typing.Union[
-        _portfolio_pb2.SyncPortfolioResponse, _abc.Awaitable[_portfolio_pb2.SyncPortfolioResponse]
-    ]:
+    ) -> _typing.Union[_portfolio_pb2.SyncPortfolioResponse, _abc.Awaitable[_portfolio_pb2.SyncPortfolioResponse]]:
         """Sync with trading"""
 
     @_abc_1.abstractmethod
@@ -213,10 +152,7 @@ class PortfolioServiceServicer(metaclass=_abc_1.ABCMeta):
         self,
         request: _portfolio_pb2.ListStrategyPerformanceRequest,
         context: _ServicerContext,
-    ) -> _typing.Union[
-        _portfolio_pb2.ListStrategyPerformanceResponse,
-        _abc.Awaitable[_portfolio_pb2.ListStrategyPerformanceResponse],
-    ]:
+    ) -> _typing.Union[_portfolio_pb2.ListStrategyPerformanceResponse, _abc.Awaitable[_portfolio_pb2.ListStrategyPerformanceResponse]]:
         """Strategy Performance"""
 
     @_abc_1.abstractmethod
@@ -224,20 +160,13 @@ class PortfolioServiceServicer(metaclass=_abc_1.ABCMeta):
         self,
         request: _portfolio_pb2.GetStrategyPerformanceRequest,
         context: _ServicerContext,
-    ) -> _typing.Union[
-        _portfolio_pb2.GetStrategyPerformanceResponse,
-        _abc.Awaitable[_portfolio_pb2.GetStrategyPerformanceResponse],
-    ]: ...
+    ) -> _typing.Union[_portfolio_pb2.GetStrategyPerformanceResponse, _abc.Awaitable[_portfolio_pb2.GetStrategyPerformanceResponse]]: ...
+
     @_abc_1.abstractmethod
     def GetStrategyEquityCurve(
         self,
         request: _portfolio_pb2.GetStrategyEquityCurveRequest,
         context: _ServicerContext,
-    ) -> _typing.Union[
-        _portfolio_pb2.GetStrategyEquityCurveResponse,
-        _abc.Awaitable[_portfolio_pb2.GetStrategyEquityCurveResponse],
-    ]: ...
+    ) -> _typing.Union[_portfolio_pb2.GetStrategyEquityCurveResponse, _abc.Awaitable[_portfolio_pb2.GetStrategyEquityCurveResponse]]: ...
 
-def add_PortfolioServiceServicer_to_server(
-    servicer: PortfolioServiceServicer, server: _typing.Union[_grpc.Server, _aio.Server]
-) -> None: ...
+def add_PortfolioServiceServicer_to_server(servicer: PortfolioServiceServicer, server: _typing.Union[_grpc.Server, _aio.Server]) -> None: ...

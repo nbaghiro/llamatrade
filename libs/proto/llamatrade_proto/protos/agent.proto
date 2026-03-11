@@ -1,0 +1,239 @@
+syntax = "proto3";
+
+package llamatrade;
+
+import "common.proto";
+
+option java_multiple_files = true;
+option java_package = "com.llamatrade.api";
+
+// =============================================================================
+// ENUMS
+// =============================================================================
+
+// Agent session status
+enum AgentSessionStatus {
+  AGENT_SESSION_STATUS_UNSPECIFIED = 0;
+  AGENT_SESSION_STATUS_ACTIVE = 1;
+  AGENT_SESSION_STATUS_COMPLETED = 2;
+  AGENT_SESSION_STATUS_ERROR = 3;
+}
+
+// Message role in conversation
+enum MessageRole {
+  MESSAGE_ROLE_UNSPECIFIED = 0;
+  MESSAGE_ROLE_USER = 1;
+  MESSAGE_ROLE_ASSISTANT = 2;
+  MESSAGE_ROLE_SYSTEM = 3;
+}
+
+// Stream event type for real-time updates
+enum StreamEventType {
+  STREAM_EVENT_TYPE_UNSPECIFIED = 0;
+  STREAM_EVENT_TYPE_CONTENT_DELTA = 1;      // Incremental text content
+  STREAM_EVENT_TYPE_TOOL_CALL_START = 2;    // Tool execution started
+  STREAM_EVENT_TYPE_TOOL_CALL_COMPLETE = 3; // Tool execution finished
+  STREAM_EVENT_TYPE_ARTIFACT_CREATED = 4;   // New pending artifact
+  STREAM_EVENT_TYPE_ERROR = 5;              // Error occurred
+  STREAM_EVENT_TYPE_COMPLETE = 6;           // Stream finished
+}
+
+// Pending artifact type
+enum ArtifactType {
+  ARTIFACT_TYPE_UNSPECIFIED = 0;
+  ARTIFACT_TYPE_STRATEGY = 1;
+}
+
+// =============================================================================
+// MESSAGES
+// =============================================================================
+
+// Agent conversation session
+message AgentSession {
+  string id = 1;
+  string tenant_id = 2;
+  string user_id = 3;
+  string title = 4;
+  AgentSessionStatus status = 5;
+  int32 message_count = 6;
+  Timestamp created_at = 7;
+  Timestamp last_activity_at = 8;
+}
+
+// Single message in a conversation
+message AgentMessage {
+  string id = 1;
+  string session_id = 2;
+  MessageRole role = 3;
+  string content = 4;
+  repeated ToolCall tool_calls = 5;
+  Timestamp created_at = 6;
+  repeated string inline_artifact_ids = 7;  // Artifact IDs to render inline with this message
+}
+
+// Tool call made by the assistant
+message ToolCall {
+  string id = 1;
+  string name = 2;
+  string arguments_json = 3;
+  string result_json = 4;
+  int32 duration_ms = 5;
+  bool success = 6;
+}
+
+// Pending artifact awaiting user confirmation
+message PendingArtifact {
+  string id = 1;
+  string session_id = 2;
+  ArtifactType artifact_type = 3;
+  string name = 4;
+  string description = 5;
+  string preview_json = 6;          // JSON preview of the artifact content
+  bool is_committed = 7;
+  string committed_resource_id = 8;  // ID of created resource after commit
+  Timestamp created_at = 9;
+}
+
+// Real-time stream event
+message AgentStreamEvent {
+  StreamEventType event_type = 1;
+  string session_id = 2;
+
+  // Content delta (for CONTENT_DELTA events)
+  string content_delta = 3;
+
+  // Tool execution info (for TOOL_CALL_* events)
+  string tool_name = 4;
+  string tool_status = 5;
+  string tool_result_preview = 6;
+
+  // Artifact info (for ARTIFACT_CREATED events)
+  PendingArtifact artifact = 7;
+
+  // Error info (for ERROR events)
+  string error_message = 8;
+
+  // Message info (for COMPLETE events)
+  string message_id = 9;
+}
+
+// Context data passed to agent for contextual prompts
+message AgentContextData {
+  string page = 1;                    // Current UI page (e.g., "strategy_detail")
+  string strategy_id = 2;             // Current strategy being viewed
+  string backtest_id = 3;             // Current backtest being viewed
+  repeated string suggested_prompts = 4; // Pre-computed suggested prompts
+}
+
+// =============================================================================
+// REQUESTS & RESPONSES
+// =============================================================================
+
+// Create session
+message CreateSessionRequest {
+  TenantContext context = 1;
+  string initial_message = 2;    // Optional first message to send
+  AgentContextData ui_context = 3;  // Optional UI context
+}
+
+message CreateSessionResponse {
+  AgentSession session = 1;
+  AgentStreamEvent initial_response = 2;  // If initial_message provided
+}
+
+// Get session
+message GetSessionRequest {
+  TenantContext context = 1;
+  string session_id = 2;
+  bool include_messages = 3;    // Include full message history
+  int32 message_limit = 4;      // Limit messages returned (default 50)
+}
+
+message GetSessionResponse {
+  AgentSession session = 1;
+  repeated AgentMessage messages = 2;
+  repeated PendingArtifact pending_artifacts = 3;
+}
+
+// List sessions
+message ListSessionsRequest {
+  TenantContext context = 1;
+  AgentSessionStatus status_filter = 2;
+  PaginationRequest pagination = 3;
+}
+
+message ListSessionsResponse {
+  repeated AgentSession sessions = 1;
+  PaginationResponse pagination = 2;
+}
+
+// Delete session
+message DeleteSessionRequest {
+  TenantContext context = 1;
+  string session_id = 2;
+}
+
+message DeleteSessionResponse {
+  bool success = 1;
+}
+
+// Send message (non-streaming)
+message SendMessageRequest {
+  TenantContext context = 1;
+  string session_id = 2;
+  string content = 3;
+  AgentContextData ui_context = 4;  // Current UI context
+  string strategy_dsl = 5;          // Full strategy DSL code for context
+  string strategy_name = 6;         // Strategy name for context
+}
+
+message SendMessageResponse {
+  AgentMessage user_message = 1;
+  AgentMessage assistant_message = 2;
+  repeated PendingArtifact new_artifacts = 3;
+}
+
+// Commit artifact (save generated strategy, etc.)
+message CommitArtifactRequest {
+  TenantContext context = 1;
+  string artifact_id = 2;
+  map<string, string> overrides = 3;  // Optional overrides (e.g., name change)
+}
+
+message CommitArtifactResponse {
+  bool success = 1;
+  string resource_id = 2;     // ID of created resource (e.g., strategy_id)
+  string resource_type = 3;   // Type of created resource (e.g., "strategy")
+}
+
+// Get suggested prompts based on context
+message GetSuggestedPromptsRequest {
+  TenantContext context = 1;
+  AgentContextData ui_context = 2;
+}
+
+message GetSuggestedPromptsResponse {
+  repeated string prompts = 1;
+}
+
+// =============================================================================
+// SERVICE
+// =============================================================================
+
+service AgentService {
+  // Session management
+  rpc CreateSession(CreateSessionRequest) returns (CreateSessionResponse);
+  rpc GetSession(GetSessionRequest) returns (GetSessionResponse);
+  rpc ListSessions(ListSessionsRequest) returns (ListSessionsResponse);
+  rpc DeleteSession(DeleteSessionRequest) returns (DeleteSessionResponse);
+
+  // Messaging
+  rpc SendMessage(SendMessageRequest) returns (SendMessageResponse);
+  rpc StreamMessage(SendMessageRequest) returns (stream AgentStreamEvent);
+
+  // Artifacts
+  rpc CommitArtifact(CommitArtifactRequest) returns (CommitArtifactResponse);
+
+  // Context-aware suggestions
+  rpc GetSuggestedPrompts(GetSuggestedPromptsRequest) returns (GetSuggestedPromptsResponse);
+}

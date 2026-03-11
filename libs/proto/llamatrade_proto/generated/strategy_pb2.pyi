@@ -24,9 +24,7 @@ class _StrategyStatus:
     ValueType = typing.NewType("ValueType", builtins.int)
     V: _TypeAlias = ValueType  # noqa: Y015
 
-class _StrategyStatusEnumTypeWrapper(
-    enum_type_wrapper._EnumTypeWrapper[_StrategyStatus.ValueType], builtins.type
-):
+class _StrategyStatusEnumTypeWrapper(enum_type_wrapper._EnumTypeWrapper[_StrategyStatus.ValueType], builtins.type):
     DESCRIPTOR: descriptor.EnumDescriptor
     STRATEGY_STATUS_UNSPECIFIED: _StrategyStatus.ValueType  # 0
     STRATEGY_STATUS_DRAFT: _StrategyStatus.ValueType  # 1
@@ -52,9 +50,7 @@ class _TemplateCategory:
     ValueType = typing.NewType("ValueType", builtins.int)
     V: _TypeAlias = ValueType  # noqa: Y015
 
-class _TemplateCategoryEnumTypeWrapper(
-    enum_type_wrapper._EnumTypeWrapper[_TemplateCategory.ValueType], builtins.type
-):
+class _TemplateCategoryEnumTypeWrapper(enum_type_wrapper._EnumTypeWrapper[_TemplateCategory.ValueType], builtins.type):
     DESCRIPTOR: descriptor.EnumDescriptor
     TEMPLATE_CATEGORY_UNSPECIFIED: _TemplateCategory.ValueType  # 0
     TEMPLATE_CATEGORY_BUY_AND_HOLD: _TemplateCategory.ValueType  # 1
@@ -81,9 +77,7 @@ class _AssetClass:
     ValueType = typing.NewType("ValueType", builtins.int)
     V: _TypeAlias = ValueType  # noqa: Y015
 
-class _AssetClassEnumTypeWrapper(
-    enum_type_wrapper._EnumTypeWrapper[_AssetClass.ValueType], builtins.type
-):
+class _AssetClassEnumTypeWrapper(enum_type_wrapper._EnumTypeWrapper[_AssetClass.ValueType], builtins.type):
     DESCRIPTOR: descriptor.EnumDescriptor
     ASSET_CLASS_UNSPECIFIED: _AssetClass.ValueType  # 0
     ASSET_CLASS_EQUITY: _AssetClass.ValueType  # 1
@@ -108,9 +102,7 @@ class _IndicatorType:
     ValueType = typing.NewType("ValueType", builtins.int)
     V: _TypeAlias = ValueType  # noqa: Y015
 
-class _IndicatorTypeEnumTypeWrapper(
-    enum_type_wrapper._EnumTypeWrapper[_IndicatorType.ValueType], builtins.type
-):
+class _IndicatorTypeEnumTypeWrapper(enum_type_wrapper._EnumTypeWrapper[_IndicatorType.ValueType], builtins.type):
     DESCRIPTOR: descriptor.EnumDescriptor
     INDICATOR_TYPE_UNSPECIFIED: _IndicatorType.ValueType  # 0
     INDICATOR_TYPE_SMA: _IndicatorType.ValueType  # 1
@@ -153,9 +145,7 @@ class _TemplateDifficulty:
     ValueType = typing.NewType("ValueType", builtins.int)
     V: _TypeAlias = ValueType  # noqa: Y015
 
-class _TemplateDifficultyEnumTypeWrapper(
-    enum_type_wrapper._EnumTypeWrapper[_TemplateDifficulty.ValueType], builtins.type
-):
+class _TemplateDifficultyEnumTypeWrapper(enum_type_wrapper._EnumTypeWrapper[_TemplateDifficulty.ValueType], builtins.type):
     DESCRIPTOR: descriptor.EnumDescriptor
     TEMPLATE_DIFFICULTY_UNSPECIFIED: _TemplateDifficulty.ValueType  # 0
     TEMPLATE_DIFFICULTY_BEGINNER: _TemplateDifficulty.ValueType  # 1
@@ -288,55 +278,9 @@ class Strategy(message.Message):
         best_sharpe: common_pb2.Decimal | None = ...,
         best_return: common_pb2.Decimal | None = ...,
     ) -> None: ...
-    _HasFieldArgType: _TypeAlias = typing.Literal[
-        "best_return",
-        b"best_return",
-        "best_sharpe",
-        b"best_sharpe",
-        "created_at",
-        b"created_at",
-        "updated_at",
-        b"updated_at",
-    ]  # noqa: Y015
+    _HasFieldArgType: _TypeAlias = typing.Literal["best_return", b"best_return", "best_sharpe", b"best_sharpe", "created_at", b"created_at", "updated_at", b"updated_at"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal[
-        "best_return",
-        b"best_return",
-        "best_sharpe",
-        b"best_sharpe",
-        "compiled_json",
-        b"compiled_json",
-        "created_at",
-        b"created_at",
-        "created_by",
-        b"created_by",
-        "description",
-        b"description",
-        "dsl_code",
-        b"dsl_code",
-        "id",
-        b"id",
-        "name",
-        b"name",
-        "parameters",
-        b"parameters",
-        "status",
-        b"status",
-        "symbols",
-        b"symbols",
-        "template_id",
-        b"template_id",
-        "template_params",
-        b"template_params",
-        "tenant_id",
-        b"tenant_id",
-        "timeframe",
-        b"timeframe",
-        "updated_at",
-        b"updated_at",
-        "version",
-        b"version",
-    ]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["best_return", b"best_return", "best_sharpe", b"best_sharpe", "compiled_json", b"compiled_json", "created_at", b"created_at", "created_by", b"created_by", "description", b"description", "dsl_code", b"dsl_code", "id", b"id", "name", b"name", "parameters", b"parameters", "status", b"status", "symbols", b"symbols", "template_id", b"template_id", "template_params", b"template_params", "tenant_id", b"tenant_id", "timeframe", b"timeframe", "updated_at", b"updated_at", "version", b"version"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -394,24 +338,7 @@ class StrategyVersion(message.Message):
     ) -> None: ...
     _HasFieldArgType: _TypeAlias = typing.Literal["created_at", b"created_at"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal[
-        "change_summary",
-        b"change_summary",
-        "compiled_json",
-        b"compiled_json",
-        "created_at",
-        b"created_at",
-        "created_by",
-        b"created_by",
-        "dsl_code",
-        b"dsl_code",
-        "parameters",
-        b"parameters",
-        "strategy_id",
-        b"strategy_id",
-        "version",
-        b"version",
-    ]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["change_summary", b"change_summary", "compiled_json", b"compiled_json", "created_at", b"created_at", "created_by", b"created_by", "dsl_code", b"dsl_code", "parameters", b"parameters", "strategy_id", b"strategy_id", "version", b"version"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -438,16 +365,7 @@ class CompilationResult(message.Message):
         errors: abc.Iterable[CompilationError] | None = ...,
         warnings: abc.Iterable[CompilationWarning] | None = ...,
     ) -> None: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal[
-        "compiled_json",
-        b"compiled_json",
-        "errors",
-        b"errors",
-        "success",
-        b"success",
-        "warnings",
-        b"warnings",
-    ]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["compiled_json", b"compiled_json", "errors", b"errors", "success", b"success", "warnings", b"warnings"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -470,9 +388,7 @@ class CompilationError(message.Message):
         message: builtins.str = ...,
         code: builtins.str = ...,
     ) -> None: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal[
-        "code", b"code", "column", b"column", "line", b"line", "message", b"message"
-    ]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["code", b"code", "column", b"column", "line", b"line", "message", b"message"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -495,9 +411,7 @@ class CompilationWarning(message.Message):
         message: builtins.str = ...,
         code: builtins.str = ...,
     ) -> None: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal[
-        "code", b"code", "column", b"column", "line", b"line", "message", b"message"
-    ]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["code", b"code", "column", b"column", "line", b"line", "message", b"message"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -529,18 +443,7 @@ class ValidationResult(message.Message):
         detected_symbols: abc.Iterable[builtins.str] | None = ...,
         detected_indicators: abc.Iterable[builtins.str] | None = ...,
     ) -> None: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal[
-        "detected_indicators",
-        b"detected_indicators",
-        "detected_symbols",
-        b"detected_symbols",
-        "errors",
-        b"errors",
-        "valid",
-        b"valid",
-        "warnings",
-        b"warnings",
-    ]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["detected_indicators", b"detected_indicators", "detected_symbols", b"detected_symbols", "errors", b"errors", "valid", b"valid", "warnings", b"warnings"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -579,24 +482,7 @@ class StrategyTemplate(message.Message):
         tags: abc.Iterable[builtins.str] | None = ...,
         difficulty: TemplateDifficulty.ValueType = ...,
     ) -> None: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal[
-        "asset_class",
-        b"asset_class",
-        "category",
-        b"category",
-        "config_sexpr",
-        b"config_sexpr",
-        "description",
-        b"description",
-        "difficulty",
-        b"difficulty",
-        "id",
-        b"id",
-        "name",
-        b"name",
-        "tags",
-        b"tags",
-    ]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["asset_class", b"asset_class", "category", b"category", "config_sexpr", b"config_sexpr", "description", b"description", "difficulty", b"difficulty", "id", b"id", "name", b"name", "tags", b"tags"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -681,47 +567,9 @@ class StrategyExecution(message.Message):
         created_at: common_pb2.Timestamp | None = ...,
         updated_at: common_pb2.Timestamp | None = ...,
     ) -> None: ...
-    _HasFieldArgType: _TypeAlias = typing.Literal[
-        "created_at",
-        b"created_at",
-        "started_at",
-        b"started_at",
-        "stopped_at",
-        b"stopped_at",
-        "updated_at",
-        b"updated_at",
-    ]  # noqa: Y015
+    _HasFieldArgType: _TypeAlias = typing.Literal["created_at", b"created_at", "started_at", b"started_at", "stopped_at", b"stopped_at", "updated_at", b"updated_at"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal[
-        "config_override",
-        b"config_override",
-        "created_at",
-        b"created_at",
-        "error_message",
-        b"error_message",
-        "id",
-        b"id",
-        "mode",
-        b"mode",
-        "started_at",
-        b"started_at",
-        "status",
-        b"status",
-        "stopped_at",
-        b"stopped_at",
-        "strategy_id",
-        b"strategy_id",
-        "symbols",
-        b"symbols",
-        "tenant_id",
-        b"tenant_id",
-        "timeframe",
-        b"timeframe",
-        "updated_at",
-        b"updated_at",
-        "version",
-        b"version",
-    ]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["config_override", b"config_override", "created_at", b"created_at", "error_message", b"error_message", "id", b"id", "mode", b"mode", "started_at", b"started_at", "status", b"status", "stopped_at", b"stopped_at", "strategy_id", b"strategy_id", "symbols", b"symbols", "tenant_id", b"tenant_id", "timeframe", b"timeframe", "updated_at", b"updated_at", "version", b"version"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -752,9 +600,7 @@ class GetStrategyRequest(message.Message):
     ) -> None: ...
     _HasFieldArgType: _TypeAlias = typing.Literal["context", b"context"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal[
-        "context", b"context", "strategy_id", b"strategy_id", "version", b"version"
-    ]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["context", b"context", "strategy_id", b"strategy_id", "version", b"version"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -804,22 +650,9 @@ class ListStrategiesRequest(message.Message):
         pagination: common_pb2.PaginationRequest | None = ...,
         sort: common_pb2.SortSpec | None = ...,
     ) -> None: ...
-    _HasFieldArgType: _TypeAlias = typing.Literal[
-        "context", b"context", "pagination", b"pagination", "sort", b"sort"
-    ]  # noqa: Y015
+    _HasFieldArgType: _TypeAlias = typing.Literal["context", b"context", "pagination", b"pagination", "sort", b"sort"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal[
-        "context",
-        b"context",
-        "pagination",
-        b"pagination",
-        "search",
-        b"search",
-        "sort",
-        b"sort",
-        "statuses",
-        b"statuses",
-    ]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["context", b"context", "pagination", b"pagination", "search", b"search", "sort", b"sort", "statuses", b"statuses"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -840,9 +673,7 @@ class ListStrategiesResponse(message.Message):
     ) -> None: ...
     _HasFieldArgType: _TypeAlias = typing.Literal["pagination", b"pagination"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal[
-        "pagination", b"pagination", "strategies", b"strategies"
-    ]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["pagination", b"pagination", "strategies", b"strategies"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -923,26 +754,7 @@ class CreateStrategyRequest(message.Message):
     ) -> None: ...
     _HasFieldArgType: _TypeAlias = typing.Literal["context", b"context"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal[
-        "context",
-        b"context",
-        "description",
-        b"description",
-        "dsl_code",
-        b"dsl_code",
-        "name",
-        b"name",
-        "parameters",
-        b"parameters",
-        "symbols",
-        b"symbols",
-        "template_id",
-        b"template_id",
-        "template_params",
-        b"template_params",
-        "timeframe",
-        b"timeframe",
-    ]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["context", b"context", "description", b"description", "dsl_code", b"dsl_code", "name", b"name", "parameters", b"parameters", "symbols", b"symbols", "template_id", b"template_id", "template_params", b"template_params", "timeframe", b"timeframe"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -1022,26 +834,7 @@ class UpdateStrategyRequest(message.Message):
     ) -> None: ...
     _HasFieldArgType: _TypeAlias = typing.Literal["context", b"context"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal[
-        "change_summary",
-        b"change_summary",
-        "context",
-        b"context",
-        "description",
-        b"description",
-        "dsl_code",
-        b"dsl_code",
-        "name",
-        b"name",
-        "parameters",
-        b"parameters",
-        "strategy_id",
-        b"strategy_id",
-        "symbols",
-        b"symbols",
-        "timeframe",
-        b"timeframe",
-    ]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["change_summary", b"change_summary", "context", b"context", "description", b"description", "dsl_code", b"dsl_code", "name", b"name", "parameters", b"parameters", "strategy_id", b"strategy_id", "symbols", b"symbols", "timeframe", b"timeframe"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -1080,9 +873,7 @@ class DeleteStrategyRequest(message.Message):
     ) -> None: ...
     _HasFieldArgType: _TypeAlias = typing.Literal["context", b"context"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal[
-        "context", b"context", "strategy_id", b"strategy_id"
-    ]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["context", b"context", "strategy_id", b"strategy_id"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -1122,9 +913,7 @@ class CompileStrategyRequest(message.Message):
     ) -> None: ...
     _HasFieldArgType: _TypeAlias = typing.Literal["context", b"context"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal[
-        "context", b"context", "dsl_code", b"dsl_code", "validate_only", b"validate_only"
-    ]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["context", b"context", "dsl_code", b"dsl_code", "validate_only", b"validate_only"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -1166,9 +955,7 @@ class ValidateStrategyRequest(message.Message):
     ) -> None: ...
     _HasFieldArgType: _TypeAlias = typing.Literal["context", b"context"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal[
-        "context", b"context", "strategy_id", b"strategy_id", "version", b"version"
-    ]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["context", b"context", "strategy_id", b"strategy_id", "version", b"version"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -1209,13 +996,9 @@ class ListStrategyVersionsRequest(message.Message):
         strategy_id: builtins.str = ...,
         pagination: common_pb2.PaginationRequest | None = ...,
     ) -> None: ...
-    _HasFieldArgType: _TypeAlias = typing.Literal[
-        "context", b"context", "pagination", b"pagination"
-    ]  # noqa: Y015
+    _HasFieldArgType: _TypeAlias = typing.Literal["context", b"context", "pagination", b"pagination"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal[
-        "context", b"context", "pagination", b"pagination", "strategy_id", b"strategy_id"
-    ]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["context", b"context", "pagination", b"pagination", "strategy_id", b"strategy_id"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -1236,9 +1019,7 @@ class ListStrategyVersionsResponse(message.Message):
     ) -> None: ...
     _HasFieldArgType: _TypeAlias = typing.Literal["pagination", b"pagination"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal[
-        "pagination", b"pagination", "versions", b"versions"
-    ]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["pagination", b"pagination", "versions", b"versions"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -1263,9 +1044,7 @@ class UpdateStrategyStatusRequest(message.Message):
     ) -> None: ...
     _HasFieldArgType: _TypeAlias = typing.Literal["context", b"context"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal[
-        "context", b"context", "status", b"status", "strategy_id", b"strategy_id"
-    ]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["context", b"context", "status", b"status", "strategy_id", b"strategy_id"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -1312,16 +1091,7 @@ class CloneStrategyRequest(message.Message):
     ) -> None: ...
     _HasFieldArgType: _TypeAlias = typing.Literal["context", b"context"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal[
-        "context",
-        b"context",
-        "new_name",
-        b"new_name",
-        "strategy_id",
-        b"strategy_id",
-        "version",
-        b"version",
-    ]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["context", b"context", "new_name", b"new_name", "strategy_id", b"strategy_id", "version", b"version"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -1390,18 +1160,7 @@ class CreateExecutionRequest(message.Message):
     ) -> None: ...
     _HasFieldArgType: _TypeAlias = typing.Literal["context", b"context"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal[
-        "config_override",
-        b"config_override",
-        "context",
-        b"context",
-        "mode",
-        b"mode",
-        "strategy_id",
-        b"strategy_id",
-        "version",
-        b"version",
-    ]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["config_override", b"config_override", "context", b"context", "mode", b"mode", "strategy_id", b"strategy_id", "version", b"version"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -1440,9 +1199,7 @@ class GetExecutionRequest(message.Message):
     ) -> None: ...
     _HasFieldArgType: _TypeAlias = typing.Literal["context", b"context"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal[
-        "context", b"context", "execution_id", b"execution_id"
-    ]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["context", b"context", "execution_id", b"execution_id"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -1478,9 +1235,7 @@ class ListExecutionsRequest(message.Message):
     @builtins.property
     def context(self) -> common_pb2.TenantContext: ...
     @builtins.property
-    def statuses(
-        self,
-    ) -> containers.RepeatedScalarFieldContainer[common_pb2.ExecutionStatus.ValueType]:
+    def statuses(self) -> containers.RepeatedScalarFieldContainer[common_pb2.ExecutionStatus.ValueType]:
         """Optional: filter by status"""
 
     @builtins.property
@@ -1498,22 +1253,9 @@ class ListExecutionsRequest(message.Message):
         modes: abc.Iterable[common_pb2.ExecutionMode.ValueType] | None = ...,
         pagination: common_pb2.PaginationRequest | None = ...,
     ) -> None: ...
-    _HasFieldArgType: _TypeAlias = typing.Literal[
-        "context", b"context", "pagination", b"pagination"
-    ]  # noqa: Y015
+    _HasFieldArgType: _TypeAlias = typing.Literal["context", b"context", "pagination", b"pagination"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal[
-        "context",
-        b"context",
-        "modes",
-        b"modes",
-        "pagination",
-        b"pagination",
-        "statuses",
-        b"statuses",
-        "strategy_id",
-        b"strategy_id",
-    ]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["context", b"context", "modes", b"modes", "pagination", b"pagination", "statuses", b"statuses", "strategy_id", b"strategy_id"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -1534,9 +1276,7 @@ class ListExecutionsResponse(message.Message):
     ) -> None: ...
     _HasFieldArgType: _TypeAlias = typing.Literal["pagination", b"pagination"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal[
-        "executions", b"executions", "pagination", b"pagination"
-    ]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["executions", b"executions", "pagination", b"pagination"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -1558,9 +1298,7 @@ class StartExecutionRequest(message.Message):
     ) -> None: ...
     _HasFieldArgType: _TypeAlias = typing.Literal["context", b"context"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal[
-        "context", b"context", "execution_id", b"execution_id"
-    ]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["context", b"context", "execution_id", b"execution_id"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -1599,9 +1337,7 @@ class PauseExecutionRequest(message.Message):
     ) -> None: ...
     _HasFieldArgType: _TypeAlias = typing.Literal["context", b"context"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal[
-        "context", b"context", "execution_id", b"execution_id"
-    ]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["context", b"context", "execution_id", b"execution_id"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -1644,9 +1380,7 @@ class StopExecutionRequest(message.Message):
     ) -> None: ...
     _HasFieldArgType: _TypeAlias = typing.Literal["context", b"context"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal[
-        "context", b"context", "execution_id", b"execution_id", "reason", b"reason"
-    ]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["context", b"context", "execution_id", b"execution_id", "reason", b"reason"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -1688,9 +1422,7 @@ class ListTemplatesRequest(message.Message):
         asset_class: AssetClass.ValueType = ...,
         difficulty: TemplateDifficulty.ValueType = ...,
     ) -> None: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal[
-        "asset_class", b"asset_class", "category", b"category", "difficulty", b"difficulty"
-    ]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["asset_class", b"asset_class", "category", b"category", "difficulty", b"difficulty"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final

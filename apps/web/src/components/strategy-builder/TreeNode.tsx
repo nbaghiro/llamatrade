@@ -1,4 +1,4 @@
-import { useStrategyBuilderStore } from '../../store/strategy-builder';
+import { useStrategyBuilderStoreWithContext } from '../../store/strategy-builder';
 import type { BlockId } from '../../types/strategy-builder';
 import { hasChildren } from '../../types/strategy-builder';
 
@@ -20,7 +20,8 @@ interface TreeNodeProps {
 }
 
 export function TreeNode({ blockId, depth = 0, isLast = true, parentWeightId, readOnly }: TreeNodeProps) {
-  const { tree, ui } = useStrategyBuilderStore();
+  // Use context-aware hook to support both global and scoped stores
+  const { tree, ui } = useStrategyBuilderStoreWithContext();
   const block = tree.blocks[blockId];
 
   if (!block) return null;

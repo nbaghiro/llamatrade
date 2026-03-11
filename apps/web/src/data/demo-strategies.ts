@@ -263,3 +263,102 @@ export function generateBenchmarkData(seed: number = 42): number[] {
 
   return data;
 }
+
+/**
+ * Generate demo return/sharpe metrics for strategies without real data
+ * First few items are always positive, then ~30% chance of negative for variety
+ */
+export function generateDemoMetrics(seed: number, index: number = 0): { returnPct: number; sharpeRatio: number } {
+  const random = createSeededRandom(seed);
+  // First 3 items are always positive, then ~30% chance of negative
+  const isNegative = index >= 3 && random() < 0.3;
+
+  const returnPct = isNegative
+    ? -(1 + random() * 10) // -1% to -11%
+    : 2 + random() * 14; // +2% to +16%
+
+  const sharpeRatio = isNegative
+    ? -0.1 + random() * 0.6 // -0.1 to 0.5 for losing strategies
+    : 0.6 + random() * 1.5; // 0.6 to 2.1 for winning strategies
+
+  return { returnPct, sharpeRatio };
+}
+
+/**
+ * Backtest run result for display in the gallery
+ */
+export interface BacktestRun {
+  id: string;
+  strategyId: string;
+  strategyName: string;
+  returnPct: number;
+  sharpeRatio: number;
+  maxDrawdown: number;
+  runDate: Date;
+  equityCurve: number[];
+  benchmarkCurve: number[];
+}
+
+/**
+ * Generate mock backtest runs for the gallery
+ * Returns a list of recent backtest results across strategies
+ */
+export function generateBacktestRuns(count: number = 10): BacktestRun[] {
+  // Strategy names for mock backtests (mix of real and varied names)
+  const strategyNames = [
+    { id: 'global-macro', name: 'Global Macro Regime' },
+    { id: 'risk-parity', name: 'Risk Parity' },
+    { id: 'multi-sleeve', name: 'Multi-Sleeve Institutional' },
+    { id: 'momentum-rotation', name: 'Momentum Rotation' },
+    { id: 'rsi-mean-reversion', name: 'RSI Mean Reversion' },
+    { id: 'golden-cross', name: 'Golden Cross' },
+    { id: 'permanent-portfolio', name: 'Permanent Portfolio' },
+    { id: 'dual-momentum', name: 'Dual Momentum' },
+    { id: 'sector-rotation', name: 'Sector Rotation' },
+    { id: 'volatility-targeting', name: 'Volatility Targeting' },
+  ];
+
+  const backtests: BacktestRun[] = [];
+  const now = new Date();
+
+  for (let i = 0; i < count; i++) {
+    const seed = 1000 + i * 137; // Deterministic seed for each backtest
+    const random = createSeededRandom(seed);
+
+    // Pick a strategy (cycle through the list)
+    const strategyInfo = strategyNames[i % strategyNames.length];
+
+    // Generate varied but realistic metrics
+    // ~30% chance of negative return for visual variety
+    const isNegative = random() < 0.3;
+    const returnPct = isNegative
+      ? -(2 + random() * 12) // -2% to -14%
+      : 2 + random() * 16; // +2% to +18%
+    const sharpeRatio = isNegative
+      ? -0.2 + random() * 0.8 // -0.2 to 0.6 for losing strategies
+      : 0.5 + random() * 1.6; // 0.5 to 2.1 for winning strategies
+    const maxDrawdown = -(5 + random() * 20); // -5% to -25%
+
+    // Generate run date (spread over last 30 days)
+    const daysAgo = Math.floor(random() * 30);
+    const runDate = new Date(now);
+    runDate.setDate(runDate.getDate() - daysAgo);
+
+    backtests.push({
+      id: `backtest-${i + 1}`,
+      strategyId: strategyInfo.id,
+      strategyName: strategyInfo.name,
+      returnPct,
+      sharpeRatio,
+      maxDrawdown,
+      runDate,
+      equityCurve: generateChartData(returnPct, seed * 31 + 7),
+      benchmarkCurve: generateBenchmarkData(seed * 17 + 42),
+    });
+  }
+
+  // Sort by run date (most recent first)
+  backtests.sort((a, b) => b.runDate.getTime() - a.runDate.getTime());
+
+  return backtests;
+}

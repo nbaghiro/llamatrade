@@ -19,6 +19,7 @@ else:
 _T = _typing.TypeVar("_T")
 
 class _MaybeAsyncIterator(_abc.AsyncIterator[_T], _abc.Iterator[_T], metaclass=_abc_1.ABCMeta): ...
+
 class _ServicerContext(_grpc.ServicerContext, _aio.ServicerContext):  # type: ignore[misc, type-arg]
     ...
 
@@ -35,54 +36,26 @@ class BillingServiceStub:
     def __new__(cls, channel: _grpc.Channel) -> _Self: ...
     @_typing.overload
     def __new__(cls, channel: _aio.Channel) -> BillingServiceAsyncStub: ...
-    GetSubscription: _grpc.UnaryUnaryMultiCallable[
-        _billing_pb2.GetSubscriptionRequest, _billing_pb2.GetSubscriptionResponse
-    ]
+    GetSubscription: _grpc.UnaryUnaryMultiCallable[_billing_pb2.GetSubscriptionRequest, _billing_pb2.GetSubscriptionResponse]
     """Subscription management"""
-    CreateSubscription: _grpc.UnaryUnaryMultiCallable[
-        _billing_pb2.CreateSubscriptionRequest, _billing_pb2.CreateSubscriptionResponse
-    ]
-    UpdateSubscription: _grpc.UnaryUnaryMultiCallable[
-        _billing_pb2.UpdateSubscriptionRequest, _billing_pb2.UpdateSubscriptionResponse
-    ]
-    CancelSubscription: _grpc.UnaryUnaryMultiCallable[
-        _billing_pb2.CancelSubscriptionRequest, _billing_pb2.CancelSubscriptionResponse
-    ]
-    ResumeSubscription: _grpc.UnaryUnaryMultiCallable[
-        _billing_pb2.ResumeSubscriptionRequest, _billing_pb2.ResumeSubscriptionResponse
-    ]
-    GetUsage: _grpc.UnaryUnaryMultiCallable[
-        _billing_pb2.GetUsageRequest, _billing_pb2.GetUsageResponse
-    ]
+    CreateSubscription: _grpc.UnaryUnaryMultiCallable[_billing_pb2.CreateSubscriptionRequest, _billing_pb2.CreateSubscriptionResponse]
+    UpdateSubscription: _grpc.UnaryUnaryMultiCallable[_billing_pb2.UpdateSubscriptionRequest, _billing_pb2.UpdateSubscriptionResponse]
+    CancelSubscription: _grpc.UnaryUnaryMultiCallable[_billing_pb2.CancelSubscriptionRequest, _billing_pb2.CancelSubscriptionResponse]
+    ResumeSubscription: _grpc.UnaryUnaryMultiCallable[_billing_pb2.ResumeSubscriptionRequest, _billing_pb2.ResumeSubscriptionResponse]
+    GetUsage: _grpc.UnaryUnaryMultiCallable[_billing_pb2.GetUsageRequest, _billing_pb2.GetUsageResponse]
     """Usage"""
-    ListInvoices: _grpc.UnaryUnaryMultiCallable[
-        _billing_pb2.ListInvoicesRequest, _billing_pb2.ListInvoicesResponse
-    ]
+    ListInvoices: _grpc.UnaryUnaryMultiCallable[_billing_pb2.ListInvoicesRequest, _billing_pb2.ListInvoicesResponse]
     """Invoices"""
-    GetInvoice: _grpc.UnaryUnaryMultiCallable[
-        _billing_pb2.GetInvoiceRequest, _billing_pb2.GetInvoiceResponse
-    ]
-    ListPlans: _grpc.UnaryUnaryMultiCallable[
-        _billing_pb2.ListPlansRequest, _billing_pb2.ListPlansResponse
-    ]
+    GetInvoice: _grpc.UnaryUnaryMultiCallable[_billing_pb2.GetInvoiceRequest, _billing_pb2.GetInvoiceResponse]
+    ListPlans: _grpc.UnaryUnaryMultiCallable[_billing_pb2.ListPlansRequest, _billing_pb2.ListPlansResponse]
     """Plans"""
-    ListPaymentMethods: _grpc.UnaryUnaryMultiCallable[
-        _billing_pb2.ListPaymentMethodsRequest, _billing_pb2.ListPaymentMethodsResponse
-    ]
+    ListPaymentMethods: _grpc.UnaryUnaryMultiCallable[_billing_pb2.ListPaymentMethodsRequest, _billing_pb2.ListPaymentMethodsResponse]
     """Payment methods"""
-    AddPaymentMethod: _grpc.UnaryUnaryMultiCallable[
-        _billing_pb2.AddPaymentMethodRequest, _billing_pb2.AddPaymentMethodResponse
-    ]
-    RemovePaymentMethod: _grpc.UnaryUnaryMultiCallable[
-        _billing_pb2.RemovePaymentMethodRequest, _billing_pb2.RemovePaymentMethodResponse
-    ]
-    CreateCheckoutSession: _grpc.UnaryUnaryMultiCallable[
-        _billing_pb2.CreateCheckoutSessionRequest, _billing_pb2.CreateCheckoutSessionResponse
-    ]
+    AddPaymentMethod: _grpc.UnaryUnaryMultiCallable[_billing_pb2.AddPaymentMethodRequest, _billing_pb2.AddPaymentMethodResponse]
+    RemovePaymentMethod: _grpc.UnaryUnaryMultiCallable[_billing_pb2.RemovePaymentMethodRequest, _billing_pb2.RemovePaymentMethodResponse]
+    CreateCheckoutSession: _grpc.UnaryUnaryMultiCallable[_billing_pb2.CreateCheckoutSessionRequest, _billing_pb2.CreateCheckoutSessionResponse]
     """Stripe integration"""
-    CreatePortalSession: _grpc.UnaryUnaryMultiCallable[
-        _billing_pb2.CreatePortalSessionRequest, _billing_pb2.CreatePortalSessionResponse
-    ]
+    CreatePortalSession: _grpc.UnaryUnaryMultiCallable[_billing_pb2.CreatePortalSessionRequest, _billing_pb2.CreatePortalSessionResponse]
 
 @_typing.type_check_only
 class BillingServiceAsyncStub(BillingServiceStub):
@@ -92,54 +65,26 @@ class BillingServiceAsyncStub(BillingServiceStub):
     """
 
     def __init__(self, channel: _aio.Channel) -> None: ...
-    GetSubscription: _aio.UnaryUnaryMultiCallable[
-        _billing_pb2.GetSubscriptionRequest, _billing_pb2.GetSubscriptionResponse
-    ]  # type: ignore[assignment]
+    GetSubscription: _aio.UnaryUnaryMultiCallable[_billing_pb2.GetSubscriptionRequest, _billing_pb2.GetSubscriptionResponse]  # type: ignore[assignment]
     """Subscription management"""
-    CreateSubscription: _aio.UnaryUnaryMultiCallable[
-        _billing_pb2.CreateSubscriptionRequest, _billing_pb2.CreateSubscriptionResponse
-    ]  # type: ignore[assignment]
-    UpdateSubscription: _aio.UnaryUnaryMultiCallable[
-        _billing_pb2.UpdateSubscriptionRequest, _billing_pb2.UpdateSubscriptionResponse
-    ]  # type: ignore[assignment]
-    CancelSubscription: _aio.UnaryUnaryMultiCallable[
-        _billing_pb2.CancelSubscriptionRequest, _billing_pb2.CancelSubscriptionResponse
-    ]  # type: ignore[assignment]
-    ResumeSubscription: _aio.UnaryUnaryMultiCallable[
-        _billing_pb2.ResumeSubscriptionRequest, _billing_pb2.ResumeSubscriptionResponse
-    ]  # type: ignore[assignment]
-    GetUsage: _aio.UnaryUnaryMultiCallable[
-        _billing_pb2.GetUsageRequest, _billing_pb2.GetUsageResponse
-    ]  # type: ignore[assignment]
+    CreateSubscription: _aio.UnaryUnaryMultiCallable[_billing_pb2.CreateSubscriptionRequest, _billing_pb2.CreateSubscriptionResponse]  # type: ignore[assignment]
+    UpdateSubscription: _aio.UnaryUnaryMultiCallable[_billing_pb2.UpdateSubscriptionRequest, _billing_pb2.UpdateSubscriptionResponse]  # type: ignore[assignment]
+    CancelSubscription: _aio.UnaryUnaryMultiCallable[_billing_pb2.CancelSubscriptionRequest, _billing_pb2.CancelSubscriptionResponse]  # type: ignore[assignment]
+    ResumeSubscription: _aio.UnaryUnaryMultiCallable[_billing_pb2.ResumeSubscriptionRequest, _billing_pb2.ResumeSubscriptionResponse]  # type: ignore[assignment]
+    GetUsage: _aio.UnaryUnaryMultiCallable[_billing_pb2.GetUsageRequest, _billing_pb2.GetUsageResponse]  # type: ignore[assignment]
     """Usage"""
-    ListInvoices: _aio.UnaryUnaryMultiCallable[
-        _billing_pb2.ListInvoicesRequest, _billing_pb2.ListInvoicesResponse
-    ]  # type: ignore[assignment]
+    ListInvoices: _aio.UnaryUnaryMultiCallable[_billing_pb2.ListInvoicesRequest, _billing_pb2.ListInvoicesResponse]  # type: ignore[assignment]
     """Invoices"""
-    GetInvoice: _aio.UnaryUnaryMultiCallable[
-        _billing_pb2.GetInvoiceRequest, _billing_pb2.GetInvoiceResponse
-    ]  # type: ignore[assignment]
-    ListPlans: _aio.UnaryUnaryMultiCallable[
-        _billing_pb2.ListPlansRequest, _billing_pb2.ListPlansResponse
-    ]  # type: ignore[assignment]
+    GetInvoice: _aio.UnaryUnaryMultiCallable[_billing_pb2.GetInvoiceRequest, _billing_pb2.GetInvoiceResponse]  # type: ignore[assignment]
+    ListPlans: _aio.UnaryUnaryMultiCallable[_billing_pb2.ListPlansRequest, _billing_pb2.ListPlansResponse]  # type: ignore[assignment]
     """Plans"""
-    ListPaymentMethods: _aio.UnaryUnaryMultiCallable[
-        _billing_pb2.ListPaymentMethodsRequest, _billing_pb2.ListPaymentMethodsResponse
-    ]  # type: ignore[assignment]
+    ListPaymentMethods: _aio.UnaryUnaryMultiCallable[_billing_pb2.ListPaymentMethodsRequest, _billing_pb2.ListPaymentMethodsResponse]  # type: ignore[assignment]
     """Payment methods"""
-    AddPaymentMethod: _aio.UnaryUnaryMultiCallable[
-        _billing_pb2.AddPaymentMethodRequest, _billing_pb2.AddPaymentMethodResponse
-    ]  # type: ignore[assignment]
-    RemovePaymentMethod: _aio.UnaryUnaryMultiCallable[
-        _billing_pb2.RemovePaymentMethodRequest, _billing_pb2.RemovePaymentMethodResponse
-    ]  # type: ignore[assignment]
-    CreateCheckoutSession: _aio.UnaryUnaryMultiCallable[
-        _billing_pb2.CreateCheckoutSessionRequest, _billing_pb2.CreateCheckoutSessionResponse
-    ]  # type: ignore[assignment]
+    AddPaymentMethod: _aio.UnaryUnaryMultiCallable[_billing_pb2.AddPaymentMethodRequest, _billing_pb2.AddPaymentMethodResponse]  # type: ignore[assignment]
+    RemovePaymentMethod: _aio.UnaryUnaryMultiCallable[_billing_pb2.RemovePaymentMethodRequest, _billing_pb2.RemovePaymentMethodResponse]  # type: ignore[assignment]
+    CreateCheckoutSession: _aio.UnaryUnaryMultiCallable[_billing_pb2.CreateCheckoutSessionRequest, _billing_pb2.CreateCheckoutSessionResponse]  # type: ignore[assignment]
     """Stripe integration"""
-    CreatePortalSession: _aio.UnaryUnaryMultiCallable[
-        _billing_pb2.CreatePortalSessionRequest, _billing_pb2.CreatePortalSessionResponse
-    ]  # type: ignore[assignment]
+    CreatePortalSession: _aio.UnaryUnaryMultiCallable[_billing_pb2.CreatePortalSessionRequest, _billing_pb2.CreatePortalSessionResponse]  # type: ignore[assignment]
 
 class BillingServiceServicer(metaclass=_abc_1.ABCMeta):
     """=============================================================================
@@ -152,9 +97,7 @@ class BillingServiceServicer(metaclass=_abc_1.ABCMeta):
         self,
         request: _billing_pb2.GetSubscriptionRequest,
         context: _ServicerContext,
-    ) -> _typing.Union[
-        _billing_pb2.GetSubscriptionResponse, _abc.Awaitable[_billing_pb2.GetSubscriptionResponse]
-    ]:
+    ) -> _typing.Union[_billing_pb2.GetSubscriptionResponse, _abc.Awaitable[_billing_pb2.GetSubscriptionResponse]]:
         """Subscription management"""
 
     @_abc_1.abstractmethod
@@ -162,45 +105,35 @@ class BillingServiceServicer(metaclass=_abc_1.ABCMeta):
         self,
         request: _billing_pb2.CreateSubscriptionRequest,
         context: _ServicerContext,
-    ) -> _typing.Union[
-        _billing_pb2.CreateSubscriptionResponse,
-        _abc.Awaitable[_billing_pb2.CreateSubscriptionResponse],
-    ]: ...
+    ) -> _typing.Union[_billing_pb2.CreateSubscriptionResponse, _abc.Awaitable[_billing_pb2.CreateSubscriptionResponse]]: ...
+
     @_abc_1.abstractmethod
     def UpdateSubscription(
         self,
         request: _billing_pb2.UpdateSubscriptionRequest,
         context: _ServicerContext,
-    ) -> _typing.Union[
-        _billing_pb2.UpdateSubscriptionResponse,
-        _abc.Awaitable[_billing_pb2.UpdateSubscriptionResponse],
-    ]: ...
+    ) -> _typing.Union[_billing_pb2.UpdateSubscriptionResponse, _abc.Awaitable[_billing_pb2.UpdateSubscriptionResponse]]: ...
+
     @_abc_1.abstractmethod
     def CancelSubscription(
         self,
         request: _billing_pb2.CancelSubscriptionRequest,
         context: _ServicerContext,
-    ) -> _typing.Union[
-        _billing_pb2.CancelSubscriptionResponse,
-        _abc.Awaitable[_billing_pb2.CancelSubscriptionResponse],
-    ]: ...
+    ) -> _typing.Union[_billing_pb2.CancelSubscriptionResponse, _abc.Awaitable[_billing_pb2.CancelSubscriptionResponse]]: ...
+
     @_abc_1.abstractmethod
     def ResumeSubscription(
         self,
         request: _billing_pb2.ResumeSubscriptionRequest,
         context: _ServicerContext,
-    ) -> _typing.Union[
-        _billing_pb2.ResumeSubscriptionResponse,
-        _abc.Awaitable[_billing_pb2.ResumeSubscriptionResponse],
-    ]: ...
+    ) -> _typing.Union[_billing_pb2.ResumeSubscriptionResponse, _abc.Awaitable[_billing_pb2.ResumeSubscriptionResponse]]: ...
+
     @_abc_1.abstractmethod
     def GetUsage(
         self,
         request: _billing_pb2.GetUsageRequest,
         context: _ServicerContext,
-    ) -> _typing.Union[
-        _billing_pb2.GetUsageResponse, _abc.Awaitable[_billing_pb2.GetUsageResponse]
-    ]:
+    ) -> _typing.Union[_billing_pb2.GetUsageResponse, _abc.Awaitable[_billing_pb2.GetUsageResponse]]:
         """Usage"""
 
     @_abc_1.abstractmethod
@@ -208,9 +141,7 @@ class BillingServiceServicer(metaclass=_abc_1.ABCMeta):
         self,
         request: _billing_pb2.ListInvoicesRequest,
         context: _ServicerContext,
-    ) -> _typing.Union[
-        _billing_pb2.ListInvoicesResponse, _abc.Awaitable[_billing_pb2.ListInvoicesResponse]
-    ]:
+    ) -> _typing.Union[_billing_pb2.ListInvoicesResponse, _abc.Awaitable[_billing_pb2.ListInvoicesResponse]]:
         """Invoices"""
 
     @_abc_1.abstractmethod
@@ -218,17 +149,14 @@ class BillingServiceServicer(metaclass=_abc_1.ABCMeta):
         self,
         request: _billing_pb2.GetInvoiceRequest,
         context: _ServicerContext,
-    ) -> _typing.Union[
-        _billing_pb2.GetInvoiceResponse, _abc.Awaitable[_billing_pb2.GetInvoiceResponse]
-    ]: ...
+    ) -> _typing.Union[_billing_pb2.GetInvoiceResponse, _abc.Awaitable[_billing_pb2.GetInvoiceResponse]]: ...
+
     @_abc_1.abstractmethod
     def ListPlans(
         self,
         request: _billing_pb2.ListPlansRequest,
         context: _ServicerContext,
-    ) -> _typing.Union[
-        _billing_pb2.ListPlansResponse, _abc.Awaitable[_billing_pb2.ListPlansResponse]
-    ]:
+    ) -> _typing.Union[_billing_pb2.ListPlansResponse, _abc.Awaitable[_billing_pb2.ListPlansResponse]]:
         """Plans"""
 
     @_abc_1.abstractmethod
@@ -236,10 +164,7 @@ class BillingServiceServicer(metaclass=_abc_1.ABCMeta):
         self,
         request: _billing_pb2.ListPaymentMethodsRequest,
         context: _ServicerContext,
-    ) -> _typing.Union[
-        _billing_pb2.ListPaymentMethodsResponse,
-        _abc.Awaitable[_billing_pb2.ListPaymentMethodsResponse],
-    ]:
+    ) -> _typing.Union[_billing_pb2.ListPaymentMethodsResponse, _abc.Awaitable[_billing_pb2.ListPaymentMethodsResponse]]:
         """Payment methods"""
 
     @_abc_1.abstractmethod
@@ -247,27 +172,21 @@ class BillingServiceServicer(metaclass=_abc_1.ABCMeta):
         self,
         request: _billing_pb2.AddPaymentMethodRequest,
         context: _ServicerContext,
-    ) -> _typing.Union[
-        _billing_pb2.AddPaymentMethodResponse, _abc.Awaitable[_billing_pb2.AddPaymentMethodResponse]
-    ]: ...
+    ) -> _typing.Union[_billing_pb2.AddPaymentMethodResponse, _abc.Awaitable[_billing_pb2.AddPaymentMethodResponse]]: ...
+
     @_abc_1.abstractmethod
     def RemovePaymentMethod(
         self,
         request: _billing_pb2.RemovePaymentMethodRequest,
         context: _ServicerContext,
-    ) -> _typing.Union[
-        _billing_pb2.RemovePaymentMethodResponse,
-        _abc.Awaitable[_billing_pb2.RemovePaymentMethodResponse],
-    ]: ...
+    ) -> _typing.Union[_billing_pb2.RemovePaymentMethodResponse, _abc.Awaitable[_billing_pb2.RemovePaymentMethodResponse]]: ...
+
     @_abc_1.abstractmethod
     def CreateCheckoutSession(
         self,
         request: _billing_pb2.CreateCheckoutSessionRequest,
         context: _ServicerContext,
-    ) -> _typing.Union[
-        _billing_pb2.CreateCheckoutSessionResponse,
-        _abc.Awaitable[_billing_pb2.CreateCheckoutSessionResponse],
-    ]:
+    ) -> _typing.Union[_billing_pb2.CreateCheckoutSessionResponse, _abc.Awaitable[_billing_pb2.CreateCheckoutSessionResponse]]:
         """Stripe integration"""
 
     @_abc_1.abstractmethod
@@ -275,11 +194,6 @@ class BillingServiceServicer(metaclass=_abc_1.ABCMeta):
         self,
         request: _billing_pb2.CreatePortalSessionRequest,
         context: _ServicerContext,
-    ) -> _typing.Union[
-        _billing_pb2.CreatePortalSessionResponse,
-        _abc.Awaitable[_billing_pb2.CreatePortalSessionResponse],
-    ]: ...
+    ) -> _typing.Union[_billing_pb2.CreatePortalSessionResponse, _abc.Awaitable[_billing_pb2.CreatePortalSessionResponse]]: ...
 
-def add_BillingServiceServicer_to_server(
-    servicer: BillingServiceServicer, server: _typing.Union[_grpc.Server, _aio.Server]
-) -> None: ...
+def add_BillingServiceServicer_to_server(servicer: BillingServiceServicer, server: _typing.Union[_grpc.Server, _aio.Server]) -> None: ...

@@ -1,7 +1,7 @@
 import { ChevronDown, ChevronRight, Code2, Eye, GitBranch, Layers, Pencil } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 
-import { useStrategyBuilderStore, type ViewMode } from '../../../store/strategy-builder';
+import { useStrategyBuilderStoreWithContext, type ViewMode } from '../../../store/strategy-builder';
 import type { RootBlock as RootBlockType } from '../../../types/strategy-builder';
 
 interface RootBlockProps {
@@ -42,7 +42,7 @@ function ViewButton({ mode, currentMode, icon, label, onClick }: ViewButtonProps
 }
 
 export function RootBlock({ block, readOnly }: RootBlockProps) {
-  const { ui, viewMode, compactView, setViewMode, toggleCompactView, selectBlock, toggleExpand, setEditing, updateBlock } = useStrategyBuilderStore();
+  const { ui, viewMode, compactView, setViewMode, toggleCompactView, selectBlock, toggleExpand, setEditing, updateBlock } = useStrategyBuilderStoreWithContext();
   const isSelected = !readOnly && ui.selectedBlockId === block.id;
   const isExpanded = ui.expandedBlocks.has(block.id);
   const isEditing = !readOnly && ui.editingBlockId === block.id;

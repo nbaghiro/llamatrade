@@ -25,9 +25,7 @@ class _BacktestStatus:
     ValueType = typing.NewType("ValueType", builtins.int)
     V: _TypeAlias = ValueType  # noqa: Y015
 
-class _BacktestStatusEnumTypeWrapper(
-    enum_type_wrapper._EnumTypeWrapper[_BacktestStatus.ValueType], builtins.type
-):
+class _BacktestStatusEnumTypeWrapper(enum_type_wrapper._EnumTypeWrapper[_BacktestStatus.ValueType], builtins.type):
     DESCRIPTOR: descriptor.EnumDescriptor
     BACKTEST_STATUS_UNSPECIFIED: _BacktestStatus.ValueType  # 0
     BACKTEST_STATUS_PENDING: _BacktestStatus.ValueType  # 1
@@ -157,53 +155,9 @@ class BacktestConfig(message.Message):
         benchmark_symbol: builtins.str = ...,
         include_benchmark: builtins.bool = ...,
     ) -> None: ...
-    _HasFieldArgType: _TypeAlias = typing.Literal[
-        "commission",
-        b"commission",
-        "end_date",
-        b"end_date",
-        "initial_capital",
-        b"initial_capital",
-        "max_position_size",
-        b"max_position_size",
-        "slippage_percent",
-        b"slippage_percent",
-        "start_date",
-        b"start_date",
-    ]  # noqa: Y015
+    _HasFieldArgType: _TypeAlias = typing.Literal["commission", b"commission", "end_date", b"end_date", "initial_capital", b"initial_capital", "max_position_size", b"max_position_size", "slippage_percent", b"slippage_percent", "start_date", b"start_date"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal[
-        "allow_shorting",
-        b"allow_shorting",
-        "benchmark_symbol",
-        b"benchmark_symbol",
-        "commission",
-        b"commission",
-        "end_date",
-        b"end_date",
-        "include_benchmark",
-        b"include_benchmark",
-        "initial_capital",
-        b"initial_capital",
-        "max_position_size",
-        b"max_position_size",
-        "parameters",
-        b"parameters",
-        "slippage_percent",
-        b"slippage_percent",
-        "start_date",
-        b"start_date",
-        "strategy_id",
-        b"strategy_id",
-        "strategy_version",
-        b"strategy_version",
-        "symbols",
-        b"symbols",
-        "timeframe",
-        b"timeframe",
-        "use_adjusted_prices",
-        b"use_adjusted_prices",
-    ]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["allow_shorting", b"allow_shorting", "benchmark_symbol", b"benchmark_symbol", "commission", b"commission", "end_date", b"end_date", "include_benchmark", b"include_benchmark", "initial_capital", b"initial_capital", "max_position_size", b"max_position_size", "parameters", b"parameters", "slippage_percent", b"slippage_percent", "start_date", b"start_date", "strategy_id", b"strategy_id", "strategy_version", b"strategy_version", "symbols", b"symbols", "timeframe", b"timeframe", "use_adjusted_prices", b"use_adjusted_prices"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -265,47 +219,9 @@ class BacktestRun(message.Message):
         started_at: common_pb2.Timestamp | None = ...,
         completed_at: common_pb2.Timestamp | None = ...,
     ) -> None: ...
-    _HasFieldArgType: _TypeAlias = typing.Literal[
-        "completed_at",
-        b"completed_at",
-        "config",
-        b"config",
-        "created_at",
-        b"created_at",
-        "results",
-        b"results",
-        "started_at",
-        b"started_at",
-    ]  # noqa: Y015
+    _HasFieldArgType: _TypeAlias = typing.Literal["completed_at", b"completed_at", "config", b"config", "created_at", b"created_at", "results", b"results", "started_at", b"started_at"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal[
-        "completed_at",
-        b"completed_at",
-        "config",
-        b"config",
-        "created_at",
-        b"created_at",
-        "current_date",
-        b"current_date",
-        "id",
-        b"id",
-        "progress_percent",
-        b"progress_percent",
-        "results",
-        b"results",
-        "started_at",
-        b"started_at",
-        "status",
-        b"status",
-        "status_message",
-        b"status_message",
-        "strategy_id",
-        b"strategy_id",
-        "strategy_version",
-        b"strategy_version",
-        "tenant_id",
-        b"tenant_id",
-    ]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["completed_at", b"completed_at", "config", b"config", "created_at", b"created_at", "current_date", b"current_date", "id", b"id", "progress_percent", b"progress_percent", "results", b"results", "started_at", b"started_at", "status", b"status", "status_message", b"status_message", "strategy_id", b"strategy_id", "strategy_version", b"strategy_version", "tenant_id", b"tenant_id"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -436,113 +352,9 @@ class BacktestMetrics(message.Message):
         excess_return: common_pb2.Decimal | None = ...,
         benchmark_symbol: builtins.str = ...,
     ) -> None: ...
-    _HasFieldArgType: _TypeAlias = typing.Literal[
-        "alpha",
-        b"alpha",
-        "annualized_return",
-        b"annualized_return",
-        "average_holding_period_days",
-        b"average_holding_period_days",
-        "average_loss",
-        b"average_loss",
-        "average_win",
-        b"average_win",
-        "benchmark_return",
-        b"benchmark_return",
-        "beta",
-        b"beta",
-        "downside_deviation",
-        b"downside_deviation",
-        "ending_capital",
-        b"ending_capital",
-        "excess_return",
-        b"excess_return",
-        "expectancy",
-        b"expectancy",
-        "information_ratio",
-        b"information_ratio",
-        "max_drawdown",
-        b"max_drawdown",
-        "max_drawdown_duration_days",
-        b"max_drawdown_duration_days",
-        "peak_capital",
-        b"peak_capital",
-        "profit_factor",
-        b"profit_factor",
-        "sharpe_ratio",
-        b"sharpe_ratio",
-        "sortino_ratio",
-        b"sortino_ratio",
-        "starting_capital",
-        b"starting_capital",
-        "total_commission",
-        b"total_commission",
-        "total_return",
-        b"total_return",
-        "volatility",
-        b"volatility",
-        "win_rate",
-        b"win_rate",
-    ]  # noqa: Y015
+    _HasFieldArgType: _TypeAlias = typing.Literal["alpha", b"alpha", "annualized_return", b"annualized_return", "average_holding_period_days", b"average_holding_period_days", "average_loss", b"average_loss", "average_win", b"average_win", "benchmark_return", b"benchmark_return", "beta", b"beta", "downside_deviation", b"downside_deviation", "ending_capital", b"ending_capital", "excess_return", b"excess_return", "expectancy", b"expectancy", "information_ratio", b"information_ratio", "max_drawdown", b"max_drawdown", "max_drawdown_duration_days", b"max_drawdown_duration_days", "peak_capital", b"peak_capital", "profit_factor", b"profit_factor", "sharpe_ratio", b"sharpe_ratio", "sortino_ratio", b"sortino_ratio", "starting_capital", b"starting_capital", "total_commission", b"total_commission", "total_return", b"total_return", "volatility", b"volatility", "win_rate", b"win_rate"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal[
-        "alpha",
-        b"alpha",
-        "annualized_return",
-        b"annualized_return",
-        "average_holding_period_days",
-        b"average_holding_period_days",
-        "average_loss",
-        b"average_loss",
-        "average_win",
-        b"average_win",
-        "benchmark_return",
-        b"benchmark_return",
-        "benchmark_symbol",
-        b"benchmark_symbol",
-        "beta",
-        b"beta",
-        "downside_deviation",
-        b"downside_deviation",
-        "ending_capital",
-        b"ending_capital",
-        "excess_return",
-        b"excess_return",
-        "expectancy",
-        b"expectancy",
-        "information_ratio",
-        b"information_ratio",
-        "losing_trades",
-        b"losing_trades",
-        "max_concurrent_positions",
-        b"max_concurrent_positions",
-        "max_drawdown",
-        b"max_drawdown",
-        "max_drawdown_duration_days",
-        b"max_drawdown_duration_days",
-        "peak_capital",
-        b"peak_capital",
-        "profit_factor",
-        b"profit_factor",
-        "sharpe_ratio",
-        b"sharpe_ratio",
-        "sortino_ratio",
-        b"sortino_ratio",
-        "starting_capital",
-        b"starting_capital",
-        "total_commission",
-        b"total_commission",
-        "total_return",
-        b"total_return",
-        "total_trades",
-        b"total_trades",
-        "volatility",
-        b"volatility",
-        "win_rate",
-        b"win_rate",
-        "winning_trades",
-        b"winning_trades",
-    ]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["alpha", b"alpha", "annualized_return", b"annualized_return", "average_holding_period_days", b"average_holding_period_days", "average_loss", b"average_loss", "average_win", b"average_win", "benchmark_return", b"benchmark_return", "benchmark_symbol", b"benchmark_symbol", "beta", b"beta", "downside_deviation", b"downside_deviation", "ending_capital", b"ending_capital", "excess_return", b"excess_return", "expectancy", b"expectancy", "information_ratio", b"information_ratio", "losing_trades", b"losing_trades", "max_concurrent_positions", b"max_concurrent_positions", "max_drawdown", b"max_drawdown", "max_drawdown_duration_days", b"max_drawdown_duration_days", "peak_capital", b"peak_capital", "profit_factor", b"profit_factor", "sharpe_ratio", b"sharpe_ratio", "sortino_ratio", b"sortino_ratio", "starting_capital", b"starting_capital", "total_commission", b"total_commission", "total_return", b"total_return", "total_trades", b"total_trades", "volatility", b"volatility", "win_rate", b"win_rate", "winning_trades", b"winning_trades"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -579,35 +391,9 @@ class EquityPoint(message.Message):
         daily_return: common_pb2.Decimal | None = ...,
         drawdown: common_pb2.Decimal | None = ...,
     ) -> None: ...
-    _HasFieldArgType: _TypeAlias = typing.Literal[
-        "cash",
-        b"cash",
-        "daily_return",
-        b"daily_return",
-        "drawdown",
-        b"drawdown",
-        "equity",
-        b"equity",
-        "positions_value",
-        b"positions_value",
-        "timestamp",
-        b"timestamp",
-    ]  # noqa: Y015
+    _HasFieldArgType: _TypeAlias = typing.Literal["cash", b"cash", "daily_return", b"daily_return", "drawdown", b"drawdown", "equity", b"equity", "positions_value", b"positions_value", "timestamp", b"timestamp"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal[
-        "cash",
-        b"cash",
-        "daily_return",
-        b"daily_return",
-        "drawdown",
-        b"drawdown",
-        "equity",
-        b"equity",
-        "positions_value",
-        b"positions_value",
-        "timestamp",
-        b"timestamp",
-    ]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["cash", b"cash", "daily_return", b"daily_return", "drawdown", b"drawdown", "equity", b"equity", "positions_value", b"positions_value", "timestamp", b"timestamp"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -667,53 +453,9 @@ class BacktestTrade(message.Message):
         entry_reason: builtins.str = ...,
         exit_reason: builtins.str = ...,
     ) -> None: ...
-    _HasFieldArgType: _TypeAlias = typing.Literal[
-        "commission",
-        b"commission",
-        "entry_price",
-        b"entry_price",
-        "entry_time",
-        b"entry_time",
-        "exit_price",
-        b"exit_price",
-        "exit_time",
-        b"exit_time",
-        "pnl",
-        b"pnl",
-        "pnl_percent",
-        b"pnl_percent",
-        "quantity",
-        b"quantity",
-    ]  # noqa: Y015
+    _HasFieldArgType: _TypeAlias = typing.Literal["commission", b"commission", "entry_price", b"entry_price", "entry_time", b"entry_time", "exit_price", b"exit_price", "exit_time", b"exit_time", "pnl", b"pnl", "pnl_percent", b"pnl_percent", "quantity", b"quantity"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal[
-        "commission",
-        b"commission",
-        "entry_price",
-        b"entry_price",
-        "entry_reason",
-        b"entry_reason",
-        "entry_time",
-        b"entry_time",
-        "exit_price",
-        b"exit_price",
-        "exit_reason",
-        b"exit_reason",
-        "exit_time",
-        b"exit_time",
-        "holding_period_bars",
-        b"holding_period_bars",
-        "pnl",
-        b"pnl",
-        "pnl_percent",
-        b"pnl_percent",
-        "quantity",
-        b"quantity",
-        "side",
-        b"side",
-        "symbol",
-        b"symbol",
-    ]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["commission", b"commission", "entry_price", b"entry_price", "entry_reason", b"entry_reason", "entry_time", b"entry_time", "exit_price", b"exit_price", "exit_reason", b"exit_reason", "exit_time", b"exit_time", "holding_period_bars", b"holding_period_bars", "pnl", b"pnl", "pnl_percent", b"pnl_percent", "quantity", b"quantity", "side", b"side", "symbol", b"symbol"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -772,9 +514,7 @@ class BacktestResults(message.Message):
     @builtins.property
     def trades(self) -> containers.RepeatedCompositeFieldContainer[BacktestTrade]: ...
     @builtins.property
-    def final_positions(
-        self,
-    ) -> containers.RepeatedCompositeFieldContainer[trading_pb2.Position]: ...
+    def final_positions(self) -> containers.RepeatedCompositeFieldContainer[trading_pb2.Position]: ...
     @builtins.property
     def monthly_returns(self) -> containers.ScalarMap[builtins.str, builtins.float]:
         """Monthly returns
@@ -803,24 +543,7 @@ class BacktestResults(message.Message):
     ) -> None: ...
     _HasFieldArgType: _TypeAlias = typing.Literal["metrics", b"metrics"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal[
-        "analysis",
-        b"analysis",
-        "benchmark_equity_curve",
-        b"benchmark_equity_curve",
-        "benchmark_symbol",
-        b"benchmark_symbol",
-        "equity_curve",
-        b"equity_curve",
-        "final_positions",
-        b"final_positions",
-        "metrics",
-        b"metrics",
-        "monthly_returns",
-        b"monthly_returns",
-        "trades",
-        b"trades",
-    ]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["analysis", b"analysis", "benchmark_equity_curve", b"benchmark_equity_curve", "benchmark_symbol", b"benchmark_symbol", "equity_curve", b"equity_curve", "final_positions", b"final_positions", "metrics", b"metrics", "monthly_returns", b"monthly_returns", "trades", b"trades"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -887,9 +610,7 @@ class GetBacktestRequest(message.Message):
     ) -> None: ...
     _HasFieldArgType: _TypeAlias = typing.Literal["context", b"context"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal[
-        "backtest_id", b"backtest_id", "context", b"context"
-    ]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["backtest_id", b"backtest_id", "context", b"context"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -935,20 +656,9 @@ class ListBacktestsRequest(message.Message):
         statuses: abc.Iterable[BacktestStatus.ValueType] | None = ...,
         pagination: common_pb2.PaginationRequest | None = ...,
     ) -> None: ...
-    _HasFieldArgType: _TypeAlias = typing.Literal[
-        "context", b"context", "pagination", b"pagination"
-    ]  # noqa: Y015
+    _HasFieldArgType: _TypeAlias = typing.Literal["context", b"context", "pagination", b"pagination"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal[
-        "context",
-        b"context",
-        "pagination",
-        b"pagination",
-        "statuses",
-        b"statuses",
-        "strategy_id",
-        b"strategy_id",
-    ]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["context", b"context", "pagination", b"pagination", "statuses", b"statuses", "strategy_id", b"strategy_id"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -969,9 +679,7 @@ class ListBacktestsResponse(message.Message):
     ) -> None: ...
     _HasFieldArgType: _TypeAlias = typing.Literal["pagination", b"pagination"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal[
-        "backtests", b"backtests", "pagination", b"pagination"
-    ]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["backtests", b"backtests", "pagination", b"pagination"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -993,9 +701,7 @@ class CancelBacktestRequest(message.Message):
     ) -> None: ...
     _HasFieldArgType: _TypeAlias = typing.Literal["context", b"context"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal[
-        "backtest_id", b"backtest_id", "context", b"context"
-    ]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["backtest_id", b"backtest_id", "context", b"context"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -1034,9 +740,7 @@ class StreamBacktestProgressRequest(message.Message):
     ) -> None: ...
     _HasFieldArgType: _TypeAlias = typing.Literal["context", b"context"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal[
-        "backtest_id", b"backtest_id", "context", b"context"
-    ]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["backtest_id", b"backtest_id", "context", b"context"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -1074,26 +778,9 @@ class BacktestProgressUpdate(message.Message):
         timestamp: common_pb2.Timestamp | None = ...,
         partial_metrics: BacktestMetrics | None = ...,
     ) -> None: ...
-    _HasFieldArgType: _TypeAlias = typing.Literal[
-        "partial_metrics", b"partial_metrics", "timestamp", b"timestamp"
-    ]  # noqa: Y015
+    _HasFieldArgType: _TypeAlias = typing.Literal["partial_metrics", b"partial_metrics", "timestamp", b"timestamp"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal[
-        "backtest_id",
-        b"backtest_id",
-        "current_date",
-        b"current_date",
-        "message",
-        b"message",
-        "partial_metrics",
-        b"partial_metrics",
-        "progress_percent",
-        b"progress_percent",
-        "status",
-        b"status",
-        "timestamp",
-        b"timestamp",
-    ]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["backtest_id", b"backtest_id", "current_date", b"current_date", "message", b"message", "partial_metrics", b"partial_metrics", "progress_percent", b"progress_percent", "status", b"status", "timestamp", b"timestamp"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -1116,9 +803,7 @@ class CompareBacktestsRequest(message.Message):
     ) -> None: ...
     _HasFieldArgType: _TypeAlias = typing.Literal["context", b"context"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal[
-        "backtest_ids", b"backtest_ids", "context", b"context"
-    ]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["backtest_ids", b"backtest_ids", "context", b"context"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -1159,7 +844,5 @@ class CompareBacktestsResponse(message.Message):
         backtests: abc.Iterable[BacktestRun] | None = ...,
         metrics_by_id: abc.Mapping[builtins.str, BacktestMetrics] | None = ...,
     ) -> None: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal[
-        "backtests", b"backtests", "metrics_by_id", b"metrics_by_id"
-    ]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["backtests", b"backtests", "metrics_by_id", b"metrics_by_id"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...

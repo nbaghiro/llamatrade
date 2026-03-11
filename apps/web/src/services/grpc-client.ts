@@ -16,6 +16,7 @@
 import { createClient, type Interceptor } from '@connectrpc/connect';
 import { createConnectTransport } from '@connectrpc/connect-web';
 
+import { AgentService } from '../generated/proto/agent_pb';
 import { AuthService } from '../generated/proto/auth_pb';
 import { BacktestService } from '../generated/proto/backtest_pb';
 import { BillingService } from '../generated/proto/billing_pb';
@@ -28,6 +29,7 @@ import { useAuthStore } from '../store/auth';
 
 // Direct service URLs (no proxy needed)
 const SERVICE_URLS = {
+  agent: import.meta.env.VITE_AGENT_URL || 'http://localhost:8890',
   auth: import.meta.env.VITE_AUTH_URL || 'http://localhost:8810',
   backtest: import.meta.env.VITE_BACKTEST_URL || 'http://localhost:8830',
   billing: import.meta.env.VITE_BILLING_URL || 'http://localhost:8880',
@@ -72,6 +74,11 @@ function createServiceTransport(baseUrl: string) {
 // ============================================================================
 // Service clients - each connects directly to its service
 // ============================================================================
+
+export const agentClient = createClient(
+  AgentService,
+  createServiceTransport(SERVICE_URLS.agent)
+);
 
 export const authClient = createClient(
   AuthService,

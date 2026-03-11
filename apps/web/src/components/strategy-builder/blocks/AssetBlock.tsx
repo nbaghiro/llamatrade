@@ -1,4 +1,4 @@
-import { useStrategyBuilderStore } from '../../../store/strategy-builder';
+import { useStrategyBuilderStoreWithContext } from '../../../store/strategy-builder';
 import type { AssetBlock as AssetBlockType } from '../../../types/strategy-builder';
 import { useBlockTheme } from '../useTheme';
 
@@ -9,7 +9,7 @@ interface AssetBlockProps {
 }
 
 export function AssetBlock({ block, allocationPercent, readOnly }: AssetBlockProps) {
-  const { ui, selectBlock } = useStrategyBuilderStore();
+  const { ui, selectBlock } = useStrategyBuilderStoreWithContext();
   const theme = useBlockTheme();
   const assetColors = theme.asset;
   const allocationBadgeColors = theme.allocation;

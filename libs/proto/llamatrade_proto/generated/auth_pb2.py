@@ -4,15 +4,18 @@
 # source: auth.proto
 # Protobuf Python Version: 6.30.2
 """Generated protocol buffer code."""
-
 from google.protobuf import descriptor as _descriptor
 from google.protobuf import descriptor_pool as _descriptor_pool
 from google.protobuf import runtime_version as _runtime_version
 from google.protobuf import symbol_database as _symbol_database
 from google.protobuf.internal import builder as _builder
-
 _runtime_version.ValidateProtobufRuntimeVersion(
-    _runtime_version.Domain.PUBLIC, 6, 30, 2, "", "auth.proto"
+    _runtime_version.Domain.PUBLIC,
+    6,
+    30,
+    2,
+    '',
+    'auth.proto'
 )
 # @@protoc_insertion_point(imports)
 
@@ -22,92 +25,88 @@ _sym_db = _symbol_database.Default()
 from . import common_pb2 as common__pb2
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(
-    b'\n\nauth.proto\x12\nllamatrade\x1a\x0c\x63ommon.proto"\xa4\x02\n\x04User\x12\x0e\n\x02id\x18\x01 \x01(\tR\x02id\x12\x1b\n\ttenant_id\x18\x02 \x01(\tR\x08tenantId\x12\x14\n\x05\x65mail\x18\x03 \x01(\tR\x05\x65mail\x12\x1d\n\nfirst_name\x18\x04 \x01(\tR\tfirstName\x12\x1b\n\tlast_name\x18\x05 \x01(\tR\x08lastName\x12\x14\n\x05roles\x18\x06 \x03(\tR\x05roles\x12\x1b\n\tis_active\x18\x07 \x01(\x08R\x08isActive\x12\x34\n\ncreated_at\x18\x08 \x01(\x0b\x32\x15.llamatrade.TimestampR\tcreatedAt\x12\x34\n\nlast_login\x18\t \x01(\x0b\x32\x15.llamatrade.TimestampR\tlastLogin"\x93\x02\n\x06Tenant\x12\x0e\n\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n\x04name\x18\x02 \x01(\tR\x04name\x12\x17\n\x07plan_id\x18\x03 \x01(\tR\x06planId\x12\x1b\n\tis_active\x18\x04 \x01(\x08R\x08isActive\x12\x34\n\ncreated_at\x18\x05 \x01(\x0b\x32\x15.llamatrade.TimestampR\tcreatedAt\x12<\n\x08settings\x18\x06 \x03(\x0b\x32 .llamatrade.Tenant.SettingsEntryR\x08settings\x1a;\n\rSettingsEntry\x12\x10\n\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n\x05value\x18\x02 \x01(\tR\x05value:\x02\x38\x01"\xbb\x02\n\x06\x41PIKey\x12\x0e\n\x02id\x18\x01 \x01(\tR\x02id\x12\x1b\n\ttenant_id\x18\x02 \x01(\tR\x08tenantId\x12\x12\n\x04name\x18\x03 \x01(\tR\x04name\x12\x16\n\x06prefix\x18\x04 \x01(\tR\x06prefix\x12\x16\n\x06scopes\x18\x05 \x03(\tR\x06scopes\x12\x34\n\ncreated_at\x18\x06 \x01(\x0b\x32\x15.llamatrade.TimestampR\tcreatedAt\x12\x34\n\nexpires_at\x18\x07 \x01(\x0b\x32\x15.llamatrade.TimestampR\texpiresAt\x12\x37\n\x0clast_used_at\x18\x08 \x01(\x0b\x32\x15.llamatrade.TimestampR\nlastUsedAt\x12\x1b\n\tis_active\x18\t \x01(\x08R\x08isActive"\xdd\x01\n\x11\x41lpacaCredentials\x12\x0e\n\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n\x04name\x18\x02 \x01(\tR\x04name\x12\x17\n\x07\x61pi_key\x18\x03 \x01(\tR\x06\x61piKey\x12\x1d\n\napi_secret\x18\x04 \x01(\tR\tapiSecret\x12\x19\n\x08is_paper\x18\x05 \x01(\x08R\x07isPaper\x12\x1b\n\tis_active\x18\x06 \x01(\x08R\x08isActive\x12\x34\n\ncreated_at\x18\x07 \x01(\x0b\x32\x15.llamatrade.TimestampR\tcreatedAt"\xd3\x01\n\x19\x41lpacaCredentialsListItem\x12\x0e\n\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n\x04name\x18\x02 \x01(\tR\x04name\x12$\n\x0e\x61pi_key_prefix\x18\x03 \x01(\tR\x0c\x61piKeyPrefix\x12\x19\n\x08is_paper\x18\x04 \x01(\x08R\x07isPaper\x12\x1b\n\tis_active\x18\x05 \x01(\x08R\x08isActive\x12\x34\n\ncreated_at\x18\x06 \x01(\x0b\x32\x15.llamatrade.TimestampR\tcreatedAt",\n\x14ValidateTokenRequest\x12\x14\n\x05token\x18\x01 \x01(\tR\x05token"\xb7\x01\n\x15ValidateTokenResponse\x12\x14\n\x05valid\x18\x01 \x01(\x08R\x05valid\x12\x33\n\x07\x63ontext\x18\x02 \x01(\x0b\x32\x19.llamatrade.TenantContextR\x07\x63ontext\x12\x34\n\nexpires_at\x18\x03 \x01(\x0b\x32\x15.llamatrade.TimestampR\texpiresAt\x12\x1d\n\ntoken_type\x18\x04 \x01(\tR\ttokenType"Y\n\x15ValidateAPIKeyRequest\x12\x17\n\x07\x61pi_key\x18\x01 \x01(\tR\x06\x61piKey\x12\'\n\x0frequired_scopes\x18\x02 \x03(\tR\x0erequiredScopes"\xb9\x01\n\x16ValidateAPIKeyResponse\x12\x14\n\x05valid\x18\x01 \x01(\x08R\x05valid\x12\x33\n\x07\x63ontext\x18\x02 \x01(\x0b\x32\x19.llamatrade.TenantContextR\x07\x63ontext\x12%\n\x0egranted_scopes\x18\x03 \x03(\tR\rgrantedScopes\x12-\n\x08key_info\x18\x04 \x01(\x0b\x32\x12.llamatrade.APIKeyR\x07keyInfo")\n\x0eGetUserRequest\x12\x17\n\x07user_id\x18\x01 \x01(\tR\x06userId"7\n\x0fGetUserResponse\x12$\n\x04user\x18\x01 \x01(\x0b\x32\x10.llamatrade.UserR\x04user"/\n\x10GetTenantRequest\x12\x1b\n\ttenant_id\x18\x01 \x01(\tR\x08tenantId"?\n\x11GetTenantResponse\x12*\n\x06tenant\x18\x01 \x01(\x0b\x32\x12.llamatrade.TenantR\x06tenant"\x81\x01\n\x16\x43heckPermissionRequest\x12\x33\n\x07\x63ontext\x18\x01 \x01(\x0b\x32\x19.llamatrade.TenantContextR\x07\x63ontext\x12\x1a\n\x08resource\x18\x02 \x01(\tR\x08resource\x12\x16\n\x06\x61\x63tion\x18\x03 \x01(\tR\x06\x61\x63tion"K\n\x17\x43heckPermissionResponse\x12\x18\n\x07\x61llowed\x18\x01 \x01(\x08R\x07\x61llowed\x12\x16\n\x06reason\x18\x02 \x01(\tR\x06reason":\n\x13RefreshTokenRequest\x12#\n\rrefresh_token\x18\x01 \x01(\tR\x0crefreshToken"\xfc\x01\n\x14RefreshTokenResponse\x12!\n\x0c\x61\x63\x63\x65ss_token\x18\x01 \x01(\tR\x0b\x61\x63\x63\x65ssToken\x12#\n\rrefresh_token\x18\x02 \x01(\tR\x0crefreshToken\x12L\n\x17\x61\x63\x63\x65ss_token_expires_at\x18\x03 \x01(\x0b\x32\x15.llamatrade.TimestampR\x14\x61\x63\x63\x65ssTokenExpiresAt\x12N\n\x18refresh_token_expires_at\x18\x04 \x01(\x0b\x32\x15.llamatrade.TimestampR\x15refreshTokenExpiresAt"@\n\x0cLoginRequest\x12\x14\n\x05\x65mail\x18\x01 \x01(\tR\x05\x65mail\x12\x1a\n\x08password\x18\x02 \x01(\tR\x08password"\x9b\x02\n\rLoginResponse\x12!\n\x0c\x61\x63\x63\x65ss_token\x18\x01 \x01(\tR\x0b\x61\x63\x63\x65ssToken\x12#\n\rrefresh_token\x18\x02 \x01(\tR\x0crefreshToken\x12$\n\x04user\x18\x03 \x01(\x0b\x32\x10.llamatrade.UserR\x04user\x12L\n\x17\x61\x63\x63\x65ss_token_expires_at\x18\x04 \x01(\x0b\x32\x15.llamatrade.TimestampR\x14\x61\x63\x63\x65ssTokenExpiresAt\x12N\n\x18refresh_token_expires_at\x18\x05 \x01(\x0b\x32\x15.llamatrade.TimestampR\x15refreshTokenExpiresAt"\xa0\x01\n\x0fRegisterRequest\x12\x1f\n\x0btenant_name\x18\x01 \x01(\tR\ntenantName\x12\x14\n\x05\x65mail\x18\x02 \x01(\tR\x05\x65mail\x12\x1a\n\x08password\x18\x03 \x01(\tR\x08password\x12\x1d\n\nfirst_name\x18\x04 \x01(\tR\tfirstName\x12\x1b\n\tlast_name\x18\x05 \x01(\tR\x08lastName"~\n\x10RegisterResponse\x12$\n\x04user\x18\x01 \x01(\x0b\x32\x10.llamatrade.UserR\x04user\x12*\n\x06tenant\x18\x02 \x01(\x0b\x32\x12.llamatrade.TenantR\x06tenant\x12\x18\n\x07message\x18\x03 \x01(\tR\x07message"\x17\n\x15GetCurrentUserRequest"j\n\x16GetCurrentUserResponse\x12$\n\x04user\x18\x01 \x01(\x0b\x32\x10.llamatrade.UserR\x04user\x12*\n\x06tenant\x18\x02 \x01(\x0b\x32\x12.llamatrade.TenantR\x06tenant"\x0f\n\rLogoutRequest"*\n\x0eLogoutResponse\x12\x18\n\x07success\x18\x01 \x01(\x08R\x07success"e\n\x15\x43hangePasswordRequest\x12)\n\x10\x63urrent_password\x18\x01 \x01(\tR\x0f\x63urrentPassword\x12!\n\x0cnew_password\x18\x02 \x01(\tR\x0bnewPassword"L\n\x16\x43hangePasswordResponse\x12\x18\n\x07success\x18\x01 \x01(\x08R\x07success\x12\x18\n\x07message\x18\x02 \x01(\tR\x07message"\x87\x01\n\x1e\x43reateAlpacaCredentialsRequest\x12\x12\n\x04name\x18\x01 \x01(\tR\x04name\x12\x17\n\x07\x61pi_key\x18\x02 \x01(\tR\x06\x61piKey\x12\x1d\n\napi_secret\x18\x03 \x01(\tR\tapiSecret\x12\x19\n\x08is_paper\x18\x04 \x01(\x08R\x07isPaper"b\n\x1f\x43reateAlpacaCredentialsResponse\x12?\n\x0b\x63redentials\x18\x01 \x01(\x0b\x32\x1d.llamatrade.AlpacaCredentialsR\x0b\x63redentials"D\n\x1bGetAlpacaCredentialsRequest\x12%\n\x0e\x63redentials_id\x18\x01 \x01(\tR\rcredentialsId"_\n\x1cGetAlpacaCredentialsResponse\x12?\n\x0b\x63redentials\x18\x01 \x01(\x0b\x32\x1d.llamatrade.AlpacaCredentialsR\x0b\x63redentials"\x1e\n\x1cListAlpacaCredentialsRequest"h\n\x1dListAlpacaCredentialsResponse\x12G\n\x0b\x63redentials\x18\x01 \x03(\x0b\x32%.llamatrade.AlpacaCredentialsListItemR\x0b\x63redentials"G\n\x1e\x44\x65leteAlpacaCredentialsRequest\x12%\n\x0e\x63redentials_id\x18\x01 \x01(\tR\rcredentialsId";\n\x1f\x44\x65leteAlpacaCredentialsResponse\x12\x18\n\x07success\x18\x01 \x01(\x08R\x07success2\xb2\n\n\x0b\x41uthService\x12<\n\x05Login\x12\x18.llamatrade.LoginRequest\x1a\x19.llamatrade.LoginResponse\x12\x45\n\x08Register\x12\x1b.llamatrade.RegisterRequest\x1a\x1c.llamatrade.RegisterResponse\x12Q\n\x0cRefreshToken\x12\x1f.llamatrade.RefreshTokenRequest\x1a .llamatrade.RefreshTokenResponse\x12?\n\x06Logout\x12\x19.llamatrade.LogoutRequest\x1a\x1a.llamatrade.LogoutResponse\x12W\n\x0eGetCurrentUser\x12!.llamatrade.GetCurrentUserRequest\x1a".llamatrade.GetCurrentUserResponse\x12W\n\x0e\x43hangePassword\x12!.llamatrade.ChangePasswordRequest\x1a".llamatrade.ChangePasswordResponse\x12T\n\rValidateToken\x12 .llamatrade.ValidateTokenRequest\x1a!.llamatrade.ValidateTokenResponse\x12W\n\x0eValidateAPIKey\x12!.llamatrade.ValidateAPIKeyRequest\x1a".llamatrade.ValidateAPIKeyResponse\x12\x42\n\x07GetUser\x12\x1a.llamatrade.GetUserRequest\x1a\x1b.llamatrade.GetUserResponse\x12H\n\tGetTenant\x12\x1c.llamatrade.GetTenantRequest\x1a\x1d.llamatrade.GetTenantResponse\x12Z\n\x0f\x43heckPermission\x12".llamatrade.CheckPermissionRequest\x1a#.llamatrade.CheckPermissionResponse\x12r\n\x17\x43reateAlpacaCredentials\x12*.llamatrade.CreateAlpacaCredentialsRequest\x1a+.llamatrade.CreateAlpacaCredentialsResponse\x12i\n\x14GetAlpacaCredentials\x12\'.llamatrade.GetAlpacaCredentialsRequest\x1a(.llamatrade.GetAlpacaCredentialsResponse\x12l\n\x15ListAlpacaCredentials\x12(.llamatrade.ListAlpacaCredentialsRequest\x1a).llamatrade.ListAlpacaCredentialsResponse\x12r\n\x17\x44\x65leteAlpacaCredentials\x12*.llamatrade.DeleteAlpacaCredentialsRequest\x1a+.llamatrade.DeleteAlpacaCredentialsResponseB\x85\x01\n\x0e\x63om.llamatradeB\tAuthProtoP\x01Z github.com/llamatrade/api/gen/go\xa2\x02\x03LXX\xaa\x02\nLlamatrade\xca\x02\nLlamatrade\xe2\x02\x16Llamatrade\\GPBMetadata\xea\x02\nLlamatradeb\x06proto3'
-)
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\nauth.proto\x12\nllamatrade\x1a\x0c\x63ommon.proto\"\xa4\x02\n\x04User\x12\x0e\n\x02id\x18\x01 \x01(\tR\x02id\x12\x1b\n\ttenant_id\x18\x02 \x01(\tR\x08tenantId\x12\x14\n\x05\x65mail\x18\x03 \x01(\tR\x05\x65mail\x12\x1d\n\nfirst_name\x18\x04 \x01(\tR\tfirstName\x12\x1b\n\tlast_name\x18\x05 \x01(\tR\x08lastName\x12\x14\n\x05roles\x18\x06 \x03(\tR\x05roles\x12\x1b\n\tis_active\x18\x07 \x01(\x08R\x08isActive\x12\x34\n\ncreated_at\x18\x08 \x01(\x0b\x32\x15.llamatrade.TimestampR\tcreatedAt\x12\x34\n\nlast_login\x18\t \x01(\x0b\x32\x15.llamatrade.TimestampR\tlastLogin\"\x93\x02\n\x06Tenant\x12\x0e\n\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n\x04name\x18\x02 \x01(\tR\x04name\x12\x17\n\x07plan_id\x18\x03 \x01(\tR\x06planId\x12\x1b\n\tis_active\x18\x04 \x01(\x08R\x08isActive\x12\x34\n\ncreated_at\x18\x05 \x01(\x0b\x32\x15.llamatrade.TimestampR\tcreatedAt\x12<\n\x08settings\x18\x06 \x03(\x0b\x32 .llamatrade.Tenant.SettingsEntryR\x08settings\x1a;\n\rSettingsEntry\x12\x10\n\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n\x05value\x18\x02 \x01(\tR\x05value:\x02\x38\x01\"\xbb\x02\n\x06\x41PIKey\x12\x0e\n\x02id\x18\x01 \x01(\tR\x02id\x12\x1b\n\ttenant_id\x18\x02 \x01(\tR\x08tenantId\x12\x12\n\x04name\x18\x03 \x01(\tR\x04name\x12\x16\n\x06prefix\x18\x04 \x01(\tR\x06prefix\x12\x16\n\x06scopes\x18\x05 \x03(\tR\x06scopes\x12\x34\n\ncreated_at\x18\x06 \x01(\x0b\x32\x15.llamatrade.TimestampR\tcreatedAt\x12\x34\n\nexpires_at\x18\x07 \x01(\x0b\x32\x15.llamatrade.TimestampR\texpiresAt\x12\x37\n\x0clast_used_at\x18\x08 \x01(\x0b\x32\x15.llamatrade.TimestampR\nlastUsedAt\x12\x1b\n\tis_active\x18\t \x01(\x08R\x08isActive\"\xdd\x01\n\x11\x41lpacaCredentials\x12\x0e\n\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n\x04name\x18\x02 \x01(\tR\x04name\x12\x17\n\x07\x61pi_key\x18\x03 \x01(\tR\x06\x61piKey\x12\x1d\n\napi_secret\x18\x04 \x01(\tR\tapiSecret\x12\x19\n\x08is_paper\x18\x05 \x01(\x08R\x07isPaper\x12\x1b\n\tis_active\x18\x06 \x01(\x08R\x08isActive\x12\x34\n\ncreated_at\x18\x07 \x01(\x0b\x32\x15.llamatrade.TimestampR\tcreatedAt\"\xd3\x01\n\x19\x41lpacaCredentialsListItem\x12\x0e\n\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n\x04name\x18\x02 \x01(\tR\x04name\x12$\n\x0e\x61pi_key_prefix\x18\x03 \x01(\tR\x0c\x61piKeyPrefix\x12\x19\n\x08is_paper\x18\x04 \x01(\x08R\x07isPaper\x12\x1b\n\tis_active\x18\x05 \x01(\x08R\x08isActive\x12\x34\n\ncreated_at\x18\x06 \x01(\x0b\x32\x15.llamatrade.TimestampR\tcreatedAt\",\n\x14ValidateTokenRequest\x12\x14\n\x05token\x18\x01 \x01(\tR\x05token\"\xb7\x01\n\x15ValidateTokenResponse\x12\x14\n\x05valid\x18\x01 \x01(\x08R\x05valid\x12\x33\n\x07\x63ontext\x18\x02 \x01(\x0b\x32\x19.llamatrade.TenantContextR\x07\x63ontext\x12\x34\n\nexpires_at\x18\x03 \x01(\x0b\x32\x15.llamatrade.TimestampR\texpiresAt\x12\x1d\n\ntoken_type\x18\x04 \x01(\tR\ttokenType\"Y\n\x15ValidateAPIKeyRequest\x12\x17\n\x07\x61pi_key\x18\x01 \x01(\tR\x06\x61piKey\x12\'\n\x0frequired_scopes\x18\x02 \x03(\tR\x0erequiredScopes\"\xb9\x01\n\x16ValidateAPIKeyResponse\x12\x14\n\x05valid\x18\x01 \x01(\x08R\x05valid\x12\x33\n\x07\x63ontext\x18\x02 \x01(\x0b\x32\x19.llamatrade.TenantContextR\x07\x63ontext\x12%\n\x0egranted_scopes\x18\x03 \x03(\tR\rgrantedScopes\x12-\n\x08key_info\x18\x04 \x01(\x0b\x32\x12.llamatrade.APIKeyR\x07keyInfo\")\n\x0eGetUserRequest\x12\x17\n\x07user_id\x18\x01 \x01(\tR\x06userId\"7\n\x0fGetUserResponse\x12$\n\x04user\x18\x01 \x01(\x0b\x32\x10.llamatrade.UserR\x04user\"/\n\x10GetTenantRequest\x12\x1b\n\ttenant_id\x18\x01 \x01(\tR\x08tenantId\"?\n\x11GetTenantResponse\x12*\n\x06tenant\x18\x01 \x01(\x0b\x32\x12.llamatrade.TenantR\x06tenant\"\x81\x01\n\x16\x43heckPermissionRequest\x12\x33\n\x07\x63ontext\x18\x01 \x01(\x0b\x32\x19.llamatrade.TenantContextR\x07\x63ontext\x12\x1a\n\x08resource\x18\x02 \x01(\tR\x08resource\x12\x16\n\x06\x61\x63tion\x18\x03 \x01(\tR\x06\x61\x63tion\"K\n\x17\x43heckPermissionResponse\x12\x18\n\x07\x61llowed\x18\x01 \x01(\x08R\x07\x61llowed\x12\x16\n\x06reason\x18\x02 \x01(\tR\x06reason\":\n\x13RefreshTokenRequest\x12#\n\rrefresh_token\x18\x01 \x01(\tR\x0crefreshToken\"\xfc\x01\n\x14RefreshTokenResponse\x12!\n\x0c\x61\x63\x63\x65ss_token\x18\x01 \x01(\tR\x0b\x61\x63\x63\x65ssToken\x12#\n\rrefresh_token\x18\x02 \x01(\tR\x0crefreshToken\x12L\n\x17\x61\x63\x63\x65ss_token_expires_at\x18\x03 \x01(\x0b\x32\x15.llamatrade.TimestampR\x14\x61\x63\x63\x65ssTokenExpiresAt\x12N\n\x18refresh_token_expires_at\x18\x04 \x01(\x0b\x32\x15.llamatrade.TimestampR\x15refreshTokenExpiresAt\"@\n\x0cLoginRequest\x12\x14\n\x05\x65mail\x18\x01 \x01(\tR\x05\x65mail\x12\x1a\n\x08password\x18\x02 \x01(\tR\x08password\"\x9b\x02\n\rLoginResponse\x12!\n\x0c\x61\x63\x63\x65ss_token\x18\x01 \x01(\tR\x0b\x61\x63\x63\x65ssToken\x12#\n\rrefresh_token\x18\x02 \x01(\tR\x0crefreshToken\x12$\n\x04user\x18\x03 \x01(\x0b\x32\x10.llamatrade.UserR\x04user\x12L\n\x17\x61\x63\x63\x65ss_token_expires_at\x18\x04 \x01(\x0b\x32\x15.llamatrade.TimestampR\x14\x61\x63\x63\x65ssTokenExpiresAt\x12N\n\x18refresh_token_expires_at\x18\x05 \x01(\x0b\x32\x15.llamatrade.TimestampR\x15refreshTokenExpiresAt\"\xa0\x01\n\x0fRegisterRequest\x12\x1f\n\x0btenant_name\x18\x01 \x01(\tR\ntenantName\x12\x14\n\x05\x65mail\x18\x02 \x01(\tR\x05\x65mail\x12\x1a\n\x08password\x18\x03 \x01(\tR\x08password\x12\x1d\n\nfirst_name\x18\x04 \x01(\tR\tfirstName\x12\x1b\n\tlast_name\x18\x05 \x01(\tR\x08lastName\"~\n\x10RegisterResponse\x12$\n\x04user\x18\x01 \x01(\x0b\x32\x10.llamatrade.UserR\x04user\x12*\n\x06tenant\x18\x02 \x01(\x0b\x32\x12.llamatrade.TenantR\x06tenant\x12\x18\n\x07message\x18\x03 \x01(\tR\x07message\"\x17\n\x15GetCurrentUserRequest\"j\n\x16GetCurrentUserResponse\x12$\n\x04user\x18\x01 \x01(\x0b\x32\x10.llamatrade.UserR\x04user\x12*\n\x06tenant\x18\x02 \x01(\x0b\x32\x12.llamatrade.TenantR\x06tenant\"\x0f\n\rLogoutRequest\"*\n\x0eLogoutResponse\x12\x18\n\x07success\x18\x01 \x01(\x08R\x07success\"e\n\x15\x43hangePasswordRequest\x12)\n\x10\x63urrent_password\x18\x01 \x01(\tR\x0f\x63urrentPassword\x12!\n\x0cnew_password\x18\x02 \x01(\tR\x0bnewPassword\"L\n\x16\x43hangePasswordResponse\x12\x18\n\x07success\x18\x01 \x01(\x08R\x07success\x12\x18\n\x07message\x18\x02 \x01(\tR\x07message\"\x87\x01\n\x1e\x43reateAlpacaCredentialsRequest\x12\x12\n\x04name\x18\x01 \x01(\tR\x04name\x12\x17\n\x07\x61pi_key\x18\x02 \x01(\tR\x06\x61piKey\x12\x1d\n\napi_secret\x18\x03 \x01(\tR\tapiSecret\x12\x19\n\x08is_paper\x18\x04 \x01(\x08R\x07isPaper\"b\n\x1f\x43reateAlpacaCredentialsResponse\x12?\n\x0b\x63redentials\x18\x01 \x01(\x0b\x32\x1d.llamatrade.AlpacaCredentialsR\x0b\x63redentials\"D\n\x1bGetAlpacaCredentialsRequest\x12%\n\x0e\x63redentials_id\x18\x01 \x01(\tR\rcredentialsId\"_\n\x1cGetAlpacaCredentialsResponse\x12?\n\x0b\x63redentials\x18\x01 \x01(\x0b\x32\x1d.llamatrade.AlpacaCredentialsR\x0b\x63redentials\"\x1e\n\x1cListAlpacaCredentialsRequest\"h\n\x1dListAlpacaCredentialsResponse\x12G\n\x0b\x63redentials\x18\x01 \x03(\x0b\x32%.llamatrade.AlpacaCredentialsListItemR\x0b\x63redentials\"G\n\x1e\x44\x65leteAlpacaCredentialsRequest\x12%\n\x0e\x63redentials_id\x18\x01 \x01(\tR\rcredentialsId\";\n\x1f\x44\x65leteAlpacaCredentialsResponse\x12\x18\n\x07success\x18\x01 \x01(\x08R\x07success2\xb2\n\n\x0b\x41uthService\x12<\n\x05Login\x12\x18.llamatrade.LoginRequest\x1a\x19.llamatrade.LoginResponse\x12\x45\n\x08Register\x12\x1b.llamatrade.RegisterRequest\x1a\x1c.llamatrade.RegisterResponse\x12Q\n\x0cRefreshToken\x12\x1f.llamatrade.RefreshTokenRequest\x1a .llamatrade.RefreshTokenResponse\x12?\n\x06Logout\x12\x19.llamatrade.LogoutRequest\x1a\x1a.llamatrade.LogoutResponse\x12W\n\x0eGetCurrentUser\x12!.llamatrade.GetCurrentUserRequest\x1a\".llamatrade.GetCurrentUserResponse\x12W\n\x0e\x43hangePassword\x12!.llamatrade.ChangePasswordRequest\x1a\".llamatrade.ChangePasswordResponse\x12T\n\rValidateToken\x12 .llamatrade.ValidateTokenRequest\x1a!.llamatrade.ValidateTokenResponse\x12W\n\x0eValidateAPIKey\x12!.llamatrade.ValidateAPIKeyRequest\x1a\".llamatrade.ValidateAPIKeyResponse\x12\x42\n\x07GetUser\x12\x1a.llamatrade.GetUserRequest\x1a\x1b.llamatrade.GetUserResponse\x12H\n\tGetTenant\x12\x1c.llamatrade.GetTenantRequest\x1a\x1d.llamatrade.GetTenantResponse\x12Z\n\x0f\x43heckPermission\x12\".llamatrade.CheckPermissionRequest\x1a#.llamatrade.CheckPermissionResponse\x12r\n\x17\x43reateAlpacaCredentials\x12*.llamatrade.CreateAlpacaCredentialsRequest\x1a+.llamatrade.CreateAlpacaCredentialsResponse\x12i\n\x14GetAlpacaCredentials\x12\'.llamatrade.GetAlpacaCredentialsRequest\x1a(.llamatrade.GetAlpacaCredentialsResponse\x12l\n\x15ListAlpacaCredentials\x12(.llamatrade.ListAlpacaCredentialsRequest\x1a).llamatrade.ListAlpacaCredentialsResponse\x12r\n\x17\x44\x65leteAlpacaCredentials\x12*.llamatrade.DeleteAlpacaCredentialsRequest\x1a+.llamatrade.DeleteAlpacaCredentialsResponseB\x85\x01\n\x0e\x63om.llamatradeB\tAuthProtoP\x01Z github.com/llamatrade/api/gen/go\xa2\x02\x03LXX\xaa\x02\nLlamatrade\xca\x02\nLlamatrade\xe2\x02\x16Llamatrade\\GPBMetadata\xea\x02\nLlamatradeb\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
-_builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, "auth_pb2", _globals)
+_builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, 'auth_pb2', _globals)
 if not _descriptor._USE_C_DESCRIPTORS:
-    _globals["DESCRIPTOR"]._loaded_options = None
-    _globals[
-        "DESCRIPTOR"
-    ]._serialized_options = b"\n\016com.llamatradeB\tAuthProtoP\001Z github.com/llamatrade/api/gen/go\242\002\003LXX\252\002\nLlamatrade\312\002\nLlamatrade\342\002\026Llamatrade\\GPBMetadata\352\002\nLlamatrade"
-    _globals["_TENANT_SETTINGSENTRY"]._loaded_options = None
-    _globals["_TENANT_SETTINGSENTRY"]._serialized_options = b"8\001"
-    _globals["_USER"]._serialized_start = 41
-    _globals["_USER"]._serialized_end = 333
-    _globals["_TENANT"]._serialized_start = 336
-    _globals["_TENANT"]._serialized_end = 611
-    _globals["_TENANT_SETTINGSENTRY"]._serialized_start = 552
-    _globals["_TENANT_SETTINGSENTRY"]._serialized_end = 611
-    _globals["_APIKEY"]._serialized_start = 614
-    _globals["_APIKEY"]._serialized_end = 929
-    _globals["_ALPACACREDENTIALS"]._serialized_start = 932
-    _globals["_ALPACACREDENTIALS"]._serialized_end = 1153
-    _globals["_ALPACACREDENTIALSLISTITEM"]._serialized_start = 1156
-    _globals["_ALPACACREDENTIALSLISTITEM"]._serialized_end = 1367
-    _globals["_VALIDATETOKENREQUEST"]._serialized_start = 1369
-    _globals["_VALIDATETOKENREQUEST"]._serialized_end = 1413
-    _globals["_VALIDATETOKENRESPONSE"]._serialized_start = 1416
-    _globals["_VALIDATETOKENRESPONSE"]._serialized_end = 1599
-    _globals["_VALIDATEAPIKEYREQUEST"]._serialized_start = 1601
-    _globals["_VALIDATEAPIKEYREQUEST"]._serialized_end = 1690
-    _globals["_VALIDATEAPIKEYRESPONSE"]._serialized_start = 1693
-    _globals["_VALIDATEAPIKEYRESPONSE"]._serialized_end = 1878
-    _globals["_GETUSERREQUEST"]._serialized_start = 1880
-    _globals["_GETUSERREQUEST"]._serialized_end = 1921
-    _globals["_GETUSERRESPONSE"]._serialized_start = 1923
-    _globals["_GETUSERRESPONSE"]._serialized_end = 1978
-    _globals["_GETTENANTREQUEST"]._serialized_start = 1980
-    _globals["_GETTENANTREQUEST"]._serialized_end = 2027
-    _globals["_GETTENANTRESPONSE"]._serialized_start = 2029
-    _globals["_GETTENANTRESPONSE"]._serialized_end = 2092
-    _globals["_CHECKPERMISSIONREQUEST"]._serialized_start = 2095
-    _globals["_CHECKPERMISSIONREQUEST"]._serialized_end = 2224
-    _globals["_CHECKPERMISSIONRESPONSE"]._serialized_start = 2226
-    _globals["_CHECKPERMISSIONRESPONSE"]._serialized_end = 2301
-    _globals["_REFRESHTOKENREQUEST"]._serialized_start = 2303
-    _globals["_REFRESHTOKENREQUEST"]._serialized_end = 2361
-    _globals["_REFRESHTOKENRESPONSE"]._serialized_start = 2364
-    _globals["_REFRESHTOKENRESPONSE"]._serialized_end = 2616
-    _globals["_LOGINREQUEST"]._serialized_start = 2618
-    _globals["_LOGINREQUEST"]._serialized_end = 2682
-    _globals["_LOGINRESPONSE"]._serialized_start = 2685
-    _globals["_LOGINRESPONSE"]._serialized_end = 2968
-    _globals["_REGISTERREQUEST"]._serialized_start = 2971
-    _globals["_REGISTERREQUEST"]._serialized_end = 3131
-    _globals["_REGISTERRESPONSE"]._serialized_start = 3133
-    _globals["_REGISTERRESPONSE"]._serialized_end = 3259
-    _globals["_GETCURRENTUSERREQUEST"]._serialized_start = 3261
-    _globals["_GETCURRENTUSERREQUEST"]._serialized_end = 3284
-    _globals["_GETCURRENTUSERRESPONSE"]._serialized_start = 3286
-    _globals["_GETCURRENTUSERRESPONSE"]._serialized_end = 3392
-    _globals["_LOGOUTREQUEST"]._serialized_start = 3394
-    _globals["_LOGOUTREQUEST"]._serialized_end = 3409
-    _globals["_LOGOUTRESPONSE"]._serialized_start = 3411
-    _globals["_LOGOUTRESPONSE"]._serialized_end = 3453
-    _globals["_CHANGEPASSWORDREQUEST"]._serialized_start = 3455
-    _globals["_CHANGEPASSWORDREQUEST"]._serialized_end = 3556
-    _globals["_CHANGEPASSWORDRESPONSE"]._serialized_start = 3558
-    _globals["_CHANGEPASSWORDRESPONSE"]._serialized_end = 3634
-    _globals["_CREATEALPACACREDENTIALSREQUEST"]._serialized_start = 3637
-    _globals["_CREATEALPACACREDENTIALSREQUEST"]._serialized_end = 3772
-    _globals["_CREATEALPACACREDENTIALSRESPONSE"]._serialized_start = 3774
-    _globals["_CREATEALPACACREDENTIALSRESPONSE"]._serialized_end = 3872
-    _globals["_GETALPACACREDENTIALSREQUEST"]._serialized_start = 3874
-    _globals["_GETALPACACREDENTIALSREQUEST"]._serialized_end = 3942
-    _globals["_GETALPACACREDENTIALSRESPONSE"]._serialized_start = 3944
-    _globals["_GETALPACACREDENTIALSRESPONSE"]._serialized_end = 4039
-    _globals["_LISTALPACACREDENTIALSREQUEST"]._serialized_start = 4041
-    _globals["_LISTALPACACREDENTIALSREQUEST"]._serialized_end = 4071
-    _globals["_LISTALPACACREDENTIALSRESPONSE"]._serialized_start = 4073
-    _globals["_LISTALPACACREDENTIALSRESPONSE"]._serialized_end = 4177
-    _globals["_DELETEALPACACREDENTIALSREQUEST"]._serialized_start = 4179
-    _globals["_DELETEALPACACREDENTIALSREQUEST"]._serialized_end = 4250
-    _globals["_DELETEALPACACREDENTIALSRESPONSE"]._serialized_start = 4252
-    _globals["_DELETEALPACACREDENTIALSRESPONSE"]._serialized_end = 4311
-    _globals["_AUTHSERVICE"]._serialized_start = 4314
-    _globals["_AUTHSERVICE"]._serialized_end = 5644
+  _globals['DESCRIPTOR']._loaded_options = None
+  _globals['DESCRIPTOR']._serialized_options = b'\n\016com.llamatradeB\tAuthProtoP\001Z github.com/llamatrade/api/gen/go\242\002\003LXX\252\002\nLlamatrade\312\002\nLlamatrade\342\002\026Llamatrade\\GPBMetadata\352\002\nLlamatrade'
+  _globals['_TENANT_SETTINGSENTRY']._loaded_options = None
+  _globals['_TENANT_SETTINGSENTRY']._serialized_options = b'8\001'
+  _globals['_USER']._serialized_start=41
+  _globals['_USER']._serialized_end=333
+  _globals['_TENANT']._serialized_start=336
+  _globals['_TENANT']._serialized_end=611
+  _globals['_TENANT_SETTINGSENTRY']._serialized_start=552
+  _globals['_TENANT_SETTINGSENTRY']._serialized_end=611
+  _globals['_APIKEY']._serialized_start=614
+  _globals['_APIKEY']._serialized_end=929
+  _globals['_ALPACACREDENTIALS']._serialized_start=932
+  _globals['_ALPACACREDENTIALS']._serialized_end=1153
+  _globals['_ALPACACREDENTIALSLISTITEM']._serialized_start=1156
+  _globals['_ALPACACREDENTIALSLISTITEM']._serialized_end=1367
+  _globals['_VALIDATETOKENREQUEST']._serialized_start=1369
+  _globals['_VALIDATETOKENREQUEST']._serialized_end=1413
+  _globals['_VALIDATETOKENRESPONSE']._serialized_start=1416
+  _globals['_VALIDATETOKENRESPONSE']._serialized_end=1599
+  _globals['_VALIDATEAPIKEYREQUEST']._serialized_start=1601
+  _globals['_VALIDATEAPIKEYREQUEST']._serialized_end=1690
+  _globals['_VALIDATEAPIKEYRESPONSE']._serialized_start=1693
+  _globals['_VALIDATEAPIKEYRESPONSE']._serialized_end=1878
+  _globals['_GETUSERREQUEST']._serialized_start=1880
+  _globals['_GETUSERREQUEST']._serialized_end=1921
+  _globals['_GETUSERRESPONSE']._serialized_start=1923
+  _globals['_GETUSERRESPONSE']._serialized_end=1978
+  _globals['_GETTENANTREQUEST']._serialized_start=1980
+  _globals['_GETTENANTREQUEST']._serialized_end=2027
+  _globals['_GETTENANTRESPONSE']._serialized_start=2029
+  _globals['_GETTENANTRESPONSE']._serialized_end=2092
+  _globals['_CHECKPERMISSIONREQUEST']._serialized_start=2095
+  _globals['_CHECKPERMISSIONREQUEST']._serialized_end=2224
+  _globals['_CHECKPERMISSIONRESPONSE']._serialized_start=2226
+  _globals['_CHECKPERMISSIONRESPONSE']._serialized_end=2301
+  _globals['_REFRESHTOKENREQUEST']._serialized_start=2303
+  _globals['_REFRESHTOKENREQUEST']._serialized_end=2361
+  _globals['_REFRESHTOKENRESPONSE']._serialized_start=2364
+  _globals['_REFRESHTOKENRESPONSE']._serialized_end=2616
+  _globals['_LOGINREQUEST']._serialized_start=2618
+  _globals['_LOGINREQUEST']._serialized_end=2682
+  _globals['_LOGINRESPONSE']._serialized_start=2685
+  _globals['_LOGINRESPONSE']._serialized_end=2968
+  _globals['_REGISTERREQUEST']._serialized_start=2971
+  _globals['_REGISTERREQUEST']._serialized_end=3131
+  _globals['_REGISTERRESPONSE']._serialized_start=3133
+  _globals['_REGISTERRESPONSE']._serialized_end=3259
+  _globals['_GETCURRENTUSERREQUEST']._serialized_start=3261
+  _globals['_GETCURRENTUSERREQUEST']._serialized_end=3284
+  _globals['_GETCURRENTUSERRESPONSE']._serialized_start=3286
+  _globals['_GETCURRENTUSERRESPONSE']._serialized_end=3392
+  _globals['_LOGOUTREQUEST']._serialized_start=3394
+  _globals['_LOGOUTREQUEST']._serialized_end=3409
+  _globals['_LOGOUTRESPONSE']._serialized_start=3411
+  _globals['_LOGOUTRESPONSE']._serialized_end=3453
+  _globals['_CHANGEPASSWORDREQUEST']._serialized_start=3455
+  _globals['_CHANGEPASSWORDREQUEST']._serialized_end=3556
+  _globals['_CHANGEPASSWORDRESPONSE']._serialized_start=3558
+  _globals['_CHANGEPASSWORDRESPONSE']._serialized_end=3634
+  _globals['_CREATEALPACACREDENTIALSREQUEST']._serialized_start=3637
+  _globals['_CREATEALPACACREDENTIALSREQUEST']._serialized_end=3772
+  _globals['_CREATEALPACACREDENTIALSRESPONSE']._serialized_start=3774
+  _globals['_CREATEALPACACREDENTIALSRESPONSE']._serialized_end=3872
+  _globals['_GETALPACACREDENTIALSREQUEST']._serialized_start=3874
+  _globals['_GETALPACACREDENTIALSREQUEST']._serialized_end=3942
+  _globals['_GETALPACACREDENTIALSRESPONSE']._serialized_start=3944
+  _globals['_GETALPACACREDENTIALSRESPONSE']._serialized_end=4039
+  _globals['_LISTALPACACREDENTIALSREQUEST']._serialized_start=4041
+  _globals['_LISTALPACACREDENTIALSREQUEST']._serialized_end=4071
+  _globals['_LISTALPACACREDENTIALSRESPONSE']._serialized_start=4073
+  _globals['_LISTALPACACREDENTIALSRESPONSE']._serialized_end=4177
+  _globals['_DELETEALPACACREDENTIALSREQUEST']._serialized_start=4179
+  _globals['_DELETEALPACACREDENTIALSREQUEST']._serialized_end=4250
+  _globals['_DELETEALPACACREDENTIALSRESPONSE']._serialized_start=4252
+  _globals['_DELETEALPACACREDENTIALSRESPONSE']._serialized_end=4311
+  _globals['_AUTHSERVICE']._serialized_start=4314
+  _globals['_AUTHSERVICE']._serialized_end=5644
 # @@protoc_insertion_point(module_scope)

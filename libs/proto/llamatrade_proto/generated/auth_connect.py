@@ -16,90 +16,54 @@ from . import auth_pb2 as auth__pb2
 
 
 class AuthService(Protocol):
-    async def login(
-        self, request: auth__pb2.LoginRequest, ctx: RequestContext
-    ) -> auth__pb2.LoginResponse:
+    async def login(self, request: auth__pb2.LoginRequest, ctx: RequestContext) -> auth__pb2.LoginResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
-    async def register(
-        self, request: auth__pb2.RegisterRequest, ctx: RequestContext
-    ) -> auth__pb2.RegisterResponse:
+    async def register(self, request: auth__pb2.RegisterRequest, ctx: RequestContext) -> auth__pb2.RegisterResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
-    async def refresh_token(
-        self, request: auth__pb2.RefreshTokenRequest, ctx: RequestContext
-    ) -> auth__pb2.RefreshTokenResponse:
+    async def refresh_token(self, request: auth__pb2.RefreshTokenRequest, ctx: RequestContext) -> auth__pb2.RefreshTokenResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
-    async def logout(
-        self, request: auth__pb2.LogoutRequest, ctx: RequestContext
-    ) -> auth__pb2.LogoutResponse:
+    async def logout(self, request: auth__pb2.LogoutRequest, ctx: RequestContext) -> auth__pb2.LogoutResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
-    async def get_current_user(
-        self, request: auth__pb2.GetCurrentUserRequest, ctx: RequestContext
-    ) -> auth__pb2.GetCurrentUserResponse:
+    async def get_current_user(self, request: auth__pb2.GetCurrentUserRequest, ctx: RequestContext) -> auth__pb2.GetCurrentUserResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
-    async def change_password(
-        self, request: auth__pb2.ChangePasswordRequest, ctx: RequestContext
-    ) -> auth__pb2.ChangePasswordResponse:
+    async def change_password(self, request: auth__pb2.ChangePasswordRequest, ctx: RequestContext) -> auth__pb2.ChangePasswordResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
-    async def validate_token(
-        self, request: auth__pb2.ValidateTokenRequest, ctx: RequestContext
-    ) -> auth__pb2.ValidateTokenResponse:
+    async def validate_token(self, request: auth__pb2.ValidateTokenRequest, ctx: RequestContext) -> auth__pb2.ValidateTokenResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
-    async def validate_a_p_i_key(
-        self, request: auth__pb2.ValidateAPIKeyRequest, ctx: RequestContext
-    ) -> auth__pb2.ValidateAPIKeyResponse:
+    async def validate_a_p_i_key(self, request: auth__pb2.ValidateAPIKeyRequest, ctx: RequestContext) -> auth__pb2.ValidateAPIKeyResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
-    async def get_user(
-        self, request: auth__pb2.GetUserRequest, ctx: RequestContext
-    ) -> auth__pb2.GetUserResponse:
+    async def get_user(self, request: auth__pb2.GetUserRequest, ctx: RequestContext) -> auth__pb2.GetUserResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
-    async def get_tenant(
-        self, request: auth__pb2.GetTenantRequest, ctx: RequestContext
-    ) -> auth__pb2.GetTenantResponse:
+    async def get_tenant(self, request: auth__pb2.GetTenantRequest, ctx: RequestContext) -> auth__pb2.GetTenantResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
-    async def check_permission(
-        self, request: auth__pb2.CheckPermissionRequest, ctx: RequestContext
-    ) -> auth__pb2.CheckPermissionResponse:
+    async def check_permission(self, request: auth__pb2.CheckPermissionRequest, ctx: RequestContext) -> auth__pb2.CheckPermissionResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
-    async def create_alpaca_credentials(
-        self, request: auth__pb2.CreateAlpacaCredentialsRequest, ctx: RequestContext
-    ) -> auth__pb2.CreateAlpacaCredentialsResponse:
+    async def create_alpaca_credentials(self, request: auth__pb2.CreateAlpacaCredentialsRequest, ctx: RequestContext) -> auth__pb2.CreateAlpacaCredentialsResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
-    async def get_alpaca_credentials(
-        self, request: auth__pb2.GetAlpacaCredentialsRequest, ctx: RequestContext
-    ) -> auth__pb2.GetAlpacaCredentialsResponse:
+    async def get_alpaca_credentials(self, request: auth__pb2.GetAlpacaCredentialsRequest, ctx: RequestContext) -> auth__pb2.GetAlpacaCredentialsResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
-    async def list_alpaca_credentials(
-        self, request: auth__pb2.ListAlpacaCredentialsRequest, ctx: RequestContext
-    ) -> auth__pb2.ListAlpacaCredentialsResponse:
+    async def list_alpaca_credentials(self, request: auth__pb2.ListAlpacaCredentialsRequest, ctx: RequestContext) -> auth__pb2.ListAlpacaCredentialsResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
-    async def delete_alpaca_credentials(
-        self, request: auth__pb2.DeleteAlpacaCredentialsRequest, ctx: RequestContext
-    ) -> auth__pb2.DeleteAlpacaCredentialsResponse:
+    async def delete_alpaca_credentials(self, request: auth__pb2.DeleteAlpacaCredentialsRequest, ctx: RequestContext) -> auth__pb2.DeleteAlpacaCredentialsResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
 
 class AuthServiceASGIApplication(ConnectASGIApplication[AuthService]):
-    def __init__(
-        self,
-        service: AuthService | AsyncGenerator[AuthService],
-        *,
-        interceptors: Iterable[Interceptor] = (),
-        read_max_bytes: int | None = None,
-    ) -> None:
+    def __init__(self, service: AuthService | AsyncGenerator[AuthService], *, interceptors: Iterable[Interceptor]=(), read_max_bytes: int | None = None) -> None:
         super().__init__(
             service=service,
             endpoints=lambda svc: {
@@ -567,89 +531,40 @@ class AuthServiceClient(ConnectClient):
 
 
 class AuthServiceSync(Protocol):
-    def login(
-        self, request: auth__pb2.LoginRequest, ctx: RequestContext
-    ) -> auth__pb2.LoginResponse:
+    def login(self, request: auth__pb2.LoginRequest, ctx: RequestContext) -> auth__pb2.LoginResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
-
-    def register(
-        self, request: auth__pb2.RegisterRequest, ctx: RequestContext
-    ) -> auth__pb2.RegisterResponse:
+    def register(self, request: auth__pb2.RegisterRequest, ctx: RequestContext) -> auth__pb2.RegisterResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
-
-    def refresh_token(
-        self, request: auth__pb2.RefreshTokenRequest, ctx: RequestContext
-    ) -> auth__pb2.RefreshTokenResponse:
+    def refresh_token(self, request: auth__pb2.RefreshTokenRequest, ctx: RequestContext) -> auth__pb2.RefreshTokenResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
-
-    def logout(
-        self, request: auth__pb2.LogoutRequest, ctx: RequestContext
-    ) -> auth__pb2.LogoutResponse:
+    def logout(self, request: auth__pb2.LogoutRequest, ctx: RequestContext) -> auth__pb2.LogoutResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
-
-    def get_current_user(
-        self, request: auth__pb2.GetCurrentUserRequest, ctx: RequestContext
-    ) -> auth__pb2.GetCurrentUserResponse:
+    def get_current_user(self, request: auth__pb2.GetCurrentUserRequest, ctx: RequestContext) -> auth__pb2.GetCurrentUserResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
-
-    def change_password(
-        self, request: auth__pb2.ChangePasswordRequest, ctx: RequestContext
-    ) -> auth__pb2.ChangePasswordResponse:
+    def change_password(self, request: auth__pb2.ChangePasswordRequest, ctx: RequestContext) -> auth__pb2.ChangePasswordResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
-
-    def validate_token(
-        self, request: auth__pb2.ValidateTokenRequest, ctx: RequestContext
-    ) -> auth__pb2.ValidateTokenResponse:
+    def validate_token(self, request: auth__pb2.ValidateTokenRequest, ctx: RequestContext) -> auth__pb2.ValidateTokenResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
-
-    def validate_a_p_i_key(
-        self, request: auth__pb2.ValidateAPIKeyRequest, ctx: RequestContext
-    ) -> auth__pb2.ValidateAPIKeyResponse:
+    def validate_a_p_i_key(self, request: auth__pb2.ValidateAPIKeyRequest, ctx: RequestContext) -> auth__pb2.ValidateAPIKeyResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
-
-    def get_user(
-        self, request: auth__pb2.GetUserRequest, ctx: RequestContext
-    ) -> auth__pb2.GetUserResponse:
+    def get_user(self, request: auth__pb2.GetUserRequest, ctx: RequestContext) -> auth__pb2.GetUserResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
-
-    def get_tenant(
-        self, request: auth__pb2.GetTenantRequest, ctx: RequestContext
-    ) -> auth__pb2.GetTenantResponse:
+    def get_tenant(self, request: auth__pb2.GetTenantRequest, ctx: RequestContext) -> auth__pb2.GetTenantResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
-
-    def check_permission(
-        self, request: auth__pb2.CheckPermissionRequest, ctx: RequestContext
-    ) -> auth__pb2.CheckPermissionResponse:
+    def check_permission(self, request: auth__pb2.CheckPermissionRequest, ctx: RequestContext) -> auth__pb2.CheckPermissionResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
-
-    def create_alpaca_credentials(
-        self, request: auth__pb2.CreateAlpacaCredentialsRequest, ctx: RequestContext
-    ) -> auth__pb2.CreateAlpacaCredentialsResponse:
+    def create_alpaca_credentials(self, request: auth__pb2.CreateAlpacaCredentialsRequest, ctx: RequestContext) -> auth__pb2.CreateAlpacaCredentialsResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
-
-    def get_alpaca_credentials(
-        self, request: auth__pb2.GetAlpacaCredentialsRequest, ctx: RequestContext
-    ) -> auth__pb2.GetAlpacaCredentialsResponse:
+    def get_alpaca_credentials(self, request: auth__pb2.GetAlpacaCredentialsRequest, ctx: RequestContext) -> auth__pb2.GetAlpacaCredentialsResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
-
-    def list_alpaca_credentials(
-        self, request: auth__pb2.ListAlpacaCredentialsRequest, ctx: RequestContext
-    ) -> auth__pb2.ListAlpacaCredentialsResponse:
+    def list_alpaca_credentials(self, request: auth__pb2.ListAlpacaCredentialsRequest, ctx: RequestContext) -> auth__pb2.ListAlpacaCredentialsResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
-
-    def delete_alpaca_credentials(
-        self, request: auth__pb2.DeleteAlpacaCredentialsRequest, ctx: RequestContext
-    ) -> auth__pb2.DeleteAlpacaCredentialsResponse:
+    def delete_alpaca_credentials(self, request: auth__pb2.DeleteAlpacaCredentialsRequest, ctx: RequestContext) -> auth__pb2.DeleteAlpacaCredentialsResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
 
 class AuthServiceWSGIApplication(ConnectWSGIApplication):
-    def __init__(
-        self,
-        service: AuthServiceSync,
-        interceptors: Iterable[InterceptorSync] = (),
-        read_max_bytes: int | None = None,
-    ) -> None:
+    def __init__(self, service: AuthServiceSync, interceptors: Iterable[InterceptorSync]=(), read_max_bytes: int | None = None) -> None:
         super().__init__(
             endpoints={
                 "/llamatrade.AuthService/Login": EndpointSync.unary(

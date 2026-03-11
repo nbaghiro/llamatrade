@@ -16,85 +16,51 @@ from . import billing_pb2 as billing__pb2
 
 
 class BillingService(Protocol):
-    async def get_subscription(
-        self, request: billing__pb2.GetSubscriptionRequest, ctx: RequestContext
-    ) -> billing__pb2.GetSubscriptionResponse:
+    async def get_subscription(self, request: billing__pb2.GetSubscriptionRequest, ctx: RequestContext) -> billing__pb2.GetSubscriptionResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
-    async def create_subscription(
-        self, request: billing__pb2.CreateSubscriptionRequest, ctx: RequestContext
-    ) -> billing__pb2.CreateSubscriptionResponse:
+    async def create_subscription(self, request: billing__pb2.CreateSubscriptionRequest, ctx: RequestContext) -> billing__pb2.CreateSubscriptionResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
-    async def update_subscription(
-        self, request: billing__pb2.UpdateSubscriptionRequest, ctx: RequestContext
-    ) -> billing__pb2.UpdateSubscriptionResponse:
+    async def update_subscription(self, request: billing__pb2.UpdateSubscriptionRequest, ctx: RequestContext) -> billing__pb2.UpdateSubscriptionResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
-    async def cancel_subscription(
-        self, request: billing__pb2.CancelSubscriptionRequest, ctx: RequestContext
-    ) -> billing__pb2.CancelSubscriptionResponse:
+    async def cancel_subscription(self, request: billing__pb2.CancelSubscriptionRequest, ctx: RequestContext) -> billing__pb2.CancelSubscriptionResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
-    async def resume_subscription(
-        self, request: billing__pb2.ResumeSubscriptionRequest, ctx: RequestContext
-    ) -> billing__pb2.ResumeSubscriptionResponse:
+    async def resume_subscription(self, request: billing__pb2.ResumeSubscriptionRequest, ctx: RequestContext) -> billing__pb2.ResumeSubscriptionResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
-    async def get_usage(
-        self, request: billing__pb2.GetUsageRequest, ctx: RequestContext
-    ) -> billing__pb2.GetUsageResponse:
+    async def get_usage(self, request: billing__pb2.GetUsageRequest, ctx: RequestContext) -> billing__pb2.GetUsageResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
-    async def list_invoices(
-        self, request: billing__pb2.ListInvoicesRequest, ctx: RequestContext
-    ) -> billing__pb2.ListInvoicesResponse:
+    async def list_invoices(self, request: billing__pb2.ListInvoicesRequest, ctx: RequestContext) -> billing__pb2.ListInvoicesResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
-    async def get_invoice(
-        self, request: billing__pb2.GetInvoiceRequest, ctx: RequestContext
-    ) -> billing__pb2.GetInvoiceResponse:
+    async def get_invoice(self, request: billing__pb2.GetInvoiceRequest, ctx: RequestContext) -> billing__pb2.GetInvoiceResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
-    async def list_plans(
-        self, request: billing__pb2.ListPlansRequest, ctx: RequestContext
-    ) -> billing__pb2.ListPlansResponse:
+    async def list_plans(self, request: billing__pb2.ListPlansRequest, ctx: RequestContext) -> billing__pb2.ListPlansResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
-    async def list_payment_methods(
-        self, request: billing__pb2.ListPaymentMethodsRequest, ctx: RequestContext
-    ) -> billing__pb2.ListPaymentMethodsResponse:
+    async def list_payment_methods(self, request: billing__pb2.ListPaymentMethodsRequest, ctx: RequestContext) -> billing__pb2.ListPaymentMethodsResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
-    async def add_payment_method(
-        self, request: billing__pb2.AddPaymentMethodRequest, ctx: RequestContext
-    ) -> billing__pb2.AddPaymentMethodResponse:
+    async def add_payment_method(self, request: billing__pb2.AddPaymentMethodRequest, ctx: RequestContext) -> billing__pb2.AddPaymentMethodResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
-    async def remove_payment_method(
-        self, request: billing__pb2.RemovePaymentMethodRequest, ctx: RequestContext
-    ) -> billing__pb2.RemovePaymentMethodResponse:
+    async def remove_payment_method(self, request: billing__pb2.RemovePaymentMethodRequest, ctx: RequestContext) -> billing__pb2.RemovePaymentMethodResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
-    async def create_checkout_session(
-        self, request: billing__pb2.CreateCheckoutSessionRequest, ctx: RequestContext
-    ) -> billing__pb2.CreateCheckoutSessionResponse:
+    async def create_checkout_session(self, request: billing__pb2.CreateCheckoutSessionRequest, ctx: RequestContext) -> billing__pb2.CreateCheckoutSessionResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
-    async def create_portal_session(
-        self, request: billing__pb2.CreatePortalSessionRequest, ctx: RequestContext
-    ) -> billing__pb2.CreatePortalSessionResponse:
+    async def create_portal_session(self, request: billing__pb2.CreatePortalSessionRequest, ctx: RequestContext) -> billing__pb2.CreatePortalSessionResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
 
 class BillingServiceASGIApplication(ConnectASGIApplication[BillingService]):
-    def __init__(
-        self,
-        service: BillingService | AsyncGenerator[BillingService],
-        *,
-        interceptors: Iterable[Interceptor] = (),
-        read_max_bytes: int | None = None,
-    ) -> None:
+    def __init__(self, service: BillingService | AsyncGenerator[BillingService], *, interceptors: Iterable[Interceptor]=(), read_max_bytes: int | None = None) -> None:
         super().__init__(
             service=service,
             endpoints=lambda svc: {
@@ -532,84 +498,38 @@ class BillingServiceClient(ConnectClient):
 
 
 class BillingServiceSync(Protocol):
-    def get_subscription(
-        self, request: billing__pb2.GetSubscriptionRequest, ctx: RequestContext
-    ) -> billing__pb2.GetSubscriptionResponse:
+    def get_subscription(self, request: billing__pb2.GetSubscriptionRequest, ctx: RequestContext) -> billing__pb2.GetSubscriptionResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
-
-    def create_subscription(
-        self, request: billing__pb2.CreateSubscriptionRequest, ctx: RequestContext
-    ) -> billing__pb2.CreateSubscriptionResponse:
+    def create_subscription(self, request: billing__pb2.CreateSubscriptionRequest, ctx: RequestContext) -> billing__pb2.CreateSubscriptionResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
-
-    def update_subscription(
-        self, request: billing__pb2.UpdateSubscriptionRequest, ctx: RequestContext
-    ) -> billing__pb2.UpdateSubscriptionResponse:
+    def update_subscription(self, request: billing__pb2.UpdateSubscriptionRequest, ctx: RequestContext) -> billing__pb2.UpdateSubscriptionResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
-
-    def cancel_subscription(
-        self, request: billing__pb2.CancelSubscriptionRequest, ctx: RequestContext
-    ) -> billing__pb2.CancelSubscriptionResponse:
+    def cancel_subscription(self, request: billing__pb2.CancelSubscriptionRequest, ctx: RequestContext) -> billing__pb2.CancelSubscriptionResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
-
-    def resume_subscription(
-        self, request: billing__pb2.ResumeSubscriptionRequest, ctx: RequestContext
-    ) -> billing__pb2.ResumeSubscriptionResponse:
+    def resume_subscription(self, request: billing__pb2.ResumeSubscriptionRequest, ctx: RequestContext) -> billing__pb2.ResumeSubscriptionResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
-
-    def get_usage(
-        self, request: billing__pb2.GetUsageRequest, ctx: RequestContext
-    ) -> billing__pb2.GetUsageResponse:
+    def get_usage(self, request: billing__pb2.GetUsageRequest, ctx: RequestContext) -> billing__pb2.GetUsageResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
-
-    def list_invoices(
-        self, request: billing__pb2.ListInvoicesRequest, ctx: RequestContext
-    ) -> billing__pb2.ListInvoicesResponse:
+    def list_invoices(self, request: billing__pb2.ListInvoicesRequest, ctx: RequestContext) -> billing__pb2.ListInvoicesResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
-
-    def get_invoice(
-        self, request: billing__pb2.GetInvoiceRequest, ctx: RequestContext
-    ) -> billing__pb2.GetInvoiceResponse:
+    def get_invoice(self, request: billing__pb2.GetInvoiceRequest, ctx: RequestContext) -> billing__pb2.GetInvoiceResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
-
-    def list_plans(
-        self, request: billing__pb2.ListPlansRequest, ctx: RequestContext
-    ) -> billing__pb2.ListPlansResponse:
+    def list_plans(self, request: billing__pb2.ListPlansRequest, ctx: RequestContext) -> billing__pb2.ListPlansResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
-
-    def list_payment_methods(
-        self, request: billing__pb2.ListPaymentMethodsRequest, ctx: RequestContext
-    ) -> billing__pb2.ListPaymentMethodsResponse:
+    def list_payment_methods(self, request: billing__pb2.ListPaymentMethodsRequest, ctx: RequestContext) -> billing__pb2.ListPaymentMethodsResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
-
-    def add_payment_method(
-        self, request: billing__pb2.AddPaymentMethodRequest, ctx: RequestContext
-    ) -> billing__pb2.AddPaymentMethodResponse:
+    def add_payment_method(self, request: billing__pb2.AddPaymentMethodRequest, ctx: RequestContext) -> billing__pb2.AddPaymentMethodResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
-
-    def remove_payment_method(
-        self, request: billing__pb2.RemovePaymentMethodRequest, ctx: RequestContext
-    ) -> billing__pb2.RemovePaymentMethodResponse:
+    def remove_payment_method(self, request: billing__pb2.RemovePaymentMethodRequest, ctx: RequestContext) -> billing__pb2.RemovePaymentMethodResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
-
-    def create_checkout_session(
-        self, request: billing__pb2.CreateCheckoutSessionRequest, ctx: RequestContext
-    ) -> billing__pb2.CreateCheckoutSessionResponse:
+    def create_checkout_session(self, request: billing__pb2.CreateCheckoutSessionRequest, ctx: RequestContext) -> billing__pb2.CreateCheckoutSessionResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
-
-    def create_portal_session(
-        self, request: billing__pb2.CreatePortalSessionRequest, ctx: RequestContext
-    ) -> billing__pb2.CreatePortalSessionResponse:
+    def create_portal_session(self, request: billing__pb2.CreatePortalSessionRequest, ctx: RequestContext) -> billing__pb2.CreatePortalSessionResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
 
 class BillingServiceWSGIApplication(ConnectWSGIApplication):
-    def __init__(
-        self,
-        service: BillingServiceSync,
-        interceptors: Iterable[InterceptorSync] = (),
-        read_max_bytes: int | None = None,
-    ) -> None:
+    def __init__(self, service: BillingServiceSync, interceptors: Iterable[InterceptorSync]=(), read_max_bytes: int | None = None) -> None:
         super().__init__(
             endpoints={
                 "/llamatrade.BillingService/GetSubscription": EndpointSync.unary(
