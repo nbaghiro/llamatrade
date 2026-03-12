@@ -721,3 +721,42 @@ class GetSuggestedPromptsResponse(message.Message):
     ) -> None: ...
     _ClearFieldArgType: _TypeAlias = typing.Literal["prompts", b"prompts"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+
+@typing.final
+class GetArtifactRequest(message.Message):
+    """Get artifact by ID"""
+
+    DESCRIPTOR: descriptor.Descriptor
+
+    CONTEXT_FIELD_NUMBER: builtins.int
+    ARTIFACT_ID_FIELD_NUMBER: builtins.int
+    artifact_id: builtins.str
+    @builtins.property
+    def context(self) -> common_pb2.TenantContext: ...
+    def __init__(
+        self,
+        *,
+        context: common_pb2.TenantContext | None = ...,
+        artifact_id: builtins.str = ...,
+    ) -> None: ...
+    _HasFieldArgType: _TypeAlias = typing.Literal["context", b"context"]  # noqa: Y015
+    def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
+    _ClearFieldArgType: _TypeAlias = typing.Literal["artifact_id", b"artifact_id", "context", b"context"]  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+
+@typing.final
+class GetArtifactResponse(message.Message):
+    DESCRIPTOR: descriptor.Descriptor
+
+    ARTIFACT_FIELD_NUMBER: builtins.int
+    @builtins.property
+    def artifact(self) -> PendingArtifact: ...
+    def __init__(
+        self,
+        *,
+        artifact: PendingArtifact | None = ...,
+    ) -> None: ...
+    _HasFieldArgType: _TypeAlias = typing.Literal["artifact", b"artifact"]  # noqa: Y015
+    def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
+    _ClearFieldArgType: _TypeAlias = typing.Literal["artifact", b"artifact"]  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...

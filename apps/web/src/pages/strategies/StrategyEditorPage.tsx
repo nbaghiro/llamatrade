@@ -10,12 +10,12 @@ export default function StrategyEditorPage() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const templateId = searchParams.get('template');
-  const fromCopilot = searchParams.get('from') === 'copilot';
+  const artifactId = searchParams.get('artifact');
 
   // Track if we've already loaded to prevent double-execution in React 18 Strict Mode
   const hasLoadedRef = useRef(false);
 
-  const { loadStrategy, loadTemplate, loadFromDSL, createNew, loading, error, clearError, tree, isDirty } =
+  const { loadStrategy, loadTemplate, loadFromArtifact, createNew, loading, error, clearError, tree, isDirty } =
     useStrategyBuilderStore();
 
   useEffect(() => {
@@ -26,31 +26,10 @@ export default function StrategyEditorPage() {
       // Edit existing strategy
       hasLoadedRef.current = true;
       loadStrategy(id);
-    } else if (fromCopilot) {
-      // Load from Copilot-generated DSL in sessionStorage
-      const copilotData = sessionStorage.getItem('copilot-strategy');
-      if (copilotData) {
-        hasLoadedRef.current = true;
-        try {
-          const { dslCode, name, description } = JSON.parse(copilotData);
-          const success = loadFromDSL(dslCode, name, description);
-          if (!success) {
-            createNew();
-          }
-        } catch {
-          createNew();
-        }
-        // Clean up sessionStorage
-        sessionStorage.removeItem('copilot-strategy');
-      } else {
-        // Check if tree already has content (from previous load)
-        const currentTree = useStrategyBuilderStore.getState().tree;
-        const hasContent = Object.keys(currentTree.blocks).length > 1;
-        if (!hasContent) {
-          hasLoadedRef.current = true;
-          createNew();
-        }
-      }
+    } else if (artifactId) {
+      // Load from pending artifact (survives page refresh)
+      hasLoadedRef.current = true;
+      loadFromArtifact(artifactId);
     } else if (templateId) {
       // Create from template
       hasLoadedRef.current = true;
@@ -65,14 +44,14 @@ export default function StrategyEditorPage() {
         createNew();
       }
     }
-  }, [id, templateId, fromCopilot, loadStrategy, loadTemplate, loadFromDSL, createNew]);
+  }, [id, artifactId, templateId, loadStrategy, loadFromArtifact, loadTemplate, createNew]);
 
   // Reset the ref when navigating to a new strategy
   useEffect(() => {
     return () => {
       hasLoadedRef.current = false;
     };
-  }, [id, templateId, fromCopilot]);
+  }, [id, artifactId, templateId]);
 
   // Warn on browser refresh/close with unsaved changes
   useEffect(() => {
@@ -100,7 +79,7 @@ export default function StrategyEditorPage() {
         <div className="text-center">
           <Loader2 className="w-8 h-8 animate-spin text-blue-500 mx-auto mb-4" />
           <p className="text-gray-500 dark:text-gray-400">
-            {id ? 'Loading strategy...' : templateId ? 'Loading template...' : 'Initializing...'}
+            {id ? 'Loading strategy...' : artifactId ? 'Loading artifact...' : templateId ? 'Loading template...' : 'Initializing...'}
           </p>
         </div>
       </div>

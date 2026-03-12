@@ -4,7 +4,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { create, createStore, useStore } from 'zustand';
 import { immer } from 'zustand/middleware/immer';
 
-import { strategyClient } from '../services/grpc-client';
+import { agentClient, strategyClient } from '../services/grpc-client';
 import {
   toDSL,
   fromDSL,
@@ -36,10 +36,48 @@ export type { ValidationResult, ValidationIssue };
 // Enable immer support for Map and Set
 enableMapSet();
 
+// View mode type (defined early for use in persistence helpers)
+export type ViewMode = 'tree' | 'code';
+
 // =============================================================================
 // Expand/Collapse State Persistence
 // =============================================================================
 const COLLAPSED_STORAGE_KEY = 'strategy-builder-collapsed';
+
+// =============================================================================
+// View Mode Persistence
+// =============================================================================
+const VIEW_MODE_STORAGE_KEY = 'strategy-builder-viewmode';
+
+/**
+ * Get stored view mode for a strategy or preview ID.
+ */
+function getStoredViewMode(strategyId: string | null): ViewMode {
+  if (!strategyId) return 'tree';
+  try {
+    const stored = localStorage.getItem(VIEW_MODE_STORAGE_KEY);
+    if (!stored) return 'tree';
+    const map = JSON.parse(stored) as Record<string, ViewMode>;
+    return map[strategyId] ?? 'tree';
+  } catch {
+    return 'tree';
+  }
+}
+
+/**
+ * Save view mode for a strategy or preview ID.
+ */
+function saveViewMode(strategyId: string | null, mode: ViewMode): void {
+  if (!strategyId) return;
+  try {
+    const stored = localStorage.getItem(VIEW_MODE_STORAGE_KEY);
+    const map: Record<string, ViewMode> = stored ? JSON.parse(stored) : {};
+    map[strategyId] = mode;
+    localStorage.setItem(VIEW_MODE_STORAGE_KEY, JSON.stringify(map));
+  } catch {
+    // Ignore storage errors
+  }
+}
 
 /**
  * Generate a stable path for a block that survives DSL round-trips.
@@ -177,8 +215,6 @@ function createInitialState(): { tree: StrategyTree; expandedBlocks: Set<BlockId
 // Initialize once and reuse
 const initialState = createInitialState();
 
-export type ViewMode = 'tree' | 'code';
-
 interface StrategyBuilderState {
   // Tree data
   tree: StrategyTree;
@@ -198,6 +234,8 @@ interface StrategyBuilderState {
 
   // Strategy metadata
   strategyId: string | null;
+  pendingArtifactId: string | null;  // ID of artifact being edited (survives refresh)
+  pendingTemplateId: string | null;  // ID of template being edited (survives refresh)
   strategyName: string;
   strategyDescription: string;
   timeframe: string;
@@ -260,6 +298,7 @@ interface StrategyBuilderState {
   loadStrategy: (id: string) => Promise<void>;
   loadTemplate: (templateId: string) => Promise<void>;
   loadFromDSL: (dslCode: string, name?: string, description?: string) => boolean;
+  loadFromArtifact: (artifactId: string) => Promise<void>;
   saveStrategy: () => Promise<string | null>;
   saveStrategyDebounced: () => void;  // Debounced save for frequent updates
   cancelDebouncedSave: () => void;    // Cancel pending debounced save
@@ -384,6 +423,8 @@ export const useStrategyBuilderStore = create<StrategyBuilderState>()(
 
     // Strategy metadata
     strategyId: null,
+    pendingArtifactId: null,
+    pendingTemplateId: null,
     strategyName: 'Untitled Strategy',
     strategyDescription: '',
     timeframe: '1D',
@@ -668,6 +709,8 @@ export const useStrategyBuilderStore = create<StrategyBuilderState>()(
             s.dslCode = dslCode;
             s.dslParseError = null;
           });
+          // Persist view mode preference
+          saveViewMode(state.strategyId, 'code');
         } else {
           // Switching to tree view: parse DSL back to tree
           const success = state.syncTreeFromCode();
@@ -675,6 +718,8 @@ export const useStrategyBuilderStore = create<StrategyBuilderState>()(
             set((s) => {
               s.viewMode = 'tree';
             });
+            // Persist view mode preference
+            saveViewMode(state.strategyId, 'tree');
           }
           // If parsing failed, stay in code view (error is already set)
         }
@@ -788,6 +833,8 @@ export const useStrategyBuilderStore = create<StrategyBuilderState>()(
           state.past = [];
           state.future = [];
           state.strategyId = null;
+          state.pendingArtifactId = null;
+          state.pendingTemplateId = null;
           state.strategyName = 'Untitled Strategy';
           state.strategyDescription = '';
           state.timeframe = '1D';
@@ -853,6 +900,8 @@ export const useStrategyBuilderStore = create<StrategyBuilderState>()(
 
           set((state) => {
             state.strategyId = strategy.id;
+            state.pendingArtifactId = null; // Clear artifact reference when loading saved strategy
+            state.pendingTemplateId = null; // Clear template reference when loading saved strategy
             state.strategyName = strategy.name;
             state.strategyDescription = strategy.description || '';
             state.timeframe = strategy.timeframe;
@@ -885,6 +934,18 @@ export const useStrategyBuilderStore = create<StrategyBuilderState>()(
 
             state.ui.expandedBlocks = expandedBlocks;
 
+            // Restore view mode from localStorage
+            const savedViewMode = getStoredViewMode(strategy.id);
+            state.viewMode = savedViewMode;
+            // If restoring to code view, generate DSL
+            if (savedViewMode === 'code') {
+              state.dslCode = toDSL(tree, {
+                name: strategy.name,
+                description: strategy.description || '',
+                timeframe: strategy.timeframe,
+              });
+            }
+
             state.isDirty = false;
             state.loading = false;
             state.past = [];
@@ -906,30 +967,34 @@ export const useStrategyBuilderStore = create<StrategyBuilderState>()(
         });
 
         try {
-          // Templates use strategy service - get strategy as template
-          const context = getTenantContext();
-          const response = await strategyClient.getStrategy({ context, strategyId: templateId });
-          const template = response.strategy;
+          // Fetch template by slug ID
+          const response = await strategyClient.getTemplate({ templateId });
+          const template = response.template;
           if (!template) {
             throw new Error('Template not found');
           }
 
-          const compiledJson = template.compiledJson ? JSON.parse(template.compiledJson) : {};
+          // Parse the S-expression DSL
+          const parsed = fromDSLString(template.configSexpr);
+          if (!parsed) {
+            throw new Error('Failed to parse template DSL');
+          }
+
+          const { tree, metadata } = parsed;
 
           set((state) => {
             state.strategyId = null; // New strategy from template
-            state.strategyName = template.name;
+            state.pendingTemplateId = templateId; // Track template for URL update after save
+            state.strategyName = metadata.name || template.name;
             state.strategyDescription = template.description || '';
-            state.timeframe = compiledJson.timeframe || template.timeframe || '1D';
+            state.timeframe = metadata.timeframe || '1D';
 
-            // Convert config to block tree
-            const tree = fromDSL(compiledJson);
             state.tree = tree;
 
             // Update root block name
             const root = tree.blocks[tree.rootId];
             if (root && root.type === 'root') {
-              root.name = template.name;
+              root.name = state.strategyName;
             }
 
             // Expand all parent blocks
@@ -1001,6 +1066,89 @@ export const useStrategyBuilderStore = create<StrategyBuilderState>()(
         return true;
       },
 
+      loadFromArtifact: async (artifactId: string) => {
+        set((state) => {
+          state.loading = true;
+          state.error = null;
+        });
+
+        try {
+          const context = getTenantContext();
+          const response = await agentClient.getArtifact({ context, artifactId });
+          const artifact = response.artifact;
+
+          if (!artifact) {
+            throw new Error('Artifact not found');
+          }
+
+          // If already committed, redirect to the strategy
+          if (artifact.isCommitted && artifact.committedResourceId) {
+            window.location.href = `/strategies/${artifact.committedResourceId}`;
+            return;
+          }
+
+          // Parse the preview JSON to get DSL code
+          const preview = JSON.parse(artifact.previewJson) as {
+            dsl_code?: string;
+            name?: string;
+            description?: string;
+            timeframe?: string;
+          };
+
+          if (!preview.dsl_code) {
+            throw new Error('Artifact has no DSL code');
+          }
+
+          // Parse the DSL
+          const parsed = fromDSLString(preview.dsl_code);
+          if (!parsed) {
+            set((state) => {
+              state.error = 'Failed to parse artifact DSL';
+              state.loading = false;
+            });
+            return;
+          }
+
+          const { tree, metadata } = parsed;
+
+          set((state) => {
+            state.strategyId = null; // Not saved yet
+            state.pendingArtifactId = artifactId;
+            state.strategyName = artifact.name || metadata.name || 'Untitled Strategy';
+            state.strategyDescription = artifact.description || metadata.description || '';
+            state.timeframe = metadata.timeframe || '1D';
+
+            state.tree = tree;
+
+            // Update root block name
+            const root = tree.blocks[tree.rootId];
+            if (root && root.type === 'root') {
+              root.name = state.strategyName;
+            }
+
+            // Expand all parent blocks
+            const expandedBlocks = new Set<BlockId>();
+            for (const block of Object.values(tree.blocks)) {
+              if (hasChildren(block)) {
+                expandedBlocks.add(block.id);
+              }
+            }
+            state.ui.expandedBlocks = expandedBlocks;
+
+            state.isDirty = true; // Mark dirty since not saved yet
+            state.loading = false;
+            state.past = [];
+            state.future = [];
+            runValidation(state);
+          });
+        } catch (error) {
+          set((state) => {
+            state.error = error instanceof Error ? error.message : 'Failed to load artifact';
+            state.loading = false;
+          });
+        }
+      },
+
       saveStrategy: async () => {
         const state = get();
 
@@ -1070,6 +1218,10 @@ export const useStrategyBuilderStore = create<StrategyBuilderState>()(
             savedName = response.strategy.name;
           }
 
+          // Check if this was from an artifact or template before updating state
+          const wasFromArtifact = state.pendingArtifactId !== null;
+          const wasFromTemplate = state.pendingTemplateId !== null;
+
           set((s) => {
             s.strategyId = savedStrategyId;
             s.strategyName = savedName;
@@ -1080,11 +1232,19 @@ export const useStrategyBuilderStore = create<StrategyBuilderState>()(
             }
             s.isDirty = false;
             s.saving = false;
+            // Clear pending artifact/template reference after save
+            s.pendingArtifactId = null;
+            s.pendingTemplateId = null;
             // Update version tracking after successful save
             s.serverVersion += 1;
             s.lastSavedAt = Date.now();
             s.conflictDetected = false;
           });
+
+          // If this was from an artifact or template, update URL to reflect saved strategy
+          if (wasFromArtifact || wasFromTemplate) {
+            window.history.replaceState(null, '', `/strategies/${savedStrategyId}`);
+          }
 
           return savedStrategyId;
         } catch (error) {
@@ -1204,6 +1364,8 @@ export const useStrategyBuilderStore = create<StrategyBuilderState>()(
           state.past = [];
           state.future = [];
           state.strategyId = null;
+          state.pendingArtifactId = null;
+          state.pendingTemplateId = null;
           state.strategyName = 'New Strategy';
           state.strategyDescription = '';
           state.timeframe = '1D';
@@ -1249,8 +1411,11 @@ export type StrategyBuilderStoreInstance = ReturnType<typeof createStrategyBuild
 /**
  * Create a new strategy builder store instance with the given initial tree.
  * Used for inline previews that need isolated state.
+ *
+ * @param initialTree - The strategy tree to initialize with
+ * @param previewId - Optional ID for view mode persistence (e.g., artifact ID)
  */
-export function createStrategyBuilderStore(initialTree?: StrategyTree) {
+export function createStrategyBuilderStore(initialTree?: StrategyTree, previewId?: string) {
   // Use provided tree or create empty initial state
   const initState = initialTree
     ? {
@@ -1263,6 +1428,20 @@ export function createStrategyBuilderStore(initialTree?: StrategyTree) {
       }
     : createInitialState();
 
+  // Restore view mode from localStorage if previewId is provided
+  const storedViewMode = previewId ? getStoredViewMode(previewId) : 'tree';
+
+  // Generate initial DSL code if starting in code view
+  const initialDslCode = storedViewMode === 'code' && initialTree
+    ? toDSL(initState.tree, {
+        name: initialTree.blocks[initialTree.rootId]?.type === 'root'
+          ? (initialTree.blocks[initialTree.rootId] as { name: string }).name
+          : 'Preview Strategy',
+        description: '',
+        timeframe: '1D',
+      })
+    : '';
+
   return createStore<StrategyBuilderState>()(
     immer((set, get) => ({
       tree: initState.tree,
@@ -1272,10 +1451,10 @@ export function createStrategyBuilderStore(initialTree?: StrategyTree) {
         editingBlockId: null,
       },
 
-      // View mode state - always tree for inline previews
-      viewMode: 'tree' as ViewMode,
+      // View mode state - restore from localStorage if previewId provided
+      viewMode: storedViewMode,
       compactView: true, // Default to compact for inline previews
-      dslCode: '',
+      dslCode: initialDslCode,
       dslParseError: null,
 
       past: [],
@@ -1283,6 +1462,8 @@ export function createStrategyBuilderStore(initialTree?: StrategyTree) {
 
       // Strategy metadata
       strategyId: null,
+      pendingArtifactId: null,
+      pendingTemplateId: null,
       strategyName: initialTree?.blocks[initialTree.rootId]?.type === 'root'
         ? (initialTree.blocks[initialTree.rootId] as { name: string }).name
         : 'Preview Strategy',
@@ -1348,17 +1529,51 @@ export function createStrategyBuilderStore(initialTree?: StrategyTree) {
       loadStrategy: async () => {},
       loadTemplate: async () => {},
       loadFromDSL: () => false,
+      loadFromArtifact: async () => {},
       saveStrategy: async () => null,
       saveStrategyDebounced: () => {},
       cancelDebouncedSave: () => {},
       resolveConflict: async () => {},
       createNew: () => {},
 
-      setViewMode: () => {},
-      toggleCompactView: () => {},
+      setViewMode: (mode) => {
+        const state = get();
+        if (mode === state.viewMode) return;
+
+        if (mode === 'code') {
+          // Switching to code view: generate DSL from tree
+          const dslCode = state.getDSLCode();
+          set((s) => {
+            s.viewMode = 'code';
+            s.dslCode = dslCode;
+            s.dslParseError = null;
+          });
+        } else {
+          // Switching to tree view (preview is read-only, just switch view)
+          set((s) => {
+            s.viewMode = 'tree';
+          });
+        }
+        // Persist view mode if previewId was provided
+        if (previewId) {
+          saveViewMode(previewId, mode);
+        }
+      },
+      toggleCompactView: () => {
+        set((s) => {
+          s.compactView = !s.compactView;
+        });
+      },
       updateDSLCode: () => {},
       syncTreeFromCode: () => false,
-      getDSLCode: () => '',
+      getDSLCode: () => {
+        const { tree, strategyName, strategyDescription, timeframe } = get();
+        return toDSL(tree, {
+          name: strategyName,
+          description: strategyDescription,
+          timeframe,
+        });
+      },
       clearDSLParseError: () => {},
 
       getBlockErrors: () => [],

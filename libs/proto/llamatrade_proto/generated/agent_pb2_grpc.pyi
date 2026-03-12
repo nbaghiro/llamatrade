@@ -46,6 +46,7 @@ class AgentServiceStub:
     StreamMessage: _grpc.UnaryStreamMultiCallable[_agent_pb2.SendMessageRequest, _agent_pb2.AgentStreamEvent]
     CommitArtifact: _grpc.UnaryUnaryMultiCallable[_agent_pb2.CommitArtifactRequest, _agent_pb2.CommitArtifactResponse]
     """Artifacts"""
+    GetArtifact: _grpc.UnaryUnaryMultiCallable[_agent_pb2.GetArtifactRequest, _agent_pb2.GetArtifactResponse]
     GetSuggestedPrompts: _grpc.UnaryUnaryMultiCallable[_agent_pb2.GetSuggestedPromptsRequest, _agent_pb2.GetSuggestedPromptsResponse]
     """Context-aware suggestions"""
 
@@ -67,6 +68,7 @@ class AgentServiceAsyncStub(AgentServiceStub):
     StreamMessage: _aio.UnaryStreamMultiCallable[_agent_pb2.SendMessageRequest, _agent_pb2.AgentStreamEvent]  # type: ignore[assignment]
     CommitArtifact: _aio.UnaryUnaryMultiCallable[_agent_pb2.CommitArtifactRequest, _agent_pb2.CommitArtifactResponse]  # type: ignore[assignment]
     """Artifacts"""
+    GetArtifact: _aio.UnaryUnaryMultiCallable[_agent_pb2.GetArtifactRequest, _agent_pb2.GetArtifactResponse]  # type: ignore[assignment]
     GetSuggestedPrompts: _aio.UnaryUnaryMultiCallable[_agent_pb2.GetSuggestedPromptsRequest, _agent_pb2.GetSuggestedPromptsResponse]  # type: ignore[assignment]
     """Context-aware suggestions"""
 
@@ -127,6 +129,13 @@ class AgentServiceServicer(metaclass=_abc_1.ABCMeta):
         context: _ServicerContext,
     ) -> _typing.Union[_agent_pb2.CommitArtifactResponse, _abc.Awaitable[_agent_pb2.CommitArtifactResponse]]:
         """Artifacts"""
+
+    @_abc_1.abstractmethod
+    def GetArtifact(
+        self,
+        request: _agent_pb2.GetArtifactRequest,
+        context: _ServicerContext,
+    ) -> _typing.Union[_agent_pb2.GetArtifactResponse, _abc.Awaitable[_agent_pb2.GetArtifactResponse]]: ...
 
     @_abc_1.abstractmethod
     def GetSuggestedPrompts(

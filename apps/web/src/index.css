@@ -243,23 +243,23 @@
 @layer utilities {
   /* Dotted grid pattern - subtle dots for backgrounds */
   .bg-dotted-grid {
-    background-image: radial-gradient(circle, theme('colors.gray.300') 1px, transparent 1px);
+    background-image: radial-gradient(circle, #b6bcc5 1px, transparent 1px); /* gray.350 */
     background-size: 24px 24px;
   }
 
   .dark .bg-dotted-grid {
-    background-image: radial-gradient(circle, #333333 1px, transparent 1px);
+    background-image: radial-gradient(circle, #2b3544 1px, transparent 1px); /* gray.750 */
   }
 
   /* Canvas with grid */
   .bg-canvas {
     @apply bg-gray-50 dark:bg-gray-950;
-    background-image: radial-gradient(circle, theme('colors.gray.300') 1px, transparent 1px);
+    background-image: radial-gradient(circle, #b6bcc5 1px, transparent 1px); /* gray.350 */
     background-size: 24px 24px;
   }
 
   .dark .bg-canvas {
-    background-image: radial-gradient(circle, #333333 1px, transparent 1px);
+    background-image: radial-gradient(circle, #2b3544 1px, transparent 1px); /* gray.750 */
   }
 
   /* Tree connector lines */

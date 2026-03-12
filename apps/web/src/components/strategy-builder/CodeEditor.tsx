@@ -8,16 +8,21 @@ import { EditorView, keymap } from '@codemirror/view';
 import { AlertCircle } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import { useStrategyBuilderStore } from '../../store/strategy-builder';
+import { useStrategyBuilderStoreWithContext } from '../../store/strategy-builder';
 
 import { sExprDSL, getEditorTheme, dslAutocomplete, dslLinter } from './codemirror';
 
-export function CodeEditor() {
+interface CodeEditorProps {
+  readOnly?: boolean;
+}
+
+export function CodeEditor({ readOnly = false }: CodeEditorProps) {
   const editorRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
   const themeCompartmentRef = useRef<Compartment | null>(null);
+  const readOnlyCompartmentRef = useRef<Compartment | null>(null);
   const isInitializedRef = useRef(false);
-  const { dslCode, dslParseError, updateDSLCode, clearDSLParseError } = useStrategyBuilderStore();
+  const { dslCode, dslParseError, updateDSLCode, clearDSLParseError } = useStrategyBuilderStoreWithContext();
 
   // Detect dark mode
   const [isDark, setIsDark] = useState(() =>
@@ -54,13 +59,26 @@ export function CodeEditor() {
     }
   }, [isDark]);
 
+  // Reconfigure readOnly when it changes
+  useEffect(() => {
+    if (viewRef.current && readOnlyCompartmentRef.current) {
+      viewRef.current.dispatch({
+        effects: readOnlyCompartmentRef.current.reconfigure(
+          EditorState.readOnly.of(readOnly)
+        ),
+      });
+    }
+  }, [readOnly]);
+
   // Initialize the editor
   useEffect(() => {
     if (!editorRef.current || viewRef.current) return;
 
-    // Create compartment for this instance
+    // Create compartments for dynamic configuration
     const themeCompartment = new Compartment();
+    const readOnlyCompartment = new Compartment();
     themeCompartmentRef.current = themeCompartment;
+    readOnlyCompartmentRef.current = readOnlyCompartment;
 
     // Create new editor
     const state = EditorState.create({
@@ -80,6 +98,7 @@ export function CodeEditor() {
         dslAutocomplete,
         dslLinter,
         themeCompartment.of(getEditorTheme(isDark)),
+        readOnlyCompartment.of(EditorState.readOnly.of(readOnly)),
         EditorView.updateListener.of((update) => {
           if (update.docChanged) {
             handleChange(update.state.doc.toString());
@@ -104,6 +123,7 @@ export function CodeEditor() {
       view.destroy();
       viewRef.current = null;
       themeCompartmentRef.current = null;
+      readOnlyCompartmentRef.current = null;
       isInitializedRef.current = false;
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps

@@ -625,3 +625,41 @@ class AgentServicer:
         prompts = get_suggested_actions(page or "dashboard", context)
 
         return agent_pb2.GetSuggestedPromptsResponse(prompts=prompts)
+
+    @handle_service_errors
+    async def get_artifact(
+        self,
+        request: agent_pb2.GetArtifactRequest,
+        ctx: RequestContext[object, object],
+    ) -> agent_pb2.GetArtifactResponse:
+        """Get a pending artifact by ID."""
+        tenant_id, user_id = _validate_tenant_context(request.context)
+        artifact_id = parse_uuid(request.artifact_id, "artifact_id")
+
+        from src.services.artifact_service import ArtifactService
+
+        async with self._get_db() as db:
+            service = ArtifactService(db, tenant_id, user_id)
+            artifact = await service.get_artifact(artifact_id)
+
+            if not artifact:
+                raise ConnectError(
+                    Code.NOT_FOUND,
+                    f"Artifact not found: {request.artifact_id}",
+                )
+
+            return agent_pb2.GetArtifactResponse(
+                artifact=agent_pb2.PendingArtifact(
+                    id=str(artifact.id),
+                    session_id=str(artifact.session_id),
+                    artifact_type=artifact.artifact_type,
+                    name=artifact.name,
+                    description=artifact.description or "",
+                    preview_json=json.dumps(artifact.artifact_json),
+                    is_committed=artifact.is_committed,
+                    committed_resource_id=str(artifact.committed_resource_id)
+                    if artifact.committed_resource_id
+                    else "",
+                    created_at=_timestamp_to_proto(artifact.created_at),
+                ),
+            )

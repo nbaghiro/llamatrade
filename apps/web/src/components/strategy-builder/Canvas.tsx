@@ -1,4 +1,4 @@
-import { useStrategyBuilderStore } from '../../store/strategy-builder';
+import { useStrategyBuilderStoreWithContext } from '../../store/strategy-builder';
 import { hasChildren } from '../../types/strategy-builder';
 
 import { AddBlockButton } from './blocks/AddBlockButton';
@@ -9,7 +9,7 @@ interface CanvasProps {
 }
 
 export function Canvas({ readOnly }: CanvasProps) {
-  const { tree, ui, compactView, selectBlock } = useStrategyBuilderStore();
+  const { tree, ui, compactView, selectBlock } = useStrategyBuilderStoreWithContext();
   const rootBlock = tree.blocks[tree.rootId];
   const isExpanded = ui.expandedBlocks.has(tree.rootId);
 

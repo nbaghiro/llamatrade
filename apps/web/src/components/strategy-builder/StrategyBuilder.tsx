@@ -1,6 +1,6 @@
 import { useCallback, useEffect } from 'react';
 
-import { useStrategyBuilderStore } from '../../store/strategy-builder';
+import { useStrategyBuilderStoreWithContext } from '../../store/strategy-builder';
 
 import { RootBlock } from './blocks/RootBlock';
 import { Canvas } from './Canvas';
@@ -13,7 +13,10 @@ interface StrategyBuilderProps {
 }
 
 export function StrategyBuilder({ readOnly }: StrategyBuilderProps) {
-  const { tree, ui, viewMode, deleteBlock, undo, redo, canUndo, canRedo, getBlock } = useStrategyBuilderStore();
+  const { tree, ui, viewMode, compactView, deleteBlock, undo, redo, canUndo, canRedo, getBlock } = useStrategyBuilderStoreWithContext();
+
+  // Combine readOnly prop with compactView state for edit controls
+  const isViewOnly = readOnly || compactView;
   const rootBlock = tree.blocks[tree.rootId];
 
   // Keyboard shortcuts - disabled in readOnly mode
@@ -90,7 +93,7 @@ export function StrategyBuilder({ readOnly }: StrategyBuilderProps) {
           <Canvas readOnly={readOnly} />
         ) : (
           <div className="flex-1 min-h-0 overflow-hidden">
-            <CodeEditor />
+            <CodeEditor readOnly={isViewOnly} />
           </div>
         )}
       </div>

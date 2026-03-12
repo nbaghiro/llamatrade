@@ -216,6 +216,16 @@ message GetSuggestedPromptsResponse {
   repeated string prompts = 1;
 }
 
+// Get artifact by ID
+message GetArtifactRequest {
+  TenantContext context = 1;
+  string artifact_id = 2;
+}
+
+message GetArtifactResponse {
+  PendingArtifact artifact = 1;
+}
+
 // =============================================================================
 // SERVICE
 // =============================================================================
@@ -233,6 +243,7 @@ service AgentService {
 
   // Artifacts
   rpc CommitArtifact(CommitArtifactRequest) returns (CommitArtifactResponse);
+  rpc GetArtifact(GetArtifactRequest) returns (GetArtifactResponse);
 
   // Context-aware suggestions
   rpc GetSuggestedPrompts(GetSuggestedPromptsRequest) returns (GetSuggestedPromptsResponse);

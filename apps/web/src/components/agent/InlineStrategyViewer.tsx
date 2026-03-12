@@ -1,7 +1,7 @@
 /**
  * InlineStrategyViewer - Renders a strategy visualization inline within chat messages.
  *
- * Parses DSL from artifact preview and renders using existing strategy builder components
+ * Parses DSL from artifact preview and renders using the StrategyBuilder component
  * in a scoped store context.
  */
 
@@ -11,8 +11,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { fromDSLString } from '../../services/strategy-serializer';
 import type { PendingArtifact } from '../../store/agent';
 import type { StrategyTree } from '../../types/strategy-builder';
+import { StrategyBuilder } from '../strategy-builder/StrategyBuilder';
 import { StrategyBuilderStoreProvider } from '../strategy-builder/StrategyBuilderStoreProvider';
-import { TreeNode } from '../strategy-builder/TreeNode';
 
 interface InlineStrategyViewerProps {
   /** The artifact containing the strategy DSL */
@@ -106,14 +106,11 @@ export function InlineStrategyViewer({
 
       {/* Strategy visualization */}
       {isExpanded && (
-        <div
-          className="overflow-auto p-4 bg-dotted-grid"
-          style={{ maxHeight: maxHeight - 48 }}
-        >
-          <StrategyBuilderStoreProvider tree={tree}>
-            <TreeNode blockId={tree.rootId} readOnly />
-          </StrategyBuilderStoreProvider>
-        </div>
+        <StrategyBuilderStoreProvider tree={tree} previewId={artifact.id}>
+          <div style={{ maxHeight: maxHeight - 48 }} className="overflow-auto">
+            <StrategyBuilder readOnly />
+          </div>
+        </StrategyBuilderStoreProvider>
       )}
     </div>
   );

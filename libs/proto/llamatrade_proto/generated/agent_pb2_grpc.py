@@ -53,6 +53,11 @@ class AgentServiceStub(object):
                 request_serializer=agent__pb2.CommitArtifactRequest.SerializeToString,
                 response_deserializer=agent__pb2.CommitArtifactResponse.FromString,
                 _registered_method=True)
+        self.GetArtifact = channel.unary_unary(
+                '/llamatrade.AgentService/GetArtifact',
+                request_serializer=agent__pb2.GetArtifactRequest.SerializeToString,
+                response_deserializer=agent__pb2.GetArtifactResponse.FromString,
+                _registered_method=True)
         self.GetSuggestedPrompts = channel.unary_unary(
                 '/llamatrade.AgentService/GetSuggestedPrompts',
                 request_serializer=agent__pb2.GetSuggestedPromptsRequest.SerializeToString,
@@ -112,6 +117,12 @@ class AgentServiceServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def GetArtifact(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
     def GetSuggestedPrompts(self, request, context):
         """Context-aware suggestions
         """
@@ -156,6 +167,11 @@ def add_AgentServiceServicer_to_server(servicer, server):
                     servicer.CommitArtifact,
                     request_deserializer=agent__pb2.CommitArtifactRequest.FromString,
                     response_serializer=agent__pb2.CommitArtifactResponse.SerializeToString,
+            ),
+            'GetArtifact': grpc.unary_unary_rpc_method_handler(
+                    servicer.GetArtifact,
+                    request_deserializer=agent__pb2.GetArtifactRequest.FromString,
+                    response_serializer=agent__pb2.GetArtifactResponse.SerializeToString,
             ),
             'GetSuggestedPrompts': grpc.unary_unary_rpc_method_handler(
                     servicer.GetSuggestedPrompts,
@@ -356,6 +372,33 @@ class AgentService(object):
             '/llamatrade.AgentService/CommitArtifact',
             agent__pb2.CommitArtifactRequest.SerializeToString,
             agent__pb2.CommitArtifactResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def GetArtifact(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/llamatrade.AgentService/GetArtifact',
+            agent__pb2.GetArtifactRequest.SerializeToString,
+            agent__pb2.GetArtifactResponse.FromString,
             options,
             channel_credentials,
             insecure,

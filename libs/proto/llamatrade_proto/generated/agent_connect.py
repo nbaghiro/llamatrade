@@ -37,6 +37,9 @@ class AgentService(Protocol):
     async def commit_artifact(self, request: agent__pb2.CommitArtifactRequest, ctx: RequestContext) -> agent__pb2.CommitArtifactResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
+    async def get_artifact(self, request: agent__pb2.GetArtifactRequest, ctx: RequestContext) -> agent__pb2.GetArtifactResponse:
+        raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
+
     async def get_suggested_prompts(self, request: agent__pb2.GetSuggestedPromptsRequest, ctx: RequestContext) -> agent__pb2.GetSuggestedPromptsResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
@@ -115,6 +118,16 @@ class AgentServiceASGIApplication(ConnectASGIApplication[AgentService]):
                         idempotency_level=IdempotencyLevel.UNKNOWN,
                     ),
                     function=svc.commit_artifact,
+                ),
+                "/llamatrade.AgentService/GetArtifact": Endpoint.unary(
+                    method=MethodInfo(
+                        name="GetArtifact",
+                        service_name="llamatrade.AgentService",
+                        input=agent__pb2.GetArtifactRequest,
+                        output=agent__pb2.GetArtifactResponse,
+                        idempotency_level=IdempotencyLevel.UNKNOWN,
+                    ),
+                    function=svc.get_artifact,
                 ),
                 "/llamatrade.AgentService/GetSuggestedPrompts": Endpoint.unary(
                     method=MethodInfo(
@@ -278,6 +291,26 @@ class AgentServiceClient(ConnectClient):
             timeout_ms=timeout_ms,
         )
 
+    async def get_artifact(
+        self,
+        request: agent__pb2.GetArtifactRequest,
+        *,
+        headers: Headers | Mapping[str, str] | None = None,
+        timeout_ms: int | None = None,
+    ) -> agent__pb2.GetArtifactResponse:
+        return await self.execute_unary(
+            request=request,
+            method=MethodInfo(
+                name="GetArtifact",
+                service_name="llamatrade.AgentService",
+                input=agent__pb2.GetArtifactRequest,
+                output=agent__pb2.GetArtifactResponse,
+                idempotency_level=IdempotencyLevel.UNKNOWN,
+            ),
+            headers=headers,
+            timeout_ms=timeout_ms,
+        )
+
     async def get_suggested_prompts(
         self,
         request: agent__pb2.GetSuggestedPromptsRequest,
@@ -313,6 +346,8 @@ class AgentServiceSync(Protocol):
     def stream_message(self, request: agent__pb2.SendMessageRequest, ctx: RequestContext) -> Iterator[agent__pb2.AgentStreamEvent]:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
     def commit_artifact(self, request: agent__pb2.CommitArtifactRequest, ctx: RequestContext) -> agent__pb2.CommitArtifactResponse:
+        raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
+    def get_artifact(self, request: agent__pb2.GetArtifactRequest, ctx: RequestContext) -> agent__pb2.GetArtifactResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
     def get_suggested_prompts(self, request: agent__pb2.GetSuggestedPromptsRequest, ctx: RequestContext) -> agent__pb2.GetSuggestedPromptsResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
@@ -391,6 +426,16 @@ class AgentServiceWSGIApplication(ConnectWSGIApplication):
                         idempotency_level=IdempotencyLevel.UNKNOWN,
                     ),
                     function=service.commit_artifact,
+                ),
+                "/llamatrade.AgentService/GetArtifact": EndpointSync.unary(
+                    method=MethodInfo(
+                        name="GetArtifact",
+                        service_name="llamatrade.AgentService",
+                        input=agent__pb2.GetArtifactRequest,
+                        output=agent__pb2.GetArtifactResponse,
+                        idempotency_level=IdempotencyLevel.UNKNOWN,
+                    ),
+                    function=service.get_artifact,
                 ),
                 "/llamatrade.AgentService/GetSuggestedPrompts": EndpointSync.unary(
                     method=MethodInfo(
@@ -548,6 +593,26 @@ class AgentServiceClientSync(ConnectClientSync):
                 service_name="llamatrade.AgentService",
                 input=agent__pb2.CommitArtifactRequest,
                 output=agent__pb2.CommitArtifactResponse,
+                idempotency_level=IdempotencyLevel.UNKNOWN,
+            ),
+            headers=headers,
+            timeout_ms=timeout_ms,
+        )
+
+    def get_artifact(
+        self,
+        request: agent__pb2.GetArtifactRequest,
+        *,
+        headers: Headers | Mapping[str, str] | None = None,
+        timeout_ms: int | None = None,
+    ) -> agent__pb2.GetArtifactResponse:
+        return self.execute_unary(
+            request=request,
+            method=MethodInfo(
+                name="GetArtifact",
+                service_name="llamatrade.AgentService",
+                input=agent__pb2.GetArtifactRequest,
+                output=agent__pb2.GetArtifactResponse,
                 idempotency_level=IdempotencyLevel.UNKNOWN,
             ),
             headers=headers,

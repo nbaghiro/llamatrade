@@ -159,47 +159,9 @@ export default function StrategyPreviewDialog() {
   const handleOpenInEditor = useCallback(() => {
     if (!previewTemplate) return;
 
-    // Parse the S-expression DSL into a block tree
-    const parseResult = fromDSLString(previewTemplate.config_sexpr);
-
-    if (!parseResult) {
-      // Fallback: create empty strategy with just the name if DSL parsing fails
-      useStrategyBuilderStore.getState().createNew();
-      useStrategyBuilderStore.setState({
-        strategyName: previewTemplate.name,
-        strategyDescription: previewTemplate.description,
-      });
-    } else {
-      const { tree, metadata } = parseResult;
-
-      const expandedBlocks = new Set<BlockId>();
-      for (const block of Object.values(tree.blocks)) {
-        if (hasChildren(block)) {
-          expandedBlocks.add(block.id);
-        }
-      }
-
-      useStrategyBuilderStore.setState({
-        tree,
-        ui: {
-          selectedBlockId: null,
-          expandedBlocks,
-          editingBlockId: null,
-        },
-        past: [],
-        future: [],
-        strategyId: null,
-        strategyName: metadata.name || previewTemplate.name,
-        strategyDescription: previewTemplate.description,
-        timeframe: metadata.timeframe || '1D',
-        isDirty: true,
-        loading: false,
-        error: null,
-      });
-    }
-
     closeAllStrategyDialogs();
-    navigate('/strategies/builder');
+    // Navigate with template ID - loadTemplate will fetch and set pendingTemplateId
+    navigate(`/strategies/builder?template=${previewTemplate.id}`);
   }, [previewTemplate, closeAllStrategyDialogs, navigate]);
 
   // Generate mock performance data
@@ -232,8 +194,8 @@ export default function StrategyPreviewDialog() {
       {/* Backdrop - lighter since it sits on top of the template dialog's backdrop */}
       <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" onClick={closePreviewDialog} />
 
-      {/* Modal - near full screen */}
-      <div className="relative bg-white dark:bg-gray-900 rounded-xl shadow-2xl w-[calc(100vw-64px)] h-[calc(100vh-64px)] max-w-[1600px] overflow-hidden mx-4 flex flex-col">
+      {/* Modal */}
+      <div className="relative bg-white dark:bg-gray-900 rounded-xl shadow-2xl w-[calc(100vw-120px)] h-[calc(100vh-100px)] max-w-[1100px] overflow-hidden mx-4 flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-3 border-b border-gray-200 dark:border-gray-700 flex-shrink-0">
           <h2 className="text-sm font-medium text-gray-500 dark:text-gray-400">

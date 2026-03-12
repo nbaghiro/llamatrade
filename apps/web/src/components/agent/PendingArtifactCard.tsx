@@ -121,17 +121,10 @@ export function PendingArtifactCard({
   const handleOpenInBuilder = () => {
     if (!preview?.dsl_code) return;
 
-    // Store the DSL in sessionStorage for the builder to pick up
-    sessionStorage.setItem('copilot-strategy', JSON.stringify({
-      dslCode: preview.dsl_code,
-      name: artifact.name,
-      description: artifact.description || preview.description,
-    }));
-
     setHasBeenOpened(true);
 
-    // Navigate to builder
-    navigate('/strategies/builder?from=copilot');
+    // Navigate to builder with artifact ID - strategy survives page refresh
+    navigate(`/strategies/builder?artifact=${artifact.id}`);
   };
 
   const handleSaveStrategy = async () => {
