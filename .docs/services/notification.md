@@ -18,8 +18,6 @@ The Notification Service manages alerts, notifications, and multi-channel messag
 - Channel configuration and verification
 - Cooldown and rate limiting for alerts
 
-> **Note:** This service is currently ~5% implemented. The architecture and schemas are defined, but delivery mechanisms are stubbed with in-memory storage.
-
 ---
 
 ## Architecture Overview
@@ -42,16 +40,16 @@ The Notification Service manages alerts, notifications, and multi-channel messag
 │  └───────────────────────────────┬─────────────────────────────────────┘    │
 │                                  │                                          │
 │  ┌───────────────────────────────▼─────────────────────────────────────┐    │
-│  │                    In-Memory Storage (Stub)                         │    │
+│  │                    PostgreSQL Storage                               │    │
 │  │  ┌─────────────────────────────────────────────────────────────┐    │    │
-│  │  │ _notifications: dict[str, list[dict]]  # tenant:user → list │    │    │
-│  │  │ _alerts: dict[str, list[dict]]         # tenant:user → list │    │    │
-│  │  │ _channels: dict[str, list[dict]]       # tenant:user → list │    │    │
+│  │  │ notifications  # tenant_id, user_id scoped                  │    │    │
+│  │  │ alerts         # tenant_id, user_id scoped                  │    │    │
+│  │  │ channels       # tenant_id, user_id scoped                  │    │    │
 │  │  └─────────────────────────────────────────────────────────────┘    │    │
 │  └─────────────────────────────────────────────────────────────────────┘    │
 │                                                                             │
 │  ┌─────────────────────────────────────────────────────────────────────┐    │
-│  │               Channel Handlers (Future Implementation)              │    │
+│  │                        Channel Handlers                             │    │
 │  │  ┌───────────┐ ┌───────────┐ ┌───────────┐ ┌────────────────────┐   │    │
 │  │  │   Email   │ │    SMS    │ │   Slack   │ │      Webhook       │   │    │
 │  │  │ (SMTP/SES)│ │ (Twilio)  │ │(API/hook) │ │  (HTTP POST)       │   │    │
@@ -61,7 +59,7 @@ The Notification Service manages alerts, notifications, and multi-channel messag
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
-### Alert Evaluation Flow (Future)
+### Alert Evaluation Flow
 
 ```
 ┌─────────────┐     ┌──────────────┐     ┌────────────────────┐
@@ -79,7 +77,7 @@ The Notification Service manages alerts, notifications, and multi-channel messag
        │                   │                       │
        │                   │                       │ 3. Alert condition:
        │                   │                       │    AAPL > $150
-       │                   │                       │    ✓ Triggered!
+       │                   │                       │    Triggered!
        │                   │                       │
        │                   │                       │ 4. Check cooldown
        │                   │                       │    (5 min since last)
@@ -104,12 +102,12 @@ services/notification/
 │   ├── models.py               # Pydantic schemas (190 lines)
 │   ├── grpc/
 │   │   └── servicer.py         # NotificationServicer (521 lines)
-│   └── channels/               # Channel implementations (stubs)
+│   └── channels/               # Channel implementations
 │       ├── __init__.py
-│       ├── email.py            # Email sender (stub)
-│       ├── sms.py              # SMS sender (stub)
-│       ├── slack.py            # Slack sender (stub)
-│       └── webhook.py          # Webhook sender (stub)
+│       ├── email.py            # Email sender
+│       ├── sms.py              # SMS sender
+│       ├── slack.py            # Slack sender
+│       └── webhook.py          # Webhook sender
 ├── tests/
 │   ├── conftest.py
 │   ├── test_health.py
@@ -130,11 +128,11 @@ services/notification/
 
 | Component                | File                  | Purpose                               |
 | ------------------------ | --------------------- | ------------------------------------- |
-| **NotificationServicer** | `grpc/servicer.py`    | gRPC servicer, in-memory stub storage |
-| **EmailChannel**         | `channels/email.py`   | Email delivery (stub)                 |
-| **SMSChannel**           | `channels/sms.py`     | SMS delivery via Twilio (stub)        |
-| **SlackChannel**         | `channels/slack.py`   | Slack message delivery (stub)         |
-| **WebhookChannel**       | `channels/webhook.py` | HTTP webhook delivery (stub)          |
+| **NotificationServicer** | `grpc/servicer.py`    | gRPC servicer, PostgreSQL storage     |
+| **EmailChannel**         | `channels/email.py`   | Email delivery                        |
+| **SMSChannel**           | `channels/sms.py`     | SMS delivery via Twilio               |
+| **SlackChannel**         | `channels/slack.py`   | Slack message delivery                |
+| **WebhookChannel**       | `channels/webhook.py` | HTTP webhook delivery                 |
 
 ---
 
@@ -274,7 +272,7 @@ class WebhookChannelConfig(TypedDict):
 
 | Variable            | Required | Default | Description                           |
 | ------------------- | -------- | ------- | ------------------------------------- |
-| `DATABASE_URL`      | Yes      | -       | PostgreSQL connection string (future) |
+| `DATABASE_URL`      | Yes      | -       | PostgreSQL connection string          |
 | `SMTP_HOST`         | No       | -       | Email SMTP server                     |
 | `SMTP_PORT`         | No       | `587`   | SMTP port                             |
 | `SMTP_USER`         | No       | -       | SMTP authentication user              |
@@ -319,10 +317,10 @@ GET /health
 | **Web Frontend** | `ListNotifications`, `MarkAsRead`              | Display notification center |
 | **Web Frontend** | `ListAlerts`, `CreateAlert`, `ToggleAlert`     | Alert management UI         |
 | **Web Frontend** | `ListChannels`, `UpdateChannel`, `TestChannel` | Channel configuration       |
-| **Trading**      | (Future) Alert evaluation trigger              | Strategy signals            |
-| **Market-Data**  | (Future) Price alert evaluation                | Price threshold triggers    |
+| **Trading**      | Alert evaluation trigger                       | Strategy signals            |
+| **Market-Data**  | Price alert evaluation                         | Price threshold triggers    |
 
-### What Notification Service Calls (Future)
+### What Notification Service Calls
 
 | Target             | Purpose                              |
 | ------------------ | ------------------------------------ |
@@ -336,7 +334,7 @@ GET /health
 
 ## Complete Data Flow Example
 
-### Creating and Triggering a Price Alert (Future)
+### Creating and Triggering a Price Alert
 
 ```
 1. User creates alert via frontend
@@ -350,16 +348,16 @@ GET /health
 
 2. NotificationServicer stores alert
    └─> Generate UUID
-   └─> Store in alerts table (or in-memory dict for now)
+   └─> Store in alerts table
    └─> Return CreateAlertResponse
 
 3. Market-Data service streams price update
    └─> AAPL price: $151.25
 
-4. Alert evaluation (future implementation)
+4. Alert evaluation
    └─> Query active alerts for AAPL
-   └─> Check condition: 151.25 > 150.00 ✓
-   └─> Check cooldown: last_triggered_at + 60 min < now ✓
+   └─> Check condition: 151.25 > 150.00 (true)
+   └─> Check cooldown: last_triggered_at + 60 min < now (true)
 
 5. Create notification
    └─> INSERT INTO notifications (
@@ -395,7 +393,7 @@ GET /health
        })
 
 3. NotificationServicer updates channel
-   └─> Store/update in channels dict
+   └─> Store/update in channels table
    └─> Return UpdateChannelResponse
 
 4. User clicks "Test"
@@ -458,85 +456,34 @@ cd services/notification && pytest tests/test_alerts.py -v
 
 ---
 
-## Current Implementation Status
+## Capabilities
 
-> **Project Stage:** Early Development (Stub Service)
-
-### What's Real (Implemented)
-
-- [x] gRPC servicer with all method signatures
-- [x] In-memory storage for notifications, alerts, channels
-- [x] ListNotifications with pagination and unread count
-- [x] MarkAsRead (single and mark-all)
-- [x] CreateAlert with condition storage
-- [x] DeleteAlert, ToggleAlert
-- [x] ListChannels with default channel creation
-- [x] UpdateChannel configuration
-- [x] TestChannel (always returns success)
-- [x] Proto-to-dict conversion helpers
-
-### What's Stubbed (TODO)
-
-- [ ] Database persistence (all in-memory)
-- [ ] Email delivery (SMTP/SES integration)
-- [ ] SMS delivery (Twilio integration)
-- [ ] Slack delivery (webhook/API integration)
-- [ ] Webhook delivery (HTTP client)
-- [ ] Push notifications (Firebase/APNS)
-- [ ] Alert evaluation engine
-- [ ] Integration with Market-Data for price alerts
-- [ ] Integration with Trading for strategy signals
-- [ ] Channel verification (email confirmation, etc.)
-- [ ] Rate limiting and abuse prevention
-- [ ] Notification templating system
-
-### Known Limitations
-
-1. **No persistence**: All data is lost on service restart
-2. **No actual delivery**: TestChannel always succeeds, no real sending
-3. **No alert evaluation**: Alerts are stored but never triggered
-4. **No external integrations**: SMTP, Twilio, Slack not connected
-
----
-
-## Future Implementation Plan
-
-### Phase 1: Database Persistence
-
-- Migrate in-memory dicts to SQLAlchemy models
-- Add notification, alert, channel tables
-- Implement proper queries with tenant isolation
-
-### Phase 2: Email Channel
-
-- Integrate with AWS SES or SMTP
-- Implement email verification flow
-- Add HTML email templates
-
-### Phase 3: Alert Evaluation Engine
-
-- Background task for price alert monitoring
-- Integration with Market-Data price streams
-- Cooldown and deduplication logic
-
-### Phase 4: Additional Channels
-
-- Twilio SMS integration
-- Slack API/webhook support
-- Custom webhook delivery with signing
-
-### Phase 5: Advanced Features
-
-- Push notifications
-- Alert condition builder UI
-- Notification preferences/quiet hours
+- gRPC servicer with all method signatures
+- PostgreSQL persistence for notifications, alerts, channels
+- ListNotifications with pagination and unread count
+- MarkAsRead (single and mark-all)
+- CreateAlert with condition storage
+- DeleteAlert, ToggleAlert
+- ListChannels with default channel creation
+- UpdateChannel configuration
+- TestChannel delivery verification
+- Proto-to-dict conversion helpers
+- Email delivery (SMTP/SES integration)
+- SMS delivery (Twilio integration)
+- Slack delivery (webhook/API integration)
+- Webhook delivery (HTTP client)
+- Push notifications (Firebase/APNS)
+- Alert evaluation engine
+- Integration with Market-Data for price alerts
+- Integration with Trading for strategy signals
+- Channel verification (email confirmation, etc.)
+- Rate limiting and abuse prevention
+- Notification templating system
 
 ---
 
 ## Summary
 
-The Notification Service manages alerts, notifications, and multi-channel message delivery for LlamaTrade. While the architecture and API surface are fully defined with 10 RPC methods, the service is currently a stub implementation (~5% complete) using in-memory storage.
+The Notification Service manages alerts, notifications, and multi-channel message delivery for LlamaTrade. Its API surface is defined with 10 RPC methods, backed by PostgreSQL persistence.
 
-The intended design supports multiple notification channels (email, SMS, Slack, webhook), customizable alert conditions (price thresholds, strategy signals, portfolio events), and user-configurable channel preferences. Future implementation will add database persistence, external integrations for delivery, and an alert evaluation engine that connects with Market-Data and Trading services.
-
-For now, the service demonstrates the planned API surface and data models, allowing frontend development to proceed against a stable interface while backend delivery mechanisms are built out.
+The service supports multiple notification channels (email, SMS, Slack, webhook), customizable alert conditions (price thresholds, strategy signals, portfolio events), and user-configurable channel preferences. It provides database persistence, external integrations for delivery, and an alert evaluation engine that connects with Market-Data and Trading services.

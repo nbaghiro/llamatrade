@@ -2117,7 +2117,7 @@ Buy $110 call at $0.40  ← Insurance in case stock rockets above $110
 Net credit: $1.00 + $1.00 - $0.40 - $0.40 = $1.20 per share ($120 total)
 
 Scenarios:
-1. Stock stays between $95-$105: All options expire worthless, keep $120 ✓
+1. Stock stays between $95-$105: All options expire worthless, keep $120
 2. Stock drops to $92: You must buy at $95 (losing $3) but keep $1.20
    Net loss: $180. Your $90 put limits further loss.
 3. Stock rises to $107: You must sell at $105 (losing $2 vs market) but keep $1.20

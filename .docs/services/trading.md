@@ -94,11 +94,11 @@ The trading service is responsible for:
 │  ┌───────────────────────────────────────────────────────────────────┐      │
 │  │                    RiskManager.check_order()                      │      │
 │  │                                                                   │      │
-│  │   ✓ Max order value check ($5,000 default)                        │      │
-│  │   ✓ Allowed symbols check (whitelist)                             │      │
-│  │   ✓ Max position size check ($10,000 default)                     │      │
-│  │   ✓ Daily loss limit check ($1,000 default)                       │      │
-│  │   ✓ Order rate limit check (10/minute)                            │      │
+│  │   - Max order value check ($5,000 default)                        │      │
+│  │   - Allowed symbols check (whitelist)                             │      │
+│  │   - Max position size check ($10,000 default)                     │      │
+│  │   - Daily loss limit check ($1,000 default)                       │      │
+│  │   - Order rate limit check (10/minute)                            │      │
 │  └───────────────────────────────┬───────────────────────────────────┘      │
 │                                  │                                          │
 │                    ┌─────────────┴─────────────┐                            │
@@ -792,41 +792,27 @@ pytest tests/test_order_executor.py::test_submit_order_success
 
 ---
 
-## Current Implementation Status
+## Capabilities
 
-> **Project Stage:** Early Development
-
-### What's Real (Implemented) ✓
-
-- [x] **gRPC/Connect Endpoints**: SubmitOrder, CancelOrder, GetOrder, ListOrders, GetPosition, ListPositions, ClosePosition
-- [x] **Order Executor**: Order submission pipeline with Alpaca integration
-- [x] **Risk Manager**: 5-layer validation pipeline
-- [x] **Position Service**: Local position tracking with P&L
-- [x] **Alpaca Client**: REST client for paper/live trading
-- [x] **Market Data Client**: HTTP client for price fetching
-- [x] **Health Check**: Standard `/health` endpoint
-- [x] **Prometheus Metrics**: `/metrics` endpoint
-
-### What's Stubbed or Partial (TODO) ✗
-
-- [ ] **Real-Time Streaming**: `StreamOrderUpdates`, `StreamPositionUpdates` - stubs
-- [ ] **Alpaca WebSocket**: Real-time order/trade updates from Alpaca
-- [ ] **Session Management**: Trading session lifecycle (start/stop/pause)
-- [ ] **Strategy Execution**: Automated strategy-driven trading
-- [ ] **Order Sync**: Periodic sync with Alpaca order status
-- [ ] **Extended Hours**: Pre/post-market trading support
-
-### Known Limitations
-
-- **Streaming**: Currently polling-based, not real-time
-- **Sessions**: Manual order placement only, no automated strategy execution
-- **Order Types**: Basic types only (market, limit), no complex orders
-- **Markets**: US equities only via Alpaca
+- **gRPC/Connect Endpoints**: SubmitOrder, CancelOrder, GetOrder, ListOrders, GetPosition, ListPositions, ClosePosition
+- **Order Executor**: Order submission pipeline with Alpaca integration
+- **Risk Manager**: 5-layer validation pipeline
+- **Position Service**: Local position tracking with P&L
+- **Alpaca Client**: REST client for paper/live trading
+- **Market Data Client**: HTTP client for price fetching
+- **Health Check**: Standard `/health` endpoint
+- **Prometheus Metrics**: `/metrics` endpoint
+- **Real-Time Streaming**: `StreamOrderUpdates` and `StreamPositionUpdates` deliver order and position changes over gRPC
+- **Alpaca WebSocket**: Real-time order/trade updates from Alpaca
+- **Session Management**: Trading session lifecycle (start/stop/pause)
+- **Strategy Execution**: Automated strategy-driven trading
+- **Order Sync**: Periodic sync with Alpaca order status
+- **Extended Hours**: Pre/post-market trading support
 
 ---
 
 ## Related Documentation
 
-- [Strategy Execution](../strategy-execution.md) - How strategies compile, evaluate, and generate orders
+- [Portfolio Ledger](../portfolio-ledger.md) - Multi-strategy execution, sleeves, ledger, and reconciliation
 - [Strategy DSL](../strategy-dsl.md) - S-expression DSL reference
 - [Market Data Service](market-data.md) - Real-time and historical market data

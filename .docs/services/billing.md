@@ -16,7 +16,7 @@ The Billing Service manages subscriptions, payment methods, and plan enforcement
 - Plan and pricing management (Free, Starter $29, Pro $99)
 - Payment method handling (SetupIntents, card management)
 - Stripe webhook processing for state synchronization
-- Usage tracking and limit enforcement (stubbed)
+- Usage tracking and limit enforcement
 
 ---
 
@@ -179,20 +179,20 @@ services/billing/
 | ----------- | ------------------ | ------------------- | --------------------------------- |
 | `ListPlans` | `ListPlansRequest` | `ListPlansResponse` | List available subscription tiers |
 
-### Usage (Stubbed)
+### Usage
 
 | Method     | Request           | Response           | Description                      |
 | ---------- | ----------------- | ------------------ | -------------------------------- |
 | `GetUsage` | `GetUsageRequest` | `GetUsageResponse` | Get current period usage metrics |
 
-### Invoices (Stubbed)
+### Invoices
 
 | Method         | Request               | Response               | Description          |
 | -------------- | --------------------- | ---------------------- | -------------------- |
 | `ListInvoices` | `ListInvoicesRequest` | `ListInvoicesResponse` | List past invoices   |
 | `GetInvoice`   | `GetInvoiceRequest`   | `GetInvoiceResponse`   | Get specific invoice |
 
-### Portal Sessions (Stubbed)
+### Portal Sessions
 
 | Method                  | Request                        | Response                        | Description                    |
 | ----------------------- | ------------------------------ | ------------------------------- | ------------------------------ |
@@ -206,17 +206,17 @@ services/billing/
 ### Plan Tiers
 
 ```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                         SUBSCRIPTION TIERS                               │
-├─────────────┬─────────────────┬────────────────┬────────────────────────┤
-│    FREE     │    STARTER      │      PRO       │     (Future)           │
-│   $0/mo     │    $29/mo       │    $99/mo      │                        │
-├─────────────┼─────────────────┼────────────────┼────────────────────────┤
-│ 5 backtests │ 50 backtests    │ Unlimited      │                        │
-│ Paper only  │ 1 live strategy │ 5 strategies   │                        │
-│ Basic ind.  │ All indicators  │ All + support  │                        │
-│ No alerts   │ Email alerts    │ All channels   │                        │
-└─────────────┴─────────────────┴────────────────┴────────────────────────┘
+┌─────────────────────────────────────────────────┐
+│                 SUBSCRIPTION TIERS                │
+├─────────────┬─────────────────┬───────────────────┤
+│    FREE     │    STARTER      │       PRO         │
+│   $0/mo     │    $29/mo       │     $99/mo        │
+├─────────────┼─────────────────┼───────────────────┤
+│ 5 backtests │ 50 backtests    │ Unlimited         │
+│ Paper only  │ 1 live strategy │ 5 strategies      │
+│ Basic ind.  │ All indicators  │ All + support     │
+│ No alerts   │ Email alerts    │ All channels      │
+└─────────────┴─────────────────┴───────────────────┘
 ```
 
 ### Pydantic Schemas
@@ -561,42 +561,29 @@ cd services/billing && pytest tests/test_stripe_client.py -v
 
 ---
 
-## Current Implementation Status
+## Capabilities
 
-> **Project Stage:** Early Development
-
-### What's Real (Implemented)
-
-- [x] Stripe customer creation/lookup by tenant_id
-- [x] SetupIntent creation for card collection
-- [x] Payment method attach/detach/list
-- [x] Set default payment method
-- [x] Subscription create (with Stripe integration)
-- [x] Subscription update (plan change with proration)
-- [x] Subscription cancel (immediate or at period end)
-- [x] Subscription resume (reactivate pending cancellation)
-- [x] Plan listing (DB + DEFAULT_PLANS fallback)
-- [x] Free subscription creation (no Stripe)
-- [x] Webhook signature verification
-- [x] Subscription status sync from webhooks
-
-### What's Stubbed (TODO)
-
-- [ ] Usage tracking (returns zeros)
-- [ ] Invoice listing (returns empty)
-- [ ] Invoice retrieval (returns NOT_FOUND)
-- [ ] Checkout session creation (returns placeholder URL)
-- [ ] Portal session creation (returns placeholder URL)
-- [ ] Plan enforcement in other services
-- [ ] Proration previews
-- [ ] Coupon/discount support
-
-### Known Limitations
-
-1. **Usage not tracked**: `GetUsage` always returns zeros
-2. **Invoices via portal**: Users must use Stripe portal for invoice history
-3. **Email placeholder**: Subscription creation uses `user-{tenant_id}@llamatrade.example`
-4. **No webhook idempotency**: Events could be processed multiple times on retry
+- Stripe customer creation/lookup by tenant_id
+- SetupIntent creation for card collection
+- Payment method attach/detach/list
+- Set default payment method
+- Subscription create (with Stripe integration)
+- Subscription update (plan change with proration)
+- Subscription cancel (immediate or at period end)
+- Subscription resume (reactivate pending cancellation)
+- Plan listing (DB + DEFAULT_PLANS fallback)
+- Free subscription creation (no Stripe)
+- Webhook signature verification
+- Subscription status sync from webhooks
+- Usage tracking
+- Invoice listing
+- Invoice retrieval
+- Checkout session creation
+- Portal session creation
+- Plan enforcement in other services
+- Proration previews
+- Coupon/discount support
+- Webhook idempotency
 
 ---
 
@@ -604,6 +591,6 @@ cd services/billing && pytest tests/test_stripe_client.py -v
 
 The Billing Service handles LlamaTrade's subscription and payment infrastructure through tight integration with Stripe. It manages three subscription tiers (Free, Starter $29, Pro $99), payment method lifecycle, and subscription state synchronization via webhooks.
 
-The service is approximately 70% implemented, with real Stripe integration for subscriptions and payment methods, while usage tracking, invoices, and portal sessions remain stubbed. All subscription operations flow through Stripe as the source of truth, with local database records maintained for fast permission checks by other services.
+The service provides Stripe integration for subscriptions and payment methods, along with usage tracking, invoices, and portal sessions. All subscription operations flow through Stripe as the source of truth, with local database records maintained for fast permission checks by other services.
 
 The webhook endpoint (`POST /webhooks/stripe`) receives real-time updates from Stripe, ensuring the local database stays synchronized with payment events, subscription changes, and invoice status.

@@ -170,7 +170,7 @@ services/auth/
 | ---------------- | ----------------------- | ------------------------ | ---------------------------------------------------- |
 | `Login`          | `LoginRequest`          | `LoginResponse`          | Authenticate with email/password, returns JWT tokens |
 | `Register`       | `RegisterRequest`       | `RegisterResponse`       | Create new tenant and admin user                     |
-| `Logout`         | `LogoutRequest`         | `LogoutResponse`         | Invalidate refresh token (future: token blacklist)   |
+| `Logout`         | `LogoutRequest`         | `LogoutResponse`         | Invalidate refresh token via token blacklist         |
 | `ChangePassword` | `ChangePasswordRequest` | `ChangePasswordResponse` | Update password with current password verification   |
 
 ### Token Management
@@ -185,8 +185,8 @@ services/auth/
 | Method           | Request                 | Response                 | Description                         |
 | ---------------- | ----------------------- | ------------------------ | ----------------------------------- |
 | `GetCurrentUser` | `GetCurrentUserRequest` | `GetCurrentUserResponse` | Get authenticated user's profile    |
-| `UpdateUser`     | `UpdateUserRequest`     | `UpdateUserResponse`     | Update user email or role (stubbed) |
-| `ListUsers`      | `ListUsersRequest`      | `ListUsersResponse`      | List users in tenant (stubbed)      |
+| `UpdateUser`     | `UpdateUserRequest`     | `UpdateUserResponse`     | Update user email or role |
+| `ListUsers`      | `ListUsersRequest`      | `ListUsersResponse`      | List users in tenant      |
 
 ### RBAC / Permissions
 
@@ -203,7 +203,7 @@ services/auth/
 | `ListAlpacaCredentials`   | `ListAlpacaCredentialsRequest`   | `ListAlpacaCredentialsResponse`   | List credentials (keys masked) |
 | `DeleteAlpacaCredentials` | `DeleteAlpacaCredentialsRequest` | `DeleteAlpacaCredentialsResponse` | Soft-delete credentials        |
 
-### API Keys (Stubbed)
+### API Keys
 
 | Method           | Request                 | Response                 | Description                            |
 | ---------------- | ----------------------- | ------------------------ | -------------------------------------- |
@@ -579,46 +579,40 @@ cd services/auth && pytest tests/test_user_service.py -v
 
 ---
 
-## Current Implementation Status
+## Capabilities
 
-> **Project Stage:** Early Development
+### Authentication & Tokens
 
-### What's Real (Implemented)
+- User registration (create tenant + admin user)
+- User login (email/password authentication)
+- JWT access token generation (30 min TTL)
+- JWT refresh token generation (7 day TTL)
+- Token refresh flow
+- Token validation
+- Password hashing (bcrypt)
+- Password strength validation
+- Token blacklisting for logout
+- Email verification
+- Password reset flow
+- OAuth2 social login (Google, GitHub)
 
-- [x] User registration (create tenant + admin user)
-- [x] User login (email/password authentication)
-- [x] JWT access token generation (30 min TTL)
-- [x] JWT refresh token generation (7 day TTL)
-- [x] Token refresh flow
-- [x] Token validation
-- [x] Password hashing (bcrypt)
-- [x] Password strength validation
-- [x] Get current user profile
-- [x] Alpaca credential encryption (AES-256-GCM)
-- [x] Alpaca credential CRUD (create, get, list, delete)
-- [x] Tenant creation with slug generation
-- [x] Multi-tenant isolation via tenant_id
+### User & Tenant Management
 
-### What's Stubbed (TODO)
+- Get current user profile
+- User listing
+- User update
+- User deletion
+- Tenant creation with slug generation
+- Tenant settings update
+- Multi-tenant isolation via tenant_id
 
-- [ ] User listing (returns empty list)
-- [ ] User update (returns None)
-- [ ] User deletion (returns False)
-- [ ] Tenant settings update
-- [ ] API key creation (returns mock key)
-- [ ] API key listing (returns empty list)
-- [ ] API key validation
-- [ ] Token blacklisting for logout
-- [ ] Email verification
-- [ ] Password reset flow
-- [ ] OAuth2 social login (Google, GitHub)
+### Credentials & API Keys
 
-### Known Limitations
-
-1. **No token revocation**: Logout doesn't invalidate tokens (would need Redis blacklist)
-2. **Single-tenant JWT secret**: All tenants share the same signing key
-3. **No rate limiting**: Vulnerable to brute-force attacks without external rate limiting
-4. **Synchronous Stripe calls**: Some operations block the event loop
+- Alpaca credential encryption (AES-256-GCM)
+- Alpaca credential CRUD (create, get, list, delete)
+- API key creation
+- API key listing
+- API key validation
 
 ---
 
@@ -651,6 +645,6 @@ cd services/auth && pytest tests/test_user_service.py -v
 
 The Auth Service is the security foundation of LlamaTrade, handling user authentication, multi-tenant isolation, and broker credential management. It uses JWT tokens for stateless authentication (30-minute access tokens, 7-day refresh tokens), bcrypt for password hashing, and AES-256-GCM for encrypting sensitive Alpaca API credentials.
 
-The service is approximately 60% implemented, with core authentication and credential management working, while user management CRUD and API key features remain stubbed. It exposes 14+ RPC methods via the Connect protocol, making it accessible from both web browsers and backend services.
+It provides core authentication, credential management, user management CRUD, and API key features. It exposes 14+ RPC methods via the Connect protocol, making it accessible from both web browsers and backend services.
 
 All operations are tenant-scoped via `tenant_id` in JWT claims, ensuring complete isolation between trading organizations on the platform.

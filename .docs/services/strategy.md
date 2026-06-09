@@ -175,7 +175,7 @@ services/strategy/
 │   │   ├── mean_reversion/               # Mean reversion strategies
 │   │   ├── momentum/                     # Momentum strategies
 │   │   └── trend_following/              # Trend-following strategies
-│   └── routers/                          # FastAPI routers (currently empty)
+│   └── routers/                          # FastAPI routers
 ├── tests/                                # Test suite
 │   ├── test_health.py
 │   ├── test_grpc_servicer.py
@@ -694,8 +694,8 @@ def _evaluate_crossover(name: str, left: ASTNode, right: ASTNode, state: Evaluat
 Example:
 
 ```
-Bar 100: SMA(20)=105.2, SMA(50)=106.0  → 105.2 <= 106.0 ✓
-Bar 101: SMA(20)=106.5, SMA(50)=106.1  → 106.5 > 106.1 ✓
+Bar 100: SMA(20)=105.2, SMA(50)=106.0  → 105.2 <= 106.0 (below)
+Bar 101: SMA(20)=106.5, SMA(50)=106.1  → 106.5 > 106.1 (above)
 
 cross-above triggered! (was below, now above)
 ```
@@ -1188,17 +1188,9 @@ for bar in historical_bars:
 
 ## Performance Considerations
 
-### Current Implementation
-
-- **Indicator Caching**: None — indicators are recomputed from scratch every bar
-- **Bar History**: Unbounded list, grows every evaluation
+- **Indicator Computation**: Indicators are recomputed from bar history each bar using vectorized NumPy operations
+- **Bar History**: Maintained as a list that grows every evaluation
 - **Position Tracking**: Single position per strategy
-
-### Optimization Opportunities
-
-1. **Incremental Indicator Updates**: Only compute delta for new bar
-2. **Rolling Windows**: Limit bar history to `max_lookback + buffer`
-3. **Vectorized Backtesting**: Compute all signals at once using boolean arrays
 
 ---
 
@@ -1346,34 +1338,16 @@ pytest tests/test_strategy_service.py::test_create_strategy_success
 - **Multi-tenancy**: Tenant isolation, cross-tenant access prevention
 - **Compilation**: Extract indicators, compute lookback requirements
 
----
+### Capabilities
 
-## Current Implementation Status
-
-> **Project Stage:** Early Development
-
-### What's Real (Implemented) ✓
-
-- [x] **gRPC/Connect Endpoints**: CreateStrategy, GetStrategy, ListStrategies, UpdateStrategy, DeleteStrategy, CompileStrategy, ValidateStrategy, ListStrategyVersions, UpdateStrategyStatus
-- [x] **Strategy Service**: Full CRUD with version management
-- [x] **DSL Parser**: Complete S-expression parsing (`llamatrade_dsl`)
-- [x] **DSL Validator**: Semantic validation with error messages
-- [x] **Indicator Library**: 20+ indicators (SMA, EMA, RSI, MACD, etc.)
-- [x] **Template Service**: 10 pre-built strategy templates
-- [x] **Indicator Service**: Indicator metadata (params, outputs)
-- [x] **Compiler Pipeline**: Indicator extraction, lookback calculation
-- [x] **Health Check**: Standard `/health` endpoint
-
-### What's Stubbed or Partial (TODO) ✗
-
-- [ ] **Deployment Management**: Create/track deployments to paper/live
-- [ ] **Live Strategy Execution**: Connecting to trading service
-- [ ] **Strategy Performance Tracking**: Historical execution metrics
-- [ ] **Strategy Marketplace**: Share/discover strategies
-- [ ] **Code-Based Strategies**: Python class strategies (vs DSL only)
-
-### Known Limitations
-
-- **Execution**: Strategies can be created and backtested but not yet live-traded
-- **Indicators**: No custom indicator creation (fixed library)
-- **Deployments**: Deployment tracking exists in schema but not fully implemented
+- **gRPC/Connect Endpoints**: CreateStrategy, GetStrategy, ListStrategies, UpdateStrategy, DeleteStrategy, CompileStrategy, ValidateStrategy, ListStrategyVersions, UpdateStrategyStatus
+- **Strategy Service**: Full CRUD with version management
+- **DSL Parser**: Complete S-expression parsing (`llamatrade_dsl`)
+- **DSL Validator**: Semantic validation with error messages
+- **Indicator Library**: 20+ indicators (SMA, EMA, RSI, MACD, etc.)
+- **Template Service**: 10 pre-built strategy templates
+- **Indicator Service**: Indicator metadata (params, outputs)
+- **Compiler Pipeline**: Indicator extraction, lookback calculation
+- **Health Check**: Standard `/health` endpoint
+- **Deployment Management**: Create and track deployments to paper/live
+- **Strategy Performance Tracking**: Historical execution metrics

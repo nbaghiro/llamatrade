@@ -9,8 +9,8 @@ Documentation for the LlamaTrade algorithmic trading platform.
 | Document | Description |
 |----------|-------------|
 | [Architecture](architecture.md) | System design, deployment, multi-tenancy |
-| [Strategy DSL](strategy-dsl.md) | S-expression DSL reference for strategies and allocations |
-| [Strategy Execution](strategy-execution.md) | How strategies compile, evaluate, and generate orders |
+| [Strategy DSL](strategy-dsl.md) | S-expression DSL reference: the language, compilation, and evaluation |
+| [Portfolio Ledger](portfolio-ledger.md) | How target weights become trades: sizing, sleeves, event-sourced ledger, reconciliation |
 | [Trading Strategies](trading-strategies.md) | Algorithmic trading concepts and approaches |
 | [Asset Classes](asset-classes.md) | Tradeable asset class reference |
 
@@ -44,19 +44,10 @@ Architecture Decision Records (ADRs) for key technical choices.
 
 ---
 
-## Planning
-
-Implementation roadmaps and task tracking.
-
-| Plan | Status |
-|------|--------|
-| [DSL Implementation Gaps](planning/dsl-gaps.md) | In Progress |
-
----
-
 ## Getting Started
 
 1. **New to LlamaTrade?** Start with [Architecture](architecture.md)
-2. **Building strategies?** See [Strategy DSL](strategy-dsl.md) and [Strategy Execution](strategy-execution.md)
-3. **Understanding a service?** Check the [Services](#services) section
-4. **Why a decision was made?** Check [Decisions](#decisions)
+2. **Building strategies?** See [Strategy DSL](strategy-dsl.md)
+3. **Running multiple strategies in one account?** See [Portfolio Ledger](portfolio-ledger.md)
+4. **Understanding a service?** Check the [Services](#services) section
+5. **Why a decision was made?** Check [Decisions](#decisions)

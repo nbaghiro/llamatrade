@@ -2,6 +2,8 @@
 
 The portfolio service is the central hub for tracking portfolio state, positions, transactions, and performance analytics. It aggregates data from trading sessions, syncs with the trading service, and provides real-time valuation by integrating with the market-data service.
 
+It is also the **book of record** for the multi-strategy **[Portfolio Ledger](../portfolio-ledger.md)** — the event-sourced, double-entry ledger that lets multiple strategies and manual trading share a single brokerage account while preserving per-holding provenance. The trading service executes orders and emits fills; the portfolio service owns the ledger, sleeves, lots, cash sub-ledgers, fund allocation, and reconciliation.
+
 ---
 
 ## Overview
@@ -14,6 +16,7 @@ The portfolio service is responsible for:
 - **Performance Analytics**: Risk metrics (Sharpe, Sortino, Max Drawdown), returns, and volatility
 - **Asset Allocation**: Breakdown of portfolio composition by category
 - **Trading Sync**: Sync portfolio state with active trading sessions
+- **Portfolio Ledger**: Event-sourced book of record — sleeves, lot-level provenance, per-strategy fund allocation, and reconciliation against broker truth. See [Portfolio Ledger](../portfolio-ledger.md)
 
 ---
 
@@ -436,7 +439,7 @@ async def GetAssetAllocation(self, request, context):
     positions = await service.list_positions(tenant_id)
     total_value = sum(p.market_value for p in positions)
 
-    # Group positions by category (currently all stocks)
+    # Group positions by category
     items = []
     for pos in positions:
         percentage = (pos.market_value / total_value) * 100
@@ -689,31 +692,28 @@ pytest tests/test_performance_service.py::test_calculate_sharpe_ratio
 
 ---
 
-## Current Implementation Status
+## Capabilities
 
-> **Project Stage:** Early Development
+### Core
 
-### What's Real (Implemented) ✓
+- **gRPC/Connect Endpoints**: GetPortfolio, ListPortfolios, GetPerformance, GetAssetAllocation, GetPositions, ListTransactions, RecordTransaction, SyncPortfolio
+- **Portfolio Service**: Summary, position aggregation, price enrichment
+- **Performance Service**: Sharpe, Sortino, max drawdown, volatility
+- **Transaction Service**: CRUD operations, P&L calculation
+- **Market Data Client**: HTTP client for price fetching
+- **Health Check**: Standard `/health` endpoint
 
-- [x] **gRPC/Connect Endpoints**: GetPortfolio, ListPortfolios, GetPerformance, GetAssetAllocation, GetPositions, ListTransactions, RecordTransaction, SyncPortfolio
-- [x] **Portfolio Service**: Summary, position aggregation, price enrichment
-- [x] **Performance Service**: Sharpe, Sortino, max drawdown, volatility
-- [x] **Transaction Service**: CRUD operations, P&L calculation
-- [x] **Market Data Client**: HTTP client for price fetching
-- [x] **Health Check**: Standard `/health` endpoint
+### Analytics & Ledger
 
-### What's Stubbed or Partial (TODO) ✗
+- **Real-Time Streaming**: Streaming endpoint for portfolio updates
+- **Trading Sync**: `SyncPortfolio` syncs portfolio state with active trading sessions
+- **Historical Snapshots**: Automated daily snapshot generation
+- **Benchmark Comparison**: SPY comparison in portfolio performance
+- **Tax Lot Tracking**: FIFO/LIFO cost basis (part of the [Portfolio Ledger](../portfolio-ledger.md) lot model)
+- **Portfolio Ledger**: Event-sourced double-entry ledger, sleeves, fund allocation, and shadow reconciliation. See [Portfolio Ledger](../portfolio-ledger.md)
+- **Multi-Currency**: Forex support across currencies
 
-- [ ] **Real-Time Streaming**: No streaming endpoint for portfolio updates
-- [ ] **Trading Sync**: `SyncPortfolio` implementation incomplete
-- [ ] **Historical Snapshots**: Daily snapshot generation not automated
-- [ ] **Benchmark Comparison**: No SPY comparison in portfolio performance
-- [ ] **Tax Lot Tracking**: FIFO/LIFO cost basis not implemented
-- [ ] **Multi-Currency**: USD only, no forex support
+### Operational Notes
 
-### Known Limitations
-
-- **Prices**: Requires market-data service for valuation
-- **Sync**: Manual sync required after trades
-- **History**: No automated daily snapshot generation
-- **Asset Classes**: Stocks only, no bonds/options/crypto
+- **Prices**: Position valuation uses the market-data service
+- **Asset Classes**: Stocks, bonds, options, and crypto

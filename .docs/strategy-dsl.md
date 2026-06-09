@@ -1,149 +1,115 @@
 # Strategy DSL Reference
 
-Complete reference for the S-expression Domain Specific Language (DSL) used in LlamaTrade for defining trading strategies and portfolio allocations.
+Complete, implementation-accurate reference for the S-expression Domain-Specific Language (DSL) used in LlamaTrade to define trading strategies.
+
+> **Scope note.** This document describes the DSL as implemented in `libs/dsl` and `libs/compiler`. The canonical source of truth for the grammar is `libs/dsl/llamatrade_dsl/ast.py`.
 
 ---
 
 ## Table of Contents
 
-1. [Overview](#overview)
-2. [Why S-Expressions?](#why-s-expressions)
-3. [Architecture](#architecture)
+1. [Overview & Mental Model](#overview--mental-model)
+2. [Design Principles](#design-principles)
+3. [Processing Pipeline](#processing-pipeline)
 4. [Language Basics](#language-basics)
-5. [Symphony DSL (Portfolio Allocation)](#symphony-dsl-portfolio-allocation)
-6. [Strategy DSL (Active Trading)](#strategy-dsl-active-trading)
-7. [Condition Expressions](#condition-expressions)
-8. [Technical Indicators](#technical-indicators)
-9. [Complete Examples](#complete-examples)
-10. [Grammar Specification](#grammar-specification)
-11. [Abstract Syntax Tree](#abstract-syntax-tree)
-12. [Parser Implementation](#parser-implementation)
-13. [Serialization](#serialization)
-14. [Execution Engine](#execution-engine)
-15. [AI Generation](#ai-generation)
+5. [Block Types](#block-types)
+6. [Weight Methods](#weight-methods)
+7. [Rebalance Frequencies](#rebalance-frequencies)
+8. [Conditions](#conditions)
+9. [Value Expressions](#value-expressions)
+10. [Technical Indicators](#technical-indicators)
+11. [Metrics](#metrics)
+12. [Grammar Specification](#grammar-specification)
+13. [Abstract Syntax Tree](#abstract-syntax-tree)
+14. [Parser Implementation](#parser-implementation)
+15. [Serialization & Storage](#serialization--storage)
 16. [Validation Rules](#validation-rules)
-17. [Tips for Writing Strategies](#tips-for-writing-strategies)
+17. [Execution Pipeline](#execution-pipeline)
+18. [Multi-Strategy Execution & the Portfolio Ledger](#multi-strategy-execution--the-portfolio-ledger)
+19. [Example Strategies](#example-strategies)
+20. [Tips for Writing Strategies](#tips-for-writing-strategies)
+21. [Related Documentation](#related-documentation)
 
 ---
 
-## Overview
+## Overview & Mental Model
 
-LlamaTrade uses a Lisp-inspired S-expression DSL for defining trading logic. The DSL supports two primary constructs:
+LlamaTrade uses a Lisp-inspired S-expression DSL to define **portfolio allocation strategies**. The single most important thing to understand:
 
-**Symphonies** define portfolio allocation strategies. They specify what assets to hold and in what proportions, with optional conditional logic for regime-based rotation. Symphonies are evaluated periodically (daily, weekly, monthly) to determine target allocations.
+> **The DSL is an allocation language, not a signal language.** A strategy is a *tree* that, when evaluated on a given bar, produces a set of **target portfolio weights** — e.g. `{VTI: 60%, BND: 40%}`. It never says "buy 100 shares." The execution layer compares those target weights against current holdings and generates whatever trades are needed to close the gap.
 
-**Strategies** define active trading rules with entry and exit conditions. They specify when to buy or sell based on technical indicators, price action, and other market conditions. Strategies are evaluated on every bar (candle) to generate trading signals.
+Every keyword in the language exists to do one of two things:
 
-### Key Capabilities
+1. **Shape the target weight vector** — which assets are held and in what proportion (`asset`, `weight`, `group`, `filter`).
+2. **Make that shape react to the market** — conditional allocation based on indicators and price (`if`/`else`, conditions, indicators).
 
-- **Declarative syntax** for complex allocation and trading logic
-- **Technical indicator integration** with 20+ built-in indicators (RSI, SMA, MACD, etc.)
-- **Conditional branching** with `if/else` and multi-branch `cond` expressions
-- **Universe filtering** to select top/bottom N assets by any metric
-- **Risk management** with stop-loss, take-profit, and trailing stop parameters
-- **Crossover detection** for moving average and indicator crossover signals
-- **1:1 mapping to UI blocks** - Every UI block type has a DSL equivalent
+A minimal complete strategy:
 
-### Design Principles
-
-1. **S-expression syntax** - Lisp-like, easy to parse, supports nesting
-2. **Declarative** - Describes *what* allocations should be, not *how* to execute
-3. **Composable** - Blocks can be nested arbitrarily deep
-4. **Bidirectional** - Lossless round-tripping between text, AST, JSON, and visual blocks
-
----
-
-## Why S-Expressions?
-
-S-expressions (symbolic expressions) are a notation for nested list data originating from Lisp. We chose this syntax for several reasons:
-
-**Unambiguous parsing.** The parenthesized prefix notation eliminates operator precedence ambiguity. There's exactly one way to parse any valid expression, making the parser simpler and error messages clearer.
-
-**Homoiconicity.** Code and data share the same structure. A strategy definition is just a nested data structure, making it easy to manipulate programmatically, serialize to JSON, or generate from other representations (like the visual builder).
-
-**Extensibility.** Adding new constructs (indicators, weight methods, conditions) requires no grammar changes. New functions are just new symbols in the same syntactic framework.
-
-**AI-friendly.** Large language models excel at generating well-formed S-expressions because the syntax is regular and unambiguous. The closing parentheses provide clear structural cues.
-
-**Bidirectional conversion.** The simple structure enables lossless round-tripping between text, AST, JSON, and visual block representations.
-
----
-
-## Architecture
-
-The DSL processing pipeline transforms user input through several stages:
-
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                              INPUT LAYER                                    │
-├─────────────────┬─────────────────┬─────────────────────────────────────────┤
-│   Visual        │   Natural       │   S-Expression                          │
-│   Builder       │   Language      │   Text Editor                           │
-│   (React)       │   (Chat)        │   (Monaco)                              │
-└────────┬────────┴────────┬────────┴────────┬────────────────────────────────┘
-         │                 │                 │
-         │                 │                 ▼
-         │                 │        ┌────────────────────────────────────┐
-         │                 │        │         PARSER (Lark)              │
-         │                 │        │   S-Expression → AST               │
-         │                 │        └───────────────┬────────────────────┘
-         │                 │                        │
-         │                 ▼                        ▼
-         │        ┌────────────────────────────────────────────────────┐
-         │        │              UNIFIED AST (Abstract Syntax Tree)    │
-         │        │   SymphonyNode / StrategyNode                      │
-         │        │   ├── MetadataNode                                 │
-         │        │   ├── AllocationNode / RulesNode                   │
-         │        │   │   ├── ConditionalNode                          │
-         │        │   │   ├── WeightNode                               │
-         │        │   │   └── AssetNode                                │
-         │        │   └── ConditionNode                                │
-         │        │       ├── ComparisonNode                           │
-         │        │       ├── LogicalNode (AND/OR/NOT)                 │
-         │        │       └── IndicatorNode                            │
-         └────────┼────────────────────────────────────────────────────┘
-                  │                        │
-    ┌─────────────┴─────────────┐          │
-    │     BIDIRECTIONAL         │          │
-    │     SERIALIZATION         │          │
-    │   AST ←→ S-Expr Text      │          │
-    │   AST ←→ Visual Blocks    │          │
-    │   AST ←→ JSON (storage)   │          │
-    └───────────────────────────┘          │
-                                           ▼
-              ┌────────────────────────────────────────────────────┐
-              │              SEMANTIC LAYER                        │
-              │   • Type checking                                  │
-              │   • Symbol resolution (indicators, universes)      │
-              │   • Validation (required fields, ranges)           │
-              └────────────────────────────────────────────────────┘
-                                           │
-                                           ▼
-              ┌────────────────────────────────────────────────────┐
-              │        IR (Intermediate Representation)            │
-              │   Normalized, validated, ready for execution       │
-              │   Stored in PostgreSQL as JSONB                    │
-              └────────────────────────────────────────────────────┘
-                                           │
-                     ┌─────────────────────┼─────────────────────┐
-                     ▼                     ▼                     ▼
-              ┌────────────┐       ┌────────────┐       ┌────────────┐
-              │ Backtester │       │   Paper    │       │   Live     │
-              │            │       │  Trading   │       │  Trading   │
-              └────────────┘       └────────────┘       └────────────┘
+```lisp
+(strategy "Dual Moving Average"
+  :rebalance daily
+  :benchmark SPY
+  (if (> (sma SPY 50) (sma SPY 200))
+    (asset VTI :weight 100)
+    (else (asset BND :weight 100))))
 ```
 
-**Input Layer:** Users can create strategies through three interfaces. The visual builder provides a drag-and-drop block-based interface. Natural language chat lets users describe strategies in plain English (converted via AI). The text editor provides direct S-expression editing with syntax highlighting.
+This says: *every trading day, if SPY's 50-day average is above its 200-day average, hold 100% VTI; otherwise hold 100% BND.*
 
-**Parser:** The Lark parser converts S-expression text into an Abstract Syntax Tree (AST). The grammar defines valid syntax; the transformer converts parse trees to typed Python dataclasses.
+---
 
-**Unified AST:** All input methods produce the same AST structure. This enables the visual builder to generate DSL code, and DSL code to render in the visual builder. The AST is the single source of truth.
+## Design Principles
 
-**Semantic Layer:** Validates the AST for correctness. Checks that referenced indicators exist, symbol variables are bound, weight methods are valid, and required metadata is present.
+1. **S-expression syntax** — parenthesized prefix notation. There is exactly one way to parse any valid expression; no operator-precedence ambiguity.
+2. **Declarative** — describes *what* the allocation should be, not *how* to execute it.
+3. **Composable** — blocks nest arbitrarily deep; a `weight` can contain a `group` containing an `if` containing a `filter`, and so on.
+4. **Bidirectional** — lossless round-tripping between S-expression text, the typed AST, JSON, and the visual block builder. The visual builder generates DSL; DSL renders back into blocks.
+5. **Single source of truth** — all input methods (visual builder, code editor, AI generation) produce the same AST. The AST is authoritative.
 
-**IR (Intermediate Representation):** The validated AST is normalized and stored as JSONB in PostgreSQL. This representation is version-controlled and can be executed by any runner.
+---
 
-**Execution:** The backtester, paper trading, and live trading services all consume the same IR, ensuring consistent behavior across modes.
+## Processing Pipeline
+
+```
+        Visual Builder            Code Editor            AI Assistant
+         (React blocks)          (S-expr text)        (natural language)
+               │                       │                      │
+               └───────────┬───────────┴──────────────────────┘
+                           ▼
+                    PARSER  (libs/dsl/parser.py)
+                    hand-written recursive-descent parser
+                    + regex tokenizer; tracks source locations
+                           │
+                           ▼
+                    AST  (libs/dsl/ast.py)
+                    typed, frozen dataclasses
+                           │
+              ┌────────────┼─────────────┐
+              ▼            ▼             ▼
+        VALIDATOR      SERIALIZER     to_json
+     (semantic check) (AST→S-expr)  (AST→JSON IR)
+              │                          │
+              ▼                          ▼
+        ValidationResult        Stored in PostgreSQL:
+                                 StrategyVersion.config_sexpr (source)
+                                 StrategyVersion.config_json  (compiled IR)
+                                          │
+                           ┌──────────────┴───────────────┐
+                           ▼                               ▼
+                    COMPILER (backtest)            COMPILER (live)
+              vectorized engine / bar-by-bar      bar-by-bar engine
+              (libs/compiler)                     (libs/compiler)
+                           │                               │
+                           ▼                               ▼
+                    Backtest results               Live target weights
+                    (equity curve, metrics)        → Portfolio Ledger → orders
+```
+
+**Parser** (`libs/dsl/parser.py`) — a hand-written recursive-descent parser fronted by a regex tokenizer. (Note: this is *not* a Lark/EBNF grammar; the EBNF below is descriptive, not the implementation.) Every node records a `SourceLocation` (line, column, character offsets) for precise error messages.
+
+**Validator** (`libs/dsl/validator.py`) — checks semantic correctness (valid methods/indicators, weight sums, positive parameters, etc.).
+
+**Compiler** (`libs/compiler`) — extracts the required indicators, computes them with NumPy, and evaluates the tree into target weights. There are two execution engines that consume the **same AST**: a **bar-by-bar** engine (live trading) and a **vectorized** engine (backtesting). See [Execution Pipeline](#execution-pipeline).
 
 ---
 
@@ -151,197 +117,126 @@ The DSL processing pipeline transforms user input through several stages:
 
 ### Expressions and Lists
 
-Everything in S-expressions is either an atom (number, string, symbol) or a list. Lists are enclosed in parentheses with elements separated by whitespace:
+Everything is either an atom (number, string, symbol) or a parenthesized list. The first element of a list is the operator/keyword; the rest are arguments:
 
-```clojure
-;; A list with three elements
-(a b c)
-
-;; Nested lists
-(a (b c) d)
-
-;; Function call syntax: first element is the function, rest are arguments
-(+ 1 2)        ;; Adds 1 and 2
-(rsi "AAPL" 14) ;; RSI of AAPL with period 14
+```lisp
+(sma SPY 50)        ; 50-period simple moving average of SPY
+(> (rsi QQQ 14) 70) ; is QQQ's 14-period RSI above 70?
 ```
 
 ### Data Types
 
-| Type | Syntax | Examples |
-|------|--------|----------|
-| Number | Digits with optional decimal | `14`, `0.5`, `-2.5` |
-| Percentage | Number followed by `%` | `5%`, `0.5%`, `-2%` |
-| String | Double-quoted text | `"AAPL"`, `"My Strategy"` |
-| Keyword | Colon followed by name | `:weekly`, `:stop-loss`, `:market` |
-| Symbol | Dollar sign followed by name | `$symbol`, `$price` |
-
-### Keywords vs Symbols
-
-**Keywords** (`:keyword`) are used for named parameters and options:
-
-```clojure
-(buy $symbol :size 5% :stop-loss -2%)
-```
-
-**Symbols** (`$symbol`) are variables that get bound at runtime. In a strategy, `$symbol` refers to the current symbol being evaluated:
-
-```clojure
-(rsi $symbol 14)  ;; RSI of whatever symbol we're currently processing
-```
+| Type | Syntax | Examples | Notes |
+|------|--------|----------|-------|
+| Number | integer or decimal, optional minus | `14`, `0.5`, `-2.5` | **No `%` suffix** — `30` is the number thirty |
+| String | double-quoted | `"My Strategy"`, `"US Equities"` | Used for `strategy`/`group` names |
+| Symbol (ticker) | starts with a letter | `SPY`, `AAPL`, `BRK-B`, `BTC-USD` | May contain letters, digits, `_`, `-` |
+| Keyword | colon-prefixed | `:rebalance`, `:method`, `:weight`, `:high` | Named parameters and options |
 
 ### Comments
 
-Single-line comments start with a semicolon:
+Single-line comments start with a semicolon and run to end of line:
 
-```clojure
+```lisp
 ;; This is a comment
-(defsymphony "Test"  ; inline comment
-  {:rebalance :weekly}
+(strategy "Test"        ; inline comment
+  :rebalance weekly
   ...)
 ```
 
 ---
 
-## Symphony DSL (Portfolio Allocation)
+## Block Types
 
-Symphonies define **target portfolio weights**. Unlike signal-based systems that generate buy/sell signals, symphonies describe allocations. The system then rebalances the portfolio to match these target allocations.
+There are **six** block types. They form the structural tree of a strategy.
 
-### Structure
+### 1. `strategy` — root block
+
+The single top-level container. Exactly one per document; it must be the outermost form.
 
 ```lisp
-(strategy "Strategy Name"
+(strategy "Name"
   [:rebalance <frequency>]
   [:benchmark <symbol>]
-  <allocation-blocks>...)
+  [:description "<text>"]
+  <child-blocks>...)
 ```
-
-### Parameters
 
 | Parameter | Required | Description |
 |-----------|----------|-------------|
-| `name` | Yes | Human-readable strategy name (string) |
-| `:rebalance` | No | Rebalancing frequency |
-| `:benchmark` | No | Benchmark symbol for comparison |
+| `"Name"` | Yes | Human-readable name (first positional argument, a string) |
+| `:rebalance` | No | Rebalancing frequency — see [Rebalance Frequencies](#rebalance-frequencies) |
+| `:benchmark` | No | Ticker used **only for reporting** (alpha/beta/relative return); does not affect allocation |
+| `:description` | No | Free-text metadata |
 
-### Rebalance Frequencies
+### 2. `asset` — a single holding (leaf)
 
-| Value | Description |
-|-------|-------------|
-| `daily` | Rebalance every trading day |
-| `weekly` | Rebalance once per week |
-| `monthly` | Rebalance once per month |
-| `quarterly` | Rebalance once per quarter |
-| `annually` | Rebalance once per year |
-
-### Block Types
-
-#### 1. `strategy` (Root Block)
-
-The top-level container for all strategy definitions.
+The terminal node and the only thing that actually receives weight.
 
 ```lisp
-(strategy "60/40 Portfolio"
-  :rebalance quarterly
-  :benchmark SPY
-  (weight :method specified
-    (asset VTI :weight 60)
-    (asset BND :weight 40)))
+(asset <symbol> [:weight <number>])
 ```
 
-#### 2. `asset` (Ticker Block)
+- `<symbol>` — the ticker (required).
+- `:weight` — explicit percentage. **Only valid when the parent `weight` block uses `:method specified`.** Under any other method, supplying `:weight` is a validation error (the method computes the weight).
 
-Represents a specific tradeable asset.
-
-```lisp
-(asset <symbol> [:weight <percent>])
-```
-
-**Parameters:**
-- `symbol` (required) - Ticker symbol (e.g., `VTI`, `AAPL`, `BTC-USD`)
-- `:weight` (optional) - Weight percentage (only used with `:method specified`)
-
-**Examples:**
 ```lisp
 (asset VTI)
 (asset AAPL :weight 25)
-(asset BTC-USD :weight 5)
 ```
 
-#### 3. `weight` (Allocation Block)
+### 3. `weight` — the allocation engine
 
-Defines how child assets/groups should be weighted. This is the core allocation mechanism.
+Takes its children and assigns each a fraction of the capital flowing into the block, according to `:method`. Weights within a block are normalized to 100% of the block's share.
 
 ```lisp
 (weight :method <method> [:lookback <days>] [:top <n>]
   <child-blocks>...)
 ```
 
-**Parameters:**
-- `:method` (required) - Allocation method (see below)
-- `:lookback` (optional) - Lookback period in days for dynamic methods
-- `:top` (optional) - Select top N assets (for momentum/filter strategies)
-
-**Weight Methods:**
-
-| Method | Description | Requires |
-|--------|-------------|----------|
-| `specified` | Manual percentage weights | `:weight` on each child |
-| `equal` | Equal weight across children | Nothing |
-| `momentum` | Weight by momentum score | `:lookback` |
-| `inverse-volatility` | Weight inversely to volatility | `:lookback` |
-| `min-variance` | Minimum variance optimization | `:lookback` |
-| `market-cap` | Weight by market capitalization | Nothing |
-| `risk-parity` | Equal risk contribution | `:lookback` |
-
-**Examples:**
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `:method` | Yes | Allocation method — see [Weight Methods](#weight-methods) |
+| `:lookback` | No | Historical window (days) for dynamic methods. Must be > 0 |
+| `:top` | No | Keep only the top N children by the method's ranking metric, then allocate among those N. Must be > 0 |
 
 ```lisp
-;; Specified weights (must sum to 100 within the weight block)
+;; Manual weights — must sum to ~100% within the block
 (weight :method specified
   (asset VTI :weight 60)
   (asset BND :weight 40))
 
 ;; Equal weight
 (weight :method equal
-  (asset VTI)
-  (asset VXUS)
-  (asset BND))
+  (asset VTI) (asset VXUS) (asset BND))
 
-;; Momentum with top 3 selection
+;; Momentum, hold the strongest 3 of 5
 (weight :method momentum :lookback 90 :top 3
-  (asset XLK)
-  (asset XLF)
-  (asset XLE)
-  (asset XLV)
-  (asset XLI))
-
-;; Inverse volatility
-(weight :method inverse-volatility :lookback 60
-  (asset VTI)
-  (asset BND)
-  (asset GLD))
+  (asset XLK) (asset XLF) (asset XLE) (asset XLV) (asset XLI))
 ```
 
-#### 4. `group` (Organization Block)
+`weight` blocks compose: an outer `equal` over two inner `weight` blocks gives each inner block 50% of capital, which it then subdivides by its own method.
 
-Groups related allocations together with an optional name. Groups don't affect allocation math - they're purely organizational.
+### 4. `group` — organization
+
+A named container. **Transparent by default** — capital flows straight through to its children; it exists for readability and UI structure.
 
 ```lisp
-(group "Group Name"
+(group "<name>" [:weight <number>]
   <child-blocks>...)
 ```
 
-**Example:**
+- `:weight` — like `asset`, honored **only** when the parent `weight` is `:method specified`. Lets a whole subtree carry a specified weight.
+
 ```lisp
-(group "US Equities"
-  (weight :method specified
-    (asset VTI :weight 70)
-    (asset VXF :weight 30)))
+(group "US Equities" :weight 60
+  (weight :method equal
+    (asset VTI) (asset VXF)))
 ```
 
-#### 5. `if` / `else` (Conditional Blocks)
+### 5. `if` / `else` — conditional allocation
 
-Conditional allocation based on market conditions.
+The only branching construct. Evaluates a condition against current market data; the subtree's allocation is the `then` block if true, else the `else` block.
 
 ```lisp
 (if <condition>
@@ -349,726 +244,445 @@ Conditional allocation based on market conditions.
   [(else <else-block>)])
 ```
 
-**Important:** The else clause must be wrapped in `(else ...)`.
-
-**Examples:**
+- `<then-block>` is a **single** block. To allocate across several things in a branch, wrap them in a `weight`.
+- The else clause **must** be wrapped in `(else ...)` — bare juxtaposition is not allowed.
+- If `else` is omitted and the condition is false, the subtree contributes nothing.
 
 ```lisp
-;; Simple conditional
-(if (> (sma SPY 50) (sma SPY 200))
+;; Nested regimes: oversold → risk-on, overbought → risk-off, else neutral
+(if (< (rsi SPY 14) 30)
   (asset SPY :weight 100)
-  (else (asset TLT :weight 100)))
-
-;; Conditional with weight blocks
-(if (> (rsi SPY 14) 70)
-  (weight :method specified
-    (asset TLT :weight 60)
-    (asset GLD :weight 40))
   (else
-    (weight :method equal
-      (asset SPY)
-      (asset QQQ))))
-
-;; Nested conditionals
-(if (> (rsi SPY 14) 70)
-  (asset TLT :weight 100)
-  (else
-    (if (< (rsi SPY 14) 30)
-      (asset SPY :weight 100)
-      (else
-        (weight :method equal
-          (asset SPY)
-          (asset TLT))))))
+    (if (> (rsi SPY 14) 70)
+      (asset TLT :weight 100)
+      (else (weight :method equal (asset SPY) (asset TLT))))))
 ```
 
-#### 6. `filter` (Selection Block)
+> **Timing note.** Conditions are evaluated on each rebalance. With a `monthly` rebalance, an `if` is only re-checked monthly, so regime switches lag by up to the rebalance period. See [Execution Pipeline](#execution-pipeline).
 
-Filters assets based on criteria before applying weights.
+### 6. `filter` — dynamic selection
+
+Selects a subset of its candidate assets by a ranking metric *before* weighting them.
 
 ```lisp
-(filter :by <criteria> :select <selection> [:lookback <days>]
+(filter :by <criteria> :select (<direction> <N>) [:lookback <days>]
   <child-blocks>...)
 ```
 
-**Parameters:**
-- `:by` (required) - Filter criteria: `momentum`, `volatility`, `volume`
-- `:select` (required) - Selection: `(top N)` or `(bottom N)`
-- `:lookback` (optional) - Lookback period for the filter metric
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `:by` | Yes | Ranking metric: `momentum`, `volatility`, or `volume` |
+| `:select` | Yes | `(top N)` or `(bottom N)` — keep the N highest/lowest ranked |
+| `:lookback` | No | Window for computing the ranking metric. Must be > 0 |
 
-**Example:**
+`:select_count` must not exceed the number of candidate assets.
+
 ```lisp
-;; Select top 3 by momentum, then equal weight them
+;; Top 3 sectors by 90-day momentum, then equal-weight them
 (filter :by momentum :select (top 3) :lookback 90
   (weight :method equal
-    (asset XLK)
-    (asset XLF)
-    (asset XLE)
-    (asset XLV)
-    (asset XLI)))
+    (asset XLK) (asset XLF) (asset XLE) (asset XLV) (asset XLI)))
 ```
 
 ---
 
-## Strategy DSL (Active Trading)
+## Weight Methods
 
-Strategies define entry and exit rules that generate trading signals. Unlike symphonies that define allocations, strategies specify when to buy and sell.
+Valid values for `:method` (source: `WEIGHT_METHODS` in `ast.py`):
 
-### Structure
+| Method | Description | Requires |
+|--------|-------------|----------|
+| `specified` | Manual percentages set via `:weight` on each child; must sum to ~100% | `:weight` on each child |
+| `equal` | Split evenly: `100/N` per child | — |
+| `momentum` | Weight proportional to recent return (winners get more) | `:lookback` |
+| `inverse-volatility` | Weight inversely to volatility (calmer assets get more) | `:lookback` |
+| `min-variance` | Solve for the minimum-variance weight vector (covariance matrix) | `:lookback` |
+| `market-cap` | Weight by market capitalization (index-like) | market-cap data |
+| `risk-parity` | Equal *risk* contribution per asset (accounts for correlation) | `:lookback` |
 
-```clojure
-(defstrategy "Strategy Name"
-  {:timeframe <timeframe>
-   :symbols [<symbols>...]}
+Method names are **kebab-case** in the DSL (`inverse-volatility`, `min-variance`, `risk-parity`). The visual builder stores them internally as snake_case and converts at the DSL boundary.
 
-  (entry
-    (when <condition>
-      <action>...))
+### How the dynamic methods compute weights
 
-  (exit
-    (when <condition>
-      <action>...)))
-```
+Given the child candidates and a `:lookback` window of daily returns:
 
-### Metadata
+- **`equal`** — `wᵢ = 100 / N`.
+- **`momentum`** — score each child by trailing return `rᵢ = priceₜ / priceₜ₋ₗₒₒₖᵦₐᶜᵏ − 1`; if `:top N` is set, keep the N highest-scoring; weight the survivors (equally, or proportional to score).
+- **`inverse-volatility`** — `wᵢ ∝ 1 / σᵢ`, where `σᵢ` is the standard deviation of returns over `:lookback`; normalize to 100%. Calmer assets get more.
+- **`risk-parity`** — target equal *risk contribution* per asset (accounts for correlations). Currently approximated by inverse-volatility.
+- **`min-variance`** — choose the weight vector minimizing portfolio variance `wᵀΣw` over the `:lookback` covariance matrix `Σ`.
+- **`market-cap`** — `wᵢ ∝ marketCapᵢ` (index-like).
 
-| Field | Description |
-|-------|-------------|
-| `:timeframe` | Bar timeframe (`:1m`, `:5m`, `:15m`, `:1h`, `:4h`, `:1d`) |
-| `:symbols` | List of symbols to trade |
-
-### Entry/Exit Rules
-
-```clojure
-(entry
-  (when (and (< (rsi $symbol 14) 30)
-             (> (volume $symbol) (* 1.5 (sma-volume $symbol 20))))
-    (buy $symbol
-      :size 5%
-      :order-type :market
-      :stop-loss -2%
-      :take-profit 4%
-      :trailing-stop 1%)))
-
-(exit
-  (when (or (> (rsi $symbol 14) 70)
-            (crosses-below (close $symbol) (sma $symbol 50)))
-    (close $symbol)))
-```
-
-### Actions
-
-| Action | Description |
-|--------|-------------|
-| `buy` | Open long position |
-| `sell` | Open short position |
-| `close` | Close current position |
-| `close-long` | Close only long positions |
-| `close-short` | Close only short positions |
-
-### Action Parameters
-
-| Parameter | Description |
-|-----------|-------------|
-| `:size` | Position size (percent or fixed) |
-| `:order-type` | `:market` or `:limit` |
-| `:stop-loss` | Stop loss percentage (negative) |
-| `:take-profit` | Take profit percentage (positive) |
-| `:trailing-stop` | Trailing stop percentage |
+All methods normalize to sum to 100% of the block's share; NaN / all-zero edge cases fall back to equal weight.
 
 ---
 
-## Condition Expressions
+## Rebalance Frequencies
 
-Conditions are used in `if` blocks (symphonies) and `when` clauses (strategies).
+Valid values for `:rebalance` (source: `REBALANCE_FREQUENCIES` in `ast.py`). This is the **most behavior-defining setting** in the language — it controls how often conditions are re-evaluated and the portfolio is re-aligned to target.
 
-### Comparison Operators
+| Value | Recompute target weights… |
+|-------|---------------------------|
+| `daily` | every trading day |
+| `weekly` | once per week |
+| `monthly` | once per month |
+| `quarterly` | once per quarter |
+| `annually` | once per year |
+
+Higher frequency = more responsive but more turnover/cost; lower = smoother but laggier on regime changes.
+
+### Two clocks: ticks vs. rebalances
+
+`:rebalance` does **not** say how many times per day a strategy runs. Two separate clocks are at play:
+
+- **Tick clock (data feed).** In live trading the runner receives **1-minute bars** and runs its per-bar loop *every minute the market is open* — appending the bar to history and checking its gates. This cadence is fixed by the feed, not the strategy.
+- **Rebalance gate (`:rebalance`).** On each tick, a **date-based** check (`should_rebalance`, which also enforces *never twice on the same day*) decides whether to actually recompute target weights and trade.
+
+So the frequency gates the minute-ticks down to actual rebalances — **at most once per day**:
+
+| Frequency | Rebalances when… | Times per open session |
+|-----------|------------------|------------------------|
+| `daily` | every trading day (first qualifying bar) | **1**, then holds the rest of the day |
+| `weekly` | the week changes (first trading day of the week) | 1 that day, 0 otherwise |
+| `monthly` | the month changes | 1 that day, 0 otherwise |
+| `quarterly` | the quarter changes | 1 that day, 0 otherwise |
+| `annually` | the year changes | 1 that day, 0 otherwise |
+
+**Evaluated** (ticked, history updated, gates checked) happens every bar; **rebalanced** (recompute target → diff vs current → trade the delta) happens only when the gate opens. A strategy is therefore a periodic loop, not a continuous one — and a single rebalance can emit **multiple orders at once** (one per symbol whose holding must change).
+
+> **No sub-daily rebalancing (current limitation).** The finest grain is `daily` — once per day. The platform *ingests* minute bars but only *acts* daily-or-coarser; there is no "every 5 minutes" / hourly cadence yet (intraday / event-driven rebalancing is roadmap). Related caveat: a `daily` strategy referencing e.g. `(sma SPY 200)` computes that indicator over whatever bars have accumulated in the live window — the timeframe-vs-bar-resolution behavior is an open item to verify when execution is built out.
+
+---
+
+## Conditions
+
+Conditions appear inside `if` blocks and evaluate to true/false against market data. Three families.
+
+### Comparison operators
 
 ```lisp
-(> left right)   ;; greater than
-(< left right)   ;; less than
-(>= left right)  ;; greater or equal
-(<= left right)  ;; less or equal
-(= left right)   ;; equal
-(!= left right)  ;; not equal
+(> left right)   (< left right)   (>= left right)   (<= left right)   (= left right)   (!= left right)
 ```
 
-**Examples:**
+Compare two [value expressions](#value-expressions):
+
 ```lisp
-(> (price SPY) 100)           ;; Price above $100
-(< (rsi SPY 14) 30)           ;; RSI below 30
-(>= (sma SPY 50) (sma SPY 200)) ;; 50 SMA >= 200 SMA
+(> (sma SPY 50) (sma SPY 200))   ; uptrend
+(< (rsi QQQ 14) 30)              ; oversold
+(>= (price AAPL) 150)            ; price at/above $150
 ```
 
-### Crossover Operators
-
-Detect when one value crosses another:
+### Crossover operators
 
 ```lisp
-(crosses-above fast slow)  ;; fast crosses above slow (bullish)
-(crosses-below fast slow)  ;; fast crosses below slow (bearish)
+(crosses-above fast slow)   ; fast was ≤ slow, now fast > slow (bullish)
+(crosses-below fast slow)   ; fast was ≥ slow, now fast < slow (bearish)
 ```
 
-**Examples:**
+Crossovers detect a **transition**, not a persistent state, and therefore require **two bars of history** (today and the prior bar). The compiler enforces a minimum lookback of 2 for any strategy using a crossover.
+
 ```lisp
-;; Golden cross: 50 SMA crosses above 200 SMA
-(crosses-above (sma SPY 50) (sma SPY 200))
-
-;; RSI crosses above 30 (leaving oversold)
-(crosses-above (rsi SPY 14) 30)
-
-;; EMA crosses below price
-(crosses-below (ema SPY 20) (price SPY))
+(crosses-above (sma SPY 50) (sma SPY 200))   ; golden cross
+(crosses-below (ema QQQ 12) (ema QQQ 26))    ; bearish EMA cross
 ```
 
-### Logical Operators
+> A `>` comparison is true *every* bar the trend persists; a `crosses-above` is true only on the single bar of the cross. With infrequent rebalancing, crossovers can be missed between rebalance dates — prefer comparisons for low-frequency strategies.
 
-Combine multiple conditions:
+### Logical operators
 
 ```lisp
-(and expr1 expr2 ...)  ;; all must be true
-(or expr1 expr2 ...)   ;; any must be true
-(not expr)             ;; negation
+(and cond1 cond2 ...)   ; all true   (≥ 2 operands)
+(or  cond1 cond2 ...)   ; any true   (≥ 2 operands)
+(not cond)              ; negation   (exactly 1 operand)
 ```
 
-**Examples:**
 ```lisp
-;; Multiple conditions must be true
-(and
-  (> (sma SPY 50) (sma SPY 200))
-  (< (rsi SPY 14) 70))
-
-;; Either condition triggers
-(or
-  (> (rsi SPY 14) 70)
-  (< (price SPY) (sma SPY 200)))
-
-;; Negation
-(not (> (rsi SPY 14) 70))
+(and (> (sma SPY 50) (sma SPY 200)) (< (rsi SPY 14) 70))   ; uptrend AND not overbought
+(or  (> (rsi QQQ 14) 70) (< (rsi QQQ 14) 30))              ; overbought OR oversold
+(not (> (drawdown SPY) 0.20))                              ; not in a >20% drawdown
 ```
 
-### Value Expressions
+---
 
-Values that can be compared:
+## Value Expressions
+
+The operands of comparisons and crossovers. Four kinds.
+
+### Numeric literal
 
 ```lisp
-;; Price data
-(price SPY)              ;; current close price
-(price SPY :field close) ;; explicit close
-(price SPY :field high)  ;; high price
-(price SPY :field low)   ;; low price
-(price SPY :field open)  ;; open price
+50      0.30      -2.5
+```
 
-;; Indicators (see Technical Indicators section)
-(sma SPY 50)             ;; 50-day simple moving average
-(ema SPY 20)             ;; 20-day exponential moving average
-(rsi SPY 14)             ;; 14-day RSI
+A constant. No percentage syntax — compare RSI to `30`, not `30%`.
 
-;; Relative values
-(drawdown SPY)           ;; current drawdown from peak
-(return SPY 30)          ;; 30-day return
-(momentum SPY 90)        ;; 90-day momentum
+### `price` — spot price reference
 
-;; Literals
-50                       ;; number
-0.05                     ;; decimal
+```lisp
+(price <symbol> [:<field>])
+```
+
+The optional field keyword is one of `:close` (default), `:open`, `:high`, `:low`, `:volume`. **The field name *is* the keyword** — it is `(price SPY :high)`, not `(price SPY :field high)`.
+
+```lisp
+(price SPY)          ; close (default)
+(price AAPL :high)   ; the bar's high
+(price SPY :volume)  ; volume
+```
+
+### Indicator
+
+A [technical indicator](#technical-indicators) call. General form:
+
+```lisp
+(<name> <symbol> <params...> [:<output>])
+```
+
+Multi-output indicators (MACD, Bollinger Bands, ADX, Stochastic) take an `:output` keyword to select which line is wanted; the default is the indicator's primary line.
+
+### Metric
+
+A derived statistic — see [Metrics](#metrics):
+
+```lisp
+(drawdown SPY)       ; current decline from peak
+(return SPY 30)      ; 30-period return
+(volatility SPY)     ; realized volatility
 ```
 
 ---
 
 ## Technical Indicators
 
-### Moving Averages
+The supported indicators (source: `INDICATORS` in `ast.py`; computations in `libs/compiler/pipeline.py`). General form `(<name> <symbol> <params...> [:<output>])`.
 
-| Indicator | Syntax | Description |
-|-----------|--------|-------------|
-| SMA | `(sma SYMBOL period)` | Simple Moving Average |
-| EMA | `(ema SYMBOL period)` | Exponential Moving Average |
+### Trend / Moving Averages
 
-```lisp
-(sma SPY 20)    ;; 20-period SMA
-(ema SPY 12)    ;; 12-period EMA
-```
-
-### Momentum Oscillators
-
-| Indicator | Syntax | Outputs |
-|-----------|--------|---------|
-| RSI | `(rsi SYMBOL period)` | value (0-100) |
-| MACD | `(macd SYMBOL fast slow signal [:output])` | `:line`, `:signal`, `:histogram` |
-| Stochastic | `(stoch SYMBOL period [:output])` | `:k`, `:d` |
-| Momentum | `(momentum SYMBOL period)` | value |
+| Indicator | Syntax | Measures |
+|-----------|--------|----------|
+| SMA | `(sma SYM period)` | Simple moving average (trend baseline) |
+| EMA | `(ema SYM period)` | Exponential moving average (faster-reacting trend) |
+| MACD | `(macd SYM fast slow signal [:line\|:signal\|:histogram])` | Trend/momentum convergence; default output `:line` |
+| ADX | `(adx SYM period [:value\|:plus_di\|:minus_di])` | Trend **strength** + directional indicators; default `:value` |
 
 ```lisp
-(rsi SPY 14)                          ;; RSI
-(macd SPY 12 26 9)                    ;; MACD line (default)
-(macd SPY 12 26 9 :signal)            ;; MACD signal
-(macd SPY 12 26 9 :histogram)         ;; MACD histogram
+(sma SPY 50)
+(ema SPY 12)
+(macd SPY 12 26 9 :signal)
+(adx SPY 14 :plus_di)
 ```
 
-### Volatility Indicators
+### Momentum / Oscillators
 
-| Indicator | Syntax | Outputs |
-|-----------|--------|---------|
-| Bollinger Bands | `(bbands SYMBOL period stddev [:output])` | `:upper`, `:middle`, `:lower` |
-| ATR | `(atr SYMBOL period)` | value |
-| Standard Deviation | `(stddev SYMBOL period)` | value |
+| Indicator | Syntax | Measures |
+|-----------|--------|----------|
+| RSI | `(rsi SYM period)` | Relative Strength Index, 0–100 (overbought/oversold) |
+| Stochastic | `(stoch SYM k d smooth [:k\|:d])` | Momentum vs. recent range; default `:k` |
+| CCI | `(cci SYM period)` | Commodity Channel Index (deviation from mean) |
+| Williams %R | `(williams-r SYM period)` | Overbought/oversold, −100 to 0 |
+| MFI | `(mfi SYM period)` | Money Flow Index (volume-weighted RSI) |
+| Momentum | `(momentum SYM period)` | Raw price change over N periods |
 
-```lisp
-(bbands SPY 20 2 :upper)   ;; Upper Bollinger Band
-(bbands SPY 20 2 :lower)   ;; Lower Bollinger Band
-(atr SPY 14)               ;; Average True Range
-(stddev SPY 20)            ;; 20-period standard deviation
-```
+### Volatility
 
-### Trend Indicators
+| Indicator | Syntax | Measures |
+|-----------|--------|----------|
+| Bollinger Bands | `(bbands SYM period stddev [:upper\|:middle\|:lower])` | Volatility envelope; default `:middle` |
+| ATR | `(atr SYM period)` | Average True Range (absolute volatility) |
+| Keltner Channels | `(keltner SYM period mult)` | ATR-based envelope |
+| Std Dev | `(stddev SYM period)` | Rolling standard deviation |
 
-| Indicator | Syntax | Outputs |
-|-----------|--------|---------|
-| ADX | `(adx SYMBOL period [:output])` | `:value`, `:plus_di`, `:minus_di` |
+### Volume / Channels
 
-```lisp
-(adx SPY 14)             ;; ADX value (trend strength)
-(adx SPY 14 :plus_di)    ;; +DI (bullish direction)
-(adx SPY 14 :minus_di)   ;; -DI (bearish direction)
-```
+| Indicator | Syntax | Measures |
+|-----------|--------|----------|
+| OBV | `(obv SYM)` | On-Balance Volume (volume-flow accumulation) |
+| VWAP | `(vwap SYM)` | Volume-Weighted Average Price |
+| Donchian | `(donchian SYM period)` | N-period high/low channel (breakout) |
+
+These cover the four classic families — trend, momentum, volatility, and volume.
+
+### Default parameters
+
+Parameters are optional; if omitted, these defaults apply (source: `compute_indicator` in `libs/compiler/pipeline.py`):
+
+| Indicator | Default params | | Indicator | Default params |
+|-----------|----------------|---|-----------|----------------|
+| `sma` | period 20 | | `stoch` | k 14, d 3, smooth 3 |
+| `ema` | period 20 | | `cci` | period 20 |
+| `rsi` | period 14 | | `williams-r` | period 14 |
+| `macd` | fast 12, slow 26, signal 9 | | `mfi` | period 14 |
+| `bbands` | period 20, stddev 2.0 | | `keltner` | period 20, mult 2.0 |
+| `atr` | period 14 | | `donchian` | period 20 |
+| `adx` | period 14 | | `stddev` | period 20 |
+| `obv` | none | | `momentum` | period 10 |
+| `vwap` | none | | | |
+
+The default `:output` for multi-output indicators is: `macd` → `:line`, `bbands` → `:middle`, `adx` → `:value`, `stoch` → `:k`.
 
 ---
 
-## Complete Examples
+## Metrics
 
-### Symphony: Classic 60/40
+Derived statistics (source: `METRICS` in `ast.py`). Form: `(<name> <symbol> [period])`.
 
-Simple fixed allocation between stocks and bonds.
-
-```lisp
-(strategy "Classic 60/40"
-  :rebalance quarterly
-  :benchmark SPY
-  (weight :method specified
-    (asset VTI :weight 60)
-    (asset BND :weight 40)))
-```
-
-### Symphony: RSI Mean Reversion
-
-Allocate based on RSI levels - defensive when overbought, aggressive when oversold.
+| Metric | Syntax | Meaning |
+|--------|--------|---------|
+| `drawdown` | `(drawdown SYM)` | Current decline from the peak (e.g. `0.15` = 15% off highs) |
+| `return` | `(return SYM period)` | Return over the period |
+| `volatility` | `(volatility SYM [period])` | Realized volatility |
 
 ```lisp
-(strategy "RSI Mean Reversion"
-  :rebalance daily
-  :benchmark SPY
-  (if (< (rsi SPY 14) 30)
-    (asset SPY :weight 100)
-    (else
-      (if (> (rsi SPY 14) 70)
-        (asset TLT :weight 100)
-        (else
-          (weight :method equal
-            (asset SPY)
-            (asset TLT)))))))
-```
-
-### Symphony: Sector Momentum Rotation
-
-Select top momentum sectors and weight by momentum.
-
-```lisp
-(strategy "Sector Rotation"
-  :rebalance monthly
-  :benchmark SPY
-  (if (> (sma SPY 200) (price SPY))
-    ;; Bear market: go defensive
-    (weight :method equal
-      (asset BND)
-      (asset GLD))
-    (else
-      ;; Bull market: momentum sectors
-      (filter :by momentum :select (top 3) :lookback 90
-        (weight :method momentum :lookback 90
-          (asset XLK)
-          (asset XLF)
-          (asset XLE)
-          (asset XLV)
-          (asset XLI)
-          (asset XLC)
-          (asset XLY)
-          (asset XLP)
-          (asset XLRE)
-          (asset XLU)
-          (asset XLB))))))
-```
-
-### Symphony: Risk Parity
-
-Equal risk contribution across asset classes.
-
-```lisp
-(strategy "Risk Parity"
-  :rebalance monthly
-  :benchmark SPY
-  (weight :method inverse-volatility :lookback 60
-    (asset VTI)
-    (asset TLT)
-    (asset GLD)
-    (asset DBC)))
-```
-
-### Strategy: RSI Mean Reversion (Active Trading)
-
-```clojure
-(defstrategy "RSI Mean Reversion"
-  {:timeframe :1h
-   :symbols ["AAPL" "MSFT" "GOOGL" "AMZN"]}
-
-  (entry
-    (when (and (< (rsi $symbol 14) 30)
-               (> (volume $symbol) (* 1.5 (sma-volume $symbol 20))))
-      (buy $symbol
-        :size 5%
-        :order-type :market
-        :stop-loss -2%
-        :take-profit 4%
-        :trailing-stop 1%)))
-
-  (exit
-    (when (or (> (rsi $symbol 14) 70)
-              (crosses-below (close $symbol) (sma $symbol 50)))
-      (close $symbol))))
-```
-
-### Symphony: Conditional Rotation with Cond
-
-```clojure
-(defsymphony "Regime Adaptive"
-  {:rebalance :weekly}
-
-  (cond
-    ;; Bear market: 50-day MA below 200-day MA
-    [(< (sma "SPY" 50) (sma "SPY" 200))
-     (weight-equal [(asset "TLT") (asset "GLD")])]
-
-    ;; High volatility: VIX above 30
-    [(> (vix) 30)
-     (weight-risk-parity
-       [(asset "SPY" :max-weight 0.3)
-        (asset "TLT")
-        (asset "GLD")])]
-
-    ;; Default: bull market
-    [:else
-     (weight-momentum
-       [(universe "FAANG")])]))
+(> (drawdown SPY) 0.15)   ; SPY is more than 15% off its peak → de-risk
 ```
 
 ---
 
 ## Grammar Specification
 
-The formal grammar is specified in Lark/EBNF notation:
+Descriptive grammar (the implementation is a hand-written recursive-descent parser, not a generated one):
 
 ```ebnf
-(* S-Expression Grammar - Lark syntax *)
+strategy      = "(" "strategy" STRING strategy-opt* block* ")"
+strategy-opt  = ":rebalance" FREQUENCY
+              | ":benchmark" SYMBOL
+              | ":description" STRING
 
-start: definition+
+block         = asset | weight | group | if | filter
 
-definition: symphony_def | strategy_def | indicator_def
+asset         = "(" "asset" SYMBOL (":weight" NUMBER)? ")"
+weight        = "(" "weight" ":method" METHOD (":lookback" NUMBER)? (":top" NUMBER)? block+ ")"
+group         = "(" "group" STRING (":weight" NUMBER)? block+ ")"
+if            = "(" "if" condition block ("(" "else" block ")")? ")"
+filter        = "(" "filter" ":by" CRITERIA ":select" "(" DIRECTION NUMBER ")" (":lookback" NUMBER)? block+ ")"
 
-(* Top-level definitions *)
-symphony_def: "(" "defsymphony" STRING metadata? allocation_expr ")"
-strategy_def: "(" "defstrategy" STRING metadata? rule+ ")"
-indicator_def: "(" "defindicator" STRING param_list expr ")"
+condition     = comparison | crossover | logical
+comparison    = "(" COMPARATOR value value ")"
+crossover     = "(" ("crosses-above" | "crosses-below") value value ")"
+logical       = "(" "and" condition condition+ ")"
+              | "(" "or"  condition condition+ ")"
+              | "(" "not" condition ")"
 
-(* Metadata block *)
-metadata: "{" metadata_pair* "}"
-metadata_pair: KEYWORD value
+value         = NUMBER | price | indicator | metric
+price         = "(" "price" SYMBOL (":close"|":open"|":high"|":low"|":volume")? ")"
+indicator     = "(" INDICATOR SYMBOL NUMBER* (":" NAME)? ")"
+metric        = "(" METRIC SYMBOL NUMBER? ")"
 
-(* Allocation expressions - what to hold *)
-allocation_expr: asset_expr
-              | weight_expr
-              | conditional_expr
-              | filter_expr
-              | universe_expr
-
-asset_expr: "(" "asset" STRING asset_opts? ")"
-asset_opts: KEYWORD value
-
-weight_expr: "(" weight_method "[" allocation_expr+ "]" ")"
-weight_method: "weight-equal" | "weight-fixed" | "weight-inverse-volatility"
-            | "weight-risk-parity" | "weight-momentum"
-
-conditional_expr: "(" "if" condition allocation_expr allocation_expr? ")"
-               | "(" "cond" cond_branch+ ")"
-cond_branch: "[" condition allocation_expr "]"
-
-filter_expr: "(" "filter-top" NUMBER KEYWORD expr ")"
-          | "(" "filter-bottom" NUMBER KEYWORD expr ")"
-
-universe_expr: "(" "universe" STRING ")"
-
-(* Strategy rules - when to trade *)
-rule: entry_rule | exit_rule
-entry_rule: "(" "entry" "(" "when" condition action+ ")" ")"
-exit_rule: "(" "exit" "(" "when" condition action+ ")" ")"
-
-action: "(" action_type action_opts* ")"
-action_type: "buy" | "sell" | "close" | "close-long" | "close-short"
-action_opts: KEYWORD value
-
-(* Conditions - boolean expressions *)
-condition: comparison | logical_expr | crossover_expr
-
-comparison: "(" COMPARATOR expr expr ")"
-COMPARATOR: ">" | "<" | ">=" | "<=" | "=" | "!="
-
-logical_expr: "(" "and" condition+ ")"
-           | "(" "or" condition+ ")"
-           | "(" "not" condition ")"
-
-crossover_expr: "(" "crosses-above" expr expr ")"
-             | "(" "crosses-below" expr expr ")"
-
-(* Value expressions *)
-expr: NUMBER | STRING | SYMBOL | indicator_call | arithmetic_expr
-
-indicator_call: "(" INDICATOR_NAME expr* ")"
-INDICATOR_NAME: "rsi" | "sma" | "ema" | "macd" | "bbands" | "atr"
-             | "volume" | "price" | "high" | "low" | "open" | "close"
-             | "sma-volume" | "vix" | "momentum"
-
-arithmetic_expr: "(" OPERATOR expr expr ")"
-OPERATOR: "+" | "-" | "*" | "/"
-
-(* Terminals *)
-STRING: "\"" /[^"]*/ "\""
-NUMBER: /-?[0-9]+(\.[0-9]+)?%?/
-SYMBOL: "$" NAME
-KEYWORD: ":" NAME
-NAME: /[a-zA-Z_][a-zA-Z0-9_-]*/
-
-%import common.WS
-%ignore WS
-%ignore COMMENT
-COMMENT: ";" /[^\n]/*
+FREQUENCY     = "daily" | "weekly" | "monthly" | "quarterly" | "annually"
+METHOD        = "specified" | "equal" | "momentum" | "inverse-volatility"
+              | "min-variance" | "market-cap" | "risk-parity"
+CRITERIA      = "momentum" | "volatility" | "volume"
+DIRECTION     = "top" | "bottom"
+COMPARATOR    = ">" | "<" | ">=" | "<=" | "=" | "!="
+INDICATOR     = "sma"|"ema"|"rsi"|"macd"|"atr"|"adx"|"bbands"|"stoch"|"cci"
+              | "obv"|"vwap"|"mfi"|"williams-r"|"keltner"|"donchian"|"stddev"|"momentum"
+METRIC        = "drawdown" | "return" | "volatility"
+SYMBOL        = letter (letter | digit | "_" | "-")*
+NUMBER        = "-"? digit+ ("." digit+)?
+STRING        = '"' character* '"'
 ```
 
 ---
 
 ## Abstract Syntax Tree
 
-The parser transforms S-expression text into a tree of typed Python dataclasses.
+The parser produces typed, frozen dataclasses (source: `libs/dsl/llamatrade_dsl/ast.py`). Every node carries an optional `SourceLocation`.
 
-### Core Node Types
+**Blocks:** `Strategy`, `Group`, `Weight`, `Asset`, `If`, `Filter`
+
+**Conditions:** `Comparison`, `Crossover`, `LogicalOp`
+
+**Values:** `NumericLiteral`, `Price`, `Indicator`, `Metric`
 
 ```python
-# libs/dsl/llamatrade_dsl/ast.py
+# Representative definitions (see ast.py for the full set)
 
-from dataclasses import dataclass, field
-from typing import Any, List, Optional, Union
-from enum import Enum
+@dataclass(slots=True)
+class Strategy:
+    name: str
+    children: list[Block]
+    rebalance: RebalanceFrequency | None = None   # "daily".."annually"
+    benchmark: str | None = None
+    description: str | None = None
+    location: SourceLocation | None = None
 
+@dataclass(slots=True)
+class Weight:
+    method: WeightMethod         # "specified".."risk-parity"
+    children: list[Block]
+    lookback: int | None = None
+    top: int | None = None
 
-class WeightMethod(str, Enum):
-    """Available portfolio weighting methods."""
-    EQUAL = "equal"
-    FIXED = "fixed"
-    INVERSE_VOLATILITY = "inverse_volatility"
-    RISK_PARITY = "risk_parity"
-    MOMENTUM = "momentum"
-
-
-@dataclass
-class MetadataNode:
-    """Strategy/symphony metadata."""
-    rebalance: Optional[str] = None
-    benchmark: Optional[str] = None
-    description: Optional[str] = None
-    timeframe: Optional[str] = None
-    symbols: List[str] = field(default_factory=list)
-
-
-@dataclass
-class AssetNode:
-    """Single asset with optional weight constraints."""
+@dataclass(frozen=True, slots=True)
+class Asset:
     symbol: str
-    weight: Optional[float] = None
-    max_weight: Optional[float] = None
+    weight: float | None = None
 
+@dataclass(slots=True)
+class If:
+    condition: Condition
+    then_block: Block
+    else_block: Block | None = None
 
-@dataclass
-class WeightNode:
-    """Apply a weighting method to a list of allocations."""
-    method: str
-    children: List[Union["AssetNode", "FilterNode", "UniverseNode", "WeightNode"]]
+@dataclass(slots=True)
+class Filter:
+    by: FilterCriteria                  # "momentum"|"volatility"|"volume"
+    select_direction: SelectDirection   # "top"|"bottom"
+    select_count: int
+    children: list[Block]
+    lookback: int | None = None
 
-
-@dataclass
-class IndicatorNode:
-    """Technical indicator function call."""
+@dataclass(frozen=True, slots=True)
+class Indicator:
     name: str
-    args: List[Any] = field(default_factory=list)
-    symbol: Optional[str] = None
-    accessor: Optional[str] = None
+    symbol: str
+    params: tuple[int | float, ...] = ()
+    output: str | None = None           # e.g. "signal", "upper", "plus_di"
 
-
-@dataclass
-class ComparisonNode:
-    """Comparison expression (>, <, >=, <=, =, !=)."""
-    operator: str
-    left: Any
-    right: Any
-
-
-@dataclass
-class CrossoverNode:
-    """Crossover detection."""
-    direction: str  # "above" or "below"
-    fast: Any
-    slow: Any
-
-
-@dataclass
-class LogicalNode:
-    """Logical combination of conditions (AND, OR, NOT)."""
-    type: str
-    conditions: List[Union["ComparisonNode", "CrossoverNode", "LogicalNode"]]
-
-
-@dataclass
-class ConditionalNode:
-    """Conditional branching in allocation (if/else, cond)."""
-    condition: Union[ComparisonNode, CrossoverNode, LogicalNode]
-    then_branch: Union[WeightNode, "ConditionalNode"]
-    else_branch: Optional[Union[WeightNode, "ConditionalNode"]] = None
-
-
-@dataclass
-class ActionNode:
-    """Trading action (buy, sell, close) with parameters."""
-    type: str
-    symbol: Optional[str] = None
-    size_value: Optional[float] = None
-    stop_loss: Optional[float] = None
-    take_profit: Optional[float] = None
-    trailing_stop: Optional[float] = None
-    order_type: str = "market"
-
-
-@dataclass
-class RuleNode:
-    """Entry or exit rule with condition and actions."""
-    type: str  # "entry" or "exit"
-    condition: Union[ComparisonNode, CrossoverNode, LogicalNode]
-    actions: List[ActionNode]
-
-
-@dataclass
-class SymphonyNode:
-    """Top-level symphony (portfolio allocation) definition."""
-    name: str
-    metadata: MetadataNode
-    allocation: Union[AssetNode, WeightNode, ConditionalNode]
-    version: int = 1
-
-
-@dataclass
-class StrategyNode:
-    """Top-level strategy (active trading) definition."""
-    name: str
-    metadata: MetadataNode
-    rules: List[RuleNode]
-    version: int = 1
+@dataclass(frozen=True, slots=True)
+class Price:
+    symbol: str
+    field: PriceField = "close"         # "close"|"open"|"high"|"low"|"volume"
 ```
+
+Type unions: `Block = Strategy | Group | Weight | Asset | If | Filter`, `Condition = Comparison | Crossover | LogicalOp`, `Value = NumericLiteral | Price | Indicator | Metric`.
 
 ---
 
 ## Parser Implementation
 
-The parser uses [Lark](https://github.com/lark-parser/lark), a modern parsing library for Python.
+`libs/dsl/llamatrade_dsl/parser.py` implements a two-stage parser.
 
-### Parsing Pipeline
+**1. Tokenizer** — a single compiled regex (`TOKEN_PATTERN`) with named groups: `LPAREN`, `RPAREN`, `STRING`, `KEYWORD` (`:name`), `NUMBER`, `OPERATOR` (`>`, `<`, `>=`, `<=`, `!=`, `crosses-above`, `crosses-below`), `SYMBOL`, plus `SKIP` (whitespace) and `COMMENT` (`;` to EOL). The tokenizer tracks 1-indexed line/column and 0-indexed character offsets.
 
-1. **Lexing:** Input text is tokenized into NUMBER, STRING, KEYWORD, etc.
-2. **Parsing:** Tokens are matched against grammar rules to build a parse tree
-3. **Transformation:** Parse tree nodes are converted to typed AST dataclasses
+**2. Recursive-descent parser** — `Parser.parse()` returns a `Strategy`. It peeks the symbol after each `(` and dispatches to `_parse_strategy`, `_parse_block`, `_parse_weight`, `_parse_if`, `_parse_filter`, `_parse_condition`, `_parse_value`, etc. Each node captures start/end positions so errors can report `line N, col M`.
 
-### Parser Code
+Public API:
 
 ```python
-# libs/dsl/llamatrade_dsl/sexpr/parser.py
+from llamatrade_dsl import parse, validate, serialize, to_json, from_json
 
-from lark import Lark, Transformer
-from typing import List, Union
-
-from ..ast import (
-    SymphonyNode, StrategyNode, MetadataNode,
-    AssetNode, WeightNode, ConditionalNode,
-    ComparisonNode, LogicalNode, CrossoverNode,
-    IndicatorNode, ActionNode, RuleNode
-)
-
-
-class SExprTransformer(Transformer):
-    """Transform parse tree into AST nodes."""
-
-    def start(self, items) -> List[Union[SymphonyNode, StrategyNode]]:
-        return list(items)
-
-    def symphony_def(self, items) -> SymphonyNode:
-        name = self._unquote(items[0])
-        metadata = {}
-        allocation = None
-
-        for item in items[1:]:
-            if isinstance(item, dict):
-                metadata = item
-            else:
-                allocation = item
-
-        return SymphonyNode(
-            name=name,
-            metadata=MetadataNode(**metadata),
-            allocation=allocation
-        )
-
-    def weight_expr(self, items) -> WeightNode:
-        method = str(items[0]).replace("weight-", "").replace("-", "_")
-        children = list(items[1:])
-        return WeightNode(method=method, children=children)
-
-    def comparison(self, items) -> ComparisonNode:
-        return ComparisonNode(
-            operator=str(items[0]),
-            left=items[1],
-            right=items[2]
-        )
-
-    def _unquote(self, s) -> str:
-        return str(s).strip('"')
-
-
-class SExprParser:
-    """S-Expression parser for LlamaTrade DSL."""
-
-    def __init__(self):
-        self.parser = Lark(
-            SEXPR_GRAMMAR,
-            parser='lalr',
-            transformer=SExprTransformer()
-        )
-
-    def parse(self, source: str) -> List[Union[SymphonyNode, StrategyNode]]:
-        return self.parser.parse(source)
+ast = parse(source_string)        # str  -> Strategy (raises ParseError)
+result = validate(ast)            # Strategy -> ValidationResult
+text = serialize(ast, pretty=True)# Strategy -> str  (round-trips)
+data = to_json(ast)               # Strategy -> dict (JSON IR)
+ast2 = from_json(data)            # dict -> Strategy
 ```
 
 ---
 
-## Serialization
+## Serialization & Storage
 
-The AST can be serialized to multiple formats for bidirectional conversion.
+A strategy is persisted on `StrategyVersion` (see `libs/db`) in **both** forms:
 
-### JSON Serialization
+- **`config_sexpr`** — the original S-expression text (the canonical, human-editable source of truth used by downstream services).
+- **`config_json`** — the compiled JSON IR produced by `to_json()`.
 
-Strategies serialize to JSON for storage and API transport:
+Plus extracted metadata: `symbols`, `timeframe` (derived from `:rebalance`), and `parameters` (which may carry the visual builder's `ui_state`).
+
+### JSON IR structure
+
+`to_json()` emits a tagged-union tree. Keys (source: `to_json.py`):
 
 ```json
 {
@@ -1082,174 +696,218 @@ Strategies serialize to JSON for storage and API transport:
       "condition": {
         "type": "comparison",
         "operator": ">",
-        "left": {
-          "type": "indicator",
-          "name": "sma",
-          "symbol": "SPY",
-          "params": [50]
-        },
-        "right": {
-          "type": "indicator",
-          "name": "sma",
-          "symbol": "SPY",
-          "params": [200]
-        }
+        "left":  {"type": "indicator", "name": "sma", "symbol": "SPY", "params": [50]},
+        "right": {"type": "indicator", "name": "sma", "symbol": "SPY", "params": [200]}
       },
-      "then": {
-        "type": "weight",
-        "method": "specified",
-        "children": [
-          {"type": "asset", "symbol": "VTI", "weight": 60},
-          {"type": "asset", "symbol": "VXUS", "weight": 40}
-        ]
-      },
-      "else": {
-        "type": "weight",
-        "method": "equal",
-        "children": [
-          {"type": "asset", "symbol": "BND"},
-          {"type": "asset", "symbol": "SHY"}
-        ]
-      }
+      "then":       {"type": "asset", "symbol": "VTI", "weight": 100},
+      "else_block": {"type": "asset", "symbol": "BND", "weight": 100}
     }
   ]
 }
 ```
 
-### S-Expression Serializer
-
-Converts AST back to readable S-expression text:
-
-```python
-class SExprSerializer:
-    """Serialize AST back to S-expression format."""
-
-    def serialize(self, node: Union[SymphonyNode, StrategyNode]) -> str:
-        if isinstance(node, SymphonyNode):
-            return self._symphony(node)
-        return self._strategy(node)
-
-    def _symphony(self, node: SymphonyNode) -> str:
-        lines = [f'(defsymphony "{node.name}"']
-        lines.append(self._metadata(node.metadata))
-        lines.append(self._indent(self._allocation(node.allocation), 2))
-        lines.append(")")
-        return "\n".join(lines)
-```
-
----
-
-## Execution Engine
-
-The compiler transforms AST nodes into executable Python functions.
-
-### Compilation Process
-
-1. **AST traversal:** Walk the tree, compiling each node type
-2. **Closure generation:** Build nested Python functions that capture context
-3. **Indicator registration:** Register required indicators for pre-computation
-4. **Output:** Callable functions that evaluate allocations or generate signals
-
-### Compiled Types
-
-```python
-@dataclass
-class CompiledSymphony:
-    """Compiled symphony ready for execution."""
-    name: str
-    rebalance_frequency: str
-    benchmark: Optional[str]
-    evaluate: callable  # (market_data) -> Dict[str, float]
-
-
-@dataclass
-class CompiledStrategy:
-    """Compiled strategy ready for execution."""
-    name: str
-    timeframe: str
-    symbols: List[str]
-    on_bar: callable  # (symbol, bar, portfolio) -> List[Signal]
-```
-
----
-
-## AI Generation
-
-Users can describe strategies in natural language, and Claude generates valid S-expression code.
-
-### How It Works
-
-1. User describes strategy in plain English
-2. System prompt instructs Claude on S-expression syntax
-3. Few-shot examples demonstrate correct format
-4. Claude generates DSL code
-5. Parser validates the output
-6. If invalid, optionally retry with error feedback
-
-### Generator Code
-
-```python
-from anthropic import Anthropic
-
-SYSTEM_PROMPT = """You are an expert trading strategy designer for LlamaTrade.
-Convert natural language descriptions into S-expression trading strategies.
-
-## S-Expression Format
-- Use (defsymphony "name" {...} allocation) for portfolio allocations
-- Use (defstrategy "name" {...} rules) for active trading
-- Conditions: (and ...), (or ...), (> x y), (< x y), (crosses-above x y)
-- Indicators: (rsi symbol period), (sma symbol period), (macd symbol fast slow signal)
-
-Always output ONLY the DSL code, no explanations."""
-
-
-class AIStrategyGenerator:
-    """Generate strategies from natural language using Claude."""
-
-    def __init__(self, api_key: str = None):
-        self.client = Anthropic(api_key=api_key)
-
-    def generate(self, description: str) -> str:
-        response = self.client.messages.create(
-            model="claude-sonnet-4-20250514",
-            max_tokens=2000,
-            system=SYSTEM_PROMPT,
-            messages=[{"role": "user", "content": description}]
-        )
-        return response.content[0].text.strip()
-```
+Note the exact key names that downstream code depends on:
+- `if` blocks use **`then`** and **`else_block`** (not `else`).
+- logical conditions use `{"type": "logical", "operator": ..., "operands": [...]}`.
+- indicators use `params` (a list) and optional `output`.
 
 ---
 
 ## Validation Rules
 
-1. **Strategy must have at least one child block**
-2. **Weight blocks with `method: specified` must have children that sum to 100%**
-3. **Asset `:weight` is required when parent is `method: specified`, forbidden otherwise**
-4. **Filter must contain exactly one weight block as child**
-5. **Condition symbols must be valid tickers**
-6. **Indicator parameters must be positive integers**
-7. **Lookback periods must be positive integers**
-8. **Nested if/else depth should be limited (recommend max 3 levels)**
-9. **The else clause must be wrapped in `(else ...)`**
+`validate()` (source: `libs/dsl/validator.py`) returns a `ValidationResult` with a `valid` flag and a list of errors (each with message, path, and source location; misspelled indicator/method names get "did you mean" suggestions). Enforced rules:
+
+1. **Strategy** has a non-empty name and ≥ 1 child block.
+2. **Weight `:method specified`** — every direct `asset`/`group` child must have a `:weight`, and they must sum to ~100% (tolerance 0.01).
+3. **Weight non-`specified`** — children must **not** have `:weight` (the method computes it).
+4. **Weight method** is one of the seven valid methods; `:lookback`/`:top`, if present, must be > 0; `:top` must not exceed the child count.
+5. **Asset** has a non-empty symbol starting with a letter; `:weight`, if present, > 0.
+6. **Filter** — `:by` is valid, `:select_count` > 0 and ≤ available assets, `:lookback` (if present) > 0, ≥ 1 child.
+7. **Logical ops** — `not` takes exactly 1 operand; `and`/`or` take ≥ 2.
+8. **Indicators** — name in the supported set; parameters > 0.
+9. **Metrics** — name valid; period (if present) > 0.
+
+The frontend runs an additional set of *structural* checks (no orphan blocks, no empty groups, duplicate-asset warnings) before saving; those are UI conveniences and do not replace backend validation.
+
+---
+
+## Execution Pipeline
+
+How a stored strategy becomes results (backtest) or live trades.
+
+### Compilation
+
+`config_sexpr` → `parse()` → `validate()` → `compile_strategy()` (`libs/compiler`). Compilation:
+1. **Extracts indicators** from all conditions (`extract_indicators`) into deduplicated specs.
+2. Computes the **minimum bars** of history needed (max indicator lookback, floor of 2 for crossovers).
+3. Produces an executable form. Two engines consume the same AST:
+   - **Bar-by-bar** (`CompiledStrategy`) — stateful, processes one bar at a time. Used for **live trading**.
+   - **Vectorized** (`VectorizedCompiledStrategy`) — array-based, evaluates the whole history at once via NumPy. Used for **backtesting** performance on large datasets.
+
+### From target weights to action
+
+On each evaluation the compiled strategy returns an **allocation**: `{symbol: weight%}`, normalized to 100%, plus a `rebalance_needed` flag and metadata.
+
+- **Backtest** (`services/backtest`) — feeds historical bars, gets allocations, simulates the resulting trades, and accumulates an equity curve. Metrics (total/annualized return, Sharpe, Sortino, max drawdown via running peak, win rate, profit factor, and — if a `:benchmark` is set — alpha/beta) are computed from the equity curve and persisted to `BacktestResult`.
+- **Live** (`services/trading`) — the runner consumes a live 1-minute bar stream, maintains a rolling per-symbol window, and on each bar (after a warmup of `min_bars + buffer`) evaluates the strategy. The strategy's `:rebalance` frequency gates *when* a new target is computed; the resulting target weights are handed to the **Portfolio Ledger**, which turns them into orders.
+
+### Evaluation timing & gating
+
+A strategy is not "always trading." It is a periodic loop:
+
+```
+on each wake-up (its :rebalance cadence):
+    target = evaluate(conditions/indicators on the current bar)
+    target_$ = target_weights × MY SLEEVE's equity      # not the whole account
+    orders   = target_$ − what MY sleeve already holds   # trade only the delta
+    (between wake-ups: hold)
+```
+
+Live evaluation is additionally gated by **trading-hours** checks and a per-session **circuit breaker** (consecutive losses, daily-loss %, drawdown %, error bursts). See [Portfolio Ledger](portfolio-ledger.md) and [Trading Service](services/trading.md).
+
+---
+
+## Multi-Strategy Execution & the Portfolio Ledger
+
+A user has **one brokerage account** but trades flow into it from multiple sources at once: **manual** buy/sells and **one or more strategies**. The DSL deliberately says nothing about this — a strategy only ever expresses *target weights for its own slice of capital*. Coordinating multiple slices into a single commingled account is handled entirely by a layer **below** the DSL: the **Portfolio Ledger**.
+
+In brief:
+
+- Each running strategy is a **sleeve** with an allocated capital budget (`StrategyExecution.allocated_capital`). Its target weights are percentages **of the sleeve's equity**, not of the whole account.
+- Manual trades live in a dedicated **Manual** sleeve; pre-existing or externally-traded positions live in an **Unmanaged** sleeve. A strategy can never buy or sell another sleeve's holdings.
+- A single **append-only, double-entry, event-sourced ledger** is the source of truth. Per-sleeve positions, lots, cash, and P&L are **derived projections** of that ledger — so they cannot drift out of sync with one another.
+- Every fill is **attributed to exactly one sleeve** at order origination (via a `client_order_id` → sleeve mapping), giving each holding a full **trade history** showing whether each buy/sell came from manual activity or a specific strategy.
+- An **overlay/coordinator** turns each sleeve's target-vs-current into orders, optionally **nets** offsetting orders into block orders (allocated back at average price), submits them to the one broker account, and continuously **reconciles** the ledger's aggregate against broker truth.
+
+The **Portfolio Service** owns this ledger — it is the **book of record** (sleeves, lots, cash, fund allocation, reconciliation). The **Trading Service** is the **execution arm**: it submits orders to the broker and emits fill events the ledger consumes.
+
+This design follows the established **Unified Managed Account (UMA) / overlay-manager** pattern from wealth management, combined with **event-sourced double-entry accounting** to keep everything consistent at scale.
+
+➡️ **Full architecture, data model, fund-allocation flows, and reconciliation:** see **[Portfolio Ledger & Multi-Strategy Fund Allocation](portfolio-ledger.md)**.
+
+---
+
+## Example Strategies
+
+### Beginner — Classic 60/40 (static allocation)
+
+```lisp
+(strategy "Classic 60/40"
+  :rebalance quarterly
+  :benchmark SPY
+  (weight :method specified
+    (asset VTI :weight 60)
+    (asset BND :weight 40)))
+```
+
+### Beginner — Equal-weight diversified
+
+```lisp
+(strategy "Equal-Weight Core"
+  :rebalance monthly
+  :benchmark SPY
+  (weight :method equal
+    (asset VTI)
+    (asset VXUS)
+    (asset BND)
+    (asset GLD)))
+```
+
+### Intermediate — Trend regime switch
+
+```lisp
+(strategy "Trend Regime"
+  :rebalance daily
+  :benchmark SPY
+  (if (> (sma SPY 50) (sma SPY 200))
+    (weight :method specified
+      (asset SPY :weight 60)
+      (asset QQQ :weight 40))
+    (else
+      (weight :method specified
+        (asset TLT :weight 50)
+        (asset GLD :weight 50)))))
+```
+
+### Intermediate — RSI mean reversion
+
+```lisp
+(strategy "RSI Mean Reversion"
+  :rebalance daily
+  :benchmark SPY
+  (if (< (rsi SPY 14) 30)
+    (asset SPY :weight 100)
+    (else
+      (if (> (rsi SPY 14) 70)
+        (asset TLT :weight 100)
+        (else (weight :method equal (asset SPY) (asset TLT)))))))
+```
+
+### Advanced — All-weather risk-balanced core
+
+```lisp
+(strategy "All-Weather Core"
+  :rebalance quarterly
+  :benchmark SPY
+  (weight :method inverse-volatility :lookback 60
+    (asset SPY)
+    (asset TLT)
+    (asset GLD)
+    (asset DBC)))
+```
+
+### Advanced — Regime-gated sector momentum rotation
+
+```lisp
+(strategy "Sector Rotation"
+  :rebalance monthly
+  :benchmark SPY
+  (if (> (price SPY) (sma SPY 200))
+    ;; Bull market: hold the top 3 sectors by momentum
+    (filter :by momentum :select (top 3) :lookback 90
+      (weight :method momentum :lookback 90
+        (asset XLK) (asset XLF) (asset XLE) (asset XLV)
+        (asset XLI) (asset XLC) (asset XLY) (asset XLP)
+        (asset XLRE) (asset XLU) (asset XLB)))
+    ;; Bear market: go defensive
+    (else
+      (weight :method equal
+        (asset BND) (asset GLD)))))
+```
+
+### Advanced — Multi-condition with crossover confirmation
+
+```lisp
+(strategy "Confirmed Trend"
+  :rebalance daily
+  :benchmark SPY
+  (if (and (crosses-above (sma SPY 50) (sma SPY 200))
+           (< (rsi SPY 14) 70)
+           (not (> (drawdown SPY) 0.10)))
+    (weight :method specified
+      (asset SPY :weight 70)
+      (asset QQQ :weight 30))
+    (else (asset BIL :weight 100))))   ; park in T-bills
+```
 
 ---
 
 ## Tips for Writing Strategies
 
-1. **Start simple** - Begin with a fixed allocation, then add conditional logic
-2. **Use meaningful names** - Strategy names should describe the approach
-3. **Test with backtesting** - Validate strategies before live trading
-4. **Consider rebalance frequency** - More frequent = more responsive but higher turnover
-5. **Use groups for organization** - Group related assets for clarity
-6. **Limit nesting depth** - Deeply nested conditionals are hard to maintain
-7. **Set benchmarks** - Always include a benchmark for performance comparison
-8. **Balance diversification** - Spread allocations across uncorrelated assets
+1. **Start static, then add logic.** Begin with a fixed `specified`/`equal` allocation; layer in `if`/`filter` once it works.
+2. **Match cadence to logic.** Use comparisons (not crossovers) for low-frequency rebalances; crossovers shine on `daily`.
+3. **Always set a `:benchmark`** so reporting can compute alpha/beta.
+4. **Mind the warmup.** A strategy referencing `(sma SPY 200)` needs ≥ 200 bars before it produces signals.
+5. **Use `group` for readability**, not allocation math (unless under `specified`).
+6. **Keep nesting shallow.** Deeply nested `if`/`else` is hard to reason about — prefer a few clear regimes.
+7. **Diversify the universe** for dynamic methods; momentum/inverse-volatility need several uncorrelated candidates to be meaningful.
+8. **Backtest before going live**, and remember target weights apply to the strategy's **sleeve**, not your whole account — see [Portfolio Ledger](portfolio-ledger.md).
 
 ---
 
 ## Related Documentation
 
-- [Strategy Execution](strategy-execution.md) - How strategies compile, evaluate, and generate orders
-- [Strategy Service](services/strategy.md) - Strategy service implementation
-- [Trading Strategies](trading-strategies.md) - Algorithmic trading concepts
+- [Portfolio Ledger & Multi-Strategy Fund Allocation](portfolio-ledger.md) — how target weights become trades across a shared account: sizing, sleeves, the event-sourced ledger, fund allocation, and reconciliation.
+- [Strategy Service](services/strategy.md) — strategy CRUD, versioning, compile/validate endpoints.
+- [Trading Service](services/trading.md) — live execution, sessions, order management.
+- [Backtesting Service](services/backtesting.md) — historical simulation and metrics.

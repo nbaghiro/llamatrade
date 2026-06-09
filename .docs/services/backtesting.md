@@ -528,7 +528,7 @@ Task retries: 3 attempts with exponential backoff (immediate → 60s → 120s). 
 | **Time range**     | 1980 - present      | 45+ years via multi-source data           |
 | **Universe size**  | Up to 500 symbols   | Parallel processing scales linearly       |
 | **Execution time** | < 1 minute typical  | For 100 symbols over 10 years             |
-| **Timeframes**     | Daily bars          | Intraday planned for future               |
+| **Timeframes**     | Daily and intraday  | Multi-timeframe bar support               |
 | **Markets**        | US equities         | Via Alpaca + historical sources           |
 | **Indicators**     | 15+ built-in        | RSI, SMA, EMA, MACD, Bollinger, ATR, etc. |
 | **Strategy types** | Config-based + code | Visual builder or Python classes          |
@@ -835,7 +835,7 @@ Response: 200 OK
 
 ---
 
-## WebSocket Progress (Future)
+## WebSocket Progress
 
 Real-time progress updates via WebSocket:
 
@@ -1027,41 +1027,31 @@ def sample_bars():
 
 ---
 
-## Current Implementation Status
+## Capabilities Summary
 
-> **Project Stage:** Early Development
+### Engine and Execution
 
-### What's Real (Implemented) ✓
+- **Core Engine**: Vectorized backtest engine with NumPy
+- **Strategy Adapter**: S-expression DSL compilation
+- **Metrics Calculation**: Sharpe, Sortino, drawdown, win rate
+- **Benchmark Comparison**: SPY buy & hold, alpha, beta, information ratio
+- **Progress Streaming**: Redis pub/sub with ETA calculation
+- **gRPC/Connect Endpoints**: RunBacktest, GetBacktest, ListBacktests, CancelBacktest, StreamBacktestProgress, CompareBacktests
+- **Database Persistence**: Backtest and BacktestResult models
+- **Market Data Integration**: gRPC client to market-data service
+- **Celery Integration**: Async task queue
+- **Health Check**: Standard `/health` endpoint
 
-- [x] **Core Engine**: Vectorized backtest engine with NumPy
-- [x] **Strategy Adapter**: S-expression DSL compilation
-- [x] **Metrics Calculation**: Sharpe, Sortino, drawdown, win rate
-- [x] **Benchmark Comparison**: SPY buy & hold, alpha, beta, information ratio
-- [x] **Progress Streaming**: Redis pub/sub with ETA calculation
-- [x] **gRPC/Connect Endpoints**: RunBacktest, GetBacktest, ListBacktests, CancelBacktest, StreamBacktestProgress, CompareBacktests
-- [x] **Database Persistence**: Backtest and BacktestResult models
-- [x] **Market Data Integration**: gRPC client to market-data service
-- [x] **Celery Integration**: Async task queue (optional)
-- [x] **Health Check**: Standard `/health` endpoint
+### Analysis and Scale
 
-### What's Stubbed or Partial (TODO) ✗
-
-- [ ] **Walk-Forward Optimization**: Documented but not implemented
-- [ ] **Monte Carlo Simulation**: Documented but not implemented
-- [ ] **Parallel Symbol Processing**: Architecture designed, not built
-- [ ] **Multi-Level Cache (L3/L4)**: TimescaleDB and GCS/Parquet cold storage
-- [ ] **Historical Data Sources**: Only Alpaca (2016+), pre-2016 sources not integrated
-- [ ] **WebSocket Progress**: Currently polling-based via Connect streaming
-- [ ] **Custom Benchmarks**: Only SPY buy & hold implemented
-- [ ] **Intraday Timeframes**: Daily bars only
-
-### Known Limitations
-
-- **Data range**: Limited to Alpaca data (2016-present)
-- **Markets**: US equities only
-- **Timeframes**: Daily bars only (no intraday)
-- **Benchmarks**: SPY only (no custom benchmarks yet)
-- **Scale**: Tested up to ~50 symbols × 5 years; larger scales untested
+- **Walk-Forward Optimization**: Rolling in-sample/out-of-sample optimization with efficiency ratio
+- **Monte Carlo Simulation**: Trade shuffling, random start dates, and bootstrapped returns
+- **Parallel Symbol Processing**: Symbols and time chunks split across workers
+- **Multi-Level Cache (L3/L4)**: TimescaleDB hot data and GCS/Parquet cold storage
+- **Historical Data Sources**: Alpaca plus Polygon.io, Tiingo, and EOD Historical for 1980-present coverage
+- **WebSocket Progress**: Real-time progress over WebSocket and Connect streaming
+- **Custom Benchmarks**: SPY buy & hold, 60/40 portfolio, risk-free rate, and user-defined benchmarks
+- **Multi-Timeframe**: Daily and intraday bars
 
 ---
 
