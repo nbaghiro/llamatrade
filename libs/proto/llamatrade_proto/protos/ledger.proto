@@ -1,0 +1,268 @@
+syntax = "proto3";
+
+package llamatrade;
+
+import "common.proto";
+
+option java_multiple_files = true;
+option java_package = "com.llamatrade.api";
+
+// =============================================================================
+// PORTFOLIO LEDGER
+//
+// Multi-strategy fund allocation on a single brokerage account, owned by the
+// Portfolio service (book of record). One Account is partitioned into Sleeves
+// (strategy / manual / unmanaged / unallocated); each Sleeve holds cash and
+// provenance-bearing Lots. The append-only, double-entry LedgerEvent log is the
+// single source of truth; sleeves/lots/cash are projections of it.
+//
+// See .docs/portfolio-ledger.md
+// =============================================================================
+
+// =============================================================================
+// ENUMS
+// =============================================================================
+
+// Type of sleeve (virtual sub-portfolio) within an account.
+enum SleeveType {
+  SLEEVE_TYPE_UNSPECIFIED = 0;
+  SLEEVE_TYPE_STRATEGY = 1;     // Backed by a StrategyExecution
+  SLEEVE_TYPE_MANUAL = 2;       // User hand-trading
+  SLEEVE_TYPE_UNMANAGED = 3;    // Pre-existing / externally-detected holdings
+  SLEEVE_TYPE_UNALLOCATED = 4;  // Free cash pool
+}
+
+// Lifecycle status of a sleeve.
+enum SleeveStatus {
+  SLEEVE_STATUS_UNSPECIFIED = 0;
+  SLEEVE_STATUS_ACTIVE = 1;
+  SLEEVE_STATUS_FROZEN = 2;  // Trading halted (e.g., material reconciliation drift)
+  SLEEVE_STATUS_CLOSED = 3;
+}
+
+// Side of a lot.
+enum LotSide {
+  LOT_SIDE_UNSPECIFIED = 0;
+  LOT_SIDE_LONG = 1;
+  LOT_SIDE_SHORT = 2;
+}
+
+// Canonical event types for the append-only double-entry ledger.
+enum LedgerEventType {
+  LEDGER_EVENT_TYPE_UNSPECIFIED = 0;
+
+  // Capital
+  LEDGER_EVENT_TYPE_FUNDS_DEPOSITED = 1;
+  LEDGER_EVENT_TYPE_FUNDS_WITHDRAWN = 2;
+  LEDGER_EVENT_TYPE_CAPITAL_ALLOCATED = 3;
+  LEDGER_EVENT_TYPE_CAPITAL_TRANSFERRED = 4;
+
+  // Trading
+  LEDGER_EVENT_TYPE_ORDER_INTENDED = 10;
+  LEDGER_EVENT_TYPE_ORDER_SUBMITTED = 11;
+  LEDGER_EVENT_TYPE_ORDER_ACCEPTED = 12;
+  LEDGER_EVENT_TYPE_ORDER_REJECTED = 13;
+  LEDGER_EVENT_TYPE_ORDER_FILLED = 14;
+  LEDGER_EVENT_TYPE_ORDER_CANCELLED = 15;
+
+  // Positions
+  LEDGER_EVENT_TYPE_LOT_OPENED = 20;
+  LEDGER_EVENT_TYPE_LOT_INCREASED = 21;
+  LEDGER_EVENT_TYPE_LOT_REDUCED = 22;
+  LEDGER_EVENT_TYPE_LOT_CLOSED = 23;
+
+  // Cash
+  LEDGER_EVENT_TYPE_CASH_DEBITED = 30;
+  LEDGER_EVENT_TYPE_CASH_CREDITED = 31;
+  LEDGER_EVENT_TYPE_DIVIDEND_RECEIVED = 32;
+  LEDGER_EVENT_TYPE_FEE_CHARGED = 33;
+  LEDGER_EVENT_TYPE_INTEREST_ACCRUED = 34;
+
+  // Corporate actions
+  LEDGER_EVENT_TYPE_SPLIT_APPLIED = 40;
+  LEDGER_EVENT_TYPE_SYMBOL_CHANGED = 41;
+
+  // Reconciliation
+  LEDGER_EVENT_TYPE_EXTERNAL_TRADE_DETECTED = 50;
+  LEDGER_EVENT_TYPE_DRIFT_CORRECTED = 51;
+  LEDGER_EVENT_TYPE_RECONCILIATION_ADJUSTED = 52;
+
+  // Sleeve lifecycle
+  LEDGER_EVENT_TYPE_SLEEVE_OPENED = 60;
+  LEDGER_EVENT_TYPE_SLEEVE_CLOSED = 61;
+  LEDGER_EVENT_TYPE_SLEEVE_FROZEN = 62;
+  LEDGER_EVENT_TYPE_SLEEVE_RESUMED = 63;
+}
+
+// =============================================================================
+// MESSAGES
+// =============================================================================
+
+// A brokerage account (one per broker credential set) — the reconciliation anchor.
+message LedgerAccount {
+  string id = 1;
+  string tenant_id = 2;
+  string credentials_id = 3;
+  string base_currency = 4;  // ISO 4217 (default "USD")
+  Timestamp created_at = 5;
+  Timestamp updated_at = 6;
+}
+
+// Per-sleeve cash sub-ledger. free = balance - reserved (derived, not stored).
+message SleeveCash {
+  Decimal balance = 1;    // total virtual cash owned by the sleeve
+  Decimal reserved = 2;   // earmarked for open buy orders
+  Decimal unsettled = 3;  // unsettled portion (cash accounts)
+}
+
+// A virtual sub-portfolio within an account.
+message Sleeve {
+  string id = 1;
+  string tenant_id = 2;
+  string account_id = 3;
+  SleeveType type = 4;
+  SleeveStatus status = 5;
+  string name = 6;
+  string strategy_execution_id = 7;  // set for SLEEVE_TYPE_STRATEGY
+  Decimal allocated_capital = 8;     // budget anchor
+  SleeveCash cash = 9;
+  Timestamp created_at = 10;
+  Timestamp updated_at = 11;
+}
+
+// A provenance-bearing unit of a holding (a tax-style lot owned by one sleeve).
+message Lot {
+  string id = 1;
+  string tenant_id = 2;
+  string sleeve_id = 3;
+  string symbol = 4;
+  LotSide side = 5;
+  Decimal qty = 6;           // remaining quantity
+  Decimal avg_price = 7;     // cost per share
+  Decimal cost_basis = 8;    // total cost basis of remaining qty
+  Decimal realized_pnl = 9;  // realized P&L accumulated from reductions
+  bool is_open = 10;
+  string opened_by_order_id = 11;
+  Timestamp opened_at = 12;
+  Timestamp closed_at = 13;
+}
+
+// An immutable, double-entry event in the append-only ledger.
+message LedgerEvent {
+  int64 sequence = 1;    // global monotonic ordering
+  string event_id = 2;   // idempotency key (UUID)
+  string tenant_id = 3;
+  string account_id = 4;
+  string sleeve_id = 5;  // empty for account-level events
+  LedgerEventType type = 6;
+  string data_json = 7;  // event payload (JSON)
+  Timestamp occurred_at = 8;
+  Timestamp recorded_at = 9;
+}
+
+// =============================================================================
+// FUND-OP REQUESTS & RESPONSES  (implemented in later phases)
+// =============================================================================
+
+message AllocateCapitalRequest {
+  TenantContext context = 1;
+  string account_id = 2;
+  string to_sleeve_id = 3;
+  Decimal amount = 4;
+}
+
+message AllocateCapitalResponse {
+  Sleeve sleeve = 1;
+}
+
+message TransferCapitalRequest {
+  TenantContext context = 1;
+  string account_id = 2;
+  string from_sleeve_id = 3;
+  string to_sleeve_id = 4;
+  Decimal amount = 5;
+}
+
+message TransferCapitalResponse {
+  Sleeve from_sleeve = 1;
+  Sleeve to_sleeve = 2;
+}
+
+message DepositFundsRequest {
+  TenantContext context = 1;
+  string account_id = 2;
+  Decimal amount = 3;
+}
+
+message DepositFundsResponse {
+  Sleeve unallocated = 1;
+}
+
+message WithdrawFundsRequest {
+  TenantContext context = 1;
+  string account_id = 2;
+  Decimal amount = 3;
+}
+
+message WithdrawFundsResponse {
+  Sleeve unallocated = 1;
+}
+
+message ListSleevesRequest {
+  TenantContext context = 1;
+  string account_id = 2;
+}
+
+message ListSleevesResponse {
+  repeated Sleeve sleeves = 1;
+}
+
+message GetSleeveRequest {
+  TenantContext context = 1;
+  string sleeve_id = 2;
+}
+
+message GetSleeveResponse {
+  Sleeve sleeve = 1;
+  repeated Lot lots = 2;
+}
+
+// Per-symbol holding history (the provenance view).
+message GetHoldingHistoryRequest {
+  TenantContext context = 1;
+  string account_id = 2;
+  string symbol = 3;
+}
+
+message HoldingHistoryEntry {
+  Timestamp occurred_at = 1;
+  string sleeve_id = 2;
+  SleeveType source = 3;
+  string strategy_execution_id = 4;
+  string side = 5;  // "buy" | "sell"
+  Decimal qty = 6;
+  Decimal price = 7;
+  Decimal realized_pnl = 8;
+  string order_id = 9;
+}
+
+message GetHoldingHistoryResponse {
+  repeated HoldingHistoryEntry entries = 1;
+}
+
+// =============================================================================
+// SERVICE  (stubs; implemented in Phases 2/6)
+// =============================================================================
+
+service LedgerService {
+  // Fund disbursement
+  rpc AllocateCapital(AllocateCapitalRequest) returns (AllocateCapitalResponse);
+  rpc TransferCapital(TransferCapitalRequest) returns (TransferCapitalResponse);
+  rpc DepositFunds(DepositFundsRequest) returns (DepositFundsResponse);
+  rpc WithdrawFunds(WithdrawFundsRequest) returns (WithdrawFundsResponse);
+
+  // Queries
+  rpc ListSleeves(ListSleevesRequest) returns (ListSleevesResponse);
+  rpc GetSleeve(GetSleeveRequest) returns (GetSleeveResponse);
+  rpc GetHoldingHistory(GetHoldingHistoryRequest) returns (GetHoldingHistoryResponse);
+}

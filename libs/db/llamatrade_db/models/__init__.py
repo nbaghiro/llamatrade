@@ -33,6 +33,17 @@ from llamatrade_db.models.billing import (
     Subscription,
     UsageRecord,
 )
+from llamatrade_db.models.ledger import (
+    Account,
+    LedgerEvent,
+    LedgerEventType,
+    Lot,
+    LotSide,
+    Sleeve,
+    SleeveSnapshot,
+    SleeveStatus,
+    SleeveType,
+)
 
 # NOTE: Enum constants should be imported directly from llamatrade_proto.generated.*_pb2
 # e.g., from llamatrade_proto.generated.trading_pb2 import ORDER_SIDE_BUY
@@ -106,6 +117,16 @@ __all__ = [
     "PerformanceMetrics",
     "StrategyPerformanceSnapshot",
     "StrategyPerformanceMetrics",
+    # Portfolio Ledger
+    "Account",
+    "Sleeve",
+    "Lot",
+    "LedgerEvent",
+    "SleeveSnapshot",
+    "SleeveType",
+    "SleeveStatus",
+    "LotSide",
+    "LedgerEventType",
     # Market Data
     "Bar",
     "Quote",
