@@ -192,20 +192,16 @@ class TestStripeClientMethods:
     @patch("src.stripe.client.PaymentMethod")
     async def test_attach_payment_method(self, mock_pm: MagicMock) -> None:
         """Test attaching payment method."""
-        mock_pm.attach.return_value = MagicMock(
-            id="pm_123",
-            type="card",
-            card={"brand": "visa", "last4": "4242", "exp_month": 12, "exp_year": 2030},
-            get=lambda key, default=None: (
-                {
-                    "brand": "visa",
-                    "last4": "4242",
-                    "exp_month": 12,
-                    "exp_year": 2030,
-                }
-                if key == "card"
-                else default
-            ),
+        from stripe import PaymentMethod as RealPaymentMethod
+
+        mock_pm.attach.return_value = RealPaymentMethod.construct_from(
+            {
+                "id": "pm_123",
+                "object": "payment_method",
+                "type": "card",
+                "card": {"brand": "visa", "last4": "4242", "exp_month": 12, "exp_year": 2030},
+            },
+            "sk_test",
         )
 
         client = StripeClient()
@@ -228,22 +224,23 @@ class TestStripeClientMethods:
     @patch("src.stripe.client.PaymentMethod")
     async def test_list_payment_methods(self, mock_pm: MagicMock) -> None:
         """Test listing payment methods."""
+        from stripe import PaymentMethod as RealPaymentMethod
+
         mock_pm.list.return_value = MagicMock(
             data=[
-                MagicMock(
-                    id="pm_1",
-                    type="card",
-                    card={"brand": "visa", "last4": "4242", "exp_month": 12, "exp_year": 2030},
-                    get=lambda key, default=None: (
-                        {
+                RealPaymentMethod.construct_from(
+                    {
+                        "id": "pm_1",
+                        "object": "payment_method",
+                        "type": "card",
+                        "card": {
                             "brand": "visa",
                             "last4": "4242",
                             "exp_month": 12,
                             "exp_year": 2030,
-                        }
-                        if key == "card"
-                        else default
-                    ),
+                        },
+                    },
+                    "sk_test",
                 )
             ]
         )
@@ -268,10 +265,15 @@ class TestStripeClientMethods:
     @patch("src.stripe.client.Customer")
     async def test_get_default_payment_method(self, mock_customer: MagicMock) -> None:
         """Test getting default payment method."""
-        mock_customer.retrieve.return_value = MagicMock(
-            get=lambda key, default=None: (
-                {"default_payment_method": "pm_123"} if key == "invoice_settings" else default
-            )
+        from stripe import Customer as RealCustomer
+
+        mock_customer.retrieve.return_value = RealCustomer.construct_from(
+            {
+                "id": "cus_123",
+                "object": "customer",
+                "invoice_settings": {"default_payment_method": "pm_123"},
+            },
+            "sk_test",
         )
 
         client = StripeClient()

@@ -1,11 +1,27 @@
-"""Webhooks router - Stripe webhook handling."""
+"""Webhooks router - Stripe webhook handling.
 
+Written against stripe-python 15 (dahlia API): handlers receive **typed**
+Stripe resources, materialized from the event payload via ``construct_from``.
+Field relocations in the current API that this code relies on:
+
+- Subscription billing periods live on the subscription **items**
+  (``items.data[].current_period_*``), not the subscription.
+- An invoice's owning subscription lives under
+  ``invoice.parent.subscription_details.subscription``.
+
+The webhook endpoint in the Stripe dashboard must be configured on the same
+API generation, or payloads will not match these shapes.
+"""
+
+import json
 import logging
 import os
-from typing import Any
+from datetime import UTC, datetime
 
+import stripe
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
+from stripe import Event, Invoice, PaymentMethod, StripeObject, Subscription
 
 from llamatrade_proto.generated import billing_pb2
 
@@ -26,6 +42,42 @@ logger = logging.getLogger(__name__)
 STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET", "")
 
 
+def _payload_as[T: StripeObject](resource: type[T], event: Event) -> T:
+    """Materialize ``event.data.object`` as its concrete typed resource.
+
+    ``Event.data.object`` is untyped in stripe-python 15; rebuilding it
+    through the resource's ``construct_from`` gives real typed attribute
+    access (including fields like ``items`` that dict-shadowing would hide).
+    """
+    return resource.construct_from(event.data.object.to_dict(), stripe.api_key)
+
+
+def _ts(epoch: int | None) -> datetime | None:
+    """Unix timestamp → aware datetime."""
+    if epoch is None:
+        return None
+    return datetime.fromtimestamp(epoch, tz=UTC)
+
+
+def _subscription_period(sub: Subscription) -> tuple[datetime | None, datetime | None]:
+    """Billing period from the first subscription item."""
+    try:
+        item = sub.items.data[0]
+    except AttributeError, KeyError, IndexError:
+        return None, None
+    return _ts(item.current_period_start), _ts(item.current_period_end)
+
+
+def _invoice_subscription_id(invoice: Invoice) -> str | None:
+    """The owning subscription id, if this invoice bills a subscription."""
+    parent = invoice.parent
+    details = parent.subscription_details if parent is not None else None
+    if details is None:
+        return None
+    sub = details.subscription
+    return sub if isinstance(sub, str) else sub.id
+
+
 @router.post("/stripe")
 async def handle_stripe_webhook(
     request: Request,
@@ -43,13 +95,10 @@ async def handle_stripe_webhook(
 
     if not STRIPE_WEBHOOK_SECRET:
         logger.warning("STRIPE_WEBHOOK_SECRET not configured, skipping signature verification")
-        # In development, we might skip verification
-        import json
-
+        # In development, parse the unverified payload into a typed Event so
+        # the same dispatch path runs as in production.
         try:
-            event_data = json.loads(payload)
-            event_type = event_data.get("type", "")
-            event_object = event_data.get("data", {}).get("object", {})
+            event = Event.construct_from(json.loads(payload), stripe.api_key)
         except json.JSONDecodeError:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -64,8 +113,6 @@ async def handle_stripe_webhook(
                 sig_header=sig_header,
                 webhook_secret=STRIPE_WEBHOOK_SECRET,
             )
-            event_type = event.type
-            event_object = event.data.object
         except StripeError as e:
             logger.error(f"Webhook signature verification failed: {e}")
             raise HTTPException(
@@ -73,25 +120,27 @@ async def handle_stripe_webhook(
                 detail="Invalid webhook signature",
             )
 
+    event_type = event.type if hasattr(event, "type") else ""
+
     # Log the event
     logger.info(f"Processing Stripe webhook: {event_type}")
 
     # Handle different event types
     try:
         if event_type == "customer.subscription.created":
-            await _handle_subscription_created(db, event_object)
+            await _handle_subscription_created(db, _payload_as(Subscription, event))
         elif event_type == "customer.subscription.updated":
-            await _handle_subscription_updated(db, event_object)
+            await _handle_subscription_updated(db, _payload_as(Subscription, event))
         elif event_type == "customer.subscription.deleted":
-            await _handle_subscription_deleted(db, event_object)
+            await _handle_subscription_deleted(db, _payload_as(Subscription, event))
         elif event_type == "invoice.paid":
-            await _handle_invoice_paid(db, event_object)
+            await _handle_invoice_paid(db, _payload_as(Invoice, event))
         elif event_type == "invoice.payment_failed":
-            await _handle_payment_failed(db, event_object)
+            await _handle_payment_failed(db, _payload_as(Invoice, event))
         elif event_type == "payment_method.attached":
-            await _handle_payment_method_attached(db, event_object)
+            await _handle_payment_method_attached(db, _payload_as(PaymentMethod, event))
         elif event_type == "payment_method.detached":
-            await _handle_payment_method_detached(db, event_object)
+            await _handle_payment_method_detached(db, _payload_as(PaymentMethod, event))
         else:
             logger.debug(f"Unhandled webhook event type: {event_type}")
     except Exception as e:
@@ -102,89 +151,73 @@ async def handle_stripe_webhook(
     return {"received": True}
 
 
-async def _handle_subscription_created(db: AsyncSession, subscription: dict[str, Any]) -> None:
+async def _handle_subscription_created(db: AsyncSession, subscription: Subscription) -> None:
     """Handle customer.subscription.created event."""
-    from datetime import UTC, datetime
-
     from sqlalchemy import select
 
-    from llamatrade_db.models import Subscription
+    from llamatrade_db.models import Subscription as DbSubscription
 
-    stripe_sub_id: str | None = subscription.get("id")
-    sub_status: str | None = subscription.get("status")
-
-    logger.info(f"Subscription created: {stripe_sub_id}, status: {sub_status}")
+    logger.info(f"Subscription created: {subscription.id}, status: {subscription.status}")
 
     # Find subscription in our database
     result = await db.execute(
-        select(Subscription).where(Subscription.stripe_subscription_id == stripe_sub_id)
+        select(DbSubscription).where(DbSubscription.stripe_subscription_id == subscription.id)
     )
     local_sub = result.scalar_one_or_none()
 
     if local_sub:
-        # Update status
-        if sub_status is not None:
-            local_sub.status = stripe_status_to_proto(sub_status)
-        current_period_start: int = subscription.get("current_period_start", 0)
-        current_period_end: int = subscription.get("current_period_end", 0)
-        local_sub.current_period_start = datetime.fromtimestamp(current_period_start, tz=UTC)
-        local_sub.current_period_end = datetime.fromtimestamp(current_period_end, tz=UTC)
-        trial_start: int | None = subscription.get("trial_start")
-        trial_end: int | None = subscription.get("trial_end")
-        if trial_start:
-            local_sub.trial_start = datetime.fromtimestamp(trial_start, tz=UTC)
-        if trial_end:
-            local_sub.trial_end = datetime.fromtimestamp(trial_end, tz=UTC)
+        local_sub.status = stripe_status_to_proto(subscription.status)
+        period_start, period_end = _subscription_period(subscription)
+        if period_start is not None:
+            local_sub.current_period_start = period_start
+        if period_end is not None:
+            local_sub.current_period_end = period_end
+        trial_start = _ts(subscription.trial_start)
+        trial_end = _ts(subscription.trial_end)
+        if trial_start is not None:
+            local_sub.trial_start = trial_start
+        if trial_end is not None:
+            local_sub.trial_end = trial_end
         await db.commit()
 
 
-async def _handle_subscription_updated(db: AsyncSession, subscription: dict[str, Any]) -> None:
+async def _handle_subscription_updated(db: AsyncSession, subscription: Subscription) -> None:
     """Handle customer.subscription.updated event."""
-    from datetime import UTC, datetime
-
     from sqlalchemy import select
 
-    from llamatrade_db.models import Subscription
+    from llamatrade_db.models import Subscription as DbSubscription
 
-    stripe_sub_id: str | None = subscription.get("id")
-    sub_status: str | None = subscription.get("status")
-    cancel_at_period_end: bool = subscription.get("cancel_at_period_end", False)
-
-    logger.info(f"Subscription updated: {stripe_sub_id}, status: {sub_status}")
+    logger.info(f"Subscription updated: {subscription.id}, status: {subscription.status}")
 
     result = await db.execute(
-        select(Subscription).where(Subscription.stripe_subscription_id == stripe_sub_id)
+        select(DbSubscription).where(DbSubscription.stripe_subscription_id == subscription.id)
     )
     local_sub = result.scalar_one_or_none()
 
     if local_sub:
-        if sub_status is not None:
-            local_sub.status = stripe_status_to_proto(sub_status)
-        local_sub.cancel_at_period_end = cancel_at_period_end
-        current_period_start: int = subscription.get("current_period_start", 0)
-        current_period_end: int = subscription.get("current_period_end", 0)
-        local_sub.current_period_start = datetime.fromtimestamp(current_period_start, tz=UTC)
-        local_sub.current_period_end = datetime.fromtimestamp(current_period_end, tz=UTC)
-        canceled_at: int | None = subscription.get("canceled_at")
-        if canceled_at:
-            local_sub.canceled_at = datetime.fromtimestamp(canceled_at, tz=UTC)
+        local_sub.status = stripe_status_to_proto(subscription.status)
+        local_sub.cancel_at_period_end = subscription.cancel_at_period_end
+        period_start, period_end = _subscription_period(subscription)
+        if period_start is not None:
+            local_sub.current_period_start = period_start
+        if period_end is not None:
+            local_sub.current_period_end = period_end
+        canceled_at = _ts(subscription.canceled_at)
+        if canceled_at is not None:
+            local_sub.canceled_at = canceled_at
         await db.commit()
 
 
-async def _handle_subscription_deleted(db: AsyncSession, subscription: dict[str, Any]) -> None:
+async def _handle_subscription_deleted(db: AsyncSession, subscription: Subscription) -> None:
     """Handle customer.subscription.deleted event."""
-    from datetime import UTC, datetime
-
     from sqlalchemy import select
 
-    from llamatrade_db.models import Subscription
+    from llamatrade_db.models import Subscription as DbSubscription
 
-    stripe_sub_id: str | None = subscription.get("id")
-
-    logger.info(f"Subscription deleted: {stripe_sub_id}")
+    logger.info(f"Subscription deleted: {subscription.id}")
 
     result = await db.execute(
-        select(Subscription).where(Subscription.stripe_subscription_id == stripe_sub_id)
+        select(DbSubscription).where(DbSubscription.stripe_subscription_id == subscription.id)
     )
     local_sub = result.scalar_one_or_none()
 
@@ -194,77 +227,67 @@ async def _handle_subscription_deleted(db: AsyncSession, subscription: dict[str,
         await db.commit()
 
 
-async def _handle_invoice_paid(db: AsyncSession, invoice: dict[str, Any]) -> None:
+async def _handle_invoice_paid(db: AsyncSession, invoice: Invoice) -> None:
     """Handle invoice.paid event."""
-    from datetime import UTC, datetime
     from decimal import Decimal
 
     from sqlalchemy import select
 
-    from llamatrade_db.models import Invoice, Subscription
+    from llamatrade_db.models import Invoice as DbInvoice
+    from llamatrade_db.models import Subscription as DbSubscription
 
-    stripe_invoice_id: str | None = invoice.get("id")
-    stripe_sub_id: str | None = invoice.get("subscription")
+    stripe_sub_id = _invoice_subscription_id(invoice)
 
-    logger.info(f"Invoice paid: {stripe_invoice_id}")
+    logger.info(f"Invoice paid: {invoice.id}")
 
     # Find the subscription to get tenant_id
     result = await db.execute(
-        select(Subscription).where(Subscription.stripe_subscription_id == stripe_sub_id)
+        select(DbSubscription).where(DbSubscription.stripe_subscription_id == stripe_sub_id)
     )
     subscription = result.scalar_one_or_none()
 
     if not subscription:
-        logger.warning(f"No subscription found for invoice {stripe_invoice_id}")
+        logger.warning(f"No subscription found for invoice {invoice.id}")
         return
 
     # Check if invoice already exists
-    result = await db.execute(select(Invoice).where(Invoice.stripe_invoice_id == stripe_invoice_id))
+    result = await db.execute(select(DbInvoice).where(DbInvoice.stripe_invoice_id == invoice.id))
     existing = result.scalar_one_or_none()
-
-    amount_paid_cents: int = invoice.get("amount_paid", 0)
-    amount_due_cents: int = invoice.get("amount_due", 0)
-    period_start: int = invoice.get("period_start", 0)
-    period_end: int = invoice.get("period_end", 0)
-    invoice_number: str | None = invoice.get("number")
-    currency: str = invoice.get("currency", "usd")
-    hosted_invoice_url: str | None = invoice.get("hosted_invoice_url")
-    invoice_pdf: str | None = invoice.get("invoice_pdf")
 
     if existing:
         # Update status
         existing.status = INVOICE_STATUS_PAID
-        existing.amount_paid = Decimal(str(amount_paid_cents / 100))
+        existing.amount_paid = Decimal(str(invoice.amount_paid / 100))
         existing.paid_at = datetime.now(UTC)
     else:
         # Create new invoice record
-        new_invoice = Invoice(
+        new_invoice = DbInvoice(
             tenant_id=subscription.tenant_id,
             subscription_id=subscription.id,
-            stripe_invoice_id=stripe_invoice_id,
-            invoice_number=invoice_number,
+            stripe_invoice_id=invoice.id,
+            invoice_number=invoice.number,
             status=INVOICE_STATUS_PAID,
-            amount_due=Decimal(str(amount_due_cents / 100)),
-            amount_paid=Decimal(str(amount_paid_cents / 100)),
-            currency=currency,
-            period_start=datetime.fromtimestamp(period_start, tz=UTC),
-            period_end=datetime.fromtimestamp(period_end, tz=UTC),
+            amount_due=Decimal(str(invoice.amount_due / 100)),
+            amount_paid=Decimal(str(invoice.amount_paid / 100)),
+            currency=invoice.currency,
+            period_start=_ts(invoice.period_start) or datetime.now(UTC),
+            period_end=_ts(invoice.period_end) or datetime.now(UTC),
             paid_at=datetime.now(UTC),
-            hosted_invoice_url=hosted_invoice_url,
-            invoice_pdf=invoice_pdf,
+            hosted_invoice_url=invoice.hosted_invoice_url,
+            invoice_pdf=invoice.invoice_pdf,
         )
         db.add(new_invoice)
 
     await db.commit()
 
 
-async def _handle_payment_failed(db: AsyncSession, invoice: dict[str, Any]) -> None:
+async def _handle_payment_failed(db: AsyncSession, invoice: Invoice) -> None:
     """Handle invoice.payment_failed event."""
     from sqlalchemy import select
 
-    from llamatrade_db.models import Subscription
+    from llamatrade_db.models import Subscription as DbSubscription
 
-    stripe_sub_id: str | None = invoice.get("subscription")
+    stripe_sub_id = _invoice_subscription_id(invoice)
 
     logger.warning(f"Payment failed for subscription: {stripe_sub_id}")
 
@@ -272,7 +295,7 @@ async def _handle_payment_failed(db: AsyncSession, invoice: dict[str, Any]) -> N
         return
 
     result = await db.execute(
-        select(Subscription).where(Subscription.stripe_subscription_id == stripe_sub_id)
+        select(DbSubscription).where(DbSubscription.stripe_subscription_id == stripe_sub_id)
     )
     subscription = result.scalar_one_or_none()
 
@@ -281,22 +304,22 @@ async def _handle_payment_failed(db: AsyncSession, invoice: dict[str, Any]) -> N
         await db.commit()
 
 
-async def _handle_payment_method_attached(db: AsyncSession, payment_method: dict[str, Any]) -> None:
+async def _handle_payment_method_attached(db: AsyncSession, payment_method: PaymentMethod) -> None:
     """Handle payment_method.attached event."""
     from sqlalchemy import select
 
-    from llamatrade_db.models import PaymentMethod, Subscription
+    from llamatrade_db.models import PaymentMethod as DbPaymentMethod
+    from llamatrade_db.models import Subscription as DbSubscription
 
-    stripe_pm_id: str | None = payment_method.get("id")
-    customer_id: str | None = payment_method.get("customer")
-    pm_type: str = payment_method.get("type", "card")
-    card: dict[str, Any] = payment_method.get("card", {})
+    customer = payment_method.customer
+    customer_id = customer if isinstance(customer, str) or customer is None else customer.id
+    card = payment_method.card
 
-    logger.info(f"Payment method attached: {stripe_pm_id}")
+    logger.info(f"Payment method attached: {payment_method.id}")
 
     # Check if already exists
     result = await db.execute(
-        select(PaymentMethod).where(PaymentMethod.stripe_payment_method_id == stripe_pm_id)
+        select(DbPaymentMethod).where(DbPaymentMethod.stripe_payment_method_id == payment_method.id)
     )
     existing = result.scalar_one_or_none()
 
@@ -305,7 +328,7 @@ async def _handle_payment_method_attached(db: AsyncSession, payment_method: dict
 
     # Find tenant by customer ID
     result = await db.execute(
-        select(Subscription.tenant_id).where(Subscription.stripe_customer_id == customer_id)
+        select(DbSubscription.tenant_id).where(DbSubscription.stripe_customer_id == customer_id)
     )
     tenant_id = result.scalar_one_or_none()
 
@@ -314,24 +337,19 @@ async def _handle_payment_method_attached(db: AsyncSession, payment_method: dict
         return
 
     # Check if this is the first payment method
-    result = await db.execute(select(PaymentMethod).where(PaymentMethod.tenant_id == tenant_id))
+    result = await db.execute(select(DbPaymentMethod).where(DbPaymentMethod.tenant_id == tenant_id))
     existing_methods = result.scalars().all()
     is_default = len(existing_methods) == 0
 
-    card_brand: str | None = card.get("brand")
-    card_last4: str | None = card.get("last4")
-    card_exp_month: int | None = card.get("exp_month")
-    card_exp_year: int | None = card.get("exp_year")
-
-    new_pm = PaymentMethod(
+    new_pm = DbPaymentMethod(
         tenant_id=tenant_id,
-        stripe_payment_method_id=stripe_pm_id,
+        stripe_payment_method_id=payment_method.id,
         stripe_customer_id=customer_id,
-        type=pm_type,
-        card_brand=card_brand,
-        card_last4=card_last4,
-        card_exp_month=card_exp_month,
-        card_exp_year=card_exp_year,
+        type=payment_method.type,
+        card_brand=card.brand if card else None,
+        card_last4=card.last4 if card else None,
+        card_exp_month=card.exp_month if card else None,
+        card_exp_year=card.exp_year if card else None,
         is_default=is_default,
     )
 
@@ -339,17 +357,15 @@ async def _handle_payment_method_attached(db: AsyncSession, payment_method: dict
     await db.commit()
 
 
-async def _handle_payment_method_detached(db: AsyncSession, payment_method: dict[str, Any]) -> None:
+async def _handle_payment_method_detached(db: AsyncSession, payment_method: PaymentMethod) -> None:
     """Handle payment_method.detached event."""
     from sqlalchemy import delete
 
-    from llamatrade_db.models import PaymentMethod
+    from llamatrade_db.models import PaymentMethod as DbPaymentMethod
 
-    stripe_pm_id: str | None = payment_method.get("id")
-
-    logger.info(f"Payment method detached: {stripe_pm_id}")
+    logger.info(f"Payment method detached: {payment_method.id}")
 
     await db.execute(
-        delete(PaymentMethod).where(PaymentMethod.stripe_payment_method_id == stripe_pm_id)
+        delete(DbPaymentMethod).where(DbPaymentMethod.stripe_payment_method_id == payment_method.id)
     )
     await db.commit()

@@ -1,7 +1,15 @@
-"""Tests for webhook handler functions."""
+"""Tests for webhook handler functions.
 
+Handlers take typed stripe-python 15 resources; payloads here are built via
+``construct_from`` with the current (dahlia) API shapes — billing periods on
+subscription items, invoice→subscription linkage under ``parent``.
+"""
+
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
+
+from stripe import Invoice, PaymentMethod, Subscription
 
 from llamatrade_proto.generated import billing_pb2
 
@@ -16,6 +24,78 @@ from src.routers.webhooks import (
 )
 
 
+def _stripe_subscription(**overrides: Any) -> Subscription:
+    data: dict[str, Any] = {
+        "id": "sub_123",
+        "object": "subscription",
+        "status": "active",
+        "cancel_at_period_end": False,
+        "canceled_at": None,
+        "trial_start": None,
+        "trial_end": None,
+        "items": {
+            "object": "list",
+            "data": [
+                {
+                    "id": "si_1",
+                    "object": "subscription_item",
+                    "current_period_start": 1700000000,
+                    "current_period_end": 1702592000,
+                }
+            ],
+            "has_more": False,
+        },
+    }
+    data.update(overrides)
+    return Subscription.construct_from(data, "sk_test")
+
+
+def _stripe_invoice(subscription: str | None = "sub_123", **overrides: Any) -> Invoice:
+    parent: dict[str, Any] | None = None
+    if subscription is not None:
+        parent = {
+            "type": "subscription_details",
+            "subscription_details": {
+                "subscription": subscription,
+                "metadata": {},
+                "subscription_proration_date": None,
+            },
+            "quote_details": None,
+        }
+    data: dict[str, Any] = {
+        "id": "in_123",
+        "object": "invoice",
+        "number": "INV-001",
+        "amount_due": 2900,
+        "amount_paid": 2900,
+        "currency": "usd",
+        "period_start": 1700000000,
+        "period_end": 1702592000,
+        "hosted_invoice_url": None,
+        "invoice_pdf": None,
+        "parent": parent,
+    }
+    data.update(overrides)
+    return Invoice.construct_from(data, "sk_test")
+
+
+def _stripe_payment_method(**overrides: Any) -> PaymentMethod:
+    data: dict[str, Any] = {
+        "id": "pm_123",
+        "object": "payment_method",
+        "type": "card",
+        "customer": "cus_123",
+        "card": {
+            "brand": "visa",
+            "last4": "4242",
+            "exp_month": 12,
+            "exp_year": 2030,
+        },
+    }
+    data.update(overrides)
+    return PaymentMethod.construct_from(data, "sk_test")
+
+
 class TestHandleSubscriptionCreated:
     """Tests for _handle_subscription_created."""
 
@@ -27,18 +107,12 @@ class TestHandleSubscriptionCreated:
         mock_db = AsyncMock()
         mock_db.execute.return_value = MagicMock(scalar_one_or_none=lambda: mock_sub)
 
-        subscription_data = {
-            "id": "sub_123",
-            "customer": "cus_123",
-            "status": "active",
-            "current_period_start": 1700000000,
-            "current_period_end": 1702592000,
-        }
+        await _handle_subscription_created(mock_db, _stripe_subscription())
 
-        await _handle_subscription_created(mock_db, subscription_data)
-
-        # Should have updated status and committed
+        # Should have updated status, period (from the item), and committed
         assert mock_sub.status == billing_pb2.SUBSCRIPTION_STATUS_ACTIVE
+        assert mock_sub.current_period_start.timestamp() == 1700000000
+        assert mock_sub.current_period_end.timestamp() == 1702592000
         mock_db.commit.assert_called()
 
     async def test_does_nothing_when_not_exists(self) -> None:
@@ -46,13 +120,7 @@ class TestHandleSubscriptionCreated:
         mock_db = AsyncMock()
         mock_db.execute.return_value = MagicMock(scalar_one_or_none=lambda: None)
 
-        subscription_data = {
-            "id": "sub_new_123",
-            "customer": "cus_123",
-            "status": "active",
-        }
-
-        await _handle_subscription_created(mock_db, subscription_data)
+        await _handle_subscription_created(mock_db, _stripe_subscription(id="sub_new_123"))
 
         # Should not commit if subscription not found
         mock_db.commit.assert_not_called()
@@ -69,17 +137,12 @@ class TestHandleSubscriptionUpdated:
         mock_db = AsyncMock()
         mock_db.execute.return_value = MagicMock(scalar_one_or_none=lambda: mock_subscription)
 
-        subscription_data = {
-            "id": "sub_123",
-            "status": "past_due",
-            "cancel_at_period_end": True,
-            "current_period_start": 1700000000,
-            "current_period_end": 1702592000,
-        }
-
-        await _handle_subscription_updated(mock_db, subscription_data)
+        await _handle_subscription_updated(
+            mock_db, _stripe_subscription(status="past_due", cancel_at_period_end=True)
+        )
 
         assert mock_subscription.status == billing_pb2.SUBSCRIPTION_STATUS_PAST_DUE
+        assert mock_subscription.cancel_at_period_end is True
         mock_db.commit.assert_called()
 
 
@@ -94,11 +157,7 @@ class TestHandleSubscriptionDeleted:
         mock_db = AsyncMock()
         mock_db.execute.return_value = MagicMock(scalar_one_or_none=lambda: mock_subscription)
 
-        subscription_data = {
-            "id": "sub_123",
-        }
-
-        await _handle_subscription_deleted(mock_db, subscription_data)
+        await _handle_subscription_deleted(mock_db, _stripe_subscription(status="canceled"))
 
         assert mock_subscription.status == billing_pb2.SUBSCRIPTION_STATUS_CANCELED
         mock_db.commit.assert_called()
@@ -126,19 +185,7 @@ class TestHandleInvoicePaid:
         mock_db = AsyncMock()
         mock_db.execute.return_value = MagicMock(scalar_one_or_none=mock_scalar)
 
-        invoice_data = {
-            "id": "in_123",
-            "subscription": "sub_123",
-            "customer": "cus_123",
-            "number": "INV-001",
-            "amount_due": 2900,
-            "amount_paid": 2900,
-            "currency": "usd",
-            "period_start": 1700000000,
-            "period_end": 1702592000,
-        }
-
-        await _handle_invoice_paid(mock_db, invoice_data)
+        await _handle_invoice_paid(mock_db, _stripe_invoice())
 
         mock_db.add.assert_called_once()
         mock_db.commit.assert_called()
@@ -148,12 +195,7 @@ class TestHandleInvoicePaid:
         mock_db = AsyncMock()
         mock_db.execute.return_value = MagicMock(scalar_one_or_none=lambda: None)
 
-        invoice_data = {
-            "id": "in_123",
-            "subscription": "sub_nonexistent",
-        }
-
-        await _handle_invoice_paid(mock_db, invoice_data)
+        await _handle_invoice_paid(mock_db, _stripe_invoice(subscription="sub_nonexistent"))
 
         # Should not commit if subscription not found
         mock_db.commit.assert_not_called()
@@ -170,12 +212,7 @@ class TestHandlePaymentFailed:
         mock_db = AsyncMock()
         mock_db.execute.return_value = MagicMock(scalar_one_or_none=lambda: mock_subscription)
 
-        invoice_data = {
-            "id": "in_123",
-            "subscription": "sub_123",
-        }
-
-        await _handle_payment_failed(mock_db, invoice_data)
+        await _handle_payment_failed(mock_db, _stripe_invoice())
 
         assert mock_subscription.status == billing_pb2.SUBSCRIPTION_STATUS_PAST_DUE
         mock_db.commit.assert_called()
@@ -185,15 +222,17 @@ class TestHandlePaymentFailed:
         mock_db = AsyncMock()
         mock_db.execute.return_value = MagicMock(scalar_one_or_none=lambda: None)
 
-        invoice_data = {
-            "id": "in_123",
-            "subscription": "sub_nonexistent",
-        }
+        await _handle_payment_failed(mock_db, _stripe_invoice(subscription="sub_nonexistent"))
 
-        await _handle_payment_failed(mock_db, invoice_data)
+        mock_db.commit.assert_not_called()
 
-        # Should not commit if nothing to update
-        # (depends on implementation)
+    async def test_does_nothing_for_non_subscription_invoice(self) -> None:
+        """An invoice with no subscription parent is a no-op."""
+        mock_db = AsyncMock()
+
+        await _handle_payment_failed(mock_db, _stripe_invoice(subscription=None))
+
+        mock_db.execute.assert_not_called()
 
 
 class TestHandlePaymentMethodAttached:
@@ -206,21 +245,12 @@ class TestHandlePaymentMethodAttached:
             scalar_one_or_none=lambda: None  # No customer found
         )
 
-        pm_data = {
-            "id": "pm_123",
-            "customer": "cus_unknown",
-            "type": "card",
-            "card": {
-                "brand": "visa",
-                "last4": "4242",
-                "exp_month": 12,
-                "exp_year": 2030,
-            },
-        }
-
-        await _handle_payment_method_attached(mock_db, pm_data)
+        await _handle_payment_method_attached(
+            mock_db, _stripe_payment_method(customer="cus_unknown")
+        )
 
         # Should not add anything if tenant not found
+        mock_db.add.assert_not_called()
 
 
 class TestHandlePaymentMethodDetached:
@@ -230,11 +260,7 @@ class TestHandlePaymentMethodDetached:
         """Test removing payment method from database."""
         mock_db = AsyncMock()
 
-        pm_data = {
-            "id": "pm_123",
-        }
-
-        await _handle_payment_method_detached(mock_db, pm_data)
+        await _handle_payment_method_detached(mock_db, _stripe_payment_method())
 
         # Should have executed delete query
         mock_db.execute.assert_called()

@@ -187,29 +187,26 @@ class StripeClient:
         """Get the default payment method ID for a customer."""
         try:
             customer = Customer.retrieve(customer_id)
-            invoice_settings = customer.get("invoice_settings", {})
-            default_pm = invoice_settings.get("default_payment_method")
+            settings = customer.invoice_settings
+            default_pm = settings.default_payment_method if settings is not None else None
             if default_pm is None:
                 return None
-            # default_payment_method can be a string or an expanded PaymentMethod object
-            if isinstance(default_pm, str):
-                return default_pm
-            # If expanded, extract the id
-            return str(default_pm.get("id", "")) if hasattr(default_pm, "get") else str(default_pm)
+            # default_payment_method is the id, or the expanded PaymentMethod
+            return default_pm if isinstance(default_pm, str) else default_pm.id
         except stripe.StripeError as e:
             logger.error(f"Stripe error getting default payment method: {e}")
             raise StripeError(str(e), getattr(e, "code", None))
 
     def _payment_method_to_result(self, pm: PaymentMethod) -> PaymentMethodResult:
         """Convert Stripe PaymentMethod to result dataclass."""
-        card = pm.get("card", {})
+        card = pm.card
         return PaymentMethodResult(
             id=pm.id,
             type=pm.type or "card",
-            card_brand=card.get("brand") if card else None,
-            card_last4=card.get("last4") if card else None,
-            card_exp_month=card.get("exp_month") if card else None,
-            card_exp_year=card.get("exp_year") if card else None,
+            card_brand=card.brand if card else None,
+            card_last4=card.last4 if card else None,
+            card_exp_month=card.exp_month if card else None,
+            card_exp_year=card.exp_year if card else None,
         )
 
     # ===================
@@ -254,7 +251,7 @@ class StripeClient:
         try:
             # Get current subscription to find the item ID
             subscription = Subscription.retrieve(subscription_id)
-            item_id = subscription["items"]["data"][0]["id"]
+            item_id = subscription.items.data[0].id
 
             # Update subscription
             updated = Subscription.modify(
@@ -303,10 +300,15 @@ class StripeClient:
             raise StripeError(str(e), getattr(e, "code", None))
 
     def _subscription_to_result(self, sub: Subscription) -> SubscriptionResult:
-        """Convert Stripe Subscription to result dataclass."""
-        # Access subscription fields via dict-like access for proper typing
-        current_period_start = sub.get("current_period_start")
-        current_period_end = sub.get("current_period_end")
+        """Convert Stripe Subscription to result dataclass.
+
+        Billing periods moved off the subscription onto its items in the
+        current API generation — read them from the first item.
+        """
+        items = sub.items.data
+        first_item = items[0] if items else None
+        current_period_start = first_item.current_period_start if first_item else None
+        current_period_end = first_item.current_period_end if first_item else None
         return SubscriptionResult(
             id=sub.id,
             status=sub.status,
