@@ -1,12 +1,16 @@
 """Strategy service - CRUD operations with S-expression DSL support."""
 
+import os
 from datetime import UTC
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 from uuid import UUID
 
 from fastapi import Depends
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+
+if TYPE_CHECKING:
+    from llamatrade_proto.clients.ledger import LedgerClient
 
 from llamatrade_compiler.extractor import extract_indicators, get_required_symbols
 from llamatrade_db import get_db
@@ -55,6 +59,11 @@ _VALID_STATUS_TRANSITIONS: set[tuple[int, int]] = {
     (STRATEGY_STATUS_ACTIVE, STRATEGY_STATUS_ARCHIVED),
     (STRATEGY_STATUS_PAUSED, STRATEGY_STATUS_ARCHIVED),
 }
+
+
+def ledger_sleeves_enabled() -> bool:
+    """LEDGER_SLEEVES flag (mirrors portfolio's ledger settings; default off)."""
+    return os.getenv("LEDGER_SLEEVES", "").strip().lower() in {"1", "true", "yes", "on"}
 
 
 def _rebalance_to_timeframe(rebalance: str | None) -> str:
@@ -671,6 +680,8 @@ class StrategyService:
                 mode=data.mode,  # Already proto int
                 status=EXECUTION_STATUS_PENDING,
                 config_override=data.config_override,
+                allocated_capital=data.allocated_capital,
+                credentials_id=data.credentials_id,
             )
             self.db.add(execution)
 
@@ -727,13 +738,19 @@ class StrategyService:
         self,
         tenant_id: UUID,
         execution_id: UUID,
+        *,
+        ledger: LedgerClient | None = None,
+        user_id: UUID | None = None,
     ) -> ExecutionResponse | None:
         """Start a pending execution.
 
         Transitions status from PENDING to RUNNING and sets started_at.
+        When LEDGER_SLEEVES is on and the execution carries funding intent
+        (allocated_capital + credentials_id), its ledger sleeve is opened and
+        funded first — the execution does not start if funding fails.
 
         Raises:
-            ValueError: If execution is not in PENDING status.
+            ValueError: If execution is not in PENDING status, or funding fails.
         """
         from datetime import datetime
 
@@ -746,12 +763,60 @@ class StrategyService:
                 f"Cannot start execution: status is {execution_status_to_str(execution.status)}, expected pending"
             )
 
+        await self._fund_sleeve(tenant_id, execution, ledger=ledger, user_id=user_id)
+
         execution.status = EXECUTION_STATUS_RUNNING
         execution.started_at = datetime.now(UTC)
         await self.db.commit()
         await self.db.refresh(execution)
 
         return self._to_execution_response(execution)
+
+    async def _fund_sleeve(
+        self,
+        tenant_id: UUID,
+        execution: StrategyExecution,
+        *,
+        ledger: LedgerClient | None,
+        user_id: UUID | None,
+    ) -> None:
+        """Open + fund the execution's ledger sleeve via the portfolio service.
+
+        No-op when the flag is off, no client is wired, the execution carries
+        no funding intent, or it is already funded (sleeve_id set) — so
+        restarts never double-fund (idempotent server-side too).
+        """
+        if (
+            ledger is None
+            or not ledger_sleeves_enabled()
+            or execution.sleeve_id is not None
+            or execution.allocated_capital is None
+            or execution.credentials_id is None
+        ):
+            return
+
+        import grpc.aio
+
+        strategy = await self._get_strategy_by_id(tenant_id, execution.strategy_id)
+        sleeve_name = strategy.name if strategy else f"Strategy {execution.strategy_id}"
+        try:
+            bootstrap = await ledger.get_or_create_account(
+                str(tenant_id), str(user_id) if user_id else "", str(execution.credentials_id)
+            )
+            sleeve = await ledger.allocate_capital(
+                str(tenant_id),
+                str(user_id) if user_id else "",
+                bootstrap.account.id,
+                "",
+                execution.allocated_capital,
+                strategy_execution_id=str(execution.id),
+                sleeve_name=sleeve_name,
+            )
+        except grpc.aio.AioRpcError as e:
+            raise ValueError(f"Cannot start execution: sleeve funding failed: {e.details()}") from e
+
+        execution.sleeve_id = UUID(sleeve.id)
+        execution.account_id = UUID(bootstrap.account.id)
 
     async def pause_execution(
         self,
@@ -954,6 +1019,10 @@ class StrategyService:
             config_override=cast(ConfigOverride, e.config_override) if e.config_override else None,
             error_message=e.error_message,
             created_at=e.created_at,
+            allocated_capital=e.allocated_capital,
+            credentials_id=e.credentials_id,
+            sleeve_id=e.sleeve_id,
+            account_id=e.account_id,
         )
 
 

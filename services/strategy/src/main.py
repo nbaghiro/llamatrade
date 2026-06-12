@@ -6,13 +6,16 @@ It exposes endpoints via Connect protocol for direct browser access.
 
 import logging
 import os
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from typing import cast
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.types import ASGIApp
+
+from llamatrade_common.observability import enable_db_pool_metrics
+from llamatrade_db import close_db, get_pool_stats
 
 logger = logging.getLogger(__name__)
 
@@ -23,7 +26,7 @@ CORS_ORIGINS = os.getenv(
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     """Application lifespan handler."""
     # Mount Connect ASGI app
     try:
@@ -43,6 +46,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     yield
 
+    # Shutdown - dispose the DB connection pool
+    await close_db()
+
 
 app = FastAPI(
     title="LlamaTrade Strategy Service",
@@ -60,6 +66,9 @@ app.add_middleware(
     allow_headers=["*"],
     expose_headers=["*"],
 )
+
+# Export DB connection-pool stats on /metrics
+enable_db_pool_metrics(app, "strategy", get_pool_stats)
 
 
 @app.get("/health")

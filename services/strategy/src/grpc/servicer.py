@@ -4,8 +4,12 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import cast
+from decimal import Decimal
+from typing import TYPE_CHECKING, cast
 from uuid import UUID
+
+if TYPE_CHECKING:
+    from llamatrade_proto.clients.ledger import LedgerClient
 
 from connectrpc.code import Code
 from connectrpc.errors import ConnectError
@@ -75,6 +79,7 @@ class StrategyServicer:
     def __init__(self) -> None:
         """Initialize the servicer."""
         self._session_maker: async_sessionmaker[AsyncSession] | None = None
+        self._ledger_client: LedgerClient | None = None
 
     async def _get_db(self) -> AsyncSession:
         """Get a database session."""
@@ -83,6 +88,16 @@ class StrategyServicer:
         assert self._session_maker is not None
         session: AsyncSession = self._session_maker()
         return session
+
+    def _get_ledger(self) -> LedgerClient:
+        """Lazy LedgerClient to the portfolio service (sleeve funding)."""
+        if self._ledger_client is None:
+            import os
+
+            from llamatrade_proto.clients.ledger import LedgerClient
+
+            self._ledger_client = LedgerClient(os.getenv("PORTFOLIO_GRPC_TARGET", "portfolio:8860"))
+        return self._ledger_client
 
     @handle_service_errors
     async def get_strategy(
@@ -597,6 +612,16 @@ class StrategyServicer:
             version=request.version if request.version > 0 else None,
             mode=mode,
             config_override=config_override,
+            allocated_capital=(
+                Decimal(request.allocated_capital.value)
+                if request.allocated_capital.value
+                else None
+            ),
+            credentials_id=(
+                parse_uuid(request.credentials_id, "credentials_id")
+                if request.credentials_id
+                else None
+            ),
         )
 
         async with await self._get_db() as db:
@@ -698,13 +723,18 @@ class StrategyServicer:
         """Start a pending execution."""
         from src.services.strategy_service import StrategyService
 
-        tenant_id, _ = _validate_tenant_context(request.context)
+        tenant_id, user_id = _validate_tenant_context(request.context)
         execution_id = parse_uuid(request.execution_id, "execution_id")
 
         try:
             async with await self._get_db() as db:
                 service = StrategyService(db)
-                execution = await service.start_execution(tenant_id, execution_id)
+                execution = await service.start_execution(
+                    tenant_id,
+                    execution_id,
+                    ledger=self._get_ledger(),
+                    user_id=user_id,
+                )
 
                 if not execution:
                     raise ConnectError(
@@ -716,7 +746,7 @@ class StrategyServicer:
                     execution=self._to_proto_execution(execution),
                 )
         except ValueError as e:
-            # State transition errors are precondition failures
+            # State transition / funding errors are precondition failures
             raise ConnectError(Code.FAILED_PRECONDITION, str(e))
 
     @handle_service_errors
@@ -946,4 +976,10 @@ class StrategyServicer:
             else common_pb2.Timestamp(),
             error_message=execution.error_message or "",
             created_at=common_pb2.Timestamp(seconds=int(execution.created_at.timestamp())),
+            allocated_capital=common_pb2.Decimal(
+                value=str(execution.allocated_capital) if execution.allocated_capital else ""
+            ),
+            credentials_id=str(execution.credentials_id) if execution.credentials_id else "",
+            sleeve_id=str(execution.sleeve_id) if execution.sleeve_id else "",
+            account_id=str(execution.account_id) if execution.account_id else "",
         )

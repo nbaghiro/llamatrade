@@ -1,6 +1,7 @@
 """Strategy Service - Pydantic schemas for API requests/responses."""
 
 from datetime import datetime
+from decimal import Decimal
 from typing import TypedDict
 from uuid import UUID
 
@@ -226,6 +227,15 @@ class ExecutionCreate(BaseModel):
         None,
         description="Runtime config overrides (e.g., different symbols)",
     )
+    allocated_capital: Decimal | None = Field(
+        None,
+        gt=0,
+        description="Capital to allocate to this execution's ledger sleeve at start",
+    )
+    credentials_id: UUID | None = Field(
+        None,
+        description="Broker credentials anchoring the ledger account",
+    )
 
 
 # ===================
@@ -281,6 +291,12 @@ class ExecutionResponse(BaseModel):
     config_override: ConfigOverride | None
     error_message: str | None
     created_at: datetime
+
+    # Ledger funding identity (None until the execution is funded)
+    allocated_capital: Decimal | None = None
+    credentials_id: UUID | None = None
+    sleeve_id: UUID | None = None
+    account_id: UUID | None = None
 
 
 class ValidationResult(BaseModel):

@@ -1,6 +1,8 @@
 """Unit tests for StrategyService with allocation-based DSL support."""
 
 from datetime import UTC, datetime
+from decimal import Decimal
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import UUID, uuid4
 
@@ -1055,6 +1057,10 @@ class TestExecutions:
         mock_execution.config_override = None
         mock_execution.error_message = None
         mock_execution.created_at = datetime.now(UTC)
+        mock_execution.allocated_capital = None
+        mock_execution.credentials_id = None
+        mock_execution.sleeve_id = None
+        mock_execution.account_id = None
 
         # Mock count query result (returns scalar for total)
         mock_count_result = MagicMock()
@@ -1254,3 +1260,182 @@ class TestDetectedIndicators:
         assert result.valid is True
         # Should detect both RSI and EMA
         assert len(result.detected_indicators) >= 2
+
+
+# ===================
+# Execution Funding Tests (ledger sleeves)
+# ===================
+
+
+class TestExecutionFunding:
+    """Sleeve funding on start_execution (LEDGER_SLEEVES rollout)."""
+
+    @staticmethod
+    def _pending_execution(**overrides: object):
+        from llamatrade_db.models.strategy import StrategyExecution
+        from llamatrade_proto.generated.common_pb2 import EXECUTION_STATUS_PENDING
+
+        execution = StrategyExecution(
+            tenant_id=uuid4(),
+            strategy_id=uuid4(),
+            version=1,
+            mode=EXECUTION_MODE_PAPER,
+            status=EXECUTION_STATUS_PENDING,
+            config_override=None,
+            allocated_capital=Decimal("40000"),
+            credentials_id=uuid4(),
+        )
+        execution.id = uuid4()
+        execution.created_at = datetime.now(UTC)
+        for key, value in overrides.items():
+            setattr(execution, key, value)
+        return execution
+
+    @staticmethod
+    def _ledger_mock(account_id: UUID, sleeve_id: UUID) -> AsyncMock:
+        ledger = AsyncMock()
+        ledger.get_or_create_account.return_value = SimpleNamespace(
+            account=SimpleNamespace(id=str(account_id)), base_sleeves=[]
+        )
+        ledger.allocate_capital.return_value = SimpleNamespace(id=str(sleeve_id))
+        return ledger
+
+    async def test_create_execution_stores_funding_fields(
+        self, mock_db: AsyncMock, tenant_id: UUID, strategy_id: UUID
+    ) -> None:
+        """allocated_capital + credentials_id persist on the execution row."""
+        service = StrategyService(mock_db)
+        credentials_id = uuid4()
+
+        mock_strategy = make_mock_strategy(id=strategy_id, tenant_id=tenant_id, current_version=1)
+        mock_version = make_mock_version(strategy_id=strategy_id)
+
+        def set_execution_attrs(execution: MagicMock) -> None:
+            execution.id = uuid4()
+            execution.created_at = datetime.now(UTC)
+
+        mock_db.refresh = AsyncMock(side_effect=set_execution_attrs)
+
+        with (
+            patch.object(service, "_get_strategy_by_id", return_value=mock_strategy),
+            patch.object(service, "_get_version", return_value=mock_version),
+        ):
+            result = await service.create_execution(
+                tenant_id=tenant_id,
+                strategy_id=strategy_id,
+                data=ExecutionCreate(
+                    mode=EXECUTION_MODE_PAPER,
+                    allocated_capital=Decimal("40000"),
+                    credentials_id=credentials_id,
+                ),
+            )
+
+        assert result is not None
+        assert result.allocated_capital == Decimal("40000")
+        assert result.credentials_id == credentials_id
+        assert result.sleeve_id is None  # funded at start, not at create
+
+    async def test_start_execution_funds_sleeve(
+        self, mock_db: AsyncMock, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Start opens+funds the sleeve and persists sleeve_id/account_id."""
+        monkeypatch.setenv("LEDGER_SLEEVES", "1")
+        service = StrategyService(mock_db)
+        execution = self._pending_execution()
+        account_id, sleeve_id = uuid4(), uuid4()
+        ledger = self._ledger_mock(account_id, sleeve_id)
+        strategy = make_mock_strategy(id=execution.strategy_id, name="Momentum A")
+
+        with (
+            patch.object(service, "_get_execution_by_id", return_value=execution),
+            patch.object(service, "_get_strategy_by_id", return_value=strategy),
+        ):
+            result = await service.start_execution(
+                execution.tenant_id, execution.id, ledger=ledger, user_id=uuid4()
+            )
+
+        assert result is not None
+        assert execution.sleeve_id == sleeve_id
+        assert execution.account_id == account_id
+        ledger.get_or_create_account.assert_awaited_once()
+        allocate_kwargs = ledger.allocate_capital.await_args.kwargs
+        assert allocate_kwargs["strategy_execution_id"] == str(execution.id)
+        assert allocate_kwargs["sleeve_name"] == "Momentum A"
+        mock_db.commit.assert_called()
+
+    async def test_start_execution_skips_funding_when_flag_off(
+        self, mock_db: AsyncMock, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """With LEDGER_SLEEVES off, start never touches the ledger."""
+        monkeypatch.delenv("LEDGER_SLEEVES", raising=False)
+        service = StrategyService(mock_db)
+        execution = self._pending_execution()
+        ledger = self._ledger_mock(uuid4(), uuid4())
+
+        with patch.object(service, "_get_execution_by_id", return_value=execution):
+            result = await service.start_execution(execution.tenant_id, execution.id, ledger=ledger)
+
+        assert result is not None
+        assert execution.sleeve_id is None
+        ledger.get_or_create_account.assert_not_awaited()
+        ledger.allocate_capital.assert_not_awaited()
+
+    async def test_start_execution_skips_funding_without_intent(
+        self, mock_db: AsyncMock, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """No allocated_capital/credentials_id → legacy unfunded start."""
+        monkeypatch.setenv("LEDGER_SLEEVES", "1")
+        service = StrategyService(mock_db)
+        execution = self._pending_execution(allocated_capital=None, credentials_id=None)
+        ledger = self._ledger_mock(uuid4(), uuid4())
+
+        with patch.object(service, "_get_execution_by_id", return_value=execution):
+            result = await service.start_execution(execution.tenant_id, execution.id, ledger=ledger)
+
+        assert result is not None
+        ledger.allocate_capital.assert_not_awaited()
+
+    async def test_start_execution_already_funded_does_not_refund(
+        self, mock_db: AsyncMock, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A sleeve_id already on the row means funding is skipped (restart)."""
+        monkeypatch.setenv("LEDGER_SLEEVES", "1")
+        service = StrategyService(mock_db)
+        existing_sleeve = uuid4()
+        execution = self._pending_execution(sleeve_id=existing_sleeve, account_id=uuid4())
+        ledger = self._ledger_mock(uuid4(), uuid4())
+
+        with patch.object(service, "_get_execution_by_id", return_value=execution):
+            await service.start_execution(execution.tenant_id, execution.id, ledger=ledger)
+
+        assert execution.sleeve_id == existing_sleeve
+        ledger.allocate_capital.assert_not_awaited()
+
+    async def test_start_execution_funding_failure_blocks_start(
+        self, mock_db: AsyncMock, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A funding RPC failure surfaces as ValueError and start aborts."""
+        import grpc
+        import grpc.aio
+
+        monkeypatch.setenv("LEDGER_SLEEVES", "1")
+        service = StrategyService(mock_db)
+        execution = self._pending_execution()
+        strategy = make_mock_strategy(id=execution.strategy_id)
+        ledger = self._ledger_mock(uuid4(), uuid4())
+        ledger.allocate_capital.side_effect = grpc.aio.AioRpcError(
+            grpc.StatusCode.INVALID_ARGUMENT,
+            grpc.aio.Metadata(),
+            grpc.aio.Metadata(),
+            details="insufficient free cash",
+        )
+
+        with (
+            patch.object(service, "_get_execution_by_id", return_value=execution),
+            patch.object(service, "_get_strategy_by_id", return_value=strategy),
+            pytest.raises(ValueError, match="sleeve funding failed"),
+        ):
+            await service.start_execution(execution.tenant_id, execution.id, ledger=ledger)
+
+        assert execution.sleeve_id is None
+        mock_db.commit.assert_not_called()
