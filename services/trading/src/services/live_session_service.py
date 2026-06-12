@@ -19,25 +19,38 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from llamatrade_alpaca import TradingClient, get_trading_client
+from llamatrade_alpaca import (
+    BarStreamClient,
+    TradingClient,
+    TradingStreamClient,
+    get_trading_client,
+)
 from llamatrade_common.utils import decrypt_value
 from llamatrade_db import get_db
 from llamatrade_db.models.auth import AlpacaCredentials
 from llamatrade_db.models.billing import Plan, Subscription
-from llamatrade_db.models.strategy import StrategyVersion
+from llamatrade_db.models.strategy import StrategyExecution, StrategyVersion
 from llamatrade_proto.generated.billing_pb2 import PLAN_TIER_FREE
 from llamatrade_proto.generated.common_pb2 import (
     EXECUTION_MODE_LIVE,
 )
 
+from src.clients.portfolio_client import get_portfolio_ledger_client
 from src.compiler_adapter import StrategyAdapter
 from src.executor.order_executor import OrderExecutor, get_order_executor
+from src.ledger_settings import execution_enabled as ledger_execution_enabled
+from src.ledger_settings import shadow_mode_enabled as ledger_shadow_mode_enabled
+from src.metrics import (
+    record_bar_stream_reconnect,
+    record_trade_stream_reconnect,
+    set_bar_stream_connected,
+    set_trade_stream_connected,
+)
 from src.models import SessionResponse
 from src.risk.risk_manager import RiskManager, get_risk_manager
-from src.runner.bar_stream import AlpacaBarStream, StreamConfig
 from src.runner.runner import RunnerConfig, RunnerManager, get_runner_manager
-from src.runner.trade_stream import AlpacaTradeStream, TradeStreamConfig
 from src.services.session_service import SessionService
+from src.streaming.publisher import get_trading_event_publisher
 
 logger = logging.getLogger(__name__)
 
@@ -85,14 +98,21 @@ class LiveSessionService(SessionService):
         credentials_id: UUID,
         symbols: list[str] | None = None,
         config: dict[str, object] | None = None,
+        sleeve_id: UUID | None = None,
+        account_id: UUID | None = None,
+        execution_id: UUID | None = None,
     ) -> SessionResponse:
         """Start a new trading session with runner.
 
         Creates the session in database and starts a StrategyRunner
-        to execute the strategy in real-time.
+        to execute the strategy in real-time. Ledger identity is resolved
+        from the funded strategy execution when not passed explicitly —
+        from ``execution_id`` when given (exact), else the strategy's most
+        recently funded execution (heuristic fallback).
 
         Raises:
-            ValueError: If preflight checks fail (subscription, credentials, buying power)
+            ValueError: If preflight checks fail (subscription, credentials,
+                buying power) or another active session already trades the sleeve.
         """
         # Run preflight checks BEFORE creating session
         creds = await self._preflight_checks(
@@ -100,6 +120,17 @@ class LiveSessionService(SessionService):
             credentials_id=credentials_id,
             mode=mode,
         )
+
+        # Ledger identity from the funded strategy execution (None = legacy)
+        if sleeve_id is None and account_id is None:
+            sleeve_id, account_id = await self._resolve_ledger_identity(
+                tenant_id, strategy_id, execution_id
+            )
+
+        # One active session per sleeve: two runners sharing a sleeve would
+        # race its free cash and double-trade its targets.
+        if sleeve_id is not None:
+            await self._ensure_sleeve_not_in_use(tenant_id, sleeve_id)
 
         # Create session in database
         response = await super().start_session(
@@ -112,6 +143,8 @@ class LiveSessionService(SessionService):
             credentials_id=credentials_id,
             symbols=symbols,
             config=config,
+            sleeve_id=sleeve_id,
+            account_id=account_id,
         )
 
         # Load strategy and start runner
@@ -124,6 +157,8 @@ class LiveSessionService(SessionService):
                 symbols=symbols,
                 mode=mode,
                 credentials=creds,
+                sleeve_id=sleeve_id,
+                account_id=account_id,
             )
         except Exception as e:
             logger.error(f"Failed to start runner for session {response.id}: {e}")
@@ -177,6 +212,68 @@ class LiveSessionService(SessionService):
     # Runner management
     # ===================
 
+    async def _resolve_ledger_identity(
+        self, tenant_id: UUID, strategy_id: UUID, execution_id: UUID | None = None
+    ) -> tuple[UUID | None, UUID | None]:
+        """(sleeve_id, account_id) of the strategy's funded execution, if any.
+
+        The strategy service persists them on the execution when it funds a
+        sleeve (CONTRACTS.md §5). An explicit ``execution_id`` resolves that
+        exact execution (and fails loudly if it doesn't match the strategy);
+        otherwise we take the most recently created funded execution.
+        (None, None) means a legacy/unfunded session — no ledger events will
+        be emitted for it.
+        """
+        if execution_id is not None:
+            execution = await self.db.scalar(
+                select(StrategyExecution).where(
+                    StrategyExecution.tenant_id == tenant_id,
+                    StrategyExecution.id == execution_id,
+                )
+            )
+            if execution is None:
+                raise ValueError(f"Execution {execution_id} not found")
+            if execution.strategy_id != strategy_id:
+                raise ValueError(f"Execution {execution_id} belongs to a different strategy")
+            return execution.sleeve_id, execution.account_id
+
+        execution = await self.db.scalar(
+            select(StrategyExecution)
+            .where(
+                StrategyExecution.tenant_id == tenant_id,
+                StrategyExecution.strategy_id == strategy_id,
+                StrategyExecution.sleeve_id.is_not(None),
+            )
+            .order_by(StrategyExecution.created_at.desc())
+            .limit(1)
+        )
+        if execution is None:
+            return None, None
+        return execution.sleeve_id, execution.account_id
+
+    async def _ensure_sleeve_not_in_use(self, tenant_id: UUID, sleeve_id: UUID) -> None:
+        """Reject a start when another live session already trades the sleeve."""
+        from llamatrade_db.models.trading import TradingSession
+        from llamatrade_proto.generated.common_pb2 import (
+            EXECUTION_STATUS_PAUSED,
+            EXECUTION_STATUS_RUNNING,
+        )
+
+        active = await self.db.scalar(
+            select(TradingSession)
+            .where(
+                TradingSession.tenant_id == tenant_id,
+                TradingSession.sleeve_id == sleeve_id,
+                TradingSession.status.in_([EXECUTION_STATUS_RUNNING, EXECUTION_STATUS_PAUSED]),
+            )
+            .limit(1)
+        )
+        if active is not None:
+            raise ValueError(
+                f"Sleeve {sleeve_id} is already traded by session {active.id}; "
+                "stop it before starting another"
+            )
+
     async def _start_runner(
         self,
         session_id: UUID,
@@ -186,6 +283,8 @@ class LiveSessionService(SessionService):
         symbols: list[str] | None,
         mode: int,  # ExecutionMode proto value: PAPER=1, LIVE=2
         credentials: DecryptedCredentials,
+        sleeve_id: UUID | None = None,
+        account_id: UUID | None = None,
     ) -> None:
         """Create and start a runner for the session.
 
@@ -197,6 +296,8 @@ class LiveSessionService(SessionService):
             symbols: Symbols to trade (None = from strategy)
             mode: ExecutionMode proto value (PAPER=1, LIVE=2)
             credentials: Decrypted Alpaca credentials for this session
+            sleeve_id: Ledger sleeve of the funded execution (None = legacy)
+            account_id: Ledger account anchoring the sleeve
         """
         # Get strategy version with S-expression
         strategy = await self._get_strategy(tenant_id, strategy_id)
@@ -218,24 +319,31 @@ class LiveSessionService(SessionService):
         if not actual_symbols:
             raise ValueError("No symbols specified")
 
-        # Create strategy adapter
-        strategy_fn = StrategyAdapter(strategy_sexpr)
+        # Create strategy adapter. Sleeve-aware sizing (drift-tolerance
+        # resizing against sleeve equity) only when this session is funded
+        # and the execution flag is on — otherwise legacy behavior.
+        sleeve_aware = sleeve_id is not None and ledger_execution_enabled()
+        strategy_fn = StrategyAdapter(strategy_sexpr, sleeve_aware=sleeve_aware)
 
-        # Create bar stream with session-specific credentials
-        stream_config = StreamConfig(
+        # Create bar stream with session-specific credentials (shared lib client;
+        # metrics wired via lifecycle hooks since the lib stays service-agnostic).
+        bar_stream = BarStreamClient(
             api_key=credentials.api_key,
             api_secret=credentials.api_secret,
             paper=credentials.is_paper,
+            on_reconnect=record_bar_stream_reconnect,
+            on_connection_change=set_bar_stream_connected,
         )
-        bar_stream = AlpacaBarStream(stream_config)
 
-        # Create trade stream with same credentials
-        trade_config = TradeStreamConfig(
+        # Create trade stream with same credentials (shared lib client; metrics
+        # are wired via lifecycle hooks since the lib stays service-agnostic).
+        trade_stream = TradingStreamClient(
             api_key=credentials.api_key,
             api_secret=credentials.api_secret,
             paper=credentials.is_paper,
+            on_reconnect=record_trade_stream_reconnect,
+            on_connection_change=set_trade_stream_connected,
         )
-        trade_stream = AlpacaTradeStream(trade_config)
 
         # Create Alpaca client with session-specific credentials
         session_alpaca_client = TradingClient(
@@ -252,6 +360,23 @@ class LiveSessionService(SessionService):
             symbols=actual_symbols,
             timeframe=strategy_ver.timeframe or "1Min",
             warmup_bars=strategy_fn.min_bars + 10,  # Extra buffer
+            mode=mode,
+            sleeve_id=sleeve_id,
+            account_id=account_id,
+        )
+
+        # Ledger fill emission needs the Redis publisher (flag-gated)
+        ledger_publisher = (
+            get_trading_event_publisher()
+            if ledger_shadow_mode_enabled() and sleeve_id is not None
+            else None
+        )
+
+        # Sleeve state reads (equity, free cash) for sleeve-aware execution
+        portfolio_client = (
+            get_portfolio_ledger_client()
+            if ledger_execution_enabled() and sleeve_id is not None
+            else None
         )
 
         # Start the runner with session-specific client
@@ -263,6 +388,8 @@ class LiveSessionService(SessionService):
             order_executor=self.order_executor,
             risk_manager=self.risk_manager,
             alpaca_client=session_alpaca_client,
+            ledger_publisher=ledger_publisher,
+            portfolio_client=portfolio_client,
         )
 
         logger.info(f"Started runner for session {session_id} (credentials: {credentials.name})")
@@ -449,6 +576,26 @@ class LiveSessionService(SessionService):
             return str(config_json["sexpr"])
 
         return None
+
+
+async def create_live_session_service() -> LiveSessionService:
+    """Create a live session service without dependency injection.
+
+    Used by the gRPC servicer where FastAPI DI is not available.
+    """
+    from llamatrade_db import get_db
+
+    from src.executor.order_executor import create_order_executor
+
+    db = await anext(get_db())
+    order_executor = await create_order_executor()
+    return LiveSessionService(
+        db=db,
+        runner_manager=get_runner_manager(),
+        order_executor=order_executor,
+        risk_manager=get_risk_manager(),
+        alpaca_client=get_trading_client(),
+    )
 
 
 async def get_live_session_service(

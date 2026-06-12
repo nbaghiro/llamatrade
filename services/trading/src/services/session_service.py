@@ -1,5 +1,6 @@
 """Session service - trading session management with database persistence."""
 
+import logging
 from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
@@ -18,7 +19,10 @@ from llamatrade_proto.generated.common_pb2 import (
     EXECUTION_STATUS_STOPPED,
 )
 
+from src.ledger_settings import execution_enabled as ledger_execution_enabled
 from src.models import SessionResponse
+
+logger = logging.getLogger(__name__)
 
 
 class SessionService:
@@ -38,6 +42,8 @@ class SessionService:
         credentials_id: UUID,
         symbols: list[str] | None = None,
         config: dict[str, Any] | None = None,
+        sleeve_id: UUID | None = None,
+        account_id: UUID | None = None,
     ) -> SessionResponse:
         """Start a new trading session."""
         # Verify strategy exists and belongs to tenant
@@ -72,6 +78,8 @@ class SessionService:
             symbols=actual_symbols,
             started_at=now,
             created_by=user_id,
+            sleeve_id=sleeve_id,
+            account_id=account_id,
         )
         self.db.add(session)
         await self.db.commit()
@@ -319,9 +327,35 @@ class SessionService:
         result = await self.db.execute(stmt)
         return result.scalar_one_or_none()
 
+    async def _ledger_realized_pnl(self, s: TradingSession) -> float | None:
+        """Realized P&L from the sleeve projection (the book of record).
+
+        Returns None (caller uses the local Position table) when ledger
+        execution is off, the session has no sleeve, or the read fails — the
+        local figure is a fine fallback, never a hard error.
+        """
+        if not ledger_execution_enabled() or s.sleeve_id is None:
+            return None
+        from src.clients.portfolio_client import get_portfolio_ledger_client
+
+        try:
+            detail = await get_portfolio_ledger_client().get_sleeve(s.tenant_id, "", s.sleeve_id)
+        except Exception as e:
+            logger.warning("Falling back to local P&L for session %s: %s", s.id, e)
+            return None
+        return float(detail.sleeve.realized_pnl)
+
     async def _to_response_with_pnl(self, s: TradingSession) -> SessionResponse:
-        """Convert session to response with P&L calculation."""
+        """Convert session to response with P&L calculation.
+
+        Realized P&L comes from the ledger sleeve when this session is
+        sleeve-attributed (single source of truth); unrealized stays local
+        (the ledger holds cost, not marks).
+        """
         realized_pnl, unrealized_pnl = await self.get_session_pnl(s.tenant_id, s.id)
+        ledger_realized = await self._ledger_realized_pnl(s)
+        if ledger_realized is not None:
+            realized_pnl = ledger_realized
         trades_count = await self.get_trades_count(s.tenant_id, s.id)
 
         return SessionResponse(
@@ -334,6 +368,9 @@ class SessionService:
             stopped_at=s.stopped_at,
             pnl=realized_pnl + unrealized_pnl,
             trades_count=trades_count,
+            name=s.name,
+            sleeve_id=s.sleeve_id,
+            account_id=s.account_id,
         )
 
     def _to_response(self, s: TradingSession) -> SessionResponse:
@@ -351,6 +388,9 @@ class SessionService:
             stopped_at=s.stopped_at,
             pnl=0,  # Use _to_response_with_pnl for actual P&L
             trades_count=0,
+            name=s.name,
+            sleeve_id=s.sleeve_id,
+            account_id=s.account_id,
         )
 
 

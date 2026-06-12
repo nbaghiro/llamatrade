@@ -14,7 +14,14 @@ from uuid import UUID
 import redis.asyncio as aioredis
 from redis.asyncio.client import PubSub
 
-from src.streaming.publisher import OrderUpdate, PositionUpdate
+from llamatrade_common.eventbus import EventBus
+
+from src.streaming.publisher import (
+    OrderUpdate,
+    PositionUpdate,
+    orders_stream,
+    positions_stream,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -42,15 +49,55 @@ class TradingEventSubscriber:
         await subscriber.close()
     """
 
-    def __init__(self, redis_url: str | None = None):
+    def __init__(self, redis_url: str | None = None, event_bus: EventBus | None = None):
         """Initialize the subscriber.
 
         Args:
             redis_url: Redis connection URL. Defaults to REDIS_URL env var.
+            event_bus: Streams transport (injected in tests; lazily created
+                otherwise) for the tail-read paths.
         """
         self.redis_url = redis_url or REDIS_URL
         self._redis: aioredis.Redis | None = None
         self._pubsub: PubSub | None = None
+        self._bus: EventBus | None = event_bus
+
+    def _get_bus(self) -> EventBus:
+        if self._bus is None:
+            self._bus = EventBus(self.redis_url)
+        return self._bus
+
+    async def tail_orders(
+        self,
+        session_id: UUID | str,
+        *,
+        last_seen_id: str = "",
+    ) -> AsyncIterator[tuple[str, OrderUpdate]]:
+        """Tail the session's order stream (STREAMS_TRADING delivery mode).
+
+        Yields ``(stream_cursor, update)``. Each caller gets its own full
+        copy; a reconnecting client passes its last-seen cursor back and the
+        gap is replayed — the durability pub/sub never had. An empty cursor
+        starts live ("$").
+        """
+        async for entry_id, fields in self._get_bus().tail(
+            orders_stream(session_id), last_id=last_seen_id or "$"
+        ):
+            data = cast(dict[str, object], json.loads(fields["payload"]))
+            yield entry_id, self._parse_order_update(data)
+
+    async def tail_positions(
+        self,
+        session_id: UUID | str,
+        *,
+        last_seen_id: str = "",
+    ) -> AsyncIterator[tuple[str, PositionUpdate]]:
+        """Tail the session's position stream; see :meth:`tail_orders`."""
+        async for entry_id, fields in self._get_bus().tail(
+            positions_stream(session_id), last_id=last_seen_id or "$"
+        ):
+            data = cast(dict[str, object], json.loads(fields["payload"]))
+            yield entry_id, self._parse_position_update(data)
 
     async def _get_redis(self) -> aioredis.Redis:
         """Get or create Redis connection."""
@@ -246,13 +293,16 @@ class TradingEventSubscriber:
         )
 
     async def close(self) -> None:
-        """Close the Redis connection."""
+        """Close the Redis connection (and the Streams bus, if created)."""
         if self._pubsub:
             await self._pubsub.close()
             self._pubsub = None
         if self._redis:
             await self._redis.close()
             self._redis = None
+        if self._bus is not None:
+            await self._bus.close()
+            self._bus = None
 
 
 # Factory function for easy instantiation

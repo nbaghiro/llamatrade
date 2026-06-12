@@ -195,6 +195,8 @@ def mock_trading_session():
     session.error_message = None
     session.created_at = datetime.now(UTC)
     session.created_by = TEST_USER_ID
+    session.sleeve_id = None
+    session.account_id = None
     return session
 
 
@@ -233,7 +235,7 @@ def mock_order():
 @pytest.fixture
 def sample_bar_data():
     """Sample bar data for testing."""
-    from src.runner.bar_stream import BarData
+    from llamatrade_alpaca import StreamBar as BarData
 
     return BarData(
         symbol="AAPL",
@@ -253,7 +255,7 @@ def sample_bars():
     """Sample bars for runner testing."""
     from datetime import timedelta
 
-    from src.runner.bar_stream import BarData
+    from llamatrade_alpaca import StreamBar as BarData
 
     base_time = datetime(2024, 1, 15, 9, 30, tzinfo=UTC)
     bars = []

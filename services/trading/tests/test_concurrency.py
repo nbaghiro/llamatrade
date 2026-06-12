@@ -14,6 +14,8 @@ from uuid import UUID, uuid4
 
 import pytest
 
+from llamatrade_alpaca import MockBarStream, MockTradeStream
+from llamatrade_alpaca import StreamBar as BarData
 from llamatrade_proto.generated.trading_pb2 import (
     ORDER_SIDE_BUY,
     ORDER_TYPE_MARKET,
@@ -23,9 +25,7 @@ from llamatrade_proto.generated.trading_pb2 import (
 from src.executor.order_executor import OrderExecutor
 from src.models import OrderCreate, RiskCheckResult
 from src.risk.risk_manager import RiskManager
-from src.runner.bar_stream import BarData, MockBarStream
 from src.runner.runner import RunnerConfig, StrategyRunner
-from src.runner.trade_stream import MockTradeStream
 
 # Test UUIDs
 TEST_TENANT_ID = UUID("11111111-1111-1111-1111-111111111111")

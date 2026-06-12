@@ -7,6 +7,7 @@ from uuid import uuid4
 import pytest
 
 from llamatrade_alpaca import Account
+from llamatrade_proto.generated.billing_pb2 import PLAN_TIER_FREE
 from llamatrade_proto.generated.common_pb2 import (
     EXECUTION_MODE_LIVE,
     EXECUTION_MODE_PAPER,
@@ -406,7 +407,7 @@ class TestLiveSessionServiceStartRunner:
             mock_adapter.min_bars = 5
             mock_adapter_cls.return_value = mock_adapter
 
-            with patch("src.services.live_session_service.AlpacaBarStream"):
+            with patch("src.services.live_session_service.BarStreamClient"):
                 with patch("src.services.live_session_service.TradingClient"):
                     await live_session_service._start_runner(
                         session_id=session_id,
@@ -445,7 +446,7 @@ class TestLiveSessionServiceStartRunner:
             mock_adapter.min_bars = 10
             mock_adapter_cls.return_value = mock_adapter
 
-            with patch("src.services.live_session_service.AlpacaBarStream"):
+            with patch("src.services.live_session_service.BarStreamClient"):
                 with patch("src.services.live_session_service.TradingClient"):
                     await live_session_service._start_runner(
                         session_id=session_id,
@@ -479,6 +480,8 @@ class TestLiveSessionServiceStartSession:
         """Test successful session start."""
         # Mock preflight checks to pass and return credentials
         live_session_service._preflight_checks = AsyncMock(return_value=mock_credentials)
+        # Legacy (unfunded) session: no ledger identity
+        live_session_service._resolve_ledger_identity = AsyncMock(return_value=(None, None))
 
         # Mock parent start_session
         with patch.object(
@@ -518,6 +521,8 @@ class TestLiveSessionServiceStartSession:
         """Test that runner failure sets session error."""
         # Mock preflight checks to pass and return credentials
         live_session_service._preflight_checks = AsyncMock(return_value=mock_credentials)
+        # Legacy (unfunded) session: no ledger identity
+        live_session_service._resolve_ledger_identity = AsyncMock(return_value=(None, None))
 
         # Mock parent start_session
         with patch.object(
@@ -845,9 +850,9 @@ class TestLiveSessionServiceCheckSubscription:
         mock_result.scalar_one_or_none.return_value = mock_subscription
         mock_db.execute.return_value = mock_result
 
-        # Mock plan with free tier
+        # Mock plan with free tier (proto int enum, matching the service code)
         mock_plan = MagicMock()
-        mock_plan.tier = "free"
+        mock_plan.tier = PLAN_TIER_FREE
         live_session_service._get_plan = AsyncMock(return_value=mock_plan)
 
         with pytest.raises(ValueError, match="Live trading requires a paid subscription"):

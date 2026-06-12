@@ -1,9 +1,13 @@
 """Tests for trading event streaming infrastructure."""
 
+import json
+from typing import cast
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
 import pytest
+
+from llamatrade_common.eventbus import EventBus
 
 from src.streaming.publisher import (
     OrderUpdate,
@@ -408,3 +412,138 @@ class TestPublishSubscribeIntegration:
             assert received[0].unrealized_pnl == 500.0
 
             await subscriber.close()
+
+
+class _StubBus:
+    """EventBus stand-in: records publishes; tail yields canned entries."""
+
+    def __init__(self, entries: list[tuple[str, dict[str, str]]] | None = None) -> None:
+        self.published: list[tuple[str, dict[str, str], int | None]] = []
+        self._entries = entries or []
+        self.tail_calls: list[tuple[str, str]] = []
+        self.closed = False
+
+    async def publish(self, stream, fields, *, maxlen=None, approximate=True):
+        self.published.append((stream, fields, maxlen))
+        return "1-0"
+
+    async def tail(self, stream, *, last_id="$", block_ms=5000, count=100):
+        self.tail_calls.append((stream, last_id))
+        for entry in self._entries:
+            yield entry
+
+    async def close(self):
+        self.closed = True
+
+
+class TestUiStreamDualWrite:
+    """STREAMS_TRADING: UI events dual-write to per-session streams."""
+
+    @pytest.mark.asyncio
+    async def test_order_update_dual_writes_when_flag_on(self, monkeypatch) -> None:
+        from src.streaming.publisher import (
+            TRADING_UI_MAXLEN,
+            OrderUpdate,
+            TradingEventPublisher,
+        )
+
+        monkeypatch.setenv("STREAMS_TRADING", "1")
+        bus = _StubBus()
+        publisher = TradingEventPublisher(event_bus=cast("EventBus", bus))
+        publisher._redis = AsyncMock()
+        publisher._redis.publish = AsyncMock(return_value=1)
+
+        update = OrderUpdate(
+            session_id="s1",
+            order_id="o1",
+            alpaca_order_id=None,
+            symbol="SPY",
+            side="buy",
+            qty=10.0,
+            order_type="market",
+            status="filled",
+        )
+        await publisher.publish_order_update("s1", update)
+
+        assert len(bus.published) == 1
+        stream, fields, maxlen = bus.published[0]
+        assert stream == "trading:orders:s1"
+        assert maxlen == TRADING_UI_MAXLEN
+        assert json.loads(fields["payload"])["order_id"] == "o1"
+        publisher._redis.publish.assert_awaited_once()  # pub/sub still primary
+
+    @pytest.mark.asyncio
+    async def test_flag_off_skips_stream(self, monkeypatch) -> None:
+        from src.streaming.publisher import PositionUpdate, TradingEventPublisher
+
+        monkeypatch.delenv("STREAMS_TRADING", raising=False)
+        bus = _StubBus()
+        publisher = TradingEventPublisher(event_bus=cast("EventBus", bus))
+        publisher._redis = AsyncMock()
+        publisher._redis.publish = AsyncMock(return_value=1)
+
+        update = PositionUpdate(
+            session_id="s1",
+            symbol="SPY",
+            qty=10.0,
+            side="long",
+            cost_basis=4800.0,
+            market_value=4800.0,
+            unrealized_pnl=0.0,
+            unrealized_pnl_percent=0.0,
+            current_price=480.0,
+        )
+        await publisher.publish_position_update("s1", update)
+
+        assert bus.published == []
+        publisher._redis.publish.assert_awaited_once()
+
+
+class TestUiStreamTail:
+    """Tail-read consumption with reconnect cursors."""
+
+    @pytest.mark.asyncio
+    async def test_tail_orders_yields_cursor_and_update(self) -> None:
+        from src.streaming.publisher import OrderUpdate
+        from src.streaming.subscriber import TradingEventSubscriber
+
+        update = OrderUpdate(
+            session_id="s1",
+            order_id="o1",
+            alpaca_order_id="a1",
+            symbol="SPY",
+            side="buy",
+            qty=10.0,
+            order_type="market",
+            status="filled",
+        )
+        bus = _StubBus(entries=[("7-0", {"payload": json.dumps(update.to_dict())})])
+        subscriber = TradingEventSubscriber(event_bus=cast("EventBus", bus))
+
+        results = [(cid, upd) async for cid, upd in subscriber.tail_orders("s1")]
+
+        assert results[0][0] == "7-0"
+        assert results[0][1].order_id == "o1"
+        assert results[0][1].status == "filled"
+        assert bus.tail_calls == [("trading:orders:s1", "$")]
+
+    @pytest.mark.asyncio
+    async def test_tail_passes_reconnect_cursor(self) -> None:
+        from src.streaming.subscriber import TradingEventSubscriber
+
+        bus = _StubBus()
+        subscriber = TradingEventSubscriber(event_bus=cast("EventBus", bus))
+
+        async for _ in subscriber.tail_positions("s1", last_seen_id="42-0"):
+            pass
+
+        assert bus.tail_calls == [("trading:positions:s1", "42-0")]
+
+    @pytest.mark.asyncio
+    async def test_close_closes_bus(self) -> None:
+        from src.streaming.subscriber import TradingEventSubscriber
+
+        bus = _StubBus()
+        subscriber = TradingEventSubscriber(event_bus=cast("EventBus", bus))
+        await subscriber.close()
+        assert bus.closed is True

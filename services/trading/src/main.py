@@ -6,7 +6,7 @@ It exposes endpoints via Connect protocol for direct browser access.
 
 import logging
 import os
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from typing import cast
 
@@ -14,7 +14,8 @@ from fastapi import FastAPI, Response
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.types import ASGIApp
 
-from llamatrade_common.metrics import get_metrics, init_service_info
+from llamatrade_common.metrics import get_metrics, init_service_info, register_db_pool_observer
+from llamatrade_db import close_db, get_pool_stats
 
 logger = logging.getLogger(__name__)
 
@@ -25,11 +26,13 @@ CORS_ORIGINS = os.getenv(
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     """Application lifespan handler."""
     # Initialize service metrics
     environment = os.getenv("ENVIRONMENT", "development")
     init_service_info("trading", "0.1.0", environment)
+    # Export DB connection-pool stats on the existing /metrics endpoint
+    register_db_pool_observer("trading", get_pool_stats)
     logger.info("Prometheus metrics initialized")
 
     # Mount Connect ASGI app
@@ -50,6 +53,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         logger.warning("Connect dependencies not available: %s", e)
 
     yield
+
+    # Shutdown - dispose the DB connection pool
+    await close_db()
 
 
 app = FastAPI(

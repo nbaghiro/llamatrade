@@ -186,6 +186,13 @@ class OrderCreate(BaseModel):
     stop_loss_price: float | None = None
     take_profit_price: float | None = None
     bracket_time_in_force: TimeInForce.ValueType = TIME_IN_FORCE_GTC
+    # Ledger attribution, fixed at origination (CONTRACTS.md §5).
+    # None → resolved from the session (strategy sleeve) or Manual sleeve.
+    sleeve_id: UUID | None = None
+    account_id: UUID | None = None
+    # Reference price for market orders (signal price), used to size the
+    # §4 cash reservation. Never sent to the broker.
+    est_price: float | None = None
 
 
 class BracketOrderInfo(BaseModel):
@@ -238,6 +245,10 @@ class SessionResponse(BaseModel):
     stopped_at: datetime | None = None
     pnl: float = 0
     trades_count: int = 0
+    name: str = ""
+    # Ledger identity (None for legacy/unfunded sessions)
+    sleeve_id: UUID | None = None
+    account_id: UUID | None = None
 
 
 class PositionResponse(BaseModel):

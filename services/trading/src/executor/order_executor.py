@@ -32,6 +32,12 @@ from llamatrade_proto.generated.trading_pb2 import (
 )
 
 from src.executor.base import OrderSubmissionMixin
+from src.ledger_events import (
+    build_ledger_fill_payload_from_order,
+    build_ledger_lifecycle_payload,
+)
+from src.ledger_settings import execution_enabled as ledger_execution_enabled
+from src.ledger_settings import shadow_mode_enabled as ledger_shadow_mode_enabled
 from src.metrics import (
     ORDER_SYNC_DURATION,
     ORDERS_SYNCED_TOTAL,
@@ -124,6 +130,9 @@ class OrderExecutor(OrderSubmissionMixin):
             take_profit_price=(
                 Decimal(str(order.take_profit_price)) if order.take_profit_price else None
             ),
+            # Ledger attribution, fixed at origination (CONTRACTS.md §5)
+            sleeve_id=order.sleeve_id,
+            account_id=order.account_id,
         )
         # Store bracket TIF in metadata if specified
         if order.stop_loss_price or order.take_profit_price:
@@ -158,6 +167,12 @@ class OrderExecutor(OrderSubmissionMixin):
                     order_type=order_type_to_str(order.order_type),
                 )
 
+            # Ledger cash reservation (CONTRACTS.md §4): earmark the estimated
+            # notional of resting buys so sleeve free cash stays honest.
+            await self._publish_ledger_lifecycle(
+                db_order, "order_submitted", reserved=self._reservation_amount(order)
+            )
+
         except Exception as e:
             # Handle API rejection with metrics and alerts (using mixin method)
             await self._handle_alpaca_rejection(
@@ -170,6 +185,7 @@ class OrderExecutor(OrderSubmissionMixin):
             # Mark order as failed
             db_order.status = ORDER_STATUS_REJECTED
             db_order.failed_at = now
+            await self._publish_ledger_lifecycle(db_order, "order_rejected")
             db_order.metadata_ = {"error": str(e)}
             await self.db.commit()
             raise ValueError(f"Failed to submit order to Alpaca: {e}")
@@ -269,7 +285,107 @@ class OrderExecutor(OrderSubmissionMixin):
 
         await self.db.commit()
 
+        # Release the ledger cash reservation (idempotent at the ledger —
+        # the runner publishes the same release for stream-observed cancels)
+        await self._publish_ledger_lifecycle(order, "order_cancelled")
+
         return True
+
+    async def _publish_ledger_events_for_sync(self, order: Order, old_status: int) -> None:
+        """Publish ledger payloads for a terminal transition found via REST sync.
+
+        Covers the crash/disconnect window where the trade stream missed the
+        event: the §1a fill (or filled portion on cancel/expiry) plus the §4
+        reservation release. Idempotent at the ledger, so re-syncing or racing
+        the stream path never double-counts. Failures log, never raise.
+        """
+        if (
+            self.publisher is None
+            or order.sleeve_id is None
+            or order.account_id is None
+            or order.status == old_status
+            or not ledger_shadow_mode_enabled()
+        ):
+            return
+
+        try:
+            payload = build_ledger_fill_payload_from_order(order)
+            if payload is not None:
+                await self.publisher.publish_ledger_fill(order.account_id, payload)
+            if ledger_execution_enabled() and order.status in (
+                ORDER_STATUS_CANCELLED,
+                ORDER_STATUS_REJECTED,
+                ORDER_STATUS_EXPIRED,
+            ):
+                kind = (
+                    "order_rejected" if order.status == ORDER_STATUS_REJECTED else "order_cancelled"
+                )
+                release = build_ledger_lifecycle_payload(
+                    kind=kind,
+                    tenant_id=order.tenant_id,
+                    account_id=order.account_id,
+                    sleeve_id=order.sleeve_id,
+                    client_order_id=order.client_order_id,
+                    symbol=order.symbol,
+                    side=order_side_to_str(order.side),
+                    order_id=order.id,
+                )
+                await self.publisher.publish_ledger_fill(order.account_id, release)
+        except Exception as e:
+            logger.error(
+                f"Failed to publish ledger events for synced order {order.client_order_id}: {e}"
+            )
+
+    @staticmethod
+    def _reservation_amount(order: OrderCreate) -> Decimal | None:
+        """Estimated notional to earmark for a buy, or None.
+
+        Reference price: limit/stop for resting orders, else the signal's
+        ``est_price`` for market buys (set by the runner). A market buy with
+        no reference price at all (rare: manual market order) doesn't reserve
+        — its fill lands within seconds, so the overdraft window is negligible.
+        """
+        if order.side != ORDER_SIDE_BUY:
+            return None
+        reference_price = order.limit_price or order.stop_price or order.est_price
+        if reference_price is None:
+            return None
+        return Decimal(str(order.qty)) * Decimal(str(reference_price))
+
+    async def _publish_ledger_lifecycle(
+        self,
+        db_order: Order,
+        kind: str,
+        reserved: Decimal | None = None,
+    ) -> None:
+        """Publish a §4 reservation lifecycle payload for an attributed order.
+
+        Gated on LEDGER_EXECUTION and the order carrying sleeve identity.
+        Publish failures are logged, never raised — the ledger converges via
+        reconciliation.
+        """
+        if (
+            self.publisher is None
+            or db_order.sleeve_id is None
+            or db_order.account_id is None
+            or not ledger_execution_enabled()
+        ):
+            return
+        payload = build_ledger_lifecycle_payload(
+            kind=kind,
+            tenant_id=db_order.tenant_id,
+            account_id=db_order.account_id,
+            sleeve_id=db_order.sleeve_id,
+            client_order_id=db_order.client_order_id,
+            symbol=db_order.symbol,
+            side=order_side_to_str(db_order.side),
+            reserved=reserved,
+            order_id=db_order.id,
+        )
+        try:
+            await self.publisher.publish_ledger_fill(db_order.account_id, payload)
+        except Exception as e:
+            logger.error(f"Failed to publish ledger {kind} for {db_order.client_order_id}: {e}")
 
     async def sync_order_status(
         self,
@@ -297,6 +413,10 @@ class OrderExecutor(OrderSubmissionMixin):
         just_filled = self._update_from_alpaca(order, alpaca_order)
         await self.db.commit()
         await self.db.refresh(order)
+
+        # Ledger emission for terminal transitions the trade stream may have
+        # missed (idempotent with the stream path — CONTRACTS.md §1)
+        await self._publish_ledger_events_for_sync(order, old_status)
 
         # Record sync metric
         duration = time.perf_counter() - start_time
@@ -379,6 +499,7 @@ class OrderExecutor(OrderSubmissionMixin):
         updated = 0
         orders_to_handle_fill: list[tuple[Order, float]] = []
         bracket_orders_filled: list[Order] = []
+        status_transitions: list[tuple[Order, int]] = []  # (order, old_status)
 
         # Fetch all Alpaca orders in parallel
         # Filter to only orders with alpaca_order_id (should all have it due to query)
@@ -414,11 +535,18 @@ class OrderExecutor(OrderSubmissionMixin):
                 else:
                     # This is a parent order that filled
                     orders_to_handle_fill.append((order, filled_price))
+                status_transitions.append((order, old_status))
             elif order.status != old_status:
                 # Status changed but not to filled
                 updated += 1
+                status_transitions.append((order, old_status))
 
         await self.db.commit()
+
+        # Ledger emission for terminal transitions discovered via sync
+        # (idempotent with the stream path — CONTRACTS.md §1)
+        for order, old_status in status_transitions:
+            await self._publish_ledger_events_for_sync(order, old_status)
 
         # Handle parent order fills - send alert and submit bracket orders
         for order, filled_price in orders_to_handle_fill:

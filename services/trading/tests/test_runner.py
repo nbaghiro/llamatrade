@@ -6,6 +6,8 @@ from uuid import UUID
 
 import pytest
 
+from llamatrade_alpaca import MockBarStream, MockTradeStream
+from llamatrade_alpaca import StreamBar as BarData
 from llamatrade_proto.generated.trading_pb2 import (
     ORDER_SIDE_BUY,
     ORDER_SIDE_SELL,
@@ -14,7 +16,6 @@ from llamatrade_proto.generated.trading_pb2 import (
 )
 
 from src.models import OrderResponse
-from src.runner.bar_stream import BarData, MockBarStream
 from src.runner.runner import (
     Position,
     RunnerConfig,
@@ -23,7 +24,6 @@ from src.runner.runner import (
     StrategyRunner,
     get_runner_manager,
 )
-from src.runner.trade_stream import MockTradeStream
 
 
 @pytest.fixture

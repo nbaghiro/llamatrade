@@ -7,15 +7,16 @@ from uuid import uuid4
 
 import pytest
 
-from src.models import RiskCheckResult
-from src.runner.bar_stream import MockBarStream
-from src.runner.runner import Position, RunnerConfig, Signal, StrategyRunner
-from src.runner.trade_stream import (
+from llamatrade_alpaca import (
     FillData,
+    MockBarStream,
     MockTradeStream,
     TradeEvent,
     TradeEventType,
 )
+
+from src.models import RiskCheckResult
+from src.runner.runner import Position, RunnerConfig, Signal, StrategyRunner
 
 
 @pytest.fixture

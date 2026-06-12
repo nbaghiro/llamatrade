@@ -11,7 +11,19 @@ from decimal import Decimal
 from typing import Any, Literal, Protocol, cast
 from uuid import UUID
 
-from llamatrade_alpaca import TradingClient
+from llamatrade_alpaca import (
+    BarStreamClient,
+    MockBarStream,
+    MockTradeStream,
+    TradeEvent,
+    TradeEventType,
+    TradingClient,
+    TradingStreamClient,
+)
+from llamatrade_alpaca import (
+    StreamBar as BarData,
+)
+from llamatrade_proto.generated.common_pb2 import EXECUTION_MODE_LIVE, EXECUTION_MODE_PAPER
 from llamatrade_proto.generated.trading_pb2 import (
     ORDER_SIDE_BUY,
     ORDER_SIDE_SELL,
@@ -24,29 +36,29 @@ from src.circuit_breaker import (
     CircuitBreakerConfig,
     create_circuit_breaker,
 )
+from src.clients.portfolio_client import PortfolioLedgerClient
 from src.events.store import EventStore
 from src.events.trading_events import SessionStarted, SessionStopped
 from src.executor.event_sourced_executor import EventSourcedOrderExecutor
 from src.executor.order_executor import OrderExecutor
+from src.ledger_events import build_ledger_fill_payload, build_ledger_lifecycle_payload
+from src.ledger_settings import execution_enabled as ledger_execution_enabled
+from src.ledger_settings import shadow_mode_enabled as ledger_shadow_mode_enabled
 from src.metrics import (
+    record_bar_latency,
     record_bar_processed,
     record_fill_processed,
     record_position_reconciliation,
     record_signal,
     record_strategy_error,
+    record_trade_stream_event,
     update_positions,
     update_runner_gauge,
 )
 from src.models import OrderCreate, RiskLimits
 from src.risk.risk_manager import RiskManager
-from src.runner.bar_stream import AlpacaBarStream, BarData, MockBarStream
-from src.runner.trade_stream import (
-    AlpacaTradeStream,
-    MockTradeStream,
-    TradeEvent,
-    TradeEventType,
-)
 from src.services.alert_service import AlertService
+from src.streaming.publisher import TradingEventPublisher
 from src.utils.trading_hours import TradingHoursChecker, TradingHoursConfig
 
 logger = logging.getLogger(__name__)
@@ -85,6 +97,12 @@ class RunnerConfig:
     timeframe: str
     warmup_bars: int = 50
     risk_limits: RiskLimits | None = None
+    mode: int = EXECUTION_MODE_PAPER  # ExecutionMode proto value: PAPER=1, LIVE=2
+
+    # Ledger identity (from the funded strategy execution; None = legacy
+    # unfunded session — no ledger events are emitted). See CONTRACTS.md §5.
+    sleeve_id: UUID | None = None
+    account_id: UUID | None = None
 
     # Position reconciliation settings
     position_reconciliation_enabled: bool = True
@@ -129,8 +147,8 @@ class StrategyRunner:
         self,
         config: RunnerConfig,
         strategy_fn: StrategyFunction,
-        bar_stream: AlpacaBarStream | MockBarStream,
-        trade_stream: AlpacaTradeStream | MockTradeStream,
+        bar_stream: BarStreamClient | MockBarStream,
+        trade_stream: TradingStreamClient | MockTradeStream,
         order_executor: OrderExecutor,
         risk_manager: RiskManager,
         alpaca_client: TradingClient | None = None,
@@ -138,6 +156,8 @@ class StrategyRunner:
         strategy_name: str = "Unknown Strategy",
         circuit_breaker_config: CircuitBreakerConfig | None = None,
         event_store: EventStore | None = None,
+        ledger_publisher: TradingEventPublisher | None = None,
+        portfolio_client: PortfolioLedgerClient | None = None,
     ):
         self.config = config
         self.strategy_fn = strategy_fn
@@ -148,6 +168,8 @@ class StrategyRunner:
         self.alerts = alert_service
         self.strategy_name = strategy_name
         self.trade_stream = trade_stream
+        self.ledger_publisher = ledger_publisher
+        self.portfolio_client = portfolio_client
 
         # Event sourcing (optional)
         self._event_store = event_store
@@ -158,6 +180,7 @@ class StrategyRunner:
                 alpaca_client=alpaca_client,
                 risk_manager=risk_manager,
                 alert_service=alert_service,
+                event_publisher=ledger_publisher,
             )
 
         # State
@@ -169,7 +192,8 @@ class StrategyRunner:
             s: deque(maxlen=max_history_size) for s in config.symbols
         }
         self._positions: dict[str, Position] = {}
-        self._equity = 100000.0  # Default, will be synced from Alpaca
+        self._equity = 100000.0  # Default, will be synced from Alpaca/sleeve
+        self._free_cash: float | None = None  # Sleeve free cash (LEDGER_EXECUTION)
         self._equity_sync_task: asyncio.Task[None] | None = None
         self._position_sync_task: asyncio.Task[None] | None = None
         self._trade_stream_task: asyncio.Task[None] | None = None
@@ -333,7 +357,9 @@ class StrategyRunner:
         self._running = True
 
         # Emit SessionStarted event if using event sourcing
-        mode: Literal["live", "paper"] = "paper"  # TODO: Get from config if available
+        mode: Literal["live", "paper"] = (
+            "live" if self.config.mode == EXECUTION_MODE_LIVE else "paper"
+        )
         if self._event_store:
             await self._event_store.append(
                 SessionStarted(
@@ -480,6 +506,13 @@ class StrategyRunner:
         start_time = time.perf_counter()
         symbol = bar.symbol
 
+        # Record receive latency (bar timestamp -> now); previously done in the
+        # in-service bar stream, now recorded here since the shared lib stream
+        # is metrics-agnostic.
+        latency = (datetime.now(UTC) - bar.timestamp).total_seconds()
+        if latency > 0:
+            record_bar_latency(latency)
+
         # Ignore bars for untracked symbols
         if symbol not in self._bar_history:
             return
@@ -548,6 +581,34 @@ class StrategyRunner:
         if not self._circuit_breaker.can_trade():
             logger.warning(f"Circuit breaker triggered, rejecting signal for {signal.symbol}")
             return
+
+        # Ledger accounting is long-only: lots have no short side yet, so a
+        # short would be silently miscounted. Reject rather than corrupt.
+        if (
+            signal.type in ("short", "cover")
+            and self.config.sleeve_id is not None
+            and ledger_execution_enabled()
+        ):
+            logger.warning(
+                f"Rejecting {signal.type} signal for {signal.symbol}: "
+                "short selling is not supported for sleeve-attributed sessions"
+            )
+            record_strategy_error("short_unsupported_for_sleeve")
+            return
+
+        # Sleeve free-cash fit: scale buys down to what the sleeve can afford
+        # rather than overdraw (mirrors portfolio sizing.fit_to_free_cash).
+        if signal.type in ("buy", "cover") and self._free_cash is not None and signal.price > 0:
+            affordable_qty = self._free_cash / signal.price
+            if affordable_qty <= 0:
+                logger.info(f"Skipping {signal.type} {signal.symbol}: sleeve free cash exhausted")
+                return
+            if signal.quantity > affordable_qty:
+                logger.info(
+                    f"Fitting {signal.symbol} buy to sleeve free cash: "
+                    f"{signal.quantity:.4f} → {affordable_qty:.4f}"
+                )
+                signal.quantity = affordable_qty
 
         # Record signal event if using event sourcing
         if self._event_executor:
@@ -639,6 +700,9 @@ class StrategyRunner:
             qty=signal.quantity,
             order_type=ORDER_TYPE_MARKET,
             time_in_force=TIME_IN_FORCE_DAY,
+            sleeve_id=self.config.sleeve_id,
+            account_id=self.config.account_id,
+            est_price=signal.price if signal.price > 0 else None,
         )
 
     async def _update_position(self, signal: Signal, order_id: UUID | None = None) -> None:
@@ -828,7 +892,15 @@ class StrategyRunner:
             del self._positions[symbol]
 
     async def _sync_equity(self) -> None:
-        """Sync equity from Alpaca account."""
+        """Sync equity — from the sleeve when ledger execution is on, else Alpaca.
+
+        Sleeve equity is what fixes multi-strategy double-counting: two
+        runners on one brokerage account each size against their own
+        allocation instead of the whole account.
+        """
+        if await self._sync_sleeve_equity():
+            return
+
         if not self.alpaca_client:
             return
 
@@ -852,6 +924,49 @@ class StrategyRunner:
             logger.warning(f"Failed to sync equity: {e}")
             # Record API error in circuit breaker
             await self._circuit_breaker.record_api_error(str(e))
+
+    async def _sync_sleeve_equity(self) -> bool:
+        """Sync equity + free cash from the sleeve projection. True if handled.
+
+        Sleeve equity = free cash + Σ(lot qty × latest bar close). Falls back
+        to a lot's average cost when no bar has arrived yet for its symbol.
+        Returns False (caller uses account equity) when ledger execution is
+        off or this session has no sleeve.
+        """
+        if (
+            self.portfolio_client is None
+            or self.config.sleeve_id is None
+            or not ledger_execution_enabled()
+        ):
+            return False
+
+        try:
+            detail = await self.portfolio_client.get_sleeve(
+                self.config.tenant_id, "", self.config.sleeve_id
+            )
+        except Exception as e:
+            logger.warning(f"Failed to sync sleeve equity: {e}")
+            await self._circuit_breaker.record_api_error(str(e))
+            return True  # handled (do NOT fall back to whole-account equity)
+
+        free_cash = float(detail.sleeve.cash.free)
+        equity = free_cash
+        for lot in detail.lots:
+            bars = self._bar_history.get(lot.symbol)
+            price = float(bars[-1].close) if bars else float(lot.avg_price)
+            equity += float(lot.qty) * price
+
+        self._free_cash = free_cash
+        self._equity = equity
+        logger.debug(f"Synced sleeve equity: ${equity:,.2f} (free cash ${free_cash:,.2f})")
+
+        self._circuit_breaker.update_equity(self._equity)
+        if not self._circuit_breaker.is_triggered:
+            triggered = await self._circuit_breaker.check_thresholds()
+            if triggered:
+                logger.warning("Circuit breaker triggered during sleeve equity sync")
+                self.pause()
+        return True
 
     async def _equity_sync_loop(self) -> None:
         """Periodically sync equity from Alpaca (every 60 seconds)."""
@@ -882,6 +997,7 @@ class StrategyRunner:
                 if not self._running:
                     break
 
+                record_trade_stream_event(event.event_type.value)
                 try:
                     await self._handle_trade_event(event)
                 except Exception as e:
@@ -919,8 +1035,69 @@ class StrategyRunner:
             await self._handle_partial_fill_event(event)
         elif event.event_type == TradeEventType.CANCELED:
             await self._handle_order_canceled(event)
+        elif event.event_type == TradeEventType.EXPIRED:
+            await self._handle_order_canceled(event)
         elif event.event_type == TradeEventType.REJECTED:
             await self._handle_order_rejected(event)
+
+        # Ledger emission: one fill payload per order, at terminal state only
+        # (the builder returns None for everything else). Never lets a publish
+        # failure break trade-event processing.
+        await self._publish_ledger_fill(event)
+
+    async def _publish_ledger_fill(self, event: TradeEvent) -> None:
+        """Publish ledger payloads for a terminal trade event.
+
+        - §1a fill payload (terminal fills, cancel/expiry with a filled
+          portion) under LEDGER_SHADOW_MODE;
+        - §4 reservation release (cancel/reject/expiry) under
+          LEDGER_EXECUTION (idempotent at the ledger, so the executor's own
+          release for API-initiated cancels never double-counts).
+        """
+        if (
+            self.ledger_publisher is None
+            or self.config.sleeve_id is None
+            or self.config.account_id is None
+            or not ledger_shadow_mode_enabled()
+        ):
+            return
+
+        payload = build_ledger_fill_payload(
+            tenant_id=self.config.tenant_id,
+            account_id=self.config.account_id,
+            sleeve_id=self.config.sleeve_id,
+            event=event,
+        )
+        try:
+            if payload is not None:
+                await self.ledger_publisher.publish_ledger_fill(self.config.account_id, payload)
+            if ledger_execution_enabled() and event.event_type in (
+                TradeEventType.CANCELED,
+                TradeEventType.EXPIRED,
+                TradeEventType.REJECTED,
+            ):
+                kind = (
+                    "order_rejected"
+                    if event.event_type is TradeEventType.REJECTED
+                    else "order_cancelled"
+                )
+                release = build_ledger_lifecycle_payload(
+                    kind=kind,
+                    tenant_id=self.config.tenant_id,
+                    account_id=self.config.account_id,
+                    sleeve_id=self.config.sleeve_id,
+                    client_order_id=event.client_order_id,
+                    symbol=event.symbol,
+                    side=event.side,
+                )
+                await self.ledger_publisher.publish_ledger_fill(self.config.account_id, release)
+        except Exception as e:
+            logger.error(f"Failed to publish ledger event for {event.client_order_id}: {e}")
+
+        # A terminal event changes sleeve cash/lots — drop the cached state so
+        # the next equity sync (and free-cash fit) sees fresh numbers.
+        if payload is not None and self.portfolio_client is not None:
+            self.portfolio_client.invalidate(self.config.sleeve_id)
 
     async def _handle_fill_event(self, event: TradeEvent) -> None:
         """Handle a complete fill event - update position based on broker confirmation.
@@ -1170,9 +1347,19 @@ class StrategyRunner:
         3. Auto-corrects small drifts (< auto_correct_threshold)
         4. Alerts on large drifts (>= alert_threshold)
         5. Handles missing positions in either direction
+
+        When the portfolio ledger owns reconciliation (LEDGER_EXECUTION with a
+        sleeve-attributed session), this becomes READ-ONLY: drift is logged and
+        alerted but local state is never auto-corrected — two writers
+        "correcting" the same drift would fight each other.
         """
         if not self.alpaca_client:
             return
+
+        # Portfolio owns reconciliation for sleeve-attributed sessions
+        ledger_owns_reconciliation = (
+            ledger_execution_enabled() and self.config.sleeve_id is not None
+        )
 
         import time
 
@@ -1241,6 +1428,29 @@ class StrategyRunner:
                     f"Position drift: {symbol} exists at broker "
                     f"({broker_pos.side} {broker_pos.qty}) but not locally"
                 )
+
+                if ledger_owns_reconciliation:
+                    # Read-only: surface the drift, let the ledger reconcile it
+                    duration = time.perf_counter() - start_time
+                    record_position_reconciliation(
+                        result="drift_alerted",
+                        duration=duration,
+                        drift_type="missing_local",
+                        symbol=symbol,
+                        drift_percent=100.0,
+                    )
+                    if self.alerts:
+                        await self.alerts.on_position_drift(
+                            tenant_id=self.config.tenant_id,
+                            session_id=self.config.execution_id,
+                            symbol=symbol,
+                            drift_type="missing_local",
+                            local_qty=0.0,
+                            broker_qty=broker_pos.qty,
+                            action="alerted",
+                        )
+                    all_ok = False
+                    continue
 
                 # Auto-add missing position (broker is source of truth)
                 self._positions[symbol] = Position(
@@ -1321,7 +1531,33 @@ class StrategyRunner:
                     auto_correct_threshold = self.config.position_drift_auto_correct_threshold_pct
                     alert_threshold = self.config.position_drift_alert_threshold_pct
 
-                    if drift_pct < auto_correct_threshold:
+                    if ledger_owns_reconciliation:
+                        # Read-only: never mutate; alert on material drift
+                        duration = time.perf_counter() - start_time
+                        record_position_reconciliation(
+                            result="drift_alerted",
+                            duration=duration,
+                            drift_type="quantity_mismatch",
+                            symbol=symbol,
+                            drift_percent=drift_pct,
+                        )
+                        logger.warning(
+                            f"Position drift (ledger-owned): {symbol} "
+                            f"local={local_pos.quantity}, broker={broker_pos.qty} "
+                            f"({drift_pct:.1f}%)"
+                        )
+                        if self.alerts and drift_pct >= alert_threshold:
+                            await self.alerts.on_position_drift(
+                                tenant_id=self.config.tenant_id,
+                                session_id=self.config.execution_id,
+                                symbol=symbol,
+                                drift_type="quantity_mismatch",
+                                local_qty=local_pos.quantity,
+                                broker_qty=broker_pos.qty,
+                                action="alerted",
+                            )
+                        all_ok = False
+                    elif drift_pct < auto_correct_threshold:
                         # Auto-correct small drift
                         old_qty = local_pos.quantity
                         local_pos.quantity = broker_pos.qty
@@ -1440,8 +1676,8 @@ class RunnerManager:
         self,
         config: RunnerConfig,
         strategy_fn: StrategyFunction,
-        bar_stream: AlpacaBarStream | MockBarStream,
-        trade_stream: AlpacaTradeStream | MockTradeStream,
+        bar_stream: BarStreamClient | MockBarStream,
+        trade_stream: TradingStreamClient | MockTradeStream,
         order_executor: OrderExecutor,
         risk_manager: RiskManager,
         alpaca_client: TradingClient | None = None,
@@ -1449,6 +1685,8 @@ class RunnerManager:
         strategy_name: str = "Unknown Strategy",
         circuit_breaker_config: CircuitBreakerConfig | None = None,
         event_store: EventStore | None = None,
+        ledger_publisher: TradingEventPublisher | None = None,
+        portfolio_client: PortfolioLedgerClient | None = None,
     ) -> StrategyRunner:
         """Create and start a new runner.
 
@@ -1486,6 +1724,8 @@ class RunnerManager:
             strategy_name=strategy_name,
             circuit_breaker_config=circuit_breaker_config,
             event_store=event_store,
+            ledger_publisher=ledger_publisher,
+            portfolio_client=portfolio_client,
         )
 
         self._runners[execution_id] = runner

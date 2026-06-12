@@ -5,11 +5,12 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from llamatrade_alpaca import StreamBar as BarData
+
 from src.compiler_adapter import (
     StrategyAdapter,
     load_strategy_adapter,
 )
-from src.runner.bar_stream import BarData
 from src.runner.runner import Position
 
 

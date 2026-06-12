@@ -145,6 +145,7 @@ class OrderSubmissionMixin:
             order_type=order_type_to_str(order.order_type),
             limit_price=order.limit_price,
             session_id=session_id,
+            sleeve_id=order.sleeve_id,
         )
 
     async def _handle_risk_rejection(

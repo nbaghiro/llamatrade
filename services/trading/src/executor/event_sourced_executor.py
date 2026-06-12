@@ -47,6 +47,9 @@ from src.events.trading_events import (
     SignalRejected,
 )
 from src.executor.base import OrderSubmissionMixin
+from src.ledger_events import build_fill_payload, build_ledger_lifecycle_payload
+from src.ledger_settings import execution_enabled as ledger_execution_enabled
+from src.ledger_settings import shadow_mode_enabled as ledger_shadow_mode_enabled
 from src.metrics import (
     record_bracket_oco_conflict,
     record_bracket_order_submitted,
@@ -975,6 +978,79 @@ class EventSourcedOrderExecutor(OrderSubmissionMixin):
                     reason="broker_cancelled",
                     filled_qty=Decimal(str(alpaca_order.filled_qty)),
                 )
+            )
+
+        # Ledger emission for the recovery window: the trade stream missed
+        # these events, and event-sourced orders have no DB row for the REST
+        # sync path to cover. Idempotent with both other paths (same
+        # client_order_id → same ledger event_id).
+        await self._publish_ledger_events_for_recovery(
+            tenant_id=tenant_id,
+            order=order,
+            client_order_id=client_order_id,
+            alpaca_order=alpaca_order,
+            order_id=order_id,
+        )
+
+    async def _publish_ledger_events_for_recovery(
+        self,
+        tenant_id: UUID,
+        order: OrderCreate,
+        client_order_id: str,
+        alpaca_order: AlpacaOrder,
+        order_id: UUID,
+    ) -> None:
+        """Publish §1a fill / §4 release for a crash-recovered order state."""
+        if (
+            self.publisher is None
+            or order.sleeve_id is None
+            or order.account_id is None
+            or not ledger_shadow_mode_enabled()
+        ):
+            return
+
+        status = alpaca_order.status.value.lower()
+        filled_qty = Decimal(str(alpaca_order.filled_qty or 0))
+        avg_price = alpaca_order.filled_avg_price
+        terminal_with_fill = status == "filled" or (
+            status in ("canceled", "cancelled", "expired") and filled_qty > 0
+        )
+        try:
+            if terminal_with_fill and filled_qty > 0 and avg_price is not None:
+                payload = build_fill_payload(
+                    tenant_id=tenant_id,
+                    account_id=order.account_id,
+                    sleeve_id=order.sleeve_id,
+                    client_order_id=client_order_id,
+                    symbol=order.symbol.upper(),
+                    side=order_side_to_str(order.side),
+                    qty=filled_qty,
+                    price=Decimal(str(avg_price)),
+                    filled_at=alpaca_order.filled_at or datetime.now(UTC),
+                    order_id=order_id,
+                )
+                await self.publisher.publish_ledger_fill(order.account_id, payload)
+            if ledger_execution_enabled() and status in (
+                "canceled",
+                "cancelled",
+                "expired",
+                "rejected",
+            ):
+                kind = "order_rejected" if status == "rejected" else "order_cancelled"
+                release = build_ledger_lifecycle_payload(
+                    kind=kind,
+                    tenant_id=tenant_id,
+                    account_id=order.account_id,
+                    sleeve_id=order.sleeve_id,
+                    client_order_id=client_order_id,
+                    symbol=order.symbol.upper(),
+                    side=order_side_to_str(order.side),
+                    order_id=order_id,
+                )
+                await self.publisher.publish_ledger_fill(order.account_id, release)
+        except Exception as e:
+            logger.error(
+                f"Failed to publish ledger events for recovered order {client_order_id}: {e}"
             )
 
     def _side_to_signal_type(self, side: int) -> Literal["buy", "sell", "short", "cover"]:

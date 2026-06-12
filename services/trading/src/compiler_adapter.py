@@ -11,11 +11,11 @@ import logging
 from collections.abc import Sequence
 from datetime import date
 
+from llamatrade_alpaca import StreamBar as BarData
 from llamatrade_compiler import Bar, CompiledStrategy, compile_strategy
 from llamatrade_compiler.extractor import get_required_symbols
 from llamatrade_dsl import RebalanceFrequency, Strategy, parse_strategy, validate_strategy
 
-from src.runner.bar_stream import BarData
 from src.runner.runner import Position, Signal
 
 logger = logging.getLogger(__name__)
@@ -82,19 +82,33 @@ class StrategyAdapter:
     The StrategyRunner expects a callable with signature:
         (symbol: str, bars: list[BarData], position: Position | None, equity: float) -> Signal | None
 
-    This adapter wraps a CompiledStrategy and converts allocation weights to signals:
+    This adapter wraps a CompiledStrategy and converts allocation weights to signals.
+
+    Legacy mode (``sleeve_aware=False``, the default):
     - When target weight > 0 and no position: generates buy signal
     - When target weight = 0 and has position: generates sell signal
+
+    Sleeve-aware mode (``sleeve_aware=True``, LEDGER_EXECUTION rollout): the
+    drift-tolerance sizing from the portfolio ledger design — trade the delta
+    between target value (sleeve equity × weight) and current value, but only
+    when the drift exceeds the band (mirrors portfolio ``sizing.target_orders``).
+    Weight changes (e.g. 60% → 40%) produce resize orders, which the legacy
+    binary logic cannot express.
 
     For multi-symbol strategies, each symbol gets its own CompiledStrategy
     instance to maintain independent state (bar history, indicators, etc.).
     """
 
-    def __init__(self, strategy_sexpr: str):
+    # Mirror of portfolio sizing.DEFAULT_DRIFT_TOLERANCE
+    DRIFT_TOLERANCE = 0.05
+
+    def __init__(self, strategy_sexpr: str, *, sleeve_aware: bool = False):
         """Initialize with strategy S-expression.
 
         Args:
             strategy_sexpr: Strategy definition in allocation-based S-expression format
+            sleeve_aware: Enable drift-tolerance resize sizing (the caller
+                passes sleeve equity, not account equity)
 
         Raises:
             ValueError: If the strategy is invalid or cannot be compiled.
@@ -134,6 +148,9 @@ class StrategyAdapter:
 
         # Track current allocations per symbol
         self._current_weights: dict[str, float] = {}
+
+        # Sizing mode (see class docstring)
+        self._sleeve_aware = sleeve_aware
 
         # Track rebalancing state
         self._last_rebalance: date | None = None
@@ -210,43 +227,84 @@ class StrategyAdapter:
 
         # Get target weight for this symbol
         target_weight = allocation["weights"].get(symbol, 0.0)
-        self._current_weights.get(symbol, 0.0)
         current_price = latest_bar.close
 
-        # Determine if we need to generate a signal
-        has_position = position is not None
-
-        signal: Signal | None = None
-
-        if target_weight > 0 and not has_position:
-            # Target allocation - generate buy signal
-            position_value = equity * (target_weight / 100)
-            quantity = position_value / current_price if current_price > 0 else 0.0
-
-            if quantity > 0:
-                self._current_weights[symbol] = target_weight
-                signal = Signal(
-                    type="buy",
-                    symbol=symbol,
-                    quantity=quantity,
-                    price=current_price,
-                )
-
-        elif target_weight == 0 and has_position:
-            # Zero allocation - generate sell signal
-            self._current_weights[symbol] = 0.0
-            signal = Signal(
-                type="sell",
-                symbol=symbol,
-                quantity=position.quantity,
-                price=current_price,
-            )
+        if self._sleeve_aware:
+            signal = self._drift_signal(symbol, target_weight, position, equity, current_price)
+        else:
+            signal = self._binary_signal(symbol, target_weight, position, equity, current_price)
 
         # Update weight tracking and rebalance date
         self._current_weights[symbol] = target_weight
         self._last_rebalance = current_date
 
         return signal
+
+    def _binary_signal(
+        self,
+        symbol: str,
+        target_weight: float,
+        position: Position | None,
+        equity: float,
+        current_price: float,
+    ) -> Signal | None:
+        """Legacy all-or-nothing conversion (no resizing on weight changes)."""
+        has_position = position is not None
+
+        if target_weight > 0 and not has_position:
+            # Target allocation - generate buy signal
+            position_value = equity * (target_weight / 100)
+            quantity = position_value / current_price if current_price > 0 else 0.0
+            if quantity > 0:
+                return Signal(type="buy", symbol=symbol, quantity=quantity, price=current_price)
+
+        elif target_weight == 0 and has_position:
+            # Zero allocation - generate sell signal
+            assert position is not None
+            return Signal(
+                type="sell", symbol=symbol, quantity=position.quantity, price=current_price
+            )
+
+        return None
+
+    def _drift_signal(
+        self,
+        symbol: str,
+        target_weight: float,
+        position: Position | None,
+        equity: float,
+        current_price: float,
+    ) -> Signal | None:
+        """Drift-tolerance resize sizing against sleeve equity.
+
+        Trade the delta between target value and current value, skipping
+        trades inside the drift band — mirrors portfolio
+        ``sizing.target_orders`` so live execution and the ledger's
+        desired-state planner agree on what a sleeve should do.
+        """
+        if current_price <= 0:
+            return None
+
+        held_qty = position.quantity if position is not None else 0.0
+        current_value = held_qty * current_price
+        target_value = equity * (target_weight / 100)
+        delta_value = target_value - current_value
+
+        # Within the drift band → no trade (avoids churn on small moves)
+        if target_value > 0 and abs(delta_value) / target_value <= self.DRIFT_TOLERANCE:
+            return None
+
+        if delta_value > 0:
+            quantity = delta_value / current_price
+            if quantity <= 0:
+                return None
+            return Signal(type="buy", symbol=symbol, quantity=quantity, price=current_price)
+
+        # Reduce (or close) — never sell more than we hold
+        quantity = min(-delta_value / current_price, held_qty)
+        if quantity <= 0:
+            return None
+        return Signal(type="sell", symbol=symbol, quantity=quantity, price=current_price)
 
     def _convert_bar(self, bar: BarData) -> Bar:
         """Convert runner BarData to compiler Bar."""

@@ -11,6 +11,7 @@ from uuid import UUID
 
 import grpc.aio
 
+from llamatrade_common.eventbus import streams_trading_enabled
 from llamatrade_proto.generated.trading_pb2 import (
     ORDER_SIDE_BUY,
     ORDER_SIDE_SELL,
@@ -19,7 +20,8 @@ from llamatrade_proto.generated.trading_pb2 import (
 )
 
 from src.executor.order_executor import create_order_executor
-from src.models import OrderCreate, OrderResponse, PositionResponse
+from src.ledger_settings import shadow_mode_enabled as ledger_shadow_mode_enabled
+from src.models import OrderCreate, OrderResponse, PositionResponse, SessionResponse
 from src.streaming import (
     OrderUpdate,
     PositionUpdate,
@@ -27,6 +29,9 @@ from src.streaming import (
 )
 
 if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
+
+    from llamatrade_proto.clients.ledger import LedgerClient
     from llamatrade_proto.generated import trading_pb2
 
 logger = logging.getLogger(__name__)
@@ -40,7 +45,248 @@ class TradingServicer:
 
     def __init__(self) -> None:
         """Initialize the servicer."""
-        pass
+        self._ledger_client: LedgerClient | None = None
+
+    def _get_ledger(self) -> LedgerClient:
+        """Lazy LedgerClient to the portfolio service (sleeve resolution)."""
+        if self._ledger_client is None:
+            import os
+
+            from llamatrade_proto.clients.ledger import LedgerClient
+
+            self._ledger_client = LedgerClient(os.getenv("PORTFOLIO_GRPC_TARGET", "portfolio:8860"))
+        return self._ledger_client
+
+    async def _resolve_order_attribution(
+        self,
+        db: AsyncSession,
+        tenant_id: UUID,
+        user_id: str,
+        session_id: UUID,
+        requested_sleeve_id: str,
+    ) -> tuple[UUID | None, UUID | None]:
+        """(sleeve_id, account_id) for an order, fixed at origination.
+
+        Resolution order (CONTRACTS.md §5): explicit request sleeve → the
+        session's strategy sleeve → the account's Manual sleeve (an
+        unattributed order is a manual trade). Only active under
+        LEDGER_SHADOW_MODE; resolution failures log and fall back to
+        unattributed — reconciliation will classify the effects as external
+        rather than blocking the order.
+        """
+        if not ledger_shadow_mode_enabled():
+            return (UUID(requested_sleeve_id) if requested_sleeve_id else None), None
+
+        from sqlalchemy import select
+
+        from llamatrade_db.models.trading import TradingSession
+        from llamatrade_proto.generated.ledger_pb2 import SLEEVE_TYPE_MANUAL
+
+        try:
+            session = await db.scalar(
+                select(TradingSession).where(
+                    TradingSession.tenant_id == tenant_id,
+                    TradingSession.id == session_id,
+                )
+            )
+            if requested_sleeve_id:
+                sleeve_id = UUID(requested_sleeve_id)
+                if session is not None and session.account_id is not None:
+                    return sleeve_id, session.account_id
+                detail = await self._get_ledger().get_sleeve(
+                    str(tenant_id), user_id, requested_sleeve_id
+                )
+                return sleeve_id, UUID(detail.sleeve.account_id)
+
+            if session is not None and session.sleeve_id is not None:
+                return session.sleeve_id, session.account_id
+
+            if session is not None:
+                bootstrap = await self._get_ledger().get_or_create_account(
+                    str(tenant_id), user_id, str(session.credentials_id)
+                )
+                manual = next(
+                    (s for s in bootstrap.base_sleeves if s.type == SLEEVE_TYPE_MANUAL), None
+                )
+                if manual is not None:
+                    return UUID(manual.id), UUID(bootstrap.account.id)
+        except Exception as e:
+            logger.warning("Order attribution resolution failed (session=%s): %s", session_id, e)
+        return None, None
+
+    async def StartSession(
+        self,
+        request: trading_pb2.StartTradingSessionRequest,
+        context: grpc.aio.ServicerContext[Any, Any],
+    ) -> trading_pb2.StartTradingSessionResponse:
+        """Start a trading session (preflight checks + runner launch)."""
+        from llamatrade_proto.generated import trading_pb2
+        from llamatrade_proto.generated.common_pb2 import EXECUTION_MODE_PAPER
+
+        from src.services.live_session_service import create_live_session_service
+
+        try:
+            service = await create_live_session_service()
+            session = await service.start_session(
+                tenant_id=UUID(request.context.tenant_id),
+                user_id=UUID(request.context.user_id),
+                strategy_id=UUID(request.strategy_id),
+                strategy_version=request.strategy_version or None,
+                name=request.name or "Trading Session",
+                mode=request.mode or EXECUTION_MODE_PAPER,
+                credentials_id=UUID(request.credentials_id),
+                symbols=list(request.symbols) or None,
+                execution_id=UUID(request.execution_id) if request.execution_id else None,
+            )
+            return trading_pb2.StartTradingSessionResponse(session=self._to_proto_session(session))
+        except ValueError as e:
+            await context.abort(grpc.StatusCode.FAILED_PRECONDITION, str(e))
+        except Exception as e:
+            logger.error("StartSession error: %s", e, exc_info=True)
+            await context.abort(grpc.StatusCode.INTERNAL, f"Failed to start session: {e}")
+
+    async def StopSession(
+        self,
+        request: trading_pb2.StopTradingSessionRequest,
+        context: grpc.aio.ServicerContext[Any, Any],
+    ) -> trading_pb2.StopTradingSessionResponse:
+        """Stop a trading session and its runner."""
+        from llamatrade_proto.generated import trading_pb2
+
+        from src.services.live_session_service import create_live_session_service
+
+        try:
+            service = await create_live_session_service()
+            session = await service.stop_session(
+                session_id=UUID(request.session_id),
+                tenant_id=UUID(request.context.tenant_id),
+            )
+            if session is None:
+                await context.abort(grpc.StatusCode.NOT_FOUND, "Session not found")
+            return trading_pb2.StopTradingSessionResponse(session=self._to_proto_session(session))
+        except grpc.aio.AioRpcError:
+            raise
+        except ValueError as e:
+            await context.abort(grpc.StatusCode.FAILED_PRECONDITION, str(e))
+        except Exception as e:
+            logger.error("StopSession error: %s", e, exc_info=True)
+            await context.abort(grpc.StatusCode.INTERNAL, f"Failed to stop session: {e}")
+
+    async def PauseSession(
+        self,
+        request: trading_pb2.PauseTradingSessionRequest,
+        context: grpc.aio.ServicerContext[Any, Any],
+    ) -> trading_pb2.PauseTradingSessionResponse:
+        """Pause a trading session and its runner."""
+        from llamatrade_proto.generated import trading_pb2
+
+        from src.services.live_session_service import create_live_session_service
+
+        try:
+            service = await create_live_session_service()
+            session = await service.pause_session(
+                session_id=UUID(request.session_id),
+                tenant_id=UUID(request.context.tenant_id),
+            )
+            if session is None:
+                await context.abort(grpc.StatusCode.NOT_FOUND, "Session not found")
+            return trading_pb2.PauseTradingSessionResponse(session=self._to_proto_session(session))
+        except grpc.aio.AioRpcError:
+            raise
+        except ValueError as e:
+            await context.abort(grpc.StatusCode.FAILED_PRECONDITION, str(e))
+        except Exception as e:
+            logger.error("PauseSession error: %s", e, exc_info=True)
+            await context.abort(grpc.StatusCode.INTERNAL, f"Failed to pause session: {e}")
+
+    async def ResumeSession(
+        self,
+        request: trading_pb2.ResumeTradingSessionRequest,
+        context: grpc.aio.ServicerContext[Any, Any],
+    ) -> trading_pb2.ResumeTradingSessionResponse:
+        """Resume a paused trading session and its runner."""
+        from llamatrade_proto.generated import trading_pb2
+
+        from src.services.live_session_service import create_live_session_service
+
+        try:
+            service = await create_live_session_service()
+            session = await service.resume_session(
+                session_id=UUID(request.session_id),
+                tenant_id=UUID(request.context.tenant_id),
+            )
+            if session is None:
+                await context.abort(grpc.StatusCode.NOT_FOUND, "Session not found")
+            return trading_pb2.ResumeTradingSessionResponse(session=self._to_proto_session(session))
+        except grpc.aio.AioRpcError:
+            raise
+        except ValueError as e:
+            await context.abort(grpc.StatusCode.FAILED_PRECONDITION, str(e))
+        except Exception as e:
+            logger.error("ResumeSession error: %s", e, exc_info=True)
+            await context.abort(grpc.StatusCode.INTERNAL, f"Failed to resume session: {e}")
+
+    async def GetSession(
+        self,
+        request: trading_pb2.GetTradingSessionRequest,
+        context: grpc.aio.ServicerContext[Any, Any],
+    ) -> trading_pb2.GetTradingSessionResponse:
+        """Get a trading session with P&L."""
+        from llamatrade_proto.generated import trading_pb2
+
+        from src.services.live_session_service import create_live_session_service
+
+        try:
+            service = await create_live_session_service()
+            session = await service.get_session(
+                session_id=UUID(request.session_id),
+                tenant_id=UUID(request.context.tenant_id),
+            )
+            if session is None:
+                await context.abort(grpc.StatusCode.NOT_FOUND, "Session not found")
+            return trading_pb2.GetTradingSessionResponse(session=self._to_proto_session(session))
+        except grpc.aio.AioRpcError:
+            raise
+        except Exception as e:
+            logger.error("GetSession error: %s", e, exc_info=True)
+            await context.abort(grpc.StatusCode.INTERNAL, f"Failed to get session: {e}")
+
+    async def ListSessions(
+        self,
+        request: trading_pb2.ListTradingSessionsRequest,
+        context: grpc.aio.ServicerContext[Any, Any],
+    ) -> trading_pb2.ListTradingSessionsResponse:
+        """List trading sessions for the tenant."""
+        from llamatrade_proto.generated import common_pb2, trading_pb2
+
+        from src.services.live_session_service import create_live_session_service
+
+        try:
+            service = await create_live_session_service()
+            page = request.pagination.page if request.HasField("pagination") else 1
+            page_size = request.pagination.page_size if request.HasField("pagination") else 20
+            sessions, total = await service.list_sessions(
+                tenant_id=UUID(request.context.tenant_id),
+                status=request.status or None,
+                strategy_id=UUID(request.strategy_id) if request.strategy_id else None,
+                page=max(page, 1),
+                page_size=max(page_size, 1),
+            )
+            total_pages = (total + page_size - 1) // page_size if total > 0 else 1
+            return trading_pb2.ListTradingSessionsResponse(
+                sessions=[self._to_proto_session(s) for s in sessions],
+                pagination=common_pb2.PaginationResponse(
+                    total_items=total,
+                    total_pages=total_pages,
+                    current_page=page,
+                    page_size=page_size,
+                    has_next=page < total_pages,
+                    has_previous=page > 1,
+                ),
+            )
+        except Exception as e:
+            logger.error("ListSessions error: %s", e, exc_info=True)
+            await context.abort(grpc.StatusCode.INTERNAL, f"Failed to list sessions: {e}")
 
     async def SubmitOrder(
         self,
@@ -57,6 +303,15 @@ class TradingServicer:
             tenant_id = UUID(request.context.tenant_id)
             session_id = UUID(request.session_id)
 
+            # Ledger attribution, fixed at origination (CONTRACTS.md §5)
+            sleeve_id, account_id = await self._resolve_order_attribution(
+                db=executor.db,
+                tenant_id=tenant_id,
+                user_id=request.context.user_id,
+                session_id=session_id,
+                requested_sleeve_id=request.sleeve_id,
+            )
+
             # Proto enum values are same as our int constants - use directly
             # Create order request
             order_create = OrderCreate(
@@ -71,6 +326,8 @@ class TradingServicer:
                 stop_price=float(request.stop_price.value)
                 if request.HasField("stop_price")
                 else None,
+                sleeve_id=sleeve_id,
+                account_id=account_id,
             )
 
             # Submit the order
@@ -379,11 +636,22 @@ class TradingServicer:
 
         subscriber = get_trading_event_subscriber()
         try:
-            async for update in subscriber.subscribe_orders(session_id):
-                if context.cancelled():
-                    break
-                proto_update = self._to_proto_order_update(update)
-                yield proto_update
+            if streams_trading_enabled():
+                # Tail-read delivery: reconnect replays the gap from the
+                # client's last-seen cursor (carried back via stream_cursor).
+                async for cursor, update in subscriber.tail_orders(
+                    session_id, last_seen_id=request.last_seen_id
+                ):
+                    if context.cancelled():
+                        break
+                    proto_update = self._to_proto_order_update(update)
+                    proto_update.stream_cursor = cursor
+                    yield proto_update
+            else:
+                async for update in subscriber.subscribe_orders(session_id):
+                    if context.cancelled():
+                        break
+                    yield self._to_proto_order_update(update)
 
         except asyncio.CancelledError:
             logger.info("Order updates stream cancelled for session: %s", session_id)
@@ -405,11 +673,20 @@ class TradingServicer:
 
         subscriber = get_trading_event_subscriber()
         try:
-            async for update in subscriber.subscribe_positions(session_id):
-                if context.cancelled():
-                    break
-                proto_update = self._to_proto_position_update(update)
-                yield proto_update
+            if streams_trading_enabled():
+                async for cursor, update in subscriber.tail_positions(
+                    session_id, last_seen_id=request.last_seen_id
+                ):
+                    if context.cancelled():
+                        break
+                    proto_update = self._to_proto_position_update(update)
+                    proto_update.stream_cursor = cursor
+                    yield proto_update
+            else:
+                async for update in subscriber.subscribe_positions(session_id):
+                    if context.cancelled():
+                        break
+                    yield self._to_proto_position_update(update)
 
         except asyncio.CancelledError:
             logger.info("Position updates stream cancelled for session: %s", session_id)
@@ -418,6 +695,30 @@ class TradingServicer:
             raise
         finally:
             await subscriber.close()
+
+    def _to_proto_session(self, session: SessionResponse) -> trading_pb2.TradingSession:
+        """Convert internal session response to proto TradingSession."""
+        from llamatrade_proto.generated import common_pb2, trading_pb2
+        from llamatrade_proto.generated.common_pb2 import EXECUTION_STATUS_RUNNING
+
+        proto = trading_pb2.TradingSession(
+            id=str(session.id),
+            tenant_id=str(session.tenant_id),
+            strategy_id=str(session.strategy_id),
+            name=session.name,
+            mode=session.mode,
+            is_active=session.status == EXECUTION_STATUS_RUNNING,
+            total_pnl=common_pb2.Decimal(value=str(session.pnl)),
+            total_trades=session.trades_count,
+            started_at=common_pb2.Timestamp(seconds=int(session.started_at.timestamp())),
+            sleeve_id=str(session.sleeve_id) if session.sleeve_id else "",
+            account_id=str(session.account_id) if session.account_id else "",
+        )
+        if session.stopped_at:
+            proto.ended_at.CopyFrom(
+                common_pb2.Timestamp(seconds=int(session.stopped_at.timestamp()))
+            )
+        return proto
 
     def _to_proto_order(self, order: OrderResponse) -> trading_pb2.Order:
         """Convert internal order to proto Order.

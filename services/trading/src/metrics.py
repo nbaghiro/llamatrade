@@ -11,7 +11,7 @@ from llamatrade_common. These metrics cover:
 """
 
 import time
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from types import TracebackType
 from typing import ParamSpec, TypeVar
@@ -49,6 +49,18 @@ ORDERS_SYNCED_TOTAL = Counter(
     "Total orders synced with Alpaca",
     ["status_change"],  # filled, cancelled, partial, no_change
 )
+
+LEDGER_EVENTS_PUBLISHED_TOTAL = Counter(
+    "trading_ledger_events_published_total",
+    "Ledger payloads published to the portfolio fill channel",
+    ["kind", "status"],  # kind: order_filled/order_submitted/...; status: success/failure
+)
+
+
+def record_ledger_publish(kind: str, status: str) -> None:
+    """Record a ledger payload publish attempt (watch failures during rollout)."""
+    LEDGER_EVENTS_PUBLISHED_TOTAL.labels(kind=kind, status=status).inc()
+
 
 # =============================================================================
 # Bracket Order Metrics
@@ -293,7 +305,7 @@ class AsyncMetricsTimer:
 
 
 @asynccontextmanager
-async def time_alpaca_call(endpoint: str) -> AsyncIterator[None]:
+async def time_alpaca_call(endpoint: str) -> AsyncGenerator[None]:
     """Context manager to time Alpaca API calls.
 
     Usage:

@@ -46,6 +46,8 @@ class AlertType(StrEnum):
     POSITION_OPENED = "position_opened"
     POSITION_CLOSED = "position_closed"
     POSITION_DRIFT = "position_drift"
+    RECONCILIATION_DRIFT = "reconciliation_drift"
+    SLEEVE_FROZEN = "sleeve_frozen"
     STOP_LOSS_HIT = "stop_loss_hit"
     TAKE_PROFIT_HIT = "take_profit_hit"
     RISK_BREACH = "risk_breach"
@@ -326,6 +328,81 @@ class AlertService:
                     "broker_qty": broker_qty,
                     "action": action,
                 },
+            )
+        )
+
+    async def on_reconciliation_drift(
+        self,
+        tenant_id: UUID,
+        account_id: UUID,
+        symbol: str,
+        drift_kind: str,
+        ledger_qty: float,
+        broker_qty: float,
+        session_id: UUID | None = None,
+    ) -> None:
+        """Send alert for ledger-vs-broker drift found by shadow reconciliation.
+
+        Args:
+            tenant_id: Tenant identifier.
+            account_id: Ledger account that drifted.
+            symbol: Symbol with drift.
+            drift_kind: Classification (qty_mismatch, missing_at_broker,
+                missing_in_ledger, dust).
+            ledger_qty: Aggregate quantity per the ledger projection.
+            broker_qty: Quantity at the broker.
+            session_id: Optional session if the drift maps to one.
+        """
+        priority = (
+            AlertPriority.CRITICAL
+            if drift_kind in ("missing_at_broker", "missing_in_ledger")
+            else AlertPriority.HIGH
+        )
+        await self.send(
+            Alert(
+                tenant_id=tenant_id,
+                session_id=session_id,
+                alert_type=AlertType.RECONCILIATION_DRIFT,
+                priority=priority,
+                title=f"Ledger Reconciliation Drift: {symbol}",
+                message=(
+                    f"Ledger/broker mismatch for {symbol}: ledger={ledger_qty}, "
+                    f"broker={broker_qty} ({drift_kind}). Manual review required."
+                ),
+                symbol=symbol,
+                metadata={
+                    "account_id": str(account_id),
+                    "drift_kind": drift_kind,
+                    "ledger_qty": ledger_qty,
+                    "broker_qty": broker_qty,
+                },
+            )
+        )
+
+    async def on_sleeve_frozen(
+        self,
+        tenant_id: UUID,
+        sleeve_id: UUID,
+        reason: str,
+        session_id: UUID | None = None,
+    ) -> None:
+        """Send alert when a ledger sleeve is frozen (material unexplained drift).
+
+        Args:
+            tenant_id: Tenant identifier.
+            sleeve_id: The frozen sleeve.
+            reason: Why the sleeve was frozen.
+            session_id: Optional session trading this sleeve.
+        """
+        await self.send(
+            Alert(
+                tenant_id=tenant_id,
+                session_id=session_id,
+                alert_type=AlertType.SLEEVE_FROZEN,
+                priority=AlertPriority.CRITICAL,
+                title="Ledger Sleeve Frozen",
+                message=f"Sleeve {sleeve_id} frozen: {reason}. Trading on it is halted.",
+                metadata={"sleeve_id": str(sleeve_id), "reason": reason},
             )
         )
 

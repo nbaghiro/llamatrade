@@ -14,9 +14,38 @@ from uuid import UUID
 
 import redis.asyncio as aioredis
 
+from llamatrade_common.eventbus import (
+    EventBus,
+    streams_ledger_fills_enabled,
+    streams_trading_enabled,
+)
+
 logger = logging.getLogger(__name__)
 
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+
+# One global durable stream for ledger fill/lifecycle payloads (bus-namespaced
+# to lt:ledger:fills). Single stream — not per-account — because XREADGROUP has
+# no pattern-subscribe, global order preserves per-account FIFO, and payloads
+# already carry account_id. See CONTRACTS.md §1.
+LEDGER_FILLS_STREAM = "ledger:fills"
+LEDGER_FILLS_MAXLEN = 10_000
+
+# Per-session UI event streams (STREAMS_TRADING): tail-read fan-out so each
+# browser/gRPC stream gets its own full copy and a reconnect replays the gap
+# from the client's last-seen cursor. Entries carry the same JSON body as the
+# pub/sub message, in a single "payload" field.
+TRADING_ORDERS_STREAM_PREFIX = "trading:orders"
+TRADING_POSITIONS_STREAM_PREFIX = "trading:positions"
+TRADING_UI_MAXLEN = 1_000
+
+
+def orders_stream(session_id: UUID | str) -> str:
+    return f"{TRADING_ORDERS_STREAM_PREFIX}:{session_id}"
+
+
+def positions_stream(session_id: UUID | str) -> str:
+    return f"{TRADING_POSITIONS_STREAM_PREFIX}:{session_id}"
 
 
 def _serialize_uuid(obj: Any) -> str:
@@ -128,20 +157,29 @@ class TradingEventPublisher:
         await publisher.close()
     """
 
-    def __init__(self, redis_url: str | None = None):
+    def __init__(self, redis_url: str | None = None, event_bus: EventBus | None = None):
         """Initialize the publisher.
 
         Args:
             redis_url: Redis connection URL. Defaults to REDIS_URL env var.
+            event_bus: Streams transport (injected in tests; lazily created
+                otherwise) for the durable dual-write paths.
         """
         self.redis_url = redis_url or REDIS_URL
         self._redis: aioredis.Redis | None = None
+        self._bus: EventBus | None = event_bus
 
     async def _get_redis(self) -> aioredis.Redis:
         """Get or create Redis connection."""
         if self._redis is None:
             self._redis = await aioredis.from_url(self.redis_url)
         return self._redis
+
+    def _get_bus(self) -> EventBus:
+        """Get or create the Streams bus (same Redis, namespaced keys)."""
+        if self._bus is None:
+            self._bus = EventBus(self.redis_url)
+        return self._bus
 
     async def publish_order_update(
         self,
@@ -157,9 +195,10 @@ class TradingEventPublisher:
         Returns:
             Number of subscribers that received the message.
         """
+        message = json.dumps(order.to_dict(), default=_serialize_uuid)
+        await self._dual_write_ui_stream(orders_stream(session_id), message)
         redis = await self._get_redis()
         channel = f"trading:orders:{session_id}"
-        message = json.dumps(order.to_dict(), default=_serialize_uuid)
         result: int = await redis.publish(channel, message)
         logger.debug(
             f"Published order update to {channel}",
@@ -181,15 +220,29 @@ class TradingEventPublisher:
         Returns:
             Number of subscribers that received the message.
         """
+        message = json.dumps(position.to_dict(), default=_serialize_uuid)
+        await self._dual_write_ui_stream(positions_stream(session_id), message)
         redis = await self._get_redis()
         channel = f"trading:positions:{session_id}"
-        message = json.dumps(position.to_dict(), default=_serialize_uuid)
         result: int = await redis.publish(channel, message)
         logger.debug(
             f"Published position update to {channel}",
             extra={"symbol": position.symbol, "qty": position.qty, "subscribers": result},
         )
         return result
+
+    async def _dual_write_ui_stream(self, stream: str, message: str) -> None:
+        """Best-effort XADD of a UI event under STREAMS_TRADING (dual-write).
+
+        Pub/sub stays primary during the soak; a stream failure logs and
+        never blocks the pub/sub delivery.
+        """
+        if not streams_trading_enabled():
+            return
+        try:
+            await self._get_bus().publish(stream, {"payload": message}, maxlen=TRADING_UI_MAXLEN)
+        except Exception:
+            logger.exception("Failed to XADD UI event to stream %s", stream)
 
     async def publish_order_submitted(
         self,
@@ -383,11 +436,68 @@ class TradingEventPublisher:
         )
         return await self.publish_position_update(session_id, update)
 
+    async def publish_ledger_fill(
+        self,
+        account_id: UUID | str,
+        payload: dict[str, str],
+    ) -> int:
+        """Publish a ledger event payload to ``ledger:fills:{account_id}``.
+
+        The portfolio service's fill consumer ingests these into the
+        double-entry ledger (see .docs/planning/CONTRACTS.md §1/§4). Payloads
+        are built by ``src.ledger_events`` — fills and order lifecycle
+        (reservation) events share this channel.
+
+        Returns:
+            Number of subscribers that received the message.
+        """
+        from src.metrics import record_ledger_publish
+
+        kind = payload.get("event_type", "order_filled")
+
+        # Durable dual-write (STREAMS_LEDGER_FILLS): one global stream consumed
+        # by the portfolio's "portfolio-ledger" group. Best-effort while pub/sub
+        # remains primary during the soak — a stream failure logs + counts but
+        # never blocks the pub/sub delivery.
+        if streams_ledger_fills_enabled():
+            try:
+                await self._get_bus().publish(
+                    LEDGER_FILLS_STREAM, payload, maxlen=LEDGER_FILLS_MAXLEN
+                )
+                record_ledger_publish(kind, "stream_success")
+            except Exception:
+                record_ledger_publish(kind, "stream_failure")
+                logger.exception(
+                    "Failed to XADD ledger event to stream",
+                    extra={"client_order_id": payload.get("client_order_id")},
+                )
+
+        try:
+            redis = await self._get_redis()
+            channel = f"ledger:fills:{account_id}"
+            result: int = await redis.publish(channel, json.dumps(payload))
+        except Exception:
+            record_ledger_publish(kind, "failure")
+            raise
+        record_ledger_publish(kind, "success")
+        logger.debug(
+            f"Published ledger event to {channel}",
+            extra={
+                "client_order_id": payload.get("client_order_id"),
+                "event_type": kind,
+                "subscribers": result,
+            },
+        )
+        return result
+
     async def close(self) -> None:
-        """Close the Redis connection."""
+        """Close the Redis connection (and the Streams bus, if created)."""
         if self._redis:
             await self._redis.close()
             self._redis = None
+        if self._bus is not None:
+            await self._bus.close()
+            self._bus = None
 
 
 # Singleton instance
