@@ -10,8 +10,10 @@ dependencies = [
     "llamatrade-common",
     "llamatrade-db",
     "llamatrade-proto",
+    "llamatrade-alpaca",
     "numpy>=1.26.0",
     "httpx>=0.26.0",
+    "redis>=5.0.0",
 ]
 
 [project.optional-dependencies]
