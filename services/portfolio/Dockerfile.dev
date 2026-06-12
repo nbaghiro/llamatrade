@@ -1,6 +1,6 @@
 # LlamaTrade Portfolio Service - Development Dockerfile
 
-FROM python:3.12-slim
+FROM python:3.14-slim
 
 WORKDIR /app
 
@@ -10,11 +10,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy common library first
+# Copy shared libraries first
 COPY libs/common /app/libs/common
+COPY libs/db /app/libs/db
+COPY libs/proto /app/libs/proto
 
-# Install common library
-RUN pip install --no-cache-dir -e /app/libs/common
+# Install shared libraries (editable for hot-reload)
+RUN pip install --no-cache-dir -e /app/libs/common -e /app/libs/db -e /app/libs/proto
 
 # Copy service dependencies
 COPY services/portfolio/pyproject.toml services/portfolio/README.md ./

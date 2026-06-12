@@ -15,6 +15,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.types import ASGIApp
 
+from llamatrade_common.eventbus import streams_ledger_fills_enabled
 from llamatrade_common.observability import enable_db_pool_metrics
 from llamatrade_db import close_db, get_pool_stats, get_session_maker, init_db
 
@@ -71,6 +72,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     shadow_tasks: list[asyncio.Task[None]] = []
     stop_event = asyncio.Event()
     redis_client = None
+    event_bus = None
     if shadow_mode_enabled():
         try:
             import redis.asyncio as aioredis
@@ -80,11 +82,12 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
 
             session_factory = get_session_maker()
             redis_client = aioredis.from_url(REDIS_URL)
+            fill_handler = make_fill_handler(session_factory)
             shadow_tasks.append(
                 asyncio.create_task(
                     consume_fills(
                         redis_client,
-                        make_fill_handler(session_factory),
+                        fill_handler,
                         stop_event=stop_event,
                     )
                 )
@@ -98,6 +101,30 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
                     )
                 )
             )
+
+            # Durable Streams consumer (dual-read during the soak — the
+            # writer's event_id dedupe makes consuming both paths a no-op on
+            # the second delivery). Stops via task cancellation on shutdown.
+            if streams_ledger_fills_enabled():
+                from llamatrade_common.eventbus import EventBus
+
+                from src.tasks.fill_ingestion import consume_fill_stream, monitor_stream_lag
+
+                event_bus = EventBus(REDIS_URL)
+                shadow_tasks.append(
+                    asyncio.create_task(
+                        consume_fill_stream(
+                            event_bus,
+                            fill_handler,
+                            consumer_name=os.getenv("HOSTNAME", "portfolio-0"),
+                        )
+                    )
+                )
+                shadow_tasks.append(
+                    asyncio.create_task(monitor_stream_lag(event_bus, stop_event=stop_event))
+                )
+                logger.info("Ledger fills stream consumer started (consumer group)")
+
             logger.info("Ledger shadow mode enabled: fill ingestion + reconciliation started")
         except Exception as e:  # shadow runtime must never block startup
             logger.warning("Failed to start ledger shadow runtime: %s", e)
@@ -116,6 +143,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
             await asyncio.gather(*pending, return_exceptions=True)
     if redis_client is not None:
         await redis_client.aclose()
+    if event_bus is not None:
+        await event_bus.close()
 
     await close_db()
 

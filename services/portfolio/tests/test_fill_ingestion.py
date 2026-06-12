@@ -116,3 +116,57 @@ async def test_dispatch_handler_error_is_swallowed() -> None:
 
     ok = await dispatch_fill(boom, json.dumps(_fill()))
     assert ok is False
+
+
+class _FlakyRecorder:
+    """Handler that fails N times before succeeding (transient persistence)."""
+
+    def __init__(self, failures: int = 0) -> None:
+        self.appends: list[LedgerAppend] = []
+        self._failures = failures
+
+    async def __call__(self, append: LedgerAppend) -> None:
+        if self._failures > 0:
+            self._failures -= 1
+            raise ConnectionError("db hiccup")
+        self.appends.append(append)
+
+
+async def test_stream_entry_ack_on_success() -> None:
+    from src.tasks.fill_ingestion import process_stream_entry
+
+    rec = _Recorder()
+    verdict = await process_stream_entry(rec, _fill())
+    assert verdict == "ack"
+    assert len(rec.appends) == 1
+
+
+async def test_stream_entry_poison_dropped() -> None:
+    from src.tasks.fill_ingestion import process_stream_entry
+
+    rec = _Recorder()
+    verdict = await process_stream_entry(rec, {"event_type": "order_teleported"})
+    assert verdict == "drop"  # acked anyway — never redeliver poison forever
+    assert rec.appends == []
+
+
+async def test_stream_entry_transient_failure_retries() -> None:
+    from src.tasks.fill_ingestion import process_stream_entry
+
+    rec = _FlakyRecorder(failures=1)
+    first = await process_stream_entry(rec, _fill())
+    second = await process_stream_entry(rec, _fill())  # group redelivery
+    assert first == "retry"  # left pending
+    assert second == "ack"
+    assert len(rec.appends) == 1
+
+
+async def test_stream_entry_routes_lifecycle_events() -> None:
+    from llamatrade_db.models.ledger import LedgerEventType
+
+    from src.tasks.fill_ingestion import process_stream_entry
+
+    rec = _Recorder()
+    verdict = await process_stream_entry(rec, _fill(event_type="order_submitted", reserved="1000"))
+    assert verdict == "ack"
+    assert rec.appends[0].event_type == LedgerEventType.ORDER_SUBMITTED

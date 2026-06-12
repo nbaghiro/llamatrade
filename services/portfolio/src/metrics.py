@@ -5,7 +5,7 @@ These are the rollout dashboard for the shadow soak: ingestion throughput and
 failures, reconciliation drift by classification, and drift-policy actions.
 """
 
-from prometheus_client import Counter
+from prometheus_client import Counter, Gauge
 
 LEDGER_EVENTS_INGESTED_TOTAL = Counter(
     "portfolio_ledger_events_ingested_total",
@@ -23,6 +23,13 @@ DRIFT_ACTIONS_TOTAL = Counter(
     "portfolio_ledger_drift_actions_total",
     "Actions taken by the drift policy on material drift",
     ["action"],  # observed/adopted/skipped/froze
+)
+
+
+LEDGER_STREAM_PENDING = Gauge(
+    "portfolio_ledger_stream_pending",
+    "Delivered-but-unacked entries in the portfolio-ledger consumer group "
+    "(lag signal; alert before MAXLEN could trim unacked entries)",
 )
 
 
