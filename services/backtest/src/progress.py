@@ -1,16 +1,21 @@
 """Progress tracking and publishing for backtests."""
 
 import json
+import logging
 import os
 import threading
 import time
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncGenerator, AsyncIterator, Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import cast
 
 import redis.asyncio as aioredis
 from redis.asyncio.client import PubSub
+
+from llamatrade_common.eventbus import EventBus, streams_backtest_enabled
+
+logger = logging.getLogger(__name__)
 
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 
@@ -120,17 +125,31 @@ class ProgressUpdate:
         }
 
 
-class ProgressPublisher:
-    """Publishes progress updates to Redis pub/sub."""
+PROGRESS_STREAM_PREFIX = "backtest:progress"
+PROGRESS_STREAM_MAXLEN = 256
 
-    def __init__(self, redis_url: str | None = None):
+
+def progress_stream(backtest_id: str) -> str:
+    return f"{PROGRESS_STREAM_PREFIX}:{backtest_id}"
+
+
+class ProgressPublisher:
+    """Publishes progress updates to Redis pub/sub (+ Streams dual-write)."""
+
+    def __init__(self, redis_url: str | None = None, event_bus: EventBus | None = None):
         self.redis_url = redis_url or REDIS_URL
         self._redis: aioredis.Redis | None = None
+        self._bus: EventBus | None = event_bus
 
     async def _get_redis(self) -> aioredis.Redis:
         if self._redis is None:
             self._redis = await aioredis.from_url(self.redis_url)
         return self._redis
+
+    def _get_bus(self) -> EventBus:
+        if self._bus is None:
+            self._bus = EventBus(self.redis_url)
+        return self._bus
 
     async def publish(
         self,
@@ -141,7 +160,6 @@ class ProgressPublisher:
         status: int | None = None,
     ) -> None:
         """Publish a progress update."""
-        redis = await self._get_redis()
         update = ProgressUpdate(
             backtest_id=backtest_id,
             progress=progress,
@@ -149,25 +167,81 @@ class ProgressPublisher:
             eta_seconds=eta_seconds,
             status=status,
         )
-        await redis.publish(
-            f"backtest:progress:{backtest_id}",
-            json.dumps(update.to_dict()),
-        )
+        body = json.dumps(update.to_dict())
+
+        # Durable dual-write (STREAMS_BACKTEST): a short bounded stream so a
+        # late-joining UI replays from the start and catches up immediately.
+        # Best-effort while pub/sub stays primary during the soak.
+        if streams_backtest_enabled():
+            try:
+                await self._get_bus().publish(
+                    progress_stream(backtest_id),
+                    {"payload": body},
+                    maxlen=PROGRESS_STREAM_MAXLEN,
+                )
+            except Exception:
+                logger.exception("Failed to XADD progress to stream for %s", backtest_id)
+
+        redis = await self._get_redis()
+        await redis.publish(f"backtest:progress:{backtest_id}", body)
 
     async def close(self) -> None:
-        """Close the Redis connection."""
+        """Close the Redis connection (and the Streams bus, if created)."""
         if self._redis:
             await self._redis.close()
             self._redis = None
+        if self._bus is not None:
+            await self._bus.close()
+            self._bus = None
 
 
 class ProgressSubscriber:
-    """Subscribes to progress updates from Redis pub/sub."""
+    """Subscribes to progress updates from Redis pub/sub (or Streams tail)."""
 
-    def __init__(self, redis_url: str | None = None):
+    def __init__(self, redis_url: str | None = None, event_bus: EventBus | None = None):
         self.redis_url = redis_url or REDIS_URL
         self._redis: aioredis.Redis | None = None
         self._pubsub: PubSub | None = None
+        self._bus: EventBus | None = event_bus
+
+    def _get_bus(self) -> EventBus:
+        if self._bus is None:
+            self._bus = EventBus(self.redis_url)
+        return self._bus
+
+    async def tail(
+        self,
+        backtest_id: str,
+        idle_timeout: float = 300.0,
+    ) -> AsyncIterator[ProgressUpdate]:
+        """Tail the progress stream from the start (STREAMS_BACKTEST mode).
+
+        Replaying from ``"0"`` means a client that connects mid-run catches up
+        on all prior updates immediately — the late-joiner gap pub/sub had.
+        Ends on a terminal update (progress >= 100) or after ``idle_timeout``
+        seconds of silence (orphaned run).
+        """
+        import asyncio
+
+        # The bus returns an async generator; typed as AsyncGenerator so the
+        # finally-close is visible to the type checker.
+        entries = cast(
+            "AsyncGenerator[tuple[str, dict[str, str]]]",
+            self._get_bus().tail(progress_stream(backtest_id), last_id="0", block_ms=1000),
+        )
+        try:
+            while True:
+                try:
+                    _, fields = await asyncio.wait_for(anext(entries), timeout=idle_timeout)
+                except TimeoutError, StopAsyncIteration:
+                    break
+                data = cast(dict[str, object], json.loads(fields["payload"]))
+                update = self._parse_progress(data)
+                yield update
+                if update.progress >= 100:
+                    break
+        finally:
+            await entries.aclose()
 
     async def _get_redis(self) -> aioredis.Redis:
         if self._redis is None:
@@ -212,27 +286,35 @@ class ProgressSubscriber:
 
                 raw_data = cast(str | bytes, msg["data"])
                 data = cast(dict[str, object], json.loads(raw_data))
-                progress_val = data.get("progress", 0)
-                progress = int(progress_val) if isinstance(progress_val, (int, float)) else 0
-                eta_val = data.get("eta_seconds")
-                ts_val = data.get("timestamp")
-                status_val = data.get("status")
-                yield ProgressUpdate(
-                    backtest_id=str(data["backtest_id"]),
-                    progress=progress,
-                    message=str(data.get("message", "")),
-                    eta_seconds=int(eta_val) if isinstance(eta_val, (int, float)) else None,
-                    timestamp=str(ts_val) if ts_val is not None else None,
-                    status=int(status_val) if isinstance(status_val, (int, float)) else None,
-                )
+                update = self._parse_progress(data)
+                yield update
                 # Stop on terminal update
-                if progress >= 100:
+                if update.progress >= 100:
                     break
         finally:
             await pubsub.unsubscribe(channel)
 
+    @staticmethod
+    def _parse_progress(data: dict[str, object]) -> ProgressUpdate:
+        """Decode one progress payload (shared by pub/sub and stream paths)."""
+        progress_val = data.get("progress", 0)
+        eta_val = data.get("eta_seconds")
+        ts_val = data.get("timestamp")
+        status_val = data.get("status")
+        return ProgressUpdate(
+            backtest_id=str(data["backtest_id"]),
+            progress=int(progress_val) if isinstance(progress_val, (int, float)) else 0,
+            message=str(data.get("message", "")),
+            eta_seconds=int(eta_val) if isinstance(eta_val, (int, float)) else None,
+            timestamp=str(ts_val) if ts_val is not None else None,
+            status=int(status_val) if isinstance(status_val, (int, float)) else None,
+        )
+
     async def close(self) -> None:
         """Close the Redis connection."""
+        if self._bus is not None:
+            await self._bus.close()
+            self._bus = None
         if self._pubsub:
             await self._pubsub.close()
             self._pubsub = None

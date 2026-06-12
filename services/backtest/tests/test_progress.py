@@ -3,9 +3,12 @@
 import json
 import time
 from datetime import datetime
+from typing import cast
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+
+from llamatrade_common.eventbus import EventBus
 
 from src.progress import (
     BacktestProgressReporter,
@@ -769,3 +772,101 @@ class TestSubscriberIdleTimeout:
             # inferred COMPLETED from the percentage. Status must be explicit.
             assert len(updates) == 1
             assert updates[0].status == BACKTEST_STATUS_FAILED
+
+
+class _StubBus:
+    """EventBus stand-in: records publishes; tail yields canned entries."""
+
+    def __init__(self, entries: list[tuple[str, dict[str, str]]] | None = None) -> None:
+        self.published: list[tuple[str, dict[str, str], int | None]] = []
+        self._entries = entries or []
+        self.tail_calls: list[tuple[str, str]] = []
+        self.closed = False
+
+    async def publish(self, stream, fields, *, maxlen=None, approximate=True):
+        self.published.append((stream, fields, maxlen))
+        return "1-0"
+
+    async def tail(self, stream, *, last_id="$", block_ms=5000, count=100):
+        self.tail_calls.append((stream, last_id))
+        for entry in self._entries:
+            yield entry
+
+    async def close(self):
+        self.closed = True
+
+
+def _progress_entry(progress: float, *, status: int | None = None) -> tuple[str, dict[str, str]]:
+    import json
+
+    body = {
+        "backtest_id": "bt-1",
+        "progress": progress,
+        "message": f"at {progress}%",
+        "eta_seconds": None,
+        "timestamp": "2026-06-12T14:30:00+00:00",
+        "status": status,
+    }
+    return (f"{int(progress)}-0", {"payload": json.dumps(body)})
+
+
+class TestProgressStreamDualWrite:
+    @pytest.mark.asyncio
+    async def test_flag_on_dual_writes(self, monkeypatch) -> None:
+        from src.progress import PROGRESS_STREAM_MAXLEN, ProgressPublisher
+
+        monkeypatch.setenv("STREAMS_BACKTEST", "1")
+        bus = _StubBus()
+        publisher = ProgressPublisher(event_bus=cast("EventBus", bus))
+        publisher._redis = AsyncMock()
+        publisher._redis.publish = AsyncMock(return_value=1)
+
+        await publisher.publish("bt-1", 42.0, "almost half")
+
+        assert len(bus.published) == 1
+        stream, fields, maxlen = bus.published[0]
+        assert stream == "backtest:progress:bt-1"
+        assert maxlen == PROGRESS_STREAM_MAXLEN
+        publisher._redis.publish.assert_awaited_once()  # pub/sub still primary
+
+    @pytest.mark.asyncio
+    async def test_flag_off_skips_stream(self, monkeypatch) -> None:
+        from src.progress import ProgressPublisher
+
+        monkeypatch.delenv("STREAMS_BACKTEST", raising=False)
+        bus = _StubBus()
+        publisher = ProgressPublisher(event_bus=cast("EventBus", bus))
+        publisher._redis = AsyncMock()
+        publisher._redis.publish = AsyncMock(return_value=1)
+
+        await publisher.publish("bt-1", 42.0, "almost half")
+
+        assert bus.published == []
+
+
+class TestProgressStreamTail:
+    @pytest.mark.asyncio
+    async def test_late_joiner_replays_from_start_and_terminates(self) -> None:
+        from src.progress import ProgressSubscriber
+
+        bus = _StubBus(
+            entries=[_progress_entry(25.0), _progress_entry(75.0), _progress_entry(100.0, status=3)]
+        )
+        subscriber = ProgressSubscriber(event_bus=cast("EventBus", bus))
+
+        updates = [u async for u in subscriber.tail("bt-1")]
+
+        # Tail starts from "0": the late joiner caught all three updates
+        assert bus.tail_calls == [("backtest:progress:bt-1", "0")]
+        assert [u.progress for u in updates] == [25, 75, 100]
+        assert updates[-1].status == 3  # explicit terminal status, not inferred
+
+    @pytest.mark.asyncio
+    async def test_tail_stops_at_terminal_even_with_more_entries(self) -> None:
+        from src.progress import ProgressSubscriber
+
+        bus = _StubBus(entries=[_progress_entry(100.0), _progress_entry(100.0)])
+        subscriber = ProgressSubscriber(event_bus=cast("EventBus", bus))
+
+        updates = [u async for u in subscriber.tail("bt-1")]
+        assert len(updates) == 1

@@ -20,7 +20,7 @@ ProgressCallback = Callable[[int, int, datetime], None]
 StrategyFn = Callable[["BacktestEngine", dict[str, "BarData"], bool], list["SignalData"]]
 
 
-class BacktestCancelled(Exception):  # noqa: N818 — domain signal, not an error
+class BacktestCancelled(Exception):  # domain signal, not an error (N818 ignored in config)
     """Raised when a run is cooperatively cancelled mid-simulation."""
 
 

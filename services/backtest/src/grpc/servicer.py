@@ -336,8 +336,17 @@ class BacktestServicer:
                     if backtest.status in terminal_statuses:
                         return
 
-            # Subscribe to Redis pub/sub for real-time updates
-            async for update in subscriber.subscribe(backtest_id):
+            # STREAMS_BACKTEST tails the bounded stream from "0" so a client
+            # connecting mid-run replays prior updates and catches up
+            # immediately; pub/sub is the legacy live-only path.
+            from llamatrade_common.eventbus import streams_backtest_enabled
+
+            updates = (
+                subscriber.tail(backtest_id)
+                if streams_backtest_enabled()
+                else subscriber.subscribe(backtest_id)
+            )
+            async for update in updates:
                 if context.cancelled():
                     break
 
