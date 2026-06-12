@@ -7,6 +7,12 @@ from llamatrade_common.errors import (
     create_dsl_error,
     grpc_status_from_dsl_code,
 )
+from llamatrade_common.eventbus import (
+    EventBus,
+    streams_backtest_enabled,
+    streams_ledger_fills_enabled,
+    streams_trading_enabled,
+)
 from llamatrade_common.events import Event, EventType
 from llamatrade_common.health import HealthChecker, HealthStatus, check_postgres, check_redis
 from llamatrade_common.logging import (
@@ -53,6 +59,10 @@ __all__ = [
     "get_tenant_context",
     # Events
     "Event",
+    "EventBus",
+    "streams_backtest_enabled",
+    "streams_ledger_fills_enabled",
+    "streams_trading_enabled",
     "EventType",
     # Errors
     "DSLError",

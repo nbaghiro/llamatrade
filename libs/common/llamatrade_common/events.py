@@ -116,17 +116,20 @@ class Event(BaseModel):
     metadata: EventMetadata = Field(default_factory=lambda: cast(EventMetadata, {}))
 
     def to_redis_stream(self) -> dict[str, str]:
-        """Convert event to Redis stream format."""
+        """Convert event to flat Redis stream fields (symmetric with
+        :meth:`from_redis_stream`). ``data``/``metadata`` are explicit JSON —
+        never derived by string-stripping a model dump, which corrupts any
+        payload that begins or ends with the stripped characters."""
+        import json
+
         return {
             "id": str(self.id),
             "type": self.type.value,
             "tenant_id": str(self.tenant_id) if self.tenant_id else "",
             "user_id": str(self.user_id) if self.user_id else "",
             "timestamp": self.timestamp.isoformat(),
-            "data": self.model_dump_json(include={"data"}).strip('{"data":').rstrip("}"),
-            "metadata": self.model_dump_json(include={"metadata"})
-            .strip('{"metadata":')
-            .rstrip("}"),
+            "data": json.dumps(self.data),
+            "metadata": json.dumps(self.metadata),
         }
 
     @classmethod
@@ -140,8 +143,8 @@ class Event(BaseModel):
             tenant_id=UUID(data["tenant_id"]) if data.get("tenant_id") else None,
             user_id=UUID(data["user_id"]) if data.get("user_id") else None,
             timestamp=datetime.fromisoformat(data["timestamp"]),
-            data=json.loads(data.get("data", "{}")),
-            metadata=json.loads(data.get("metadata", "{}")),
+            data=json.loads(data.get("data") or "{}"),
+            metadata=json.loads(data.get("metadata") or "{}"),
         )
 
 
