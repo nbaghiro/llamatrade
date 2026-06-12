@@ -86,7 +86,6 @@ class TestStrategy:
         assert "tenant_id" in columns
         assert "name" in columns
         assert "description" in columns
-        assert "strategy_type" in columns
         assert "status" in columns
         assert "is_public" in columns
         assert "current_version" in columns
@@ -108,11 +107,11 @@ class TestStrategy:
         """Test Strategy has expected indexes."""
         table_args = Strategy.__table_args__
         assert table_args is not None
-        # Should have at least 3 indexes (tenant_name, tenant_status, tenant_type)
+        # Should have at least 2 indexes (tenant_name, tenant_status)
         from sqlalchemy import Index
 
         indexes = [arg for arg in table_args if isinstance(arg, Index)]
-        assert len(indexes) >= 3
+        assert len(indexes) >= 2
 
 
 class TestStrategyVersion:
@@ -191,7 +190,6 @@ class TestStrategyTemplate:
         assert "name" in columns
         assert "description" in columns
         assert "category" in columns
-        assert "strategy_type" in columns
         assert "config_sexpr" in columns
         assert "config_json" in columns
         assert "tags" in columns

@@ -4,7 +4,7 @@
 
 import type { GenEnum, GenFile, GenMessage, GenService } from "@bufbuild/protobuf/codegenv1";
 import { enumDesc, fileDesc, messageDesc, serviceDesc } from "@bufbuild/protobuf/codegenv1";
-import type { Decimal, ExecutionMode, PaginationRequest, PaginationResponse, TenantContext, Timestamp } from "./common_pb";
+import type { Decimal, ExecutionMode, ExecutionStatus, PaginationRequest, PaginationResponse, TenantContext, Timestamp } from "./common_pb";
 import { file_common } from "./common_pb";
 import type { Message } from "@bufbuild/protobuf";
 
@@ -12,7 +12,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file trading.proto.
  */
 export const file_trading: GenFile = /*@__PURE__*/
-  fileDesc("Cg10cmFkaW5nLnByb3RvEgpsbGFtYXRyYWRlIrgHCgVPcmRlchIKCgJpZBgBIAEoCRIXCg9jbGllbnRfb3JkZXJfaWQYAiABKAkSEQoJdGVuYW50X2lkGAMgASgJEhIKCnNlc3Npb25faWQYBCABKAkSEwoLc3RyYXRlZ3lfaWQYBSABKAkSDgoGc3ltYm9sGAYgASgJEiMKBHNpZGUYByABKA4yFS5sbGFtYXRyYWRlLk9yZGVyU2lkZRIjCgR0eXBlGAggASgOMhUubGxhbWF0cmFkZS5PcmRlclR5cGUSLgoNdGltZV9pbl9mb3JjZRgJIAEoDjIXLmxsYW1hdHJhZGUuVGltZUluRm9yY2USJQoIcXVhbnRpdHkYCiABKAsyEy5sbGFtYXRyYWRlLkRlY2ltYWwSLAoPZmlsbGVkX3F1YW50aXR5GAsgASgLMhMubGxhbWF0cmFkZS5EZWNpbWFsEigKC2xpbWl0X3ByaWNlGAwgASgLMhMubGxhbWF0cmFkZS5EZWNpbWFsEicKCnN0b3BfcHJpY2UYDSABKAsyEy5sbGFtYXRyYWRlLkRlY2ltYWwSLwoSYXZlcmFnZV9maWxsX3ByaWNlGA4gASgLMhMubGxhbWF0cmFkZS5EZWNpbWFsEioKDXRyYWlsX3BlcmNlbnQYDyABKAsyEy5sbGFtYXRyYWRlLkRlY2ltYWwSKAoLdHJhaWxfcHJpY2UYECABKAsyEy5sbGFtYXRyYWRlLkRlY2ltYWwSJwoGc3RhdHVzGBEgASgOMhcubGxhbWF0cmFkZS5PcmRlclN0YXR1cxIWCg5zdGF0dXNfbWVzc2FnZRgSIAEoCRIpCgpjcmVhdGVkX2F0GBMgASgLMhUubGxhbWF0cmFkZS5UaW1lc3RhbXASKwoMc3VibWl0dGVkX2F0GBQgASgLMhUubGxhbWF0cmFkZS5UaW1lc3RhbXASKAoJZmlsbGVkX2F0GBUgASgLMhUubGxhbWF0cmFkZS5UaW1lc3RhbXASKwoMY2FuY2VsbGVkX2F0GBYgASgLMhUubGxhbWF0cmFkZS5UaW1lc3RhbXASKQoKZXhwaXJlZF9hdBgXIAEoCzIVLmxsYW1hdHJhZGUuVGltZXN0YW1wEhYKDmV4dGVuZGVkX2hvdXJzGBggASgIEjEKCG1ldGFkYXRhGBkgAygLMh8ubGxhbWF0cmFkZS5PcmRlci5NZXRhZGF0YUVudHJ5Gi8KDU1ldGFkYXRhRW50cnkSCwoDa2V5GAEgASgJEg0KBXZhbHVlGAIgASgJOgI4ASLkAQoERmlsbBIKCgJpZBgBIAEoCRIQCghvcmRlcl9pZBgCIAEoCRIOCgZzeW1ib2wYAyABKAkSIgoFcHJpY2UYBCABKAsyEy5sbGFtYXRyYWRlLkRlY2ltYWwSJQoIcXVhbnRpdHkYBSABKAsyEy5sbGFtYXRyYWRlLkRlY2ltYWwSKAoJdGltZXN0YW1wGAYgASgLMhUubGxhbWF0cmFkZS5UaW1lc3RhbXASEAoIZXhjaGFuZ2UYByABKAkSJwoKY29tbWlzc2lvbhgIIAEoCzITLmxsYW1hdHJhZGUuRGVjaW1hbCLhBAoIUG9zaXRpb24SCgoCaWQYASABKAkSEQoJdGVuYW50X2lkGAIgASgJEhIKCnNlc3Npb25faWQYAyABKAkSDgoGc3ltYm9sGAQgASgJEiYKBHNpZGUYBSABKA4yGC5sbGFtYXRyYWRlLlBvc2l0aW9uU2lkZRIlCghxdWFudGl0eRgGIAEoCzITLmxsYW1hdHJhZGUuRGVjaW1hbBIvChJhdmFpbGFibGVfcXVhbnRpdHkYByABKAsyEy5sbGFtYXRyYWRlLkRlY2ltYWwSJwoKY29zdF9iYXNpcxgIIAEoCzITLmxsYW1hdHJhZGUuRGVjaW1hbBIwChNhdmVyYWdlX2VudHJ5X3ByaWNlGAkgASgLMhMubGxhbWF0cmFkZS5EZWNpbWFsEioKDWN1cnJlbnRfcHJpY2UYCiABKAsyEy5sbGFtYXRyYWRlLkRlY2ltYWwSKQoMbWFya2V0X3ZhbHVlGAsgASgLMhMubGxhbWF0cmFkZS5EZWNpbWFsEisKDnVucmVhbGl6ZWRfcG5sGAwgASgLMhMubGxhbWF0cmFkZS5EZWNpbWFsEjMKFnVucmVhbGl6ZWRfcG5sX3BlcmNlbnQYDSABKAsyEy5sbGFtYXRyYWRlLkRlY2ltYWwSKQoMcmVhbGl6ZWRfcG5sGA4gASgLMhMubGxhbWF0cmFkZS5EZWNpbWFsEigKCW9wZW5lZF9hdBgPIAEoCzIVLmxsYW1hdHJhZGUuVGltZXN0YW1wEikKCnVwZGF0ZWRfYXQYECABKAsyFS5sbGFtYXRyYWRlLlRpbWVzdGFtcCKUAwoOVHJhZGluZ1Nlc3Npb24SCgoCaWQYASABKAkSEQoJdGVuYW50X2lkGAIgASgJEhMKC3N0cmF0ZWd5X2lkGAMgASgJEgwKBG5hbWUYBCABKAkSJwoEbW9kZRgFIAEoDjIZLmxsYW1hdHJhZGUuRXhlY3V0aW9uTW9kZRIRCglpc19hY3RpdmUYBiABKAgSLQoQc3RhcnRpbmdfY2FwaXRhbBgHIAEoCzITLmxsYW1hdHJhZGUuRGVjaW1hbBIrCg5jdXJyZW50X2VxdWl0eRgIIAEoCzITLmxsYW1hdHJhZGUuRGVjaW1hbBImCgl0b3RhbF9wbmwYCSABKAsyEy5sbGFtYXRyYWRlLkRlY2ltYWwSFAoMdG90YWxfdHJhZGVzGAogASgFEhYKDndpbm5pbmdfdHJhZGVzGAsgASgFEikKCnN0YXJ0ZWRfYXQYDCABKAsyFS5sbGFtYXRyYWRlLlRpbWVzdGFtcBInCghlbmRlZF9hdBgNIAEoCzIVLmxsYW1hdHJhZGUuVGltZXN0YW1wIrsEChJTdWJtaXRPcmRlclJlcXVlc3QSKgoHY29udGV4dBgBIAEoCzIZLmxsYW1hdHJhZGUuVGVuYW50Q29udGV4dBISCgpzZXNzaW9uX2lkGAIgASgJEhcKD2NsaWVudF9vcmRlcl9pZBgDIAEoCRIOCgZzeW1ib2wYBCABKAkSIwoEc2lkZRgFIAEoDjIVLmxsYW1hdHJhZGUuT3JkZXJTaWRlEiMKBHR5cGUYBiABKA4yFS5sbGFtYXRyYWRlLk9yZGVyVHlwZRIuCg10aW1lX2luX2ZvcmNlGAcgASgOMhcubGxhbWF0cmFkZS5UaW1lSW5Gb3JjZRIlCghxdWFudGl0eRgIIAEoCzITLmxsYW1hdHJhZGUuRGVjaW1hbBIoCgtsaW1pdF9wcmljZRgJIAEoCzITLmxsYW1hdHJhZGUuRGVjaW1hbBInCgpzdG9wX3ByaWNlGAogASgLMhMubGxhbWF0cmFkZS5EZWNpbWFsEioKDXRyYWlsX3BlcmNlbnQYCyABKAsyEy5sbGFtYXRyYWRlLkRlY2ltYWwSFgoOZXh0ZW5kZWRfaG91cnMYDCABKAgSEwoLc3RyYXRlZ3lfaWQYDSABKAkSPgoIbWV0YWRhdGEYDiADKAsyLC5sbGFtYXRyYWRlLlN1Ym1pdE9yZGVyUmVxdWVzdC5NZXRhZGF0YUVudHJ5Gi8KDU1ldGFkYXRhRW50cnkSCwoDa2V5GAEgASgJEg0KBXZhbHVlGAIgASgJOgI4ASI3ChNTdWJtaXRPcmRlclJlc3BvbnNlEiAKBW9yZGVyGAEgASgLMhEubGxhbWF0cmFkZS5PcmRlciJSChJDYW5jZWxPcmRlclJlcXVlc3QSKgoHY29udGV4dBgBIAEoCzIZLmxsYW1hdHJhZGUuVGVuYW50Q29udGV4dBIQCghvcmRlcl9pZBgCIAEoCSI3ChNDYW5jZWxPcmRlclJlc3BvbnNlEiAKBW9yZGVyGAEgASgLMhEubGxhbWF0cmFkZS5PcmRlciJPCg9HZXRPcmRlclJlcXVlc3QSKgoHY29udGV4dBgBIAEoCzIZLmxsYW1hdHJhZGUuVGVuYW50Q29udGV4dBIQCghvcmRlcl9pZBgCIAEoCSI0ChBHZXRPcmRlclJlc3BvbnNlEiAKBW9yZGVyGAEgASgLMhEubGxhbWF0cmFkZS5PcmRlciLBAQoRTGlzdE9yZGVyc1JlcXVlc3QSKgoHY29udGV4dBgBIAEoCzIZLmxsYW1hdHJhZGUuVGVuYW50Q29udGV4dBISCgpzZXNzaW9uX2lkGAIgASgJEikKCHN0YXR1c2VzGAMgAygOMhcubGxhbWF0cmFkZS5PcmRlclN0YXR1cxIOCgZzeW1ib2wYBCABKAkSMQoKcGFnaW5hdGlvbhgFIAEoCzIdLmxsYW1hdHJhZGUuUGFnaW5hdGlvblJlcXVlc3QiawoSTGlzdE9yZGVyc1Jlc3BvbnNlEiEKBm9yZGVycxgBIAMoCzIRLmxsYW1hdHJhZGUuT3JkZXISMgoKcGFnaW5hdGlvbhgCIAEoCzIeLmxsYW1hdHJhZGUuUGFnaW5hdGlvblJlc3BvbnNlImQKEkdldFBvc2l0aW9uUmVxdWVzdBIqCgdjb250ZXh0GAEgASgLMhkubGxhbWF0cmFkZS5UZW5hbnRDb250ZXh0EhIKCnNlc3Npb25faWQYAiABKAkSDgoGc3ltYm9sGAMgASgJIj0KE0dldFBvc2l0aW9uUmVzcG9uc2USJgoIcG9zaXRpb24YASABKAsyFC5sbGFtYXRyYWRlLlBvc2l0aW9uIlYKFExpc3RQb3NpdGlvbnNSZXF1ZXN0EioKB2NvbnRleHQYASABKAsyGS5sbGFtYXRyYWRlLlRlbmFudENvbnRleHQSEgoKc2Vzc2lvbl9pZBgCIAEoCSJAChVMaXN0UG9zaXRpb25zUmVzcG9uc2USJwoJcG9zaXRpb25zGAEgAygLMhQubGxhbWF0cmFkZS5Qb3NpdGlvbiKNAQoUQ2xvc2VQb3NpdGlvblJlcXVlc3QSKgoHY29udGV4dBgBIAEoCzIZLmxsYW1hdHJhZGUuVGVuYW50Q29udGV4dBISCgpzZXNzaW9uX2lkGAIgASgJEg4KBnN5bWJvbBgDIAEoCRIlCghxdWFudGl0eRgEIAEoCzITLmxsYW1hdHJhZGUuRGVjaW1hbCI5ChVDbG9zZVBvc2l0aW9uUmVzcG9uc2USIAoFb3JkZXIYASABKAsyES5sbGFtYXRyYWRlLk9yZGVyIlsKGVN0cmVhbU9yZGVyVXBkYXRlc1JlcXVlc3QSKgoHY29udGV4dBgBIAEoCzIZLmxsYW1hdHJhZGUuVGVuYW50Q29udGV4dBISCgpzZXNzaW9uX2lkGAIgASgJIpQBCgtPcmRlclVwZGF0ZRIgCgVvcmRlchgBIAEoCzIRLmxsYW1hdHJhZGUuT3JkZXISJQoLbGF0ZXN0X2ZpbGwYAiABKAsyEC5sbGFtYXRyYWRlLkZpbGwSEgoKZXZlbnRfdHlwZRgDIAEoCRIoCgl0aW1lc3RhbXAYBCABKAsyFS5sbGFtYXRyYWRlLlRpbWVzdGFtcCJeChxTdHJlYW1Qb3NpdGlvblVwZGF0ZXNSZXF1ZXN0EioKB2NvbnRleHQYASABKAsyGS5sbGFtYXRyYWRlLlRlbmFudENvbnRleHQSEgoKc2Vzc2lvbl9pZBgCIAEoCSJ2Cg5Qb3NpdGlvblVwZGF0ZRImCghwb3NpdGlvbhgBIAEoCzIULmxsYW1hdHJhZGUuUG9zaXRpb24SEgoKZXZlbnRfdHlwZRgCIAEoCRIoCgl0aW1lc3RhbXAYAyABKAsyFS5sbGFtYXRyYWRlLlRpbWVzdGFtcCpQCglPcmRlclNpZGUSGgoWT1JERVJfU0lERV9VTlNQRUNJRklFRBAAEhIKDk9SREVSX1NJREVfQlVZEAESEwoPT1JERVJfU0lERV9TRUxMEAIqogEKCU9yZGVyVHlwZRIaChZPUkRFUl9UWVBFX1VOU1BFQ0lGSUVEEAASFQoRT1JERVJfVFlQRV9NQVJLRVQQARIUChBPUkRFUl9UWVBFX0xJTUlUEAISEwoPT1JERVJfVFlQRV9TVE9QEAMSGQoVT1JERVJfVFlQRV9TVE9QX0xJTUlUEAQSHAoYT1JERVJfVFlQRV9UUkFJTElOR19TVE9QEAUqgAIKC09yZGVyU3RhdHVzEhwKGE9SREVSX1NUQVRVU19VTlNQRUNJRklFRBAAEhgKFE9SREVSX1NUQVRVU19QRU5ESU5HEAESGgoWT1JERVJfU1RBVFVTX1NVQk1JVFRFRBACEhkKFU9SREVSX1NUQVRVU19BQ0NFUFRFRBADEhgKFE9SREVSX1NUQVRVU19QQVJUSUFMEAQSFwoTT1JERVJfU1RBVFVTX0ZJTExFRBAFEhoKFk9SREVSX1NUQVRVU19DQU5DRUxMRUQQBhIZChVPUkRFUl9TVEFUVVNfUkVKRUNURUQQBxIYChRPUkRFUl9TVEFUVVNfRVhQSVJFRBAIKrYBCgtUaW1lSW5Gb3JjZRIdChlUSU1FX0lOX0ZPUkNFX1VOU1BFQ0lGSUVEEAASFQoRVElNRV9JTl9GT1JDRV9EQVkQARIVChFUSU1FX0lOX0ZPUkNFX0dUQxACEhUKEVRJTUVfSU5fRk9SQ0VfSU9DEAMSFQoRVElNRV9JTl9GT1JDRV9GT0sQBBIVChFUSU1FX0lOX0ZPUkNFX09QRxAFEhUKEVRJTUVfSU5fRk9SQ0VfQ0xTEAYqXgoMUG9zaXRpb25TaWRlEh0KGVBPU0lUSU9OX1NJREVfVU5TUEVDSUZJRUQQABIWChJQT1NJVElPTl9TSURFX0xPTkcQARIXChNQT1NJVElPTl9TSURFX1NIT1JUEAIy+QUKDlRyYWRpbmdTZXJ2aWNlEk4KC1N1Ym1pdE9yZGVyEh4ubGxhbWF0cmFkZS5TdWJtaXRPcmRlclJlcXVlc3QaHy5sbGFtYXRyYWRlLlN1Ym1pdE9yZGVyUmVzcG9uc2USTgoLQ2FuY2VsT3JkZXISHi5sbGFtYXRyYWRlLkNhbmNlbE9yZGVyUmVxdWVzdBofLmxsYW1hdHJhZGUuQ2FuY2VsT3JkZXJSZXNwb25zZRJFCghHZXRPcmRlchIbLmxsYW1hdHJhZGUuR2V0T3JkZXJSZXF1ZXN0GhwubGxhbWF0cmFkZS5HZXRPcmRlclJlc3BvbnNlEksKCkxpc3RPcmRlcnMSHS5sbGFtYXRyYWRlLkxpc3RPcmRlcnNSZXF1ZXN0Gh4ubGxhbWF0cmFkZS5MaXN0T3JkZXJzUmVzcG9uc2USTgoLR2V0UG9zaXRpb24SHi5sbGFtYXRyYWRlLkdldFBvc2l0aW9uUmVxdWVzdBofLmxsYW1hdHJhZGUuR2V0UG9zaXRpb25SZXNwb25zZRJUCg1MaXN0UG9zaXRpb25zEiAubGxhbWF0cmFkZS5MaXN0UG9zaXRpb25zUmVxdWVzdBohLmxsYW1hdHJhZGUuTGlzdFBvc2l0aW9uc1Jlc3BvbnNlElQKDUNsb3NlUG9zaXRpb24SIC5sbGFtYXRyYWRlLkNsb3NlUG9zaXRpb25SZXF1ZXN0GiEubGxhbWF0cmFkZS5DbG9zZVBvc2l0aW9uUmVzcG9uc2USVgoSU3RyZWFtT3JkZXJVcGRhdGVzEiUubGxhbWF0cmFkZS5TdHJlYW1PcmRlclVwZGF0ZXNSZXF1ZXN0GhcubGxhbWF0cmFkZS5PcmRlclVwZGF0ZTABEl8KFVN0cmVhbVBvc2l0aW9uVXBkYXRlcxIoLmxsYW1hdHJhZGUuU3RyZWFtUG9zaXRpb25VcGRhdGVzUmVxdWVzdBoaLmxsYW1hdHJhZGUuUG9zaXRpb25VcGRhdGUwAUKIAQoOY29tLmxsYW1hdHJhZGVCDFRyYWRpbmdQcm90b1ABWiBnaXRodWIuY29tL2xsYW1hdHJhZGUvYXBpL2dlbi9nb6ICA0xYWKoCCkxsYW1hdHJhZGXKAgpMbGFtYXRyYWRl4gIWTGxhbWF0cmFkZVxHUEJNZXRhZGF0YeoCCkxsYW1hdHJhZGViBnByb3RvMw", [file_common]);
+  fileDesc("Cg10cmFkaW5nLnByb3RvEgpsbGFtYXRyYWRlIt8HCgVPcmRlchIKCgJpZBgBIAEoCRIXCg9jbGllbnRfb3JkZXJfaWQYAiABKAkSEQoJdGVuYW50X2lkGAMgASgJEhIKCnNlc3Npb25faWQYBCABKAkSEwoLc3RyYXRlZ3lfaWQYBSABKAkSDgoGc3ltYm9sGAYgASgJEiMKBHNpZGUYByABKA4yFS5sbGFtYXRyYWRlLk9yZGVyU2lkZRIjCgR0eXBlGAggASgOMhUubGxhbWF0cmFkZS5PcmRlclR5cGUSLgoNdGltZV9pbl9mb3JjZRgJIAEoDjIXLmxsYW1hdHJhZGUuVGltZUluRm9yY2USJQoIcXVhbnRpdHkYCiABKAsyEy5sbGFtYXRyYWRlLkRlY2ltYWwSLAoPZmlsbGVkX3F1YW50aXR5GAsgASgLMhMubGxhbWF0cmFkZS5EZWNpbWFsEigKC2xpbWl0X3ByaWNlGAwgASgLMhMubGxhbWF0cmFkZS5EZWNpbWFsEicKCnN0b3BfcHJpY2UYDSABKAsyEy5sbGFtYXRyYWRlLkRlY2ltYWwSLwoSYXZlcmFnZV9maWxsX3ByaWNlGA4gASgLMhMubGxhbWF0cmFkZS5EZWNpbWFsEioKDXRyYWlsX3BlcmNlbnQYDyABKAsyEy5sbGFtYXRyYWRlLkRlY2ltYWwSKAoLdHJhaWxfcHJpY2UYECABKAsyEy5sbGFtYXRyYWRlLkRlY2ltYWwSJwoGc3RhdHVzGBEgASgOMhcubGxhbWF0cmFkZS5PcmRlclN0YXR1cxIWCg5zdGF0dXNfbWVzc2FnZRgSIAEoCRIpCgpjcmVhdGVkX2F0GBMgASgLMhUubGxhbWF0cmFkZS5UaW1lc3RhbXASKwoMc3VibWl0dGVkX2F0GBQgASgLMhUubGxhbWF0cmFkZS5UaW1lc3RhbXASKAoJZmlsbGVkX2F0GBUgASgLMhUubGxhbWF0cmFkZS5UaW1lc3RhbXASKwoMY2FuY2VsbGVkX2F0GBYgASgLMhUubGxhbWF0cmFkZS5UaW1lc3RhbXASKQoKZXhwaXJlZF9hdBgXIAEoCzIVLmxsYW1hdHJhZGUuVGltZXN0YW1wEhYKDmV4dGVuZGVkX2hvdXJzGBggASgIEjEKCG1ldGFkYXRhGBkgAygLMh8ubGxhbWF0cmFkZS5PcmRlci5NZXRhZGF0YUVudHJ5EhEKCXNsZWV2ZV9pZBgaIAEoCRISCgphY2NvdW50X2lkGBsgASgJGi8KDU1ldGFkYXRhRW50cnkSCwoDa2V5GAEgASgJEg0KBXZhbHVlGAIgASgJOgI4ASKLAgoERmlsbBIKCgJpZBgBIAEoCRIQCghvcmRlcl9pZBgCIAEoCRIOCgZzeW1ib2wYAyABKAkSIgoFcHJpY2UYBCABKAsyEy5sbGFtYXRyYWRlLkRlY2ltYWwSJQoIcXVhbnRpdHkYBSABKAsyEy5sbGFtYXRyYWRlLkRlY2ltYWwSKAoJdGltZXN0YW1wGAYgASgLMhUubGxhbWF0cmFkZS5UaW1lc3RhbXASEAoIZXhjaGFuZ2UYByABKAkSJwoKY29tbWlzc2lvbhgIIAEoCzITLmxsYW1hdHJhZGUuRGVjaW1hbBIRCglzbGVldmVfaWQYCSABKAkSEgoKYWNjb3VudF9pZBgKIAEoCSLhBAoIUG9zaXRpb24SCgoCaWQYASABKAkSEQoJdGVuYW50X2lkGAIgASgJEhIKCnNlc3Npb25faWQYAyABKAkSDgoGc3ltYm9sGAQgASgJEiYKBHNpZGUYBSABKA4yGC5sbGFtYXRyYWRlLlBvc2l0aW9uU2lkZRIlCghxdWFudGl0eRgGIAEoCzITLmxsYW1hdHJhZGUuRGVjaW1hbBIvChJhdmFpbGFibGVfcXVhbnRpdHkYByABKAsyEy5sbGFtYXRyYWRlLkRlY2ltYWwSJwoKY29zdF9iYXNpcxgIIAEoCzITLmxsYW1hdHJhZGUuRGVjaW1hbBIwChNhdmVyYWdlX2VudHJ5X3ByaWNlGAkgASgLMhMubGxhbWF0cmFkZS5EZWNpbWFsEioKDWN1cnJlbnRfcHJpY2UYCiABKAsyEy5sbGFtYXRyYWRlLkRlY2ltYWwSKQoMbWFya2V0X3ZhbHVlGAsgASgLMhMubGxhbWF0cmFkZS5EZWNpbWFsEisKDnVucmVhbGl6ZWRfcG5sGAwgASgLMhMubGxhbWF0cmFkZS5EZWNpbWFsEjMKFnVucmVhbGl6ZWRfcG5sX3BlcmNlbnQYDSABKAsyEy5sbGFtYXRyYWRlLkRlY2ltYWwSKQoMcmVhbGl6ZWRfcG5sGA4gASgLMhMubGxhbWF0cmFkZS5EZWNpbWFsEigKCW9wZW5lZF9hdBgPIAEoCzIVLmxsYW1hdHJhZGUuVGltZXN0YW1wEikKCnVwZGF0ZWRfYXQYECABKAsyFS5sbGFtYXRyYWRlLlRpbWVzdGFtcCK7AwoOVHJhZGluZ1Nlc3Npb24SCgoCaWQYASABKAkSEQoJdGVuYW50X2lkGAIgASgJEhMKC3N0cmF0ZWd5X2lkGAMgASgJEgwKBG5hbWUYBCABKAkSJwoEbW9kZRgFIAEoDjIZLmxsYW1hdHJhZGUuRXhlY3V0aW9uTW9kZRIRCglpc19hY3RpdmUYBiABKAgSLQoQc3RhcnRpbmdfY2FwaXRhbBgHIAEoCzITLmxsYW1hdHJhZGUuRGVjaW1hbBIrCg5jdXJyZW50X2VxdWl0eRgIIAEoCzITLmxsYW1hdHJhZGUuRGVjaW1hbBImCgl0b3RhbF9wbmwYCSABKAsyEy5sbGFtYXRyYWRlLkRlY2ltYWwSFAoMdG90YWxfdHJhZGVzGAogASgFEhYKDndpbm5pbmdfdHJhZGVzGAsgASgFEikKCnN0YXJ0ZWRfYXQYDCABKAsyFS5sbGFtYXRyYWRlLlRpbWVzdGFtcBInCghlbmRlZF9hdBgNIAEoCzIVLmxsYW1hdHJhZGUuVGltZXN0YW1wEhIKCmFjY291bnRfaWQYDiABKAkSEQoJc2xlZXZlX2lkGA8gASgJIs4EChJTdWJtaXRPcmRlclJlcXVlc3QSKgoHY29udGV4dBgBIAEoCzIZLmxsYW1hdHJhZGUuVGVuYW50Q29udGV4dBISCgpzZXNzaW9uX2lkGAIgASgJEhcKD2NsaWVudF9vcmRlcl9pZBgDIAEoCRIOCgZzeW1ib2wYBCABKAkSIwoEc2lkZRgFIAEoDjIVLmxsYW1hdHJhZGUuT3JkZXJTaWRlEiMKBHR5cGUYBiABKA4yFS5sbGFtYXRyYWRlLk9yZGVyVHlwZRIuCg10aW1lX2luX2ZvcmNlGAcgASgOMhcubGxhbWF0cmFkZS5UaW1lSW5Gb3JjZRIlCghxdWFudGl0eRgIIAEoCzITLmxsYW1hdHJhZGUuRGVjaW1hbBIoCgtsaW1pdF9wcmljZRgJIAEoCzITLmxsYW1hdHJhZGUuRGVjaW1hbBInCgpzdG9wX3ByaWNlGAogASgLMhMubGxhbWF0cmFkZS5EZWNpbWFsEioKDXRyYWlsX3BlcmNlbnQYCyABKAsyEy5sbGFtYXRyYWRlLkRlY2ltYWwSFgoOZXh0ZW5kZWRfaG91cnMYDCABKAgSEwoLc3RyYXRlZ3lfaWQYDSABKAkSPgoIbWV0YWRhdGEYDiADKAsyLC5sbGFtYXRyYWRlLlN1Ym1pdE9yZGVyUmVxdWVzdC5NZXRhZGF0YUVudHJ5EhEKCXNsZWV2ZV9pZBgPIAEoCRovCg1NZXRhZGF0YUVudHJ5EgsKA2tleRgBIAEoCRINCgV2YWx1ZRgCIAEoCToCOAEiNwoTU3VibWl0T3JkZXJSZXNwb25zZRIgCgVvcmRlchgBIAEoCzIRLmxsYW1hdHJhZGUuT3JkZXIiUgoSQ2FuY2VsT3JkZXJSZXF1ZXN0EioKB2NvbnRleHQYASABKAsyGS5sbGFtYXRyYWRlLlRlbmFudENvbnRleHQSEAoIb3JkZXJfaWQYAiABKAkiNwoTQ2FuY2VsT3JkZXJSZXNwb25zZRIgCgVvcmRlchgBIAEoCzIRLmxsYW1hdHJhZGUuT3JkZXIiTwoPR2V0T3JkZXJSZXF1ZXN0EioKB2NvbnRleHQYASABKAsyGS5sbGFtYXRyYWRlLlRlbmFudENvbnRleHQSEAoIb3JkZXJfaWQYAiABKAkiNAoQR2V0T3JkZXJSZXNwb25zZRIgCgVvcmRlchgBIAEoCzIRLmxsYW1hdHJhZGUuT3JkZXIiwQEKEUxpc3RPcmRlcnNSZXF1ZXN0EioKB2NvbnRleHQYASABKAsyGS5sbGFtYXRyYWRlLlRlbmFudENvbnRleHQSEgoKc2Vzc2lvbl9pZBgCIAEoCRIpCghzdGF0dXNlcxgDIAMoDjIXLmxsYW1hdHJhZGUuT3JkZXJTdGF0dXMSDgoGc3ltYm9sGAQgASgJEjEKCnBhZ2luYXRpb24YBSABKAsyHS5sbGFtYXRyYWRlLlBhZ2luYXRpb25SZXF1ZXN0ImsKEkxpc3RPcmRlcnNSZXNwb25zZRIhCgZvcmRlcnMYASADKAsyES5sbGFtYXRyYWRlLk9yZGVyEjIKCnBhZ2luYXRpb24YAiABKAsyHi5sbGFtYXRyYWRlLlBhZ2luYXRpb25SZXNwb25zZSJkChJHZXRQb3NpdGlvblJlcXVlc3QSKgoHY29udGV4dBgBIAEoCzIZLmxsYW1hdHJhZGUuVGVuYW50Q29udGV4dBISCgpzZXNzaW9uX2lkGAIgASgJEg4KBnN5bWJvbBgDIAEoCSI9ChNHZXRQb3NpdGlvblJlc3BvbnNlEiYKCHBvc2l0aW9uGAEgASgLMhQubGxhbWF0cmFkZS5Qb3NpdGlvbiJWChRMaXN0UG9zaXRpb25zUmVxdWVzdBIqCgdjb250ZXh0GAEgASgLMhkubGxhbWF0cmFkZS5UZW5hbnRDb250ZXh0EhIKCnNlc3Npb25faWQYAiABKAkiQAoVTGlzdFBvc2l0aW9uc1Jlc3BvbnNlEicKCXBvc2l0aW9ucxgBIAMoCzIULmxsYW1hdHJhZGUuUG9zaXRpb24ijQEKFENsb3NlUG9zaXRpb25SZXF1ZXN0EioKB2NvbnRleHQYASABKAsyGS5sbGFtYXRyYWRlLlRlbmFudENvbnRleHQSEgoKc2Vzc2lvbl9pZBgCIAEoCRIOCgZzeW1ib2wYAyABKAkSJQoIcXVhbnRpdHkYBCABKAsyEy5sbGFtYXRyYWRlLkRlY2ltYWwiOQoVQ2xvc2VQb3NpdGlvblJlc3BvbnNlEiAKBW9yZGVyGAEgASgLMhEubGxhbWF0cmFkZS5PcmRlciLtAQoaU3RhcnRUcmFkaW5nU2Vzc2lvblJlcXVlc3QSKgoHY29udGV4dBgBIAEoCzIZLmxsYW1hdHJhZGUuVGVuYW50Q29udGV4dBITCgtzdHJhdGVneV9pZBgCIAEoCRIYChBzdHJhdGVneV92ZXJzaW9uGAMgASgFEgwKBG5hbWUYBCABKAkSJwoEbW9kZRgFIAEoDjIZLmxsYW1hdHJhZGUuRXhlY3V0aW9uTW9kZRIWCg5jcmVkZW50aWFsc19pZBgGIAEoCRIPCgdzeW1ib2xzGAcgAygJEhQKDGV4ZWN1dGlvbl9pZBgIIAEoCSJKChtTdGFydFRyYWRpbmdTZXNzaW9uUmVzcG9uc2USKwoHc2Vzc2lvbhgBIAEoCzIaLmxsYW1hdHJhZGUuVHJhZGluZ1Nlc3Npb24iWwoZU3RvcFRyYWRpbmdTZXNzaW9uUmVxdWVzdBIqCgdjb250ZXh0GAEgASgLMhkubGxhbWF0cmFkZS5UZW5hbnRDb250ZXh0EhIKCnNlc3Npb25faWQYAiABKAkiSQoaU3RvcFRyYWRpbmdTZXNzaW9uUmVzcG9uc2USKwoHc2Vzc2lvbhgBIAEoCzIaLmxsYW1hdHJhZGUuVHJhZGluZ1Nlc3Npb24iXAoaUGF1c2VUcmFkaW5nU2Vzc2lvblJlcXVlc3QSKgoHY29udGV4dBgBIAEoCzIZLmxsYW1hdHJhZGUuVGVuYW50Q29udGV4dBISCgpzZXNzaW9uX2lkGAIgASgJIkoKG1BhdXNlVHJhZGluZ1Nlc3Npb25SZXNwb25zZRIrCgdzZXNzaW9uGAEgASgLMhoubGxhbWF0cmFkZS5UcmFkaW5nU2Vzc2lvbiJdChtSZXN1bWVUcmFkaW5nU2Vzc2lvblJlcXVlc3QSKgoHY29udGV4dBgBIAEoCzIZLmxsYW1hdHJhZGUuVGVuYW50Q29udGV4dBISCgpzZXNzaW9uX2lkGAIgASgJIksKHFJlc3VtZVRyYWRpbmdTZXNzaW9uUmVzcG9uc2USKwoHc2Vzc2lvbhgBIAEoCzIaLmxsYW1hdHJhZGUuVHJhZGluZ1Nlc3Npb24iWgoYR2V0VHJhZGluZ1Nlc3Npb25SZXF1ZXN0EioKB2NvbnRleHQYASABKAsyGS5sbGFtYXRyYWRlLlRlbmFudENvbnRleHQSEgoKc2Vzc2lvbl9pZBgCIAEoCSJIChlHZXRUcmFkaW5nU2Vzc2lvblJlc3BvbnNlEisKB3Nlc3Npb24YASABKAsyGi5sbGFtYXRyYWRlLlRyYWRpbmdTZXNzaW9uIr0BChpMaXN0VHJhZGluZ1Nlc3Npb25zUmVxdWVzdBIqCgdjb250ZXh0GAEgASgLMhkubGxhbWF0cmFkZS5UZW5hbnRDb250ZXh0EisKBnN0YXR1cxgCIAEoDjIbLmxsYW1hdHJhZGUuRXhlY3V0aW9uU3RhdHVzEhMKC3N0cmF0ZWd5X2lkGAMgASgJEjEKCnBhZ2luYXRpb24YBCABKAsyHS5sbGFtYXRyYWRlLlBhZ2luYXRpb25SZXF1ZXN0In8KG0xpc3RUcmFkaW5nU2Vzc2lvbnNSZXNwb25zZRIsCghzZXNzaW9ucxgBIAMoCzIaLmxsYW1hdHJhZGUuVHJhZGluZ1Nlc3Npb24SMgoKcGFnaW5hdGlvbhgCIAEoCzIeLmxsYW1hdHJhZGUuUGFnaW5hdGlvblJlc3BvbnNlInEKGVN0cmVhbU9yZGVyVXBkYXRlc1JlcXVlc3QSKgoHY29udGV4dBgBIAEoCzIZLmxsYW1hdHJhZGUuVGVuYW50Q29udGV4dBISCgpzZXNzaW9uX2lkGAIgASgJEhQKDGxhc3Rfc2Vlbl9pZBgDIAEoCSKrAQoLT3JkZXJVcGRhdGUSIAoFb3JkZXIYASABKAsyES5sbGFtYXRyYWRlLk9yZGVyEiUKC2xhdGVzdF9maWxsGAIgASgLMhAubGxhbWF0cmFkZS5GaWxsEhIKCmV2ZW50X3R5cGUYAyABKAkSKAoJdGltZXN0YW1wGAQgASgLMhUubGxhbWF0cmFkZS5UaW1lc3RhbXASFQoNc3RyZWFtX2N1cnNvchgFIAEoCSJ0ChxTdHJlYW1Qb3NpdGlvblVwZGF0ZXNSZXF1ZXN0EioKB2NvbnRleHQYASABKAsyGS5sbGFtYXRyYWRlLlRlbmFudENvbnRleHQSEgoKc2Vzc2lvbl9pZBgCIAEoCRIUCgxsYXN0X3NlZW5faWQYAyABKAkijQEKDlBvc2l0aW9uVXBkYXRlEiYKCHBvc2l0aW9uGAEgASgLMhQubGxhbWF0cmFkZS5Qb3NpdGlvbhISCgpldmVudF90eXBlGAIgASgJEigKCXRpbWVzdGFtcBgDIAEoCzIVLmxsYW1hdHJhZGUuVGltZXN0YW1wEhUKDXN0cmVhbV9jdXJzb3IYBCABKAkqUAoJT3JkZXJTaWRlEhoKFk9SREVSX1NJREVfVU5TUEVDSUZJRUQQABISCg5PUkRFUl9TSURFX0JVWRABEhMKD09SREVSX1NJREVfU0VMTBACKqIBCglPcmRlclR5cGUSGgoWT1JERVJfVFlQRV9VTlNQRUNJRklFRBAAEhUKEU9SREVSX1RZUEVfTUFSS0VUEAESFAoQT1JERVJfVFlQRV9MSU1JVBACEhMKD09SREVSX1RZUEVfU1RPUBADEhkKFU9SREVSX1RZUEVfU1RPUF9MSU1JVBAEEhwKGE9SREVSX1RZUEVfVFJBSUxJTkdfU1RPUBAFKoACCgtPcmRlclN0YXR1cxIcChhPUkRFUl9TVEFUVVNfVU5TUEVDSUZJRUQQABIYChRPUkRFUl9TVEFUVVNfUEVORElORxABEhoKFk9SREVSX1NUQVRVU19TVUJNSVRURUQQAhIZChVPUkRFUl9TVEFUVVNfQUNDRVBURUQQAxIYChRPUkRFUl9TVEFUVVNfUEFSVElBTBAEEhcKE09SREVSX1NUQVRVU19GSUxMRUQQBRIaChZPUkRFUl9TVEFUVVNfQ0FOQ0VMTEVEEAYSGQoVT1JERVJfU1RBVFVTX1JFSkVDVEVEEAcSGAoUT1JERVJfU1RBVFVTX0VYUElSRUQQCCq2AQoLVGltZUluRm9yY2USHQoZVElNRV9JTl9GT1JDRV9VTlNQRUNJRklFRBAAEhUKEVRJTUVfSU5fRk9SQ0VfREFZEAESFQoRVElNRV9JTl9GT1JDRV9HVEMQAhIVChFUSU1FX0lOX0ZPUkNFX0lPQxADEhUKEVRJTUVfSU5fRk9SQ0VfRk9LEAQSFQoRVElNRV9JTl9GT1JDRV9PUEcQBRIVChFUSU1FX0lOX0ZPUkNFX0NMUxAGKl4KDFBvc2l0aW9uU2lkZRIdChlQT1NJVElPTl9TSURFX1VOU1BFQ0lGSUVEEAASFgoSUE9TSVRJT05fU0lERV9MT05HEAESFwoTUE9TSVRJT05fU0lERV9TSE9SVBACMrkKCg5UcmFkaW5nU2VydmljZRJfCgxTdGFydFNlc3Npb24SJi5sbGFtYXRyYWRlLlN0YXJ0VHJhZGluZ1Nlc3Npb25SZXF1ZXN0GicubGxhbWF0cmFkZS5TdGFydFRyYWRpbmdTZXNzaW9uUmVzcG9uc2USXAoLU3RvcFNlc3Npb24SJS5sbGFtYXRyYWRlLlN0b3BUcmFkaW5nU2Vzc2lvblJlcXVlc3QaJi5sbGFtYXRyYWRlLlN0b3BUcmFkaW5nU2Vzc2lvblJlc3BvbnNlEl8KDFBhdXNlU2Vzc2lvbhImLmxsYW1hdHJhZGUuUGF1c2VUcmFkaW5nU2Vzc2lvblJlcXVlc3QaJy5sbGFtYXRyYWRlLlBhdXNlVHJhZGluZ1Nlc3Npb25SZXNwb25zZRJiCg1SZXN1bWVTZXNzaW9uEicubGxhbWF0cmFkZS5SZXN1bWVUcmFkaW5nU2Vzc2lvblJlcXVlc3QaKC5sbGFtYXRyYWRlLlJlc3VtZVRyYWRpbmdTZXNzaW9uUmVzcG9uc2USWQoKR2V0U2Vzc2lvbhIkLmxsYW1hdHJhZGUuR2V0VHJhZGluZ1Nlc3Npb25SZXF1ZXN0GiUubGxhbWF0cmFkZS5HZXRUcmFkaW5nU2Vzc2lvblJlc3BvbnNlEl8KDExpc3RTZXNzaW9ucxImLmxsYW1hdHJhZGUuTGlzdFRyYWRpbmdTZXNzaW9uc1JlcXVlc3QaJy5sbGFtYXRyYWRlLkxpc3RUcmFkaW5nU2Vzc2lvbnNSZXNwb25zZRJOCgtTdWJtaXRPcmRlchIeLmxsYW1hdHJhZGUuU3VibWl0T3JkZXJSZXF1ZXN0Gh8ubGxhbWF0cmFkZS5TdWJtaXRPcmRlclJlc3BvbnNlEk4KC0NhbmNlbE9yZGVyEh4ubGxhbWF0cmFkZS5DYW5jZWxPcmRlclJlcXVlc3QaHy5sbGFtYXRyYWRlLkNhbmNlbE9yZGVyUmVzcG9uc2USRQoIR2V0T3JkZXISGy5sbGFtYXRyYWRlLkdldE9yZGVyUmVxdWVzdBocLmxsYW1hdHJhZGUuR2V0T3JkZXJSZXNwb25zZRJLCgpMaXN0T3JkZXJzEh0ubGxhbWF0cmFkZS5MaXN0T3JkZXJzUmVxdWVzdBoeLmxsYW1hdHJhZGUuTGlzdE9yZGVyc1Jlc3BvbnNlEk4KC0dldFBvc2l0aW9uEh4ubGxhbWF0cmFkZS5HZXRQb3NpdGlvblJlcXVlc3QaHy5sbGFtYXRyYWRlLkdldFBvc2l0aW9uUmVzcG9uc2USVAoNTGlzdFBvc2l0aW9ucxIgLmxsYW1hdHJhZGUuTGlzdFBvc2l0aW9uc1JlcXVlc3QaIS5sbGFtYXRyYWRlLkxpc3RQb3NpdGlvbnNSZXNwb25zZRJUCg1DbG9zZVBvc2l0aW9uEiAubGxhbWF0cmFkZS5DbG9zZVBvc2l0aW9uUmVxdWVzdBohLmxsYW1hdHJhZGUuQ2xvc2VQb3NpdGlvblJlc3BvbnNlElYKElN0cmVhbU9yZGVyVXBkYXRlcxIlLmxsYW1hdHJhZGUuU3RyZWFtT3JkZXJVcGRhdGVzUmVxdWVzdBoXLmxsYW1hdHJhZGUuT3JkZXJVcGRhdGUwARJfChVTdHJlYW1Qb3NpdGlvblVwZGF0ZXMSKC5sbGFtYXRyYWRlLlN0cmVhbVBvc2l0aW9uVXBkYXRlc1JlcXVlc3QaGi5sbGFtYXRyYWRlLlBvc2l0aW9uVXBkYXRlMAFCiAEKDmNvbS5sbGFtYXRyYWRlQgxUcmFkaW5nUHJvdG9QAVogZ2l0aHViLmNvbS9sbGFtYXRyYWRlL2FwaS9nZW4vZ2+iAgNMWFiqAgpMbGFtYXRyYWRlygIKTGxhbWF0cmFkZeICFkxsYW1hdHJhZGVcR1BCTWV0YWRhdGHqAgpMbGFtYXRyYWRlYgZwcm90bzM", [file_common]);
 
 /**
  * Order
@@ -158,6 +158,18 @@ export type Order = Message<"llamatrade.Order"> & {
    * @generated from field: map<string, string> metadata = 25;
    */
   metadata: { [key: string]: string };
+
+  /**
+   * Ledger attribution (fixed at order origination; see ledger.proto)
+   *
+   * @generated from field: string sleeve_id = 26;
+   */
+  sleeveId: string;
+
+  /**
+   * @generated from field: string account_id = 27;
+   */
+  accountId: string;
 };
 
 /**
@@ -212,6 +224,18 @@ export type Fill = Message<"llamatrade.Fill"> & {
    * @generated from field: llamatrade.Decimal commission = 8;
    */
   commission?: Decimal;
+
+  /**
+   * Ledger attribution (inherited from the originating order)
+   *
+   * @generated from field: string sleeve_id = 9;
+   */
+  sleeveId: string;
+
+  /**
+   * @generated from field: string account_id = 10;
+   */
+  accountId: string;
 };
 
 /**
@@ -399,6 +423,18 @@ export type TradingSession = Message<"llamatrade.TradingSession"> & {
    * @generated from field: llamatrade.Timestamp ended_at = 13;
    */
   endedAt?: Timestamp;
+
+  /**
+   * Ledger attribution: the account + strategy sleeve this session trades for
+   *
+   * @generated from field: string account_id = 14;
+   */
+  accountId: string;
+
+  /**
+   * @generated from field: string sleeve_id = 15;
+   */
+  sleeveId: string;
 };
 
 /**
@@ -487,6 +523,14 @@ export type SubmitOrderRequest = Message<"llamatrade.SubmitOrderRequest"> & {
    * @generated from field: map<string, string> metadata = 14;
    */
   metadata: { [key: string]: string };
+
+  /**
+   * Ledger attribution. Empty → the order is attributed to the account's
+   * Manual sleeve (resolved server-side via LedgerService).
+   *
+   * @generated from field: string sleeve_id = 15;
+   */
+  sleeveId: string;
 };
 
 /**
@@ -797,6 +841,299 @@ export const ClosePositionResponseSchema: GenMessage<ClosePositionResponse> = /*
   messageDesc(file_trading, 17);
 
 /**
+ * Start a trading session (runs preflight checks and launches the runner)
+ *
+ * @generated from message llamatrade.StartTradingSessionRequest
+ */
+export type StartTradingSessionRequest = Message<"llamatrade.StartTradingSessionRequest"> & {
+  /**
+   * @generated from field: llamatrade.TenantContext context = 1;
+   */
+  context?: TenantContext;
+
+  /**
+   * @generated from field: string strategy_id = 2;
+   */
+  strategyId: string;
+
+  /**
+   * 0 = current version
+   *
+   * @generated from field: int32 strategy_version = 3;
+   */
+  strategyVersion: number;
+
+  /**
+   * @generated from field: string name = 4;
+   */
+  name: string;
+
+  /**
+   * @generated from field: llamatrade.ExecutionMode mode = 5;
+   */
+  mode: ExecutionMode;
+
+  /**
+   * @generated from field: string credentials_id = 6;
+   */
+  credentialsId: string;
+
+  /**
+   * empty = from strategy definition
+   *
+   * @generated from field: repeated string symbols = 7;
+   */
+  symbols: string[];
+
+  /**
+   * The funded strategy execution this session trades for. Threads the exact
+   * sleeve identity (CONTRACTS.md §5); empty falls back to the most recently
+   * funded execution of the strategy.
+   *
+   * @generated from field: string execution_id = 8;
+   */
+  executionId: string;
+};
+
+/**
+ * Describes the message llamatrade.StartTradingSessionRequest.
+ * Use `create(StartTradingSessionRequestSchema)` to create a new message.
+ */
+export const StartTradingSessionRequestSchema: GenMessage<StartTradingSessionRequest> = /*@__PURE__*/
+  messageDesc(file_trading, 18);
+
+/**
+ * @generated from message llamatrade.StartTradingSessionResponse
+ */
+export type StartTradingSessionResponse = Message<"llamatrade.StartTradingSessionResponse"> & {
+  /**
+   * @generated from field: llamatrade.TradingSession session = 1;
+   */
+  session?: TradingSession;
+};
+
+/**
+ * Describes the message llamatrade.StartTradingSessionResponse.
+ * Use `create(StartTradingSessionResponseSchema)` to create a new message.
+ */
+export const StartTradingSessionResponseSchema: GenMessage<StartTradingSessionResponse> = /*@__PURE__*/
+  messageDesc(file_trading, 19);
+
+/**
+ * @generated from message llamatrade.StopTradingSessionRequest
+ */
+export type StopTradingSessionRequest = Message<"llamatrade.StopTradingSessionRequest"> & {
+  /**
+   * @generated from field: llamatrade.TenantContext context = 1;
+   */
+  context?: TenantContext;
+
+  /**
+   * @generated from field: string session_id = 2;
+   */
+  sessionId: string;
+};
+
+/**
+ * Describes the message llamatrade.StopTradingSessionRequest.
+ * Use `create(StopTradingSessionRequestSchema)` to create a new message.
+ */
+export const StopTradingSessionRequestSchema: GenMessage<StopTradingSessionRequest> = /*@__PURE__*/
+  messageDesc(file_trading, 20);
+
+/**
+ * @generated from message llamatrade.StopTradingSessionResponse
+ */
+export type StopTradingSessionResponse = Message<"llamatrade.StopTradingSessionResponse"> & {
+  /**
+   * @generated from field: llamatrade.TradingSession session = 1;
+   */
+  session?: TradingSession;
+};
+
+/**
+ * Describes the message llamatrade.StopTradingSessionResponse.
+ * Use `create(StopTradingSessionResponseSchema)` to create a new message.
+ */
+export const StopTradingSessionResponseSchema: GenMessage<StopTradingSessionResponse> = /*@__PURE__*/
+  messageDesc(file_trading, 21);
+
+/**
+ * @generated from message llamatrade.PauseTradingSessionRequest
+ */
+export type PauseTradingSessionRequest = Message<"llamatrade.PauseTradingSessionRequest"> & {
+  /**
+   * @generated from field: llamatrade.TenantContext context = 1;
+   */
+  context?: TenantContext;
+
+  /**
+   * @generated from field: string session_id = 2;
+   */
+  sessionId: string;
+};
+
+/**
+ * Describes the message llamatrade.PauseTradingSessionRequest.
+ * Use `create(PauseTradingSessionRequestSchema)` to create a new message.
+ */
+export const PauseTradingSessionRequestSchema: GenMessage<PauseTradingSessionRequest> = /*@__PURE__*/
+  messageDesc(file_trading, 22);
+
+/**
+ * @generated from message llamatrade.PauseTradingSessionResponse
+ */
+export type PauseTradingSessionResponse = Message<"llamatrade.PauseTradingSessionResponse"> & {
+  /**
+   * @generated from field: llamatrade.TradingSession session = 1;
+   */
+  session?: TradingSession;
+};
+
+/**
+ * Describes the message llamatrade.PauseTradingSessionResponse.
+ * Use `create(PauseTradingSessionResponseSchema)` to create a new message.
+ */
+export const PauseTradingSessionResponseSchema: GenMessage<PauseTradingSessionResponse> = /*@__PURE__*/
+  messageDesc(file_trading, 23);
+
+/**
+ * @generated from message llamatrade.ResumeTradingSessionRequest
+ */
+export type ResumeTradingSessionRequest = Message<"llamatrade.ResumeTradingSessionRequest"> & {
+  /**
+   * @generated from field: llamatrade.TenantContext context = 1;
+   */
+  context?: TenantContext;
+
+  /**
+   * @generated from field: string session_id = 2;
+   */
+  sessionId: string;
+};
+
+/**
+ * Describes the message llamatrade.ResumeTradingSessionRequest.
+ * Use `create(ResumeTradingSessionRequestSchema)` to create a new message.
+ */
+export const ResumeTradingSessionRequestSchema: GenMessage<ResumeTradingSessionRequest> = /*@__PURE__*/
+  messageDesc(file_trading, 24);
+
+/**
+ * @generated from message llamatrade.ResumeTradingSessionResponse
+ */
+export type ResumeTradingSessionResponse = Message<"llamatrade.ResumeTradingSessionResponse"> & {
+  /**
+   * @generated from field: llamatrade.TradingSession session = 1;
+   */
+  session?: TradingSession;
+};
+
+/**
+ * Describes the message llamatrade.ResumeTradingSessionResponse.
+ * Use `create(ResumeTradingSessionResponseSchema)` to create a new message.
+ */
+export const ResumeTradingSessionResponseSchema: GenMessage<ResumeTradingSessionResponse> = /*@__PURE__*/
+  messageDesc(file_trading, 25);
+
+/**
+ * @generated from message llamatrade.GetTradingSessionRequest
+ */
+export type GetTradingSessionRequest = Message<"llamatrade.GetTradingSessionRequest"> & {
+  /**
+   * @generated from field: llamatrade.TenantContext context = 1;
+   */
+  context?: TenantContext;
+
+  /**
+   * @generated from field: string session_id = 2;
+   */
+  sessionId: string;
+};
+
+/**
+ * Describes the message llamatrade.GetTradingSessionRequest.
+ * Use `create(GetTradingSessionRequestSchema)` to create a new message.
+ */
+export const GetTradingSessionRequestSchema: GenMessage<GetTradingSessionRequest> = /*@__PURE__*/
+  messageDesc(file_trading, 26);
+
+/**
+ * @generated from message llamatrade.GetTradingSessionResponse
+ */
+export type GetTradingSessionResponse = Message<"llamatrade.GetTradingSessionResponse"> & {
+  /**
+   * @generated from field: llamatrade.TradingSession session = 1;
+   */
+  session?: TradingSession;
+};
+
+/**
+ * Describes the message llamatrade.GetTradingSessionResponse.
+ * Use `create(GetTradingSessionResponseSchema)` to create a new message.
+ */
+export const GetTradingSessionResponseSchema: GenMessage<GetTradingSessionResponse> = /*@__PURE__*/
+  messageDesc(file_trading, 27);
+
+/**
+ * @generated from message llamatrade.ListTradingSessionsRequest
+ */
+export type ListTradingSessionsRequest = Message<"llamatrade.ListTradingSessionsRequest"> & {
+  /**
+   * @generated from field: llamatrade.TenantContext context = 1;
+   */
+  context?: TenantContext;
+
+  /**
+   * unspecified = all
+   *
+   * @generated from field: llamatrade.ExecutionStatus status = 2;
+   */
+  status: ExecutionStatus;
+
+  /**
+   * empty = all
+   *
+   * @generated from field: string strategy_id = 3;
+   */
+  strategyId: string;
+
+  /**
+   * @generated from field: llamatrade.PaginationRequest pagination = 4;
+   */
+  pagination?: PaginationRequest;
+};
+
+/**
+ * Describes the message llamatrade.ListTradingSessionsRequest.
+ * Use `create(ListTradingSessionsRequestSchema)` to create a new message.
+ */
+export const ListTradingSessionsRequestSchema: GenMessage<ListTradingSessionsRequest> = /*@__PURE__*/
+  messageDesc(file_trading, 28);
+
+/**
+ * @generated from message llamatrade.ListTradingSessionsResponse
+ */
+export type ListTradingSessionsResponse = Message<"llamatrade.ListTradingSessionsResponse"> & {
+  /**
+   * @generated from field: repeated llamatrade.TradingSession sessions = 1;
+   */
+  sessions: TradingSession[];
+
+  /**
+   * @generated from field: llamatrade.PaginationResponse pagination = 2;
+   */
+  pagination?: PaginationResponse;
+};
+
+/**
+ * Describes the message llamatrade.ListTradingSessionsResponse.
+ * Use `create(ListTradingSessionsResponseSchema)` to create a new message.
+ */
+export const ListTradingSessionsResponseSchema: GenMessage<ListTradingSessionsResponse> = /*@__PURE__*/
+  messageDesc(file_trading, 29);
+
+/**
  * Stream order updates
  *
  * @generated from message llamatrade.StreamOrderUpdatesRequest
@@ -811,6 +1148,14 @@ export type StreamOrderUpdatesRequest = Message<"llamatrade.StreamOrderUpdatesRe
    * @generated from field: string session_id = 2;
    */
   sessionId: string;
+
+  /**
+   * Resume cursor (STREAMS_TRADING): the stream_cursor of the last update the
+   * client saw — reconnect replays the gap. Empty = live tail only.
+   *
+   * @generated from field: string last_seen_id = 3;
+   */
+  lastSeenId: string;
 };
 
 /**
@@ -818,7 +1163,7 @@ export type StreamOrderUpdatesRequest = Message<"llamatrade.StreamOrderUpdatesRe
  * Use `create(StreamOrderUpdatesRequestSchema)` to create a new message.
  */
 export const StreamOrderUpdatesRequestSchema: GenMessage<StreamOrderUpdatesRequest> = /*@__PURE__*/
-  messageDesc(file_trading, 18);
+  messageDesc(file_trading, 30);
 
 /**
  * Order update event
@@ -847,6 +1192,13 @@ export type OrderUpdate = Message<"llamatrade.OrderUpdate"> & {
    * @generated from field: llamatrade.Timestamp timestamp = 4;
    */
   timestamp?: Timestamp;
+
+  /**
+   * Stream entry id; persist client-side and send back as last_seen_id.
+   *
+   * @generated from field: string stream_cursor = 5;
+   */
+  streamCursor: string;
 };
 
 /**
@@ -854,7 +1206,7 @@ export type OrderUpdate = Message<"llamatrade.OrderUpdate"> & {
  * Use `create(OrderUpdateSchema)` to create a new message.
  */
 export const OrderUpdateSchema: GenMessage<OrderUpdate> = /*@__PURE__*/
-  messageDesc(file_trading, 19);
+  messageDesc(file_trading, 31);
 
 /**
  * Stream position updates
@@ -871,6 +1223,13 @@ export type StreamPositionUpdatesRequest = Message<"llamatrade.StreamPositionUpd
    * @generated from field: string session_id = 2;
    */
   sessionId: string;
+
+  /**
+   * Resume cursor (STREAMS_TRADING); see StreamOrderUpdatesRequest.
+   *
+   * @generated from field: string last_seen_id = 3;
+   */
+  lastSeenId: string;
 };
 
 /**
@@ -878,7 +1237,7 @@ export type StreamPositionUpdatesRequest = Message<"llamatrade.StreamPositionUpd
  * Use `create(StreamPositionUpdatesRequestSchema)` to create a new message.
  */
 export const StreamPositionUpdatesRequestSchema: GenMessage<StreamPositionUpdatesRequest> = /*@__PURE__*/
-  messageDesc(file_trading, 20);
+  messageDesc(file_trading, 32);
 
 /**
  * Position update event
@@ -902,6 +1261,13 @@ export type PositionUpdate = Message<"llamatrade.PositionUpdate"> & {
    * @generated from field: llamatrade.Timestamp timestamp = 3;
    */
   timestamp?: Timestamp;
+
+  /**
+   * Stream entry id; persist client-side and send back as last_seen_id.
+   *
+   * @generated from field: string stream_cursor = 4;
+   */
+  streamCursor: string;
 };
 
 /**
@@ -909,7 +1275,7 @@ export type PositionUpdate = Message<"llamatrade.PositionUpdate"> & {
  * Use `create(PositionUpdateSchema)` to create a new message.
  */
 export const PositionUpdateSchema: GenMessage<PositionUpdate> = /*@__PURE__*/
-  messageDesc(file_trading, 21);
+  messageDesc(file_trading, 33);
 
 /**
  * Order side
@@ -1130,6 +1496,56 @@ export const PositionSideSchema: GenEnum<PositionSide> = /*@__PURE__*/
  * @generated from service llamatrade.TradingService
  */
 export const TradingService: GenService<{
+  /**
+   * Session lifecycle
+   *
+   * @generated from rpc llamatrade.TradingService.StartSession
+   */
+  startSession: {
+    methodKind: "unary";
+    input: typeof StartTradingSessionRequestSchema;
+    output: typeof StartTradingSessionResponseSchema;
+  },
+  /**
+   * @generated from rpc llamatrade.TradingService.StopSession
+   */
+  stopSession: {
+    methodKind: "unary";
+    input: typeof StopTradingSessionRequestSchema;
+    output: typeof StopTradingSessionResponseSchema;
+  },
+  /**
+   * @generated from rpc llamatrade.TradingService.PauseSession
+   */
+  pauseSession: {
+    methodKind: "unary";
+    input: typeof PauseTradingSessionRequestSchema;
+    output: typeof PauseTradingSessionResponseSchema;
+  },
+  /**
+   * @generated from rpc llamatrade.TradingService.ResumeSession
+   */
+  resumeSession: {
+    methodKind: "unary";
+    input: typeof ResumeTradingSessionRequestSchema;
+    output: typeof ResumeTradingSessionResponseSchema;
+  },
+  /**
+   * @generated from rpc llamatrade.TradingService.GetSession
+   */
+  getSession: {
+    methodKind: "unary";
+    input: typeof GetTradingSessionRequestSchema;
+    output: typeof GetTradingSessionResponseSchema;
+  },
+  /**
+   * @generated from rpc llamatrade.TradingService.ListSessions
+   */
+  listSessions: {
+    methodKind: "unary";
+    input: typeof ListTradingSessionsRequestSchema;
+    output: typeof ListTradingSessionsResponseSchema;
+  },
   /**
    * Order management
    *

@@ -59,6 +59,11 @@ class TradingSession(Base, UUIDPrimaryKeyMixin, TenantMixin, TimestampMixin):
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_by: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
 
+    # Ledger identity (threaded from the funded strategy execution; nullable
+    # for legacy/unfunded sessions — see CONTRACTS.md §5)
+    sleeve_id: Mapped[UUID | None] = mapped_column(PG_UUID(as_uuid=True), nullable=True)
+    account_id: Mapped[UUID | None] = mapped_column(PG_UUID(as_uuid=True), nullable=True)
+
     # Relationships
     orders: Mapped[list[Order]] = relationship("Order", back_populates="session")
     positions: Mapped[list[Position]] = relationship("Position", back_populates="session")
@@ -111,6 +116,10 @@ class Order(Base, UUIDPrimaryKeyMixin, TenantMixin, TimestampMixin):
     failed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     signal_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     metadata_: Mapped[dict[str, Any] | None] = mapped_column("metadata", JSONB, nullable=True)
+
+    # Ledger attribution, fixed at order origination (CONTRACTS.md §5)
+    sleeve_id: Mapped[UUID | None] = mapped_column(PG_UUID(as_uuid=True), nullable=True)
+    account_id: Mapped[UUID | None] = mapped_column(PG_UUID(as_uuid=True), nullable=True)
 
     # Bracket order fields (stop-loss/take-profit)
     parent_order_id: Mapped[UUID | None] = mapped_column(

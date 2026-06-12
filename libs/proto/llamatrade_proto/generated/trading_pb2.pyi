@@ -199,6 +199,8 @@ class Order(message.Message):
     EXPIRED_AT_FIELD_NUMBER: builtins.int
     EXTENDED_HOURS_FIELD_NUMBER: builtins.int
     METADATA_FIELD_NUMBER: builtins.int
+    SLEEVE_ID_FIELD_NUMBER: builtins.int
+    ACCOUNT_ID_FIELD_NUMBER: builtins.int
     id: builtins.str
     client_order_id: builtins.str
     tenant_id: builtins.str
@@ -214,6 +216,9 @@ class Order(message.Message):
     status_message: builtins.str
     extended_hours: builtins.bool
     """Extended hours"""
+    sleeve_id: builtins.str
+    """Ledger attribution (fixed at order origination; see ledger.proto)"""
+    account_id: builtins.str
     @builtins.property
     def quantity(self) -> common_pb2.Decimal:
         """Quantities"""
@@ -276,10 +281,12 @@ class Order(message.Message):
         expired_at: common_pb2.Timestamp | None = ...,
         extended_hours: builtins.bool = ...,
         metadata: abc.Mapping[builtins.str, builtins.str] | None = ...,
+        sleeve_id: builtins.str = ...,
+        account_id: builtins.str = ...,
     ) -> None: ...
     _HasFieldArgType: _TypeAlias = typing.Literal["average_fill_price", b"average_fill_price", "cancelled_at", b"cancelled_at", "created_at", b"created_at", "expired_at", b"expired_at", "filled_at", b"filled_at", "filled_quantity", b"filled_quantity", "limit_price", b"limit_price", "quantity", b"quantity", "stop_price", b"stop_price", "submitted_at", b"submitted_at", "trail_percent", b"trail_percent", "trail_price", b"trail_price"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal["average_fill_price", b"average_fill_price", "cancelled_at", b"cancelled_at", "client_order_id", b"client_order_id", "created_at", b"created_at", "expired_at", b"expired_at", "extended_hours", b"extended_hours", "filled_at", b"filled_at", "filled_quantity", b"filled_quantity", "id", b"id", "limit_price", b"limit_price", "metadata", b"metadata", "quantity", b"quantity", "session_id", b"session_id", "side", b"side", "status", b"status", "status_message", b"status_message", "stop_price", b"stop_price", "strategy_id", b"strategy_id", "submitted_at", b"submitted_at", "symbol", b"symbol", "tenant_id", b"tenant_id", "time_in_force", b"time_in_force", "trail_percent", b"trail_percent", "trail_price", b"trail_price", "type", b"type"]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["account_id", b"account_id", "average_fill_price", b"average_fill_price", "cancelled_at", b"cancelled_at", "client_order_id", b"client_order_id", "created_at", b"created_at", "expired_at", b"expired_at", "extended_hours", b"extended_hours", "filled_at", b"filled_at", "filled_quantity", b"filled_quantity", "id", b"id", "limit_price", b"limit_price", "metadata", b"metadata", "quantity", b"quantity", "session_id", b"session_id", "side", b"side", "sleeve_id", b"sleeve_id", "status", b"status", "status_message", b"status_message", "stop_price", b"stop_price", "strategy_id", b"strategy_id", "submitted_at", b"submitted_at", "symbol", b"symbol", "tenant_id", b"tenant_id", "time_in_force", b"time_in_force", "trail_percent", b"trail_percent", "trail_price", b"trail_price", "type", b"type"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -296,10 +303,15 @@ class Fill(message.Message):
     TIMESTAMP_FIELD_NUMBER: builtins.int
     EXCHANGE_FIELD_NUMBER: builtins.int
     COMMISSION_FIELD_NUMBER: builtins.int
+    SLEEVE_ID_FIELD_NUMBER: builtins.int
+    ACCOUNT_ID_FIELD_NUMBER: builtins.int
     id: builtins.str
     order_id: builtins.str
     symbol: builtins.str
     exchange: builtins.str
+    sleeve_id: builtins.str
+    """Ledger attribution (inherited from the originating order)"""
+    account_id: builtins.str
     @builtins.property
     def price(self) -> common_pb2.Decimal: ...
     @builtins.property
@@ -319,10 +331,12 @@ class Fill(message.Message):
         timestamp: common_pb2.Timestamp | None = ...,
         exchange: builtins.str = ...,
         commission: common_pb2.Decimal | None = ...,
+        sleeve_id: builtins.str = ...,
+        account_id: builtins.str = ...,
     ) -> None: ...
     _HasFieldArgType: _TypeAlias = typing.Literal["commission", b"commission", "price", b"price", "quantity", b"quantity", "timestamp", b"timestamp"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal["commission", b"commission", "exchange", b"exchange", "id", b"id", "order_id", b"order_id", "price", b"price", "quantity", b"quantity", "symbol", b"symbol", "timestamp", b"timestamp"]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["account_id", b"account_id", "commission", b"commission", "exchange", b"exchange", "id", b"id", "order_id", b"order_id", "price", b"price", "quantity", b"quantity", "sleeve_id", b"sleeve_id", "symbol", b"symbol", "timestamp", b"timestamp"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -426,6 +440,8 @@ class TradingSession(message.Message):
     WINNING_TRADES_FIELD_NUMBER: builtins.int
     STARTED_AT_FIELD_NUMBER: builtins.int
     ENDED_AT_FIELD_NUMBER: builtins.int
+    ACCOUNT_ID_FIELD_NUMBER: builtins.int
+    SLEEVE_ID_FIELD_NUMBER: builtins.int
     id: builtins.str
     tenant_id: builtins.str
     strategy_id: builtins.str
@@ -435,6 +451,9 @@ class TradingSession(message.Message):
     is_active: builtins.bool
     total_trades: builtins.int
     winning_trades: builtins.int
+    account_id: builtins.str
+    """Ledger attribution: the account + strategy sleeve this session trades for"""
+    sleeve_id: builtins.str
     @builtins.property
     def starting_capital(self) -> common_pb2.Decimal:
         """Performance"""
@@ -465,10 +484,12 @@ class TradingSession(message.Message):
         winning_trades: builtins.int = ...,
         started_at: common_pb2.Timestamp | None = ...,
         ended_at: common_pb2.Timestamp | None = ...,
+        account_id: builtins.str = ...,
+        sleeve_id: builtins.str = ...,
     ) -> None: ...
     _HasFieldArgType: _TypeAlias = typing.Literal["current_equity", b"current_equity", "ended_at", b"ended_at", "started_at", b"started_at", "starting_capital", b"starting_capital", "total_pnl", b"total_pnl"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal["current_equity", b"current_equity", "ended_at", b"ended_at", "id", b"id", "is_active", b"is_active", "mode", b"mode", "name", b"name", "started_at", b"started_at", "starting_capital", b"starting_capital", "strategy_id", b"strategy_id", "tenant_id", b"tenant_id", "total_pnl", b"total_pnl", "total_trades", b"total_trades", "winning_trades", b"winning_trades"]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["account_id", b"account_id", "current_equity", b"current_equity", "ended_at", b"ended_at", "id", b"id", "is_active", b"is_active", "mode", b"mode", "name", b"name", "sleeve_id", b"sleeve_id", "started_at", b"started_at", "starting_capital", b"starting_capital", "strategy_id", b"strategy_id", "tenant_id", b"tenant_id", "total_pnl", b"total_pnl", "total_trades", b"total_trades", "winning_trades", b"winning_trades"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -513,6 +534,7 @@ class SubmitOrderRequest(message.Message):
     EXTENDED_HOURS_FIELD_NUMBER: builtins.int
     STRATEGY_ID_FIELD_NUMBER: builtins.int
     METADATA_FIELD_NUMBER: builtins.int
+    SLEEVE_ID_FIELD_NUMBER: builtins.int
     session_id: builtins.str
     client_order_id: builtins.str
     symbol: builtins.str
@@ -523,6 +545,10 @@ class SubmitOrderRequest(message.Message):
     extended_hours: builtins.bool
     strategy_id: builtins.str
     """Metadata"""
+    sleeve_id: builtins.str
+    """Ledger attribution. Empty → the order is attributed to the account's
+    Manual sleeve (resolved server-side via LedgerService).
+    """
     @builtins.property
     def context(self) -> common_pb2.TenantContext: ...
     @builtins.property
@@ -552,10 +578,11 @@ class SubmitOrderRequest(message.Message):
         extended_hours: builtins.bool = ...,
         strategy_id: builtins.str = ...,
         metadata: abc.Mapping[builtins.str, builtins.str] | None = ...,
+        sleeve_id: builtins.str = ...,
     ) -> None: ...
     _HasFieldArgType: _TypeAlias = typing.Literal["context", b"context", "limit_price", b"limit_price", "quantity", b"quantity", "stop_price", b"stop_price", "trail_percent", b"trail_percent"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal["client_order_id", b"client_order_id", "context", b"context", "extended_hours", b"extended_hours", "limit_price", b"limit_price", "metadata", b"metadata", "quantity", b"quantity", "session_id", b"session_id", "side", b"side", "stop_price", b"stop_price", "strategy_id", b"strategy_id", "symbol", b"symbol", "time_in_force", b"time_in_force", "trail_percent", b"trail_percent", "type", b"type"]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["client_order_id", b"client_order_id", "context", b"context", "extended_hours", b"extended_hours", "limit_price", b"limit_price", "metadata", b"metadata", "quantity", b"quantity", "session_id", b"session_id", "side", b"side", "sleeve_id", b"sleeve_id", "stop_price", b"stop_price", "strategy_id", b"strategy_id", "symbol", b"symbol", "time_in_force", b"time_in_force", "trail_percent", b"trail_percent", "type", b"type"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -835,9 +862,72 @@ class ClosePositionResponse(message.Message):
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
-class StreamOrderUpdatesRequest(message.Message):
-    """Stream order updates"""
+class StartTradingSessionRequest(message.Message):
+    """Start a trading session (runs preflight checks and launches the runner)"""
 
+    DESCRIPTOR: descriptor.Descriptor
+
+    CONTEXT_FIELD_NUMBER: builtins.int
+    STRATEGY_ID_FIELD_NUMBER: builtins.int
+    STRATEGY_VERSION_FIELD_NUMBER: builtins.int
+    NAME_FIELD_NUMBER: builtins.int
+    MODE_FIELD_NUMBER: builtins.int
+    CREDENTIALS_ID_FIELD_NUMBER: builtins.int
+    SYMBOLS_FIELD_NUMBER: builtins.int
+    EXECUTION_ID_FIELD_NUMBER: builtins.int
+    strategy_id: builtins.str
+    strategy_version: builtins.int
+    """0 = current version"""
+    name: builtins.str
+    mode: common_pb2.ExecutionMode.ValueType
+    credentials_id: builtins.str
+    execution_id: builtins.str
+    """The funded strategy execution this session trades for. Threads the exact
+    sleeve identity (CONTRACTS.md §5); empty falls back to the most recently
+    funded execution of the strategy.
+    """
+    @builtins.property
+    def context(self) -> common_pb2.TenantContext: ...
+    @builtins.property
+    def symbols(self) -> containers.RepeatedScalarFieldContainer[builtins.str]:
+        """empty = from strategy definition"""
+
+    def __init__(
+        self,
+        *,
+        context: common_pb2.TenantContext | None = ...,
+        strategy_id: builtins.str = ...,
+        strategy_version: builtins.int = ...,
+        name: builtins.str = ...,
+        mode: common_pb2.ExecutionMode.ValueType = ...,
+        credentials_id: builtins.str = ...,
+        symbols: abc.Iterable[builtins.str] | None = ...,
+        execution_id: builtins.str = ...,
+    ) -> None: ...
+    _HasFieldArgType: _TypeAlias = typing.Literal["context", b"context"]  # noqa: Y015
+    def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
+    _ClearFieldArgType: _TypeAlias = typing.Literal["context", b"context", "credentials_id", b"credentials_id", "execution_id", b"execution_id", "mode", b"mode", "name", b"name", "strategy_id", b"strategy_id", "strategy_version", b"strategy_version", "symbols", b"symbols"]  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+
+@typing.final
+class StartTradingSessionResponse(message.Message):
+    DESCRIPTOR: descriptor.Descriptor
+
+    SESSION_FIELD_NUMBER: builtins.int
+    @builtins.property
+    def session(self) -> TradingSession: ...
+    def __init__(
+        self,
+        *,
+        session: TradingSession | None = ...,
+    ) -> None: ...
+    _HasFieldArgType: _TypeAlias = typing.Literal["session", b"session"]  # noqa: Y015
+    def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
+    _ClearFieldArgType: _TypeAlias = typing.Literal["session", b"session"]  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+
+@typing.final
+class StopTradingSessionRequest(message.Message):
     DESCRIPTOR: descriptor.Descriptor
 
     CONTEXT_FIELD_NUMBER: builtins.int
@@ -857,6 +947,212 @@ class StreamOrderUpdatesRequest(message.Message):
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
+class StopTradingSessionResponse(message.Message):
+    DESCRIPTOR: descriptor.Descriptor
+
+    SESSION_FIELD_NUMBER: builtins.int
+    @builtins.property
+    def session(self) -> TradingSession: ...
+    def __init__(
+        self,
+        *,
+        session: TradingSession | None = ...,
+    ) -> None: ...
+    _HasFieldArgType: _TypeAlias = typing.Literal["session", b"session"]  # noqa: Y015
+    def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
+    _ClearFieldArgType: _TypeAlias = typing.Literal["session", b"session"]  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+
+@typing.final
+class PauseTradingSessionRequest(message.Message):
+    DESCRIPTOR: descriptor.Descriptor
+
+    CONTEXT_FIELD_NUMBER: builtins.int
+    SESSION_ID_FIELD_NUMBER: builtins.int
+    session_id: builtins.str
+    @builtins.property
+    def context(self) -> common_pb2.TenantContext: ...
+    def __init__(
+        self,
+        *,
+        context: common_pb2.TenantContext | None = ...,
+        session_id: builtins.str = ...,
+    ) -> None: ...
+    _HasFieldArgType: _TypeAlias = typing.Literal["context", b"context"]  # noqa: Y015
+    def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
+    _ClearFieldArgType: _TypeAlias = typing.Literal["context", b"context", "session_id", b"session_id"]  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+
+@typing.final
+class PauseTradingSessionResponse(message.Message):
+    DESCRIPTOR: descriptor.Descriptor
+
+    SESSION_FIELD_NUMBER: builtins.int
+    @builtins.property
+    def session(self) -> TradingSession: ...
+    def __init__(
+        self,
+        *,
+        session: TradingSession | None = ...,
+    ) -> None: ...
+    _HasFieldArgType: _TypeAlias = typing.Literal["session", b"session"]  # noqa: Y015
+    def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
+    _ClearFieldArgType: _TypeAlias = typing.Literal["session", b"session"]  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+
+@typing.final
+class ResumeTradingSessionRequest(message.Message):
+    DESCRIPTOR: descriptor.Descriptor
+
+    CONTEXT_FIELD_NUMBER: builtins.int
+    SESSION_ID_FIELD_NUMBER: builtins.int
+    session_id: builtins.str
+    @builtins.property
+    def context(self) -> common_pb2.TenantContext: ...
+    def __init__(
+        self,
+        *,
+        context: common_pb2.TenantContext | None = ...,
+        session_id: builtins.str = ...,
+    ) -> None: ...
+    _HasFieldArgType: _TypeAlias = typing.Literal["context", b"context"]  # noqa: Y015
+    def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
+    _ClearFieldArgType: _TypeAlias = typing.Literal["context", b"context", "session_id", b"session_id"]  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+
+@typing.final
+class ResumeTradingSessionResponse(message.Message):
+    DESCRIPTOR: descriptor.Descriptor
+
+    SESSION_FIELD_NUMBER: builtins.int
+    @builtins.property
+    def session(self) -> TradingSession: ...
+    def __init__(
+        self,
+        *,
+        session: TradingSession | None = ...,
+    ) -> None: ...
+    _HasFieldArgType: _TypeAlias = typing.Literal["session", b"session"]  # noqa: Y015
+    def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
+    _ClearFieldArgType: _TypeAlias = typing.Literal["session", b"session"]  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+
+@typing.final
+class GetTradingSessionRequest(message.Message):
+    DESCRIPTOR: descriptor.Descriptor
+
+    CONTEXT_FIELD_NUMBER: builtins.int
+    SESSION_ID_FIELD_NUMBER: builtins.int
+    session_id: builtins.str
+    @builtins.property
+    def context(self) -> common_pb2.TenantContext: ...
+    def __init__(
+        self,
+        *,
+        context: common_pb2.TenantContext | None = ...,
+        session_id: builtins.str = ...,
+    ) -> None: ...
+    _HasFieldArgType: _TypeAlias = typing.Literal["context", b"context"]  # noqa: Y015
+    def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
+    _ClearFieldArgType: _TypeAlias = typing.Literal["context", b"context", "session_id", b"session_id"]  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+
+@typing.final
+class GetTradingSessionResponse(message.Message):
+    DESCRIPTOR: descriptor.Descriptor
+
+    SESSION_FIELD_NUMBER: builtins.int
+    @builtins.property
+    def session(self) -> TradingSession: ...
+    def __init__(
+        self,
+        *,
+        session: TradingSession | None = ...,
+    ) -> None: ...
+    _HasFieldArgType: _TypeAlias = typing.Literal["session", b"session"]  # noqa: Y015
+    def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
+    _ClearFieldArgType: _TypeAlias = typing.Literal["session", b"session"]  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+
+@typing.final
+class ListTradingSessionsRequest(message.Message):
+    DESCRIPTOR: descriptor.Descriptor
+
+    CONTEXT_FIELD_NUMBER: builtins.int
+    STATUS_FIELD_NUMBER: builtins.int
+    STRATEGY_ID_FIELD_NUMBER: builtins.int
+    PAGINATION_FIELD_NUMBER: builtins.int
+    status: common_pb2.ExecutionStatus.ValueType
+    """unspecified = all"""
+    strategy_id: builtins.str
+    """empty = all"""
+    @builtins.property
+    def context(self) -> common_pb2.TenantContext: ...
+    @builtins.property
+    def pagination(self) -> common_pb2.PaginationRequest: ...
+    def __init__(
+        self,
+        *,
+        context: common_pb2.TenantContext | None = ...,
+        status: common_pb2.ExecutionStatus.ValueType = ...,
+        strategy_id: builtins.str = ...,
+        pagination: common_pb2.PaginationRequest | None = ...,
+    ) -> None: ...
+    _HasFieldArgType: _TypeAlias = typing.Literal["context", b"context", "pagination", b"pagination"]  # noqa: Y015
+    def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
+    _ClearFieldArgType: _TypeAlias = typing.Literal["context", b"context", "pagination", b"pagination", "status", b"status", "strategy_id", b"strategy_id"]  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+
+@typing.final
+class ListTradingSessionsResponse(message.Message):
+    DESCRIPTOR: descriptor.Descriptor
+
+    SESSIONS_FIELD_NUMBER: builtins.int
+    PAGINATION_FIELD_NUMBER: builtins.int
+    @builtins.property
+    def sessions(self) -> containers.RepeatedCompositeFieldContainer[TradingSession]: ...
+    @builtins.property
+    def pagination(self) -> common_pb2.PaginationResponse: ...
+    def __init__(
+        self,
+        *,
+        sessions: abc.Iterable[TradingSession] | None = ...,
+        pagination: common_pb2.PaginationResponse | None = ...,
+    ) -> None: ...
+    _HasFieldArgType: _TypeAlias = typing.Literal["pagination", b"pagination"]  # noqa: Y015
+    def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
+    _ClearFieldArgType: _TypeAlias = typing.Literal["pagination", b"pagination", "sessions", b"sessions"]  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+
+@typing.final
+class StreamOrderUpdatesRequest(message.Message):
+    """Stream order updates"""
+
+    DESCRIPTOR: descriptor.Descriptor
+
+    CONTEXT_FIELD_NUMBER: builtins.int
+    SESSION_ID_FIELD_NUMBER: builtins.int
+    LAST_SEEN_ID_FIELD_NUMBER: builtins.int
+    session_id: builtins.str
+    last_seen_id: builtins.str
+    """Resume cursor (STREAMS_TRADING): the stream_cursor of the last update the
+    client saw — reconnect replays the gap. Empty = live tail only.
+    """
+    @builtins.property
+    def context(self) -> common_pb2.TenantContext: ...
+    def __init__(
+        self,
+        *,
+        context: common_pb2.TenantContext | None = ...,
+        session_id: builtins.str = ...,
+        last_seen_id: builtins.str = ...,
+    ) -> None: ...
+    _HasFieldArgType: _TypeAlias = typing.Literal["context", b"context"]  # noqa: Y015
+    def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
+    _ClearFieldArgType: _TypeAlias = typing.Literal["context", b"context", "last_seen_id", b"last_seen_id", "session_id", b"session_id"]  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+
+@typing.final
 class OrderUpdate(message.Message):
     """Order update event"""
 
@@ -866,8 +1162,11 @@ class OrderUpdate(message.Message):
     LATEST_FILL_FIELD_NUMBER: builtins.int
     EVENT_TYPE_FIELD_NUMBER: builtins.int
     TIMESTAMP_FIELD_NUMBER: builtins.int
+    STREAM_CURSOR_FIELD_NUMBER: builtins.int
     event_type: builtins.str
     """"new", "fill", "partial_fill", "cancelled", "rejected" """
+    stream_cursor: builtins.str
+    """Stream entry id; persist client-side and send back as last_seen_id."""
     @builtins.property
     def order(self) -> Order: ...
     @builtins.property
@@ -881,10 +1180,11 @@ class OrderUpdate(message.Message):
         latest_fill: Fill | None = ...,
         event_type: builtins.str = ...,
         timestamp: common_pb2.Timestamp | None = ...,
+        stream_cursor: builtins.str = ...,
     ) -> None: ...
     _HasFieldArgType: _TypeAlias = typing.Literal["latest_fill", b"latest_fill", "order", b"order", "timestamp", b"timestamp"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal["event_type", b"event_type", "latest_fill", b"latest_fill", "order", b"order", "timestamp", b"timestamp"]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["event_type", b"event_type", "latest_fill", b"latest_fill", "order", b"order", "stream_cursor", b"stream_cursor", "timestamp", b"timestamp"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -895,7 +1195,10 @@ class StreamPositionUpdatesRequest(message.Message):
 
     CONTEXT_FIELD_NUMBER: builtins.int
     SESSION_ID_FIELD_NUMBER: builtins.int
+    LAST_SEEN_ID_FIELD_NUMBER: builtins.int
     session_id: builtins.str
+    last_seen_id: builtins.str
+    """Resume cursor (STREAMS_TRADING); see StreamOrderUpdatesRequest."""
     @builtins.property
     def context(self) -> common_pb2.TenantContext: ...
     def __init__(
@@ -903,10 +1206,11 @@ class StreamPositionUpdatesRequest(message.Message):
         *,
         context: common_pb2.TenantContext | None = ...,
         session_id: builtins.str = ...,
+        last_seen_id: builtins.str = ...,
     ) -> None: ...
     _HasFieldArgType: _TypeAlias = typing.Literal["context", b"context"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal["context", b"context", "session_id", b"session_id"]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["context", b"context", "last_seen_id", b"last_seen_id", "session_id", b"session_id"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -918,8 +1222,11 @@ class PositionUpdate(message.Message):
     POSITION_FIELD_NUMBER: builtins.int
     EVENT_TYPE_FIELD_NUMBER: builtins.int
     TIMESTAMP_FIELD_NUMBER: builtins.int
+    STREAM_CURSOR_FIELD_NUMBER: builtins.int
     event_type: builtins.str
     """"opened", "updated", "closed" """
+    stream_cursor: builtins.str
+    """Stream entry id; persist client-side and send back as last_seen_id."""
     @builtins.property
     def position(self) -> Position: ...
     @builtins.property
@@ -930,8 +1237,9 @@ class PositionUpdate(message.Message):
         position: Position | None = ...,
         event_type: builtins.str = ...,
         timestamp: common_pb2.Timestamp | None = ...,
+        stream_cursor: builtins.str = ...,
     ) -> None: ...
     _HasFieldArgType: _TypeAlias = typing.Literal["position", b"position", "timestamp", b"timestamp"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal["event_type", b"event_type", "position", b"position", "timestamp", b"timestamp"]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["event_type", b"event_type", "position", b"position", "stream_cursor", b"stream_cursor", "timestamp", b"timestamp"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...

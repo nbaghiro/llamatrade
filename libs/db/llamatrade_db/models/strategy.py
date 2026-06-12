@@ -189,6 +189,12 @@ class StrategyExecution(Base, UUIDPrimaryKeyMixin, TenantMixin, TimestampMixin):
     )
     color: Mapped[str | None] = mapped_column(String(20), nullable=True)  # UI color for charts
 
+    # Ledger identity (set when the execution is funded; trading threads these
+    # into orders/fills — see ledger.proto and CONTRACTS.md)
+    credentials_id: Mapped[UUID | None] = mapped_column(PG_UUID(as_uuid=True), nullable=True)
+    sleeve_id: Mapped[UUID | None] = mapped_column(PG_UUID(as_uuid=True), nullable=True)
+    account_id: Mapped[UUID | None] = mapped_column(PG_UUID(as_uuid=True), nullable=True)
+
     # Relationships
     strategy: Mapped[Strategy] = relationship("Strategy", back_populates="executions")
     performance_metrics: Mapped[StrategyPerformanceMetrics | None] = relationship(

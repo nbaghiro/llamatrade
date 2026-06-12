@@ -105,6 +105,10 @@ message Order {
 
   // Metadata
   map<string, string> metadata = 25;
+
+  // Ledger attribution (fixed at order origination; see ledger.proto)
+  string sleeve_id = 26;
+  string account_id = 27;
 }
 
 // Order fill
@@ -117,6 +121,10 @@ message Fill {
   Timestamp timestamp = 6;
   string exchange = 7;
   Decimal commission = 8;
+
+  // Ledger attribution (inherited from the originating order)
+  string sleeve_id = 9;
+  string account_id = 10;
 }
 
 // Position
@@ -166,6 +174,10 @@ message TradingSession {
   // Timestamps
   Timestamp started_at = 12;
   Timestamp ended_at = 13;
+
+  // Ledger attribution: the account + strategy sleeve this session trades for
+  string account_id = 14;
+  string sleeve_id = 15;
 }
 
 // =============================================================================
@@ -192,6 +204,10 @@ message SubmitOrderRequest {
   // Metadata
   string strategy_id = 13;
   map<string, string> metadata = 14;
+
+  // Ledger attribution. Empty → the order is attributed to the account's
+  // Manual sleeve (resolved server-side via LedgerService).
+  string sleeve_id = 15;
 }
 
 message SubmitOrderResponse {
@@ -265,10 +281,81 @@ message ClosePositionResponse {
   Order order = 1;
 }
 
+// Start a trading session (runs preflight checks and launches the runner)
+message StartTradingSessionRequest {
+  TenantContext context = 1;
+  string strategy_id = 2;
+  int32 strategy_version = 3;  // 0 = current version
+  string name = 4;
+  ExecutionMode mode = 5;
+  string credentials_id = 6;
+  repeated string symbols = 7;  // empty = from strategy definition
+
+  // The funded strategy execution this session trades for. Threads the exact
+  // sleeve identity (CONTRACTS.md §5); empty falls back to the most recently
+  // funded execution of the strategy.
+  string execution_id = 8;
+}
+
+message StartTradingSessionResponse {
+  TradingSession session = 1;
+}
+
+message StopTradingSessionRequest {
+  TenantContext context = 1;
+  string session_id = 2;
+}
+
+message StopTradingSessionResponse {
+  TradingSession session = 1;
+}
+
+message PauseTradingSessionRequest {
+  TenantContext context = 1;
+  string session_id = 2;
+}
+
+message PauseTradingSessionResponse {
+  TradingSession session = 1;
+}
+
+message ResumeTradingSessionRequest {
+  TenantContext context = 1;
+  string session_id = 2;
+}
+
+message ResumeTradingSessionResponse {
+  TradingSession session = 1;
+}
+
+message GetTradingSessionRequest {
+  TenantContext context = 1;
+  string session_id = 2;
+}
+
+message GetTradingSessionResponse {
+  TradingSession session = 1;
+}
+
+message ListTradingSessionsRequest {
+  TenantContext context = 1;
+  ExecutionStatus status = 2;  // unspecified = all
+  string strategy_id = 3;      // empty = all
+  PaginationRequest pagination = 4;
+}
+
+message ListTradingSessionsResponse {
+  repeated TradingSession sessions = 1;
+  PaginationResponse pagination = 2;
+}
+
 // Stream order updates
 message StreamOrderUpdatesRequest {
   TenantContext context = 1;
   string session_id = 2;
+  // Resume cursor (STREAMS_TRADING): the stream_cursor of the last update the
+  // client saw — reconnect replays the gap. Empty = live tail only.
+  string last_seen_id = 3;
 }
 
 // Order update event
@@ -277,12 +364,16 @@ message OrderUpdate {
   Fill latest_fill = 2;
   string event_type = 3;  // "new", "fill", "partial_fill", "cancelled", "rejected"
   Timestamp timestamp = 4;
+  // Stream entry id; persist client-side and send back as last_seen_id.
+  string stream_cursor = 5;
 }
 
 // Stream position updates
 message StreamPositionUpdatesRequest {
   TenantContext context = 1;
   string session_id = 2;
+  // Resume cursor (STREAMS_TRADING); see StreamOrderUpdatesRequest.
+  string last_seen_id = 3;
 }
 
 // Position update event
@@ -290,6 +381,8 @@ message PositionUpdate {
   Position position = 1;
   string event_type = 2;  // "opened", "updated", "closed"
   Timestamp timestamp = 3;
+  // Stream entry id; persist client-side and send back as last_seen_id.
+  string stream_cursor = 4;
 }
 
 // =============================================================================
@@ -297,6 +390,14 @@ message PositionUpdate {
 // =============================================================================
 
 service TradingService {
+  // Session lifecycle
+  rpc StartSession(StartTradingSessionRequest) returns (StartTradingSessionResponse);
+  rpc StopSession(StopTradingSessionRequest) returns (StopTradingSessionResponse);
+  rpc PauseSession(PauseTradingSessionRequest) returns (PauseTradingSessionResponse);
+  rpc ResumeSession(ResumeTradingSessionRequest) returns (ResumeTradingSessionResponse);
+  rpc GetSession(GetTradingSessionRequest) returns (GetTradingSessionResponse);
+  rpc ListSessions(ListTradingSessionsRequest) returns (ListTradingSessionsResponse);
+
   // Order management
   rpc SubmitOrder(SubmitOrderRequest) returns (SubmitOrderResponse);
   rpc CancelOrder(CancelOrderRequest) returns (CancelOrderResponse);

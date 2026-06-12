@@ -96,6 +96,8 @@ class _AlertConditionTypeEnumTypeWrapper(enum_type_wrapper._EnumTypeWrapper[_Ale
     ALERT_CONDITION_TYPE_RSI_BELOW: _AlertConditionType.ValueType  # 6
     ALERT_CONDITION_TYPE_ORDER_FILLED: _AlertConditionType.ValueType  # 7
     ALERT_CONDITION_TYPE_STRATEGY_SIGNAL: _AlertConditionType.ValueType  # 8
+    ALERT_CONDITION_TYPE_RECONCILIATION_DRIFT: _AlertConditionType.ValueType  # 9
+    ALERT_CONDITION_TYPE_SLEEVE_FROZEN: _AlertConditionType.ValueType  # 10
 
 class AlertConditionType(_AlertConditionType, metaclass=_AlertConditionTypeEnumTypeWrapper):
     """Alert condition type"""
@@ -109,6 +111,8 @@ ALERT_CONDITION_TYPE_RSI_ABOVE: AlertConditionType.ValueType  # 5
 ALERT_CONDITION_TYPE_RSI_BELOW: AlertConditionType.ValueType  # 6
 ALERT_CONDITION_TYPE_ORDER_FILLED: AlertConditionType.ValueType  # 7
 ALERT_CONDITION_TYPE_STRATEGY_SIGNAL: AlertConditionType.ValueType  # 8
+ALERT_CONDITION_TYPE_RECONCILIATION_DRIFT: AlertConditionType.ValueType  # 9
+ALERT_CONDITION_TYPE_SLEEVE_FROZEN: AlertConditionType.ValueType  # 10
 
 class _AlertStatus:
     ValueType = typing.NewType("ValueType", builtins.int)

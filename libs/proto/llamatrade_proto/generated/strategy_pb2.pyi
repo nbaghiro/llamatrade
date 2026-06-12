@@ -522,6 +522,10 @@ class StrategyExecution(message.Message):
     ERROR_MESSAGE_FIELD_NUMBER: builtins.int
     CREATED_AT_FIELD_NUMBER: builtins.int
     UPDATED_AT_FIELD_NUMBER: builtins.int
+    ALLOCATED_CAPITAL_FIELD_NUMBER: builtins.int
+    CREDENTIALS_ID_FIELD_NUMBER: builtins.int
+    SLEEVE_ID_FIELD_NUMBER: builtins.int
+    ACCOUNT_ID_FIELD_NUMBER: builtins.int
     id: builtins.str
     strategy_id: builtins.str
     tenant_id: builtins.str
@@ -531,6 +535,9 @@ class StrategyExecution(message.Message):
     status: common_pb2.ExecutionStatus.ValueType
     timeframe: builtins.str
     error_message: builtins.str
+    credentials_id: builtins.str
+    sleeve_id: builtins.str
+    account_id: builtins.str
     @builtins.property
     def symbols(self) -> containers.RepeatedScalarFieldContainer[builtins.str]:
         """Runtime configuration overrides"""
@@ -549,6 +556,10 @@ class StrategyExecution(message.Message):
 
     @builtins.property
     def updated_at(self) -> common_pb2.Timestamp: ...
+    @builtins.property
+    def allocated_capital(self) -> common_pb2.Decimal:
+        """Ledger funding (set when the execution is funded; see ledger.proto)"""
+
     def __init__(
         self,
         *,
@@ -566,10 +577,14 @@ class StrategyExecution(message.Message):
         error_message: builtins.str = ...,
         created_at: common_pb2.Timestamp | None = ...,
         updated_at: common_pb2.Timestamp | None = ...,
+        allocated_capital: common_pb2.Decimal | None = ...,
+        credentials_id: builtins.str = ...,
+        sleeve_id: builtins.str = ...,
+        account_id: builtins.str = ...,
     ) -> None: ...
-    _HasFieldArgType: _TypeAlias = typing.Literal["created_at", b"created_at", "started_at", b"started_at", "stopped_at", b"stopped_at", "updated_at", b"updated_at"]  # noqa: Y015
+    _HasFieldArgType: _TypeAlias = typing.Literal["allocated_capital", b"allocated_capital", "created_at", b"created_at", "started_at", b"started_at", "stopped_at", b"stopped_at", "updated_at", b"updated_at"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal["config_override", b"config_override", "created_at", b"created_at", "error_message", b"error_message", "id", b"id", "mode", b"mode", "started_at", b"started_at", "status", b"status", "stopped_at", b"stopped_at", "strategy_id", b"strategy_id", "symbols", b"symbols", "tenant_id", b"tenant_id", "timeframe", b"timeframe", "updated_at", b"updated_at", "version", b"version"]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["account_id", b"account_id", "allocated_capital", b"allocated_capital", "config_override", b"config_override", "created_at", b"created_at", "credentials_id", b"credentials_id", "error_message", b"error_message", "id", b"id", "mode", b"mode", "sleeve_id", b"sleeve_id", "started_at", b"started_at", "status", b"status", "stopped_at", b"stopped_at", "strategy_id", b"strategy_id", "symbols", b"symbols", "tenant_id", b"tenant_id", "timeframe", b"timeframe", "updated_at", b"updated_at", "version", b"version"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -1139,15 +1154,24 @@ class CreateExecutionRequest(message.Message):
     VERSION_FIELD_NUMBER: builtins.int
     MODE_FIELD_NUMBER: builtins.int
     CONFIG_OVERRIDE_FIELD_NUMBER: builtins.int
+    ALLOCATED_CAPITAL_FIELD_NUMBER: builtins.int
+    CREDENTIALS_ID_FIELD_NUMBER: builtins.int
     strategy_id: builtins.str
     version: builtins.int
     """Optional: strategy version (0 = current)"""
     mode: common_pb2.ExecutionMode.ValueType
+    credentials_id: builtins.str
     @builtins.property
     def context(self) -> common_pb2.TenantContext: ...
     @builtins.property
     def config_override(self) -> containers.ScalarMap[builtins.str, builtins.str]:
         """Runtime config overrides"""
+
+    @builtins.property
+    def allocated_capital(self) -> common_pb2.Decimal:
+        """Ledger funding: capital to allocate to this execution's sleeve at start,
+        and the broker credentials its account is anchored to.
+        """
 
     def __init__(
         self,
@@ -1157,10 +1181,12 @@ class CreateExecutionRequest(message.Message):
         version: builtins.int = ...,
         mode: common_pb2.ExecutionMode.ValueType = ...,
         config_override: abc.Mapping[builtins.str, builtins.str] | None = ...,
+        allocated_capital: common_pb2.Decimal | None = ...,
+        credentials_id: builtins.str = ...,
     ) -> None: ...
-    _HasFieldArgType: _TypeAlias = typing.Literal["context", b"context"]  # noqa: Y015
+    _HasFieldArgType: _TypeAlias = typing.Literal["allocated_capital", b"allocated_capital", "context", b"context"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal["config_override", b"config_override", "context", b"context", "mode", b"mode", "strategy_id", b"strategy_id", "version", b"version"]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["allocated_capital", b"allocated_capital", "config_override", b"config_override", "context", b"context", "credentials_id", b"credentials_id", "mode", b"mode", "strategy_id", b"strategy_id", "version", b"version"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final

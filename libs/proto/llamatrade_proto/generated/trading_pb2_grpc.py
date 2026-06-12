@@ -18,6 +18,36 @@ class TradingServiceStub(object):
         Args:
             channel: A grpc.Channel.
         """
+        self.StartSession = channel.unary_unary(
+                '/llamatrade.TradingService/StartSession',
+                request_serializer=trading__pb2.StartTradingSessionRequest.SerializeToString,
+                response_deserializer=trading__pb2.StartTradingSessionResponse.FromString,
+                _registered_method=True)
+        self.StopSession = channel.unary_unary(
+                '/llamatrade.TradingService/StopSession',
+                request_serializer=trading__pb2.StopTradingSessionRequest.SerializeToString,
+                response_deserializer=trading__pb2.StopTradingSessionResponse.FromString,
+                _registered_method=True)
+        self.PauseSession = channel.unary_unary(
+                '/llamatrade.TradingService/PauseSession',
+                request_serializer=trading__pb2.PauseTradingSessionRequest.SerializeToString,
+                response_deserializer=trading__pb2.PauseTradingSessionResponse.FromString,
+                _registered_method=True)
+        self.ResumeSession = channel.unary_unary(
+                '/llamatrade.TradingService/ResumeSession',
+                request_serializer=trading__pb2.ResumeTradingSessionRequest.SerializeToString,
+                response_deserializer=trading__pb2.ResumeTradingSessionResponse.FromString,
+                _registered_method=True)
+        self.GetSession = channel.unary_unary(
+                '/llamatrade.TradingService/GetSession',
+                request_serializer=trading__pb2.GetTradingSessionRequest.SerializeToString,
+                response_deserializer=trading__pb2.GetTradingSessionResponse.FromString,
+                _registered_method=True)
+        self.ListSessions = channel.unary_unary(
+                '/llamatrade.TradingService/ListSessions',
+                request_serializer=trading__pb2.ListTradingSessionsRequest.SerializeToString,
+                response_deserializer=trading__pb2.ListTradingSessionsResponse.FromString,
+                _registered_method=True)
         self.SubmitOrder = channel.unary_unary(
                 '/llamatrade.TradingService/SubmitOrder',
                 request_serializer=trading__pb2.SubmitOrderRequest.SerializeToString,
@@ -71,6 +101,43 @@ class TradingServiceServicer(object):
     =============================================================================
 
     """
+
+    def StartSession(self, request, context):
+        """Session lifecycle
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def StopSession(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def PauseSession(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def ResumeSession(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def GetSession(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def ListSessions(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
 
     def SubmitOrder(self, request, context):
         """Order management
@@ -132,6 +199,36 @@ class TradingServiceServicer(object):
 
 def add_TradingServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
+            'StartSession': grpc.unary_unary_rpc_method_handler(
+                    servicer.StartSession,
+                    request_deserializer=trading__pb2.StartTradingSessionRequest.FromString,
+                    response_serializer=trading__pb2.StartTradingSessionResponse.SerializeToString,
+            ),
+            'StopSession': grpc.unary_unary_rpc_method_handler(
+                    servicer.StopSession,
+                    request_deserializer=trading__pb2.StopTradingSessionRequest.FromString,
+                    response_serializer=trading__pb2.StopTradingSessionResponse.SerializeToString,
+            ),
+            'PauseSession': grpc.unary_unary_rpc_method_handler(
+                    servicer.PauseSession,
+                    request_deserializer=trading__pb2.PauseTradingSessionRequest.FromString,
+                    response_serializer=trading__pb2.PauseTradingSessionResponse.SerializeToString,
+            ),
+            'ResumeSession': grpc.unary_unary_rpc_method_handler(
+                    servicer.ResumeSession,
+                    request_deserializer=trading__pb2.ResumeTradingSessionRequest.FromString,
+                    response_serializer=trading__pb2.ResumeTradingSessionResponse.SerializeToString,
+            ),
+            'GetSession': grpc.unary_unary_rpc_method_handler(
+                    servicer.GetSession,
+                    request_deserializer=trading__pb2.GetTradingSessionRequest.FromString,
+                    response_serializer=trading__pb2.GetTradingSessionResponse.SerializeToString,
+            ),
+            'ListSessions': grpc.unary_unary_rpc_method_handler(
+                    servicer.ListSessions,
+                    request_deserializer=trading__pb2.ListTradingSessionsRequest.FromString,
+                    response_serializer=trading__pb2.ListTradingSessionsResponse.SerializeToString,
+            ),
             'SubmitOrder': grpc.unary_unary_rpc_method_handler(
                     servicer.SubmitOrder,
                     request_deserializer=trading__pb2.SubmitOrderRequest.FromString,
@@ -191,6 +288,168 @@ class TradingService(object):
     =============================================================================
 
     """
+
+    @staticmethod
+    def StartSession(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/llamatrade.TradingService/StartSession',
+            trading__pb2.StartTradingSessionRequest.SerializeToString,
+            trading__pb2.StartTradingSessionResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def StopSession(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/llamatrade.TradingService/StopSession',
+            trading__pb2.StopTradingSessionRequest.SerializeToString,
+            trading__pb2.StopTradingSessionResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def PauseSession(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/llamatrade.TradingService/PauseSession',
+            trading__pb2.PauseTradingSessionRequest.SerializeToString,
+            trading__pb2.PauseTradingSessionResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def ResumeSession(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/llamatrade.TradingService/ResumeSession',
+            trading__pb2.ResumeTradingSessionRequest.SerializeToString,
+            trading__pb2.ResumeTradingSessionResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def GetSession(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/llamatrade.TradingService/GetSession',
+            trading__pb2.GetTradingSessionRequest.SerializeToString,
+            trading__pb2.GetTradingSessionResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def ListSessions(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/llamatrade.TradingService/ListSessions',
+            trading__pb2.ListTradingSessionsRequest.SerializeToString,
+            trading__pb2.ListTradingSessionsResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
 
     @staticmethod
     def SubmitOrder(request,

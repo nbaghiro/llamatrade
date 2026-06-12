@@ -16,6 +16,24 @@ from . import trading_pb2 as trading__pb2
 
 
 class TradingService(Protocol):
+    async def start_session(self, request: trading__pb2.StartTradingSessionRequest, ctx: RequestContext) -> trading__pb2.StartTradingSessionResponse:
+        raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
+
+    async def stop_session(self, request: trading__pb2.StopTradingSessionRequest, ctx: RequestContext) -> trading__pb2.StopTradingSessionResponse:
+        raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
+
+    async def pause_session(self, request: trading__pb2.PauseTradingSessionRequest, ctx: RequestContext) -> trading__pb2.PauseTradingSessionResponse:
+        raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
+
+    async def resume_session(self, request: trading__pb2.ResumeTradingSessionRequest, ctx: RequestContext) -> trading__pb2.ResumeTradingSessionResponse:
+        raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
+
+    async def get_session(self, request: trading__pb2.GetTradingSessionRequest, ctx: RequestContext) -> trading__pb2.GetTradingSessionResponse:
+        raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
+
+    async def list_sessions(self, request: trading__pb2.ListTradingSessionsRequest, ctx: RequestContext) -> trading__pb2.ListTradingSessionsResponse:
+        raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
+
     async def submit_order(self, request: trading__pb2.SubmitOrderRequest, ctx: RequestContext) -> trading__pb2.SubmitOrderResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
@@ -49,6 +67,66 @@ class TradingServiceASGIApplication(ConnectASGIApplication[TradingService]):
         super().__init__(
             service=service,
             endpoints=lambda svc: {
+                "/llamatrade.TradingService/StartSession": Endpoint.unary(
+                    method=MethodInfo(
+                        name="StartSession",
+                        service_name="llamatrade.TradingService",
+                        input=trading__pb2.StartTradingSessionRequest,
+                        output=trading__pb2.StartTradingSessionResponse,
+                        idempotency_level=IdempotencyLevel.UNKNOWN,
+                    ),
+                    function=svc.start_session,
+                ),
+                "/llamatrade.TradingService/StopSession": Endpoint.unary(
+                    method=MethodInfo(
+                        name="StopSession",
+                        service_name="llamatrade.TradingService",
+                        input=trading__pb2.StopTradingSessionRequest,
+                        output=trading__pb2.StopTradingSessionResponse,
+                        idempotency_level=IdempotencyLevel.UNKNOWN,
+                    ),
+                    function=svc.stop_session,
+                ),
+                "/llamatrade.TradingService/PauseSession": Endpoint.unary(
+                    method=MethodInfo(
+                        name="PauseSession",
+                        service_name="llamatrade.TradingService",
+                        input=trading__pb2.PauseTradingSessionRequest,
+                        output=trading__pb2.PauseTradingSessionResponse,
+                        idempotency_level=IdempotencyLevel.UNKNOWN,
+                    ),
+                    function=svc.pause_session,
+                ),
+                "/llamatrade.TradingService/ResumeSession": Endpoint.unary(
+                    method=MethodInfo(
+                        name="ResumeSession",
+                        service_name="llamatrade.TradingService",
+                        input=trading__pb2.ResumeTradingSessionRequest,
+                        output=trading__pb2.ResumeTradingSessionResponse,
+                        idempotency_level=IdempotencyLevel.UNKNOWN,
+                    ),
+                    function=svc.resume_session,
+                ),
+                "/llamatrade.TradingService/GetSession": Endpoint.unary(
+                    method=MethodInfo(
+                        name="GetSession",
+                        service_name="llamatrade.TradingService",
+                        input=trading__pb2.GetTradingSessionRequest,
+                        output=trading__pb2.GetTradingSessionResponse,
+                        idempotency_level=IdempotencyLevel.UNKNOWN,
+                    ),
+                    function=svc.get_session,
+                ),
+                "/llamatrade.TradingService/ListSessions": Endpoint.unary(
+                    method=MethodInfo(
+                        name="ListSessions",
+                        service_name="llamatrade.TradingService",
+                        input=trading__pb2.ListTradingSessionsRequest,
+                        output=trading__pb2.ListTradingSessionsResponse,
+                        idempotency_level=IdempotencyLevel.UNKNOWN,
+                    ),
+                    function=svc.list_sessions,
+                ),
                 "/llamatrade.TradingService/SubmitOrder": Endpoint.unary(
                     method=MethodInfo(
                         name="SubmitOrder",
@@ -151,6 +229,126 @@ class TradingServiceASGIApplication(ConnectASGIApplication[TradingService]):
 
 
 class TradingServiceClient(ConnectClient):
+    async def start_session(
+        self,
+        request: trading__pb2.StartTradingSessionRequest,
+        *,
+        headers: Headers | Mapping[str, str] | None = None,
+        timeout_ms: int | None = None,
+    ) -> trading__pb2.StartTradingSessionResponse:
+        return await self.execute_unary(
+            request=request,
+            method=MethodInfo(
+                name="StartSession",
+                service_name="llamatrade.TradingService",
+                input=trading__pb2.StartTradingSessionRequest,
+                output=trading__pb2.StartTradingSessionResponse,
+                idempotency_level=IdempotencyLevel.UNKNOWN,
+            ),
+            headers=headers,
+            timeout_ms=timeout_ms,
+        )
+
+    async def stop_session(
+        self,
+        request: trading__pb2.StopTradingSessionRequest,
+        *,
+        headers: Headers | Mapping[str, str] | None = None,
+        timeout_ms: int | None = None,
+    ) -> trading__pb2.StopTradingSessionResponse:
+        return await self.execute_unary(
+            request=request,
+            method=MethodInfo(
+                name="StopSession",
+                service_name="llamatrade.TradingService",
+                input=trading__pb2.StopTradingSessionRequest,
+                output=trading__pb2.StopTradingSessionResponse,
+                idempotency_level=IdempotencyLevel.UNKNOWN,
+            ),
+            headers=headers,
+            timeout_ms=timeout_ms,
+        )
+
+    async def pause_session(
+        self,
+        request: trading__pb2.PauseTradingSessionRequest,
+        *,
+        headers: Headers | Mapping[str, str] | None = None,
+        timeout_ms: int | None = None,
+    ) -> trading__pb2.PauseTradingSessionResponse:
+        return await self.execute_unary(
+            request=request,
+            method=MethodInfo(
+                name="PauseSession",
+                service_name="llamatrade.TradingService",
+                input=trading__pb2.PauseTradingSessionRequest,
+                output=trading__pb2.PauseTradingSessionResponse,
+                idempotency_level=IdempotencyLevel.UNKNOWN,
+            ),
+            headers=headers,
+            timeout_ms=timeout_ms,
+        )
+
+    async def resume_session(
+        self,
+        request: trading__pb2.ResumeTradingSessionRequest,
+        *,
+        headers: Headers | Mapping[str, str] | None = None,
+        timeout_ms: int | None = None,
+    ) -> trading__pb2.ResumeTradingSessionResponse:
+        return await self.execute_unary(
+            request=request,
+            method=MethodInfo(
+                name="ResumeSession",
+                service_name="llamatrade.TradingService",
+                input=trading__pb2.ResumeTradingSessionRequest,
+                output=trading__pb2.ResumeTradingSessionResponse,
+                idempotency_level=IdempotencyLevel.UNKNOWN,
+            ),
+            headers=headers,
+            timeout_ms=timeout_ms,
+        )
+
+    async def get_session(
+        self,
+        request: trading__pb2.GetTradingSessionRequest,
+        *,
+        headers: Headers | Mapping[str, str] | None = None,
+        timeout_ms: int | None = None,
+    ) -> trading__pb2.GetTradingSessionResponse:
+        return await self.execute_unary(
+            request=request,
+            method=MethodInfo(
+                name="GetSession",
+                service_name="llamatrade.TradingService",
+                input=trading__pb2.GetTradingSessionRequest,
+                output=trading__pb2.GetTradingSessionResponse,
+                idempotency_level=IdempotencyLevel.UNKNOWN,
+            ),
+            headers=headers,
+            timeout_ms=timeout_ms,
+        )
+
+    async def list_sessions(
+        self,
+        request: trading__pb2.ListTradingSessionsRequest,
+        *,
+        headers: Headers | Mapping[str, str] | None = None,
+        timeout_ms: int | None = None,
+    ) -> trading__pb2.ListTradingSessionsResponse:
+        return await self.execute_unary(
+            request=request,
+            method=MethodInfo(
+                name="ListSessions",
+                service_name="llamatrade.TradingService",
+                input=trading__pb2.ListTradingSessionsRequest,
+                output=trading__pb2.ListTradingSessionsResponse,
+                idempotency_level=IdempotencyLevel.UNKNOWN,
+            ),
+            headers=headers,
+            timeout_ms=timeout_ms,
+        )
+
     async def submit_order(
         self,
         request: trading__pb2.SubmitOrderRequest,
@@ -333,6 +531,18 @@ class TradingServiceClient(ConnectClient):
 
 
 class TradingServiceSync(Protocol):
+    def start_session(self, request: trading__pb2.StartTradingSessionRequest, ctx: RequestContext) -> trading__pb2.StartTradingSessionResponse:
+        raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
+    def stop_session(self, request: trading__pb2.StopTradingSessionRequest, ctx: RequestContext) -> trading__pb2.StopTradingSessionResponse:
+        raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
+    def pause_session(self, request: trading__pb2.PauseTradingSessionRequest, ctx: RequestContext) -> trading__pb2.PauseTradingSessionResponse:
+        raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
+    def resume_session(self, request: trading__pb2.ResumeTradingSessionRequest, ctx: RequestContext) -> trading__pb2.ResumeTradingSessionResponse:
+        raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
+    def get_session(self, request: trading__pb2.GetTradingSessionRequest, ctx: RequestContext) -> trading__pb2.GetTradingSessionResponse:
+        raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
+    def list_sessions(self, request: trading__pb2.ListTradingSessionsRequest, ctx: RequestContext) -> trading__pb2.ListTradingSessionsResponse:
+        raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
     def submit_order(self, request: trading__pb2.SubmitOrderRequest, ctx: RequestContext) -> trading__pb2.SubmitOrderResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
     def cancel_order(self, request: trading__pb2.CancelOrderRequest, ctx: RequestContext) -> trading__pb2.CancelOrderResponse:
@@ -357,6 +567,66 @@ class TradingServiceWSGIApplication(ConnectWSGIApplication):
     def __init__(self, service: TradingServiceSync, interceptors: Iterable[InterceptorSync]=(), read_max_bytes: int | None = None) -> None:
         super().__init__(
             endpoints={
+                "/llamatrade.TradingService/StartSession": EndpointSync.unary(
+                    method=MethodInfo(
+                        name="StartSession",
+                        service_name="llamatrade.TradingService",
+                        input=trading__pb2.StartTradingSessionRequest,
+                        output=trading__pb2.StartTradingSessionResponse,
+                        idempotency_level=IdempotencyLevel.UNKNOWN,
+                    ),
+                    function=service.start_session,
+                ),
+                "/llamatrade.TradingService/StopSession": EndpointSync.unary(
+                    method=MethodInfo(
+                        name="StopSession",
+                        service_name="llamatrade.TradingService",
+                        input=trading__pb2.StopTradingSessionRequest,
+                        output=trading__pb2.StopTradingSessionResponse,
+                        idempotency_level=IdempotencyLevel.UNKNOWN,
+                    ),
+                    function=service.stop_session,
+                ),
+                "/llamatrade.TradingService/PauseSession": EndpointSync.unary(
+                    method=MethodInfo(
+                        name="PauseSession",
+                        service_name="llamatrade.TradingService",
+                        input=trading__pb2.PauseTradingSessionRequest,
+                        output=trading__pb2.PauseTradingSessionResponse,
+                        idempotency_level=IdempotencyLevel.UNKNOWN,
+                    ),
+                    function=service.pause_session,
+                ),
+                "/llamatrade.TradingService/ResumeSession": EndpointSync.unary(
+                    method=MethodInfo(
+                        name="ResumeSession",
+                        service_name="llamatrade.TradingService",
+                        input=trading__pb2.ResumeTradingSessionRequest,
+                        output=trading__pb2.ResumeTradingSessionResponse,
+                        idempotency_level=IdempotencyLevel.UNKNOWN,
+                    ),
+                    function=service.resume_session,
+                ),
+                "/llamatrade.TradingService/GetSession": EndpointSync.unary(
+                    method=MethodInfo(
+                        name="GetSession",
+                        service_name="llamatrade.TradingService",
+                        input=trading__pb2.GetTradingSessionRequest,
+                        output=trading__pb2.GetTradingSessionResponse,
+                        idempotency_level=IdempotencyLevel.UNKNOWN,
+                    ),
+                    function=service.get_session,
+                ),
+                "/llamatrade.TradingService/ListSessions": EndpointSync.unary(
+                    method=MethodInfo(
+                        name="ListSessions",
+                        service_name="llamatrade.TradingService",
+                        input=trading__pb2.ListTradingSessionsRequest,
+                        output=trading__pb2.ListTradingSessionsResponse,
+                        idempotency_level=IdempotencyLevel.UNKNOWN,
+                    ),
+                    function=service.list_sessions,
+                ),
                 "/llamatrade.TradingService/SubmitOrder": EndpointSync.unary(
                     method=MethodInfo(
                         name="SubmitOrder",
@@ -459,6 +729,126 @@ class TradingServiceWSGIApplication(ConnectWSGIApplication):
 
 
 class TradingServiceClientSync(ConnectClientSync):
+    def start_session(
+        self,
+        request: trading__pb2.StartTradingSessionRequest,
+        *,
+        headers: Headers | Mapping[str, str] | None = None,
+        timeout_ms: int | None = None,
+    ) -> trading__pb2.StartTradingSessionResponse:
+        return self.execute_unary(
+            request=request,
+            method=MethodInfo(
+                name="StartSession",
+                service_name="llamatrade.TradingService",
+                input=trading__pb2.StartTradingSessionRequest,
+                output=trading__pb2.StartTradingSessionResponse,
+                idempotency_level=IdempotencyLevel.UNKNOWN,
+            ),
+            headers=headers,
+            timeout_ms=timeout_ms,
+        )
+
+    def stop_session(
+        self,
+        request: trading__pb2.StopTradingSessionRequest,
+        *,
+        headers: Headers | Mapping[str, str] | None = None,
+        timeout_ms: int | None = None,
+    ) -> trading__pb2.StopTradingSessionResponse:
+        return self.execute_unary(
+            request=request,
+            method=MethodInfo(
+                name="StopSession",
+                service_name="llamatrade.TradingService",
+                input=trading__pb2.StopTradingSessionRequest,
+                output=trading__pb2.StopTradingSessionResponse,
+                idempotency_level=IdempotencyLevel.UNKNOWN,
+            ),
+            headers=headers,
+            timeout_ms=timeout_ms,
+        )
+
+    def pause_session(
+        self,
+        request: trading__pb2.PauseTradingSessionRequest,
+        *,
+        headers: Headers | Mapping[str, str] | None = None,
+        timeout_ms: int | None = None,
+    ) -> trading__pb2.PauseTradingSessionResponse:
+        return self.execute_unary(
+            request=request,
+            method=MethodInfo(
+                name="PauseSession",
+                service_name="llamatrade.TradingService",
+                input=trading__pb2.PauseTradingSessionRequest,
+                output=trading__pb2.PauseTradingSessionResponse,
+                idempotency_level=IdempotencyLevel.UNKNOWN,
+            ),
+            headers=headers,
+            timeout_ms=timeout_ms,
+        )
+
+    def resume_session(
+        self,
+        request: trading__pb2.ResumeTradingSessionRequest,
+        *,
+        headers: Headers | Mapping[str, str] | None = None,
+        timeout_ms: int | None = None,
+    ) -> trading__pb2.ResumeTradingSessionResponse:
+        return self.execute_unary(
+            request=request,
+            method=MethodInfo(
+                name="ResumeSession",
+                service_name="llamatrade.TradingService",
+                input=trading__pb2.ResumeTradingSessionRequest,
+                output=trading__pb2.ResumeTradingSessionResponse,
+                idempotency_level=IdempotencyLevel.UNKNOWN,
+            ),
+            headers=headers,
+            timeout_ms=timeout_ms,
+        )
+
+    def get_session(
+        self,
+        request: trading__pb2.GetTradingSessionRequest,
+        *,
+        headers: Headers | Mapping[str, str] | None = None,
+        timeout_ms: int | None = None,
+    ) -> trading__pb2.GetTradingSessionResponse:
+        return self.execute_unary(
+            request=request,
+            method=MethodInfo(
+                name="GetSession",
+                service_name="llamatrade.TradingService",
+                input=trading__pb2.GetTradingSessionRequest,
+                output=trading__pb2.GetTradingSessionResponse,
+                idempotency_level=IdempotencyLevel.UNKNOWN,
+            ),
+            headers=headers,
+            timeout_ms=timeout_ms,
+        )
+
+    def list_sessions(
+        self,
+        request: trading__pb2.ListTradingSessionsRequest,
+        *,
+        headers: Headers | Mapping[str, str] | None = None,
+        timeout_ms: int | None = None,
+    ) -> trading__pb2.ListTradingSessionsResponse:
+        return self.execute_unary(
+            request=request,
+            method=MethodInfo(
+                name="ListSessions",
+                service_name="llamatrade.TradingService",
+                input=trading__pb2.ListTradingSessionsRequest,
+                output=trading__pb2.ListTradingSessionsResponse,
+                idempotency_level=IdempotencyLevel.UNKNOWN,
+            ),
+            headers=headers,
+            timeout_ms=timeout_ms,
+        )
+
     def submit_order(
         self,
         request: trading__pb2.SubmitOrderRequest,

@@ -186,6 +186,12 @@ message StrategyExecution {
   // Timestamps
   Timestamp created_at = 13;
   Timestamp updated_at = 14;
+
+  // Ledger funding (set when the execution is funded; see ledger.proto)
+  Decimal allocated_capital = 15;
+  string credentials_id = 16;
+  string sleeve_id = 17;
+  string account_id = 18;
 }
 
 // =============================================================================
@@ -325,6 +331,11 @@ message CreateExecutionRequest {
   int32 version = 3;            // Optional: strategy version (0 = current)
   ExecutionMode mode = 4;
   map<string, string> config_override = 5;  // Runtime config overrides
+
+  // Ledger funding: capital to allocate to this execution's sleeve at start,
+  // and the broker credentials its account is anchored to.
+  Decimal allocated_capital = 6;
+  string credentials_id = 7;
 }
 
 message CreateExecutionResponse {

@@ -36,6 +36,13 @@ class TradingServiceStub:
     def __new__(cls, channel: _grpc.Channel) -> _Self: ...
     @_typing.overload
     def __new__(cls, channel: _aio.Channel) -> TradingServiceAsyncStub: ...
+    StartSession: _grpc.UnaryUnaryMultiCallable[_trading_pb2.StartTradingSessionRequest, _trading_pb2.StartTradingSessionResponse]
+    """Session lifecycle"""
+    StopSession: _grpc.UnaryUnaryMultiCallable[_trading_pb2.StopTradingSessionRequest, _trading_pb2.StopTradingSessionResponse]
+    PauseSession: _grpc.UnaryUnaryMultiCallable[_trading_pb2.PauseTradingSessionRequest, _trading_pb2.PauseTradingSessionResponse]
+    ResumeSession: _grpc.UnaryUnaryMultiCallable[_trading_pb2.ResumeTradingSessionRequest, _trading_pb2.ResumeTradingSessionResponse]
+    GetSession: _grpc.UnaryUnaryMultiCallable[_trading_pb2.GetTradingSessionRequest, _trading_pb2.GetTradingSessionResponse]
+    ListSessions: _grpc.UnaryUnaryMultiCallable[_trading_pb2.ListTradingSessionsRequest, _trading_pb2.ListTradingSessionsResponse]
     SubmitOrder: _grpc.UnaryUnaryMultiCallable[_trading_pb2.SubmitOrderRequest, _trading_pb2.SubmitOrderResponse]
     """Order management"""
     CancelOrder: _grpc.UnaryUnaryMultiCallable[_trading_pb2.CancelOrderRequest, _trading_pb2.CancelOrderResponse]
@@ -57,6 +64,13 @@ class TradingServiceAsyncStub(TradingServiceStub):
     """
 
     def __init__(self, channel: _aio.Channel) -> None: ...
+    StartSession: _aio.UnaryUnaryMultiCallable[_trading_pb2.StartTradingSessionRequest, _trading_pb2.StartTradingSessionResponse]  # type: ignore[assignment]
+    """Session lifecycle"""
+    StopSession: _aio.UnaryUnaryMultiCallable[_trading_pb2.StopTradingSessionRequest, _trading_pb2.StopTradingSessionResponse]  # type: ignore[assignment]
+    PauseSession: _aio.UnaryUnaryMultiCallable[_trading_pb2.PauseTradingSessionRequest, _trading_pb2.PauseTradingSessionResponse]  # type: ignore[assignment]
+    ResumeSession: _aio.UnaryUnaryMultiCallable[_trading_pb2.ResumeTradingSessionRequest, _trading_pb2.ResumeTradingSessionResponse]  # type: ignore[assignment]
+    GetSession: _aio.UnaryUnaryMultiCallable[_trading_pb2.GetTradingSessionRequest, _trading_pb2.GetTradingSessionResponse]  # type: ignore[assignment]
+    ListSessions: _aio.UnaryUnaryMultiCallable[_trading_pb2.ListTradingSessionsRequest, _trading_pb2.ListTradingSessionsResponse]  # type: ignore[assignment]
     SubmitOrder: _aio.UnaryUnaryMultiCallable[_trading_pb2.SubmitOrderRequest, _trading_pb2.SubmitOrderResponse]  # type: ignore[assignment]
     """Order management"""
     CancelOrder: _aio.UnaryUnaryMultiCallable[_trading_pb2.CancelOrderRequest, _trading_pb2.CancelOrderResponse]  # type: ignore[assignment]
@@ -75,6 +89,49 @@ class TradingServiceServicer(metaclass=_abc_1.ABCMeta):
     SERVICE
     =============================================================================
     """
+
+    @_abc_1.abstractmethod
+    def StartSession(
+        self,
+        request: _trading_pb2.StartTradingSessionRequest,
+        context: _ServicerContext,
+    ) -> _typing.Union[_trading_pb2.StartTradingSessionResponse, _abc.Awaitable[_trading_pb2.StartTradingSessionResponse]]:
+        """Session lifecycle"""
+
+    @_abc_1.abstractmethod
+    def StopSession(
+        self,
+        request: _trading_pb2.StopTradingSessionRequest,
+        context: _ServicerContext,
+    ) -> _typing.Union[_trading_pb2.StopTradingSessionResponse, _abc.Awaitable[_trading_pb2.StopTradingSessionResponse]]: ...
+
+    @_abc_1.abstractmethod
+    def PauseSession(
+        self,
+        request: _trading_pb2.PauseTradingSessionRequest,
+        context: _ServicerContext,
+    ) -> _typing.Union[_trading_pb2.PauseTradingSessionResponse, _abc.Awaitable[_trading_pb2.PauseTradingSessionResponse]]: ...
+
+    @_abc_1.abstractmethod
+    def ResumeSession(
+        self,
+        request: _trading_pb2.ResumeTradingSessionRequest,
+        context: _ServicerContext,
+    ) -> _typing.Union[_trading_pb2.ResumeTradingSessionResponse, _abc.Awaitable[_trading_pb2.ResumeTradingSessionResponse]]: ...
+
+    @_abc_1.abstractmethod
+    def GetSession(
+        self,
+        request: _trading_pb2.GetTradingSessionRequest,
+        context: _ServicerContext,
+    ) -> _typing.Union[_trading_pb2.GetTradingSessionResponse, _abc.Awaitable[_trading_pb2.GetTradingSessionResponse]]: ...
+
+    @_abc_1.abstractmethod
+    def ListSessions(
+        self,
+        request: _trading_pb2.ListTradingSessionsRequest,
+        context: _ServicerContext,
+    ) -> _typing.Union[_trading_pb2.ListTradingSessionsResponse, _abc.Awaitable[_trading_pb2.ListTradingSessionsResponse]]: ...
 
     @_abc_1.abstractmethod
     def SubmitOrder(
