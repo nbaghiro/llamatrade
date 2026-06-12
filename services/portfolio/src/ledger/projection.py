@@ -19,15 +19,23 @@ from typing import Any, Protocol
 from llamatrade_db.models.ledger import LedgerEventType
 
 from src.ledger.postings import Bucket, assert_balanced, build_postings
+from src.ledger.sizing import Lot, select_lots_fifo
 
 ZERO = Decimal("0")
 
 
 class LedgerEventLike(Protocol):
-    """Minimal shape needed to fold an event (DB row or plain object)."""
+    """Minimal shape needed to fold an event (DB row or plain object).
 
-    event_type: str | LedgerEventType
-    data: dict[str, Any]
+    Read-only properties so ORM rows (``Mapped[str]`` descriptors) and plain
+    dataclasses both satisfy the protocol without invariance issues.
+    """
+
+    @property
+    def event_type(self) -> str | LedgerEventType: ...
+
+    @property
+    def data(self) -> dict[str, Any]: ...
 
 
 @dataclass
@@ -44,6 +52,9 @@ class SleeveProjection:
 
     cash: Decimal = ZERO
     realized_pnl: Decimal = ZERO
+    # Cash earmarked for open buy orders (reservation lifecycle, §4).
+    # Free cash = cash − reserved.
+    reserved: Decimal = ZERO
     positions: dict[str, PositionState] = field(default_factory=dict)
 
 
@@ -78,8 +89,12 @@ def fold(events: Iterable[LedgerEventLike]) -> AccountProjection:
     Raises ``UnbalancedEventError`` if any event violates conservation.
     """
     acc = AccountProjection()
+    # Open cash reservations: client_order_id -> (sleeve_id, amount)
+    pending_reservations: dict[str, tuple[str, Decimal]] = {}
     for ev in events:
-        postings = build_postings(_coerce(ev.event_type), ev.data)
+        event_type = _coerce(ev.event_type)
+        _apply_reservation(acc, pending_reservations, event_type, ev.data)
+        postings = build_postings(event_type, ev.data)
         if not postings:
             continue
         assert_balanced(postings)
@@ -97,6 +112,81 @@ def fold(events: Iterable[LedgerEventLike]) -> AccountProjection:
                 if p.qty is not None:
                     pos.qty += p.qty
     return acc
+
+
+# Terminal order events that release an open cash reservation.
+_RESERVATION_RELEASES = {
+    LedgerEventType.ORDER_FILLED,
+    LedgerEventType.ORDER_CANCELLED,
+    LedgerEventType.ORDER_REJECTED,
+}
+
+
+def _apply_reservation(
+    acc: AccountProjection,
+    pending: dict[str, tuple[str, Decimal]],
+    event_type: LedgerEventType,
+    data: dict[str, Any],
+) -> None:
+    """Track the §4 cash-reservation lifecycle (reserve → release/consume).
+
+    ``reserved`` is derived state, not a posting bucket — reservations don't
+    move value, they only earmark it, so conservation is untouched.
+    """
+    client_order_id = data.get("client_order_id")
+    if client_order_id is None:
+        return
+
+    if event_type is LedgerEventType.ORDER_SUBMITTED and "reserved" in data:
+        sleeve_id = data.get("sleeve_id")
+        if sleeve_id is None:
+            return
+        amount = Decimal(str(data["reserved"]))
+        acc.sleeve(str(sleeve_id)).reserved += amount
+        pending[str(client_order_id)] = (str(sleeve_id), amount)
+    elif event_type in _RESERVATION_RELEASES:
+        entry = pending.pop(str(client_order_id), None)
+        if entry is not None:
+            acc.sleeve(entry[0]).reserved -= entry[1]
+
+
+def open_lots(events: Iterable[LedgerEventLike], sleeve_id: str, symbol: str) -> list[Lot]:
+    """Fold the event stream into the open FIFO lots of one (sleeve, symbol).
+
+    Buys (positive POSITION postings) open lots in event order; sells consume
+    them FIFO. Used at fill ingestion to resolve the cost basis of a sell when
+    the publisher didn't supply one — the resolved value is then written into
+    the event data, so the log stays self-contained and replayable.
+
+    A sell exceeding the open lots (abnormal: drift, external trades) clears
+    them all rather than raising — reconciliation surfaces the discrepancy.
+    """
+    lots: list[Lot] = []
+    for index, ev in enumerate(events):
+        postings = build_postings(_coerce(ev.event_type), ev.data)
+        for p in postings:
+            if (
+                p.bucket is not Bucket.POSITION
+                or p.sleeve_id != sleeve_id
+                or p.symbol != symbol
+                or p.qty is None
+                or p.qty == ZERO
+            ):
+                continue
+            if p.qty > ZERO:
+                seq = getattr(ev, "sequence", None)
+                lots.append(
+                    Lot(
+                        qty=p.qty, cost_basis=p.amount, opened_seq=seq if seq is not None else index
+                    )
+                )
+            else:
+                sell_qty = -p.qty
+                if sell_qty >= sum((lot.qty for lot in lots), ZERO):
+                    lots = []
+                else:
+                    lots = select_lots_fifo(lots, sell_qty).remaining_lots
+    return lots
 
 
 @dataclass

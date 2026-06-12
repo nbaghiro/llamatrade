@@ -266,6 +266,7 @@ class Sleeve(message.Message):
     CASH_FIELD_NUMBER: builtins.int
     CREATED_AT_FIELD_NUMBER: builtins.int
     UPDATED_AT_FIELD_NUMBER: builtins.int
+    REALIZED_PNL_FIELD_NUMBER: builtins.int
     id: builtins.str
     tenant_id: builtins.str
     account_id: builtins.str
@@ -284,6 +285,10 @@ class Sleeve(message.Message):
     def created_at(self) -> common_pb2.Timestamp: ...
     @builtins.property
     def updated_at(self) -> common_pb2.Timestamp: ...
+    @builtins.property
+    def realized_pnl(self) -> common_pb2.Decimal:
+        """projected from the event log"""
+
     def __init__(
         self,
         *,
@@ -298,10 +303,11 @@ class Sleeve(message.Message):
         cash: SleeveCash | None = ...,
         created_at: common_pb2.Timestamp | None = ...,
         updated_at: common_pb2.Timestamp | None = ...,
+        realized_pnl: common_pb2.Decimal | None = ...,
     ) -> None: ...
-    _HasFieldArgType: _TypeAlias = typing.Literal["allocated_capital", b"allocated_capital", "cash", b"cash", "created_at", b"created_at", "updated_at", b"updated_at"]  # noqa: Y015
+    _HasFieldArgType: _TypeAlias = typing.Literal["allocated_capital", b"allocated_capital", "cash", b"cash", "created_at", b"created_at", "realized_pnl", b"realized_pnl", "updated_at", b"updated_at"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal["account_id", b"account_id", "allocated_capital", b"allocated_capital", "cash", b"cash", "created_at", b"created_at", "id", b"id", "name", b"name", "status", b"status", "strategy_execution_id", b"strategy_execution_id", "tenant_id", b"tenant_id", "type", b"type", "updated_at", b"updated_at"]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["account_id", b"account_id", "allocated_capital", b"allocated_capital", "cash", b"cash", "created_at", b"created_at", "id", b"id", "name", b"name", "realized_pnl", b"realized_pnl", "status", b"status", "strategy_execution_id", b"strategy_execution_id", "tenant_id", b"tenant_id", "type", b"type", "updated_at", b"updated_at"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -421,20 +427,75 @@ class LedgerEvent(message.Message):
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
-class AllocateCapitalRequest(message.Message):
+class GetOrCreateAccountRequest(message.Message):
     """=============================================================================
     FUND-OP REQUESTS & RESPONSES  (implemented in later phases)
     =============================================================================
+
+    Resolve (lazily creating) the ledger Account for a broker credential set.
+    Idempotent: also ensures the singleton base sleeves exist.
     """
 
+    DESCRIPTOR: descriptor.Descriptor
+
+    CONTEXT_FIELD_NUMBER: builtins.int
+    CREDENTIALS_ID_FIELD_NUMBER: builtins.int
+    credentials_id: builtins.str
+    @builtins.property
+    def context(self) -> common_pb2.TenantContext: ...
+    def __init__(
+        self,
+        *,
+        context: common_pb2.TenantContext | None = ...,
+        credentials_id: builtins.str = ...,
+    ) -> None: ...
+    _HasFieldArgType: _TypeAlias = typing.Literal["context", b"context"]  # noqa: Y015
+    def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
+    _ClearFieldArgType: _TypeAlias = typing.Literal["context", b"context", "credentials_id", b"credentials_id"]  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+
+@typing.final
+class GetOrCreateAccountResponse(message.Message):
+    DESCRIPTOR: descriptor.Descriptor
+
+    ACCOUNT_FIELD_NUMBER: builtins.int
+    BASE_SLEEVES_FIELD_NUMBER: builtins.int
+    @builtins.property
+    def account(self) -> LedgerAccount: ...
+    @builtins.property
+    def base_sleeves(self) -> containers.RepeatedCompositeFieldContainer[Sleeve]:
+        """unallocated / manual / unmanaged"""
+
+    def __init__(
+        self,
+        *,
+        account: LedgerAccount | None = ...,
+        base_sleeves: abc.Iterable[Sleeve] | None = ...,
+    ) -> None: ...
+    _HasFieldArgType: _TypeAlias = typing.Literal["account", b"account"]  # noqa: Y015
+    def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
+    _ClearFieldArgType: _TypeAlias = typing.Literal["account", b"account", "base_sleeves", b"base_sleeves"]  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+
+@typing.final
+class AllocateCapitalRequest(message.Message):
     DESCRIPTOR: descriptor.Descriptor
 
     CONTEXT_FIELD_NUMBER: builtins.int
     ACCOUNT_ID_FIELD_NUMBER: builtins.int
     TO_SLEEVE_ID_FIELD_NUMBER: builtins.int
     AMOUNT_FIELD_NUMBER: builtins.int
+    STRATEGY_EXECUTION_ID_FIELD_NUMBER: builtins.int
+    SLEEVE_NAME_FIELD_NUMBER: builtins.int
     account_id: builtins.str
     to_sleeve_id: builtins.str
+    """existing sleeve; may be empty for open-and-fund"""
+    strategy_execution_id: builtins.str
+    """Open-and-fund: when to_sleeve_id is empty and strategy_execution_id is
+    set, the portfolio opens (or gets) the strategy sleeve linked to that
+    execution, then funds it — one atomic round trip.
+    """
+    sleeve_name: builtins.str
     @builtins.property
     def context(self) -> common_pb2.TenantContext: ...
     @builtins.property
@@ -446,10 +507,12 @@ class AllocateCapitalRequest(message.Message):
         account_id: builtins.str = ...,
         to_sleeve_id: builtins.str = ...,
         amount: common_pb2.Decimal | None = ...,
+        strategy_execution_id: builtins.str = ...,
+        sleeve_name: builtins.str = ...,
     ) -> None: ...
     _HasFieldArgType: _TypeAlias = typing.Literal["amount", b"amount", "context", b"context"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal["account_id", b"account_id", "amount", b"amount", "context", b"context", "to_sleeve_id", b"to_sleeve_id"]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["account_id", b"account_id", "amount", b"amount", "context", b"context", "sleeve_name", b"sleeve_name", "strategy_execution_id", b"strategy_execution_id", "to_sleeve_id", b"to_sleeve_id"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final

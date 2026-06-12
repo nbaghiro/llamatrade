@@ -128,6 +128,7 @@ message Sleeve {
   SleeveCash cash = 9;
   Timestamp created_at = 10;
   Timestamp updated_at = 11;
+  Decimal realized_pnl = 12;         // projected from the event log
 }
 
 // A provenance-bearing unit of a holding (a tax-style lot owned by one sleeve).
@@ -164,11 +165,29 @@ message LedgerEvent {
 // FUND-OP REQUESTS & RESPONSES  (implemented in later phases)
 // =============================================================================
 
+// Resolve (lazily creating) the ledger Account for a broker credential set.
+// Idempotent: also ensures the singleton base sleeves exist.
+message GetOrCreateAccountRequest {
+  TenantContext context = 1;
+  string credentials_id = 2;
+}
+
+message GetOrCreateAccountResponse {
+  LedgerAccount account = 1;
+  repeated Sleeve base_sleeves = 2;  // unallocated / manual / unmanaged
+}
+
 message AllocateCapitalRequest {
   TenantContext context = 1;
   string account_id = 2;
-  string to_sleeve_id = 3;
+  string to_sleeve_id = 3;  // existing sleeve; may be empty for open-and-fund
   Decimal amount = 4;
+
+  // Open-and-fund: when to_sleeve_id is empty and strategy_execution_id is
+  // set, the portfolio opens (or gets) the strategy sleeve linked to that
+  // execution, then funds it — one atomic round trip.
+  string strategy_execution_id = 5;
+  string sleeve_name = 6;
 }
 
 message AllocateCapitalResponse {
@@ -255,6 +274,9 @@ message GetHoldingHistoryResponse {
 // =============================================================================
 
 service LedgerService {
+  // Identity bootstrap (credentials_id → Account + base sleeves)
+  rpc GetOrCreateAccount(GetOrCreateAccountRequest) returns (GetOrCreateAccountResponse);
+
   // Fund disbursement
   rpc AllocateCapital(AllocateCapitalRequest) returns (AllocateCapitalResponse);
   rpc TransferCapital(TransferCapitalRequest) returns (TransferCapitalResponse);

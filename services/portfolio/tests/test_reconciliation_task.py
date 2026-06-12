@@ -108,3 +108,63 @@ async def test_pass_empty_accounts_returns_empty() -> None:
         projector=FakeProjector([]), broker=FakeBroker({}), accounts=[]
     )
     assert results == []
+
+
+class _DriftRecorder:
+    def __init__(self, *, fail: bool = False) -> None:
+        self.calls: list = []
+        self._fail = fail
+
+    async def __call__(self, account, drift) -> None:
+        self.calls.append((account.id, drift))
+        if self._fail:
+            raise RuntimeError("alert pathway down")
+
+
+async def test_material_drift_forwarded_to_handler() -> None:
+    acct = _account()
+    material = Drift(
+        symbol="SPY",
+        ledger_qty=Decimal("60"),
+        broker_qty=Decimal("61"),
+        kind=DriftKind.QTY_MISMATCH,
+    )
+    dust = Drift(
+        symbol="QQQ",
+        ledger_qty=Decimal("10"),
+        broker_qty=Decimal("10.00001"),
+        kind=DriftKind.DUST,
+    )
+    handler = _DriftRecorder()
+
+    await run_reconciliation_pass(
+        projector=FakeProjector([material, dust]),
+        broker=FakeBroker({"SPY": Decimal("61")}),
+        accounts=[acct],
+        on_material_drift=handler,
+    )
+
+    # Only the material drift reaches the alert handler; dust is log-only.
+    assert [d.symbol for _, d in handler.calls] == ["SPY"]
+    assert handler.calls[0][0] == acct.id
+
+
+async def test_handler_failure_never_aborts_pass() -> None:
+    acct_one, acct_two = _account(), _account()
+    drift = Drift(
+        symbol="SPY",
+        ledger_qty=Decimal("60"),
+        broker_qty=Decimal("0"),
+        kind=DriftKind.MISSING_AT_BROKER,
+    )
+
+    results = await run_reconciliation_pass(
+        projector=FakeProjector([drift]),
+        broker=FakeBroker({}),
+        accounts=[acct_one, acct_two],
+        on_material_drift=_DriftRecorder(fail=True),
+    )
+
+    # Both accounts still reconciled despite the handler blowing up.
+    assert [r.account_id for r in results] == [acct_one.id, acct_two.id]
+    assert all(r.error is None for r in results)

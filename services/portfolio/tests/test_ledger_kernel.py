@@ -14,15 +14,21 @@ import pytest
 from llamatrade_db.models.ledger import LedgerEventType
 
 from src.ledger.backfill import BrokerPosition, plan_backfill
-from src.ledger.ingestion import fill_to_append
+from src.ledger.ingestion import (
+    enrich_sell_fill,
+    fill_to_append,
+    needs_cost_basis,
+    payload_to_append,
+)
 from src.ledger.postings import (
     Bucket,
     UnbalancedEventError,
     assert_balanced,
     build_postings,
 )
-from src.ledger.projection import fold, holding_history
+from src.ledger.projection import fold, holding_history, open_lots
 from src.ledger.reconciliation import DriftKind, reconcile
+from src.ledger.sizing import Lot
 
 # Sleeve ids used across the scenario
 U = "unallocated"
@@ -250,6 +256,247 @@ class TestFillIngestion:
                 }
             ).event_id
         )
+
+    def test_sell_without_cost_basis_is_valid(self) -> None:
+        """cost_basis is optional on sells: the consumer computes FIFO at ingestion."""
+        append = fill_to_append(
+            {
+                "tenant_id": "11111111-1111-1111-1111-111111111111",
+                "account_id": "22222222-2222-2222-2222-222222222222",
+                "sleeve_id": "33333333-3333-3333-3333-333333333333",
+                "client_order_id": "lt-sell-1",
+                "symbol": "SPY",
+                "side": "sell",
+                "qty": "50",
+                "price": "500",
+            }
+        )
+        assert append.event_type is LedgerEventType.ORDER_FILLED
+        assert "cost_basis" not in append.data
+        assert "realized_pnl" not in append.data
+
+    def test_sell_with_cost_basis_passes_through(self) -> None:
+        append = fill_to_append(
+            {
+                "tenant_id": "11111111-1111-1111-1111-111111111111",
+                "account_id": "22222222-2222-2222-2222-222222222222",
+                "sleeve_id": "33333333-3333-3333-3333-333333333333",
+                "client_order_id": "lt-sell-2",
+                "symbol": "SPY",
+                "side": "sell",
+                "qty": "50",
+                "price": "500",
+                "cost_basis": "24000",
+                "realized_pnl": "1000",
+            }
+        )
+        assert append.data["cost_basis"] == "24000"
+        assert append.data["realized_pnl"] == "1000"
+
+
+def _buy(sleeve: str, qty: str, price: str, symbol: str = "SPY") -> Ev:
+    return Ev(
+        LedgerEventType.ORDER_FILLED,
+        {"sleeve_id": sleeve, "symbol": symbol, "side": "buy", "qty": qty, "price": price},
+    )
+
+
+def _sell(sleeve: str, qty: str, price: str, cost_basis: str, symbol: str = "SPY") -> Ev:
+    return Ev(
+        LedgerEventType.ORDER_FILLED,
+        {
+            "sleeve_id": sleeve,
+            "symbol": symbol,
+            "side": "sell",
+            "qty": qty,
+            "price": price,
+            "cost_basis": cost_basis,
+        },
+    )
+
+
+class TestOpenLots:
+    def test_buys_open_lots_in_order(self) -> None:
+        lots = open_lots([_buy(A, "50", "480"), _buy(A, "30", "500")], A, "SPY")
+        assert [(lot.qty, lot.cost_basis) for lot in lots] == [
+            (D("50"), D("24000")),
+            (D("30"), D("15000")),
+        ]
+        assert lots[0].opened_seq < lots[1].opened_seq
+
+    def test_sell_consumes_oldest_lot_first(self) -> None:
+        lots = open_lots(
+            [_buy(A, "50", "480"), _buy(A, "30", "500"), _sell(A, "60", "510", "29000")],
+            A,
+            "SPY",
+        )
+        # 50 @ 480 fully consumed, 10 of the 30 @ 500 consumed → 20 @ 500 remain.
+        assert len(lots) == 1
+        assert lots[0].qty == D("20")
+        assert lots[0].cost_basis == D("10000")
+
+    def test_other_sleeves_and_symbols_ignored(self) -> None:
+        lots = open_lots(
+            [_buy(A, "50", "480"), _buy(B, "20", "480"), _buy(A, "5", "100", symbol="QQQ")],
+            A,
+            "SPY",
+        )
+        assert len(lots) == 1
+        assert lots[0].qty == D("50")
+
+    def test_overdrawn_sell_clears_lots(self) -> None:
+        lots = open_lots([_buy(A, "10", "480"), _sell(A, "25", "500", "4800")], A, "SPY")
+        assert lots == []
+
+    def test_uses_db_sequence_when_present(self) -> None:
+        @dataclass
+        class SeqEv(Ev):
+            sequence: int = 0
+
+        events = [
+            SeqEv(
+                LedgerEventType.ORDER_FILLED,
+                {"sleeve_id": A, "symbol": "SPY", "side": "buy", "qty": "10", "price": "480"},
+                sequence=7,
+            )
+        ]
+        assert open_lots(events, A, "SPY")[0].opened_seq == 7
+
+
+class TestSellEnrichment:
+    def _sell_append(self, qty: str = "60", **extra: str):
+        payload = {
+            "tenant_id": "11111111-1111-1111-1111-111111111111",
+            "account_id": "22222222-2222-2222-2222-222222222222",
+            "sleeve_id": "33333333-3333-3333-3333-333333333333",
+            "client_order_id": "lt-sell-enrich",
+            "symbol": "SPY",
+            "side": "sell",
+            "qty": qty,
+            "price": "510",
+        }
+        payload.update(extra)
+        return fill_to_append(payload)
+
+    def test_needs_cost_basis_predicate(self) -> None:
+        assert needs_cost_basis(self._sell_append()) is True
+        assert needs_cost_basis(self._sell_append(cost_basis="100")) is False
+
+    def test_enrich_computes_fifo_cost_and_realized_pnl(self) -> None:
+        lots = [
+            Lot(qty=D("50"), cost_basis=D("24000"), opened_seq=1),
+            Lot(qty=D("30"), cost_basis=D("15000"), opened_seq=2),
+        ]
+        enriched = enrich_sell_fill(self._sell_append("60"), lots)
+        # 50 @ 480 + 10 @ 500 = 29000 closed cost; 60*510 - 29000 = 1600 realized.
+        assert enriched.data["cost_basis"] == "29000"
+        assert enriched.data["realized_pnl"] == "1600"
+        # The enriched event balances and folds with the right P&L.
+        assert_balanced(build_postings(enriched.event_type, enriched.data))
+
+    def test_enrich_subtracts_fees_from_realized(self) -> None:
+        lots = [Lot(qty=D("60"), cost_basis=D("28800"), opened_seq=1)]
+        enriched = enrich_sell_fill(self._sell_append("60", fees="10"), lots)
+        assert enriched.data["realized_pnl"] == "1790"  # 30600 - 28800 - 10
+
+    def test_existing_cost_basis_untouched(self) -> None:
+        append = self._sell_append(cost_basis="25000")
+        assert enrich_sell_fill(append, []) is append
+
+    def test_insufficient_lots_leaves_fill_unenriched(self) -> None:
+        lots = [Lot(qty=D("10"), cost_basis=D("4800"), opened_seq=1)]
+        enriched = enrich_sell_fill(self._sell_append("60"), lots)
+        assert "cost_basis" not in enriched.data
+
+
+class TestReservationProjection:
+    """§4 cash-reservation lifecycle folded into sleeve projections."""
+
+    def _submitted(self, coid: str = "lt-r1", reserved: str = "24000") -> Ev:
+        return Ev(
+            LedgerEventType.ORDER_SUBMITTED,
+            {"sleeve_id": A, "client_order_id": coid, "reserved": reserved},
+        )
+
+    def test_submitted_reserves_cash(self) -> None:
+        acc = fold([*_scenario(), self._submitted()])
+        assert acc.sleeve(A).reserved == D("24000")
+
+    def test_cancel_releases_reservation(self) -> None:
+        cancel = Ev(LedgerEventType.ORDER_CANCELLED, {"sleeve_id": A, "client_order_id": "lt-r1"})
+        acc = fold([*_scenario(), self._submitted(), cancel])
+        assert acc.sleeve(A).reserved == D("0")
+
+    def test_fill_consumes_reservation(self) -> None:
+        fill = Ev(
+            LedgerEventType.ORDER_FILLED,
+            {
+                "sleeve_id": A,
+                "symbol": "SPY",
+                "side": "buy",
+                "qty": "50",
+                "price": "480",
+                "client_order_id": "lt-r1",
+            },
+        )
+        acc = fold([*_scenario(), self._submitted(), fill])
+        assert acc.sleeve(A).reserved == D("0")
+        # The fill itself still moves cash (conservation untouched by reservations)
+        assert acc.sleeve(A).positions["SPY"].qty == D("90")  # scenario 50 − 10, then +50
+
+    def test_release_without_reservation_is_noop(self) -> None:
+        reject = Ev(LedgerEventType.ORDER_REJECTED, {"sleeve_id": A, "client_order_id": "ghost"})
+        acc = fold([*_scenario(), reject])
+        assert acc.sleeve(A).reserved == D("0")
+
+    def test_reservations_are_per_sleeve(self) -> None:
+        other = Ev(
+            LedgerEventType.ORDER_SUBMITTED,
+            {"sleeve_id": B, "client_order_id": "lt-r2", "reserved": "1000"},
+        )
+        acc = fold([*_scenario(), self._submitted(), other])
+        assert acc.sleeve(A).reserved == D("24000")
+        assert acc.sleeve(B).reserved == D("1000")
+
+
+class TestPayloadRouting:
+    def _payload(self, **overrides: str) -> dict:
+        payload = {
+            "tenant_id": "11111111-1111-1111-1111-111111111111",
+            "account_id": "22222222-2222-2222-2222-222222222222",
+            "sleeve_id": "33333333-3333-3333-3333-333333333333",
+            "client_order_id": "lt-route-1",
+            "symbol": "SPY",
+            "side": "buy",
+            "qty": "50",
+            "price": "480",
+        }
+        payload.update(overrides)
+        return payload
+
+    def test_default_routes_to_fill(self) -> None:
+        append = payload_to_append(self._payload())
+        assert append.event_type is LedgerEventType.ORDER_FILLED
+
+    def test_reservation_stages_route_and_have_distinct_event_ids(self) -> None:
+        submitted = payload_to_append(self._payload(event_type="order_submitted", reserved="24000"))
+        cancelled = payload_to_append(self._payload(event_type="order_cancelled"))
+        filled = payload_to_append(self._payload())
+
+        assert submitted.event_type is LedgerEventType.ORDER_SUBMITTED
+        assert submitted.data["reserved"] == "24000"
+        assert submitted.data["client_order_id"] == "lt-route-1"
+        assert cancelled.event_type is LedgerEventType.ORDER_CANCELLED
+        # Each lifecycle stage is independently idempotent.
+        assert len({submitted.event_id, cancelled.event_id, filled.event_id}) == 3
+
+    def test_lifecycle_events_carry_no_postings_yet(self) -> None:
+        submitted = payload_to_append(self._payload(event_type="order_submitted"))
+        assert build_postings(submitted.event_type, submitted.data) == []
+
+    def test_unknown_event_type_raises(self) -> None:
+        with pytest.raises(ValueError, match="unknown ledger payload event_type"):
+            payload_to_append(self._payload(event_type="order_teleported"))
 
 
 class TestBackfillPlanner:

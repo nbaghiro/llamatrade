@@ -11,11 +11,12 @@ from __future__ import annotations
 
 import logging
 from decimal import Decimal
+from typing import cast
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.ledger.projection import AccountProjection, fold, holding_history
+from src.ledger.projection import AccountProjection, LedgerEventLike, fold, holding_history
 from src.ledger.reconciliation import Drift, reconcile
 from src.ledger.writer import LedgerWriter
 
@@ -31,13 +32,19 @@ class LedgerProjector:
 
     async def project_account(self, tenant_id: UUID, account_id: UUID) -> AccountProjection:
         """Fold the account's full event history into a projection."""
-        events = await self._writer.read_account_events(tenant_id, account_id)
+        events = await self._read_events(tenant_id, account_id)
         return fold(events)
 
     async def holding_history(self, tenant_id: UUID, account_id: UUID, symbol: str) -> list[object]:
         """Per-symbol provenance timeline (delegates to the pure kernel)."""
-        events = await self._writer.read_account_events(tenant_id, account_id)
+        events = await self._read_events(tenant_id, account_id)
         return list(holding_history(events, symbol))
+
+    async def _read_events(self, tenant_id: UUID, account_id: UUID) -> list[LedgerEventLike]:
+        """Event rows as the kernel protocol (ORM rows duck-type it at runtime;
+        the cast bridges SQLAlchemy's Mapped descriptors for the type checker)."""
+        events = await self._writer.read_account_events(tenant_id, account_id)
+        return cast("list[LedgerEventLike]", events)
 
     async def reconcile_account(
         self,

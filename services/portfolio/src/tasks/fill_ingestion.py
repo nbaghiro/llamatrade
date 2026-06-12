@@ -15,7 +15,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from typing import Any
+from typing import Any, cast
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -23,8 +23,11 @@ from src.ledger.ingestion import (
     FILL_CHANNEL_PREFIX,
     FillHandler,
     LedgerAppend,
-    fill_to_append,
+    enrich_sell_fill,
+    needs_cost_basis,
+    payload_to_append,
 )
+from src.ledger.projection import LedgerEventLike, open_lots
 from src.ledger.writer import LedgerWriter
 
 logger = logging.getLogger(__name__)
@@ -34,8 +37,21 @@ FILL_CHANNEL_PATTERN = f"{FILL_CHANNEL_PREFIX}:*"
 
 
 async def persist_append(db: AsyncSession, append: LedgerAppend) -> None:
-    """Append one translated fill to the ledger (idempotent, balance-checked)."""
+    """Append one translated fill to the ledger (idempotent, balance-checked).
+
+    Sells without a publisher-resolved ``cost_basis`` are enriched here via
+    FIFO against the sleeve's open lots, so the persisted event is
+    self-contained (CONTRACTS.md §1, amendment 3A).
+    """
     writer = LedgerWriter(db)
+    if needs_cost_basis(append):
+        # ORM rows duck-type the kernel protocol; cast bridges Mapped descriptors
+        events = cast(
+            "list[LedgerEventLike]",
+            await writer.read_account_events(append.tenant_id, append.account_id),
+        )
+        lots = open_lots(events, str(append.sleeve_id), str(append.data["symbol"]))
+        append = enrich_sell_fill(append, lots)
     await writer.append(
         tenant_id=append.tenant_id,
         account_id=append.account_id,
@@ -85,7 +101,7 @@ async def consume_fills(
     while not stop_event.is_set():
         try:
             await _subscribe_and_consume(redis, handler, stop_event=stop_event)
-        except Exception:  # noqa: BLE001 - reconnect on any transport error
+        except Exception:  # reconnect on any transport error
             logger.exception("fill consumer connection error; reconnecting")
             await _interruptible_sleep(stop_event, reconnect_backoff_seconds)
     logger.info("ledger fill consumer stopped")
@@ -124,11 +140,15 @@ async def dispatch_fill(handler: FillHandler, raw: object) -> bool:
     Pure enough to unit-test: bad JSON / malformed payloads are swallowed (logged)
     so the surrounding loop survives.
     """
+    from src.metrics import record_ingest
+
     try:
         text = raw.decode() if isinstance(raw, bytes | bytearray) else str(raw)
         payload = json.loads(text)
-        await handler(fill_to_append(payload))
+        await handler(payload_to_append(payload))
+        record_ingest("success")
         return True
-    except Exception:  # noqa: BLE001 - never let one bad fill kill the loop
+    except Exception:  # never let one bad fill kill the loop
         logger.exception("failed to ingest fill")
+        record_ingest("failure")
         return False

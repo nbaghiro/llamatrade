@@ -16,6 +16,9 @@ from . import ledger_pb2 as ledger__pb2
 
 
 class LedgerService(Protocol):
+    async def get_or_create_account(self, request: ledger__pb2.GetOrCreateAccountRequest, ctx: RequestContext) -> ledger__pb2.GetOrCreateAccountResponse:
+        raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
+
     async def allocate_capital(self, request: ledger__pb2.AllocateCapitalRequest, ctx: RequestContext) -> ledger__pb2.AllocateCapitalResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
@@ -43,6 +46,16 @@ class LedgerServiceASGIApplication(ConnectASGIApplication[LedgerService]):
         super().__init__(
             service=service,
             endpoints=lambda svc: {
+                "/llamatrade.LedgerService/GetOrCreateAccount": Endpoint.unary(
+                    method=MethodInfo(
+                        name="GetOrCreateAccount",
+                        service_name="llamatrade.LedgerService",
+                        input=ledger__pb2.GetOrCreateAccountRequest,
+                        output=ledger__pb2.GetOrCreateAccountResponse,
+                        idempotency_level=IdempotencyLevel.UNKNOWN,
+                    ),
+                    function=svc.get_or_create_account,
+                ),
                 "/llamatrade.LedgerService/AllocateCapital": Endpoint.unary(
                     method=MethodInfo(
                         name="AllocateCapital",
@@ -125,6 +138,26 @@ class LedgerServiceASGIApplication(ConnectASGIApplication[LedgerService]):
 
 
 class LedgerServiceClient(ConnectClient):
+    async def get_or_create_account(
+        self,
+        request: ledger__pb2.GetOrCreateAccountRequest,
+        *,
+        headers: Headers | Mapping[str, str] | None = None,
+        timeout_ms: int | None = None,
+    ) -> ledger__pb2.GetOrCreateAccountResponse:
+        return await self.execute_unary(
+            request=request,
+            method=MethodInfo(
+                name="GetOrCreateAccount",
+                service_name="llamatrade.LedgerService",
+                input=ledger__pb2.GetOrCreateAccountRequest,
+                output=ledger__pb2.GetOrCreateAccountResponse,
+                idempotency_level=IdempotencyLevel.UNKNOWN,
+            ),
+            headers=headers,
+            timeout_ms=timeout_ms,
+        )
+
     async def allocate_capital(
         self,
         request: ledger__pb2.AllocateCapitalRequest,
@@ -267,6 +300,8 @@ class LedgerServiceClient(ConnectClient):
 
 
 class LedgerServiceSync(Protocol):
+    def get_or_create_account(self, request: ledger__pb2.GetOrCreateAccountRequest, ctx: RequestContext) -> ledger__pb2.GetOrCreateAccountResponse:
+        raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
     def allocate_capital(self, request: ledger__pb2.AllocateCapitalRequest, ctx: RequestContext) -> ledger__pb2.AllocateCapitalResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
     def transfer_capital(self, request: ledger__pb2.TransferCapitalRequest, ctx: RequestContext) -> ledger__pb2.TransferCapitalResponse:
@@ -287,6 +322,16 @@ class LedgerServiceWSGIApplication(ConnectWSGIApplication):
     def __init__(self, service: LedgerServiceSync, interceptors: Iterable[InterceptorSync]=(), read_max_bytes: int | None = None) -> None:
         super().__init__(
             endpoints={
+                "/llamatrade.LedgerService/GetOrCreateAccount": EndpointSync.unary(
+                    method=MethodInfo(
+                        name="GetOrCreateAccount",
+                        service_name="llamatrade.LedgerService",
+                        input=ledger__pb2.GetOrCreateAccountRequest,
+                        output=ledger__pb2.GetOrCreateAccountResponse,
+                        idempotency_level=IdempotencyLevel.UNKNOWN,
+                    ),
+                    function=service.get_or_create_account,
+                ),
                 "/llamatrade.LedgerService/AllocateCapital": EndpointSync.unary(
                     method=MethodInfo(
                         name="AllocateCapital",
@@ -369,6 +414,26 @@ class LedgerServiceWSGIApplication(ConnectWSGIApplication):
 
 
 class LedgerServiceClientSync(ConnectClientSync):
+    def get_or_create_account(
+        self,
+        request: ledger__pb2.GetOrCreateAccountRequest,
+        *,
+        headers: Headers | Mapping[str, str] | None = None,
+        timeout_ms: int | None = None,
+    ) -> ledger__pb2.GetOrCreateAccountResponse:
+        return self.execute_unary(
+            request=request,
+            method=MethodInfo(
+                name="GetOrCreateAccount",
+                service_name="llamatrade.LedgerService",
+                input=ledger__pb2.GetOrCreateAccountRequest,
+                output=ledger__pb2.GetOrCreateAccountResponse,
+                idempotency_level=IdempotencyLevel.UNKNOWN,
+            ),
+            headers=headers,
+            timeout_ms=timeout_ms,
+        )
+
     def allocate_capital(
         self,
         request: ledger__pb2.AllocateCapitalRequest,

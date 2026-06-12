@@ -99,7 +99,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
                 )
             )
             logger.info("Ledger shadow mode enabled: fill ingestion + reconciliation started")
-        except Exception as e:  # noqa: BLE001 - shadow runtime must never block startup
+        except Exception as e:  # shadow runtime must never block startup
             logger.warning("Failed to start ledger shadow runtime: %s", e)
 
     yield

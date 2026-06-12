@@ -37,6 +37,14 @@ class SqlSleeveRepository:
             )
         )
 
+    async def get_account(self, tenant_id: UUID, account_id: UUID) -> Account | None:
+        return await self.db.scalar(
+            select(Account).where(
+                Account.tenant_id == tenant_id,
+                Account.id == account_id,
+            )
+        )
+
     async def add_account(self, account: Account) -> None:
         self.db.add(account)
         await self.db.flush()
@@ -79,6 +87,10 @@ class SqlSleeveRepository:
             .order_by(Sleeve.created_at)
         )
         return list(result.all())
+
+    async def set_sleeve_status(self, sleeve: Sleeve, status: str) -> None:
+        sleeve.status = status
+        await self.db.flush()
 
     async def add_sleeve(self, sleeve: Sleeve) -> None:
         self.db.add(sleeve)

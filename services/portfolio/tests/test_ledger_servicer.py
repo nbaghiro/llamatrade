@@ -7,10 +7,16 @@ handler-over-DB orchestration is exercised by the integration suite.
 from decimal import Decimal
 from uuid import uuid4
 
-from llamatrade_db.models.ledger import Sleeve, SleeveStatus, SleeveType
+from llamatrade_db.models.ledger import Account, Sleeve, SleeveStatus, SleeveType
 from llamatrade_proto.generated import common_pb2, ledger_pb2
 
-from src.grpc.ledger_servicer import _amount, _dec, _sleeve_to_proto, _view_to_proto
+from src.grpc.ledger_servicer import (
+    _account_to_proto,
+    _amount,
+    _dec,
+    _sleeve_to_proto,
+    _view_to_proto,
+)
 from src.services.fund_service import SleeveView
 
 ZERO = Decimal("0")
@@ -71,3 +77,27 @@ def test_view_to_proto_uses_view_cash() -> None:
     proto = _view_to_proto(SleeveView(sleeve=s, cash=Decimal("321")))
     assert proto.type == ledger_pb2.SLEEVE_TYPE_MANUAL
     assert proto.cash.balance.value == "321"
+
+
+def test_account_to_proto_maps_fields() -> None:
+    account = Account(tenant_id=uuid4(), credentials_id=uuid4(), base_currency="USD")
+    account.id = uuid4()
+    proto = _account_to_proto(account)
+    assert proto.id == str(account.id)
+    assert proto.tenant_id == str(account.tenant_id)
+    assert proto.credentials_id == str(account.credentials_id)
+    assert proto.base_currency == "USD"
+
+
+def test_sleeve_to_proto_projected_reserved_and_realized() -> None:
+    s = _sleeve(SleeveType.STRATEGY)
+    proto = _sleeve_to_proto(s, Decimal("750"), Decimal("100"), Decimal("42.50"))
+    assert proto.cash.reserved.value == "100"  # projection wins over the row column
+    assert proto.realized_pnl.value == "42.50"
+
+
+def test_sleeve_to_proto_defaults_without_projection() -> None:
+    s = _sleeve(SleeveType.STRATEGY)
+    proto = _sleeve_to_proto(s, Decimal("750"))
+    assert proto.cash.reserved.value == "12.50"  # row column fallback
+    assert proto.realized_pnl.value == "0"

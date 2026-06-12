@@ -25,9 +25,10 @@ from src.ledger.projection import HoldingHistoryEntry
 from src.ledger.projector import LedgerProjector
 from src.repositories import SqlLedgerStore, SqlSleeveRepository
 from src.services.fund_service import FundService, SleeveView
+from src.services.sleeve_service import SleeveService
 
 if TYPE_CHECKING:
-    from llamatrade_db.models.ledger import Sleeve
+    from llamatrade_db.models.ledger import Account, Sleeve
 
 logger = logging.getLogger(__name__)
 
@@ -54,7 +55,12 @@ def _amount(value: common_pb2.Decimal) -> Decimal:
     return Decimal(value.value or "0")
 
 
-def _sleeve_to_proto(sleeve: Sleeve, cash: Decimal) -> ledger_pb2.Sleeve:
+def _sleeve_to_proto(
+    sleeve: Sleeve,
+    cash: Decimal,
+    reserved: Decimal | None = None,
+    realized_pnl: Decimal | None = None,
+) -> ledger_pb2.Sleeve:
     return ledger_pb2.Sleeve(
         id=str(sleeve.id),
         tenant_id=str(sleeve.tenant_id),
@@ -68,14 +74,26 @@ def _sleeve_to_proto(sleeve: Sleeve, cash: Decimal) -> ledger_pb2.Sleeve:
         allocated_capital=_dec(sleeve.allocated_capital),
         cash=ledger_pb2.SleeveCash(
             balance=_dec(cash),
-            reserved=_dec(sleeve.reserved_cash),
+            # Projected from the reservation lifecycle when available; the
+            # row column is a legacy fallback.
+            reserved=_dec(reserved if reserved is not None else sleeve.reserved_cash),
             unsettled=_dec(sleeve.unsettled_cash),
         ),
+        realized_pnl=_dec(realized_pnl if realized_pnl is not None else Decimal("0")),
     )
 
 
 def _view_to_proto(view: SleeveView) -> ledger_pb2.Sleeve:
     return _sleeve_to_proto(view.sleeve, view.cash)
+
+
+def _account_to_proto(account: Account) -> ledger_pb2.LedgerAccount:
+    return ledger_pb2.LedgerAccount(
+        id=str(account.id),
+        tenant_id=str(account.tenant_id),
+        credentials_id=str(account.credentials_id),
+        base_currency=account.base_currency,
+    )
 
 
 class LedgerServicer:
@@ -88,6 +106,71 @@ class LedgerServicer:
         if self._session_factory is None:
             self._session_factory = get_session_maker()
         return self._session_factory()
+
+    # ----------------------------------------------------- identity bootstrap
+
+    async def get_or_create_account(
+        self, request: ledger_pb2.GetOrCreateAccountRequest, ctx: AnyContext
+    ) -> ledger_pb2.GetOrCreateAccountResponse:
+        """Resolve (lazily creating) the Account for a broker credential set.
+
+        Idempotent: also ensures the singleton base sleeves exist. First-time
+        creation seeds the ledger from current broker state (cash →
+        Unallocated, pre-existing positions → Unmanaged) so the
+        ``Σ sleeves == broker`` invariant holds from day one. Backfill is
+        best-effort: a broker outage logs and proceeds — re-onboarding is
+        idempotent and reconciliation surfaces the gap until then.
+        """
+        tenant_id = UUID(request.context.tenant_id)
+        try:
+            credentials_id = UUID(request.credentials_id)
+        except ValueError as e:
+            raise ConnectError(Code.INVALID_ARGUMENT, "credentials_id must be a UUID") from e
+        try:
+            async with self._get_db() as db:
+                repo = SqlSleeveRepository(db)
+                sleeves = SleeveService(repo)
+                existed = (
+                    await repo.get_account_by_credentials(tenant_id, credentials_id) is not None
+                )
+                account = await sleeves.get_or_create_account(tenant_id, credentials_id)
+                base = await sleeves.ensure_base_sleeves(account)
+                if not existed:
+                    await self._backfill_account(db, sleeves, tenant_id, credentials_id)
+                projection = await LedgerProjector(db).project_account(tenant_id, account.id)
+                await db.commit()
+                return ledger_pb2.GetOrCreateAccountResponse(
+                    account=_account_to_proto(account),
+                    base_sleeves=[
+                        _sleeve_to_proto(s, projection.sleeve(str(s.id)).cash)
+                        for s in base.values()
+                    ],
+                )
+        except ConnectError:
+            raise
+        except Exception as e:
+            logger.error("get_or_create_account error: %s", e, exc_info=True)
+            raise ConnectError(Code.INTERNAL, f"account bootstrap failed: {e}") from e
+
+    @staticmethod
+    async def _backfill_account(
+        db: AsyncSession, sleeves: SleeveService, tenant_id: UUID, credentials_id: UUID
+    ) -> None:
+        """Seed a newly created account from broker state (best-effort)."""
+        from src.clients.alpaca import AlpacaBrokerPositions
+        from src.services.onboarding_service import AccountOnboardingService
+
+        try:
+            onboarding = AccountOnboardingService(
+                sleeves, SqlLedgerStore(db), AlpacaBrokerPositions(db)
+            )
+            await onboarding.onboard(tenant_id, credentials_id)
+        except Exception:
+            logger.exception(
+                "broker backfill failed for credentials %s — account created unseeded; "
+                "reconciliation will surface the gap until re-onboarded",
+                credentials_id,
+            )
 
     # ------------------------------------------------------------- fund ops
 
@@ -132,24 +215,57 @@ class LedgerServicer:
     async def allocate_capital(
         self, request: ledger_pb2.AllocateCapitalRequest, ctx: AnyContext
     ) -> ledger_pb2.AllocateCapitalResponse:
+        """Fund an existing sleeve, or open-and-fund a strategy sleeve.
+
+        With an empty ``to_sleeve_id`` and a ``strategy_execution_id``, the
+        strategy sleeve linked to that execution is opened (or reused) and
+        funded in the same transaction (CONTRACTS.md §5).
+        """
         tenant_id = UUID(request.context.tenant_id)
         account_id = UUID(request.account_id)
+        if not request.to_sleeve_id and not request.strategy_execution_id:
+            raise ConnectError(
+                Code.INVALID_ARGUMENT, "to_sleeve_id or strategy_execution_id required"
+            )
         try:
             async with self._get_db() as db:
-                fund = FundService(SqlSleeveRepository(db), SqlLedgerStore(db))
+                repo = SqlSleeveRepository(db)
+                to_sleeve_id = await self._resolve_allocation_target(repo, request, tenant_id)
+                fund = FundService(repo, SqlLedgerStore(db))
                 view = await fund.allocate(
                     tenant_id=tenant_id,
                     account_id=account_id,
-                    to_sleeve_id=UUID(request.to_sleeve_id),
+                    to_sleeve_id=to_sleeve_id,
                     amount=_amount(request.amount),
                 )
                 await db.commit()
                 return ledger_pb2.AllocateCapitalResponse(sleeve=_view_to_proto(view))
         except FundError as e:
             raise ConnectError(Code.INVALID_ARGUMENT, str(e)) from e
+        except ConnectError:
+            raise
         except Exception as e:
             logger.error("allocate_capital error: %s", e, exc_info=True)
             raise ConnectError(Code.INTERNAL, f"allocate failed: {e}") from e
+
+    @staticmethod
+    async def _resolve_allocation_target(
+        repo: SqlSleeveRepository, request: ledger_pb2.AllocateCapitalRequest, tenant_id: UUID
+    ) -> UUID:
+        """The sleeve to fund: the given one, or an opened strategy sleeve."""
+        if request.to_sleeve_id:
+            return UUID(request.to_sleeve_id)
+        sleeves = SleeveService(repo)
+        account = await repo.get_account(tenant_id, UUID(request.account_id))
+        if account is None:
+            raise ConnectError(Code.NOT_FOUND, f"account {request.account_id} not found")
+        sleeve = await sleeves.get_or_create_strategy_sleeve(
+            account,
+            strategy_execution_id=UUID(request.strategy_execution_id),
+            name=request.sleeve_name or f"Strategy {request.strategy_execution_id[:8]}",
+            allocated_capital=_amount(request.amount),
+        )
+        return sleeve.id
 
     async def transfer_capital(
         self, request: ledger_pb2.TransferCapitalRequest, ctx: AnyContext
@@ -188,7 +304,15 @@ class LedgerServicer:
                 repo = SqlSleeveRepository(db)
                 projection = await LedgerProjector(db).project_account(tenant_id, account_id)
                 rows = await repo.list_sleeves(tenant_id, account_id)
-                sleeves = [_sleeve_to_proto(s, projection.sleeve(str(s.id)).cash) for s in rows]
+                sleeves = [
+                    _sleeve_to_proto(
+                        s,
+                        projection.sleeve(str(s.id)).cash,
+                        projection.sleeve(str(s.id)).reserved,
+                        projection.sleeve(str(s.id)).realized_pnl,
+                    )
+                    for s in rows
+                ]
                 return ledger_pb2.ListSleevesResponse(sleeves=sleeves)
         except Exception as e:
             logger.error("list_sleeves error: %s", e, exc_info=True)
@@ -223,7 +347,10 @@ class LedgerServicer:
                     if pos.qty != 0
                 ]
                 return ledger_pb2.GetSleeveResponse(
-                    sleeve=_sleeve_to_proto(sleeve, sleeve_proj.cash), lots=lots
+                    sleeve=_sleeve_to_proto(
+                        sleeve, sleeve_proj.cash, sleeve_proj.reserved, sleeve_proj.realized_pnl
+                    ),
+                    lots=lots,
                 )
         except ConnectError:
             raise

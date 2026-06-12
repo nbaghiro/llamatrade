@@ -121,8 +121,8 @@ def _service(
     repo = FakeSleeveRepo()
     store = FakeStore()
     svc = AccountOnboardingService(
-        SleeveService(repo),  # type: ignore[arg-type]
-        store,  # type: ignore[arg-type]
+        SleeveService(repo),
+        store,
         FakeBroker(snapshot),
     )
     return svc, repo, store

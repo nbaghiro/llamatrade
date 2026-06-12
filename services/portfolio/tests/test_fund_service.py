@@ -96,7 +96,7 @@ def _setup() -> tuple[FundService, FakeRepo, FakeLedger, Sleeve, Sleeve]:
     unalloc = _sleeve(SleeveType.UNALLOCATED)
     strat = _sleeve(SleeveType.STRATEGY, strategy_execution_id=uuid4())
     repo.sleeves = [unalloc, strat]
-    return FundService(repo, ledger), repo, ledger, unalloc, strat  # type: ignore[arg-type]
+    return FundService(repo, ledger), repo, ledger, unalloc, strat
 
 
 async def test_deposit_credits_unallocated() -> None:
@@ -170,7 +170,7 @@ async def test_transfer_illiquid_raises() -> None:
 
 async def test_deposit_without_unallocated_raises() -> None:
     repo = FakeRepo()  # no sleeves
-    svc = FundService(repo, FakeLedger())  # type: ignore[arg-type]
+    svc = FundService(repo, FakeLedger())
     with pytest.raises(FundError, match="no Unallocated sleeve"):
         await svc.deposit(tenant_id=TENANT, account_id=ACCOUNT, amount=Decimal("100"))
 

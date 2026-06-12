@@ -36,6 +36,8 @@ class LedgerServiceStub:
     def __new__(cls, channel: _grpc.Channel) -> _Self: ...
     @_typing.overload
     def __new__(cls, channel: _aio.Channel) -> LedgerServiceAsyncStub: ...
+    GetOrCreateAccount: _grpc.UnaryUnaryMultiCallable[_ledger_pb2.GetOrCreateAccountRequest, _ledger_pb2.GetOrCreateAccountResponse]
+    """Identity bootstrap (credentials_id → Account + base sleeves)"""
     AllocateCapital: _grpc.UnaryUnaryMultiCallable[_ledger_pb2.AllocateCapitalRequest, _ledger_pb2.AllocateCapitalResponse]
     """Fund disbursement"""
     TransferCapital: _grpc.UnaryUnaryMultiCallable[_ledger_pb2.TransferCapitalRequest, _ledger_pb2.TransferCapitalResponse]
@@ -54,6 +56,8 @@ class LedgerServiceAsyncStub(LedgerServiceStub):
     """
 
     def __init__(self, channel: _aio.Channel) -> None: ...
+    GetOrCreateAccount: _aio.UnaryUnaryMultiCallable[_ledger_pb2.GetOrCreateAccountRequest, _ledger_pb2.GetOrCreateAccountResponse]  # type: ignore[assignment]
+    """Identity bootstrap (credentials_id → Account + base sleeves)"""
     AllocateCapital: _aio.UnaryUnaryMultiCallable[_ledger_pb2.AllocateCapitalRequest, _ledger_pb2.AllocateCapitalResponse]  # type: ignore[assignment]
     """Fund disbursement"""
     TransferCapital: _aio.UnaryUnaryMultiCallable[_ledger_pb2.TransferCapitalRequest, _ledger_pb2.TransferCapitalResponse]  # type: ignore[assignment]
@@ -69,6 +73,14 @@ class LedgerServiceServicer(metaclass=_abc_1.ABCMeta):
     SERVICE  (stubs; implemented in Phases 2/6)
     =============================================================================
     """
+
+    @_abc_1.abstractmethod
+    def GetOrCreateAccount(
+        self,
+        request: _ledger_pb2.GetOrCreateAccountRequest,
+        context: _ServicerContext,
+    ) -> _typing.Union[_ledger_pb2.GetOrCreateAccountResponse, _abc.Awaitable[_ledger_pb2.GetOrCreateAccountResponse]]:
+        """Identity bootstrap (credentials_id → Account + base sleeves)"""
 
     @_abc_1.abstractmethod
     def AllocateCapital(

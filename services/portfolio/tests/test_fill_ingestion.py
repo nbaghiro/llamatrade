@@ -80,6 +80,27 @@ async def test_dispatch_bad_json_is_swallowed() -> None:
     assert rec.appends == []
 
 
+async def test_dispatch_routes_reservation_events() -> None:
+    rec = _Recorder()
+    ok = await dispatch_fill(
+        rec, json.dumps(_fill(event_type="order_submitted", reserved="1502.50"))
+    )
+    assert ok is True
+    append = rec.appends[0]
+    assert append.event_type == LedgerEventType.ORDER_SUBMITTED
+    assert append.data["reserved"] == "1502.50"
+    # Reservation stage must not collide with the fill's idempotency key.
+    await dispatch_fill(rec, json.dumps(_fill()))
+    assert rec.appends[0].event_id != rec.appends[1].event_id
+
+
+async def test_dispatch_unknown_event_type_is_swallowed() -> None:
+    rec = _Recorder()
+    ok = await dispatch_fill(rec, json.dumps(_fill(event_type="order_teleported")))
+    assert ok is False
+    assert rec.appends == []
+
+
 async def test_dispatch_missing_required_field_is_swallowed() -> None:
     rec = _Recorder()
     fill = _fill()

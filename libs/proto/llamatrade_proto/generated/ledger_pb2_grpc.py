@@ -18,6 +18,11 @@ class LedgerServiceStub(object):
         Args:
             channel: A grpc.Channel.
         """
+        self.GetOrCreateAccount = channel.unary_unary(
+                '/llamatrade.LedgerService/GetOrCreateAccount',
+                request_serializer=ledger__pb2.GetOrCreateAccountRequest.SerializeToString,
+                response_deserializer=ledger__pb2.GetOrCreateAccountResponse.FromString,
+                _registered_method=True)
         self.AllocateCapital = channel.unary_unary(
                 '/llamatrade.LedgerService/AllocateCapital',
                 request_serializer=ledger__pb2.AllocateCapitalRequest.SerializeToString,
@@ -61,6 +66,13 @@ class LedgerServiceServicer(object):
     =============================================================================
 
     """
+
+    def GetOrCreateAccount(self, request, context):
+        """Identity bootstrap (credentials_id → Account + base sleeves)
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
 
     def AllocateCapital(self, request, context):
         """Fund disbursement
@@ -109,6 +121,11 @@ class LedgerServiceServicer(object):
 
 def add_LedgerServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
+            'GetOrCreateAccount': grpc.unary_unary_rpc_method_handler(
+                    servicer.GetOrCreateAccount,
+                    request_deserializer=ledger__pb2.GetOrCreateAccountRequest.FromString,
+                    response_serializer=ledger__pb2.GetOrCreateAccountResponse.SerializeToString,
+            ),
             'AllocateCapital': grpc.unary_unary_rpc_method_handler(
                     servicer.AllocateCapital,
                     request_deserializer=ledger__pb2.AllocateCapitalRequest.FromString,
@@ -158,6 +175,33 @@ class LedgerService(object):
     =============================================================================
 
     """
+
+    @staticmethod
+    def GetOrCreateAccount(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/llamatrade.LedgerService/GetOrCreateAccount',
+            ledger__pb2.GetOrCreateAccountRequest.SerializeToString,
+            ledger__pb2.GetOrCreateAccountResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
 
     @staticmethod
     def AllocateCapital(request,
