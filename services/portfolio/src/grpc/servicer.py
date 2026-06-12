@@ -17,6 +17,8 @@ type AnyContext = RequestContext[object, object]
 
 from llamatrade_db import get_session_maker
 
+from src.clients.market_data import get_market_data_client
+
 if TYPE_CHECKING:
     from llamatrade_proto.generated import portfolio_pb2
 
@@ -54,7 +56,7 @@ class PortfolioServicer:
             tenant_id = UUID(request.context.tenant_id)
 
             async with await self._get_db() as db:
-                service = PortfolioService(db)
+                service = PortfolioService(db, market_data=get_market_data_client())
                 summary = await service.get_summary(tenant_id)
                 positions = await service.list_positions(tenant_id)
 
@@ -84,7 +86,7 @@ class PortfolioServicer:
             tenant_id = UUID(request.context.tenant_id)
 
             async with await self._get_db() as db:
-                service = PortfolioService(db)
+                service = PortfolioService(db, market_data=get_market_data_client())
                 summary = await service.get_summary(tenant_id)
 
                 # Currently we support one portfolio per tenant
@@ -124,8 +126,8 @@ class PortfolioServicer:
             tenant_id = UUID(request.context.tenant_id)
 
             async with await self._get_db() as db:
-                portfolio_service = PortfolioService(db)
-                perf_service = PerformanceService(db)
+                portfolio_service = PortfolioService(db, market_data=get_market_data_client())
+                perf_service = PerformanceService(db, market_data=get_market_data_client())
 
                 # Get portfolio summary for basic metrics
                 summary = await portfolio_service.get_summary(tenant_id)
@@ -207,7 +209,7 @@ class PortfolioServicer:
             tenant_id = UUID(request.context.tenant_id)
 
             async with await self._get_db() as db:
-                service = PortfolioService(db)
+                service = PortfolioService(db, market_data=get_market_data_client())
                 positions = await service.list_positions(tenant_id)
 
                 # Calculate allocation by grouping
@@ -263,7 +265,7 @@ class PortfolioServicer:
             tenant_id = UUID(request.context.tenant_id)
 
             async with await self._get_db() as db:
-                service = PortfolioService(db)
+                service = PortfolioService(db, market_data=get_market_data_client())
                 positions = await service.list_positions(tenant_id)
 
                 return portfolio_pb2.GetPositionsResponse(
@@ -398,7 +400,7 @@ class PortfolioServicer:
             # This would call the trading service to get current positions
             # and sync them to the portfolio
             async with await self._get_db() as db:
-                service = PortfolioService(db)
+                service = PortfolioService(db, market_data=get_market_data_client())
                 summary = await service.get_summary(tenant_id)
                 positions = await service.list_positions(tenant_id)
 

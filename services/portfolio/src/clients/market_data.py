@@ -2,6 +2,7 @@
 
 import logging
 import os
+from datetime import date, datetime
 from decimal import Decimal
 
 from llamatrade_proto.clients.market_data import MarketDataClient as GRPCMarketDataClient
@@ -106,6 +107,30 @@ class MarketDataClient:
             return await client.get_snapshots(symbols)
         except Exception as e:
             logger.warning("Failed to get snapshots for %s: %s", symbols, e)
+            return {}
+
+    async def get_daily_closes(
+        self, symbol: str, start: datetime, end: datetime
+    ) -> dict[date, float]:
+        """Get daily close prices keyed by date over a window.
+
+        Used for benchmark comparison (e.g. SPY) in performance analytics.
+
+        Args:
+            symbol: Stock symbol
+            start: Window start (inclusive)
+            end: Window end (inclusive)
+
+        Returns:
+            Mapping of trading date to close price. Empty on failure.
+        """
+        symbol = symbol.upper()
+        try:
+            client = self._get_client()
+            bars = await client.get_historical_bars(symbol, start, end, timeframe="1D")
+            return {bar.timestamp.date(): float(bar.close) for bar in bars}
+        except Exception as e:
+            logger.warning("Failed to get daily closes for %s: %s", symbol, e)
             return {}
 
 

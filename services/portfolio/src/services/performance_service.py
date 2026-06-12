@@ -1,6 +1,6 @@
 """Performance service - performance analytics with database persistence."""
 
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 from uuid import UUID
 
 import numpy as np
@@ -11,14 +11,23 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from llamatrade_db import get_db
 from llamatrade_db.models.portfolio import PortfolioHistory
 
+from src.domain import benchmark_metrics
 from src.models import EquityPoint, PerformanceMetrics
+from src.ports import PriceProvider
 
 
 class PerformanceService:
     """Service for performance analytics with database persistence."""
 
-    def __init__(self, db: AsyncSession):
+    def __init__(
+        self,
+        db: AsyncSession,
+        market_data: PriceProvider | None = None,
+        benchmark_symbol: str = "SPY",
+    ):
         self.db = db
+        self._market_data = market_data
+        self._benchmark_symbol = benchmark_symbol
 
     async def get_metrics(self, tenant_id: UUID, period: str) -> PerformanceMetrics:
         """Get performance metrics for a period.
@@ -107,6 +116,20 @@ class PerformanceService:
         total_losses = float(abs(np.sum(losses))) if len(losses) > 0 else 0
         profit_factor = total_gains / total_losses if total_losses > 0 else 0
 
+        # Benchmark comparison (alpha / beta / benchmark return vs the benchmark
+        # symbol, default SPY). Requires the market-data client; otherwise zeros.
+        beta, alpha, benchmark_return = 0.0, 0.0, 0.0
+        if self._market_data is not None:
+            dates = [h.snapshot_date for h in history]
+            bench_closes = await self._market_data.get_daily_closes(
+                self._benchmark_symbol,
+                datetime.combine(dates[0], time.min, tzinfo=UTC),
+                datetime.combine(dates[-1] + timedelta(days=1), time.min, tzinfo=UTC),
+            )
+            beta, alpha, benchmark_return = self._calc_benchmark_metrics(
+                dates, equities, bench_closes
+            )
+
         return PerformanceMetrics(
             period=period,
             total_return=total_return,
@@ -121,7 +144,22 @@ class PerformanceService:
             best_day=best_day,
             worst_day=worst_day,
             avg_daily_return=avg_daily_return,
+            beta=beta,
+            alpha=alpha,
+            benchmark_return=benchmark_return,
         )
+
+    def _calc_benchmark_metrics(
+        self,
+        dates: list[date],
+        equities: np.ndarray,
+        bench_closes: dict[date, float],
+    ) -> tuple[float, float, float]:
+        """Compute (beta, alpha %, benchmark_return %) vs the benchmark.
+
+        Thin wrapper over the pure-domain implementation.
+        """
+        return benchmark_metrics(dates, equities, bench_closes)
 
     async def get_equity_curve(
         self,

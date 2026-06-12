@@ -232,3 +232,30 @@ def test_calc_max_drawdown_empty() -> None:
     max_dd = service._calc_max_drawdown(equities)
 
     assert max_dd == 0.0
+
+
+def test_calc_benchmark_metrics_tracks_benchmark() -> None:
+    """Portfolio tracking the benchmark 1:1 => beta 1.0, alpha ~0, return = compounded."""
+    service = PerformanceService(db=MagicMock())
+    d = [date(2024, 1, 1), date(2024, 1, 2), date(2024, 1, 3), date(2024, 1, 4)]
+    # Equity equals benchmark closes exactly -> identical returns
+    closes = {d[0]: 100.0, d[1]: 110.0, d[2]: 99.0, d[3]: 118.8}
+    equities: NDArray[np.float64] = np.array([closes[x] for x in d])
+
+    beta, alpha, benchmark_return = service._calc_benchmark_metrics(d, equities, closes)
+
+    assert beta == pytest.approx(1.0, abs=1e-9)
+    assert alpha == pytest.approx(0.0, abs=1e-6)
+    # 1.10 * 0.90 * 1.20 - 1 = 0.188 -> 18.8%
+    assert benchmark_return == pytest.approx(18.8, abs=1e-6)
+
+
+def test_calc_benchmark_metrics_insufficient_overlap() -> None:
+    """Returns zeros when fewer than two overlapping intervals exist."""
+    service = PerformanceService(db=MagicMock())
+    d = [date(2024, 1, 1), date(2024, 1, 2), date(2024, 1, 3)]
+    equities: NDArray[np.float64] = np.array([100.0, 110.0, 120.0])
+    # Benchmark only covers a single date -> no aligned interval
+    closes = {d[0]: 400.0}
+
+    assert service._calc_benchmark_metrics(d, equities, closes) == (0.0, 0.0, 0.0)

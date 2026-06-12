@@ -12,8 +12,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from llamatrade_db import get_db
 from llamatrade_db.models.portfolio import PortfolioSummary as PortfolioSummaryModel
 
+from src import domain
 from src.clients.market_data import MarketDataClient, get_market_data_client
 from src.models import PortfolioSummary, PositionResponse
+from src.ports import PriceProvider
 
 
 @runtime_checkable
@@ -46,7 +48,7 @@ def _safe_float(val: object, default: float = 0.0) -> float:
 class PortfolioService:
     """Service for portfolio operations with database persistence."""
 
-    def __init__(self, db: AsyncSession, market_data: MarketDataClient | None = None):
+    def __init__(self, db: AsyncSession, market_data: PriceProvider | None = None):
         self.db = db
         self.market_data = market_data
 
@@ -172,12 +174,16 @@ class PortfolioService:
             cost_val = pos.get("cost_basis")
             cost_basis = _safe_float(cost_val) if cost_val is not None else qty * avg_entry_price
 
-            # Use fetched price or fallback to stored price
+            # Use the fetched live price, falling back to the stored price (or
+            # avg entry). A fetched price of 0 means "unavailable" (get_prices
+            # returns 0 on failure / unknown symbol), so treat it as a miss
+            # rather than valuing the position at $0.
             current_price_val = pos.get("current_price")
             fallback_price = (
                 _safe_float(current_price_val) if current_price_val is not None else avg_entry_price
             )
-            current_price = current_prices.get(symbol, fallback_price)
+            fetched_price = current_prices.get(symbol)
+            current_price = fetched_price if fetched_price else fallback_price
 
             # Calculate current market value
             market_value = qty * current_price
@@ -191,9 +197,7 @@ class PortfolioService:
             )
 
             # Calculate unrealized P&L percent
-            unrealized_pnl_percent = 0.0
-            if cost_basis != 0:
-                unrealized_pnl_percent = (unrealized_pnl / cost_basis) * 100
+            unrealized_pnl_percent = domain.pnl_percent(unrealized_pnl, cost_basis)
 
             result.append(
                 PositionResponse(
@@ -229,10 +233,7 @@ class PortfolioService:
         Returns:
             Unrealized P&L value
         """
-        if side == "long":
-            return (current_price - entry_price) * qty
-        else:  # short
-            return (entry_price - current_price) * qty
+        return domain.unrealized_pnl(side, qty, entry_price, current_price)
 
     async def update_summary(
         self,
