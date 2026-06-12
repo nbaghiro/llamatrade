@@ -14,11 +14,16 @@ celery_app = Celery(
     include=["src.workers.celery_tasks"],
 )
 
+# Time limits are env-configurable: long backtests (years of intraday bars)
+# legitimately exceed the old 10-minute hard kill
+TASK_SOFT_TIME_LIMIT = int(os.getenv("BACKTEST_TASK_SOFT_TIME_LIMIT", "1800"))
+TASK_TIME_LIMIT = int(os.getenv("BACKTEST_TASK_TIME_LIMIT", "3600"))
+
 # Celery configuration
 celery_app.conf.update(
     # Task execution settings
-    task_soft_time_limit=300,  # 5 minutes soft limit
-    task_time_limit=600,  # 10 minutes hard limit
+    task_soft_time_limit=TASK_SOFT_TIME_LIMIT,
+    task_time_limit=TASK_TIME_LIMIT,
     task_acks_late=True,  # Acknowledge after task completion
     task_reject_on_worker_lost=True,  # Reject if worker dies
     # Retry settings
@@ -42,6 +47,4 @@ celery_app.conf.update(
 # Task routing for different queues
 celery_app.conf.task_routes = {
     "src.workers.celery_tasks.run_backtest_task": {"queue": "backtest"},
-    "src.workers.celery_tasks.run_symbol_chunk": {"queue": "backtest"},
-    "src.workers.celery_tasks.merge_results": {"queue": "backtest"},
 }

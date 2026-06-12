@@ -48,8 +48,6 @@ source = ["src"]
 omit = [
     "tests/*",
     "src/celery_app.py",
-    "src/workers/celery_tasks.py",
-    "src/workers/tasks.py",
 ]
 
 [tool.coverage.report]

@@ -1,14 +1,13 @@
 """Backtest service - manages backtest runs with database persistence."""
 
 import asyncio
+import logging
 import os
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from types import TracebackType
-from typing import TYPE_CHECKING, Protocol, cast, runtime_checkable
+from typing import TYPE_CHECKING, Protocol, cast
 from uuid import UUID
-
-import numpy as np
 
 if TYPE_CHECKING:
     from llamatrade_proto import MarketDataClient
@@ -34,9 +33,12 @@ from llamatrade_proto.generated.strategy_pb2 import (
     StrategyStatus,
 )
 
-from src.engine.backtester import BacktestConfig, BacktestEngine
-from src.engine.benchmarks import BenchmarkBarData, BenchmarkCalculator
-from src.engine.strategy_adapter import create_strategy_function
+from src.convert import safe_float
+from src.engine.backtester import BacktestCancelled, BacktestConfig, BacktestEngine
+from src.engine.benchmarks import BenchmarkBarData, BenchmarkCalculator, align_daily_returns
+from src.engine.metrics import resample_daily
+from src.engine.strategy_adapter import create_multi_symbol_strategy
+from src.engine.validation import BarDataDict, log_validation_result, validate_bars
 from src.models import (
     VALID_TIMEFRAMES,
     BacktestMetrics,
@@ -46,9 +48,7 @@ from src.models import (
     EquityPoint,
     TradeRecord,
 )
-from src.progress import BacktestProgressReporter
-
-# Feature flags
+from src.progress import BacktestProgressReporter, CancellationFlag
 
 # Status string to proto int mapping
 _STATUS_STR_TO_PROTO: dict[str, int] = {
@@ -68,14 +68,81 @@ def _normalize_status(status: str | int) -> BacktestStatus.ValueType:
     return cast(BacktestStatus.ValueType, result if result is not None else BACKTEST_STATUS_PENDING)
 
 
-USE_CELERY = os.getenv("BACKTEST_USE_CELERY", "false").lower() == "true"
 MARKET_DATA_GRPC_TARGET = os.getenv("MARKET_DATA_GRPC_TARGET", "market-data:8840")
+# Concurrent per-symbol fetches against market-data; capped so a large
+# universe doesn't stampede the service (and Alpaca's rate limiter behind it)
+MARKET_DATA_FETCH_CONCURRENCY = int(os.getenv("MARKET_DATA_FETCH_CONCURRENCY", "6"))
+
+logger = logging.getLogger(__name__)
 
 
 class MarketDataError(Exception):
     """Error fetching market data."""
 
     pass
+
+
+# Approximate regular-session bars per trading day for intraday timeframes
+_BARS_PER_TRADING_DAY: dict[str, int] = {
+    "1Min": 390,
+    "5Min": 78,
+    "15Min": 26,
+    "30Min": 13,
+    "1H": 7,
+    "1Hour": 7,
+    "4H": 2,
+}
+
+
+# Stored equity curves are daily-resampled; this cap is a backstop against
+# pathological row sizes (e.g. decade-long backtests)
+_MAX_STORED_EQUITY_POINTS = 5000
+
+
+def _cap_equity_curve(
+    curve: list[tuple[datetime, float]],
+) -> list[tuple[datetime, float]]:
+    """Downsample a curve by even stride if it exceeds the storage cap.
+
+    The final point is always preserved so total return stays exact.
+    """
+    if len(curve) <= _MAX_STORED_EQUITY_POINTS:
+        return curve
+
+    stride = -(-len(curve) // _MAX_STORED_EQUITY_POINTS)  # ceil division
+    sampled = curve[::stride]
+    if sampled[-1] != curve[-1]:
+        sampled.append(curve[-1])
+    return sampled
+
+
+def warmup_padding_days(timeframe: str, min_bars: int) -> int:
+    """Calendar days of extra history to fetch so indicators can warm up.
+
+    Converts an indicator lookback (in bars of `timeframe`) to calendar days,
+    padding by 1.5x plus a small buffer to absorb weekends, holidays, and
+    missing bars.
+
+    Args:
+        timeframe: Bar timeframe (e.g. "1D", "1H", "1W")
+        min_bars: Minimum number of bars the strategy's indicators need
+
+    Returns:
+        Number of calendar days to extend the fetch start back by
+    """
+    if min_bars <= 0:
+        return 0
+
+    if timeframe in ("1W",):
+        trading_days_needed = min_bars * 5
+    elif timeframe in ("1D", "1d"):
+        trading_days_needed = min_bars
+    else:
+        bars_per_day = _BARS_PER_TRADING_DAY.get(timeframe, 390)
+        trading_days_needed = -(-min_bars // bars_per_day)  # ceil division
+
+    # 1.5x for weekends/holidays plus a fixed buffer
+    return int(trading_days_needed * 1.5) + 5
 
 
 class MarketDataFetcher(Protocol):
@@ -123,30 +190,45 @@ class GRPCMarketDataClient:
         start_date: date,
         end_date: date,
     ) -> dict[str, list[dict[str, object]]]:
-        """Fetch historical bars using gRPC."""
+        """Fetch historical bars using gRPC.
+
+        Raises:
+            MarketDataError: If the timeframe is unsupported or the fetch fails.
+        """
         from datetime import datetime
+
+        # Convert timeframe to gRPC format. Unknown timeframes are an error —
+        # silently falling back to daily would produce a plausible-looking but
+        # wrong backtest.
+        tf_map = {
+            "1D": "1DAY",
+            "1d": "1DAY",
+            "1Min": "1MIN",
+            "5Min": "5MIN",
+            "15Min": "15MIN",
+            "30Min": "30MIN",
+            "1H": "1HOUR",
+            "1Hour": "1HOUR",
+            "4H": "4HOUR",
+            "1W": "1WEEK",
+        }
+        grpc_timeframe = tf_map.get(timeframe)
+        if grpc_timeframe is None:
+            raise MarketDataError(
+                f"Unsupported timeframe '{timeframe}'. Must be one of: {', '.join(sorted(tf_map))}"
+            )
 
         try:
             client = await self._get_client()
+        except Exception as e:
+            raise MarketDataError(f"Failed to fetch bars: {e}") from e
 
-            # Convert timeframe to gRPC format
-            tf_map = {
-                "1D": "1DAY",
-                "1d": "1DAY",
-                "1Min": "1MIN",
-                "5Min": "5MIN",
-                "15Min": "15MIN",
-                "30Min": "30MIN",
-                "1H": "1HOUR",
-                "1Hour": "1HOUR",
-                "4H": "4HOUR",
-                "1W": "1WEEK",
-            }
-            grpc_timeframe = tf_map.get(timeframe, "1DAY")
+        # Fetch symbols concurrently over the shared channel, bounded by a
+        # semaphore so large universes don't stampede the market-data service
+        semaphore = asyncio.Semaphore(MARKET_DATA_FETCH_CONCURRENCY)
 
-            result: dict[str, list[dict[str, object]]] = {}
-
-            for symbol in symbols:
+        async def fetch_symbol(symbol: str) -> list[dict[str, object]]:
+            async with semaphore:
                 bars = await client.get_historical_bars(
                     symbol=symbol,
                     start=datetime.combine(start_date, datetime.min.time()).replace(tzinfo=UTC),
@@ -154,9 +236,13 @@ class GRPCMarketDataClient:
                     timeframe=grpc_timeframe,
                 )
 
-                result[symbol] = [
+                return [
                     {
-                        "timestamp": bar.timestamp,
+                        # Normalize to tz-aware UTC so comparisons with the
+                        # backtest window are well-defined
+                        "timestamp": bar.timestamp
+                        if bar.timestamp.tzinfo is not None
+                        else bar.timestamp.replace(tzinfo=UTC),
                         "open": float(bar.open),
                         "high": float(bar.high),
                         "low": float(bar.low),
@@ -166,10 +252,26 @@ class GRPCMarketDataClient:
                     for bar in bars
                 ]
 
-            return result
+        fetched = await asyncio.gather(
+            *(fetch_symbol(symbol) for symbol in symbols), return_exceptions=True
+        )
 
-        except Exception as e:
-            raise MarketDataError(f"Failed to fetch bars: {e}") from e
+        # Aggregate per-symbol failures into one error naming the symbols
+        failures = [
+            (symbol, res)
+            for symbol, res in zip(symbols, fetched, strict=True)
+            if isinstance(res, BaseException)
+        ]
+        if failures:
+            failed_names = ", ".join(symbol for symbol, _ in failures)
+            raise MarketDataError(
+                f"Failed to fetch bars for: {failed_names} ({failures[0][1]})"
+            ) from failures[0][1]
+
+        return {
+            symbol: cast(list[dict[str, object]], res)
+            for symbol, res in zip(symbols, fetched, strict=True)
+        }
 
     async def close(self) -> None:
         """Close the client."""
@@ -419,7 +521,7 @@ class BacktestService:
         reporter: BacktestProgressReporter | None = None
         if publish_progress:
             reporter = BacktestProgressReporter(str(backtest_id))
-            await reporter.publish_phase("Starting backtest", 0)
+            await reporter.publish_phase("Starting backtest", 0, status=BACKTEST_STATUS_RUNNING)
 
         # Update status to running
         backtest.status = BACKTEST_STATUS_RUNNING
@@ -427,18 +529,6 @@ class BacktestService:
         await self.db.commit()
 
         try:
-            # Validate symbols before running (Phase 3)
-            if reporter:
-                await reporter.publish_phase("Validating symbols", 5)
-
-            # Cast symbols since JSONB returns untyped list
-            symbols_list: list[str] = backtest.symbols
-            symbols_to_validate = list(symbols_list)
-            if include_benchmark and benchmark_symbol:
-                symbols_to_validate.append(benchmark_symbol)
-
-            await self._validate_symbols(symbols_to_validate)
-
             # Get strategy version
             if reporter:
                 await reporter.publish_phase("Loading strategy", 10)
@@ -454,38 +544,62 @@ class BacktestService:
             if not config_sexpr:
                 raise ValueError("Strategy has no S-expression config")
 
-            # Create strategy function
-            strategy_fn, _min_bars = create_strategy_function(config_sexpr)
+            # Create strategy function (multi-symbol: all bars per date at once)
+            strategy_fn, required_symbols, min_bars = create_multi_symbol_strategy(config_sexpr)
 
             if reporter:
                 await reporter.publish_phase("Strategy compiled", 20)
 
-            # Fetch historical bars using timeframe from config (Phase 1)
-            # Include benchmark symbol in the same request to avoid duplicate API call
+            # Fetch historical bars using timeframe from config.
+            # - includes indicator-only symbols the strategy references
+            #   (e.g. RSI(SPY) while trading TLT)
+            # - includes the benchmark symbol to avoid a duplicate API call
+            # - extends the start back so indicators are warm on day one
             if reporter:
                 await reporter.publish_phase("Fetching market data", 30)
 
-            symbols_to_fetch = list(symbols_list)
+            # Cast symbols since JSONB returns untyped list
+            symbols_list: list[str] = backtest.symbols
+            strategy_symbols = list(dict.fromkeys([*symbols_list, *sorted(required_symbols)]))
+            symbols_to_fetch = list(strategy_symbols)
             if include_benchmark and benchmark_symbol and benchmark_symbol not in symbols_to_fetch:
                 symbols_to_fetch.append(benchmark_symbol)
+
+            padding_days = warmup_padding_days(timeframe, min_bars)
+            fetch_start = backtest.start_date - timedelta(days=padding_days)
 
             all_bars = await self.market_data_client.fetch_bars(
                 symbols=symbols_to_fetch,
                 timeframe=timeframe,
-                start_date=backtest.start_date,
+                start_date=fetch_start,
                 end_date=backtest.end_date,
             )
 
             if not all_bars:
                 raise ValueError("No market data available for specified period")
 
+            # Symbols the strategy needs must have data; a missing benchmark
+            # only disables the benchmark comparison.
+            missing_symbols = [s for s in strategy_symbols if not all_bars.get(s)]
+            if missing_symbols:
+                raise ValueError(
+                    f"No market data available for symbols: {', '.join(missing_symbols)}"
+                )
+
             # Separate strategy bars from benchmark bars
             # Cast to BarData since market_data_client returns properly structured dicts
             from src.engine.backtester import BarData
 
             bars: dict[str, list[BarData]] = {
-                s: cast(list[BarData], all_bars[s]) for s in symbols_list if s in all_bars
+                s: cast(list[BarData], all_bars[s]) for s in strategy_symbols if s in all_bars
             }
+
+            # Validate OHLCV data before simulating: errors abort the run,
+            # warnings (gaps, suspected splits) are logged.
+            validation = validate_bars(cast(dict[str, list[BarData | BarDataDict]], bars))
+            log_validation_result(validation)
+            if not validation.valid:
+                raise ValueError(f"Market data validation failed: {validation.summary()}")
 
             # Calculate total bars for progress tracking
             total_bars = sum(len(symbol_bars) for symbol_bars in bars.values())
@@ -493,45 +607,28 @@ class BacktestService:
                 reporter.set_total_bars(total_bars)
                 await reporter.publish_phase("Running simulation", 40)
 
-            # Run backtest with progress callback
-            @runtime_checkable
-            class _SupportsFloat(Protocol):
-                def __float__(self) -> float: ...
-
-            def _safe_float(val: object, default: float = 0.0) -> float:
-                """Safely convert object to float."""
-                if val is None:
-                    return default
-                if isinstance(val, (int, float)):
-                    return float(val)
-                if isinstance(val, str):
-                    try:
-                        return float(val)
-                    except ValueError:
-                        return default
-                if isinstance(val, _SupportsFloat):
-                    try:
-                        return float(val)
-                    except TypeError, ValueError:
-                        return default
-                return default
-
             backtest_config = BacktestConfig(
                 initial_capital=float(backtest.initial_capital),
-                commission_rate=_safe_float(config.get("commission", 0)),
-                slippage_rate=_safe_float(config.get("slippage", 0)),
+                commission_rate=safe_float(config.get("commission", 0)),
+                slippage_rate=safe_float(config.get("slippage", 0)),
             )
             engine = BacktestEngine(backtest_config)
 
             # Create progress callback if reporting is enabled
             progress_callback = reporter.create_engine_callback() if reporter else None
 
+            # Cooperative cancellation: CancelBacktest sets a Redis flag that
+            # the engine polls between trading dates (fails open if Redis is
+            # unreachable)
+            should_abort = CancellationFlag().make_should_abort(str(backtest_id))
+
             result = engine.run(
                 bars=bars,
                 strategy_fn=strategy_fn,
-                start_date=datetime.combine(backtest.start_date, datetime.min.time()),
-                end_date=datetime.combine(backtest.end_date, datetime.max.time()),
+                start_date=datetime.combine(backtest.start_date, datetime.min.time(), tzinfo=UTC),
+                end_date=datetime.combine(backtest.end_date, datetime.max.time(), tzinfo=UTC),
                 progress_callback=progress_callback,
+                should_abort=should_abort,
             )
 
             # Flush pending progress updates
@@ -539,20 +636,31 @@ class BacktestService:
                 await reporter.flush()
                 await reporter.publish_phase("Calculating metrics", 85)
 
-            # Calculate benchmark metrics if enabled (Phase 4)
-            benchmark_return_val: float = 0
+            # Benchmark comparison values. None means "not available" —
+            # a computed 0.0 is a legitimate value and must be stored as 0.0.
+            benchmark_return_val: float | None = None
             benchmark_equity_curve: list[dict[str, object]] = []
-            alpha_val: float = 0
-            beta_val: float = 0
-            information_ratio_val: float = 0
+            alpha_val: float | None = None
+            beta_val: float | None = None
+            information_ratio_val: float | None = None
 
             if include_benchmark and benchmark_symbol:
                 if reporter:
                     await reporter.publish_phase("Calculating benchmark comparison", 90)
 
                 try:
-                    # Use benchmark bars from the combined fetch (no duplicate API call)
-                    benchmark_bars_list = all_bars.get(benchmark_symbol, [])
+                    # Use benchmark bars from the combined fetch (no duplicate
+                    # API call), restricted to the backtest window so warm-up
+                    # padding does not distort the comparison.
+                    window_start = datetime.combine(
+                        backtest.start_date, datetime.min.time(), tzinfo=UTC
+                    )
+                    benchmark_bars_list = [
+                        b
+                        for b in all_bars.get(benchmark_symbol, [])
+                        if not isinstance(b["timestamp"], datetime)
+                        or b["timestamp"] >= window_start
+                    ]
 
                     if benchmark_bars_list:
                         # Convert to BenchmarkBarData format
@@ -565,7 +673,7 @@ class BacktestService:
                                     "timestamp": ts
                                     if isinstance(ts, datetime)
                                     else datetime.fromisoformat(str(ts)),
-                                    "close": _safe_float(close_val),
+                                    "close": safe_float(close_val),
                                 }
                             )
 
@@ -575,26 +683,26 @@ class BacktestService:
                             benchmark_bars, float(backtest.initial_capital)
                         )
 
-                        # Convert to storable format
+                        # Store the benchmark curve on the daily grid, matching
+                        # the strategy equity curve resolution
                         benchmark_equity_curve = [
-                            {"date": dt.isoformat(), "equity": eq} for dt, eq in benchmark_ec
+                            {"date": dt.isoformat(), "equity": eq}
+                            for dt, eq in resample_daily(benchmark_ec)
                         ]
 
-                        # Calculate alpha, beta, information ratio using strategy daily returns
-                        if result.daily_returns:
-                            strategy_returns = np.array(result.daily_returns)
-                            benchmark_closes = np.array([b["close"] for b in benchmark_bars])
-
-                            if len(benchmark_closes) > 1:
-                                benchmark_returns = (
-                                    np.diff(benchmark_closes) / benchmark_closes[:-1]
-                                )
-                                alpha_val, beta_val = calculator.calculate_alpha_beta(
-                                    strategy_returns, benchmark_returns
-                                )
-                                information_ratio_val = calculator.calculate_information_ratio(
-                                    strategy_returns, benchmark_returns
-                                )
+                        # Alpha, beta, information ratio on DATE-JOINED daily
+                        # returns — positional alignment skews these whenever
+                        # either series is missing a date
+                        strategy_returns, benchmark_returns = align_daily_returns(
+                            result.daily_equity_curve, benchmark_bars
+                        )
+                        if len(strategy_returns) > 1:
+                            alpha_val, beta_val = calculator.calculate_alpha_beta(
+                                strategy_returns, benchmark_returns
+                            )
+                            information_ratio_val = calculator.calculate_information_ratio(
+                                strategy_returns, benchmark_returns
+                            )
 
                 except MarketDataError:
                     # Benchmark data unavailable - continue without it
@@ -603,17 +711,25 @@ class BacktestService:
             if reporter:
                 await reporter.publish_phase("Saving results", 95)
 
+            # Guard the terminal write: if the row was cancelled while the
+            # simulation was finishing, keep CANCELLED and discard the result
+            await self.db.refresh(backtest)
+            if backtest.status == BACKTEST_STATUS_CANCELLED:
+                raise BacktestCancelled("Backtest was cancelled during execution")
+
             # Save results with benchmark data
             backtest_result = BacktestResult(
                 backtest_id=backtest.id,
                 total_return=Decimal(str(result.total_return)),
                 annual_return=Decimal(str(result.annual_return)),
                 sharpe_ratio=Decimal(str(result.sharpe_ratio)),
-                sortino_ratio=Decimal(str(result.sortino_ratio)) if result.sortino_ratio else None,
+                sortino_ratio=Decimal(str(result.sortino_ratio)),
                 max_drawdown=Decimal(str(result.max_drawdown)),
                 max_drawdown_duration=result.max_drawdown_duration,
                 win_rate=Decimal(str(result.win_rate)),
-                profit_factor=Decimal(str(result.profit_factor)) if result.profit_factor else None,
+                profit_factor=Decimal(str(result.profit_factor))
+                if result.profit_factor is not None
+                else None,
                 total_trades=len(result.trades),
                 winning_trades=len([t for t in result.trades if t.pnl > 0]),
                 losing_trades=len([t for t in result.trades if t.pnl <= 0]),
@@ -627,7 +743,8 @@ class BacktestService:
                 final_equity=Decimal(str(result.final_equity)),
                 exposure_time=Decimal(str(result.exposure_time)),
                 equity_curve=[
-                    {"date": ec[0].isoformat(), "equity": ec[1]} for ec in result.equity_curve
+                    {"date": ec[0].isoformat(), "equity": ec[1]}
+                    for ec in _cap_equity_curve(result.daily_equity_curve)
                 ],
                 trades=[
                     {
@@ -646,15 +763,15 @@ class BacktestService:
                 ],
                 daily_returns=result.daily_returns,
                 monthly_returns=result.monthly_returns,
-                # Benchmark comparison data (Phase 4)
+                # Benchmark comparison data: NULL only when unavailable
                 benchmark_return=Decimal(str(benchmark_return_val))
-                if benchmark_return_val
+                if benchmark_return_val is not None
                 else None,
                 benchmark_symbol=benchmark_symbol if include_benchmark else None,
-                alpha=Decimal(str(alpha_val)) if alpha_val else None,
-                beta=Decimal(str(beta_val)) if beta_val else None,
+                alpha=Decimal(str(alpha_val)) if alpha_val is not None else None,
+                beta=Decimal(str(beta_val)) if beta_val is not None else None,
                 information_ratio=Decimal(str(information_ratio_val))
-                if information_ratio_val
+                if information_ratio_val is not None
                 else None,
                 benchmark_equity_curve=benchmark_equity_curve if benchmark_equity_curve else None,
             )
@@ -668,10 +785,19 @@ class BacktestService:
 
             # Publish completion
             if reporter:
-                await reporter.publish_phase("Completed", 100)
+                await reporter.publish_phase("Completed", 100, status=BACKTEST_STATUS_COMPLETED)
                 await reporter.close()
 
             return self._to_result_response(backtest, backtest_result)
+
+        except BacktestCancelled:
+            backtest.status = BACKTEST_STATUS_CANCELLED
+            backtest.completed_at = datetime.now(UTC)
+            await self.db.commit()
+            if reporter:
+                await reporter.publish_phase("Cancelled", 100, status=BACKTEST_STATUS_CANCELLED)
+                await reporter.close()
+            raise
 
         except MarketDataError as e:
             backtest.status = BACKTEST_STATUS_FAILED
@@ -679,9 +805,11 @@ class BacktestService:
             backtest.completed_at = datetime.now(UTC)
             await self.db.commit()
             if reporter:
-                await reporter.publish_phase(f"Failed: {e}", 100)
+                await reporter.publish_phase(f"Failed: {e}", 100, status=BACKTEST_STATUS_FAILED)
                 await reporter.close()
-            raise ValueError(str(e)) from e
+            # Propagate typed so the Celery task can distinguish transient
+            # market-data failures (retryable) from terminal errors
+            raise
 
         except Exception as e:
             backtest.status = BACKTEST_STATUS_FAILED
@@ -689,7 +817,7 @@ class BacktestService:
             backtest.completed_at = datetime.now(UTC)
             await self.db.commit()
             if reporter:
-                await reporter.publish_phase(f"Failed: {e}", 100)
+                await reporter.publish_phase(f"Failed: {e}", 100, status=BACKTEST_STATUS_FAILED)
                 await reporter.close()
             raise
 
@@ -709,6 +837,17 @@ class BacktestService:
         backtest.status = BACKTEST_STATUS_CANCELLED
         backtest.completed_at = datetime.now(UTC)
         await self.db.commit()
+
+        # Signal the (possibly running) worker to abort cooperatively. Redis
+        # being down only delays the stop until the run finishes — the DB
+        # status above already prevents a COMPLETED overwrite.
+        try:
+            await CancellationFlag().request_cancel(str(backtest_id))
+        except Exception:
+            logger.warning(
+                "Could not set cancellation flag for backtest %s", backtest_id, exc_info=True
+            )
+
         return True
 
     async def retry_backtest(
@@ -782,38 +921,6 @@ class BacktestService:
     # Private helpers
     # ===================
 
-    async def _validate_symbols(self, symbols: list[str]) -> None:
-        """Validate symbols exist by attempting to fetch recent bars.
-
-        Validates all symbols concurrently for better performance.
-
-        Args:
-            symbols: List of symbols to validate
-
-        Raises:
-            ValueError: If any symbols are invalid
-        """
-
-        async def validate_single(symbol: str) -> str | None:
-            """Return symbol if invalid, None if valid."""
-            try:
-                await self.market_data_client.fetch_bars(
-                    symbols=[symbol],
-                    timeframe="1D",
-                    start_date=date.today() - timedelta(days=7),
-                    end_date=date.today(),
-                )
-                return None
-            except MarketDataError:
-                return symbol
-
-        # Validate all symbols concurrently
-        results = await asyncio.gather(*[validate_single(s) for s in symbols])
-        invalid = [s for s in results if s is not None]
-
-        if invalid:
-            raise ValueError(f"Invalid symbols: {', '.join(invalid)}")
-
     async def _get_backtest_by_id(self, tenant_id: UUID, backtest_id: UUID) -> Backtest | None:
         """Get backtest ensuring tenant isolation."""
         stmt = (
@@ -865,20 +972,6 @@ class BacktestService:
             completed_at=b.completed_at,
         )
 
-    @staticmethod
-    def _safe_float(val: object, default: float = 0.0) -> float:
-        """Safely convert object to float."""
-        if val is None:
-            return default
-        if isinstance(val, (int, float)):
-            return float(val)
-        if isinstance(val, str):
-            try:
-                return float(val)
-            except ValueError:
-                return default
-        return default
-
     def _build_equity_curve(
         self, raw_curve: list[dict[str, object]] | None, initial_capital: float
     ) -> list[EquityPoint]:
@@ -890,7 +983,7 @@ class BacktestService:
         peak = initial_capital
 
         for point in raw_curve:
-            equity = self._safe_float(point.get("equity", 0))
+            equity = safe_float(point.get("equity", 0))
             peak = max(peak, equity)
             drawdown = peak - equity
             drawdown_pct = (drawdown / peak) if peak > 0 else 0
@@ -916,7 +1009,7 @@ class BacktestService:
         return [
             BenchmarkEquityPoint(
                 date=datetime.fromisoformat(str(point["date"])),
-                equity=self._safe_float(point.get("equity", 0)),
+                equity=safe_float(point.get("equity", 0)),
             )
             for point in raw_curve
         ]
@@ -936,14 +1029,12 @@ class BacktestService:
                     exit_date=datetime.fromisoformat(str(exit_date_val)) if exit_date_val else None,
                     symbol=str(t["symbol"]),
                     side=str(t["side"]),
-                    entry_price=self._safe_float(t["entry_price"]),
-                    exit_price=self._safe_float(exit_price_val)
-                    if exit_price_val is not None
-                    else None,
-                    quantity=self._safe_float(t["quantity"]),
-                    pnl=self._safe_float(t.get("pnl", 0)),
-                    pnl_percent=self._safe_float(t.get("pnl_percent", 0)),
-                    commission=self._safe_float(t.get("commission", 0)),
+                    entry_price=safe_float(t["entry_price"]),
+                    exit_price=safe_float(exit_price_val) if exit_price_val is not None else None,
+                    quantity=safe_float(t["quantity"]),
+                    pnl=safe_float(t.get("pnl", 0)),
+                    pnl_percent=safe_float(t.get("pnl_percent", 0)),
+                    commission=safe_float(t.get("commission", 0)),
                 )
             )
         return trades
@@ -968,24 +1059,25 @@ class BacktestService:
         holding_periods = [(t.exit_date - t.entry_date).days for t in trades if t.exit_date]
         avg_holding = sum(holding_periods) / len(holding_periods) if holding_periods else 0
 
-        # Benchmark metrics
-        benchmark_return = float(r.benchmark_return) if r.benchmark_return else 0
+        # Benchmark metrics. Availability is explicit: a NULL benchmark_return
+        # means the comparison was unavailable; a stored 0.0 is a real value.
+        benchmark_data_available = r.benchmark_return is not None or benchmark_curve_available
+        benchmark_return = float(r.benchmark_return) if r.benchmark_return is not None else 0
         benchmark_symbol = r.benchmark_symbol or "SPY"
-        alpha = float(r.alpha) if r.alpha else 0
-        beta = float(r.beta) if r.beta else 0
-        information_ratio = float(r.information_ratio) if r.information_ratio else 0
-        excess_return = float(r.total_return) - benchmark_return
-        benchmark_data_available = benchmark_curve_available or benchmark_return != 0
+        alpha = float(r.alpha) if r.alpha is not None else 0
+        beta = float(r.beta) if r.beta is not None else 0
+        information_ratio = float(r.information_ratio) if r.information_ratio is not None else 0
+        excess_return = float(r.total_return) - benchmark_return if benchmark_data_available else 0
 
         return BacktestMetrics(
             total_return=float(r.total_return),
             annual_return=float(r.annual_return),
             sharpe_ratio=float(r.sharpe_ratio),
-            sortino_ratio=float(r.sortino_ratio) if r.sortino_ratio else 0,
+            sortino_ratio=float(r.sortino_ratio) if r.sortino_ratio is not None else 0,
             max_drawdown=float(r.max_drawdown),
             max_drawdown_duration=r.max_drawdown_duration or 0,
             win_rate=float(r.win_rate),
-            profit_factor=float(r.profit_factor) if r.profit_factor else 0,
+            profit_factor=float(r.profit_factor) if r.profit_factor is not None else None,
             total_trades=r.total_trades,
             winning_trades=r.winning_trades,
             losing_trades=r.losing_trades,
@@ -994,7 +1086,7 @@ class BacktestService:
             largest_win=largest_win,
             largest_loss=largest_loss,
             avg_holding_period=avg_holding,
-            exposure_time=float(r.exposure_time) if r.exposure_time else 0,
+            exposure_time=float(r.exposure_time) if r.exposure_time is not None else 0,
             benchmark_return=benchmark_return,
             benchmark_symbol=benchmark_symbol,
             alpha=alpha,

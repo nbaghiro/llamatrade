@@ -8,13 +8,11 @@ Provides reference benchmarks and relative performance metrics:
 """
 
 from dataclasses import dataclass
+from datetime import date as date_type
 from datetime import datetime
-from typing import TYPE_CHECKING, SupportsFloat, TypedDict, cast
+from typing import TypedDict
 
 import numpy as np
-
-if TYPE_CHECKING:
-    from src.services.backtest_service import MarketDataFetcher
 
 
 class BenchmarkBarData(TypedDict):
@@ -42,6 +40,53 @@ class BenchmarkMetrics:
     excess_return_vs_spy: float = 0.0
     excess_return_vs_60_40: float = 0.0
     excess_return_vs_rf: float = 0.0
+
+
+def align_daily_returns(
+    strategy_daily_curve: list[tuple[datetime, float]],
+    benchmark_bars: list[BenchmarkBarData],
+) -> tuple[np.ndarray, np.ndarray]:
+    """Date-join strategy and benchmark day-over-day returns.
+
+    Both series are resampled to one point per calendar day (last value),
+    day-over-day returns are computed per series, and only dates present in
+    BOTH series are kept. This replaces positional alignment, which skews
+    alpha/beta whenever either series is missing a date.
+
+    Args:
+        strategy_daily_curve: Strategy (timestamp, equity) points, chronological
+        benchmark_bars: Benchmark bars, chronological
+
+    Returns:
+        Tuple of (strategy_returns, benchmark_returns) aligned by date
+    """
+
+    def daily_returns_by_date(points: list[tuple[datetime, float]]) -> dict[date_type, float]:
+        # Last value per calendar day
+        daily: list[tuple[date_type, float]] = []
+        for dt, val in points:
+            d = dt.date()
+            if daily and daily[-1][0] == d:
+                daily[-1] = (d, val)
+            else:
+                daily.append((d, val))
+
+        returns: dict[date_type, float] = {}
+        for (_, prev_val), (d, val) in zip(daily, daily[1:], strict=False):
+            if prev_val > 0:
+                returns[d] = (val - prev_val) / prev_val
+        return returns
+
+    strategy_returns = daily_returns_by_date(strategy_daily_curve)
+    benchmark_returns = daily_returns_by_date(
+        [(b["timestamp"], b["close"]) for b in benchmark_bars]
+    )
+
+    common_dates = sorted(set(strategy_returns) & set(benchmark_returns))
+    return (
+        np.array([strategy_returns[d] for d in common_dates]),
+        np.array([benchmark_returns[d] for d in common_dates]),
+    )
 
 
 class BenchmarkCalculator:
@@ -337,82 +382,3 @@ class BenchmarkCalculator:
             excess_return_vs_60_40=strategy_total_return - portfolio_return,
             excess_return_vs_rf=strategy_total_return - rf_return,
         )
-
-
-async def fetch_benchmark_data(
-    market_data_client: MarketDataFetcher,
-    start_date: datetime,
-    end_date: datetime,
-    timeframe: str = "1D",
-) -> tuple[list[BenchmarkBarData], list[BenchmarkBarData] | None, bool]:
-    """Fetch benchmark data (SPY and BND) from market data service.
-
-    Args:
-        market_data_client: MarketDataClient instance
-        start_date: Start date
-        end_date: End date
-        timeframe: Timeframe (default daily)
-
-    Returns:
-        Tuple of (spy_bars, bond_bars, benchmark_available).
-        benchmark_available is True if SPY data was successfully fetched with at least one bar.
-    """
-    try:
-        # Fetch SPY
-        bars = await market_data_client.fetch_bars(
-            symbols=["SPY", "BND"],
-            timeframe=timeframe,
-            start_date=start_date.date(),
-            end_date=end_date.date(),
-        )
-
-        def _to_float(val: object) -> float:
-            """Safely convert to float."""
-            if val is None:
-                return 0.0
-            if isinstance(val, (int, float)):
-                return float(val)
-            if isinstance(val, str):
-                try:
-                    return float(val)
-                except ValueError:
-                    return 0.0
-            # For SupportsFloat or other convertible types
-            if hasattr(val, "__float__"):
-                try:
-                    return float(cast(SupportsFloat, val))
-                except TypeError, ValueError:
-                    return 0.0
-            return 0.0
-
-        spy_bars: list[BenchmarkBarData] = []
-        for b in bars.get("SPY", []):
-            ts = b["timestamp"]
-            spy_bars.append(
-                {
-                    "timestamp": ts
-                    if isinstance(ts, datetime)
-                    else datetime.fromisoformat(str(ts)),
-                    "close": _to_float(b["close"]),
-                }
-            )
-
-        bond_bars_list: list[BenchmarkBarData] = []
-        for b in bars.get("BND", []):
-            ts = b["timestamp"]
-            bond_bars_list.append(
-                {
-                    "timestamp": ts
-                    if isinstance(ts, datetime)
-                    else datetime.fromisoformat(str(ts)),
-                    "close": _to_float(b["close"]),
-                }
-            )
-
-        # Benchmark is considered available if we have at least one SPY bar
-        benchmark_available = len(spy_bars) > 0
-        return spy_bars, bond_bars_list if bond_bars_list else None, benchmark_available
-
-    except Exception:
-        # On error, explicitly mark benchmark as unavailable
-        return [], None, False

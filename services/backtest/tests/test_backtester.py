@@ -9,6 +9,7 @@ from src.engine.backtester import (
     BacktestConfig,
     BacktestEngine,
     BacktestResult,
+    BarData,
     Position,
     Trade,
 )
@@ -49,35 +50,26 @@ class TestTrade:
         assert trade.pnl == pytest.approx(-102.0)  # (90-100)*10 - 2
         assert trade.pnl_percent == pytest.approx(-10.2)
 
-    def test_trade_pnl_short_profit(self):
-        """Test P&L calculation for profitable short trade."""
-        trade = Trade(
-            entry_date=datetime(2024, 1, 1, tzinfo=UTC),
-            exit_date=datetime(2024, 1, 10, tzinfo=UTC),
-            symbol="AAPL",
-            side="short",
-            entry_price=100.0,
-            exit_price=90.0,
-            quantity=10,
-            commission=2.0,
-        )
+    def test_unsupported_signal_type_is_rejected_loudly(self):
+        """Short/cover (and any unknown) signal types are recorded as rejections."""
+        engine = BacktestEngine(BacktestConfig(initial_capital=100000))
+        bar: BarData = {
+            "timestamp": datetime(2024, 1, 2, tzinfo=UTC),
+            "open": 100.0,
+            "high": 101.0,
+            "low": 99.0,
+            "close": 100.0,
+            "volume": 1000,
+        }
+        engine._current_date = bar["timestamp"]
 
-        assert trade.pnl == pytest.approx(98.0)  # (100-90)*10 - 2
+        for bad_type in ("short", "cover", "hold"):
+            engine._process_signal({"type": bad_type, "symbol": "AAPL", "quantity": 10}, bar)
 
-    def test_trade_pnl_short_loss(self):
-        """Test P&L calculation for losing short trade."""
-        trade = Trade(
-            entry_date=datetime(2024, 1, 1, tzinfo=UTC),
-            exit_date=datetime(2024, 1, 10, tzinfo=UTC),
-            symbol="AAPL",
-            side="short",
-            entry_price=100.0,
-            exit_price=110.0,
-            quantity=10,
-            commission=2.0,
-        )
-
-        assert trade.pnl == pytest.approx(-102.0)  # (100-110)*10 - 2
+        assert not engine.positions
+        assert not engine.trades
+        assert len(engine.rejected_signals) == 3
+        assert all("Unsupported signal type" in r.reason for r in engine.rejected_signals)
 
 
 class TestBacktestConfig:
@@ -209,20 +201,21 @@ class TestBacktestEngine:
         """Test running a simple buy-and-hold strategy."""
         buy_triggered = False
 
-        def strategy_fn(eng, symbol, bar):
+        def strategy_fn(eng, bars_dict, warm_up):
             nonlocal buy_triggered
             signals = []
-            if not buy_triggered and not eng.has_position(symbol):
-                quantity = eng.get_cash() * 0.1 / bar["close"]
-                signals.append(
-                    {
-                        "type": "buy",
-                        "symbol": symbol,
-                        "quantity": quantity,
-                        "price": bar["close"],
-                    }
-                )
-                buy_triggered = True
+            for symbol, bar in bars_dict.items():
+                if not buy_triggered and not eng.has_position(symbol):
+                    quantity = eng.get_cash() * 0.1 / bar["close"]
+                    signals.append(
+                        {
+                            "type": "buy",
+                            "symbol": symbol,
+                            "quantity": quantity,
+                            "price": bar["close"],
+                        }
+                    )
+                    buy_triggered = True
             return signals
 
         start_date = datetime(2024, 1, 2, tzinfo=UTC)
@@ -243,30 +236,31 @@ class TestBacktestEngine:
         """Test running a strategy with entries and exits."""
         trade_count = [0]
 
-        def strategy_fn(eng, symbol, bar):
+        def strategy_fn(eng, bars_dict, warm_up):
             signals = []
-            if not eng.has_position(symbol) and trade_count[0] < 2:
-                quantity = eng.get_cash() * 0.2 / bar["close"]
-                signals.append(
-                    {
-                        "type": "buy",
-                        "symbol": symbol,
-                        "quantity": quantity,
-                        "price": bar["close"],
-                    }
-                )
-                trade_count[0] += 1
-            elif eng.has_position(symbol):
-                pos = eng.get_position(symbol)
-                if pos and bar["close"] > pos.entry_price * 1.02:  # 2% profit
+            for symbol, bar in bars_dict.items():
+                if not eng.has_position(symbol) and trade_count[0] < 2:
+                    quantity = eng.get_cash() * 0.2 / bar["close"]
                     signals.append(
                         {
-                            "type": "sell",
+                            "type": "buy",
                             "symbol": symbol,
-                            "quantity": pos.quantity,
+                            "quantity": quantity,
                             "price": bar["close"],
                         }
                     )
+                    trade_count[0] += 1
+                elif eng.has_position(symbol):
+                    pos = eng.get_position(symbol)
+                    if pos and bar["close"] > pos.entry_price * 1.02:  # 2% profit
+                        signals.append(
+                            {
+                                "type": "sell",
+                                "symbol": symbol,
+                                "quantity": pos.quantity,
+                                "price": bar["close"],
+                            }
+                        )
             return signals
 
         start_date = datetime(2024, 1, 2, tzinfo=UTC)
@@ -287,19 +281,20 @@ class TestBacktestEngine:
         """Test that exposure time is tracked correctly."""
         in_position = [False]
 
-        def strategy_fn(eng, symbol, bar):
+        def strategy_fn(eng, bars_dict, warm_up):
             signals = []
-            if not eng.has_position(symbol) and not in_position[0]:
-                quantity = eng.get_cash() * 0.5 / bar["close"]
-                signals.append(
-                    {
-                        "type": "buy",
-                        "symbol": symbol,
-                        "quantity": quantity,
-                        "price": bar["close"],
-                    }
-                )
-                in_position[0] = True
+            for symbol, bar in bars_dict.items():
+                if not eng.has_position(symbol) and not in_position[0]:
+                    quantity = eng.get_cash() * 0.5 / bar["close"]
+                    signals.append(
+                        {
+                            "type": "buy",
+                            "symbol": symbol,
+                            "quantity": quantity,
+                            "price": bar["close"],
+                        }
+                    )
+                    in_position[0] = True
             return signals
 
         start_date = datetime(2024, 1, 2, tzinfo=UTC)
@@ -318,7 +313,7 @@ class TestBacktestEngine:
     def test_engine_calculates_daily_returns(self, engine, sample_bars):
         """Test that daily returns are calculated."""
 
-        def strategy_fn(eng, symbol, bar):
+        def strategy_fn(eng, bars_dict, warm_up):
             return []  # No trades, just track equity
 
         start_date = datetime(2024, 1, 2, tzinfo=UTC)
@@ -337,7 +332,7 @@ class TestBacktestEngine:
     def test_engine_calculates_monthly_returns(self, engine, sample_bars):
         """Test that monthly returns are calculated."""
 
-        def strategy_fn(eng, symbol, bar):
+        def strategy_fn(eng, bars_dict, warm_up):
             return []
 
         start_date = datetime(2024, 1, 2, tzinfo=UTC)
@@ -382,7 +377,8 @@ class TestBacktestEngine:
 
         entered = [False]
 
-        def strategy_fn(eng, symbol, bar):
+        def strategy_fn(eng, bars_dict, warm_up):
+            symbol, bar = next(iter(bars_dict.items()))
             if not entered[0]:
                 entered[0] = True
                 return [{"type": "buy", "symbol": symbol, "quantity": 10, "price": bar["close"]}]
@@ -426,7 +422,8 @@ class TestBacktestEngine:
 
         entered = [False]
 
-        def strategy_fn(eng, symbol, bar):
+        def strategy_fn(eng, bars_dict, warm_up):
+            symbol, bar = next(iter(bars_dict.items()))
             if not entered[0]:
                 entered[0] = True
                 return [{"type": "buy", "symbol": symbol, "quantity": 10, "price": bar["close"]}]
@@ -448,7 +445,7 @@ class TestBacktestEngine:
         """Test engine handles empty bar data - returns initial capital."""
         result = engine.run(
             bars={},
-            strategy_fn=lambda eng, sym, bar: [],
+            strategy_fn=lambda eng, bars_dict, warm_up: [],
             start_date=datetime(2024, 1, 1, tzinfo=UTC),
             end_date=datetime(2024, 1, 31, tzinfo=UTC),
         )
@@ -460,7 +457,8 @@ class TestBacktestEngine:
     def test_engine_closes_positions_at_end(self, engine, sample_bars):
         """Test that positions are closed at backtest end."""
 
-        def strategy_fn(eng, symbol, bar):
+        def strategy_fn(eng, bars_dict, warm_up):
+            symbol, bar = next(iter(bars_dict.items()))
             if not eng.has_position(symbol):
                 quantity = eng.get_cash() * 0.5 / bar["close"]
                 return [
@@ -484,7 +482,7 @@ class TestBacktestEngine:
     def test_engine_calculates_sharpe_ratio(self, engine, sample_bars):
         """Test Sharpe ratio calculation."""
 
-        def strategy_fn(eng, symbol, bar):
+        def strategy_fn(eng, bars_dict, warm_up):
             return []
 
         start_date = datetime(2024, 1, 2, tzinfo=UTC)
@@ -503,7 +501,7 @@ class TestBacktestEngine:
     def test_engine_calculates_max_drawdown(self, engine, sample_bars):
         """Test max drawdown calculation."""
 
-        def strategy_fn(eng, symbol, bar):
+        def strategy_fn(eng, bars_dict, warm_up):
             return []
 
         start_date = datetime(2024, 1, 2, tzinfo=UTC)
@@ -538,7 +536,8 @@ class TestBacktestEngine:
             ]
         }
 
-        def strategy_fn(eng, symbol, bar):
+        def strategy_fn(eng, bars_dict, warm_up):
+            symbol, bar = next(iter(bars_dict.items()))
             # Try to buy $1000 worth when we only have $10
             return [{"type": "buy", "symbol": symbol, "quantity": 10, "price": bar["close"]}]
 
@@ -638,7 +637,8 @@ class TestEdgeCases:
 
         attempts = [0]
 
-        def strategy_fn(eng, symbol, bar):
+        def strategy_fn(eng, bars_dict, warm_up):
+            symbol, bar = next(iter(bars_dict.items()))
             attempts[0] += 1
             # Always try to buy more than we can afford
             return [{"type": "buy", "symbol": symbol, "quantity": 100, "price": bar["close"]}]
@@ -675,7 +675,8 @@ class TestEdgeCases:
             ]
         }
 
-        def strategy_fn(eng, symbol, bar):
+        def strategy_fn(eng, bars_dict, warm_up):
+            symbol, bar = next(iter(bars_dict.items()))
             if not eng.has_position(symbol):
                 return [{"type": "buy", "symbol": symbol, "quantity": 10, "price": bar["close"]}]
             return []
@@ -718,7 +719,8 @@ class TestEdgeCases:
             ]
         }
 
-        def bad_strategy(eng, symbol, bar):
+        def bad_strategy(eng, bars_dict, warm_up):
+            bar = next(iter(bars_dict.values()))
             if bar["close"] > 105:
                 raise ValueError("Strategy error on price threshold")
             return []
@@ -731,3 +733,199 @@ class TestEdgeCases:
                 start_date=datetime(2024, 1, 1, tzinfo=UTC),
                 end_date=datetime(2024, 1, 2, tzinfo=UTC),
             )
+
+
+class TestWarmUp:
+    """Tests for warm-up bar handling (bars before start_date)."""
+
+    @staticmethod
+    def _bars(n: int, start: datetime) -> dict:
+        return {
+            "AAPL": [
+                {
+                    "timestamp": start + timedelta(days=i),
+                    "open": 100.0,
+                    "high": 101.0,
+                    "low": 99.0,
+                    "close": 100.0,
+                    "volume": 1000,
+                }
+                for i in range(n)
+            ]
+        }
+
+    def test_no_equity_or_trades_before_start_date(self):
+        """Warm-up dates must not appear in the equity curve or execute trades."""
+        engine = BacktestEngine(BacktestConfig(initial_capital=10000))
+        data_start = datetime(2024, 1, 1, tzinfo=UTC)
+        bars = self._bars(20, data_start)
+        start_date = datetime(2024, 1, 11, tzinfo=UTC)  # 10 warm-up days
+
+        def greedy(eng, bars_dict, warm_up):
+            # Misbehaving strategy: emits signals even during warm-up
+            symbol, bar = next(iter(bars_dict.items()))
+            if not eng.has_position(symbol):
+                return [{"type": "buy", "symbol": symbol, "quantity": 1, "price": bar["close"]}]
+            return []
+
+        result = engine.run(
+            bars=bars,
+            strategy_fn=greedy,
+            start_date=start_date,
+            end_date=bars["AAPL"][-1]["timestamp"],
+        )
+
+        assert len(result.equity_curve) == 10  # trading dates only
+        assert all(dt >= start_date for dt, _ in result.equity_curve)
+        assert all(t.entry_date >= start_date for t in result.trades)
+
+    def test_strategy_sees_warm_up_bars(self):
+        """The strategy must be called with warm_up=True for pre-start bars."""
+        engine = BacktestEngine(BacktestConfig(initial_capital=10000))
+        data_start = datetime(2024, 1, 1, tzinfo=UTC)
+        bars = self._bars(20, data_start)
+        start_date = datetime(2024, 1, 11, tzinfo=UTC)
+
+        calls: list[bool] = []
+
+        def recorder(eng, bars_dict, warm_up):
+            calls.append(warm_up)
+            return []
+
+        engine.run(
+            bars=bars,
+            strategy_fn=recorder,
+            start_date=start_date,
+            end_date=bars["AAPL"][-1]["timestamp"],
+        )
+
+        assert calls == [True] * 10 + [False] * 10
+
+    def test_progress_reports_trading_bars_only(self):
+        """Progress total must count trading bars, not warm-up bars."""
+        engine = BacktestEngine(BacktestConfig(initial_capital=10000))
+        data_start = datetime(2024, 1, 1, tzinfo=UTC)
+        bars = self._bars(20, data_start)
+        start_date = datetime(2024, 1, 11, tzinfo=UTC)
+
+        reports: list[tuple[int, int]] = []
+
+        engine.run(
+            bars=bars,
+            strategy_fn=lambda eng, bars_dict, warm_up: [],
+            start_date=start_date,
+            end_date=bars["AAPL"][-1]["timestamp"],
+            progress_callback=lambda cur, total, dt: reports.append((cur, total)),
+        )
+
+        assert reports[0] == (1, 10)
+        assert reports[-1] == (10, 10)
+
+
+class TestPartialPositions:
+    """Tests for partial sells and adding to positions (rebalancing support)."""
+
+    def _engine_on_date(self, cash: float = 10000.0) -> BacktestEngine:
+        engine = BacktestEngine(BacktestConfig(initial_capital=cash))
+        engine._current_date = datetime(2024, 1, 2, tzinfo=UTC)
+        return engine
+
+    def test_partial_sell_keeps_remaining_position(self):
+        engine = self._engine_on_date()
+        engine._open_position("AAPL", 100.0, 10)
+
+        engine._close_position("AAPL", 110.0, quantity=4)
+
+        pos = engine.get_position("AAPL")
+        assert pos is not None
+        assert pos.quantity == 6
+        assert len(engine.trades) == 1
+        assert engine.trades[0].quantity == 4
+        assert engine.trades[0].pnl == pytest.approx((110.0 - 100.0) * 4)
+
+    def test_sell_more_than_held_closes_fully(self):
+        engine = self._engine_on_date()
+        engine._open_position("AAPL", 100.0, 10)
+
+        engine._close_position("AAPL", 110.0, quantity=15)
+
+        assert engine.get_position("AAPL") is None
+        assert engine.trades[0].quantity == 10
+
+    def test_buy_into_existing_position_averages_entry(self):
+        engine = self._engine_on_date()
+        engine._open_position("AAPL", 100.0, 10)
+        engine._open_position("AAPL", 110.0, 10)
+
+        pos = engine.get_position("AAPL")
+        assert pos is not None
+        assert pos.quantity == 20
+        assert pos.entry_price == pytest.approx(105.0)
+
+    def test_partial_lifecycle_preserves_cash_equity_consistency(self):
+        """Cash + position value must track through partial fills exactly."""
+        engine = self._engine_on_date(cash=10000.0)
+        engine._open_position("AAPL", 100.0, 50)  # cash 5000
+        engine._close_position("AAPL", 120.0, quantity=20)  # +2400 → cash 7400
+        engine._last_prices["AAPL"] = 120.0
+
+        assert engine.cash == pytest.approx(7400.0)
+        # equity = cash + 30 shares @ 120 = 7400 + 3600
+        assert engine._calculate_equity() == pytest.approx(11000.0)
+
+
+class TestCancellation:
+    """Tests for cooperative cancellation via should_abort."""
+
+    @staticmethod
+    def _bars(n: int) -> dict:
+        return {
+            "AAPL": [
+                {
+                    "timestamp": datetime(2024, 1, 1, tzinfo=UTC) + timedelta(days=i),
+                    "open": 100.0,
+                    "high": 101.0,
+                    "low": 99.0,
+                    "close": 100.0,
+                    "volume": 1000,
+                }
+                for i in range(n)
+            ]
+        }
+
+    def test_abort_raises_and_stops_processing(self):
+        from src.engine.backtester import BacktestCancelled
+
+        engine = BacktestEngine(BacktestConfig(initial_capital=10000))
+        bars = self._bars(20)
+
+        calls = [0]
+
+        def should_abort() -> bool:
+            calls[0] += 1
+            return calls[0] > 5  # cancel after 5 trading dates
+
+        with pytest.raises(BacktestCancelled):
+            engine.run(
+                bars=bars,
+                strategy_fn=lambda eng, bars_dict, warm_up: [],
+                start_date=bars["AAPL"][0]["timestamp"],
+                end_date=bars["AAPL"][-1]["timestamp"],
+                should_abort=should_abort,
+            )
+
+        # Processing stopped at the abort point, not the end of data
+        assert len(engine.equity_curve) == 5
+
+    def test_no_abort_callback_runs_to_completion(self):
+        engine = BacktestEngine(BacktestConfig(initial_capital=10000))
+        bars = self._bars(10)
+
+        result = engine.run(
+            bars=bars,
+            strategy_fn=lambda eng, bars_dict, warm_up: [],
+            start_date=bars["AAPL"][0]["timestamp"],
+            end_date=bars["AAPL"][-1]["timestamp"],
+        )
+
+        assert len(result.equity_curve) == 10

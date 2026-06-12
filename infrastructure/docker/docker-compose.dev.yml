@@ -46,6 +46,17 @@ services:
       - ../../libs/proto/llamatrade_proto:/app/libs/proto/llamatrade_proto:cached
     command: uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload --reload-dir /app/src
 
+  backtest-worker:
+    build:
+      context: ../..
+      dockerfile: services/backtest/Dockerfile.dev
+    volumes:
+      - ../../services/backtest/src:/app/src:cached
+      - ../../libs/common/llamatrade_common:/app/libs/common/llamatrade_common:cached
+      - ../../libs/db/llamatrade_db:/app/libs/db/llamatrade_db:cached
+      - ../../libs/proto/llamatrade_proto:/app/libs/proto/llamatrade_proto:cached
+    command: celery -A src.celery_app:celery_app worker --queues backtest --loglevel info
+
   market-data:
     build:
       context: ../..

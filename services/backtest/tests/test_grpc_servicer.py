@@ -152,6 +152,7 @@ class TestRunBacktest:
         # Mock the database session and service
         mock_service = MagicMock()
         mock_service.create_backtest = AsyncMock(return_value=mock_backtest)
+        mock_service.queue_backtest = AsyncMock(return_value="task-id")
 
         mock_db = MagicMock()
 
@@ -473,6 +474,7 @@ class TestCompareBacktests:
 
         mock_service = MagicMock()
         mock_service.get_backtest = AsyncMock(side_effect=mock_backtests)
+        mock_service.get_results = AsyncMock(return_value=None)
 
         mock_db = MagicMock()
 
@@ -504,6 +506,7 @@ class TestCompareBacktests:
         mock_service = MagicMock()
         # First call returns backtest, second returns None
         mock_service.get_backtest = AsyncMock(side_effect=[mock_backtest, None])
+        mock_service.get_results = AsyncMock(return_value=None)
 
         mock_db = MagicMock()
 

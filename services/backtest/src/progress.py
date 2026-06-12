@@ -95,13 +95,19 @@ class ProgressTracker:
 
 @dataclass
 class ProgressUpdate:
-    """Progress update message."""
+    """Progress update message.
+
+    `status` carries the explicit BacktestStatus proto value. Consumers must
+    use it rather than inferring status from the progress percentage — a
+    failed run also publishes progress=100.
+    """
 
     backtest_id: str
     progress: float  # 0-100
     message: str
     eta_seconds: int | None = None
     timestamp: str | None = None
+    status: int | None = None  # BacktestStatus proto value
 
     def to_dict(self) -> dict[str, str | float | int | None]:
         return {
@@ -110,6 +116,7 @@ class ProgressUpdate:
             "message": self.message,
             "eta_seconds": self.eta_seconds,
             "timestamp": self.timestamp or datetime.now(UTC).isoformat(),
+            "status": self.status,
         }
 
 
@@ -131,6 +138,7 @@ class ProgressPublisher:
         progress: float,
         message: str,
         eta_seconds: int | None = None,
+        status: int | None = None,
     ) -> None:
         """Publish a progress update."""
         redis = await self._get_redis()
@@ -139,6 +147,7 @@ class ProgressPublisher:
             progress=progress,
             message=message,
             eta_seconds=eta_seconds,
+            status=status,
         )
         await redis.publish(
             f"backtest:progress:{backtest_id}",
@@ -165,10 +174,17 @@ class ProgressSubscriber:
             self._redis = await aioredis.from_url(self.redis_url)
         return self._redis
 
-    async def subscribe(self, backtest_id: str) -> AsyncIterator[ProgressUpdate]:
+    async def subscribe(
+        self,
+        backtest_id: str,
+        idle_timeout: float = 300.0,
+    ) -> AsyncIterator[ProgressUpdate]:
         """Subscribe to progress updates for a backtest.
 
-        Yields ProgressUpdate objects as they come in.
+        Yields ProgressUpdate objects as they come in. The stream ends when a
+        terminal update arrives (progress >= 100) or when no message has been
+        received for `idle_timeout` seconds — without the timeout, an
+        orphaned stream (publisher died mid-run) would hang forever.
         """
         redis = await self._get_redis()
         pubsub: PubSub = redis.pubsub()
@@ -177,26 +193,41 @@ class ProgressSubscriber:
 
         await pubsub.subscribe(channel)
 
+        poll_interval = 1.0
+        idle_elapsed = 0.0
+
         try:
-            async for raw_message in pubsub.listen():
+            while idle_elapsed < idle_timeout:
+                raw_message = await pubsub.get_message(
+                    ignore_subscribe_messages=True, timeout=poll_interval
+                )
+                if raw_message is None:
+                    idle_elapsed += poll_interval
+                    continue
+                idle_elapsed = 0.0
+
                 msg: dict[str, object] = cast(dict[str, object], raw_message)
-                if msg["type"] == "message":
-                    raw_data = cast(str | bytes, msg["data"])
-                    data = cast(dict[str, object], json.loads(raw_data))
-                    progress_val = data.get("progress", 0)
-                    progress = int(progress_val) if isinstance(progress_val, (int, float)) else 0
-                    eta_val = data.get("eta_seconds")
-                    ts_val = data.get("timestamp")
-                    yield ProgressUpdate(
-                        backtest_id=str(data["backtest_id"]),
-                        progress=progress,
-                        message=str(data.get("message", "")),
-                        eta_seconds=int(eta_val) if isinstance(eta_val, (int, float)) else None,
-                        timestamp=str(ts_val) if ts_val is not None else None,
-                    )
-                    # Stop if we hit 100%
-                    if progress >= 100:
-                        break
+                if msg["type"] != "message":
+                    continue
+
+                raw_data = cast(str | bytes, msg["data"])
+                data = cast(dict[str, object], json.loads(raw_data))
+                progress_val = data.get("progress", 0)
+                progress = int(progress_val) if isinstance(progress_val, (int, float)) else 0
+                eta_val = data.get("eta_seconds")
+                ts_val = data.get("timestamp")
+                status_val = data.get("status")
+                yield ProgressUpdate(
+                    backtest_id=str(data["backtest_id"]),
+                    progress=progress,
+                    message=str(data.get("message", "")),
+                    eta_seconds=int(eta_val) if isinstance(eta_val, (int, float)) else None,
+                    timestamp=str(ts_val) if ts_val is not None else None,
+                    status=int(status_val) if isinstance(status_val, (int, float)) else None,
+                )
+                # Stop on terminal update
+                if progress >= 100:
+                    break
         finally:
             await pubsub.unsubscribe(channel)
 
@@ -264,6 +295,7 @@ class BacktestProgressReporter:
         message: str,
         progress: float,
         eta_seconds: int | None = None,
+        status: int | None = None,
     ) -> None:
         """Publish a phase progress update (e.g., 'Loading strategy').
 
@@ -271,12 +303,14 @@ class BacktestProgressReporter:
             message: Status message.
             progress: Progress percentage (0-100).
             eta_seconds: Optional ETA in seconds.
+            status: Explicit BacktestStatus proto value for this update.
         """
         await self._publisher.publish(
             self.backtest_id,
             progress,
             message,
             eta_seconds,
+            status=status,
         )
 
     def set_total_bars(self, total_bars: int) -> None:
@@ -355,3 +389,67 @@ class BacktestProgressReporter:
     async def close(self) -> None:
         """Close the publisher connection."""
         await self._publisher.close()
+
+
+class CancellationFlag:
+    """Redis-backed cancellation flag for cooperative backtest cancellation.
+
+    `request_cancel` is async (called from the API on CancelBacktest).
+    `make_should_abort` returns a SYNCHRONOUS, rate-limited checker suitable
+    for the engine's hot loop, which runs in the Celery worker (no event
+    loop to starve). Redis errors fail open: a broken Redis must not be able
+    to abort or hang running backtests.
+    """
+
+    KEY_PREFIX = "backtest:cancel"
+    # Flag outlives the longest plausible run; cancellation of a dead run is moot
+    TTL_SECONDS = 2 * 3600
+
+    def __init__(self, redis_url: str | None = None):
+        self.redis_url = redis_url or REDIS_URL
+
+    @classmethod
+    def _key(cls, backtest_id: str) -> str:
+        return f"{cls.KEY_PREFIX}:{backtest_id}"
+
+    async def request_cancel(self, backtest_id: str) -> None:
+        """Mark a backtest as cancellation-requested."""
+        redis = await aioredis.from_url(self.redis_url)
+        try:
+            await redis.setex(self._key(backtest_id), self.TTL_SECONDS, "1")
+        finally:
+            await redis.aclose()
+
+    def make_should_abort(
+        self,
+        backtest_id: str,
+        check_interval: float = 1.0,
+    ) -> Callable[[], bool]:
+        """Create a sync, rate-limited cancellation checker for the engine.
+
+        The checker hits Redis at most once per `check_interval` seconds and
+        latches True once cancellation is observed.
+        """
+        import redis as sync_redis
+
+        key = self._key(backtest_id)
+        client = sync_redis.from_url(self.redis_url)
+        last_check = 0.0
+        cancelled = False
+
+        def should_abort() -> bool:
+            nonlocal last_check, cancelled
+            if cancelled:
+                return True
+            now = time.monotonic()
+            if now - last_check < check_interval:
+                return False
+            last_check = now
+            try:
+                cancelled = client.get(key) is not None
+            except Exception:
+                # Fail open: Redis being down must not abort runs
+                return False
+            return cancelled
+
+        return should_abort

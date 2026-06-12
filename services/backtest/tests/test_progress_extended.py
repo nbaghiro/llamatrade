@@ -206,7 +206,9 @@ class TestBacktestProgressReporter:
 
         await reporter.publish_phase("Loading data", 30)
 
-        mock_publisher.publish.assert_called_once_with("test-123", 30, "Loading data", None)
+        mock_publisher.publish.assert_called_once_with(
+            "test-123", 30, "Loading data", None, status=None
+        )
 
     def test_set_total_bars(self):
         """Test setting total bars."""

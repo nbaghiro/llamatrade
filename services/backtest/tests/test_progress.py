@@ -256,9 +256,9 @@ class TestProgressIntegration:
             mock_redis = AsyncMock()
             mock_pubsub = AsyncMock()
 
-            # Mock pubsub listen to yield messages
-            async def mock_listen():
-                yield {
+            # Queue of pubsub messages; None once drained
+            messages = [
+                {
                     "type": "message",
                     "data": json.dumps(
                         {
@@ -269,8 +269,8 @@ class TestProgressIntegration:
                             "timestamp": "2024-01-01T12:00:00Z",
                         }
                     ),
-                }
-                yield {
+                },
+                {
                     "type": "message",
                     "data": json.dumps(
                         {
@@ -281,9 +281,13 @@ class TestProgressIntegration:
                             "timestamp": "2024-01-01T12:01:00Z",
                         }
                     ),
-                }
+                },
+            ]
 
-            mock_pubsub.listen = mock_listen
+            async def mock_get_message(ignore_subscribe_messages=True, timeout=1.0):
+                return messages.pop(0) if messages else None
+
+            mock_pubsub.get_message = mock_get_message
             mock_pubsub.subscribe = AsyncMock()
             mock_pubsub.unsubscribe = AsyncMock()
             mock_redis.pubsub = MagicMock(return_value=mock_pubsub)
@@ -307,9 +311,9 @@ class TestProgressIntegration:
             mock_redis = AsyncMock()
             mock_pubsub = AsyncMock()
 
-            # Mock pubsub listen with 100% progress
-            async def mock_listen():
-                yield {
+            # 100% progress first; the second message must never be read
+            messages = [
+                {
                     "type": "message",
                     "data": json.dumps(
                         {
@@ -318,9 +322,8 @@ class TestProgressIntegration:
                             "message": "Done",
                         }
                     ),
-                }
-                # This should not be yielded
-                yield {
+                },
+                {
                     "type": "message",
                     "data": json.dumps(
                         {
@@ -329,9 +332,13 @@ class TestProgressIntegration:
                             "message": "Still done",
                         }
                     ),
-                }
+                },
+            ]
 
-            mock_pubsub.listen = mock_listen
+            async def mock_get_message(ignore_subscribe_messages=True, timeout=1.0):
+                return messages.pop(0) if messages else None
+
+            mock_pubsub.get_message = mock_get_message
             mock_pubsub.subscribe = AsyncMock()
             mock_pubsub.unsubscribe = AsyncMock()
             mock_redis.pubsub = MagicMock(return_value=mock_pubsub)
@@ -353,9 +360,9 @@ class TestProgressIntegration:
             mock_redis = AsyncMock()
             mock_pubsub = AsyncMock()
 
-            async def mock_listen():
-                yield {"type": "subscribe", "channel": "backtest:progress:bt-123"}
-                yield {
+            messages = [
+                {"type": "subscribe", "channel": "backtest:progress:bt-123"},
+                {
                     "type": "message",
                     "data": json.dumps(
                         {
@@ -364,9 +371,13 @@ class TestProgressIntegration:
                             "message": "Done",
                         }
                     ),
-                }
+                },
+            ]
 
-            mock_pubsub.listen = mock_listen
+            async def mock_get_message(ignore_subscribe_messages=True, timeout=1.0):
+                return messages.pop(0) if messages else None
+
+            mock_pubsub.get_message = mock_get_message
             mock_pubsub.subscribe = AsyncMock()
             mock_pubsub.unsubscribe = AsyncMock()
             mock_redis.pubsub = MagicMock(return_value=mock_pubsub)
@@ -687,3 +698,74 @@ class TestBacktestProgressReporter:
 
         # No errors should have occurred
         assert len(errors) == 0
+
+
+class TestSubscriberIdleTimeout:
+    """An orphaned stream (publisher died) must end, not hang forever."""
+
+    @pytest.mark.asyncio
+    async def test_subscribe_ends_after_idle_timeout(self):
+        with patch("src.progress.aioredis") as mock_aioredis:
+            mock_redis = AsyncMock()
+            mock_pubsub = AsyncMock()
+
+            async def never_a_message(ignore_subscribe_messages=True, timeout=1.0):
+                return None
+
+            mock_pubsub.get_message = never_a_message
+            mock_pubsub.subscribe = AsyncMock()
+            mock_pubsub.unsubscribe = AsyncMock()
+            mock_redis.pubsub = MagicMock(return_value=mock_pubsub)
+            mock_aioredis.from_url = AsyncMock(return_value=mock_redis)
+
+            subscriber = ProgressSubscriber()
+
+            updates = []
+            async for update in subscriber.subscribe("bt-orphan", idle_timeout=3.0):
+                updates.append(update)
+
+            assert updates == []
+            mock_pubsub.unsubscribe.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_update_carries_explicit_status(self):
+        """Subscriber must surface the publisher's explicit status field."""
+        from llamatrade_proto.generated.backtest_pb2 import BACKTEST_STATUS_FAILED
+
+        with patch("src.progress.aioredis") as mock_aioredis:
+            mock_redis = AsyncMock()
+            mock_pubsub = AsyncMock()
+
+            messages = [
+                {
+                    "type": "message",
+                    "data": json.dumps(
+                        {
+                            "backtest_id": "bt-123",
+                            "progress": 100.0,
+                            "message": "Failed: boom",
+                            "status": BACKTEST_STATUS_FAILED,
+                        }
+                    ),
+                },
+            ]
+
+            async def mock_get_message(ignore_subscribe_messages=True, timeout=1.0):
+                return messages.pop(0) if messages else None
+
+            mock_pubsub.get_message = mock_get_message
+            mock_pubsub.subscribe = AsyncMock()
+            mock_pubsub.unsubscribe = AsyncMock()
+            mock_redis.pubsub = MagicMock(return_value=mock_pubsub)
+            mock_aioredis.from_url = AsyncMock(return_value=mock_redis)
+
+            subscriber = ProgressSubscriber()
+
+            updates = []
+            async for update in subscriber.subscribe("bt-123"):
+                updates.append(update)
+
+            # Regression: a failed run publishes progress=100; the OLD code
+            # inferred COMPLETED from the percentage. Status must be explicit.
+            assert len(updates) == 1
+            assert updates[0].status == BACKTEST_STATUS_FAILED

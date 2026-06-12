@@ -66,7 +66,8 @@ class BacktestMetrics(BaseModel):
     max_drawdown: float
     max_drawdown_duration: int  # days
     win_rate: float
-    profit_factor: float
+    # None = undefined (no trades, or no losing trades); never coerce to 0
+    profit_factor: float | None
     total_trades: int
     winning_trades: int
     losing_trades: int

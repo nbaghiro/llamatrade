@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator, AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import UTC, date, datetime
 from decimal import Decimal
+from typing import TYPE_CHECKING, cast
 from uuid import UUID
 
 import grpc.aio
@@ -16,8 +17,11 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from llamatrade_db import get_session_maker
 from llamatrade_proto.generated import backtest_pb2
 
-from src.models import BacktestResponse
+from src.models import BacktestMetrics, BacktestResponse, BacktestResultResponse
 from src.services.backtest_service import BacktestService
+
+if TYPE_CHECKING:
+    from llamatrade_proto.generated.backtest_pb2 import BacktestStatus
 
 logger = logging.getLogger(__name__)
 
@@ -33,7 +37,7 @@ class BacktestServicer:
         self._session_maker: async_sessionmaker[AsyncSession] | None = None
 
     @asynccontextmanager
-    async def _get_db(self) -> AsyncIterator[AsyncSession]:
+    async def _get_db(self) -> AsyncGenerator[AsyncSession]:
         """Get a database session with proper lifecycle management.
 
         Usage:
@@ -99,6 +103,13 @@ class BacktestServicer:
                         include_benchmark=config.include_benchmark,
                     )
 
+                    # Queue execution — the Celery worker is the only
+                    # execution path; nothing runs in the API process.
+                    await service.queue_backtest(
+                        backtest_id=backtest.id,
+                        tenant_id=tenant_id,
+                    )
+
                     return backtest_pb2.RunBacktestResponse(
                         backtest=self._to_proto_backtest(backtest),
                     )
@@ -141,9 +152,19 @@ class BacktestServicer:
                         )
                         return backtest_pb2.GetBacktestResponse()  # Never reached
 
-                    return backtest_pb2.GetBacktestResponse(
-                        backtest=self._to_proto_backtest(backtest),
-                    )
+                    proto_backtest = self._to_proto_backtest(backtest)
+
+                    # Attach full results on single-get only — list responses
+                    # must stay slim
+                    if backtest.status == backtest_pb2.BACKTEST_STATUS_COMPLETED:
+                        results = await service.get_results(
+                            backtest_id=backtest_id,
+                            tenant_id=tenant_id,
+                        )
+                        if results:
+                            proto_backtest.results.CopyFrom(self._to_proto_results(results))
+
+                    return backtest_pb2.GetBacktestResponse(backtest=proto_backtest)
 
         except grpc.aio.AioRpcError:
             raise
@@ -320,13 +341,14 @@ class BacktestServicer:
                 if context.cancelled():
                     break
 
-                # Determine status from progress
-                if update.progress >= 100:
-                    status = backtest_pb2.BACKTEST_STATUS_COMPLETED
-                elif update.progress > 0:
-                    status = backtest_pb2.BACKTEST_STATUS_RUNNING
-                else:
-                    status = backtest_pb2.BACKTEST_STATUS_PENDING
+                # Use the EXPLICIT status from the publisher. Inferring status
+                # from the progress number is wrong: failed runs also publish
+                # progress=100 and would be reported as COMPLETED.
+                status = (
+                    cast("BacktestStatus.ValueType", update.status)
+                    if update.status is not None
+                    else backtest_pb2.BACKTEST_STATUS_RUNNING
+                )
 
                 yield backtest_pb2.BacktestProgressUpdate(
                     backtest_id=backtest_id,
@@ -335,6 +357,9 @@ class BacktestServicer:
                     message=update.message,
                     timestamp=common_pb2.Timestamp(seconds=int(datetime.now(UTC).timestamp())),
                 )
+
+                if status in terminal_statuses:
+                    break
 
         except asyncio.CancelledError:
             logger.info("Progress stream cancelled for backtest: %s", backtest_id)
@@ -356,18 +381,29 @@ class BacktestServicer:
             async with self._get_db() as db:
                 async with BacktestService(db) as service:
                     backtests: list[BacktestResponse] = []
+                    metrics_by_id: dict[str, backtest_pb2.BacktestMetrics] = {}
                     for bid in backtest_ids:
                         backtest = await service.get_backtest(
                             backtest_id=bid,
                             tenant_id=tenant_id,
                         )
-                        if backtest:
-                            backtests.append(backtest)
+                        if not backtest:
+                            continue
+                        backtests.append(backtest)
+
+                        if backtest.status == backtest_pb2.BACKTEST_STATUS_COMPLETED:
+                            results = await service.get_results(
+                                backtest_id=bid,
+                                tenant_id=tenant_id,
+                            )
+                            if results:
+                                metrics_by_id[str(bid)] = self._to_proto_metrics(results.metrics)
 
                     proto_backtests = [self._to_proto_backtest(b) for b in backtests]
 
                     return backtest_pb2.CompareBacktestsResponse(
                         backtests=proto_backtests,
+                        metrics_by_id=metrics_by_id,
                     )
 
         except Exception as e:
@@ -376,6 +412,100 @@ class BacktestServicer:
                 grpc.StatusCode.INTERNAL,
                 f"Failed to compare backtests: {e}",
             )
+
+    def _to_proto_metrics(self, m: BacktestMetrics) -> backtest_pb2.BacktestMetrics:
+        """Convert internal metrics to proto BacktestMetrics."""
+        from llamatrade_proto.generated import backtest_pb2, common_pb2
+
+        def dec(value: float) -> common_pb2.Decimal:
+            return common_pb2.Decimal(value=str(value))
+
+        metrics = backtest_pb2.BacktestMetrics(
+            total_return=dec(m.total_return),
+            annualized_return=dec(m.annual_return),
+            sharpe_ratio=dec(m.sharpe_ratio),
+            sortino_ratio=dec(m.sortino_ratio),
+            max_drawdown=dec(m.max_drawdown),
+            max_drawdown_duration_days=dec(m.max_drawdown_duration),
+            total_trades=m.total_trades,
+            winning_trades=m.winning_trades,
+            losing_trades=m.losing_trades,
+            win_rate=dec(m.win_rate),
+            average_win=dec(m.avg_win),
+            average_loss=dec(m.avg_loss),
+            average_holding_period_days=dec(m.avg_holding_period),
+        )
+
+        # Profit factor is None when undefined (no trades or no losses):
+        # leave the proto field unset rather than writing a fake 0
+        if m.profit_factor is not None:
+            metrics.profit_factor.CopyFrom(dec(m.profit_factor))
+
+        # Benchmark metrics only when the comparison was actually computed
+        if m.benchmark_data_available:
+            metrics.benchmark_return.CopyFrom(dec(m.benchmark_return))
+            metrics.alpha.CopyFrom(dec(m.alpha))
+            metrics.beta.CopyFrom(dec(m.beta))
+            metrics.information_ratio.CopyFrom(dec(m.information_ratio))
+            metrics.excess_return.CopyFrom(dec(m.excess_return))
+            metrics.benchmark_symbol = m.benchmark_symbol
+
+        return metrics
+
+    def _to_proto_results(
+        self,
+        results: BacktestResultResponse,
+    ) -> backtest_pb2.BacktestResults:
+        """Convert internal result response to proto BacktestResults."""
+        from llamatrade_proto.generated import backtest_pb2, common_pb2
+        from llamatrade_proto.generated.trading_pb2 import ORDER_SIDE_BUY
+
+        def dec(value: float) -> common_pb2.Decimal:
+            return common_pb2.Decimal(value=str(value))
+
+        def ts(value: datetime) -> common_pb2.Timestamp:
+            return common_pb2.Timestamp(seconds=int(value.timestamp()))
+
+        proto = backtest_pb2.BacktestResults(
+            metrics=self._to_proto_metrics(results.metrics),
+            equity_curve=[
+                backtest_pb2.EquityPoint(
+                    timestamp=ts(point.date),
+                    equity=dec(point.equity),
+                    drawdown=dec(point.drawdown_percent),
+                )
+                for point in results.equity_curve
+            ],
+            trades=[
+                backtest_pb2.BacktestTrade(
+                    symbol=trade.symbol,
+                    side=ORDER_SIDE_BUY,  # engine is long-only
+                    quantity=dec(trade.quantity),
+                    entry_price=dec(trade.entry_price),
+                    exit_price=dec(trade.exit_price)
+                    if trade.exit_price is not None
+                    else common_pb2.Decimal(value="0"),
+                    entry_time=ts(trade.entry_date),
+                    exit_time=ts(trade.exit_date) if trade.exit_date else None,
+                    pnl=dec(trade.pnl),
+                    pnl_percent=dec(trade.pnl_percent),
+                    commission=dec(trade.commission),
+                )
+                for trade in results.trades
+            ],
+            benchmark_equity_curve=[
+                backtest_pb2.EquityPoint(
+                    timestamp=ts(point.date),
+                    equity=dec(point.equity),
+                )
+                for point in results.benchmark_equity_curve
+            ],
+            benchmark_symbol=results.metrics.benchmark_symbol
+            if results.metrics.benchmark_data_available
+            else "",
+        )
+        proto.monthly_returns.update(results.monthly_returns)
+        return proto
 
     def _to_proto_backtest(
         self,

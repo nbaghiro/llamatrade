@@ -105,6 +105,22 @@ services:
     ports:
       - "8830:8830"
 
+  backtest-worker:
+    build:
+      context: ../../services/backtest
+      dockerfile: Dockerfile
+    container_name: llamatrade-backtest-worker
+    command: celery -A src.celery_app:celery_app worker --queues backtest --loglevel info
+    environment:
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/llamatrade
+      REDIS_URL: redis://redis:6379
+      MARKET_DATA_GRPC_TARGET: market-data:8840
+    depends_on:
+      db-migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+
   market-data:
     build:
       context: ../../services/market-data

@@ -1,7 +1,6 @@
-"""Shared metrics calculation functions for backtesting engines.
+"""Shared metrics calculation functions for backtesting.
 
-This module provides a single source of truth for calculating
-backtest metrics, used by both bar-by-bar and vectorized engines.
+This module is the single source of truth for backtest metric math.
 """
 
 from datetime import datetime
@@ -135,8 +134,12 @@ def calculate_monthly_returns(
 
 def calculate_trade_statistics(
     trades: list[TradeWithPnl],
-) -> tuple[float, float]:
+) -> tuple[float, float | None]:
     """Calculate win rate and profit factor from trades.
+
+    Profit factor convention: None means "undefined" — either no trades at
+    all, or no losing trades (which would otherwise divide by zero). Callers
+    must surface undefined as missing, not as 0.
 
     Args:
         trades: List of Trade objects
@@ -145,7 +148,7 @@ def calculate_trade_statistics(
         Tuple of (win_rate, profit_factor)
     """
     if not trades:
-        return 0.0, 0.0
+        return 0.0, None
 
     wins = [t for t in trades if t.pnl > 0]
     losses = [t for t in trades if t.pnl <= 0]
@@ -153,7 +156,7 @@ def calculate_trade_statistics(
 
     total_wins = sum(t.pnl for t in wins)
     total_losses = abs(sum(t.pnl for t in losses))
-    profit_factor = total_wins / total_losses if total_losses > 0 else 0.0
+    profit_factor = total_wins / total_losses if total_losses > 0 else None
 
     return win_rate, profit_factor
 
@@ -194,3 +197,32 @@ def calculate_returns(
         daily_returns_list = []
 
     return total_return, annual_return, daily_returns_list
+
+
+def resample_daily(
+    equity_curve: list[tuple[datetime, float]],
+) -> list[tuple[datetime, float]]:
+    """Resample an equity curve to one point per calendar day.
+
+    Keeps the LAST point of each day, so for daily bars this is the identity
+    transform. All annualized metrics (Sharpe, Sortino, annual return,
+    drawdown duration) must be computed on this daily grid — computing them
+    on raw intraday bars with a 252-period annualization factor inflates them
+    by roughly sqrt(bars per day).
+
+    Args:
+        equity_curve: Chronological list of (timestamp, equity) tuples
+
+    Returns:
+        Daily-resampled (timestamp, equity) tuples (last point per day)
+    """
+    if not equity_curve:
+        return []
+
+    daily: list[tuple[datetime, float]] = []
+    for dt, eq in equity_curve:
+        if daily and daily[-1][0].date() == dt.date():
+            daily[-1] = (dt, eq)
+        else:
+            daily.append((dt, eq))
+    return daily

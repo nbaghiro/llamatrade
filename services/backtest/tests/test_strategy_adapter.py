@@ -1,20 +1,46 @@
-"""Tests for strategy adapter - bridges allocation DSL strategies with backtest engine."""
+"""Tests for strategy adapter - bridges allocation DSL strategies with backtest engine.
+
+The adapter is multi-symbol only: all symbols' bars are evaluated together on
+each date, so cross-symbol conditions work and every symbol can trade on a
+shared rebalance day.
+"""
 
 from datetime import UTC, date, datetime, timedelta
 
 import numpy as np
 import pytest
 
-from src.engine.backtester import BacktestConfig, BacktestEngine
+from src.engine.backtester import BacktestConfig, BacktestEngine, BarData
 from src.engine.strategy_adapter import (
     AllocationState,
-    create_allocation_strategy,
-    create_strategy_function,
+    create_multi_symbol_strategy,
     should_rebalance,
 )
 
 
-class TestCreateStrategyFunction:
+def make_bars(
+    closes_by_symbol: dict[str, list[float]],
+    start: datetime | None = None,
+) -> dict[str, list[BarData]]:
+    """Build daily bars from per-symbol close series."""
+    start = start or datetime(2024, 1, 1, 10, 0, tzinfo=UTC)
+    bars: dict[str, list[BarData]] = {}
+    for symbol, closes in closes_by_symbol.items():
+        bars[symbol] = [
+            {
+                "timestamp": start + timedelta(days=i),
+                "open": close * 0.999,
+                "high": close * 1.01,
+                "low": close * 0.99,
+                "close": close,
+                "volume": 1_000_000,
+            }
+            for i, close in enumerate(closes)
+        ]
+    return bars
+
+
+class TestCreateMultiSymbolStrategy:
     """Tests for strategy function creation from allocation S-expressions."""
 
     def test_create_simple_rsi_allocation_strategy(self) -> None:
@@ -26,9 +52,11 @@ class TestCreateStrategyFunction:
     (asset SPY :weight 100)
     (else (asset TLT :weight 100))))"""
 
-        strategy_fn, min_bars = create_strategy_function(config)
+        strategy_fn, symbols, min_bars = create_multi_symbol_strategy(config)
 
         assert callable(strategy_fn)
+        assert "SPY" in symbols
+        assert "TLT" in symbols
         assert min_bars >= 14  # At least 14 bars for RSI(14)
 
     def test_create_sma_crossover_allocation(self) -> None:
@@ -40,7 +68,7 @@ class TestCreateStrategyFunction:
     (asset SPY :weight 100)
     (else (asset TLT :weight 100))))"""
 
-        strategy_fn, min_bars = create_strategy_function(config)
+        strategy_fn, _symbols, min_bars = create_multi_symbol_strategy(config)
 
         assert callable(strategy_fn)
         assert min_bars >= 20  # At least 20 bars for SMA(20)
@@ -55,9 +83,10 @@ class TestCreateStrategyFunction:
     (asset GOOGL)
     (asset MSFT)))"""
 
-        strategy_fn, min_bars = create_strategy_function(config)
+        strategy_fn, symbols, min_bars = create_multi_symbol_strategy(config)
 
         assert callable(strategy_fn)
+        assert symbols == {"AAPL", "GOOGL", "MSFT"}
         assert min_bars >= 2  # At least 2 for crossovers
 
     def test_create_strategy_invalid_syntax(self) -> None:
@@ -65,7 +94,7 @@ class TestCreateStrategyFunction:
         config = '(strategy "invalid'
 
         with pytest.raises(Exception):
-            create_strategy_function(config)
+            create_multi_symbol_strategy(config)
 
     def test_create_strategy_missing_body(self) -> None:
         """Test that missing body raises validation error."""
@@ -74,40 +103,7 @@ class TestCreateStrategyFunction:
   :benchmark SPY)"""
 
         with pytest.raises(ValueError, match="Invalid strategy"):
-            create_strategy_function(config)
-
-
-class TestCreateAllocationStrategy:
-    """Tests for the allocation strategy factory function."""
-
-    def test_create_allocation_strategy_basic(self) -> None:
-        """Test creating a compiled allocation strategy."""
-        config = """(strategy "Basic"
-  :rebalance daily
-  :benchmark SPY
-  (weight :method equal
-    (asset SPY)
-    (asset TLT)))"""
-
-        compiled, symbols, min_bars = create_allocation_strategy(config)
-
-        assert compiled is not None
-        assert "SPY" in symbols or "TLT" in symbols
-        assert min_bars >= 2
-
-    def test_create_allocation_strategy_with_conditions(self) -> None:
-        """Test creating a conditional allocation strategy."""
-        config = """(strategy "Conditional"
-  :rebalance daily
-  :benchmark SPY
-  (if (> (rsi SPY 14) 50)
-    (asset SPY :weight 100)
-    (else (asset TLT :weight 100))))"""
-
-        compiled, symbols, min_bars = create_allocation_strategy(config)
-
-        assert compiled is not None
-        assert "SPY" in symbols
+            create_multi_symbol_strategy(config)
 
 
 class TestShouldRebalance:
@@ -238,91 +234,132 @@ class TestAllocationState:
         assert state.last_rebalance == date(2024, 1, 15)
 
 
-class TestStrategyFunctionIntegration:
-    """Integration tests for strategy function with backtest engine."""
+class TestMultiSymbolRegressions:
+    """Named regression tests for the bugs that motivated the adapter rewrite."""
 
-    @pytest.fixture
-    def sample_bars(self) -> dict[str, list[dict[str, float | datetime]]]:
-        """Create sample bar data for testing."""
-        np.random.seed(42)
-        base_price = 100.0
-        bars: list[dict[str, float | datetime]] = []
-        timestamp = datetime(2024, 1, 1, 10, 0, tzinfo=UTC)
+    def test_all_symbols_trade_on_shared_rebalance_day(self) -> None:
+        """Every allocated symbol must trade on the same rebalance day.
 
-        for i in range(50):
-            change = np.random.randn() * 0.02
-            close = base_price * (1 + change)
-            high = close * 1.01
-            low = close * 0.99
-            open_price = base_price
-
-            bars.append(
-                {
-                    "timestamp": timestamp,
-                    "open": open_price,
-                    "high": high,
-                    "low": low,
-                    "close": close,
-                    "volume": 1000000.0,
-                }
-            )
-
-            base_price = close
-            timestamp += timedelta(days=1)
-
-        return {"SPY": bars, "TLT": bars}
-
-    def test_strategy_function_generates_signals(
-        self, sample_bars: dict[str, list[dict[str, float | datetime]]]
-    ) -> None:
-        """Test that strategy function generates buy/sell signals."""
-        config = """(strategy "Test"
+        Regression: the old per-symbol adapter advanced last_rebalance after
+        the first symbol of the day, so only one symbol ever traded per
+        rebalance.
+        """
+        config = """(strategy "Equal Weight"
   :rebalance daily
-  :benchmark SPY
-  (if (> (rsi SPY 14) 50)
-    (asset SPY :weight 100)
-    (else (asset TLT :weight 100))))"""
+  (weight :method equal
+    (asset SPY)
+    (asset QQQ)))"""
 
-        strategy_fn, min_bars = create_strategy_function(config)
+        strategy_fn, _symbols, min_bars = create_multi_symbol_strategy(config)
         engine = BacktestEngine(BacktestConfig(initial_capital=100000))
 
-        # Process bars through strategy
-        all_signals = []
-        for bar in sample_bars["SPY"][min_bars:]:  # Skip warmup bars
-            signals = strategy_fn(engine, "SPY", bar)
-            all_signals.extend(signals)
+        n = min_bars + 10
+        bars = make_bars({"SPY": [400.0] * n, "QQQ": [300.0] * n})
+        start_date = bars["SPY"][min_bars]["timestamp"]
+        end_date = bars["SPY"][-1]["timestamp"]
 
-        # Should generate at least some signals
-        assert isinstance(all_signals, list)
+        result = engine.run(
+            bars=bars, strategy_fn=strategy_fn, start_date=start_date, end_date=end_date
+        )
 
-    def test_strategy_function_allocates_based_on_condition(
-        self, sample_bars: dict[str, list[dict[str, float | datetime]]]
-    ) -> None:
-        """Test that strategy allocates based on condition evaluation."""
-        # Use a condition that will definitely trigger (always true)
-        config = """(strategy "Always SPY"
+        traded_symbols = {t.symbol for t in result.trades}
+        assert traded_symbols == {"SPY", "QQQ"}
+        first_entries = {t.symbol: t.entry_date for t in result.trades}
+        assert first_entries["SPY"] == first_entries["QQQ"] == start_date
+
+    def test_cross_symbol_condition_evaluates(self) -> None:
+        """A condition on one symbol must drive allocation of another.
+
+        Regression: the old per-symbol adapter passed only one symbol's bar to
+        compute_allocation, so RSI(SPY) could never gate a TLT allocation.
+
+        SPY rises monotonically → RSI(SPY) is ~100 → the strategy must hold
+        TLT and never buy SPY.
+        """
+        config = """(strategy "Risk Off"
   :rebalance daily
-  :benchmark SPY
-  (if (> (price SPY) 0)
-    (asset SPY :weight 100)
-    (else (asset TLT :weight 100))))"""
+  (if (> (rsi SPY 14) 70)
+    (asset TLT :weight 100)
+    (else (asset SPY :weight 100))))"""
 
-        strategy_fn, min_bars = create_strategy_function(config)
+        strategy_fn, _symbols, min_bars = create_multi_symbol_strategy(config)
         engine = BacktestEngine(BacktestConfig(initial_capital=100000))
 
-        # Process bars and collect signals
-        buy_signals = []
-        for bar in sample_bars["SPY"][min_bars:]:
-            signals = strategy_fn(engine, "SPY", bar)
-            for signal in signals:
-                if signal.get("type") == "buy":
-                    buy_signals.append(signal)
-                    # Simulate opening position
-                    engine._open_position("SPY", "long", bar["close"], 10)
-                    break  # Only count first buy
+        n = min_bars + 15
+        spy_closes = [400.0 + 2.0 * i for i in range(n)]  # monotonic rise → RSI 100
+        tlt_closes = [100.0] * n
+        bars = make_bars({"SPY": spy_closes, "TLT": tlt_closes})
+        start_date = bars["SPY"][min_bars]["timestamp"]
+        end_date = bars["SPY"][-1]["timestamp"]
 
-        # Should have at least one buy signal since condition is always true
-        assert len(buy_signals) >= 1
+        result = engine.run(
+            bars=bars, strategy_fn=strategy_fn, start_date=start_date, end_date=end_date
+        )
+
+        traded_symbols = {t.symbol for t in result.trades}
+        assert traded_symbols == {"TLT"}, (
+            f"Expected only TLT trades (RSI(SPY) > 70), got {traded_symbols}"
+        )
+
+    def test_bars_feed_indicators_on_non_rebalance_days(self) -> None:
+        """Indicators must see every bar, not just rebalance-day bars.
+
+        Regression: bars were only added to the compiled strategy's history on
+        rebalance days, so a monthly-rebalance RSI(14) strategy needed 14
+        months instead of 14 days of history.
+
+        With ~3 weeks of warm-up and monthly rebalancing, the first trading
+        day must still produce an allocation.
+        """
+        config = """(strategy "Monthly RSI"
+  :rebalance monthly
+  (if (> (rsi SPY 14) 70)
+    (asset TLT :weight 100)
+    (else (asset SPY :weight 100))))"""
+
+        strategy_fn, _symbols, min_bars = create_multi_symbol_strategy(config)
+        engine = BacktestEngine(BacktestConfig(initial_capital=100000))
+
+        n = min_bars + 10
+        bars = make_bars({"SPY": [400.0 - i * 0.5 for i in range(n)], "TLT": [100.0] * n})
+        start_date = bars["SPY"][min_bars]["timestamp"]
+        end_date = bars["SPY"][-1]["timestamp"]
+
+        result = engine.run(
+            bars=bars, strategy_fn=strategy_fn, start_date=start_date, end_date=end_date
+        )
+
+        # Falling SPY → RSI low → hold SPY; the allocation must happen on the
+        # FIRST trading day because daily bars warmed the indicators up.
+        assert result.trades, "Expected an initial allocation on the first rebalance day"
+        assert min(t.entry_date for t in result.trades) == start_date
+
+    def test_warm_up_does_not_advance_rebalance_state(self) -> None:
+        """A warm-up call must not consume the rebalance schedule.
+
+        If warm-up advanced last_rebalance, a monthly strategy starting
+        mid-month would silently skip its initial allocation.
+        """
+        config = """(strategy "Monthly Equal"
+  :rebalance monthly
+  (weight :method equal
+    (asset SPY)))"""
+
+        strategy_fn, _symbols, min_bars = create_multi_symbol_strategy(config)
+        engine = BacktestEngine(BacktestConfig(initial_capital=100000))
+
+        # Warm-up and trading window are in the SAME month
+        n = min_bars + 8
+        bars = make_bars({"SPY": [400.0] * n}, start=datetime(2024, 3, 1, 10, 0, tzinfo=UTC))
+        start_date = bars["SPY"][min_bars]["timestamp"]
+        end_date = bars["SPY"][-1]["timestamp"]
+
+        result = engine.run(
+            bars=bars, strategy_fn=strategy_fn, start_date=start_date, end_date=end_date
+        )
+
+        assert result.trades, "Initial allocation must happen despite same-month warm-up"
+        assert min(t.entry_date for t in result.trades) == start_date
 
 
 class TestIndicatorExtraction:
@@ -434,69 +471,30 @@ class TestSymbolExtraction:
         assert "TLT" in symbols  # From asset
 
 
-class TestMultiSymbolStrategy:
-    """Tests for multi-symbol strategy evaluation."""
+class TestMultiSymbolIntegration:
+    """Integration tests for multi-symbol strategy with the backtest engine."""
 
     @pytest.fixture
-    def multi_symbol_bars(self) -> dict[str, list[dict[str, float | datetime]]]:
-        """Create sample bar data for multiple symbols."""
+    def multi_symbol_bars(self) -> dict[str, list[BarData]]:
+        """Create sample random-walk bar data for multiple symbols."""
         np.random.seed(42)
-        base_date = datetime(2024, 1, 1, 10, 0, tzinfo=UTC)
-
-        symbols_data: dict[str, list[dict[str, float | datetime]]] = {}
         base_prices = {"SPY": 450.0, "QQQ": 400.0, "TLT": 100.0}
+        closes: dict[str, list[float]] = {}
 
         for symbol, base_price in base_prices.items():
-            bars: list[dict[str, float | datetime]] = []
             price = base_price
+            series: list[float] = []
+            for _ in range(50):
+                price = price * (1 + float(np.random.randn()) * 0.02)
+                series.append(price)
+            closes[symbol] = series
 
-            for i in range(50):
-                change = np.random.randn() * 0.02
-                close = price * (1 + change)
-                high = close * 1.01
-                low = close * 0.99
+        return make_bars(closes)
 
-                bars.append(
-                    {
-                        "timestamp": base_date + timedelta(days=i),
-                        "open": price,
-                        "high": high,
-                        "low": low,
-                        "close": close,
-                        "volume": 1000000.0,
-                    }
-                )
-                price = close
-
-            symbols_data[symbol] = bars
-
-        return symbols_data
-
-    def test_create_multi_symbol_strategy(self) -> None:
-        """Test creating a multi-symbol strategy function."""
-        from src.engine.strategy_adapter import create_multi_symbol_strategy
-
-        config = """(strategy "Multi Symbol"
-  :rebalance monthly
-  (weight :method equal
-    (asset SPY)
-    (asset QQQ)
-    (asset TLT)))"""
-
-        strategy_fn, symbols, min_bars = create_multi_symbol_strategy(config)
-
-        assert callable(strategy_fn)
-        assert "SPY" in symbols
-        assert "QQQ" in symbols
-        assert "TLT" in symbols
-        assert min_bars >= 2
-
-    def test_multi_symbol_strategy_receives_all_bars(
-        self, multi_symbol_bars: dict[str, list[dict[str, float | datetime]]]
+    def test_strategy_function_direct_call(
+        self, multi_symbol_bars: dict[str, list[BarData]]
     ) -> None:
-        """Test that multi-symbol strategy receives all symbols' bars."""
-        from src.engine.strategy_adapter import create_multi_symbol_strategy
-
+        """Calling the strategy function directly returns a signal list."""
         config = """(strategy "Equal Weight"
   :rebalance daily
   (weight :method equal
@@ -507,26 +505,33 @@ class TestMultiSymbolStrategy:
         strategy_fn, symbols, min_bars = create_multi_symbol_strategy(config)
         engine = BacktestEngine(BacktestConfig(initial_capital=100000))
 
-        # Get bars for a specific date
         date_idx = min_bars + 5
-        bars_dict = {
-            symbol: multi_symbol_bars[symbol][date_idx]
-            for symbol in symbols
-            if symbol in multi_symbol_bars
-        }
+        bars_dict = {symbol: multi_symbol_bars[symbol][date_idx] for symbol in symbols}
 
-        # Strategy should handle all bars at once
-        signals = strategy_fn(engine, bars_dict)
-
-        # Should return a list of signals
+        signals = strategy_fn(engine, bars_dict, False)
         assert isinstance(signals, list)
 
-    def test_multi_symbol_strategy_generates_buy_signals(
-        self, multi_symbol_bars: dict[str, list[dict[str, float | datetime]]]
+    def test_warm_up_call_returns_no_signals(
+        self, multi_symbol_bars: dict[str, list[BarData]]
     ) -> None:
-        """Test that multi-symbol strategy generates buy signals via backtest."""
-        from src.engine.strategy_adapter import create_multi_symbol_strategy
+        """Warm-up calls accumulate history and never emit signals."""
+        config = """(strategy "Equal Weight"
+  :rebalance daily
+  (weight :method equal
+    (asset SPY)
+    (asset QQQ)))"""
 
+        strategy_fn, symbols, _min_bars = create_multi_symbol_strategy(config)
+        engine = BacktestEngine(BacktestConfig(initial_capital=100000))
+
+        for i in range(30):
+            bars_dict = {symbol: multi_symbol_bars[symbol][i] for symbol in symbols}
+            assert strategy_fn(engine, bars_dict, True) == []
+
+    def test_multi_symbol_strategy_generates_trades(
+        self, multi_symbol_bars: dict[str, list[BarData]]
+    ) -> None:
+        """An equal-weight strategy run end-to-end produces trades and equity."""
         config = """(strategy "Equal Weight"
   :rebalance daily
   (weight :method equal
@@ -536,33 +541,25 @@ class TestMultiSymbolStrategy:
         strategy_fn, symbols, min_bars = create_multi_symbol_strategy(config)
         engine = BacktestEngine(BacktestConfig(initial_capital=100000))
 
-        # Use run_multi_symbol to properly process bars and generate signals
-        filtered_bars = {s: multi_symbol_bars[s] for s in symbols if s in multi_symbol_bars}
+        filtered_bars = {s: multi_symbol_bars[s] for s in symbols}
         start_date = multi_symbol_bars["SPY"][min_bars]["timestamp"]
         end_date = multi_symbol_bars["SPY"][-1]["timestamp"]
 
-        result = engine.run_multi_symbol(
+        result = engine.run(
             bars=filtered_bars,
             strategy_fn=strategy_fn,
             start_date=start_date,
             end_date=end_date,
         )
 
-        # Should have made at least one trade
-        assert len(result.trades) >= 0  # May have 0 trades if positions held till end
-        assert result.final_equity > 0  # Should have positive equity
+        assert result.final_equity > 0
+        assert len(result.equity_curve) > 0
+        assert {t.symbol for t in result.trades} == {"SPY", "QQQ"}
 
-    def test_multi_symbol_strategy_respects_rebalance_frequency(
-        self, multi_symbol_bars: dict[str, list[dict[str, float | datetime]]]
+    def test_monthly_rebalance_trades_less_than_daily(
+        self, multi_symbol_bars: dict[str, list[BarData]]
     ) -> None:
-        """Test that monthly rebalance generates fewer signals than daily.
-
-        Monthly rebalancing should result in fewer total signals across
-        the backtest period compared to daily rebalancing.
-        """
-        from src.engine.strategy_adapter import create_multi_symbol_strategy
-
-        # Daily rebalance strategy
+        """Monthly rebalancing should not trade more than daily rebalancing."""
         daily_config = """(strategy "Daily Rebalance"
   :rebalance daily
   (weight :method equal
@@ -572,18 +569,17 @@ class TestMultiSymbolStrategy:
         daily_fn, symbols, min_bars = create_multi_symbol_strategy(daily_config)
         daily_engine = BacktestEngine(BacktestConfig(initial_capital=100000))
 
-        filtered_bars = {s: multi_symbol_bars[s] for s in symbols if s in multi_symbol_bars}
+        filtered_bars = {s: multi_symbol_bars[s] for s in symbols}
         start_date = multi_symbol_bars["SPY"][min_bars]["timestamp"]
         end_date = multi_symbol_bars["SPY"][-1]["timestamp"]
 
-        daily_result = daily_engine.run_multi_symbol(
+        daily_result = daily_engine.run(
             bars=filtered_bars,
             strategy_fn=daily_fn,
             start_date=start_date,
             end_date=end_date,
         )
 
-        # Monthly rebalance strategy
         monthly_config = """(strategy "Monthly Rebalance"
   :rebalance monthly
   (weight :method equal
@@ -593,50 +589,13 @@ class TestMultiSymbolStrategy:
         monthly_fn, _, _ = create_multi_symbol_strategy(monthly_config)
         monthly_engine = BacktestEngine(BacktestConfig(initial_capital=100000))
 
-        monthly_result = monthly_engine.run_multi_symbol(
+        monthly_result = monthly_engine.run(
             bars=filtered_bars,
             strategy_fn=monthly_fn,
             start_date=start_date,
             end_date=end_date,
         )
 
-        # Both should complete successfully
         assert daily_result.final_equity > 0
         assert monthly_result.final_equity > 0
-
-        # Monthly should have equal or fewer trades (less frequent rebalancing)
-        # Note: The test data only spans ~50 days, so differences may be small
-        assert len(monthly_result.trades) <= len(daily_result.trades) + 2
-
-    def test_backtester_run_multi_symbol(
-        self, multi_symbol_bars: dict[str, list[dict[str, float | datetime]]]
-    ) -> None:
-        """Test running backtest with multi-symbol strategy."""
-        from src.engine.strategy_adapter import create_multi_symbol_strategy
-
-        config = """(strategy "Backtest Multi"
-  :rebalance daily
-  (weight :method equal
-    (asset SPY)
-    (asset QQQ)))"""
-
-        strategy_fn, symbols, min_bars = create_multi_symbol_strategy(config)
-        engine = BacktestEngine(BacktestConfig(initial_capital=100000))
-
-        # Filter bars to only include required symbols
-        filtered_bars = {s: multi_symbol_bars[s] for s in symbols if s in multi_symbol_bars}
-
-        # Run backtest with multi-symbol method
-        start_date = multi_symbol_bars["SPY"][min_bars]["timestamp"]
-        end_date = multi_symbol_bars["SPY"][-1]["timestamp"]
-
-        result = engine.run_multi_symbol(
-            bars=filtered_bars,
-            strategy_fn=strategy_fn,
-            start_date=start_date,
-            end_date=end_date,
-        )
-
-        # Verify backtest completed
-        assert result.final_equity > 0
-        assert len(result.equity_curve) > 0
+        assert len(monthly_result.trades) <= len(daily_result.trades)
