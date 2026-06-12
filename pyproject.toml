@@ -29,6 +29,8 @@ forced-separate = ["src"]
 "libs/proto/llamatrade_proto/generated/*.pyi" = ["N802", "N803", "UP036", "UP046", "E501", "I001", "F401", "E402", "UP009", "UP035", "UP007"]
 # gRPC/Connect servicers: PascalCase methods from proto, inline imports to avoid circular deps
 "services/*/src/grpc/*.py" = ["N802", "E402"]
+# BacktestCancelled is a cooperative-cancellation signal, not an error (deliberate naming)
+"services/backtest/src/engine/backtester.py" = ["N818"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

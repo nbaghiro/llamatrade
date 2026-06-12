@@ -175,6 +175,10 @@ if [[ "$RUN_TESTS" == "true" && "$RUN_BACKEND" == "true" ]]; then
     # shellcheck disable=SC1091
     source .venv/bin/activate
 
+    # uv-managed venvs ship without pip (and `uv sync` prunes it); the test
+    # phase installs editables with pip, so reseed it each run.
+    python -m ensurepip --upgrade --default-pip > /dev/null 2>&1 || true
+
     # Install shared libs
     print_step "Installing shared libraries"
     pip install -e "libs/common[dev]" -q

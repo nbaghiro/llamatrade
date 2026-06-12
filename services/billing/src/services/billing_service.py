@@ -221,8 +221,10 @@ class BillingService:
         if not plan:
             raise ValueError(f"Plan {request.plan_id} not found")
 
-        # For free plan, create subscription without Stripe
-        if plan.tier == "free":
+        # For free plan, create subscription without Stripe.
+        # plan.tier is a proto int enum (PlanTier); compare against the constant,
+        # not the string "free" (which would never match).
+        if plan.tier == billing_pb2.PLAN_TIER_FREE:
             return await self._create_free_subscription(tenant_id, plan)
 
         # Get the plan from database for Stripe price IDs

@@ -9,13 +9,16 @@ Port: 8890
 
 import logging
 import os
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from typing import cast
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.types import ASGIApp
+
+from llamatrade_common.observability import enable_db_pool_metrics
+from llamatrade_db import get_pool_stats
 
 logger = logging.getLogger(__name__)
 
@@ -26,7 +29,7 @@ CORS_ORIGINS = os.getenv(
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     """Application lifespan handler."""
     # Initialize database (non-critical - may fail if DB not available)
     try:
@@ -80,6 +83,9 @@ app.add_middleware(
     allow_headers=["*"],
     expose_headers=["*"],
 )
+
+# Export DB connection-pool stats on /metrics
+enable_db_pool_metrics(app, "agent", get_pool_stats)
 
 
 @app.get("/health")

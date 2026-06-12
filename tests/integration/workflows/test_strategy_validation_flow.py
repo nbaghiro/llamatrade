@@ -83,7 +83,7 @@ def _load_strategy_servicer():
 
 
 @pytest.fixture
-def auth_servicer(db_session: "AsyncSession"):
+def auth_servicer(db_session: AsyncSession):
     """Create an auth servicer with test database session."""
     auth_servicer_cls = _load_auth_servicer()
     servicer = auth_servicer_cls()
@@ -96,7 +96,7 @@ def auth_servicer(db_session: "AsyncSession"):
 
 
 @pytest.fixture
-def strategy_servicer(db_session: "AsyncSession"):
+def strategy_servicer(db_session: AsyncSession):
     """Create a strategy servicer with test database session."""
     strategy_servicer_cls = _load_strategy_servicer()
     servicer = strategy_servicer_cls()
@@ -457,7 +457,7 @@ class TestStrategyBacktestIntegration:
         multi_strategy_servicer,
         multi_backtest_servicer,
         mock_context: MockServicerContext,
-        db_session: "AsyncSession",
+        db_session: AsyncSession,
     ):
         """Test full workflow: create strategy → run backtest → review results."""
         from datetime import datetime, timedelta
@@ -530,7 +530,7 @@ class TestStrategyBacktestIntegration:
         multi_strategy_servicer,
         multi_backtest_servicer,
         mock_context: MockServicerContext,
-        db_session: "AsyncSession",
+        db_session: AsyncSession,
     ):
         """Test listing backtests filtered by strategy."""
         from datetime import datetime, timedelta

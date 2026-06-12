@@ -449,7 +449,7 @@ def mock_context() -> MockServicerContext:
 
 
 @pytest.fixture
-def multi_auth_servicer(db_session: "AsyncSession") -> Any:
+def multi_auth_servicer(db_session: AsyncSession) -> Any:
     """Create an AuthServicer instance for multi-servicer tests.
 
     Uses the preloaded class to avoid module conflicts.
@@ -457,7 +457,7 @@ def multi_auth_servicer(db_session: "AsyncSession") -> Any:
     assert _AUTH_SERVICER_CLASS is not None, "AuthServicer not loaded"
     servicer = _AUTH_SERVICER_CLASS()
 
-    async def mock_get_db() -> "AsyncSession":
+    async def mock_get_db() -> AsyncSession:
         return db_session
 
     servicer._get_db = mock_get_db
@@ -465,7 +465,7 @@ def multi_auth_servicer(db_session: "AsyncSession") -> Any:
 
 
 @pytest.fixture
-def multi_strategy_servicer(db_session: "AsyncSession") -> Any:
+def multi_strategy_servicer(db_session: AsyncSession) -> Any:
     """Create a StrategyServicer instance for multi-servicer tests.
 
     Uses the preloaded class to avoid module conflicts.
@@ -473,7 +473,7 @@ def multi_strategy_servicer(db_session: "AsyncSession") -> Any:
     assert _STRATEGY_SERVICER_CLASS is not None, "StrategyServicer not loaded"
     servicer = _STRATEGY_SERVICER_CLASS()
 
-    async def mock_get_db() -> "AsyncSession":
+    async def mock_get_db() -> AsyncSession:
         return db_session
 
     servicer._get_db = mock_get_db
@@ -481,7 +481,7 @@ def multi_strategy_servicer(db_session: "AsyncSession") -> Any:
 
 
 @pytest.fixture
-def multi_backtest_servicer(db_session: "AsyncSession") -> Any:
+def multi_backtest_servicer(db_session: AsyncSession) -> Any:
     """Create a BacktestServicer instance for multi-servicer tests.
 
     Uses the preloaded class to avoid module conflicts.

@@ -350,3 +350,34 @@ Never allow cross-tenant data access. When in doubt, add tenant filtering.
 - CSS files for component styling (use Tailwind)
 - Direct database access outside service layer
 - **Adding real implementations without tests** — new business logic needs coverage
+- **Calling Alpaca directly from a service** (raw `httpx`/`websockets` to `*.alpaca.markets`, or re-reading `ALPACA_API_KEY`/URLs) — always go through `llamatrade_alpaca` (see below)
+
+---
+
+## Alpaca Integration (Shared Library)
+
+**`libs/alpaca` (`llamatrade_alpaca`) is the single entry point for ALL Alpaca Markets calls — REST and WebSocket.** No service may talk to Alpaca directly, hand-roll a WebSocket, or load credentials/URLs itself. If something is missing, add it to the lib, not to a service.
+
+### What the lib provides
+
+**REST clients** (HTTP, `AlpacaClientBase` → subclasses; built-in rate limiter + circuit breaker + retry/backoff + Prometheus metrics):
+- `TradingClient` — account, orders (market/limit/stop/stop-limit), positions, market clock. Crash recovery via `get_order_by_client_id`.
+- `MarketDataClient` — historical bars, latest quotes/trades, snapshots.
+- Singletons: `get_trading_client()` / `get_market_data_client()` (sync, for `Depends`) and `..._async()` (for gRPC/concurrent contexts).
+
+**WebSocket clients** (`llamatrade_alpaca.streaming`, `AlpacaWebSocketBase` → subclasses; shared transport, auth, reconnect-with-exponential-backoff+jitter, credential handling):
+- `MarketDataStreamClient` — real-time trades/quotes/bars (IEX). **Callback** delivery (`set_callbacks` + `run()`). Singletons: `get_market_data_stream()` / `init_market_data_stream()` / `close_market_data_stream()`.
+- `TradingStreamClient` — `trade_updates` order/fill events. **Async-generator** delivery (`async for event in client.stream()`). Fills are the source of truth for position state.
+- `MockTradeStream` — in-memory trade stream for tests.
+
+**Models** (`llamatrade_alpaca.models`): REST (`Order`, `Position`, `Account`, `Bar`, `Quote`, `Trade`, `Snapshot`, `MarketClock`, enums) and streaming (`TradeData`/`QuoteData`/`BarData` TypedDicts; `TradeEvent`/`FillData`/`TradeEventType`). **Config** (`AlpacaUrls`, `AlpacaCredentials`), **errors**, **resilience**, **metrics**.
+
+### Conventions
+
+- **Credentials**: pass `api_key`/`api_secret` (per-tenant/session) or an `AlpacaCredentials`, else they fall back to `ALPACA_API_KEY`/`ALPACA_API_SECRET` env vars. `paper=True` selects the paper environment.
+- **The lib is service-agnostic** — it must not import from any service. For service-specific metrics on streams, pass the `on_reconnect` / `on_connection_change` hooks (connection metrics) and record per-event metrics in the consumer of `stream()`. See `services/trading/.../live_session_service.py`.
+- **Changes here affect every consuming service** (market-data, trading) — run `libs/alpaca`, `services/market-data`, and `services/trading` test suites.
+
+### Ledger integration
+
+- Trading is the **execution arm** of the portfolio double-entry ledger: it publishes fill/reservation payloads to `ledger:fills:{account_id}` and reads sleeve state via `LedgerClient`. The locked contract (payload shapes, idempotency, identity threading) lives in `.docs/planning/CONTRACTS.md` — change it there first. Rollout is flag-gated: `LEDGER_SHADOW_MODE` → `LEDGER_SLEEVES` → `LEDGER_EXECUTION` (no behavior change with flags off).

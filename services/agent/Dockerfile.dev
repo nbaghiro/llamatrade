@@ -1,4 +1,4 @@
-# LlamaTrade Auth Service - Development Dockerfile
+# LlamaTrade Agent Service - Development Dockerfile
 
 FROM python:3.14-slim
 
@@ -14,20 +14,21 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY libs/common /app/libs/common
 COPY libs/db /app/libs/db
 COPY libs/proto /app/libs/proto
+COPY libs/dsl /app/libs/dsl
 
 # Install shared libraries (editable for hot-reload)
-RUN pip install --no-cache-dir -e /app/libs/common -e /app/libs/db -e /app/libs/proto
+RUN pip install --no-cache-dir -e /app/libs/common -e /app/libs/db -e /app/libs/proto -e /app/libs/dsl
 
 # Copy service dependencies
-COPY services/auth/pyproject.toml services/auth/README.md ./
+COPY services/agent/pyproject.toml services/agent/README.md ./
 
 # Install service dev dependencies
 RUN pip install --no-cache-dir -e ".[dev]"
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
-    PORT=8001
+    PORT=8890
 
-EXPOSE 8001
+EXPOSE 8890
 
-CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8001", "--reload", "--reload-dir", "/app/src"]
+CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8890", "--reload", "--reload-dir", "/app/src"]

@@ -15,7 +15,6 @@ from typing import TYPE_CHECKING
 from uuid import uuid4
 
 import pytest
-from connectrpc.errors import ConnectError
 
 from .conftest import MockServicerContext
 
@@ -66,7 +65,7 @@ class TestNewUserJourney:
         multi_strategy_servicer,
         multi_backtest_servicer,
         mock_context: MockServicerContext,
-        db_session: "AsyncSession",
+        db_session: AsyncSession,
     ):
         """Test complete user journey: register → create strategy → backtest.
 
@@ -187,7 +186,7 @@ class TestNewUserJourney:
         multi_strategy_servicer,
         multi_backtest_servicer,
         mock_context: MockServicerContext,
-        db_session: "AsyncSession",
+        db_session: AsyncSession,
     ):
         """Test user iterates on strategy: create → backtest → update → backtest again."""
         from llamatrade_proto.generated import auth_pb2, backtest_pb2, common_pb2, strategy_pb2
@@ -295,7 +294,7 @@ class TestMultiTenantJourney:
         multi_strategy_servicer,
         multi_backtest_servicer,
         mock_context: MockServicerContext,
-        db_session: "AsyncSession",
+        db_session: AsyncSession,
     ):
         """Test two users completing workflows independently with full isolation."""
         from llamatrade_proto.generated import auth_pb2, backtest_pb2, common_pb2, strategy_pb2
@@ -469,7 +468,7 @@ class TestDataIsolationWithFixtures:
 
     async def test_database_query_isolation(
         self,
-        db_session: "AsyncSession",
+        db_session: AsyncSession,
         test_tenant,
         second_tenant,
         test_strategy,

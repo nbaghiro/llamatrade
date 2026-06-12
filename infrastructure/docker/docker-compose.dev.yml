@@ -22,7 +22,7 @@ services:
       - ../../libs/common/llamatrade_common:/app/libs/common/llamatrade_common:cached
       - ../../libs/db/llamatrade_db:/app/libs/db/llamatrade_db:cached
       - ../../libs/proto/llamatrade_proto:/app/libs/proto/llamatrade_proto:cached
-    command: uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload --reload-dir /app/src
+    command: uvicorn src.main:app --host 0.0.0.0 --port 8810 --reload --reload-dir /app/src
 
   strategy:
     build:
@@ -33,7 +33,7 @@ services:
       - ../../libs/common/llamatrade_common:/app/libs/common/llamatrade_common:cached
       - ../../libs/db/llamatrade_db:/app/libs/db/llamatrade_db:cached
       - ../../libs/proto/llamatrade_proto:/app/libs/proto/llamatrade_proto:cached
-    command: uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload --reload-dir /app/src
+    command: uvicorn src.main:app --host 0.0.0.0 --port 8820 --reload --reload-dir /app/src
 
   backtest:
     build:
@@ -44,7 +44,7 @@ services:
       - ../../libs/common/llamatrade_common:/app/libs/common/llamatrade_common:cached
       - ../../libs/db/llamatrade_db:/app/libs/db/llamatrade_db:cached
       - ../../libs/proto/llamatrade_proto:/app/libs/proto/llamatrade_proto:cached
-    command: uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload --reload-dir /app/src
+    command: uvicorn src.main:app --host 0.0.0.0 --port 8830 --reload --reload-dir /app/src
 
   backtest-worker:
     build:
@@ -66,7 +66,7 @@ services:
       - ../../libs/common/llamatrade_common:/app/libs/common/llamatrade_common:cached
       - ../../libs/db/llamatrade_db:/app/libs/db/llamatrade_db:cached
       - ../../libs/proto/llamatrade_proto:/app/libs/proto/llamatrade_proto:cached
-    command: uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload --reload-dir /app/src
+    command: uvicorn src.main:app --host 0.0.0.0 --port 8840 --reload --reload-dir /app/src
 
   trading:
     build:
@@ -77,7 +77,7 @@ services:
       - ../../libs/common/llamatrade_common:/app/libs/common/llamatrade_common:cached
       - ../../libs/db/llamatrade_db:/app/libs/db/llamatrade_db:cached
       - ../../libs/proto/llamatrade_proto:/app/libs/proto/llamatrade_proto:cached
-    command: uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload --reload-dir /app/src
+    command: uvicorn src.main:app --host 0.0.0.0 --port 8850 --reload --reload-dir /app/src
 
   portfolio:
     build:
@@ -88,7 +88,7 @@ services:
       - ../../libs/common/llamatrade_common:/app/libs/common/llamatrade_common:cached
       - ../../libs/db/llamatrade_db:/app/libs/db/llamatrade_db:cached
       - ../../libs/proto/llamatrade_proto:/app/libs/proto/llamatrade_proto:cached
-    command: uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload --reload-dir /app/src
+    command: uvicorn src.main:app --host 0.0.0.0 --port 8860 --reload --reload-dir /app/src
 
   notification:
     build:
@@ -99,7 +99,7 @@ services:
       - ../../libs/common/llamatrade_common:/app/libs/common/llamatrade_common:cached
       - ../../libs/db/llamatrade_db:/app/libs/db/llamatrade_db:cached
       - ../../libs/proto/llamatrade_proto:/app/libs/proto/llamatrade_proto:cached
-    command: uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload --reload-dir /app/src
+    command: uvicorn src.main:app --host 0.0.0.0 --port 8870 --reload --reload-dir /app/src
 
   billing:
     build:
@@ -110,7 +110,19 @@ services:
       - ../../libs/common/llamatrade_common:/app/libs/common/llamatrade_common:cached
       - ../../libs/db/llamatrade_db:/app/libs/db/llamatrade_db:cached
       - ../../libs/proto/llamatrade_proto:/app/libs/proto/llamatrade_proto:cached
-    command: uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload --reload-dir /app/src
+    command: uvicorn src.main:app --host 0.0.0.0 --port 8880 --reload --reload-dir /app/src
+
+  agent:
+    build:
+      context: ../..
+      dockerfile: services/agent/Dockerfile.dev
+    volumes:
+      - ../../services/agent/src:/app/src:cached
+      - ../../libs/common/llamatrade_common:/app/libs/common/llamatrade_common:cached
+      - ../../libs/db/llamatrade_db:/app/libs/db/llamatrade_db:cached
+      - ../../libs/proto/llamatrade_proto:/app/libs/proto/llamatrade_proto:cached
+      - ../../libs/dsl/llamatrade_dsl:/app/libs/dsl/llamatrade_dsl:cached
+    command: uvicorn src.main:app --host 0.0.0.0 --port 8890 --reload --reload-dir /app/src
 
   # ===================
   # Frontend with Vite HMR
@@ -120,8 +132,18 @@ services:
       context: ../../apps/web
       dockerfile: Dockerfile.dev
     volumes:
-      - ../../apps/web/src:/app/src:cached
-      - ../../apps/web/public:/app/public:cached
-    ports:
+      # Mount the whole app so Vite sees index.html, vite.config.ts and tsconfig*
+      # (they live at the app root, not in src/). The anonymous node_modules
+      # volume preserves the image's installed deps instead of the host's.
+      - ../../apps/web:/app:cached
+      - /app/node_modules
+    # !override replaces the base file's "8800:80" mapping instead of Compose's
+    # default list-concatenation, which would publish host 8800 twice (->80 and
+    # ->8800) and fail with "port is already allocated". Dev Vite serves on 8800.
+    ports: !override
       - "8800:8800"
+    environment:
+      # Agent's host port is remapped to 8990 (see docker-compose.yml). The
+      # browser talks to the agent directly, so point it at the remapped port.
+      VITE_AGENT_URL: http://localhost:8990
     command: npm run dev -- --host 0.0.0.0 --port 8800
