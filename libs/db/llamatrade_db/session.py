@@ -2,6 +2,7 @@
 
 import os
 from collections.abc import AsyncGenerator
+from dataclasses import dataclass
 
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
@@ -49,6 +50,54 @@ def get_session_maker() -> async_sessionmaker[AsyncSession]:
             expire_on_commit=False,
         )
     return _async_session_maker
+
+
+@dataclass(frozen=True)
+class PoolStats:
+    """Point-in-time snapshot of the connection pool.
+
+    All counts come from the live SQLAlchemy pool, except the configured
+    limits which mirror how ``get_engine`` was constructed.
+    """
+
+    checked_out: int  # connections currently in use
+    checked_in: int  # connections idle in the pool
+    pool_size: int  # configured base pool size
+    max_overflow: int  # configured overflow allowance
+
+    @property
+    def total_open(self) -> int:
+        """Physical connections currently held (in use + idle)."""
+        return self.checked_out + self.checked_in
+
+    @property
+    def max_connections(self) -> int:
+        """Upper bound this process may open against Postgres."""
+        return self.pool_size + self.max_overflow
+
+
+def get_pool_stats() -> PoolStats | None:
+    """Return live connection-pool stats, or None if unavailable.
+
+    Returns None when the engine has not been created yet, or when the
+    configured pool type does not expose connection counters (e.g. NullPool
+    in tests). Safe to call from anywhere — it only reads in-memory counters.
+    """
+    if _engine is None:
+        return None
+
+    pool = _engine.sync_engine.pool
+    checked_out = getattr(pool, "checkedout", None)
+    checked_in = getattr(pool, "checkedin", None)
+    if checked_out is None or checked_in is None:
+        return None
+
+    return PoolStats(
+        checked_out=checked_out(),
+        checked_in=checked_in(),
+        pool_size=int(os.getenv("DB_POOL_SIZE", "10")),
+        max_overflow=int(os.getenv("DB_MAX_OVERFLOW", "20")),
+    )
 
 
 async def init_db() -> None:

@@ -10,6 +10,47 @@ from llamatrade_db.session import (
 )
 
 
+class TestGetPoolStats:
+    """Tests for get_pool_stats pool-observability helper."""
+
+    @pytest.mark.asyncio
+    async def test_returns_none_when_engine_uninitialized(self) -> None:
+        """Returns None before any engine has been created."""
+        import llamatrade_db.session as session_module
+        from llamatrade_db.session import get_pool_stats
+
+        session_module._engine = None
+        session_module._async_session_maker = None
+
+        assert get_pool_stats() is None
+
+    @pytest.mark.asyncio
+    async def test_returns_stats_for_live_engine(self) -> None:
+        """Returns live counters and the configured limits for a real engine."""
+        import llamatrade_db.session as session_module
+        from llamatrade_db.session import close_db, get_engine, get_pool_stats
+
+        session_module._engine = None
+        session_module._async_session_maker = None
+
+        with patch.dict(os.environ, {"DB_POOL_SIZE": "7", "DB_MAX_OVERFLOW": "3"}):
+            try:
+                get_engine()
+                stats = get_pool_stats()
+
+                assert stats is not None
+                # No queries issued yet → no physical connections are held.
+                assert stats.checked_out == 0
+                assert stats.checked_in == 0
+                assert stats.total_open == 0
+                # Configured limits mirror how the engine was built.
+                assert stats.pool_size == 7
+                assert stats.max_overflow == 3
+                assert stats.max_connections == 10
+            finally:
+                await close_db()
+
+
 class TestGetDatabaseUrl:
     """Tests for get_database_url function."""
 

@@ -10,7 +10,7 @@ import time
 from collections.abc import Awaitable, Callable
 from functools import wraps
 from types import TracebackType
-from typing import ParamSpec, TypeVar, cast
+from typing import ParamSpec, Protocol, TypeVar, cast
 
 from prometheus_client import Counter, Gauge, Histogram, Info, generate_latest
 
@@ -71,7 +71,19 @@ DB_QUERY_DURATION_SECONDS = Histogram(
 
 DB_CONNECTIONS_ACTIVE = Gauge(
     "llamatrade_db_connections_active",
-    "Active database connections",
+    "Database connections currently checked out (in use)",
+    ["service"],
+)
+
+DB_CONNECTIONS_IDLE = Gauge(
+    "llamatrade_db_connections_idle",
+    "Database connections idle in the pool (checked in)",
+    ["service"],
+)
+
+DB_CONNECTIONS_MAX = Gauge(
+    "llamatrade_db_connections_max",
+    "Maximum connections the pool may open (pool_size + max_overflow)",
     ["service"],
 )
 
@@ -162,12 +174,66 @@ def init_service_info(service_name: str, version: str, environment: str) -> None
     )
 
 
+class PoolStatsLike(Protocol):
+    """Structural type for a DB connection-pool snapshot.
+
+    Matches ``llamatrade_db.PoolStats`` without importing it, so this
+    observability layer stays decoupled from the database layer.
+    """
+
+    @property
+    def checked_out(self) -> int: ...
+
+    @property
+    def checked_in(self) -> int: ...
+
+    @property
+    def max_connections(self) -> int: ...
+
+
+# Registered per service so /metrics can sample live pool counts at scrape time.
+# Keyed by service name → idempotent across repeated registration (e.g. tests).
+_pool_stats_providers: dict[str, Callable[[], PoolStatsLike | None]] = {}
+
+
+def register_db_pool_observer(
+    service_name: str,
+    provider: Callable[[], PoolStatsLike | None],
+) -> None:
+    """Register a pool-stats provider whose values are exported on /metrics.
+
+    The provider is sampled on every metrics scrape (see ``get_metrics``).
+    Pass ``llamatrade_db.get_pool_stats`` here from the service that owns
+    the engine; this module never imports the DB layer itself.
+    """
+    _pool_stats_providers[service_name] = provider
+
+
+def _collect_db_pool_metrics() -> None:
+    """Sample every registered provider and set the pool gauges."""
+    for service_name, provider in _pool_stats_providers.items():
+        try:
+            stats = provider()
+        except Exception:
+            # Observability must never break the metrics endpoint.
+            continue
+        if stats is None:
+            continue
+        DB_CONNECTIONS_ACTIVE.labels(service=service_name).set(stats.checked_out)
+        DB_CONNECTIONS_IDLE.labels(service=service_name).set(stats.checked_in)
+        DB_CONNECTIONS_MAX.labels(service=service_name).set(stats.max_connections)
+
+
 def get_metrics() -> bytes:
     """Generate Prometheus metrics in text format.
+
+    Refreshes DB pool gauges from registered providers immediately before
+    serialization so the exported counts are accurate at scrape time.
 
     Returns:
         Metrics in Prometheus exposition format
     """
+    _collect_db_pool_metrics()
     result: bytes = generate_latest()
     return result
 

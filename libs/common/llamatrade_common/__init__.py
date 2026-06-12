@@ -22,6 +22,7 @@ from llamatrade_common.metrics import (
     get_metrics,
     init_service_info,
     record_http_request,
+    register_db_pool_observer,
 )
 from llamatrade_common.middleware import TenantMiddleware, get_tenant_context
 from llamatrade_common.models import (
@@ -31,6 +32,7 @@ from llamatrade_common.models import (
     TenantContext,
     UserInfo,
 )
+from llamatrade_common.observability import enable_db_pool_metrics, setup_observability
 from llamatrade_common.utils import (
     decrypt_value,
     encrypt_value,
@@ -75,6 +77,10 @@ __all__ = [
     "MetricsTimer",
     "HTTP_REQUESTS_TOTAL",
     "HTTP_REQUEST_DURATION_SECONDS",
+    "register_db_pool_observer",
+    # Observability
+    "setup_observability",
+    "enable_db_pool_metrics",
     # Health
     "HealthChecker",
     "HealthStatus",

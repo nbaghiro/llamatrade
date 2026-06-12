@@ -2,6 +2,7 @@
 
 import asyncio
 import time
+from dataclasses import dataclass
 
 import pytest
 
@@ -17,8 +18,72 @@ from llamatrade_common.metrics import (
     init_service_info,
     record_http_request,
     record_order,
+    register_db_pool_observer,
     time_function,
 )
+
+
+@dataclass
+class _FakePoolStats:
+    """Stand-in matching the PoolStatsLike protocol."""
+
+    checked_out: int
+    checked_in: int
+    max_connections: int
+
+
+class TestDbPoolObserver:
+    """Tests for DB connection-pool gauge registration."""
+
+    def test_registered_provider_populates_gauges(self) -> None:
+        """A registered provider's snapshot is exported on the next scrape."""
+        register_db_pool_observer(
+            "unittest-pool-svc",
+            lambda: _FakePoolStats(checked_out=3, checked_in=5, max_connections=30),
+        )
+
+        text = get_metrics().decode()
+
+        assert 'llamatrade_db_connections_active{service="unittest-pool-svc"} 3.0' in text
+        assert 'llamatrade_db_connections_idle{service="unittest-pool-svc"} 5.0' in text
+        assert 'llamatrade_db_connections_max{service="unittest-pool-svc"} 30.0' in text
+
+    def test_provider_returning_none_is_skipped(self) -> None:
+        """A provider with no engine yet (None) must not raise or emit a sample."""
+        register_db_pool_observer("none-pool-svc", lambda: None)
+
+        text = get_metrics().decode()
+
+        assert 'service="none-pool-svc"' not in text
+
+    def test_provider_exception_never_breaks_metrics(self) -> None:
+        """A throwing provider must not break the /metrics endpoint."""
+
+        def boom() -> _FakePoolStats:
+            raise RuntimeError("provider exploded")
+
+        register_db_pool_observer("boom-pool-svc", boom)
+
+        # Must not raise; other metrics still serialize.
+        result = get_metrics()
+        assert isinstance(result, bytes)
+
+    def test_registration_is_idempotent_per_service(self) -> None:
+        """Re-registering a service replaces, not duplicates, its provider."""
+        register_db_pool_observer(
+            "dup-pool-svc",
+            lambda: _FakePoolStats(checked_out=1, checked_in=1, max_connections=10),
+        )
+        register_db_pool_observer(
+            "dup-pool-svc",
+            lambda: _FakePoolStats(checked_out=9, checked_in=0, max_connections=10),
+        )
+
+        text = get_metrics().decode()
+
+        # Only the latest value should be present.
+        assert 'llamatrade_db_connections_active{service="dup-pool-svc"} 9.0' in text
+        assert 'llamatrade_db_connections_active{service="dup-pool-svc"} 1.0' not in text
 
 
 class TestServiceInfo:

@@ -23,8 +23,10 @@ from llamatrade_common.metrics import (
     HTTP_REQUEST_DURATION_SECONDS,
     HTTP_REQUESTS_IN_PROGRESS,
     HTTP_REQUESTS_TOTAL,
+    PoolStatsLike,
     get_metrics,
     init_service_info,
+    register_db_pool_observer,
 )
 
 logger = get_logger(__name__)
@@ -150,6 +152,42 @@ class ObservabilityMiddleware(BaseHTTPMiddleware):
 
         # Fallback to raw path (may have high cardinality)
         return str(request.url.path)
+
+
+def enable_db_pool_metrics(
+    app: FastAPI,
+    service_name: str,
+    pool_stats_provider: Callable[[], PoolStatsLike | None],
+) -> None:
+    """Export DB connection-pool stats for a service on /metrics.
+
+    Registers ``pool_stats_provider`` (pass ``llamatrade_db.get_pool_stats``)
+    so the pool gauges are refreshed on every scrape, and ensures a /metrics
+    endpoint exists. The endpoint is only added when the app does not already
+    have one (services using ``setup_observability`` or a hand-rolled route
+    keep theirs). Purely additive — it adds no middleware and changes no
+    request handling.
+
+    Args:
+        app: FastAPI application
+        service_name: Service label applied to the pool metrics
+        pool_stats_provider: Callable returning a pool snapshot, or None
+    """
+    register_db_pool_observer(service_name, pool_stats_provider)
+
+    has_metrics_route = any(getattr(route, "path", None) == "/metrics" for route in app.routes)
+    if has_metrics_route:
+        return
+
+    @app.get("/metrics", include_in_schema=False)
+    async def metrics_endpoint() -> Response:
+        """Prometheus metrics endpoint."""
+        return Response(
+            content=get_metrics(),
+            media_type="text/plain; charset=utf-8",
+        )
+
+    _ = metrics_endpoint  # Registered via decorator
 
 
 def setup_observability(
