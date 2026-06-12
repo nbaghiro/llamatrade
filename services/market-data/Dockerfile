@@ -1,6 +1,6 @@
 # LlamaTrade Market Data Service Dockerfile
 
-FROM python:3.12-slim AS builder
+FROM python:3.14-slim AS builder
 
 WORKDIR /app
 
@@ -10,7 +10,7 @@ COPY ../libs/common /app/libs/common
 RUN pip install --no-cache-dir /app/libs/common
 RUN pip install --no-cache-dir .
 
-FROM python:3.12-slim
+FROM python:3.14-slim
 
 WORKDIR /app
 

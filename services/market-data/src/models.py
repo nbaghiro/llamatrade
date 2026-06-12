@@ -6,24 +6,29 @@ and streaming types are defined here.
 """
 
 from datetime import UTC, datetime
-from typing import TypedDict
 
 from pydantic import BaseModel, Field
 
-# Re-export shared models and errors for convenience
+# Re-export shared models and errors for convenience. Streaming payload types
+# (TradeData/QuoteData/BarData/StreamData) live in the shared llamatrade_alpaca
+# library and are the single source of truth for the WebSocket wire schema.
 from llamatrade_alpaca import (
     AlpacaError,
     AlpacaRateLimitError,
     AlpacaServerError,
     Bar,
+    BarData,
     CircuitOpenError,
     InvalidRequestError,
     MarketClock,
     Quote,
+    QuoteData,
     Snapshot,
+    StreamData,
     SymbolNotFoundError,
     Timeframe,
     Trade,
+    TradeData,
 )
 
 __all__ = [
@@ -32,62 +37,25 @@ __all__ = [
     "AlpacaRateLimitError",
     "AlpacaServerError",
     "Bar",
+    "BarData",
     "CircuitOpenError",
     "InvalidRequestError",
     "MarketClock",
     "Quote",
+    "QuoteData",
     "Snapshot",
+    "StreamData",
     "SymbolNotFoundError",
     "Timeframe",
     "Trade",
+    "TradeData",
     # Service-specific
-    "BarData",
     "BarsRequest",
     "BarsResponse",
-    "QuoteData",
     "QuotesRequest",
-    "StreamData",
     "StreamMessage",
     "StreamSubscription",
-    "TradeData",
 ]
-
-
-# === Streaming TypedDicts (for WebSocket messages) ===
-
-
-class TradeData(TypedDict):
-    """Trade data for streaming."""
-
-    price: float
-    size: int
-    exchange: str
-    timestamp: str | datetime  # Can be ISO string or datetime from Alpaca
-
-
-class QuoteData(TypedDict):
-    """Quote data for streaming."""
-
-    bid_price: float
-    bid_size: int
-    ask_price: float
-    ask_size: int
-    timestamp: str | datetime  # Can be ISO string or datetime from Alpaca
-
-
-class BarData(TypedDict):
-    """Bar data for streaming."""
-
-    open: float
-    high: float
-    low: float
-    close: float
-    volume: int
-    timestamp: str | datetime  # Can be ISO string or datetime from Alpaca
-
-
-# Union of all streaming data types
-StreamData = TradeData | QuoteData | BarData
 
 
 # === Service-specific Request/Response Schemas ===

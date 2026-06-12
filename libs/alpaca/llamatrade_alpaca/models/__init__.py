@@ -15,6 +15,16 @@ from .market_data import (
     parse_timestamp,
     parse_trade,
 )
+from .streaming import (
+    BarData,
+    FillData,
+    QuoteData,
+    StreamBar,
+    StreamData,
+    TradeData,
+    TradeEvent,
+    TradeEventType,
+)
 from .trading import (
     Account,
     MarketClock,
@@ -32,6 +42,16 @@ from .trading import (
 )
 
 __all__ = [
+    # Streaming models (market data stream)
+    "BarData",
+    "QuoteData",
+    "StreamBar",
+    "StreamData",
+    "TradeData",
+    # Streaming models (trading/account stream)
+    "FillData",
+    "TradeEvent",
+    "TradeEventType",
     # Market data models
     "Bar",
     "Quote",

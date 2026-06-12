@@ -4,8 +4,9 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from llamatrade_alpaca import MarketDataStreamClient
+
 from src.models import BarData, QuoteData, TradeData
-from src.streaming.alpaca_stream import AlpacaStreamClient
 from src.streaming.bridge import (
     StreamBridge,
     close_stream_bridge,
@@ -18,7 +19,7 @@ from src.streaming.manager import StreamManager
 @pytest.fixture
 def mock_alpaca_stream():
     """Create a mock Alpaca stream client."""
-    stream = MagicMock(spec=AlpacaStreamClient)
+    stream = MagicMock(spec=MarketDataStreamClient)
     stream.connected = True
     stream.authenticated = True
     stream.set_callbacks = MagicMock()

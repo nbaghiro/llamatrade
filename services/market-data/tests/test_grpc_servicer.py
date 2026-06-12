@@ -196,7 +196,7 @@ class TestGetHistoricalBars:
         mock_client = MagicMock()
         mock_client.get_bars = AsyncMock(return_value=[sample_bar])
 
-        with patch("src.grpc.servicer.get_market_data_client_async", return_value=mock_client):
+        with patch("src.grpc.servicer.get_market_data_service", return_value=mock_client):
             request = create_mock_historical_bars_request(symbol="AAPL")
             response = await servicer.get_historical_bars(request, mock_context)
 
@@ -211,7 +211,7 @@ class TestGetHistoricalBars:
         mock_client = MagicMock()
         mock_client.get_bars = AsyncMock(return_value=[sample_bar])
 
-        with patch("src.grpc.servicer.get_market_data_client_async", return_value=mock_client):
+        with patch("src.grpc.servicer.get_market_data_service", return_value=mock_client):
             request = create_mock_historical_bars_request(
                 symbol="AAPL",
                 pagination=MockPagination(page_size=500),
@@ -227,7 +227,7 @@ class TestGetHistoricalBars:
         mock_client = MagicMock()
         mock_client.get_bars = AsyncMock(side_effect=Exception("API error"))
 
-        with patch("src.grpc.servicer.get_market_data_client_async", return_value=mock_client):
+        with patch("src.grpc.servicer.get_market_data_service", return_value=mock_client):
             request = create_mock_historical_bars_request(symbol="AAPL")
 
             with pytest.raises(ConnectError, match="Failed to fetch historical bars"):
@@ -247,7 +247,7 @@ class TestGetMultiBars:
             return_value={"AAPL": [sample_bar], "GOOGL": [sample_bar]}
         )
 
-        with patch("src.grpc.servicer.get_market_data_client_async", return_value=mock_client):
+        with patch("src.grpc.servicer.get_market_data_service", return_value=mock_client):
             request = create_mock_multi_bars_request(symbols=["AAPL", "GOOGL"])
             response = await servicer.get_multi_bars(request, mock_context)
 
@@ -261,7 +261,7 @@ class TestGetMultiBars:
         mock_client = MagicMock()
         mock_client.get_multi_bars = AsyncMock(return_value={"AAPL": [sample_bar]})
 
-        with patch("src.grpc.servicer.get_market_data_client_async", return_value=mock_client):
+        with patch("src.grpc.servicer.get_market_data_service", return_value=mock_client):
             request = create_mock_multi_bars_request(symbols=["AAPL"], limit=500)
             response = await servicer.get_multi_bars(request, mock_context)
 
@@ -274,7 +274,7 @@ class TestGetMultiBars:
         mock_client = MagicMock()
         mock_client.get_multi_bars = AsyncMock(side_effect=Exception("API error"))
 
-        with patch("src.grpc.servicer.get_market_data_client_async", return_value=mock_client):
+        with patch("src.grpc.servicer.get_market_data_service", return_value=mock_client):
             request = create_mock_multi_bars_request(symbols=["AAPL"])
 
             with pytest.raises(ConnectError, match="Failed to fetch multi bars"):
@@ -292,7 +292,7 @@ class TestGetSnapshot:
         mock_client = MagicMock()
         mock_client.get_snapshot = AsyncMock(return_value=sample_snapshot)
 
-        with patch("src.grpc.servicer.get_market_data_client_async", return_value=mock_client):
+        with patch("src.grpc.servicer.get_market_data_service", return_value=mock_client):
             request = MockGetSnapshotRequest(symbol="AAPL")
             response = await servicer.get_snapshot(request, mock_context)
 
@@ -306,7 +306,7 @@ class TestGetSnapshot:
         mock_client = MagicMock()
         mock_client.get_snapshot = AsyncMock(return_value=None)
 
-        with patch("src.grpc.servicer.get_market_data_client_async", return_value=mock_client):
+        with patch("src.grpc.servicer.get_market_data_service", return_value=mock_client):
             # Use a valid-format symbol that doesn't exist
             request = MockGetSnapshotRequest(symbol="ZZZZZ")
 
@@ -321,7 +321,7 @@ class TestGetSnapshot:
         mock_client = MagicMock()
         mock_client.get_snapshot = AsyncMock(side_effect=Exception("API error"))
 
-        with patch("src.grpc.servicer.get_market_data_client_async", return_value=mock_client):
+        with patch("src.grpc.servicer.get_market_data_service", return_value=mock_client):
             request = MockGetSnapshotRequest(symbol="AAPL")
 
             with pytest.raises(ConnectError, match="Failed to fetch snapshot"):
@@ -341,7 +341,7 @@ class TestGetSnapshots:
             return_value={"AAPL": sample_snapshot, "GOOGL": sample_snapshot}
         )
 
-        with patch("src.grpc.servicer.get_market_data_client_async", return_value=mock_client):
+        with patch("src.grpc.servicer.get_market_data_service", return_value=mock_client):
             request = MockGetSnapshotsRequest(symbols=["AAPL", "GOOGL"])
             response = await servicer.get_snapshots(request, mock_context)
 
@@ -353,7 +353,7 @@ class TestGetSnapshots:
         mock_client = MagicMock()
         mock_client.get_multi_snapshots = AsyncMock(side_effect=Exception("API error"))
 
-        with patch("src.grpc.servicer.get_market_data_client_async", return_value=mock_client):
+        with patch("src.grpc.servicer.get_market_data_service", return_value=mock_client):
             request = MockGetSnapshotsRequest(symbols=["AAPL"])
 
             with pytest.raises(ConnectError, match="Failed to fetch snapshots"):
@@ -577,7 +577,7 @@ class TestTimeframeMapping:
         mock_client = MagicMock()
         mock_client.get_bars = AsyncMock(return_value=[sample_bar])
 
-        with patch("src.grpc.servicer.get_market_data_client_async", return_value=mock_client):
+        with patch("src.grpc.servicer.get_market_data_service", return_value=mock_client):
             # 9 = TIMEFRAME_1MONTH in proto enum
             request = create_mock_historical_bars_request(symbol="AAPL", timeframe=9)
             response = await servicer.get_historical_bars(request, mock_context)

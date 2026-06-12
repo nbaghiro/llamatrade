@@ -51,6 +51,8 @@ from .metrics import (
 from .models import (
     Account,
     Bar,
+    BarData,
+    FillData,
     MarketClock,
     Order,
     OrderSide,
@@ -59,10 +61,16 @@ from .models import (
     Position,
     PositionSide,
     Quote,
+    QuoteData,
     Snapshot,
+    StreamBar,
+    StreamData,
     Timeframe,
     TimeInForce,
     Trade,
+    TradeData,
+    TradeEvent,
+    TradeEventType,
     parse_account,
     parse_bar,
     parse_clock,
@@ -82,6 +90,17 @@ from .resilience import (
     create_trading_resilience,
     parse_alpaca_error,
     retry_with_backoff,
+)
+from .streaming import (
+    AlpacaWebSocketBase,
+    BarStreamClient,
+    MarketDataStreamClient,
+    MockBarStream,
+    MockTradeStream,
+    TradingStreamClient,
+    close_market_data_stream,
+    get_market_data_stream,
+    init_market_data_stream,
 )
 
 __all__ = [
@@ -112,6 +131,15 @@ __all__ = [
     "parse_snapshot",
     "parse_timestamp",
     "parse_trade",
+    # Streaming Models
+    "BarData",
+    "QuoteData",
+    "TradeData",
+    "StreamBar",
+    "StreamData",
+    "FillData",
+    "TradeEvent",
+    "TradeEventType",
     # Trading Models
     "Account",
     "MarketClock",
@@ -144,6 +172,16 @@ __all__ = [
     # Clients
     "MarketDataClient",
     "TradingClient",
+    # Streaming clients
+    "AlpacaWebSocketBase",
+    "MarketDataStreamClient",
+    "BarStreamClient",
+    "MockBarStream",
+    "TradingStreamClient",
+    "MockTradeStream",
+    "get_market_data_stream",
+    "init_market_data_stream",
+    "close_market_data_stream",
     # Singleton helpers (sync - for FastAPI Depends)
     "get_trading_client",
     "get_market_data_client",

@@ -18,9 +18,10 @@ from connectrpc.request import RequestContext
 # Type alias for generic request context (accepts any request/response types)
 type AnyContext = RequestContext[object, object]
 
-from llamatrade_alpaca import get_market_data_client_async, get_trading_client_async
+from llamatrade_alpaca import get_trading_client_async
 
 from src.models import BarData, QuoteData, Timeframe, TradeData
+from src.services.market_data_service import get_market_data_service
 from src.streaming.manager import StreamType, get_stream_manager
 
 if TYPE_CHECKING:
@@ -207,7 +208,7 @@ class MarketDataServicer:
         )
 
         try:
-            client = await get_market_data_client_async()
+            service = await get_market_data_service()
 
             # Parse request parameters
             start = datetime.fromtimestamp(request.start.seconds, tz=UTC)
@@ -223,8 +224,8 @@ class MarketDataServicer:
             if request.HasField("pagination"):
                 limit = min(request.pagination.page_size, 10000)
 
-            # Fetch bars from Alpaca
-            bars = await client.get_bars(
+            # Fetch bars (Redis-cached service layer)
+            bars = await service.get_bars(
                 symbol=symbol,
                 timeframe=timeframe,
                 start=start,
@@ -271,7 +272,7 @@ class MarketDataServicer:
         )
 
         try:
-            client = await get_market_data_client_async()
+            service = await get_market_data_service()
 
             start = datetime.fromtimestamp(request.start.seconds, tz=UTC)
             end = (
@@ -282,8 +283,8 @@ class MarketDataServicer:
             timeframe = self._TIMEFRAME_MAP.get(request.timeframe, Timeframe.DAY_1)
             limit = request.limit if request.limit > 0 else 1000
 
-            # Fetch bars from Alpaca
-            multi_bars = await client.get_multi_bars(
+            # Fetch bars (Redis-cached service layer)
+            multi_bars = await service.get_multi_bars(
                 symbols=symbols,
                 timeframe=timeframe,
                 start=start,
@@ -323,8 +324,8 @@ class MarketDataServicer:
         )
 
         try:
-            client = await get_market_data_client_async()
-            snapshot = await client.get_snapshot(symbol)
+            service = await get_market_data_service()
+            snapshot = await service.get_snapshot(symbol)
 
             if snapshot is None:
                 raise ConnectError(Code.NOT_FOUND, f"Snapshot not found for symbol: {symbol}")
@@ -357,8 +358,8 @@ class MarketDataServicer:
         )
 
         try:
-            client = await get_market_data_client_async()
-            snapshots_data = await client.get_multi_snapshots(symbols)
+            service = await get_market_data_service()
+            snapshots_data = await service.get_multi_snapshots(symbols)
 
             proto_snapshots: dict[str, market_data_pb2.Snapshot] = {}
             for symbol, snapshot in snapshots_data.items():

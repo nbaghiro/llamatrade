@@ -23,9 +23,13 @@ class AlpacaUrls:
     TRADING_LIVE = "https://api.alpaca.markets/v2"
     TRADING_PAPER = "https://paper-api.alpaca.markets/v2"
 
-    # Streaming WebSocket
+    # Market Data Streaming WebSocket (real-time trades/quotes/bars, IEX feed)
     STREAM_LIVE = "wss://stream.data.alpaca.markets/v2/iex"
     STREAM_PAPER = "wss://stream.data.sandbox.alpaca.markets/v2/iex"
+
+    # Trading (account) Streaming WebSocket (order/trade_updates events)
+    TRADE_STREAM_LIVE = "wss://api.alpaca.markets/stream"
+    TRADE_STREAM_PAPER = "wss://paper-api.alpaca.markets/stream"
 
     @classmethod
     def data_url(cls, paper: bool = True) -> str:
@@ -39,8 +43,13 @@ class AlpacaUrls:
 
     @classmethod
     def stream_url(cls, paper: bool = True) -> str:
-        """Get WebSocket streaming URL."""
+        """Get market data WebSocket streaming URL."""
         return cls.STREAM_PAPER if paper else cls.STREAM_LIVE
+
+    @classmethod
+    def trade_stream_url(cls, paper: bool = True) -> str:
+        """Get trading (account) WebSocket streaming URL for trade_updates."""
+        return cls.TRADE_STREAM_PAPER if paper else cls.TRADE_STREAM_LIVE
 
 
 @dataclass

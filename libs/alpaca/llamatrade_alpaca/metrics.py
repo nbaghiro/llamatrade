@@ -13,7 +13,7 @@ Usage:
 from __future__ import annotations
 
 import time
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
@@ -73,7 +73,7 @@ ALPACA_API_CALLS_TOTAL, ALPACA_API_DURATION_SECONDS, HAS_PROMETHEUS = _create_me
 
 
 @asynccontextmanager
-async def time_alpaca_call(endpoint: str) -> AsyncIterator[None]:
+async def time_alpaca_call(endpoint: str) -> AsyncGenerator[None]:
     """Context manager to time Alpaca API calls and record metrics.
 
     Records both duration (histogram) and call count (counter with status label).

@@ -10,8 +10,9 @@ import time
 from collections import defaultdict
 from dataclasses import dataclass
 
+from llamatrade_alpaca import MarketDataStreamClient
+
 from src.models import BarData, QuoteData, TradeData
-from src.streaming.alpaca_stream import AlpacaStreamClient
 from src.streaming.manager import StreamManager
 
 logger = logging.getLogger(__name__)
@@ -85,7 +86,7 @@ class StreamBridge:
 
     def __init__(
         self,
-        alpaca_stream: AlpacaStreamClient,
+        alpaca_stream: MarketDataStreamClient,
         stream_manager: StreamManager,
     ):
         self._alpaca = alpaca_stream
@@ -347,7 +348,7 @@ def get_stream_bridge() -> StreamBridge | None:
 
 
 async def init_stream_bridge(
-    alpaca_stream: AlpacaStreamClient,
+    alpaca_stream: MarketDataStreamClient,
     stream_manager: StreamManager,
 ) -> StreamBridge:
     """Initialize and start the stream bridge.

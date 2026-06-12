@@ -1,7 +1,7 @@
 """End-to-end integration tests for streaming infrastructure.
 
 These tests verify that data flows correctly through the entire streaming pipeline:
-Alpaca WebSocket -> AlpacaStreamClient -> StreamBridge -> StreamManager -> Client Queue
+Alpaca WebSocket -> MarketDataStreamClient -> StreamBridge -> StreamManager -> Client Queue
 """
 
 import asyncio

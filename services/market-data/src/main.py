@@ -16,15 +16,20 @@ from fastapi.middleware.cors import CORSMiddleware
 from starlette.types import ASGIApp
 
 from llamatrade_alpaca import close_all_clients
-from llamatrade_common.observability import setup_observability
+from llamatrade_alpaca import (
+    close_market_data_stream as close_alpaca_stream,
+)
+from llamatrade_alpaca import (
+    get_market_data_stream as get_alpaca_stream,
+)
+from llamatrade_alpaca import (
+    init_market_data_stream as init_alpaca_stream,
+)
+from llamatrade_common.observability import enable_db_pool_metrics, setup_observability
+from llamatrade_db import close_db, get_pool_stats
 
 from src.cache import close_cache, get_cache, init_cache
 from src.error_handlers import register_error_handlers
-from src.streaming.alpaca_stream import (
-    close_alpaca_stream,
-    get_alpaca_stream,
-    init_alpaca_stream,
-)
 from src.streaming.bridge import close_stream_bridge, init_stream_bridge
 from src.streaming.manager import get_stream_manager
 
@@ -94,6 +99,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     await close_alpaca_stream()
     await close_all_clients()
     await close_cache()
+    await close_db()
 
 
 app = FastAPI(
@@ -112,6 +118,9 @@ setup_observability(
     log_level=LOG_LEVEL,
     json_logs=ENVIRONMENT != "development",
 )
+
+# Export DB connection-pool stats (the /metrics endpoint is added by setup_observability)
+enable_db_pool_metrics(app, SERVICE_NAME, get_pool_stats)
 
 # Register error handlers
 register_error_handlers(app)
