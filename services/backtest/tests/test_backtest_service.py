@@ -1002,9 +1002,15 @@ class TestZeroVsNullSemantics:
 
     @pytest.mark.asyncio
     async def test_flat_benchmark_zero_return_stored_as_zero_not_null(
-        self, mock_db, mock_backtest, mock_strategy_version
+        self, mock_db, mock_backtest, mock_strategy_version, monkeypatch
     ):
         """A 0.0 benchmark return (flat market) must persist as 0.0."""
+        # Neutralize the Redis-backed cancel flag: a live CI Redis can carry
+        # another test's cancel request for the shared TEST_BACKTEST_ID.
+        monkeypatch.setattr(
+            "src.services.backtest_service.CancellationFlag.make_should_abort",
+            lambda self, backtest_id, check_interval=1.0: lambda: False,
+        )
         mock_backtest.status = BACKTEST_STATUS_PENDING
         mock_db.execute.side_effect = [
             MagicMock(scalar_one_or_none=MagicMock(return_value=mock_backtest)),
@@ -1039,9 +1045,14 @@ class TestZeroVsNullSemantics:
 
     @pytest.mark.asyncio
     async def test_stored_equity_curve_is_daily_within_window(
-        self, mock_db, mock_backtest, mock_strategy_version
+        self, mock_db, mock_backtest, mock_strategy_version, monkeypatch
     ):
         """Persisted equity curve excludes warm-up days and is daily-resampled."""
+        # Neutralize the Redis-backed cancel flag (see test above).
+        monkeypatch.setattr(
+            "src.services.backtest_service.CancellationFlag.make_should_abort",
+            lambda self, backtest_id, check_interval=1.0: lambda: False,
+        )
         mock_backtest.status = BACKTEST_STATUS_PENDING
         mock_backtest.start_date = date(2024, 1, 5)
         mock_db.execute.side_effect = [

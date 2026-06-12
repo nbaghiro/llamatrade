@@ -106,9 +106,11 @@ class TestProgressPublisher:
     """Tests for ProgressPublisher class."""
 
     def test_init_default_url(self):
-        """Test initialization with default URL."""
+        """Defaults to the module's env-derived REDIS_URL (CI overrides it)."""
+        from src.progress import REDIS_URL
+
         publisher = ProgressPublisher()
-        assert publisher.redis_url == "redis://localhost:6379/0"
+        assert publisher.redis_url == REDIS_URL
         assert publisher._redis is None
 
     def test_init_custom_url(self):
@@ -196,9 +198,11 @@ class TestProgressSubscriber:
     """Tests for ProgressSubscriber class."""
 
     def test_init_default_url(self):
-        """Test initialization with default URL."""
+        """Defaults to the module's env-derived REDIS_URL (CI overrides it)."""
+        from src.progress import REDIS_URL
+
         subscriber = ProgressSubscriber()
-        assert subscriber.redis_url == "redis://localhost:6379/0"
+        assert subscriber.redis_url == REDIS_URL
         assert subscriber._redis is None
         assert subscriber._pubsub is None
 
