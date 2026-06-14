@@ -11,8 +11,7 @@ from collections.abc import AsyncIterator, Mapping
 from typing import SupportsFloat, cast
 from uuid import UUID
 
-from llamatrade_common.eventbus import EventBus
-from llamatrade_common.events import Event
+from llamatrade_common.events import Event, EventBus
 
 from src.streaming.publisher import (
     OrderUpdate,

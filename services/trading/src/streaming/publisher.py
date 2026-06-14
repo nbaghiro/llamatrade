@@ -13,8 +13,7 @@ from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
-from llamatrade_common.eventbus import EventBus
-from llamatrade_common.events import Event, EventType
+from llamatrade_common.events import Event, EventBus, EventType
 
 logger = logging.getLogger(__name__)
 

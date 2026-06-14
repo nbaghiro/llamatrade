@@ -12,7 +12,7 @@ from uuid import uuid4
 
 import pytest
 
-from llamatrade_common.eventbus import EventBus
+from llamatrade_common.events import EventBus
 
 pytestmark = [pytest.mark.integration, pytest.mark.asyncio]
 

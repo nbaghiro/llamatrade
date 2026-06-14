@@ -19,7 +19,7 @@ from typing import Literal, cast
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from llamatrade_common.eventbus import EventBus
+from llamatrade_common.events import EventBus
 
 from src.ledger.ingestion import (
     FillHandler,

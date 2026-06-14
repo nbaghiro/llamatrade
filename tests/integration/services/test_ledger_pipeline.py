@@ -303,7 +303,7 @@ class TestStreamsPipeline:
     async def test_stream_publish_consume_persist_project(
         self, db_session: AsyncSession, funded_account, redis_url: str
     ) -> None:
-        from llamatrade_common.eventbus import EventBus
+        from llamatrade_common.events import EventBus
 
         from src.ledger.projector import LedgerProjector
         from src.tasks.fill_ingestion import (

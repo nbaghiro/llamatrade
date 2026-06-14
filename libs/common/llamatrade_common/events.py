@@ -343,7 +343,9 @@ class EventBus:
         while True:
             try:
                 redis = await self._client()
-                response = await redis.xread({self.key(stream): cursor}, block=block_ms, count=count)
+                response = await redis.xread(
+                    {self.key(stream): cursor}, block=block_ms, count=count
+                )
                 attempt = 0
                 if not response:
                     continue

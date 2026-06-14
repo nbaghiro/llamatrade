@@ -5,8 +5,7 @@ from uuid import uuid4
 
 import pytest
 
-from llamatrade_common.eventbus import EventBus
-from llamatrade_common.events import Event, EventType
+from llamatrade_common.events import Event, EventBus, EventType
 
 from src.streaming.publisher import (
     OrderUpdate,

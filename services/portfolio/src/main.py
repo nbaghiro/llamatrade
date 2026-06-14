@@ -71,7 +71,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     stop_event = asyncio.Event()
     event_bus = None
     try:
-        from llamatrade_common.eventbus import EventBus
+        from llamatrade_common.events import EventBus
 
         from src.clients.market_data import get_market_data_client
         from src.tasks.equity_snapshot import snapshot_loop
