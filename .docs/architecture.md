@@ -16,7 +16,7 @@ This document is the **single entry point** for understanding the system. It exp
 6. [Data Model](#data-model)
 7. [Multi-Tenancy](#multi-tenancy)
 8. [Service Communication (gRPC/Connect)](#service-communication)
-9. [Event Sourcing](#event-sourcing)
+9. [Durability & state authority](#durability--state-authority)
 10. [Security](#security)
 11. [Technology Stack](#technology-stack)
 12. [Getting Started](#getting-started)
@@ -66,8 +66,13 @@ Where to go for depth on each area:
 **The core mental model.** Everything in the product follows one loop:
 
 ```
-   Build / pick a Strategy  ─►  Backtest it  ─►  Deploy to Paper  ─►  Go Live
-        (visual builder)         (vs SPY)         (simulated)        (real money)
+╭─────────────────╮      ╭─────────────────╮      ╭─────────────────╮      ╭─────────────────╮
+│  BUILD or PICK  │ ───► │    BACKTEST     │ ───► │ DEPLOY TO PAPER │ ───► │     GO LIVE     │
+│ visual builder  │      │ vs SPY · sharpe │      │ simulated money │      │ real money with │
+│ template · AI   │      │ drawdown · wins │      │ on live data    │      │ risk guardrails │
+╰─────────────────╯      ╰─────────────────╯      ╰─────────────────╯      ╰────────┬────────╯
+         ▲                                                                          │
+         ╰───────────────────── iterate: tweak → re-test → redeploy ◄───────────────╯
 ```
 
 **The brokerage relationship.** LlamaTrade never holds customer funds or securities. Each user connects **their own Alpaca brokerage account**; LlamaTrade is the automation layer that places orders on that account. Alpaca (a registered broker-dealer, member FINRA/SIPC) is the broker of record. See [Alpaca integration](#41-alpaca-integration--account-model).
@@ -96,34 +101,29 @@ A typical end-to-end flow through the product:
 LlamaTrade is a set of focused microservices. The browser talks **directly** to each service over the Connect protocol (no API gateway); services talk to each other over gRPC; and asynchronous/real-time work flows through Redis.
 
 ```
-┌───────────────────────────────────────────────────────────────────────────────────────┐
-│                                     USER BROWSER                                      │
-└───────────────────────────────────────────┬───────────────────────────────────────────┘
-                                            │
-                                            ▼
-┌───────────────────────────────────────────────────────────────────────────────────────┐
-│                              FRONTEND (React SPA) :8800                               │
-│  ┌───────────┐ ┌───────────┐ ┌───────────┐ ┌───────────┐ ┌───────────┐ ┌───────────┐  │
-│  │   Auth    │ │ Strategy  │ │ Backtest  │ │  Trading  │ │ Portfolio │ │  Copilot  │  │
-│  │   Pages   │ │  Builder  │ │  Runner   │ │   Panel   │ │ Dashboard │ │   Chat    │  │
-│  └───────────┘ └───────────┘ └───────────┘ └───────────┘ └───────────┘ └───────────┘  │
-│                           Zustand + Connect Protocol Client                           │
-└───────────────────────────────────────────┬───────────────────────────────────────────┘
-                                            │ Connect Protocol (HTTP/1.1 + JSON)
-                                            ▼
- ┌────────┐ ┌────────┐ ┌────────┐ ┌────────┐ ┌────────┐ ┌────────┐ ┌────────┐ ┌────────┐
- │  Auth  │ │Strategy│ │Backtest│ │ Market │ │Trading │ │Portfol.│ │ Notif. │ │ Agent  │
- │  8810  │ │  8820  │ │  8830  │ │  8840  │ │  8850  │ │  8860  │ │  8870  │ │  8890  │
- └───┬────┘ └───┬────┘ └───┬────┘ └───┬────┘ └───┬────┘ └───┬────┘ └───┬────┘ └───┬────┘
-     └──────────┴──────────┴──────────┴─gRPC┬────┴──────────┴──────────┴──────────┘
-                                            │
-                   ┌────────────────────────┼────────────────────────┐
-                   ▼                        ▼                        ▼
-           ┌──────────────┐         ┌──────────────┐         ┌──────────────┐
-           │   Postgres   │         │    Redis     │         │    Alpaca    │
-           │ + Timescale  │         │ Cache/Queue  │         │     API      │
-           │    (RLS)     │         │   /Streams   │         │  + Streams   │
-           └──────────────┘         └──────────────┘         └──────────────┘
+                       🦙  LlamaTrade — every request flows downhill
+       ┌────────────────────────────────────────────────────────────────────┐
+       │                         web · 8800 (React SPA)                     │
+       └────────┬─────────────────────┬─────────────────────┬───────────────┘
+          build │                test │                live │     Connect/gRPC · JWT
+       ┌────────▼─────────┐ ┌─────────▼────────┐ ┌──────────▼───────────────┐
+       │ agent · 8890     │ │ backtest · 8830  │ │ strategy · 8820          │
+       │ AI chat → DSL    │ │ Celery engine    │ │ StartExecution           │
+       └────────┬─────────┘ │ two-clock sim    │ └──────────┬───────────────┘
+                │           └─────────┬────────┘ fund sleeve│ AllocateCapital
+       ┌────────▼─────────┐ ┌─────────▼────────┐ ┌──────────▼───────────────┐
+       │ strategy · 8820  │ │ market-data 8840 │ │ trading · 8850           │
+       │ parse · version  │ │ history (cached) │ │ runner: 4 loops          │
+       └──────────────────┘ └──────────────────┘ │ orders ⇄ Alpaca WS+REST  │
+                                                 └──────────┬───────────────┘
+        gatekeepers on every stream:         terminal fills │ exactly-once
+        auth 8810 · billing 8880 · notification             ▼
+       ╔════════════════════════════════════════════════════════════════════╗
+       ║  portfolio · 8860 — THE LEDGER DELTA   ★ book of record            ║
+       ║  sleeves · lots · double-entry events · per-strategy P&L           ║
+       ║  Σ sleeve_qty == broker_qty · Σ cash == broker_cash · nets to 0    ║
+       ╚════════════════════════════════════════════════════════════════════╝
+                  Postgres (RLS)  ·  Redis (queues · fills · progress)
 ```
 
 ### Core Services
@@ -176,11 +176,18 @@ Because the user is Alpaca's direct customer, **Alpaca is the broker-dealer of r
 A user builds a strategy in the **visual builder** (or starts from a template, or describes it to the AI copilot). The builder state compiles to a **DSL** — an S-expression representation that is portable and executable. Saving a strategy creates an **immutable `StrategyVersion`** (the visual `config` JSON plus the compiled `sexpr`); editing always produces a new version, so backtests and live sessions are always pinned to an exact, reproducible definition.
 
 ```
-Visual Builder ──compile──► DSL (S-expression) ──save──► StrategyVersion (immutable)
-   (config JSON)                                              │
-                                                   ┌──────────┴──────────┐
-                                                   ▼                     ▼
-                                              Backtest             Trading Session
+╭────────────────╮ compile ╭────────────────────╮  save  ╔════════════════════════╗
+│ Visual Builder │ ──────► │ DSL (S-expression) │ ─────► ║ StrategyVersion vN     ║
+│ blocks · JSON  │         │ portable, runnable │        ║ immutable — edits mint ║
+╰────────────────╯         ╰────────────────────╯        ║ vN+1, never mutate     ║
+                                                         ╚═══════════╤════════════╝
+                                       every run pins an exact vN    │
+                                                      ┌──────────────┴──────────────┐
+                                                      ▼                             ▼
+                                              ╭───────────────╮             ╭───────────────╮
+                                              │   Backtest    │             │ Live session  │
+                                              │ reproducible  │             │ reproducible  │
+                                              ╰───────────────╯             ╰───────────────╯
 ```
 
 → Deep dive: [strategy.md](services/strategy.md), [strategy-dsl.md](strategy-dsl.md), [agent.md](services/agent.md)
@@ -190,12 +197,19 @@ Visual Builder ──compile──► DSL (S-expression) ──save──► Str
 When a user deploys a strategy, the Trading service starts a **strategy runner** bound to that tenant's Alpaca credentials. From then on the runner drives the full loop:
 
 ```
-Market Data (live bars) ─► Strategy logic ─► Signal ─► Risk checks + Circuit breaker
-                                                              │ (pass)
-                                                              ▼
-                                                     Order Executor ─► Alpaca submit_order
-                                                              │
-        Position reconciliation ◄── Position update ◄── Fill (trade_updates stream)
+            ╭────────────────╮ 1-min bars ╭────────────────╮  signal  ╭────────────────╮
+      ┌───► │  market data   │ ─────────► │ strategy logic │ ───────► │ risk checks +  │
+      │     │  live stream   │            │ rebalance gate │          │ circuit breaker│
+      │     ╰────────────────╯            │ (≤ once a day) │          ╰───────┬────────╯
+      │                                   ╰────────────────╯             pass │
+      │ reconcile vs broker                                                   ▼
+      │ every 5 min                                                   ╭────────────────╮
+      │                                                               │ order executor │
+      │     ╭────────────────╮   fills    ╭────────────────╮  submit  │ deterministic  │
+      └──── │   positions    │ ◄───────── │ trade_updates  │ ◄─────── │ client_order_id│
+            │ truth = fills  │   async    │ stream (Alpaca)│          ╰────────────────╯
+            ╰───────┬────────╯            ╰────────────────╯
+                    ╰──► terminal fills land in the portfolio ledger (per-sleeve P&L)
 ```
 
 1. **Session start** — preflight checks (paid plan required for live; buying power via Alpaca account); runner launches.
@@ -205,7 +219,7 @@ Market Data (live bars) ─► Strategy logic ─► Signal ─► Risk checks +
 5. **Fills in** — a **`trade_updates` stream** delivers fills **asynchronously** (submission ≠ instant fill); **fills are the source of truth for positions** (not optimistic local state).
 6. **Reconciliation** — the runner periodically reconciles local positions against the broker and corrects drift.
 
-Durability is provided by **event sourcing** (see [§Event Sourcing](#event-sourcing)) with deterministic `client_order_id`s for idempotent submission and crash recovery.
+Durability is **layered by authority** (see [§Durability & state authority](#durability--state-authority)): the broker is the source of truth for live order status and positions, the [portfolio ledger](portfolio-ledger.md) is the event-sourced book of record, and the order executor keeps a thin durable intent record with a **deterministic `client_order_id`** for idempotent (exactly-once) submission and crash recovery.
 
 → Deep dive: [trading.md](services/trading.md), [portfolio-ledger.md](portfolio-ledger.md)
 
@@ -218,10 +232,16 @@ The **Market Data service** is the single gateway to Alpaca's data and the syste
 - Other services never call Alpaca for data directly — they call Market Data over gRPC.
 
 ```
-Alpaca REST/WS ─► Market Data service ─┬─► TimescaleDB (bars: durable history)
-                                       └─► Redis (hot cache + real-time fan-out)
-                                                  ▲
-   Backtest / Frontend / Trading ──gRPC──────────┘
+                          ╭───────────────────────────╮
+ Alpaca ══ REST history ═►│                           │──► TimescaleDB `bars`
+                          │    market-data · 8840     │    durable, shared history
+ Alpaca ══ WS live ══════►│   the ONLY data gateway   │
+                          │                           │──► Redis
+                          ╰─────────────▲─────────────╯    hot cache · live fan-out
+                                        │ gRPC
+                                        │
+                     backtest · frontend · trading sessions
+                  (no service calls Alpaca for data directly)
 ```
 
 → Deep dive: [market-data.md](services/market-data.md), [decisions/tiingo-vs-alpaca-market-data.md](decisions/tiingo-vs-alpaca-market-data.md)
@@ -244,54 +264,97 @@ A backtest replays a strategy over a historical window and reports how it would 
 PostgreSQL with SQLAlchemy 2.0 (async). All tenant-scoped models inherit a `tenant_id` foreign key to `tenants.id`; price `bars` are shared (no tenant scope) and stored in TimescaleDB.
 
 ```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                                TENANT BOUNDARY                              │
-│   All models below are scoped to a tenant (except Bars, which are shared)   │
-└─────────────────────────────────────────────────────────────────────────────┘
+╔════════════════════════════════════════════════════════════════════════════════════════════╗
+║         TENANT BOUNDARY — every model below carries tenant_id (except shared Bars)         ║
+╚════════════════════════════════════════════════════════════════════════════════════════════╝
 
-                              ┌──────────────────┐
-                              │     TENANT       │
-                              │ id, name, slug   │
-                              │ settings (JSONB) │
-                              └────────┬─────────┘
-        ┌──────────────┬───────────────┼───────────────┬──────────────┐
-        ▼              ▼               ▼               ▼              ▼
-   ┌────────┐   ┌──────────┐   ┌─────────────┐  ┌────────────┐  ┌──────────┐
-   │  USER  │   │ API_KEY  │   │  ALPACA_    │  │SUBSCRIPTION│  │AUDIT_LOG │
-   │ email  │   │ key_hash │   │ CREDENTIALS │  │ plan,status│  │ action   │
-   │ role   │   │ scopes   │   │ enc keys    │  │ stripe_id  │  │ entity   │
-   │ pw_hash │   └──────────┘   │ is_paper    │  └────────────┘  └──────────┘
-   └────────┘                   └─────────────┘
+                                        ┌──────────────────┐
+                                        │      TENANT      │
+                                        ├──────────────────┤
+                                        │ id, name, slug   │
+                                        │ settings (JSONB) │
+                                        └──────────────────┘
+                                                  │
+          ┌────────────────────┬──────────────────┼─────────────────┬─────────────────┐
+          ▼                    ▼                  ▼                 ▼                 ▼
+┌──────────────────┐  ┌────────────────┐  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐
+│       USER       │  │    API_KEY     │  │ ALPACA_CREDS │  │ SUBSCRIPTION │  │  AUDIT_LOG   │
+├──────────────────┤  ├────────────────┤  ├──────────────┤  ├──────────────┤  ├──────────────┤
+│ email, role      │  │ key_hash       │  │ enc api keys │  │ plan, status │  │ action       │
+│ pw_hash (bcrypt) │  │ scopes, expiry │  │ is_paper     │  │ stripe_id    │  │ entity, diff │
+└──────────────────┘  └────────────────┘  └──────────────┘  └──────────────┘  └──────────────┘
 
-                       ┌──────────────────────────┐
-                       │        STRATEGY          │
-                       │ name, status, version    │
-                       │ created_by (→ User)      │
-                       └────────────┬─────────────┘
-          ┌─────────────────────────┼─────────────────────────┐
-          ▼                         ▼                         ▼
- ┌─────────────────┐     ┌─────────────────────┐    ┌──────────────────┐
- │ STRATEGY_VERSION│     │  TRADING_SESSION    │    │     BACKTEST     │
- │ version, config │     │  mode: paper|live   │    │ date range,      │
- │ sexpr (compiled)│     │  status, symbols    │    │ initial_capital  │
- └─────────────────┘     └──────────┬──────────┘    └────────┬─────────┘
-  immutable snapshots               │                        │ 1:1
-                          ┌─────────┴─────────┐               ▼
-                          ▼                   ▼      ┌──────────────────┐
-                    ┌──────────┐       ┌──────────┐ │ BACKTEST_RESULT  │
-                    │  ORDER   │       │ POSITION │ │ return, sharpe,  │
-                    │ side,qty │       │ qty, pnl │ │ drawdown,        │
-                    │ status   │       └──────────┘ │ equity_curve     │
-                    └──────────┘                    └──────────────────┘
+                                    ┌─────────────────────┐
+                                    │       STRATEGY      │
+                                    ├─────────────────────┤
+                                    │ name, status        │
+                                    │ created_by (→ User) │
+                                    └─────────────────────┘
+                                               │
+                      ┌────────────────────────┼────────────────────────┐
+                      ▼                        ▼                        ▼
+            ┌──────────────────┐    ┌─────────────────────┐    ┌─────────────────┐
+            │ STRATEGY_VERSION │    │  STRATEGY_EXECUTION │    │     BACKTEST    │
+            ├──────────────────┤    ├─────────────────────┤    ├─────────────────┤
+            │ version, sexpr   │    │ mode, status        │    │ date range      │
+            │ compiled JSON    │    │ allocated_capital   │    │ initial_capital │
+            │ (immutable)      │    │ sleeve_id ─► ledger │    └─────────────────┘
+            └──────────────────┘    └─────────────────────┘             │
+                                               │                        │ 1:1
+                                               ▼                        │
+                                     ┌──────────────────┐               │
+                                     │ TRADING_SESSION  │               │
+                                     ├──────────────────┤               │
+                                     │ runner session   │               │
+                                     │ mode: paper|live │               │
+                                     │ status, symbols  │               │
+                                     └──────────────────┘               │
+                                               │                        │
+                        ┌──────────────────────┤                        │
+                        ▼                      ▼                        ▼
+              ┌───────────────────┐    ┌───────────────┐    ┌──────────────────────┐
+              │       ORDER       │    │    POSITION   │    │   BACKTEST_RESULT    │
+              ├───────────────────┤    ├───────────────┤    ├──────────────────────┤
+              │ side, qty, status │    │ qty, avg_cost │    │ sharpe, drawdown     │
+              │ client_order_id   │    │ realized pnl  │    │ equity_curve, trades │
+              └───────────────────┘    └───────────────┘    └──────────────────────┘
 
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                        SHARED DATA (No Tenant Scope)                        │
-│   BAR (TimescaleDB hypertable): symbol+timestamp+timeframe (PK),            │
-│   OHLCV; partitioned by time. Timeframes: 1Min…1Day.                       │
-└─────────────────────────────────────────────────────────────────────────────┘
+╔════════════════════════════════════════════════════════════════════════════════════════════╗
+║                 THE LEDGER (portfolio · 8860) — append-only book of record                 ║
+╚════════════════════════════════════════════════════════════════════════════════════════════╝
+                               ┌─────────────────────────────┐
+                               │           ACCOUNT           │
+                               ├─────────────────────────────┤
+                               │ 1 per broker credential set │
+                               │ anchors reconciliation      │
+                               └─────────────────────────────┘
+                                              │
+                               ┌──────────────┴───────────────┐
+                               ▼                              ▼
+                  ┌────────────────────────┐      ┌───────────────────────┐
+                  │         SLEEVE         │      │      LEDGER_EVENT     │
+                  ├────────────────────────┤      ├───────────────────────┤
+                  │ type: strategy|manual| │      │ seq, event_id (dedup) │
+                  │ unmanaged|unallocated  │      │ double-entry postings │
+                  │ cash, realized_pnl     │      │ ORDER_FILLED, …       │
+                  └────────────────────────┘      └───────────────────────┘
+                               │
+                               ▼
+                  ┌─────────────────────────┐
+                  │           LOT           │
+                  ├─────────────────────────┤
+                  │ symbol, qty, cost basis │
+                  │ opened_by_order_id      │
+                  └─────────────────────────┘
+   sleeves · lots · cash are PROJECTIONS folded from LEDGER_EVENTs — never mutated directly
+
+╔════════════════════════════════════════════════════════════════════════════════════════════╗
+║                               SHARED DATA (no tenant scope)                                ║
+║    BAR — TimescaleDB hypertable · PK (symbol, timestamp, timeframe) · OHLCV · 1Min…1Day    ║
+╚════════════════════════════════════════════════════════════════════════════════════════════╝
 ```
 
-Key relationships: a `Tenant` owns Users, API Keys, Alpaca Credentials, a Subscription, Strategies, and Audit Logs. Each `Strategy` owns immutable `StrategyVersion`s and spawns `TradingSession`s (→ Orders, Positions) and `Backtest`s (→ 1:1 Result).
+Key relationships: a `Tenant` owns Users, API Keys, Alpaca Credentials, a Subscription, Strategies, and Audit Logs. Each `Strategy` owns immutable `StrategyVersion`s and spawns `StrategyExecution`s (funded with a ledger sleeve, running as `TradingSession`s → Orders, Positions) and `Backtest`s (→ 1:1 Result). The ledger cluster — `Account` → `Sleeve`s + append-only `LedgerEvent`s, with `Lot`s as projections — is owned by the portfolio service and is the book of record for money and positions.
 
 → Deep dive: the SQLAlchemy models live in `libs/db`; migrations are managed with Alembic.
 
@@ -329,12 +392,7 @@ Proto definitions live in `libs/proto/llamatrade_proto/protos/`; generated Pytho
 
 ### Enums (proto is the source of truth)
 
-Enums are defined once in proto and generated for both languages:
-
-```
-Proto definition ──► Python integer constants (+ conversion helpers for external APIs)
-                 └─► TypeScript numeric enums
-```
+Enums are defined once in proto and generated for both languages — Python integer constants (with `*_to_str()` helpers used only at external boundaries) and TypeScript numeric enums:
 
 ```python
 from llamatrade_proto.generated import ORDER_SIDE_BUY, ORDER_STATUS_FILLED
@@ -372,39 +430,29 @@ raise ConnectError(Code.NOT_FOUND, f"Strategy not found: {strategy_id}")
 
 ---
 
-## Event Sourcing
+## Durability & state authority
 
-The Trading service uses event sourcing for durable execution, crash recovery, and a complete audit trail.
+Trading durability is **layered by authority** — each kind of state is owned by the system that is actually the source of truth for it, rather than by a single session-level event log. This avoids keeping multiple authorities in sync.
 
-```
-Strategy Runner ─► EventSourcedOrderExecutor ─► Event Store (append-only)
-   Signal              1. deterministic client_order_id (SHA256)
-                       2. check Alpaca for existing order (recovery)
-                       3. risk checks
-                       4. emit OrderSubmitted
-                       5. submit to Alpaca
-                       6. emit OrderAccepted / OrderRejected / OrderFilled
-```
+| State | Authority | Mechanism |
+| --- | --- | --- |
+| Live order status & positions | **Broker (Alpaca)** | Trade-updates stream + periodic reconciliation; fills are the source of truth |
+| Money, lots, cost basis, per-strategy P&L, provenance | **[Portfolio ledger](portfolio-ledger.md)** | Account-grain, append-only, double-entry event log; per-strategy history = ledger filtered by sleeve |
+| Order intent / exactly-once submission | **Trading order executor** | Durable order rows keyed by a deterministic `client_order_id` |
+| Strategy runtime (indicator windows, rebalance clock) | **Runner** | Rehydrated on restart from market data + broker/ledger (checkpoint, not replay) |
 
-**Events** are immutable facts ordered by a global sequence, scoped to tenant + session. **Aggregates** (current state) are derived by replaying events:
-
-```python
-state = await SessionState.load(session_id, tenant_id, event_store)
-state.positions["AAPL"]; state.orders[order_id]; state.realized_pnl
-```
-
-**Idempotent submission.** Orders use a deterministic `client_order_id` derived from signal parameters, so the same signal always yields the same id and Alpaca treats it as an idempotency key:
+**Idempotent submission.** Orders use a deterministic `client_order_id` derived from the signal, so the same signal always yields the same id and Alpaca treats it as an idempotency key — a retry after a crash collapses onto the same broker order rather than placing a second one:
 
 ```python
 data = f"{session_id}:{symbol}:{side}:{signal_timestamp.isoformat()}"
 client_order_id = "lt-" + hashlib.sha256(data.encode()).hexdigest()[:16]
 ```
 
-**Crash recovery.** On restart, signal replay reproduces the same `client_order_id`; the executor checks Alpaca for the order, emits any missing events, and skips re-submission.
+**Crash recovery.** On restart the runner re-syncs equity, reconciles positions against the broker (the source of truth), and re-warms indicators from market data. Because the deterministic `client_order_id` is sent to Alpaca, an order recorded but not persisted before a crash is rejected as a duplicate at the broker instead of double-filling.
 
-**Event families:** signal (`signal.generated/rejected`), order (`order.submitted/accepted/rejected/filled/partially_filled/cancelled`), position (`position.opened/increased/reduced/closed`), session (`session.started/stopped/paused/resumed`), and circuit breaker (`circuit_breaker.triggered/reset`).
+> The trading service previously carried a separate session-level event-sourcing subsystem (`trading_events`, `EventSourcedOrderExecutor`, `SessionState` replay). It was never wired into the live path and has been **retired** in favour of the model above; the portfolio ledger is the event-sourced book of record.
 
-→ Deep dive: [trading.md](services/trading.md)
+→ Deep dive: [trading.md](services/trading.md), [portfolio-ledger.md](portfolio-ledger.md)
 
 ---
 
