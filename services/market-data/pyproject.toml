@@ -25,6 +25,9 @@ dev = [
     "pytest-cov>=4.1.0",
     "ruff>=0.1.0",
 ]
+integration = [
+    "testcontainers[postgres,redis]>=4.0.0",
+]
 
 [build-system]
 requires = ["hatchling"]
@@ -37,6 +40,9 @@ packages = ["src"]
 asyncio_mode = "auto"
 testpaths = ["tests"]
 pythonpath = ["."]
+markers = [
+    "integration: requires Docker (real TimescaleDB/Redis via testcontainers)",
+]
 
 [tool.ruff]
 extend = "../../pyproject.toml"

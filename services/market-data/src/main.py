@@ -25,15 +25,30 @@ from llamatrade_alpaca import (
 from llamatrade_alpaca import (
     init_market_data_stream as init_alpaca_stream,
 )
+from llamatrade_common.events import EventBus
 from llamatrade_common.observability import enable_db_pool_metrics, setup_observability
 from llamatrade_db import close_db, get_pool_stats
 
 from src.cache import close_cache, get_cache, init_cache
 from src.error_handlers import register_error_handlers
 from src.streaming.bridge import close_stream_bridge, init_stream_bridge
+from src.streaming.bus_bridge import BusBridge
 from src.streaming.manager import get_stream_manager
 
 logger = logging.getLogger(__name__)
+
+
+def _bars_from_bus() -> bool:
+    """Bus mode (consolidated) vs legacy direct-Alpaca, from env.
+
+    Explicit ``MARKET_DATA_BARS_FROM_BUS`` wins; otherwise default to bus mode
+    whenever Redis is configured (the deployed topology).
+    """
+    flag = os.getenv("MARKET_DATA_BARS_FROM_BUS")
+    if flag is not None:
+        return flag.strip().lower() in {"1", "true", "yes", "on"}
+    return os.getenv("REDIS_URL") is not None
+
 
 # Service configuration
 SERVICE_NAME = "market-data"
@@ -49,6 +64,10 @@ CORS_ORIGINS = os.getenv(
 # Track streaming state for health check
 _stream_connected = False
 
+# Bus-mode fan-out handles (set in lifespan, closed on shutdown)
+_event_bus: EventBus | None = None
+_bus_bridge: BusBridge | None = None
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
@@ -62,22 +81,30 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     else:
         logger.warning("Redis cache unavailable - service will operate without caching")
 
-    # Startup - initialize Alpaca stream (non-critical)
-    alpaca_stream = await init_alpaca_stream()
-    if alpaca_stream:
-        logger.info("Alpaca stream connected successfully")
+    # Startup - live bar fan-out. Two modes:
+    #  - bus mode (default when REDIS_URL is set): bars come from the internal
+    #    EventBus fed by the ingest role; serving holds NO Alpaca connection.
+    #  - legacy mode: serving opens its own Alpaca stream directly.
+    global _event_bus, _bus_bridge
+    stream_manager = get_stream_manager()
+    if _bars_from_bus():
+        _event_bus = EventBus(os.getenv("REDIS_URL"))
+        _bus_bridge = BusBridge(_event_bus, stream_manager)
+        await _bus_bridge.start()
         _stream_connected = True
-
-        # Initialize stream bridge
-        stream_manager = get_stream_manager()
-        await init_stream_bridge(alpaca_stream, stream_manager)
-        logger.info("Stream bridge initialized")
+        logger.info("Live bars sourced from internal bus (consolidated mode)")
     else:
-        logger.warning(
-            "Alpaca stream unavailable - real-time streaming will not work. "
-            "Check ALPACA_API_KEY and ALPACA_API_SECRET environment variables."
-        )
-        _stream_connected = False
+        alpaca_stream = await init_alpaca_stream()
+        if alpaca_stream:
+            _stream_connected = True
+            await init_stream_bridge(alpaca_stream, stream_manager)
+            logger.info("Stream bridge initialized (legacy direct-Alpaca mode)")
+        else:
+            logger.warning(
+                "Alpaca stream unavailable - real-time streaming will not work. "
+                "Check ALPACA_API_KEY and ALPACA_API_SECRET environment variables."
+            )
+            _stream_connected = False
 
     # Mount Connect ASGI app
     try:
@@ -95,6 +122,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     yield
 
     # Shutdown - close connections in reverse order
+    if _bus_bridge is not None:
+        await _bus_bridge.stop()
+    if _event_bus is not None:
+        await _event_bus.close()
     await close_stream_bridge()
     await close_alpaca_stream()
     await close_all_clients()

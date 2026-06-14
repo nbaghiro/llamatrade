@@ -26,24 +26,38 @@ This service is **read-only** with respect to Alpaca (market data + clock); it n
 - **Alpaca access:** via the shared `llamatrade_alpaca` library only — `MarketDataClient` (REST) and `MarketDataStreamClient` (WebSocket). This service does **not** contain its own Alpaca HTTP/WebSocket client.
 
 ```
-Frontend / other services
-        │  Connect (HTTP/1.1 + JSON)  /  gRPC streams
-        ▼
-┌──────────────────────────────────────────────────────────┐
-│ MarketDataServicer (grpc/servicer.py)                      │
-│   • unary RPCs   • streaming RPCs                          │
-└───────────────┬───────────────────────┬───────────────────┘
-                │                        │
-   (cached path)│                        │(stream path)
-                ▼                        ▼
-   MarketDataService            StreamBridge ── StreamManager
-   (services/…) + Redis          (streaming/bridge.py,           per-client
-                │                  manager.py)                    asyncio.Queue
-                ▼                        ▲
-   llamatrade_alpaca.MarketDataClient    │ callbacks
-   (REST: data.alpaca.markets/v2)        │
-                                  llamatrade_alpaca.MarketDataStreamClient
-                                  (wss://stream.data.alpaca.markets/v2/iex)
+          ┌────────────────────────────────────────┐
+          │                CALLERS                 │
+          ├────────────────────────────────────────┤
+          │ frontend · backtest · trading sessions │
+          └────────────────────────────────────────┘
+                               │
+                               ▼ Connect HTTP/1.1+JSON · gRPC streams
+          ╭────────────────────────────────────────╮
+          │ MarketDataServicer · grpc/servicer.py  │
+          ├────────────────────────────────────────┤
+          │ unary RPCs (cached)  ·  streaming RPCs │
+          ╰────────────────────────────────────────╯
+                               │
+             ┌─────────────────┴─────────────────┐
+             ▼ cached path                       ▼ stream path
+╭────────────────────────╮      ╭─────────────────────────────────╮
+│   MarketDataService    │      │          stream fan-out         │
+├────────────────────────┤      ├─────────────────────────────────┤
+│ cache-aware logic      │      │ StreamBridge → StreamManager    │
+│ + Redis · per-type TTL │      │ ref-counted subs · per-client Q │
+╰────────────────────────╯      ╰─────────────────────────────────╯
+             │                                   │
+             ▼                                   ▲ callbacks
+╭─────────────────────────╮      ╭─────────────────────────────────╮
+│    llamatrade_alpaca    │      │        llamatrade_alpaca        │
+├─────────────────────────┤      ├─────────────────────────────────┤
+│ MarketDataClient (REST) │      │ MarketDataStreamClient (WS)     │
+│ data.alpaca.markets/v2  │      │ stream.data.alpaca.markets /iex │
+╰─────────────────────────╯      ╰─────────────────────────────────╯
+             ║                                   ║
+             ▲                                   ▲
+      Alpaca ═► REST                        Alpaca ═► WS IEX
 ```
 
 The gRPC servicer's unary handlers route through the Redis-cached `MarketDataService`, so the public gRPC path and direct `MarketDataService` callers share the same cache layer.
