@@ -25,102 +25,67 @@ Backtesting enables users to evaluate trading strategies against historical mark
 ### System Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                         BACKTESTING SYSTEM ARCHITECTURE                     │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                             │
-│   ┌──────────┐                            ┌─────────────────────────────┐   │
-│   │ Frontend │───────────────────────────▶│    Backtest Service :8830   │   │
-│   │          │      Connect Protocol      │  • Request validation       │   │
-│   └──────────┘                            │  • Job queuing              │   │
-│        ▲                                  │  • Result retrieval         │   │
-│        │ WebSocket/Polling                └─────────────┬───────────────┘   │
-│        │                                                │                   │
-│   ┌────┴─────────────────────────────┐                  │ Celery Task       │
-│   │        Progress Updates          │                  ▼                   │
-│   │   Redis Pub/Sub ◀────────────────┼──────── Celery Workers (N)           │
-│   └──────────────────────────────────┘          │  • Run simulations        │
-│                                                 │  • Calculate metrics      │
-│                                                 │  • Cache results          │
-│   ┌─────────────────────────────────────────────┴───────────────────────┐   │
-│   │                        DATA DEPENDENCIES                            │   │
-│   │                                                                     │   │
-│   │  Strategy Service ────▶ Strategy config, indicators, conditions     │   │
-│   │  Market Data Service ──▶ Historical OHLCV bars                      │   │
-│   │  PostgreSQL ───────────▶ Backtest records, results storage          │   │
-│   │  Redis ────────────────▶ Bar cache, indicator cache, progress       │   │
-│   │                                                                     │   │
-│   └─────────────────────────────────────────────────────────────────────┘   │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
+╭───────────────╮        ╭───────────────────────────────╮        ╭────────────────────╮
+│    Frontend   │  ──►   │         Backtest :8830        │  ──►   │ Celery Workers (N) │
+├───────────────┤        ├───────────────────────────────┤        ├────────────────────┤
+│ progress bar  │ Connect│ RPCs: RunBacktest ·           │ Celery │ run vectorized sim │
+│ cancel button │        │ GetBacktest · ListBacktests · │        │ compute metrics    │
+╰───────────────╯        │ CancelBacktest ·              │        │ cache + persist    │
+                         │ CompareBacktests ·            │        ╰────────────────────╯
+                         │ StreamBacktestProgress        │
+                         │ └ BacktestService: validate · │
+                         │   enqueue · fetch result      │
+                         ╰───────────────────────────────╯
+        ▲                                                                    │
+        ┌─ progress · Redis pub/sub (Connect stream) ────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────┐
+│                          DATA DEPENDENCIES                          │
+├─────────────────────────────────────────────────────────────────────┤
+│ Strategy svc  ──gRPC──►  strategy config · indicators · conditions  │
+│ Market Data   ──gRPC──►  historical OHLCV bars (TimescaleDB-backed) │
+│ PostgreSQL    ────────►  backtest records · results storage         │
+│ Redis         ────────►  job queue · bar/indicator cache · progress │
+└─────────────────────────────────────────────────────────────────────┘
 ```
 
 ### Performance Architecture
 
 A core product requirement is **speed at scale**. The system achieves sub-minute execution through:
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                         PERFORMANCE ARCHITECTURE                            │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                             │
-│  VECTORIZED COMPUTATION (100-500x speedup)                                  │
-│  ─────────────────────────────────────────                                  │
-│  • Process entire time series with NumPy arrays, not row-by-row loops       │
-│  • 45 years × 100 symbols: ~30 seconds (vs ~4 hours row-by-row)             │
-│                                                                             │
-│  PARALLEL PROCESSING                                                        │
-│  ───────────────────                                                        │
-│  • Large universes: Split symbols across workers                            │
-│  • Long periods: Split time chunks across workers                           │
-│  • Auto-selection based on job characteristics                              │
-│                                                                             │
-│  MULTI-LEVEL CACHE                                                          │
-│  ────────────────────────────────────────────────────────────────────────   │
-│                                                                             │
-│  L1: In-Process LRU     │ ~100MB/worker │ <1ms   │ Hot data in current run  │
-│  L2: Redis Cluster      │ Shared        │ ~5ms   │ Indicators, recent runs  │
-│  L3: TimescaleDB        │ 5yr hot data  │ ~50ms  │ Compressed hypertables   │
-│  L4: GCS + DuckDB       │ 1980-2019     │ ~200ms │ Parquet cold storage     │
-│                                                                             │
-│  CACHE HIT SCENARIOS                                                        │
-│  • Same backtest twice: <100ms (results cached)                             │
-│  • Same strategy, different dates: <1s (indicators cached)                  │
-│  • First run, recent data: <10s (TimescaleDB)                               │
-│  • First run, cold data: <30s (Parquet fetch)                               │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
+Two levers feed the engine: a **vectorized** core (NumPy over the whole series, not row-by-row — ~100–500×; 45 yr × 100 symbols runs in ~30 s vs. ~4 h) and **parallel processing** (split by symbol or time chunk, auto-selected by job shape). Both sit over a **multi-level cache** that falls through tier by tier on a miss:
+
+| Tier | Store | Latency | Holds |
+| --- | --- | --- | --- |
+| L1 | in-process LRU (~100 MB/worker) | <1 ms | hot data, current run |
+| L2 | Redis (shared) | ~5 ms | indicators, recent runs |
+| L3 | TimescaleDB (5 yr hot) | ~50 ms | compressed hypertables |
+| L4 | GCS + DuckDB (Parquet, 1980–2019) | ~200 ms | cold storage |
+
+Resulting cache-hit profile: same backtest twice → <100 ms (results cached); same strategy, new dates → <1 s (indicators cached); first run on recent data → <10 s (TimescaleDB); first run on cold data → <30 s (Parquet fetch).
 
 ### Execution Flow
 
 ```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                         BACKTEST EXECUTION FLOW                             │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                             │
-│  USER                           SYSTEM                                      │
-│  ────                           ──────                                      │
-│                                                                             │
-│  1. Click "Run Backtest"  ───▶  Validate request, create DB record          │
-│                                 Queue Celery task, return backtest_id       │
-│                                                                             │
-│  2. See progress bar      ◀───  Worker: Update status to RUNNING            │
-│     (polling/WebSocket)         Fetch strategy config (10%)                 │
-│                                 Fetch market data, check cache (30%)        │
-│                                 Compute indicators (40%)                    │
-│                                 Run simulation loop (50-90%)                │
-│                                 Calculate metrics (95%)                     │
-│                                                                             │
-│  3. View results          ◀───  Worker: Save results, mark COMPLETED        │
-│                                 Return metrics, equity curve, trades        │
-│                                                                             │
-│  SIMULATION LOOP (for each bar):                                            │
-│  ───────────────────────────────                                            │
-│  Load OHLCV ─▶ Compute indicators ─▶ Evaluate conditions ─▶ Generate signal │
-│       ─▶ Apply slippage/commission ─▶ Execute trade ─▶ Update portfolio     │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
+┌───────────────────────────────────────────────────────────────────────────────────┐
+│          REQUEST LIFECYCLE  (user ⇄ system, cooperative cancel any time)          │
+├───────────────────────────────────────────────────────────────────────────────────┤
+│ 1. Click "Run Backtest"  → validate · create DB record · queue Celery · return id │
+│ 2. Watch progress        ← RUNNING · 10% config · 30% data · 40% indicators ·     │
+│                             50-90% simulate · 95% metrics  (Redis pub/sub)        │
+│ 3. View results          ← COMPLETED · metrics · equity curve · trades            │
+└───────────────────────────────────────────────────────────────────────────────────┘
+
+┌───────────────────────────────────────────────────────────────────────────┐
+│ SIMULATION LOOP  ·  per bar (loops until window end · cooperative cancel) │
+├───────────────────────────────────────────────────────────────────────────┤
+│ load OHLCV ─► compute indicators ─► evaluate conditions ─► generate       │
+│                                                               signal      │
+│       └─► apply slippage / commission ─► execute trade ─► update          │
+│                                                          portfolio  ──┐   │
+│       ▲                                                               │   │
+│       └─────────────────────  next bar  ──────────────────────────────┘   │
+└───────────────────────────────────────────────────────────────────────────┘
 ```
 
 ### Performance Targets

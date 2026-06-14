@@ -12,7 +12,6 @@ import pytest
 
 from src.engine.backtester import BacktestConfig, BacktestEngine, BarData
 from src.engine.strategy_adapter import (
-    AllocationState,
     create_multi_symbol_strategy,
     should_rebalance,
 )
@@ -202,38 +201,6 @@ class TestShouldRebalance:
         assert should_rebalance(current, last, None) is True
 
 
-class TestAllocationState:
-    """Tests for allocation state management."""
-
-    def test_initial_state(self) -> None:
-        """Test initial allocation state."""
-        state = AllocationState()
-
-        assert state.current_weights == {}
-        assert state.target_weights == {}
-        assert state.last_rebalance is None
-        assert state.rebalance_frequency is None
-
-    def test_state_tracks_weights(self) -> None:
-        """Test that state tracks weight changes."""
-        state = AllocationState()
-        state.current_weights["SPY"] = 60.0
-        state.current_weights["TLT"] = 40.0
-        state.target_weights["SPY"] = 70.0
-
-        assert state.current_weights["SPY"] == 60.0
-        assert state.current_weights["TLT"] == 40.0
-        assert state.target_weights["SPY"] == 70.0
-
-    def test_state_tracks_rebalance(self) -> None:
-        """Test that state tracks rebalance date."""
-        state = AllocationState(rebalance_frequency="monthly")
-        state.last_rebalance = date(2024, 1, 15)
-
-        assert state.rebalance_frequency == "monthly"
-        assert state.last_rebalance == date(2024, 1, 15)
-
-
 class TestMultiSymbolRegressions:
     """Named regression tests for the bugs that motivated the adapter rewrite."""
 
@@ -367,7 +334,7 @@ class TestIndicatorExtraction:
 
     def test_extract_rsi_indicator(self) -> None:
         """Test extracting RSI indicator from strategy."""
-        from llamatrade_compiler.extractor import extract_indicators
+        from llamatrade_compiler import extract_indicators
         from llamatrade_dsl import parse_strategy
 
         config = """(strategy "RSI Test"
@@ -387,7 +354,7 @@ class TestIndicatorExtraction:
 
     def test_extract_sma_indicators(self) -> None:
         """Test extracting multiple SMA indicators."""
-        from llamatrade_compiler.extractor import extract_indicators
+        from llamatrade_compiler import extract_indicators
         from llamatrade_dsl import parse_strategy
 
         config = """(strategy "Multi SMA"
@@ -410,7 +377,7 @@ class TestIndicatorExtraction:
 
     def test_max_lookback_calculation(self) -> None:
         """Test max lookback is calculated correctly."""
-        from llamatrade_compiler.extractor import extract_indicators, get_max_lookback
+        from llamatrade_compiler import extract_indicators, get_max_lookback
         from llamatrade_dsl import parse_strategy
 
         config = """(strategy "MACD Test"
@@ -433,7 +400,7 @@ class TestSymbolExtraction:
 
     def test_extract_symbols_from_assets(self) -> None:
         """Test extracting symbols from asset blocks."""
-        from llamatrade_compiler.extractor import get_required_symbols
+        from llamatrade_compiler import get_required_symbols
         from llamatrade_dsl import parse_strategy
 
         config = """(strategy "Multi Asset"
@@ -453,7 +420,7 @@ class TestSymbolExtraction:
 
     def test_extract_symbols_from_indicators(self) -> None:
         """Test extracting symbols from indicator references."""
-        from llamatrade_compiler.extractor import get_required_symbols
+        from llamatrade_compiler import get_required_symbols
         from llamatrade_dsl import parse_strategy
 
         config = """(strategy "Indicator Symbols"

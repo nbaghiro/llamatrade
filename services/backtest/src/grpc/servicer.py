@@ -336,17 +336,9 @@ class BacktestServicer:
                     if backtest.status in terminal_statuses:
                         return
 
-            # STREAMS_BACKTEST tails the bounded stream from "0" so a client
-            # connecting mid-run replays prior updates and catches up
-            # immediately; pub/sub is the legacy live-only path.
-            from llamatrade_common.eventbus import streams_backtest_enabled
-
-            updates = (
-                subscriber.tail(backtest_id)
-                if streams_backtest_enabled()
-                else subscriber.subscribe(backtest_id)
-            )
-            async for update in updates:
+            # Tail the bounded stream from "0" so a client connecting mid-run
+            # replays prior updates and catches up immediately.
+            async for update in subscriber.tail(backtest_id):
                 if context.cancelled():
                     break
 

@@ -138,11 +138,10 @@ class TestProgressPublisher:
     """Tests for ProgressPublisher class."""
 
     async def test_publish_success(self):
-        """Test publishing progress update."""
-        publisher = ProgressPublisher()
-        mock_redis = MagicMock()
-        mock_redis.publish = AsyncMock()
-        publisher._redis = mock_redis
+        """Test publishing a progress update to the stream."""
+        bus = AsyncMock()
+        bus.publish = AsyncMock(return_value="1-0")
+        publisher = ProgressPublisher(event_bus=bus)
 
         await publisher.publish(
             backtest_id="test-123",
@@ -151,21 +150,15 @@ class TestProgressPublisher:
             eta_seconds=60,
         )
 
-        mock_redis.publish.assert_called_once()
-        call_args = mock_redis.publish.call_args
-        assert "backtest:progress:test-123" in call_args[0]
+        bus.publish.assert_awaited_once()
+        assert bus.publish.await_args.args[0] == "backtest:progress:test-123"
 
     async def test_close(self):
-        """Test closing publisher."""
-        publisher = ProgressPublisher()
-        mock_redis = MagicMock()
-        mock_redis.close = AsyncMock()
-        publisher._redis = mock_redis
-
+        """Test closing publisher closes the bus."""
+        bus = AsyncMock()
+        publisher = ProgressPublisher(event_bus=bus)
         await publisher.close()
-
-        mock_redis.close.assert_called_once()
-        assert publisher._redis is None
+        bus.close.assert_awaited_once()
 
 
 # === ProgressSubscriber Tests ===
@@ -175,20 +168,11 @@ class TestProgressSubscriber:
     """Tests for ProgressSubscriber class."""
 
     async def test_close(self):
-        """Test closing subscriber."""
-        subscriber = ProgressSubscriber()
-        mock_pubsub = MagicMock()
-        mock_pubsub.close = AsyncMock()
-        mock_redis = MagicMock()
-        mock_redis.close = AsyncMock()
-
-        subscriber._pubsub = mock_pubsub
-        subscriber._redis = mock_redis
-
+        """Test closing subscriber closes the bus."""
+        bus = AsyncMock()
+        subscriber = ProgressSubscriber(event_bus=bus)
         await subscriber.close()
-
-        mock_pubsub.close.assert_called_once()
-        mock_redis.close.assert_called_once()
+        bus.close.assert_awaited_once()
 
 
 # === BacktestProgressReporter Tests ===
