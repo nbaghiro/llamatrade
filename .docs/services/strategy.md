@@ -23,121 +23,103 @@ The strategy service is responsible for:
 ### System Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                          STRATEGY SERVICE :8820                             │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                             │
-│  ┌─────────────────────────────────────────────────────────────────────┐    │
-│  │                      FastAPI + Connect ASGI                         │    │
-│  │   /health    StrategyServiceASGIApplication                         │    │
-│  └─────────────────────────────┬───────────────────────────────────────┘    │
-│                                │                                            │
-│  ┌─────────────────────────────┴───────────────────────────────────────┐    │
-│  │                      gRPC Servicer                                  │    │
-│  │                                                                     │    │
-│  │  CreateStrategy ──────► Parse DSL, validate, create strategy + v1   │    │
-│  │  GetStrategy ─────────► Fetch strategy ± specific version           │    │
-│  │  ListStrategies ──────► List with filters (status, type, pagination)│    │
-│  │  UpdateStrategy ──────► Update metadata or create new version       │    │
-│  │  DeleteStrategy ──────► Soft delete (archive)                       │    │
-│  │  CompileStrategy ─────► Validate + parse DSL without saving         │    │
-│  │  ValidateStrategy ────► Validate existing strategy config           │    │
-│  │  ListStrategyVersions ► List versions with pagination               │    │
-│  │  UpdateStrategyStatus ► Change status (ACTIVE/PAUSED/ARCHIVED)      │    │
-│  └─────────────────────────────┬───────────────────────────────────────┘    │
-│                                │                                            │
-│  ┌─────────────────────────────┴───────────────────────────────────────┐    │
-│  │                      Service Layer                                  │    │
-│  │                                                                     │    │
-│  │  StrategyService ─────► CRUD, versioning, deployment management     │    │
-│  │  IndicatorService ────► Indicator metadata (params, outputs)        │    │
-│  │  TemplateService ─────► Pre-built strategy templates                │    │
-│  └─────────────────────────────────────────────────────────────────────┘    │
-│                                                                             │
-│  ┌─────────────────────────────────────────────────────────────────────┐    │
-│  │                      Compiler Pipeline                              │    │
-│  │                                                                     │    │
-│  │  Extractor ───────────► Extract indicator specs from AST            │    │
-│  │  Pipeline ────────────► Compute indicators (NumPy)                  │    │
-│  │  Evaluator ───────────► Evaluate conditions against state           │    │
-│  │  CompiledStrategy ────► Runtime execution engine                    │    │
-│  └─────────────────────────────────────────────────────────────────────┘    │
-│                                                                             │
-│  ┌─────────────────────────────────────────────────────────────────────┐    │
-│  │                      Database Layer                                 │    │
-│  │                                                                     │    │
-│  │  Strategy ────────────► Strategy metadata (name, type, status)      │    │
-│  │  StrategyVersion ─────► Version history with config snapshots       │    │
-│  │  StrategyDeployment ──► Deployment records (paper/live)             │    │
-│  └─────────────────────────────────────────────────────────────────────┘    │
-│                                                                             │
-└─────────────────────────────────┬───────────────────────────────────────────┘
-                                  │
-        ┌─────────────────────────┼─────────────────────────────────┐
-        ▼                         ▼                                 ▼
-   ┌─────────────┐        ┌─────────────┐                   ┌─────────────┐
-   │ PostgreSQL  │        │ Shared Libs │                   │  Consumers  │
-   │  Database   │        │             │                   │             │
-   │             │        │ llamatrade_ │                   │  Backtest   │
-   │             │        │   dsl       │                   │  Trading    │
-   │             │        │   compiler  │                   │  Frontend   │
-   └─────────────┘        └─────────────┘                   └─────────────┘
+╔════════════════════════════════════════════════════════════════════════════════════════════╗
+║                                 STRATEGY SERVICE  ·  :8820                                 ║
+╚════════════════════════════════════════════════════════════════════════════════════════════╝
+                                             │
+╭────────────────────────────────────────────────────────────────────────────────────────╮
+│                                 FastAPI + Connect ASGI                                 │
+├────────────────────────────────────────────────────────────────────────────────────────┤
+│ /health                  StrategyServiceASGIApplication                                │
+╰────────────────────────────────────────────────────────────────────────────────────────╯
+                                             │
+╭────────────────────────────────────────────────────────────────────────────────────────╮
+│                                     gRPC Servicer                                      │
+├────────────────────────────────────────────────────────────────────────────────────────┤
+│ CreateStrategy ────────► parse DSL, validate, create strategy + v1                     │
+│ GetStrategy ───────────► fetch strategy ± a specific version                           │
+│ ListStrategies ────────► list with status / type filters + paging                      │
+│ UpdateStrategy ────────► update metadata or mint a new version                         │
+│ DeleteStrategy ────────► soft delete (archive)                                         │
+│ CompileStrategy ───────► validate + parse DSL without saving                           │
+│ ValidateStrategy ──────► validate an existing strategy config                          │
+│ ListStrategyVersions ──► list versions with pagination                                 │
+│ UpdateStrategyStatus ──► change status (ACTIVE / PAUSED / ARCHIVED)                    │
+╰────────────────────────────────────────────────────────────────────────────────────────╯
+                                             │
+╭────────────────────────────────────────────────────────────────────────────────────────╮
+│                                     Service Layer                                      │
+├────────────────────────────────────────────────────────────────────────────────────────┤
+│ StrategyService ───────► CRUD, versioning, deployment management                       │
+│ IndicatorService ──────► indicator metadata (params, outputs)                          │
+│ TemplateService ───────► 10 pre-built strategy templates                               │
+╰────────────────────────────────────────────────────────────────────────────────────────╯
+                                             │
+╭────────────────────────────────────────────────────────────────────────────────────────╮
+│                                   Compiler Pipeline                                    │
+├────────────────────────────────────────────────────────────────────────────────────────┤
+│ Extractor ─────────────► extract indicator specs from the AST                          │
+│ Pipeline ──────────────► compute indicators (vectorized NumPy)                         │
+│ Evaluator ─────────────► evaluate conditions against state                             │
+│ CompiledStrategy ──────► runtime execution engine                                      │
+╰────────────────────────────────────────────────────────────────────────────────────────╯
+                                             │
+╭────────────────────────────────────────────────────────────────────────────────────────╮
+│                                     Database Layer                                     │
+├────────────────────────────────────────────────────────────────────────────────────────┤
+│ Strategy ──────────────► metadata (name, type, status)                                 │
+│ StrategyVersion ───────► immutable config snapshots (vN)                               │
+│ StrategyDeployment ────► deployment records (paper / live)                             │
+╰────────────────────────────────────────────────────────────────────────────────────────╯
+                                             │
+                 ┌──────────────────────────┬┴────────────────────────────┐
+                 ▼                          ▼                             ▼
+         ┌──────────────┐          ╭────────────────╮          ╭────────────────────╮
+         │ PostgreSQL   │          │ shared libs    │          │ consumers          │
+         │ strategies + │          │ llamatrade_dsl │          │ backtest ·         │
+         │ versions     │          │ · compiler     │          │ trading · frontend │
+         └──────────────┘          ╰────────────────╯          ╰────────────────────╯
 ```
 
 ### Strategy Lifecycle Flow
 
 ```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                         STRATEGY LIFECYCLE                                  │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                             │
-│  ┌───────────────────────────────────────────────────────────────────┐      │
-│  │                    1. CREATION                                    │      │
-│  │                                                                   │      │
-│  │   User writes S-expression DSL                                    │      │
-│  │       ↓                                                           │      │
-│  │   CreateStrategy RPC                                              │      │
-│  │       ↓                                                           │      │
-│  │   parse_strategy() → AST                                          │      │
-│  │       ↓                                                           │      │
-│  │   validate_strategy() → ValidationResult                          │      │
-│  │       ↓                                                           │      │
-│  │   to_json() → JSON for storage                                    │      │
-│  │       ↓                                                           │      │
-│  │   Create Strategy + StrategyVersion v1 in DB                      │      │
-│  └───────────────────────────────────────────────────────────────────┘      │
-│                                  │                                          │
-│                                  ▼                                          │
-│  ┌───────────────────────────────────────────────────────────────────┐      │
-│  │                    2. COMPILATION                                 │      │
-│  │                                                                   │      │
-│  │   CompiledStrategy.compile(strategy_ast)                          │      │
-│  │       ↓                                                           │      │
-│  │   extract_indicators() → [IndicatorSpec, ...]                     │      │
-│  │       ↓                                                           │      │
-│  │   get_max_lookback() → min_bars required                          │      │
-│  │       ↓                                                           │      │
-│  │   CompiledStrategy ready for evaluation                           │      │
-│  └───────────────────────────────────────────────────────────────────┘      │
-│                                  │                                          │
-│                                  ▼                                          │
-│  ┌───────────────────────────────────────────────────────────────────┐      │
-│  │                    3. RUNTIME EVALUATION                          │      │
-│  │                                                                   │      │
-│  │   For each new bar:                                               │      │
-│  │       ↓                                                           │      │
-│  │   add_bar(bar) → update history                                   │      │
-│  │       ↓                                                           │      │
-│  │   _compute_indicators() → NumPy arrays                            │      │
-│  │       ↓                                                           │      │
-│  │   Build EvaluationState                                           │      │
-│  │       ↓                                                           │      │
-│  │   evaluate_condition(entry/exit) → bool                           │      │
-│  │       ↓                                                           │      │
-│  │   Generate Signal(s) if conditions met                            │      │
-│  └───────────────────────────────────────────────────────────────────┘      │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
+╔════════════════════════════════════════════════════════════════════════════════════════════╗
+║             STRATEGY LIFECYCLE  ·  creation → compilation → runtime evaluation             ║
+╚════════════════════════════════════════════════════════════════════════════════════════════╝
+
+                 ╭───────────────────────────────────────────────────────────╮
+                 │      1 · CREATION  (CreateStrategy / UpdateStrategy)      │
+                 ├───────────────────────────────────────────────────────────┤
+                 │ S-expression DSL ──► parse_strategy() ──► AST             │
+                 │ validate_strategy() ──► ValidationResult                  │
+                 │ to_json() ──► JSON · INSERT Strategy + StrategyVersion vN │
+                 ╰───────────────────────────────────────────────────────────╯
+                                               │
+                                               ▼
+                     ╭───────────────────────────────────────────────────╮
+                     │        2 · COMPILATION  (one-time, at load)       │
+                     ├───────────────────────────────────────────────────┤
+                     │ CompiledStrategy.compile(ast)                     │
+                     │ extract_indicators() ──► [IndicatorSpec, …]       │
+                     │ get_max_lookback() ──► min bars required (warmup) │
+                     ╰───────────────────────────────────────────────────╯
+                                               │
+                                               ▼
+                ╭────────────────────────────────────────────────────────────╮
+                │           3 · RUNTIME EVALUATION  (per new bar)            │
+                ├────────────────────────────────────────────────────────────┤
+                │ add_bar(bar) ──► _compute_indicators() (NumPy arrays)      │
+                │ build EvaluationState ──► evaluate_condition(entry / exit) │
+                │ emit Signal(s) when conditions are met                     │
+                ╰────────────────────────────────────────────────────────────╯
+
+                    ╔════════════════════════════════════════════════════╗
+                    ║                  StrategyVersion                   ║
+                    ╠════════════════════════════════════════════════════╣
+                    ║ editing always mints vN+1 — versions are immutable ║
+                    ║ every backtest / live session pins an exact vN     ║
+                    ╚════════════════════════════════════════════════════╝
 ```
 
 ---

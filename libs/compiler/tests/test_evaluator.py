@@ -1,16 +1,16 @@
-"""Tests for llamatrade_compiler.evaluator module."""
+"""Tests for llamatrade_compiler.evaluation.conditions module."""
 
 from datetime import UTC, datetime
 
 import numpy as np
 import pytest
 
-from llamatrade_compiler.evaluator import (
+from llamatrade_compiler.evaluation.conditions import (
     EvaluationError,
     evaluate_condition,
     evaluate_condition_safe,
 )
-from llamatrade_compiler.state import EvaluationState
+from llamatrade_compiler.evaluation.state import EvaluationState
 from llamatrade_compiler.types import Bar
 from llamatrade_dsl import Comparison, Crossover, Indicator, LogicalOp, NumericLiteral, Price
 
@@ -795,33 +795,33 @@ class TestSafeDivideAndNormalize:
 
     def test_safe_divide_normal(self) -> None:
         """Test safe_divide with normal values."""
-        from llamatrade_compiler.evaluator import safe_divide
+        from llamatrade_compiler.evaluation.conditions import safe_divide
 
         assert safe_divide(10.0, 2.0) == 5.0
         assert safe_divide(0.0, 5.0) == 0.0
 
     def test_safe_divide_by_zero(self) -> None:
         """Test safe_divide returns default on division by zero."""
-        from llamatrade_compiler.evaluator import safe_divide
+        from llamatrade_compiler.evaluation.conditions import safe_divide
 
         assert safe_divide(10.0, 0.0) == 0.0
         assert safe_divide(10.0, 0.0, default=1.0) == 1.0
 
     def test_safe_divide_nan_numerator(self) -> None:
         """Test safe_divide returns default with NaN numerator."""
-        from llamatrade_compiler.evaluator import safe_divide
+        from llamatrade_compiler.evaluation.conditions import safe_divide
 
         assert safe_divide(np.nan, 2.0) == 0.0
 
     def test_safe_divide_nan_denominator(self) -> None:
         """Test safe_divide returns default with NaN denominator."""
-        from llamatrade_compiler.evaluator import safe_divide
+        from llamatrade_compiler.evaluation.conditions import safe_divide
 
         assert safe_divide(10.0, np.nan) == 0.0
 
     def test_safe_divide_inf_result(self) -> None:
         """Test safe_divide handles infinity result."""
-        from llamatrade_compiler.evaluator import safe_divide
+        from llamatrade_compiler.evaluation.conditions import safe_divide
 
         # Very small denominator that would cause overflow
         result = safe_divide(1e308, 1e-308)
@@ -830,7 +830,7 @@ class TestSafeDivideAndNormalize:
 
     def test_normalize_weights_normal(self) -> None:
         """Test normalize_weights with normal values."""
-        from llamatrade_compiler.evaluator import normalize_weights
+        from llamatrade_compiler.evaluation.conditions import normalize_weights
 
         weights = {"A": 60.0, "B": 40.0}
         result = normalize_weights(weights)
@@ -839,7 +839,7 @@ class TestSafeDivideAndNormalize:
 
     def test_normalize_weights_not_100(self) -> None:
         """Test normalize_weights scales to 100%."""
-        from llamatrade_compiler.evaluator import normalize_weights
+        from llamatrade_compiler.evaluation.conditions import normalize_weights
 
         weights = {"A": 30.0, "B": 20.0}  # Sum = 50
         result = normalize_weights(weights)
@@ -848,7 +848,7 @@ class TestSafeDivideAndNormalize:
 
     def test_normalize_weights_all_zero(self) -> None:
         """Test normalize_weights with all zero weights."""
-        from llamatrade_compiler.evaluator import normalize_weights
+        from llamatrade_compiler.evaluation.conditions import normalize_weights
 
         weights = {"A": 0.0, "B": 0.0}
         result = normalize_weights(weights)
@@ -858,14 +858,14 @@ class TestSafeDivideAndNormalize:
 
     def test_normalize_weights_empty(self) -> None:
         """Test normalize_weights with empty dict."""
-        from llamatrade_compiler.evaluator import normalize_weights
+        from llamatrade_compiler.evaluation.conditions import normalize_weights
 
         result = normalize_weights({})
         assert result == {}
 
     def test_normalize_weights_with_nan(self) -> None:
         """Test normalize_weights filters out NaN values."""
-        from llamatrade_compiler.evaluator import normalize_weights
+        from llamatrade_compiler.evaluation.conditions import normalize_weights
 
         weights = {"A": 60.0, "B": np.nan, "C": 40.0}
         result = normalize_weights(weights)
@@ -876,7 +876,7 @@ class TestSafeDivideAndNormalize:
 
     def test_normalize_weights_with_negative(self) -> None:
         """Test normalize_weights filters out negative values."""
-        from llamatrade_compiler.evaluator import normalize_weights
+        from llamatrade_compiler.evaluation.conditions import normalize_weights
 
         weights = {"A": 60.0, "B": -10.0, "C": 40.0}
         result = normalize_weights(weights)
@@ -886,7 +886,7 @@ class TestSafeDivideAndNormalize:
 
     def test_normalize_weights_all_nan(self) -> None:
         """Test normalize_weights with all NaN values."""
-        from llamatrade_compiler.evaluator import normalize_weights
+        from llamatrade_compiler.evaluation.conditions import normalize_weights
 
         weights = {"A": np.nan, "B": np.nan}
         result = normalize_weights(weights)
@@ -896,7 +896,7 @@ class TestSafeDivideAndNormalize:
 
     def test_normalize_weights_no_fallback(self) -> None:
         """Test normalize_weights without fallback to equal weights."""
-        from llamatrade_compiler.evaluator import normalize_weights
+        from llamatrade_compiler.evaluation.conditions import normalize_weights
 
         weights = {"A": 0.0, "B": 0.0}
         result = normalize_weights(weights, fallback_to_equal=False)

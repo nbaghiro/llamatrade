@@ -10,7 +10,7 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from llamatrade_common.models import TenantContext
+from llamatrade_common.middleware import TenantContext
 
 from src.main import app
 

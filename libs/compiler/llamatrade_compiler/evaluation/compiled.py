@@ -4,21 +4,23 @@ CompiledStrategy wraps a Strategy AST and provides efficient evaluation
 of allocation rules against market data, computing portfolio weights.
 """
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import TypedDict
 
 import numpy as np
 from numpy.typing import NDArray
 
-from llamatrade_compiler.evaluator import evaluate_condition_safe
-from llamatrade_compiler.extractor import (
+from llamatrade_compiler.evaluation.conditions import evaluate_condition_safe
+from llamatrade_compiler.evaluation.extractor import (
     IndicatorSpec,
     extract_indicators,
     get_max_lookback,
     get_required_symbols,
 )
-from llamatrade_compiler.pipeline import PriceData, compute_all_indicators
-from llamatrade_compiler.state import EvaluationState
+from llamatrade_compiler.evaluation.state import EvaluationState
+from llamatrade_compiler.indicators.cache import compute_window
+from llamatrade_compiler.indicators.library import PriceData, compute_all_indicators
 from llamatrade_compiler.types import Bar
 from llamatrade_dsl import (
     Asset,
@@ -82,6 +84,9 @@ class CompiledStrategy:
     indicators: list[IndicatorSpec] = field(default_factory=_empty_indicator_list)
     symbols: set[str] = field(default_factory=_empty_symbol_set)
     min_bars: int = 0
+    # Cap on retained history per symbol (None = keep everything, e.g. for no-period
+    # metrics that read the full series). Keeps long runs from going O(N^2) on indicators.
+    history_window: int | None = None
     _bar_history: dict[str, list[Bar]] = field(default_factory=_empty_bar_history, repr=False)
     _indicator_cache: dict[str, NDArray[np.float64]] = field(
         default_factory=_empty_indicator_cache, repr=False
@@ -110,6 +115,7 @@ class CompiledStrategy:
             indicators=indicators,
             symbols=symbols,
             min_bars=min_bars,
+            history_window=compute_window(strategy, min_bars),
         )
 
     def reset(self) -> None:
@@ -130,9 +136,11 @@ class CompiledStrategy:
             bars: Dict mapping symbol to Bar
         """
         for symbol, bar in bars.items():
-            if symbol not in self._bar_history:
-                self._bar_history[symbol] = []
-            self._bar_history[symbol].append(bar)
+            history = self._bar_history.setdefault(symbol, [])
+            history.append(bar)
+            # Bound the retained history (when safe) so indicator recompute stays O(window).
+            if self.history_window is not None and len(history) > self.history_window:
+                del history[: -self.history_window]
 
     def has_enough_history(self) -> bool:
         """Check if we have enough bars for evaluation."""
@@ -300,14 +308,10 @@ class CompiledStrategy:
             return self._compute_risk_parity_weights(symbols, state, weight.lookback)
 
         if method == "min-variance":
-            # Simplified: use inverse volatility as approximation
-            return self._compute_inverse_volatility_weights(symbols, state, weight.lookback)
+            return self._compute_min_variance_weights(symbols, state, weight.lookback)
 
-        if method == "market-cap":
-            # Market cap not available, fall back to equal
-            return {s: 100.0 / len(symbols) for s in symbols}
-
-        # Default to equal weight
+        # market-cap is rejected by the validator (no fundamental data); any other unknown
+        # method falls back to equal weight defensively.
         return {s: 100.0 / len(symbols) for s in symbols}
 
     def _evaluate_asset(self, asset: Asset) -> dict[str, float]:
@@ -427,15 +431,122 @@ class CompiledStrategy:
         # Fall back to equal weight
         return {s: 100.0 / len(symbols) for s in symbols}
 
+    def _aligned_returns(
+        self,
+        symbols: list[str],
+        state: EvaluationState,
+        lookback: int | None,
+    ) -> tuple[list[str], NDArray[np.float64]] | None:
+        """Build an aligned daily-returns matrix across symbols with enough history.
+
+        Returns ``(symbols_with_data, returns[n_obs, n_symbols])`` using the most recent
+        common window, or None if fewer than two symbols have enough data. Symbols are
+        sorted for deterministic column order.
+        """
+        series: dict[str, NDArray[np.float64]] = {}
+        for symbol in symbols:
+            bars = state.bar_history.get(symbol, [])
+            if len(bars) >= 3:
+                series[symbol] = np.array([b.close for b in bars], dtype=np.float64)
+
+        if len(series) < 2:
+            return None
+
+        window = min(len(arr) for arr in series.values())
+        if lookback:
+            window = min(window, lookback + 1)
+        if window < 3:
+            return None
+
+        syms = sorted(series)
+        closes = np.vstack([series[s][-window:] for s in syms])  # (n_symbols, window)
+        returns = np.diff(closes, axis=1) / closes[:, :-1]  # (n_symbols, window-1)
+        return syms, returns.T  # (n_obs, n_symbols)
+
+    def _covariance_weights(
+        self,
+        symbols: list[str],
+        state: EvaluationState,
+        lookback: int | None,
+        raw_weights: Callable[[NDArray[np.float64]], NDArray[np.float64] | None],
+    ) -> dict[str, float]:
+        """Shared scaffolding for covariance-based methods (min-variance, risk-parity).
+
+        Computes the return covariance, delegates the raw weight vector to ``raw_weights``,
+        then makes it long-only (clip negatives, renormalize to 100). Falls back to inverse
+        volatility on insufficient history or a degenerate solution.
+        """
+        aligned = self._aligned_returns(symbols, state, lookback)
+        if aligned is None:
+            return self._compute_inverse_volatility_weights(symbols, state, lookback)
+
+        syms, returns = aligned
+        cov = np.atleast_2d(np.cov(returns, rowvar=False))
+
+        raw = raw_weights(cov)
+        if raw is None:
+            return self._compute_inverse_volatility_weights(symbols, state, lookback)
+
+        raw = np.clip(raw, 0.0, None)
+        total = float(raw.sum())
+        if total <= 0:
+            return self._compute_inverse_volatility_weights(symbols, state, lookback)
+
+        scaled = raw / total * 100.0
+        result: dict[str, float] = {s: float(scaled[i]) for i, s in enumerate(syms)}
+        # Symbols without enough history get zero weight (excluded from this rebalance).
+        for symbol in symbols:
+            result.setdefault(symbol, 0.0)
+        return result
+
+    def _compute_min_variance_weights(
+        self,
+        symbols: list[str],
+        state: EvaluationState,
+        lookback: int | None,
+    ) -> dict[str, float]:
+        """Long-only minimum-variance weights from the return covariance matrix.
+
+        Unconstrained min-variance is ``w ∝ Σ⁻¹·1``; the pseudo-inverse keeps it robust to
+        singular covariance, and negatives are clipped for the long-only constraint.
+        """
+
+        def raw(cov: NDArray[np.float64]) -> NDArray[np.float64] | None:
+            ones = np.ones(cov.shape[0], dtype=np.float64)
+            try:
+                return np.linalg.pinv(cov) @ ones
+            except np.linalg.LinAlgError:
+                return None
+
+        return self._covariance_weights(symbols, state, lookback, raw)
+
     def _compute_risk_parity_weights(
         self,
         symbols: list[str],
         state: EvaluationState,
         lookback: int | None,
     ) -> dict[str, float]:
-        """Compute risk parity weights (simplified)."""
-        # Simplified: use inverse volatility as approximation
-        return self._compute_inverse_volatility_weights(symbols, state, lookback)
+        """Equal-risk-contribution (risk parity) weights via fixed-point iteration.
+
+        Iterates ``w_i ∝ 1 / (Σw)_i`` to convergence, which drives each asset's risk
+        contribution toward equality. Reduces to inverse-volatility when assets are
+        uncorrelated, but accounts for correlation when they are not.
+        """
+
+        def raw(cov: NDArray[np.float64]) -> NDArray[np.float64] | None:
+            n = cov.shape[0]
+            w = np.ones(n, dtype=np.float64) / n
+            for _ in range(500):
+                marginal = cov @ w
+                marginal = np.where(np.abs(marginal) < 1e-12, 1e-12, marginal)
+                w_next = 1.0 / marginal
+                w_next = w_next / w_next.sum()
+                if float(np.max(np.abs(w_next - w))) < 1e-9:
+                    return w_next
+                w = w_next
+            return w
+
+        return self._covariance_weights(symbols, state, lookback, raw)
 
     def _calculate_filter_scores(
         self,

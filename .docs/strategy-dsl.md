@@ -71,38 +71,62 @@ This says: *every trading day, if SPY's 50-day average is above its 200-day aver
 ## Processing Pipeline
 
 ```
-        Visual Builder            Code Editor            AI Assistant
-         (React blocks)          (S-expr text)        (natural language)
-               │                       │                      │
-               └───────────┬───────────┴──────────────────────┘
-                           ▼
-                    PARSER  (libs/dsl/parser.py)
-                    hand-written recursive-descent parser
-                    + regex tokenizer; tracks source locations
-                           │
-                           ▼
-                    AST  (libs/dsl/ast.py)
-                    typed, frozen dataclasses
-                           │
-              ┌────────────┼─────────────┐
-              ▼            ▼             ▼
-        VALIDATOR      SERIALIZER     to_json
-     (semantic check) (AST→S-expr)  (AST→JSON IR)
-              │                          │
-              ▼                          ▼
-        ValidationResult        Stored in PostgreSQL:
-                                 StrategyVersion.config_sexpr (source)
-                                 StrategyVersion.config_json  (compiled IR)
-                                          │
-                           ┌──────────────┴───────────────┐
-                           ▼                               ▼
-                    COMPILER (backtest)            COMPILER (live)
-              vectorized engine / bar-by-bar      bar-by-bar engine
-              (libs/compiler)                     (libs/compiler)
-                           │                               │
-                           ▼                               ▼
-                    Backtest results               Live target weights
-                    (equity curve, metrics)        → Portfolio Ledger → orders
+╭────────────────╮     ╭─────────────╮     ╭──────────────────╮
+│ Visual Builder │     │ Code Editor │     │   AI Assistant   │
+├────────────────┤     ├─────────────┤     ├──────────────────┤
+│ React blocks   │     │ S-expr text │     │ natural language │
+╰────────────────╯     ╰─────────────╯     ╰──────────────────╯
+         │                    │                      │
+         └────────────────────┼──────────────────────┘
+                              ▼
+       ╭─────────────────────────────────────────────╮
+       │                    PARSER                   │
+       ├─────────────────────────────────────────────┤
+       │ libs/dsl/parser.py                          │
+       │ hand-written recursive-descent              │
+       │ + regex tokenizer · tracks source locations │
+       ╰─────────────────────────────────────────────╯
+                              │
+                              │  authoritative artifact
+   ╔══════════════════════════╤═════════════════════════╗
+   ║                        AST                         ║
+   ╠════════════════════════════════════════════════════╣
+   ║ libs/dsl/ast.py                                    ║
+   ║ typed, frozen dataclasses · single source of truth ║
+   ╚══════════════════════════╧═════════════════════════╝
+                              │
+          ┌───────────────────┴┬───────────────────┐
+          ▼                    ▼                   ▼
+ ╭────────────────╮    ╭──────────────╮    ╭───────────────╮
+ │   VALIDATOR    │    │  SERIALIZER  │    │    to_json    │
+ ├────────────────┤    ├──────────────┤    ├───────────────┤
+ │ semantic check │    │ AST → S-expr │    │ AST → JSON IR │
+ ╰────────────────╯    ╰──────────────╯    ╰───────────────╯
+          │                                        │
+          ▼                                        ▼
+┌──────────────────┐          ┌────────────────────────────────────────┐
+│ ValidationResult │          │ Stored in PostgreSQL · StrategyVersion │
+├──────────────────┤          ├────────────────────────────────────────┤
+│ pass / fail      │          │ config_sexpr  (source)                 │
+└──────────────────┘          │ config_json   (compiled IR)            │
+                              └────────────────────────────────────────┘
+                                                   │
+                                     ┌─────────────┴─────────────┐
+                                     ▼                           ▼
+                          ╭─────────────────────╮      ╭───────────────────╮
+                          │ COMPILER (backtest) │      │  COMPILER (live)  │
+                          ├─────────────────────┤      ├───────────────────┤
+                          │ vectorized engine / │      │ bar-by-bar engine │
+                          │ bar-by-bar          │      │ (libs/compiler)   │
+                          │ (libs/compiler)     │      ╰───────────────────╯
+                          ╰─────────────────────╯
+                                     │                           │
+                                     ▼                           ▼
+                         ┌───────────────────────┐  ┌─────────────────────────────┐
+                         │    Backtest results   │  │     Live target weights     │
+                         ├───────────────────────┤  ├─────────────────────────────┤
+                         │ equity curve, metrics │  │ → Portfolio Ledger → orders │
+                         └───────────────────────┘  └─────────────────────────────┘
 ```
 
 **Parser** (`libs/dsl/parser.py`) — a hand-written recursive-descent parser fronted by a regex tokenizer. (Note: this is *not* a Lark/EBNF grammar; the EBNF below is descriptive, not the implementation.) Every node records a `SourceLocation` (line, column, character offsets) for precise error messages.

@@ -6,7 +6,7 @@ returning boolean results for If block branch selection.
 
 import numpy as np
 
-from llamatrade_compiler.state import EvaluationState
+from llamatrade_compiler.evaluation.state import EvaluationState
 from llamatrade_dsl import (
     Comparison,
     Condition,

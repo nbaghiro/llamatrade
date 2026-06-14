@@ -234,6 +234,18 @@ class Validator:
                 suggestions=suggestions,
             )
 
+        # market-cap weighting needs fundamental data (shares outstanding) the engine does
+        # not have — only OHLCV price bars. Reject it explicitly rather than silently
+        # approximating it as equal weight.
+        if weight.method == "market-cap":
+            self._error(
+                "market-cap weighting is not supported (requires fundamental data not "
+                "available from price bars); use 'specified' or 'equal'",
+                f"{path}.method",
+                line=line,
+                column=col,
+            )
+
         # Must have children
         if not weight.children:
             self._error("Weight block must have at least one child", f"{path}.children")

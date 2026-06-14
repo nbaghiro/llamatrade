@@ -5,7 +5,7 @@ from datetime import UTC, datetime, timedelta
 import numpy as np
 import pytest
 
-from llamatrade_compiler.pipeline import PriceData
+from llamatrade_compiler.indicators.library import PriceData
 from llamatrade_compiler.types import Bar
 
 

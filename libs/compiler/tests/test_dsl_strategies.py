@@ -8,8 +8,8 @@ from datetime import UTC, datetime, timedelta
 
 import numpy as np
 
-from llamatrade_compiler.compiled import CompiledStrategy, compile_strategy
-from llamatrade_compiler.extractor import extract_indicators, get_max_lookback
+from llamatrade_compiler.evaluation.compiled import CompiledStrategy, compile_strategy
+from llamatrade_compiler.evaluation.extractor import extract_indicators, get_max_lookback
 from llamatrade_compiler.types import Bar
 from llamatrade_dsl import parse
 

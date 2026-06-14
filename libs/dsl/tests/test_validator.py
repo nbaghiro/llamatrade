@@ -168,6 +168,21 @@ class TestValidateWeight:
         assert not result.valid
         assert any("positive integer" in str(e) for e in result.errors)
 
+    def test_market_cap_method_rejected(self):
+        # market-cap needs fundamental data the engine does not have -> rejected.
+        strategy = Strategy(
+            name="Test",
+            children=[
+                Weight(
+                    method="market-cap",
+                    children=[Asset(symbol="AAA"), Asset(symbol="BBB")],
+                )
+            ],
+        )
+        result = validate(strategy)
+        assert not result.valid
+        assert any("market-cap" in str(e) for e in result.errors)
+
     def test_invalid_top_exceeds_children(self):
         strategy = Strategy(
             name="Test",

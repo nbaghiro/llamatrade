@@ -16,6 +16,7 @@ from connectrpc.errors import ConnectError
 from connectrpc.request import RequestContext
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from llamatrade_db import get_session_maker
 from llamatrade_proto.generated import common_pb2, strategy_pb2
 from llamatrade_proto.generated.common_pb2 import EXECUTION_MODE_PAPER
 from llamatrade_proto.generated.strategy_pb2 import (
@@ -32,7 +33,6 @@ from src.models import (
     StrategyResponse,
     StrategyVersionResponse,
 )
-from src.services.database import get_session_maker
 
 logger = logging.getLogger(__name__)
 
@@ -302,15 +302,17 @@ class StrategyServicer:
         request: strategy_pb2.DeleteStrategyRequest,
         ctx: RequestContext[object, object],
     ) -> strategy_pb2.DeleteStrategyResponse:
-        """Delete (archive) a strategy."""
+        """Delete (archive) a strategy, cascading to stop + release its executions."""
         from src.services.strategy_service import StrategyService
 
-        tenant_id, _ = _validate_tenant_context(request.context)
+        tenant_id, user_id = _validate_tenant_context(request.context)
         strategy_id = parse_uuid(request.strategy_id, "strategy_id")
 
         async with await self._get_db() as db:
             service = StrategyService(db)
-            success = await service.delete_strategy(tenant_id, strategy_id)
+            success = await service.delete_strategy(
+                tenant_id, strategy_id, ledger=self._get_ledger(), user_id=user_id
+            )
 
             if not success:
                 raise ConnectError(
@@ -785,10 +787,10 @@ class StrategyServicer:
         request: strategy_pb2.StopExecutionRequest,
         ctx: RequestContext[object, object],
     ) -> strategy_pb2.StopExecutionResponse:
-        """Stop an execution."""
+        """Stop an execution and release its ledger sleeve."""
         from src.services.strategy_service import StrategyService
 
-        tenant_id, _ = _validate_tenant_context(request.context)
+        tenant_id, user_id = _validate_tenant_context(request.context)
         execution_id = parse_uuid(request.execution_id, "execution_id")
 
         reason = request.reason if request.reason else None
@@ -800,6 +802,8 @@ class StrategyServicer:
                     tenant_id=tenant_id,
                     execution_id=execution_id,
                     reason=reason,
+                    ledger=self._get_ledger(),
+                    user_id=user_id,
                 )
 
                 if not execution:

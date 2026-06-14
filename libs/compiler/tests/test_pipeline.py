@@ -1,10 +1,10 @@
-"""Tests for llamatrade_compiler.pipeline module."""
+"""Tests for llamatrade_compiler.indicators.library module."""
 
 import numpy as np
 import pytest
 
-from llamatrade_compiler.extractor import IndicatorSpec
-from llamatrade_compiler.pipeline import (
+from llamatrade_compiler.evaluation.extractor import IndicatorSpec
+from llamatrade_compiler.indicators.library import (
     PriceData,
     compute_all_indicators,
     compute_indicator,

@@ -1,8 +1,8 @@
-"""Tests for llamatrade_compiler.extractor module."""
+"""Tests for llamatrade_compiler.evaluation.extractor module."""
 
 import pytest
 
-from llamatrade_compiler.extractor import (
+from llamatrade_compiler.evaluation.extractor import (
     IndicatorSpec,
     extract_indicators,
     get_max_lookback,

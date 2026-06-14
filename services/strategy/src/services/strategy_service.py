@@ -1,7 +1,7 @@
 """Strategy service - CRUD operations with S-expression DSL support."""
 
-import os
-from datetime import UTC
+import logging
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, cast
 from uuid import UUID
 
@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 if TYPE_CHECKING:
     from llamatrade_proto.clients.ledger import LedgerClient
 
-from llamatrade_compiler.extractor import extract_indicators, get_required_symbols
+from llamatrade_compiler import extract_indicators, get_required_symbols
 from llamatrade_db import get_db
 from llamatrade_db.models.strategy import (
     Strategy,
@@ -48,6 +48,8 @@ from src.models import (
     execution_status_to_str,
 )
 
+logger = logging.getLogger(__name__)
+
 # Valid status transitions: (from_status, to_status) using proto int values
 # Rules: DRAFT→ACTIVE, ACTIVE↔PAUSED, any→ARCHIVED
 _VALID_STATUS_TRANSITIONS: set[tuple[int, int]] = {
@@ -59,11 +61,6 @@ _VALID_STATUS_TRANSITIONS: set[tuple[int, int]] = {
     (STRATEGY_STATUS_ACTIVE, STRATEGY_STATUS_ARCHIVED),
     (STRATEGY_STATUS_PAUSED, STRATEGY_STATUS_ARCHIVED),
 }
-
-
-def ledger_sleeves_enabled() -> bool:
-    """LEDGER_SLEEVES flag (mirrors portfolio's ledger settings; default off)."""
-    return os.getenv("LEDGER_SLEEVES", "").strip().lower() in {"1", "true", "yes", "on"}
 
 
 def _rebalance_to_timeframe(rebalance: str | None) -> str:
@@ -403,15 +400,58 @@ class StrategyService:
         self,
         tenant_id: UUID,
         strategy_id: UUID,
+        *,
+        ledger: LedgerClient | None = None,
+        user_id: UUID | None = None,
     ) -> bool:
-        """Soft delete (archive) a strategy."""
+        """Soft delete (archive) a strategy, cascading to its executions.
+
+        Archiving terminates every non-terminal execution and releases its
+        sleeve, so an archived strategy never leaves a live execution running or
+        capital trapped in a funded sleeve.
+        """
         strategy = await self._get_strategy_by_id(tenant_id, strategy_id, for_update=True)
         if not strategy:
             return False
 
+        stopped = await self._stop_nonterminal_executions(tenant_id, strategy_id)
         strategy.status = STRATEGY_STATUS_ARCHIVED
         await self.db.commit()
+
+        # Release sleeves after the status commit (remote ledger calls).
+        for execution in stopped:
+            await self._close_sleeve(
+                tenant_id, execution, ledger=ledger, user_id=user_id, reason="strategy archived"
+            )
         return True
+
+    async def _stop_nonterminal_executions(
+        self, tenant_id: UUID, strategy_id: UUID
+    ) -> list[StrategyExecution]:
+        """Transition every non-terminal execution of a strategy to STOPPED.
+
+        Returns the affected executions so the caller can release their sleeves.
+        Does not commit — the caller commits the archive and these stops in one
+        transaction. PENDING executions were never funded (no sleeve to close).
+        """
+        stmt = select(StrategyExecution).where(
+            StrategyExecution.tenant_id == tenant_id,
+            StrategyExecution.strategy_id == strategy_id,
+            StrategyExecution.status.in_(
+                [
+                    EXECUTION_STATUS_PENDING,
+                    EXECUTION_STATUS_RUNNING,
+                    EXECUTION_STATUS_PAUSED,
+                ]
+            ),
+        )
+        executions = list((await self.db.execute(stmt)).scalars().all())
+        now = datetime.now(UTC)
+        for execution in executions:
+            execution.status = EXECUTION_STATUS_STOPPED
+            execution.stopped_at = now
+            execution.error_message = "Stopped: strategy archived"
+        return executions
 
     async def activate_strategy(
         self,
@@ -745,15 +785,13 @@ class StrategyService:
         """Start a pending execution.
 
         Transitions status from PENDING to RUNNING and sets started_at.
-        When LEDGER_SLEEVES is on and the execution carries funding intent
-        (allocated_capital + credentials_id), its ledger sleeve is opened and
-        funded first — the execution does not start if funding fails.
+        When the execution carries funding intent (allocated_capital +
+        credentials_id), its ledger sleeve is opened and funded first — the
+        execution does not start if funding fails.
 
         Raises:
             ValueError: If execution is not in PENDING status, or funding fails.
         """
-        from datetime import datetime
-
         execution = await self._get_execution_by_id(tenant_id, execution_id)
         if not execution:
             return None
@@ -782,13 +820,12 @@ class StrategyService:
     ) -> None:
         """Open + fund the execution's ledger sleeve via the portfolio service.
 
-        No-op when the flag is off, no client is wired, the execution carries
-        no funding intent, or it is already funded (sleeve_id set) — so
-        restarts never double-fund (idempotent server-side too).
+        No-op when no client is wired, the execution carries no funding intent,
+        or it is already funded (sleeve_id set) — so restarts never double-fund
+        (idempotent server-side too).
         """
         if (
             ledger is None
-            or not ledger_sleeves_enabled()
             or execution.sleeve_id is not None
             or execution.allocated_capital is None
             or execution.credentials_id is None
@@ -877,16 +914,21 @@ class StrategyService:
         tenant_id: UUID,
         execution_id: UUID,
         reason: str | None = None,
+        *,
+        ledger: LedgerClient | None = None,
+        user_id: UUID | None = None,
     ) -> ExecutionResponse | None:
-        """Stop an execution.
+        """Stop an execution and release its ledger sleeve.
 
-        Can stop from RUNNING or PAUSED status. Sets stopped_at timestamp.
+        Can stop from RUNNING or PAUSED status. Sets stopped_at, then closes the
+        execution's sleeve (re-homing open positions to the Unmanaged sleeve and
+        free cash to Unallocated) so a stopped strategy never traps capital. The
+        close is best-effort — the stop succeeds even if the ledger is
+        unreachable.
 
         Raises:
             ValueError: If execution is already stopped or in error state.
         """
-        from datetime import datetime
-
         execution = await self._get_execution_by_id(tenant_id, execution_id)
         if not execution:
             return None
@@ -906,7 +948,50 @@ class StrategyService:
         await self.db.commit()
         await self.db.refresh(execution)
 
+        await self._close_sleeve(
+            tenant_id, execution, ledger=ledger, user_id=user_id, reason=reason
+        )
+
         return self._to_execution_response(execution)
+
+    async def _close_sleeve(
+        self,
+        tenant_id: UUID,
+        execution: StrategyExecution,
+        *,
+        ledger: LedgerClient | None,
+        user_id: UUID | None,
+        reason: str | None,
+    ) -> None:
+        """Release a stopped execution's sleeve back to the account (best-effort).
+
+        The ledger owns sleeve lifecycle; closing re-homes open positions to the
+        Unmanaged sleeve and free cash to Unallocated. No-op when no client is
+        wired or the execution was never funded (no sleeve). A close failure
+        (ledger down, or an in-flight order still holding reserved cash) is
+        logged, not raised — the stop itself must not fail, and the sleeve is
+        re-homed on a later close once the order settles.
+        """
+        if ledger is None or execution.sleeve_id is None or execution.account_id is None:
+            return
+
+        import grpc.aio
+
+        try:
+            await ledger.close_sleeve(
+                str(tenant_id),
+                str(user_id) if user_id else "",
+                str(execution.account_id),
+                str(execution.sleeve_id),
+                reason=reason or "strategy execution stopped",
+            )
+        except grpc.aio.AioRpcError as e:
+            logger.warning(
+                "sleeve close deferred for execution %s (sleeve %s): %s",
+                execution.id,
+                execution.sleeve_id,
+                e.details(),
+            )
 
     async def _get_execution_by_id(
         self, tenant_id: UUID, execution_id: UUID

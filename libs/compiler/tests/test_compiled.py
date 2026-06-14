@@ -1,10 +1,10 @@
-"""Tests for llamatrade_compiler.compiled module."""
+"""Tests for llamatrade_compiler.evaluation.compiled module."""
 
 from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from llamatrade_compiler.compiled import CompiledStrategy, compile_strategy
+from llamatrade_compiler.evaluation.compiled import CompiledStrategy, compile_strategy
 from llamatrade_compiler.types import Bar
 from llamatrade_dsl import parse
 

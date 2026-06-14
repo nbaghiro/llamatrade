@@ -8,7 +8,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from llamatrade_compiler.extractor import IndicatorSpec
+from llamatrade_compiler.evaluation.extractor import IndicatorSpec
 
 __all__ = [
     # Dataclass

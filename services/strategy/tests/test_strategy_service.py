@@ -250,7 +250,7 @@ class TestCreateStrategy:
         self, mock_db: AsyncMock, tenant_id: UUID, user_id: UUID
     ) -> None:
         """Test that symbols are extracted from S-expression."""
-        from llamatrade_compiler.extractor import get_required_symbols
+        from llamatrade_compiler import get_required_symbols
         from llamatrade_dsl import parse_strategy
 
         ast = parse_strategy(VALID_RSI_STRATEGY)
@@ -616,6 +616,11 @@ class TestDeleteStrategy:
             tenant_id=tenant_id,
             status="draft",
         )
+
+        # No non-terminal executions to cascade-stop.
+        no_executions = MagicMock()
+        no_executions.scalars.return_value.all.return_value = []
+        mock_db.execute = AsyncMock(return_value=no_executions)
 
         with patch.object(service, "_get_strategy_by_id", return_value=mock_strategy):
             result = await service.delete_strategy(
@@ -1268,7 +1273,7 @@ class TestDetectedIndicators:
 
 
 class TestExecutionFunding:
-    """Sleeve funding on start_execution (LEDGER_SLEEVES rollout)."""
+    """Sleeve funding on start_execution."""
 
     @staticmethod
     def _pending_execution(**overrides: object):
@@ -1335,11 +1340,8 @@ class TestExecutionFunding:
         assert result.credentials_id == credentials_id
         assert result.sleeve_id is None  # funded at start, not at create
 
-    async def test_start_execution_funds_sleeve(
-        self, mock_db: AsyncMock, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    async def test_start_execution_funds_sleeve(self, mock_db: AsyncMock) -> None:
         """Start opens+funds the sleeve and persists sleeve_id/account_id."""
-        monkeypatch.setenv("LEDGER_SLEEVES", "1")
         service = StrategyService(mock_db)
         execution = self._pending_execution()
         account_id, sleeve_id = uuid4(), uuid4()
@@ -1363,28 +1365,8 @@ class TestExecutionFunding:
         assert allocate_kwargs["sleeve_name"] == "Momentum A"
         mock_db.commit.assert_called()
 
-    async def test_start_execution_skips_funding_when_flag_off(
-        self, mock_db: AsyncMock, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """With LEDGER_SLEEVES off, start never touches the ledger."""
-        monkeypatch.delenv("LEDGER_SLEEVES", raising=False)
-        service = StrategyService(mock_db)
-        execution = self._pending_execution()
-        ledger = self._ledger_mock(uuid4(), uuid4())
-
-        with patch.object(service, "_get_execution_by_id", return_value=execution):
-            result = await service.start_execution(execution.tenant_id, execution.id, ledger=ledger)
-
-        assert result is not None
-        assert execution.sleeve_id is None
-        ledger.get_or_create_account.assert_not_awaited()
-        ledger.allocate_capital.assert_not_awaited()
-
-    async def test_start_execution_skips_funding_without_intent(
-        self, mock_db: AsyncMock, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    async def test_start_execution_skips_funding_without_intent(self, mock_db: AsyncMock) -> None:
         """No allocated_capital/credentials_id → legacy unfunded start."""
-        monkeypatch.setenv("LEDGER_SLEEVES", "1")
         service = StrategyService(mock_db)
         execution = self._pending_execution(allocated_capital=None, credentials_id=None)
         ledger = self._ledger_mock(uuid4(), uuid4())
@@ -1395,11 +1377,8 @@ class TestExecutionFunding:
         assert result is not None
         ledger.allocate_capital.assert_not_awaited()
 
-    async def test_start_execution_already_funded_does_not_refund(
-        self, mock_db: AsyncMock, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    async def test_start_execution_already_funded_does_not_refund(self, mock_db: AsyncMock) -> None:
         """A sleeve_id already on the row means funding is skipped (restart)."""
-        monkeypatch.setenv("LEDGER_SLEEVES", "1")
         service = StrategyService(mock_db)
         existing_sleeve = uuid4()
         execution = self._pending_execution(sleeve_id=existing_sleeve, account_id=uuid4())
@@ -1411,14 +1390,11 @@ class TestExecutionFunding:
         assert execution.sleeve_id == existing_sleeve
         ledger.allocate_capital.assert_not_awaited()
 
-    async def test_start_execution_funding_failure_blocks_start(
-        self, mock_db: AsyncMock, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    async def test_start_execution_funding_failure_blocks_start(self, mock_db: AsyncMock) -> None:
         """A funding RPC failure surfaces as ValueError and start aborts."""
         import grpc
         import grpc.aio
 
-        monkeypatch.setenv("LEDGER_SLEEVES", "1")
         service = StrategyService(mock_db)
         execution = self._pending_execution()
         strategy = make_mock_strategy(id=execution.strategy_id)
@@ -1439,3 +1415,119 @@ class TestExecutionFunding:
 
         assert execution.sleeve_id is None
         mock_db.commit.assert_not_called()
+
+
+class TestExecutionStopRelease:
+    """stop_execution + archive release the execution's ledger sleeve."""
+
+    @staticmethod
+    def _running_execution(**overrides: object):
+        from llamatrade_db.models.strategy import StrategyExecution
+        from llamatrade_proto.generated.common_pb2 import EXECUTION_STATUS_RUNNING
+
+        execution = StrategyExecution(
+            tenant_id=uuid4(),
+            strategy_id=uuid4(),
+            version=1,
+            mode=EXECUTION_MODE_PAPER,
+            status=EXECUTION_STATUS_RUNNING,
+            config_override=None,
+            allocated_capital=Decimal("40000"),
+            credentials_id=uuid4(),
+            sleeve_id=uuid4(),
+            account_id=uuid4(),
+        )
+        execution.id = uuid4()
+        execution.created_at = datetime.now(UTC)
+        for key, value in overrides.items():
+            setattr(execution, key, value)
+        return execution
+
+    async def test_stop_closes_sleeve(self, mock_db: AsyncMock) -> None:
+        """A funded execution's sleeve is closed (re-homed) on stop."""
+        from llamatrade_proto.generated.common_pb2 import EXECUTION_STATUS_STOPPED
+
+        service = StrategyService(mock_db)
+        execution = self._running_execution()
+        ledger = AsyncMock()
+
+        with patch.object(service, "_get_execution_by_id", return_value=execution):
+            result = await service.stop_execution(
+                execution.tenant_id, execution.id, reason="done", ledger=ledger, user_id=uuid4()
+            )
+
+        assert result is not None
+        assert execution.status == EXECUTION_STATUS_STOPPED
+        ledger.close_sleeve.assert_awaited_once()
+        args = ledger.close_sleeve.await_args.args
+        assert args[2] == str(execution.account_id)  # account_id
+        assert args[3] == str(execution.sleeve_id)  # sleeve_id
+
+    async def test_stop_without_sleeve_skips_close(self, mock_db: AsyncMock) -> None:
+        """An unfunded (legacy) execution has no sleeve to release."""
+        service = StrategyService(mock_db)
+        execution = self._running_execution(sleeve_id=None, account_id=None)
+        ledger = AsyncMock()
+
+        with patch.object(service, "_get_execution_by_id", return_value=execution):
+            await service.stop_execution(execution.tenant_id, execution.id, ledger=ledger)
+
+        ledger.close_sleeve.assert_not_awaited()
+
+    async def test_stop_without_ledger_still_stops(self, mock_db: AsyncMock) -> None:
+        """No ledger wired → stop succeeds, close is a no-op."""
+        service = StrategyService(mock_db)
+        execution = self._running_execution()
+
+        with patch.object(service, "_get_execution_by_id", return_value=execution):
+            result = await service.stop_execution(execution.tenant_id, execution.id)
+
+        assert result is not None
+
+    async def test_stop_close_failure_is_best_effort(self, mock_db: AsyncMock) -> None:
+        """A close RPC failure (e.g. in-flight order) never fails the stop."""
+        import grpc
+        import grpc.aio
+
+        from llamatrade_proto.generated.common_pb2 import EXECUTION_STATUS_STOPPED
+
+        service = StrategyService(mock_db)
+        execution = self._running_execution()
+        ledger = AsyncMock()
+        ledger.close_sleeve.side_effect = grpc.aio.AioRpcError(
+            grpc.StatusCode.FAILED_PRECONDITION,
+            grpc.aio.Metadata(),
+            grpc.aio.Metadata(),
+            details="sleeve has reserved cash for in-flight orders",
+        )
+
+        with patch.object(service, "_get_execution_by_id", return_value=execution):
+            result = await service.stop_execution(execution.tenant_id, execution.id, ledger=ledger)
+
+        assert result is not None  # stop still succeeds
+        assert execution.status == EXECUTION_STATUS_STOPPED
+
+    async def test_delete_strategy_cascades_stop_and_close(
+        self, mock_db: AsyncMock, tenant_id: UUID, strategy_id: UUID
+    ) -> None:
+        """Archiving stops every non-terminal execution and releases its sleeve."""
+        from llamatrade_proto.generated.common_pb2 import EXECUTION_STATUS_STOPPED
+
+        service = StrategyService(mock_db)
+        strategy = make_mock_strategy(id=strategy_id, tenant_id=tenant_id, status="active")
+        execution = self._running_execution(tenant_id=tenant_id, strategy_id=strategy_id)
+
+        mock_result = MagicMock()
+        mock_result.scalars.return_value.all.return_value = [execution]
+        mock_db.execute = AsyncMock(return_value=mock_result)
+        ledger = AsyncMock()
+
+        with patch.object(service, "_get_strategy_by_id", return_value=strategy):
+            result = await service.delete_strategy(
+                tenant_id, strategy_id, ledger=ledger, user_id=uuid4()
+            )
+
+        assert result is True
+        assert strategy.status == 4  # STRATEGY_STATUS_ARCHIVED
+        assert execution.status == EXECUTION_STATUS_STOPPED
+        ledger.close_sleeve.assert_awaited_once()

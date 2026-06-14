@@ -1,11 +1,11 @@
-"""Tests for llamatrade_compiler.state module."""
+"""Tests for llamatrade_compiler.evaluation.state module."""
 
 from datetime import UTC, datetime
 
 import numpy as np
 import pytest
 
-from llamatrade_compiler.state import EvaluationState, Position
+from llamatrade_compiler.evaluation.state import EvaluationState, Position
 from llamatrade_compiler.types import Bar
 from llamatrade_dsl import Indicator, Metric
 

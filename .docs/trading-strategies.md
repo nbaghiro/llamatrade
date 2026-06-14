@@ -13,12 +13,30 @@ This document is a comprehensive reference for algorithmic trading strategies, c
 An algorithmic trading system follows a continuous loop: ingest market data, generate signals based on predefined rules, execute orders through a broker, and manage risk throughout.
 
 ```
-Data Feeds ──► Strategy Engine ──► Broker API
-   │               │                   │
-   │               ▼                   │
-   │         Risk Management           │
-   │               │                   │
-   └───────── Monitoring ◄─────────────┘
+╭──────────────────────╮        ╭──────────────────╮        ╭────────────────╮
+│      DATA FEEDS      │  ──►   │ STRATEGY ENGINE  │  ──►   │   BROKER API   │
+├──────────────────────┤        ├──────────────────┤        ├────────────────┤
+│ OHLCV · ticks · news │        │ signals · sizing │        │ orders · fills │
+╰──────────────────────╯        │ allocation       │        ╰────────────────╯
+                                ╰──────────────────╯
+                                          │ signals
+                                          ▼
+                          ╭───────────────────────────────╮
+                          │        RISK MANAGEMENT        │
+                          ├───────────────────────────────┤
+                          │ position limits · stop losses │
+                          │ drawdown · correlation checks │
+                          ╰───────────────────────────────╯
+                                          │
+                                          ▼
+                        ╭───────────────────────────────────╮
+                        │             MONITORING            │
+                        ├───────────────────────────────────┤
+                        │ live P&L · trade journal · alerts │
+                        ╰───────────────────────────────────╯
+                                          │
+            ┌─ feedback: monitoring → data feeds
+            ▲
 ```
 
 **Core components:**
