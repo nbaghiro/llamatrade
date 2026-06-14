@@ -8,13 +8,13 @@ from fastapi.testclient import TestClient
 
 from llamatrade_common.middleware import (
     ServiceClient,
+    TenantContext,
     TenantMiddleware,
     get_tenant_context,
     require_auth,
     require_roles,
     set_tenant_context,
 )
-from llamatrade_common.models import TenantContext
 
 
 class TestTenantContext:

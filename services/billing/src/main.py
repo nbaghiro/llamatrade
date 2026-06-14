@@ -16,10 +16,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from starlette.types import ASGIApp
 
 from llamatrade_common.observability import enable_db_pool_metrics
-from llamatrade_db import get_pool_stats
+from llamatrade_db import close_db, get_pool_stats, init_db
 
 from src.routers import webhooks
-from src.services.database import close_db, init_db
 
 logger = logging.getLogger(__name__)
 

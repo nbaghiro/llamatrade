@@ -7,9 +7,9 @@ from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from llamatrade_common.utils import generate_api_key
+from llamatrade_db import get_db
 
 from src.models import APIKeyCreatedResponse, APIKeyResponse, APIKeyValidationResult
-from src.services.database import get_db
 
 
 class APIKeyService:

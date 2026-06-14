@@ -12,7 +12,8 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from src.services.database import get_db
+from llamatrade_db import get_db
+
 from src.services.memory_service import MemoryService
 from src.tools.base import BaseTool, ToolContext, ToolResult
 

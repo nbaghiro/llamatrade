@@ -33,7 +33,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     """Application lifespan handler."""
     # Initialize database (non-critical - may fail if DB not available)
     try:
-        from src.services.database import init_db
+        from llamatrade_db import init_db
 
         await init_db()
         logger.info("Database initialized successfully")
@@ -60,7 +60,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
 
     # Cleanup
     try:
-        from src.services.database import close_db
+        from llamatrade_db import close_db
 
         await close_db()
     except Exception as e:

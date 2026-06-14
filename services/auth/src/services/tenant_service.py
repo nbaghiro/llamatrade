@@ -19,7 +19,7 @@ from src.models import (
     TenantDetailResponse,
     TenantResponse,
 )
-from src.services.database import get_db
+from llamatrade_db import get_db
 
 
 def _slugify(name: str) -> str:

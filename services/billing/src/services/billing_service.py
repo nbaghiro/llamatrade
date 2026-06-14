@@ -9,6 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from llamatrade_db import get_db
 from llamatrade_db.models import Plan, Subscription
 from llamatrade_proto.generated import billing_pb2
 from llamatrade_proto.generated.billing_pb2 import SubscriptionStatus
@@ -18,7 +19,6 @@ from src.models import (
     SubscriptionCreateRequest,
     SubscriptionResponse,
 )
-from src.services.database import get_db
 from src.stripe.client import StripeClient, StripeError, get_stripe_client
 
 logger = logging.getLogger(__name__)

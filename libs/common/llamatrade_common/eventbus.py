@@ -63,25 +63,6 @@ RECONNECT_BASE_DELAY_SECONDS = 1.0
 RECONNECT_MAX_DELAY_SECONDS = 30.0
 
 
-def _flag(name: str) -> bool:
-    return os.getenv(name, "").strip().lower() in {"1", "true", "yes", "on"}
-
-
-def streams_ledger_fills_enabled() -> bool:
-    """Dual-write/consume ledger fills via Streams (Phase 1)."""
-    return _flag("STREAMS_LEDGER_FILLS")
-
-
-def streams_trading_enabled() -> bool:
-    """Dual-write/tail trading order/position UI events via Streams (Phase 2)."""
-    return _flag("STREAMS_TRADING")
-
-
-def streams_backtest_enabled() -> bool:
-    """Dual-write/tail backtest progress via Streams (Phase 3)."""
-    return _flag("STREAMS_BACKTEST")
-
-
 def _decode_fields(raw: dict[bytes | str, bytes | str]) -> dict[str, str]:
     """Stream entries arrive as bytes unless decode_responses is set."""
     return {

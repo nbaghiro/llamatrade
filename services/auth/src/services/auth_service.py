@@ -10,7 +10,7 @@ from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.models import TokenResponse, UserResponse, UserWithPassword
-from src.services.database import get_db
+from llamatrade_db import get_db
 from src.services.tenant_service import TenantService, get_tenant_service
 from src.services.user_service import UserService, get_user_service
 

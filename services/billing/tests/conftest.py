@@ -9,11 +9,11 @@ from uuid import UUID, uuid4
 import pytest
 from httpx import ASGITransport, AsyncClient
 
+from llamatrade_db import get_db
 from llamatrade_proto.generated import billing_pb2
 
 from src.main import app
 from src.models import PlanResponse
-from src.services.database import get_db
 from src.stripe.client import (
     InvoiceResult,
     PaymentMethodResult,

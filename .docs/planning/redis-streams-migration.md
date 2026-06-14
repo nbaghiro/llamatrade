@@ -7,10 +7,15 @@ fill ingestion.
 
 - **Background discussion:** Redis pub/sub vs Kafka vs Postgres-as-ledger (this thread).
 - **Ledger spec it feeds:** [Portfolio Ledger & Multi-Strategy Fund Allocation](../portfolio-ledger.md) — resolves its [Open Decision #2](portfolio-ledger-implementation.md) (fill-ingestion transport) toward Streams.
-- **Status:** **IMPLEMENTED (2026-06-12)** — EventBus + all three channel migrations
-  landed, flag-gated with dual-write (pub/sub remains primary until staging parity;
-  Phase-4 pub/sub *removal* is the only outstanding step). Implementation deviations
-  from this plan, decided during the build:
+- **Status:** **COMPLETE (Phase 4 done, 2026-06-14)** — Redis Streams is now the
+  **sole** transport for all three channels. The dual-write pub/sub paths, the
+  `pubsub()` subscriber code, and the `STREAMS_LEDGER_FILLS`/`STREAMS_TRADING`/
+  `STREAMS_BACKTEST` flags were all removed (pre-prod, no soak needed). The
+  `EventBus` (`publish`/`tail`/`consume`/`ack`) is the only event path; the
+  `CancellationFlag` keeps its own key-based Redis usage (not an event channel).
+  Below is the original phased plan, retained for context — the per-phase flag
+  and dual-write mechanics no longer apply. Implementation deviations decided
+  during the build:
   - The bus is **payload-agnostic** (flat `dict[str, str]` fields, Streams' native
     model) rather than `Event`-typed — the locked ledger fill contract crosses
     untranslated; the (fixed) `Event` codec plugs in via `to_redis_stream()`.
@@ -82,17 +87,24 @@ fire-and-forget pub/sub and onto Redis Streams, behind a single reusable abstrac
 Redis Streams support both patterns the system needs, and the bus must expose both:
 
 ```
-                          lt:trading:account:{account_id}   (one durable stream)
-                          ┌──────────────────────────────────────────────┐
-   Trading producer ────► │  e1  e2  e3  e4  e5  …                         │
-   (XADD, MAXLEN ~N)      └──────────────────────────────────────────────┘
-                              │                │                  │
-        ┌─────────────────────┘                │                  └────────────────────┐
-        ▼ TAIL (XREAD, no group)               ▼ GROUP "portfolio-ledger"               ▼ GROUP "notifications" (future)
-   live UI gRPC stream(s)                  XREADGROUP + XACK                        XREADGROUP + XACK
-   each browser tails independently        every event once, durable,              independent offset,
-   from its last-seen id, filters          replays unacked on restart,             own progress
-   by session_id; reconnect replays        dedupe by event.id → ledger
+   ┌────────────────────────────────────────────────────────────────────────────────────┐
+   │              lt:trading:account:{account_id}   ·   one durable stream              │
+   ├────────────────────────────────────────────────────────────────────────────────────┤
+   │ Trading producer  ─XADD·MAXLEN~N─►   e1  e2  e3  e4  e5  …                         │
+   └────────────────────────────────────────────────────────────────────────────────────┘
+                                              │
+               ┌─────────────────────────────┬┴─────────────────────────────┐
+               ▼                             ▼                              ▼
+ ╭──────────────────────────╮  ╭───────────────────────────╮  ╭──────────────────────────╮
+ │ TAIL · XREAD (no group)  │  │  GROUP "portfolio-ledger" │  │  GROUP "notifications"   │
+ ├──────────────────────────┤  ├───────────────────────────┤  ├──────────────────────────┤
+ │ live UI gRPC streams     │  │ XREADGROUP + XACK         │  │ XREADGROUP + XACK        │
+ │ browser tails from its   │  │ every event exactly once, │  │ (future consumer)        │
+ │ last-seen id, filters by │  │ durable; replays unacked  │  │ independent offset,      │
+ │ session_id; reconnect    │  │ on restart; dedupe by     │  │ own progress; competing  │
+ │ replays → no lost fills  │  │ event.id → the ledger     │  │ consumers within group   │
+ ╰──────────────────────────╯  ╰───────────────────────────╯  ╰──────────────────────────╯
+     independent fan-out           competing + durable            competing consumers
 ```
 
 - **Tail read** = independent fan-out. N live clients each see the *full* stream (filtered client-side). Reconnect resumes from the last-seen entry id → **no lost fills on browser reconnect** (the gap pub/sub had).

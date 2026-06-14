@@ -17,7 +17,7 @@ type AnyContext = RequestContext[object, object]
 
 from llamatrade_proto.generated import auth_pb2, common_pb2
 
-from src.services.database import get_session_maker
+from llamatrade_db import get_session_maker
 
 logger = logging.getLogger(__name__)
 

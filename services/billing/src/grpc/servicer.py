@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 # Type alias for generic request context (accepts any request/response types)
 type AnyContext = RequestContext[object, object]
 
+from llamatrade_db import get_session_maker
 from llamatrade_proto.generated import billing_pb2, common_pb2
 
 from src.models import (
@@ -22,7 +23,6 @@ from src.models import (
     PlanResponse,
     SubscriptionResponse,
 )
-from src.services.database import get_session_maker
 from src.stripe.client import get_stripe_client
 
 logger = logging.getLogger(__name__)

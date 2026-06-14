@@ -26,7 +26,7 @@ from stripe import Event, Invoice, PaymentMethod, StripeObject, Subscription
 from llamatrade_proto.generated import billing_pb2
 
 from src.services.billing_service import stripe_status_to_proto
-from src.services.database import get_db
+from llamatrade_db import get_db
 from src.stripe.client import StripeError, get_stripe_client
 
 # Invoice status constants (DB-only, no proto)

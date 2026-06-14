@@ -14,13 +14,10 @@ from typing import cast
 import pytest
 import redis.asyncio as aioredis
 
-from llamatrade_common.eventbus import (
+from llamatrade_common.events import (
     RECONNECT_MAX_DELAY_SECONDS,
     EventBus,
     _backoff_delay,
-    streams_backtest_enabled,
-    streams_ledger_fills_enabled,
-    streams_trading_enabled,
 )
 
 
@@ -227,18 +224,3 @@ class TestUtilities:
         assert _backoff_delay(1) <= RECONNECT_MAX_DELAY_SECONDS
         assert _backoff_delay(99) <= RECONNECT_MAX_DELAY_SECONDS
         assert _backoff_delay(99) > 0
-
-    def test_flags_default_off(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        for name in ("STREAMS_LEDGER_FILLS", "STREAMS_TRADING", "STREAMS_BACKTEST"):
-            monkeypatch.delenv(name, raising=False)
-        assert streams_ledger_fills_enabled() is False
-        assert streams_trading_enabled() is False
-        assert streams_backtest_enabled() is False
-
-    def test_flags_enabled(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setenv("STREAMS_LEDGER_FILLS", "1")
-        monkeypatch.setenv("STREAMS_TRADING", "true")
-        monkeypatch.setenv("STREAMS_BACKTEST", "on")
-        assert streams_ledger_fills_enabled() is True
-        assert streams_trading_enabled() is True
-        assert streams_backtest_enabled() is True

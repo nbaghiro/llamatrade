@@ -18,6 +18,7 @@ from connectrpc.errors import ConnectError
 from connectrpc.request import RequestContext
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from llamatrade_db import get_session_maker
 from llamatrade_proto.generated import agent_pb2, common_pb2
 from llamatrade_proto.generated.agent_pb2 import (
     MESSAGE_ROLE_ASSISTANT,
@@ -31,7 +32,6 @@ from llamatrade_proto.generated.agent_pb2 import (
 )
 
 from src.grpc.error_handler import handle_service_errors, parse_uuid
-from src.services.database import get_session_maker
 
 if TYPE_CHECKING:
     pass

@@ -7,11 +7,11 @@ from fastapi import Depends
 from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from llamatrade_db import get_db
 from llamatrade_db.models import PaymentMethod
 
 from src.models import PaymentMethodResponse, SetupIntentResponse
 from src.services.billing_service import BillingService, get_billing_service
-from src.services.database import get_db
 from src.stripe.client import StripeClient, StripeError, get_stripe_client
 
 logger = logging.getLogger(__name__)

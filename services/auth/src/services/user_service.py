@@ -9,7 +9,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.models import UserResponse, UserUpdate, UserWithPassword
-from src.services.database import get_db
+from llamatrade_db import get_db
 
 
 class UserService:

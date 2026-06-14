@@ -7,9 +7,26 @@ from uuid import UUID
 import jwt
 from fastapi import Depends, HTTPException, Request, Response, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from pydantic import ValidationError
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, ValidationError
 
-from llamatrade_common.models import TenantContext
+
+class TenantContext(BaseModel):
+    """Tenant identity extracted from the JWT — the in-process auth context.
+
+    Defined here rather than in a separate models module because the middleware
+    is its sole source and logic: ``TenantMiddleware`` constructs it, and
+    ``require_auth`` / ``require_roles`` / ``get_tenant_context`` return it.
+    (Wire types live in ``llamatrade_proto``; persisted models in
+    ``llamatrade_db``. This is neither — it is request-scoped auth state.)
+    """
+
+    tenant_id: UUID
+    user_id: UUID
+    email: EmailStr
+    roles: list[str] = Field(default_factory=list)
+
+    model_config = ConfigDict(frozen=True)
+
 
 # Context variable to store tenant context per request
 _tenant_context: ContextVar[TenantContext | None] = ContextVar("tenant_context", default=None)
