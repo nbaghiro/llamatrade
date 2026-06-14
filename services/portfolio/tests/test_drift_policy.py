@@ -1,6 +1,6 @@
 """Drift-policy tests — pure, no DB/broker.
 
-Material drift actions under LEDGER_EXECUTION: external trades adopted into
+Material drift actions (ledger is authoritative): external trades adopted into
 Unmanaged, contradicted sleeves frozen; shadow mode stays observe-only.
 """
 
@@ -113,28 +113,7 @@ def account() -> Account:
     return _account()
 
 
-async def test_shadow_mode_only_observes(account: Account, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv("LEDGER_EXECUTION", raising=False)
-    repo = FakeRepo([_sleeve(account, SleeveType.UNMANAGED, "Unmanaged")])
-    store = FakeStore()
-
-    action = await apply_drift_action(
-        repo=repo,
-        store=store,
-        broker=FakeBroker([]),
-        account=account,
-        drift=_drift(DriftKind.MISSING_IN_LEDGER),
-    )
-
-    assert action == "observed"
-    assert store.appended == []
-    assert repo.status_changes == []
-
-
-async def test_missing_in_ledger_adopted_into_unmanaged(
-    account: Account, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setenv("LEDGER_EXECUTION", "1")
+async def test_missing_in_ledger_adopted_into_unmanaged(account: Account) -> None:
     unmanaged = _sleeve(account, SleeveType.UNMANAGED, "Unmanaged")
     repo = FakeRepo([unmanaged])
     store = FakeStore()
@@ -159,8 +138,7 @@ async def test_missing_in_ledger_adopted_into_unmanaged(
     assert projection.account_positions() == {"SPY": D("10")}
 
 
-async def test_adoption_is_idempotent(account: Account, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("LEDGER_EXECUTION", "1")
+async def test_adoption_is_idempotent(account: Account) -> None:
     repo = FakeRepo([_sleeve(account, SleeveType.UNMANAGED, "Unmanaged")])
     store = FakeStore()
     broker = FakeBroker([BrokerHolding(symbol="SPY", qty=D("10"), avg_price=D("480"))])
@@ -172,8 +150,7 @@ async def test_adoption_is_idempotent(account: Account, monkeypatch: pytest.Monk
     assert len(store.appended) == 1  # deterministic event_id dedups the re-detection
 
 
-async def test_vanished_holding_skipped(account: Account, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("LEDGER_EXECUTION", "1")
+async def test_vanished_holding_skipped(account: Account) -> None:
     repo = FakeRepo([_sleeve(account, SleeveType.UNMANAGED, "Unmanaged")])
     store = FakeStore()
 
@@ -189,10 +166,7 @@ async def test_vanished_holding_skipped(account: Account, monkeypatch: pytest.Mo
     assert store.appended == []
 
 
-async def test_qty_mismatch_freezes_holding_sleeves(
-    account: Account, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setenv("LEDGER_EXECUTION", "1")
+async def test_qty_mismatch_freezes_holding_sleeves(account: Account) -> None:
     holder = _sleeve(account, SleeveType.STRATEGY, "Strategy A")
     bystander = _sleeve(account, SleeveType.STRATEGY, "Strategy B")
     repo = FakeRepo([holder, bystander])
@@ -229,10 +203,7 @@ async def test_qty_mismatch_freezes_holding_sleeves(
     assert freeze_events[0].data["sleeve_id"] == str(holder.id)
 
 
-async def test_already_frozen_sleeve_not_refrozen(
-    account: Account, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setenv("LEDGER_EXECUTION", "1")
+async def test_already_frozen_sleeve_not_refrozen(account: Account) -> None:
     holder = _sleeve(account, SleeveType.STRATEGY, "Strategy A")
     holder.status = SleeveStatus.FROZEN.value
     repo = FakeRepo([holder])

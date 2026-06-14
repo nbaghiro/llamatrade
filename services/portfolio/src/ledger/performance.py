@@ -1,4 +1,4 @@
-"""Per-sleeve performance & P&L (Phase 6), derived from the projection.
+"""Per-sleeve performance & P&L, derived from the projection.
 
 Realized P&L comes straight from the folded ledger; unrealized P&L and equity
 are computed by marking the sleeve's open positions to current prices. Pure

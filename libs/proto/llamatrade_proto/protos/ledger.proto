@@ -207,6 +207,28 @@ message TransferCapitalResponse {
   Sleeve to_sleeve = 2;
 }
 
+// Close (retire) a sleeve: re-home its open positions to the Unmanaged sleeve
+// and its free cash to Unallocated, then mark it CLOSED. Idempotent.
+message CloseSleeveRequest {
+  TenantContext context = 1;
+  string account_id = 2;
+  string sleeve_id = 3;
+  string reason = 4;  // optional audit note (e.g. "execution stopped")
+}
+
+message RehomedPosition {
+  string symbol = 1;
+  Decimal qty = 2;
+  Decimal cost_basis = 3;
+}
+
+message CloseSleeveResponse {
+  Sleeve sleeve = 1;                          // the now-CLOSED (drained) sleeve
+  bool already_closed = 2;                    // true if it was already closed (no-op)
+  Decimal rehomed_cash = 3;                   // free cash moved to Unallocated
+  repeated RehomedPosition rehomed_positions = 4;  // positions moved to Unmanaged
+}
+
 message DepositFundsRequest {
   TenantContext context = 1;
   string account_id = 2;
@@ -282,6 +304,9 @@ service LedgerService {
   rpc TransferCapital(TransferCapitalRequest) returns (TransferCapitalResponse);
   rpc DepositFunds(DepositFundsRequest) returns (DepositFundsResponse);
   rpc WithdrawFunds(WithdrawFundsRequest) returns (WithdrawFundsResponse);
+
+  // Sleeve lifecycle
+  rpc CloseSleeve(CloseSleeveRequest) returns (CloseSleeveResponse);
 
   // Queries
   rpc ListSleeves(ListSleevesRequest) returns (ListSleevesResponse);

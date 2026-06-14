@@ -10,8 +10,7 @@ from uuid import UUID
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from llamatrade_common.middleware import require_auth
-from llamatrade_common.models import TenantContext
+from llamatrade_common.middleware import TenantContext, require_auth
 
 from src.main import app
 

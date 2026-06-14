@@ -1,10 +1,10 @@
-"""DB-backed projector + reconciliation service (shadow mode).
+"""DB-backed projector + reconciliation service.
 
 Thin async wrappers around the pure kernel: read an account's events from the
 ledger, fold them into an :class:`AccountProjection`, and reconcile the
-aggregate against broker truth. In shadow mode the projection is computed
-on-read from the event log (the source of truth); materializing it into
-``Sleeve``/``Lot`` rows + ``SleeveSnapshot`` is a later optimization.
+aggregate against broker truth. The projection is computed on-read from the
+event log (the source of truth); materializing it into ``Sleeve``/``Lot`` rows
+is a later optimization (``SleeveSnapshot`` already backs the equity curve).
 """
 
 from __future__ import annotations
@@ -40,6 +40,10 @@ class LedgerProjector:
         events = await self._read_events(tenant_id, account_id)
         return list(holding_history(events, symbol))
 
+    async def read_events(self, tenant_id: UUID, account_id: UUID) -> list[LedgerEventLike]:
+        """Public alias for reading an account's events (for read-model derivation)."""
+        return await self._read_events(tenant_id, account_id)
+
     async def _read_events(self, tenant_id: UUID, account_id: UUID) -> list[LedgerEventLike]:
         """Event rows as the kernel protocol (ORM rows duck-type it at runtime;
         the cast bridges SQLAlchemy's Mapped descriptors for the type checker)."""
@@ -54,9 +58,9 @@ class LedgerProjector:
     ) -> list[Drift]:
         """Shadow-compare the ledger aggregate against broker truth.
 
-        Returns the (possibly empty) list of drifts. In shadow mode the caller
-        only logs/alerts; once authoritative (Phase 3) it appends correction
-        events (external → Unmanaged) and may freeze a sleeve on material drift.
+        Returns the (possibly empty) list of drifts. The drift policy then adopts
+        external trades into Unmanaged and freezes sleeves the broker
+        contradicts (see ``tasks/drift_policy.py``).
         """
         projection = await self.project_account(tenant_id, account_id)
         drifts = reconcile(projection, broker_positions)

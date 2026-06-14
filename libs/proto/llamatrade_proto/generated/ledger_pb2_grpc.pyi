@@ -43,6 +43,8 @@ class LedgerServiceStub:
     TransferCapital: _grpc.UnaryUnaryMultiCallable[_ledger_pb2.TransferCapitalRequest, _ledger_pb2.TransferCapitalResponse]
     DepositFunds: _grpc.UnaryUnaryMultiCallable[_ledger_pb2.DepositFundsRequest, _ledger_pb2.DepositFundsResponse]
     WithdrawFunds: _grpc.UnaryUnaryMultiCallable[_ledger_pb2.WithdrawFundsRequest, _ledger_pb2.WithdrawFundsResponse]
+    CloseSleeve: _grpc.UnaryUnaryMultiCallable[_ledger_pb2.CloseSleeveRequest, _ledger_pb2.CloseSleeveResponse]
+    """Sleeve lifecycle"""
     ListSleeves: _grpc.UnaryUnaryMultiCallable[_ledger_pb2.ListSleevesRequest, _ledger_pb2.ListSleevesResponse]
     """Queries"""
     GetSleeve: _grpc.UnaryUnaryMultiCallable[_ledger_pb2.GetSleeveRequest, _ledger_pb2.GetSleeveResponse]
@@ -63,6 +65,8 @@ class LedgerServiceAsyncStub(LedgerServiceStub):
     TransferCapital: _aio.UnaryUnaryMultiCallable[_ledger_pb2.TransferCapitalRequest, _ledger_pb2.TransferCapitalResponse]  # type: ignore[assignment]
     DepositFunds: _aio.UnaryUnaryMultiCallable[_ledger_pb2.DepositFundsRequest, _ledger_pb2.DepositFundsResponse]  # type: ignore[assignment]
     WithdrawFunds: _aio.UnaryUnaryMultiCallable[_ledger_pb2.WithdrawFundsRequest, _ledger_pb2.WithdrawFundsResponse]  # type: ignore[assignment]
+    CloseSleeve: _aio.UnaryUnaryMultiCallable[_ledger_pb2.CloseSleeveRequest, _ledger_pb2.CloseSleeveResponse]  # type: ignore[assignment]
+    """Sleeve lifecycle"""
     ListSleeves: _aio.UnaryUnaryMultiCallable[_ledger_pb2.ListSleevesRequest, _ledger_pb2.ListSleevesResponse]  # type: ignore[assignment]
     """Queries"""
     GetSleeve: _aio.UnaryUnaryMultiCallable[_ledger_pb2.GetSleeveRequest, _ledger_pb2.GetSleeveResponse]  # type: ignore[assignment]
@@ -110,6 +114,14 @@ class LedgerServiceServicer(metaclass=_abc_1.ABCMeta):
         request: _ledger_pb2.WithdrawFundsRequest,
         context: _ServicerContext,
     ) -> _typing.Union[_ledger_pb2.WithdrawFundsResponse, _abc.Awaitable[_ledger_pb2.WithdrawFundsResponse]]: ...
+
+    @_abc_1.abstractmethod
+    def CloseSleeve(
+        self,
+        request: _ledger_pb2.CloseSleeveRequest,
+        context: _ServicerContext,
+    ) -> _typing.Union[_ledger_pb2.CloseSleeveResponse, _abc.Awaitable[_ledger_pb2.CloseSleeveResponse]]:
+        """Sleeve lifecycle"""
 
     @_abc_1.abstractmethod
     def ListSleeves(

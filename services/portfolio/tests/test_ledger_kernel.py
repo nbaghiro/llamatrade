@@ -1,4 +1,4 @@
-"""Unit tests for the portfolio ledger kernel (Phase 1) — pure, no IO.
+"""Unit tests for the portfolio ledger kernel — pure, no IO.
 
 Covers the conservation invariant (double-entry postings), projection folding
 (cash / positions / realized P&L / aggregate), holding-history provenance, and

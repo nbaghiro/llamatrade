@@ -8,8 +8,8 @@ once as a :class:`LedgerEvent`. Writes are:
 - **balance-checked** — economic events must expand to balanced postings, or
   the append is rejected (conservation enforced at write time).
 
-In shadow mode (Phase 1) this consumes fills emitted by the trading service and
-records them; it does not yet drive execution.
+It consumes fills emitted by the trading service and records them as the
+book of record.
 """
 
 from __future__ import annotations

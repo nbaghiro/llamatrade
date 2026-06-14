@@ -4,7 +4,7 @@ How LlamaTrade shares a **single brokerage account** across **multiple strategie
 
 > **Ownership:** The portfolio ledger is owned by the **Portfolio Service** (`:8860`) — it is the **book of record**. The **Trading Service** (`:8850`) is the **execution arm**: it submits orders to the broker, handles fills, and emits fill events that the portfolio ledger consumes. See [Service Ownership & Boundaries](#service-ownership--boundaries).
 
-> **Architecture:** This specification builds on the portfolio service's `Transaction` / `PortfolioSummary` / `PortfolioHistory` models (the seed of the ledger), the trading service's `trading_events` store, deterministic `client_order_id`, and `StrategyExecution.allocated_capital`. See [Mapping to Code](#mapping-to-code).
+> **Architecture:** This specification builds on the portfolio service's `Transaction` / `PortfolioSummary` / `PortfolioHistory` models (the seed of the ledger), the trading service's deterministic `client_order_id`, and `StrategyExecution.allocated_capital`. This ledger is the **single event-sourced book of record** for trading; the trading service keeps only a thin durable order-intent record and defers accounting here (see [Service Ownership & Boundaries](#service-ownership--boundaries)). See [Mapping to Code](#mapping-to-code).
 
 ---
 
@@ -50,17 +50,33 @@ The naive approach — having each strategy size against the full account and re
 ## Core Model: Accounts, Sleeves, Lots
 
 ```
-Account  (1 per broker credential set)
-│  broker truth: aggregate position per symbol, total cash, total equity
-│
-├── Sleeve "Unallocated"   free cash not yet assigned to anything
-├── Sleeve "Manual"        positions/cash the user trades by hand
-├── Sleeve "Unmanaged"     pre-existing holdings + externally-detected trades
-├── Sleeve  Strategy A     type=strategy, allocated_capital, cash + lots
-└── Sleeve  Strategy B     type=strategy, allocated_capital, cash + lots
-        │
-        └── Lots (provenance-bearing units of a holding)
-              Lot{symbol=SPY, qty, cost_basis, opened_by_order, opened_at, closed_at}
+              ╔═════════════════════════════════════════════════════════╗
+              ║                         ACCOUNT                         ║
+              ╠═════════════════════════════════════════════════════════╣
+              ║ 1 per broker credential set  ·  reconciliation anchor   ║
+              ║ broker truth: aggregate position/symbol · cash · equity ║
+              ╚═════════════════════════════════════════════════════════╝
+                                           │  partitions into virtual sleeves
+                                           │
+       ┌────────────────┬─────────────────┬┴────────────────┬──────────────────┐
+       ▼                ▼                 ▼                 ▼                  ▼
+╭─────────────╮  ╭─────────────╮  ╭──────────────╮  ╭───────────────╮  ╭───────────────╮
+│ Unallocated │  │    Manual   │  │  Unmanaged   │  │   Strategy A  │  │   Strategy B  │
+├─────────────┤  ├─────────────┤  ├──────────────┤  ├───────────────┤  ├───────────────┤
+│ free cash   │  │ hand-traded │  │ pre-existing │  │ type=strategy │  │ type=strategy │
+│ pool        │  │ cash + lots │  │ + external   │  │ alloc_capital │  │ alloc_capital │
+╰─────────────╯  ╰─────────────╯  ╰──────────────╯  │ cash + lots   │  │ cash + lots   │
+                                                    ╰───────────────╯  ╰───────────────╯
+                                                            │                  │
+                                                            └────────┬─────────┘  lots
+                                                                     ▼
+                                                       ┌───────────────────────────┐
+                                                       │ LOT  (provenance-bearing) │
+                                                       ├───────────────────────────┤
+                                                       │ symbol · qty · cost_basis │
+                                                       │ opened_by_order           │
+                                                       │ opened_at · closed_at     │
+                                                       └───────────────────────────┘
 ```
 
 **Account** — the unit of broker reality; the reconciliation anchor. One per Alpaca credential set.
@@ -110,24 +126,41 @@ Conceptually this is the **Unified Managed Account (UMA) / overlay-manager** pat
 ## Architecture
 
 ```
-  STRATEGY / TRADING RUNNER            PORTFOLIO SERVICE (:8860)              TRADING SERVICE (:8850)
-  ─────────────────────────            — the book of record —                — the execution arm —
+  STRATEGY / TRADING RUNNER        PORTFOLIO SERVICE (:8860)      TRADING SERVICE (:8850)
+  ─ produces sleeve targets ─       ─── the book of record ───    ─── the execution arm ───
 
-  Strategies (DSL) ───────────────►  DESIRED-STATE RECONCILER
-   target weights (% of sleeve eq)     │  diff( desired sleeves )
-  Manual actions ─────────────────►   │     vs ( projected actual from ledger )
-                                       │  → intended orders, tagged by sleeve
-                                       │
-                                       │  ── intended orders ──────────────►  BLOCK-AND-ALLOCATE EXECUTOR (OMS)
-                                       │                                        • order-time risk checks
-                                       │                                        • bunch intents → block order → broker
-                                       │  ◄──────── fill events ───────────────  • receive fills, allocate @ avg price
-                                       ▼                                          (emits OrderFilled + client_order_id)
-                              APPEND-ONLY DOUBLE-ENTRY LEDGER ◄── SINGLE SOURCE OF TRUTH
-                                       │  every fill / cash move = balanced event, tagged with sleeve
-                                       ├──(fold)──► per-sleeve lots / positions / cash / P&L
-                                       ├──(fold)──► account aggregate
-                                       └── SHADOW RECONCILER: aggregate ⟷ broker truth → correction events
+╭──────────────────────────╮            ╭──────────────────────────────────╮
+│      SIGNAL SOURCES      │            │     DESIRED-STATE RECONCILER     │
+├──────────────────────────┤            ├──────────────────────────────────┤
+│ Strategies (DSL): target │ ─desired─► │ diff( desired sleeves ) vs       │
+│ weights (% of sleeve eq) │            │ ( projected actual from ledger ) │
+│ Manual actions           │            │ → intended orders, by sleeve     │
+╰──────────────────────────╯            ╰──────────────────────────────────╯
+                                                          │  intended orders, by sleeve
+                                                          └──────────────┐
+                                                                         ▼
+                                                    ╭────────────────────────────────────────╮
+                                                    │   BLOCK-AND-ALLOCATE EXECUTOR (OMS)    │
+                                                    ├────────────────────────────────────────┤
+                                                    │ • order-time risk checks               │
+                                                    │ • bunch intents → block order → broker │
+                                                    │ • receive fills, allocate @ avg price  │
+                                                    │ • emits OrderFilled + client_order_id  │
+                                                    ╰────────────────────────────────────────╯
+                                                                         │
+    ┌─◄─ fill events (echo client_order_id) ─────────────────────────────┘
+    ▼
+    ╔════════════════════════════════════════════════════════════════════════════════╗
+    ║                        APPEND-ONLY DOUBLE-ENTRY LEDGER                         ║
+    ╠════════════════════════════════════════════════════════════════════════════════╣
+    ║ every fill / cash move = a balanced double-entry event, tagged with its sleeve ║
+    ║ ◄══ SINGLE SOURCE OF TRUTH                                                     ║
+    ╚════════════════════════════════════════════════════════════════════════════════╝
+      │
+      ├──(fold)──►  per-sleeve lots / positions / cash / P&L
+      ├──(fold)──►  account aggregate
+      │
+      ╰── SHADOW RECONCILER:  aggregate ⟷ broker truth ──► correction events
 ```
 
 Three layers, cleanly separated:
@@ -357,8 +390,8 @@ Each row is one ledger entry, stamped with source, order id, qty, price, and tim
 | Shadow reconciliation vs broker | **Portfolio** | **Invariant-based** reconciliation; external deltas → Unmanaged (`runner.py:1193`) |
 | P&L / provenance / holding history | **Portfolio** | Lot-level attribution + realized P&L per sleeve, including tax-lot tracking |
 | Trading session (execution) | **Trading** | `TradingSession` (one per strategy; `strategy_id` NOT NULL) is the execution session, **linked to a portfolio sleeve** |
-| Event store (execution events) | **Trading** | `services/trading/src/events/store.py` (`trading_events`) holds order/execution events; fills flow to the portfolio ledger |
-| Deterministic order ids | **Trading** | `event_sourced_executor.py` (`lt-<hash>`) is the `client_order_id → sleeve` attribution key on fills |
+| Order-intent record | **Trading** | Durable `Order` rows (`executor/order_executor.py`); the event-sourced book of record lives **here** in the portfolio ledger, fed by fills |
+| Deterministic order ids | **Trading** | `order_executor.generate_deterministic_order_id` (`lt-<hash>`) gives exactly-once submission and is the `client_order_id → sleeve` attribution key on fills |
 | Order-time risk checks | **Trading** | `risk/risk_manager.py` is **sleeve-aware**, reading sleeve free-cash/budget from the portfolio ledger |
 | Order netting | **Trading** | **Block-and-allocate**, bunching intents into net block orders |
 

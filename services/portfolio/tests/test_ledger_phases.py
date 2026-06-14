@@ -1,4 +1,4 @@
-"""Unit tests for the ledger phase cores (Phases 2-6) — pure, no IO.
+"""Unit tests for the ledger non-postings kernel cores — pure, no IO.
 
 Covers fund disbursement (allocate/transfer/withdraw + raise-cash + admission),
 sleeve-aware sizing (drift bands, free-cash fit, FIFO lots), desired-state

@@ -1,4 +1,4 @@
-"""Block-and-allocate netting (Phase 5).
+"""Block-and-allocate netting.
 
 When multiple sleeves trade the same symbol in one cycle, bunch their intents
 into a single net broker order instead of firing competing orders. Offsetting

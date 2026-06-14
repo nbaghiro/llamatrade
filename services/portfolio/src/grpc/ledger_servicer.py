@@ -21,10 +21,12 @@ from llamatrade_db import get_session_maker
 from llamatrade_proto.generated import common_pb2, ledger_pb2
 
 from src.ledger.funds import FundError
+from src.ledger.lifecycle import SleeveCloseError
 from src.ledger.projection import HoldingHistoryEntry
 from src.ledger.projector import LedgerProjector
 from src.repositories import SqlLedgerStore, SqlSleeveRepository
 from src.services.fund_service import FundService, SleeveView
+from src.services.sleeve_lifecycle_service import SleeveLifecycleService
 from src.services.sleeve_service import SleeveService
 
 if TYPE_CHECKING:
@@ -291,6 +293,51 @@ class LedgerServicer:
         except Exception as e:
             logger.error("transfer_capital error: %s", e, exc_info=True)
             raise ConnectError(Code.INTERNAL, f"transfer failed: {e}") from e
+
+    # ----------------------------------------------------------- sleeve lifecycle
+
+    async def close_sleeve(
+        self, request: ledger_pb2.CloseSleeveRequest, ctx: AnyContext
+    ) -> ledger_pb2.CloseSleeveResponse:
+        """Close a sleeve: re-home positions → Unmanaged, free cash → Unallocated.
+
+        Idempotent. The strategy service calls this when an execution stops or
+        its strategy is archived (the ledger owns sleeve lifecycle).
+        """
+        tenant_id = UUID(request.context.tenant_id)
+        account_id = UUID(request.account_id)
+        try:
+            async with self._get_db() as db:
+                lifecycle = SleeveLifecycleService(SqlSleeveRepository(db), SqlLedgerStore(db))
+                result = await lifecycle.close_sleeve(
+                    tenant_id=tenant_id,
+                    account_id=account_id,
+                    sleeve_id=UUID(request.sleeve_id),
+                    reason=request.reason or None,
+                )
+                projection = await LedgerProjector(db).project_account(tenant_id, account_id)
+                await db.commit()
+                sproj = projection.sleeve(str(result.sleeve.id))
+                return ledger_pb2.CloseSleeveResponse(
+                    sleeve=_sleeve_to_proto(
+                        result.sleeve, sproj.cash, sproj.reserved, sproj.realized_pnl
+                    ),
+                    already_closed=result.already_closed,
+                    rehomed_cash=_dec(result.rehomed_cash),
+                    rehomed_positions=[
+                        ledger_pb2.RehomedPosition(
+                            symbol=p.symbol, qty=_dec(p.qty), cost_basis=_dec(p.cost_basis)
+                        )
+                        for p in result.rehomed_positions
+                    ],
+                )
+        except SleeveCloseError as e:
+            raise ConnectError(Code.FAILED_PRECONDITION, str(e)) from e
+        except ConnectError:
+            raise
+        except Exception as e:
+            logger.error("close_sleeve error: %s", e, exc_info=True)
+            raise ConnectError(Code.INTERNAL, f"close sleeve failed: {e}") from e
 
     # --------------------------------------------------------------- queries
 

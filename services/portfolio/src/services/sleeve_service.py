@@ -1,4 +1,4 @@
-"""Sleeve lifecycle & account bootstrap (Phase 2).
+"""Sleeve lifecycle & account bootstrap.
 
 Lazily creates one ledger ``Account`` per broker credential set, the three
 singleton base sleeves (Unallocated / Manual / Unmanaged), and a ``strategy``

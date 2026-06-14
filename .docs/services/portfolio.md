@@ -25,105 +25,97 @@ The portfolio service is responsible for:
 ### System Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                         PORTFOLIO SERVICE :8860                             │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                             │
-│  ┌─────────────────────────────────────────────────────────────────────┐    │
-│  │                      FastAPI + Connect ASGI                         │    │
-│  │   /health    PortfolioServiceASGIApplication                        │    │
-│  └─────────────────────────────┬───────────────────────────────────────┘    │
-│                                │                                            │
-│  ┌─────────────────────────────┴───────────────────────────────────────┐    │
-│  │                      gRPC Servicer                                  │    │
-│  │                                                                     │    │
-│  │  GetPortfolio ──────► Portfolio summary + positions                 │    │
-│  │  ListPortfolios ────► List all portfolios for tenant                │    │
-│  │  GetPerformance ────► Risk metrics + time series                    │    │
-│  │  GetAssetAllocation ► Category breakdown                            │    │
-│  │  GetPositions ──────► All current positions                         │    │
-│  │  ListTransactions ──► Paginated transaction history                 │    │
-│  │  RecordTransaction ─► Create new transaction                        │    │
-│  │  SyncPortfolio ─────► Sync with trading session                     │    │
-│  └─────────────────────────────┬───────────────────────────────────────┘    │
-│                                │                                            │
-│  ┌─────────────────────────────┴───────────────────────────────────────┐    │
-│  │                      Service Layer                                  │    │
-│  │                                                                     │    │
-│  │  PortfolioService ──► Summary, positions, sync operations           │    │
-│  │  PerformanceService ► Analytics, metrics, equity curves             │    │
-│  │  TransactionService ► Transaction CRUD, P&L calculations            │    │
-│  │  MarketDataClient ──► HTTP client for price enrichment              │    │
-│  └─────────────────────────────────────────────────────────────────────┘    │
-│                                                                             │
-│  ┌─────────────────────────────────────────────────────────────────────┐    │
-│  │                      Database Layer                                 │    │
-│  │                                                                     │    │
-│  │  PortfolioSummary ──► Aggregated portfolio state (JSONB positions)  │    │
-│  │  Transaction ───────► Individual transaction records                │    │
-│  │  PortfolioHistory ──► Daily snapshots for analytics                 │    │
-│  │  PerformanceMetrics ► Cached metric calculations                    │    │
-│  └─────────────────────────────────────────────────────────────────────┘    │
-│                                                                             │
-└─────────────────────────────────┬───────────────────────────────────────────┘
-                                  │
-        ┌─────────────────────────┼─────────────────────────┐
-        ▼                         ▼                         ▼
-   ┌─────────────┐        ┌─────────────┐           ┌─────────────┐
-   │ PostgreSQL  │        │ Market-Data │           │  Consumers  │
-   │  Database   │        │  Service    │           │             │
-   │             │        │   :8840     │           │  Frontend   │
-   └─────────────┘        └─────────────┘           │  Trading    │
-                                                    │  Backtest   │
-                                                    └─────────────┘
+╔════════════════════════════════════════════════════════════════════════════════════════════╗
+║                       PORTFOLIO SERVICE  ·  :8860  —  book of record                       ║
+╚════════════════════════════════════════════════════════════════════════════════════════════╝
+                                             │
+╭────────────────────────────────────────────────────────────────────────────────────────╮
+│                                 FastAPI + Connect ASGI                                 │
+├────────────────────────────────────────────────────────────────────────────────────────┤
+│ /health                  PortfolioServiceASGIApplication                               │
+╰────────────────────────────────────────────────────────────────────────────────────────╯
+                                             │
+╭────────────────────────────────────────────────────────────────────────────────────────╮
+│                                     gRPC Servicer                                      │
+├────────────────────────────────────────────────────────────────────────────────────────┤
+│ GetPortfolio ──────────► portfolio summary + positions                                 │
+│ ListPortfolios ────────► list all portfolios for tenant                                │
+│ GetPerformance ────────► risk metrics + time series                                    │
+│ GetAssetAllocation ────► category breakdown                                            │
+│ GetPositions ──────────► all current positions                                         │
+│ ListTransactions ──────► paginated transaction history                                 │
+│ RecordTransaction ─────► create a new transaction                                      │
+│ SyncPortfolio ─────────► sync with a trading session                                   │
+╰────────────────────────────────────────────────────────────────────────────────────────╯
+                                             │
+╭────────────────────────────────────────────────────────────────────────────────────────╮
+│                                     Service Layer                                      │
+├────────────────────────────────────────────────────────────────────────────────────────┤
+│ PortfolioService ──────► summary, positions, sync operations                           │
+│ PerformanceService ────► analytics, metrics, equity curves                             │
+│ TransactionService ────► transaction CRUD, P&L calculations                            │
+│ MarketDataClient ──────► HTTP client for price enrichment                              │
+╰────────────────────────────────────────────────────────────────────────────────────────╯
+                                             │
+╭────────────────────────────────────────────────────────────────────────────────────────╮
+│                                     Database Layer                                     │
+├────────────────────────────────────────────────────────────────────────────────────────┤
+│ PortfolioSummary ──────► aggregated state (JSONB positions)                            │
+│ Transaction ───────────► individual transaction records                                │
+│ PortfolioHistory ──────► daily snapshots for analytics                                 │
+│ PerformanceMetrics ────► cached metric calculations                                    │
+╰────────────────────────────────────────────────────────────────────────────────────────╯
+                                             │
+                  ┌───────────────────────┬──┴─────────────────────────┐
+                  ▼                       ▼                            ▼
+           ┌────────────┐          ╭─────────────╮          ╭────────────────────╮
+           │ PostgreSQL │          │ market-data │          │ consumers          │
+           │ ledger +   │          │ :8840       │          │ frontend ·         │
+           │ snapshots  │          │ valuation   │          │ trading · backtest │
+           └────────────┘          ╰─────────────╯          ╰────────────────────╯
 ```
 
 ### Data Flow
 
 ```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                         PORTFOLIO DATA FLOW                                 │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                             │
-│  ┌───────────────────────────────────────────────────────────────────┐      │
-│  │                    External Sources                               │      │
-│  │                                                                   │      │
-│  │   Trading Service ──► Order fills, position updates               │      │
-│  │   Market-Data ──────► Current prices for valuation                │      │
-│  │   User Actions ─────► Deposits, withdrawals                       │      │
-│  └───────────────────────────────┬───────────────────────────────────┘      │
-│                                  │                                          │
-│                                  ▼                                          │
-│  ┌───────────────────────────────────────────────────────────────────┐      │
-│  │                  TransactionService                               │      │
-│  │                                                                   │      │
-│  │   • Records buy/sell transactions from order fills                │      │
-│  │   • Records deposits/withdrawals/dividends/fees                   │      │
-│  │   • Calculates net amounts after fees                             │      │
-│  │   • Provides realized P&L calculations                            │      │
-│  └───────────────────────────────┬───────────────────────────────────┘      │
-│                                  │                                          │
-│                                  ▼                                          │
-│  ┌───────────────────────────────────────────────────────────────────┐      │
-│  │                   PortfolioService                                │      │
-│  │                                                                   │      │
-│  │   • Aggregates positions from PortfolioSummary JSONB              │      │
-│  │   • Enriches positions with current prices (via MarketDataClient) │      │
-│  │   • Calculates unrealized P&L per position                        │      │
-│  │   • Provides total equity, cash, market value                     │      │
-│  └───────────────────────────────┬───────────────────────────────────┘      │
-│                                  │                                          │
-│                                  ▼                                          │
-│  ┌───────────────────────────────────────────────────────────────────┐      │
-│  │                  PerformanceService                               │      │
-│  │                                                                   │      │
-│  │   • Fetches PortfolioHistory for time periods                     │      │
-│  │   • Calculates daily returns from equity series                   │      │
-│  │   • Computes risk metrics: Sharpe, Sortino, Max Drawdown          │      │
-│  │   • Provides equity curves, daily return series                   │      │
-│  └───────────────────────────────────────────────────────────────────┘      │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
+╔════════════════════════════════════════════════════════════════════════════════════════════╗
+║           PORTFOLIO DATA FLOW  ·  sources → transactions → valuation → analytics           ║
+╚════════════════════════════════════════════════════════════════════════════════════════════╝
+
+                     ┌───────────────────────────────────────────────────┐
+                     │                  external sources                 │
+                     ├───────────────────────────────────────────────────┤
+                     │ trading service ──► order fills, position updates │
+                     │ market-data ──────► current prices for valuation  │
+                     │ user actions ─────► deposits · withdrawals        │
+                     └───────────────────────────────────────────────────┘
+                                               │
+                                               ▼
+                ╭─────────────────────────────────────────────────────────────╮
+                │                      TransactionService                     │
+                ├─────────────────────────────────────────────────────────────┤
+                │ records buy / sell from fills · deposits · dividends · fees │
+                │ calculates net amounts after fees                           │
+                │ provides realized-P&L calculations                          │
+                ╰─────────────────────────────────────────────────────────────╯
+                                               │
+                                               ▼
+               ╭──────────────────────────────────────────────────────────────╮
+               │                       PortfolioService                       │
+               ├──────────────────────────────────────────────────────────────┤
+               │ aggregates positions from PortfolioSummary JSONB             │
+               │ enriches with current prices (via MarketDataClient)          │
+               │ computes unrealized P&L · total equity · cash · market value │
+               ╰──────────────────────────────────────────────────────────────╯
+                                               │
+                                               ▼
+               ╭──────────────────────────────────────────────────────────────╮
+               │                      PerformanceService                      │
+               ├──────────────────────────────────────────────────────────────┤
+               │ fetches PortfolioHistory for the period                      │
+               │ daily returns from the equity series                         │
+               │ risk metrics: Sharpe · Sortino · Max Drawdown · equity curve │
+               ╰──────────────────────────────────────────────────────────────╯
 ```
 
 ---

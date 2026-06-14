@@ -1,28 +1,27 @@
-"""Wiring for fill ingestion (shadow mode).
+"""Wiring for fill ingestion over the Redis Streams consumer group.
 
-The pure translation (``fill_to_append``) and the Redis pub/sub adapter
-(``FillConsumer``) live in ``src.ledger.ingestion``. This module supplies the
-**handler** that persists a translated append: open a fresh session, append the
-balanced event idempotently via ``LedgerWriter``, and commit. Each fill gets its
-own short transaction so one bad fill can't poison a batch.
+The pure translation (``fill_to_append`` / ``payload_to_append``) lives in
+``src.ledger.ingestion``. This module supplies the **handler** that persists a
+translated append: open a fresh session, append the balanced event idempotently
+via ``LedgerWriter``, and commit. Each fill gets its own short transaction so one
+bad fill can't poison a batch.
 
 ``persist_append`` is the unit-tested core; ``make_fill_handler`` binds it to a
-session factory for the consumer.
+session factory; ``process_stream_entry`` decides ack/drop/retry per entry;
+``consume_fill_stream`` drives the consumer group.
 """
 
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
-from typing import Any, Literal, cast
+from typing import Literal, cast
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from llamatrade_common.eventbus import EventBus
 
 from src.ledger.ingestion import (
-    FILL_CHANNEL_PREFIX,
     FillHandler,
     LedgerAppend,
     enrich_sell_fill,
@@ -34,15 +33,11 @@ from src.ledger.writer import LedgerWriter
 
 logger = logging.getLogger(__name__)
 
-# Pattern matching every account's fill channel (ledger:fills:{account_id}).
-FILL_CHANNEL_PATTERN = f"{FILL_CHANNEL_PREFIX}:*"
-
-# Durable Streams transport (STREAMS_LEDGER_FILLS): one global stream — the
-# trading publisher XADDs every fill/lifecycle payload to it, and this service
-# consumes via a consumer group. Entries are the §1a payload as flat fields
-# (no JSON envelope). Run a SINGLE active consumer in the group: per-account
-# ordering (buy-before-sell for FIFO cost basis) relies on it; a replacement
-# pod takes over pending entries via XAUTOCLAIM.
+# One global durable stream — the trading publisher XADDs every fill/lifecycle
+# payload to it, and this service consumes via a consumer group. Entries are the
+# §1a payload as flat fields (no JSON envelope). Run a SINGLE active consumer in
+# the group: per-account ordering (buy-before-sell for FIFO cost basis) relies
+# on it; a replacement pod takes over pending entries via XAUTOCLAIM.
 LEDGER_FILLS_STREAM = "ledger:fills"
 PORTFOLIO_LEDGER_GROUP = "portfolio-ledger"
 
@@ -50,10 +45,13 @@ PORTFOLIO_LEDGER_GROUP = "portfolio-ledger"
 async def persist_append(db: AsyncSession, append: LedgerAppend) -> None:
     """Append one translated fill to the ledger (idempotent, balance-checked).
 
-    Sells without a publisher-resolved ``cost_basis`` are enriched here via
-    FIFO against the sleeve's open lots, so the persisted event is
-    self-contained (CONTRACTS.md §1, amendment 3A).
+    A fill whose target sleeve was already closed (a stray/late fill) is
+    re-homed to the account's Unmanaged sleeve so it can't resurrect a retired
+    sleeve. Sells without a publisher-resolved ``cost_basis`` are then enriched
+    here via FIFO against the (possibly re-homed) sleeve's open lots, so the
+    persisted event is self-contained (CONTRACTS.md §1, amendment 3A).
     """
+    append = await _reroute_if_sleeve_closed(db, append)
     writer = LedgerWriter(db)
     if needs_cost_basis(append):
         # ORM rows duck-type the kernel protocol; cast bridges Mapped descriptors
@@ -75,8 +73,51 @@ async def persist_append(db: AsyncSession, append: LedgerAppend) -> None:
     await db.commit()
 
 
+async def _reroute_if_sleeve_closed(db: AsyncSession, append: LedgerAppend) -> LedgerAppend:
+    """Re-home a fill targeting a CLOSED sleeve to the account's Unmanaged sleeve.
+
+    A sleeve is closed on strategy stop/archive (its holdings re-homed to
+    Unmanaged). A fill that arrives afterwards — a stray or out-of-band fill —
+    must not resurrect the retired sleeve, so it is attributed to Unmanaged
+    instead (the same destination the sleeve's positions were moved to). No-op
+    for live (ACTIVE/FROZEN) sleeves; if the Unmanaged sleeve is somehow absent,
+    leave the append untouched and let reconciliation surface it.
+    """
+    from dataclasses import replace
+
+    from llamatrade_db.models.ledger import SleeveStatus, SleeveType
+
+    from src.repositories import SqlSleeveRepository
+
+    repo = SqlSleeveRepository(db)
+    sleeve = await repo.get_sleeve(append.tenant_id, append.sleeve_id)
+    if sleeve is None or sleeve.status != SleeveStatus.CLOSED.value:
+        return append
+
+    unmanaged = await repo.get_sleeve_by_type(
+        append.tenant_id, append.account_id, SleeveType.UNMANAGED
+    )
+    if unmanaged is None:
+        logger.error(
+            "fill for closed sleeve %s but account %s has no Unmanaged sleeve; "
+            "applying to the closed sleeve",
+            append.sleeve_id,
+            append.account_id,
+        )
+        return append
+
+    logger.warning(
+        "fill arrived for closed sleeve %s; re-homing to Unmanaged sleeve %s",
+        append.sleeve_id,
+        unmanaged.id,
+    )
+    data = dict(append.data)
+    data["sleeve_id"] = str(unmanaged.id)
+    return replace(append, sleeve_id=unmanaged.id, data=data)
+
+
 def make_fill_handler(session_factory: async_sessionmaker[AsyncSession]) -> FillHandler:
-    """Bind ``persist_append`` to a session factory for use by ``FillConsumer``."""
+    """Bind ``persist_append`` to a session factory for the stream consumer."""
 
     async def handle(append: LedgerAppend) -> None:
         async with session_factory() as db:
@@ -91,50 +132,6 @@ def make_fill_handler(session_factory: async_sessionmaker[AsyncSession]) -> Fill
     return handle
 
 
-RECONNECT_BACKOFF_SECONDS = 5.0
-
-
-async def consume_fills(
-    redis: Any,
-    handler: FillHandler,
-    *,
-    stop_event: asyncio.Event,
-    reconnect_backoff_seconds: float = RECONNECT_BACKOFF_SECONDS,
-) -> None:  # pragma: no cover - IO loop, logic covered via persist_append/dispatch_fill
-    """Pattern-subscribe to every account's fill channel and drive ``handler``.
-
-    A pattern subscription (``ledger:fills:*``) covers accounts onboarded after
-    startup without re-subscribing. One bad fill is logged and skipped, and a
-    Redis connection drop is recovered by re-subscribing after a backoff — so a
-    transient outage never permanently kills ingestion. Returns when
-    ``stop_event`` is set.
-    """
-    while not stop_event.is_set():
-        try:
-            await _subscribe_and_consume(redis, handler, stop_event=stop_event)
-        except Exception:  # reconnect on any transport error
-            logger.exception("fill consumer connection error; reconnecting")
-            await _interruptible_sleep(stop_event, reconnect_backoff_seconds)
-    logger.info("ledger fill consumer stopped")
-
-
-async def _subscribe_and_consume(
-    redis: Any, handler: FillHandler, *, stop_event: asyncio.Event
-) -> None:  # pragma: no cover - IO loop
-    pubsub = redis.pubsub()
-    await pubsub.psubscribe(FILL_CHANNEL_PATTERN)
-    logger.info("ledger fill consumer subscribed to pattern %s", FILL_CHANNEL_PATTERN)
-    try:
-        while not stop_event.is_set():
-            message = await pubsub.get_message(ignore_subscribe_messages=True, timeout=1.0)
-            if message is None or message.get("type") != "pmessage":
-                continue
-            await dispatch_fill(handler, message["data"])
-    finally:
-        await pubsub.punsubscribe(FILL_CHANNEL_PATTERN)
-        await pubsub.aclose()
-
-
 async def _interruptible_sleep(
     stop_event: asyncio.Event, seconds: float
 ) -> None:  # pragma: no cover - timing shell
@@ -145,26 +142,6 @@ async def _interruptible_sleep(
         pass
 
 
-async def dispatch_fill(handler: FillHandler, raw: object) -> bool:
-    """Decode one raw pub/sub payload and drive the handler. Returns success.
-
-    Pure enough to unit-test: bad JSON / malformed payloads are swallowed (logged)
-    so the surrounding loop survives.
-    """
-    from src.metrics import record_ingest
-
-    try:
-        text = raw.decode() if isinstance(raw, bytes | bytearray) else str(raw)
-        payload = json.loads(text)
-        await handler(payload_to_append(payload))
-        record_ingest("success")
-        return True
-    except Exception:  # never let one bad fill kill the loop
-        logger.exception("failed to ingest fill")
-        record_ingest("failure")
-        return False
-
-
 async def process_stream_entry(
     handler: FillHandler, fields: dict[str, str]
 ) -> Literal["ack", "drop", "retry"]:
@@ -172,7 +149,7 @@ async def process_stream_entry(
 
     - ``ack``: persisted (or deduped) — remove from the pending list.
     - ``drop``: poison payload (translation failed) — ack anyway after logging,
-      or it would redeliver forever; the pub/sub path swallows these too.
+      or it would redeliver forever.
     - ``retry``: transient persistence failure — leave pending so the group
       redelivers (idempotent at the writer, so a half-applied retry is safe).
     """
@@ -200,11 +177,11 @@ async def consume_fill_stream(
     *,
     consumer_name: str,
 ) -> None:  # pragma: no cover - IO loop, logic covered via process_stream_entry
-    """Durable counterpart of :func:`consume_fills` over the global stream.
+    """Durably consume the global fill stream via the consumer group.
 
-    Runs until cancelled (the lifespan cancels it on shutdown). Unacked
-    entries survive restarts; a dead pod's pending entries are reclaimed via
-    the bus's XAUTOCLAIM pass.
+    Runs until cancelled (the lifespan cancels it on shutdown). Unacked entries
+    survive restarts; a dead pod's pending entries are reclaimed via the bus's
+    XAUTOCLAIM pass.
     """
     logger.info(
         "ledger fill stream consumer started (stream=%s group=%s consumer=%s)",

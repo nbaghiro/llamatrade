@@ -1,4 +1,4 @@
-"""Fill ingestion: trading-service fills → ledger events (shadow mode).
+"""Fill ingestion: trading-service fills → ledger events.
 
 The trading service is the execution arm; it emits exactly ONE ``OrderFilled``
 event per order, at terminal state (tagged with the deterministic
@@ -16,9 +16,9 @@ absent, the consumer handler computes them at ingestion via FIFO lot selection
 against the account projection (the ledger owns the lots; trading reports
 broker facts only).
 
-The translation (`fill_to_append`) is a pure function so it can be unit-tested;
-``FillConsumer`` is the thin Redis pub/sub adapter that drives it. In shadow
-mode this only *records* — it does not drive execution.
+The translation (`fill_to_append` / `payload_to_append`) is a pure function so it
+can be unit-tested; the portfolio service drives it from the Redis Streams
+consumer group (``src.tasks.fill_ingestion``).
 """
 
 from __future__ import annotations
@@ -38,21 +38,14 @@ from src.ledger.sizing import Lot, select_lots_fifo
 
 logger = logging.getLogger(__name__)
 
-# Redis channel the trading service publishes fills to (per account).
-FILL_CHANNEL_PREFIX = "ledger:fills"
-
-# Non-fill order lifecycle stages trading publishes on the same channel
-# (reservation addendum, CONTRACTS.md §4). Recorded without postings until
-# LEDGER_EXECUTION posting rules land.
+# Non-fill order lifecycle stages trading publishes on the same stream
+# (reservation addendum, CONTRACTS.md §4). Recorded for the reservation
+# lifecycle; they carry no economic postings of their own.
 LIFECYCLE_EVENT_TYPES: dict[str, LedgerEventType] = {
     "order_submitted": LedgerEventType.ORDER_SUBMITTED,
     "order_cancelled": LedgerEventType.ORDER_CANCELLED,
     "order_rejected": LedgerEventType.ORDER_REJECTED,
 }
-
-
-def fill_channel(account_id: UUID | str) -> str:
-    return f"{FILL_CHANNEL_PREFIX}:{account_id}"
 
 
 @dataclass(frozen=True)
@@ -203,36 +196,3 @@ def _event_id_from_client_order_id(client_order_id: str) -> UUID:
 
 
 FillHandler = Callable[[LedgerAppend], Awaitable[None]]
-
-
-class FillConsumer:
-    """Subscribes to an account's fill channel and drives a handler.
-
-    Thin Redis pub/sub adapter (mirrors the trading service's subscriber
-    pattern); the economic logic lives in ``fill_to_append`` + ``LedgerWriter``.
-    """
-
-    def __init__(self, redis: Any, handler: FillHandler) -> None:
-        self._redis = redis
-        self._handler = handler
-
-    async def run(self, account_id: UUID) -> None:  # pragma: no cover - IO loop
-        import json
-
-        pubsub = self._redis.pubsub()
-        channel = fill_channel(account_id)
-        await pubsub.subscribe(channel)
-        logger.info("ledger fill consumer subscribed to %s", channel)
-        try:
-            while True:
-                message = await pubsub.get_message(ignore_subscribe_messages=True, timeout=None)
-                if message is None or message.get("type") != "message":
-                    continue
-                try:
-                    payload = json.loads(message["data"])
-                    await self._handler(fill_to_append(payload))
-                except Exception:  # never let one bad fill kill the loop
-                    logger.exception("failed to ingest fill")
-        finally:
-            await pubsub.unsubscribe(channel)
-            await pubsub.close()

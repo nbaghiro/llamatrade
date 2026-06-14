@@ -1,4 +1,4 @@
-"""Account onboarding + broker backfill (Phase 2 bootstrap).
+"""Account onboarding + broker backfill.
 
 When an account is first provisioned we must seed the ledger from current broker
 state so the invariant ``Σ sleeves == broker`` holds from day one: free cash →

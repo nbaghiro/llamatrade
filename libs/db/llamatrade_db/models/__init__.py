@@ -47,24 +47,13 @@ from llamatrade_db.models.ledger import (
 
 # NOTE: Enum constants should be imported directly from llamatrade_proto.generated.*_pb2
 # e.g., from llamatrade_proto.generated.trading_pb2 import ORDER_SIDE_BUY
-from llamatrade_db.models.market_data import (
-    Bar,
-    Quote,
-    Trade,
-)
+# NOTE: Market-data bars/quotes/trades now live in the dedicated Timescale store
+# owned by the market-data service (services/market-data/src/store), not here.
 from llamatrade_db.models.notification import (
     Alert,
     Notification,
     NotificationChannel,
     Webhook,
-)
-from llamatrade_db.models.portfolio import (
-    PerformanceMetrics,
-    PortfolioHistory,
-    PortfolioSummary,
-    StrategyPerformanceMetrics,
-    StrategyPerformanceSnapshot,
-    Transaction,
 )
 from llamatrade_db.models.strategy import (
     Strategy,
@@ -110,13 +99,6 @@ __all__ = [
     "TradingSession",
     "Order",
     "Position",
-    # Portfolio
-    "PortfolioSummary",
-    "Transaction",
-    "PortfolioHistory",
-    "PerformanceMetrics",
-    "StrategyPerformanceSnapshot",
-    "StrategyPerformanceMetrics",
     # Portfolio Ledger
     "Account",
     "Sleeve",
@@ -127,10 +109,6 @@ __all__ = [
     "SleeveStatus",
     "LotSide",
     "LedgerEventType",
-    # Market Data
-    "Bar",
-    "Quote",
-    "Trade",
     # Notification
     "Alert",
     "Notification",

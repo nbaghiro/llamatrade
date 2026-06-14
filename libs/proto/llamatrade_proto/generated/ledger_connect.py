@@ -31,6 +31,9 @@ class LedgerService(Protocol):
     async def withdraw_funds(self, request: ledger__pb2.WithdrawFundsRequest, ctx: RequestContext) -> ledger__pb2.WithdrawFundsResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
+    async def close_sleeve(self, request: ledger__pb2.CloseSleeveRequest, ctx: RequestContext) -> ledger__pb2.CloseSleeveResponse:
+        raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
+
     async def list_sleeves(self, request: ledger__pb2.ListSleevesRequest, ctx: RequestContext) -> ledger__pb2.ListSleevesResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
@@ -95,6 +98,16 @@ class LedgerServiceASGIApplication(ConnectASGIApplication[LedgerService]):
                         idempotency_level=IdempotencyLevel.UNKNOWN,
                     ),
                     function=svc.withdraw_funds,
+                ),
+                "/llamatrade.LedgerService/CloseSleeve": Endpoint.unary(
+                    method=MethodInfo(
+                        name="CloseSleeve",
+                        service_name="llamatrade.LedgerService",
+                        input=ledger__pb2.CloseSleeveRequest,
+                        output=ledger__pb2.CloseSleeveResponse,
+                        idempotency_level=IdempotencyLevel.UNKNOWN,
+                    ),
+                    function=svc.close_sleeve,
                 ),
                 "/llamatrade.LedgerService/ListSleeves": Endpoint.unary(
                     method=MethodInfo(
@@ -238,6 +251,26 @@ class LedgerServiceClient(ConnectClient):
             timeout_ms=timeout_ms,
         )
 
+    async def close_sleeve(
+        self,
+        request: ledger__pb2.CloseSleeveRequest,
+        *,
+        headers: Headers | Mapping[str, str] | None = None,
+        timeout_ms: int | None = None,
+    ) -> ledger__pb2.CloseSleeveResponse:
+        return await self.execute_unary(
+            request=request,
+            method=MethodInfo(
+                name="CloseSleeve",
+                service_name="llamatrade.LedgerService",
+                input=ledger__pb2.CloseSleeveRequest,
+                output=ledger__pb2.CloseSleeveResponse,
+                idempotency_level=IdempotencyLevel.UNKNOWN,
+            ),
+            headers=headers,
+            timeout_ms=timeout_ms,
+        )
+
     async def list_sleeves(
         self,
         request: ledger__pb2.ListSleevesRequest,
@@ -310,6 +343,8 @@ class LedgerServiceSync(Protocol):
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
     def withdraw_funds(self, request: ledger__pb2.WithdrawFundsRequest, ctx: RequestContext) -> ledger__pb2.WithdrawFundsResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
+    def close_sleeve(self, request: ledger__pb2.CloseSleeveRequest, ctx: RequestContext) -> ledger__pb2.CloseSleeveResponse:
+        raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
     def list_sleeves(self, request: ledger__pb2.ListSleevesRequest, ctx: RequestContext) -> ledger__pb2.ListSleevesResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
     def get_sleeve(self, request: ledger__pb2.GetSleeveRequest, ctx: RequestContext) -> ledger__pb2.GetSleeveResponse:
@@ -371,6 +406,16 @@ class LedgerServiceWSGIApplication(ConnectWSGIApplication):
                         idempotency_level=IdempotencyLevel.UNKNOWN,
                     ),
                     function=service.withdraw_funds,
+                ),
+                "/llamatrade.LedgerService/CloseSleeve": EndpointSync.unary(
+                    method=MethodInfo(
+                        name="CloseSleeve",
+                        service_name="llamatrade.LedgerService",
+                        input=ledger__pb2.CloseSleeveRequest,
+                        output=ledger__pb2.CloseSleeveResponse,
+                        idempotency_level=IdempotencyLevel.UNKNOWN,
+                    ),
+                    function=service.close_sleeve,
                 ),
                 "/llamatrade.LedgerService/ListSleeves": EndpointSync.unary(
                     method=MethodInfo(
@@ -508,6 +553,26 @@ class LedgerServiceClientSync(ConnectClientSync):
                 service_name="llamatrade.LedgerService",
                 input=ledger__pb2.WithdrawFundsRequest,
                 output=ledger__pb2.WithdrawFundsResponse,
+                idempotency_level=IdempotencyLevel.UNKNOWN,
+            ),
+            headers=headers,
+            timeout_ms=timeout_ms,
+        )
+
+    def close_sleeve(
+        self,
+        request: ledger__pb2.CloseSleeveRequest,
+        *,
+        headers: Headers | Mapping[str, str] | None = None,
+        timeout_ms: int | None = None,
+    ) -> ledger__pb2.CloseSleeveResponse:
+        return self.execute_unary(
+            request=request,
+            method=MethodInfo(
+                name="CloseSleeve",
+                service_name="llamatrade.LedgerService",
+                input=ledger__pb2.CloseSleeveRequest,
+                output=ledger__pb2.CloseSleeveResponse,
                 idempotency_level=IdempotencyLevel.UNKNOWN,
             ),
             headers=headers,

@@ -298,7 +298,7 @@ class TestBackfillOnboarding:
 
 
 class TestStreamsPipeline:
-    """STREAMS_LEDGER_FILLS: the durable path end-to-end on real Redis."""
+    """The durable ledger-fills stream path end-to-end on real Redis."""
 
     async def test_stream_publish_consume_persist_project(
         self, db_session: AsyncSession, funded_account, redis_url: str
@@ -346,11 +346,12 @@ class TestStreamsPipeline:
         finally:
             await bus.close()
 
-    async def test_dual_path_delivery_is_deduped_by_writer(
+    async def test_redelivery_is_deduped_by_writer(
         self, db_session: AsyncSession, funded_account, redis_url: str
     ) -> None:
-        """Consuming the same payload via pub/sub AND the stream is a no-op
-        on the second delivery — the soak-mode dual-read safety property."""
+        """Consuming the same payload twice is a no-op on the second delivery —
+        the at-least-once → effective-once property the consumer group relies on
+        (the writer dedupes by event_id)."""
         from src.ledger.ingestion import payload_to_append
         from src.ledger.projector import LedgerProjector
         from src.tasks.fill_ingestion import persist_append
@@ -358,7 +359,7 @@ class TestStreamsPipeline:
         account, sleeve, _ = funded_account
         payload = _fill_payload(account, sleeve)
 
-        # First delivery (pub/sub path), second delivery (stream path)
+        # Same payload delivered twice (e.g. consumer-group redelivery on retry)
         await persist_append(db_session, payload_to_append(payload))
         await persist_append(db_session, payload_to_append(payload))
 

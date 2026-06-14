@@ -113,6 +113,25 @@ class SleeveDetail:
     lots: list[LotInfo] = field(default_factory=list)
 
 
+@dataclass
+class RehomedPositionInfo:
+    """A position moved out of a closing sleeve (into Unmanaged), at cost."""
+
+    symbol: str
+    qty: Decimal
+    cost_basis: Decimal
+
+
+@dataclass
+class SleeveCloseInfo:
+    """Result of CloseSleeve: the now-CLOSED sleeve plus what it re-homed."""
+
+    sleeve: SleeveInfo
+    already_closed: bool
+    rehomed_cash: Decimal
+    rehomed_positions: list[RehomedPositionInfo] = field(default_factory=list)
+
+
 def _dec(pb_value: object) -> Decimal:
     """Convert a proto Decimal (string-valued) to a Decimal, defaulting to 0."""
     raw = getattr(pb_value, "value", "")
@@ -228,6 +247,37 @@ class LedgerClient(BaseGRPCClient):
         )
         response = await self.stub.TransferCapital(request)
         return self._to_sleeve(response.from_sleeve), self._to_sleeve(response.to_sleeve)
+
+    async def close_sleeve(
+        self,
+        tenant_id: str,
+        user_id: str,
+        account_id: str,
+        sleeve_id: str,
+        *,
+        reason: str = "",
+    ) -> SleeveCloseInfo:
+        """Close (retire) a sleeve: re-home its open positions → Unmanaged and
+        free cash → Unallocated, then mark it CLOSED. Idempotent — a re-close of
+        an already-closed sleeve is a no-op (``already_closed`` is True)."""
+        from llamatrade_proto.generated import common_pb2, ledger_pb2
+
+        request = ledger_pb2.CloseSleeveRequest(
+            context=common_pb2.TenantContext(tenant_id=tenant_id, user_id=user_id),
+            account_id=account_id,
+            sleeve_id=sleeve_id,
+            reason=reason,
+        )
+        response = await self.stub.CloseSleeve(request)
+        return SleeveCloseInfo(
+            sleeve=self._to_sleeve(response.sleeve),
+            already_closed=response.already_closed,
+            rehomed_cash=_dec(response.rehomed_cash),
+            rehomed_positions=[
+                RehomedPositionInfo(symbol=p.symbol, qty=_dec(p.qty), cost_basis=_dec(p.cost_basis))
+                for p in response.rehomed_positions
+            ],
+        )
 
     async def deposit_funds(
         self, tenant_id: str, user_id: str, account_id: str, amount: Decimal

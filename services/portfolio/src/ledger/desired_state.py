@@ -1,4 +1,4 @@
-"""Desired-state reconciliation (Phase 4): targets → intended orders.
+"""Desired-state reconciliation: targets → intended orders.
 
 Each sleeve declares *what its portfolio should be* (target weights); this folds
 the per-sleeve desired state against current holdings into intended orders. It's

@@ -168,6 +168,43 @@ async def test_transfer_illiquid_raises() -> None:
         )
 
 
+async def _reserve(ledger: FakeLedger, sleeve_id: UUID, amount: str, coid: str) -> None:
+    """Append an ORDER_SUBMITTED reservation event (earmarks free cash)."""
+    from llamatrade_db.models.ledger import LedgerEventType
+
+    await ledger.append(
+        tenant_id=TENANT,
+        account_id=ACCOUNT,
+        event_type=LedgerEventType.ORDER_SUBMITTED,
+        data={"sleeve_id": str(sleeve_id), "client_order_id": coid, "reserved": amount},
+    )
+
+
+async def test_withdraw_cannot_spend_reserved_cash() -> None:
+    """Reserved cash (open buy orders) is not free: withdraw must exclude it."""
+    svc, _repo, ledger, unalloc, _ = _setup()
+    await svc.deposit(tenant_id=TENANT, account_id=ACCOUNT, amount=Decimal("1000"))
+    await _reserve(ledger, unalloc.id, "600", "lt-coid-1")
+    # balance is 1000 but free is only 400 — a 600 withdraw must be rejected.
+    assert fold(ledger.events).sleeve(str(unalloc.id)).reserved == Decimal("600")
+    with pytest.raises(FundError, match="insufficient free cash"):
+        await svc.withdraw(tenant_id=TENANT, account_id=ACCOUNT, amount=Decimal("600"))
+    # within free cash succeeds
+    view = await svc.withdraw(tenant_id=TENANT, account_id=ACCOUNT, amount=Decimal("400"))
+    assert view.cash == Decimal("600")  # display balance = 1000 − 400
+
+
+async def test_allocate_cannot_spend_reserved_cash() -> None:
+    """Allocation affordability also excludes reserved cash."""
+    svc, _repo, ledger, unalloc, strat = _setup()
+    await svc.deposit(tenant_id=TENANT, account_id=ACCOUNT, amount=Decimal("1000"))
+    await _reserve(ledger, unalloc.id, "700", "lt-coid-2")
+    with pytest.raises(FundError, match="insufficient free cash"):
+        await svc.allocate(
+            tenant_id=TENANT, account_id=ACCOUNT, to_sleeve_id=strat.id, amount=Decimal("500")
+        )
+
+
 async def test_deposit_without_unallocated_raises() -> None:
     repo = FakeRepo()  # no sleeves
     svc = FundService(repo, FakeLedger())

@@ -1,4 +1,4 @@
-"""Fund disbursement (Phase 2): allocate / transfer / deposit / withdraw.
+"""Fund disbursement: allocate / transfer / deposit / withdraw.
 
 Pure planners that turn a requested capital operation into the balanced ledger
 events to append, enforcing the cash invariants (you can't allocate or withdraw

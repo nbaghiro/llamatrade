@@ -62,6 +62,9 @@ accounting. (If supplied, the value passes through unchanged.)
     `strategy_execution_id`, the portfolio opens (or reuses) the strategy
     sleeve linked to that execution and funds it atomically (open-and-fund).
 - `ListSleeves`, `GetSleeve` (sleeve + open lots), `GetHoldingHistory`
+- `CloseSleeve` **[ADDED]** — retire a sleeve, re-homing its holdings (§5a).
+  `CloseSleeveResponse`: the CLOSED sleeve + `already_closed` + a re-home
+  summary (`rehomed_cash`, `repeated RehomedPosition{symbol, qty, cost_basis}`).
 - `Sleeve` message **[ADDED]**: `realized_pnl = 12` (projected from the event
   log) and `SleeveCash.reserved` is the **projected** reservation total (§4),
   not the row column.
@@ -113,7 +116,7 @@ live trade stream, the REST sync recovery path (`sync_order_status` /
 `sync_all_pending_orders`), and the event-sourced crash-recovery path. Market
 buys reserve via the signal's `est_price`.
 
-Portfolio's drift policy (under `LEDGER_EXECUTION`; shadow observes only):
+Portfolio's drift policy (always active — the ledger is authoritative):
 `missing_in_ledger` → adopt into Unmanaged via `EXTERNAL_TRADE_DETECTED` at
 broker avg price; `missing_at_broker`/`qty_mismatch` → freeze every sleeve
 holding the symbol (+ `SLEEVE_FROZEN` audit event). Trading's risk check
@@ -133,8 +136,48 @@ backfill).
   (`trading/src/executor/event_sourced_executor.py`) — reused as the
   attribution/idempotency key end-to-end.
 
-## 6. Rollout flags (unchanged from brief)
+## 5a. Sleeve close — re-home on stop/archive [ADDED]
 
-`LEDGER_SHADOW_MODE → LEDGER_SLEEVES → LEDGER_EXECUTION → LEDGER_DESIRED_STATE
-→ LEDGER_NETTING` (`services/portfolio/src/ledger/settings.py`). Everything is
-flag-gated; with flags off, behavior is unchanged.
+A strategy sleeve is **retired** when its execution stops or its strategy is
+archived. The strategy service owns sleeve lifecycle: it funds via
+`AllocateCapital` and closes via `CloseSleeve`. Closing is **idempotent** and
+**conservation-preserving** — it moves value between sleeves, never destroys it:
+
+- open positions → the account's **Unmanaged** sleeve (carrying qty + cost
+  basis; a re-home is not a sale, so no realized P&L is recognized);
+- free cash → the **Unallocated** sleeve (immediately reusable);
+- a `SLEEVE_CLOSED` event is appended and the sleeve's status becomes `CLOSED`.
+
+Event id is `sha256(sleeve_id + ":close")`, so a re-close is a writer no-op. The
+close **refuses while the sleeve has reserved cash** (an in-flight order): a
+clean close commits no money to an open order.
+
+`SLEEVE_CLOSED` payload (`data`): `sleeve_id`, `to_position_sleeve_id`
+(Unmanaged), `to_cash_sleeve_id` (Unallocated), `positions`
+(`[{symbol, qty, cost_basis}]`), `cash`, optional `reason`. Postings: each
+position is two balanced POSITION legs (close on source, open on Unmanaged) and
+cash is two balanced CASH legs — netting to zero (mirrors `SYMBOL_CHANGED`'s
+two-leg move, but across sleeves).
+
+**Triggers** (strategy service): execution **STOPPED** → close its sleeve;
+strategy **ARCHIVED** → cascade-stop every non-terminal execution and close each
+sleeve. The close is **best-effort** — a stop/archive succeeds even if the
+ledger is unreachable (logged; re-homed on a later close).
+
+**Decoupled, race-free orchestration** (no strategy→trading call): the strategy
+closes the sleeve; trading's risk check blocks orders on any non-ACTIVE sleeve
+(FROZEN or CLOSED); the runner self-stops on its next equity sync when the
+sleeve is CLOSED; and a stray/late fill for a CLOSED sleeve is **re-homed to
+Unmanaged** at ingestion (`_reroute_if_sleeve_closed`) so it can't resurrect a
+retired sleeve.
+
+## 6. Rollout
+
+The `LEDGER_*` rollout flags were **removed (2026-06-14)**: the ledger is the
+single source of truth and is always on, with no legacy fallback. Sleeve-aware
+behavior (sizing, risk, reservations, reconciliation handoff, fill emission) is
+keyed off whether an order/session carries a `sleeve_id` — unattributed/manual
+orders degrade gracefully to account-level behavior. The only ledger env knobs
+that remain are tuning intervals (`LEDGER_RECONCILE_INTERVAL_SECONDS`,
+`LEDGER_SNAPSHOT_INTERVAL_SECONDS`). The Redis Streams transport flag
+(`STREAMS_LEDGER_FILLS`) is a separate migration and is unaffected.

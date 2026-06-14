@@ -1,4 +1,4 @@
-"""Transactional fund disbursement (Phase 2).
+"""Transactional fund disbursement.
 
 Wraps the pure planners in ``src/ledger/funds.py`` with the ledger store: read
 the current projection for free cash, plan the balanced events, append them, and
@@ -84,18 +84,16 @@ class FundService:
         to_sleeve_id: UUID,
         amount: Decimal,
     ) -> tuple[SleeveView, SleeveView]:
-        """Move cash sleeve→sleeve. Illiquid transfers (needing sells) are
-        rejected until execution is enabled (raise-cash needs the trading arm)."""
+        """Move cash sleeve→sleeve. Only liquid transfers are supported: raising
+        cash by selling the source sleeve's lots needs the trading arm to execute
+        the sells, so illiquid transfers are rejected."""
         from_sleeve = await self._require_sleeve(tenant_id, account_id, from_sleeve_id)
         to_sleeve = await self._require_sleeve(tenant_id, account_id, to_sleeve_id)
         free = await self._free_cash(tenant_id, account_id, from_sleeve_id)
-        # Raise-cash transfers (selling the source sleeve's lots to free cash) need
-        # the trading arm to execute the sells, so only liquid transfers are
-        # supported until LEDGER_EXECUTION is enabled.
         if free < amount:
             raise funds.FundError(
-                "transfer requires raising cash by selling positions; available once "
-                "execution (LEDGER_EXECUTION) is enabled"
+                "transfer requires raising cash by selling positions, which is not "
+                "yet supported; transfer only liquid (free-cash) amounts"
             )
         plan = funds.plan_transfer(
             from_sleeve_id=from_sleeve_id,
@@ -130,8 +128,12 @@ class FundService:
         return sleeve
 
     async def _free_cash(self, tenant_id: UUID, account_id: UUID, sleeve_id: UUID) -> Decimal:
+        # Free cash = balance − reserved (cash earmarked for open buy orders).
+        # Affordability checks (withdraw/allocate/transfer) must never spend
+        # reserved funds, or a concurrent open order could overdraw the account.
         proj = await self._store.project_account(tenant_id, account_id)
-        return proj.sleeve(str(sleeve_id)).cash
+        s = proj.sleeve(str(sleeve_id))
+        return s.cash - s.reserved
 
     async def _append_all(
         self, tenant_id: UUID, account_id: UUID, events: list[funds.PlannedFundEvent]

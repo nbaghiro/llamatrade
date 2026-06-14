@@ -1,42 +1,9 @@
-"""Portfolio Service - Pydantic schemas."""
+"""Portfolio Service - Pydantic schemas (read-side response shapes)."""
 
 from datetime import datetime
 from uuid import UUID
 
 from pydantic import BaseModel
-
-from llamatrade_proto.generated.portfolio_pb2 import (
-    TRANSACTION_TYPE_BUY,
-    TRANSACTION_TYPE_DEPOSIT,
-    TRANSACTION_TYPE_DIVIDEND,
-    TRANSACTION_TYPE_FEE,
-    TRANSACTION_TYPE_INTEREST,
-    TRANSACTION_TYPE_SELL,
-    TRANSACTION_TYPE_TRANSFER_IN,
-    TRANSACTION_TYPE_TRANSFER_OUT,
-    TRANSACTION_TYPE_WITHDRAWAL,
-)
-
-# ===================
-# Conversion helpers: proto int -> str (for display/API)
-# ===================
-
-_TRANSACTION_TYPE_TO_STR: dict[int, str] = {
-    TRANSACTION_TYPE_BUY: "buy",
-    TRANSACTION_TYPE_SELL: "sell",
-    TRANSACTION_TYPE_DEPOSIT: "deposit",
-    TRANSACTION_TYPE_WITHDRAWAL: "withdrawal",
-    TRANSACTION_TYPE_DIVIDEND: "dividend",
-    TRANSACTION_TYPE_INTEREST: "interest",
-    TRANSACTION_TYPE_FEE: "fee",
-    TRANSACTION_TYPE_TRANSFER_IN: "transfer_in",
-    TRANSACTION_TYPE_TRANSFER_OUT: "transfer_out",
-}
-
-
-def transaction_type_to_str(value: int) -> str:
-    """Convert TransactionType proto value to string."""
-    return _TRANSACTION_TYPE_TO_STR.get(value, "unknown")
 
 
 class PositionResponse(BaseModel):
@@ -107,13 +74,3 @@ class TransactionResponse(BaseModel):
     description: str | None = None
     reference_id: str | None = None
     created_at: datetime
-
-
-class TransactionCreate(BaseModel):
-    type: int  # TransactionType proto value
-    symbol: str | None = None
-    qty: float | None = None
-    price: float | None = None
-    amount: float
-    commission: float = 0
-    description: str | None = None

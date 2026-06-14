@@ -380,4 +380,4 @@ Never allow cross-tenant data access. When in doubt, add tenant filtering.
 
 ### Ledger integration
 
-- Trading is the **execution arm** of the portfolio double-entry ledger: it publishes fill/reservation payloads to `ledger:fills:{account_id}` and reads sleeve state via `LedgerClient`. The locked contract (payload shapes, idempotency, identity threading) lives in `.docs/planning/CONTRACTS.md` — change it there first. Rollout is flag-gated: `LEDGER_SHADOW_MODE` → `LEDGER_SLEEVES` → `LEDGER_EXECUTION` (no behavior change with flags off).
+- Trading is the **execution arm** of the portfolio double-entry ledger: it publishes fill/reservation payloads to `ledger:fills:{account_id}` and reads sleeve state via `LedgerClient`. The locked contract (payload shapes, idempotency, identity threading) lives in `.docs/planning/CONTRACTS.md` — change it there first. The ledger is the **single source of truth** and is always on — there are no `LEDGER_*` rollout flags and no legacy fallback (sleeve-attributed behavior is keyed off whether an order/session carries a `sleeve_id`).

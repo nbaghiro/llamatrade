@@ -14,7 +14,7 @@ from __future__ import annotations
 from datetime import datetime
 from decimal import Decimal
 from enum import Enum as PyEnum
-from typing import TYPE_CHECKING, Any
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy import (
@@ -42,12 +42,6 @@ from llamatrade_db.models._enum_types import (
     TemplateDifficultyType,
 )
 from llamatrade_proto.generated import common_pb2, strategy_pb2
-
-if TYPE_CHECKING:
-    from llamatrade_db.models.portfolio import (
-        StrategyPerformanceMetrics,
-        StrategyPerformanceSnapshot,
-    )
 
 
 class StrategyType(PyEnum):
@@ -197,17 +191,6 @@ class StrategyExecution(Base, UUIDPrimaryKeyMixin, TenantMixin, TimestampMixin):
 
     # Relationships
     strategy: Mapped[Strategy] = relationship("Strategy", back_populates="executions")
-    performance_metrics: Mapped[StrategyPerformanceMetrics | None] = relationship(
-        "StrategyPerformanceMetrics",
-        back_populates="execution",
-        uselist=False,
-        cascade="all, delete-orphan",
-    )
-    performance_snapshots: Mapped[list[StrategyPerformanceSnapshot]] = relationship(
-        "StrategyPerformanceSnapshot",
-        back_populates="execution",
-        cascade="all, delete-orphan",
-    )
 
 
 class StrategyTemplate(Base, UUIDPrimaryKeyMixin, TimestampMixin):

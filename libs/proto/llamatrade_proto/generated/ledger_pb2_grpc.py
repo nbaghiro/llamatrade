@@ -43,6 +43,11 @@ class LedgerServiceStub(object):
                 request_serializer=ledger__pb2.WithdrawFundsRequest.SerializeToString,
                 response_deserializer=ledger__pb2.WithdrawFundsResponse.FromString,
                 _registered_method=True)
+        self.CloseSleeve = channel.unary_unary(
+                '/llamatrade.LedgerService/CloseSleeve',
+                request_serializer=ledger__pb2.CloseSleeveRequest.SerializeToString,
+                response_deserializer=ledger__pb2.CloseSleeveResponse.FromString,
+                _registered_method=True)
         self.ListSleeves = channel.unary_unary(
                 '/llamatrade.LedgerService/ListSleeves',
                 request_serializer=ledger__pb2.ListSleevesRequest.SerializeToString,
@@ -99,6 +104,13 @@ class LedgerServiceServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def CloseSleeve(self, request, context):
+        """Sleeve lifecycle
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
     def ListSleeves(self, request, context):
         """Queries
         """
@@ -145,6 +157,11 @@ def add_LedgerServiceServicer_to_server(servicer, server):
                     servicer.WithdrawFunds,
                     request_deserializer=ledger__pb2.WithdrawFundsRequest.FromString,
                     response_serializer=ledger__pb2.WithdrawFundsResponse.SerializeToString,
+            ),
+            'CloseSleeve': grpc.unary_unary_rpc_method_handler(
+                    servicer.CloseSleeve,
+                    request_deserializer=ledger__pb2.CloseSleeveRequest.FromString,
+                    response_serializer=ledger__pb2.CloseSleeveResponse.SerializeToString,
             ),
             'ListSleeves': grpc.unary_unary_rpc_method_handler(
                     servicer.ListSleeves,
@@ -301,6 +318,33 @@ class LedgerService(object):
             '/llamatrade.LedgerService/WithdrawFunds',
             ledger__pb2.WithdrawFundsRequest.SerializeToString,
             ledger__pb2.WithdrawFundsResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def CloseSleeve(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/llamatrade.LedgerService/CloseSleeve',
+            ledger__pb2.CloseSleeveRequest.SerializeToString,
+            ledger__pb2.CloseSleeveResponse.FromString,
             options,
             channel_credentials,
             insecure,

@@ -20,6 +20,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from decimal import Decimal
 from enum import StrEnum
+from typing import cast
 
 from llamatrade_db.models.ledger import LedgerEventType
 
@@ -121,6 +122,31 @@ def build_postings(event_type: LedgerEventType, data: dict[str, object]) -> list
                 Posting(sleeve, Bucket.PNL, amount),
             ]
 
+        case LedgerEventType.SPLIT_APPLIED:
+            # A stock split adds (or removes, on a reverse split) shares at zero
+            # incremental cost — cost basis is preserved, only qty changes. The
+            # single zero-dollar POSITION leg keeps cash conservation intact;
+            # ``qty_delta`` is the signed share change for THIS sleeve (the
+            # corporate-action planner computes it per holding sleeve).
+            sleeve = str(data["sleeve_id"])
+            symbol = str(data["symbol"])
+            qty_delta = _d(data, "qty_delta")
+            return [Posting(sleeve, Bucket.POSITION, ZERO, symbol=symbol, qty=qty_delta)]
+
+        case LedgerEventType.SYMBOL_CHANGED:
+            # A ticker rename moves a sleeve's lot from the old symbol to the new
+            # one, carrying qty and cost basis across unchanged. Two POSITION legs
+            # (close old, open new) at equal cost net to zero dollars.
+            sleeve = str(data["sleeve_id"])
+            old_symbol = str(data["old_symbol"])
+            new_symbol = str(data["new_symbol"])
+            qty = _d(data, "qty")
+            cost = _d(data, "cost_basis")
+            return [
+                Posting(sleeve, Bucket.POSITION, -cost, symbol=old_symbol, qty=-qty),
+                Posting(sleeve, Bucket.POSITION, cost, symbol=new_symbol, qty=qty),
+            ]
+
         case LedgerEventType.EXTERNAL_TRADE_DETECTED:
             # An externally-originated fill we attribute to the Unmanaged sleeve.
             # Funded from outside the tracked book (EXTERNAL leg).
@@ -133,6 +159,9 @@ def build_postings(event_type: LedgerEventType, data: dict[str, object]) -> list
                 Posting(None, Bucket.EXTERNAL, -notional),
                 Posting(sleeve, Bucket.POSITION, notional, symbol=symbol, qty=qty),
             ]
+
+        case LedgerEventType.SLEEVE_CLOSED:
+            return _sleeve_closed_postings(data)
 
         case _:
             return []
@@ -166,3 +195,36 @@ def _order_filled_postings(data: dict[str, object]) -> list[Posting]:
         ]
 
     raise ValueError(f"unknown order side: {side!r}")
+
+
+def _sleeve_closed_postings(data: dict[str, object]) -> list[Posting]:
+    """Re-home a closing sleeve's holdings, then retire it.
+
+    Open positions move to the Unmanaged sleeve and free cash to Unallocated.
+    Each position is two balanced POSITION legs (close on the source, open on
+    the target, carrying qty + cost basis — a re-home is not a sale, so no PNL
+    leg), and cash is two balanced CASH legs, so the whole close nets to zero
+    dollars. An already-empty sleeve yields no postings; the ``SLEEVE_CLOSED``
+    event is then a pure lifecycle marker. Mirrors the two-leg position move in
+    ``SYMBOL_CHANGED``, but across sleeves rather than across symbols.
+    """
+    frm = str(data["sleeve_id"])
+    postings: list[Posting] = []
+
+    raw_positions = data.get("positions")
+    if raw_positions:
+        to_positions = str(data["to_position_sleeve_id"])
+        for entry in cast("list[dict[str, object]]", raw_positions):
+            symbol = str(entry["symbol"])
+            qty = _d(entry, "qty")
+            cost = _d(entry, "cost_basis")
+            postings.append(Posting(frm, Bucket.POSITION, -cost, symbol=symbol, qty=-qty))
+            postings.append(Posting(to_positions, Bucket.POSITION, cost, symbol=symbol, qty=qty))
+
+    cash = _d(data, "cash") if "cash" in data else ZERO
+    if cash != ZERO:
+        to_cash = str(data["to_cash_sleeve_id"])
+        postings.append(Posting(frm, Bucket.CASH, -cash))
+        postings.append(Posting(to_cash, Bucket.CASH, cash))
+
+    return postings

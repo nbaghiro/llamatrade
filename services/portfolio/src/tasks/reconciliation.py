@@ -1,9 +1,8 @@
-"""Shadow-mode reconciliation task.
+"""Reconciliation task: keep the ledger aggregate matching broker truth.
 
-Periodically compares each account's ledger projection against broker truth and
-logs/classifies any drift. In shadow mode (Phase 1) this is **read-only**: it
-never appends correction events or freezes a sleeve — it only surfaces drift so
-we can validate the ledger against reality before it becomes authoritative.
+Periodically compares each account's ledger projection against broker truth,
+classifies any drift, and routes material drift to the drift policy (adopt
+external trades into Unmanaged; freeze sleeves the broker contradicts).
 
 ``run_reconciliation_pass`` is the pure orchestration (one pass over a given set
 of accounts) and is unit-tested with fakes; ``reconciliation_loop`` is the thin
@@ -44,9 +43,9 @@ MATERIAL_DRIFT_KINDS = {
     DriftKind.MISSING_IN_LEDGER,
 }
 
-# Called for each material drift: (account, drift). Wire this to the alert
-# pathway (webhooks / notification service) when LEDGER_EXECUTION goes live;
-# shadow mode defaults to structured logging only.
+# Called for each material drift: (account, drift). The default handler applies
+# the drift policy; it can also be wired to the alert pathway (webhooks /
+# notification service).
 MaterialDriftHandler = Callable[[Account, "Drift"], Awaitable[None]]
 
 
@@ -153,9 +152,8 @@ async def reconciliation_loop(
 ) -> None:  # pragma: no cover - scheduler shell, logic covered via run_reconciliation_pass
     """Run reconciliation passes until ``stop_event`` is set.
 
-    Material drifts are routed to the drift policy (adopt external trades /
-    freeze contradicted sleeves under LEDGER_EXECUTION; observe-only in
-    shadow mode — see ``tasks/drift_policy.py``).
+    Material drifts are routed to the drift policy (adopt external trades into
+    Unmanaged / freeze contradicted sleeves — see ``tasks/drift_policy.py``).
     """
     from src.tasks.drift_policy import make_drift_handler
 

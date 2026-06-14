@@ -1,4 +1,4 @@
-"""Portfolio ledger (Phase 1): event-sourced book of record.
+"""Portfolio ledger: event-sourced book of record.
 
 Pure kernel (no IO):
 - ``postings``        — double-entry expansion + conservation check
@@ -10,6 +10,12 @@ IO adapter:
 """
 
 from src.ledger.backfill import BrokerPosition, PlannedEvent, plan_backfill
+from src.ledger.corporate import (
+    PlannedCorporateEvent,
+    plan_split,
+    plan_symbol_change,
+    split_dividend,
+)
 from src.ledger.desired_state import SleeveDesired, plan_rebalance
 from src.ledger.funds import (
     FundError,
@@ -23,9 +29,7 @@ from src.ledger.funds import (
     plan_withdraw,
 )
 from src.ledger.ingestion import (
-    FillConsumer,
     LedgerAppend,
-    fill_channel,
     fill_to_append,
 )
 from src.ledger.netting import (
@@ -56,13 +60,6 @@ from src.ledger.reconciliation import (
     Drift,
     DriftKind,
     reconcile,
-)
-from src.ledger.settings import (
-    desired_state_enabled,
-    execution_enabled,
-    netting_enabled,
-    shadow_mode_enabled,
-    sleeves_enabled,
 )
 from src.ledger.sizing import (
     DEFAULT_DRIFT_TOLERANCE,
@@ -100,21 +97,18 @@ __all__ = [
     # ingestion
     "LedgerAppend",
     "fill_to_append",
-    "fill_channel",
-    "FillConsumer",
     # backfill
     "BrokerPosition",
     "PlannedEvent",
     "plan_backfill",
+    # corporate actions
+    "PlannedCorporateEvent",
+    "plan_split",
+    "plan_symbol_change",
+    "split_dividend",
     # projector
     "LedgerProjector",
-    # settings / flags
-    "shadow_mode_enabled",
-    "sleeves_enabled",
-    "execution_enabled",
-    "desired_state_enabled",
-    "netting_enabled",
-    # funds (Phase 2)
+    # funds
     "FundError",
     "PlannedFundEvent",
     "RaiseCashSell",
@@ -124,7 +118,7 @@ __all__ = [
     "plan_deposit",
     "plan_transfer",
     "plan_withdraw",
-    # sizing (Phase 3)
+    # sizing
     "IntendedOrder",
     "Lot",
     "FifoResult",
@@ -133,15 +127,15 @@ __all__ = [
     "target_orders",
     "fit_to_free_cash",
     "select_lots_fifo",
-    # desired-state (Phase 4)
+    # desired-state
     "SleeveDesired",
     "plan_rebalance",
-    # netting (Phase 5)
+    # netting
     "BrokerOrder",
     "SleeveAllocation",
     "NettingResult",
     "net_orders",
-    # performance (Phase 6)
+    # performance
     "SleevePnL",
     "sleeve_pnl",
     "account_pnl",

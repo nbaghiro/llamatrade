@@ -1,1 +1,1 @@
-"""Background tasks for the portfolio service (shadow-mode reconciliation)."""
+"""Background tasks for the portfolio service (ingestion, reconciliation, snapshots)."""

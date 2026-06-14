@@ -101,3 +101,33 @@ def test_sleeve_to_proto_defaults_without_projection() -> None:
     proto = _sleeve_to_proto(s, Decimal("750"))
     assert proto.cash.reserved.value == "12.50"  # row column fallback
     assert proto.realized_pnl.value == "0"
+
+
+def test_close_sleeve_response_proto_round_trips() -> None:
+    resp = ledger_pb2.CloseSleeveResponse(
+        sleeve=_sleeve_to_proto(_sleeve(SleeveType.STRATEGY), Decimal("0")),
+        already_closed=False,
+        rehomed_cash=_dec(Decimal("2000")),
+        rehomed_positions=[
+            ledger_pb2.RehomedPosition(
+                symbol="AAPL", qty=_dec(Decimal("10")), cost_basis=_dec(Decimal("3000"))
+            )
+        ],
+    )
+    assert resp.already_closed is False
+    assert resp.rehomed_cash.value == "2000"
+    assert resp.rehomed_positions[0].symbol == "AAPL"
+    assert resp.rehomed_positions[0].qty.value == "10"
+    assert resp.rehomed_positions[0].cost_basis.value == "3000"
+
+
+def test_close_sleeve_handler_is_bound_on_the_asgi_app() -> None:
+    """The Connect app binds svc.close_sleeve at construction, so this also
+    guards the proto RPC name ↔ servicer method-name mapping."""
+    from llamatrade_proto.generated.ledger_connect import LedgerServiceASGIApplication
+
+    from src.grpc.ledger_servicer import LedgerServicer
+
+    servicer = LedgerServicer()
+    assert callable(servicer.close_sleeve)
+    LedgerServiceASGIApplication(servicer)  # raises if close_sleeve isn't bound

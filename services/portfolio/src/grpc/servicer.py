@@ -22,6 +22,9 @@ from src.clients.market_data import get_market_data_client
 if TYPE_CHECKING:
     from llamatrade_proto.generated import portfolio_pb2
 
+    from src.services.portfolio_read_service import PortfolioReadService
+    from src.services.strategy_performance_read_service import StrategyPerformanceReadService
+
 logger = logging.getLogger(__name__)
 
 
@@ -42,6 +45,24 @@ class PortfolioServicer:
         assert self._session_factory is not None
         return self._session_factory()
 
+    # All portfolio/strategy reads derive from the ledger projection — the single
+    # source of truth. (Summary, positions, performance, transactions, and
+    # strategy performance share one read service.)
+
+    def _reader(self, db: AsyncSession) -> PortfolioReadService:
+        """Ledger-backed reader for summary / positions / performance / transactions."""
+        from src.services.portfolio_read_service import PortfolioReadService
+
+        return PortfolioReadService(db, market_data=get_market_data_client())
+
+    def _strategy_perf_reader(self, db: AsyncSession) -> StrategyPerformanceReadService:
+        """Ledger-backed strategy-performance reader (list/get/equity-curve)."""
+        from src.services.strategy_performance_read_service import (
+            StrategyPerformanceReadService,
+        )
+
+        return StrategyPerformanceReadService(db, market_data=get_market_data_client())
+
     async def get_portfolio(
         self,
         request: portfolio_pb2.GetPortfolioRequest,
@@ -51,12 +72,10 @@ class PortfolioServicer:
         from llamatrade_proto.generated import portfolio_pb2
 
         try:
-            from src.services.portfolio_service import PortfolioService
-
             tenant_id = UUID(request.context.tenant_id)
 
             async with await self._get_db() as db:
-                service = PortfolioService(db, market_data=get_market_data_client())
+                service = self._reader(db)
                 summary = await service.get_summary(tenant_id)
                 positions = await service.list_positions(tenant_id)
 
@@ -81,12 +100,10 @@ class PortfolioServicer:
         from llamatrade_proto.generated import common_pb2, portfolio_pb2
 
         try:
-            from src.services.portfolio_service import PortfolioService
-
             tenant_id = UUID(request.context.tenant_id)
 
             async with await self._get_db() as db:
-                service = PortfolioService(db, market_data=get_market_data_client())
+                service = self._reader(db)
                 summary = await service.get_summary(tenant_id)
 
                 # Currently we support one portfolio per tenant
@@ -120,17 +137,13 @@ class PortfolioServicer:
         from llamatrade_proto.generated import common_pb2, portfolio_pb2
 
         try:
-            from src.services.performance_service import PerformanceService
-            from src.services.portfolio_service import PortfolioService
-
             tenant_id = UUID(request.context.tenant_id)
 
             async with await self._get_db() as db:
-                portfolio_service = PortfolioService(db, market_data=get_market_data_client())
-                perf_service = PerformanceService(db, market_data=get_market_data_client())
+                service = self._reader(db)
 
                 # Get portfolio summary for basic metrics
-                summary = await portfolio_service.get_summary(tenant_id)
+                summary = await service.get_summary(tenant_id)
 
                 # Convert time range if provided
                 start_date = None
@@ -166,7 +179,7 @@ class PortfolioServicer:
                         period = "ALL"
 
                 # Get performance metrics
-                metrics = await perf_service.get_metrics(
+                metrics = await service.get_metrics(
                     tenant_id=tenant_id,
                     period=period,
                 )
@@ -204,12 +217,10 @@ class PortfolioServicer:
         from llamatrade_proto.generated import common_pb2, portfolio_pb2
 
         try:
-            from src.services.portfolio_service import PortfolioService
-
             tenant_id = UUID(request.context.tenant_id)
 
             async with await self._get_db() as db:
-                service = PortfolioService(db, market_data=get_market_data_client())
+                service = self._reader(db)
                 positions = await service.list_positions(tenant_id)
 
                 # Calculate allocation by grouping
@@ -260,12 +271,10 @@ class PortfolioServicer:
         from llamatrade_proto.generated import portfolio_pb2
 
         try:
-            from src.services.portfolio_service import PortfolioService
-
             tenant_id = UUID(request.context.tenant_id)
 
             async with await self._get_db() as db:
-                service = PortfolioService(db, market_data=get_market_data_client())
+                service = self._reader(db)
                 positions = await service.list_positions(tenant_id)
 
                 return portfolio_pb2.GetPositionsResponse(
@@ -288,14 +297,12 @@ class PortfolioServicer:
         from llamatrade_proto.generated import common_pb2, portfolio_pb2
 
         try:
-            from src.services.transaction_service import TransactionService
-
             tenant_id = UUID(request.context.tenant_id)
             page = request.pagination.page if request.HasField("pagination") else 1
             page_size = request.pagination.page_size if request.HasField("pagination") else 20
 
             async with await self._get_db() as db:
-                service = TransactionService(db)
+                service = self._reader(db)
                 transactions, total = await service.list_transactions(
                     tenant_id=tenant_id,
                     type=None,
@@ -330,59 +337,18 @@ class PortfolioServicer:
         request: portfolio_pb2.RecordTransactionRequest,
         ctx: AnyContext,
     ) -> portfolio_pb2.RecordTransactionResponse:
-        """Record a new transaction."""
-        from llamatrade_proto.generated import portfolio_pb2
+        """Record a manual transaction.
 
-        try:
-            from decimal import Decimal
-
-            from src.models import TransactionCreate
-            from src.services.transaction_service import TransactionService
-
-            tenant_id = UUID(request.context.tenant_id)
-            txn_type = self._from_proto_transaction_type(request.type)
-
-            # Calculate amount from quantity * price, or use explicit amount if provided
-            qty = Decimal(request.quantity.value) if request.HasField("quantity") else None
-            price = Decimal(request.price.value) if request.HasField("price") else None
-            amount = Decimal("0")
-            if qty is not None and price is not None:
-                amount = qty * price
-
-            create_data = TransactionCreate(
-                type=txn_type,
-                symbol=request.symbol if request.symbol else None,
-                qty=float(qty) if qty is not None else None,
-                price=float(price) if price is not None else None,
-                amount=float(amount),
-                commission=float(Decimal(request.fees.value)) if request.HasField("fees") else 0,
-                description=request.description if request.description else None,
-            )
-
-            async with await self._get_db() as db:
-                service = TransactionService(db)
-                transaction = await service.create_transaction(
-                    tenant_id=tenant_id,
-                    data=create_data,
-                )
-
-                return portfolio_pb2.RecordTransactionResponse(
-                    transaction=self._to_proto_transaction(transaction),
-                )
-
-        except ValueError as e:
-            raise ConnectError(
-                Code.INVALID_ARGUMENT,
-                str(e),
-            ) from e
-        except ConnectError:
-            raise
-        except Exception as e:
-            logger.error("record_transaction error: %s", e, exc_info=True)
-            raise ConnectError(
-                Code.INTERNAL,
-                f"Failed to record transaction: {e}",
-            ) from e
+        Transactions are now derived from the ledger event log (the single source
+        of truth) — fills arrive on the ``ledger:fills`` channel and cash moves go
+        through the LedgerService fund ops. Recording an ad-hoc transaction row no
+        longer has a home; manual transactions as ledger events are future work.
+        """
+        raise ConnectError(
+            Code.UNIMPLEMENTED,
+            "manual transaction recording is superseded by the ledger event log "
+            "(fills via ledger:fills, cash via LedgerService fund ops)",
+        )
 
     async def sync_portfolio(
         self,
@@ -393,14 +359,12 @@ class PortfolioServicer:
         from llamatrade_proto.generated import portfolio_pb2
 
         try:
-            from src.services.portfolio_service import PortfolioService
-
             tenant_id = UUID(request.context.tenant_id)
 
             # This would call the trading service to get current positions
             # and sync them to the portfolio
             async with await self._get_db() as db:
-                service = PortfolioService(db, market_data=get_market_data_client())
+                service = self._reader(db)
                 summary = await service.get_summary(tenant_id)
                 positions = await service.list_positions(tenant_id)
 
@@ -430,10 +394,7 @@ class PortfolioServicer:
         from llamatrade_proto.generated import common_pb2, portfolio_pb2
 
         try:
-            from src.services.strategy_performance_service import (
-                ListPerformanceFilters,
-                StrategyPerformanceService,
-            )
+            from src.services.strategy_performance_service import ListPerformanceFilters
 
             tenant_id = UUID(request.context.tenant_id)
             page = request.pagination.page if request.HasField("pagination") else 1
@@ -447,7 +408,7 @@ class PortfolioServicer:
                 filters.status = request.status
 
             async with await self._get_db() as db:
-                service = StrategyPerformanceService(db)
+                service = self._strategy_perf_reader(db)
                 result = await service.list_strategy_performance(
                     tenant_id=tenant_id,
                     filters=filters,
@@ -490,13 +451,11 @@ class PortfolioServicer:
         from llamatrade_proto.generated import portfolio_pb2
 
         try:
-            from src.services.strategy_performance_service import StrategyPerformanceService
-
             tenant_id = UUID(request.context.tenant_id)
             execution_id = UUID(request.execution_id)
 
             async with await self._get_db() as db:
-                service = StrategyPerformanceService(db)
+                service = self._strategy_perf_reader(db)
                 detail = await service.get_strategy_performance(
                     tenant_id=tenant_id,
                     execution_id=execution_id,
@@ -534,8 +493,6 @@ class PortfolioServicer:
         from llamatrade_proto.generated import common_pb2, portfolio_pb2
 
         try:
-            from src.services.strategy_performance_service import StrategyPerformanceService
-
             tenant_id = UUID(request.context.tenant_id)
             execution_id = UUID(request.execution_id)
 
@@ -549,7 +506,7 @@ class PortfolioServicer:
                     end_time = datetime.fromtimestamp(request.time_range.end.seconds, tz=UTC)
 
             async with await self._get_db() as db:
-                service = StrategyPerformanceService(db)
+                service = self._strategy_perf_reader(db)
                 result = await service.get_strategy_equity_curve(
                     tenant_id=tenant_id,
                     execution_id=execution_id,
@@ -665,27 +622,6 @@ class PortfolioServicer:
         from llamatrade_proto.generated import portfolio_pb2
 
         # Return the value - it's already a valid TransactionType int
-        valid_types: set[portfolio_pb2.TransactionType.ValueType] = {
-            portfolio_pb2.TRANSACTION_TYPE_DEPOSIT,
-            portfolio_pb2.TRANSACTION_TYPE_WITHDRAWAL,
-            portfolio_pb2.TRANSACTION_TYPE_BUY,
-            portfolio_pb2.TRANSACTION_TYPE_SELL,
-            portfolio_pb2.TRANSACTION_TYPE_DIVIDEND,
-            portfolio_pb2.TRANSACTION_TYPE_INTEREST,
-            portfolio_pb2.TRANSACTION_TYPE_FEE,
-        }
-        for valid_type in valid_types:
-            if txn_type == valid_type:
-                return valid_type
-        return portfolio_pb2.TRANSACTION_TYPE_DEPOSIT
-
-    def _from_proto_transaction_type(
-        self, txn_type: int
-    ) -> portfolio_pb2.TransactionType.ValueType:
-        """Convert proto transaction type int to ValueType."""
-        from llamatrade_proto.generated import portfolio_pb2
-
-        # Validate the value is a known transaction type
         valid_types: set[portfolio_pb2.TransactionType.ValueType] = {
             portfolio_pb2.TRANSACTION_TYPE_DEPOSIT,
             portfolio_pb2.TRANSACTION_TYPE_WITHDRAWAL,

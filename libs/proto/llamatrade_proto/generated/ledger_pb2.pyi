@@ -584,6 +584,96 @@ class TransferCapitalResponse(message.Message):
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
+class CloseSleeveRequest(message.Message):
+    """Close (retire) a sleeve: re-home its open positions to the Unmanaged sleeve
+    and its free cash to Unallocated, then mark it CLOSED. Idempotent.
+    """
+
+    DESCRIPTOR: descriptor.Descriptor
+
+    CONTEXT_FIELD_NUMBER: builtins.int
+    ACCOUNT_ID_FIELD_NUMBER: builtins.int
+    SLEEVE_ID_FIELD_NUMBER: builtins.int
+    REASON_FIELD_NUMBER: builtins.int
+    account_id: builtins.str
+    sleeve_id: builtins.str
+    reason: builtins.str
+    """optional audit note (e.g. "execution stopped")"""
+    @builtins.property
+    def context(self) -> common_pb2.TenantContext: ...
+    def __init__(
+        self,
+        *,
+        context: common_pb2.TenantContext | None = ...,
+        account_id: builtins.str = ...,
+        sleeve_id: builtins.str = ...,
+        reason: builtins.str = ...,
+    ) -> None: ...
+    _HasFieldArgType: _TypeAlias = typing.Literal["context", b"context"]  # noqa: Y015
+    def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
+    _ClearFieldArgType: _TypeAlias = typing.Literal["account_id", b"account_id", "context", b"context", "reason", b"reason", "sleeve_id", b"sleeve_id"]  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+
+@typing.final
+class RehomedPosition(message.Message):
+    DESCRIPTOR: descriptor.Descriptor
+
+    SYMBOL_FIELD_NUMBER: builtins.int
+    QTY_FIELD_NUMBER: builtins.int
+    COST_BASIS_FIELD_NUMBER: builtins.int
+    symbol: builtins.str
+    @builtins.property
+    def qty(self) -> common_pb2.Decimal: ...
+    @builtins.property
+    def cost_basis(self) -> common_pb2.Decimal: ...
+    def __init__(
+        self,
+        *,
+        symbol: builtins.str = ...,
+        qty: common_pb2.Decimal | None = ...,
+        cost_basis: common_pb2.Decimal | None = ...,
+    ) -> None: ...
+    _HasFieldArgType: _TypeAlias = typing.Literal["cost_basis", b"cost_basis", "qty", b"qty"]  # noqa: Y015
+    def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
+    _ClearFieldArgType: _TypeAlias = typing.Literal["cost_basis", b"cost_basis", "qty", b"qty", "symbol", b"symbol"]  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+
+@typing.final
+class CloseSleeveResponse(message.Message):
+    DESCRIPTOR: descriptor.Descriptor
+
+    SLEEVE_FIELD_NUMBER: builtins.int
+    ALREADY_CLOSED_FIELD_NUMBER: builtins.int
+    REHOMED_CASH_FIELD_NUMBER: builtins.int
+    REHOMED_POSITIONS_FIELD_NUMBER: builtins.int
+    already_closed: builtins.bool
+    """true if it was already closed (no-op)"""
+    @builtins.property
+    def sleeve(self) -> Sleeve:
+        """the now-CLOSED (drained) sleeve"""
+
+    @builtins.property
+    def rehomed_cash(self) -> common_pb2.Decimal:
+        """free cash moved to Unallocated"""
+
+    @builtins.property
+    def rehomed_positions(self) -> containers.RepeatedCompositeFieldContainer[RehomedPosition]:
+        """positions moved to Unmanaged"""
+
+    def __init__(
+        self,
+        *,
+        sleeve: Sleeve | None = ...,
+        already_closed: builtins.bool = ...,
+        rehomed_cash: common_pb2.Decimal | None = ...,
+        rehomed_positions: abc.Iterable[RehomedPosition] | None = ...,
+    ) -> None: ...
+    _HasFieldArgType: _TypeAlias = typing.Literal["rehomed_cash", b"rehomed_cash", "sleeve", b"sleeve"]  # noqa: Y015
+    def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
+    _ClearFieldArgType: _TypeAlias = typing.Literal["already_closed", b"already_closed", "rehomed_cash", b"rehomed_cash", "rehomed_positions", b"rehomed_positions", "sleeve", b"sleeve"]  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+
+@typing.final
 class DepositFundsRequest(message.Message):
     DESCRIPTOR: descriptor.Descriptor
 

@@ -1,4 +1,4 @@
-"""Sleeve-aware sizing (Phase 3): target weights → intended orders.
+"""Sleeve-aware sizing: target weights → intended orders.
 
 Pure helpers the execution layer calls instead of the legacy account-equity
 sizing. Key properties:

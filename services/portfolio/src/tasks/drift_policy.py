@@ -1,7 +1,6 @@
 """Drift policy: what reconciliation DOES about material ledger/broker drift.
 
-Shadow mode only observes; once the ledger is authoritative (LEDGER_EXECUTION)
-material drift gets an action:
+The ledger is authoritative, so material drift always gets an action:
 
 - ``MISSING_IN_LEDGER`` (broker holds something the ledger doesn't): an
   externally originated trade — attribute it to the **Unmanaged** sleeve via
@@ -34,7 +33,6 @@ from llamatrade_db.models.ledger import (
 )
 
 from src.ledger.reconciliation import Drift, DriftKind
-from src.ledger.settings import execution_enabled
 
 if TYPE_CHECKING:
     from src.ports import BrokerSnapshotProvider, LedgerStore, SleeveRepository
@@ -61,14 +59,7 @@ async def apply_drift_action(
     account: Account,
     drift: Drift,
 ) -> str:
-    """Apply the policy for one material drift; returns the action taken.
-
-    No-op (``"observed"``) outside LEDGER_EXECUTION — shadow mode stays
-    read-only by construction.
-    """
-    if not execution_enabled():
-        return "observed"
-
+    """Apply the policy for one material drift; returns the action taken."""
     if drift.kind is DriftKind.MISSING_IN_LEDGER:
         return await _adopt_external_trade(repo, store, broker, account, drift)
     if drift.kind in _FREEZE_KINDS:
