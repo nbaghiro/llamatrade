@@ -166,8 +166,7 @@ class TestRunnerLedgerEmission:
     """Terminal-state-only emission from the trade event loop."""
 
     @pytest.mark.asyncio
-    async def test_fill_publishes_once(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setenv("LEDGER_SHADOW_MODE", "1")
+    async def test_fill_publishes_once(self) -> None:
         publisher = AsyncMock()
         runner = _runner(publisher=publisher)
 
@@ -180,10 +179,7 @@ class TestRunnerLedgerEmission:
         assert payload["sleeve_id"] == str(SLEEVE_ID)
 
     @pytest.mark.asyncio
-    async def test_partial_then_fill_publishes_exactly_once(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        monkeypatch.setenv("LEDGER_SHADOW_MODE", "1")
+    async def test_partial_then_fill_publishes_exactly_once(self) -> None:
         publisher = AsyncMock()
         runner = _runner(publisher=publisher)
 
@@ -197,34 +193,21 @@ class TestRunnerLedgerEmission:
         assert payload["qty"] == "50"  # cumulative, not the last partial
 
     @pytest.mark.asyncio
-    async def test_cancel_with_partial_publishes_filled_portion(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        monkeypatch.setenv("LEDGER_SHADOW_MODE", "1")
+    async def test_cancel_with_partial_publishes_filled_portion(self) -> None:
         publisher = AsyncMock()
         runner = _runner(publisher=publisher)
 
         await runner._handle_trade_event(_event(TradeEventType.CANCELED, filled_qty="20"))
 
-        publisher.publish_ledger_fill.assert_awaited_once()
-        _, payload = publisher.publish_ledger_fill.await_args.args
-        assert payload["qty"] == "20"
+        # Two payloads: the filled-portion fill, then the §4 reservation release.
+        assert publisher.publish_ledger_fill.await_count == 2
+        _, fill_payload = publisher.publish_ledger_fill.await_args_list[0].args
+        assert fill_payload["qty"] == "20"
+        _, release_payload = publisher.publish_ledger_fill.await_args_list[1].args
+        assert release_payload["event_type"] == "order_cancelled"
 
     @pytest.mark.asyncio
-    async def test_flag_off_publishes_nothing(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.delenv("LEDGER_SHADOW_MODE", raising=False)
-        publisher = AsyncMock()
-        runner = _runner(publisher=publisher)
-
-        await runner._handle_trade_event(_event(TradeEventType.FILL, with_fill_data=True))
-
-        publisher.publish_ledger_fill.assert_not_awaited()
-
-    @pytest.mark.asyncio
-    async def test_unattributed_session_publishes_nothing(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        monkeypatch.setenv("LEDGER_SHADOW_MODE", "1")
+    async def test_unattributed_session_publishes_nothing(self) -> None:
         publisher = AsyncMock()
         runner = _runner(sleeve_id=None, account_id=None, publisher=publisher)
 
@@ -233,10 +216,7 @@ class TestRunnerLedgerEmission:
         publisher.publish_ledger_fill.assert_not_awaited()
 
     @pytest.mark.asyncio
-    async def test_publish_failure_never_breaks_fill_processing(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        monkeypatch.setenv("LEDGER_SHADOW_MODE", "1")
+    async def test_publish_failure_never_breaks_fill_processing(self) -> None:
         publisher = AsyncMock()
         publisher.publish_ledger_fill.side_effect = ConnectionError("redis down")
         runner = _runner(publisher=publisher)
@@ -246,54 +226,34 @@ class TestRunnerLedgerEmission:
         assert runner.metrics["fills_processed"] == 1
 
 
-class TestStreamDualWrite:
-    """STREAMS_LEDGER_FILLS: payloads also XADD to the global durable stream."""
+class TestLedgerFillStream:
+    """Ledger fill payloads XADD to the global durable stream."""
 
     def _publisher(self):
         from src.streaming.publisher import TradingEventPublisher
 
         bus = AsyncMock()
-        publisher = TradingEventPublisher(event_bus=bus)
-        publisher._redis = AsyncMock()  # pub/sub leg
-        publisher._redis.publish = AsyncMock(return_value=1)
-        return publisher, bus, publisher._redis
+        bus.publish = AsyncMock(return_value="1-0")
+        return TradingEventPublisher(event_bus=bus), bus
 
     @pytest.mark.asyncio
-    async def test_flag_on_dual_writes_stream_and_pubsub(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    async def test_publishes_to_global_stream(self) -> None:
         from src.streaming.publisher import LEDGER_FILLS_MAXLEN, LEDGER_FILLS_STREAM
 
-        monkeypatch.setenv("STREAMS_LEDGER_FILLS", "1")
-        publisher, bus, redis = self._publisher()
+        publisher, bus = self._publisher()
         payload = {"client_order_id": "lt-1", "account_id": str(ACCOUNT_ID)}
 
-        await publisher.publish_ledger_fill(ACCOUNT_ID, payload)
+        entry_id = await publisher.publish_ledger_fill(ACCOUNT_ID, payload)
 
         bus.publish.assert_awaited_once_with(
             LEDGER_FILLS_STREAM, payload, maxlen=LEDGER_FILLS_MAXLEN
         )
-        redis.publish.assert_awaited_once()  # pub/sub stays primary during soak
+        assert entry_id == "1-0"
 
     @pytest.mark.asyncio
-    async def test_flag_off_skips_stream(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.delenv("STREAMS_LEDGER_FILLS", raising=False)
-        publisher, bus, redis = self._publisher()
-
-        await publisher.publish_ledger_fill(ACCOUNT_ID, {"client_order_id": "lt-1"})
-
-        bus.publish.assert_not_awaited()
-        redis.publish.assert_awaited_once()
-
-    @pytest.mark.asyncio
-    async def test_stream_failure_never_blocks_pubsub(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        monkeypatch.setenv("STREAMS_LEDGER_FILLS", "1")
-        publisher, bus, redis = self._publisher()
+    async def test_stream_failure_propagates(self) -> None:
+        publisher, bus = self._publisher()
         bus.publish.side_effect = ConnectionError("stream down")
 
-        result = await publisher.publish_ledger_fill(ACCOUNT_ID, {"client_order_id": "lt-1"})
-
-        assert result == 1  # pub/sub delivery succeeded regardless
-        redis.publish.assert_awaited_once()
+        with pytest.raises(ConnectionError):
+            await publisher.publish_ledger_fill(ACCOUNT_ID, {"client_order_id": "lt-1"})

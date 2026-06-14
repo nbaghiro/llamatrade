@@ -1,6 +1,7 @@
 """Order executor - handles order submission and lifecycle with database persistence."""
 
 import asyncio
+import hashlib
 import logging
 import time
 from datetime import UTC, datetime
@@ -36,8 +37,6 @@ from src.ledger_events import (
     build_ledger_fill_payload_from_order,
     build_ledger_lifecycle_payload,
 )
-from src.ledger_settings import execution_enabled as ledger_execution_enabled
-from src.ledger_settings import shadow_mode_enabled as ledger_shadow_mode_enabled
 from src.metrics import (
     ORDER_SYNC_DURATION,
     ORDERS_SYNCED_TOTAL,
@@ -59,6 +58,26 @@ from src.services.alert_service import AlertService, get_alert_service
 from src.streaming import TradingEventPublisher, get_trading_event_publisher
 
 logger = logging.getLogger(__name__)
+
+
+def generate_deterministic_order_id(
+    session_id: UUID,
+    symbol: str,
+    side: str,
+    signal_timestamp: datetime,
+) -> str:
+    """Generate a deterministic client_order_id for exactly-once submission.
+
+    The same signal (session + symbol + side + signal timestamp) always
+    produces the same id. When this id is sent to Alpaca, a retry after a
+    crash resolves to the existing broker order instead of placing a second
+    one — the broker enforces client_order_id uniqueness per account.
+
+    Format: ``lt-{sha256(key)[:16]}``.
+    """
+    data = f"{session_id}:{symbol}:{side}:{signal_timestamp.isoformat()}"
+    digest = hashlib.sha256(data.encode()).hexdigest()[:16]
+    return f"lt-{digest}"
 
 
 class OrderExecutor(OrderSubmissionMixin):
@@ -83,9 +102,38 @@ class OrderExecutor(OrderSubmissionMixin):
         tenant_id: UUID,
         session_id: UUID,
         order: OrderCreate,
+        signal_timestamp: datetime | None = None,
     ) -> OrderResponse:
-        """Submit an order after risk checks."""
+        """Submit an order after risk checks.
+
+        When ``signal_timestamp`` is supplied (live strategy runner), the
+        ``client_order_id`` is derived deterministically from the signal so a
+        retry after a crash is idempotent: an already-recorded order is
+        returned as-is, and the broker rejects a duplicate that we recorded but
+        never persisted. Without it (e.g. ad-hoc manual orders), a random id is
+        used — still sent to the broker, but not crash-idempotent.
+        """
         start_time = time.perf_counter()
+
+        # Generate client order ID. Deterministic when we have a signal to key
+        # off (live runner) so retries collapse onto the same broker order.
+        if signal_timestamp is not None:
+            client_order_id = generate_deterministic_order_id(
+                session_id=session_id,
+                symbol=order.symbol.upper(),
+                side=order_side_to_str(order.side),
+                signal_timestamp=signal_timestamp,
+            )
+            existing = await self._find_order_by_client_id(client_order_id, tenant_id)
+            if existing is not None:
+                # Idempotent retry: we already recorded this order.
+                logger.info(
+                    "Order already submitted for client_order_id=%s; returning existing",
+                    client_order_id,
+                )
+                return self._to_response(existing)
+        else:
+            client_order_id = str(uuid4())
 
         # Run risk checks (using mixin method)
         risk_result = await self._run_risk_check(
@@ -105,8 +153,6 @@ class OrderExecutor(OrderSubmissionMixin):
             )
             raise ValueError(f"Risk check failed: {', '.join(risk_result.violations)}")
 
-        # Generate client order ID
-        client_order_id = str(uuid4())
         now = datetime.now(UTC)
 
         # Create order record in pending state
@@ -141,9 +187,10 @@ class OrderExecutor(OrderSubmissionMixin):
         await self.db.commit()
         await self.db.refresh(db_order)
 
-        # Submit to Alpaca (using mixin method)
+        # Submit to Alpaca (using mixin method). Passing our client_order_id
+        # lets the broker enforce idempotency on retry.
         try:
-            result = await self._submit_to_alpaca(order=order)
+            result = await self._submit_to_alpaca(order=order, client_order_id=client_order_id)
 
             # Update order with Alpaca response
             db_order.alpaca_order_id = result.alpaca_order_id
@@ -304,7 +351,6 @@ class OrderExecutor(OrderSubmissionMixin):
             or order.sleeve_id is None
             or order.account_id is None
             or order.status == old_status
-            or not ledger_shadow_mode_enabled()
         ):
             return
 
@@ -312,7 +358,7 @@ class OrderExecutor(OrderSubmissionMixin):
             payload = build_ledger_fill_payload_from_order(order)
             if payload is not None:
                 await self.publisher.publish_ledger_fill(order.account_id, payload)
-            if ledger_execution_enabled() and order.status in (
+            if order.status in (
                 ORDER_STATUS_CANCELLED,
                 ORDER_STATUS_REJECTED,
                 ORDER_STATUS_EXPIRED,
@@ -360,16 +406,10 @@ class OrderExecutor(OrderSubmissionMixin):
     ) -> None:
         """Publish a §4 reservation lifecycle payload for an attributed order.
 
-        Gated on LEDGER_EXECUTION and the order carrying sleeve identity.
-        Publish failures are logged, never raised — the ledger converges via
-        reconciliation.
+        Gated on the order carrying sleeve identity. Publish failures are logged,
+        never raised — the ledger converges via reconciliation.
         """
-        if (
-            self.publisher is None
-            or db_order.sleeve_id is None
-            or db_order.account_id is None
-            or not ledger_execution_enabled()
-        ):
+        if self.publisher is None or db_order.sleeve_id is None or db_order.account_id is None:
             return
         payload = build_ledger_lifecycle_payload(
             kind=kind,
@@ -1035,6 +1075,16 @@ class OrderExecutor(OrderSubmissionMixin):
     async def _get_order_by_id(self, tenant_id: UUID, order_id: UUID) -> Order | None:
         """Get order ensuring tenant isolation."""
         stmt = select(Order).where(Order.id == order_id).where(Order.tenant_id == tenant_id)
+        result = await self.db.execute(stmt)
+        return result.scalar_one_or_none()
+
+    async def _find_order_by_client_id(self, client_order_id: str, tenant_id: UUID) -> Order | None:
+        """Find an order by its (deterministic) client_order_id for idempotency."""
+        stmt = (
+            select(Order)
+            .where(Order.client_order_id == client_order_id)
+            .where(Order.tenant_id == tenant_id)
+        )
         result = await self.db.execute(stmt)
         return result.scalar_one_or_none()
 

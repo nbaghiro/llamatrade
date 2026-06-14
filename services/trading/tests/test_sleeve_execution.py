@@ -1,4 +1,4 @@
-"""Sleeve-aware execution tests (LEDGER_EXECUTION rollout, CONTRACTS.md).
+"""Sleeve-aware execution tests (CONTRACTS.md).
 
 Covers drift-tolerance sizing, sleeve equity sync, free-cash fit, sleeve
 buying-power risk checks, and cash-reservation lifecycle publishing.
@@ -24,7 +24,6 @@ from llamatrade_proto.generated.trading_pb2 import (
 )
 
 from src.clients.portfolio_client import PortfolioLedgerClient
-from src.compiler_adapter import StrategyAdapter
 from src.executor.order_executor import OrderExecutor
 from src.models import OrderCreate, RiskCheckResult
 from src.risk.risk_manager import RiskManager
@@ -92,50 +91,9 @@ def _position(qty: float, entry: float = 480.0) -> Position:
     )
 
 
-class TestDriftSignal:
-    """Drift-tolerance resize sizing (sleeve-aware mode)."""
-
-    @pytest.fixture
-    def adapter(self) -> StrategyAdapter:
-        return StrategyAdapter(SIMPLE_STRATEGY, sleeve_aware=True)
-
-    def test_weight_drop_produces_resize_sell(self, adapter: StrategyAdapter) -> None:
-        # Hold $48k of SPY (100 @ 480); target drops to 40% of $40k equity.
-        signal = adapter._drift_signal("SPY", 40.0, _position(100), 40000.0, 480.0)
-        assert signal is not None
-        assert signal.type == "sell"
-        # delta = 16000 - 48000 = -32000 → sell 32000/480
-        assert signal.quantity == pytest.approx(32000 / 480)
-
-    def test_weight_increase_produces_resize_buy(self, adapter: StrategyAdapter) -> None:
-        signal = adapter._drift_signal("SPY", 100.0, _position(50), 40000.0, 480.0)
-        assert signal is not None
-        assert signal.type == "buy"
-        # target 40000, current 24000 → buy 16000/480
-        assert signal.quantity == pytest.approx(16000 / 480)
-
-    def test_within_drift_band_no_trade(self, adapter: StrategyAdapter) -> None:
-        # current 39600 vs target 40000 → 1% drift, inside the 5% band
-        signal = adapter._drift_signal("SPY", 100.0, _position(82.5), 40000.0, 480.0)
-        assert signal is None
-
-    def test_zero_target_closes_position(self, adapter: StrategyAdapter) -> None:
-        signal = adapter._drift_signal("SPY", 0.0, _position(100), 40000.0, 480.0)
-        assert signal is not None
-        assert signal.type == "sell"
-        assert signal.quantity == pytest.approx(100)  # capped at held qty
-
-    def test_never_sells_more_than_held(self, adapter: StrategyAdapter) -> None:
-        signal = adapter._drift_signal("SPY", 0.0, _position(10), 40000.0, 480.0)
-        assert signal is not None
-        assert signal.quantity == pytest.approx(10)
-
-    def test_legacy_binary_ignores_weight_changes(self) -> None:
-        adapter = StrategyAdapter(SIMPLE_STRATEGY)  # sleeve_aware off
-        # Legacy mode: has position + nonzero weight → no signal, ever
-        assert adapter._binary_signal("SPY", 40.0, _position(100), 40000.0, 480.0) is None
-        buy = adapter._binary_signal("SPY", 100.0, None, 40000.0, 480.0)
-        assert buy is not None and buy.type == "buy"
+# Note: drift/binary weight->order sizing now lives in llamatrade_compiler.size_orders and
+# is covered by libs/compiler/tests/test_sizing.py (the sizing logic is shared by live and
+# backtest). The tests below cover the trading-service integration around it.
 
 
 def _runner(portfolio_client: PortfolioLedgerClient | None = None) -> StrategyRunner:
@@ -164,8 +122,7 @@ class TestSleeveEquitySync:
     """Runner sizes against sleeve equity, never the whole account."""
 
     @pytest.mark.asyncio
-    async def test_sleeve_equity_from_cash_and_lots(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setenv("LEDGER_EXECUTION", "1")
+    async def test_sleeve_equity_from_cash_and_lots(self) -> None:
         client = AsyncMock(spec=PortfolioLedgerClient)
         client.get_sleeve.return_value = _sleeve_detail(
             balance="16000", reserved="1000", lots=[_lot(qty="50", avg_price="480")]
@@ -179,26 +136,8 @@ class TestSleeveEquitySync:
         assert runner._free_cash == pytest.approx(15000)
 
     @pytest.mark.asyncio
-    async def test_flag_off_falls_back_to_account_equity(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        monkeypatch.delenv("LEDGER_EXECUTION", raising=False)
-        client = AsyncMock(spec=PortfolioLedgerClient)
-        runner = _runner(portfolio_client=client)
-        runner.alpaca_client = AsyncMock()
-        runner.alpaca_client.get_account.return_value = MagicMock(equity=123456.0)
-
-        await runner._sync_equity()
-
-        assert runner._equity == pytest.approx(123456.0)
-        client.get_sleeve.assert_not_awaited()
-
-    @pytest.mark.asyncio
-    async def test_sleeve_fetch_failure_keeps_last_equity(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    async def test_sleeve_fetch_failure_keeps_last_equity(self) -> None:
         """Never silently falls back to whole-account equity."""
-        monkeypatch.setenv("LEDGER_EXECUTION", "1")
         client = AsyncMock(spec=PortfolioLedgerClient)
         client.get_sleeve.side_effect = ConnectionError("portfolio down")
         runner = _runner(portfolio_client=client)
@@ -209,6 +148,21 @@ class TestSleeveEquitySync:
 
         assert runner._equity == pytest.approx(40000.0)
         runner.alpaca_client.get_account.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_closed_sleeve_stops_the_runner(self) -> None:
+        """A retired sleeve (closed on stop/archive) winds the runner down."""
+        from llamatrade_proto.generated.ledger_pb2 import SLEEVE_STATUS_CLOSED
+
+        client = AsyncMock(spec=PortfolioLedgerClient)
+        client.get_sleeve.return_value = _sleeve_detail(status=SLEEVE_STATUS_CLOSED)
+        runner = _runner(portfolio_client=client)
+        runner._running = True
+
+        handled = await runner._sync_sleeve_equity()
+
+        assert handled is True  # do not fall back to whole-account equity
+        assert runner._running is False  # loops exit on next iteration
 
 
 class TestFreeCashFit:
@@ -262,62 +216,65 @@ class TestSleeveBuyingPower:
         return RiskManager(portfolio_client=client)
 
     @pytest.mark.asyncio
-    async def test_buy_within_free_cash_passes(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setenv("LEDGER_EXECUTION", "1")
+    async def test_buy_within_free_cash_passes(self) -> None:
         risk = self._risk(_sleeve_detail(balance="40000"))
         violation = await risk._check_sleeve(TENANT_ID, SLEEVE_ID, "buy", 24000.0)
         assert violation is None
 
     @pytest.mark.asyncio
-    async def test_buy_exceeding_free_cash_violates(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setenv("LEDGER_EXECUTION", "1")
+    async def test_buy_exceeding_free_cash_violates(self) -> None:
         risk = self._risk(_sleeve_detail(balance="40000", reserved="20000"))
         violation = await risk._check_sleeve(TENANT_ID, SLEEVE_ID, "buy", 24000.0)
         assert violation is not None
         assert "free cash" in violation
 
     @pytest.mark.asyncio
-    async def test_fetch_failure_fails_safe(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setenv("LEDGER_EXECUTION", "1")
+    async def test_fetch_failure_fails_safe(self) -> None:
         risk = self._risk(ConnectionError("portfolio down"))
         violation = await risk._check_sleeve(TENANT_ID, SLEEVE_ID, "buy", 100.0)
         assert violation is not None
 
     @pytest.mark.asyncio
-    async def test_flag_off_is_noop(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.delenv("LEDGER_EXECUTION", raising=False)
-        risk = self._risk(ConnectionError("never called"))
-        violation = await risk._check_sleeve(TENANT_ID, SLEEVE_ID, "buy", 1e12)
-        assert violation is None
-
-    @pytest.mark.asyncio
-    async def test_frozen_sleeve_blocks_buys(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    async def test_frozen_sleeve_blocks_buys(self) -> None:
         from llamatrade_proto.generated.ledger_pb2 import SLEEVE_STATUS_FROZEN
 
-        monkeypatch.setenv("LEDGER_EXECUTION", "1")
         risk = self._risk(_sleeve_detail(balance="40000", status=SLEEVE_STATUS_FROZEN))
         violation = await risk._check_sleeve(TENANT_ID, SLEEVE_ID, "buy", 1.0)
         assert violation is not None
         assert "frozen" in violation
 
     @pytest.mark.asyncio
-    async def test_frozen_sleeve_blocks_sells_too(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    async def test_frozen_sleeve_blocks_sells_too(self) -> None:
         from llamatrade_proto.generated.ledger_pb2 import SLEEVE_STATUS_FROZEN
 
-        monkeypatch.setenv("LEDGER_EXECUTION", "1")
         risk = self._risk(_sleeve_detail(status=SLEEVE_STATUS_FROZEN))
         violation = await risk._check_sleeve(TENANT_ID, SLEEVE_ID, "sell", 1.0)
         assert violation is not None
         assert "frozen" in violation
 
     @pytest.mark.asyncio
-    async def test_active_sleeve_sell_passes_without_cash_check(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        monkeypatch.setenv("LEDGER_EXECUTION", "1")
+    async def test_active_sleeve_sell_passes_without_cash_check(self) -> None:
         risk = self._risk(_sleeve_detail(balance="0"))
         violation = await risk._check_sleeve(TENANT_ID, SLEEVE_ID, "sell", 1e9)
         assert violation is None
+
+    @pytest.mark.asyncio
+    async def test_closed_sleeve_blocks_buys(self) -> None:
+        from llamatrade_proto.generated.ledger_pb2 import SLEEVE_STATUS_CLOSED
+
+        risk = self._risk(_sleeve_detail(balance="40000", status=SLEEVE_STATUS_CLOSED))
+        violation = await risk._check_sleeve(TENANT_ID, SLEEVE_ID, "buy", 1.0)
+        assert violation is not None
+        assert "closed" in violation
+
+    @pytest.mark.asyncio
+    async def test_closed_sleeve_blocks_sells_too(self) -> None:
+        from llamatrade_proto.generated.ledger_pb2 import SLEEVE_STATUS_CLOSED
+
+        risk = self._risk(_sleeve_detail(status=SLEEVE_STATUS_CLOSED))
+        violation = await risk._check_sleeve(TENANT_ID, SLEEVE_ID, "sell", 1.0)
+        assert violation is not None
+        assert "closed" in violation
 
 
 class TestReservationPublishing:
@@ -374,8 +331,7 @@ class TestReservationPublishing:
         assert OrderExecutor._reservation_amount(order) is None
 
     @pytest.mark.asyncio
-    async def test_lifecycle_published_when_flag_on(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setenv("LEDGER_EXECUTION", "1")
+    async def test_lifecycle_published_when_flag_on(self) -> None:
         publisher = AsyncMock()
         executor = self._executor(publisher)
 
@@ -391,20 +347,7 @@ class TestReservationPublishing:
         assert payload["client_order_id"] == "lt-abc123"
 
     @pytest.mark.asyncio
-    async def test_lifecycle_skipped_when_flag_off(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.delenv("LEDGER_EXECUTION", raising=False)
-        publisher = AsyncMock()
-        executor = self._executor(publisher)
-
-        await executor._publish_ledger_lifecycle(self._db_order(), "order_cancelled")
-
-        publisher.publish_ledger_fill.assert_not_awaited()
-
-    @pytest.mark.asyncio
-    async def test_lifecycle_skipped_for_unattributed_orders(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        monkeypatch.setenv("LEDGER_EXECUTION", "1")
+    async def test_lifecycle_skipped_for_unattributed_orders(self) -> None:
         publisher = AsyncMock()
         executor = self._executor(publisher)
 
@@ -415,8 +358,7 @@ class TestReservationPublishing:
         publisher.publish_ledger_fill.assert_not_awaited()
 
     @pytest.mark.asyncio
-    async def test_publish_failure_never_raises(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setenv("LEDGER_EXECUTION", "1")
+    async def test_publish_failure_never_raises(self) -> None:
         publisher = AsyncMock()
         publisher.publish_ledger_fill.side_effect = ConnectionError("redis down")
         executor = self._executor(publisher)
@@ -452,7 +394,7 @@ class TestPortfolioLedgerClientCache:
 
 
 class TestLedgerOwnedReconciliation:
-    """Under LEDGER_EXECUTION the runner's reconciliation is read-only."""
+    """For sleeve-attributed sessions the runner's reconciliation is read-only."""
 
     def _broker_position(self, symbol: str = "SPY", qty: float = 60.0) -> MagicMock:
         pos = MagicMock()
@@ -463,8 +405,7 @@ class TestLedgerOwnedReconciliation:
         return pos
 
     @pytest.mark.asyncio
-    async def test_missing_local_not_auto_added(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setenv("LEDGER_EXECUTION", "1")
+    async def test_missing_local_not_auto_added(self) -> None:
         runner = _runner()
         runner.alerts = AsyncMock()
         runner.alpaca_client = AsyncMock()
@@ -477,8 +418,7 @@ class TestLedgerOwnedReconciliation:
         assert runner.alerts.on_position_drift.await_args.kwargs["action"] == "alerted"
 
     @pytest.mark.asyncio
-    async def test_qty_drift_not_auto_corrected(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setenv("LEDGER_EXECUTION", "1")
+    async def test_qty_drift_not_auto_corrected(self) -> None:
         runner = _runner()
         runner.alpaca_client = AsyncMock()
         runner._positions["SPY"] = _position(59.0)  # small drift vs broker 60
@@ -487,18 +427,6 @@ class TestLedgerOwnedReconciliation:
         await runner._sync_positions()
 
         assert runner._positions["SPY"].quantity == pytest.approx(59.0)  # untouched
-
-    @pytest.mark.asyncio
-    async def test_flag_off_still_auto_corrects(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.delenv("LEDGER_EXECUTION", raising=False)
-        runner = _runner()
-        runner.alpaca_client = AsyncMock()
-        runner._positions["SPY"] = _position(59.0)
-        runner.alpaca_client.get_positions.return_value = [self._broker_position(qty=60.0)]
-
-        await runner._sync_positions()
-
-        assert runner._positions["SPY"].quantity == pytest.approx(60.0)  # legacy behavior
 
 
 class TestLedgerAlerts:
@@ -584,14 +512,11 @@ class TestSessionPnlFromLedger:
         return s
 
     @pytest.mark.asyncio
-    async def test_realized_pnl_overridden_from_sleeve(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    async def test_realized_pnl_overridden_from_sleeve(self) -> None:
         from unittest.mock import patch
 
         from src.services.session_service import SessionService
 
-        monkeypatch.setenv("LEDGER_EXECUTION", "1")
         service = SessionService(AsyncMock())
         detail = _sleeve_detail()
         detail.sleeve.realized_pnl = Decimal("1234.56")
@@ -612,12 +537,11 @@ class TestSessionPnlFromLedger:
         assert response.pnl == pytest.approx(1284.56)
 
     @pytest.mark.asyncio
-    async def test_flag_off_uses_local_pnl(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    async def test_flag_off_uses_local_pnl(self) -> None:
         from unittest.mock import patch
 
         from src.services.session_service import SessionService
 
-        monkeypatch.delenv("LEDGER_EXECUTION", raising=False)
         service = SessionService(AsyncMock())
 
         with (
@@ -629,14 +553,11 @@ class TestSessionPnlFromLedger:
         assert response.pnl == pytest.approx(150.0)
 
     @pytest.mark.asyncio
-    async def test_ledger_failure_falls_back_to_local(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    async def test_ledger_failure_falls_back_to_local(self) -> None:
         from unittest.mock import patch
 
         from src.services.session_service import SessionService
 
-        monkeypatch.setenv("LEDGER_EXECUTION", "1")
         service = SessionService(AsyncMock())
         client = AsyncMock(spec=PortfolioLedgerClient)
         client.get_sleeve.side_effect = ConnectionError("portfolio down")
@@ -688,13 +609,12 @@ class TestRestSyncLedgerEmission:
         return order
 
     @pytest.mark.asyncio
-    async def test_synced_fill_publishes_ledger_fill(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    async def test_synced_fill_publishes_ledger_fill(self) -> None:
         from llamatrade_proto.generated.trading_pb2 import (
             ORDER_STATUS_FILLED,
             ORDER_STATUS_SUBMITTED,
         )
 
-        monkeypatch.setenv("LEDGER_SHADOW_MODE", "1")
         publisher = AsyncMock()
         executor = self._executor_for_sync(publisher)
         order = self._terminal_order(status=ORDER_STATUS_FILLED, filled_qty="50", avg_price="480")
@@ -707,16 +627,12 @@ class TestRestSyncLedgerEmission:
         assert payload["client_order_id"] == "lt-sync-1"
 
     @pytest.mark.asyncio
-    async def test_synced_cancel_with_partial_publishes_fill_and_release(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    async def test_synced_cancel_with_partial_publishes_fill_and_release(self) -> None:
         from llamatrade_proto.generated.trading_pb2 import (
             ORDER_STATUS_CANCELLED,
             ORDER_STATUS_PARTIAL,
         )
 
-        monkeypatch.setenv("LEDGER_SHADOW_MODE", "1")
-        monkeypatch.setenv("LEDGER_EXECUTION", "1")
         publisher = AsyncMock()
         executor = self._executor_for_sync(publisher)
         order = self._terminal_order(
@@ -732,10 +648,9 @@ class TestRestSyncLedgerEmission:
         assert release_payload["event_type"] == "order_cancelled"
 
     @pytest.mark.asyncio
-    async def test_no_transition_publishes_nothing(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    async def test_no_transition_publishes_nothing(self) -> None:
         from llamatrade_proto.generated.trading_pb2 import ORDER_STATUS_FILLED
 
-        monkeypatch.setenv("LEDGER_SHADOW_MODE", "1")
         publisher = AsyncMock()
         executor = self._executor_for_sync(publisher)
         order = self._terminal_order(status=ORDER_STATUS_FILLED, filled_qty="50", avg_price="480")
@@ -852,10 +767,7 @@ class TestShortsRejection:
     """Ledger accounting is long-only: shorts rejected for attributed sessions."""
 
     @pytest.mark.asyncio
-    async def test_short_signal_rejected_under_ledger_execution(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        monkeypatch.setenv("LEDGER_EXECUTION", "1")
+    async def test_short_signal_rejected_under_ledger_execution(self) -> None:
         runner = _runner()
 
         await runner._process_signal(Signal(type="short", symbol="SPY", quantity=10, price=480.0))
@@ -863,10 +775,7 @@ class TestShortsRejection:
         runner.order_executor.submit_order.assert_not_awaited()
 
     @pytest.mark.asyncio
-    async def test_short_signal_allowed_for_legacy_sessions(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        monkeypatch.setenv("LEDGER_EXECUTION", "1")
+    async def test_short_signal_allowed_for_legacy_sessions(self) -> None:
         runner = _runner()
         runner.config.sleeve_id = None  # unfunded/legacy session
         runner.risk_manager.check_order = AsyncMock(

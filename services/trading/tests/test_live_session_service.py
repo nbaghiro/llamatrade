@@ -402,10 +402,10 @@ class TestLiveSessionServiceStartRunner:
         mock_version.timeframe = "1Min"
         live_session_service._get_strategy_version = AsyncMock(return_value=mock_version)
 
-        with patch("src.services.live_session_service.StrategyAdapter") as mock_adapter_cls:
-            mock_adapter = MagicMock()
-            mock_adapter.min_bars = 5
-            mock_adapter_cls.return_value = mock_adapter
+        with patch("src.services.live_session_service.StrategySession") as mock_session_cls:
+            mock_session = MagicMock()
+            mock_session.min_bars = 5
+            mock_session_cls.return_value = mock_session
 
             with patch("src.services.live_session_service.BarStreamClient"):
                 with patch("src.services.live_session_service.TradingClient"):
@@ -441,10 +441,10 @@ class TestLiveSessionServiceStartRunner:
         mock_version.timeframe = "5Min"
         live_session_service._get_strategy_version = AsyncMock(return_value=mock_version)
 
-        with patch("src.services.live_session_service.StrategyAdapter") as mock_adapter_cls:
-            mock_adapter = MagicMock()
-            mock_adapter.min_bars = 10
-            mock_adapter_cls.return_value = mock_adapter
+        with patch("src.services.live_session_service.StrategySession") as mock_session_cls:
+            mock_session = MagicMock()
+            mock_session.min_bars = 10
+            mock_session_cls.return_value = mock_session
 
             with patch("src.services.live_session_service.BarStreamClient"):
                 with patch("src.services.live_session_service.TradingClient"):

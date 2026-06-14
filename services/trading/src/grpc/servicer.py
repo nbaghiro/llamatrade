@@ -11,7 +11,6 @@ from uuid import UUID
 
 import grpc.aio
 
-from llamatrade_common.eventbus import streams_trading_enabled
 from llamatrade_proto.generated.trading_pb2 import (
     ORDER_SIDE_BUY,
     ORDER_SIDE_SELL,
@@ -20,7 +19,6 @@ from llamatrade_proto.generated.trading_pb2 import (
 )
 
 from src.executor.order_executor import create_order_executor
-from src.ledger_settings import shadow_mode_enabled as ledger_shadow_mode_enabled
 from src.models import OrderCreate, OrderResponse, PositionResponse, SessionResponse
 from src.streaming import (
     OrderUpdate,
@@ -69,14 +67,10 @@ class TradingServicer:
 
         Resolution order (CONTRACTS.md §5): explicit request sleeve → the
         session's strategy sleeve → the account's Manual sleeve (an
-        unattributed order is a manual trade). Only active under
-        LEDGER_SHADOW_MODE; resolution failures log and fall back to
-        unattributed — reconciliation will classify the effects as external
-        rather than blocking the order.
+        unattributed order is a manual trade). Resolution failures log and fall
+        back to unattributed — reconciliation will classify the effects as
+        external rather than blocking the order.
         """
-        if not ledger_shadow_mode_enabled():
-            return (UUID(requested_sleeve_id) if requested_sleeve_id else None), None
-
         from sqlalchemy import select
 
         from llamatrade_db.models.trading import TradingSession
@@ -629,29 +623,23 @@ class TradingServicer:
         request: trading_pb2.StreamOrderUpdatesRequest,
         context: grpc.aio.ServicerContext[Any, Any],
     ) -> AsyncGenerator[trading_pb2.OrderUpdate]:
-        """Stream real-time order updates via Redis pub/sub."""
+        """Stream real-time order updates via Redis Streams (tail-read)."""
         _tenant_id = request.context.tenant_id  # Reserved for future use
         session_id = request.session_id
         logger.info("Starting order updates stream for session: %s", session_id)
 
         subscriber = get_trading_event_subscriber()
         try:
-            if streams_trading_enabled():
-                # Tail-read delivery: reconnect replays the gap from the
-                # client's last-seen cursor (carried back via stream_cursor).
-                async for cursor, update in subscriber.tail_orders(
-                    session_id, last_seen_id=request.last_seen_id
-                ):
-                    if context.cancelled():
-                        break
-                    proto_update = self._to_proto_order_update(update)
-                    proto_update.stream_cursor = cursor
-                    yield proto_update
-            else:
-                async for update in subscriber.subscribe_orders(session_id):
-                    if context.cancelled():
-                        break
-                    yield self._to_proto_order_update(update)
+            # Tail-read delivery: reconnect replays the gap from the client's
+            # last-seen cursor (carried back via stream_cursor).
+            async for cursor, update in subscriber.tail_orders(
+                session_id, last_seen_id=request.last_seen_id
+            ):
+                if context.cancelled():
+                    break
+                proto_update = self._to_proto_order_update(update)
+                proto_update.stream_cursor = cursor
+                yield proto_update
 
         except asyncio.CancelledError:
             logger.info("Order updates stream cancelled for session: %s", session_id)
@@ -666,27 +654,21 @@ class TradingServicer:
         request: trading_pb2.StreamPositionUpdatesRequest,
         context: grpc.aio.ServicerContext[Any, Any],
     ) -> AsyncGenerator[trading_pb2.PositionUpdate]:
-        """Stream real-time position updates via Redis pub/sub."""
+        """Stream real-time position updates via Redis Streams (tail-read)."""
         _tenant_id = request.context.tenant_id  # Reserved for future use
         session_id = request.session_id
         logger.info("Starting position updates stream for session: %s", session_id)
 
         subscriber = get_trading_event_subscriber()
         try:
-            if streams_trading_enabled():
-                async for cursor, update in subscriber.tail_positions(
-                    session_id, last_seen_id=request.last_seen_id
-                ):
-                    if context.cancelled():
-                        break
-                    proto_update = self._to_proto_position_update(update)
-                    proto_update.stream_cursor = cursor
-                    yield proto_update
-            else:
-                async for update in subscriber.subscribe_positions(session_id):
-                    if context.cancelled():
-                        break
-                    yield self._to_proto_position_update(update)
+            async for cursor, update in subscriber.tail_positions(
+                session_id, last_seen_id=request.last_seen_id
+            ):
+                if context.cancelled():
+                    break
+                proto_update = self._to_proto_position_update(update)
+                proto_update.stream_cursor = cursor
+                yield proto_update
 
         except asyncio.CancelledError:
             logger.info("Position updates stream cancelled for session: %s", session_id)

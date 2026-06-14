@@ -26,6 +26,7 @@ from llamatrade_alpaca import (
     get_trading_client,
 )
 from llamatrade_common.utils import decrypt_value
+from llamatrade_compiler import SizingMode, StrategySession
 from llamatrade_db import get_db
 from llamatrade_db.models.auth import AlpacaCredentials
 from llamatrade_db.models.billing import Plan, Subscription
@@ -36,10 +37,7 @@ from llamatrade_proto.generated.common_pb2 import (
 )
 
 from src.clients.portfolio_client import get_portfolio_ledger_client
-from src.compiler_adapter import StrategyAdapter
 from src.executor.order_executor import OrderExecutor, get_order_executor
-from src.ledger_settings import execution_enabled as ledger_execution_enabled
-from src.ledger_settings import shadow_mode_enabled as ledger_shadow_mode_enabled
 from src.metrics import (
     record_bar_stream_reconnect,
     record_trade_stream_reconnect,
@@ -319,11 +317,14 @@ class LiveSessionService(SessionService):
         if not actual_symbols:
             raise ValueError("No symbols specified")
 
-        # Create strategy adapter. Sleeve-aware sizing (drift-tolerance
-        # resizing against sleeve equity) only when this session is funded
-        # and the execution flag is on — otherwise legacy behavior.
-        sleeve_aware = sleeve_id is not None and ledger_execution_enabled()
-        strategy_fn = StrategyAdapter(strategy_sexpr, sleeve_aware=sleeve_aware)
+        # Build the shared StrategySession (merged-symbol evaluation + portfolio-level
+        # rebalance, identical to backtest). DRIFT sizing (resize against sleeve equity)
+        # only when this session is funded (has a sleeve); otherwise BINARY.
+        sleeve_aware = sleeve_id is not None
+        session = StrategySession(
+            strategy_sexpr,
+            sizing_mode=SizingMode.DRIFT if sleeve_aware else SizingMode.BINARY,
+        )
 
         # Create bar stream with session-specific credentials (shared lib client;
         # metrics wired via lifecycle hooks since the lib stays service-agnostic).
@@ -359,30 +360,23 @@ class LiveSessionService(SessionService):
             strategy_id=strategy_id,
             symbols=actual_symbols,
             timeframe=strategy_ver.timeframe or "1Min",
-            warmup_bars=strategy_fn.min_bars + 10,  # Extra buffer
+            warmup_bars=session.min_bars + 10,  # Extra buffer
             mode=mode,
             sleeve_id=sleeve_id,
             account_id=account_id,
         )
 
-        # Ledger fill emission needs the Redis publisher (flag-gated)
-        ledger_publisher = (
-            get_trading_event_publisher()
-            if ledger_shadow_mode_enabled() and sleeve_id is not None
-            else None
-        )
+        # Ledger fill emission needs the Redis publisher (only for funded sessions)
+        ledger_publisher = get_trading_event_publisher() if sleeve_id is not None else None
 
         # Sleeve state reads (equity, free cash) for sleeve-aware execution
-        portfolio_client = (
-            get_portfolio_ledger_client()
-            if ledger_execution_enabled() and sleeve_id is not None
-            else None
-        )
+        portfolio_client = get_portfolio_ledger_client() if sleeve_id is not None else None
 
         # Start the runner with session-specific client
         await self.runner_manager.start_runner(
             config=runner_config,
-            strategy_fn=strategy_fn,
+            strategy_fn=None,
+            session=session,
             bar_stream=bar_stream,
             trade_stream=trade_stream,
             order_executor=self.order_executor,

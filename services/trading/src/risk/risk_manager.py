@@ -18,7 +18,6 @@ from llamatrade_db.models.trading import Order, Position
 
 from src.clients.market_data import MarketDataClient, get_market_data_client
 from src.clients.portfolio_client import PortfolioLedgerClient, get_portfolio_ledger_client
-from src.ledger_settings import execution_enabled as ledger_execution_enabled
 from src.metrics import record_risk_check, update_daily_pnl, update_drawdown
 from src.models import RiskCheckResult, RiskLimits
 from src.utils.cache import AsyncTTLCache
@@ -93,7 +92,7 @@ class RiskManager:
         Checks performed (in order):
         0. Market hours - orders blocked outside trading hours
         1. Max order value
-        1b. Sleeve buying power (LEDGER_EXECUTION: buys must fit the sleeve's
+        1b. Sleeve buying power (buys must fit the sleeve's
             free cash = balance − reserved)
         2. Allowed symbols
         3. Position size
@@ -141,7 +140,7 @@ class RiskManager:
                 f"Order value ${order_value:.2f} exceeds limit ${limits.max_order_value:.2f}"
             )
 
-        # 1b. Check sleeve status + buying power (LEDGER_EXECUTION)
+        # 1b. Check sleeve status + buying power (ledger book of record)
         if sleeve_id is not None:
             sleeve_violation = await self._check_sleeve(tenant_id, sleeve_id, side, order_value)
             if sleeve_violation:
@@ -190,17 +189,18 @@ class RiskManager:
     ) -> str | None:
         """Violation string for sleeve-level rejections, else None.
 
-        Two checks (one sleeve fetch): a FROZEN sleeve blocks every order
-        (reconciliation found a contradiction — manual review gate), and buys
-        must fit the sleeve's free cash. Only active under LEDGER_EXECUTION.
-        Fail-safe: if sleeve state can't be fetched we reject (consistent with
-        the price-unavailable path) — overdrafting another strategy's capital
-        is worse than a delayed order.
+        Two checks (one sleeve fetch): a non-ACTIVE sleeve blocks every order —
+        FROZEN (reconciliation found a contradiction — manual review gate) or
+        CLOSED (the sleeve was retired on stop/archive; a stray late order must
+        not resurrect it) — and buys must fit the sleeve's free cash. Fail-safe:
+        if sleeve state can't be fetched we reject (consistent with the
+        price-unavailable path) — overdrafting another strategy's capital is
+        worse than a delayed order.
         """
-        if not ledger_execution_enabled():
-            return None
-
-        from llamatrade_proto.generated.ledger_pb2 import SLEEVE_STATUS_FROZEN
+        from llamatrade_proto.generated.ledger_pb2 import (
+            SLEEVE_STATUS_ACTIVE,
+            SLEEVE_STATUS_FROZEN,
+        )
 
         client = self.portfolio_client or get_portfolio_ledger_client()
         try:
@@ -211,6 +211,8 @@ class RiskManager:
 
         if detail.sleeve.status == SLEEVE_STATUS_FROZEN:
             return f"Sleeve {sleeve_id} is frozen pending reconciliation review"
+        if detail.sleeve.status != SLEEVE_STATUS_ACTIVE:
+            return f"Sleeve {sleeve_id} is closed; orders are blocked"
 
         if side.lower() in ("buy", "cover"):
             free_cash = float(detail.sleeve.cash.free)

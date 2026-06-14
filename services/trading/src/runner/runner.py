@@ -7,8 +7,7 @@ from collections import deque
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from decimal import Decimal
-from typing import Any, Literal, Protocol, cast
+from typing import Any, Literal, Protocol
 from uuid import UUID
 
 from llamatrade_alpaca import (
@@ -23,6 +22,8 @@ from llamatrade_alpaca import (
 from llamatrade_alpaca import (
     StreamBar as BarData,
 )
+from llamatrade_compiler import Bar as CompilerBar
+from llamatrade_compiler import Holding, StrategySession
 from llamatrade_proto.generated.common_pb2 import EXECUTION_MODE_LIVE, EXECUTION_MODE_PAPER
 from llamatrade_proto.generated.trading_pb2 import (
     ORDER_SIDE_BUY,
@@ -37,13 +38,8 @@ from src.circuit_breaker import (
     create_circuit_breaker,
 )
 from src.clients.portfolio_client import PortfolioLedgerClient
-from src.events.store import EventStore
-from src.events.trading_events import SessionStarted, SessionStopped
-from src.executor.event_sourced_executor import EventSourcedOrderExecutor
 from src.executor.order_executor import OrderExecutor
 from src.ledger_events import build_ledger_fill_payload, build_ledger_lifecycle_payload
-from src.ledger_settings import execution_enabled as ledger_execution_enabled
-from src.ledger_settings import shadow_mode_enabled as ledger_shadow_mode_enabled
 from src.metrics import (
     record_bar_latency,
     record_bar_processed,
@@ -146,7 +142,7 @@ class StrategyRunner:
     def __init__(
         self,
         config: RunnerConfig,
-        strategy_fn: StrategyFunction,
+        strategy_fn: StrategyFunction | None,
         bar_stream: BarStreamClient | MockBarStream,
         trade_stream: TradingStreamClient | MockTradeStream,
         order_executor: OrderExecutor,
@@ -155,12 +151,24 @@ class StrategyRunner:
         alert_service: AlertService | None = None,
         strategy_name: str = "Unknown Strategy",
         circuit_breaker_config: CircuitBreakerConfig | None = None,
-        event_store: EventStore | None = None,
         ledger_publisher: TradingEventPublisher | None = None,
         portfolio_client: PortfolioLedgerClient | None = None,
+        session: StrategySession | None = None,
     ):
+        # Strategy evaluation comes from EITHER the shared merged-symbol session
+        # (production: cross-symbol conditions + portfolio-level rebalance gate) OR a
+        # per-symbol strategy_fn (tests / legacy). Exactly one must be provided.
+        if session is None and strategy_fn is None:
+            raise ValueError("StrategyRunner requires either a session or a strategy_fn")
         self.config = config
         self.strategy_fn = strategy_fn
+        self._session = session
+        # Merged-symbol live evaluation buffers (session path): latest bar + timestamp per
+        # symbol, and the last period actually evaluated (so we evaluate once per bar period
+        # only when every subscribed symbol's bar for that timestamp has arrived).
+        self._latest_bars: dict[str, CompilerBar] = {}
+        self._latest_ts: dict[str, datetime] = {}
+        self._last_evaluated_ts: datetime | None = None
         self.bar_stream = bar_stream
         self.order_executor = order_executor
         self.risk_manager = risk_manager
@@ -170,18 +178,6 @@ class StrategyRunner:
         self.trade_stream = trade_stream
         self.ledger_publisher = ledger_publisher
         self.portfolio_client = portfolio_client
-
-        # Event sourcing (optional)
-        self._event_store = event_store
-        self._event_executor: EventSourcedOrderExecutor | None = None
-        if event_store and alpaca_client:
-            self._event_executor = EventSourcedOrderExecutor(
-                event_store=event_store,
-                alpaca_client=alpaca_client,
-                risk_manager=risk_manager,
-                alert_service=alert_service,
-                event_publisher=ledger_publisher,
-            )
 
         # State
         self._running = False
@@ -193,7 +189,7 @@ class StrategyRunner:
         }
         self._positions: dict[str, Position] = {}
         self._equity = 100000.0  # Default, will be synced from Alpaca/sleeve
-        self._free_cash: float | None = None  # Sleeve free cash (LEDGER_EXECUTION)
+        self._free_cash: float | None = None  # Sleeve free cash (book of record)
         self._equity_sync_task: asyncio.Task[None] | None = None
         self._position_sync_task: asyncio.Task[None] | None = None
         self._trade_stream_task: asyncio.Task[None] | None = None
@@ -301,25 +297,8 @@ class StrategyRunner:
 
         logger.info(f"Starting strategy runner for execution {self.config.execution_id}")
 
-        # Recover from crash if using event sourcing
-        if self._event_executor:
-            logger.info("Recovering state from events...")
-            state = await self._event_executor.recover_from_crash(
-                session_id=self.config.execution_id,
-                tenant_id=self.config.tenant_id,
-            )
-            # Restore positions from event-sourced state
-            for symbol, pos_state in state.positions.items():
-                self._positions[symbol] = Position(
-                    symbol=symbol,
-                    side=pos_state.side,
-                    quantity=float(pos_state.qty),
-                    entry_price=float(pos_state.avg_cost),
-                    entry_date=datetime.now(UTC),  # Approximate
-                )
-            logger.info(f"Recovered {len(self._positions)} positions from events")
-
-        # Sync equity before starting
+        # Sync equity before starting. Positions are recovered from the broker
+        # (source of truth) via the periodic reconciliation loop below.
         await self._sync_equity()
 
         # Connect to bar stream
@@ -356,22 +335,9 @@ class StrategyRunner:
 
         self._running = True
 
-        # Emit SessionStarted event if using event sourcing
         mode: Literal["live", "paper"] = (
             "live" if self.config.mode == EXECUTION_MODE_LIVE else "paper"
         )
-        if self._event_store:
-            await self._event_store.append(
-                SessionStarted(
-                    tenant_id=self.config.tenant_id,
-                    session_id=self.config.execution_id,
-                    strategy_id=self.config.strategy_id,
-                    strategy_name=self.strategy_name,
-                    mode=mode,
-                    symbols=self.config.symbols,
-                    starting_equity=Decimal(str(self._equity)),
-                )
-            )
 
         # Send session started alert
         if self.alerts:
@@ -448,17 +414,6 @@ class StrategyRunner:
             except asyncio.CancelledError:
                 pass
 
-        # Emit SessionStopped event if using event sourcing
-        if self._event_store:
-            await self._event_store.append(
-                SessionStopped(
-                    tenant_id=self.config.tenant_id,
-                    session_id=self.config.execution_id,
-                    reason=reason or "user_requested",
-                    final_equity=Decimal(str(self._equity)),
-                )
-            )
-
         # Send session stopped alert
         if self.alerts:
             await self.alerts.on_session_stopped(
@@ -520,7 +475,25 @@ class StrategyRunner:
         # Add to history (deque with maxlen handles size limiting automatically)
         self._bar_history[symbol].append(bar)
 
-        # Skip if warming up
+        # Production path: the shared merged-symbol session evaluates all symbols together.
+        if self._session is not None:
+            try:
+                await self._evaluate_session(bar)
+            except Exception as e:
+                logger.error(f"Strategy error for {symbol}: {e}")
+                record_strategy_error("signal_generation")
+                await self._circuit_breaker.record_api_error(str(e))
+                if self.alerts:
+                    await self.alerts.on_strategy_error(
+                        tenant_id=self.config.tenant_id,
+                        session_id=self.config.execution_id,
+                        error=f"Error processing {symbol}: {e}",
+                    )
+            finally:
+                record_bar_processed(symbol, time.perf_counter() - start_time)
+            return
+
+        # Legacy per-symbol path (tests / strategy_fn). Skip if warming up.
         if len(self._bar_history[symbol]) < self.config.warmup_bars:
             logger.debug(
                 f"Warming up {symbol}: {len(self._bar_history[symbol])}/{self.config.warmup_bars}"
@@ -544,6 +517,7 @@ class StrategyRunner:
 
         # Generate signal
         try:
+            assert self.strategy_fn is not None  # guaranteed when session is None
             signal = self.strategy_fn(
                 symbol=symbol,
                 bars=self._bar_history[symbol],
@@ -573,6 +547,54 @@ class StrategyRunner:
             duration = time.perf_counter() - start_time
             record_bar_processed(symbol, duration)
 
+    async def _evaluate_session(self, bar: BarData) -> None:
+        """Merged-symbol evaluation via the shared StrategySession.
+
+        Buffers the latest bar per symbol and evaluates the strategy **once per bar
+        period**, only when every subscribed symbol has produced a bar for that timestamp.
+        This gives the session a complete cross-symbol snapshot (so conditions like
+        "hold TLT when RSI(SPY) > 70" work) and a single portfolio-level rebalance, without
+        feeding the same period's bars more than once.
+        """
+        assert self._session is not None
+        self._latest_bars[bar.symbol] = CompilerBar(
+            timestamp=bar.timestamp,
+            open=bar.open,
+            high=bar.high,
+            low=bar.low,
+            close=bar.close,
+            volume=int(bar.volume),
+        )
+        self._latest_ts[bar.symbol] = bar.timestamp
+        ts = bar.timestamp
+
+        # Wait until every subscribed symbol has this period's bar.
+        if any(self._latest_ts.get(s) != ts for s in self.config.symbols):
+            return
+        # Evaluate each period at most once.
+        if ts == self._last_evaluated_ts:
+            return
+        self._last_evaluated_ts = ts
+
+        if self._trading_hours and not self._trading_hours.is_market_open(ts):
+            return
+        if not self._circuit_breaker.can_trade():
+            return
+
+        holdings = {s: Holding(s, p.quantity) for s, p in self._positions.items() if p.quantity > 0}
+        orders = self._session.evaluate(self._latest_bars, holdings, self._equity)
+        for order in orders:
+            signal = Signal(
+                type=order.side,
+                symbol=order.symbol,
+                quantity=order.quantity,
+                price=order.price,
+                timestamp=ts,
+            )
+            self._signals_generated += 1
+            record_signal(signal.type)
+            await self._process_signal(signal)
+
     async def _process_signal(self, signal: Signal) -> None:
         """Process a trading signal."""
         logger.info(f"Signal: {signal.type} {signal.quantity} {signal.symbol}")
@@ -584,11 +606,7 @@ class StrategyRunner:
 
         # Ledger accounting is long-only: lots have no short side yet, so a
         # short would be silently miscounted. Reject rather than corrupt.
-        if (
-            signal.type in ("short", "cover")
-            and self.config.sleeve_id is not None
-            and ledger_execution_enabled()
-        ):
+        if signal.type in ("short", "cover") and self.config.sleeve_id is not None:
             logger.warning(
                 f"Rejecting {signal.type} signal for {signal.symbol}: "
                 "short selling is not supported for sleeve-attributed sessions"
@@ -610,75 +628,52 @@ class StrategyRunner:
                 )
                 signal.quantity = affordable_qty
 
-        # Record signal event if using event sourcing
-        if self._event_executor:
-            # Convert signal type string to proto enum value
-            signal_type_proto = (
-                ORDER_SIDE_SELL if signal.type in ("sell", "short") else ORDER_SIDE_BUY
-            )
-            await self._event_executor.record_signal(
-                tenant_id=self.config.tenant_id,
-                session_id=self.config.execution_id,
-                symbol=signal.symbol,
-                signal_type=signal_type_proto,
-                price=Decimal(str(signal.price)),
-                qty=Decimal(str(signal.quantity)),
-            )
-
         # Convert signal to order
         order = self._signal_to_order(signal)
 
-        # Submit order - use event-sourced executor if available
+        # Submit order via the OrderExecutor (DB-backed, broker is source of truth).
         try:
-            if self._event_executor:
-                # Event-sourced path - idempotent, durable
-                order_id = await self._event_executor.submit_order(
-                    tenant_id=self.config.tenant_id,
-                    session_id=self.config.execution_id,
-                    order=order,
-                    signal_timestamp=signal.timestamp,
-                )
-                self._orders_submitted += 1
-                logger.info(f"Order submitted (event-sourced): {order_id}")
-            else:
-                # Direct OrderExecutor path (when event sourcing disabled)
-                # Run risk checks (event-sourced executor does this internally)
-                risk_result = await self.risk_manager.check_order(
-                    tenant_id=self.config.tenant_id,
-                    symbol=signal.symbol,
-                    side=signal.type,
-                    qty=signal.quantity,
-                    order_type="market",
-                )
+            # Run risk checks (submit_order also checks internally; this lets us
+            # raise a strategy-level alert before persisting an order).
+            risk_result = await self.risk_manager.check_order(
+                tenant_id=self.config.tenant_id,
+                symbol=signal.symbol,
+                side=signal.type,
+                qty=signal.quantity,
+                order_type="market",
+            )
 
-                if not risk_result.passed:
-                    logger.warning(f"Signal rejected by risk: {risk_result.violations}")
-                    self._orders_rejected += 1
-                    if self.alerts:
-                        await self.alerts.on_risk_breach(
-                            tenant_id=self.config.tenant_id,
-                            session_id=self.config.execution_id,
-                            breach_type="signal_rejected",
-                            details={
-                                "symbol": signal.symbol,
-                                "signal_type": signal.type,
-                                "quantity": signal.quantity,
-                                "violations": risk_result.violations,
-                            },
-                        )
-                    return
+            if not risk_result.passed:
+                logger.warning(f"Signal rejected by risk: {risk_result.violations}")
+                self._orders_rejected += 1
+                if self.alerts:
+                    await self.alerts.on_risk_breach(
+                        tenant_id=self.config.tenant_id,
+                        session_id=self.config.execution_id,
+                        breach_type="signal_rejected",
+                        details={
+                            "symbol": signal.symbol,
+                            "signal_type": signal.type,
+                            "quantity": signal.quantity,
+                            "violations": risk_result.violations,
+                        },
+                    )
+                return
 
-                result = await self.order_executor.submit_order(
-                    tenant_id=self.config.tenant_id,
-                    session_id=self.config.execution_id,
-                    order=order,
-                )
-                self._orders_submitted += 1
-                logger.info(f"Order submitted: {result.id} status={result.status}")
+            # signal_timestamp makes the client_order_id deterministic, so a
+            # retry after a crash collapses onto the same broker order.
+            result = await self.order_executor.submit_order(
+                tenant_id=self.config.tenant_id,
+                session_id=self.config.execution_id,
+                order=order,
+                signal_timestamp=signal.timestamp,
+            )
+            self._orders_submitted += 1
+            logger.info(f"Order submitted: {result.id} status={result.status}")
 
-                # Track pending order for fill-based position update
-                if result.client_order_id:
-                    self._pending_orders[result.client_order_id] = signal
+            # Track pending order for fill-based position update
+            if result.client_order_id:
+                self._pending_orders[result.client_order_id] = signal
 
             # Position updates happen via trade stream fill events, not here
             # This ensures positions match broker reality
@@ -705,17 +700,16 @@ class StrategyRunner:
             est_price=signal.price if signal.price > 0 else None,
         )
 
-    async def _update_position(self, signal: Signal, order_id: UUID | None = None) -> None:
-        """Update position tracking after signal."""
-        symbol = signal.symbol
-        # Generate order_id if not provided (for event sourcing)
-        if order_id is None:
-            from uuid import uuid4
+    async def _update_position(self, signal: Signal) -> None:
+        """Update in-memory position tracking after a signal.
 
-            order_id = uuid4()
+        The live runner reconciles positions from broker fills (the trade
+        stream); this helper maintains the same in-memory projection for
+        synchronous callers and tests.
+        """
+        symbol = signal.symbol
 
         if signal.type == "buy":
-            old_position = self._positions.get(symbol)
             self._positions[symbol] = Position(
                 symbol=symbol,
                 side="long",
@@ -723,36 +717,6 @@ class StrategyRunner:
                 entry_price=signal.price,
                 entry_date=signal.timestamp,
             )
-            # Emit position event if using event sourcing
-            if self._event_executor:
-                if old_position and old_position.side == "long":
-                    # Adding to existing position
-                    new_qty = old_position.quantity + signal.quantity
-                    new_avg = (
-                        (old_position.entry_price * old_position.quantity)
-                        + (signal.price * signal.quantity)
-                    ) / new_qty
-                    await self._event_executor.record_position_increased(
-                        tenant_id=self.config.tenant_id,
-                        session_id=self.config.execution_id,
-                        symbol=symbol,
-                        qty_added=Decimal(str(signal.quantity)),
-                        price=Decimal(str(signal.price)),
-                        new_total_qty=Decimal(str(new_qty)),
-                        new_avg_cost=Decimal(str(new_avg)),
-                        order_id=order_id,
-                    )
-                else:
-                    # Opening new position
-                    await self._event_executor.record_position_opened(
-                        tenant_id=self.config.tenant_id,
-                        session_id=self.config.execution_id,
-                        symbol=symbol,
-                        side="long",
-                        qty=Decimal(str(signal.quantity)),
-                        entry_price=Decimal(str(signal.price)),
-                        order_id=order_id,
-                    )
             # Send position opened alert
             if self.alerts:
                 await self.alerts.on_position_opened(
@@ -771,17 +735,6 @@ class StrategyRunner:
             # Send position closed alert and record trade in circuit breaker
             if old_position:
                 pnl = (signal.price - old_position.entry_price) * old_position.quantity
-                # Emit position closed event if using event sourcing
-                if self._event_executor:
-                    await self._event_executor.record_position_closed(
-                        tenant_id=self.config.tenant_id,
-                        session_id=self.config.execution_id,
-                        symbol=symbol,
-                        exit_price=Decimal(str(signal.price)),
-                        realized_pnl=Decimal(str(pnl)),
-                        order_id=order_id,
-                    )
-                # Record trade in circuit breaker
                 await self._circuit_breaker.record_trade(is_win=pnl >= 0, pnl=pnl)
                 if self.alerts:
                     await self.alerts.on_position_closed(
@@ -793,7 +746,6 @@ class StrategyRunner:
                     )
 
         elif signal.type == "short":
-            old_position = self._positions.get(symbol)
             self._positions[symbol] = Position(
                 symbol=symbol,
                 side="short",
@@ -801,36 +753,6 @@ class StrategyRunner:
                 entry_price=signal.price,
                 entry_date=signal.timestamp,
             )
-            # Emit position event if using event sourcing
-            if self._event_executor:
-                if old_position and old_position.side == "short":
-                    # Adding to existing short position
-                    new_qty = old_position.quantity + signal.quantity
-                    new_avg = (
-                        (old_position.entry_price * old_position.quantity)
-                        + (signal.price * signal.quantity)
-                    ) / new_qty
-                    await self._event_executor.record_position_increased(
-                        tenant_id=self.config.tenant_id,
-                        session_id=self.config.execution_id,
-                        symbol=symbol,
-                        qty_added=Decimal(str(signal.quantity)),
-                        price=Decimal(str(signal.price)),
-                        new_total_qty=Decimal(str(new_qty)),
-                        new_avg_cost=Decimal(str(new_avg)),
-                        order_id=order_id,
-                    )
-                else:
-                    # Opening new short position
-                    await self._event_executor.record_position_opened(
-                        tenant_id=self.config.tenant_id,
-                        session_id=self.config.execution_id,
-                        symbol=symbol,
-                        side="short",
-                        qty=Decimal(str(signal.quantity)),
-                        entry_price=Decimal(str(signal.price)),
-                        order_id=order_id,
-                    )
             # Send position opened alert
             if self.alerts:
                 await self.alerts.on_position_opened(
@@ -850,17 +772,6 @@ class StrategyRunner:
             if old_position:
                 # For short: profit when price goes down
                 pnl = (old_position.entry_price - signal.price) * old_position.quantity
-                # Emit position closed event if using event sourcing
-                if self._event_executor:
-                    await self._event_executor.record_position_closed(
-                        tenant_id=self.config.tenant_id,
-                        session_id=self.config.execution_id,
-                        symbol=symbol,
-                        exit_price=Decimal(str(signal.price)),
-                        realized_pnl=Decimal(str(pnl)),
-                        order_id=order_id,
-                    )
-                # Record trade in circuit breaker
                 await self._circuit_breaker.record_trade(is_win=pnl >= 0, pnl=pnl)
                 if self.alerts:
                     await self.alerts.on_position_closed(
@@ -930,14 +841,10 @@ class StrategyRunner:
 
         Sleeve equity = free cash + Σ(lot qty × latest bar close). Falls back
         to a lot's average cost when no bar has arrived yet for its symbol.
-        Returns False (caller uses account equity) when ledger execution is
-        off or this session has no sleeve.
+        Returns False (caller uses account equity) when this session has no
+        sleeve or no portfolio client.
         """
-        if (
-            self.portfolio_client is None
-            or self.config.sleeve_id is None
-            or not ledger_execution_enabled()
-        ):
+        if self.portfolio_client is None or self.config.sleeve_id is None:
             return False
 
         try:
@@ -948,6 +855,20 @@ class StrategyRunner:
             logger.warning(f"Failed to sync sleeve equity: {e}")
             await self._circuit_breaker.record_api_error(str(e))
             return True  # handled (do NOT fall back to whole-account equity)
+
+        # The sleeve was retired (stop/archive). Stop trading this session — its
+        # holdings have been re-homed, so there is nothing left to manage. The
+        # loops all honor _running and wind down on their next iteration.
+        from llamatrade_proto.generated.ledger_pb2 import SLEEVE_STATUS_CLOSED
+
+        if detail.sleeve.status == SLEEVE_STATUS_CLOSED:
+            logger.info(
+                "Sleeve %s is closed; stopping runner for execution %s",
+                self.config.sleeve_id,
+                self.config.execution_id,
+            )
+            self._running = False
+            return True
 
         free_cash = float(detail.sleeve.cash.free)
         equity = free_cash
@@ -1048,17 +969,15 @@ class StrategyRunner:
     async def _publish_ledger_fill(self, event: TradeEvent) -> None:
         """Publish ledger payloads for a terminal trade event.
 
-        - §1a fill payload (terminal fills, cancel/expiry with a filled
-          portion) under LEDGER_SHADOW_MODE;
-        - §4 reservation release (cancel/reject/expiry) under
-          LEDGER_EXECUTION (idempotent at the ledger, so the executor's own
-          release for API-initiated cancels never double-counts).
+        - §1a fill payload (terminal fills, cancel/expiry with a filled portion);
+        - §4 reservation release (cancel/reject/expiry) — idempotent at the
+          ledger, so the executor's own release for API-initiated cancels never
+          double-counts.
         """
         if (
             self.ledger_publisher is None
             or self.config.sleeve_id is None
             or self.config.account_id is None
-            or not ledger_shadow_mode_enabled()
         ):
             return
 
@@ -1071,7 +990,7 @@ class StrategyRunner:
         try:
             if payload is not None:
                 await self.ledger_publisher.publish_ledger_fill(self.config.account_id, payload)
-            if ledger_execution_enabled() and event.event_type in (
+            if event.event_type in (
                 TradeEventType.CANCELED,
                 TradeEventType.EXPIRED,
                 TradeEventType.REJECTED,
@@ -1119,8 +1038,9 @@ class StrategyRunner:
 
         logger.info(f"Processing fill: {side} {fill_qty} {symbol} @ ${fill_price:.2f}")
 
-        # Look up the original signal (if we submitted this order)
-        signal = self._pending_orders.pop(fill.client_order_id, None)
+        # Drop any pending-order bookkeeping for this fill; position state below
+        # is derived from the broker fill, the source of truth.
+        self._pending_orders.pop(fill.client_order_id, None)
 
         # Update position based on fill
         old_position = self._positions.get(symbol)
@@ -1251,38 +1171,6 @@ class StrategyRunner:
         # Update position metrics
         self._update_position_metrics()
 
-        # Emit event if using event sourcing and we have the original signal
-        if self._event_executor and signal:
-            signal_type = cast(
-                Literal["buy", "sell", "short", "cover"],
-                signal.type,
-            )
-            # Record fill in event store
-            if signal_type in ("buy", "short"):
-                await self._event_executor.record_position_opened(
-                    tenant_id=self.config.tenant_id,
-                    session_id=self.config.execution_id,
-                    symbol=symbol,
-                    side="long" if signal_type == "buy" else "short",
-                    qty=Decimal(str(fill_qty)),
-                    entry_price=Decimal(str(fill_price)),
-                    order_id=UUID(event.order_id) if len(event.order_id) == 36 else None,
-                )
-            elif signal_type in ("sell", "cover") and old_position:
-                pnl = (
-                    (fill_price - old_position.entry_price) * fill_qty
-                    if old_position.side == "long"
-                    else (old_position.entry_price - fill_price) * fill_qty
-                )
-                await self._event_executor.record_position_closed(
-                    tenant_id=self.config.tenant_id,
-                    session_id=self.config.execution_id,
-                    symbol=symbol,
-                    exit_price=Decimal(str(fill_price)),
-                    realized_pnl=Decimal(str(pnl)),
-                    order_id=UUID(event.order_id) if len(event.order_id) == 36 else None,
-                )
-
         logger.info(f"Fill processed: {symbol} now {self._positions.get(symbol, 'flat')}")
 
     async def _handle_partial_fill_event(self, event: TradeEvent) -> None:
@@ -1348,18 +1236,16 @@ class StrategyRunner:
         4. Alerts on large drifts (>= alert_threshold)
         5. Handles missing positions in either direction
 
-        When the portfolio ledger owns reconciliation (LEDGER_EXECUTION with a
-        sleeve-attributed session), this becomes READ-ONLY: drift is logged and
-        alerted but local state is never auto-corrected — two writers
-        "correcting" the same drift would fight each other.
+        When the portfolio ledger owns reconciliation (a sleeve-attributed
+        session), this becomes READ-ONLY: drift is logged and alerted but local
+        state is never auto-corrected — two writers "correcting" the same drift
+        would fight each other.
         """
         if not self.alpaca_client:
             return
 
         # Portfolio owns reconciliation for sleeve-attributed sessions
-        ledger_owns_reconciliation = (
-            ledger_execution_enabled() and self.config.sleeve_id is not None
-        )
+        ledger_owns_reconciliation = self.config.sleeve_id is not None
 
         import time
 
@@ -1675,7 +1561,7 @@ class RunnerManager:
     async def start_runner(
         self,
         config: RunnerConfig,
-        strategy_fn: StrategyFunction,
+        strategy_fn: StrategyFunction | None,
         bar_stream: BarStreamClient | MockBarStream,
         trade_stream: TradingStreamClient | MockTradeStream,
         order_executor: OrderExecutor,
@@ -1684,9 +1570,9 @@ class RunnerManager:
         alert_service: AlertService | None = None,
         strategy_name: str = "Unknown Strategy",
         circuit_breaker_config: CircuitBreakerConfig | None = None,
-        event_store: EventStore | None = None,
         ledger_publisher: TradingEventPublisher | None = None,
         portfolio_client: PortfolioLedgerClient | None = None,
+        session: StrategySession | None = None,
     ) -> StrategyRunner:
         """Create and start a new runner.
 
@@ -1697,12 +1583,10 @@ class RunnerManager:
             trade_stream: Trade update stream.
             order_executor: Order executor for submitting orders.
             risk_manager: Risk manager for order validation.
-            alpaca_client: Alpaca trading client (required for event sourcing).
+            alpaca_client: Alpaca trading client.
             alert_service: Alert service for notifications.
             strategy_name: Human-readable strategy name.
             circuit_breaker_config: Circuit breaker configuration.
-            event_store: Event store for event sourcing. When provided,
-                enables idempotent order submission and crash recovery.
 
         Returns:
             Started StrategyRunner instance.
@@ -1723,9 +1607,9 @@ class RunnerManager:
             alert_service=alert_service,
             strategy_name=strategy_name,
             circuit_breaker_config=circuit_breaker_config,
-            event_store=event_store,
             ledger_publisher=ledger_publisher,
             portfolio_client=portfolio_client,
+            session=session,
         )
 
         self._runners[execution_id] = runner

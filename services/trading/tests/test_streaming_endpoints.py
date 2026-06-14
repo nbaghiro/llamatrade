@@ -1,5 +1,6 @@
 """Tests for gRPC streaming endpoints."""
 
+from collections.abc import AsyncIterator
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
@@ -34,30 +35,36 @@ class TestStreamOrderUpdates:
         # Create mock subscriber that yields updates
         mock_subscriber = MagicMock()
 
-        async def mock_subscribe_orders(sid: str) -> list[OrderUpdate]:
-            yield OrderUpdate(
-                session_id=session_id,
-                order_id=order_id,
-                alpaca_order_id="alpaca-123",
-                symbol="AAPL",
-                side="buy",
-                qty=10.0,
-                order_type="market",
-                status="filled",
-                filled_qty=10.0,
-                filled_avg_price=150.50,
-                update_type="filled",
+        async def mock_tail_orders(
+            sid: str, *, last_seen_id: str = ""
+        ) -> AsyncIterator[tuple[str, OrderUpdate]]:
+            yield (
+                "1-0",
+                OrderUpdate(
+                    session_id=session_id,
+                    order_id=order_id,
+                    alpaca_order_id="alpaca-123",
+                    symbol="AAPL",
+                    side="buy",
+                    qty=10.0,
+                    order_type="market",
+                    status="filled",
+                    filled_qty=10.0,
+                    filled_avg_price=150.50,
+                    update_type="filled",
+                ),
             )
             # Stop after one update
             return
 
-        mock_subscriber.subscribe_orders = mock_subscribe_orders
+        mock_subscriber.tail_orders = mock_tail_orders
         mock_subscriber.close = AsyncMock()
 
         # Create mock request
         mock_request = MagicMock()
         mock_request.context.tenant_id = str(uuid4())
         mock_request.session_id = session_id
+        mock_request.last_seen_id = ""
 
         context = MockServicerContext()
 
@@ -79,8 +86,6 @@ class TestStreamOrderUpdates:
 
     async def test_stream_order_updates_closes_on_cancel(self) -> None:
         """Test that subscriber is closed when stream is cancelled."""
-        from collections.abc import AsyncIterator
-
         from src.grpc.servicer import TradingServicer
 
         session_id = str(uuid4())
@@ -88,26 +93,32 @@ class TestStreamOrderUpdates:
         # Create mock subscriber that yields then checks cancelled
         mock_subscriber = MagicMock()
 
-        async def mock_subscribe_orders(sid: str) -> AsyncIterator[OrderUpdate]:
+        async def mock_tail_orders(
+            sid: str, *, last_seen_id: str = ""
+        ) -> AsyncIterator[tuple[str, OrderUpdate]]:
             # Yield one update first
-            yield OrderUpdate(
-                session_id=session_id,
-                order_id="order-123",
-                alpaca_order_id=None,
-                symbol="AAPL",
-                side="buy",
-                qty=10.0,
-                order_type="market",
-                status="submitted",
+            yield (
+                "1-0",
+                OrderUpdate(
+                    session_id=session_id,
+                    order_id="order-123",
+                    alpaca_order_id=None,
+                    symbol="AAPL",
+                    side="buy",
+                    qty=10.0,
+                    order_type="market",
+                    status="submitted",
+                ),
             )
             # Then would continue but context is cancelled
 
-        mock_subscriber.subscribe_orders = mock_subscribe_orders
+        mock_subscriber.tail_orders = mock_tail_orders
         mock_subscriber.close = AsyncMock()
 
         mock_request = MagicMock()
         mock_request.context.tenant_id = str(uuid4())
         mock_request.session_id = session_id
+        mock_request.last_seen_id = ""
 
         context = MockServicerContext()
         context.cancel()  # Pre-cancel
@@ -132,16 +143,19 @@ class TestStreamOrderUpdates:
 
         mock_subscriber = MagicMock()
 
-        async def mock_subscribe_orders_error(sid: str) -> list[OrderUpdate]:
+        async def mock_tail_orders_error(
+            sid: str, *, last_seen_id: str = ""
+        ) -> AsyncIterator[tuple[str, OrderUpdate]]:
             raise RuntimeError("Redis connection failed")
             yield  # Make it a generator
 
-        mock_subscriber.subscribe_orders = mock_subscribe_orders_error
+        mock_subscriber.tail_orders = mock_tail_orders_error
         mock_subscriber.close = AsyncMock()
 
         mock_request = MagicMock()
         mock_request.context.tenant_id = str(uuid4())
         mock_request.session_id = session_id
+        mock_request.last_seen_id = ""
 
         context = MockServicerContext()
 
@@ -167,27 +181,33 @@ class TestStreamPositionUpdates:
 
         mock_subscriber = MagicMock()
 
-        async def mock_subscribe_positions(sid: str) -> list[PositionUpdate]:
-            yield PositionUpdate(
-                session_id=session_id,
-                symbol="AAPL",
-                qty=100.0,
-                side="long",
-                cost_basis=15000.0,
-                market_value=15500.0,
-                unrealized_pnl=500.0,
-                unrealized_pnl_percent=3.33,
-                current_price=155.0,
-                update_type="opened",
+        async def mock_tail_positions(
+            sid: str, *, last_seen_id: str = ""
+        ) -> AsyncIterator[tuple[str, PositionUpdate]]:
+            yield (
+                "1-0",
+                PositionUpdate(
+                    session_id=session_id,
+                    symbol="AAPL",
+                    qty=100.0,
+                    side="long",
+                    cost_basis=15000.0,
+                    market_value=15500.0,
+                    unrealized_pnl=500.0,
+                    unrealized_pnl_percent=3.33,
+                    current_price=155.0,
+                    update_type="opened",
+                ),
             )
             return
 
-        mock_subscriber.subscribe_positions = mock_subscribe_positions
+        mock_subscriber.tail_positions = mock_tail_positions
         mock_subscriber.close = AsyncMock()
 
         mock_request = MagicMock()
         mock_request.context.tenant_id = str(uuid4())
         mock_request.session_id = session_id
+        mock_request.last_seen_id = ""
 
         context = MockServicerContext()
 
@@ -207,36 +227,40 @@ class TestStreamPositionUpdates:
 
     async def test_stream_position_updates_closes_on_cancel(self) -> None:
         """Test that subscriber is closed when stream is cancelled."""
-        from collections.abc import AsyncIterator
-
         from src.grpc.servicer import TradingServicer
 
         session_id = str(uuid4())
 
         mock_subscriber = MagicMock()
 
-        async def mock_subscribe_positions(sid: str) -> AsyncIterator[PositionUpdate]:
+        async def mock_tail_positions(
+            sid: str, *, last_seen_id: str = ""
+        ) -> AsyncIterator[tuple[str, PositionUpdate]]:
             # Yield one update first
-            yield PositionUpdate(
-                session_id=session_id,
-                symbol="AAPL",
-                qty=100.0,
-                side="long",
-                cost_basis=15000.0,
-                market_value=15000.0,
-                unrealized_pnl=0.0,
-                unrealized_pnl_percent=0.0,
-                current_price=150.0,
-                update_type="opened",
+            yield (
+                "1-0",
+                PositionUpdate(
+                    session_id=session_id,
+                    symbol="AAPL",
+                    qty=100.0,
+                    side="long",
+                    cost_basis=15000.0,
+                    market_value=15000.0,
+                    unrealized_pnl=0.0,
+                    unrealized_pnl_percent=0.0,
+                    current_price=150.0,
+                    update_type="opened",
+                ),
             )
             # Then would continue but context is cancelled
 
-        mock_subscriber.subscribe_positions = mock_subscribe_positions
+        mock_subscriber.tail_positions = mock_tail_positions
         mock_subscriber.close = AsyncMock()
 
         mock_request = MagicMock()
         mock_request.context.tenant_id = str(uuid4())
         mock_request.session_id = session_id
+        mock_request.last_seen_id = ""
 
         context = MockServicerContext()
         context.cancel()

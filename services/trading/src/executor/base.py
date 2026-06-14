@@ -1,7 +1,7 @@
 """Base executor mixin - shared logic for order submission.
 
-This module extracts common functionality between OrderExecutor and
-EventSourcedOrderExecutor to reduce code duplication.
+This module holds the order-submission helpers shared by order executors
+(risk checks, Alpaca submission, status mapping, alerts).
 """
 
 import logging
@@ -88,8 +88,7 @@ class AlpacaSubmitResult:
 class OrderSubmissionMixin:
     """Mixin providing shared order submission functionality.
 
-    This mixin extracts common patterns from OrderExecutor and
-    EventSourcedOrderExecutor:
+    Common order-submission patterns used by OrderExecutor:
     - Risk checking with metrics
     - Alert notifications on rejection
     - Alpaca submission with error handling

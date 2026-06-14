@@ -19,7 +19,6 @@ from llamatrade_proto.generated.common_pb2 import (
     EXECUTION_STATUS_STOPPED,
 )
 
-from src.ledger_settings import execution_enabled as ledger_execution_enabled
 from src.models import SessionResponse
 
 logger = logging.getLogger(__name__)
@@ -330,11 +329,11 @@ class SessionService:
     async def _ledger_realized_pnl(self, s: TradingSession) -> float | None:
         """Realized P&L from the sleeve projection (the book of record).
 
-        Returns None (caller uses the local Position table) when ledger
-        execution is off, the session has no sleeve, or the read fails — the
-        local figure is a fine fallback, never a hard error.
+        Returns None (caller uses the local Position table) when the session has
+        no sleeve or the read fails — the local figure is a fine fallback, never
+        a hard error.
         """
-        if not ledger_execution_enabled() or s.sleeve_id is None:
+        if s.sleeve_id is None:
             return None
         from src.clients.portfolio_client import get_portfolio_ledger_client
 

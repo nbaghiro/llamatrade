@@ -22,113 +22,136 @@ The trading service is responsible for:
 ### System Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                          TRADING SERVICE :8850                              │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                             │
-│  ┌─────────────────────────────────────────────────────────────────────┐    │
-│  │                      FastAPI + Connect ASGI                         │    │
-│  │   /health    TradingServiceASGIApplication                          │    │
-│  └─────────────────────────────┬───────────────────────────────────────┘    │
-│                                │                                            │
-│  ┌─────────────────────────────┴───────────────────────────────────────┐    │
-│  │                      gRPC Servicer                                  │    │
-│  │                                                                     │    │
-│  │  SubmitOrder ───────► Submit order after risk checks                │    │
-│  │  CancelOrder ───────► Cancel pending/submitted order                │    │
-│  │  GetOrder ──────────► Get order by ID                               │    │
-│  │  ListOrders ────────► List orders with filters                      │    │
-│  │  GetPosition ───────► Get position by symbol                        │    │
-│  │  ListPositions ─────► List all positions                            │    │
-│  │  ClosePosition ─────► Close position (submit sell order)            │    │
-│  │  StreamOrderUpdates ► Real-time order status changes                │    │
-│  │  StreamPositionUpdates ► Real-time position updates                 │    │
-│  └─────────────────────────────┬───────────────────────────────────────┘    │
-│                                │                                            │
-│  ┌─────────────────────────────┴───────────────────────────────────────┐    │
-│  │                      Service Layer                                  │    │
-│  │                                                                     │    │
-│  │  OrderExecutor ─────► Submit orders, risk checks, Alpaca sync       │    │
-│  │  PositionService ───► Local position tracking, P&L                  │    │
-│  │  RiskManager ───────► 5-layer validation pipeline                   │    │
-│  │  AlpacaTradingClient ► REST client for Alpaca API                   │    │
-│  │  MarketDataClient ──► HTTP client for price fetching                │    │
-│  └─────────────────────────────────────────────────────────────────────┘    │
-│                                                                             │
-│  ┌─────────────────────────────────────────────────────────────────────┐    │
-│  │                      Database Layer                                 │    │
-│  │                                                                     │    │
-│  │  TradingSession ────► Trading session records                       │    │
-│  │  Order ─────────────► Order records with Alpaca sync                │    │
-│  │  Position ──────────► Position tracking per session                 │    │
-│  │  RiskConfig ────────► Risk limits per tenant/session                │    │
-│  │  DailyPnL ──────────► Daily P&L tracking for risk                   │    │
-│  └─────────────────────────────────────────────────────────────────────┘    │
-│                                                                             │
-└─────────────────────────────────┬───────────────────────────────────────────┘
-                                  │
-        ┌─────────────────────────┼─────────────────────────┐
-        ▼                         ▼                         ▼
-   ┌─────────────┐        ┌─────────────┐           ┌─────────────┐
-   │   Alpaca    │        │ Market-Data │           │  Consumers  │
-   │  Trading    │        │  Service    │           │             │
-   │  REST API   │        │   :8840     │           │  Frontend   │
-   └─────────────┘        └─────────────┘           │  Strategy   │
-                                                    │  Portfolio  │
-                                                    └─────────────┘
+╔════════════════════════════════════════════════════════════════════════════════════════════╗
+║                                 TRADING SERVICE  ·  :8850                                  ║
+╚════════════════════════════════════════════════════════════════════════════════════════════╝
+                                             │
+╭────────────────────────────────────────────────────────────────────────────────────────╮
+│                                 FastAPI + Connect ASGI                                 │
+├────────────────────────────────────────────────────────────────────────────────────────┤
+│ /health · /metrics       TradingServiceASGIApplication                                 │
+╰────────────────────────────────────────────────────────────────────────────────────────╯
+                                             │
+╭────────────────────────────────────────────────────────────────────────────────────────╮
+│                                     gRPC Servicer                                      │
+├────────────────────────────────────────────────────────────────────────────────────────┤
+│ SubmitOrder ───────────► submit order after 5-layer risk checks                        │
+│ CancelOrder ───────────► cancel a pending / submitted order                            │
+│ GetOrder ──────────────► get order by id                                               │
+│ ListOrders ────────────► list orders with status filter                                │
+│ GetPosition ───────────► get position by symbol                                        │
+│ ListPositions ─────────► list all positions in a session                               │
+│ ClosePosition ─────────► close position (submit offsetting order)                      │
+│ StreamOrderUpdates ────► real-time order status changes                                │
+│ StreamPositionUpdates ─► real-time position changes                                    │
+╰────────────────────────────────────────────────────────────────────────────────────────╯
+                                             │
+╭────────────────────────────────────────────────────────────────────────────────────────╮
+│                                     Service Layer                                      │
+├────────────────────────────────────────────────────────────────────────────────────────┤
+│ LiveSessionService ────► runs the 4-loop strategy runner per session                   │
+│ OrderExecutor ─────────► deterministic client_order_id · exactly-once                  │
+│ PositionService ───────► local position cache (fills = source of truth)                │
+│ RiskManager ───────────► 5-layer validation + circuit breaker                          │
+│ CompilerAdapter ───────► strategy DSL → signals → target weights                       │
+╰────────────────────────────────────────────────────────────────────────────────────────╯
+                                             │
+╭────────────────────────────────────────────────────────────────────────────────────────╮
+│                     Runner — 4 concurrent loops (per live session)                     │
+├────────────────────────────────────────────────────────────────────────────────────────┤
+│ bar → signal ──────────► tick clock + rebalance gate (≤ 1 / day)                       │
+│ fills → positions ─────► trade_updates stream · broker = truth                         │
+│ equity sync (~60s) ────► sleeve-aware account valuation                                │
+│ reconcile (~300s) ─────► diff local vs broker · correct drift                          │
+╰────────────────────────────────────────────────────────────────────────────────────────╯
+                                             │
+╭────────────────────────────────────────────────────────────────────────────────────────╮
+│                                     Database Layer                                     │
+├────────────────────────────────────────────────────────────────────────────────────────┤
+│ TradingSession ────────► live / paper session records                                  │
+│ Order ─────────────────► durable order intent (client_order_id key)                    │
+│ Position ──────────────► position cache per session                                    │
+│ RiskConfig · DailyPnL ─► risk limits + daily P&L for the breaker                       │
+╰────────────────────────────────────────────────────────────────────────────────────────╯
+                                             │
+                      ┌──────────────────────┴──┬────────────────────────┐
+                      ▼                         ▼                        ▼
+              ╭───────────────╮          ╭─────────────╮          ╭────────────╮
+              │ Alpaca        │          │ market-data │          │ consumers  │
+              │ Trading       │          │ :8840       │          │ frontend · │
+              │ ═ REST + WS ═ │          │ prices      │          │ portfolio  │
+              ╰───────────────╯          ╰─────────────╯          ╰────────────╯
+
+                      terminal fills ═══════════════════════════════════════════════►
+                      ╔════════════════════════════════════════════════╗
+                      ║           ledger:fills:{account_id}            ║
+                      ╠════════════════════════════════════════════════╣
+                      ║ portfolio LEDGER  ·  :8860                     ║
+                      ║ the book of record (append-only, double-entry) ║
+                      ╚════════════════════════════════════════════════╝
 ```
 
 ### Order Execution Flow
 
 ```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                         ORDER EXECUTION FLOW                                │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                             │
-│  ┌───────────────────────────────────────────────────────────────────┐      │
-│  │                    Client Request                                 │      │
-│  │         SubmitOrder(symbol, side, qty, type, limit_price)         │      │
-│  └───────────────────────────────┬───────────────────────────────────┘      │
-│                                  │                                          │
-│                                  ▼                                          │
-│  ┌───────────────────────────────────────────────────────────────────┐      │
-│  │                    RiskManager.check_order()                      │      │
-│  │                                                                   │      │
-│  │   - Max order value check ($5,000 default)                        │      │
-│  │   - Allowed symbols check (whitelist)                             │      │
-│  │   - Max position size check ($10,000 default)                     │      │
-│  │   - Daily loss limit check ($1,000 default)                       │      │
-│  │   - Order rate limit check (10/minute)                            │      │
-│  └───────────────────────────────┬───────────────────────────────────┘      │
-│                                  │                                          │
-│                    ┌─────────────┴─────────────┐                            │
-│                    │                           │                            │
-│              Risk PASSED               Risk FAILED                          │
-│                    │                           │                            │
-│                    ▼                           ▼                            │
-│  ┌─────────────────────────────┐  ┌─────────────────────────────┐           │
-│  │  Create Order in DB         │  │  Return INVALID_ARGUMENT    │           │
-│  │  (status = pending)         │  │  with violation details     │           │
-│  └──────────────┬──────────────┘  └─────────────────────────────┘           │
-│                 │                                                           │
-│                 ▼                                                           │
-│  ┌───────────────────────────────────────────────────────────────────┐      │
-│  │                    AlpacaTradingClient.submit_order()             │      │
-│  │              POST /v2/orders → Alpaca Trading API                 │      │
-│  └───────────────────────────────┬───────────────────────────────────┘      │
-│                                  │                                          │
-│                    ┌─────────────┴─────────────┐                            │
-│                    │                           │                            │
-│              Alpaca OK                   Alpaca Error                       │
-│                    │                           │                            │
-│                    ▼                           ▼                            │
-│  ┌─────────────────────────────┐  ┌─────────────────────────────┐           │
-│  │  Update Order in DB         │  │  Update Order in DB         │           │
-│  │  (status = submitted)       │  │  (status = rejected)        │           │
-│  │  (alpaca_order_id = ...)    │  │  Return error               │           │
-│  └─────────────────────────────┘  └─────────────────────────────┘           │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
+╔════════════════════════════════════════════════════════════════════════════════════════════╗
+║           ORDER EXECUTION FLOW  ·  rebalance → risk → executor → Alpaca → ledger           ║
+╚════════════════════════════════════════════════════════════════════════════════════════════╝
+
+                 ╭─────────────────────────────────────────────────────────╮
+                 │     rebalance signal  (runner: bar → target weights)    │
+                 ├─────────────────────────────────────────────────────────┤
+                 │ a single rebalance can emit MANY orders at once —       │
+                 │ one per symbol whose holding must change (sells + buys) │
+                 ╰─────────────────────────────────────────────────────────╯
+                                              │ per order
+                                              ▼
+                 ╭──────────────────────────────────────────────────────────╮
+                 │      RiskManager.check_order()  —  5-layer pipeline      │
+                 ├──────────────────────────────────────────────────────────┤
+                 │ max order value ($5,000)   ·   allowed-symbols whitelist │
+                 │ max position size ($10,000) ·  daily-loss limit ($1,000) │
+                 │ order rate limit (10 / min) +  circuit breaker (halt)    │
+                 ╰──────────────────────────────────────────────────────────╯
+                                               │
+                             ┌─────────────────┴────────────────────────────┐
+                        risk PASSED                                    risk FAILED
+                             ▼                                              ▼
+   ╭──────────────────────────────────────────────────╮        ┌─────────────────────────┐
+   │              record durable intent               │        │          reject         │
+   ├──────────────────────────────────────────────────┤        ├─────────────────────────┤
+   │ create Order in DB (status = pending)            │        │ return INVALID_ARGUMENT │
+   │ deterministic client_order_id = lt-<sha256[:16]> │        │ with violation details  │
+   │ already-recorded id short-circuits (idempotent)  │        └─────────────────────────┘
+   ╰──────────────────────────────────────────────────╯
+                             │ submit
+                             ▼
+                   ╭──────────────────────────────────────────────────────╮
+                   │   OrderExecutor → Alpaca  (within the open window)   │
+                   ├──────────────────────────────────────────────────────┤
+                   │ POST /v2/orders  ═►  Alpaca Trading API              │
+                   │ (market · limit · stop · stop-limit · bracket / OCO) │
+                   ╰──────────────────────────────────────────────────────╯
+                                               │
+                             ┌─────────────────┴────────────────┐
+                         Alpaca OK                        Alpaca error
+                             ▼                                  ▼
+               ┌──────────────────────────┐        ┌─────────────────────────┐
+               │         accepted         │        │          failed         │
+               ├──────────────────────────┤        ├─────────────────────────┤
+               │ update Order → submitted │        │ update Order → rejected │
+               │ store alpaca_order_id    │        │ map + return error      │
+               └──────────────────────────┘        └─────────────────────────┘
+                             │
+                             ╰─► async fills via trade_updates  ·  broker = source of truth
+
+                fills ═══════════════════════════════════════════►
+            ╔═══════════════════════════════════════════════════════════════════╗
+            ║                    fills in  →  book of record                    ║
+            ╠═══════════════════════════════════════════════════════════════════╣
+            ║ fills update local positions; TERMINAL fills publish to           ║
+            ║ ledger:fills:{account_id} → the portfolio LEDGER (per-sleeve P&L) ║
+            ╚═══════════════════════════════════════════════════════════════════╝
 ```
 
 ---
@@ -252,13 +275,22 @@ Multi-layer fallback for price estimation:
 ### Order Status States
 
 ```
-PENDING ──► SUBMITTED ──► ACCEPTED ──► FILLED
-    │           │             │
-    │           │             └──► PARTIAL ──► FILLED
-    │           │
-    │           └──► CANCELLED
-    │
-    └──► REJECTED
+   ╭─────────╮  submit   ╭───────────╮  accept  ╭──────────╮   fill   ╭────────╮
+   │ PENDING │ ────────► │ SUBMITTED │ ───────► │ ACCEPTED │ ───────► │ FILLED │
+   ╰────┬────╯           ╰─────┬─────╯          ╰────┬─────╯          ╰───▲────╯
+       risk               cancel · or               partial              fill
+    or reject              reject │                  fill │           remainder
+        │                         │                       │                │
+        ▼                         ▼                       ▼                │
+   ╭──────────╮            ╭───────────╮            ╭─────────╮            │
+   │ REJECTED │            │ CANCELLED │            │ PARTIAL │ ───────────╯
+   ╰──────────╯            ╰───────────╯            ╰────┬────╯
+                                            day order after EOD
+                                                        │
+                                                        ▼
+                                                   ╭─────────╮
+                                                   │ EXPIRED │
+                                                   ╰─────────╯
 ```
 
 | Status      | Description                            |
@@ -600,7 +632,7 @@ LOG_LEVEL=INFO
 
 4. **Risk Check Passes**
    - Creates `Order` record in database (status=pending)
-   - Generates `client_order_id`
+   - Generates a `client_order_id` — **deterministic** (`lt-<sha256(session:symbol:side:signal_ts)>`) for live-runner orders so a retry after a crash is idempotent; the id is sent to Alpaca, which enforces uniqueness. An already-recorded order short-circuits and is returned as-is.
 
 5. **AlpacaTradingClient.submit_order()** is called
    - POSTs to `https://paper-api.alpaca.markets/v2/orders`
