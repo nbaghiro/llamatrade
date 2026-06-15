@@ -21,8 +21,8 @@ from src.ledger.funds import (
     plan_withdraw,
 )
 from src.ledger.netting import net_orders
-from src.ledger.performance import sleeve_pnl
-from src.ledger.projection import PositionState, SleeveProjection
+from src.ledger.performance import account_pnl, sleeve_pnl
+from src.ledger.projection import AccountProjection, PositionState, SleeveProjection
 from src.ledger.sizing import (
     IntendedOrder,
     Lot,
@@ -198,3 +198,19 @@ class TestPerformance:
         assert pnl.unrealized_pnl == D("800")  # 20000 - 19200
         assert pnl.equity == D("41000")  # 21000 + 20000
         assert pnl.realized_pnl == D("200")
+
+    def test_account_pnl_marks_every_sleeve_ordered_by_id(self) -> None:
+        acc = AccountProjection(
+            sleeves={
+                "B": SleeveProjection(cash=D("1000")),
+                "A": SleeveProjection(
+                    cash=D("21000"),
+                    realized_pnl=D("200"),
+                    positions={"SPY": PositionState(qty=D("40"), cost_basis=D("19200"))},
+                ),
+            }
+        )
+        pnls = account_pnl(acc, {"SPY": D("500")})
+        assert [p.sleeve_id for p in pnls] == ["A", "B"]  # sorted by sleeve id
+        assert pnls[0].equity == D("41000")  # sleeve A marked to market
+        assert pnls[1].equity == D("1000")  # sleeve B, cash only

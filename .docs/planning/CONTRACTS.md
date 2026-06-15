@@ -95,8 +95,10 @@ the same channel (same envelope keys: `tenant_id`, `account_id`, `sleeve_id`,
 Reservation event ids derive from `sha256(client_order_id + ":" + event_type)`
 so each lifecycle stage is idempotent independently. Uses the existing
 `ORDER_SUBMITTED` / `ORDER_CANCELLED` / `ORDER_REJECTED` `LedgerEventType`s.
-Posting rules land with `LEDGER_EXECUTION` (Phase 4); until then these events
-may be published and are recorded without postings.
+These reservation events carry no value postings of their own (they only
+earmark cash, tracked as the projection's derived `reserved` total); the
+terminal fill moves the value. Always active — the ledger is unconditional
+(no rollout flags).
 
 ## 4a. Transport: Redis Streams [ADDED]
 
@@ -132,9 +134,9 @@ backfill).
   `AllocateCapital`, stores the returned `sleeve_id` + `account_id` on the
   execution row; trading reads them when starting the runner and threads them
   into orders, fills, sizing, and risk. Manual orders resolve the Manual sleeve.
-- **client_order_id**: already deterministic
-  (`trading/src/executor/event_sourced_executor.py`) — reused as the
-  attribution/idempotency key end-to-end.
+- **client_order_id**: deterministic
+  (`trading/src/executor/order_executor.py:generate_deterministic_order_id`) —
+  reused as the attribution/idempotency key end-to-end.
 
 ## 5a. Sleeve close — re-home on stop/archive [ADDED]
 

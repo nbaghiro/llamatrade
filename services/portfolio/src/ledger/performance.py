@@ -47,7 +47,12 @@ def sleeve_pnl(sleeve_id: str, sleeve: SleeveProjection, prices: dict[str, Decim
 
 
 def account_pnl(projection: AccountProjection, prices: dict[str, Decimal]) -> list[SleevePnL]:
-    """Per-sleeve P&L for every sleeve in the account."""
+    """Mark every sleeve in the account to market, ordered by sleeve id.
+
+    The account-level fan-out over :func:`sleeve_pnl`; callers marking a single
+    sleeve should call :func:`sleeve_pnl` directly (and scope ``prices`` to that
+    sleeve's symbols).
+    """
     return [
         sleeve_pnl(sleeve_id, sleeve, prices)
         for sleeve_id, sleeve in sorted(projection.sleeves.items())

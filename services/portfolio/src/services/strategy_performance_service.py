@@ -40,12 +40,12 @@ _EXECUTION_STATUS_TO_STR: dict[int, str] = {
 }
 
 
-def _execution_mode_to_str(value: int) -> str:
+def execution_mode_to_str(value: int) -> str:
     """Convert ExecutionMode proto value to string."""
     return _EXECUTION_MODE_TO_STR.get(value, "paper")
 
 
-def _execution_status_to_str(value: int) -> str:
+def execution_status_to_str(value: int) -> str:
     """Convert ExecutionStatus proto value to string."""
     return _EXECUTION_STATUS_TO_STR.get(value, "pending")
 

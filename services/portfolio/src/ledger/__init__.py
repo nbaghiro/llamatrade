@@ -137,6 +137,6 @@ __all__ = [
     "net_orders",
     # performance
     "SleevePnL",
-    "sleeve_pnl",
     "account_pnl",
+    "sleeve_pnl",
 ]

@@ -13,7 +13,6 @@ from __future__ import annotations
 
 from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
-from typing import cast
 from uuid import UUID
 
 import numpy as np
@@ -259,7 +258,7 @@ class PortfolioReadService:
         # day -> sleeve_id -> (created_at, equity); last write per sleeve per day wins
         by_day: dict[date, dict[UUID, tuple[datetime, Decimal]]] = {}
         for snap in rows:
-            created = cast(datetime, snap.created_at)
+            created = snap.created_at
             d = created.date()
             if d < start_date or d > end_date:
                 continue

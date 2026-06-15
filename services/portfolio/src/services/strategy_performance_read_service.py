@@ -40,8 +40,8 @@ from src.services.strategy_performance_service import (
     PositionSummary,
     StrategyPerformanceDetail,
     StrategyPerformanceSummary,
-    _execution_mode_to_str,
-    _execution_status_to_str,
+    execution_mode_to_str,
+    execution_status_to_str,
 )
 
 ZERO = Decimal("0")
@@ -197,8 +197,8 @@ class StrategyPerformanceReadService:
             execution_id=execution.id,
             strategy_id=execution.strategy_id,
             strategy_name=execution.strategy.name if execution.strategy else "Unknown",
-            mode=_execution_mode_to_str(execution.mode),
-            status=_execution_status_to_str(execution.status),
+            mode=execution_mode_to_str(execution.mode),
+            status=execution_status_to_str(execution.status),
             color=execution.color,
             allocated_capital=execution.allocated_capital,
             current_value=current_value,
@@ -295,7 +295,7 @@ class StrategyPerformanceReadService:
         rows = (await self.db.scalars(stmt)).all()
         out: list[tuple[datetime, Decimal]] = []
         for snap in rows:
-            ts: datetime = snap.created_at  # type: ignore[assignment]
+            ts: datetime = snap.created_at
             if start_time and ts < start_time:
                 continue
             if end_time and ts > end_time:

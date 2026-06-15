@@ -25,9 +25,10 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from llamatrade_db.models.ledger import Account, LedgerEvent, SleeveSnapshot
 
-from src.ledger.performance import sleeve_pnl
+from src.ledger.performance import account_pnl
 from src.ledger.projection import AccountProjection
 from src.ledger.projector import LedgerProjector
+from src.ports import PriceProvider
 
 logger = logging.getLogger(__name__)
 
@@ -62,8 +63,8 @@ def compute_snapshot_values(
     sleeves (no cash, no positions) are skipped — nothing to chart.
     """
     out: list[SnapshotValue] = []
-    for sleeve_id, sleeve in sorted(projection.sleeves.items()):
-        pnl = sleeve_pnl(sleeve_id, sleeve, prices)
+    for pnl in account_pnl(projection, prices):
+        sleeve = projection.sleeves[pnl.sleeve_id]
         if pnl.equity == Decimal("0") and not sleeve.positions:
             continue
         lots = [
@@ -73,7 +74,7 @@ def compute_snapshot_values(
         ]
         out.append(
             SnapshotValue(
-                sleeve_id=sleeve_id,
+                sleeve_id=pnl.sleeve_id,
                 as_of_sequence=sequence,
                 cash_balance=sleeve.cash,
                 reserved_cash=sleeve.reserved,
@@ -95,7 +96,7 @@ async def _latest_sequence(db: AsyncSession, account_id: UUID) -> int:
 async def snapshot_account(
     db: AsyncSession,
     projector: LedgerProjector,
-    prices_provider: object,  # PriceProvider (structural)
+    prices_provider: PriceProvider,
     account: Account,
 ) -> int:
     """Project the account, mark to market, and persist sleeve snapshots.
@@ -106,7 +107,7 @@ async def snapshot_account(
     symbols = projection_symbols(projection)
     prices: dict[str, Decimal] = {}
     if symbols:
-        prices = await prices_provider.get_prices(symbols)  # type: ignore[attr-defined]
+        prices = await prices_provider.get_prices(symbols)
     sequence = await _latest_sequence(db, account.id)
     values = compute_snapshot_values(projection, prices, sequence)
     for v in values:
@@ -131,7 +132,7 @@ async def _load_accounts(db: AsyncSession) -> list[Account]:
 
 async def snapshot_loop(
     session_factory: async_sessionmaker[AsyncSession],
-    prices_provider: object,
+    prices_provider: PriceProvider,
     *,
     stop_event: asyncio.Event,
     interval_seconds: float = DEFAULT_SNAPSHOT_INTERVAL_SECONDS,
