@@ -1,0 +1,91 @@
+syntax = "proto3";
+
+package llamatrade;
+
+option java_multiple_files = true;
+option java_package = "com.llamatrade.api";
+
+// The canonical envelope for every event on the bus. The transport carries the
+// serialized EventEnvelope as opaque bytes (Redis Streams field / Kafka value),
+// so this is the single source of truth for event data — shared by the bus and
+// the gRPC streaming edge.
+//
+// `payload` is the serialized domain message; `type` is the discriminator the
+// codec uses to parse it (no google.protobuf.Any — a plain bytes+discriminator
+// pair is simpler and the most transport-portable shape).
+message EventEnvelope {
+  // UUID — correlation id and idempotency seed.
+  string id = 1;
+  // Semantic discriminator: tells the consumer which message `payload` is.
+  EventType type = 2;
+  // Tenant scope (empty for platform-wide events like market bars).
+  string tenant_id = 3;
+  // Originating user, if any.
+  string user_id = 4;
+  // Event time, unix epoch milliseconds.
+  int64 created_at_unix_ms = 5;
+  // The serialized domain proto message (parsed according to `type`).
+  bytes payload = 6;
+  // Free-form context: correlation_id, trace_id, source_service, …
+  map<string, string> metadata = 7;
+}
+
+// Every event the system emits. Grouped by domain; the trailing gaps leave room
+// for the dormant taxonomy (notification, billing, auth, strategy) to light up.
+enum EventType {
+  EVENT_TYPE_UNSPECIFIED = 0;
+
+  // Trading — order lifecycle (UI streams)
+  EVENT_TYPE_ORDER_SUBMITTED = 1;
+  EVENT_TYPE_ORDER_FILLED = 2;
+  EVENT_TYPE_ORDER_CANCELLED = 3;
+  EVENT_TYPE_ORDER_REJECTED = 4;
+  EVENT_TYPE_ORDER_UPDATED = 5;
+
+  // Trading — position lifecycle (UI streams)
+  EVENT_TYPE_POSITION_OPENED = 10;
+  EVENT_TYPE_POSITION_CLOSED = 11;
+  EVENT_TYPE_POSITION_UPDATED = 12;
+
+  // Ledger — fill + cash reservation (durable, consumed by portfolio)
+  EVENT_TYPE_LEDGER_FILL = 20;
+  EVENT_TYPE_LEDGER_RESERVATION = 21;
+
+  // Backtest progress (UI stream)
+  EVENT_TYPE_BACKTEST_PROGRESS = 30;
+
+  // Market data — live bars (high-volume; carried raw, no envelope)
+  EVENT_TYPE_BAR = 40;
+
+  // Reserved for the dormant taxonomy (notification 50+, billing 60+,
+  // auth/user 70+, strategy 80+).
+}
+
+// Ledger fill — trading → portfolio (durable). Proto form of CONTRACTS.md §1.
+// Decimal amounts are strings (broker-faithful, no precision loss), matching the
+// locked flat contract this replaces.
+message LedgerFill {
+  string tenant_id = 1;
+  string account_id = 2;
+  string sleeve_id = 3;
+  string client_order_id = 4;
+  string order_id = 5;
+  string symbol = 6;
+  string side = 7;  // buy | sell
+  string qty = 8;
+  string price = 9;
+  string fees = 10;  // optional
+  string cost_basis = 11;  // optional, sells only
+  string realized_pnl = 12;  // optional, sells only
+  string filled_at = 13;  // ISO-8601
+}
+
+// Cash reservation lifecycle — trading → portfolio. CONTRACTS.md §4.
+message LedgerReservation {
+  string tenant_id = 1;
+  string account_id = 2;
+  string sleeve_id = 3;
+  string client_order_id = 4;
+  string event_type = 5;  // order_submitted | order_cancelled | order_rejected
+  string reserved = 6;  // notional estimate (on submit)
+}
