@@ -11,14 +11,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy shared libraries first (for layer caching)
+COPY libs/telemetry /app/libs/telemetry
 COPY libs/common /app/libs/common
 COPY libs/db /app/libs/db
 COPY libs/dsl /app/libs/dsl
 COPY libs/compiler /app/libs/compiler
 COPY libs/proto /app/libs/proto
 
-# Install shared libraries (order matters for dependencies)
-RUN pip install --no-cache-dir /app/libs/common /app/libs/db /app/libs/dsl /app/libs/compiler /app/libs/proto
+# Install shared libraries (order matters for dependencies; telemetry first)
+RUN pip install --no-cache-dir /app/libs/telemetry /app/libs/common /app/libs/db /app/libs/dsl /app/libs/compiler /app/libs/proto
 
 # Copy service files and install
 COPY services/strategy/pyproject.toml services/strategy/README.md /app/

@@ -12,12 +12,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy shared libraries first (for layer caching)
+COPY libs/telemetry /app/libs/telemetry
 COPY libs/common /app/libs/common
 COPY libs/db /app/libs/db
 COPY libs/proto /app/libs/proto
 
-# Install shared libraries
-RUN pip install --no-cache-dir /app/libs/common /app/libs/db /app/libs/proto
+# Install shared libraries (telemetry first — common/db depend on it)
+RUN pip install --no-cache-dir /app/libs/telemetry /app/libs/common /app/libs/db /app/libs/proto
 
 # Copy service files and install
 COPY services/auth/pyproject.toml services/auth/README.md /app/
