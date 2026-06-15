@@ -81,30 +81,71 @@ class PriceData:
 
 
 def _sma(values: np.ndarray, period: int) -> np.ndarray:
-    """Simple Moving Average."""
-    if len(values) < period:
-        return np.full(len(values), np.nan)
+    """Simple Moving Average.
 
-    result = np.full(len(values), np.nan)
-    cumsum = np.cumsum(values)
-    result[period - 1 :] = (cumsum[period - 1 :] - np.concatenate([[0], cumsum[:-period]])) / period
+    NaN-tolerant: a window that contains any NaN yields NaN, and the output only
+    begins once a full clean window is available. This matters because several
+    indicators feed an already-warming (leading-NaN) series into ``_sma`` — e.g.
+    Stochastic smooths raw %K, ADX averages DX. A naive cumulative sum would let a
+    single leading NaN poison the entire output.
+    """
+    n = len(values)
+    if n < period:
+        return np.full(n, np.nan)
+
+    isnan = np.isnan(values)
+    clean = np.where(isnan, 0.0, values)
+    csum = np.cumsum(clean)
+    cnan = np.cumsum(isnan.astype(np.int64))
+
+    # Windowed sums and per-window NaN counts via cumulative differences (O(n)).
+    win_sum = csum.copy()
+    win_sum[period:] = csum[period:] - csum[:-period]
+    win_nan = cnan.copy()
+    win_nan[period:] = cnan[period:] - cnan[:-period]
+
+    result = np.full(n, np.nan)
+    valid = np.zeros(n, dtype=bool)
+    valid[period - 1 :] = win_nan[period - 1 :] == 0
+    result[valid] = win_sum[valid] / period
     return result
 
 
 def _ema(values: np.ndarray, period: int) -> np.ndarray:
-    """Exponential Moving Average."""
-    if len(values) < period:
-        return np.full(len(values), np.nan)
+    """Exponential Moving Average.
 
-    result = np.full(len(values), np.nan)
+    NaN-tolerant: seeds with the SMA of the first fully clean ``period``-length
+    window (skipping any leading NaN), then applies the standard recurrence. This
+    lets EMA-of-an-EMA chains work — e.g. the MACD signal line is an EMA of the
+    MACD line, which itself has a leading-NaN warm-up.
+    """
+    n = len(values)
+    if n < period:
+        return np.full(n, np.nan)
+
+    isnan = np.isnan(values)
+    result = np.full(n, np.nan)
     multiplier = 2.0 / (period + 1)
 
-    # Initialize with SMA
-    result[period - 1] = np.mean(values[:period])
+    # Seed at the first index whose trailing period-window is fully populated.
+    start: int | None = None
+    for i in range(period - 1, n):
+        if not isnan[i - period + 1 : i + 1].any():
+            start = i
+            break
+    if start is None:
+        return result
 
-    # Calculate EMA
-    for i in range(period, len(values)):
-        result[i] = (values[i] - result[i - 1]) * multiplier + result[i - 1]
+    result[start] = float(np.mean(values[start - period + 1 : start + 1]))
+    for i in range(start + 1, n):
+        if isnan[i]:
+            continue  # leave NaN; a later clean window can re-seed
+        prev = result[i - 1]
+        if np.isnan(prev):
+            if not isnan[i - period + 1 : i + 1].any():
+                result[i] = float(np.mean(values[i - period + 1 : i + 1]))
+        else:
+            result[i] = (values[i] - prev) * multiplier + prev
 
     return result
 
@@ -174,82 +215,95 @@ def _bollinger_bands(
     return upper, middle, lower
 
 
-def _atr(high: np.ndarray, low: np.ndarray, close: np.ndarray, period: int) -> np.ndarray:
-    """Average True Range."""
-    if len(close) < 2:
-        return np.full(len(close), np.nan)
-
-    # True Range
-    tr = np.zeros(len(close))
-    tr[0] = high[0] - low[0]
-
-    for i in range(1, len(close)):
+def _true_range(high: np.ndarray, low: np.ndarray, close: np.ndarray) -> np.ndarray:
+    """True Range series. Index 0 is undefined (needs a prior close) → NaN."""
+    n = len(close)
+    tr = np.full(n, np.nan)
+    for i in range(1, n):
         hl = high[i] - low[i]
         hc = abs(high[i] - close[i - 1])
         lc = abs(low[i] - close[i - 1])
         tr[i] = max(hl, hc, lc)
+    return tr
 
-    # Smoothed average
-    return _sma(tr, period)
+
+def _wilder_smooth(values: np.ndarray, period: int, start: int) -> np.ndarray:
+    """Wilder's running average (a.k.a. RMA), seeded at ``start`` with a simple mean.
+
+    ``ATR[start] = mean(values[start-period+1 : start+1])`` then
+    ``ATR[i] = (ATR[i-1]*(period-1) + values[i]) / period``. This is the smoothing
+    Wilder defined for ATR/ADX and what TA-Lib uses — distinct from a plain SMA.
+    """
+    n = len(values)
+    out = np.full(n, np.nan)
+    if start >= n:
+        return out
+    out[start] = float(np.mean(values[start - period + 1 : start + 1]))
+    for i in range(start + 1, n):
+        out[i] = (out[i - 1] * (period - 1) + values[i]) / period
+    return out
+
+
+def _atr(high: np.ndarray, low: np.ndarray, close: np.ndarray, period: int) -> np.ndarray:
+    """Average True Range (Wilder smoothing, matches TA-Lib).
+
+    TR is undefined on the first bar, so the first ATR sits at index ``period``
+    (the mean of TR[1..period]); later values use Wilder's running average.
+    """
+    n = len(close)
+    if n < period + 1:
+        return np.full(n, np.nan)
+
+    tr = _true_range(high, low, close)
+    # Seed at index `period`: mean of the first `period` true ranges (tr[1..period]).
+    return _wilder_smooth(tr, period, start=period)
 
 
 def _adx(
     high: np.ndarray, low: np.ndarray, close: np.ndarray, period: int
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """ADX: value, plus_di, minus_di."""
-    if len(close) < period + 1:
-        return (
-            np.full(len(close), np.nan),
-            np.full(len(close), np.nan),
-            np.full(len(close), np.nan),
-        )
+    """ADX with +DI / -DI (Wilder smoothing, matches TA-Lib).
 
-    # Directional Movement
-    plus_dm = np.zeros(len(close))
-    minus_dm = np.zeros(len(close))
+    Directional movement and true range are Wilder-smoothed from index ``period``
+    (so +DI/-DI/DX are valid there), and the ADX is Wilder's running average of DX
+    seeded at index ``2*period - 1``.
+    """
+    n = len(close)
+    nan = np.full(n, np.nan)
+    if n < 2 * period:
+        return nan.copy(), nan.copy(), nan.copy()
 
-    for i in range(1, len(close)):
+    plus_dm = np.zeros(n)
+    minus_dm = np.zeros(n)
+    for i in range(1, n):
         up_move = high[i] - high[i - 1]
         down_move = low[i - 1] - low[i]
-
         if up_move > down_move and up_move > 0:
             plus_dm[i] = up_move
         if down_move > up_move and down_move > 0:
             minus_dm[i] = down_move
 
-    # True Range
-    tr = np.zeros(len(close))
-    tr[0] = high[0] - low[0]
-    for i in range(1, len(close)):
-        hl = high[i] - low[i]
-        hc = abs(high[i] - close[i - 1])
-        lc = abs(low[i] - close[i - 1])
-        tr[i] = max(hl, hc, lc)
+    tr = _true_range(high, low, close)
+    tr[0] = 0.0  # neutralize the undefined first bar for the seed sum
 
-    # Smooth with EMA-like method
-    atr_smooth = _sma(tr, period)
-    plus_dm_smooth = _sma(plus_dm, period)
-    minus_dm_smooth = _sma(minus_dm, period)
+    # Wilder-smooth TR, +DM, -DM seeded at index `period` (sum of indices 1..period).
+    str_ = _wilder_smooth(tr, period, start=period)
+    sp_dm = _wilder_smooth(plus_dm, period, start=period)
+    sm_dm = _wilder_smooth(minus_dm, period, start=period)
 
-    # DI calculation
-    plus_di = np.full(len(close), np.nan)
-    minus_di = np.full(len(close), np.nan)
-
-    for i in range(period - 1, len(close)):
-        if atr_smooth[i] != 0:
-            plus_di[i] = 100 * plus_dm_smooth[i] / atr_smooth[i]
-            minus_di[i] = 100 * minus_dm_smooth[i] / atr_smooth[i]
-
-    # DX and ADX
-    dx = np.full(len(close), np.nan)
-    for i in range(period - 1, len(close)):
-        if plus_di[i] is not np.nan and minus_di[i] is not np.nan:
+    plus_di = np.full(n, np.nan)
+    minus_di = np.full(n, np.nan)
+    dx = np.full(n, np.nan)
+    for i in range(period, n):
+        if str_[i] and not np.isnan(str_[i]) and str_[i] != 0:
+            plus_di[i] = 100.0 * sp_dm[i] / str_[i]
+            minus_di[i] = 100.0 * sm_dm[i] / str_[i]
             di_sum = plus_di[i] + minus_di[i]
             if di_sum != 0:
-                dx[i] = 100 * abs(plus_di[i] - minus_di[i]) / di_sum
+                dx[i] = 100.0 * abs(plus_di[i] - minus_di[i]) / di_sum
 
-    adx = _sma(dx, period)
-
+    # ADX = Wilder's running average of DX, seeded at index 2*period - 1.
+    adx = _wilder_smooth(dx, period, start=2 * period - 1)
     return adx, plus_di, minus_di
 
 
