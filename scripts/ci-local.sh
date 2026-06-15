@@ -137,7 +137,9 @@ if [[ "$RUN_LINT" == "true" && "$RUN_BACKEND" == "true" ]]; then
 
     # Run Pyright for type checking (configured in pyproject.toml)
     # Note: Don't specify paths - let pyright use include/exclude from pyproject.toml
-    run_step "Pyright" npx pyright
+    # Pinned to match CI (.github/workflows/ci.yml); newer pyright false-positives
+    # reportDeprecated on stdlib @contextmanager under strict mode.
+    run_step "Pyright" npx pyright@1.1.408
 fi
 
 # ═══════════════════════════════════════════════════════════════

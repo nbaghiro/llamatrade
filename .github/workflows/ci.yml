@@ -64,7 +64,10 @@ jobs:
           .venv/bin/pip install -e services/trading
 
       - name: Run Pyright (type check)
-        run: npx pyright
+        # Pin pyright: unpinned `npx pyright` pulls the latest release, which
+        # false-positives reportDeprecated on stdlib @contextmanager under strict
+        # mode. Match the version the repo develops/type-checks against locally.
+        run: npx pyright@1.1.408
 
   test-backend:
     name: Test Backend
