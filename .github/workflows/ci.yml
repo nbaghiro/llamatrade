@@ -40,13 +40,18 @@ jobs:
         run: |
           python -m venv .venv
           .venv/bin/pip install --upgrade pip
-          # Install all libs (needed for type checking)
-          .venv/bin/pip install -e libs/alpaca
+          # Install all libs (needed for type checking). Order matters: local
+          # packages are not on PyPI, so each must be installed before its dependents
+          # (telemetry/proto/dsl are leaves; common/db/alpaca need telemetry;
+          # events needs proto; compiler needs dsl).
+          .venv/bin/pip install -e libs/telemetry
+          .venv/bin/pip install -e libs/proto
+          .venv/bin/pip install -e libs/dsl
           .venv/bin/pip install -e libs/common
           .venv/bin/pip install -e libs/db
-          .venv/bin/pip install -e libs/dsl
           .venv/bin/pip install -e libs/compiler
-          .venv/bin/pip install -e libs/proto
+          .venv/bin/pip install -e libs/alpaca
+          .venv/bin/pip install -e libs/events
           # Install all services (to resolve their dependencies)
           .venv/bin/pip install -e services/agent
           .venv/bin/pip install -e services/auth
@@ -94,6 +99,7 @@ jobs:
 
       - name: Install shared libs
         run: |
+          pip install -e libs/telemetry
           pip install -e libs/common[dev]
           pip install -e libs/db[dev]
           pip install -e libs/dsl[dev]

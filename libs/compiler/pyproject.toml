@@ -15,8 +15,12 @@ dev = [
     "pytest-asyncio>=0.21.0",
     "pytest-cov>=4.0.0",
     "ruff>=0.1.0",
-    # Reference oracle for indicator golden tests (tests/test_indicators_golden.py).
-    # Validates our NumPy indicator math against the industry-standard library.
+]
+# Reference oracle for the indicator golden tests (tests/test_indicators_golden.py).
+# Kept out of `dev` because the `ta-lib` wheel needs the native TA-Lib C library,
+# which CI runners lack. The tests `importorskip` it (skipped where absent);
+# `uv sync --all-extras` installs it for local runs.
+golden = [
     "ta-lib>=0.6.0",
 ]
 
