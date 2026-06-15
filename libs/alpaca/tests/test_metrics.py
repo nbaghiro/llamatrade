@@ -1,93 +1,53 @@
-"""Tests for metrics module."""
+"""Tests for Alpaca metrics → unified telemetry dependency metrics."""
+
+from __future__ import annotations
 
 import pytest
 
-from llamatrade_alpaca.metrics import (
-    ALPACA_API_CALLS_TOTAL,
-    ALPACA_API_DURATION_SECONDS,
-    HAS_PROMETHEUS,
-    NoOpMetric,
-    record_api_call,
-    time_alpaca_call,
-)
+from llamatrade_alpaca.metrics import record_api_call, time_alpaca_call
+from llamatrade_telemetry.registry import get_metrics
 
 
-class TestNoOpMetric:
-    """Tests for NoOpMetric fallback."""
-
-    def test_labels_returns_self(self) -> None:
-        """Test that labels() returns self."""
-        metric = NoOpMetric()
-        result = metric.labels(endpoint="test", status="success")
-        assert result is metric
-
-    def test_inc_does_nothing(self) -> None:
-        """Test that inc() doesn't raise."""
-        metric = NoOpMetric()
-        metric.inc()
-        metric.inc(5)
-
-    def test_observe_does_nothing(self) -> None:
-        """Test that observe() doesn't raise."""
-        metric = NoOpMetric()
-        metric.observe(0.5)
-        metric.observe(1.0)
+def _scrape() -> str:
+    return get_metrics().decode()
 
 
-class TestMetricsGracefulDegradation:
-    """Tests for graceful degradation without prometheus."""
-
-    def test_metrics_are_defined(self) -> None:
-        """Test that metrics are defined (either real or no-op)."""
-        assert ALPACA_API_CALLS_TOTAL is not None
-        assert ALPACA_API_DURATION_SECONDS is not None
-
-    def test_record_api_call_doesnt_raise(self) -> None:
-        """Test that record_api_call works without raising."""
-        # Should not raise even if prometheus is not installed
-        record_api_call("test_endpoint", "success", 0.5)
-        record_api_call("test_endpoint", "error", 1.0)
+def test_record_api_call_emits_dependency_metric() -> None:
+    record_api_call("unit_record", "success", 0.5)
+    out = _scrape()
+    assert (
+        'llamatrade_dependency_requests_total{operation="unit_record",status="success",target="alpaca"}'
+        in out
+    )
 
 
-class TestTimeAlpacaCall:
-    """Tests for time_alpaca_call context manager."""
-
-    @pytest.mark.asyncio
-    async def test_successful_call(self) -> None:
-        """Test timing a successful call."""
-        async with time_alpaca_call("test_endpoint"):
-            # Simulate some work
-            pass
-        # Should not raise
-
-    @pytest.mark.asyncio
-    async def test_error_call(self) -> None:
-        """Test timing a call that raises."""
-        with pytest.raises(ValueError):
-            async with time_alpaca_call("test_endpoint"):
-                raise ValueError("test error")
-        # Metrics should still be recorded
-
-    @pytest.mark.asyncio
-    async def test_timeout_call(self) -> None:
-        """Test timing a call that times out."""
-        with pytest.raises(TimeoutError):
-            async with time_alpaca_call("test_endpoint"):
-                raise TimeoutError("test timeout")
-        # Metrics should still be recorded with timeout status
+async def test_time_alpaca_call_success() -> None:
+    async with time_alpaca_call("unit_success"):
+        pass
+    out = _scrape()
+    assert (
+        'llamatrade_dependency_requests_total{operation="unit_success",status="success",target="alpaca"}'
+        in out
+    )
 
 
-class TestPrometheusAvailability:
-    """Tests for prometheus availability detection."""
+async def test_time_alpaca_call_error_records_error_status() -> None:
+    with pytest.raises(ValueError):
+        async with time_alpaca_call("unit_error"):
+            raise ValueError("boom")
+    out = _scrape()
+    assert (
+        'llamatrade_dependency_requests_total{operation="unit_error",status="error",target="alpaca"}'
+        in out
+    )
 
-    def test_has_prometheus_is_bool(self) -> None:
-        """Test that HAS_PROMETHEUS is a boolean."""
-        assert isinstance(HAS_PROMETHEUS, bool)
 
-    @pytest.mark.skipif(not HAS_PROMETHEUS, reason="prometheus not installed")
-    def test_metrics_are_prometheus_types(self) -> None:
-        """Test that metrics are actual Prometheus types when available."""
-
-        # Check the underlying types
-        assert hasattr(ALPACA_API_CALLS_TOTAL, "labels")
-        assert hasattr(ALPACA_API_DURATION_SECONDS, "labels")
+async def test_time_alpaca_call_timeout_records_timeout_status() -> None:
+    with pytest.raises(TimeoutError):
+        async with time_alpaca_call("unit_timeout"):
+            raise TimeoutError("slow")
+    out = _scrape()
+    assert (
+        'llamatrade_dependency_requests_total{operation="unit_timeout",status="timeout",target="alpaca"}'
+        in out
+    )

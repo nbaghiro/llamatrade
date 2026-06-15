@@ -9,8 +9,10 @@ import jwt
 from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.models import TokenResponse, UserResponse, UserWithPassword
 from llamatrade_db import get_db
+from llamatrade_telemetry import metrics
+
+from src.models import TokenResponse, UserResponse, UserWithPassword
 from src.services.tenant_service import TenantService, get_tenant_service
 from src.services.user_service import UserService, get_user_service
 
@@ -56,24 +58,29 @@ class AuthService:
             role="admin",
         )
 
+        metrics.auth.registration()
         return user
 
     async def login(self, email: str, password: str) -> TokenResponse | None:
         """Authenticate user and return tokens."""
         user = await self.user_service.get_user_by_email(email)
         if not user:
+            metrics.auth.login_failure(reason="user_not_found")
             return None
 
         if not user.is_active:
+            metrics.auth.login_failure(reason="inactive")
             return None
 
         if not self._verify_password(password, user.password_hash):
+            metrics.auth.login_failure(reason="wrong_password")
             return None
 
         # Generate tokens
         access_token = self._create_access_token(user)
         refresh_token = self._create_refresh_token(user)
 
+        metrics.auth.login()
         return TokenResponse(
             access_token=access_token,
             refresh_token=refresh_token,
@@ -136,8 +143,9 @@ class AuthService:
 
     def _hash_password(self, password: str) -> str:
         """Hash a password using bcrypt."""
-        salt = bcrypt.gensalt()
-        hashed: bytes = bcrypt.hashpw(password.encode(), salt)
+        with metrics.auth.bcrypt_hash_duration.time():
+            salt = bcrypt.gensalt()
+            hashed: bytes = bcrypt.hashpw(password.encode(), salt)
         return hashed.decode()
 
     def _verify_password(self, password: str, password_hash: str) -> bool:
@@ -161,6 +169,7 @@ class AuthService:
         }
 
         token: str = jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
+        metrics.auth.token_issued(type="access")
         return token
 
     def _create_refresh_token(self, user: UserResponse | UserWithPassword) -> str:
@@ -177,6 +186,7 @@ class AuthService:
         }
 
         token: str = jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
+        metrics.auth.token_issued(type="refresh")
         return token
 
 

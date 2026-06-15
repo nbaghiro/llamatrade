@@ -12,6 +12,7 @@ from dataclasses import dataclass
 
 from llamatrade_alpaca import MarketDataStreamClient
 
+from src.metrics import record_stream_message_lag
 from src.models import BarData, QuoteData, TradeData
 from src.streaming.manager import StreamManager
 
@@ -276,14 +277,17 @@ class StreamBridge:
 
         Directly awaits the broadcast - no thread pool overhead.
         """
+        record_stream_message_lag(data["timestamp"])
         await self._broadcast_trade(symbol, data)
 
     async def _handle_quote(self, symbol: str, data: QuoteData) -> None:
         """Handle incoming quote data from Alpaca."""
+        record_stream_message_lag(data["timestamp"])
         await self._broadcast_quote(symbol, data)
 
     async def _handle_bar(self, symbol: str, data: BarData) -> None:
         """Handle incoming bar data from Alpaca."""
+        record_stream_message_lag(data["timestamp"])
         await self._broadcast_bar(symbol, data)
 
     async def _broadcast_trade(self, symbol: str, data: TradeData) -> None:

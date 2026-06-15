@@ -1,6 +1,7 @@
 """Slack notification channel using incoming webhooks."""
 
 import logging
+import time
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import StrEnum
@@ -8,7 +9,11 @@ from typing import Any
 
 import httpx
 
+from llamatrade_telemetry import metrics
+
 logger = logging.getLogger(__name__)
+
+_CHANNEL = "slack"
 
 
 class SlackMessageColor(StrEnum):
@@ -161,6 +166,7 @@ class SlackChannel:
         if attachments:
             payload["attachments"] = [a.to_dict() for a in attachments]
 
+        start = time.perf_counter()
         try:
             async with httpx.AsyncClient() as client:
                 response = await client.post(
@@ -171,22 +177,33 @@ class SlackChannel:
 
                 if response.status_code == 200 and response.text == "ok":
                     logger.info("Slack message sent successfully")
+                    metrics.notification.delivered(channel=_CHANNEL)
                     return SlackResult(success=True)
 
                 # Handle error
                 error_msg = response.text or f"HTTP {response.status_code}"
                 logger.error(f"Slack API error: {error_msg}")
+                metrics.notification.delivery_failed(
+                    channel=_CHANNEL, reason=f"http_{response.status_code}"
+                )
                 return SlackResult(success=False, error_message=error_msg)
 
         except httpx.TimeoutException:
             logger.error("Slack API timeout")
+            metrics.notification.delivery_failed(channel=_CHANNEL, reason="timeout")
             return SlackResult(success=False, error_message="Request timed out")
         except httpx.RequestError as e:
             logger.error(f"Slack API request error: {e}")
+            metrics.notification.delivery_failed(channel=_CHANNEL, reason="request_error")
             return SlackResult(success=False, error_message=str(e))
         except Exception as e:
             logger.error(f"Unexpected error sending to Slack: {e}")
+            metrics.notification.delivery_failed(channel=_CHANNEL, reason=type(e).__name__)
             return SlackResult(success=False, error_message=str(e))
+        finally:
+            metrics.notification.delivery_latency.labels(channel=_CHANNEL).observe(
+                time.perf_counter() - start
+            )
 
     async def send_trading_alert(
         self,

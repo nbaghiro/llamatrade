@@ -11,8 +11,8 @@ from typing import cast
 
 import redis.asyncio as aioredis
 
-from llamatrade_common.events import EventBus
-from llamatrade_common.events import Event, EventType
+from llamatrade_common.events import Event, EventBus, EventType
+from llamatrade_telemetry import metrics
 
 logger = logging.getLogger(__name__)
 
@@ -165,11 +165,17 @@ class ProgressPublisher:
             status=status,
         )
         event = Event(type=EventType.BACKTEST_PROGRESS, data=update.to_dict())
-        await self._get_bus().publish(
-            progress_stream(backtest_id),
-            event.to_redis_stream(),
-            maxlen=PROGRESS_STREAM_MAXLEN,
-        )
+        try:
+            await self._get_bus().publish(
+                progress_stream(backtest_id),
+                event.to_redis_stream(),
+                maxlen=PROGRESS_STREAM_MAXLEN,
+            )
+        except Exception:
+            # Record the failure for observability, then preserve existing
+            # behavior by re-raising (the caller maps it to a FAILED run).
+            metrics.backtest.progress_publish_failure()
+            raise
 
     async def close(self) -> None:
         """Close the Streams bus, if created."""

@@ -169,3 +169,64 @@ services:
       # browser talks to the agent directly, so point it at the remapped port.
       VITE_AGENT_URL: http://localhost:8990
     command: npm run dev -- --host 0.0.0.0 --port 8800
+
+  # ===================
+  # Observability stack (dev) — scrapes every service's /metrics and receives
+  # OTLP traces. See infrastructure/observability/README.md. Services export
+  # traces only when OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318 is
+  # set in their environment; metrics scraping needs no service-side config.
+  # ===================
+  prometheus:
+    image: prom/prometheus:v3.1.0
+    container_name: llamatrade-prometheus
+    volumes:
+      - ../observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ../observability/prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
+      - llamatrade_prometheus_data:/prometheus
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --web.enable-lifecycle
+    ports:
+      - "9090:9090"
+
+  alertmanager:
+    image: prom/alertmanager:v0.28.0
+    container_name: llamatrade-alertmanager
+    volumes:
+      - ../observability/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+    command:
+      - --config.file=/etc/alertmanager/alertmanager.yml
+    ports:
+      - "9093:9093"
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.117.0
+    container_name: llamatrade-otel-collector
+    command: ["--config=/etc/otelcol/config.yaml"]
+    volumes:
+      - ../observability/otel-collector/config.yaml:/etc/otelcol/config.yaml:ro
+    ports:
+      - "4318:4318" # OTLP HTTP
+      - "4317:4317" # OTLP gRPC
+      - "13133:13133" # health
+
+  grafana:
+    image: grafana/grafana:11.4.0
+    container_name: llamatrade-grafana
+    depends_on:
+      - prometheus
+    volumes:
+      - ../observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ../observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - llamatrade_grafana_data:/var/lib/grafana
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    ports:
+      - "3001:3000"
+
+volumes:
+  llamatrade_prometheus_data:
+  llamatrade_grafana_data:

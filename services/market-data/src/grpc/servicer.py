@@ -20,6 +20,7 @@ type AnyContext = RequestContext[object, object]
 
 from llamatrade_alpaca import get_trading_client_async
 
+from src import metrics as md_metrics
 from src.models import BarData, QuoteData, Timeframe, TradeData
 from src.services.market_data_service import get_market_data_service
 from src.streaming.manager import StreamType, get_stream_manager
@@ -233,6 +234,13 @@ class MarketDataServicer:
                 limit=limit,
             )
 
+            # Data-quality telemetry on the served series.
+            if bars:
+                md_metrics.record_bar_staleness(bars)
+                md_metrics.record_bar_series_gaps(timeframe.value, bars)
+            else:
+                md_metrics.record_missing_symbol()
+
             # Convert to proto response using helper
             proto_bars = [self._bar_to_proto(symbol, bar) for bar in bars]
 
@@ -292,6 +300,15 @@ class MarketDataServicer:
                 limit=limit,
             )
 
+            # Data-quality telemetry per requested symbol.
+            for requested in symbols:
+                symbol_bars = multi_bars.get(requested) or []
+                if symbol_bars:
+                    md_metrics.record_bar_staleness(symbol_bars)
+                    md_metrics.record_bar_series_gaps(timeframe.value, symbol_bars)
+                else:
+                    md_metrics.record_missing_symbol()
+
             # Convert to proto response using helper
             bars_map = {
                 symbol: market_data_pb2.BarList(
@@ -328,7 +345,10 @@ class MarketDataServicer:
             snapshot = await service.get_snapshot(symbol)
 
             if snapshot is None:
+                md_metrics.record_missing_symbol()
                 raise ConnectError(Code.NOT_FOUND, f"Snapshot not found for symbol: {symbol}")
+
+            self._record_snapshot_staleness(snapshot)
 
             return self._to_proto_snapshot(symbol, snapshot)
 
@@ -361,8 +381,14 @@ class MarketDataServicer:
             service = await get_market_data_service()
             snapshots_data = await service.get_multi_snapshots(symbols)
 
+            # Data-quality telemetry: record absent requested symbols as missing.
+            for requested in symbols:
+                if requested not in snapshots_data:
+                    md_metrics.record_missing_symbol()
+
             proto_snapshots: dict[str, market_data_pb2.Snapshot] = {}
             for symbol, snapshot in snapshots_data.items():
+                self._record_snapshot_staleness(snapshot)
                 proto_snapshots[symbol] = self._to_proto_snapshot(symbol, snapshot)
 
             return market_data_pb2.GetSnapshotsResponse(snapshots=proto_snapshots)
@@ -609,6 +635,13 @@ class MarketDataServicer:
         finally:
             await stream_manager.disconnect(stream_id)
             logger.info("Closed trade stream for symbols: %s", symbols)
+
+    def _record_snapshot_staleness(self, snapshot: Snapshot) -> None:
+        """Observe served-data staleness for the freshest fields of a snapshot."""
+        if snapshot.latest_quote is not None:
+            md_metrics.record_quote_staleness(snapshot.latest_quote.timestamp)
+        if snapshot.latest_trade is not None:
+            md_metrics.record_trade_staleness(snapshot.latest_trade.timestamp)
 
     def _to_proto_snapshot(
         self,

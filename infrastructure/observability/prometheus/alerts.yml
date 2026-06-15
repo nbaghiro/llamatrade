@@ -1,0 +1,218 @@
+# LlamaTrade SLO / burn-rate alert rules.
+#
+# Implements the Tier-2 SLOs from .docs/telemetry.md §2:
+#   - Service availability (5xx ratio)         target 99.9%
+#   - Order-submission p99 latency             target < 1s
+#   - Market-data freshness (stream lag) p95   target < 2s
+#   - Ledger reconciliation drift              target ~0
+#   - EventBus consumer lag                    backlog should drain
+#   - DB pool exhaustion                       target 0
+#
+# PromQL references the actual llamatrade_* metric names. The `job` label
+# (set by prometheus.yml scrape_configs) is the per-service dimension since the
+# metrics themselves carry no `service` label.
+#
+# This file is valid as a standalone Prometheus rule file AND mirrors the
+# `spec.groups` used by the Kubernetes PrometheusRule in
+# ../../k8s/base/observability/prometheusrule.yaml — keep them in sync.
+groups:
+  # ---------------------------------------------------------------------------
+  # SLO 1: Service availability — 99.9% (0.1% error budget).
+  # Multi-window, multi-burn-rate: page on fast burn (2% budget in 1h),
+  # ticket on slow burn (5% budget in 6h). Standard Google SRE thresholds.
+  # ---------------------------------------------------------------------------
+  - name: slo_availability
+    rules:
+      - alert: ServiceAvailabilityFastBurn
+        expr: |
+          (
+            sum by (job) (rate(llamatrade_http_requests_total{status_class="5xx"}[5m]))
+              /
+            sum by (job) (rate(llamatrade_http_requests_total[5m]))
+          ) > (14.4 * 0.001)
+          and
+          (
+            sum by (job) (rate(llamatrade_http_requests_total{status_class="5xx"}[1h]))
+              /
+            sum by (job) (rate(llamatrade_http_requests_total[1h]))
+          ) > (14.4 * 0.001)
+        for: 2m
+        labels:
+          severity: page
+          slo: availability
+        annotations:
+          summary: "High 5xx burn rate on {{ $labels.job }} (fast)"
+          description: >
+            {{ $labels.job }} is burning the 99.9% availability error budget
+            14.4x too fast (5m & 1h windows). At this rate the 30d budget is
+            gone in ~2 days.
+
+      - alert: ServiceAvailabilitySlowBurn
+        expr: |
+          (
+            sum by (job) (rate(llamatrade_http_requests_total{status_class="5xx"}[30m]))
+              /
+            sum by (job) (rate(llamatrade_http_requests_total[30m]))
+          ) > (6 * 0.001)
+          and
+          (
+            sum by (job) (rate(llamatrade_http_requests_total{status_class="5xx"}[6h]))
+              /
+            sum by (job) (rate(llamatrade_http_requests_total[6h]))
+          ) > (6 * 0.001)
+        for: 15m
+        labels:
+          severity: ticket
+          slo: availability
+        annotations:
+          summary: "Elevated 5xx burn rate on {{ $labels.job }} (slow)"
+          description: >
+            {{ $labels.job }} is burning the 99.9% availability error budget
+            6x too fast (30m & 6h windows).
+
+  # ---------------------------------------------------------------------------
+  # SLO 2: Order-submission latency — p99 < 1s (signal → Alpaca).
+  # ---------------------------------------------------------------------------
+  - name: slo_trading_latency
+    rules:
+      - alert: OrderSubmissionLatencyHigh
+        expr: |
+          histogram_quantile(
+            0.99,
+            sum by (le) (
+              rate(llamatrade_trading_order_submission_latency_seconds_bucket[5m])
+            )
+          ) > 1
+        for: 5m
+        labels:
+          severity: page
+          slo: order_submission_latency
+        annotations:
+          summary: "Order submission p99 latency above 1s"
+          description: >
+            p99 order-submission latency (signal → Alpaca) is
+            {{ $value | humanizeDuration }}, breaching the < 1s SLO.
+
+  # ---------------------------------------------------------------------------
+  # SLO 3: Market-data freshness — stream lag p95 < 2s (Alpaca ts → received).
+  # ---------------------------------------------------------------------------
+  - name: slo_marketdata_freshness
+    rules:
+      - alert: MarketDataStreamLagHigh
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum by (le) (
+              rate(llamatrade_marketdata_stream_message_lag_seconds_bucket[5m])
+            )
+          ) > 2
+        for: 5m
+        labels:
+          severity: page
+          slo: marketdata_freshness
+        annotations:
+          summary: "Market-data stream lag p95 above 2s"
+          description: >
+            p95 market-data stream message lag is {{ $value | humanizeDuration }},
+            breaching the < 2s freshness SLO. Live signals may act on stale data.
+
+  # ---------------------------------------------------------------------------
+  # SLO 4: Ledger reconciliation drift — should be ~0.
+  # The ledger is the book of record; any drift between ledger and broker is
+  # an integrity incident.
+  # ---------------------------------------------------------------------------
+  - name: slo_ledger_integrity
+    rules:
+      - alert: LedgerReconciliationDrift
+        expr: |
+          sum by (kind) (increase(llamatrade_ledger_reconciliation_drift_total[10m])) > 0
+        for: 1m
+        labels:
+          severity: page
+          slo: ledger_reconciliation
+        annotations:
+          summary: "Ledger reconciliation drift detected ({{ $labels.kind }})"
+          description: >
+            {{ $value }} ledger reconciliation drift event(s) of kind
+            "{{ $labels.kind }}" in the last 10m. The ledger is the source of
+            truth — investigate before trading continues.
+
+      - alert: LedgerVsBrokerMismatch
+        expr: abs(llamatrade_ledger_vs_broker_mismatch_dollars) > 1
+        for: 5m
+        labels:
+          severity: page
+          slo: ledger_reconciliation
+        annotations:
+          summary: "Ledger vs broker dollar mismatch"
+          description: >
+            Ledger-vs-broker mismatch is ${{ $value }} (should be ~0).
+
+  # ---------------------------------------------------------------------------
+  # SLO 5: EventBus consumer lag — backlogs must drain.
+  # ---------------------------------------------------------------------------
+  - name: slo_eventbus_lag
+    rules:
+      - alert: EventBusConsumerLagEntriesHigh
+        expr: |
+          llamatrade_eventbus_consumer_lag_entries > 1000
+        for: 10m
+        labels:
+          severity: ticket
+          slo: eventbus_lag
+        annotations:
+          summary: "EventBus backlog on {{ $labels.stream }}/{{ $labels.group }}"
+          description: >
+            {{ $value }} unacked entries pending on stream {{ $labels.stream }}
+            (group {{ $labels.group }}) for 10m — consumer not keeping up.
+
+      - alert: EventBusConsumerLagSecondsHigh
+        expr: |
+          llamatrade_eventbus_consumer_lag_seconds > 300
+        for: 5m
+        labels:
+          severity: page
+          slo: eventbus_lag
+        annotations:
+          summary: "EventBus oldest unacked > 5m on {{ $labels.stream }}/{{ $labels.group }}"
+          description: >
+            Oldest unacked entry on {{ $labels.stream }} (group
+            {{ $labels.group }}) is {{ $value | humanizeDuration }} old. Fill →
+            ledger projection may be stalled (reconciliation-freshness SLO < 5m).
+
+  # ---------------------------------------------------------------------------
+  # SLO 6: DB pool exhaustion — should be 0. Per-service pool budgets are tight
+  # (sum of pool+overflow must stay under Postgres max_connections).
+  # ---------------------------------------------------------------------------
+  - name: slo_db_pool
+    rules:
+      - alert: DBPoolExhausted
+        expr: |
+          sum by (job) (increase(llamatrade_db_pool_exhausted_total[5m])) > 0
+        for: 2m
+        labels:
+          severity: page
+          slo: db_pool
+        annotations:
+          summary: "DB pool exhausted on {{ $labels.job }}"
+          description: >
+            {{ $labels.job }} hit DB pool exhaustion {{ $value }} time(s) in 5m.
+            Requests are queuing for connections — check for leaks or scale the
+            pool / move to PgBouncer.
+
+      - alert: DBPoolNearExhaustion
+        expr: |
+          (
+            max by (job) (llamatrade_db_connections{state="active"})
+              /
+            max by (job) (llamatrade_db_connections{state="max"})
+          ) > 0.9
+        for: 5m
+        labels:
+          severity: ticket
+          slo: db_pool
+        annotations:
+          summary: "DB pool > 90% utilized on {{ $labels.job }}"
+          description: >
+            {{ $labels.job }} is using {{ $value | humanizePercentage }} of its
+            DB connection pool for 5m. Approaching exhaustion.

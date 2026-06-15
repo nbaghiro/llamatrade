@@ -2,10 +2,15 @@
 
 import logging
 import os
+import time
 from dataclasses import dataclass
 from enum import StrEnum
 
+from llamatrade_telemetry import metrics
+
 logger = logging.getLogger(__name__)
+
+_CHANNEL = "sms"
 
 
 class SMSProvider(StrEnum):
@@ -84,6 +89,7 @@ class SMSChannel:
         """
         if not self.is_configured:
             logger.warning("SMS channel not configured, cannot send")
+            metrics.notification.delivery_failed(channel=_CHANNEL, reason="not_configured")
             return SMSResult(
                 success=False,
                 error_code="NOT_CONFIGURED",
@@ -93,6 +99,7 @@ class SMSChannel:
         # Validate phone number format
         if not to.startswith("+"):
             logger.warning(f"Invalid phone number format: {to}")
+            metrics.notification.delivery_failed(channel=_CHANNEL, reason="invalid_number")
             return SMSResult(
                 success=False,
                 error_code="INVALID_NUMBER",
@@ -107,6 +114,7 @@ class SMSChannel:
         if self.provider == SMSProvider.TWILIO:
             return await self._send_twilio(to, message, from_number)
 
+        metrics.notification.delivery_failed(channel=_CHANNEL, reason="unknown_provider")
         return SMSResult(
             success=False,
             error_code="UNKNOWN_PROVIDER",
@@ -129,6 +137,7 @@ class SMSChannel:
 
         url = f"https://api.twilio.com/2010-04-01/Accounts/{self.twilio_account_sid}/Messages.json"
 
+        start = time.perf_counter()
         try:
             async with httpx.AsyncClient() as client:
                 response = await client.post(
@@ -145,6 +154,7 @@ class SMSChannel:
                 if response.status_code == 201:
                     data = response.json()
                     logger.info(f"SMS sent successfully: {data.get('sid')}")
+                    metrics.notification.delivered(channel=_CHANNEL)
                     return SMSResult(
                         success=True,
                         message_sid=data.get("sid"),
@@ -161,6 +171,9 @@ class SMSChannel:
                 )
 
                 logger.error(f"Twilio API error: {error_code} - {error_message}")
+                metrics.notification.delivery_failed(
+                    channel=_CHANNEL, reason=f"http_{response.status_code}"
+                )
                 return SMSResult(
                     success=False,
                     error_code=error_code,
@@ -169,6 +182,7 @@ class SMSChannel:
 
         except httpx.TimeoutException:
             logger.error("Twilio API timeout")
+            metrics.notification.delivery_failed(channel=_CHANNEL, reason="timeout")
             return SMSResult(
                 success=False,
                 error_code="TIMEOUT",
@@ -176,6 +190,7 @@ class SMSChannel:
             )
         except httpx.RequestError as e:
             logger.error(f"Twilio API request error: {e}")
+            metrics.notification.delivery_failed(channel=_CHANNEL, reason="request_error")
             return SMSResult(
                 success=False,
                 error_code="REQUEST_ERROR",
@@ -183,10 +198,15 @@ class SMSChannel:
             )
         except Exception as e:
             logger.error(f"Unexpected error sending SMS: {e}")
+            metrics.notification.delivery_failed(channel=_CHANNEL, reason=type(e).__name__)
             return SMSResult(
                 success=False,
                 error_code="UNKNOWN_ERROR",
                 error_message=str(e),
+            )
+        finally:
+            metrics.notification.delivery_latency.labels(channel=_CHANNEL).observe(
+                time.perf_counter() - start
             )
 
     async def send_verification_code(

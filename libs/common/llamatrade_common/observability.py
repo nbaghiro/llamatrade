@@ -1,258 +1,54 @@
-"""Observability middleware and utilities for FastAPI services.
+"""Back-compat shim → :mod:`llamatrade_telemetry`.
 
-This module provides a unified setup for logging, metrics, and tracing.
+Observability setup moved to the unified ``init_telemetry`` call. These thin
+wrappers preserve the old API (used across service ``main.py`` files) and now
+wire the full stack: structured logging, OTel metrics + Prometheus ``/metrics``,
+distributed tracing, the RED middleware, and DB pool gauges.
 """
 
 from __future__ import annotations
 
-import time
-import uuid
-from collections.abc import Awaitable, Callable
+from collections.abc import Callable
 
-from fastapi import FastAPI, Request, Response
-from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.types import ASGIApp
+from starlette.applications import Starlette
 
-from llamatrade_common.logging import (
-    clear_request_context,
-    configure_logging,
-    get_logger,
-    set_request_context,
-)
-from llamatrade_common.metrics import (
-    HTTP_REQUEST_DURATION_SECONDS,
-    HTTP_REQUESTS_IN_PROGRESS,
-    HTTP_REQUESTS_TOTAL,
-    PoolStatsLike,
-    get_metrics,
-    init_service_info,
-    register_db_pool_observer,
-)
+from llamatrade_telemetry import init_telemetry
+from llamatrade_telemetry.config import TelemetrySettings
+from llamatrade_telemetry.instrumentation.db import PoolStatsLike
+from llamatrade_telemetry.instrumentation.http import TelemetryMiddleware as ObservabilityMiddleware
 
-logger = get_logger(__name__)
-
-
-class ObservabilityMiddleware(BaseHTTPMiddleware):
-    """Middleware that adds logging, metrics, and request tracing.
-
-    Features:
-    - Assigns request ID to each request
-    - Records request/response metrics
-    - Sets up logging context
-    - Adds timing headers
-
-    Example:
-        app = FastAPI()
-        app.add_middleware(
-            ObservabilityMiddleware,
-            service_name="auth",
-        )
-    """
-
-    def __init__(
-        self,
-        app: ASGIApp,
-        service_name: str = "llamatrade",
-    ) -> None:
-        super().__init__(app)
-        self.service_name = service_name
-
-    async def dispatch(
-        self,
-        request: Request,
-        call_next: Callable[[Request], Awaitable[Response]],
-    ) -> Response:
-        """Process request with observability instrumentation."""
-        # Generate or extract request ID
-        request_id = request.headers.get("X-Request-ID", str(uuid.uuid4()))
-
-        # Extract tenant info from headers (set by gateway or middleware)
-        tenant_id = request.headers.get("X-Tenant-ID")
-        user_id = request.headers.get("X-User-ID")
-
-        # Set logging context
-        set_request_context(
-            request_id=request_id,
-            tenant_id=tenant_id,
-            user_id=user_id,
-        )
-
-        # Get normalized endpoint for metrics
-        endpoint = self._get_endpoint(request)
-        method = request.method
-
-        # Track in-progress requests
-        HTTP_REQUESTS_IN_PROGRESS.labels(
-            service=self.service_name,
-            method=method,
-            endpoint=endpoint,
-        ).inc()
-
-        start_time = time.perf_counter()
-        status_code = 500  # Default to error, will be overwritten on success
-
-        try:
-            response: Response = await call_next(request)
-            status_code = response.status_code
-        except Exception as e:
-            logger.exception("Unhandled exception in request: %s", e)
-            raise
-        finally:
-            # Record metrics
-            duration = time.perf_counter() - start_time
-
-            HTTP_REQUESTS_TOTAL.labels(
-                service=self.service_name,
-                method=method,
-                endpoint=endpoint,
-                status_code=str(status_code),
-            ).inc()
-
-            HTTP_REQUEST_DURATION_SECONDS.labels(
-                service=self.service_name,
-                method=method,
-                endpoint=endpoint,
-            ).observe(duration)
-
-            HTTP_REQUESTS_IN_PROGRESS.labels(
-                service=self.service_name,
-                method=method,
-                endpoint=endpoint,
-            ).dec()
-
-            # Log request
-            logger.info(
-                "HTTP %s %s %d %.3fs",
-                method,
-                request.url.path,
-                status_code,
-                duration,
-            )
-
-            # Clear logging context
-            clear_request_context()
-
-        # Add headers to response
-        response.headers["X-Request-ID"] = request_id
-        response.headers["X-Response-Time"] = f"{duration:.3f}s"
-
-        return response
-
-    def _get_endpoint(self, request: Request) -> str:
-        """Get normalized endpoint path for metrics.
-
-        Replaces path parameters with placeholders to avoid
-        high-cardinality metrics.
-        """
-        # Try to get the matched route
-        if hasattr(request, "scope") and "route" in request.scope:
-            route = request.scope["route"]
-            if hasattr(route, "path"):
-                return str(route.path)
-
-        # Fallback to raw path (may have high cardinality)
-        return str(request.url.path)
+__all__ = [
+    "ObservabilityMiddleware",
+    "PoolStatsLike",
+    "enable_db_pool_metrics",
+    "setup_observability",
+]
 
 
 def enable_db_pool_metrics(
-    app: FastAPI,
+    app: Starlette,
     service_name: str,
     pool_stats_provider: Callable[[], PoolStatsLike | None],
 ) -> None:
-    """Export DB connection-pool stats for a service on /metrics.
+    """Initialise telemetry for ``app`` and export DB pool gauges.
 
-    Registers ``pool_stats_provider`` (pass ``llamatrade_db.get_pool_stats``)
-    so the pool gauges are refreshed on every scrape, and ensures a /metrics
-    endpoint exists. The endpoint is only added when the app does not already
-    have one (services using ``setup_observability`` or a hand-rolled route
-    keep theirs). Purely additive — it adds no middleware and changes no
-    request handling.
-
-    Args:
-        app: FastAPI application
-        service_name: Service label applied to the pool metrics
-        pool_stats_provider: Callable returning a pool snapshot, or None
+    Now wires the full telemetry stack (was pool-gauges-only). Idempotent.
     """
-    register_db_pool_observer(service_name, pool_stats_provider)
-
-    has_metrics_route = any(getattr(route, "path", None) == "/metrics" for route in app.routes)
-    if has_metrics_route:
-        return
-
-    @app.get("/metrics", include_in_schema=False)
-    async def metrics_endpoint() -> Response:
-        """Prometheus metrics endpoint."""
-        return Response(
-            content=get_metrics(),
-            media_type="text/plain; charset=utf-8",
-        )
-
-    _ = metrics_endpoint  # Registered via decorator
+    init_telemetry(app, service=service_name, pool_stats_provider=pool_stats_provider)
 
 
 def setup_observability(
-    app: FastAPI,
+    app: Starlette,
     service_name: str,
     version: str = "0.0.0",
     environment: str = "development",
     log_level: str = "INFO",
     json_logs: bool = True,
 ) -> None:
-    """Set up full observability stack for a FastAPI app.
-
-    This function:
-    - Configures structured logging
-    - Adds observability middleware
-    - Adds /metrics endpoint
-    - Initializes service info metric
-
-    Args:
-        app: FastAPI application
-        service_name: Name of the service
-        version: Service version
-        environment: Deployment environment
-        log_level: Log level
-        json_logs: Whether to output JSON logs
-
-    Example:
-        app = FastAPI()
-        setup_observability(
-            app,
-            service_name="auth",
-            version="1.0.0",
-            environment=os.getenv("ENVIRONMENT", "development"),
-        )
-    """
-    # Configure logging
-    configure_logging(
-        service_name=service_name,
-        level=log_level,
-        json_output=json_logs,
+    """Initialise the full telemetry stack for ``app`` (idempotent)."""
+    settings = TelemetrySettings(
+        ENVIRONMENT=environment,
+        LOG_LEVEL=log_level,
+        LOG_FORMAT="json" if json_logs else "text",
     )
-
-    # Initialize service info metric
-    init_service_info(service_name, version, environment)
-
-    # Add observability middleware
-    app.add_middleware(
-        ObservabilityMiddleware,
-        service_name=service_name,
-    )
-
-    # Add metrics endpoint
-    @app.get("/metrics", include_in_schema=False)
-    async def metrics_endpoint() -> Response:
-        """Prometheus metrics endpoint."""
-        return Response(
-            content=get_metrics(),
-            media_type="text/plain; charset=utf-8",
-        )
-
-    _ = metrics_endpoint  # Registered via decorator
-
-    logger.info(
-        "Observability configured: service=%s version=%s env=%s",
-        service_name,
-        version,
-        environment,
-    )
+    init_telemetry(app, service=service_name, version=version, settings=settings)

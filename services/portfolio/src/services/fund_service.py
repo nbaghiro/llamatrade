@@ -13,8 +13,10 @@ from decimal import Decimal
 from uuid import UUID
 
 from llamatrade_db.models.ledger import Sleeve, SleeveType
+from llamatrade_telemetry import metrics
 
 from src.ledger import funds
+from src.ledger.projection import AccountProjection
 from src.ports import LedgerStore, SleeveRepository
 
 ZERO = Decimal("0")
@@ -43,7 +45,9 @@ class FundService:
             account_id,
             funds.plan_deposit(unallocated_sleeve_id=unalloc.id, amount=amount),
         )
-        return await self._view(tenant_id, account_id, unalloc)
+        proj = await self._store.project_account(tenant_id, account_id)
+        self._record_capital(proj, unalloc.id)
+        return SleeveView(unalloc, proj.sleeve(str(unalloc.id)).cash)
 
     async def withdraw(self, *, tenant_id: UUID, account_id: UUID, amount: Decimal) -> SleeveView:
         """Withdraw external cash from the Unallocated sleeve's free cash."""
@@ -54,7 +58,9 @@ class FundService:
             account_id,
             funds.plan_withdraw(sleeve_id=unalloc.id, amount=amount, free_cash=free),
         )
-        return await self._view(tenant_id, account_id, unalloc)
+        proj = await self._store.project_account(tenant_id, account_id)
+        self._record_capital(proj, unalloc.id)
+        return SleeveView(unalloc, proj.sleeve(str(unalloc.id)).cash)
 
     async def allocate(
         self, *, tenant_id: UUID, account_id: UUID, to_sleeve_id: UUID, amount: Decimal
@@ -63,6 +69,10 @@ class FundService:
         unalloc = await self._require_unallocated(tenant_id, account_id)
         to_sleeve = await self._require_sleeve(tenant_id, account_id, to_sleeve_id)
         free = await self._free_cash(tenant_id, account_id, unalloc.id)
+        if free < amount:
+            # Under-capitalized: the planner will reject this with a FundError; the
+            # gauge records the attempt before the exception propagates.
+            metrics.ledger.capital_insufficient()
         await self._append_all(
             tenant_id,
             account_id,
@@ -73,7 +83,9 @@ class FundService:
                 from_free_cash=free,
             ),
         )
-        return await self._view(tenant_id, account_id, to_sleeve)
+        proj = await self._store.project_account(tenant_id, account_id)
+        self._record_capital(proj, unalloc.id)
+        return SleeveView(to_sleeve, proj.sleeve(str(to_sleeve_id)).cash)
 
     async def transfer(
         self,
@@ -108,6 +120,12 @@ class FundService:
             data=dict(plan.transfer.data),
         )
         proj = await self._store.project_account(tenant_id, account_id)
+        # Best-effort capital telemetry: a transfer doesn't require resolving the
+        # Unallocated sleeve, so never let a missing one turn a good transfer into
+        # a failure — just skip the gauge update.
+        unalloc = await self._repo.get_sleeve_by_type(tenant_id, account_id, SleeveType.UNALLOCATED)
+        if unalloc is not None:
+            self._record_capital(proj, unalloc.id)
         return (
             SleeveView(from_sleeve, proj.sleeve(str(from_sleeve_id)).cash),
             SleeveView(to_sleeve, proj.sleeve(str(to_sleeve_id)).cash),
@@ -146,6 +164,19 @@ class FundService:
                 data=dict(ev.data),
             )
 
-    async def _view(self, tenant_id: UUID, account_id: UUID, sleeve: Sleeve) -> SleeveView:
-        proj = await self._store.project_account(tenant_id, account_id)
-        return SleeveView(sleeve, proj.sleeve(str(sleeve.id)).cash)
+    def _record_capital(self, projection: AccountProjection, unallocated_sleeve_id: UUID) -> None:
+        """Publish the account's allocated/unallocated capital split as gauges.
+
+        Unallocated capital is the cash idle in the Unallocated sleeve; allocated
+        capital is the cash put to work in every other sleeve (strategy / manual /
+        unmanaged). Reservations are not netted out — these are book balances, not
+        free cash.
+        """
+        unallocated_key = str(unallocated_sleeve_id)
+        unallocated = projection.sleeve(unallocated_key).cash
+        allocated = sum(
+            (s.cash for key, s in projection.sleeves.items() if key != unallocated_key),
+            ZERO,
+        )
+        metrics.ledger.capital_allocated_dollars.set(float(allocated))
+        metrics.ledger.capital_unallocated_dollars.set(float(unallocated))

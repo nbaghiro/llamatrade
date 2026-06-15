@@ -20,7 +20,7 @@ from enum import StrEnum
 from typing import Any, Protocol
 from uuid import UUID
 
-from prometheus_client import Counter
+from llamatrade_telemetry import metrics
 
 logger = logging.getLogger(__name__)
 
@@ -463,7 +463,7 @@ class CircuitBreaker:
         )
 
         # Record metric
-        CIRCUIT_BREAKER_TRIGGERED_TOTAL.labels(reason=reason.value).inc()
+        metrics.trading.circuit_breaker_triggered(reason=reason.value)
 
         # Notify callback
         if self.callback:
@@ -498,19 +498,6 @@ class CircuitBreaker:
                 await self.reset(force=True)
         except asyncio.CancelledError:
             pass
-
-
-# Prometheus metrics for circuit breaker events
-CIRCUIT_BREAKER_TRIGGERED_TOTAL = Counter(
-    "trading_circuit_breaker_triggered_total",
-    "Circuit breaker trigger events",
-    ["reason"],
-)
-
-CIRCUIT_BREAKER_RESETS_TOTAL = Counter(
-    "trading_circuit_breaker_resets_total",
-    "Circuit breaker reset events",
-)
 
 
 def create_circuit_breaker(

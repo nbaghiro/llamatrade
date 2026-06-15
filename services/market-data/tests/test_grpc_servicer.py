@@ -623,3 +623,146 @@ class TestTimeframeMapping:
 
         for proto_tf, expected_internal in expected_mappings.items():
             assert servicer._TIMEFRAME_MAP.get(proto_tf) == expected_internal
+
+
+# === Data-Quality Metric Wiring ===
+
+
+def _md_exposition() -> str:
+    from llamatrade_telemetry import get_metrics
+
+    return get_metrics().decode()
+
+
+def _md_sample(text: str, name: str, **labels: str) -> float | None:
+    label_parts = {f'{k}="{v}"' for k, v in labels.items()}
+    for line in text.splitlines():
+        if line.startswith("#") or not line.startswith(name):
+            continue
+        head, _, value = line.rpartition(" ")
+        if not head.startswith(name):
+            continue
+        if "{" in head:
+            inner = head[head.index("{") + 1 : head.rindex("}")]
+            line_labels = {part for part in inner.split(",") if part}
+            if not label_parts.issubset(line_labels):
+                continue
+        elif label_parts:
+            continue
+        return float(value)
+    return None
+
+
+class TestServicerMetricsWiring:
+    """Data-quality metrics fire at the real serve call sites."""
+
+    async def test_historical_bars_records_staleness(self, servicer, mock_context, sample_bar):
+        mock_client = MagicMock()
+        mock_client.get_bars = AsyncMock(return_value=[sample_bar])
+        before = _md_sample(
+            _md_exposition(),
+            "llamatrade_marketdata_data_staleness_seconds_count",
+            data_type="bars",
+        )
+        with patch("src.grpc.servicer.get_market_data_service", return_value=mock_client):
+            request = create_mock_historical_bars_request(symbol="AAPL")
+            await servicer.get_historical_bars(request, mock_context)
+        after = _md_sample(
+            _md_exposition(),
+            "llamatrade_marketdata_data_staleness_seconds_count",
+            data_type="bars",
+        )
+        assert after == (before or 0.0) + 1.0
+
+    async def test_historical_bars_empty_records_missing_symbol(self, servicer, mock_context):
+        mock_client = MagicMock()
+        mock_client.get_bars = AsyncMock(return_value=[])
+        before = _md_sample(_md_exposition(), "llamatrade_marketdata_missing_symbol_errors_total")
+        with patch("src.grpc.servicer.get_market_data_service", return_value=mock_client):
+            request = create_mock_historical_bars_request(symbol="AAPL")
+            await servicer.get_historical_bars(request, mock_context)
+        after = _md_sample(_md_exposition(), "llamatrade_marketdata_missing_symbol_errors_total")
+        assert after == (before or 0.0) + 1.0
+
+    async def test_intraday_bars_record_gap(self, servicer, mock_context):
+        from datetime import timedelta
+
+        now = datetime.now(UTC)
+        gapped = [
+            Bar(
+                timestamp=now - timedelta(minutes=3),
+                open=1.0,
+                high=1.0,
+                low=1.0,
+                close=1.0,
+                volume=1,
+            ),
+            Bar(
+                timestamp=now - timedelta(minutes=1),
+                open=1.0,
+                high=1.0,
+                low=1.0,
+                close=1.0,
+                volume=1,
+            ),
+        ]
+        mock_client = MagicMock()
+        mock_client.get_bars = AsyncMock(return_value=gapped)
+        before = _md_sample(_md_exposition(), "llamatrade_marketdata_data_gaps_detected_total")
+        with patch("src.grpc.servicer.get_market_data_service", return_value=mock_client):
+            # timeframe=1 -> TIMEFRAME_1MIN
+            request = create_mock_historical_bars_request(symbol="AAPL", timeframe=1)
+            await servicer.get_historical_bars(request, mock_context)
+        after = _md_sample(_md_exposition(), "llamatrade_marketdata_data_gaps_detected_total")
+        assert after == (before or 0.0) + 1.0
+
+    async def test_multi_bars_missing_symbol_for_absent(self, servicer, mock_context, sample_bar):
+        mock_client = MagicMock()
+        # Only AAPL returns data; GOOGL is absent -> counts as missing.
+        mock_client.get_multi_bars = AsyncMock(return_value={"AAPL": [sample_bar]})
+        before = _md_sample(_md_exposition(), "llamatrade_marketdata_missing_symbol_errors_total")
+        with patch("src.grpc.servicer.get_market_data_service", return_value=mock_client):
+            request = create_mock_multi_bars_request(symbols=["AAPL", "GOOGL"])
+            await servicer.get_multi_bars(request, mock_context)
+        after = _md_sample(_md_exposition(), "llamatrade_marketdata_missing_symbol_errors_total")
+        assert after == (before or 0.0) + 1.0
+
+    async def test_snapshot_records_quote_and_trade_staleness(
+        self, servicer, mock_context, sample_snapshot
+    ):
+        mock_client = MagicMock()
+        mock_client.get_snapshot = AsyncMock(return_value=sample_snapshot)
+        text_before = _md_exposition()
+        q_before = _md_sample(
+            text_before, "llamatrade_marketdata_data_staleness_seconds_count", data_type="quotes"
+        )
+        t_before = _md_sample(
+            text_before, "llamatrade_marketdata_data_staleness_seconds_count", data_type="trades"
+        )
+        with patch("src.grpc.servicer.get_market_data_service", return_value=mock_client):
+            request = MockGetSnapshotRequest(symbol="AAPL")
+            await servicer.get_snapshot(request, mock_context)
+        text_after = _md_exposition()
+        assert (
+            _md_sample(
+                text_after, "llamatrade_marketdata_data_staleness_seconds_count", data_type="quotes"
+            )
+            == (q_before or 0.0) + 1.0
+        )
+        assert (
+            _md_sample(
+                text_after, "llamatrade_marketdata_data_staleness_seconds_count", data_type="trades"
+            )
+            == (t_before or 0.0) + 1.0
+        )
+
+    async def test_snapshot_not_found_records_missing_symbol(self, servicer, mock_context):
+        mock_client = MagicMock()
+        mock_client.get_snapshot = AsyncMock(return_value=None)
+        before = _md_sample(_md_exposition(), "llamatrade_marketdata_missing_symbol_errors_total")
+        with patch("src.grpc.servicer.get_market_data_service", return_value=mock_client):
+            request = MockGetSnapshotRequest(symbol="ZZZZZ")
+            with pytest.raises(ConnectError):
+                await servicer.get_snapshot(request, mock_context)
+        after = _md_sample(_md_exposition(), "llamatrade_marketdata_missing_symbol_errors_total")
+        assert after == (before or 0.0) + 1.0

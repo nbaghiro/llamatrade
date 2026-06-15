@@ -33,6 +33,7 @@ from llamatrade_proto.generated.strategy_pb2 import (
     STRATEGY_STATUS_DRAFT,
     STRATEGY_STATUS_PAUSED,
 )
+from llamatrade_telemetry import metrics
 
 from src.models import (
     ConfigOverride,
@@ -170,12 +171,15 @@ class StrategyService:
         """
         # Parse and validate S-expression (do this before starting transaction)
         try:
-            ast = parse_strategy(data.config_sexpr)
+            with metrics.strategy.compile_duration.time():
+                ast = parse_strategy(data.config_sexpr)
         except ParseError as e:
+            metrics.strategy.parse_error(kind="parse")
             raise ValueError(f"Invalid strategy: {e}")
 
         validation = validate_strategy(ast)
         if not validation.valid:
+            metrics.strategy.parse_error(kind="validate")
             error_messages = [str(e) for e in validation.errors]
             raise ValueError(f"Invalid strategy: {'; '.join(error_messages)}")
 
@@ -219,6 +223,8 @@ class StrategyService:
 
         await self.db.commit()
         await self.db.refresh(strategy)
+
+        metrics.strategy.version_minted()
 
         return self._to_detail_response(strategy, version)
 
@@ -338,11 +344,14 @@ class StrategyService:
         ast = None
         if data.config_sexpr is not None:
             try:
-                ast = parse_strategy(data.config_sexpr)
+                with metrics.strategy.compile_duration.time():
+                    ast = parse_strategy(data.config_sexpr)
             except ParseError as e:
+                metrics.strategy.parse_error(kind="parse")
                 raise ValueError(f"Invalid strategy: {e}")
             validation = validate_strategy(ast)
             if not validation.valid:
+                metrics.strategy.parse_error(kind="validate")
                 error_messages = [str(e) for e in validation.errors]
                 raise ValueError(f"Invalid strategy: {'; '.join(error_messages)}")
 
@@ -390,6 +399,9 @@ class StrategyService:
 
         await self.db.commit()
         await self.db.refresh(strategy)
+
+        if ast is not None:
+            metrics.strategy.version_minted()
 
         current_version = await self._get_version(tenant_id, strategy.id, strategy.current_version)
         if current_version is None:
@@ -583,6 +595,8 @@ class StrategyService:
         if not template:
             raise ValueError(f"Template not found: {template_id}")
 
+        metrics.strategy.template_instantiated(template=template_id)
+
         config_sexpr = template["config_sexpr"]
 
         # Apply template parameter overrides
@@ -640,8 +654,12 @@ class StrategyService:
         Returns validation result including detected symbols and indicators.
         """
         try:
-            ast = parse_strategy(config_sexpr)
+            with metrics.strategy.compile_duration.time():
+                ast = parse_strategy(config_sexpr)
             validation = validate_strategy(ast)
+
+            if not validation.valid:
+                metrics.strategy.parse_error(kind="validate")
 
             errors = [str(e) for e in validation.errors]
             warnings: list[str] = []
@@ -679,6 +697,7 @@ class StrategyService:
                 detected_indicators=detected_indicators,
             )
         except Exception as e:
+            metrics.strategy.parse_error(kind="parse")
             return ValidationResult(
                 valid=False,
                 errors=[str(e)],

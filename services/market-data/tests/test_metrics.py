@@ -1,278 +1,375 @@
-"""Tests for market data metrics module."""
+"""Tests for the market data metrics helpers.
 
-from unittest.mock import MagicMock, patch
+These assert against the unified telemetry exposition (``get_metrics().decode()``)
+rather than prometheus_client internals, so they verify the real
+``llamatrade_marketdata_*`` / ``llamatrade_cache_*`` series the service emits.
+"""
+
+from __future__ import annotations
+
+from datetime import UTC, datetime, timedelta
+
+from llamatrade_telemetry import get_metrics
 
 from src.metrics import (
-    ALPACA_CIRCUIT_BREAKER_STATE,
-    ALPACA_RATE_LIMIT_TOKENS,
-    ALPACA_REQUEST_LATENCY,
-    ALPACA_REQUESTS_TOTAL,
-    CACHE_LATENCY,
-    CACHE_OPERATIONS_TOTAL,
-    STREAM_ALPACA_MESSAGES_TOTAL,
-    STREAM_CONNECTIONS,
-    STREAM_MESSAGES_TOTAL,
-    STREAM_SUBSCRIPTIONS,
-    record_alpaca_request,
     record_alpaca_stream_message,
+    record_bar_series_gaps,
+    record_bar_staleness,
     record_cache_operation,
+    record_missing_symbol,
+    record_quote_staleness,
     record_stream_message,
+    record_stream_message_lag,
+    record_trade_staleness,
     update_circuit_breaker_metrics,
     update_rate_limiter_metrics,
     update_stream_metrics,
 )
+from src.models import Bar
 
 
-class TestRecordAlpacaRequest:
-    """Tests for record_alpaca_request function."""
+def _exposition() -> str:
+    """Render the current Prometheus exposition output."""
+    return get_metrics().decode()
 
-    def test_records_request_success(self):
-        """Test recording a successful request."""
-        # Get the labeled metric to verify it exists
-        with patch.object(ALPACA_REQUESTS_TOTAL, "labels") as mock_labels:
-            with patch.object(ALPACA_REQUEST_LATENCY, "labels") as mock_latency_labels:
-                mock_counter = MagicMock()
-                mock_histogram = MagicMock()
-                mock_labels.return_value = mock_counter
-                mock_latency_labels.return_value = mock_histogram
 
-                record_alpaca_request("get_bars", "success", 0.15)
+def _sample(text: str, name: str, **labels: str) -> float | None:
+    """Return the value of a single Prometheus sample, or ``None`` if absent.
 
-                mock_labels.assert_called_once_with(method="get_bars", status="success")
-                mock_counter.inc.assert_called_once()
-                mock_latency_labels.assert_called_once_with(method="get_bars")
-                mock_histogram.observe.assert_called_once_with(0.15)
-
-    def test_records_request_error(self):
-        """Test recording a failed request."""
-        with patch.object(ALPACA_REQUESTS_TOTAL, "labels") as mock_labels:
-            with patch.object(ALPACA_REQUEST_LATENCY, "labels") as mock_latency_labels:
-                mock_counter = MagicMock()
-                mock_histogram = MagicMock()
-                mock_labels.return_value = mock_counter
-                mock_latency_labels.return_value = mock_histogram
-
-                record_alpaca_request("get_quote", "error", 0.5)
-
-                mock_labels.assert_called_once_with(method="get_quote", status="error")
-                mock_counter.inc.assert_called_once()
-
-    def test_records_rate_limited(self):
-        """Test recording a rate limited request."""
-        with patch.object(ALPACA_REQUESTS_TOTAL, "labels") as mock_labels:
-            with patch.object(ALPACA_REQUEST_LATENCY, "labels") as mock_latency_labels:
-                mock_counter = MagicMock()
-                mock_histogram = MagicMock()
-                mock_labels.return_value = mock_counter
-                mock_latency_labels.return_value = mock_histogram
-
-                record_alpaca_request("get_snapshot", "rate_limited", 0.01)
-
-                mock_labels.assert_called_once_with(method="get_snapshot", status="rate_limited")
+    Matches a line ``name{label="v",...} value`` regardless of label order.
+    """
+    label_parts = {f'{k}="{v}"' for k, v in labels.items()}
+    for line in text.splitlines():
+        if line.startswith("#") or not line.startswith(name):
+            continue
+        head, _, value = line.rpartition(" ")
+        if not head.startswith(name):
+            continue
+        if "{" in head:
+            inner = head[head.index("{") + 1 : head.rindex("}")]
+            line_labels = {part for part in inner.split(",") if part}
+            if not label_parts.issubset(line_labels):
+                continue
+        elif label_parts:
+            continue
+        return float(value)
+    return None
 
 
 class TestRecordCacheOperation:
-    """Tests for record_cache_operation function."""
+    """Cache ops route through the cross-cutting cache instrumentation."""
 
-    def test_records_cache_hit(self):
-        """Test recording a cache hit."""
-        with patch.object(CACHE_OPERATIONS_TOTAL, "labels") as mock_labels:
-            with patch.object(CACHE_LATENCY, "labels") as mock_latency_labels:
-                mock_counter = MagicMock()
-                mock_histogram = MagicMock()
-                mock_labels.return_value = mock_counter
-                mock_latency_labels.return_value = mock_histogram
+    def test_records_cache_hit(self) -> None:
+        before = _sample(
+            _exposition(),
+            "llamatrade_cache_operations_total",
+            cache="marketdata",
+            op="get",
+            result="hit",
+        )
+        record_cache_operation("get", "hit", 0.001)
+        after = _sample(
+            _exposition(),
+            "llamatrade_cache_operations_total",
+            cache="marketdata",
+            op="get",
+            result="hit",
+        )
+        assert after == (before or 0.0) + 1.0
 
-                record_cache_operation("get", "hit", 0.001)
+    def test_records_cache_miss_and_error(self) -> None:
+        record_cache_operation("get", "miss", 0.002)
+        record_cache_operation("delete", "error", 0.01)
+        text = _exposition()
+        assert (
+            _sample(
+                text,
+                "llamatrade_cache_operations_total",
+                cache="marketdata",
+                op="get",
+                result="miss",
+            )
+            is not None
+        )
+        assert (
+            _sample(
+                text,
+                "llamatrade_cache_operations_total",
+                cache="marketdata",
+                op="delete",
+                result="error",
+            )
+            is not None
+        )
 
-                mock_labels.assert_called_once_with(operation="get", result="hit")
-                mock_counter.inc.assert_called_once()
-                mock_latency_labels.assert_called_once_with(operation="get")
-                mock_histogram.observe.assert_called_once_with(0.001)
-
-    def test_records_cache_miss(self):
-        """Test recording a cache miss."""
-        with patch.object(CACHE_OPERATIONS_TOTAL, "labels") as mock_labels:
-            with patch.object(CACHE_LATENCY, "labels") as mock_latency_labels:
-                mock_counter = MagicMock()
-                mock_histogram = MagicMock()
-                mock_labels.return_value = mock_counter
-                mock_latency_labels.return_value = mock_histogram
-
-                record_cache_operation("get", "miss", 0.002)
-
-                mock_labels.assert_called_once_with(operation="get", result="miss")
-
-    def test_records_cache_set(self):
-        """Test recording a cache set operation."""
-        with patch.object(CACHE_OPERATIONS_TOTAL, "labels") as mock_labels:
-            with patch.object(CACHE_LATENCY, "labels") as mock_latency_labels:
-                mock_counter = MagicMock()
-                mock_histogram = MagicMock()
-                mock_labels.return_value = mock_counter
-                mock_latency_labels.return_value = mock_histogram
-
-                record_cache_operation("set", "hit", 0.003)
-
-                mock_labels.assert_called_once_with(operation="set", result="hit")
-
-    def test_records_cache_error(self):
-        """Test recording a cache error."""
-        with patch.object(CACHE_OPERATIONS_TOTAL, "labels") as mock_labels:
-            with patch.object(CACHE_LATENCY, "labels") as mock_latency_labels:
-                mock_counter = MagicMock()
-                mock_histogram = MagicMock()
-                mock_labels.return_value = mock_counter
-                mock_latency_labels.return_value = mock_histogram
-
-                record_cache_operation("delete", "error", 0.01)
-
-                mock_labels.assert_called_once_with(operation="delete", result="error")
+    def test_records_latency_histogram(self) -> None:
+        record_cache_operation("set", "hit", 0.003)
+        text = _exposition()
+        # The duration histogram exposes a labelled count series.
+        assert (
+            _sample(
+                text,
+                "llamatrade_cache_op_duration_seconds_count",
+                cache="marketdata",
+                op="set",
+            )
+            is not None
+        )
 
 
 class TestUpdateStreamMetrics:
-    """Tests for update_stream_metrics function."""
+    """Stream gauges map onto the shared marketdata gauges."""
 
-    def test_updates_all_metrics(self):
-        """Test updating all stream metrics."""
-        with patch.object(STREAM_CONNECTIONS, "set") as mock_conn_set:
-            with patch.object(STREAM_SUBSCRIPTIONS, "labels") as mock_sub_labels:
-                mock_sub_gauge = MagicMock()
-                mock_sub_labels.return_value = mock_sub_gauge
+    def test_updates_all_gauges(self) -> None:
+        update_stream_metrics(connections=5, trade_subs=10, quote_subs=15, bar_subs=8)
+        text = _exposition()
+        assert _sample(text, "llamatrade_marketdata_stream_connections") == 5.0
+        assert _sample(text, "llamatrade_marketdata_stream_subscriptions", type="trades") == 10.0
+        assert _sample(text, "llamatrade_marketdata_stream_subscriptions", type="quotes") == 15.0
+        assert _sample(text, "llamatrade_marketdata_stream_subscriptions", type="bars") == 8.0
 
-                update_stream_metrics(
-                    connections=5,
-                    trade_subs=10,
-                    quote_subs=15,
-                    bar_subs=8,
-                )
-
-                mock_conn_set.assert_called_once_with(5)
-                assert mock_sub_labels.call_count == 3
-                assert mock_sub_gauge.set.call_count == 3
-
-    def test_updates_zero_values(self):
-        """Test updating with zero values."""
-        with patch.object(STREAM_CONNECTIONS, "set") as mock_conn_set:
-            with patch.object(STREAM_SUBSCRIPTIONS, "labels") as mock_sub_labels:
-                mock_sub_gauge = MagicMock()
-                mock_sub_labels.return_value = mock_sub_gauge
-
-                update_stream_metrics(
-                    connections=0,
-                    trade_subs=0,
-                    quote_subs=0,
-                    bar_subs=0,
-                )
-
-                mock_conn_set.assert_called_once_with(0)
+    def test_updates_zero_values(self) -> None:
+        update_stream_metrics(connections=0, trade_subs=0, quote_subs=0, bar_subs=0)
+        assert _sample(_exposition(), "llamatrade_marketdata_stream_connections") == 0.0
 
 
 class TestRecordStreamMessage:
-    """Tests for record_stream_message function."""
+    """Client-facing stream message counter is service-specific."""
 
-    def test_records_trade_message(self):
-        """Test recording a trade message."""
-        with patch.object(STREAM_MESSAGES_TOTAL, "labels") as mock_labels:
-            mock_counter = MagicMock()
-            mock_labels.return_value = mock_counter
+    def test_increments_per_type(self) -> None:
+        before = _sample(_exposition(), "llamatrade_marketdata_stream_messages_total", type="trade")
+        record_stream_message("trade")
+        after = _sample(_exposition(), "llamatrade_marketdata_stream_messages_total", type="trade")
+        assert after == (before or 0.0) + 1.0
 
-            record_stream_message("trade")
-
-            mock_labels.assert_called_once_with(type="trade")
-            mock_counter.inc.assert_called_once()
-
-    def test_records_quote_message(self):
-        """Test recording a quote message."""
-        with patch.object(STREAM_MESSAGES_TOTAL, "labels") as mock_labels:
-            mock_counter = MagicMock()
-            mock_labels.return_value = mock_counter
-
-            record_stream_message("quote")
-
-            mock_labels.assert_called_once_with(type="quote")
-
-    def test_records_bar_message(self):
-        """Test recording a bar message."""
-        with patch.object(STREAM_MESSAGES_TOTAL, "labels") as mock_labels:
-            mock_counter = MagicMock()
-            mock_labels.return_value = mock_counter
-
-            record_stream_message("bar")
-
-            mock_labels.assert_called_once_with(type="bar")
+    def test_records_quote_and_bar(self) -> None:
+        record_stream_message("quote")
+        record_stream_message("bar")
+        text = _exposition()
+        assert (
+            _sample(text, "llamatrade_marketdata_stream_messages_total", type="quote") is not None
+        )
+        assert _sample(text, "llamatrade_marketdata_stream_messages_total", type="bar") is not None
 
 
 class TestRecordAlpacaStreamMessage:
-    """Tests for record_alpaca_stream_message function."""
+    """Upstream Alpaca stream message counter is service-specific."""
 
-    def test_records_trade(self):
-        """Test recording a trade from Alpaca stream."""
-        with patch.object(STREAM_ALPACA_MESSAGES_TOTAL, "labels") as mock_labels:
-            mock_counter = MagicMock()
-            mock_labels.return_value = mock_counter
+    def test_records_trade(self) -> None:
+        before = _sample(
+            _exposition(), "llamatrade_marketdata_stream_alpaca_messages_total", type="trade"
+        )
+        record_alpaca_stream_message("trade")
+        after = _sample(
+            _exposition(), "llamatrade_marketdata_stream_alpaca_messages_total", type="trade"
+        )
+        assert after == (before or 0.0) + 1.0
 
-            record_alpaca_stream_message("trade")
-
-            mock_labels.assert_called_once_with(type="trade")
-            mock_counter.inc.assert_called_once()
-
-    def test_records_error(self):
-        """Test recording an error from Alpaca stream."""
-        with patch.object(STREAM_ALPACA_MESSAGES_TOTAL, "labels") as mock_labels:
-            mock_counter = MagicMock()
-            mock_labels.return_value = mock_counter
-
-            record_alpaca_stream_message("error")
-
-            mock_labels.assert_called_once_with(type="error")
+    def test_records_error(self) -> None:
+        record_alpaca_stream_message("error")
+        assert (
+            _sample(
+                _exposition(),
+                "llamatrade_marketdata_stream_alpaca_messages_total",
+                type="error",
+            )
+            is not None
+        )
 
 
 class TestUpdateRateLimiterMetrics:
-    """Tests for update_rate_limiter_metrics function."""
+    """Rate-limiter tokens map onto the shared marketdata gauge."""
 
-    def test_updates_tokens(self):
-        """Test updating rate limiter tokens."""
-        with patch.object(ALPACA_RATE_LIMIT_TOKENS, "set") as mock_set:
-            update_rate_limiter_metrics(100.5)
+    def test_updates_tokens(self) -> None:
+        update_rate_limiter_metrics(100.5)
+        assert _sample(_exposition(), "llamatrade_marketdata_rate_limit_tokens_available") == 100.5
 
-            mock_set.assert_called_once_with(100.5)
-
-    def test_updates_zero_tokens(self):
-        """Test updating with zero tokens."""
-        with patch.object(ALPACA_RATE_LIMIT_TOKENS, "set") as mock_set:
-            update_rate_limiter_metrics(0)
-
-            mock_set.assert_called_once_with(0)
+    def test_updates_zero_tokens(self) -> None:
+        update_rate_limiter_metrics(0)
+        assert _sample(_exposition(), "llamatrade_marketdata_rate_limit_tokens_available") == 0.0
 
 
 class TestUpdateCircuitBreakerMetrics:
-    """Tests for update_circuit_breaker_metrics function."""
+    """Circuit-breaker state maps closed/half_open/open -> 0/1/2 (unknown -> -1)."""
 
-    def test_updates_closed_state(self):
-        """Test updating circuit breaker to closed state."""
-        with patch.object(ALPACA_CIRCUIT_BREAKER_STATE, "set") as mock_set:
-            update_circuit_breaker_metrics("closed")
+    def test_closed_state(self) -> None:
+        update_circuit_breaker_metrics("closed")
+        assert _sample(_exposition(), "llamatrade_marketdata_circuit_breaker_state") == 0.0
 
-            mock_set.assert_called_once_with(0)
+    def test_half_open_state(self) -> None:
+        update_circuit_breaker_metrics("half_open")
+        assert _sample(_exposition(), "llamatrade_marketdata_circuit_breaker_state") == 1.0
 
-    def test_updates_half_open_state(self):
-        """Test updating circuit breaker to half_open state."""
-        with patch.object(ALPACA_CIRCUIT_BREAKER_STATE, "set") as mock_set:
-            update_circuit_breaker_metrics("half_open")
+    def test_open_state(self) -> None:
+        update_circuit_breaker_metrics("open")
+        assert _sample(_exposition(), "llamatrade_marketdata_circuit_breaker_state") == 2.0
 
-            mock_set.assert_called_once_with(1)
+    def test_unknown_state(self) -> None:
+        update_circuit_breaker_metrics("unknown")
+        assert _sample(_exposition(), "llamatrade_marketdata_circuit_breaker_state") == -1.0
 
-    def test_updates_open_state(self):
-        """Test updating circuit breaker to open state."""
-        with patch.object(ALPACA_CIRCUIT_BREAKER_STATE, "set") as mock_set:
-            update_circuit_breaker_metrics("open")
 
-            mock_set.assert_called_once_with(2)
+class TestNoDuplicateAlpacaMetrics:
+    """The legacy ``market_data_alpaca_*`` duplicates must be gone.
 
-    def test_handles_unknown_state(self):
-        """Test handling unknown circuit breaker state."""
-        with patch.object(ALPACA_CIRCUIT_BREAKER_STATE, "set") as mock_set:
-            update_circuit_breaker_metrics("unknown")
+    Alpaca REST calls are instrumented by ``llamatrade_alpaca`` itself
+    (``llamatrade_dependency_*`` with ``target="alpaca"``); the service must not
+    re-emit them.
+    """
 
-            mock_set.assert_called_once_with(-1)
+    def test_legacy_alpaca_request_metrics_absent(self) -> None:
+        text = _exposition()
+        assert "market_data_alpaca_requests_total" not in text
+        assert "market_data_alpaca_latency_seconds" not in text
+        assert "market_data_alpaca_rate_limit_tokens" not in text
+        assert "market_data_alpaca_circuit_breaker_state" not in text
+
+
+def _bar(ts: datetime) -> Bar:
+    """Minimal bar at a given timestamp for staleness/gap tests."""
+    return Bar(timestamp=ts, open=1.0, high=1.0, low=1.0, close=1.0, volume=1)
+
+
+class TestRecordDataStaleness:
+    """Served-data staleness lands in the labelled histogram by data_type."""
+
+    def test_bar_staleness_observed(self) -> None:
+        before = _sample(
+            _exposition(),
+            "llamatrade_marketdata_data_staleness_seconds_count",
+            data_type="bars",
+        )
+        record_bar_staleness([_bar(datetime.now(UTC) - timedelta(seconds=10))])
+        after = _sample(
+            _exposition(),
+            "llamatrade_marketdata_data_staleness_seconds_count",
+            data_type="bars",
+        )
+        assert after == (before or 0.0) + 1.0
+
+    def test_bar_staleness_uses_freshest_bar(self) -> None:
+        now = datetime.now(UTC)
+        bars = [_bar(now - timedelta(seconds=300)), _bar(now - timedelta(seconds=2))]
+        before = _sample(
+            _exposition(), "llamatrade_marketdata_data_staleness_seconds_sum", data_type="bars"
+        )
+        record_bar_staleness(bars)
+        after = _sample(
+            _exposition(), "llamatrade_marketdata_data_staleness_seconds_sum", data_type="bars"
+        )
+        # The freshest (≈2s) bar drives staleness, not the 300s-old one.
+        assert (after or 0.0) - (before or 0.0) < 60.0
+
+    def test_empty_series_is_noop(self) -> None:
+        before = _sample(
+            _exposition(),
+            "llamatrade_marketdata_data_staleness_seconds_count",
+            data_type="bars",
+        )
+        record_bar_staleness([])
+        after = _sample(
+            _exposition(),
+            "llamatrade_marketdata_data_staleness_seconds_count",
+            data_type="bars",
+        )
+        assert after == before
+
+    def test_quote_and_trade_staleness(self) -> None:
+        now = datetime.now(UTC)
+        record_quote_staleness((now - timedelta(seconds=3)).isoformat())
+        record_trade_staleness(now - timedelta(seconds=4))
+        text = _exposition()
+        assert (
+            _sample(text, "llamatrade_marketdata_data_staleness_seconds_count", data_type="quotes")
+            is not None
+        )
+        assert (
+            _sample(text, "llamatrade_marketdata_data_staleness_seconds_count", data_type="trades")
+            is not None
+        )
+
+    def test_future_timestamp_clamped_to_zero(self) -> None:
+        before = _sample(
+            _exposition(), "llamatrade_marketdata_data_staleness_seconds_sum", data_type="bars"
+        )
+        record_bar_staleness([_bar(datetime.now(UTC) + timedelta(seconds=30))])
+        after = _sample(
+            _exposition(), "llamatrade_marketdata_data_staleness_seconds_sum", data_type="bars"
+        )
+        # A future timestamp must not push the sum below its prior value.
+        assert (after or 0.0) >= (before or 0.0)
+
+
+class TestRecordStreamMessageLag:
+    """Stream-message lag lands in the no-label histogram."""
+
+    def test_lag_observed(self) -> None:
+        before = _sample(_exposition(), "llamatrade_marketdata_stream_message_lag_seconds_count")
+        record_stream_message_lag((datetime.now(UTC) - timedelta(seconds=1)).isoformat())
+        after = _sample(_exposition(), "llamatrade_marketdata_stream_message_lag_seconds_count")
+        assert after == (before or 0.0) + 1.0
+
+    def test_accepts_datetime_and_string(self) -> None:
+        before = _sample(_exposition(), "llamatrade_marketdata_stream_message_lag_seconds_count")
+        record_stream_message_lag(datetime.now(UTC) - timedelta(seconds=2))
+        record_stream_message_lag((datetime.now(UTC) - timedelta(seconds=2)).isoformat())
+        after = _sample(_exposition(), "llamatrade_marketdata_stream_message_lag_seconds_count")
+        assert after == (before or 0.0) + 2.0
+
+    def test_naive_timestamp_treated_as_utc(self) -> None:
+        # A naive ISO string (no tz) must not raise on subtraction.
+        naive = datetime.now(UTC).replace(tzinfo=None).isoformat()
+        record_stream_message_lag(naive)
+        assert (
+            _sample(_exposition(), "llamatrade_marketdata_stream_message_lag_seconds_count")
+            is not None
+        )
+
+
+class TestRecordBarSeriesGaps:
+    """Interior holes in an intraday series increment the gap counter."""
+
+    def test_intraday_hole_counts_one_gap(self) -> None:
+        now = datetime.now(UTC)
+        before = _sample(_exposition(), "llamatrade_marketdata_data_gaps_detected_total")
+        # 1Min series with a single missing bar (3-min then 1-min cadence).
+        bars = [_bar(now - timedelta(minutes=3)), _bar(now - timedelta(minutes=1))]
+        record_bar_series_gaps("1Min", bars)
+        after = _sample(_exposition(), "llamatrade_marketdata_data_gaps_detected_total")
+        assert after == (before or 0.0) + 1.0
+
+    def test_contiguous_series_has_no_gap(self) -> None:
+        now = datetime.now(UTC)
+        before = _sample(_exposition(), "llamatrade_marketdata_data_gaps_detected_total")
+        bars = [_bar(now - timedelta(minutes=2)), _bar(now - timedelta(minutes=1))]
+        record_bar_series_gaps("1Min", bars)
+        after = _sample(_exposition(), "llamatrade_marketdata_data_gaps_detected_total")
+        assert after == before
+
+    def test_session_boundary_jump_not_counted(self) -> None:
+        now = datetime.now(UTC)
+        before = _sample(_exposition(), "llamatrade_marketdata_data_gaps_detected_total")
+        # A 10-minute jump on a 1Min series exceeds the session-boundary bound.
+        bars = [_bar(now - timedelta(minutes=11)), _bar(now - timedelta(minutes=1))]
+        record_bar_series_gaps("1Min", bars)
+        after = _sample(_exposition(), "llamatrade_marketdata_data_gaps_detected_total")
+        assert after == before
+
+    def test_daily_series_is_skipped(self) -> None:
+        now = datetime.now(UTC)
+        before = _sample(_exposition(), "llamatrade_marketdata_data_gaps_detected_total")
+        # Daily+ series are skipped (no trading calendar to distinguish weekends).
+        bars = [_bar(now - timedelta(days=5)), _bar(now - timedelta(days=1))]
+        record_bar_series_gaps("1Day", bars)
+        after = _sample(_exposition(), "llamatrade_marketdata_data_gaps_detected_total")
+        assert after == before
+
+
+class TestRecordMissingSymbol:
+    """Missing-symbol requests increment the error counter."""
+
+    def test_increments(self) -> None:
+        before = _sample(_exposition(), "llamatrade_marketdata_missing_symbol_errors_total")
+        record_missing_symbol()
+        after = _sample(_exposition(), "llamatrade_marketdata_missing_symbol_errors_total")
+        assert after == (before or 0.0) + 1.0

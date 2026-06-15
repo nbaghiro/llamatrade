@@ -10,12 +10,12 @@ from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from typing import cast
 
-from fastapi import FastAPI, Response
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.types import ASGIApp
 
-from llamatrade_common.metrics import get_metrics, init_service_info, register_db_pool_observer
 from llamatrade_db import close_db, get_pool_stats
+from llamatrade_telemetry import init_telemetry
 
 logger = logging.getLogger(__name__)
 
@@ -28,13 +28,6 @@ CORS_ORIGINS = os.getenv(
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     """Application lifespan handler."""
-    # Initialize service metrics
-    environment = os.getenv("ENVIRONMENT", "development")
-    init_service_info("trading", "0.1.0", environment)
-    # Export DB connection-pool stats on the existing /metrics endpoint
-    register_db_pool_observer("trading", get_pool_stats)
-    logger.info("Prometheus metrics initialized")
-
     # Mount Connect ASGI app
     try:
         from llamatrade_proto.generated.trading_connect import (
@@ -65,6 +58,10 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# Unified telemetry: RED middleware, /metrics endpoint, JSON logging, tracing,
+# and DB connection-pool gauges.
+init_telemetry(app, service="trading", version="0.1.0", pool_stats_provider=get_pool_stats)
+
 # CORS middleware
 app.add_middleware(
     CORSMiddleware,
@@ -80,12 +77,3 @@ app.add_middleware(
 async def health_check() -> dict[str, str]:
     """Health check endpoint."""
     return {"status": "healthy", "service": "trading", "version": "0.1.0"}
-
-
-@app.get("/metrics")
-async def metrics() -> Response:
-    """Prometheus metrics endpoint."""
-    return Response(
-        content=get_metrics(),
-        media_type="text/plain; charset=utf-8",
-    )

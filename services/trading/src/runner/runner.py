@@ -46,9 +46,9 @@ from src.metrics import (
     record_fill_processed,
     record_position_reconciliation,
     record_signal,
+    record_slippage,
     record_strategy_error,
     record_trade_stream_event,
-    update_positions,
     update_runner_gauge,
 )
 from src.models import OrderCreate, RiskLimits
@@ -782,15 +782,6 @@ class StrategyRunner:
                         pnl=pnl,
                     )
 
-        # Update position metrics
-        total_value = sum(pos.quantity * pos.entry_price for pos in self._positions.values())
-        update_positions(
-            str(self.config.tenant_id),
-            str(self.config.execution_id),
-            len(self._positions),
-            total_value,
-        )
-
     def set_equity(self, equity: float) -> None:
         """Update equity value (called by external sync)."""
         self._equity = equity
@@ -1039,8 +1030,10 @@ class StrategyRunner:
         logger.info(f"Processing fill: {side} {fill_qty} {symbol} @ ${fill_price:.2f}")
 
         # Drop any pending-order bookkeeping for this fill; position state below
-        # is derived from the broker fill, the source of truth.
-        self._pending_orders.pop(fill.client_order_id, None)
+        # is derived from the broker fill, the source of truth. Retain the
+        # originating signal so we can compare the fill against its pre-trade
+        # estimated price (slippage) once the fill is processed.
+        pending_signal = self._pending_orders.pop(fill.client_order_id, None)
 
         # Update position based on fill
         old_position = self._positions.get(symbol)
@@ -1168,8 +1161,11 @@ class StrategyRunner:
         duration = time.perf_counter() - start_time
         record_fill_processed(side=side, fill_type="full", duration=duration)
 
-        # Update position metrics
-        self._update_position_metrics()
+        # Slippage: compare the broker fill against the signal's pre-trade
+        # estimate (its market price at signal time). Only when we still have
+        # the originating signal and it carried a usable reference price.
+        if pending_signal is not None:
+            record_slippage(side=side, fill_price=fill_price, est_price=pending_signal.price)
 
         logger.info(f"Fill processed: {symbol} now {self._positions.get(symbol, 'flat')}")
 
@@ -1215,16 +1211,6 @@ class StrategyRunner:
                     session_id=self.config.execution_id,
                     error=f"Order rejected by broker: {event.symbol} {signal.type}",
                 )
-
-    def _update_position_metrics(self) -> None:
-        """Update Prometheus metrics for positions."""
-        total_value = sum(pos.quantity * pos.entry_price for pos in self._positions.values())
-        update_positions(
-            str(self.config.tenant_id),
-            str(self.config.execution_id),
-            len(self._positions),
-            total_value,
-        )
 
     async def _sync_positions(self) -> None:
         """Reconcile local positions with Alpaca broker positions.

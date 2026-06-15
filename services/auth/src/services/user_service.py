@@ -8,8 +8,10 @@ from fastapi import Depends
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.models import UserResponse, UserUpdate, UserWithPassword
 from llamatrade_db import get_db
+from llamatrade_telemetry import metrics
+
+from src.models import UserResponse, UserUpdate, UserWithPassword
 
 
 class UserService:
@@ -181,8 +183,9 @@ class UserService:
 
     def _hash_password(self, password: str) -> str:
         """Hash a password using bcrypt."""
-        salt = bcrypt.gensalt()
-        hashed: bytes = bcrypt.hashpw(password.encode(), salt)
+        with metrics.auth.bcrypt_hash_duration.time():
+            salt = bcrypt.gensalt()
+            hashed: bytes = bcrypt.hashpw(password.encode(), salt)
         return hashed.decode()
 
 

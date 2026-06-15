@@ -1,0 +1,152 @@
+# Kubernetes PrometheusRule mirroring infrastructure/observability/prometheus/alerts.yml.
+# Requires the Prometheus Operator (monitoring.coreos.com CRDs). NOT included in
+# the default kustomization — apply explicitly where the operator is installed:
+#   kubectl apply -f infrastructure/k8s/base/observability/prometheusrule.yaml
+# Keep the rule expressions in sync with the dev alerts.yml (same SLOs,
+# .docs/telemetry.md §2).
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: llamatrade-slo
+  labels:
+    app.kubernetes.io/part-of: llamatrade
+    role: alert-rules
+spec:
+  groups:
+    - name: slo_availability
+      rules:
+        - alert: ServiceAvailabilityFastBurn
+          expr: |
+            (
+              sum by (job) (rate(llamatrade_http_requests_total{status_class="5xx"}[5m]))
+                /
+              sum by (job) (rate(llamatrade_http_requests_total[5m]))
+            ) > (14.4 * 0.001)
+            and
+            (
+              sum by (job) (rate(llamatrade_http_requests_total{status_class="5xx"}[1h]))
+                /
+              sum by (job) (rate(llamatrade_http_requests_total[1h]))
+            ) > (14.4 * 0.001)
+          for: 2m
+          labels:
+            severity: page
+            slo: availability
+          annotations:
+            summary: "High 5xx burn rate on {{ $labels.job }} (fast)"
+            description: "{{ $labels.job }} burning the 99.9% availability budget 14.4x too fast."
+        - alert: ServiceAvailabilitySlowBurn
+          expr: |
+            (
+              sum by (job) (rate(llamatrade_http_requests_total{status_class="5xx"}[30m]))
+                /
+              sum by (job) (rate(llamatrade_http_requests_total[30m]))
+            ) > (6 * 0.001)
+            and
+            (
+              sum by (job) (rate(llamatrade_http_requests_total{status_class="5xx"}[6h]))
+                /
+              sum by (job) (rate(llamatrade_http_requests_total[6h]))
+            ) > (6 * 0.001)
+          for: 15m
+          labels:
+            severity: ticket
+            slo: availability
+          annotations:
+            summary: "Elevated 5xx burn rate on {{ $labels.job }} (slow)"
+            description: "{{ $labels.job }} burning the 99.9% availability budget 6x too fast."
+    - name: slo_trading_latency
+      rules:
+        - alert: OrderSubmissionLatencyHigh
+          expr: |
+            histogram_quantile(
+              0.99,
+              sum by (le) (rate(llamatrade_trading_order_submission_latency_seconds_bucket[5m]))
+            ) > 1
+          for: 5m
+          labels:
+            severity: page
+            slo: order_submission_latency
+          annotations:
+            summary: "Order submission p99 latency above 1s"
+            description: "p99 order-submission latency (signal → Alpaca) breaches the < 1s SLO."
+    - name: slo_marketdata_freshness
+      rules:
+        - alert: MarketDataStreamLagHigh
+          expr: |
+            histogram_quantile(
+              0.95,
+              sum by (le) (rate(llamatrade_marketdata_stream_message_lag_seconds_bucket[5m]))
+            ) > 2
+          for: 5m
+          labels:
+            severity: page
+            slo: marketdata_freshness
+          annotations:
+            summary: "Market-data stream lag p95 above 2s"
+            description: "p95 market-data stream lag breaches the < 2s freshness SLO."
+    - name: slo_ledger_integrity
+      rules:
+        - alert: LedgerReconciliationDrift
+          expr: sum by (kind) (increase(llamatrade_ledger_reconciliation_drift_total[10m])) > 0
+          for: 1m
+          labels:
+            severity: page
+            slo: ledger_reconciliation
+          annotations:
+            summary: "Ledger reconciliation drift detected ({{ $labels.kind }})"
+            description: "Ledger drift of kind {{ $labels.kind }} — the ledger is the book of record."
+        - alert: LedgerVsBrokerMismatch
+          expr: abs(llamatrade_ledger_vs_broker_mismatch_dollars) > 1
+          for: 5m
+          labels:
+            severity: page
+            slo: ledger_reconciliation
+          annotations:
+            summary: "Ledger vs broker dollar mismatch"
+            description: "Ledger-vs-broker mismatch is ${{ $value }} (should be ~0)."
+    - name: slo_eventbus_lag
+      rules:
+        - alert: EventBusConsumerLagEntriesHigh
+          expr: llamatrade_eventbus_consumer_lag_entries > 1000
+          for: 10m
+          labels:
+            severity: ticket
+            slo: eventbus_lag
+          annotations:
+            summary: "EventBus backlog on {{ $labels.stream }}/{{ $labels.group }}"
+            description: "{{ $value }} unacked entries pending for 10m — consumer not keeping up."
+        - alert: EventBusConsumerLagSecondsHigh
+          expr: llamatrade_eventbus_consumer_lag_seconds > 300
+          for: 5m
+          labels:
+            severity: page
+            slo: eventbus_lag
+          annotations:
+            summary: "EventBus oldest unacked > 5m on {{ $labels.stream }}/{{ $labels.group }}"
+            description: "Fill → ledger projection may be stalled (reconciliation-freshness SLO < 5m)."
+    - name: slo_db_pool
+      rules:
+        - alert: DBPoolExhausted
+          expr: sum by (job) (increase(llamatrade_db_pool_exhausted_total[5m])) > 0
+          for: 2m
+          labels:
+            severity: page
+            slo: db_pool
+          annotations:
+            summary: "DB pool exhausted on {{ $labels.job }}"
+            description: "{{ $labels.job }} hit DB pool exhaustion — check for leaks or scale the pool."
+        - alert: DBPoolNearExhaustion
+          expr: |
+            (
+              max by (job) (llamatrade_db_connections{state="active"})
+                /
+              max by (job) (llamatrade_db_connections{state="max"})
+            ) > 0.9
+          for: 5m
+          labels:
+            severity: ticket
+            slo: db_pool
+          annotations:
+            summary: "DB pool > 90% utilized on {{ $labels.job }}"
+            description: "{{ $labels.job }} DB pool > 90% utilized for 5m — approaching exhaustion."

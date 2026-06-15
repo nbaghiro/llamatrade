@@ -23,6 +23,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from llamatrade_db.models.ledger import LedgerEvent, LedgerEventType
+from llamatrade_telemetry import metrics
 
 from src.ledger.postings import assert_balanced, build_postings
 
@@ -57,20 +58,21 @@ class LedgerWriter:
             logger.debug("ledger append skipped (duplicate event_id=%s)", event_id)
             return existing
 
-        # Conservation check — economic events must balance (no-op events return []).
-        assert_balanced(build_postings(event_type, data))
+        with metrics.ledger.event_append_latency.time():
+            # Conservation check — economic events must balance (no-op events return []).
+            assert_balanced(build_postings(event_type, data))
 
-        event = LedgerEvent(
-            event_id=event_id,
-            tenant_id=tenant_id,
-            account_id=account_id,
-            sleeve_id=sleeve_id,
-            event_type=event_type.value,
-            data=data,
-            occurred_at=occurred_at or datetime.now(UTC),
-        )
-        self.db.add(event)
-        await self.db.flush()
+            event = LedgerEvent(
+                event_id=event_id,
+                tenant_id=tenant_id,
+                account_id=account_id,
+                sleeve_id=sleeve_id,
+                event_type=event_type.value,
+                data=data,
+                occurred_at=occurred_at or datetime.now(UTC),
+            )
+            self.db.add(event)
+            await self.db.flush()
         return event
 
     async def read_account_events(self, tenant_id: UUID, account_id: UUID) -> list[LedgerEvent]:

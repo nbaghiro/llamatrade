@@ -16,11 +16,41 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from llamatrade_telemetry import metrics
+
 from src.ledger.projection import AccountProjection, LedgerEventLike, fold, holding_history
 from src.ledger.reconciliation import Drift, reconcile
 from src.ledger.writer import LedgerWriter
 
 logger = logging.getLogger(__name__)
+
+_ZERO = Decimal("0")
+
+
+def _mismatch_dollars(projection: AccountProjection, drifts: list[Drift]) -> Decimal:
+    """Total absolute dollar mismatch of an account's reconciliation drift.
+
+    Each per-symbol quantity drift is valued at the ledger's aggregate average
+    cost for that symbol (Σ cost_basis ÷ Σ qty across sleeves) — the only honest
+    price the projection itself carries, so no external price source is needed.
+    When the ledger holds no quantity for a drifted symbol (``MISSING_IN_LEDGER``)
+    there is no ledger cost to value it at, so it contributes zero.
+    """
+    cost_by: dict[str, Decimal] = {}
+    qty_by: dict[str, Decimal] = {}
+    for sleeve in projection.sleeves.values():
+        for symbol, pos in sleeve.positions.items():
+            cost_by[symbol] = cost_by.get(symbol, _ZERO) + pos.cost_basis
+            qty_by[symbol] = qty_by.get(symbol, _ZERO) + pos.qty
+
+    total = _ZERO
+    for drift in drifts:
+        qty = qty_by.get(drift.symbol, _ZERO)
+        if qty == _ZERO:
+            continue
+        avg_cost = cost_by.get(drift.symbol, _ZERO) / qty
+        total += abs(drift.delta * avg_cost)
+    return total
 
 
 class LedgerProjector:
@@ -33,7 +63,8 @@ class LedgerProjector:
     async def project_account(self, tenant_id: UUID, account_id: UUID) -> AccountProjection:
         """Fold the account's full event history into a projection."""
         events = await self._read_events(tenant_id, account_id)
-        return fold(events)
+        with metrics.ledger.projection_fold_duration.time():
+            return fold(events)
 
     async def holding_history(self, tenant_id: UUID, account_id: UUID, symbol: str) -> list[object]:
         """Per-symbol provenance timeline (delegates to the pure kernel)."""
@@ -64,6 +95,7 @@ class LedgerProjector:
         """
         projection = await self.project_account(tenant_id, account_id)
         drifts = reconcile(projection, broker_positions)
+        metrics.ledger.vs_broker_mismatch_dollars.set(float(_mismatch_dollars(projection, drifts)))
         if drifts:
             logger.warning(
                 "ledger reconciliation drift on account %s: %s",

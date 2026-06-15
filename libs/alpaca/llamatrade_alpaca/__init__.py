@@ -42,9 +42,6 @@ from .errors import (
     SymbolNotFoundError,
 )
 from .metrics import (
-    ALPACA_API_CALLS_TOTAL,
-    ALPACA_API_DURATION_SECONDS,
-    HAS_PROMETHEUS,
     record_api_call,
     time_alpaca_call,
 )
@@ -164,9 +161,6 @@ __all__ = [
     "parse_alpaca_error",
     "retry_with_backoff",
     # Metrics
-    "ALPACA_API_CALLS_TOTAL",
-    "ALPACA_API_DURATION_SECONDS",
-    "HAS_PROMETHEUS",
     "record_api_call",
     "time_alpaca_call",
     # Clients

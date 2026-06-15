@@ -376,3 +376,61 @@ class TestGlobalFunctions:
 
         # Should not raise
         await close_stream_bridge()
+
+
+class TestStreamMessageLagWiring:
+    """_handle_* records upstream-to-received lag on receipt."""
+
+    @staticmethod
+    def _exposition() -> str:
+        from llamatrade_telemetry import get_metrics
+
+        return get_metrics().decode()
+
+    @classmethod
+    def _lag_count(cls) -> float | None:
+        name = "llamatrade_marketdata_stream_message_lag_seconds_count"
+        for line in cls._exposition().splitlines():
+            if line.startswith("#"):
+                continue
+            head, _, value = line.rpartition(" ")
+            if head == name:
+                return float(value)
+        return None
+
+    async def test_handle_trade_records_lag(self, bridge):
+        before = self._lag_count()
+        await bridge._handle_trade(
+            "AAPL",
+            TradeData(price=150.0, size=100, exchange="V", timestamp="2024-01-15T09:30:00Z"),
+        )
+        assert self._lag_count() == (before or 0.0) + 1.0
+
+    async def test_handle_quote_records_lag(self, bridge):
+        before = self._lag_count()
+        await bridge._handle_quote(
+            "AAPL",
+            QuoteData(
+                bid_price=150.0,
+                bid_size=100,
+                ask_price=150.1,
+                ask_size=200,
+                timestamp="2024-01-15T09:30:00Z",
+            ),
+        )
+        assert self._lag_count() == (before or 0.0) + 1.0
+
+    async def test_handle_bar_records_lag(self, bridge):
+        before = self._lag_count()
+        await bridge._handle_bar(
+            "AAPL",
+            BarData(
+                open=150.0,
+                high=151.0,
+                low=149.0,
+                close=150.5,
+                volume=10000,
+                timestamp="2024-01-15T09:30:00Z",
+            ),
+        )
+        assert self._lag_count() == (before or 0.0) + 1.0

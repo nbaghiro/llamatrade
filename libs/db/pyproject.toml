@@ -13,6 +13,7 @@ dependencies = [
     "alembic>=1.13.0",
     "greenlet>=3.0.0",
     "pgvector>=0.3.0",
+    "llamatrade-telemetry",
 ]
 
 [project.optional-dependencies]

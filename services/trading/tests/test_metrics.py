@@ -1,132 +1,132 @@
-"""Tests for trading service Prometheus metrics."""
+"""Tests for trading-service metrics via telemetry exposition.
+
+These assert against the Prometheus exposition produced by
+``llamatrade_telemetry.get_metrics`` (the real ``/metrics`` payload) rather
+than poking at prometheus_client internals.
+"""
+
+import re
 
 import pytest
 
+from llamatrade_telemetry import get_metrics
+
 from src.metrics import (
-    ACTIVE_POSITIONS,
-    ACTIVE_RUNNERS,
-    ALPACA_API_CALLS_TOTAL,
-    BAR_STREAM_CONNECTED,
-    BAR_STREAM_RECONNECTS_TOTAL,
-    BARS_PROCESSED_TOTAL,
-    BRACKET_ORDERS_SUBMITTED,
-    BRACKET_ORDERS_TRIGGERED,
-    CURRENT_DRAWDOWN_GAUGE,
-    DAILY_PNL_GAUGE,
-    ORDER_SUBMISSION_DURATION,
-    ORDER_SUBMISSIONS_TOTAL,
-    POSITION_VALUE_GAUGE,
-    RISK_CHECKS_TOTAL,
-    RISK_VIOLATIONS_TOTAL,
-    SIGNALS_GENERATED_TOTAL,
-    STRATEGY_ERRORS_TOTAL,
-    AsyncMetricsTimer,
     record_bar_latency,
     record_bar_processed,
     record_bar_stream_reconnect,
     record_bracket_order_submitted,
     record_bracket_order_triggered,
+    record_fill_processed,
     record_order_submission,
+    record_position_reconciliation,
     record_risk_check,
     record_signal,
     record_strategy_error,
+    record_trade_stream_event,
     set_bar_stream_connected,
-    time_alpaca_call,
-    update_daily_pnl,
-    update_drawdown,
-    update_positions,
     update_runner_gauge,
 )
 
 
+def _exposition() -> str:
+    """Return the current Prometheus exposition text."""
+    return get_metrics().decode()
+
+
+def _sample(text: str, metric: str, **labels: str) -> float:
+    """Return the value of a single exposition sample, or 0.0 if absent.
+
+    Matches a line like ``metric{a="b",c="d"} 3.0`` regardless of label order.
+    """
+    for line in text.splitlines():
+        if line.startswith("#") or not line.startswith(metric):
+            continue
+        match = re.match(
+            rf"{re.escape(metric)}(?:\{{(?P<labels>[^}}]*)\}})?\s+(?P<value>\S+)$", line
+        )
+        if not match:
+            continue
+        present = dict(re.findall(r'(\w+)="([^"]*)"', match.group("labels") or ""))
+        if all(present.get(k) == v for k, v in labels.items()):
+            return float(match.group("value"))
+    return 0.0
+
+
 class TestOrderMetrics:
-    """Tests for order-related metrics."""
+    """Order submission metrics route through the trading domain namespace."""
 
     def test_record_order_submission_success(self):
-        """Test recording successful order submission."""
-        # Get initial value
-        initial = ORDER_SUBMISSIONS_TOTAL.labels(
-            side="buy", order_type="market", status="success"
-        )._value.get()
+        metric = "llamatrade_trading_order_submissions_total"
+        before = _sample(_exposition(), metric, side="buy", type="market", status="success")
 
-        record_order_submission(
-            side="buy",
-            order_type="market",
-            status="success",
-            duration=0.5,
-        )
+        record_order_submission(side="buy", order_type="market", status="success", duration=0.5)
 
-        # Verify counter incremented
-        new_value = ORDER_SUBMISSIONS_TOTAL.labels(
-            side="buy", order_type="market", status="success"
-        )._value.get()
-        assert new_value == initial + 1
+        after = _sample(_exposition(), metric, side="buy", type="market", status="success")
+        assert after == before + 1
 
     def test_record_order_submission_rejected(self):
-        """Test recording rejected order submission."""
-        initial = ORDER_SUBMISSIONS_TOTAL.labels(
-            side="sell", order_type="limit", status="rejected_risk"
-        )._value.get()
+        metric = "llamatrade_trading_order_submissions_total"
+        before = _sample(_exposition(), metric, side="sell", type="limit", status="rejected_risk")
 
         record_order_submission(
-            side="sell",
-            order_type="limit",
-            status="rejected_risk",
-            duration=0.1,
+            side="sell", order_type="limit", status="rejected_risk", duration=0.1
         )
 
-        new_value = ORDER_SUBMISSIONS_TOTAL.labels(
-            side="sell", order_type="limit", status="rejected_risk"
-        )._value.get()
-        assert new_value == initial + 1
+        after = _sample(_exposition(), metric, side="sell", type="limit", status="rejected_risk")
+        assert after == before + 1
+
+    def test_order_submission_latency_observed(self):
+        metric = "llamatrade_trading_order_submission_latency_seconds_count"
+        before = _sample(_exposition(), metric)
+
+        record_order_submission(side="buy", order_type="market", status="success", duration=0.3)
+
+        assert _sample(_exposition(), metric) == before + 1
 
 
 class TestBracketOrderMetrics:
-    """Tests for bracket order metrics."""
+    """Bracket-order counters are trading-service-local."""
 
     def test_record_bracket_order_submitted(self):
-        """Test recording bracket order submission."""
-        initial_sl = BRACKET_ORDERS_SUBMITTED.labels(bracket_type="stop_loss")._value.get()
-        initial_tp = BRACKET_ORDERS_SUBMITTED.labels(bracket_type="take_profit")._value.get()
+        metric = "llamatrade_trading_bracket_orders_submitted_total"
+        before_sl = _sample(_exposition(), metric, bracket_type="stop_loss")
+        before_tp = _sample(_exposition(), metric, bracket_type="take_profit")
 
         record_bracket_order_submitted("stop_loss")
         record_bracket_order_submitted("take_profit")
 
-        assert (
-            BRACKET_ORDERS_SUBMITTED.labels(bracket_type="stop_loss")._value.get() == initial_sl + 1
-        )
-        assert (
-            BRACKET_ORDERS_SUBMITTED.labels(bracket_type="take_profit")._value.get()
-            == initial_tp + 1
-        )
+        text = _exposition()
+        assert _sample(text, metric, bracket_type="stop_loss") == before_sl + 1
+        assert _sample(text, metric, bracket_type="take_profit") == before_tp + 1
 
     def test_record_bracket_order_triggered(self):
-        """Test recording bracket order triggered."""
-        initial = BRACKET_ORDERS_TRIGGERED.labels(bracket_type="stop_loss")._value.get()
+        metric = "llamatrade_trading_bracket_orders_triggered_total"
+        before = _sample(_exposition(), metric, bracket_type="stop_loss")
 
         record_bracket_order_triggered("stop_loss")
 
-        assert BRACKET_ORDERS_TRIGGERED.labels(bracket_type="stop_loss")._value.get() == initial + 1
+        assert _sample(_exposition(), metric, bracket_type="stop_loss") == before + 1
 
 
 class TestRiskMetrics:
-    """Tests for risk-related metrics."""
+    """Risk checks and violation classification."""
 
     def test_record_risk_check_passed(self):
-        """Test recording passed risk check."""
-        initial = RISK_CHECKS_TOTAL.labels(result="passed")._value.get()
+        metric = "llamatrade_trading_risk_checks_total"
+        before = _sample(_exposition(), metric, result="passed")
 
         record_risk_check(passed=True, violations=[], duration=0.01)
 
-        assert RISK_CHECKS_TOTAL.labels(result="passed")._value.get() == initial + 1
+        assert _sample(_exposition(), metric, result="passed") == before + 1
 
     def test_record_risk_check_failed_with_violations(self):
-        """Test recording failed risk check with violations."""
-        initial_failed = RISK_CHECKS_TOTAL.labels(result="failed")._value.get()
-        initial_max_order = RISK_VIOLATIONS_TOTAL.labels(
-            violation_type="max_order_value"
-        )._value.get()
-        initial_daily_loss = RISK_VIOLATIONS_TOTAL.labels(violation_type="daily_loss")._value.get()
+        checks = "llamatrade_trading_risk_checks_total"
+        violations = "llamatrade_trading_risk_violations_total"
+        text = _exposition()
+        before_failed = _sample(text, checks, result="failed")
+        before_order = _sample(text, violations, violation_type="max_order_value")
+        before_daily = _sample(text, violations, violation_type="daily_loss")
 
         record_risk_check(
             passed=False,
@@ -137,19 +137,14 @@ class TestRiskMetrics:
             duration=0.02,
         )
 
-        assert RISK_CHECKS_TOTAL.labels(result="failed")._value.get() == initial_failed + 1
-        assert (
-            RISK_VIOLATIONS_TOTAL.labels(violation_type="max_order_value")._value.get()
-            == initial_max_order + 1
-        )
-        assert (
-            RISK_VIOLATIONS_TOTAL.labels(violation_type="daily_loss")._value.get()
-            == initial_daily_loss + 1
-        )
+        text = _exposition()
+        assert _sample(text, checks, result="failed") == before_failed + 1
+        assert _sample(text, violations, violation_type="max_order_value") == before_order + 1
+        assert _sample(text, violations, violation_type="daily_loss") == before_daily + 1
 
     def test_record_risk_check_position_violation(self):
-        """Test recording position size violation."""
-        initial = RISK_VIOLATIONS_TOTAL.labels(violation_type="max_position_size")._value.get()
+        violations = "llamatrade_trading_risk_violations_total"
+        before = _sample(_exposition(), violations, violation_type="max_position_size")
 
         record_risk_check(
             passed=False,
@@ -157,174 +152,168 @@ class TestRiskMetrics:
             duration=0.01,
         )
 
-        assert (
-            RISK_VIOLATIONS_TOTAL.labels(violation_type="max_position_size")._value.get()
-            == initial + 1
-        )
+        assert _sample(_exposition(), violations, violation_type="max_position_size") == before + 1
 
 
 class TestStrategyMetrics:
-    """Tests for strategy runner metrics."""
+    """Signal, bar-processing, strategy-error, and runner-gauge metrics."""
 
     def test_record_signal(self):
-        """Test recording trading signals."""
-        initial_buy = SIGNALS_GENERATED_TOTAL.labels(signal_type="buy")._value.get()
-        initial_sell = SIGNALS_GENERATED_TOTAL.labels(signal_type="sell")._value.get()
+        metric = "llamatrade_trading_signals_generated_total"
+        text = _exposition()
+        before_buy = _sample(text, metric, signal_type="buy")
+        before_sell = _sample(text, metric, signal_type="sell")
 
         record_signal("buy")
         record_signal("sell")
         record_signal("buy")
 
-        assert SIGNALS_GENERATED_TOTAL.labels(signal_type="buy")._value.get() == initial_buy + 2
-        assert SIGNALS_GENERATED_TOTAL.labels(signal_type="sell")._value.get() == initial_sell + 1
+        text = _exposition()
+        assert _sample(text, metric, signal_type="buy") == before_buy + 2
+        assert _sample(text, metric, signal_type="sell") == before_sell + 1
 
     def test_record_bar_processed(self):
-        """Test recording bar processing."""
-        initial = BARS_PROCESSED_TOTAL.labels(symbol="AAPL")._value.get()
+        count = "llamatrade_trading_bars_processed_total"
+        duration = "llamatrade_trading_bar_processing_duration_seconds_count"
+        text = _exposition()
+        before_count = _sample(text, count)
+        before_duration = _sample(text, duration)
 
+        # The symbol argument is accepted but no longer used as a label.
         record_bar_processed("AAPL", duration=0.005)
 
-        assert BARS_PROCESSED_TOTAL.labels(symbol="AAPL")._value.get() == initial + 1
+        text = _exposition()
+        assert _sample(text, count) == before_count + 1
+        assert _sample(text, duration) == before_duration + 1
 
     def test_record_strategy_error(self):
-        """Test recording strategy errors."""
-        initial = STRATEGY_ERRORS_TOTAL.labels(error_type="signal_generation")._value.get()
+        metric = "llamatrade_trading_strategy_errors_total"
+        before = _sample(_exposition(), metric, error_type="signal_generation")
 
         record_strategy_error("signal_generation")
 
-        assert (
-            STRATEGY_ERRORS_TOTAL.labels(error_type="signal_generation")._value.get() == initial + 1
-        )
+        assert _sample(_exposition(), metric, error_type="signal_generation") == before + 1
 
     def test_update_runner_gauge(self):
-        """Test updating active runners gauge."""
+        metric = "llamatrade_trading_active_runners"
+
         update_runner_gauge(5)
-        assert ACTIVE_RUNNERS._value.get() == 5
+        assert _sample(_exposition(), metric) == 5
 
         update_runner_gauge(3)
-        assert ACTIVE_RUNNERS._value.get() == 3
+        assert _sample(_exposition(), metric) == 3
 
 
-class TestBarStreamMetrics:
-    """Tests for bar stream metrics."""
+class TestStreamMetrics:
+    """Bar/trade stream connection and reconnect metrics."""
 
     def test_record_bar_latency(self):
-        """Test recording bar latency."""
-        # Just verify it doesn't raise
+        metric = "llamatrade_trading_bar_stream_latency_seconds_count"
+        before = _sample(_exposition(), metric)
+
         record_bar_latency(0.5)
         record_bar_latency(1.2)
 
+        assert _sample(_exposition(), metric) == before + 2
+
     def test_record_bar_stream_reconnect(self):
-        """Test recording reconnection."""
-        initial = BAR_STREAM_RECONNECTS_TOTAL._value.get()
+        metric = "llamatrade_trading_bar_stream_reconnects_total"
+        before = _sample(_exposition(), metric)
 
         record_bar_stream_reconnect()
 
-        assert BAR_STREAM_RECONNECTS_TOTAL._value.get() == initial + 1
+        assert _sample(_exposition(), metric) == before + 1
 
     def test_set_bar_stream_connected(self):
-        """Test setting connection status."""
+        metric = "llamatrade_trading_bar_stream_connected"
+
         set_bar_stream_connected(True)
-        assert BAR_STREAM_CONNECTED._value.get() == 1
+        assert _sample(_exposition(), metric) == 1
 
         set_bar_stream_connected(False)
-        assert BAR_STREAM_CONNECTED._value.get() == 0
+        assert _sample(_exposition(), metric) == 0
+
+    def test_record_trade_stream_event(self):
+        metric = "llamatrade_trading_trade_stream_events_total"
+        before = _sample(_exposition(), metric, event_type="fill")
+
+        record_trade_stream_event("fill")
+
+        assert _sample(_exposition(), metric, event_type="fill") == before + 1
 
 
-class TestPositionMetrics:
-    """Tests for position metrics."""
+class TestFillMetrics:
+    """Fill processing counters and duration."""
 
-    def test_update_positions(self):
-        """Test updating position metrics."""
-        update_positions("tenant-1", "session-1", count=3, total_value=15000.0)
+    def test_record_fill_processed(self):
+        count = "llamatrade_trading_fills_total"
+        duration = "llamatrade_trading_fill_processing_duration_seconds_count"
+        text = _exposition()
+        before_count = _sample(text, count, side="buy", fill_type="full")
+        before_duration = _sample(text, duration)
 
-        assert (
-            ACTIVE_POSITIONS.labels(tenant_id="tenant-1", session_id="session-1")._value.get() == 3
-        )
-        assert (
-            POSITION_VALUE_GAUGE.labels(tenant_id="tenant-1", session_id="session-1")._value.get()
-            == 15000.0
-        )
+        record_fill_processed(side="buy", fill_type="full", duration=0.01)
 
-    def test_update_daily_pnl(self):
-        """Test updating daily P&L gauge."""
-        update_daily_pnl("tenant-1", "session-1", pnl=1500.50)
-
-        assert (
-            DAILY_PNL_GAUGE.labels(tenant_id="tenant-1", session_id="session-1")._value.get()
-            == 1500.50
-        )
-
-    def test_update_drawdown(self):
-        """Test updating drawdown gauge."""
-        update_drawdown("tenant-1", "session-1", drawdown_pct=2.5)
-
-        assert (
-            CURRENT_DRAWDOWN_GAUGE.labels(tenant_id="tenant-1", session_id="session-1")._value.get()
-            == 2.5
-        )
+        text = _exposition()
+        assert _sample(text, count, side="buy", fill_type="full") == before_count + 1
+        assert _sample(text, duration) == before_duration + 1
 
 
-class TestAsyncMetricsTimer:
-    """Tests for async metrics timer."""
+class TestReconciliationMetrics:
+    """Position reconciliation, drift, and drift-magnitude metrics."""
 
-    @pytest.mark.asyncio
-    async def test_async_metrics_timer(self):
-        """Test async context manager timing."""
-        import asyncio
+    def test_record_position_reconciliation_match(self):
+        metric = "llamatrade_trading_position_reconciliation_total"
+        duration = "llamatrade_trading_position_reconciliation_duration_seconds_count"
+        text = _exposition()
+        before = _sample(text, metric, result="match")
+        before_duration = _sample(text, duration)
 
-        async with AsyncMetricsTimer(
-            ORDER_SUBMISSION_DURATION, {"side": "buy", "order_type": "market"}
-        ):
-            await asyncio.sleep(0.01)
+        record_position_reconciliation(result="match", duration=0.1)
 
-        # Just verify it doesn't raise and completes
+        text = _exposition()
+        assert _sample(text, metric, result="match") == before + 1
+        assert _sample(text, duration) == before_duration + 1
 
+    def test_record_position_reconciliation_drift(self):
+        recon = "llamatrade_trading_position_reconciliation_total"
+        drift = "llamatrade_trading_position_drift_detected_total"
+        pct = "llamatrade_trading_position_drift_quantity_pct_count"
+        text = _exposition()
+        before_recon = _sample(text, recon, result="drift_alerted")
+        before_drift = _sample(text, drift, drift_type="quantity_mismatch")
+        before_pct = _sample(text, pct)
 
-class TestAlpacaApiMetrics:
-    """Tests for Alpaca API metrics."""
-
-    @pytest.mark.asyncio
-    async def test_time_alpaca_call_success(self):
-        """Test timing successful API call."""
-        initial = ALPACA_API_CALLS_TOTAL.labels(
-            endpoint="test_endpoint", status="success"
-        )._value.get()
-
-        async with time_alpaca_call("test_endpoint"):
-            pass
-
-        assert (
-            ALPACA_API_CALLS_TOTAL.labels(endpoint="test_endpoint", status="success")._value.get()
-            == initial + 1
+        # symbol is accepted but not recorded as a label.
+        record_position_reconciliation(
+            result="drift_alerted",
+            duration=0.2,
+            drift_type="quantity_mismatch",
+            symbol="AAPL",
+            drift_percent=12.5,
         )
 
-    @pytest.mark.asyncio
-    async def test_time_alpaca_call_error(self):
-        """Test timing failed API call."""
-        initial = ALPACA_API_CALLS_TOTAL.labels(endpoint="test_error", status="error")._value.get()
+        text = _exposition()
+        assert _sample(text, recon, result="drift_alerted") == before_recon + 1
+        assert _sample(text, drift, drift_type="quantity_mismatch") == before_drift + 1
+        assert _sample(text, pct) == before_pct + 1
 
-        with pytest.raises(ValueError):
-            async with time_alpaca_call("test_error"):
-                raise ValueError("Test error")
 
-        assert (
-            ALPACA_API_CALLS_TOTAL.labels(endpoint="test_error", status="error")._value.get()
-            == initial + 1
-        )
+class TestExpositionShape:
+    """Forbidden per-session labels must not appear in the exposition."""
 
-    @pytest.mark.asyncio
-    async def test_time_alpaca_call_timeout(self):
-        """Test timing timeout API call."""
-        initial = ALPACA_API_CALLS_TOTAL.labels(
-            endpoint="test_timeout", status="timeout"
-        )._value.get()
-
-        with pytest.raises(TimeoutError):
-            async with time_alpaca_call("test_timeout"):
-                raise TimeoutError("Test timeout")
-
-        assert (
-            ALPACA_API_CALLS_TOTAL.labels(endpoint="test_timeout", status="timeout")._value.get()
-            == initial + 1
-        )
+    @pytest.mark.parametrize(
+        "forbidden",
+        [
+            "tenant_id=",
+            "session_id=",
+            "trading_daily_pnl_dollars",
+            "trading_current_drawdown_percent",
+            "trading_position_value_dollars",
+            "trading_alpaca_api_calls_total",
+        ],
+    )
+    def test_no_forbidden_labels_or_dropped_metrics(self, forbidden):
+        # Emit a representative signal so the trading metrics exist in output.
+        record_order_submission(side="buy", order_type="market", status="success", duration=0.1)
+        assert forbidden not in _exposition()

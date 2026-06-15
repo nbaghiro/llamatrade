@@ -12,6 +12,8 @@ import os
 from collections.abc import AsyncIterator
 from typing import Any
 
+from llamatrade_telemetry import metrics
+
 from src.llm.client import (
     LLMClient,
     LLMConfig,
@@ -199,8 +201,10 @@ class AnthropicClient(LLMClient):
         if effective_tools:
             kwargs["tools"] = effective_tools
 
+        model = self.config.model
         try:
-            response = await client.messages.create(**kwargs)
+            with metrics.agent.llm_latency.time(model=model):
+                response = await client.messages.create(**kwargs)
 
             # Extract content and tool calls
             content_parts = []
@@ -218,17 +222,25 @@ class AnthropicClient(LLMClient):
                         )
                     )
 
+            input_tokens = int(response.usage.input_tokens)
+            output_tokens = int(response.usage.output_tokens)
+            metrics.agent.llm_request(model=model, result="success")
+            metrics.agent.llm_tokens(model=model, direction="input", count=input_tokens)
+            metrics.agent.llm_tokens(model=model, direction="output", count=output_tokens)
+
             return LLMResponse(
                 content="\n".join(content_parts),
                 tool_calls=tool_calls,
                 stop_reason=response.stop_reason or "end_turn",
                 usage={
-                    "input_tokens": response.usage.input_tokens,
-                    "output_tokens": response.usage.output_tokens,
+                    "input_tokens": input_tokens,
+                    "output_tokens": output_tokens,
                 },
             )
 
         except Exception as e:
+            metrics.agent.llm_request(model=model, result="error")
+            metrics.agent.llm_error(type=type(e).__name__)
             logger.error("Anthropic API error: %s", e)
             raise
 
@@ -277,76 +289,95 @@ class AnthropicClient(LLMClient):
         if effective_tools:
             kwargs["tools"] = effective_tools
 
+        model = self.config.model
         try:
             # Track current tool use for accumulating input
             current_tool_id: str | None = None
             current_tool_name: str | None = None
             current_tool_input: str = ""
 
-            async with client.messages.stream(**kwargs) as stream:
-                async for event in stream:
-                    # Handle different event types
-                    if event.type == "message_start":
-                        yield StreamEvent(type=StreamEventType.MESSAGE_START)
+            with metrics.agent.llm_latency.time(model=model):
+                async with client.messages.stream(**kwargs) as stream:
+                    async for event in stream:
+                        # Handle different event types
+                        if event.type == "message_start":
+                            yield StreamEvent(type=StreamEventType.MESSAGE_START)
 
-                    elif event.type == "content_block_start":
-                        block = event.content_block
-                        if block.type == "tool_use":
-                            current_tool_id = block.id
-                            current_tool_name = block.name
-                            current_tool_input = ""
-                            yield StreamEvent(
-                                type=StreamEventType.TOOL_USE_START,
-                                tool_call=ToolCall(
-                                    id=block.id,
-                                    name=block.name,
-                                    input={},
-                                ),
-                            )
-
-                    elif event.type == "content_block_delta":
-                        delta = event.delta
-                        if delta.type == "text_delta":
-                            yield StreamEvent(
-                                type=StreamEventType.CONTENT_DELTA,
-                                content=delta.text,
-                            )
-                        elif delta.type == "input_json_delta":
-                            current_tool_input += delta.partial_json
-                            yield StreamEvent(
-                                type=StreamEventType.TOOL_USE_DELTA,
-                                content=delta.partial_json,
-                            )
-
-                    elif event.type == "content_block_stop":
-                        if current_tool_id and current_tool_name:
-                            # Parse accumulated JSON input
-                            try:
-                                tool_input = (
-                                    json.loads(current_tool_input) if current_tool_input else {}
+                        elif event.type == "content_block_start":
+                            block = event.content_block
+                            if block.type == "tool_use":
+                                current_tool_id = block.id
+                                current_tool_name = block.name
+                                current_tool_input = ""
+                                yield StreamEvent(
+                                    type=StreamEventType.TOOL_USE_START,
+                                    tool_call=ToolCall(
+                                        id=block.id,
+                                        name=block.name,
+                                        input={},
+                                    ),
                                 )
-                            except json.JSONDecodeError:
-                                tool_input = {}
 
+                        elif event.type == "content_block_delta":
+                            delta = event.delta
+                            if delta.type == "text_delta":
+                                yield StreamEvent(
+                                    type=StreamEventType.CONTENT_DELTA,
+                                    content=delta.text,
+                                )
+                            elif delta.type == "input_json_delta":
+                                current_tool_input += delta.partial_json
+                                yield StreamEvent(
+                                    type=StreamEventType.TOOL_USE_DELTA,
+                                    content=delta.partial_json,
+                                )
+
+                        elif event.type == "content_block_stop":
+                            if current_tool_id and current_tool_name:
+                                # Parse accumulated JSON input
+                                try:
+                                    tool_input = (
+                                        json.loads(current_tool_input) if current_tool_input else {}
+                                    )
+                                except json.JSONDecodeError:
+                                    tool_input = {}
+
+                                yield StreamEvent(
+                                    type=StreamEventType.TOOL_USE_END,
+                                    tool_call=ToolCall(
+                                        id=current_tool_id,
+                                        name=current_tool_name,
+                                        input=tool_input,
+                                    ),
+                                )
+                                current_tool_id = None
+                                current_tool_name = None
+                                current_tool_input = ""
+
+                        elif event.type == "message_stop":
+                            snapshot = stream.current_message_snapshot
+                            usage = getattr(snapshot, "usage", None)
+                            if usage is not None:
+                                metrics.agent.llm_tokens(
+                                    model=model,
+                                    direction="input",
+                                    count=int(usage.input_tokens),
+                                )
+                                metrics.agent.llm_tokens(
+                                    model=model,
+                                    direction="output",
+                                    count=int(usage.output_tokens),
+                                )
                             yield StreamEvent(
-                                type=StreamEventType.TOOL_USE_END,
-                                tool_call=ToolCall(
-                                    id=current_tool_id,
-                                    name=current_tool_name,
-                                    input=tool_input,
-                                ),
+                                type=StreamEventType.MESSAGE_END,
+                                stop_reason=snapshot.stop_reason,
                             )
-                            current_tool_id = None
-                            current_tool_name = None
-                            current_tool_input = ""
 
-                    elif event.type == "message_stop":
-                        yield StreamEvent(
-                            type=StreamEventType.MESSAGE_END,
-                            stop_reason=stream.current_message_snapshot.stop_reason,
-                        )
+            metrics.agent.llm_request(model=model, result="success")
 
         except Exception as e:
+            metrics.agent.llm_request(model=model, result="error")
+            metrics.agent.llm_error(type=type(e).__name__)
             logger.error("Anthropic streaming error: %s", e)
             yield StreamEvent(
                 type=StreamEventType.ERROR,

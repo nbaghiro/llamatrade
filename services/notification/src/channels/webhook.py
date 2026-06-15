@@ -2,8 +2,13 @@
 
 import hashlib
 import hmac
+import time
 
 import httpx
+
+from llamatrade_telemetry import metrics
+
+_CHANNEL = "webhook"
 
 
 class WebhookChannel:
@@ -29,6 +34,7 @@ class WebhookChannel:
             signature = hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
             request_headers["X-Signature"] = f"sha256={signature}"
 
+        start = time.perf_counter()
         try:
             async with httpx.AsyncClient() as client:
                 response = await client.post(
@@ -37,6 +43,18 @@ class WebhookChannel:
                     headers=request_headers,
                     timeout=30.0,
                 )
-                return bool(response.status_code < 400)
-        except Exception:
+                ok = bool(response.status_code < 400)
+                if ok:
+                    metrics.notification.delivered(channel=_CHANNEL)
+                else:
+                    metrics.notification.delivery_failed(
+                        channel=_CHANNEL, reason=f"http_{response.status_code}"
+                    )
+                return ok
+        except Exception as e:
+            metrics.notification.delivery_failed(channel=_CHANNEL, reason=type(e).__name__)
             return False
+        finally:
+            metrics.notification.delivery_latency.labels(channel=_CHANNEL).observe(
+                time.perf_counter() - start
+            )

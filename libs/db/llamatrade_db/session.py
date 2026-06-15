@@ -1,9 +1,13 @@
 """Database connection and session management."""
 
 import os
+import re
 from collections.abc import AsyncGenerator
 from dataclasses import dataclass
+from time import perf_counter
 
+from sqlalchemy import event
+from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -12,6 +16,7 @@ from sqlalchemy.ext.asyncio import (
 )
 
 from llamatrade_db.base import Base
+from llamatrade_telemetry.instrumentation.db import DB_QUERY_DURATION
 
 # Module-level engine and session maker (initialized lazily)
 _engine: AsyncEngine | None = None
@@ -26,6 +31,62 @@ def get_database_url() -> str:
     )
 
 
+_TABLE_RE = re.compile(
+    r"\b(?:from|into|update|join)\s+\"?([a-zA-Z_][a-zA-Z0-9_]*)\"?", re.IGNORECASE
+)
+_OPERATIONS = frozenset({"SELECT", "INSERT", "UPDATE", "DELETE"})
+
+
+def _operation(statement: str) -> str:
+    word = statement.lstrip().split(" ", 1)[0].upper() if statement else ""
+    return word if word in _OPERATIONS else "other"
+
+
+def _table(statement: str) -> str:
+    match = _TABLE_RE.search(statement or "")
+    return match.group(1) if match else "unknown"
+
+
+def _install_query_timing(engine: AsyncEngine) -> None:
+    """Time every SQL statement into ``llamatrade_db_query_duration_seconds``.
+
+    Uses SQLAlchemy cursor-execute events on the underlying sync engine, so all
+    queries across the service are timed without per-call-site changes. Labels are
+    bounded: ``operation`` (SELECT/INSERT/UPDATE/DELETE/other) and a best-effort
+    ``table`` (schema tables are a finite set; falls back to ``unknown``).
+    """
+    sync_engine = engine.sync_engine
+
+    def _before(
+        conn: Connection,
+        cursor: object,
+        statement: str,
+        parameters: object,
+        context: object,
+        executemany: bool,
+    ) -> None:
+        conn.info.setdefault("_lt_query_start", []).append(perf_counter())
+
+    def _after(
+        conn: Connection,
+        cursor: object,
+        statement: str,
+        parameters: object,
+        context: object,
+        executemany: bool,
+    ) -> None:
+        stack = conn.info.get("_lt_query_start")
+        if not stack:
+            return
+        elapsed = perf_counter() - stack.pop()
+        DB_QUERY_DURATION.labels(operation=_operation(statement), table=_table(statement)).observe(
+            elapsed
+        )
+
+    event.listen(sync_engine, "before_cursor_execute", _before)
+    event.listen(sync_engine, "after_cursor_execute", _after)
+
+
 def get_engine() -> AsyncEngine:
     """Get or create the async database engine."""
     global _engine
@@ -37,6 +98,7 @@ def get_engine() -> AsyncEngine:
             pool_size=int(os.getenv("DB_POOL_SIZE", "10")),
             max_overflow=int(os.getenv("DB_MAX_OVERFLOW", "20")),
         )
+        _install_query_timing(_engine)
     return _engine
 
 

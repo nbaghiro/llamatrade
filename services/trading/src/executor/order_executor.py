@@ -43,6 +43,7 @@ from src.metrics import (
     record_bracket_oco_conflict,
     record_bracket_order_submitted,
     record_bracket_order_triggered,
+    record_idempotent_replay,
 )
 from src.models import (
     BracketOrderInfo,
@@ -127,6 +128,7 @@ class OrderExecutor(OrderSubmissionMixin):
             existing = await self._find_order_by_client_id(client_order_id, tenant_id)
             if existing is not None:
                 # Idempotent retry: we already recorded this order.
+                record_idempotent_replay()
                 logger.info(
                     "Order already submitted for client_order_id=%s; returning existing",
                     client_order_id,

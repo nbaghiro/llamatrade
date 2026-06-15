@@ -11,17 +11,14 @@ from llamatrade_common.events import Event, EventBus, EventType
 from llamatrade_common.health import HealthChecker, HealthStatus, check_postgres, check_redis
 from llamatrade_common.logging import (
     JSONFormatter,
+    clear_request_context,
     configure_logging,
     get_logger,
     set_request_context,
 )
 from llamatrade_common.metrics import (
-    HTTP_REQUEST_DURATION_SECONDS,
-    HTTP_REQUESTS_TOTAL,
-    MetricsTimer,
     get_metrics,
     init_service_info,
-    record_http_request,
     register_db_pool_observer,
 )
 from llamatrade_common.middleware import TenantContext, TenantMiddleware, get_tenant_context
@@ -58,14 +55,11 @@ __all__ = [
     "configure_logging",
     "get_logger",
     "set_request_context",
+    "clear_request_context",
     "JSONFormatter",
     # Metrics
     "get_metrics",
     "init_service_info",
-    "record_http_request",
-    "MetricsTimer",
-    "HTTP_REQUESTS_TOTAL",
-    "HTTP_REQUEST_DURATION_SECONDS",
     "register_db_pool_observer",
     # Observability
     "setup_observability",

@@ -31,6 +31,7 @@ from llamatrade_db.models.ledger import (
     SleeveStatus,
     SleeveType,
 )
+from llamatrade_telemetry import metrics
 
 from src.ledger.reconciliation import Drift, DriftKind
 
@@ -141,6 +142,7 @@ async def _freeze_holding_sleeves(
             sleeve_id=sleeve.id,
             event_id=_drift_event_id(sleeve.id, drift, "freeze"),
         )
+        metrics.ledger.sleeve_frozen()
         frozen += 1
         logger.critical(
             "froze sleeve %s (account=%s): %s drift on %s — manual review required",

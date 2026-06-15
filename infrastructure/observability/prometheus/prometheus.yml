@@ -1,0 +1,64 @@
+# Prometheus scrape + alerting config for the LlamaTrade dev stack.
+#
+# Targets are addressed by Docker Compose service/container name on the shared
+# `llamatrade-network`. Every backend service exposes OTel-backed Prometheus
+# metrics at GET /metrics (default port == its gRPC/app port). Metrics carry NO
+# `service` label, so the `job` label below is how dashboards distinguish them.
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    cluster: llamatrade-dev
+
+# Alertmanager wiring.
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+            - alertmanager:9093
+
+# SLO / burn-rate alert rules (PromQL against the llamatrade_* metric names).
+rule_files:
+  - /etc/prometheus/alerts.yml
+
+scrape_configs:
+  # Prometheus self-monitoring.
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]
+
+  # OTel Collector's own Prometheus metrics (queue/exporter health).
+  - job_name: otel-collector
+    static_configs:
+      - targets: ["otel-collector:8888"]
+
+  # --- LlamaTrade backend services (9) ------------------------------------
+  # job=<service-name> is the dashboard/alert dimension.
+  - job_name: auth
+    static_configs:
+      - targets: ["auth:8810"]
+  - job_name: strategy
+    static_configs:
+      - targets: ["strategy:8820"]
+  - job_name: backtest
+    static_configs:
+      - targets: ["backtest:8830"]
+  - job_name: market-data
+    static_configs:
+      - targets: ["market-data:8840"]
+  - job_name: trading
+    static_configs:
+      - targets: ["trading:8850"]
+  - job_name: portfolio
+    static_configs:
+      - targets: ["portfolio:8860"]
+  - job_name: notification
+    static_configs:
+      - targets: ["notification:8870"]
+  - job_name: billing
+    # Billing exposes gRPC on 8880 and HTTP (incl. /metrics) on 8881.
+    static_configs:
+      - targets: ["billing:8881"]
+  - job_name: agent
+    static_configs:
+      - targets: ["agent:8890"]

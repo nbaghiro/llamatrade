@@ -13,6 +13,7 @@ dependencies = [
     "fastapi>=0.109.0",
     "httpx>=0.26.0",
     "redis>=5.0.0",
+    "llamatrade-telemetry",
 ]
 
 [project.optional-dependencies]

@@ -1,0 +1,38 @@
+# Minimal Alertmanager config for the LlamaTrade dev stack.
+#
+# Dev default: route everything to a no-op webhook receiver so alerts are
+# visible in the Alertmanager UI (http://localhost:9093) without paging anyone.
+# Wire Slack/PagerDuty/email receivers here for staging/prod.
+global:
+  resolve_timeout: 5m
+
+route:
+  receiver: "null"
+  group_by: ["alertname", "job"]
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+  routes:
+    # Page-severity alerts could fan out to a real receiver here.
+    - matchers:
+        - severity = "page"
+      receiver: "null"
+      continue: true
+
+receivers:
+  # No-op sink: alerts still show in the UI, nothing is delivered.
+  - name: "null"
+
+  # --- Example webhook receiver (uncomment + point at your handler) --------
+  # - name: "webhook"
+  #   webhook_configs:
+  #     - url: "http://alert-webhook:9000/alerts"
+  #       send_resolved: true
+
+inhibit_rules:
+  # A firing page mutes the matching ticket for the same job/slo.
+  - source_matchers:
+      - severity = "page"
+    target_matchers:
+      - severity = "ticket"
+    equal: ["job", "slo"]

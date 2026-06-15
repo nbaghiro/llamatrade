@@ -18,7 +18,7 @@ from llamatrade_db.models.trading import Order, Position
 
 from src.clients.market_data import MarketDataClient, get_market_data_client
 from src.clients.portfolio_client import PortfolioLedgerClient, get_portfolio_ledger_client
-from src.metrics import record_risk_check, update_daily_pnl, update_drawdown
+from src.metrics import record_risk_check
 from src.models import RiskCheckResult, RiskLimits
 from src.utils.cache import AsyncTTLCache
 from src.utils.trading_hours import TradingHoursChecker, TradingHoursConfig
@@ -361,10 +361,6 @@ class RiskManager:
             self.db.add(daily)
 
         await self.db.commit()
-
-        # Update Prometheus metrics
-        update_daily_pnl(str(tenant_id), str(session_id), total_pnl)
-        update_drawdown(str(tenant_id), str(session_id), float(daily.max_drawdown_pct))
 
     async def record_trade(
         self,

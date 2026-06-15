@@ -41,9 +41,10 @@ from typing import TypedDict, cast
 from uuid import UUID, uuid4
 
 import redis.asyncio as aioredis
-from prometheus_client import Counter
 from pydantic import BaseModel, Field
 from redis.typing import EncodableT, FieldT
+
+from llamatrade_telemetry.instrumentation.eventbus import record_published, record_reconnect
 
 logger = logging.getLogger(__name__)
 
@@ -236,18 +237,8 @@ class PriceUpdateData(BaseModel):
 # EventBus — Redis Streams transport
 # =============================================================================
 
-# Labeled by the stream's logical prefix (e.g. "trading:orders"), never the
-# full per-session key — bounded metric cardinality.
-EVENTBUS_PUBLISHED_TOTAL = Counter(
-    "eventbus_published_total",
-    "Entries published to Redis Streams via the EventBus",
-    ["stream"],
-)
-EVENTBUS_RECONNECTS_TOTAL = Counter(
-    "eventbus_reconnects_total",
-    "Transport-error reconnects in EventBus readers",
-    ["stream", "mode"],  # mode: tail / consume
-)
+# EventBus metrics now live in llamatrade_telemetry.instrumentation.eventbus
+# (labelled by the stream's logical prefix — bounded cardinality).
 
 DEFAULT_NAMESPACE = "lt"
 RECONNECT_BASE_DELAY_SECONDS = 1.0
@@ -319,7 +310,7 @@ class EventBus:
             maxlen=maxlen,
             approximate=approximate,
         )
-        EVENTBUS_PUBLISHED_TOTAL.labels(stream=_stream_label(stream)).inc()
+        record_published(_stream_label(stream))
         return _decode_id(entry_id)
 
     async def tail(
@@ -358,7 +349,7 @@ class EventBus:
                 raise
             except Exception:
                 attempt += 1
-                EVENTBUS_RECONNECTS_TOTAL.labels(stream=_stream_label(stream), mode="tail").inc()
+                record_reconnect(_stream_label(stream), "tail")
                 delay = _backoff_delay(attempt)
                 logger.warning(
                     "tail(%s) transport error; retrying in %.1fs", stream, delay, exc_info=True
@@ -423,7 +414,7 @@ class EventBus:
                 raise
             except Exception:
                 attempt += 1
-                EVENTBUS_RECONNECTS_TOTAL.labels(stream=_stream_label(stream), mode="consume").inc()
+                record_reconnect(_stream_label(stream), "consume")
                 delay = _backoff_delay(attempt)
                 logger.warning(
                     "consume(%s, group=%s) transport error; retrying in %.1fs",

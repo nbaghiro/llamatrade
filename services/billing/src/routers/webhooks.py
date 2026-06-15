@@ -23,10 +23,11 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from stripe import Event, Invoice, PaymentMethod, StripeObject, Subscription
 
+from llamatrade_db import get_db
 from llamatrade_proto.generated import billing_pb2
+from llamatrade_telemetry import metrics
 
 from src.services.billing_service import stripe_status_to_proto
-from llamatrade_db import get_db
 from src.stripe.client import StripeError, get_stripe_client
 
 # Invoice status constants (DB-only, no proto)
@@ -40,6 +41,22 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET", "")
+
+# Stripe event types this service dispatches; everything else is a no-op.
+_HANDLED_EVENT_TYPES = frozenset(
+    {
+        "customer.subscription.created",
+        "customer.subscription.updated",
+        "customer.subscription.deleted",
+        "invoice.paid",
+        "invoice.payment_failed",
+        "payment_method.attached",
+        "payment_method.detached",
+    }
+)
+
+# Bounded fallback plan label for revenue metrics when the plan is unknown.
+_UNKNOWN_PLAN = "unknown"
 
 
 def _payload_as[T: StripeObject](resource: type[T], event: Event) -> T:
@@ -114,6 +131,7 @@ async def handle_stripe_webhook(
                 webhook_secret=STRIPE_WEBHOOK_SECRET,
             )
         except StripeError as e:
+            metrics.billing.webhook_signature_failure()
             logger.error(f"Webhook signature verification failed: {e}")
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -125,24 +143,33 @@ async def handle_stripe_webhook(
     # Log the event
     logger.info(f"Processing Stripe webhook: {event_type}")
 
+    # Map of handled event types to their dispatch coroutines. Only handled
+    # types are counted/timed; unrecognized events are no-ops (Stripe sends
+    # many we don't subscribe to).
+    handled = event_type in _HANDLED_EVENT_TYPES
+    if not handled:
+        logger.debug(f"Unhandled webhook event type: {event_type}")
+        return {"received": True}
+
+    metrics.billing.webhook_received(event_type=event_type)
+
     # Handle different event types
     try:
-        if event_type == "customer.subscription.created":
-            await _handle_subscription_created(db, _payload_as(Subscription, event))
-        elif event_type == "customer.subscription.updated":
-            await _handle_subscription_updated(db, _payload_as(Subscription, event))
-        elif event_type == "customer.subscription.deleted":
-            await _handle_subscription_deleted(db, _payload_as(Subscription, event))
-        elif event_type == "invoice.paid":
-            await _handle_invoice_paid(db, _payload_as(Invoice, event))
-        elif event_type == "invoice.payment_failed":
-            await _handle_payment_failed(db, _payload_as(Invoice, event))
-        elif event_type == "payment_method.attached":
-            await _handle_payment_method_attached(db, _payload_as(PaymentMethod, event))
-        elif event_type == "payment_method.detached":
-            await _handle_payment_method_detached(db, _payload_as(PaymentMethod, event))
-        else:
-            logger.debug(f"Unhandled webhook event type: {event_type}")
+        with metrics.billing.webhook_handler_duration.time(event_type=event_type):
+            if event_type == "customer.subscription.created":
+                await _handle_subscription_created(db, _payload_as(Subscription, event))
+            elif event_type == "customer.subscription.updated":
+                await _handle_subscription_updated(db, _payload_as(Subscription, event))
+            elif event_type == "customer.subscription.deleted":
+                await _handle_subscription_deleted(db, _payload_as(Subscription, event))
+            elif event_type == "invoice.paid":
+                await _handle_invoice_paid(db, _payload_as(Invoice, event))
+            elif event_type == "invoice.payment_failed":
+                await _handle_payment_failed(db, _payload_as(Invoice, event))
+            elif event_type == "payment_method.attached":
+                await _handle_payment_method_attached(db, _payload_as(PaymentMethod, event))
+            elif event_type == "payment_method.detached":
+                await _handle_payment_method_detached(db, _payload_as(PaymentMethod, event))
     except Exception as e:
         logger.error(f"Error processing webhook {event_type}: {e}")
         # Don't raise - return 200 so Stripe doesn't retry
@@ -232,6 +259,7 @@ async def _handle_invoice_paid(db: AsyncSession, invoice: Invoice) -> None:
     from decimal import Decimal
 
     from sqlalchemy import select
+    from sqlalchemy.orm import selectinload
 
     from llamatrade_db.models import Invoice as DbInvoice
     from llamatrade_db.models import Subscription as DbSubscription
@@ -240,9 +268,11 @@ async def _handle_invoice_paid(db: AsyncSession, invoice: Invoice) -> None:
 
     logger.info(f"Invoice paid: {invoice.id}")
 
-    # Find the subscription to get tenant_id
+    # Find the subscription to get tenant_id (eager-load plan for revenue metric)
     result = await db.execute(
-        select(DbSubscription).where(DbSubscription.stripe_subscription_id == stripe_sub_id)
+        select(DbSubscription)
+        .options(selectinload(DbSubscription.plan))
+        .where(DbSubscription.stripe_subscription_id == stripe_sub_id)
     )
     subscription = result.scalar_one_or_none()
 
@@ -250,11 +280,16 @@ async def _handle_invoice_paid(db: AsyncSession, invoice: Invoice) -> None:
         logger.warning(f"No subscription found for invoice {invoice.id}")
         return
 
+    plan_name = subscription.plan.name
+    metrics.billing.invoice_paid(plan=plan_name)
+
     # Check if invoice already exists
     result = await db.execute(select(DbInvoice).where(DbInvoice.stripe_invoice_id == invoice.id))
     existing = result.scalar_one_or_none()
 
     if existing:
+        # An invoice we've already recorded is being re-delivered: idempotent replay.
+        metrics.billing.webhook_duplicate()
         # Update status
         existing.status = INVOICE_STATUS_PAID
         existing.amount_paid = Decimal(str(invoice.amount_paid / 100))
@@ -284,6 +319,7 @@ async def _handle_invoice_paid(db: AsyncSession, invoice: Invoice) -> None:
 async def _handle_payment_failed(db: AsyncSession, invoice: Invoice) -> None:
     """Handle invoice.payment_failed event."""
     from sqlalchemy import select
+    from sqlalchemy.orm import selectinload
 
     from llamatrade_db.models import Subscription as DbSubscription
 
@@ -292,12 +328,18 @@ async def _handle_payment_failed(db: AsyncSession, invoice: Invoice) -> None:
     logger.warning(f"Payment failed for subscription: {stripe_sub_id}")
 
     if not stripe_sub_id:
+        metrics.billing.invoice_payment_failed(plan=_UNKNOWN_PLAN)
         return
 
     result = await db.execute(
-        select(DbSubscription).where(DbSubscription.stripe_subscription_id == stripe_sub_id)
+        select(DbSubscription)
+        .options(selectinload(DbSubscription.plan))
+        .where(DbSubscription.stripe_subscription_id == stripe_sub_id)
     )
     subscription = result.scalar_one_or_none()
+
+    plan_name = subscription.plan.name if subscription is not None else _UNKNOWN_PLAN
+    metrics.billing.invoice_payment_failed(plan=plan_name)
 
     if subscription:
         subscription.status = billing_pb2.SUBSCRIPTION_STATUS_PAST_DUE
@@ -324,6 +366,8 @@ async def _handle_payment_method_attached(db: AsyncSession, payment_method: Paym
     existing = result.scalar_one_or_none()
 
     if existing:
+        # Payment method already recorded: re-delivered webhook (idempotent replay).
+        metrics.billing.webhook_duplicate()
         return  # Already synced
 
     # Find tenant by customer ID

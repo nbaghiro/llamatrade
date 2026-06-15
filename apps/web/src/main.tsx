@@ -5,6 +5,9 @@ import { BrowserRouter } from 'react-router-dom';
 
 import App from './App';
 import './index.css';
+import { initTelemetry } from './telemetry';
+
+initTelemetry();
 
 const queryClient = new QueryClient({
   defaultOptions: {

@@ -1,16 +1,20 @@
 """Tenant service - tenant management operations."""
 
+import binascii
 import json
 import re
 from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
+from cryptography.fernet import InvalidToken
 from fastapi import Depends
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from llamatrade_common.utils import decrypt_value, encrypt_value
+from llamatrade_db import get_db
 from llamatrade_db.models.auth import AlpacaCredentials as AlpacaCredentialsModel
+from llamatrade_telemetry import metrics
 
 from src.models import (
     AlpacaCredentialsCreate,
@@ -19,7 +23,6 @@ from src.models import (
     TenantDetailResponse,
     TenantResponse,
 )
-from llamatrade_db import get_db
 
 
 def _slugify(name: str) -> str:
@@ -35,6 +38,17 @@ class TenantService:
 
     def __init__(self, db: AsyncSession):
         self.db = db
+
+    def _decrypt_credential(self, encrypted_value: str) -> str:
+        """Decrypt a stored Alpaca credential, recording decryption failures.
+
+        Re-raises the underlying error so existing error propagation is preserved.
+        """
+        try:
+            return decrypt_value(encrypted_value)
+        except InvalidToken, binascii.Error:
+            metrics.auth.credential_decryption_failure()
+            raise
 
     async def create_tenant(
         self,
@@ -119,8 +133,8 @@ class TenantService:
         return AlpacaCredentialsResponse(
             id=creds.id,
             name=creds.name,
-            api_key=decrypt_value(creds.api_key_encrypted),
-            api_secret=decrypt_value(creds.api_secret_encrypted),
+            api_key=self._decrypt_credential(creds.api_key_encrypted),
+            api_secret=self._decrypt_credential(creds.api_secret_encrypted),
             is_paper=creds.is_paper,
             is_active=creds.is_active,
             created_at=creds.created_at,
@@ -181,7 +195,7 @@ class TenantService:
         items: list[AlpacaCredentialsListItem] = []
         for creds in creds_list:
             # Decrypt just to get prefix, then mask
-            api_key = decrypt_value(creds.api_key_encrypted)
+            api_key = self._decrypt_credential(creds.api_key_encrypted)
             items.append(
                 AlpacaCredentialsListItem(
                     id=creds.id,

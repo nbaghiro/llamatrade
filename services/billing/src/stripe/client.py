@@ -9,6 +9,8 @@ from typing import Any, Literal
 import stripe
 from stripe import Customer, Event, Invoice, PaymentMethod, SetupIntent, Subscription
 
+from llamatrade_telemetry.instrumentation.dependency import time_dependency
+
 logger = logging.getLogger(__name__)
 
 
@@ -96,16 +98,18 @@ class StripeClient:
         """Get existing customer by metadata or create new one."""
         try:
             # Search for existing customer with this tenant_id
-            customers = Customer.search(query=f"metadata['tenant_id']:'{tenant_id}'")
+            with time_dependency("stripe", "customer_search"):
+                customers = Customer.search(query=f"metadata['tenant_id']:'{tenant_id}'")
             if customers.data:
                 return str(customers.data[0].id)
 
             # Create new customer
-            customer = Customer.create(
-                email=email,
-                name=name or "",
-                metadata={"tenant_id": tenant_id},
-            )
+            with time_dependency("stripe", "customer_create"):
+                customer = Customer.create(
+                    email=email,
+                    name=name or "",
+                    metadata={"tenant_id": tenant_id},
+                )
             logger.info(f"Created Stripe customer {customer.id} for tenant {tenant_id}")
             return str(customer.id)
         except stripe.StripeError as e:
@@ -115,7 +119,8 @@ class StripeClient:
     async def get_customer(self, customer_id: str) -> Customer | None:
         """Get customer by ID."""
         try:
-            return Customer.retrieve(customer_id)
+            with time_dependency("stripe", "customer_retrieve"):
+                return Customer.retrieve(customer_id)
         except stripe.InvalidRequestError:
             return None
         except stripe.StripeError as e:
@@ -129,11 +134,12 @@ class StripeClient:
     async def create_setup_intent(self, customer_id: str) -> SetupIntentResult:
         """Create a SetupIntent for collecting card details."""
         try:
-            setup_intent = SetupIntent.create(
-                customer=customer_id,
-                payment_method_types=["card"],
-                usage="off_session",
-            )
+            with time_dependency("stripe", "setup_intent_create"):
+                setup_intent = SetupIntent.create(
+                    customer=customer_id,
+                    payment_method_types=["card"],
+                    usage="off_session",
+                )
             return SetupIntentResult(
                 client_secret=setup_intent.client_secret or "",
                 customer_id=customer_id,
@@ -147,7 +153,8 @@ class StripeClient:
     ) -> PaymentMethodResult:
         """Attach a payment method to a customer."""
         try:
-            pm = PaymentMethod.attach(payment_method_id, customer=customer_id)
+            with time_dependency("stripe", "payment_method_attach"):
+                pm = PaymentMethod.attach(payment_method_id, customer=customer_id)
             return self._payment_method_to_result(pm)
         except stripe.StripeError as e:
             logger.error(f"Stripe error attaching payment method: {e}")
@@ -156,7 +163,8 @@ class StripeClient:
     async def detach_payment_method(self, payment_method_id: str) -> bool:
         """Detach a payment method from its customer."""
         try:
-            PaymentMethod.detach(payment_method_id)
+            with time_dependency("stripe", "payment_method_detach"):
+                PaymentMethod.detach(payment_method_id)
             return True
         except stripe.StripeError as e:
             logger.error(f"Stripe error detaching payment method: {e}")
@@ -165,7 +173,8 @@ class StripeClient:
     async def list_payment_methods(self, customer_id: str) -> list[PaymentMethodResult]:
         """List payment methods for a customer."""
         try:
-            methods = PaymentMethod.list(customer=customer_id, type="card")
+            with time_dependency("stripe", "payment_method_list"):
+                methods = PaymentMethod.list(customer=customer_id, type="card")
             return [self._payment_method_to_result(pm) for pm in methods.data]
         except stripe.StripeError as e:
             logger.error(f"Stripe error listing payment methods: {e}")
@@ -174,10 +183,11 @@ class StripeClient:
     async def set_default_payment_method(self, customer_id: str, payment_method_id: str) -> bool:
         """Set a payment method as the default for a customer."""
         try:
-            Customer.modify(
-                customer_id,
-                invoice_settings={"default_payment_method": payment_method_id},
-            )
+            with time_dependency("stripe", "customer_set_default_payment_method"):
+                Customer.modify(
+                    customer_id,
+                    invoice_settings={"default_payment_method": payment_method_id},
+                )
             return True
         except stripe.StripeError as e:
             logger.error(f"Stripe error setting default payment method: {e}")
@@ -186,7 +196,8 @@ class StripeClient:
     async def get_default_payment_method(self, customer_id: str) -> str | None:
         """Get the default payment method ID for a customer."""
         try:
-            customer = Customer.retrieve(customer_id)
+            with time_dependency("stripe", "customer_retrieve"):
+                customer = Customer.retrieve(customer_id)
             settings = customer.invoice_settings
             default_pm = settings.default_payment_method if settings is not None else None
             if default_pm is None:
@@ -233,7 +244,8 @@ class StripeClient:
             if trial_days > 0:
                 params["trial_period_days"] = trial_days
 
-            subscription = Subscription.create(**params)
+            with time_dependency("stripe", "subscription_create"):
+                subscription = Subscription.create(**params)
             return self._subscription_to_result(subscription)
         except stripe.StripeError as e:
             logger.error(f"Stripe error creating subscription: {e}")
@@ -250,15 +262,17 @@ class StripeClient:
         """Update a subscription to a new price (plan change)."""
         try:
             # Get current subscription to find the item ID
-            subscription = Subscription.retrieve(subscription_id)
+            with time_dependency("stripe", "subscription_retrieve"):
+                subscription = Subscription.retrieve(subscription_id)
             item_id = subscription.items.data[0].id
 
             # Update subscription
-            updated = Subscription.modify(
-                subscription_id,
-                items=[{"id": item_id, "price": price_id}],
-                proration_behavior=proration_behavior,
-            )
+            with time_dependency("stripe", "subscription_modify"):
+                updated = Subscription.modify(
+                    subscription_id,
+                    items=[{"id": item_id, "price": price_id}],
+                    proration_behavior=proration_behavior,
+                )
             return self._subscription_to_result(updated)
         except stripe.StripeError as e:
             logger.error(f"Stripe error updating subscription: {e}")
@@ -268,9 +282,11 @@ class StripeClient:
         """Cancel a subscription."""
         try:
             if at_period_end:
-                Subscription.modify(subscription_id, cancel_at_period_end=True)
+                with time_dependency("stripe", "subscription_modify"):
+                    Subscription.modify(subscription_id, cancel_at_period_end=True)
             else:
-                Subscription.cancel(subscription_id)
+                with time_dependency("stripe", "subscription_cancel"):
+                    Subscription.cancel(subscription_id)
             return True
         except stripe.StripeError as e:
             logger.error(f"Stripe error canceling subscription: {e}")
@@ -279,10 +295,11 @@ class StripeClient:
     async def reactivate_subscription(self, subscription_id: str) -> SubscriptionResult:
         """Reactivate a subscription that was set to cancel at period end."""
         try:
-            subscription = Subscription.modify(
-                subscription_id,
-                cancel_at_period_end=False,
-            )
+            with time_dependency("stripe", "subscription_modify"):
+                subscription = Subscription.modify(
+                    subscription_id,
+                    cancel_at_period_end=False,
+                )
             return self._subscription_to_result(subscription)
         except stripe.StripeError as e:
             logger.error(f"Stripe error reactivating subscription: {e}")
@@ -291,7 +308,8 @@ class StripeClient:
     async def get_subscription(self, subscription_id: str) -> SubscriptionResult | None:
         """Get a subscription by ID."""
         try:
-            subscription = Subscription.retrieve(subscription_id)
+            with time_dependency("stripe", "subscription_retrieve"):
+                subscription = Subscription.retrieve(subscription_id)
             return self._subscription_to_result(subscription)
         except stripe.InvalidRequestError:
             return None
@@ -327,7 +345,8 @@ class StripeClient:
     async def list_invoices(self, customer_id: str, limit: int = 10) -> list[InvoiceResult]:
         """List invoices for a customer."""
         try:
-            invoices = Invoice.list(customer=customer_id, limit=limit)
+            with time_dependency("stripe", "invoice_list"):
+                invoices = Invoice.list(customer=customer_id, limit=limit)
             return [self._invoice_to_result(inv) for inv in invoices.data]
         except stripe.StripeError as e:
             logger.error(f"Stripe error listing invoices: {e}")

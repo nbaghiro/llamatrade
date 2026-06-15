@@ -1,0 +1,62 @@
+# OpenTelemetry Collector config for the LlamaTrade dev stack.
+#
+# Services export traces via OTLP/HTTP when OTEL_EXPORTER_OTLP_ENDPOINT is set
+# (see docker-compose.dev.yml). The collector receives OTLP (http + grpc),
+# batches, and exports. By default it just logs spans (debug exporter) so the
+# pipeline is verifiable without standing up Tempo/Cloud Trace. Uncomment a real
+# backend exporter below when you want persistent traces.
+receivers:
+  otlp:
+    protocols:
+      http:
+        endpoint: 0.0.0.0:4318
+      grpc:
+        endpoint: 0.0.0.0:4317
+
+processors:
+  # Batch spans before export to reduce egress overhead.
+  batch:
+    timeout: 5s
+    send_batch_size: 512
+  # Guard against memory blowups under load.
+  memory_limiter:
+    check_interval: 1s
+    limit_percentage: 80
+    spike_limit_percentage: 25
+
+exporters:
+  # Default dev sink: log a one-line summary of every batch. Replace/augment
+  # with a real backend below for persistent traces.
+  debug:
+    verbosity: normal
+
+  # --- Tempo (self-hosted) -------------------------------------------------
+  # otlp/tempo:
+  #   endpoint: tempo:4317
+  #   tls:
+  #     insecure: true
+
+  # --- Google Cloud Trace (GCP) -------------------------------------------
+  # Requires the contrib image (already used here) + GCP credentials mounted
+  # via GOOGLE_APPLICATION_CREDENTIALS.
+  # googlecloud:
+  #   project: ${GCP_PROJECT_ID}
+
+extensions:
+  # Liveness endpoint for the container healthcheck / k8s probes.
+  health_check:
+    endpoint: 0.0.0.0:13133
+
+service:
+  extensions: [health_check]
+  # The collector exposes its own metrics here; Prometheus scrapes otel-collector:8888.
+  telemetry:
+    metrics:
+      address: 0.0.0.0:8888
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, batch]
+      exporters: [debug]
+      # exporters: [debug, otlp/tempo]      # add Tempo
+      # exporters: [debug, googlecloud]     # or Cloud Trace

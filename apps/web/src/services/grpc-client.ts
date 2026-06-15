@@ -26,6 +26,7 @@ import { PortfolioService } from '../generated/proto/portfolio_pb';
 import { StrategyService } from '../generated/proto/strategy_pb';
 import { TradingService } from '../generated/proto/trading_pb';
 import { useAuthStore } from '../store/auth';
+import { telemetryInterceptor } from '../telemetry';
 
 // Direct service URLs (no proxy needed)
 const SERVICE_URLS = {
@@ -66,7 +67,8 @@ const authInterceptor: Interceptor = (next) => async (req) => {
 function createServiceTransport(baseUrl: string) {
   return createConnectTransport({
     baseUrl,
-    interceptors: [authInterceptor],
+    // telemetry first (outermost) so it times the full call and sets traceparent
+    interceptors: [telemetryInterceptor, authInterceptor],
     useBinaryFormat: false, // JSON for debugging - set to true for production
   });
 }

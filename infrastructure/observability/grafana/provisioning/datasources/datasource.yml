@@ -1,0 +1,15 @@
+# Grafana datasource provisioning — auto-loaded on startup.
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    type: prometheus
+    access: proxy
+    # Container DNS on the shared llamatrade-network.
+    url: http://prometheus:9090
+    isDefault: true
+    editable: true
+    jsonData:
+      httpMethod: POST
+      # Match Prometheus scrape_interval so $__rate_interval picks sane windows.
+      timeInterval: 15s

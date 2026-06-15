@@ -15,9 +15,9 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 # Type alias for generic request context (accepts any request/response types)
 type AnyContext = RequestContext[object, object]
 
-from llamatrade_proto.generated import auth_pb2, common_pb2
-
 from llamatrade_db import get_session_maker
+from llamatrade_proto.generated import auth_pb2, common_pb2
+from llamatrade_telemetry import metrics
 
 logger = logging.getLogger(__name__)
 
@@ -70,8 +70,10 @@ class AuthServicer:
             try:
                 payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
             except jwt.ExpiredSignatureError:
+                metrics.auth.token_validation_failure(reason="expired")
                 return auth_pb2.ValidateTokenResponse(valid=False)
             except jwt.InvalidTokenError:
+                metrics.auth.token_validation_failure(reason="invalid_sig")
                 return auth_pb2.ValidateTokenResponse(valid=False)
 
             # Extract context from payload
@@ -82,6 +84,7 @@ class AuthServicer:
             exp = payload.get("exp")
 
             if not tenant_id or not user_id:
+                metrics.auth.token_validation_failure(reason="missing_tenant")
                 return auth_pb2.ValidateTokenResponse(valid=False)
 
             # Build response
@@ -132,11 +135,13 @@ class AuthServicer:
                 db_key = result.scalar_one_or_none()
 
                 if not db_key:
+                    metrics.auth.api_key_validation_failure(reason="not_found")
                     return auth_pb2.ValidateAPIKeyResponse(valid=False)
 
                 # Verify full key (in production, would hash and compare)
                 # For simplicity, we check if the key is active and not expired
                 if db_key.expires_at and db_key.expires_at < datetime.now(UTC):
+                    metrics.auth.api_key_validation_failure(reason="expired")
                     return auth_pb2.ValidateAPIKeyResponse(valid=False)
 
                 # Check required scopes
@@ -180,8 +185,10 @@ class AuthServicer:
         try:
             payload = jwt.decode(refresh_token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
         except jwt.ExpiredSignatureError:
+            metrics.auth.token_validation_failure(reason="expired")
             raise ConnectError(Code.UNAUTHENTICATED, "Refresh token expired")
         except jwt.InvalidTokenError:
+            metrics.auth.token_validation_failure(reason="invalid_sig")
             raise ConnectError(Code.UNAUTHENTICATED, "Invalid refresh token")
 
         # Verify it's a refresh token
@@ -224,6 +231,7 @@ class AuthServicer:
                 "exp": access_expire,
             }
             new_access_token = jwt.encode(access_payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
+            metrics.auth.token_issued(type="access")
 
             refresh_payload = {
                 "sub": str(user.id),
@@ -233,6 +241,7 @@ class AuthServicer:
                 "exp": refresh_expire,
             }
             new_refresh_token = jwt.encode(refresh_payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
+            metrics.auth.token_issued(type="refresh")
 
             return auth_pb2.RefreshTokenResponse(
                 access_token=new_access_token,
@@ -363,7 +372,8 @@ class AuthServicer:
             await db.flush()
 
             # Hash password
-            password_hash = bcrypt.hashpw(request.password.encode(), bcrypt.gensalt()).decode()
+            with metrics.auth.bcrypt_hash_duration.time():
+                password_hash = bcrypt.hashpw(request.password.encode(), bcrypt.gensalt()).decode()
 
             # Create user
             user = User(
@@ -378,6 +388,8 @@ class AuthServicer:
             )
             db.add(user)
             await db.commit()
+
+            metrics.auth.registration()
 
             return auth_pb2.RegisterResponse(
                 user=auth_pb2.User(
@@ -416,6 +428,7 @@ class AuthServicer:
             user = result.scalar_one_or_none()
 
             if not user:
+                metrics.auth.login_failure(reason="user_not_found")
                 raise ConnectError(Code.UNAUTHENTICATED, "Invalid email or password")
 
             # Verify password
@@ -423,9 +436,11 @@ class AuthServicer:
                 request.password.encode(),
                 user.password_hash.encode(),
             ):
+                metrics.auth.login_failure(reason="wrong_password")
                 raise ConnectError(Code.UNAUTHENTICATED, "Invalid email or password")
 
             if not user.is_active:
+                metrics.auth.login_failure(reason="inactive")
                 raise ConnectError(Code.PERMISSION_DENIED, "User account is inactive")
 
             # Update last login
@@ -447,6 +462,7 @@ class AuthServicer:
                 "exp": access_expire,
             }
             access_token = jwt.encode(access_payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
+            metrics.auth.token_issued(type="access")
 
             refresh_payload = {
                 "sub": str(user.id),
@@ -456,7 +472,9 @@ class AuthServicer:
                 "exp": refresh_expire,
             }
             refresh_token = jwt.encode(refresh_payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
+            metrics.auth.token_issued(type="refresh")
 
+            metrics.auth.login()
             return auth_pb2.LoginResponse(
                 access_token=access_token,
                 refresh_token=refresh_token,
@@ -499,12 +517,15 @@ class AuthServicer:
         try:
             payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
         except jwt.ExpiredSignatureError:
+            metrics.auth.token_validation_failure(reason="expired")
             raise ConnectError(Code.UNAUTHENTICATED, "Token expired")
         except jwt.InvalidTokenError:
+            metrics.auth.token_validation_failure(reason="invalid_sig")
             raise ConnectError(Code.UNAUTHENTICATED, "Invalid token")
 
         user_id = payload.get("sub")
         if not user_id:
+            metrics.auth.token_validation_failure(reason="missing_tenant")
             raise ConnectError(Code.UNAUTHENTICATED, "Invalid token: missing user ID")
 
         async with await self._get_db() as db:
@@ -522,9 +543,10 @@ class AuthServicer:
                 raise ConnectError(Code.INVALID_ARGUMENT, "Current password is incorrect")
 
             # Update password
-            user.password_hash = bcrypt.hashpw(
-                request.new_password.encode(), bcrypt.gensalt()
-            ).decode()
+            with metrics.auth.bcrypt_hash_duration.time():
+                user.password_hash = bcrypt.hashpw(
+                    request.new_password.encode(), bcrypt.gensalt()
+                ).decode()
             await db.commit()
 
             return auth_pb2.ChangePasswordResponse(
@@ -550,13 +572,16 @@ class AuthServicer:
         try:
             payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
         except jwt.ExpiredSignatureError:
+            metrics.auth.token_validation_failure(reason="expired")
             raise ConnectError(Code.UNAUTHENTICATED, "Token expired")
         except jwt.InvalidTokenError:
+            metrics.auth.token_validation_failure(reason="invalid_sig")
             raise ConnectError(Code.UNAUTHENTICATED, "Invalid token")
 
         user_id = payload.get("sub")
         tenant_id = payload.get("tenant_id")
         if not user_id or not tenant_id:
+            metrics.auth.token_validation_failure(reason="missing_tenant")
             raise ConnectError(Code.UNAUTHENTICATED, "Invalid token: missing user or tenant ID")
 
         async with await self._get_db() as db:
@@ -616,6 +641,7 @@ class AuthServicer:
             # Token already expired, logout is successful
             return auth_pb2.LogoutResponse(success=True)
         except jwt.InvalidTokenError:
+            metrics.auth.token_validation_failure(reason="invalid_sig")
             raise ConnectError(Code.UNAUTHENTICATED, "Invalid token")
 
         # In production, add token to a blocklist (Redis) here
@@ -707,12 +733,15 @@ class AuthServicer:
         try:
             payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
         except jwt.ExpiredSignatureError:
+            metrics.auth.token_validation_failure(reason="expired")
             raise ConnectError(Code.UNAUTHENTICATED, "Token expired")
         except jwt.InvalidTokenError:
+            metrics.auth.token_validation_failure(reason="invalid_sig")
             raise ConnectError(Code.UNAUTHENTICATED, "Invalid token")
 
         tenant_id = payload.get("tenant_id")
         if not tenant_id:
+            metrics.auth.token_validation_failure(reason="missing_tenant")
             raise ConnectError(Code.UNAUTHENTICATED, "Invalid token: missing tenant ID")
 
         async with await self._get_db() as db:
@@ -754,12 +783,15 @@ class AuthServicer:
         try:
             payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
         except jwt.ExpiredSignatureError:
+            metrics.auth.token_validation_failure(reason="expired")
             raise ConnectError(Code.UNAUTHENTICATED, "Token expired")
         except jwt.InvalidTokenError:
+            metrics.auth.token_validation_failure(reason="invalid_sig")
             raise ConnectError(Code.UNAUTHENTICATED, "Invalid token")
 
         tenant_id = payload.get("tenant_id")
         if not tenant_id:
+            metrics.auth.token_validation_failure(reason="missing_tenant")
             raise ConnectError(Code.UNAUTHENTICATED, "Invalid token: missing tenant ID")
 
         async with await self._get_db() as db:
@@ -802,12 +834,15 @@ class AuthServicer:
         try:
             payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
         except jwt.ExpiredSignatureError:
+            metrics.auth.token_validation_failure(reason="expired")
             raise ConnectError(Code.UNAUTHENTICATED, "Token expired")
         except jwt.InvalidTokenError:
+            metrics.auth.token_validation_failure(reason="invalid_sig")
             raise ConnectError(Code.UNAUTHENTICATED, "Invalid token")
 
         tenant_id = payload.get("tenant_id")
         if not tenant_id:
+            metrics.auth.token_validation_failure(reason="missing_tenant")
             raise ConnectError(Code.UNAUTHENTICATED, "Invalid token: missing tenant ID")
 
         async with await self._get_db() as db:
@@ -843,12 +878,15 @@ class AuthServicer:
         try:
             payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
         except jwt.ExpiredSignatureError:
+            metrics.auth.token_validation_failure(reason="expired")
             raise ConnectError(Code.UNAUTHENTICATED, "Token expired")
         except jwt.InvalidTokenError:
+            metrics.auth.token_validation_failure(reason="invalid_sig")
             raise ConnectError(Code.UNAUTHENTICATED, "Invalid token")
 
         tenant_id = payload.get("tenant_id")
         if not tenant_id:
+            metrics.auth.token_validation_failure(reason="missing_tenant")
             raise ConnectError(Code.UNAUTHENTICATED, "Invalid token: missing tenant ID")
 
         async with await self._get_db() as db:
