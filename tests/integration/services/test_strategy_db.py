@@ -412,9 +412,7 @@ class TestStrategyQueries:
         await db_session.flush()
 
         # Query public only
-        result = await db_session.execute(
-            select(Strategy).where(Strategy.is_public.is_(True))
-        )
+        result = await db_session.execute(select(Strategy).where(Strategy.is_public.is_(True)))
         public = result.scalars().all()
 
         assert len(public) == 2

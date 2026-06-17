@@ -518,9 +518,7 @@ class TestStrategyBacktestIntegration:
             context=ctx,
             backtest_id=backtest_response.backtest.id,
         )
-        get_response = await multi_backtest_servicer.GetBacktest(
-            get_request, MockServicerContext()
-        )
+        get_response = await multi_backtest_servicer.GetBacktest(get_request, MockServicerContext())
 
         assert get_response.backtest.id == backtest_response.backtest.id
 

@@ -8,9 +8,15 @@ requires-python = ">=3.14"
 [tool.ruff]
 line-length = 100
 target-version = "py314"
+# force-exclude makes these apply even when files/dirs are passed explicitly
+# (pre-commit passes changed filenames; CI passes services/ libs/ tests/), so
+# every ruff invocation skips generated code identically — no per-command
+# --exclude flags needed. Keep this list in sync with the EXCLUDE_PATTERN in
+# scripts/check-no-suppressions.sh (grep can't read this config).
 force-exclude = true
 extend-exclude = [
     "libs/proto/llamatrade_proto/generated",
+    "libs/proto/connectrpc",
 ]
 
 [tool.ruff.lint]

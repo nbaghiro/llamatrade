@@ -9,21 +9,22 @@ repos:
         name: No lint/type suppression comments
         entry: ./scripts/check-no-suppressions.sh
         language: script
-        files: ^(services|libs)/.*\.py$
+        files: ^(services|libs|tests)/.*\.py$
         pass_filenames: false
 
   # Python linting with Ruff
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.15.2
     hooks:
+      # Generated code is skipped via force-exclude + extend-exclude in
+      # pyproject.toml (the single source of truth), which applies even though
+      # pre-commit passes explicit filenames — no per-hook exclude needed.
       - id: ruff
         args: [--fix, --ignore-noqa, --config=pyproject.toml]
-        files: ^(services|libs)/
-        exclude: ^(libs/proto/llamatrade_proto/generated/|libs/proto/connectrpc/)
+        files: ^(services|libs|tests)/
       - id: ruff-format
         args: [--config=pyproject.toml]
-        files: ^(services|libs)/
-        exclude: ^(libs/proto/llamatrade_proto/generated/|libs/proto/connectrpc/)
+        files: ^(services|libs|tests)/
 
   # Python type checking with Pyright (uses config from pyproject.toml)
   - repo: local

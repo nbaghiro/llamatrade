@@ -399,21 +399,29 @@ class TestMultiTenantJourney:
         # Both run backtests independently
         # ============================================================
         now = datetime.utcnow()
-        backtest_config = lambda sid: backtest_pb2.BacktestConfig(
-            strategy_id=sid,
-            strategy_version=1,
-            start_date=common_pb2.Timestamp(seconds=int((now - timedelta(days=90)).timestamp())),
-            end_date=common_pb2.Timestamp(seconds=int(now.timestamp())),
-            initial_capital=common_pb2.Decimal(value="100000"),
-        )
+
+        def backtest_config(sid: str) -> backtest_pb2.BacktestConfig:
+            return backtest_pb2.BacktestConfig(
+                strategy_id=sid,
+                strategy_version=1,
+                start_date=common_pb2.Timestamp(
+                    seconds=int((now - timedelta(days=90)).timestamp())
+                ),
+                end_date=common_pb2.Timestamp(seconds=int(now.timestamp())),
+                initial_capital=common_pb2.Decimal(value="100000"),
+            )
 
         alice_backtest = await multi_backtest_servicer.RunBacktest(
-            backtest_pb2.RunBacktestRequest(context=alice_ctx, config=backtest_config(alice_strategy_id)),
+            backtest_pb2.RunBacktestRequest(
+                context=alice_ctx, config=backtest_config(alice_strategy_id)
+            ),
             MockServicerContext(),
         )
 
         bob_backtest = await multi_backtest_servicer.RunBacktest(
-            backtest_pb2.RunBacktestRequest(context=bob_ctx, config=backtest_config(bob_strategy_id)),
+            backtest_pb2.RunBacktestRequest(
+                context=bob_ctx, config=backtest_config(bob_strategy_id)
+            ),
             MockServicerContext(),
         )
 

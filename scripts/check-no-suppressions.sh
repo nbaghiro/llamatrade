@@ -20,30 +20,32 @@ RED='\033[0;31m'
 GREEN='\033[0;32m'
 NC='\033[0m'
 
-# Directories to check
-DIRS="services/ libs/"
+# Directories to check (top-level tests/ included so integration suites can't
+# silently reintroduce suppressions — that's exactly where they used to live)
+DIRS="services/ libs/ tests/"
 
-# Patterns to check (excluding generated code)
-EXCLUDE_PATTERN="libs/proto/llamatrade_proto/generated"
+# Generated code is exempt: the stub/Connect generators emit their own
+# directives and these files must never be hand-edited.
+EXCLUDE_PATTERN="libs/proto/llamatrade_proto/generated|libs/proto/connectrpc"
 
 echo "Checking for lint/type suppression comments..."
 
 FOUND=0
 
 # Check for # noqa
-if grep -rn "# noqa" $DIRS --include="*.py" 2>/dev/null | grep -v "$EXCLUDE_PATTERN"; then
+if grep -rn "# noqa" $DIRS --include="*.py" 2>/dev/null | grep -vE "$EXCLUDE_PATTERN"; then
     echo -e "${RED}Found # noqa comments. Remove them and fix the underlying lint issue.${NC}"
     FOUND=1
 fi
 
 # Check for # type: ignore
-if grep -rn "# type: ignore" $DIRS --include="*.py" 2>/dev/null | grep -v "$EXCLUDE_PATTERN"; then
+if grep -rn "# type: ignore" $DIRS --include="*.py" 2>/dev/null | grep -vE "$EXCLUDE_PATTERN"; then
     echo -e "${RED}Found # type: ignore comments. Remove them and fix the underlying type issue.${NC}"
     FOUND=1
 fi
 
 # Check for # pyright: directives
-if grep -rn "# pyright:" $DIRS --include="*.py" 2>/dev/null | grep -v "$EXCLUDE_PATTERN"; then
+if grep -rn "# pyright:" $DIRS --include="*.py" 2>/dev/null | grep -vE "$EXCLUDE_PATTERN"; then
     echo -e "${RED}Found # pyright: directives. Remove them and fix the underlying type issue.${NC}"
     FOUND=1
 fi

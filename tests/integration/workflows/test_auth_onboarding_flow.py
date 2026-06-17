@@ -299,9 +299,7 @@ class TestLoginFlow:
         refresh_request = auth_pb2.RefreshTokenRequest(
             refresh_token=login_response.refresh_token,
         )
-        refresh_response = await auth_servicer.refresh_token(
-            refresh_request, MockServicerContext()
-        )
+        refresh_response = await auth_servicer.refresh_token(refresh_request, MockServicerContext())
 
         assert refresh_response.access_token
         # New token should be different (has different timestamp)

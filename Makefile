@@ -172,9 +172,9 @@ lint:
 	@echo "=== Checking for suppression comments ==="
 	@./scripts/check-no-suppressions.sh
 	@echo "=== Python: Ruff (lint) ==="
-	ruff check --config pyproject.toml --ignore-noqa --exclude "libs/proto/llamatrade_proto/generated/*" --exclude "libs/proto/connectrpc/*" services/ libs/
+	ruff check --config pyproject.toml --ignore-noqa services/ libs/ tests/
 	@echo "=== Python: Ruff (format) ==="
-	ruff format --config pyproject.toml --exclude "libs/proto/llamatrade_proto/generated/*" --exclude "libs/proto/connectrpc/*" --check services/ libs/
+	ruff format --config pyproject.toml --check services/ libs/ tests/
 	@echo "=== Python: Pyright (type check) ==="
 	npx pyright services/ libs/
 	@echo "=== Frontend: ESLint ==="
@@ -183,13 +183,13 @@ lint:
 	cd apps/web && npx tsc --noEmit
 
 lint-fix:
-	ruff check --config pyproject.toml --fix --unsafe-fixes --exclude "libs/proto/llamatrade_proto/generated/*" --exclude "libs/proto/connectrpc/*" services/ libs/
-	ruff format --config pyproject.toml --exclude "libs/proto/llamatrade_proto/generated/*" --exclude "libs/proto/connectrpc/*" services/ libs/
+	ruff check --config pyproject.toml --fix --unsafe-fixes services/ libs/ tests/
+	ruff format --config pyproject.toml services/ libs/ tests/
 
 lint-python:
 	@./scripts/check-no-suppressions.sh
-	ruff check --config pyproject.toml --ignore-noqa --exclude "libs/proto/llamatrade_proto/generated/*" --exclude "libs/proto/connectrpc/*" services/ libs/
-	ruff format --config pyproject.toml --exclude "libs/proto/llamatrade_proto/generated/*" --exclude "libs/proto/connectrpc/*" --check services/ libs/
+	ruff check --config pyproject.toml --ignore-noqa services/ libs/ tests/
+	ruff format --config pyproject.toml --check services/ libs/ tests/
 	npx pyright services/ libs/
 
 lint-frontend:
