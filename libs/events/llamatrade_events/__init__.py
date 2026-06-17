@@ -22,10 +22,15 @@ from __future__ import annotations
 
 from llamatrade_events.bus import EventBus
 from llamatrade_events.catalog import (
+    BacktestProgressUpdate,
     BarEvents,
     FillEvents,
+    LedgerFill,
+    LedgerReservation,
     OrderEvents,
+    OrderUpdate,
     PositionEvents,
+    PositionUpdate,
     ProgressEvents,
 )
 from llamatrade_events.channels import (
@@ -74,6 +79,7 @@ __all__ = [
     "ORDERS",
     "POSITIONS",
     # catalog
+    "BacktestProgressUpdate",
     "BarEvents",
     "Channel",
     "Cursor",
@@ -86,8 +92,12 @@ __all__ = [
     "EventType",
     "FillEvents",
     "InMemoryDedupStore",
+    "LedgerFill",
+    "LedgerReservation",
     "OrderEvents",
+    "OrderUpdate",
     "PositionEvents",
+    "PositionUpdate",
     "ProgressEvents",
     "RedisStreamsTransport",
     # runtime

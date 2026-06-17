@@ -208,6 +208,9 @@ class LedgerReservation(message.Message):
     CLIENT_ORDER_ID_FIELD_NUMBER: builtins.int
     EVENT_TYPE_FIELD_NUMBER: builtins.int
     RESERVED_FIELD_NUMBER: builtins.int
+    SYMBOL_FIELD_NUMBER: builtins.int
+    SIDE_FIELD_NUMBER: builtins.int
+    ORDER_ID_FIELD_NUMBER: builtins.int
     tenant_id: builtins.str
     account_id: builtins.str
     sleeve_id: builtins.str
@@ -215,7 +218,13 @@ class LedgerReservation(message.Message):
     event_type: builtins.str
     """order_submitted | order_cancelled | order_rejected"""
     reserved: builtins.str
-    """notional estimate (on submit)"""
+    """notional estimate (on submit), optional"""
+    symbol: builtins.str
+    """optional"""
+    side: builtins.str
+    """buy | sell, optional"""
+    order_id: builtins.str
+    """optional"""
     def __init__(
         self,
         *,
@@ -225,6 +234,9 @@ class LedgerReservation(message.Message):
         client_order_id: builtins.str = ...,
         event_type: builtins.str = ...,
         reserved: builtins.str = ...,
+        symbol: builtins.str = ...,
+        side: builtins.str = ...,
+        order_id: builtins.str = ...,
     ) -> None: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal["account_id", b"account_id", "client_order_id", b"client_order_id", "event_type", b"event_type", "reserved", b"reserved", "sleeve_id", b"sleeve_id", "tenant_id", b"tenant_id"]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["account_id", b"account_id", "client_order_id", b"client_order_id", "event_type", b"event_type", "order_id", b"order_id", "reserved", b"reserved", "side", b"side", "sleeve_id", b"sleeve_id", "symbol", b"symbol", "tenant_id", b"tenant_id"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...

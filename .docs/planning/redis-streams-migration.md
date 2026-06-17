@@ -1,5 +1,12 @@
 # Redis Streams Migration — Implementation Plan
 
+> **SUPERSEDED (2026-06-16).** This documents the pub/sub→Streams migration that
+> delivered the `libs/common` `EventBus`. That `EventBus`/`Event`/`EventType` code
+> has since been **deleted** and replaced wholesale by the unified
+> `llamatrade_events` library (proto envelope + pluggable transport + typed
+> catalog). See [events-lib.md](events-lib.md) for the current event system. The
+> content below is historical.
+
 Execution plan for replacing Redis **pub/sub** with Redis **Streams** where multiple
 consumers, durability, and replay matter — delivered as a shared `EventBus` in
 `libs/common` that also becomes the transport substrate for the portfolio ledger's

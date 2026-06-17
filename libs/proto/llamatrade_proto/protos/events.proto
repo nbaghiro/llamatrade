@@ -87,5 +87,8 @@ message LedgerReservation {
   string sleeve_id = 3;
   string client_order_id = 4;
   string event_type = 5;  // order_submitted | order_cancelled | order_rejected
-  string reserved = 6;  // notional estimate (on submit)
+  string reserved = 6;  // notional estimate (on submit), optional
+  string symbol = 7;  // optional
+  string side = 8;  // buy | sell, optional
+  string order_id = 9;  // optional
 }

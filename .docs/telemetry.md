@@ -45,7 +45,7 @@ history for what has shipped.
 | Alpaca metrics | defined 3× under 3 names | 1 set in `libs/alpaca` |
 | Logging | full JSON formatter exists, only `market-data` configures it | configured everywhere, with `trace_id`/`span_id` |
 | Tracing | none (only an `X-Request-ID` header) | OTel spans + W3C propagation across services |
-| EventBus | `eventbus_published_total`, `eventbus_reconnects_total` only | + consumer lag (entries & seconds), ack/nack, processing duration, DLQ |
+| Events (`llamatrade_events`) | n/a (predecessor `eventbus_*` shim removed) | `events_published_total`, `events_consumed_total{outcome}`, `events_reconnects_total`, `events_consumer_lag` |
 | Scraping | every service exposes `/metrics`; **nothing scrapes them** | Prometheus + Grafana + OTel Collector + Alertmanager (compose + k8s) |
 | Frontend | `console.error` only | `@llamatrade/telemetry`: web-vitals, RPC latency, JS errors, trace propagation |
 | Workers | Celery backtests have **zero** task/queue metrics | full Celery instrumentation |
@@ -254,17 +254,15 @@ service imports them.
 - `llamatrade_cache_operations_total{cache,op,result}` (folds hits/misses)
 - `llamatrade_cache_op_duration_seconds{cache,op}`
 
-**EventBus (Redis Streams):**
-- `llamatrade_eventbus_published_total{stream,event_type,result}`
-- `llamatrade_eventbus_consumed_total{stream,group,result}`
-- `llamatrade_eventbus_ack_total{stream,group}` · `_nack_total`
-- `llamatrade_eventbus_consumer_lag_entries{stream,group}` (gauge — pending count;
-  supersedes `portfolio_ledger_stream_pending`)
-- `llamatrade_eventbus_consumer_lag_seconds{stream,group}` (age of oldest unacked)
-- `llamatrade_eventbus_processing_duration_seconds{stream,event_type}`
-- `llamatrade_eventbus_reconnects_total{stream,mode}` (existing)
-- `llamatrade_eventbus_redelivery_total{stream,group}` (XAUTOCLAIM reclaims)
-- `llamatrade_eventbus_dlq_total{stream}` (poison messages)
+**Events (`llamatrade_events`, Redis Streams):** the lib's `observability.py`
+metrics (plain `prometheus_client`, bridged into the telemetry export), labelled by
+the stream's logical prefix only (bounded cardinality):
+- `events_published_total{stream}`
+- `events_consumed_total{stream,group,outcome}` (outcome: `ok`/`deduped`/`dlq`/`error`)
+- `events_reconnects_total{stream,mode}` (tail/consume reconnects)
+- `events_consumer_lag{stream,group}` (gauge — delivered-but-unacked pending count;
+  the single event-lag metric, supersedes both `llamatrade_eventbus_*` and
+  `portfolio_ledger_stream_pending`)
 
 **Async runtime** (async-first → critical):
 - `llamatrade_runtime_event_loop_lag_seconds` · `llamatrade_runtime_asyncio_tasks`

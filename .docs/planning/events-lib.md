@@ -1,10 +1,18 @@
-# `libs/events` — The Single Event System (Final Plan)
+# `libs/events` (`llamatrade_events`) — The Single Event System
 
-Status: **PLAN**. One library owns **every event-related line in the system** —
-schemas, transport, the typed produce/consume catalog, the consumer runtime, and
-the gRPC stream fan-out. Services call it **directly** (like `init_telemetry`),
-with **no per-service publisher/subscriber/bridge wrapper**. Successor to the
-completed [redis-streams-migration](redis-streams-migration.md).
+Status: **IMPLEMENTED** (2026-06-16). `llamatrade_events` is the system's **sole**
+event library — proto schemas, pluggable transport, the typed produce/consume
+catalog, the consumer runtime, and the gRPC stream fan-out. Services call it
+**directly** (like `init_telemetry`), with **no per-service
+publisher/subscriber/bridge wrapper**. The predecessor `llamatrade_common.events`
+(`Event`/`EventBus`/`EventType`) has been **deleted**, and so has the telemetry
+`instrumentation/eventbus.py` shim (event metrics now live in the lib's
+`observability.py`, surfaced as `events_*`).
+
+All streams are migrated: `ledger:fills` (`FillEvents`, proto, durable consumer
+group), `trading:orders/positions:*` (`OrderEvents`/`PositionEvents`),
+`backtest:progress:*` (`ProgressEvents`), `market:bars:1m` (`BarEvents`).
+Successor to the completed [redis-streams-migration](redis-streams-migration.md).
 
 ## Three principles
 1. **Proto is the source of truth for event data.** Every payload is a proto

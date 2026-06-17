@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from llamatrade_telemetry.instrumentation import cache, celery, dependency, eventbus
+from llamatrade_telemetry.instrumentation import cache, celery, dependency
 from llamatrade_telemetry.instrumentation import db as dbmod
 from tests.conftest import scrape
 
@@ -39,32 +39,6 @@ def test_cache_recorders() -> None:
     out = scrape()
     assert 'llamatrade_cache_operations_total{cache="bars",op="get",result="hit"} 1.0' in out
     assert 'llamatrade_cache_op_duration_seconds_count{cache="bars",op="get"} 1.0' in out
-
-
-def test_eventbus_recorders() -> None:
-    eventbus.record_published("ledger:fills", "order_filled", "success")
-    eventbus.record_consumed("ledger:fills", "portfolio-ledger", "success")
-    eventbus.record_ack("ledger:fills", "portfolio-ledger")
-    eventbus.record_nack("ledger:fills", "portfolio-ledger")
-    eventbus.record_reconnect("ledger:fills", "consume")
-    eventbus.record_redelivery("ledger:fills", "portfolio-ledger")
-    eventbus.record_dlq("ledger:fills")
-    eventbus.set_consumer_lag("ledger:fills", "portfolio-ledger", 7, 12.5)
-    with eventbus.time_processing("ledger:fills", "order_filled"):
-        pass
-    out = scrape()
-    assert (
-        'llamatrade_eventbus_published_total{event_type="order_filled",result="success",stream="ledger:fills"} 1.0'
-        in out
-    )
-    assert (
-        'llamatrade_eventbus_consumer_lag_entries{group="portfolio-ledger",stream="ledger:fills"} 7.0'
-        in out
-    )
-    assert (
-        'llamatrade_eventbus_consumer_lag_seconds{group="portfolio-ledger",stream="ledger:fills"} 12.5'
-        in out
-    )
 
 
 def test_celery_recorders() -> None:
