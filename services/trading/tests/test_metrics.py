@@ -179,8 +179,7 @@ class TestStrategyMetrics:
         before_count = _sample(text, count)
         before_duration = _sample(text, duration)
 
-        # The symbol argument is accepted but no longer used as a label.
-        record_bar_processed("AAPL", duration=0.005)
+        record_bar_processed(duration=0.005)
 
         text = _exposition()
         assert _sample(text, count) == before_count + 1
@@ -284,12 +283,10 @@ class TestReconciliationMetrics:
         before_drift = _sample(text, drift, drift_type="quantity_mismatch")
         before_pct = _sample(text, pct)
 
-        # symbol is accepted but not recorded as a label.
         record_position_reconciliation(
             result="drift_alerted",
             duration=0.2,
             drift_type="quantity_mismatch",
-            symbol="AAPL",
             drift_percent=12.5,
         )
 

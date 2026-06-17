@@ -15,8 +15,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.types import ASGIApp
 
-from llamatrade_common.observability import enable_db_pool_metrics
 from llamatrade_db import close_db, get_pool_stats, init_db
+from llamatrade_telemetry import init_telemetry
 
 from src.routers import webhooks
 
@@ -74,7 +74,7 @@ app.add_middleware(
 )
 
 # Export DB connection-pool stats on /metrics
-enable_db_pool_metrics(app, "billing", get_pool_stats)
+init_telemetry(app, service="billing", pool_stats_provider=get_pool_stats)
 
 # Stripe webhooks still use HTTP endpoints (not Connect)
 app.include_router(webhooks.router, prefix="/webhooks", tags=["Webhooks"])

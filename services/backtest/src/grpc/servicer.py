@@ -319,11 +319,16 @@ class BacktestServicer:
                         )
                         return
 
-                    # Send initial status (backtest.status is already proto ValueType)
+                    # Send initial status (backtest.status is already proto ValueType).
+                    # Progress is derivable from status (terminal=100 if completed),
+                    # so a late joiner to a finished run sees the right percentage.
+                    initial_pct = (
+                        100 if backtest.status == backtest_pb2.BACKTEST_STATUS_COMPLETED else 0
+                    )
                     yield backtest_pb2.BacktestProgressUpdate(
                         backtest_id=backtest_id,
                         status=backtest.status,
-                        progress_percent=int(backtest.progress),
+                        progress_percent=initial_pct,
                         message=backtest.error_message or "Connected to progress stream",
                         timestamp=common_pb2.Timestamp(seconds=int(datetime.now(UTC).timestamp())),
                     )
@@ -511,7 +516,9 @@ class BacktestServicer:
             strategy_version=backtest.strategy_version,
             status=backtest.status,
             status_message=backtest.error_message or "",
-            progress_percent=int(backtest.progress),
+            progress_percent=100
+            if backtest.status == backtest_pb2.BACKTEST_STATUS_COMPLETED
+            else 0,
             created_at=common_pb2.Timestamp(seconds=int(backtest.created_at.timestamp())),
         )
 

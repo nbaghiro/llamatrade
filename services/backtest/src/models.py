@@ -125,7 +125,6 @@ class BacktestResponse(BaseModel):
     end_date: datetime
     initial_capital: float
     status: BacktestStatus.ValueType
-    progress: float = 0
     error_message: str | None = None
     created_at: datetime
     started_at: datetime | None = None

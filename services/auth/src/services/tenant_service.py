@@ -1,14 +1,11 @@
 """Tenant service - tenant management operations."""
 
 import binascii
-import json
-import re
-from datetime import UTC, datetime
-from uuid import UUID, uuid4
+from uuid import UUID
 
 from cryptography.fernet import InvalidToken
 from fastapi import Depends
-from sqlalchemy import select, text
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from llamatrade_common.utils import decrypt_value, encrypt_value
@@ -20,17 +17,7 @@ from src.models import (
     AlpacaCredentialsCreate,
     AlpacaCredentialsListItem,
     AlpacaCredentialsResponse,
-    TenantDetailResponse,
-    TenantResponse,
 )
-
-
-def _slugify(name: str) -> str:
-    """Convert name to URL-safe slug."""
-    slug = name.lower().strip()
-    slug = re.sub(r"[^\w\s-]", "", slug)
-    slug = re.sub(r"[\s_-]+", "-", slug)
-    return slug[:100]
 
 
 class TenantService:
@@ -49,62 +36,6 @@ class TenantService:
         except InvalidToken, binascii.Error:
             metrics.auth.credential_decryption_failure()
             raise
-
-    async def create_tenant(
-        self,
-        name: str,
-        plan_id: str = "free",
-        settings: dict[str, str | int | bool | None] | None = None,
-    ) -> TenantDetailResponse:
-        """Create a new tenant."""
-        tenant_id = uuid4()
-        now = datetime.now(UTC)
-        # Generate unique slug from name
-        base_slug = _slugify(name)
-        slug = f"{base_slug}-{str(tenant_id)[:8]}"
-
-        query = text("""
-            INSERT INTO tenants (id, name, slug, is_active, settings)
-            VALUES (:id, :name, :slug, :is_active, CAST(:settings AS jsonb))
-            RETURNING id, name, slug, is_active, settings, created_at
-        """)
-
-        await self.db.execute(
-            query,
-            {
-                "id": tenant_id,
-                "name": name,
-                "slug": slug,
-                "is_active": True,
-                "settings": json.dumps(settings or {}),
-            },
-        )
-
-        # Flush to ensure tenant exists before creating user
-        await self.db.flush()
-
-        return TenantDetailResponse(
-            id=tenant_id,
-            name=name,
-            slug=slug,
-            plan_id=plan_id,
-            settings=settings or {},
-            created_at=now,
-        )
-
-    async def get_tenant(self, tenant_id: UUID) -> TenantResponse | None:
-        """Get a tenant by ID."""
-        # Simplified - in production use SQLAlchemy ORM
-        return None
-
-    async def update_tenant_settings(
-        self,
-        tenant_id: UUID,
-        settings: dict[str, str | int | bool | None],
-    ) -> TenantResponse | None:
-        """Update tenant settings."""
-        # Simplified - in production use SQLAlchemy ORM
-        return None
 
     async def get_alpaca_credentials(
         self, credentials_id: UUID, tenant_id: UUID

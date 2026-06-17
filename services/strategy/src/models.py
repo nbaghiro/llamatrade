@@ -151,17 +151,6 @@ class ConfigOverride(TypedDict, total=False):
     sizing_value: float
 
 
-class IndicatorParamInfo(TypedDict):
-    """Indicator parameter metadata."""
-
-    name: str
-    type: str  # "int", "float", "str"
-    default: int | float | str | None
-    min: int | float | None
-    max: int | float | None
-    description: str
-
-
 # TemplateCategory, AssetClass, IndicatorType, TemplateDifficulty are now imported from proto
 
 
@@ -307,24 +296,6 @@ class ValidationResult(BaseModel):
     warnings: list[str] = Field(default_factory=list)
     detected_symbols: list[str] = Field(default_factory=list)
     detected_indicators: list[str] = Field(default_factory=list)
-
-
-# ===================
-# Indicator Types
-# ===================
-
-# IndicatorType is now imported from proto
-
-
-class IndicatorInfoResponse(BaseModel):
-    """Indicator metadata."""
-
-    type: IndicatorType.ValueType
-    name: str
-    description: str
-    params: list[IndicatorParamInfo]
-    outputs: list[str]
-    category: str
 
 
 class TemplateResponse(BaseModel):

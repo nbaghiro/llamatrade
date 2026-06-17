@@ -258,40 +258,6 @@ class TestReactivateSubscription:
             await billing_service.reactivate_subscription(test_tenant_id)
 
 
-# === sync_subscription_from_stripe Tests ===
-
-
-class TestSyncSubscriptionFromStripe:
-    """Tests for sync_subscription_from_stripe method."""
-
-    async def test_sync_updates_status(
-        self, billing_service: BillingService, mock_db: MagicMock
-    ) -> None:
-        """Test syncing subscription status from Stripe."""
-        mock_sub = MagicMock()
-        mock_sub.status = billing_pb2.SUBSCRIPTION_STATUS_ACTIVE
-
-        mock_result = MagicMock()
-        mock_result.scalar_one_or_none.return_value = mock_sub
-        mock_db.execute.return_value = mock_result
-
-        await billing_service.sync_subscription_from_stripe("sub_123", "cancelled")
-
-        assert mock_sub.status == billing_pb2.SUBSCRIPTION_STATUS_CANCELED
-        mock_db.commit.assert_called_once()
-
-    async def test_sync_no_subscription_found(
-        self, billing_service: BillingService, mock_db: MagicMock
-    ) -> None:
-        """Test syncing when subscription not found."""
-        mock_result = MagicMock()
-        mock_result.scalar_one_or_none.return_value = None
-        mock_db.execute.return_value = mock_result
-
-        # Should not raise
-        await billing_service.sync_subscription_from_stripe("sub_nonexistent", "active")
-
-
 # === _is_uuid Tests ===
 
 

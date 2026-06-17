@@ -57,7 +57,6 @@ def make_mock_strategy(
     tenant_id: UUID | None = None,
     name: str = "Test Strategy",
     description: str | None = None,
-    strategy_type: str = "custom",
     status: int | str = 1,  # Proto int or string: DRAFT=1, ACTIVE=2, PAUSED=3, ARCHIVED=4
     current_version: int = 1,
     created_by: UUID | None = None,
@@ -65,10 +64,6 @@ def make_mock_strategy(
     updated_at: datetime | None = None,
 ) -> MagicMock:
     """Create a mock Strategy object."""
-    from llamatrade_db.models.strategy import (
-        StrategyType as DBStrategyType,
-    )
-
     # Convert string status to int if needed
     status_int = _STATUS_STR_TO_INT.get(status, status) if isinstance(status, str) else status
 
@@ -78,7 +73,6 @@ def make_mock_strategy(
     strategy.tenant_id = tenant_id or uuid4()
     strategy.name = name
     strategy.description = description
-    strategy.strategy_type = DBStrategyType(strategy_type)
     strategy.status = status_int  # DB TypeDecorator returns proto int directly
     strategy.current_version = current_version
     strategy.created_by = created_by or uuid4()

@@ -8,27 +8,13 @@ from uuid import UUID
 from pydantic import BaseModel, Field
 
 from llamatrade_proto.generated.common_pb2 import (
-    EXECUTION_MODE_LIVE,
     EXECUTION_MODE_PAPER,
-    EXECUTION_STATUS_ERROR,
-    EXECUTION_STATUS_PAUSED,
-    EXECUTION_STATUS_PENDING,
-    EXECUTION_STATUS_RUNNING,
-    EXECUTION_STATUS_STOPPED,
     ExecutionMode,
     ExecutionStatus,
 )
 from llamatrade_proto.generated.trading_pb2 import (
     ORDER_SIDE_BUY,
     ORDER_SIDE_SELL,
-    ORDER_STATUS_ACCEPTED,
-    ORDER_STATUS_CANCELLED,
-    ORDER_STATUS_EXPIRED,
-    ORDER_STATUS_FILLED,
-    ORDER_STATUS_PARTIAL,
-    ORDER_STATUS_PENDING,
-    ORDER_STATUS_REJECTED,
-    ORDER_STATUS_SUBMITTED,
     ORDER_TYPE_LIMIT,
     ORDER_TYPE_MARKET,
     ORDER_TYPE_STOP,
@@ -74,17 +60,6 @@ _ORDER_TYPE_TO_STR: dict[int, str] = {
     ORDER_TYPE_TRAILING_STOP: "trailing_stop",
 }
 
-_ORDER_STATUS_TO_STR: dict[int, str] = {
-    ORDER_STATUS_PENDING: "pending",
-    ORDER_STATUS_SUBMITTED: "submitted",
-    ORDER_STATUS_ACCEPTED: "accepted",
-    ORDER_STATUS_PARTIAL: "partial",
-    ORDER_STATUS_FILLED: "filled",
-    ORDER_STATUS_CANCELLED: "cancelled",
-    ORDER_STATUS_REJECTED: "rejected",
-    ORDER_STATUS_EXPIRED: "expired",
-}
-
 _TIME_IN_FORCE_TO_STR: dict[int, str] = {
     TIME_IN_FORCE_DAY: "day",
     TIME_IN_FORCE_GTC: "gtc",
@@ -92,19 +67,6 @@ _TIME_IN_FORCE_TO_STR: dict[int, str] = {
     TIME_IN_FORCE_FOK: "fok",
     TIME_IN_FORCE_OPG: "opg",
     TIME_IN_FORCE_CLS: "cls",
-}
-
-_EXECUTION_MODE_TO_STR: dict[int, str] = {
-    EXECUTION_MODE_PAPER: "paper",
-    EXECUTION_MODE_LIVE: "live",
-}
-
-_EXECUTION_STATUS_TO_STR: dict[int, str] = {
-    EXECUTION_STATUS_PENDING: "pending",
-    EXECUTION_STATUS_RUNNING: "running",
-    EXECUTION_STATUS_PAUSED: "paused",
-    EXECUTION_STATUS_STOPPED: "stopped",
-    EXECUTION_STATUS_ERROR: "error",
 }
 
 _POSITION_SIDE_TO_STR: dict[int, str] = {
@@ -136,11 +98,6 @@ def order_type_to_str(
     return mapping.get(value, "market")
 
 
-def order_status_to_str(value: OrderStatus.ValueType) -> str:
-    """Convert OrderStatus proto value to string."""
-    return _ORDER_STATUS_TO_STR.get(value, "pending")
-
-
 def time_in_force_to_str(value: TimeInForce.ValueType) -> Literal["day", "gtc", "ioc", "fok"]:
     """Convert TimeInForce proto value to string for Alpaca API."""
     mapping: dict[int, Literal["day", "gtc", "ioc", "fok"]] = {
@@ -150,16 +107,6 @@ def time_in_force_to_str(value: TimeInForce.ValueType) -> Literal["day", "gtc", 
         TIME_IN_FORCE_FOK: "fok",
     }
     return mapping.get(value, "day")
-
-
-def trading_mode_to_str(value: ExecutionMode.ValueType) -> str:
-    """Convert ExecutionMode proto value to string."""
-    return _EXECUTION_MODE_TO_STR.get(value, "paper")
-
-
-def session_status_to_str(value: ExecutionStatus.ValueType) -> str:
-    """Convert ExecutionStatus proto value to string."""
-    return _EXECUTION_STATUS_TO_STR.get(value, "pending")
 
 
 def position_side_to_str(value: PositionSide.ValueType) -> str:

@@ -114,18 +114,6 @@ class AnthropicClient(LLMClient):
                     )
                 converted["content"] = content_blocks
 
-            # Handle single tool result (backwards compat)
-            elif msg.tool_call_id:
-                converted["content"] = [
-                    {
-                        "type": "tool_result",
-                        "tool_use_id": msg.tool_call_id,
-                        "content": msg.content
-                        if isinstance(msg.content, str)
-                        else json.dumps(msg.content),
-                    }
-                ]
-
             # Handle regular content
             else:
                 if isinstance(msg.content, str):

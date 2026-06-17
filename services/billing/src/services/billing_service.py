@@ -480,23 +480,6 @@ class BillingService:
             created_at=subscription.created_at,
         )
 
-    # ===================
-    # Sync from Stripe webhooks
-    # ===================
-
-    async def sync_subscription_from_stripe(self, stripe_subscription_id: str, status: str) -> None:
-        """Sync subscription status from Stripe webhook."""
-        result = await self.db.execute(
-            select(Subscription).where(
-                Subscription.stripe_subscription_id == stripe_subscription_id
-            )
-        )
-        subscription = result.scalar_one_or_none()
-
-        if subscription:
-            subscription.status = stripe_status_to_proto(status)
-            await self.db.commit()
-
 
 async def get_billing_service(
     db: AsyncSession = Depends(get_db),

@@ -53,16 +53,6 @@ class TestMessage:
         assert msg.role == "user"
         assert msg.content == "Hello"
         assert msg.tool_calls is None
-        assert msg.tool_call_id is None
-
-    def test_message_with_tool_result(self) -> None:
-        """Test message with tool result."""
-        msg = Message(
-            role="user",
-            content='{"result": "success"}',
-            tool_call_id="tool_123",
-        )
-        assert msg.tool_call_id == "tool_123"
 
 
 class TestToolCall:

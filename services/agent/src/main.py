@@ -17,8 +17,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.types import ASGIApp
 
-from llamatrade_common.observability import enable_db_pool_metrics
 from llamatrade_db import get_pool_stats
+from llamatrade_telemetry import init_telemetry
 
 logger = logging.getLogger(__name__)
 
@@ -85,7 +85,7 @@ app.add_middleware(
 )
 
 # Export DB connection-pool stats on /metrics
-enable_db_pool_metrics(app, "agent", get_pool_stats)
+init_telemetry(app, service="agent", pool_stats_provider=get_pool_stats)
 
 
 @app.get("/health")

@@ -261,17 +261,6 @@ class TestBillingServiceSubscriptions:
 
         assert result.cancel_at_period_end is False
 
-    async def test_sync_subscription_from_stripe(self) -> None:
-        """Test syncing subscription status from Stripe."""
-        mock_sub = MockSubscription()
-        mock_db = AsyncMock()
-        mock_db.execute.return_value = MagicMock(scalar_one_or_none=lambda: mock_sub)
-
-        service = BillingService(mock_db, MockStripeClient())
-        await service.sync_subscription_from_stripe("sub_test_123", "past_due")
-
-        assert mock_sub.status == billing_pb2.SUBSCRIPTION_STATUS_PAST_DUE
-
     async def test_ensure_stripe_customer(self) -> None:
         """Test ensuring Stripe customer exists."""
         mock_db = AsyncMock()
@@ -390,18 +379,6 @@ class TestPaymentMethodService:
         with pytest.raises(ValueError, match="Payment method not found"):
             await service.set_default_payment_method(uuid4(), uuid4())
 
-    async def test_sync_payment_method_detached(self) -> None:
-        """Test syncing payment method detachment."""
-        mock_db = AsyncMock()
-        stripe_client = MockStripeClient()
-        billing_service = BillingService(mock_db, stripe_client)
-
-        service = PaymentMethodService(mock_db, stripe_client, billing_service)
-        await service.sync_payment_method_detached("pm_test_123")
-
-        mock_db.execute.assert_called_once()
-        mock_db.commit.assert_called_once()
-
 
 class TestBillingServiceUpdate:
     """Tests for BillingService update methods."""
@@ -467,53 +444,6 @@ class TestPaymentMethodServiceDelete:
         result = await service.delete_payment_method(mock_pm.tenant_id, mock_pm.id)
 
         assert result is True
-
-    async def test_sync_payment_method_attached_new(self) -> None:
-        """Test syncing a new payment method attachment."""
-        mock_db = AsyncMock()
-        mock_db.execute.return_value = MagicMock(
-            scalar_one_or_none=lambda: None, scalars=lambda: MagicMock(all=lambda: [])
-        )
-        stripe_client = MockStripeClient()
-        billing_service = BillingService(mock_db, stripe_client)
-
-        service = PaymentMethodService(mock_db, stripe_client, billing_service)
-        await service.sync_payment_method_attached(
-            tenant_id=uuid4(),
-            stripe_payment_method_id="pm_new_123",
-            stripe_customer_id="cus_123",
-            pm_type="card",
-            card_brand="visa",
-            card_last4="4242",
-            card_exp_month=12,
-            card_exp_year=2030,
-        )
-
-        mock_db.add.assert_called_once()
-        mock_db.commit.assert_called_once()
-
-    async def test_sync_payment_method_attached_existing(self) -> None:
-        """Test syncing a payment method that already exists."""
-        mock_pm = MockPaymentMethod()
-        mock_db = AsyncMock()
-        mock_db.execute.return_value = MagicMock(scalar_one_or_none=lambda: mock_pm)
-        stripe_client = MockStripeClient()
-        billing_service = BillingService(mock_db, stripe_client)
-
-        service = PaymentMethodService(mock_db, stripe_client, billing_service)
-        await service.sync_payment_method_attached(
-            tenant_id=mock_pm.tenant_id,
-            stripe_payment_method_id=mock_pm.stripe_payment_method_id,
-            stripe_customer_id=mock_pm.stripe_customer_id,
-            pm_type="card",
-            card_brand="visa",
-            card_last4="4242",
-            card_exp_month=12,
-            card_exp_year=2030,
-        )
-
-        # Should not add again if exists
-        mock_db.add.assert_not_called()
 
 
 class TestBillingServiceCreateSubscription:
@@ -668,21 +598,6 @@ class TestCreateFreeSubscription:
         assert plan.id == "free"
         assert plan.tier == billing_pb2.PLAN_TIER_FREE
         assert plan.price_monthly == 0
-
-
-class TestWebhookHelperFunctions:
-    """Tests for webhook helper functions."""
-
-    async def test_sync_subscription_not_found(self) -> None:
-        """Test syncing subscription when none exists in DB."""
-        mock_db = AsyncMock()
-        mock_db.execute.return_value = MagicMock(scalar_one_or_none=lambda: None)
-
-        service = BillingService(mock_db, MockStripeClient())
-        await service.sync_subscription_from_stripe("sub_nonexistent", "cancelled")
-
-        # Should not commit if no subscription found
-        # (actually, looking at the code, it still commits - let's verify)
 
 
 class TestPaymentMethodSetDefault:

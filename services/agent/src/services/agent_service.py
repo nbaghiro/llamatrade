@@ -13,7 +13,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from llamatrade_db.models import PendingArtifact
 from llamatrade_proto.generated.agent_pb2 import (
     MESSAGE_ROLE_ASSISTANT,
-    MESSAGE_ROLE_USER,
     STREAM_EVENT_TYPE_ARTIFACT_CREATED,
     STREAM_EVENT_TYPE_COMPLETE,
     STREAM_EVENT_TYPE_CONTENT_DELTA,
@@ -454,35 +453,6 @@ class AgentService:
             # Return new user hint as fallback
             return build_memory_hint(None)
 
-    async def _fetch_strategy_context(
-        self,
-        strategy_id: str,
-    ) -> dict[str, Any] | None:
-        """Fetch strategy data for context injection.
-
-        Args:
-            strategy_id: Strategy UUID string
-
-        Returns:
-            Strategy data dict or None
-        """
-        try:
-            from src.tools.base import ToolContext
-            from src.tools.strategy_tools import GetStrategyTool
-
-            tool = GetStrategyTool()
-            context = ToolContext(
-                tenant_id=self.tenant_id,
-                user_id=self.user_id,
-                session_id=UUID("00000000-0000-0000-0000-000000000000"),  # Dummy
-            )
-            result = await tool.run({"strategy_id": strategy_id}, context)
-            if result.success and result.data:
-                return result.data
-        except Exception as e:
-            logger.warning("Failed to fetch strategy context: %s", e)
-        return None
-
     async def _fetch_backtest_context(
         self,
         backtest_id: str,
@@ -511,33 +481,6 @@ class AgentService:
         except Exception as e:
             logger.warning("Failed to fetch backtest context: %s", e)
         return None
-
-    async def _get_conversation_history(
-        self,
-        session_id: UUID,
-        limit: int = 20,
-    ) -> list[dict[str, Any]]:
-        """Get recent conversation history for context.
-
-        Args:
-            session_id: Session UUID
-            limit: Maximum messages to include
-
-        Returns:
-            List of message dictionaries
-        """
-        from src.services.conversation_service import ConversationService
-
-        conv_service = ConversationService(self.db)
-        messages = await conv_service.get_messages(session_id, limit=limit)
-
-        return [
-            {
-                "role": "user" if m.role == MESSAGE_ROLE_USER else "assistant",
-                "content": m.content,
-            }
-            for m in messages
-        ]
 
     async def _store_assistant_message(
         self,

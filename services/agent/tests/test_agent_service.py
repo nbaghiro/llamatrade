@@ -229,7 +229,6 @@ class TestStreamMessage:
         agent_service._llm_client = mock_client
 
         with (
-            patch.object(agent_service, "_get_conversation_history", return_value=[]),
             patch.object(agent_service, "_store_assistant_message", return_value=None),
         ):
             events = []
@@ -275,7 +274,6 @@ class TestStreamMessage:
         )
 
         with (
-            patch.object(agent_service, "_get_conversation_history", return_value=[]),
             patch.object(agent_service, "_store_assistant_message", return_value=None),
             patch.object(agent_service._executor, "execute", return_value=mock_tool_result),
         ):
@@ -337,7 +335,6 @@ class TestProcessMessage:
         agent_service._llm_client = mock_client
 
         with (
-            patch.object(agent_service, "_get_conversation_history", return_value=[]),
             patch.object(agent_service, "_store_assistant_message", return_value=None),
         ):
             content, tool_calls, artifacts = await agent_service.process_message(
@@ -412,40 +409,6 @@ class TestFetchContexts:
     """Tests for context fetching methods."""
 
     @pytest.mark.asyncio
-    async def test_fetch_strategy_context_success(self, agent_service: AgentService) -> None:
-        """Test successful strategy context fetch."""
-        from src.tools.base import ToolResult
-
-        mock_result = ToolResult(
-            success=True,
-            data={
-                "name": "My Strategy",
-                "dsl_code": "(strategy ...)",
-                "status": "active",
-            },
-        )
-
-        with patch("src.tools.strategy_tools.GetStrategyTool") as mock_tool_cls:
-            mock_tool = mock_tool_cls.return_value
-            mock_tool.run = AsyncMock(return_value=mock_result)
-
-            result = await agent_service._fetch_strategy_context("test-id")
-
-        assert result is not None
-        assert result["name"] == "My Strategy"
-
-    @pytest.mark.asyncio
-    async def test_fetch_strategy_context_error(self, agent_service: AgentService) -> None:
-        """Test strategy context fetch with error."""
-        with patch(
-            "src.tools.strategy_tools.GetStrategyTool",
-            side_effect=Exception("Network error"),
-        ):
-            result = await agent_service._fetch_strategy_context("test-id")
-
-        assert result is None
-
-    @pytest.mark.asyncio
     async def test_fetch_backtest_context_success(self, agent_service: AgentService) -> None:
         """Test successful backtest context fetch."""
         from src.tools.base import ToolResult
@@ -517,7 +480,6 @@ class TestMultiIterationToolLoop:
             return ToolResult(success=True, data={"result": "mock"})
 
         with (
-            patch.object(agent_service, "_get_conversation_history", return_value=[]),
             patch.object(agent_service, "_store_assistant_message", return_value=None),
             patch.object(agent_service._executor, "execute", side_effect=mock_execute),
             patch.object(agent_service._executor, "format_tool_result_for_llm", return_value="{}"),
@@ -563,7 +525,6 @@ class TestMultiIterationToolLoop:
             return ToolResult(success=True, data={})
 
         with (
-            patch.object(agent_service, "_get_conversation_history", return_value=[]),
             patch.object(agent_service, "_store_assistant_message", return_value=None),
             patch.object(agent_service._executor, "execute", side_effect=mock_execute),
             patch.object(agent_service._executor, "format_tool_result_for_llm", return_value="{}"),
@@ -604,7 +565,6 @@ class TestMultiIterationToolLoop:
             return ToolResult(success=False, error="Tool execution failed")
 
         with (
-            patch.object(agent_service, "_get_conversation_history", return_value=[]),
             patch.object(agent_service, "_store_assistant_message", return_value=None),
             patch.object(agent_service._executor, "execute", side_effect=mock_execute),
             patch.object(
@@ -636,88 +596,6 @@ class TestMultiIterationToolLoop:
 # =============================================================================
 # Conversation History Tests
 # =============================================================================
-
-
-class TestConversationHistory:
-    """Tests for conversation history retrieval."""
-
-    @pytest.mark.asyncio
-    async def test_get_conversation_history(
-        self,
-        agent_service: AgentService,
-        session_id: UUID,
-    ) -> None:
-        """Test that conversation history is formatted correctly."""
-        from llamatrade_proto.generated.agent_pb2 import (
-            MESSAGE_ROLE_ASSISTANT,
-            MESSAGE_ROLE_USER,
-        )
-
-        # Create mock messages
-        mock_msg1 = MagicMock()
-        mock_msg1.role = MESSAGE_ROLE_USER
-        mock_msg1.content = "Hello"
-
-        mock_msg2 = MagicMock()
-        mock_msg2.role = MESSAGE_ROLE_ASSISTANT
-        mock_msg2.content = "Hi there!"
-
-        mock_msg3 = MagicMock()
-        mock_msg3.role = MESSAGE_ROLE_USER
-        mock_msg3.content = "Create a strategy"
-
-        mock_conv_service = MagicMock()
-        mock_conv_service.get_messages = AsyncMock(return_value=[mock_msg1, mock_msg2, mock_msg3])
-
-        with patch(
-            "src.services.conversation_service.ConversationService",
-            return_value=mock_conv_service,
-        ):
-            history = await agent_service._get_conversation_history(session_id)
-
-        assert len(history) == 3
-        assert history[0]["role"] == "user"
-        assert history[0]["content"] == "Hello"
-        assert history[1]["role"] == "assistant"
-        assert history[1]["content"] == "Hi there!"
-
-    @pytest.mark.asyncio
-    async def test_get_conversation_history_limit(
-        self,
-        agent_service: AgentService,
-        session_id: UUID,
-    ) -> None:
-        """Test that history respects the limit parameter."""
-        mock_conv_service = MagicMock()
-        mock_conv_service.get_messages = AsyncMock(return_value=[])
-
-        with patch(
-            "src.services.conversation_service.ConversationService",
-            return_value=mock_conv_service,
-        ):
-            await agent_service._get_conversation_history(session_id, limit=10)
-
-        # Verify limit was passed
-        mock_conv_service.get_messages.assert_called_once_with(session_id, limit=10)
-
-    @pytest.mark.asyncio
-    async def test_get_conversation_history_default_limit(
-        self,
-        agent_service: AgentService,
-        session_id: UUID,
-    ) -> None:
-        """Test that default limit is 20."""
-        mock_conv_service = MagicMock()
-        mock_conv_service.get_messages = AsyncMock(return_value=[])
-
-        with patch(
-            "src.services.conversation_service.ConversationService",
-            return_value=mock_conv_service,
-        ):
-            await agent_service._get_conversation_history(session_id)
-
-        # Verify default limit of 20
-        mock_conv_service.get_messages.assert_called_once_with(session_id, limit=20)
 
 
 # =============================================================================
@@ -806,7 +684,6 @@ class TestArtifactCreationFlow:
             return mock_artifact
 
         with (
-            patch.object(agent_service, "_get_conversation_history", return_value=[]),
             patch.object(agent_service, "_store_assistant_message", return_value=None),
             patch.object(agent_service._executor, "execute", return_value=mock_validation_result),
             patch.object(
@@ -861,7 +738,6 @@ class TestArtifactCreationFlow:
             return None
 
         with (
-            patch.object(agent_service, "_get_conversation_history", return_value=[]),
             patch.object(agent_service, "_store_assistant_message", return_value=None),
             patch.object(agent_service._executor, "execute", return_value=mock_validation_result),
             patch.object(

@@ -63,7 +63,6 @@ class Message:
     role: str  # "user", "assistant", "system"
     content: str | list[dict[str, Any]]  # Can be string or content blocks
     tool_calls: list[ToolCall] | None = None
-    tool_call_id: str | None = None  # For single tool result (backwards compat)
     tool_results: list[dict[str, Any]] | None = None  # For multiple tool results
 
 

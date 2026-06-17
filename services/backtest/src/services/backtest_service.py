@@ -1001,7 +1001,6 @@ class BacktestService:
             end_date=datetime.combine(b.end_date, datetime.min.time()),
             initial_capital=float(b.initial_capital),
             status=status,
-            progress=100.0 if status == BACKTEST_STATUS_COMPLETED else 0.0,
             error_message=b.error_message,
             created_at=b.created_at,
             started_at=b.started_at,

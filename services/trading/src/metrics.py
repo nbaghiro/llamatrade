@@ -189,14 +189,10 @@ def record_signal(signal_type: str) -> None:
     metrics.trading.signal_generated(signal_type=signal_type)
 
 
-def record_bar_processed(symbol: str, duration: float) -> None:
+def record_bar_processed(duration: float) -> None:
     """Record a processed bar.
 
-    The ``symbol`` argument is accepted for call-site compatibility but is no
-    longer used as a metric label (high-cardinality keys are forbidden).
-
     Args:
-        symbol: Trading symbol (not recorded as a label).
         duration: Processing time in seconds.
     """
     metrics.trading.bar_processed()
@@ -286,21 +282,17 @@ def record_position_reconciliation(
     result: str,
     duration: float,
     drift_type: str | None = None,
-    symbol: str | None = None,
     drift_percent: float | None = None,
 ) -> None:
     """Record a position reconciliation check.
 
-    The ``symbol`` argument is accepted for call-site compatibility but is no
-    longer used as a metric label (high-cardinality keys are forbidden); the
-    drift magnitude is still observed on a no-label histogram.
+    The drift magnitude is observed on a no-label histogram.
 
     Args:
         result: Reconciliation result (match, drift_corrected, drift_alerted, error).
         duration: Time taken in seconds.
         drift_type: Type of drift if detected (missing_local, missing_broker,
             quantity_mismatch, side_mismatch).
-        symbol: Symbol with drift (not recorded as a label).
         drift_percent: Percentage drift in quantity (if applicable).
     """
     metrics.trading.position_reconciled(result=result)

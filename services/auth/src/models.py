@@ -74,14 +74,6 @@ class UserWithPassword(BaseModel):
     created_at: datetime
 
 
-class UserUpdate(BaseModel):
-    """Schema for updating a user."""
-
-    email: EmailStr | None = None
-    role: str | None = None
-    is_active: bool | None = None
-
-
 class LoginRequest(BaseModel):
     """Schema for login request."""
 

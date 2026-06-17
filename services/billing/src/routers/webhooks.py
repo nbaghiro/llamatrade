@@ -30,12 +30,8 @@ from llamatrade_telemetry import metrics
 from src.services.billing_service import stripe_status_to_proto
 from src.stripe.client import StripeError, get_stripe_client
 
-# Invoice status constants (DB-only, no proto)
-INVOICE_STATUS_DRAFT = 1
-INVOICE_STATUS_OPEN = 2
+# Invoice status constant (DB-only, no proto)
 INVOICE_STATUS_PAID = 3
-INVOICE_STATUS_VOID = 4
-INVOICE_STATUS_UNCOLLECTIBLE = 5
 
 router = APIRouter()
 logger = logging.getLogger(__name__)

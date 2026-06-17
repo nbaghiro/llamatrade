@@ -514,7 +514,3 @@ class NotificationServicer:
             if updated_at
             else None,
         )
-
-
-# Type aliases for method signatures (imported lazily)
-from llamatrade_proto.generated import notification_pb2

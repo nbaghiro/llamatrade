@@ -6,7 +6,7 @@ from uuid import UUID, uuid4
 
 import pytest
 
-from src.services.tenant_service import TenantService, _slugify
+from src.services.tenant_service import TenantService
 
 # === Test Fixtures ===
 
@@ -30,118 +30,6 @@ def tenant_service(mock_db: MagicMock) -> TenantService:
 @pytest.fixture
 def test_tenant_id() -> UUID:
     return uuid4()
-
-
-# === _slugify Tests ===
-
-
-class TestSlugify:
-    """Tests for _slugify helper function."""
-
-    def test_slugify_basic(self) -> None:
-        """Test basic slugification."""
-        assert _slugify("My Company") == "my-company"
-
-    def test_slugify_special_chars(self) -> None:
-        """Test slugification removes special characters."""
-        # Note: trailing whitespace from removed chars becomes trailing hyphen
-        assert _slugify("My Company! @#$%").startswith("my-company")
-
-    def test_slugify_multiple_spaces(self) -> None:
-        """Test slugification handles multiple spaces."""
-        assert _slugify("My   Company") == "my-company"
-
-    def test_slugify_underscores(self) -> None:
-        """Test slugification converts underscores."""
-        assert _slugify("my_company_name") == "my-company-name"
-
-    def test_slugify_truncates(self) -> None:
-        """Test slugification truncates to 100 chars."""
-        long_name = "a" * 150
-        result = _slugify(long_name)
-        assert len(result) == 100
-
-    def test_slugify_strips_whitespace(self) -> None:
-        """Test slugification strips leading/trailing whitespace."""
-        assert _slugify("  My Company  ") == "my-company"
-
-
-# === create_tenant Tests ===
-
-
-class TestCreateTenant:
-    """Tests for create_tenant method."""
-
-    async def test_create_tenant_success(
-        self, tenant_service: TenantService, mock_db: MagicMock
-    ) -> None:
-        """Test creating a tenant successfully."""
-        name = "Test Company"
-
-        result = await tenant_service.create_tenant(name=name)
-
-        assert result.name == name
-        assert result.plan_id == "free"
-        assert result.settings == {}
-        assert "test-company" in result.slug
-        mock_db.execute.assert_called_once()
-        mock_db.flush.assert_called_once()
-
-    async def test_create_tenant_with_plan(
-        self, tenant_service: TenantService, mock_db: MagicMock
-    ) -> None:
-        """Test creating a tenant with specific plan."""
-        result = await tenant_service.create_tenant(
-            name="Pro Company",
-            plan_id="pro",
-        )
-
-        assert result.plan_id == "pro"
-
-    async def test_create_tenant_with_settings(
-        self, tenant_service: TenantService, mock_db: MagicMock
-    ) -> None:
-        """Test creating a tenant with settings."""
-        settings: dict[str, Any] = {"theme": "dark", "max_users": 10}
-
-        result = await tenant_service.create_tenant(
-            name="Custom Company",
-            settings=settings,
-        )
-
-        assert result.settings == settings
-
-
-# === get_tenant Tests ===
-
-
-class TestGetTenant:
-    """Tests for get_tenant method."""
-
-    async def test_get_tenant_returns_none(
-        self, tenant_service: TenantService, test_tenant_id: UUID
-    ) -> None:
-        """Test getting tenant returns None (stub)."""
-        result = await tenant_service.get_tenant(test_tenant_id)
-
-        assert result is None
-
-
-# === update_tenant_settings Tests ===
-
-
-class TestUpdateTenantSettings:
-    """Tests for update_tenant_settings method."""
-
-    async def test_update_tenant_settings_returns_none(
-        self, tenant_service: TenantService, test_tenant_id: UUID
-    ) -> None:
-        """Test updating tenant settings returns None (stub)."""
-        settings: dict[str, str | int | bool | None] = {"theme": "light"}
-
-        result = await tenant_service.update_tenant_settings(test_tenant_id, settings)
-
-        assert result is None
 
 
 # === get_alpaca_credentials Tests ===

@@ -237,64 +237,6 @@ class PaymentMethodService:
 
         return self._to_response(payment_method)
 
-    # ===================
-    # Sync from Stripe webhooks
-    # ===================
-
-    async def sync_payment_method_attached(
-        self,
-        tenant_id: UUID,
-        stripe_payment_method_id: str,
-        stripe_customer_id: str,
-        pm_type: str,
-        card_brand: str | None,
-        card_last4: str | None,
-        card_exp_month: int | None,
-        card_exp_year: int | None,
-    ) -> None:
-        """Sync a payment method attachment from Stripe webhook."""
-        # Check if already exists
-        result = await self.db.execute(
-            select(PaymentMethod).where(
-                PaymentMethod.stripe_payment_method_id == stripe_payment_method_id
-            )
-        )
-        existing = result.scalar_one_or_none()
-
-        if existing:
-            return  # Already synced
-
-        # Check if this should be default
-        result = await self.db.execute(
-            select(PaymentMethod).where(PaymentMethod.tenant_id == tenant_id)
-        )
-        existing_methods = result.scalars().all()
-        is_default = len(existing_methods) == 0
-
-        payment_method = PaymentMethod(
-            tenant_id=tenant_id,
-            stripe_payment_method_id=stripe_payment_method_id,
-            stripe_customer_id=stripe_customer_id,
-            type=pm_type,
-            card_brand=card_brand,
-            card_last4=card_last4,
-            card_exp_month=card_exp_month,
-            card_exp_year=card_exp_year,
-            is_default=is_default,
-        )
-
-        self.db.add(payment_method)
-        await self.db.commit()
-
-    async def sync_payment_method_detached(self, stripe_payment_method_id: str) -> None:
-        """Sync a payment method detachment from Stripe webhook."""
-        await self.db.execute(
-            delete(PaymentMethod).where(
-                PaymentMethod.stripe_payment_method_id == stripe_payment_method_id
-            )
-        )
-        await self.db.commit()
-
     def _to_response(self, pm: PaymentMethod) -> PaymentMethodResponse:
         """Convert PaymentMethod model to response."""
         return PaymentMethodResponse(

@@ -27,7 +27,6 @@ from llamatrade_proto.generated import (
     billing_pb2,
     common_pb2,
     notification_pb2,
-    portfolio_pb2,
     strategy_pb2,
     trading_pb2,
 )
@@ -187,13 +186,6 @@ class _NotificationStatus(StrEnum):
     READ = "read"
 
 
-class _NotificationPriority(StrEnum):
-    LOW = "low"
-    MEDIUM = "medium"
-    HIGH = "high"
-    CRITICAL = "critical"
-
-
 class _TemplateCategory(StrEnum):
     BUY_AND_HOLD = "buy-and-hold"
     TACTICAL = "tactical"
@@ -213,38 +205,10 @@ class _AssetClass(StrEnum):
     OPTIONS = "options"
 
 
-class _IndicatorType(StrEnum):
-    SMA = "sma"
-    EMA = "ema"
-    MACD = "macd"
-    ADX = "adx"
-    RSI = "rsi"
-    STOCHASTIC = "stochastic"
-    CCI = "cci"
-    WILLIAMS_R = "williams-r"
-    BOLLINGER_BANDS = "bollinger-bands"
-    ATR = "atr"
-    KELTNER_CHANNEL = "keltner-channel"
-    OBV = "obv"
-    MFI = "mfi"
-    VWAP = "vwap"
-    DONCHIAN_CHANNEL = "donchian-channel"
-
-
 class _TemplateDifficulty(StrEnum):
     BEGINNER = "beginner"
     INTERMEDIATE = "intermediate"
     ADVANCED = "advanced"
-
-
-class _TransactionType(StrEnum):
-    DEPOSIT = "deposit"
-    WITHDRAWAL = "withdrawal"
-    DIVIDEND = "dividend"
-    INTEREST = "interest"
-    FEE = "fee"
-    TRANSFER_IN = "transfer_in"
-    TRANSFER_OUT = "transfer_out"
 
 
 # =============================================================================
@@ -653,43 +617,6 @@ class NotificationStatusType(_ProtoEnumType[notification_pb2.NotificationStatus.
     _str_to_int = {v: k for k, v in _int_to_str.items()}
 
 
-class TransactionTypeType(_ProtoEnumType[portfolio_pb2.TransactionType.ValueType]):
-    impl = Enum(
-        _TransactionType,
-        name="transaction_type",
-        create_type=False,
-        values_callable=_enum_values,
-    )
-    _str_enum = _TransactionType
-    _int_to_str = {
-        portfolio_pb2.TRANSACTION_TYPE_DEPOSIT: _TransactionType.DEPOSIT,
-        portfolio_pb2.TRANSACTION_TYPE_WITHDRAWAL: _TransactionType.WITHDRAWAL,
-        portfolio_pb2.TRANSACTION_TYPE_DIVIDEND: _TransactionType.DIVIDEND,
-        portfolio_pb2.TRANSACTION_TYPE_INTEREST: _TransactionType.INTEREST,
-        portfolio_pb2.TRANSACTION_TYPE_FEE: _TransactionType.FEE,
-        portfolio_pb2.TRANSACTION_TYPE_TRANSFER_IN: _TransactionType.TRANSFER_IN,
-        portfolio_pb2.TRANSACTION_TYPE_TRANSFER_OUT: _TransactionType.TRANSFER_OUT,
-    }
-    _str_to_int = {v: k for k, v in _int_to_str.items()}
-
-
-class NotificationPriorityType(_ProtoEnumType[notification_pb2.NotificationPriority.ValueType]):
-    impl = Enum(
-        _NotificationPriority,
-        name="notification_priority",
-        create_type=False,
-        values_callable=_enum_values,
-    )
-    _str_enum = _NotificationPriority
-    _int_to_str = {
-        notification_pb2.NOTIFICATION_PRIORITY_LOW: _NotificationPriority.LOW,
-        notification_pb2.NOTIFICATION_PRIORITY_MEDIUM: _NotificationPriority.MEDIUM,
-        notification_pb2.NOTIFICATION_PRIORITY_HIGH: _NotificationPriority.HIGH,
-        notification_pb2.NOTIFICATION_PRIORITY_CRITICAL: _NotificationPriority.CRITICAL,
-    }
-    _str_to_int = {v: k for k, v in _int_to_str.items()}
-
-
 class TemplateCategoryType(_ProtoEnumType[strategy_pb2.TemplateCategory.ValueType]):
     impl = Enum(
         _TemplateCategory,
@@ -725,34 +652,6 @@ class AssetClassType(_ProtoEnumType[strategy_pb2.AssetClass.ValueType]):
         strategy_pb2.ASSET_CLASS_CRYPTO: _AssetClass.CRYPTO,
         strategy_pb2.ASSET_CLASS_COMMODITY: _AssetClass.COMMODITY,
         strategy_pb2.ASSET_CLASS_OPTIONS: _AssetClass.OPTIONS,
-    }
-    _str_to_int = {v: k for k, v in _int_to_str.items()}
-
-
-class IndicatorTypeType(_ProtoEnumType[strategy_pb2.IndicatorType.ValueType]):
-    impl = Enum(
-        _IndicatorType,
-        name="indicator_type",
-        create_type=False,
-        values_callable=_enum_values,
-    )
-    _str_enum = _IndicatorType
-    _int_to_str = {
-        strategy_pb2.INDICATOR_TYPE_SMA: _IndicatorType.SMA,
-        strategy_pb2.INDICATOR_TYPE_EMA: _IndicatorType.EMA,
-        strategy_pb2.INDICATOR_TYPE_MACD: _IndicatorType.MACD,
-        strategy_pb2.INDICATOR_TYPE_ADX: _IndicatorType.ADX,
-        strategy_pb2.INDICATOR_TYPE_RSI: _IndicatorType.RSI,
-        strategy_pb2.INDICATOR_TYPE_STOCHASTIC: _IndicatorType.STOCHASTIC,
-        strategy_pb2.INDICATOR_TYPE_CCI: _IndicatorType.CCI,
-        strategy_pb2.INDICATOR_TYPE_WILLIAMS_R: _IndicatorType.WILLIAMS_R,
-        strategy_pb2.INDICATOR_TYPE_BOLLINGER_BANDS: _IndicatorType.BOLLINGER_BANDS,
-        strategy_pb2.INDICATOR_TYPE_ATR: _IndicatorType.ATR,
-        strategy_pb2.INDICATOR_TYPE_KELTNER_CHANNEL: _IndicatorType.KELTNER_CHANNEL,
-        strategy_pb2.INDICATOR_TYPE_OBV: _IndicatorType.OBV,
-        strategy_pb2.INDICATOR_TYPE_MFI: _IndicatorType.MFI,
-        strategy_pb2.INDICATOR_TYPE_VWAP: _IndicatorType.VWAP,
-        strategy_pb2.INDICATOR_TYPE_DONCHIAN_CHANNEL: _IndicatorType.DONCHIAN_CHANNEL,
     }
     _str_to_int = {v: k for k, v in _int_to_str.items()}
 
