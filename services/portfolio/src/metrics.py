@@ -9,15 +9,15 @@ gauges defined in the shared library:
 * ingestion throughput/failures -> ``llamatrade_ledger_events_ingested_total``
 * reconciliation drift by classification -> ``llamatrade_ledger_reconciliation_drift_total``
 * drift-policy actions -> ``llamatrade_ledger_drift_actions_total``
-* consumer-group pending lag -> ``llamatrade_eventbus_consumer_lag_entries``
+* consumer-group pending lag -> ``events_consumer_lag`` (the events lib's gauge)
 
 This is the rollout dashboard for the shadow soak.
 """
 
 from __future__ import annotations
 
+from llamatrade_events.observability import EVENTS_CONSUMER_LAG
 from llamatrade_telemetry import metrics
-from llamatrade_telemetry.instrumentation.eventbus import set_consumer_lag
 
 # The durable fill stream and consumer group the pending-lag gauge is keyed on.
 # Kept here (not imported from ``tasks.fill_ingestion``) to avoid a metrics ->
@@ -45,12 +45,14 @@ class _StreamPendingGauge:
     """``.set(entries)`` handle for the consumer-group pending-lag gauge.
 
     Preserves the call site (``LEDGER_STREAM_PENDING.set(...)``) while routing to
-    the shared eventbus gauge ``llamatrade_eventbus_consumer_lag_entries`` under
-    the portfolio-ledger stream/group labels.
+    the events lib's ``events_consumer_lag`` gauge under the portfolio-ledger
+    stream/group labels (the single event-lag metric across the system).
     """
 
     def set(self, entries: int) -> None:
-        set_consumer_lag(_LEDGER_FILLS_STREAM, _PORTFOLIO_LEDGER_GROUP, entries)
+        EVENTS_CONSUMER_LAG.labels(stream=_LEDGER_FILLS_STREAM, group=_PORTFOLIO_LEDGER_GROUP).set(
+            entries
+        )
 
 
 # Delivered-but-unacked entries in the portfolio-ledger consumer group (lag

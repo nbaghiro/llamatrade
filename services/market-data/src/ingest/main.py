@@ -21,7 +21,7 @@ from llamatrade_alpaca import (
     get_market_data_client_async,
     init_market_data_stream,
 )
-from llamatrade_common.events import EventBus
+from llamatrade_events import EventBus, RedisStreamsTransport
 
 from src.ingest.backfill import BackfillController
 from src.ingest.config import BACKFILL_TIMEFRAMES, IngestConfig, get_universe
@@ -64,7 +64,7 @@ async def run() -> None:
 
     store = BarStore()
     alpaca = await get_market_data_client_async()
-    bus = EventBus(os.getenv("REDIS_URL"))
+    bus = EventBus(RedisStreamsTransport(os.getenv("REDIS_URL")))
 
     controller = BackfillController(
         store,

@@ -359,7 +359,7 @@ class OrderExecutor(OrderSubmissionMixin):
         try:
             payload = build_ledger_fill_payload_from_order(order)
             if payload is not None:
-                await self.publisher.publish_ledger_fill(order.account_id, payload)
+                await self.publisher.publish_ledger_fill(payload)
             if order.status in (
                 ORDER_STATUS_CANCELLED,
                 ORDER_STATUS_REJECTED,
@@ -378,7 +378,7 @@ class OrderExecutor(OrderSubmissionMixin):
                     side=order_side_to_str(order.side),
                     order_id=order.id,
                 )
-                await self.publisher.publish_ledger_fill(order.account_id, release)
+                await self.publisher.publish_ledger_fill(release)
         except Exception as e:
             logger.error(
                 f"Failed to publish ledger events for synced order {order.client_order_id}: {e}"
@@ -425,7 +425,7 @@ class OrderExecutor(OrderSubmissionMixin):
             order_id=db_order.id,
         )
         try:
-            await self.publisher.publish_ledger_fill(db_order.account_id, payload)
+            await self.publisher.publish_ledger_fill(payload)
         except Exception as e:
             logger.error(f"Failed to publish ledger {kind} for {db_order.client_order_id}: {e}")
 

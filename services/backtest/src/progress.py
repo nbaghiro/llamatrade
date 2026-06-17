@@ -4,14 +4,14 @@ import logging
 import os
 import threading
 import time
-from collections.abc import AsyncGenerator, AsyncIterator, Callable, Mapping
-from dataclasses import dataclass
+from collections.abc import AsyncGenerator, AsyncIterator, Callable
 from datetime import UTC, datetime
 from typing import cast
 
 import redis.asyncio as aioredis
 
-from llamatrade_common.events import Event, EventBus, EventType
+from llamatrade_events import CURSOR_BEGIN, EventBus, ProgressEvents, RedisStreamsTransport
+from llamatrade_proto.generated import backtest_pb2, common_pb2
 from llamatrade_telemetry import metrics
 
 logger = logging.getLogger(__name__)
@@ -43,31 +43,6 @@ class ProgressTracker:
         self._min_report_interval = min_report_interval
         self._lock = threading.Lock()
 
-    def calculate_eta(self, current_item: int) -> int | None:
-        """Calculate estimated seconds remaining.
-
-        Args:
-            current_item: Current item number (1-indexed).
-
-        Returns:
-            Estimated seconds remaining, or None if cannot calculate.
-        """
-        if current_item <= 0 or self.total_items <= 0:
-            return None
-
-        # Thread-safe read of start_time (immutable after init)
-        elapsed = time.monotonic() - self.start_time
-        if elapsed < 0.1:  # Not enough time elapsed
-            return None
-
-        items_per_second = current_item / elapsed
-        if items_per_second <= 0:
-            return None
-
-        remaining_items = self.total_items - current_item
-        eta_seconds = int(remaining_items / items_per_second)
-        return max(0, eta_seconds)
-
     def should_report(self, current_progress: float) -> bool:
         """Check if we should report progress (rate limiting).
 
@@ -97,59 +72,27 @@ class ProgressTracker:
             return False
 
 
-@dataclass
-class ProgressUpdate:
-    """Progress update message.
+class ProgressPublisher:
+    """Publishes progress updates to a bounded, replayable Redis Stream.
 
-    `status` carries the explicit BacktestStatus proto value. Consumers must
-    use it rather than inferring status from the progress percentage — a
-    failed run also publishes progress=100.
+    The wire payload is the ``BacktestProgressUpdate`` proto on the events lib's
+    ``BACKTEST_PROGRESS`` channel; that channel owns the stream key and retention.
     """
 
-    backtest_id: str
-    progress: float  # 0-100
-    message: str
-    eta_seconds: int | None = None
-    timestamp: str | None = None
-    status: int | None = None  # BacktestStatus proto value
-
-    def to_dict(self) -> dict[str, str | float | int | None]:
-        return {
-            "backtest_id": self.backtest_id,
-            "progress": self.progress,
-            "message": self.message,
-            "eta_seconds": self.eta_seconds,
-            "timestamp": self.timestamp or datetime.now(UTC).isoformat(),
-            "status": self.status,
-        }
-
-
-PROGRESS_STREAM_PREFIX = "backtest:progress"
-PROGRESS_STREAM_MAXLEN = 256
-
-
-def progress_stream(backtest_id: str) -> str:
-    return f"{PROGRESS_STREAM_PREFIX}:{backtest_id}"
-
-
-class ProgressPublisher:
-    """Publishes progress updates to a bounded, replayable Redis Stream."""
-
-    def __init__(self, redis_url: str | None = None, event_bus: EventBus | None = None):
+    def __init__(self, redis_url: str | None = None, progress_events: ProgressEvents | None = None):
         self.redis_url = redis_url or REDIS_URL
-        self._bus: EventBus | None = event_bus
+        self._events: ProgressEvents | None = progress_events
 
-    def _get_bus(self) -> EventBus:
-        if self._bus is None:
-            self._bus = EventBus(self.redis_url)
-        return self._bus
+    def _get_events(self) -> ProgressEvents:
+        if self._events is None:
+            self._events = ProgressEvents(bus=EventBus(RedisStreamsTransport(self.redis_url)))
+        return self._events
 
     async def publish(
         self,
         backtest_id: str,
         progress: float,
         message: str,
-        eta_seconds: int | None = None,
         status: int | None = None,
     ) -> None:
         """Publish a progress update to the backtest's progress stream.
@@ -157,20 +100,22 @@ class ProgressPublisher:
         A short bounded stream so a late-joining UI replays from the start and
         catches up immediately.
         """
-        update = ProgressUpdate(
-            backtest_id=backtest_id,
-            progress=progress,
-            message=message,
-            eta_seconds=eta_seconds,
-            status=status,
+        # `status` is a plain int on the caller side; the proto field is the
+        # BacktestStatus enum ValueType. They share the same wire integers, so a
+        # cast is the right narrowing here.
+        status_value = cast(
+            "backtest_pb2.BacktestStatus.ValueType",
+            status if status is not None else backtest_pb2.BACKTEST_STATUS_RUNNING,
         )
-        event = Event(type=EventType.BACKTEST_PROGRESS, data=update.to_dict())
+        update = backtest_pb2.BacktestProgressUpdate(
+            backtest_id=backtest_id,
+            status=status_value,
+            progress_percent=int(progress),
+            message=message,
+            timestamp=common_pb2.Timestamp(seconds=int(datetime.now(UTC).timestamp())),
+        )
         try:
-            await self._get_bus().publish(
-                progress_stream(backtest_id),
-                event.to_redis_stream(),
-                maxlen=PROGRESS_STREAM_MAXLEN,
-            )
+            await self._get_events().publish(backtest_id, update)
         except Exception:
             # Record the failure for observability, then preserve existing
             # behavior by re-raising (the caller maps it to a FAILED run).
@@ -178,79 +123,62 @@ class ProgressPublisher:
             raise
 
     async def close(self) -> None:
-        """Close the Streams bus, if created."""
-        if self._bus is not None:
-            await self._bus.close()
-            self._bus = None
+        """Close the progress channel, if created."""
+        if self._events is not None:
+            await self._events.close()
+            self._events = None
 
 
 class ProgressSubscriber:
     """Tail-reads progress updates from the backtest's Redis Stream."""
 
-    def __init__(self, redis_url: str | None = None, event_bus: EventBus | None = None):
+    def __init__(self, redis_url: str | None = None, progress_events: ProgressEvents | None = None):
         self.redis_url = redis_url or REDIS_URL
-        self._bus: EventBus | None = event_bus
+        self._events: ProgressEvents | None = progress_events
 
-    def _get_bus(self) -> EventBus:
-        if self._bus is None:
-            self._bus = EventBus(self.redis_url)
-        return self._bus
+    def _get_events(self) -> ProgressEvents:
+        if self._events is None:
+            self._events = ProgressEvents(bus=EventBus(RedisStreamsTransport(self.redis_url)))
+        return self._events
 
     async def tail(
         self,
         backtest_id: str,
         idle_timeout: float = 300.0,
-    ) -> AsyncIterator[ProgressUpdate]:
+    ) -> AsyncIterator[backtest_pb2.BacktestProgressUpdate]:
         """Tail the progress stream from the start.
 
-        Replaying from ``"0"`` means a client that connects mid-run catches up
-        on all prior updates immediately — the late-joiner gap pub/sub had.
-        Ends on a terminal update (progress >= 100) or after ``idle_timeout``
-        seconds of silence (orphaned run).
+        Replaying from ``CURSOR_BEGIN`` means a client that connects mid-run
+        catches up on all prior updates immediately — the late-joiner gap
+        pub/sub had. Ends on a terminal update (progress >= 100) or after
+        ``idle_timeout`` seconds of silence (orphaned run).
         """
         import asyncio
 
-        # The bus returns an async generator; typed as AsyncGenerator so the
-        # finally-close is visible to the type checker.
+        # The channel returns an async generator of (cursor, proto) tuples;
+        # typed as AsyncGenerator so the finally-close is visible to the type
+        # checker.
         entries = cast(
-            "AsyncGenerator[tuple[str, dict[str, str]]]",
-            self._get_bus().tail(progress_stream(backtest_id), last_id="0", block_ms=1000),
+            "AsyncGenerator[tuple[str, backtest_pb2.BacktestProgressUpdate]]",
+            self._get_events().tail(backtest_id, from_cursor=CURSOR_BEGIN),
         )
         try:
             while True:
                 try:
-                    _, fields = await asyncio.wait_for(anext(entries), timeout=idle_timeout)
+                    _, update = await asyncio.wait_for(anext(entries), timeout=idle_timeout)
                 except TimeoutError, StopAsyncIteration:
                     break
-                event = Event.from_redis_stream(fields)
-                update = self._parse_progress(event.data)
                 yield update
-                if update.progress >= 100:
+                if update.progress_percent >= 100:
                     break
         finally:
             await entries.aclose()
 
-    @staticmethod
-    def _parse_progress(data: Mapping[str, object]) -> ProgressUpdate:
-        """Decode one progress payload from the Event.data body."""
-        progress_val = data.get("progress", 0)
-        eta_val = data.get("eta_seconds")
-        ts_val = data.get("timestamp")
-        status_val = data.get("status")
-        return ProgressUpdate(
-            backtest_id=str(data["backtest_id"]),
-            progress=int(progress_val) if isinstance(progress_val, (int, float)) else 0,
-            message=str(data.get("message", "")),
-            eta_seconds=int(eta_val) if isinstance(eta_val, (int, float)) else None,
-            timestamp=str(ts_val) if ts_val is not None else None,
-            status=int(status_val) if isinstance(status_val, (int, float)) else None,
-        )
-
     async def close(self) -> None:
-        """Close the Streams bus, if created."""
-        if self._bus is not None:
-            await self._bus.close()
-            self._bus = None
+        """Close the progress channel, if created."""
+        if self._events is not None:
+            await self._events.close()
+            self._events = None
 
 
 class BacktestProgressReporter:
@@ -298,7 +226,7 @@ class BacktestProgressReporter:
         self.simulation_end_pct = simulation_end_pct
         self._publisher = ProgressPublisher(redis_url)
         self._tracker: ProgressTracker | None = ProgressTracker(total_items=total_bars)
-        self._pending_updates: list[tuple[float, str, int | None]] = []
+        self._pending_updates: list[tuple[float, str]] = []
         self._lock = threading.Lock()  # Thread-safe access to _pending_updates
         self._max_pending = 100  # Auto-flush threshold to bound memory usage
 
@@ -306,7 +234,6 @@ class BacktestProgressReporter:
         self,
         message: str,
         progress: float,
-        eta_seconds: int | None = None,
         status: int | None = None,
     ) -> None:
         """Publish a phase progress update (e.g., 'Loading strategy').
@@ -314,14 +241,12 @@ class BacktestProgressReporter:
         Args:
             message: Status message.
             progress: Progress percentage (0-100).
-            eta_seconds: Optional ETA in seconds.
             status: Explicit BacktestStatus proto value for this update.
         """
         await self._publisher.publish(
             self.backtest_id,
             progress,
             message,
-            eta_seconds,
             status=status,
         )
 
@@ -363,16 +288,13 @@ class BacktestProgressReporter:
             if not self._tracker.should_report(progress):
                 return
 
-            # Calculate ETA
-            eta = self._tracker.calculate_eta(current_bar)
-
             # Format message with current date
             date_str = current_date.strftime("%Y-%m-%d")
             message = f"Processing {date_str} ({current_bar}/{total_bars})"
 
             # Queue update for async publishing (thread-safe)
             with self._lock:
-                self._pending_updates.append((progress, message, eta))
+                self._pending_updates.append((progress, message))
 
                 # Auto-trim queue if it exceeds limit to bound memory usage.
                 # Keep only the most recent half of updates (discarding older ones).
@@ -395,8 +317,8 @@ class BacktestProgressReporter:
             self._pending_updates.clear()
 
         # Publish outside the lock to avoid blocking callbacks
-        for progress, message, eta in updates:
-            await self._publisher.publish(self.backtest_id, progress, message, eta)
+        for progress, message in updates:
+            await self._publisher.publish(self.backtest_id, progress, message)
 
     async def close(self) -> None:
         """Close the publisher connection."""

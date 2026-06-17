@@ -12,13 +12,14 @@ from typing import Any
 import pytest
 
 from llamatrade_db.models.ledger import LedgerEventType
+from llamatrade_events import LedgerFill, LedgerReservation
 
 from src.ledger.backfill import BrokerPosition, plan_backfill
 from src.ledger.ingestion import (
+    append_from_message,
     enrich_sell_fill,
     fill_to_append,
     needs_cost_basis,
-    payload_to_append,
 )
 from src.ledger.postings import (
     Bucket,
@@ -223,17 +224,17 @@ class TestFillIngestion:
         aid = "22222222-2222-2222-2222-222222222222"
         sid = "33333333-3333-3333-3333-333333333333"
         append = fill_to_append(
-            {
-                "tenant_id": tid,
-                "account_id": aid,
-                "sleeve_id": sid,
-                "client_order_id": "lt-abc123",
-                "symbol": "SPY",
-                "side": "BUY",
-                "qty": "50",
-                "price": "480",
-                "fees": "1.00",
-            }
+            LedgerFill(
+                tenant_id=tid,
+                account_id=aid,
+                sleeve_id=sid,
+                client_order_id="lt-abc123",
+                symbol="SPY",
+                side="BUY",
+                qty="50",
+                price="480",
+                fees="1.00",
+            )
         )
         assert append.event_type is LedgerEventType.ORDER_FILLED
         assert append.tenant_id == UUID(tid)
@@ -244,32 +245,32 @@ class TestFillIngestion:
         assert (
             append.event_id
             == fill_to_append(
-                {
-                    "tenant_id": tid,
-                    "account_id": aid,
-                    "sleeve_id": sid,
-                    "client_order_id": "lt-abc123",
-                    "symbol": "SPY",
-                    "side": "buy",
-                    "qty": "50",
-                    "price": "480",
-                }
+                LedgerFill(
+                    tenant_id=tid,
+                    account_id=aid,
+                    sleeve_id=sid,
+                    client_order_id="lt-abc123",
+                    symbol="SPY",
+                    side="buy",
+                    qty="50",
+                    price="480",
+                )
             ).event_id
         )
 
     def test_sell_without_cost_basis_is_valid(self) -> None:
         """cost_basis is optional on sells: the consumer computes FIFO at ingestion."""
         append = fill_to_append(
-            {
-                "tenant_id": "11111111-1111-1111-1111-111111111111",
-                "account_id": "22222222-2222-2222-2222-222222222222",
-                "sleeve_id": "33333333-3333-3333-3333-333333333333",
-                "client_order_id": "lt-sell-1",
-                "symbol": "SPY",
-                "side": "sell",
-                "qty": "50",
-                "price": "500",
-            }
+            LedgerFill(
+                tenant_id="11111111-1111-1111-1111-111111111111",
+                account_id="22222222-2222-2222-2222-222222222222",
+                sleeve_id="33333333-3333-3333-3333-333333333333",
+                client_order_id="lt-sell-1",
+                symbol="SPY",
+                side="sell",
+                qty="50",
+                price="500",
+            )
         )
         assert append.event_type is LedgerEventType.ORDER_FILLED
         assert "cost_basis" not in append.data
@@ -277,18 +278,18 @@ class TestFillIngestion:
 
     def test_sell_with_cost_basis_passes_through(self) -> None:
         append = fill_to_append(
-            {
-                "tenant_id": "11111111-1111-1111-1111-111111111111",
-                "account_id": "22222222-2222-2222-2222-222222222222",
-                "sleeve_id": "33333333-3333-3333-3333-333333333333",
-                "client_order_id": "lt-sell-2",
-                "symbol": "SPY",
-                "side": "sell",
-                "qty": "50",
-                "price": "500",
-                "cost_basis": "24000",
-                "realized_pnl": "1000",
-            }
+            LedgerFill(
+                tenant_id="11111111-1111-1111-1111-111111111111",
+                account_id="22222222-2222-2222-2222-222222222222",
+                sleeve_id="33333333-3333-3333-3333-333333333333",
+                client_order_id="lt-sell-2",
+                symbol="SPY",
+                side="sell",
+                qty="50",
+                price="500",
+                cost_basis="24000",
+                realized_pnl="1000",
+            )
         )
         assert append.data["cost_basis"] == "24000"
         assert append.data["realized_pnl"] == "1000"
@@ -365,7 +366,7 @@ class TestOpenLots:
 
 class TestSellEnrichment:
     def _sell_append(self, qty: str = "60", **extra: str):
-        payload = {
+        fields = {
             "tenant_id": "11111111-1111-1111-1111-111111111111",
             "account_id": "22222222-2222-2222-2222-222222222222",
             "sleeve_id": "33333333-3333-3333-3333-333333333333",
@@ -375,8 +376,8 @@ class TestSellEnrichment:
             "qty": qty,
             "price": "510",
         }
-        payload.update(extra)
-        return fill_to_append(payload)
+        fields.update(extra)
+        return fill_to_append(LedgerFill(**fields))
 
     def test_needs_cost_basis_predicate(self) -> None:
         assert needs_cost_basis(self._sell_append()) is True
@@ -460,28 +461,30 @@ class TestReservationProjection:
 
 
 class TestPayloadRouting:
-    def _payload(self, **overrides: str) -> dict:
-        payload = {
+    def _message(self, **overrides: str):
+        base = {
             "tenant_id": "11111111-1111-1111-1111-111111111111",
             "account_id": "22222222-2222-2222-2222-222222222222",
             "sleeve_id": "33333333-3333-3333-3333-333333333333",
             "client_order_id": "lt-route-1",
             "symbol": "SPY",
             "side": "buy",
-            "qty": "50",
-            "price": "480",
         }
-        payload.update(overrides)
-        return payload
+        event_type = overrides.pop("event_type", None)
+        if event_type is not None:
+            return LedgerReservation(event_type=event_type, **base, **overrides)
+        return LedgerFill(qty="50", price="480", **base, **overrides)
 
     def test_default_routes_to_fill(self) -> None:
-        append = payload_to_append(self._payload())
+        append = append_from_message(self._message())
         assert append.event_type is LedgerEventType.ORDER_FILLED
 
     def test_reservation_stages_route_and_have_distinct_event_ids(self) -> None:
-        submitted = payload_to_append(self._payload(event_type="order_submitted", reserved="24000"))
-        cancelled = payload_to_append(self._payload(event_type="order_cancelled"))
-        filled = payload_to_append(self._payload())
+        submitted = append_from_message(
+            self._message(event_type="order_submitted", reserved="24000")
+        )
+        cancelled = append_from_message(self._message(event_type="order_cancelled"))
+        filled = append_from_message(self._message())
 
         assert submitted.event_type is LedgerEventType.ORDER_SUBMITTED
         assert submitted.data["reserved"] == "24000"
@@ -491,12 +494,12 @@ class TestPayloadRouting:
         assert len({submitted.event_id, cancelled.event_id, filled.event_id}) == 3
 
     def test_lifecycle_events_carry_no_postings_yet(self) -> None:
-        submitted = payload_to_append(self._payload(event_type="order_submitted"))
+        submitted = append_from_message(self._message(event_type="order_submitted"))
         assert build_postings(submitted.event_type, submitted.data) == []
 
     def test_unknown_event_type_raises(self) -> None:
-        with pytest.raises(ValueError, match="unknown ledger payload event_type"):
-            payload_to_append(self._payload(event_type="order_teleported"))
+        with pytest.raises(ValueError, match="unknown ledger reservation event_type"):
+            append_from_message(self._message(event_type="order_teleported"))
 
 
 class TestBackfillPlanner:

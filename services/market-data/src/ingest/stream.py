@@ -15,11 +15,11 @@ from datetime import datetime
 from decimal import Decimal
 from typing import TYPE_CHECKING, cast
 
-from llamatrade_common.events import EventBus
+from llamatrade_events import BarEvents, EventBus
 
 from src.store.models import BarRow
 from src.store.repository import BarStore
-from src.streaming.bar_events import BAR_STREAM, BAR_STREAM_MAXLEN, encode_bar_event
+from src.streaming.bar_events import bar_row_to_proto
 
 if TYPE_CHECKING:
     from llamatrade_alpaca.streaming import MarketDataStreamClient
@@ -47,7 +47,7 @@ class BarIngestor:
 
     def __init__(self, store: BarStore, event_bus: EventBus, *, max_buffer: int = 1000) -> None:
         self._store = store
-        self._bus = event_bus
+        self._bars = BarEvents(bus=event_bus)
         self._max_buffer = max_buffer
         self._buffer: list[BarRow] = []
         self._lock = asyncio.Lock()
@@ -72,7 +72,7 @@ class BarIngestor:
         self._buffer = []
         await self._store.upsert_bars(rows, "1Min")
         for row in rows:
-            await self._bus.publish(BAR_STREAM, encode_bar_event(row), maxlen=BAR_STREAM_MAXLEN)
+            await self._bars.publish(bar_row_to_proto(row))
         logger.debug("Flushed %d live bars to store + bus", len(rows))
         return len(rows)
 

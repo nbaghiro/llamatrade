@@ -12,13 +12,15 @@ Partial fills never publish — the ledger ``event_id`` is derived from
 ``client_order_id``, so per-partial publishing would dedup all but the first.
 
 ``cost_basis``/``realized_pnl`` on sells are OPTIONAL in the payload: when
-absent, the consumer handler computes them at ingestion via FIFO lot selection
-against the account projection (the ledger owns the lots; trading reports
-broker facts only).
+absent (proto scalar left empty), the consumer handler computes them at
+ingestion via FIFO lot selection against the account projection (the ledger
+owns the lots; trading reports broker facts only).
 
-The translation (`fill_to_append` / `payload_to_append`) is a pure function so it
-can be unit-tested; the portfolio service drives it from the Redis Streams
-consumer group (``src.tasks.fill_ingestion``).
+Trading emits proto messages (``LedgerFill`` / ``LedgerReservation``, the §1/§4
+contract); the translation (`fill_to_append` / `reservation_to_append`, routed by
+`append_from_message`) is a pure function so it can be unit-tested. The portfolio
+service drives it from the Redis Streams consumer group
+(``src.tasks.fill_ingestion``).
 """
 
 from __future__ import annotations
@@ -33,6 +35,7 @@ from typing import Any
 from uuid import UUID
 
 from llamatrade_db.models.ledger import LedgerEventType
+from llamatrade_events import LedgerFill, LedgerReservation
 
 from src.ledger.sizing import Lot, select_lots_fifo
 
@@ -61,81 +64,110 @@ class LedgerAppend:
     occurred_at: datetime
 
 
-def fill_to_append(fill: dict[str, Any]) -> LedgerAppend:
-    """Translate a trading ``OrderFilled`` payload into a ledger append.
+def _require(value: str, name: str) -> str:
+    """A required proto scalar must be non-empty; empty → poison (drop)."""
+    if not value:
+        raise ValueError(f"ledger payload missing required field: {name}")
+    return value
 
-    Expected payload keys: ``tenant_id``, ``account_id``, ``sleeve_id``,
-    ``client_order_id`` (idempotency key), ``symbol``, ``side`` (buy/sell),
-    ``qty``, ``price``; optional ``fees``, ``cost_basis`` (sells),
+
+def fill_to_append(fill: LedgerFill) -> LedgerAppend:
+    """Translate a trading ``LedgerFill`` (§1) into a ledger append.
+
+    Required: ``tenant_id``, ``account_id``, ``sleeve_id``, ``client_order_id``
+    (idempotency key), ``symbol``, ``side`` (buy/sell), ``qty``, ``price``.
+    Optional (proto scalar empty ⇒ absent): ``fees``, ``cost_basis`` (sells),
     ``realized_pnl`` (sells), ``order_id``, ``filled_at`` (ISO).
 
     ``qty``/``price`` are the order's terminal cumulative fill quantity and
-    average fill price — one payload per order, never per partial fill.
-    When ``cost_basis`` is absent on a sell, the consumer computes it at
-    ingestion (FIFO against the projection) before appending.
+    average fill price — one message per order, never per partial fill. When
+    ``cost_basis`` is absent on a sell, the consumer computes it at ingestion
+    (FIFO against the projection) before appending.
 
     Idempotency: the ledger ``event_id`` is derived from the broker
     ``client_order_id`` so a re-delivered fill is a no-op at the writer.
     """
+    client_order_id = _require(fill.client_order_id, "client_order_id")
     data: dict[str, Any] = {
-        "sleeve_id": str(fill["sleeve_id"]),
-        "symbol": str(fill["symbol"]),
-        "side": str(fill["side"]).lower(),
-        "qty": str(fill["qty"]),
-        "price": str(fill["price"]),
+        "sleeve_id": _require(fill.sleeve_id, "sleeve_id"),
+        "symbol": _require(fill.symbol, "symbol"),
+        "side": _require(fill.side, "side").lower(),
+        "qty": _require(fill.qty, "qty"),
+        "price": _require(fill.price, "price"),
         # Carried in data so the fill releases its cash reservation (§4)
-        "client_order_id": str(fill["client_order_id"]),
+        "client_order_id": client_order_id,
     }
-    for optional in ("fees", "cost_basis", "realized_pnl", "order_id"):
-        if optional in fill and fill[optional] is not None:
-            data[optional] = str(fill[optional])
+    # Proto3 can't distinguish unset from empty: an empty scalar means "absent",
+    # so the FIFO-enrichment trigger (no cost_basis) is preserved.
+    for name, value in (
+        ("fees", fill.fees),
+        ("cost_basis", fill.cost_basis),
+        ("realized_pnl", fill.realized_pnl),
+        ("order_id", fill.order_id),
+    ):
+        if value:
+            data[name] = value
 
-    occurred_at = _parse_ts(fill.get("filled_at"))
     return LedgerAppend(
-        tenant_id=UUID(str(fill["tenant_id"])),
-        account_id=UUID(str(fill["account_id"])),
-        sleeve_id=UUID(str(fill["sleeve_id"])),
+        tenant_id=UUID(_require(fill.tenant_id, "tenant_id")),
+        account_id=UUID(_require(fill.account_id, "account_id")),
+        sleeve_id=UUID(data["sleeve_id"]),
         event_type=LedgerEventType.ORDER_FILLED,
         data=data,
-        event_id=_event_id_from_client_order_id(str(fill["client_order_id"])),
-        occurred_at=occurred_at,
+        event_id=_event_id_from_client_order_id(client_order_id),
+        occurred_at=_parse_ts(fill.filled_at),
     )
 
 
-def payload_to_append(payload: dict[str, Any]) -> LedgerAppend:
-    """Route one channel payload to a ledger append by its ``event_type`` key.
+def reservation_to_append(reservation: LedgerReservation) -> LedgerAppend:
+    """Translate a trading ``LedgerReservation`` (§4 lifecycle) into an append.
 
-    No ``event_type`` (or ``"order_filled"``) → a fill (``fill_to_append``).
-    ``order_submitted`` / ``order_cancelled`` / ``order_rejected`` → an order
-    lifecycle event whose ``event_id`` derives from ``client_order_id:stage``,
-    so each stage is idempotent independently of the fill.
+    ``order_submitted`` / ``order_cancelled`` / ``order_rejected`` carry no
+    economic postings of their own; the ``event_id`` derives from
+    ``client_order_id:stage`` so each stage is idempotent independently of the
+    fill. Reservations carry no timestamp, so ``occurred_at`` is "now".
     """
-    kind = str(payload.get("event_type", "order_filled")).lower()
-    if kind == "order_filled":
-        return fill_to_append(payload)
-
+    kind = _require(reservation.event_type, "event_type").lower()
     try:
         event_type = LIFECYCLE_EVENT_TYPES[kind]
     except KeyError:
-        raise ValueError(f"unknown ledger payload event_type: {kind!r}") from None
+        raise ValueError(f"unknown ledger reservation event_type: {kind!r}") from None
 
+    client_order_id = _require(reservation.client_order_id, "client_order_id")
     data: dict[str, Any] = {
-        "sleeve_id": str(payload["sleeve_id"]),
-        "client_order_id": str(payload["client_order_id"]),
+        "sleeve_id": _require(reservation.sleeve_id, "sleeve_id"),
+        "client_order_id": client_order_id,
     }
-    for optional in ("symbol", "side", "qty", "price", "reserved", "order_id"):
-        if optional in payload and payload[optional] is not None:
-            data[optional] = str(payload[optional])
+    for name, value in (
+        ("symbol", reservation.symbol),
+        ("side", reservation.side),
+        ("reserved", reservation.reserved),
+        ("order_id", reservation.order_id),
+    ):
+        if value:
+            data[name] = value
 
     return LedgerAppend(
-        tenant_id=UUID(str(payload["tenant_id"])),
-        account_id=UUID(str(payload["account_id"])),
-        sleeve_id=UUID(str(payload["sleeve_id"])),
+        tenant_id=UUID(_require(reservation.tenant_id, "tenant_id")),
+        account_id=UUID(_require(reservation.account_id, "account_id")),
+        sleeve_id=UUID(data["sleeve_id"]),
         event_type=event_type,
         data=data,
-        event_id=_event_id_from_client_order_id(f"{payload['client_order_id']}:{kind}"),
-        occurred_at=_parse_ts(payload.get("occurred_at") or payload.get("filled_at")),
+        event_id=_event_id_from_client_order_id(f"{client_order_id}:{kind}"),
+        occurred_at=_parse_ts(None),
     )
+
+
+def append_from_message(message: LedgerFill | LedgerReservation) -> LedgerAppend:
+    """Route a consumed ledger message to its append by proto type.
+
+    ``LedgerReservation`` → a lifecycle stage; ``LedgerFill`` → a fill. The
+    envelope's ``EventType`` already discriminated which message was parsed, so
+    the type is authoritative (no string sniffing).
+    """
+    if isinstance(message, LedgerReservation):
+        return reservation_to_append(message)
+    return fill_to_append(message)
 
 
 def needs_cost_basis(append: LedgerAppend) -> bool:

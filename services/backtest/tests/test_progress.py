@@ -7,32 +7,35 @@ from typing import cast
 
 import pytest
 
-from llamatrade_common.events import EventBus
+from llamatrade_events import ProgressEvents
+from llamatrade_proto.generated import backtest_pb2
 
 from src.progress import (
     BacktestProgressReporter,
     ProgressPublisher,
     ProgressSubscriber,
     ProgressTracker,
-    ProgressUpdate,
 )
 
 
-class _StubBus:
-    """EventBus stand-in: records publishes; tail yields canned entries."""
+class _StubEvents:
+    """ProgressEvents stand-in: records publishes; tail yields canned entries."""
 
-    def __init__(self, entries: list[tuple[str, dict[str, str]]] | None = None) -> None:
-        self.published: list[tuple[str, dict[str, str], int | None]] = []
+    def __init__(
+        self,
+        entries: list[tuple[str, backtest_pb2.BacktestProgressUpdate]] | None = None,
+    ) -> None:
+        self.published: list[tuple[str, backtest_pb2.BacktestProgressUpdate]] = []
         self._entries = entries or []
         self.tail_calls: list[tuple[str, str]] = []
         self.closed = False
 
-    async def publish(self, stream, fields, *, maxlen=None, approximate=True):
-        self.published.append((stream, fields, maxlen))
+    async def publish(self, backtest_id, update, *, tenant_id="", event_id=None):
+        self.published.append((backtest_id, update))
         return "1-0"
 
-    async def tail(self, stream, *, last_id="$", block_ms=5000, count=100):
-        self.tail_calls.append((stream, last_id))
+    async def tail(self, backtest_id, *, from_cursor="0"):
+        self.tail_calls.append((backtest_id, from_cursor))
         for entry in self._entries:
             yield entry
 
@@ -40,71 +43,26 @@ class _StubBus:
         self.closed = True
 
 
-class _BlockingBus(_StubBus):
+class _BlockingEvents(_StubEvents):
     """Tail blocks forever after its canned entries (orphaned-stream sim)."""
 
-    async def tail(self, stream, *, last_id="$", block_ms=5000, count=100):
-        self.tail_calls.append((stream, last_id))
+    async def tail(self, backtest_id, *, from_cursor="0"):
+        self.tail_calls.append((backtest_id, from_cursor))
         for entry in self._entries:
             yield entry
         await asyncio.Event().wait()  # never resolves → forces idle timeout
 
 
-def _progress_entry(progress: float, *, status: int | None = None) -> tuple[str, dict[str, str]]:
-    from llamatrade_common.events import Event, EventType
-
-    body: dict[str, object] = {
-        "backtest_id": "bt-1",
-        "progress": progress,
-        "message": f"at {progress}%",
-        "eta_seconds": None,
-        "timestamp": "2026-06-12T14:30:00+00:00",
-        "status": status,
-    }
-    entry = Event(type=EventType.BACKTEST_PROGRESS, data=body).to_redis_stream()
-    return (f"{int(progress)}-0", entry)
-
-
-class TestProgressUpdate:
-    """Tests for ProgressUpdate dataclass."""
-
-    def test_basic_creation(self):
-        update = ProgressUpdate(backtest_id="bt-123", progress=50.0, message="Processing...")
-        assert update.backtest_id == "bt-123"
-        assert update.progress == 50.0
-        assert update.message == "Processing..."
-        assert update.eta_seconds is None
-
-    def test_with_eta(self):
-        update = ProgressUpdate(
-            backtest_id="bt-123", progress=25.0, message="Loading data", eta_seconds=120
-        )
-        assert update.eta_seconds == 120
-
-    def test_with_timestamp(self):
-        ts = "2024-01-01T12:00:00+00:00"
-        update = ProgressUpdate(
-            backtest_id="bt-123", progress=100.0, message="Complete", timestamp=ts
-        )
-        assert update.timestamp == ts
-
-    def test_to_dict_basic(self):
-        update = ProgressUpdate(backtest_id="bt-123", progress=75.0, message="Calculating metrics")
-        result = update.to_dict()
-        assert result["backtest_id"] == "bt-123"
-        assert result["progress"] == 75.0
-        assert result["message"] == "Calculating metrics"
-        assert result["eta_seconds"] is None
-        assert "timestamp" in result  # Auto-generated
-
-    def test_to_dict_with_provided_timestamp(self):
-        ts = "2024-01-01T12:00:00+00:00"
-        update = ProgressUpdate(backtest_id="bt-123", progress=100.0, message="Done", timestamp=ts)
-        assert update.to_dict()["timestamp"] == ts
-
-    def test_to_dict_auto_timestamp(self):
-        result = ProgressUpdate(backtest_id="bt-123", progress=50.0, message="Working").to_dict()
-        assert "T" in str(result["timestamp"])
+def _progress_entry(
+    progress: float, *, status: int | None = None
+) -> tuple[str, backtest_pb2.BacktestProgressUpdate]:
+    update = backtest_pb2.BacktestProgressUpdate(
+        backtest_id="bt-1",
+        progress_percent=int(progress),
+        message=f"at {progress}%",
+        status=status if status is not None else backtest_pb2.BACKTEST_STATUS_RUNNING,
+    )
+    return (f"{int(progress)}-0", update)
 
 
 class TestProgressPublisher:
@@ -123,32 +81,38 @@ class TestProgressPublisher:
 
     @pytest.mark.asyncio
     async def test_publish_writes_to_stream(self):
-        from src.progress import PROGRESS_STREAM_MAXLEN
+        events = _StubEvents()
+        publisher = ProgressPublisher(progress_events=cast("ProgressEvents", events))
 
-        bus = _StubBus()
-        publisher = ProgressPublisher(event_bus=cast("EventBus", bus))
+        await publisher.publish("bt-123", 50.0, "Halfway there")
 
-        await publisher.publish("bt-123", 50.0, "Halfway there", eta_seconds=60)
-
-        assert len(bus.published) == 1
-        stream, fields, maxlen = bus.published[0]
-        assert stream == "backtest:progress:bt-123"
-        assert maxlen == PROGRESS_STREAM_MAXLEN
-        # The entry is the Event envelope; the data body round-trips the update.
-        from llamatrade_common.events import Event
-
-        update = Event.from_redis_stream(fields).data
-        assert update["backtest_id"] == "bt-123"
-        assert update["progress"] == 50.0
-        assert update["message"] == "Halfway there"
-        assert update["eta_seconds"] == 60
+        assert len(events.published) == 1
+        backtest_id, update = events.published[0]
+        assert backtest_id == "bt-123"
+        # The wire payload is the BacktestProgressUpdate proto.
+        assert update.backtest_id == "bt-123"
+        assert update.progress_percent == 50
+        assert update.message == "Halfway there"
+        assert update.status == backtest_pb2.BACKTEST_STATUS_RUNNING
 
     @pytest.mark.asyncio
-    async def test_close_closes_bus(self):
-        bus = _StubBus()
-        publisher = ProgressPublisher(event_bus=cast("EventBus", bus))
+    async def test_publish_carries_explicit_status(self):
+        events = _StubEvents()
+        publisher = ProgressPublisher(progress_events=cast("ProgressEvents", events))
+
+        await publisher.publish(
+            "bt-123", 100.0, "Failed", status=backtest_pb2.BACKTEST_STATUS_FAILED
+        )
+
+        _, update = events.published[0]
+        assert update.status == backtest_pb2.BACKTEST_STATUS_FAILED
+
+    @pytest.mark.asyncio
+    async def test_close_closes_events(self):
+        events = _StubEvents()
+        publisher = ProgressPublisher(progress_events=cast("ProgressEvents", events))
         await publisher.close()
-        assert bus.closed is True
+        assert events.closed is True
 
     @pytest.mark.asyncio
     async def test_close_without_connection(self):
@@ -176,22 +140,22 @@ class TestProgressSubscriber:
 class TestProgressStreamTail:
     @pytest.mark.asyncio
     async def test_late_joiner_replays_from_start_and_terminates(self) -> None:
-        bus = _StubBus(
+        events = _StubEvents(
             entries=[_progress_entry(25.0), _progress_entry(75.0), _progress_entry(100.0, status=3)]
         )
-        subscriber = ProgressSubscriber(event_bus=cast("EventBus", bus))
+        subscriber = ProgressSubscriber(progress_events=cast("ProgressEvents", events))
 
         updates = [u async for u in subscriber.tail("bt-1")]
 
-        # Tail starts from "0": the late joiner caught all three updates
-        assert bus.tail_calls == [("backtest:progress:bt-1", "0")]
-        assert [u.progress for u in updates] == [25, 75, 100]
+        # Tail starts from CURSOR_BEGIN: the late joiner caught all three updates
+        assert events.tail_calls == [("bt-1", "0")]
+        assert [u.progress_percent for u in updates] == [25, 75, 100]
         assert updates[-1].status == 3  # explicit terminal status, not inferred
 
     @pytest.mark.asyncio
     async def test_tail_stops_at_terminal_even_with_more_entries(self) -> None:
-        bus = _StubBus(entries=[_progress_entry(100.0), _progress_entry(100.0)])
-        subscriber = ProgressSubscriber(event_bus=cast("EventBus", bus))
+        events = _StubEvents(entries=[_progress_entry(100.0), _progress_entry(100.0)])
+        subscriber = ProgressSubscriber(progress_events=cast("ProgressEvents", events))
 
         updates = [u async for u in subscriber.tail("bt-1")]
         assert len(updates) == 1
@@ -201,8 +165,8 @@ class TestProgressStreamTail:
         """Regression: a failed run publishes progress=100; status must be explicit."""
         from llamatrade_proto.generated.backtest_pb2 import BACKTEST_STATUS_FAILED
 
-        bus = _StubBus(entries=[_progress_entry(100.0, status=BACKTEST_STATUS_FAILED)])
-        subscriber = ProgressSubscriber(event_bus=cast("EventBus", bus))
+        events = _StubEvents(entries=[_progress_entry(100.0, status=BACKTEST_STATUS_FAILED)])
+        subscriber = ProgressSubscriber(progress_events=cast("ProgressEvents", events))
 
         updates = [u async for u in subscriber.tail("bt-1")]
         assert len(updates) == 1
@@ -211,12 +175,12 @@ class TestProgressStreamTail:
     @pytest.mark.asyncio
     async def test_orphaned_stream_ends_after_idle_timeout(self) -> None:
         """A publisher that died mid-run must not hang the tail forever."""
-        bus = _BlockingBus(entries=[_progress_entry(25.0)])
-        subscriber = ProgressSubscriber(event_bus=cast("EventBus", bus))
+        events = _BlockingEvents(entries=[_progress_entry(25.0)])
+        subscriber = ProgressSubscriber(progress_events=cast("ProgressEvents", events))
 
         updates = [u async for u in subscriber.tail("bt-1", idle_timeout=0.2)]
         # The one prior update is replayed, then the idle timeout ends the tail.
-        assert [u.progress for u in updates] == [25]
+        assert [u.progress_percent for u in updates] == [25]
 
 
 class TestProgressTracker:
@@ -231,26 +195,6 @@ class TestProgressTracker:
     def test_init_custom_interval(self):
         tracker = ProgressTracker(total_items=100, min_report_interval=1.0)
         assert tracker._min_report_interval == 1.0
-
-    def test_calculate_eta_no_progress(self):
-        assert ProgressTracker(total_items=100).calculate_eta(0) is None
-
-    def test_calculate_eta_insufficient_time(self):
-        assert ProgressTracker(total_items=100).calculate_eta(1) is None
-
-    def test_calculate_eta_with_progress(self):
-        tracker = ProgressTracker(total_items=100)
-        tracker.start_time = time.monotonic() - 10  # 10 seconds ago
-        eta = tracker.calculate_eta(50)
-        assert eta is not None
-        assert 8 <= eta <= 12  # Allow some variance
-
-    def test_calculate_eta_near_completion(self):
-        tracker = ProgressTracker(total_items=100)
-        tracker.start_time = time.monotonic() - 100
-        eta = tracker.calculate_eta(99)
-        assert eta is not None
-        assert eta <= 2
 
     def test_should_report_initial(self):
         assert ProgressTracker(total_items=100).should_report(5.0) is True
@@ -299,11 +243,11 @@ class TestBacktestProgressReporter:
     """Tests for BacktestProgressReporter class."""
 
     @staticmethod
-    def _reporter_with_bus() -> tuple[BacktestProgressReporter, _StubBus]:
+    def _reporter_with_events() -> tuple[BacktestProgressReporter, _StubEvents]:
         reporter = BacktestProgressReporter("bt-123", total_bars=100)
-        bus = _StubBus()
-        reporter._publisher._bus = cast("EventBus", bus)
-        return reporter, bus
+        events = _StubEvents()
+        reporter._publisher._events = cast("ProgressEvents", events)
+        return reporter, events
 
     def test_init(self):
         reporter = BacktestProgressReporter("bt-123", total_bars=1000)
@@ -322,15 +266,13 @@ class TestBacktestProgressReporter:
 
     @pytest.mark.asyncio
     async def test_publish_phase(self):
-        reporter, bus = self._reporter_with_bus()
+        reporter, events = self._reporter_with_events()
         await reporter.publish_phase("Loading data", 30)
 
-        assert len(bus.published) == 1
-        from llamatrade_common.events import Event
-
-        data = Event.from_redis_stream(bus.published[0][1]).data
-        assert data["progress"] == 30
-        assert data["message"] == "Loading data"
+        assert len(events.published) == 1
+        _, update = events.published[0]
+        assert update.progress_percent == 30
+        assert update.message == "Loading data"
 
     def test_create_engine_callback(self):
         reporter = BacktestProgressReporter("bt-123", total_bars=100)
@@ -342,7 +284,7 @@ class TestBacktestProgressReporter:
         callback(50, 100, datetime(2024, 1, 15))
 
         assert len(reporter._pending_updates) == 1
-        progress, message, eta = reporter._pending_updates[0]
+        progress, message = reporter._pending_updates[0]
         # 50% through simulation (40% to 90% range) = 40 + 25 = 65%
         assert 64 <= progress <= 66
         assert "2024-01-15" in message
@@ -356,19 +298,19 @@ class TestBacktestProgressReporter:
 
     @pytest.mark.asyncio
     async def test_flush(self):
-        reporter, bus = self._reporter_with_bus()
-        reporter._pending_updates = [(50.0, "Test 1", 30), (75.0, "Test 2", 15)]
+        reporter, events = self._reporter_with_events()
+        reporter._pending_updates = [(50.0, "Test 1"), (75.0, "Test 2")]
 
         await reporter.flush()
 
-        assert len(bus.published) == 2
+        assert len(events.published) == 2
         assert len(reporter._pending_updates) == 0
 
     @pytest.mark.asyncio
     async def test_close(self):
-        reporter, bus = self._reporter_with_bus()
+        reporter, events = self._reporter_with_events()
         await reporter.close()
-        assert bus.closed is True
+        assert events.closed is True
 
     def test_engine_callback_auto_trims_queue(self):
         reporter = BacktestProgressReporter("bt-123", total_bars=1000)
@@ -386,7 +328,7 @@ class TestBacktestProgressReporter:
         reporter = BacktestProgressReporter("bt-123", total_bars=100)
         reporter._max_pending = 10
         for i in range(15):
-            reporter._pending_updates.append((float(i), f"Update {i}", i))
+            reporter._pending_updates.append((float(i), f"Update {i}"))
         callback = reporter.create_engine_callback()
         if reporter._tracker:
             with reporter._tracker._lock:

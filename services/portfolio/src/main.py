@@ -15,8 +15,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.types import ASGIApp
 
-from llamatrade_common.observability import enable_db_pool_metrics
 from llamatrade_db import close_db, get_pool_stats, get_session_maker, init_db
+from llamatrade_telemetry import init_telemetry
 
 logger = logging.getLogger(__name__)
 
@@ -69,9 +69,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     # against broker truth, and materialize the read-side equity-curve snapshots.
     ledger_tasks: list[asyncio.Task[None]] = []
     stop_event = asyncio.Event()
-    event_bus = None
+    fills = None
     try:
-        from llamatrade_common.events import EventBus
+        from llamatrade_events import EventBus, FillEvents, RedisStreamsTransport
 
         from src.clients.market_data import get_market_data_client
         from src.tasks.equity_snapshot import snapshot_loop
@@ -87,19 +87,20 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
 
         # Durable fill ingestion via the Redis Streams consumer group: a dead
         # pod's pending entries are reclaimed via XAUTOCLAIM; the writer's
-        # event_id dedupe makes redelivery a no-op.
-        event_bus = EventBus(REDIS_URL)
+        # event_id dedupe makes redelivery a no-op. Trading publishes proto
+        # LedgerFill/LedgerReservation onto lt:ledger:fills (CONTRACTS.md §1/§4).
+        fills = FillEvents(bus=EventBus(RedisStreamsTransport(REDIS_URL)))
         ledger_tasks.append(
             asyncio.create_task(
                 consume_fill_stream(
-                    event_bus,
+                    fills,
                     fill_handler,
                     consumer_name=os.getenv("HOSTNAME", "portfolio-0"),
                 )
             )
         )
         ledger_tasks.append(
-            asyncio.create_task(monitor_stream_lag(event_bus, stop_event=stop_event))
+            asyncio.create_task(monitor_stream_lag(fills.bus, stop_event=stop_event))
         )
         ledger_tasks.append(
             asyncio.create_task(
@@ -137,8 +138,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
             task.cancel()
         if pending:
             await asyncio.gather(*pending, return_exceptions=True)
-    if event_bus is not None:
-        await event_bus.close()
+    if fills is not None:
+        await fills.close()
 
     await close_db()
 
@@ -161,7 +162,7 @@ app.add_middleware(
 )
 
 # Export DB connection-pool stats on /metrics
-enable_db_pool_metrics(app, "portfolio", get_pool_stats)
+init_telemetry(app, service="portfolio", pool_stats_provider=get_pool_stats)
 
 
 @app.get("/health")

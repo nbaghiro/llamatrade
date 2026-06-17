@@ -1,7 +1,7 @@
-"""Ledger event payload builders (pure; see .docs/planning/CONTRACTS.md).
+"""Ledger event message builders (pure; see .docs/planning/CONTRACTS.md).
 
-Trading publishes to ``ledger:fills:{account_id}`` exactly ONE fill payload
-per order, at terminal state:
+Trading publishes to the global ``ledger:fills`` stream exactly ONE ``LedgerFill``
+message per order, at terminal state:
 
 - ``fill`` → the cumulative ``filled_qty`` / ``filled_avg_price``;
 - ``canceled`` / ``expired`` with a nonzero filled quantity → the filled
@@ -9,12 +9,12 @@ per order, at terminal state:
 
 Partial fills never publish — the ledger dedups on
 ``event_id = sha256(client_order_id)``, so per-partial publishing would drop
-all but the first. ``cost_basis``/``realized_pnl`` are intentionally absent:
+all but the first. ``cost_basis``/``realized_pnl`` are intentionally left empty:
 the portfolio consumer resolves them via FIFO at ingestion (amendment 3A).
 
-Order lifecycle payloads (``order_submitted`` / ``order_cancelled`` /
-``order_rejected``) carry the reservation contract (§4); they share the
-envelope but set ``event_type`` so the consumer routes them separately.
+Order lifecycle messages are ``LedgerReservation`` (``order_submitted`` /
+``order_cancelled`` / ``order_rejected``) — the reservation contract (§4); they
+ride the same stream, discriminated by their proto type / EventType.
 """
 
 from __future__ import annotations
@@ -25,6 +25,7 @@ from typing import TYPE_CHECKING
 from uuid import UUID
 
 from llamatrade_alpaca.models import TradeEvent, TradeEventType
+from llamatrade_events import LedgerFill, LedgerReservation
 from llamatrade_proto.generated.trading_pb2 import (
     ORDER_STATUS_CANCELLED,
     ORDER_STATUS_EXPIRED,
@@ -48,8 +49,8 @@ def build_ledger_fill_payload(
     sleeve_id: UUID,
     event: TradeEvent,
     order_id: UUID | None = None,
-) -> dict[str, str] | None:
-    """The §1a fill payload for a terminal trade event, or None to skip.
+) -> LedgerFill | None:
+    """The §1a fill message for a terminal trade event, or None to skip.
 
     Returns None for partial fills (never published), for terminal events
     with nothing filled, and for fills missing an average price.
@@ -81,8 +82,8 @@ def build_ledger_fill_payload(
     )
 
 
-def build_ledger_fill_payload_from_order(order: Order) -> dict[str, str] | None:
-    """The §1a fill payload from a persisted Order row, or None to skip.
+def build_ledger_fill_payload_from_order(order: Order) -> LedgerFill | None:
+    """The §1a fill message from a persisted Order row, or None to skip.
 
     The REST recovery path (``sync_order_status`` / ``sync_all_pending_orders``)
     discovers terminal states the trade stream may have missed; emission is
@@ -134,21 +135,21 @@ def build_fill_payload(
     price: Decimal,
     filled_at: datetime,
     order_id: UUID | None,
-) -> dict[str, str]:
-    payload = {
-        "tenant_id": str(tenant_id),
-        "account_id": str(account_id),
-        "sleeve_id": str(sleeve_id),
-        "client_order_id": client_order_id,
-        "symbol": symbol,
-        "side": side,
-        "qty": str(qty),
-        "price": str(price),
-        "filled_at": filled_at.isoformat(),
-    }
+) -> LedgerFill:
+    fill = LedgerFill(
+        tenant_id=str(tenant_id),
+        account_id=str(account_id),
+        sleeve_id=str(sleeve_id),
+        client_order_id=client_order_id,
+        symbol=symbol,
+        side=side,
+        qty=str(qty),
+        price=str(price),
+        filled_at=filled_at.isoformat(),
+    )
     if order_id is not None:
-        payload["order_id"] = str(order_id)
-    return payload
+        fill.order_id = str(order_id)
+    return fill
 
 
 def build_ledger_lifecycle_payload(
@@ -162,20 +163,20 @@ def build_ledger_lifecycle_payload(
     side: str,
     reserved: Decimal | None = None,
     order_id: UUID | None = None,
-) -> dict[str, str]:
-    """A reservation lifecycle payload (§4): reserve on submit, release on
+) -> LedgerReservation:
+    """A reservation lifecycle message (§4): reserve on submit, release on
     cancel/reject. ``reserved`` is the estimated notional earmarked for buys."""
-    payload = {
-        "event_type": kind,
-        "tenant_id": str(tenant_id),
-        "account_id": str(account_id),
-        "sleeve_id": str(sleeve_id),
-        "client_order_id": client_order_id,
-        "symbol": symbol,
-        "side": side,
-    }
+    reservation = LedgerReservation(
+        event_type=kind,
+        tenant_id=str(tenant_id),
+        account_id=str(account_id),
+        sleeve_id=str(sleeve_id),
+        client_order_id=client_order_id,
+        symbol=symbol,
+        side=side,
+    )
     if reserved is not None:
-        payload["reserved"] = str(reserved)
+        reservation.reserved = str(reserved)
     if order_id is not None:
-        payload["order_id"] = str(order_id)
-    return payload
+        reservation.order_id = str(order_id)
+    return reservation

@@ -2,14 +2,17 @@
 
 import time
 from datetime import datetime
+from typing import cast
 from unittest.mock import AsyncMock, MagicMock
+
+from llamatrade_events import ProgressEvents
+from llamatrade_proto.generated import backtest_pb2
 
 from src.progress import (
     BacktestProgressReporter,
     ProgressPublisher,
     ProgressSubscriber,
     ProgressTracker,
-    ProgressUpdate,
 )
 
 # === ProgressTracker Tests ===
@@ -17,51 +20,6 @@ from src.progress import (
 
 class TestProgressTracker:
     """Tests for ProgressTracker class."""
-
-    def test_calculate_eta_basic(self):
-        """Test ETA calculation."""
-        tracker = ProgressTracker(total_items=100)
-        # Simulate some time passing
-        tracker.start_time = time.monotonic() - 10  # 10 seconds ago
-
-        eta = tracker.calculate_eta(50)  # Half done
-
-        assert eta is not None
-        assert eta > 0
-
-    def test_calculate_eta_zero_items(self):
-        """Test ETA with zero items."""
-        tracker = ProgressTracker(total_items=0)
-
-        eta = tracker.calculate_eta(0)
-
-        assert eta is None
-
-    def test_calculate_eta_negative_current(self):
-        """Test ETA with negative current item."""
-        tracker = ProgressTracker(total_items=100)
-
-        eta = tracker.calculate_eta(-1)
-
-        assert eta is None
-
-    def test_calculate_eta_not_enough_time(self):
-        """Test ETA when not enough time has elapsed."""
-        tracker = ProgressTracker(total_items=100)
-        # start_time is basically now
-
-        eta = tracker.calculate_eta(1)
-
-        assert eta is None
-
-    def test_calculate_eta_at_end(self):
-        """Test ETA at end returns 0."""
-        tracker = ProgressTracker(total_items=100)
-        tracker.start_time = time.monotonic() - 10
-
-        eta = tracker.calculate_eta(100)  # Completed
-
-        assert eta == 0
 
     def test_should_report_significant_progress(self):
         """Test reporting on significant progress jumps."""
@@ -94,43 +52,6 @@ class TestProgressTracker:
         assert tracker.should_report(2.0) is True
 
 
-# === ProgressUpdate Tests ===
-
-
-class TestProgressUpdate:
-    """Tests for ProgressUpdate class."""
-
-    def test_to_dict(self):
-        """Test converting update to dictionary."""
-        update = ProgressUpdate(
-            backtest_id="test-123",
-            progress=50.0,
-            message="Processing",
-            eta_seconds=60,
-        )
-
-        result = update.to_dict()
-
-        assert result["backtest_id"] == "test-123"
-        assert result["progress"] == 50.0
-        assert result["message"] == "Processing"
-        assert result["eta_seconds"] == 60
-        assert "timestamp" in result
-
-    def test_to_dict_with_timestamp(self):
-        """Test dictionary with explicit timestamp."""
-        update = ProgressUpdate(
-            backtest_id="test-123",
-            progress=100.0,
-            message="Done",
-            timestamp="2024-01-01T00:00:00Z",
-        )
-
-        result = update.to_dict()
-
-        assert result["timestamp"] == "2024-01-01T00:00:00Z"
-
-
 # === ProgressPublisher Tests ===
 
 
@@ -139,26 +60,30 @@ class TestProgressPublisher:
 
     async def test_publish_success(self):
         """Test publishing a progress update to the stream."""
-        bus = AsyncMock()
-        bus.publish = AsyncMock(return_value="1-0")
-        publisher = ProgressPublisher(event_bus=bus)
+        events = AsyncMock()
+        events.publish = AsyncMock(return_value="1-0")
+        publisher = ProgressPublisher(progress_events=cast("ProgressEvents", events))
 
         await publisher.publish(
             backtest_id="test-123",
             progress=50.0,
             message="Processing",
-            eta_seconds=60,
         )
 
-        bus.publish.assert_awaited_once()
-        assert bus.publish.await_args.args[0] == "backtest:progress:test-123"
+        events.publish.assert_awaited_once()
+        backtest_id, update = events.publish.await_args.args
+        assert backtest_id == "test-123"
+        assert update.backtest_id == "test-123"
+        assert update.progress_percent == 50
+        assert update.message == "Processing"
+        assert update.status == backtest_pb2.BACKTEST_STATUS_RUNNING
 
     async def test_close(self):
-        """Test closing publisher closes the bus."""
-        bus = AsyncMock()
-        publisher = ProgressPublisher(event_bus=bus)
+        """Test closing publisher closes the channel."""
+        events = AsyncMock()
+        publisher = ProgressPublisher(progress_events=cast("ProgressEvents", events))
         await publisher.close()
-        bus.close.assert_awaited_once()
+        events.close.assert_awaited_once()
 
 
 # === ProgressSubscriber Tests ===
@@ -168,11 +93,11 @@ class TestProgressSubscriber:
     """Tests for ProgressSubscriber class."""
 
     async def test_close(self):
-        """Test closing subscriber closes the bus."""
-        bus = AsyncMock()
-        subscriber = ProgressSubscriber(event_bus=bus)
+        """Test closing subscriber closes the channel."""
+        events = AsyncMock()
+        subscriber = ProgressSubscriber(progress_events=cast("ProgressEvents", events))
         await subscriber.close()
-        bus.close.assert_awaited_once()
+        events.close.assert_awaited_once()
 
 
 # === BacktestProgressReporter Tests ===
@@ -190,9 +115,7 @@ class TestBacktestProgressReporter:
 
         await reporter.publish_phase("Loading data", 30)
 
-        mock_publisher.publish.assert_called_once_with(
-            "test-123", 30, "Loading data", None, status=None
-        )
+        mock_publisher.publish.assert_called_once_with("test-123", 30, "Loading data", status=None)
 
     def test_set_total_bars(self):
         """Test setting total bars."""
@@ -237,7 +160,7 @@ class TestBacktestProgressReporter:
         mock_publisher = MagicMock()
         mock_publisher.publish = AsyncMock()
         reporter._publisher = mock_publisher
-        reporter._pending_updates = [(50.0, "Processing", 30)]
+        reporter._pending_updates = [(50.0, "Processing")]
 
         await reporter.flush()
 

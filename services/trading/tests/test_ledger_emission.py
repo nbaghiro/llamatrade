@@ -14,6 +14,7 @@ import pytest
 
 from llamatrade_alpaca import MockBarStream, MockTradeStream
 from llamatrade_alpaca.models import FillData, TradeEvent, TradeEventType
+from llamatrade_events import FillEvents, LedgerFill, LedgerReservation
 
 from src.ledger_events import build_ledger_fill_payload, build_ledger_lifecycle_payload
 from src.runner.runner import RunnerConfig, StrategyRunner
@@ -62,7 +63,7 @@ def _event(
 class TestBuildLedgerFillPayload:
     """Pure payload builder: one payload per order, at terminal state."""
 
-    def _build(self, event: TradeEvent) -> dict[str, str] | None:
+    def _build(self, event: TradeEvent) -> LedgerFill | None:
         return build_ledger_fill_payload(
             tenant_id=TENANT_ID, account_id=ACCOUNT_ID, sleeve_id=SLEEVE_ID, event=event
         )
@@ -70,14 +71,14 @@ class TestBuildLedgerFillPayload:
     def test_fill_uses_cumulative_qty_and_avg_price(self) -> None:
         payload = self._build(_event(TradeEventType.FILL))
         assert payload is not None
-        assert payload["qty"] == "50"
-        assert payload["price"] == "480.00"
-        assert payload["client_order_id"] == "lt-abc123"
-        assert payload["side"] == "buy"
-        assert payload["filled_at"] == FILLED_AT.isoformat()
+        assert payload.qty == "50"
+        assert payload.price == "480.00"
+        assert payload.client_order_id == "lt-abc123"
+        assert payload.side == "buy"
+        assert payload.filled_at == FILLED_AT.isoformat()
         # cost_basis/realized_pnl are resolved by the portfolio at ingestion
-        assert "cost_basis" not in payload
-        assert "realized_pnl" not in payload
+        assert payload.cost_basis == ""
+        assert payload.realized_pnl == ""
 
     def test_partial_fill_never_publishes(self) -> None:
         assert self._build(_event(TradeEventType.PARTIAL_FILL)) is None
@@ -85,7 +86,7 @@ class TestBuildLedgerFillPayload:
     def test_canceled_with_partial_fill_publishes_filled_portion(self) -> None:
         payload = self._build(_event(TradeEventType.CANCELED, filled_qty="20"))
         assert payload is not None
-        assert payload["qty"] == "20"
+        assert payload.qty == "20"
 
     def test_canceled_without_fill_publishes_nothing(self) -> None:
         assert self._build(_event(TradeEventType.CANCELED, filled_qty="0")) is None
@@ -93,7 +94,7 @@ class TestBuildLedgerFillPayload:
     def test_expired_with_partial_fill_publishes(self) -> None:
         payload = self._build(_event(TradeEventType.EXPIRED, filled_qty="5"))
         assert payload is not None
-        assert payload["qty"] == "5"
+        assert payload.qty == "5"
 
     def test_rejected_publishes_nothing(self) -> None:
         assert self._build(_event(TradeEventType.REJECTED, filled_qty="0")) is None
@@ -116,9 +117,9 @@ class TestBuildLifecyclePayload:
             side="buy",
             reserved=Decimal("24000"),
         )
-        assert payload["event_type"] == "order_submitted"
-        assert payload["reserved"] == "24000"
-        assert payload["sleeve_id"] == str(SLEEVE_ID)
+        assert payload.event_type == "order_submitted"
+        assert payload.reserved == "24000"
+        assert payload.sleeve_id == str(SLEEVE_ID)
 
     def test_cancelled_has_no_reservation_amount(self) -> None:
         payload = build_ledger_lifecycle_payload(
@@ -130,8 +131,8 @@ class TestBuildLifecyclePayload:
             symbol="SPY",
             side="buy",
         )
-        assert payload["event_type"] == "order_cancelled"
-        assert "reserved" not in payload
+        assert payload.event_type == "order_cancelled"
+        assert payload.reserved == ""
 
 
 def _runner(
@@ -173,10 +174,9 @@ class TestRunnerLedgerEmission:
         await runner._handle_trade_event(_event(TradeEventType.FILL, with_fill_data=True))
 
         publisher.publish_ledger_fill.assert_awaited_once()
-        account_arg, payload = publisher.publish_ledger_fill.await_args.args
-        assert account_arg == ACCOUNT_ID
-        assert payload["qty"] == "50"
-        assert payload["sleeve_id"] == str(SLEEVE_ID)
+        (payload,) = publisher.publish_ledger_fill.await_args.args
+        assert payload.qty == "50"
+        assert payload.sleeve_id == str(SLEEVE_ID)
 
     @pytest.mark.asyncio
     async def test_partial_then_fill_publishes_exactly_once(self) -> None:
@@ -189,8 +189,8 @@ class TestRunnerLedgerEmission:
         await runner._handle_trade_event(_event(TradeEventType.FILL, with_fill_data=True))
 
         assert publisher.publish_ledger_fill.await_count == 1
-        _, payload = publisher.publish_ledger_fill.await_args.args
-        assert payload["qty"] == "50"  # cumulative, not the last partial
+        (payload,) = publisher.publish_ledger_fill.await_args.args
+        assert payload.qty == "50"  # cumulative, not the last partial
 
     @pytest.mark.asyncio
     async def test_cancel_with_partial_publishes_filled_portion(self) -> None:
@@ -199,12 +199,12 @@ class TestRunnerLedgerEmission:
 
         await runner._handle_trade_event(_event(TradeEventType.CANCELED, filled_qty="20"))
 
-        # Two payloads: the filled-portion fill, then the §4 reservation release.
+        # Two messages: the filled-portion fill, then the §4 reservation release.
         assert publisher.publish_ledger_fill.await_count == 2
-        _, fill_payload = publisher.publish_ledger_fill.await_args_list[0].args
-        assert fill_payload["qty"] == "20"
-        _, release_payload = publisher.publish_ledger_fill.await_args_list[1].args
-        assert release_payload["event_type"] == "order_cancelled"
+        (fill_payload,) = publisher.publish_ledger_fill.await_args_list[0].args
+        assert fill_payload.qty == "20"
+        (release_payload,) = publisher.publish_ledger_fill.await_args_list[1].args
+        assert release_payload.event_type == "order_cancelled"
 
     @pytest.mark.asyncio
     async def test_unattributed_session_publishes_nothing(self) -> None:
@@ -227,33 +227,41 @@ class TestRunnerLedgerEmission:
 
 
 class TestLedgerFillStream:
-    """Ledger fill payloads XADD to the global durable stream."""
+    """Ledger proto messages publish to the global durable stream via FillEvents."""
 
     def _publisher(self):
         from src.streaming.publisher import TradingEventPublisher
 
-        bus = AsyncMock()
-        bus.publish = AsyncMock(return_value="1-0")
-        return TradingEventPublisher(event_bus=bus), bus
+        fills = AsyncMock(spec=FillEvents)
+        fills.publish_fill = AsyncMock(return_value="1-0")
+        fills.publish_reservation = AsyncMock(return_value="1-0")
+        return TradingEventPublisher(fills=fills), fills
 
     @pytest.mark.asyncio
-    async def test_publishes_to_global_stream(self) -> None:
-        from src.streaming.publisher import LEDGER_FILLS_MAXLEN, LEDGER_FILLS_STREAM
+    async def test_publishes_fill_via_fill_events(self) -> None:
+        publisher, fills = self._publisher()
+        message = LedgerFill(client_order_id="lt-1", account_id=str(ACCOUNT_ID))
 
-        publisher, bus = self._publisher()
-        payload = {"client_order_id": "lt-1", "account_id": str(ACCOUNT_ID)}
+        entry_id = await publisher.publish_ledger_fill(message)
 
-        entry_id = await publisher.publish_ledger_fill(ACCOUNT_ID, payload)
-
-        bus.publish.assert_awaited_once_with(
-            LEDGER_FILLS_STREAM, payload, maxlen=LEDGER_FILLS_MAXLEN
-        )
+        fills.publish_fill.assert_awaited_once_with(message)
+        fills.publish_reservation.assert_not_awaited()
         assert entry_id == "1-0"
 
     @pytest.mark.asyncio
+    async def test_reservation_routes_to_publish_reservation(self) -> None:
+        publisher, fills = self._publisher()
+        message = LedgerReservation(event_type="order_submitted", client_order_id="lt-1")
+
+        await publisher.publish_ledger_fill(message)
+
+        fills.publish_reservation.assert_awaited_once_with(message)
+        fills.publish_fill.assert_not_awaited()
+
+    @pytest.mark.asyncio
     async def test_stream_failure_propagates(self) -> None:
-        publisher, bus = self._publisher()
-        bus.publish.side_effect = ConnectionError("stream down")
+        publisher, fills = self._publisher()
+        fills.publish_fill.side_effect = ConnectionError("stream down")
 
         with pytest.raises(ConnectionError):
-            await publisher.publish_ledger_fill(ACCOUNT_ID, {"client_order_id": "lt-1"})
+            await publisher.publish_ledger_fill(LedgerFill(client_order_id="lt-1"))

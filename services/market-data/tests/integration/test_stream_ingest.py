@@ -10,9 +10,11 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
+from llamatrade_events import BARS
+from llamatrade_proto.generated import market_data_pb2
+
 from src.ingest.stream import BarIngestor
 from src.store.repository import BarStore
-from src.streaming.bar_events import BAR_STREAM, decode_bar_event
 
 pytestmark = pytest.mark.integration
 
@@ -44,18 +46,16 @@ async def test_bars_land_in_store_and_bus(bar_store: BarStore, event_bus) -> Non
     assert len(stored) == 5
     assert stored[-1].close == 104
 
-    # Bus side: 5 entries published, decodable back to bars.
-    client = await event_bus._client()
-    entries = await client.xrange(event_bus.key(BAR_STREAM))
+    # Bus side: 5 raw Bar protos published to the BARS channel, parseable back.
+    transport = event_bus.transport
+    client = await transport._client()
+    entries = await client.xrange(transport.key(BARS.key()))
     assert len(entries) == 5
     _id, raw = entries[0]
-    fields = {
-        (k.decode() if isinstance(k, bytes) else k): (v.decode() if isinstance(v, bytes) else v)
-        for k, v in raw.items()
-    }
-    decoded = decode_bar_event(fields)
-    assert decoded.symbol == "AAPL"
-    assert decoded.close == 100
+    value = raw[b"v"] if b"v" in raw else raw["v"]
+    bar = market_data_pb2.Bar.FromString(value)
+    assert bar.symbol == "AAPL"
+    assert float(bar.close.value) == 100.0
 
 
 async def test_empty_flush_is_noop(bar_store: BarStore, event_bus) -> None:

@@ -86,12 +86,13 @@ def redis_url() -> Iterator[str]:
 
 @pytest_asyncio.fixture
 async def event_bus(redis_url: str):
-    """A real EventBus on a throwaway Redis, flushed per test."""
-    from llamatrade_common.events import EventBus
+    """A real EventBus (Redis Streams transport) on a throwaway Redis, flushed per test."""
+    from llamatrade_events import EventBus, RedisStreamsTransport
 
-    bus = EventBus(redis_url)
-    client = await bus._client()
+    transport = RedisStreamsTransport(redis_url)
+    client = await transport._client()
     await client.flushdb()
+    bus = EventBus(transport)
     try:
         yield bus
     finally:

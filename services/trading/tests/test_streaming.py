@@ -1,35 +1,39 @@
-"""Tests for trading event streaming infrastructure (Redis Streams transport)."""
+"""Tests for trading event streaming infrastructure (Redis Streams transport).
 
+Order/position UI events carry the proto ``trading_pb2.OrderUpdate`` /
+``trading_pb2.PositionUpdate`` directly on the bus (via ``OrderEvents`` /
+``PositionEvents``), so the publisher builds protos and the subscriber yields
+them unchanged.
+"""
+
+from collections.abc import AsyncIterator
 from typing import cast
 from uuid import uuid4
 
 import pytest
 
-from llamatrade_common.events import Event, EventBus, EventType
+from llamatrade_events import OrderEvents, PositionEvents
+from llamatrade_proto.generated import trading_pb2
 
-from src.streaming.publisher import (
-    OrderUpdate,
-    PositionUpdate,
-    TradingEventPublisher,
-)
+from src.streaming.publisher import TradingEventPublisher
 from src.streaming.subscriber import TradingEventSubscriber
 
 
-class _StubBus:
-    """EventBus stand-in: records publishes; tail yields canned entries."""
+class _StubOrderEvents:
+    """OrderEvents stand-in: records publishes; tail yields canned entries."""
 
-    def __init__(self, entries: list[tuple[str, dict[str, str]]] | None = None) -> None:
-        self.published: list[tuple[str, dict[str, str], int | None]] = []
+    def __init__(self, entries: list[tuple[str, trading_pb2.OrderUpdate]] | None = None) -> None:
+        self.published: list[tuple[str, trading_pb2.OrderUpdate]] = []
         self._entries = entries or []
         self.tail_calls: list[tuple[str, str]] = []
         self.closed = False
 
-    async def publish(self, stream, fields, *, maxlen=None, approximate=True):
-        self.published.append((stream, fields, maxlen))
+    async def publish(self, session_id, update, *, tenant_id="", user_id="", event_id=None):
+        self.published.append((str(session_id), update))
         return "1-0"
 
-    async def tail(self, stream, *, last_id="$", block_ms=5000, count=100):
-        self.tail_calls.append((stream, last_id))
+    async def tail(self, session_id, *, from_cursor="$"):
+        self.tail_calls.append((str(session_id), from_cursor))
         for entry in self._entries:
             yield entry
 
@@ -37,162 +41,140 @@ class _StubBus:
         self.closed = True
 
 
-def _publisher() -> tuple[TradingEventPublisher, _StubBus]:
-    bus = _StubBus()
-    return TradingEventPublisher(event_bus=cast("EventBus", bus)), bus
+class _StubPositionEvents:
+    """PositionEvents stand-in: records publishes; tail yields canned entries."""
+
+    def __init__(self, entries: list[tuple[str, trading_pb2.PositionUpdate]] | None = None) -> None:
+        self.published: list[tuple[str, trading_pb2.PositionUpdate]] = []
+        self._entries = entries or []
+        self.tail_calls: list[tuple[str, str]] = []
+        self.closed = False
+
+    async def publish(self, session_id, update, *, tenant_id="", user_id="", event_id=None):
+        self.published.append((str(session_id), update))
+        return "1-0"
+
+    async def tail(self, session_id, *, from_cursor="$"):
+        self.tail_calls.append((str(session_id), from_cursor))
+        for entry in self._entries:
+            yield entry
+
+    async def close(self):
+        self.closed = True
 
 
-class TestOrderUpdate:
-    """Tests for OrderUpdate dataclass."""
-
-    def test_to_dict(self) -> None:
-        update = OrderUpdate(
-            session_id="session-123",
-            order_id="order-456",
-            alpaca_order_id="alpaca-789",
-            symbol="AAPL",
-            side="buy",
-            qty=10.0,
-            order_type="market",
-            status="filled",
-            filled_qty=10.0,
-            filled_avg_price=150.50,
-            update_type="filled",
-        )
-        result = update.to_dict()
-        assert result["session_id"] == "session-123"
-        assert result["order_id"] == "order-456"
-        assert result["alpaca_order_id"] == "alpaca-789"
-        assert result["symbol"] == "AAPL"
-        assert result["side"] == "buy"
-        assert result["qty"] == 10.0
-        assert result["status"] == "filled"
-        assert result["filled_avg_price"] == 150.50
-        assert "timestamp" in result
-
-    def test_defaults(self) -> None:
-        update = OrderUpdate(
-            session_id="session-123",
-            order_id="order-456",
-            alpaca_order_id=None,
-            symbol="AAPL",
-            side="buy",
-            qty=10.0,
-            order_type="market",
-            status="submitted",
-        )
-        assert update.filled_qty == 0.0
-        assert update.filled_avg_price is None
-        assert update.update_type == "status_change"
-
-
-class TestPositionUpdate:
-    """Tests for PositionUpdate dataclass."""
-
-    def test_to_dict(self) -> None:
-        update = PositionUpdate(
-            session_id="session-123",
-            symbol="AAPL",
-            qty=100.0,
-            side="long",
-            cost_basis=15000.0,
-            market_value=15500.0,
-            unrealized_pnl=500.0,
-            unrealized_pnl_percent=3.33,
-            current_price=155.0,
-            update_type="opened",
-        )
-        result = update.to_dict()
-        assert result["session_id"] == "session-123"
-        assert result["symbol"] == "AAPL"
-        assert result["qty"] == 100.0
-        assert result["side"] == "long"
-        assert result["market_value"] == 15500.0
-        assert result["update_type"] == "opened"
+def _publisher() -> tuple[TradingEventPublisher, _StubOrderEvents, _StubPositionEvents]:
+    orders = _StubOrderEvents()
+    positions = _StubPositionEvents()
+    publisher = TradingEventPublisher(
+        orders_events=cast("OrderEvents", orders),
+        positions_events=cast("PositionEvents", positions),
+    )
+    return publisher, orders, positions
 
 
 class TestTradingEventPublisher:
-    """Tests for TradingEventPublisher (streams transport)."""
+    """Tests for TradingEventPublisher (streams transport, proto payloads)."""
 
     async def test_publish_order_update(self) -> None:
-        publisher, bus = _publisher()
+        publisher, orders, _ = _publisher()
         session_id = uuid4()
-        update = OrderUpdate(
-            session_id=str(session_id),
-            order_id="order-123",
-            alpaca_order_id="alpaca-456",
-            symbol="AAPL",
-            side="buy",
-            qty=10.0,
-            order_type="market",
-            status="filled",
-            update_type="filled",
+        update = trading_pb2.OrderUpdate(
+            order=trading_pb2.Order(id="order-123", symbol="AAPL"),
+            event_type="filled",
         )
 
-        entry_id = await publisher.publish_order_update(session_id, update)
+        cursor = await publisher.publish_order_update(session_id, update)
 
-        assert entry_id == "1-0"
-        assert len(bus.published) == 1
-        stream, fields, _maxlen = bus.published[0]
-        assert stream == f"trading:orders:{session_id}"
-        event = Event.from_redis_stream(fields)
-        assert event.type == EventType.ORDER_FILLED
-        assert event.data["order_id"] == "order-123"
+        assert cursor == "1-0"
+        assert len(orders.published) == 1
+        published_session, published_update = orders.published[0]
+        assert published_session == str(session_id)
+        assert published_update.order.id == "order-123"
+        assert published_update.event_type == "filled"
 
     async def test_publish_position_update(self) -> None:
-        publisher, bus = _publisher()
+        publisher, _, positions = _publisher()
         session_id = uuid4()
-        update = PositionUpdate(
-            session_id=str(session_id),
-            symbol="AAPL",
-            qty=100.0,
-            side="long",
-            cost_basis=15000.0,
-            market_value=15500.0,
-            unrealized_pnl=500.0,
-            unrealized_pnl_percent=3.33,
-            current_price=155.0,
-            update_type="opened",
+        update = trading_pb2.PositionUpdate(
+            position=trading_pb2.Position(symbol="AAPL"),
+            event_type="opened",
         )
 
         await publisher.publish_position_update(session_id, update)
 
-        assert len(bus.published) == 1
-        stream, fields, _ = bus.published[0]
-        assert stream == f"trading:positions:{session_id}"
-        assert Event.from_redis_stream(fields).type == EventType.POSITION_OPENED
+        assert len(positions.published) == 1
+        published_session, published_update = positions.published[0]
+        assert published_session == str(session_id)
+        assert published_update.position.symbol == "AAPL"
+        assert published_update.event_type == "opened"
 
     async def test_publish_order_submitted(self) -> None:
-        publisher, bus = _publisher()
+        publisher, orders, _ = _publisher()
+        session_id = uuid4()
+        order_id = uuid4()
         await publisher.publish_order_submitted(
-            session_id=uuid4(),
-            order_id=uuid4(),
+            session_id=session_id,
+            order_id=order_id,
             alpaca_order_id="alpaca-123",
             symbol="AAPL",
             side="buy",
             qty=10.0,
             order_type="market",
         )
-        assert len(bus.published) == 1
-        assert Event.from_redis_stream(bus.published[0][1]).type == EventType.ORDER_SUBMITTED
+        assert len(orders.published) == 1
+        _, update = orders.published[0]
+        assert update.event_type == "submitted"
+        assert update.order.id == str(order_id)
+        assert update.order.client_order_id == "alpaca-123"
+        assert update.order.symbol == "AAPL"
+        assert update.order.side == trading_pb2.ORDER_SIDE_BUY
+        assert update.order.type == trading_pb2.ORDER_TYPE_MARKET
+        assert update.order.status == trading_pb2.ORDER_STATUS_SUBMITTED
+        assert update.order.quantity.value == "10.0"
+        assert update.timestamp.seconds > 0
 
     async def test_publish_order_filled(self) -> None:
-        publisher, bus = _publisher()
+        publisher, orders, _ = _publisher()
         await publisher.publish_order_filled(
             session_id=uuid4(),
             order_id=uuid4(),
             alpaca_order_id="alpaca-123",
             symbol="AAPL",
-            side="buy",
+            side="sell",
             qty=10.0,
-            order_type="market",
+            order_type="limit",
             filled_qty=10.0,
             filled_avg_price=150.50,
         )
-        assert Event.from_redis_stream(bus.published[0][1]).type == EventType.ORDER_FILLED
+        _, update = orders.published[0]
+        assert update.event_type == "filled"
+        assert update.order.side == trading_pb2.ORDER_SIDE_SELL
+        assert update.order.type == trading_pb2.ORDER_TYPE_LIMIT
+        assert update.order.status == trading_pb2.ORDER_STATUS_FILLED
+        assert update.order.filled_quantity.value == "10.0"
+        assert update.order.average_fill_price.value == "150.5"
+
+    async def test_publish_order_cancelled(self) -> None:
+        publisher, orders, _ = _publisher()
+        await publisher.publish_order_cancelled(
+            session_id=uuid4(),
+            order_id=uuid4(),
+            alpaca_order_id=None,
+            symbol="AAPL",
+            side="buy",
+            qty=10.0,
+            order_type="market",
+            filled_qty=3.0,
+        )
+        _, update = orders.published[0]
+        assert update.event_type == "cancelled"
+        assert update.order.client_order_id == ""
+        assert update.order.status == trading_pb2.ORDER_STATUS_CANCELLED
+        assert update.order.filled_quantity.value == "3.0"
 
     async def test_publish_position_opened(self) -> None:
-        publisher, bus = _publisher()
+        publisher, _, positions = _publisher()
         await publisher.publish_position_opened(
             session_id=uuid4(),
             symbol="AAPL",
@@ -200,29 +182,37 @@ class TestTradingEventPublisher:
             side="long",
             entry_price=150.0,
         )
-        assert Event.from_redis_stream(bus.published[0][1]).type == EventType.POSITION_OPENED
+        _, update = positions.published[0]
+        assert update.event_type == "opened"
+        assert update.position.symbol == "AAPL"
+        assert update.position.side == trading_pb2.POSITION_SIDE_LONG
+        assert update.position.quantity.value == "100.0"
+        # cost_basis = qty * entry_price; average_entry_price = cost_basis / qty
+        assert update.position.cost_basis.value == "15000.0"
+        assert update.position.average_entry_price.value == "150.0"
+        assert update.position.current_price.value == "150.0"
+        assert update.timestamp.seconds > 0
 
-    async def test_publish_uses_ui_maxlen(self) -> None:
-        from src.streaming.publisher import TRADING_UI_MAXLEN
-
-        publisher, bus = _publisher()
-        update = OrderUpdate(
-            session_id="s1",
-            order_id="o1",
-            alpaca_order_id=None,
-            symbol="SPY",
-            side="buy",
-            qty=10.0,
-            order_type="market",
-            status="filled",
+    async def test_publish_position_closed(self) -> None:
+        publisher, _, positions = _publisher()
+        await publisher.publish_position_closed(
+            session_id=uuid4(),
+            symbol="AAPL",
+            side="short",
+            exit_price=144.0,
+            realized_pnl=300.0,
         )
-        await publisher.publish_order_update("s1", update)
-        assert bus.published[0][2] == TRADING_UI_MAXLEN
+        _, update = positions.published[0]
+        assert update.event_type == "closed"
+        assert update.position.side == trading_pb2.POSITION_SIDE_SHORT
+        assert update.position.quantity.value == "0.0"
+        assert update.position.current_price.value == "144.0"
 
-    async def test_close_closes_bus(self) -> None:
-        publisher, bus = _publisher()
+    async def test_close_closes_channels(self) -> None:
+        publisher, orders, positions = _publisher()
         await publisher.close()
-        assert bus.closed is True
+        assert orders.closed is True
+        assert positions.closed is True
 
     async def test_close_without_connection(self) -> None:
         await TradingEventPublisher().close()  # Should not raise
@@ -230,49 +220,6 @@ class TestTradingEventPublisher:
 
 class TestTradingEventSubscriber:
     """Tests for TradingEventSubscriber."""
-
-    async def test_parse_order_update(self) -> None:
-        subscriber = TradingEventSubscriber()
-        data = {
-            "session_id": "session-123",
-            "order_id": "order-456",
-            "alpaca_order_id": "alpaca-789",
-            "symbol": "AAPL",
-            "side": "buy",
-            "qty": 10.0,
-            "order_type": "market",
-            "status": "filled",
-            "filled_qty": 10.0,
-            "filled_avg_price": 150.50,
-            "update_type": "filled",
-            "timestamp": "2025-01-06T12:00:00Z",
-        }
-        result = subscriber._parse_order_update(data)
-        assert result.session_id == "session-123"
-        assert result.order_id == "order-456"
-        assert result.status == "filled"
-        assert result.filled_avg_price == 150.50
-
-    async def test_parse_position_update(self) -> None:
-        subscriber = TradingEventSubscriber()
-        data = {
-            "session_id": "session-123",
-            "symbol": "AAPL",
-            "qty": 100.0,
-            "side": "long",
-            "cost_basis": 15000.0,
-            "market_value": 15500.0,
-            "unrealized_pnl": 500.0,
-            "unrealized_pnl_percent": 3.33,
-            "current_price": 155.0,
-            "update_type": "opened",
-            "timestamp": "2025-01-06T12:00:00Z",
-        }
-        result = subscriber._parse_position_update(data)
-        assert result.session_id == "session-123"
-        assert result.symbol == "AAPL"
-        assert result.qty == 100.0
-        assert result.unrealized_pnl == 500.0
 
     async def test_close_without_connection(self) -> None:
         await TradingEventSubscriber().close()  # Should not raise
@@ -283,40 +230,42 @@ class TestUiStreamTail:
 
     @pytest.mark.asyncio
     async def test_tail_orders_yields_cursor_and_update(self) -> None:
-        update = OrderUpdate(
-            session_id="s1",
-            order_id="o1",
-            alpaca_order_id="a1",
-            symbol="SPY",
-            side="buy",
-            qty=10.0,
-            order_type="market",
-            status="filled",
+        update = trading_pb2.OrderUpdate(
+            order=trading_pb2.Order(id="o1", symbol="SPY", status=trading_pb2.ORDER_STATUS_FILLED),
+            event_type="filled",
         )
-        entry = Event(type=EventType.ORDER_FILLED, data=update.to_dict()).to_redis_stream()
-        bus = _StubBus(entries=[("7-0", entry)])
-        subscriber = TradingEventSubscriber(event_bus=cast("EventBus", bus))
+        orders = _StubOrderEvents(entries=[("7-0", update)])
+        subscriber = TradingEventSubscriber(orders_events=cast("OrderEvents", orders))
 
-        results = [(cid, upd) async for cid, upd in subscriber.tail_orders("s1")]
+        results = [(cur, upd) async for cur, upd in subscriber.tail_orders("s1")]
 
         assert results[0][0] == "7-0"
-        assert results[0][1].order_id == "o1"
-        assert results[0][1].status == "filled"
-        assert bus.tail_calls == [("trading:orders:s1", "$")]
+        assert results[0][1].order.id == "o1"
+        assert results[0][1].order.status == trading_pb2.ORDER_STATUS_FILLED
+        assert orders.tail_calls == [("s1", "$")]
 
     @pytest.mark.asyncio
     async def test_tail_passes_reconnect_cursor(self) -> None:
-        bus = _StubBus()
-        subscriber = TradingEventSubscriber(event_bus=cast("EventBus", bus))
+        positions = _StubPositionEvents()
+        subscriber = TradingEventSubscriber(positions_events=cast("PositionEvents", positions))
 
-        async for _ in subscriber.tail_positions("s1", last_seen_id="42-0"):
+        async def _consume() -> AsyncIterator[None]:
+            async for _ in subscriber.tail_positions("s1", last_seen_id="42-0"):
+                yield None
+
+        async for _ in _consume():
             pass
 
-        assert bus.tail_calls == [("trading:positions:s1", "42-0")]
+        assert positions.tail_calls == [("s1", "42-0")]
 
     @pytest.mark.asyncio
-    async def test_close_closes_bus(self) -> None:
-        bus = _StubBus()
-        subscriber = TradingEventSubscriber(event_bus=cast("EventBus", bus))
+    async def test_close_closes_channels(self) -> None:
+        orders = _StubOrderEvents()
+        positions = _StubPositionEvents()
+        subscriber = TradingEventSubscriber(
+            orders_events=cast("OrderEvents", orders),
+            positions_events=cast("PositionEvents", positions),
+        )
         await subscriber.close()
-        assert bus.closed is True
+        assert orders.closed is True
+        assert positions.closed is True

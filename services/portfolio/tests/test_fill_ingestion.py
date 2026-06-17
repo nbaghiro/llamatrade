@@ -1,7 +1,7 @@
 """Fill-ingestion wiring tests — pure, no Redis/DB.
 
-Covers the stream-entry path (``process_stream_entry``): translate flat stream
-fields → append, with ack/drop/retry verdicts. The DB persistence
+Covers the stream-entry path (``process_stream_entry``): translate a parsed proto
+message → append, with ack/drop/retry verdicts. The DB persistence
 (``persist_append`` → ``LedgerWriter``) is the thin IO shell, exercised by the
 integration suite.
 """
@@ -9,6 +9,7 @@ integration suite.
 from uuid import UUID, uuid4
 
 from llamatrade_db.models.ledger import LedgerEventType
+from llamatrade_events import LedgerFill, LedgerReservation
 
 from src.ledger.ingestion import LedgerAppend
 from src.tasks.fill_ingestion import process_stream_entry
@@ -18,8 +19,8 @@ ACCOUNT = str(uuid4())
 SLEEVE = str(uuid4())
 
 
-def _fill(**overrides) -> dict:
-    fill = {
+def _fill(**overrides: str) -> LedgerFill:
+    fields = {
         "tenant_id": TENANT,
         "account_id": ACCOUNT,
         "sleeve_id": SLEEVE,
@@ -29,8 +30,21 @@ def _fill(**overrides) -> dict:
         "qty": "10",
         "price": "150.25",
     }
-    fill.update(overrides)
-    return fill
+    fields.update(overrides)
+    return LedgerFill(**fields)
+
+
+def _reservation(**overrides: str) -> LedgerReservation:
+    fields = {
+        "tenant_id": TENANT,
+        "account_id": ACCOUNT,
+        "sleeve_id": SLEEVE,
+        "client_order_id": "co-123",
+        "symbol": "AAPL",
+        "side": "buy",
+    }
+    fields.update(overrides)
+    return LedgerReservation(**fields)
 
 
 class _Recorder:
@@ -89,16 +103,15 @@ async def test_ack_on_success() -> None:
 
 async def test_poison_dropped() -> None:
     rec = _Recorder()
-    verdict = await process_stream_entry(rec, {"event_type": "order_teleported"})
+    verdict = await process_stream_entry(rec, _reservation(event_type="order_teleported"))
     assert verdict == "drop"  # acked anyway — never redeliver poison forever
     assert rec.appends == []
 
 
 async def test_missing_required_field_is_poison() -> None:
     rec = _Recorder()
-    fill = _fill()
-    del fill["price"]
-    verdict = await process_stream_entry(rec, fill)
+    # An empty required scalar (proto3 can't omit fields) is poison, not retried.
+    verdict = await process_stream_entry(rec, _fill(price=""))
     assert verdict == "drop"
     assert rec.appends == []
 
@@ -114,7 +127,9 @@ async def test_transient_failure_retries() -> None:
 
 async def test_routes_lifecycle_events() -> None:
     rec = _Recorder()
-    verdict = await process_stream_entry(rec, _fill(event_type="order_submitted", reserved="1000"))
+    verdict = await process_stream_entry(
+        rec, _reservation(event_type="order_submitted", reserved="1000")
+    )
     assert verdict == "ack"
     append = rec.appends[0]
     assert append.event_type == LedgerEventType.ORDER_SUBMITTED
@@ -123,7 +138,7 @@ async def test_routes_lifecycle_events() -> None:
 
 async def test_reservation_and_fill_have_distinct_ids() -> None:
     rec = _Recorder()
-    await process_stream_entry(rec, _fill(event_type="order_submitted", reserved="1502.50"))
+    await process_stream_entry(rec, _reservation(event_type="order_submitted", reserved="1502.50"))
     await process_stream_entry(rec, _fill())
     # Reservation stage must not collide with the fill's idempotency key.
     assert rec.appends[0].event_id != rec.appends[1].event_id

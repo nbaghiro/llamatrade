@@ -20,11 +20,7 @@ from llamatrade_proto.generated.trading_pb2 import (
 
 from src.executor.order_executor import create_order_executor
 from src.models import OrderCreate, OrderResponse, PositionResponse, SessionResponse
-from src.streaming import (
-    OrderUpdate,
-    PositionUpdate,
-    get_trading_event_subscriber,
-)
+from src.streaming import get_trading_event_subscriber
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
@@ -637,9 +633,8 @@ class TradingServicer:
             ):
                 if context.cancelled():
                     break
-                proto_update = self._to_proto_order_update(update)
-                proto_update.stream_cursor = cursor
-                yield proto_update
+                update.stream_cursor = cursor
+                yield update
 
         except asyncio.CancelledError:
             logger.info("Order updates stream cancelled for session: %s", session_id)
@@ -666,9 +661,8 @@ class TradingServicer:
             ):
                 if context.cancelled():
                     break
-                proto_update = self._to_proto_position_update(update)
-                proto_update.stream_cursor = cursor
-                yield proto_update
+                update.stream_cursor = cursor
+                yield update
 
         except asyncio.CancelledError:
             logger.info("Position updates stream cancelled for session: %s", session_id)
@@ -775,147 +769,3 @@ class TradingServicer:
             )
 
         return proto_position
-
-    def _to_proto_order_update(self, update: OrderUpdate) -> trading_pb2.OrderUpdate:
-        """Convert streaming OrderUpdate to proto OrderUpdate.
-
-        Proto OrderUpdate structure (from trading.proto):
-        - Order order = 1;  // embedded full Order message
-        - Fill latest_fill = 2;  // optional
-        - string event_type = 3;  // "new", "fill", "partial_fill", "cancelled", "rejected"
-        - Timestamp timestamp = 4;
-        """
-        from llamatrade_proto.generated import common_pb2, trading_pb2
-
-        # Map status string to proto enum
-        status_map = {
-            "submitted": trading_pb2.ORDER_STATUS_SUBMITTED,
-            "pending": trading_pb2.ORDER_STATUS_PENDING,
-            "accepted": trading_pb2.ORDER_STATUS_ACCEPTED,
-            "partial": trading_pb2.ORDER_STATUS_PARTIAL,
-            "filled": trading_pb2.ORDER_STATUS_FILLED,
-            "cancelled": trading_pb2.ORDER_STATUS_CANCELLED,
-            "rejected": trading_pb2.ORDER_STATUS_REJECTED,
-            "expired": trading_pb2.ORDER_STATUS_EXPIRED,
-        }
-
-        # Map side string to proto enum
-        side_map = {
-            "buy": trading_pb2.ORDER_SIDE_BUY,
-            "sell": trading_pb2.ORDER_SIDE_SELL,
-        }
-
-        # Map order type string to proto enum
-        type_map = {
-            "market": trading_pb2.ORDER_TYPE_MARKET,
-            "limit": trading_pb2.ORDER_TYPE_LIMIT,
-            "stop": trading_pb2.ORDER_TYPE_STOP,
-            "stop_limit": trading_pb2.ORDER_TYPE_STOP_LIMIT,
-            "trailing_stop": trading_pb2.ORDER_TYPE_TRAILING_STOP,
-        }
-
-        # Build embedded Order message
-        order = trading_pb2.Order(
-            id=update.order_id,
-            client_order_id=update.alpaca_order_id or "",
-            session_id=update.session_id,
-            symbol=update.symbol,
-            side=side_map.get(update.side.lower(), trading_pb2.ORDER_SIDE_BUY),
-            type=type_map.get(update.order_type.lower(), trading_pb2.ORDER_TYPE_MARKET),
-            status=status_map.get(update.status.lower(), trading_pb2.ORDER_STATUS_SUBMITTED),
-            quantity=common_pb2.Decimal(value=str(update.qty)),
-        )
-
-        if update.filled_qty > 0:
-            order.filled_quantity.CopyFrom(common_pb2.Decimal(value=str(update.filled_qty)))
-        if update.filled_avg_price is not None:
-            order.average_fill_price.CopyFrom(
-                common_pb2.Decimal(value=str(update.filled_avg_price))
-            )
-
-        # Map update_type to event_type
-        event_type_map = {
-            "submitted": "new",
-            "filled": "fill",
-            "partial": "partial_fill",
-            "cancelled": "cancelled",
-            "rejected": "rejected",
-            "status_change": "status_change",
-        }
-        event_type = event_type_map.get(update.update_type, update.update_type)
-
-        # Build OrderUpdate with embedded Order
-        proto_update = trading_pb2.OrderUpdate(
-            order=order,
-            event_type=event_type,
-        )
-
-        # Add timestamp if available
-        if update.timestamp:
-            try:
-                from datetime import datetime
-
-                dt = datetime.fromisoformat(update.timestamp.replace("Z", "+00:00"))
-                proto_update.timestamp.CopyFrom(common_pb2.Timestamp(seconds=int(dt.timestamp())))
-            except ValueError, AttributeError:
-                pass
-
-        return proto_update
-
-    def _to_proto_position_update(self, update: PositionUpdate) -> trading_pb2.PositionUpdate:
-        """Convert streaming PositionUpdate to proto PositionUpdate.
-
-        Proto PositionUpdate structure (from trading.proto):
-        - Position position = 1;  // embedded full Position message
-        - string event_type = 2;  // "opened", "updated", "closed"
-        - Timestamp timestamp = 3;
-        """
-        from llamatrade_proto.generated import common_pb2, trading_pb2
-
-        side = (
-            trading_pb2.POSITION_SIDE_LONG
-            if update.side.lower() == "long"
-            else trading_pb2.POSITION_SIDE_SHORT
-        )
-
-        # Build embedded Position message
-        position = trading_pb2.Position(
-            session_id=update.session_id,
-            symbol=update.symbol,
-            side=side,
-            quantity=common_pb2.Decimal(value=str(update.qty)),
-        )
-
-        if update.cost_basis:
-            position.cost_basis.CopyFrom(common_pb2.Decimal(value=str(update.cost_basis)))
-        if update.qty > 0 and update.cost_basis:
-            avg_entry = update.cost_basis / update.qty
-            position.average_entry_price.CopyFrom(common_pb2.Decimal(value=str(avg_entry)))
-        if update.current_price:
-            position.current_price.CopyFrom(common_pb2.Decimal(value=str(update.current_price)))
-        if update.market_value:
-            position.market_value.CopyFrom(common_pb2.Decimal(value=str(update.market_value)))
-        if update.unrealized_pnl:
-            position.unrealized_pnl.CopyFrom(common_pb2.Decimal(value=str(update.unrealized_pnl)))
-        if update.unrealized_pnl_percent:
-            position.unrealized_pnl_percent.CopyFrom(
-                common_pb2.Decimal(value=str(update.unrealized_pnl_percent))
-            )
-
-        # Build PositionUpdate with embedded Position
-        proto_update = trading_pb2.PositionUpdate(
-            position=position,
-            event_type=update.update_type,
-        )
-
-        # Add timestamp if available
-        if update.timestamp:
-            try:
-                from datetime import datetime
-
-                dt = datetime.fromisoformat(update.timestamp.replace("Z", "+00:00"))
-                proto_update.timestamp.CopyFrom(common_pb2.Timestamp(seconds=int(dt.timestamp())))
-            except ValueError, AttributeError:
-                pass
-
-        return proto_update

@@ -78,7 +78,7 @@ def test_record_drift_action_collapses_froze_suffix() -> None:
 
 
 def test_stream_pending_gauge_sets_consumer_lag_entries() -> None:
-    name = "llamatrade_eventbus_consumer_lag_entries"
+    name = "events_consumer_lag"
     labels = 'group="portfolio-ledger",stream="ledger:fills"'
 
     LEDGER_STREAM_PENDING.set(7)
@@ -100,7 +100,7 @@ def test_no_forbidden_labels_on_ledger_series() -> None:
     ledger_lines = [
         line
         for line in text.splitlines()
-        if line.startswith(("llamatrade_ledger_", "llamatrade_eventbus_consumer_lag_entries"))
+        if line.startswith(("llamatrade_ledger_", "events_consumer_lag"))
     ]
     assert ledger_lines
     for forbidden in ("tenant_id", "session_id", "account_id", "sleeve_id", "symbol"):

@@ -8,7 +8,6 @@ from collections.abc import AsyncGenerator, AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import UTC, date, datetime
 from decimal import Decimal
-from typing import TYPE_CHECKING, cast
 from uuid import UUID
 
 import grpc.aio
@@ -19,9 +18,6 @@ from llamatrade_proto.generated import backtest_pb2
 
 from src.models import BacktestMetrics, BacktestResponse, BacktestResultResponse
 from src.services.backtest_service import BacktestService
-
-if TYPE_CHECKING:
-    from llamatrade_proto.generated.backtest_pb2 import BacktestStatus
 
 logger = logging.getLogger(__name__)
 
@@ -336,30 +332,22 @@ class BacktestServicer:
                     if backtest.status in terminal_statuses:
                         return
 
-            # Tail the bounded stream from "0" so a client connecting mid-run
-            # replays prior updates and catches up immediately.
+            # Tail the bounded stream from the start so a client connecting
+            # mid-run replays prior updates and catches up immediately. The
+            # subscriber yields the BacktestProgressUpdate proto directly, with
+            # an EXPLICIT status set by the publisher — inferring status from the
+            # progress number is wrong: failed runs also publish progress=100 and
+            # would be reported as COMPLETED.
             async for update in subscriber.tail(backtest_id):
                 if context.cancelled():
                     break
 
-                # Use the EXPLICIT status from the publisher. Inferring status
-                # from the progress number is wrong: failed runs also publish
-                # progress=100 and would be reported as COMPLETED.
-                status = (
-                    cast("BacktestStatus.ValueType", update.status)
-                    if update.status is not None
-                    else backtest_pb2.BACKTEST_STATUS_RUNNING
-                )
+                if update.status == backtest_pb2.BACKTEST_STATUS_UNSPECIFIED:
+                    update.status = backtest_pb2.BACKTEST_STATUS_RUNNING
 
-                yield backtest_pb2.BacktestProgressUpdate(
-                    backtest_id=backtest_id,
-                    status=status,
-                    progress_percent=int(update.progress),
-                    message=update.message,
-                    timestamp=common_pb2.Timestamp(seconds=int(datetime.now(UTC).timestamp())),
-                )
+                yield update
 
-                if status in terminal_statuses:
+                if update.status in terminal_statuses:
                     break
 
         except asyncio.CancelledError:

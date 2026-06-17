@@ -490,7 +490,7 @@ class StrategyRunner:
                         error=f"Error processing {symbol}: {e}",
                     )
             finally:
-                record_bar_processed(symbol, time.perf_counter() - start_time)
+                record_bar_processed(time.perf_counter() - start_time)
             return
 
         # Legacy per-symbol path (tests / strategy_fn). Skip if warming up.
@@ -545,7 +545,7 @@ class StrategyRunner:
         finally:
             # Record bar processing metrics
             duration = time.perf_counter() - start_time
-            record_bar_processed(symbol, duration)
+            record_bar_processed(duration)
 
     async def _evaluate_session(self, bar: BarData) -> None:
         """Merged-symbol evaluation via the shared StrategySession.
@@ -980,7 +980,7 @@ class StrategyRunner:
         )
         try:
             if payload is not None:
-                await self.ledger_publisher.publish_ledger_fill(self.config.account_id, payload)
+                await self.ledger_publisher.publish_ledger_fill(payload)
             if event.event_type in (
                 TradeEventType.CANCELED,
                 TradeEventType.EXPIRED,
@@ -1000,7 +1000,7 @@ class StrategyRunner:
                     symbol=event.symbol,
                     side=event.side,
                 )
-                await self.ledger_publisher.publish_ledger_fill(self.config.account_id, release)
+                await self.ledger_publisher.publish_ledger_fill(release)
         except Exception as e:
             logger.error(f"Failed to publish ledger event for {event.client_order_id}: {e}")
 
@@ -1270,7 +1270,6 @@ class StrategyRunner:
                     result="drift_alerted",
                     duration=duration,
                     drift_type="missing_broker",
-                    symbol=symbol,
                     drift_percent=100.0,  # 100% missing
                 )
 
@@ -1308,7 +1307,6 @@ class StrategyRunner:
                         result="drift_alerted",
                         duration=duration,
                         drift_type="missing_local",
-                        symbol=symbol,
                         drift_percent=100.0,
                     )
                     if self.alerts:
@@ -1338,7 +1336,6 @@ class StrategyRunner:
                     result="drift_corrected",
                     duration=duration,
                     drift_type="missing_local",
-                    symbol=symbol,
                     drift_percent=100.0,
                 )
 
@@ -1375,7 +1372,6 @@ class StrategyRunner:
                         result="drift_alerted",
                         duration=duration,
                         drift_type="side_mismatch",
-                        symbol=symbol,
                     )
 
                     if self.alerts:
@@ -1410,7 +1406,6 @@ class StrategyRunner:
                             result="drift_alerted",
                             duration=duration,
                             drift_type="quantity_mismatch",
-                            symbol=symbol,
                             drift_percent=drift_pct,
                         )
                         logger.warning(
@@ -1439,7 +1434,6 @@ class StrategyRunner:
                             result="drift_corrected",
                             duration=duration,
                             drift_type="quantity_mismatch",
-                            symbol=symbol,
                             drift_percent=drift_pct,
                         )
 
@@ -1466,7 +1460,6 @@ class StrategyRunner:
                             result="drift_alerted",
                             duration=duration,
                             drift_type="quantity_mismatch",
-                            symbol=symbol,
                             drift_percent=drift_pct,
                         )
 

@@ -25,9 +25,10 @@ from llamatrade_alpaca import (
 from llamatrade_alpaca import (
     init_market_data_stream as init_alpaca_stream,
 )
-from llamatrade_common.events import EventBus
-from llamatrade_common.observability import enable_db_pool_metrics, setup_observability
 from llamatrade_db import close_db, get_pool_stats
+from llamatrade_events import EventBus, RedisStreamsTransport
+from llamatrade_telemetry import init_telemetry
+from llamatrade_telemetry.config import TelemetrySettings
 
 from src.cache import close_cache, get_cache, init_cache
 from src.error_handlers import register_error_handlers
@@ -88,7 +89,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     global _event_bus, _bus_bridge
     stream_manager = get_stream_manager()
     if _bars_from_bus():
-        _event_bus = EventBus(os.getenv("REDIS_URL"))
+        _event_bus = EventBus(RedisStreamsTransport(os.getenv("REDIS_URL")))
         _bus_bridge = BusBridge(_event_bus, stream_manager)
         await _bus_bridge.start()
         _stream_connected = True
@@ -141,17 +142,19 @@ app = FastAPI(
 )
 
 # Setup observability (logging, metrics, request tracing)
-setup_observability(
+init_telemetry(
     app,
-    service_name=SERVICE_NAME,
+    service=SERVICE_NAME,
     version=SERVICE_VERSION,
-    environment=ENVIRONMENT,
-    log_level=LOG_LEVEL,
-    json_logs=ENVIRONMENT != "development",
+    settings=TelemetrySettings(
+        ENVIRONMENT=ENVIRONMENT,
+        LOG_LEVEL=LOG_LEVEL,
+        LOG_FORMAT="json" if ENVIRONMENT != "development" else "text",
+    ),
 )
 
-# Export DB connection-pool stats (the /metrics endpoint is added by setup_observability)
-enable_db_pool_metrics(app, SERVICE_NAME, get_pool_stats)
+# Export DB connection-pool stats (the /metrics endpoint is added above)
+init_telemetry(app, service=SERVICE_NAME, pool_stats_provider=get_pool_stats)
 
 # Register error handlers
 register_error_handlers(app)

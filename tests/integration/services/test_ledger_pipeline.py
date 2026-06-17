@@ -6,19 +6,19 @@ and persisted by the portfolio ingestion path into a real database, and the
 resulting projection must satisfy the conservation invariant
 ``Σ sleeve == broker`` with FIFO cost basis and reservation lifecycle intact.
 
-Trading-side payloads are hand-written dicts on purpose: this file IS the
+Trading-side messages are hand-written protos on purpose: this file IS the
 wire-contract check, so it must not share builder code with the publisher.
 """
 
 from __future__ import annotations
 
-import asyncio
-import json
 from decimal import Decimal
 from typing import TYPE_CHECKING
 from uuid import UUID, uuid4
 
 import pytest
+
+from llamatrade_events import LedgerFill, LedgerReservation
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
@@ -105,9 +105,9 @@ async def funded_account(db_session: AsyncSession, run_migrations):
     return account, strategy_sleeve, base[SleeveType.UNALLOCATED]
 
 
-def _fill_payload(account, sleeve, **overrides) -> dict[str, str]:
-    """A §1a wire payload exactly as trading publishes it."""
-    payload = {
+def _fill_payload(account, sleeve, **overrides: str) -> LedgerFill:
+    """A §1a wire message exactly as trading publishes it."""
+    fields = {
         "tenant_id": str(TEST_TENANT_ID),
         "account_id": str(account.id),
         "sleeve_id": str(sleeve.id),
@@ -118,64 +118,30 @@ def _fill_payload(account, sleeve, **overrides) -> dict[str, str]:
         "price": "480",
         "filled_at": "2026-06-12T14:30:00+00:00",
     }
-    payload.update(overrides)
-    return payload
+    fields.update(overrides)
+    return LedgerFill(**fields)
 
 
-async def _ingest(db_session: AsyncSession, payload: dict[str, str]) -> None:
-    """Run one payload through the real ingestion path (translate → persist)."""
-    from src.ledger.ingestion import payload_to_append
+def _reservation_payload(account, sleeve, **overrides: str) -> LedgerReservation:
+    """A §4 reservation lifecycle wire message."""
+    fields = {
+        "tenant_id": str(TEST_TENANT_ID),
+        "account_id": str(account.id),
+        "sleeve_id": str(sleeve.id),
+        "client_order_id": "lt-int-1",
+        "symbol": "SPY",
+        "side": "buy",
+    }
+    fields.update(overrides)
+    return LedgerReservation(**fields)
+
+
+async def _ingest(db_session: AsyncSession, message: LedgerFill | LedgerReservation) -> None:
+    """Run one message through the real ingestion path (translate → persist)."""
+    from src.ledger.ingestion import append_from_message
     from src.tasks.fill_ingestion import persist_append
 
-    await persist_append(db_session, payload_to_append(payload))
-
-
-class TestRedisWireContract:
-    """The payload survives the real Redis hop byte-for-byte."""
-
-    async def test_fill_crosses_redis_and_projects(
-        self, db_session: AsyncSession, funded_account, redis_url: str
-    ) -> None:
-        import redis.asyncio as aioredis
-
-        from src.ledger.ingestion import fill_channel, payload_to_append
-        from src.ledger.projector import LedgerProjector
-        from src.tasks.fill_ingestion import persist_append
-
-        account, sleeve, _ = funded_account
-        payload = _fill_payload(account, sleeve)
-
-        redis = aioredis.from_url(redis_url)
-        try:
-            pubsub = redis.pubsub()
-            await pubsub.psubscribe("ledger:fills:*")
-            try:
-                # Publish exactly as trading does: JSON to ledger:fills:{account}
-                await redis.publish(fill_channel(account.id), json.dumps(payload))
-
-                received = None
-                for _ in range(50):  # up to ~5s
-                    message = await pubsub.get_message(ignore_subscribe_messages=True, timeout=0.1)
-                    if message is not None and message.get("type") == "pmessage":
-                        received = message
-                        break
-                    await asyncio.sleep(0.0)
-                assert received is not None, "fill never arrived on the channel"
-                assert received["channel"].decode().endswith(str(account.id))
-            finally:
-                await pubsub.punsubscribe("ledger:fills:*")
-                await pubsub.aclose()
-        finally:
-            await redis.aclose()
-
-        # Drive the received bytes through the real ingestion path
-        wire_payload = json.loads(received["data"])
-        await persist_append(db_session, payload_to_append(wire_payload))
-
-        projection = await LedgerProjector(db_session).project_account(TEST_TENANT_ID, account.id)
-        sleeve_proj = projection.sleeve(str(sleeve.id))
-        assert sleeve_proj.positions["SPY"].qty == D("50")
-        assert sleeve_proj.cash == D("40000") - D("24000")
+    await persist_append(db_session, append_from_message(message))
 
 
 class TestLedgerEconomicScenario:
@@ -192,16 +158,7 @@ class TestLedgerEconomicScenario:
         # 1. Reservation on submit earmarks free cash
         await _ingest(
             db_session,
-            {
-                "event_type": "order_submitted",
-                "tenant_id": str(TEST_TENANT_ID),
-                "account_id": str(account.id),
-                "sleeve_id": str(sleeve.id),
-                "client_order_id": "lt-int-1",
-                "symbol": "SPY",
-                "side": "buy",
-                "reserved": "24000",
-            },
+            _reservation_payload(account, sleeve, event_type="order_submitted", reserved="24000"),
         )
         projection = await projector.project_account(TEST_TENANT_ID, account.id)
         assert projection.sleeve(str(sleeve.id)).reserved == D("24000")
@@ -248,16 +205,22 @@ class TestLedgerEconomicScenario:
         from src.ledger.projector import LedgerProjector
 
         account, sleeve, _ = funded_account
-        base = {
-            "tenant_id": str(TEST_TENANT_ID),
-            "account_id": str(account.id),
-            "sleeve_id": str(sleeve.id),
-            "client_order_id": "lt-int-cancel",
-            "symbol": "SPY",
-            "side": "buy",
-        }
-        await _ingest(db_session, {**base, "event_type": "order_submitted", "reserved": "9600"})
-        await _ingest(db_session, {**base, "event_type": "order_cancelled"})
+        await _ingest(
+            db_session,
+            _reservation_payload(
+                account,
+                sleeve,
+                client_order_id="lt-int-cancel",
+                event_type="order_submitted",
+                reserved="9600",
+            ),
+        )
+        await _ingest(
+            db_session,
+            _reservation_payload(
+                account, sleeve, client_order_id="lt-int-cancel", event_type="order_cancelled"
+            ),
+        )
 
         projection = await LedgerProjector(db_session).project_account(TEST_TENANT_ID, account.id)
         assert projection.sleeve(str(sleeve.id)).reserved == D("0")
@@ -303,7 +266,7 @@ class TestStreamsPipeline:
     async def test_stream_publish_consume_persist_project(
         self, db_session: AsyncSession, funded_account, redis_url: str
     ) -> None:
-        from llamatrade_common.events import EventBus
+        from llamatrade_events import EventBus, FillEvents, RedisStreamsTransport
 
         from src.ledger.projector import LedgerProjector
         from src.tasks.fill_ingestion import (
@@ -313,38 +276,40 @@ class TestStreamsPipeline:
         )
 
         account, sleeve, _ = funded_account
-        bus = EventBus(redis_url, namespace=f"t{account.id.hex[:8]}")
+        ns = f"t{account.id.hex[:8]}"
+        fills = FillEvents(bus=EventBus(RedisStreamsTransport(redis_url, namespace=ns)))
+        bus = fills.bus
         try:
-            await bus.ensure_group(LEDGER_FILLS_STREAM, PORTFOLIO_LEDGER_GROUP, start_id="0")
+            await bus.ensure_group(LEDGER_FILLS_STREAM, PORTFOLIO_LEDGER_GROUP)
 
-            # Trading side: XADD the §1a payload as flat fields
-            await bus.publish(LEDGER_FILLS_STREAM, _fill_payload(account, sleeve), maxlen=10_000)
+            # Trading side: publish the §1 proto envelope as FillEvents does.
+            await fills.publish_fill(_fill_payload(account, sleeve))
 
             async def handler(append) -> None:
                 from src.tasks.fill_ingestion import persist_append
 
                 await persist_append(db_session, append)
 
-            # Portfolio side: consumer group → verdict → ack
+            # Portfolio side: consumer group → parse envelope → verdict → ack
             entries = []
-            async for entry_id, fields in bus.consume(
-                LEDGER_FILLS_STREAM, PORTFOLIO_LEDGER_GROUP, "test-pod", block_ms=200
+            async for entry_id, env in bus.consume_envelopes(
+                LEDGER_FILLS_STREAM, PORTFOLIO_LEDGER_GROUP, "test-pod"
             ):
-                verdict = await process_stream_entry(handler, fields)
+                verdict = await process_stream_entry(handler, FillEvents.payload(env))
                 assert verdict == "ack"
                 await bus.ack(LEDGER_FILLS_STREAM, PORTFOLIO_LEDGER_GROUP, entry_id)
                 entries.append(entry_id)
                 break
 
             assert len(entries) == 1
-            assert await bus.pending_count(LEDGER_FILLS_STREAM, PORTFOLIO_LEDGER_GROUP) == 0
+            assert await bus.pending(LEDGER_FILLS_STREAM, PORTFOLIO_LEDGER_GROUP) == 0
 
             projection = await LedgerProjector(db_session).project_account(
                 TEST_TENANT_ID, account.id
             )
             assert projection.sleeve(str(sleeve.id)).positions["SPY"].qty == D("50")
         finally:
-            await bus.close()
+            await fills.close()
 
     async def test_redelivery_is_deduped_by_writer(
         self, db_session: AsyncSession, funded_account, redis_url: str
@@ -352,16 +317,16 @@ class TestStreamsPipeline:
         """Consuming the same payload twice is a no-op on the second delivery —
         the at-least-once → effective-once property the consumer group relies on
         (the writer dedupes by event_id)."""
-        from src.ledger.ingestion import payload_to_append
+        from src.ledger.ingestion import append_from_message
         from src.ledger.projector import LedgerProjector
         from src.tasks.fill_ingestion import persist_append
 
         account, sleeve, _ = funded_account
-        payload = _fill_payload(account, sleeve)
+        message = _fill_payload(account, sleeve)
 
-        # Same payload delivered twice (e.g. consumer-group redelivery on retry)
-        await persist_append(db_session, payload_to_append(payload))
-        await persist_append(db_session, payload_to_append(payload))
+        # Same message delivered twice (e.g. consumer-group redelivery on retry)
+        await persist_append(db_session, append_from_message(message))
+        await persist_append(db_session, append_from_message(message))
 
         projection = await LedgerProjector(db_session).project_account(TEST_TENANT_ID, account.id)
         assert projection.sleeve(str(sleeve.id)).positions["SPY"].qty == D("50")  # once

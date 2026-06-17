@@ -4,147 +4,155 @@ Publishes order/position UI events and ledger fill/lifecycle payloads onto
 durable Redis Streams (via the shared ``EventBus``). UI events fan out to live
 tail-readers (each gets the full stream + reconnect replay); ledger payloads are
 consumed by the portfolio service's durable consumer group.
+
+Order/position UI events carry the proto ``trading_pb2.OrderUpdate`` /
+``trading_pb2.PositionUpdate`` directly (the same message the gRPC edge streams),
+wrapped in an event envelope by ``OrderEvents`` / ``PositionEvents``.
 """
 
 import logging
 import os
-from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import Any
 from uuid import UUID
 
-from llamatrade_common.events import Event, EventBus, EventType
+from llamatrade_events import EventBus as EventsBus
+from llamatrade_events import (
+    FillEvents,
+    LedgerFill,
+    LedgerReservation,
+    OrderEvents,
+    PositionEvents,
+    RedisStreamsTransport,
+)
+from llamatrade_proto.generated import common_pb2, trading_pb2
 
 logger = logging.getLogger(__name__)
 
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 
-# One global durable stream for ledger fill/lifecycle payloads (bus-namespaced
-# to lt:ledger:fills). Single stream — not per-account — because XREADGROUP has
-# no pattern-subscribe, global order preserves per-account FIFO, and payloads
-# already carry account_id. See CONTRACTS.md §1.
-LEDGER_FILLS_STREAM = "ledger:fills"
-LEDGER_FILLS_MAXLEN = 10_000
-
-# Per-session UI event streams: tail-read fan-out so each browser/gRPC stream
-# gets its own full copy and a reconnect replays the gap from the client's
-# last-seen cursor. Entries are the shared `Event` envelope (id/type/timestamp +
-# JSON `data` body) via Event.to_redis_stream(), so the wire carries a semantic
-# event type instead of an opaque "payload" blob.
-TRADING_ORDERS_STREAM_PREFIX = "trading:orders"
-TRADING_POSITIONS_STREAM_PREFIX = "trading:positions"
-TRADING_UI_MAXLEN = 1_000
-
-
-def orders_stream(session_id: UUID | str) -> str:
-    return f"{TRADING_ORDERS_STREAM_PREFIX}:{session_id}"
-
-
-def positions_stream(session_id: UUID | str) -> str:
-    return f"{TRADING_POSITIONS_STREAM_PREFIX}:{session_id}"
-
-
-@dataclass
-class OrderUpdate:
-    """Order update message for streaming."""
-
-    session_id: str
-    order_id: str
-    alpaca_order_id: str | None
-    symbol: str
-    side: str
-    qty: float
-    order_type: str
-    status: str
-    filled_qty: float = 0.0
-    filled_avg_price: float | None = None
-    submitted_at: str | None = None
-    filled_at: str | None = None
-    update_type: str = "status_change"  # "submitted", "status_change", "filled", "cancelled"
-    timestamp: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
-
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "session_id": self.session_id,
-            "order_id": self.order_id,
-            "alpaca_order_id": self.alpaca_order_id,
-            "symbol": self.symbol,
-            "side": self.side,
-            "qty": self.qty,
-            "order_type": self.order_type,
-            "status": self.status,
-            "filled_qty": self.filled_qty,
-            "filled_avg_price": self.filled_avg_price,
-            "submitted_at": self.submitted_at,
-            "filled_at": self.filled_at,
-            "update_type": self.update_type,
-            "timestamp": self.timestamp,
-        }
-
-
-@dataclass
-class PositionUpdate:
-    """Position update message for streaming."""
-
-    session_id: str
-    symbol: str
-    qty: float
-    side: str
-    cost_basis: float
-    market_value: float
-    unrealized_pnl: float
-    unrealized_pnl_percent: float
-    current_price: float
-    update_type: str = "change"  # "opened", "increased", "reduced", "closed", "change"
-    timestamp: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
-
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "session_id": self.session_id,
-            "symbol": self.symbol,
-            "qty": self.qty,
-            "side": self.side,
-            "cost_basis": self.cost_basis,
-            "market_value": self.market_value,
-            "unrealized_pnl": self.unrealized_pnl,
-            "unrealized_pnl_percent": self.unrealized_pnl_percent,
-            "current_price": self.current_price,
-            "update_type": self.update_type,
-            "timestamp": self.timestamp,
-        }
-
-
-# Map a domain update_type to a semantic envelope EventType. "status_change"
-# (and any unmapped kind) falls back to the generic *_UPDATED member.
-_ORDER_EVENT_TYPES: dict[str, EventType] = {
-    "submitted": EventType.ORDER_SUBMITTED,
-    "filled": EventType.ORDER_FILLED,
-    "cancelled": EventType.ORDER_CANCELLED,
-    "rejected": EventType.ORDER_REJECTED,
-    "status_change": EventType.ORDER_UPDATED,
+# Status string → proto OrderStatus enum.
+_ORDER_STATUS: dict[str, trading_pb2.OrderStatus.ValueType] = {
+    "submitted": trading_pb2.ORDER_STATUS_SUBMITTED,
+    "pending": trading_pb2.ORDER_STATUS_PENDING,
+    "accepted": trading_pb2.ORDER_STATUS_ACCEPTED,
+    "partial": trading_pb2.ORDER_STATUS_PARTIAL,
+    "filled": trading_pb2.ORDER_STATUS_FILLED,
+    "cancelled": trading_pb2.ORDER_STATUS_CANCELLED,
+    "rejected": trading_pb2.ORDER_STATUS_REJECTED,
+    "expired": trading_pb2.ORDER_STATUS_EXPIRED,
 }
-_POSITION_EVENT_TYPES: dict[str, EventType] = {
-    "opened": EventType.POSITION_OPENED,
-    "closed": EventType.POSITION_CLOSED,
-    "increased": EventType.POSITION_UPDATED,
-    "reduced": EventType.POSITION_UPDATED,
-    "change": EventType.POSITION_UPDATED,
+
+# Side string → proto OrderSide enum.
+_ORDER_SIDE: dict[str, trading_pb2.OrderSide.ValueType] = {
+    "buy": trading_pb2.ORDER_SIDE_BUY,
+    "sell": trading_pb2.ORDER_SIDE_SELL,
+}
+
+# Order type string → proto OrderType enum.
+_ORDER_TYPE: dict[str, trading_pb2.OrderType.ValueType] = {
+    "market": trading_pb2.ORDER_TYPE_MARKET,
+    "limit": trading_pb2.ORDER_TYPE_LIMIT,
+    "stop": trading_pb2.ORDER_TYPE_STOP,
+    "stop_limit": trading_pb2.ORDER_TYPE_STOP_LIMIT,
+    "trailing_stop": trading_pb2.ORDER_TYPE_TRAILING_STOP,
 }
 
 
-def _order_event(order: OrderUpdate) -> Event:
-    """Wrap an order update in the canonical Event envelope for the stream."""
-    return Event(
-        type=_ORDER_EVENT_TYPES.get(order.update_type, EventType.ORDER_UPDATED),
-        data=order.to_dict(),
+def _now_timestamp() -> common_pb2.Timestamp:
+    """Current time as a proto Timestamp (whole seconds)."""
+    return common_pb2.Timestamp(seconds=int(datetime.now(UTC).timestamp()))
+
+
+def _build_order_update(
+    *,
+    session_id: str,
+    order_id: str,
+    alpaca_order_id: str | None,
+    symbol: str,
+    side: str,
+    qty: float,
+    order_type: str,
+    status: str,
+    event_type: str,
+    filled_qty: float = 0.0,
+    filled_avg_price: float | None = None,
+) -> trading_pb2.OrderUpdate:
+    """Build a proto ``OrderUpdate`` (embedded Order + event_type + timestamp).
+
+    Enum strings are mapped to their proto int values; numeric fields are wrapped
+    in ``common_pb2.Decimal``. ``event_type`` drives the bus's semantic EventType
+    mapping ("submitted"/"filled"/"cancelled"/"rejected"/"partial_fill").
+    """
+    order = trading_pb2.Order(
+        id=order_id,
+        client_order_id=alpaca_order_id or "",
+        session_id=session_id,
+        symbol=symbol,
+        side=_ORDER_SIDE.get(side.lower(), trading_pb2.ORDER_SIDE_BUY),
+        type=_ORDER_TYPE.get(order_type.lower(), trading_pb2.ORDER_TYPE_MARKET),
+        status=_ORDER_STATUS.get(status.lower(), trading_pb2.ORDER_STATUS_SUBMITTED),
+        quantity=common_pb2.Decimal(value=str(qty)),
+    )
+    if filled_qty > 0:
+        order.filled_quantity.CopyFrom(common_pb2.Decimal(value=str(filled_qty)))
+    if filled_avg_price is not None:
+        order.average_fill_price.CopyFrom(common_pb2.Decimal(value=str(filled_avg_price)))
+
+    return trading_pb2.OrderUpdate(
+        order=order,
+        event_type=event_type,
+        timestamp=_now_timestamp(),
     )
 
 
-def _position_event(position: PositionUpdate) -> Event:
-    """Wrap a position update in the canonical Event envelope for the stream."""
-    return Event(
-        type=_POSITION_EVENT_TYPES.get(position.update_type, EventType.POSITION_UPDATED),
-        data=position.to_dict(),
+def _build_position_update(
+    *,
+    session_id: str,
+    symbol: str,
+    qty: float,
+    side: str,
+    cost_basis: float,
+    market_value: float,
+    unrealized_pnl: float,
+    unrealized_pnl_percent: float,
+    current_price: float,
+    event_type: str,
+) -> trading_pb2.PositionUpdate:
+    """Build a proto ``PositionUpdate`` (embedded Position + event_type + timestamp).
+
+    ``event_type`` drives the bus's semantic EventType mapping
+    ("opened"/"closed"/"updated").
+    """
+    side_enum = (
+        trading_pb2.POSITION_SIDE_LONG
+        if side.lower() == "long"
+        else trading_pb2.POSITION_SIDE_SHORT
+    )
+    position = trading_pb2.Position(
+        session_id=session_id,
+        symbol=symbol,
+        side=side_enum,
+        quantity=common_pb2.Decimal(value=str(qty)),
+    )
+    if cost_basis:
+        position.cost_basis.CopyFrom(common_pb2.Decimal(value=str(cost_basis)))
+    if qty > 0 and cost_basis:
+        position.average_entry_price.CopyFrom(common_pb2.Decimal(value=str(cost_basis / qty)))
+    if current_price:
+        position.current_price.CopyFrom(common_pb2.Decimal(value=str(current_price)))
+    if market_value:
+        position.market_value.CopyFrom(common_pb2.Decimal(value=str(market_value)))
+    if unrealized_pnl:
+        position.unrealized_pnl.CopyFrom(common_pb2.Decimal(value=str(unrealized_pnl)))
+    if unrealized_pnl_percent:
+        position.unrealized_pnl_percent.CopyFrom(
+            common_pb2.Decimal(value=str(unrealized_pnl_percent))
+        )
+
+    return trading_pb2.PositionUpdate(
+        position=position,
+        event_type=event_type,
+        timestamp=_now_timestamp(),
     )
 
 
@@ -160,62 +168,93 @@ class TradingEventPublisher:
         - lt:ledger:fills                   - ledger fill/lifecycle (consumer group)
     """
 
-    def __init__(self, redis_url: str | None = None, event_bus: EventBus | None = None):
+    def __init__(
+        self,
+        redis_url: str | None = None,
+        orders_events: OrderEvents | None = None,
+        positions_events: PositionEvents | None = None,
+        fills: FillEvents | None = None,
+    ):
         """Initialize the publisher.
 
         Args:
             redis_url: Redis connection URL. Defaults to REDIS_URL env var.
-            event_bus: Streams transport (injected in tests; lazily created
-                otherwise).
+            orders_events: Order UI-stream channel (injected in tests; lazily
+                created otherwise).
+            positions_events: Position UI-stream channel (injected in tests;
+                lazily created otherwise).
+            fills: Ledger fill/reservation publisher (injected in tests; lazily
+                created otherwise). Proto wire onto ``lt:ledger:fills``.
         """
         self.redis_url = redis_url or REDIS_URL
-        self._bus: EventBus | None = event_bus
+        self._bus: EventsBus | None = None
+        self._orders_events: OrderEvents | None = orders_events
+        self._positions_events: PositionEvents | None = positions_events
+        self._fills: FillEvents | None = fills
 
-    def _get_bus(self) -> EventBus:
-        """Get or create the Streams bus (namespaced keys)."""
+    def _get_bus(self) -> EventsBus:
+        """Get or create the shared events bus (Redis Streams transport)."""
         if self._bus is None:
-            self._bus = EventBus(self.redis_url)
+            self._bus = EventsBus(RedisStreamsTransport(self.redis_url))
         return self._bus
+
+    def _get_orders_events(self) -> OrderEvents:
+        """Get or create the order UI-stream channel."""
+        if self._orders_events is None:
+            self._orders_events = OrderEvents(bus=self._get_bus())
+        return self._orders_events
+
+    def _get_positions_events(self) -> PositionEvents:
+        """Get or create the position UI-stream channel."""
+        if self._positions_events is None:
+            self._positions_events = PositionEvents(bus=self._get_bus())
+        return self._positions_events
+
+    def _get_fills(self) -> FillEvents:
+        """Get or create the ledger fill/reservation publisher (proto wire)."""
+        if self._fills is None:
+            self._fills = FillEvents(bus=self._get_bus())
+        return self._fills
 
     async def publish_order_update(
         self,
         session_id: UUID | str,
-        order: OrderUpdate,
+        update: trading_pb2.OrderUpdate,
     ) -> str:
         """Publish an order update to the session's order stream.
 
-        Returns the assigned stream entry id.
+        Returns the assigned stream entry cursor.
         """
-        entry_id = await self._get_bus().publish(
-            orders_stream(session_id),
-            _order_event(order).to_redis_stream(),
-            maxlen=TRADING_UI_MAXLEN,
-        )
+        cursor = await self._get_orders_events().publish(str(session_id), update)
         logger.debug(
             "Published order update",
-            extra={"order_id": order.order_id, "status": order.status, "entry_id": entry_id},
+            extra={
+                "order_id": update.order.id,
+                "event_type": update.event_type,
+                "cursor": cursor,
+            },
         )
-        return entry_id
+        return cursor
 
     async def publish_position_update(
         self,
         session_id: UUID | str,
-        position: PositionUpdate,
+        update: trading_pb2.PositionUpdate,
     ) -> str:
         """Publish a position update to the session's position stream.
 
-        Returns the assigned stream entry id.
+        Returns the assigned stream entry cursor.
         """
-        entry_id = await self._get_bus().publish(
-            positions_stream(session_id),
-            _position_event(position).to_redis_stream(),
-            maxlen=TRADING_UI_MAXLEN,
-        )
+        cursor = await self._get_positions_events().publish(str(session_id), update)
         logger.debug(
             "Published position update",
-            extra={"symbol": position.symbol, "qty": position.qty, "entry_id": entry_id},
+            extra={
+                "symbol": update.position.symbol,
+                "event_type": update.event_type,
+                "cursor": cursor,
+            },
         )
-        return entry_id
+        return cursor
 
     async def publish_order_submitted(
         self,
@@ -228,7 +267,7 @@ class TradingEventPublisher:
         order_type: str,
     ) -> str:
         """Convenience method for publishing order submitted event."""
-        update = OrderUpdate(
+        update = _build_order_update(
             session_id=str(session_id),
             order_id=str(order_id),
             alpaca_order_id=alpaca_order_id,
@@ -237,8 +276,7 @@ class TradingEventPublisher:
             qty=qty,
             order_type=order_type,
             status="submitted",
-            update_type="submitted",
-            submitted_at=datetime.now(UTC).isoformat(),
+            event_type="submitted",
         )
         return await self.publish_order_update(session_id, update)
 
@@ -255,8 +293,7 @@ class TradingEventPublisher:
         filled_avg_price: float,
     ) -> str:
         """Convenience method for publishing order filled event."""
-        now = datetime.now(UTC).isoformat()
-        update = OrderUpdate(
+        update = _build_order_update(
             session_id=str(session_id),
             order_id=str(order_id),
             alpaca_order_id=alpaca_order_id,
@@ -265,10 +302,9 @@ class TradingEventPublisher:
             qty=qty,
             order_type=order_type,
             status="filled",
+            event_type="filled",
             filled_qty=filled_qty,
             filled_avg_price=filled_avg_price,
-            filled_at=now,
-            update_type="filled",
         )
         return await self.publish_order_update(session_id, update)
 
@@ -284,7 +320,7 @@ class TradingEventPublisher:
         filled_qty: float = 0.0,
     ) -> str:
         """Convenience method for publishing order cancelled event."""
-        update = OrderUpdate(
+        update = _build_order_update(
             session_id=str(session_id),
             order_id=str(order_id),
             alpaca_order_id=alpaca_order_id,
@@ -293,8 +329,8 @@ class TradingEventPublisher:
             qty=qty,
             order_type=order_type,
             status="cancelled",
+            event_type="cancelled",
             filled_qty=filled_qty,
-            update_type="cancelled",
         )
         return await self.publish_order_update(session_id, update)
 
@@ -308,7 +344,7 @@ class TradingEventPublisher:
     ) -> str:
         """Convenience method for publishing position opened event."""
         cost_basis = qty * entry_price
-        update = PositionUpdate(
+        update = _build_position_update(
             session_id=str(session_id),
             symbol=symbol,
             qty=qty,
@@ -318,7 +354,7 @@ class TradingEventPublisher:
             unrealized_pnl=0.0,
             unrealized_pnl_percent=0.0,
             current_price=entry_price,
-            update_type="opened",
+            event_type="opened",
         )
         return await self.publish_position_update(session_id, update)
 
@@ -331,7 +367,7 @@ class TradingEventPublisher:
         realized_pnl: float,
     ) -> str:
         """Convenience method for publishing position closed event."""
-        update = PositionUpdate(
+        update = _build_position_update(
             session_id=str(session_id),
             symbol=symbol,
             qty=0.0,
@@ -341,28 +377,33 @@ class TradingEventPublisher:
             unrealized_pnl=0.0,
             unrealized_pnl_percent=0.0,
             current_price=exit_price,
-            update_type="closed",
+            event_type="closed",
         )
         return await self.publish_position_update(session_id, update)
 
     async def publish_ledger_fill(
         self,
-        account_id: UUID | str,
-        payload: dict[str, str],
+        message: LedgerFill | LedgerReservation,
     ) -> str:
-        """Publish a ledger event payload to the global ``ledger:fills`` stream.
+        """Publish a ledger proto message to the global ``ledger:fills`` stream.
 
         The portfolio service's fill consumer group ingests these into the
-        double-entry ledger (see .docs/planning/CONTRACTS.md §1/§4). Payloads
-        are built by ``src.ledger_events`` — fills and order lifecycle
-        (reservation) events share this stream. Returns the stream entry id.
+        double-entry ledger (see .docs/planning/CONTRACTS.md §1/§4). Messages are
+        built by ``src.ledger_events`` — ``LedgerFill`` and ``LedgerReservation``
+        share this stream, discriminated by their EventType. Idempotency seeds
+        (``client_order_id`` / ``client_order_id:event_type``) are set by
+        ``FillEvents``. Returns the stream entry id.
         """
         from src.metrics import record_ledger_publish
 
-        kind = payload.get("event_type", "order_filled")
+        is_reservation = isinstance(message, LedgerReservation)
+        kind = message.event_type if is_reservation else "order_filled"
         try:
-            entry_id = await self._get_bus().publish(
-                LEDGER_FILLS_STREAM, payload, maxlen=LEDGER_FILLS_MAXLEN
+            fills = self._get_fills()
+            entry_id = (
+                await fills.publish_reservation(message)
+                if is_reservation
+                else await fills.publish_fill(message)
             )
         except Exception:
             record_ledger_publish(kind, "failure")
@@ -371,7 +412,7 @@ class TradingEventPublisher:
         logger.debug(
             "Published ledger event",
             extra={
-                "client_order_id": payload.get("client_order_id"),
+                "client_order_id": message.client_order_id,
                 "event_type": kind,
                 "entry_id": entry_id,
             },
@@ -379,7 +420,16 @@ class TradingEventPublisher:
         return entry_id
 
     async def close(self) -> None:
-        """Close the Streams bus, if created."""
+        """Close the orders/positions/ledger channels and the shared bus."""
+        if self._orders_events is not None:
+            await self._orders_events.close()
+            self._orders_events = None
+        if self._positions_events is not None:
+            await self._positions_events.close()
+            self._positions_events = None
+        if self._fills is not None:
+            await self._fills.close()
+            self._fills = None
         if self._bus is not None:
             await self._bus.close()
             self._bus = None

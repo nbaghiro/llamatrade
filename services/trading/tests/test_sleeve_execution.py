@@ -340,11 +340,10 @@ class TestReservationPublishing:
         )
 
         publisher.publish_ledger_fill.assert_awaited_once()
-        account_arg, payload = publisher.publish_ledger_fill.await_args.args
-        assert account_arg == ACCOUNT_ID
-        assert payload["event_type"] == "order_submitted"
-        assert payload["reserved"] == "24000"
-        assert payload["client_order_id"] == "lt-abc123"
+        (payload,) = publisher.publish_ledger_fill.await_args.args
+        assert payload.event_type == "order_submitted"
+        assert payload.reserved == "24000"
+        assert payload.client_order_id == "lt-abc123"
 
     @pytest.mark.asyncio
     async def test_lifecycle_skipped_for_unattributed_orders(self) -> None:
@@ -622,9 +621,9 @@ class TestRestSyncLedgerEmission:
         await executor._publish_ledger_events_for_sync(order, ORDER_STATUS_SUBMITTED)
 
         publisher.publish_ledger_fill.assert_awaited_once()
-        _, payload = publisher.publish_ledger_fill.await_args.args
-        assert payload["qty"] == "50"
-        assert payload["client_order_id"] == "lt-sync-1"
+        (payload,) = publisher.publish_ledger_fill.await_args.args
+        assert payload.qty == "50"
+        assert payload.client_order_id == "lt-sync-1"
 
     @pytest.mark.asyncio
     async def test_synced_cancel_with_partial_publishes_fill_and_release(self) -> None:
@@ -642,10 +641,10 @@ class TestRestSyncLedgerEmission:
         await executor._publish_ledger_events_for_sync(order, ORDER_STATUS_PARTIAL)
 
         assert publisher.publish_ledger_fill.await_count == 2
-        fill_payload = publisher.publish_ledger_fill.await_args_list[0].args[1]
-        release_payload = publisher.publish_ledger_fill.await_args_list[1].args[1]
-        assert fill_payload["qty"] == "20"
-        assert release_payload["event_type"] == "order_cancelled"
+        fill_payload = publisher.publish_ledger_fill.await_args_list[0].args[0]
+        release_payload = publisher.publish_ledger_fill.await_args_list[1].args[0]
+        assert fill_payload.qty == "20"
+        assert release_payload.event_type == "order_cancelled"
 
     @pytest.mark.asyncio
     async def test_no_transition_publishes_nothing(self) -> None:
