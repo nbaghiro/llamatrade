@@ -92,6 +92,9 @@ class CompiledStrategy:
         default_factory=_empty_indicator_cache, repr=False
     )
     _last_allocation: dict[str, float] = field(default_factory=_empty_allocation, repr=False)
+    # Running total of conditions that could not be evaluated (NaN/missing data)
+    # and were treated as False — surfaced for the service to emit as a metric.
+    _degraded_eval_count: int = field(default=0, repr=False)
 
     @classmethod
     def compile(cls, strategy: Strategy) -> CompiledStrategy:
@@ -123,6 +126,12 @@ class CompiledStrategy:
         self._bar_history = {}
         self._indicator_cache = {}
         self._last_allocation = {}
+        self._degraded_eval_count = 0
+
+    @property
+    def degraded_eval_count(self) -> int:
+        """Total conditions treated as False due to NaN/missing data this run."""
+        return self._degraded_eval_count
 
     @property
     def indicator_cache(self) -> dict[str, NDArray[np.float64]]:
@@ -174,6 +183,7 @@ class CompiledStrategy:
 
         # Compute allocations from strategy tree
         weights = self._evaluate_block(self.strategy, state)
+        self._degraded_eval_count += state.degraded_evaluations
 
         # Normalize weights to sum to 100
         weights = self._normalize_weights(weights)

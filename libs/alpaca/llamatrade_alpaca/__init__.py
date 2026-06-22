@@ -47,6 +47,7 @@ from .metrics import (
 )
 from .models import (
     Account,
+    Asset,
     Bar,
     BarData,
     FillData,
@@ -69,6 +70,7 @@ from .models import (
     TradeEvent,
     TradeEventType,
     parse_account,
+    parse_asset,
     parse_bar,
     parse_clock,
     parse_order,
@@ -139,6 +141,7 @@ __all__ = [
     "TradeEventType",
     # Trading Models
     "Account",
+    "Asset",
     "MarketClock",
     "Order",
     "OrderSide",
@@ -148,6 +151,7 @@ __all__ = [
     "PositionSide",
     "TimeInForce",
     "parse_account",
+    "parse_asset",
     "parse_clock",
     "parse_order",
     "parse_position",

@@ -20,6 +20,7 @@ from ..errors import OrderNotFoundError, PositionNotFoundError
 from ..metrics import time_alpaca_call
 from ..models import (
     Account,
+    Asset,
     MarketClock,
     Order,
     OrderSide,
@@ -27,6 +28,7 @@ from ..models import (
     Position,
     TimeInForce,
     parse_account,
+    parse_asset,
     parse_clock,
     parse_order,
     parse_position,
@@ -289,6 +291,27 @@ class TradingClient(AlpacaClientBase):
             try:
                 response = await self._get(f"/positions/{symbol.upper()}")
                 return parse_position(response.json())
+            except Exception as e:
+                if getattr(e, "status_code", None) == 404:
+                    return None
+                raise
+
+    async def get_asset(self, symbol: str) -> Asset | None:
+        """Get an asset's metadata (incl. tradability), or None if unknown.
+
+        Args:
+            symbol: Stock symbol
+
+        Returns:
+            Asset if it exists on Alpaca, None on 404 (unknown symbol).
+
+        Raises:
+            AlpacaError: On API errors (except 404)
+        """
+        async with time_alpaca_call("get_asset"):
+            try:
+                response = await self._get(f"/assets/{symbol.upper()}")
+                return parse_asset(response.json())
             except Exception as e:
                 if getattr(e, "status_code", None) == 404:
                     return None

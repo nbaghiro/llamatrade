@@ -180,6 +180,16 @@ class StrategySession:
     def last_rebalance(self) -> date | None:
         return self._last_rebalance
 
+    @property
+    def degraded_eval_count(self) -> int:
+        """Conditions treated as False due to NaN/missing data since the last reset.
+
+        A rising count means indicators are stale or data is missing — the
+        consumer (live runner / backtest) should emit this as a metric so a
+        degraded run is visible rather than silently producing "no signal".
+        """
+        return self._compiled.degraded_eval_count
+
 
 def _latest_date(bars: Mapping[str, Bar]) -> date:
     """The (max) calendar date across the provided bars."""

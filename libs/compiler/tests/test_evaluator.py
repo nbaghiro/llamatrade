@@ -63,6 +63,67 @@ def basic_state(
     )
 
 
+class TestDegradedEvaluation:
+    """NaN/missing operands are observable (counted), not silently False (Issue 5A)."""
+
+    @staticmethod
+    def _bar(close: float = 103.0) -> Bar:
+        return Bar(
+            timestamp=datetime(2024, 1, 15, 10, 30, tzinfo=UTC),
+            open=close,
+            high=close,
+            low=close,
+            close=close,
+            volume=1000,
+        )
+
+    def test_nan_comparison_returns_false_and_counts(self) -> None:
+        state = EvaluationState(
+            current_bars={"AAPL": self._bar()},
+            indicators={"rsi_AAPL_close_14": np.array([50.0, np.nan])},
+        )
+        cond = Comparison(
+            operator=">",
+            left=Indicator(name="rsi", symbol="AAPL", params=(14,)),
+            right=NumericLiteral(value=30),
+        )
+        assert evaluate_condition(cond, state) is False
+        assert state.degraded_evaluations == 1
+
+    def test_missing_data_returns_false_and_counts(self) -> None:
+        state = EvaluationState(current_bars={}, indicators={})
+        cond = Comparison(
+            operator=">",
+            left=Price(symbol="AAPL", field="close"),  # no bar -> KeyError
+            right=NumericLiteral(value=100),
+        )
+        assert evaluate_condition_safe(cond, state) is False
+        assert state.degraded_evaluations == 1
+
+    def test_nan_crossover_returns_false_and_counts(self) -> None:
+        state = EvaluationState(
+            current_bars={"AAPL": self._bar()},
+            prev_bars={"AAPL": self._bar()},
+            indicators={"sma_AAPL_close_20": np.array([100.0, np.nan])},
+        )
+        cond = Crossover(
+            direction="above",
+            fast=Indicator(name="sma", symbol="AAPL", params=(20,)),
+            slow=NumericLiteral(value=100),
+        )
+        assert evaluate_condition(cond, state) is False
+        assert state.degraded_evaluations == 1
+
+    def test_valid_comparison_not_counted(self, basic_state: EvaluationState) -> None:
+        cond = Comparison(
+            operator=">",
+            left=Price(symbol="AAPL", field="close"),
+            right=NumericLiteral(value=100),
+        )
+        assert evaluate_condition(cond, basic_state) is True
+        assert basic_state.degraded_evaluations == 0
+
+
 class TestComparisonOperators:
     """Tests for comparison operators."""
 

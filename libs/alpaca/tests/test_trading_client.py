@@ -84,6 +84,70 @@ class TestGetAccount:
         await trading_client.close()
 
 
+class TestGetAsset:
+    """Tests for get_asset method (asset tradability lookup)."""
+
+    @pytest.mark.asyncio
+    @respx.mock
+    async def test_get_asset_tradable(self, trading_client: TradingClient) -> None:
+        respx.get("https://paper-api.alpaca.markets/v2/assets/AAPL").mock(
+            return_value=Response(
+                200,
+                json={
+                    "id": "asset-1",
+                    "class": "us_equity",
+                    "exchange": "NASDAQ",
+                    "symbol": "AAPL",
+                    "name": "Apple Inc.",
+                    "status": "active",
+                    "tradable": True,
+                    "fractionable": True,
+                },
+            )
+        )
+
+        asset = await trading_client.get_asset("AAPL")
+
+        assert asset is not None
+        assert asset.symbol == "AAPL"
+        assert asset.tradable is True
+        await trading_client.close()
+
+    @pytest.mark.asyncio
+    @respx.mock
+    async def test_get_asset_not_tradable(self, trading_client: TradingClient) -> None:
+        respx.get("https://paper-api.alpaca.markets/v2/assets/XYZ").mock(
+            return_value=Response(
+                200,
+                json={
+                    "id": "asset-2",
+                    "class": "us_equity",
+                    "exchange": "OTC",
+                    "symbol": "XYZ",
+                    "name": "Delisted Co",
+                    "status": "inactive",
+                    "tradable": False,
+                },
+            )
+        )
+
+        asset = await trading_client.get_asset("XYZ")
+
+        assert asset is not None
+        assert asset.tradable is False
+        await trading_client.close()
+
+    @pytest.mark.asyncio
+    @respx.mock
+    async def test_get_asset_unknown_returns_none(self, trading_client: TradingClient) -> None:
+        respx.get("https://paper-api.alpaca.markets/v2/assets/NOPE").mock(
+            return_value=Response(404, json={"message": "asset not found"})
+        )
+
+        assert await trading_client.get_asset("NOPE") is None
+        await trading_client.close()
+
+
 class TestSubmitOrder:
     """Tests for submit_order method."""
 

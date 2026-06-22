@@ -5,12 +5,16 @@ step, so an unbounded history makes a long backtest O(N^2). Capping the history 
 largest window any part of the strategy actually reads keeps it O(N * window) while
 producing identical results.
 
-Bounding is only safe when every read has a bounded window. A no-period metric such as
-``(return SPY)`` or ``(drawdown SPY)`` reads the *entire* history, so if a strategy uses one
-:func:`compute_window` returns ``None`` and the evaluator keeps the full history.
+Bounding is always applied. When every read has a bounded window the cap is exactly that
+window. A no-period metric such as ``(return SPY)`` or ``(drawdown SPY)`` reads the *entire*
+history; rather than grow without bound, :func:`compute_window` caps it at ``_MAX_WINDOW``
+bars — a deliberate, bounded approximation of "all history" that keeps memory and per-bar
+recompute bounded.
 """
 
 from __future__ import annotations
+
+import logging
 
 from llamatrade_dsl import (
     Comparison,
@@ -37,22 +41,40 @@ _WINDOW_BUFFER = 10
 
 _VOL_METHODS = {"inverse-volatility", "risk-parity", "min-variance"}
 
+# Hard cap on retained history when a strategy reads unbounded history (a period-less
+# metric). ~8 years of daily bars. Without it, history grows forever and the per-bar
+# indicator recompute degrades to O(N^2).
+_MAX_WINDOW = 2000
 
-def compute_window(strategy: Strategy, min_bars: int) -> int | None:
-    """Largest bar window the strategy reads, or None if it reads unbounded history.
+logger = logging.getLogger(__name__)
+
+
+def compute_window(strategy: Strategy, min_bars: int, max_window: int = _MAX_WINDOW) -> int:
+    """Largest bar window the strategy reads, always capped at ``max_window``.
 
     Args:
         strategy: the parsed strategy AST.
         min_bars: the indicator warm-up requirement (max indicator lookback).
+        max_window: hard cap applied when the strategy reads unbounded history.
 
     Returns:
-        A bar count to cap history at, or None when an unbounded read (a no-period metric)
-        means the full history must be kept.
+        A bar count to cap retained history at. For a strategy whose reads are all
+        bounded this is exactly the largest window read; for one that reads unbounded
+        history (a no-period metric) it is ``max_window`` (never below the warm-up need),
+        trading exactness over the full series for bounded memory and O(N * window) recompute.
     """
     lookbacks = [min_bars]
-    if _walk_block(strategy, lookbacks):
-        return None
-    return max(lookbacks) + _WINDOW_BUFFER
+    unbounded = _walk_block(strategy, lookbacks)
+    needed = max(lookbacks) + _WINDOW_BUFFER
+    if unbounded:
+        capped = max(needed, max_window)
+        logger.debug(
+            "strategy %r reads unbounded history; capping retained bars at %d",
+            strategy.name,
+            capped,
+        )
+        return capped
+    return needed
 
 
 def _walk_block(block: Block, acc: list[int]) -> bool:

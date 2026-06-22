@@ -36,6 +36,19 @@ repos:
         files: ^(services|libs)/.*\.py$
         pass_filenames: false
 
+  # Strategy service: run its test suite, which enforces the >=80% coverage gate
+  # (--cov-fail-under=80 lives in services/strategy/pyproject.toml addopts).
+  # The Docker-backed tenant-isolation test skips cleanly when Docker is absent.
+  # Runs only when strategy Python sources/tests change.
+  - repo: local
+    hooks:
+      - id: strategy-tests-coverage
+        name: Strategy tests (>=80% coverage)
+        entry: bash -c 'cd services/strategy && ../../.venv/bin/python -m pytest -q'
+        language: system
+        files: ^services/strategy/.*\.py$
+        pass_filenames: false
+
   # Backtest service: run its test suite, which enforces the >=80% coverage gate
   # (--cov-fail-under=80 lives in services/backtest/pyproject.toml addopts).
   # Runs only when backtest Python sources/tests change.

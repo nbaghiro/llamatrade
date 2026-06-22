@@ -4,6 +4,8 @@ Evaluates Condition AST nodes against the current evaluation state,
 returning boolean results for If block branch selection.
 """
 
+import logging
+
 import numpy as np
 
 from llamatrade_compiler.evaluation.state import EvaluationState
@@ -18,11 +20,26 @@ from llamatrade_dsl import (
     Value,
 )
 
+logger = logging.getLogger(__name__)
+
 
 class EvaluationError(Exception):
     """Error during condition evaluation."""
 
     pass
+
+
+def _record_degraded(state: EvaluationState, reason: str) -> None:
+    """Record a condition that could not be meaningfully evaluated.
+
+    The condition is treated as False (fail-safe: take no action) but the event
+    is surfaced — counted on the state and logged — so a stale indicator, a NaN
+    during warm-up, or a missing bar does not masquerade silently as a
+    legitimate "no signal". The per-run total is exposed via
+    ``StrategySession.degraded_eval_count`` for the service to emit as a metric.
+    """
+    state.degraded_evaluations += 1
+    logger.debug("condition evaluation degraded (%s); treating as False", reason)
 
 
 def safe_divide(numerator: float, denominator: float, default: float = 0.0) -> float:
@@ -142,6 +159,12 @@ def _evaluate_comparison(comparison: Comparison, state: EvaluationState) -> bool
     left_val = _resolve_value(comparison.left, state)
     right_val = _resolve_value(comparison.right, state)
 
+    # A NaN operand (e.g. an indicator still warming up) makes every IEEE
+    # comparison silently False. Surface it instead of failing quietly.
+    if np.isnan(left_val) or np.isnan(right_val):
+        _record_degraded(state, f"NaN operand in '{comparison.operator}' comparison")
+        return False
+
     op = comparison.operator
     if op == ">":
         return left_val > right_val
@@ -167,6 +190,11 @@ def _evaluate_crossover(crossover: Crossover, state: EvaluationState) -> bool:
     slow_curr = _resolve_value(crossover.slow, state)
     fast_prev = _get_prev_value(crossover.fast, state)
     slow_prev = _get_prev_value(crossover.slow, state)
+
+    # A NaN on either side (current or previous) can't be a real crossing.
+    if any(np.isnan(v) for v in (fast_curr, slow_curr, fast_prev, slow_prev)):
+        _record_degraded(state, f"NaN operand in '{crossover.direction}' crossover")
+        return False
 
     if crossover.direction == "above":
         return fast_prev <= slow_prev and fast_curr > slow_curr
@@ -231,7 +259,9 @@ def evaluate_condition_safe(condition: Condition, state: EvaluationState) -> boo
     """
     try:
         return evaluate_condition(condition, state)
-    except EvaluationError:
+    except EvaluationError as e:
+        _record_degraded(state, f"evaluation error: {e}")
         return False
-    except KeyError, ValueError, IndexError:
+    except (KeyError, ValueError, IndexError) as e:
+        _record_degraded(state, f"missing/invalid data: {e}")
         return False

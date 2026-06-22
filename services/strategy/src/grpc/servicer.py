@@ -302,17 +302,23 @@ class StrategyServicer:
         request: strategy_pb2.DeleteStrategyRequest,
         ctx: RequestContext[object, object],
     ) -> strategy_pb2.DeleteStrategyResponse:
-        """Delete (archive) a strategy, cascading to stop + release its executions."""
+        """Delete (archive) a strategy.
+
+        Refused (FAILED_PRECONDITION) while an active execution is still running;
+        the operator must stop it first.
+        """
         from src.services.strategy_service import StrategyService
 
-        tenant_id, user_id = _validate_tenant_context(request.context)
+        tenant_id, _ = _validate_tenant_context(request.context)
         strategy_id = parse_uuid(request.strategy_id, "strategy_id")
 
         async with await self._get_db() as db:
             service = StrategyService(db)
-            success = await service.delete_strategy(
-                tenant_id, strategy_id, ledger=self._get_ledger(), user_id=user_id
-            )
+            try:
+                success = await service.delete_strategy(tenant_id, strategy_id)
+            except ValueError as e:
+                # Active execution still running — archiving is a precondition failure.
+                raise ConnectError(Code.FAILED_PRECONDITION, str(e)) from e
 
             if not success:
                 raise ConnectError(
@@ -335,22 +341,36 @@ class StrategyServicer:
             service = StrategyService(db)
             validation = await service.validate_config(request.dsl_code)
 
-            # If valid, try to compile to JSON
+            # If the DSL validates, compile it to JSON. A compile failure on
+            # otherwise-valid DSL is a real error: surface it to the caller
+            # instead of silently returning success with empty compiled output.
             compiled_json_str = ""
+            compile_error: str | None = None
             if validation.valid:
                 from llamatrade_dsl import parse_strategy, to_json
 
                 try:
                     ast = parse_strategy(request.dsl_code)
                     compiled_json_str = json.dumps(to_json(ast))
-                except Exception:
-                    pass
+                except Exception as e:
+                    # Any compile failure is reported to the caller, not swallowed.
+                    compile_error = f"compilation failed: {e}"
 
             # Build the result
             result = strategy_pb2.CompilationResult(
-                success=bool(validation.valid),
+                success=bool(validation.valid) and compile_error is None,
                 compiled_json=compiled_json_str,
             )
+
+            if compile_error is not None:
+                result.errors.append(
+                    strategy_pb2.CompilationError(
+                        line=0,
+                        column=0,
+                        message=compile_error,
+                        code="COMPILE_ERROR",
+                    )
+                )
 
             # Add errors one by one
             for e in validation.errors:

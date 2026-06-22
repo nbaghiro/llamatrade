@@ -27,6 +27,7 @@ from .streaming import (
 )
 from .trading import (
     Account,
+    Asset,
     MarketClock,
     Order,
     OrderSide,
@@ -36,6 +37,7 @@ from .trading import (
     PositionSide,
     TimeInForce,
     parse_account,
+    parse_asset,
     parse_clock,
     parse_order,
     parse_position,
@@ -65,6 +67,7 @@ __all__ = [
     "parse_trade",
     # Trading models
     "Account",
+    "Asset",
     "MarketClock",
     "Order",
     "OrderSide",
@@ -74,6 +77,7 @@ __all__ = [
     "PositionSide",
     "TimeInForce",
     "parse_account",
+    "parse_asset",
     "parse_clock",
     "parse_order",
     "parse_position",

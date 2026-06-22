@@ -543,6 +543,10 @@ class TestCompileStrategy:
         from src.models import ValidationResult
 
         mock_validation = ValidationResult(valid=True, errors=[], warnings=[])
+        # A genuinely parseable allocation strategy: compile_strategy mocks the
+        # validation layer but runs the real parser/serializer, so this must be
+        # valid current-DSL (the legacy VALID_STRATEGY_SEXPR no longer parses).
+        valid_sexpr = '(strategy "Test" (weight :method equal (asset SPY) (asset AGG)))'
 
         with patch("src.services.strategy_service.StrategyService") as mock_service_cls:
             mock_service = mock_service_cls.return_value
@@ -553,13 +557,14 @@ class TestCompileStrategy:
                     tenant_id=str(TEST_TENANT_ID),
                     user_id=str(TEST_USER_ID),
                 ),
-                dsl_code=VALID_STRATEGY_SEXPR,
+                dsl_code=valid_sexpr,
             )
 
             response = await strategy_servicer.compile_strategy(request, grpc_context)
 
             assert response.result.success is True
             assert len(response.result.errors) == 0
+            assert response.result.compiled_json != ""
 
     async def test_compile_strategy_invalid(
         self, strategy_servicer: MockStrategyServicer, grpc_context: RequestContext
@@ -591,6 +596,37 @@ class TestCompileStrategy:
 
             assert response.result.success is False
             assert len(response.result.errors) > 0
+
+    async def test_compile_strategy_surfaces_compile_error(
+        self, strategy_servicer: MockStrategyServicer, grpc_context: RequestContext
+    ) -> None:
+        """Valid DSL that fails to compile reports an error, not silent success."""
+        from llamatrade_proto.generated import common_pb2, strategy_pb2
+
+        from src.models import ValidationResult
+
+        mock_validation = ValidationResult(valid=True, errors=[], warnings=[])
+
+        with (
+            patch("src.services.strategy_service.StrategyService") as mock_service_cls,
+            patch("llamatrade_dsl.to_json", side_effect=RuntimeError("boom")),
+        ):
+            mock_service = mock_service_cls.return_value
+            mock_service.validate_config = AsyncMock(return_value=mock_validation)
+
+            request = strategy_pb2.CompileStrategyRequest(
+                context=common_pb2.TenantContext(
+                    tenant_id=str(TEST_TENANT_ID),
+                    user_id=str(TEST_USER_ID),
+                ),
+                dsl_code=VALID_STRATEGY_SEXPR,
+            )
+
+            response = await strategy_servicer.compile_strategy(request, grpc_context)
+
+        assert response.result.success is False
+        assert response.result.compiled_json == ""
+        assert any(e.code == "COMPILE_ERROR" for e in response.result.errors)
 
 
 class TestUpdateStrategyStatus:

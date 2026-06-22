@@ -29,7 +29,8 @@ def handle_service_errors[**P, T](
     - IntegrityError: "Data constraint violation"
     - OperationalError: "Database temporarily unavailable"
     - SQLAlchemyError: "An internal error occurred"
-    - ValueError: Passed through with message (validation errors)
+    - ValueError: INVALID_ARGUMENT with the message (safety net for validation errors a
+      method didn't already map to a more specific ConnectError)
     - Other exceptions: "An unexpected error occurred" (logged with details)
     """
 
@@ -79,8 +80,13 @@ def handle_service_errors[**P, T](
                 Code.INTERNAL,
                 "An internal database error occurred. Please try again.",
             )
-        # Note: ValueError is NOT caught here - methods should handle it explicitly
-        # with the appropriate error code (INVALID_ARGUMENT or FAILED_PRECONDITION)
+        except ValueError as e:
+            # Methods that need a specific code (e.g. FAILED_PRECONDITION) raise a
+            # ConnectError themselves (re-raised above). An unconverted ValueError is a
+            # client/validation error, so surface its message as INVALID_ARGUMENT rather
+            # than burying it in a generic INTERNAL 500.
+            logger.warning(f"Value error in {func.__name__}: {e}")
+            raise ConnectError(Code.INVALID_ARGUMENT, str(e))
         except Exception as e:
             logger.exception(f"Unexpected error in {func.__name__}: {e}")
             raise ConnectError(

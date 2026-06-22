@@ -611,8 +611,9 @@ class TestDeleteStrategy:
             status="draft",
         )
 
-        # No non-terminal executions to cascade-stop.
+        # No active executions (count 0) and no pending ones to cancel.
         no_executions = MagicMock()
+        no_executions.scalar_one.return_value = 0
         no_executions.scalars.return_value.all.return_value = []
         mock_db.execute = AsyncMock(return_value=no_executions)
 
@@ -1211,6 +1212,48 @@ class TestCreateFromTemplate:
                 template_id="non_existent_template",
             )
 
+    async def test_create_from_template_rejects_unknown_param(
+        self, mock_db: AsyncMock, tenant_id: UUID, user_id: UUID
+    ) -> None:
+        """An unknown template parameter is rejected, not silently ignored."""
+        service = StrategyService(mock_db)
+
+        with pytest.raises(ValueError, match="Unknown template parameter"):
+            await service.create_from_template(
+                tenant_id=tenant_id,
+                user_id=user_id,
+                template_id="ma-crossover",
+                template_params={"bogus": "x"},
+            )
+
+    async def test_create_from_template_rejects_injection_value(
+        self, mock_db: AsyncMock, tenant_id: UUID, user_id: UUID
+    ) -> None:
+        """A value that could inject S-expression text is rejected before substitution."""
+        service = StrategyService(mock_db)
+
+        with pytest.raises(ValueError, match="Invalid value"):
+            await service.create_from_template(
+                tenant_id=tenant_id,
+                user_id=user_id,
+                template_id="ma-crossover",
+                template_params={"symbols": '"AAPL") (evil'},
+            )
+
+    async def test_create_from_template_rejects_unmatched_param(
+        self, mock_db: AsyncMock, tenant_id: UUID, user_id: UUID
+    ) -> None:
+        """A valid override matching no field raises rather than silently no-op."""
+        service = StrategyService(mock_db)
+
+        with pytest.raises(ValueError, match="no 'symbols' field"):
+            await service.create_from_template(
+                tenant_id=tenant_id,
+                user_id=user_id,
+                template_id="ma-crossover",
+                template_params={"symbols": '["AAPL" "MSFT"]'},
+            )
+
 
 # ===================
 # Detected Indicators Tests
@@ -1386,8 +1429,9 @@ class TestExecutionFunding:
 
     async def test_start_execution_funding_failure_blocks_start(self, mock_db: AsyncMock) -> None:
         """A funding RPC failure surfaces as ValueError and start aborts."""
-        import grpc
         import grpc.aio
+
+        import grpc
 
         service = StrategyService(mock_db)
         execution = self._pending_execution()
@@ -1443,6 +1487,7 @@ class TestExecutionStopRelease:
 
         service = StrategyService(mock_db)
         execution = self._running_execution()
+        original_sleeve, original_account = execution.sleeve_id, execution.account_id
         ledger = AsyncMock()
 
         with patch.object(service, "_get_execution_by_id", return_value=execution):
@@ -1454,8 +1499,10 @@ class TestExecutionStopRelease:
         assert execution.status == EXECUTION_STATUS_STOPPED
         ledger.close_sleeve.assert_awaited_once()
         args = ledger.close_sleeve.await_args.args
-        assert args[2] == str(execution.account_id)  # account_id
-        assert args[3] == str(execution.sleeve_id)  # sleeve_id
+        assert args[2] == str(original_account)  # account_id
+        assert args[3] == str(original_sleeve)  # sleeve_id
+        # On a successful close the sleeve identity is cleared (3A: marks released).
+        assert execution.sleeve_id is None
 
     async def test_stop_without_sleeve_skips_close(self, mock_db: AsyncMock) -> None:
         """An unfunded (legacy) execution has no sleeve to release."""
@@ -1480,9 +1527,9 @@ class TestExecutionStopRelease:
 
     async def test_stop_close_failure_is_best_effort(self, mock_db: AsyncMock) -> None:
         """A close RPC failure (e.g. in-flight order) never fails the stop."""
-        import grpc
         import grpc.aio
 
+        import grpc
         from llamatrade_proto.generated.common_pb2 import EXECUTION_STATUS_STOPPED
 
         service = StrategyService(mock_db)
@@ -1500,28 +1547,103 @@ class TestExecutionStopRelease:
 
         assert result is not None  # stop still succeeds
         assert execution.status == EXECUTION_STATUS_STOPPED
+        # Close failed -> sleeve_id stays set as the "needs release" marker (3A).
+        assert execution.sleeve_id is not None
 
-    async def test_delete_strategy_cascades_stop_and_close(
-        self, mock_db: AsyncMock, tenant_id: UUID, strategy_id: UUID
-    ) -> None:
-        """Archiving stops every non-terminal execution and releases its sleeve."""
+    async def test_reconcile_stranded_sleeves(self, mock_db: AsyncMock) -> None:
+        """The sweeper retries close for terminal executions whose sleeve is still set."""
         from llamatrade_proto.generated.common_pb2 import EXECUTION_STATUS_STOPPED
 
         service = StrategyService(mock_db)
-        strategy = make_mock_strategy(id=strategy_id, tenant_id=tenant_id, status="active")
-        execution = self._running_execution(tenant_id=tenant_id, strategy_id=strategy_id)
+        e1 = self._running_execution(status=EXECUTION_STATUS_STOPPED)
+        e2 = self._running_execution(status=EXECUTION_STATUS_STOPPED)
 
-        mock_result = MagicMock()
-        mock_result.scalars.return_value.all.return_value = [execution]
-        mock_db.execute = AsyncMock(return_value=mock_result)
+        result = MagicMock()
+        result.scalars.return_value.all.return_value = [e1, e2]
+        mock_db.execute = AsyncMock(return_value=result)
         ledger = AsyncMock()
 
-        with patch.object(service, "_get_strategy_by_id", return_value=strategy):
-            result = await service.delete_strategy(
-                tenant_id, strategy_id, ledger=ledger, user_id=uuid4()
-            )
+        released = await service.reconcile_stranded_sleeves(ledger=ledger, user_id=uuid4())
 
-        assert result is True
+        assert released == 2
+        assert e1.sleeve_id is None
+        assert e2.sleeve_id is None
+        assert ledger.close_sleeve.await_count == 2
+
+    async def test_reconcile_skips_when_close_fails(self, mock_db: AsyncMock) -> None:
+        """A still-failing close leaves the sleeve marked for the next sweep."""
+        import grpc.aio
+
+        import grpc
+        from llamatrade_proto.generated.common_pb2 import EXECUTION_STATUS_STOPPED
+
+        service = StrategyService(mock_db)
+        execution = self._running_execution(status=EXECUTION_STATUS_STOPPED)
+
+        result = MagicMock()
+        result.scalars.return_value.all.return_value = [execution]
+        mock_db.execute = AsyncMock(return_value=result)
+        ledger = AsyncMock()
+        ledger.close_sleeve.side_effect = grpc.aio.AioRpcError(
+            grpc.StatusCode.UNAVAILABLE,
+            grpc.aio.Metadata(),
+            grpc.aio.Metadata(),
+            details="ledger down",
+        )
+
+        released = await service.reconcile_stranded_sleeves(ledger=ledger)
+
+        assert released == 0
+        assert execution.sleeve_id is not None  # still marked for retry
+
+    async def test_archive_blocked_by_active_execution(
+        self, mock_db: AsyncMock, tenant_id: UUID, strategy_id: UUID
+    ) -> None:
+        """Archiving is refused while a RUNNING/PAUSED execution exists."""
+        service = StrategyService(mock_db)
+        strategy = make_mock_strategy(id=strategy_id, tenant_id=tenant_id, status="active")
+
+        active_count = MagicMock()
+        active_count.scalar_one.return_value = 1  # one active execution
+        mock_db.execute = AsyncMock(return_value=active_count)
+
+        with (
+            patch.object(service, "_get_strategy_by_id", return_value=strategy),
+            pytest.raises(ValueError, match="active execution"),
+        ):
+            await service.delete_strategy(tenant_id, strategy_id)
+
+        assert strategy.status != 4  # not archived
+        mock_db.commit.assert_not_called()
+
+    async def test_archive_cancels_pending_executions(
+        self, mock_db: AsyncMock, tenant_id: UUID, strategy_id: UUID
+    ) -> None:
+        """Archiving cancels never-started PENDING executions (unfunded — no sleeve)."""
+        from llamatrade_proto.generated.common_pb2 import (
+            EXECUTION_STATUS_PENDING,
+            EXECUTION_STATUS_STOPPED,
+        )
+
+        service = StrategyService(mock_db)
+        strategy = make_mock_strategy(id=strategy_id, tenant_id=tenant_id, status="draft")
+        pending = self._running_execution(
+            tenant_id=tenant_id,
+            strategy_id=strategy_id,
+            status=EXECUTION_STATUS_PENDING,
+            sleeve_id=None,
+            account_id=None,
+        )
+
+        result = MagicMock()
+        result.scalar_one.return_value = 0  # no active executions
+        result.scalars.return_value.all.return_value = [pending]
+        mock_db.execute = AsyncMock(return_value=result)
+
+        with patch.object(service, "_get_strategy_by_id", return_value=strategy):
+            ok = await service.delete_strategy(tenant_id, strategy_id)
+
+        assert ok is True
         assert strategy.status == 4  # STRATEGY_STATUS_ARCHIVED
-        assert execution.status == EXECUTION_STATUS_STOPPED
-        ledger.close_sleeve.assert_awaited_once()
+        assert pending.status == EXECUTION_STATUS_STOPPED
+        mock_db.commit.assert_called()

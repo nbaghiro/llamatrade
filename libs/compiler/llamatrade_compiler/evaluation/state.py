@@ -47,6 +47,11 @@ class EvaluationState:
     # Current position (optional, for signal-based strategies)
     position: Position | None = None
 
+    # Count of conditions this bar that could not be meaningfully evaluated
+    # (NaN operand, missing data) and were treated as False. Surfaced upward so
+    # a degraded run is observable rather than a silent stream of "no signal".
+    degraded_evaluations: int = 0
+
     def get_price(self, symbol: str, price_field: str = "close") -> float:
         """Get current price for a symbol.
 

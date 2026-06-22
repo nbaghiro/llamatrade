@@ -42,9 +42,23 @@ def test_window_covers_momentum_lookback():
     assert window >= 90  # must cover the momentum lookback
 
 
-def test_no_period_metric_disables_windowing():
-    # (drawdown SPY) reads the whole history -> must NOT bound.
-    assert compute_window(parse_strategy(NO_PERIOD_METRIC), min_bars=14) is None
+def test_no_period_metric_caps_window():
+    # (drawdown SPY) reads the whole history -> bounded at the hard cap, not unbounded.
+    from llamatrade_compiler.indicators.cache import _MAX_WINDOW
+
+    window = compute_window(parse_strategy(NO_PERIOD_METRIC), min_bars=14)
+    assert window == _MAX_WINDOW
+
+
+def test_no_period_metric_respects_custom_cap():
+    window = compute_window(parse_strategy(NO_PERIOD_METRIC), min_bars=14, max_window=500)
+    assert window == 500
+
+
+def test_cap_never_below_warmup():
+    # If the indicator warm-up need exceeds the cap, the warm-up requirement wins.
+    window = compute_window(parse_strategy(NO_PERIOD_METRIC), min_bars=5000, max_window=500)
+    assert window >= 5000
 
 
 def test_history_is_actually_bounded():

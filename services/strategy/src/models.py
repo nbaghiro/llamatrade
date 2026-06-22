@@ -155,6 +155,18 @@ class ConfigOverride(TypedDict, total=False):
 
 
 # ===================
+# Request field bounds
+# ===================
+
+# Caps on user-supplied strategy fields. The S-expression cap is generous but
+# guards the parser/DB against pathological input; the capital ceiling guards
+# the money path against absurd or overflow values.
+_MAX_SEXPR_LEN = 100_000
+_MAX_DESCRIPTION_LEN = 2_000
+_MAX_ALLOCATED_CAPITAL = Decimal("1000000000")
+
+
+# ===================
 # Request Schemas
 # ===================
 
@@ -163,9 +175,11 @@ class StrategyCreate(BaseModel):
     """Schema for creating a strategy with S-expression config."""
 
     name: str = Field(..., min_length=1, max_length=255)
-    description: str | None = None
+    description: str | None = Field(default=None, max_length=_MAX_DESCRIPTION_LEN)
     config_sexpr: str = Field(
         ...,
+        min_length=1,
+        max_length=_MAX_SEXPR_LEN,
         description="S-expression strategy definition",
         examples=[
             """(strategy
@@ -188,10 +202,12 @@ class StrategyUpdate(BaseModel):
     """Schema for updating a strategy."""
 
     name: str | None = Field(default=None, min_length=1, max_length=255)
-    description: str | None = None
+    description: str | None = Field(default=None, max_length=_MAX_DESCRIPTION_LEN)
     status: StrategyStatus.ValueType | None = None
     config_sexpr: str | None = Field(
         default=None,
+        min_length=1,
+        max_length=_MAX_SEXPR_LEN,
         description="New S-expression config (creates new version if changed)",
     )
     parameters: dict[str, str] | None = Field(
@@ -200,6 +216,7 @@ class StrategyUpdate(BaseModel):
     )
     changelog: str | None = Field(
         default=None,
+        max_length=_MAX_DESCRIPTION_LEN,
         description="Change summary for version history (only used when config_sexpr changes)",
     )
 
@@ -219,6 +236,7 @@ class ExecutionCreate(BaseModel):
     allocated_capital: Decimal | None = Field(
         None,
         gt=0,
+        le=_MAX_ALLOCATED_CAPITAL,
         description="Capital to allocate to this execution's ledger sleeve at start",
     )
     credentials_id: UUID | None = Field(

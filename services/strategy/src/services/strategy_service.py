@@ -99,6 +99,51 @@ def _validate_status_transition(current: int, target: int) -> tuple[bool, str]:
     return False, f"Invalid status transition: {current} → {target}"
 
 
+# Template parameter overrides. Each entry maps a public parameter name to:
+#   (field_pattern, value_validator, replacement)
+# field_pattern locates the S-expression field to replace, value_validator
+# constrains caller input so it cannot inject arbitrary S-expression text, and
+# replacement is the substitution (``{value}`` is filled with the validated input).
+_TEMPLATE_PARAM_FIELDS: dict[str, tuple[str, str, str]] = {
+    "symbols": (
+        r":symbols\s+\[.*?\]",
+        r'^\[\s*(?:"[A-Za-z0-9.\-]+"\s*)+\]$',
+        ":symbols {value}",
+    ),
+    "timeframe": (r':timeframe\s+"[^"]*"', r"^[A-Za-z0-9]+$", ':timeframe "{value}"'),
+    "stop_loss_pct": (r":stop-loss-pct\s+[\d.]+", r"^\d+(?:\.\d+)?$", ":stop-loss-pct {value}"),
+    "take_profit_pct": (
+        r":take-profit-pct\s+[\d.]+",
+        r"^\d+(?:\.\d+)?$",
+        ":take-profit-pct {value}",
+    ),
+}
+
+
+def _apply_template_params(config_sexpr: str, template_id: str, params: dict[str, str]) -> str:
+    """Apply validated parameter overrides to a template's S-expression.
+
+    Every override must (1) be a known parameter, (2) pass value validation so
+    untrusted input cannot inject S-expression text, and (3) actually match a
+    field in the template. An unknown parameter, an invalid value, or an
+    unmatched field raises ``ValueError`` — overrides never silently no-op,
+    because a strategy that quietly trades the wrong symbols is a hazard.
+    """
+    import re
+
+    for name, value in params.items():
+        field = _TEMPLATE_PARAM_FIELDS.get(name)
+        if field is None:
+            raise ValueError(f"Unknown template parameter: {name}")
+        search, validator, replacement = field
+        if not re.fullmatch(validator, value):
+            raise ValueError(f"Invalid value for template parameter {name!r}: {value!r}")
+        config_sexpr, count = re.subn(search, replacement.format(value=value), config_sexpr)
+        if count == 0:
+            raise ValueError(f"Template {template_id!r} has no {name!r} field to override")
+    return config_sexpr
+
+
 class StrategyService:
     """Service for strategy management operations."""
 
@@ -412,58 +457,66 @@ class StrategyService:
         self,
         tenant_id: UUID,
         strategy_id: UUID,
-        *,
-        ledger: LedgerClient | None = None,
-        user_id: UUID | None = None,
     ) -> bool:
-        """Soft delete (archive) a strategy, cascading to its executions.
+        """Soft delete (archive) a strategy.
 
-        Archiving terminates every non-terminal execution and releases its
-        sleeve, so an archived strategy never leaves a live execution running or
-        capital trapped in a funded sleeve.
+        Refuses to archive while the strategy has an active (RUNNING or PAUSED)
+        execution: those carry a funded sleeve and may back a live trading
+        runner, so the operator must stop them explicitly first — which releases
+        the sleeve and halts the session — rather than have archiving silently
+        release capital out from under a live runner. PENDING executions were
+        never funded or started, so they are simply cancelled.
+
+        Returns False if the strategy does not exist.
+
+        Raises:
+            ValueError: If the strategy still has an active execution.
         """
         strategy = await self._get_strategy_by_id(tenant_id, strategy_id, for_update=True)
         if not strategy:
             return False
 
-        stopped = await self._stop_nonterminal_executions(tenant_id, strategy_id)
+        active = await self._count_active_executions(tenant_id, strategy_id)
+        if active:
+            raise ValueError(
+                f"Cannot archive strategy: {active} active execution(s) still running; "
+                "stop them before archiving"
+            )
+
+        await self._cancel_pending_executions(tenant_id, strategy_id)
         strategy.status = STRATEGY_STATUS_ARCHIVED
         await self.db.commit()
-
-        # Release sleeves after the status commit (remote ledger calls).
-        for execution in stopped:
-            await self._close_sleeve(
-                tenant_id, execution, ledger=ledger, user_id=user_id, reason="strategy archived"
-            )
         return True
 
-    async def _stop_nonterminal_executions(
-        self, tenant_id: UUID, strategy_id: UUID
-    ) -> list[StrategyExecution]:
-        """Transition every non-terminal execution of a strategy to STOPPED.
+    async def _count_active_executions(self, tenant_id: UUID, strategy_id: UUID) -> int:
+        """Count RUNNING/PAUSED executions — these must be stopped before archiving."""
+        stmt = (
+            select(func.count())
+            .select_from(StrategyExecution)
+            .where(
+                StrategyExecution.tenant_id == tenant_id,
+                StrategyExecution.strategy_id == strategy_id,
+                StrategyExecution.status.in_([EXECUTION_STATUS_RUNNING, EXECUTION_STATUS_PAUSED]),
+            )
+        )
+        return int((await self.db.execute(stmt)).scalar_one())
 
-        Returns the affected executions so the caller can release their sleeves.
-        Does not commit — the caller commits the archive and these stops in one
-        transaction. PENDING executions were never funded (no sleeve to close).
+    async def _cancel_pending_executions(self, tenant_id: UUID, strategy_id: UUID) -> None:
+        """Cancel never-started PENDING executions (unfunded — no sleeve, no runner).
+
+        Does not commit — the caller commits the archive and these cancellations
+        in one transaction.
         """
         stmt = select(StrategyExecution).where(
             StrategyExecution.tenant_id == tenant_id,
             StrategyExecution.strategy_id == strategy_id,
-            StrategyExecution.status.in_(
-                [
-                    EXECUTION_STATUS_PENDING,
-                    EXECUTION_STATUS_RUNNING,
-                    EXECUTION_STATUS_PAUSED,
-                ]
-            ),
+            StrategyExecution.status == EXECUTION_STATUS_PENDING,
         )
-        executions = list((await self.db.execute(stmt)).scalars().all())
         now = datetime.now(UTC)
-        for execution in executions:
+        for execution in (await self.db.execute(stmt)).scalars().all():
             execution.status = EXECUTION_STATUS_STOPPED
             execution.stopped_at = now
-            execution.error_message = "Stopped: strategy archived"
-        return executions
+            execution.error_message = "Cancelled: strategy archived"
 
     async def activate_strategy(
         self,
@@ -523,6 +576,7 @@ class StrategyService:
 
         stmt = (
             select(StrategyVersion)
+            .where(StrategyVersion.tenant_id == tenant_id)
             .where(StrategyVersion.strategy_id == strategy_id)
             .order_by(StrategyVersion.version.desc())
         )
@@ -599,38 +653,12 @@ class StrategyService:
 
         config_sexpr = template["config_sexpr"]
 
-        # Apply template parameter overrides
+        # Apply template parameter overrides. Each override is validated and must
+        # match an existing field — an unmatched override raises rather than
+        # silently doing nothing (a strategy that quietly trades the wrong
+        # symbols is a money-safety hazard, not a no-op).
         if template_params:
-            import re
-
-            # Simple string replacement for common parameters
-            if "symbols" in template_params:
-                # Parse symbols as JSON array string
-                symbols = template_params["symbols"]
-                # Replace the :symbols field in the s-expression
-                config_sexpr = re.sub(
-                    r":symbols\s+\[.*?\]",
-                    f":symbols {symbols}",
-                    config_sexpr,
-                )
-            if "timeframe" in template_params:
-                config_sexpr = re.sub(
-                    r':timeframe\s+"[^"]*"',
-                    f':timeframe "{template_params["timeframe"]}"',
-                    config_sexpr,
-                )
-            if "stop_loss_pct" in template_params:
-                config_sexpr = re.sub(
-                    r":stop-loss-pct\s+[\d.]+",
-                    f":stop-loss-pct {template_params['stop_loss_pct']}",
-                    config_sexpr,
-                )
-            if "take_profit_pct" in template_params:
-                config_sexpr = re.sub(
-                    r":take-profit-pct\s+[\d.]+",
-                    f":take-profit-pct {template_params['take_profit_pct']}",
-                    config_sexpr,
-                )
+            config_sexpr = _apply_template_params(config_sexpr, template_id, template_params)
 
         strategy_name = name or template["name"]
         strategy_description = description or template["description"]
@@ -982,14 +1010,18 @@ class StrategyService:
         user_id: UUID | None,
         reason: str | None,
     ) -> None:
-        """Release a stopped execution's sleeve back to the account (best-effort).
+        """Release a stopped execution's sleeve back to the account.
 
         The ledger owns sleeve lifecycle; closing re-homes open positions to the
         Unmanaged sleeve and free cash to Unallocated. No-op when no client is
-        wired or the execution was never funded (no sleeve). A close failure
-        (ledger down, or an in-flight order still holding reserved cash) is
-        logged, not raised — the stop itself must not fail, and the sleeve is
-        re-homed on a later close once the order settles.
+        wired or the execution was never funded (no sleeve).
+
+        On success the ``sleeve_id`` is cleared, which both marks the sleeve as
+        released and stops a closed sleeve from anchoring a new session. A close
+        failure (ledger down, or an in-flight order still holding reserved cash)
+        is logged, not raised — the stop must not fail — and ``sleeve_id`` is
+        left set so :meth:`reconcile_stranded_sleeves` retries it later. Capital
+        is therefore never silently trapped.
         """
         if ledger is None or execution.sleeve_id is None or execution.account_id is None:
             return
@@ -1005,12 +1037,54 @@ class StrategyService:
                 reason=reason or "strategy execution stopped",
             )
         except grpc.aio.AioRpcError as e:
+            # Leave sleeve_id set as the "needs release" marker for the sweeper.
             logger.warning(
                 "sleeve close deferred for execution %s (sleeve %s): %s",
                 execution.id,
                 execution.sleeve_id,
                 e.details(),
             )
+            return
+
+        execution.sleeve_id = None
+        await self.db.commit()
+
+    async def reconcile_stranded_sleeves(
+        self,
+        *,
+        ledger: LedgerClient,
+        user_id: UUID | None = None,
+        limit: int = 100,
+    ) -> int:
+        """Retry sleeve release for terminal executions whose close earlier failed.
+
+        A STOPPED/ERROR execution that still carries a ``sleeve_id`` had its
+        ledger close deferred (ledger unreachable, or an in-flight order holding
+        reserved cash). This sweeps them and retries so capital is never
+        permanently trapped. Intended to run periodically (cron/Celery), across
+        all tenants. Returns the number of sleeves successfully released.
+        """
+        stmt = (
+            select(StrategyExecution)
+            .where(
+                StrategyExecution.status.in_([EXECUTION_STATUS_STOPPED, EXECUTION_STATUS_ERROR]),
+                StrategyExecution.sleeve_id.is_not(None),
+            )
+            .limit(limit)
+        )
+        stranded = list((await self.db.execute(stmt)).scalars().all())
+        released = 0
+        for execution in stranded:
+            await self._close_sleeve(
+                execution.tenant_id,
+                execution,
+                ledger=ledger,
+                user_id=user_id,
+                reason="reconcile stranded sleeve",
+            )
+            if execution.sleeve_id is None:  # close succeeded -> released
+                released += 1
+        return released
 
     async def _get_execution_by_id(
         self, tenant_id: UUID, execution_id: UUID

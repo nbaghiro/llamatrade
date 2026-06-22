@@ -45,6 +45,32 @@ def _run(session: StrategySession, steps: list[dict[str, Bar]], holdings, equity
     return last
 
 
+def test_degraded_eval_count_surfaces_through_session():
+    """A NaN price makes the condition unevaluable; the session counts it (Issue 5A).
+
+    A raw price comparison propagates NaN deterministically (indicators absorb a
+    stray NaN by design, so they don't), making this a clean observability check.
+    """
+    price_switch = (
+        '(strategy "Price Switch" :rebalance daily '
+        "(if (> (price SPY) 0) (asset SPY :weight 100) (else (asset TLT :weight 100))))"
+    )
+    session = StrategySession(price_switch, sizing_mode=SizingMode.DRIFT)
+    start = datetime(2024, 1, 1, tzinfo=UTC)
+    # Clean warm-up, then a bad (NaN) SPY close.
+    spy = [100.0, 101.0, float("nan")]
+    tlt = [50.0, 50.0, 50.0]
+    steps = _series({"SPY": spy, "TLT": tlt}, start)
+
+    assert session.degraded_eval_count == 0
+    _run(session, steps, holdings={}, equity=10_000.0)
+    assert session.degraded_eval_count > 0
+
+    # reset() clears the counter for a fresh run.
+    session.reset()
+    assert session.degraded_eval_count == 0
+
+
 def test_cross_symbol_condition_picks_tlt_when_spy_rsi_high():
     session = StrategySession(SWITCH, sizing_mode=SizingMode.DRIFT)
     start = datetime(2024, 1, 1, tzinfo=UTC)

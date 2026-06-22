@@ -240,3 +240,30 @@ def parse_clock(data: dict[str, Any]) -> MarketClock:
         next_open=parse_timestamp(data["next_open"]),
         next_close=parse_timestamp(data["next_close"]),
     )
+
+
+class Asset(BaseModel):
+    """Tradable-asset metadata from Alpaca's /v2/assets endpoint."""
+
+    id: str
+    symbol: str
+    name: str = ""
+    asset_class: str = Field(default="us_equity", description="Alpaca 'class' field")
+    exchange: str = ""
+    status: str = Field(description="'active' or 'inactive'")
+    tradable: bool = Field(description="Whether the asset can currently be traded")
+    fractionable: bool = False
+
+
+def parse_asset(data: dict[str, Any]) -> Asset:
+    """Parse Alpaca asset JSON to an Asset model."""
+    return Asset(
+        id=data["id"],
+        symbol=data["symbol"],
+        name=data.get("name", ""),
+        asset_class=data.get("class", "us_equity"),
+        exchange=data.get("exchange", ""),
+        status=data["status"],
+        tradable=bool(data.get("tradable", False)),
+        fractionable=bool(data.get("fractionable", False)),
+    )

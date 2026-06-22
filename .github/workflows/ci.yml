@@ -129,13 +129,13 @@ jobs:
           cd services/auth && pytest tests -v --cov=src --cov-report=term-missing
           pip uninstall -y llamatrade-auth
 
-      - name: Run strategy tests with coverage
+      - name: Run strategy tests with coverage (>=80% gate)
         env:
           DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/test
           REDIS_URL: redis://localhost:6379
         run: |
           pip install -e services/strategy[dev]
-          cd services/strategy && pytest tests -v --cov=src --cov-report=term-missing
+          cd services/strategy && pytest tests -v --cov=src --cov-report=term-missing --cov-fail-under=80
 
       - name: Run agent tests with coverage
         env:
