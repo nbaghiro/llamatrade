@@ -1,19 +1,18 @@
 """Backtest service - manages backtest runs with database persistence."""
 
-import asyncio
 import logging
 import os
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from types import TracebackType
-from typing import TYPE_CHECKING, Protocol, cast
+from typing import TYPE_CHECKING, Any, Protocol, cast
 from uuid import UUID
 
 if TYPE_CHECKING:
     from llamatrade_proto import MarketDataClient
 
 from fastapi import Depends
-from sqlalchemy import func, select
+from sqlalchemy import CursorResult, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from llamatrade_db import get_db
@@ -70,9 +69,26 @@ def _normalize_status(status: str | int) -> BacktestStatus.ValueType:
 
 
 MARKET_DATA_GRPC_TARGET = os.getenv("MARKET_DATA_GRPC_TARGET", "market-data:8840")
-# Concurrent per-symbol fetches against market-data; capped so a large
-# universe doesn't stampede the service (and Alpaca's rate limiter behind it)
-MARKET_DATA_FETCH_CONCURRENCY = int(os.getenv("MARKET_DATA_FETCH_CONCURRENCY", "6"))
+# Max bars per symbol requested in the single batched GetMultiBars call (16B).
+# Set well above realistic backtest windows; the server applies its own cap too.
+MARKET_DATA_MAX_BARS_PER_SYMBOL = int(os.getenv("BACKTEST_MAX_BARS_PER_SYMBOL", "100000"))
+
+# Max page size accepted by GetBacktestTrades (14B); larger requests are clamped.
+MAX_TRADES_PAGE_SIZE = int(os.getenv("BACKTEST_MAX_TRADES_PAGE_SIZE", "200"))
+
+# --- Reaper thresholds (1A) ---------------------------------------------------
+# A RUNNING row whose worker was lost (OOM, eviction, hard kill) never runs the
+# run_backtest except handlers, so it is stranded forever. We only reap RUNNING
+# rows whose started_at predates the hard time limit by a safe grace, so a
+# legitimately long (but still alive) run is never reaped — Celery would have
+# killed it at the hard limit anyway.
+_TASK_TIME_LIMIT_SECONDS = int(os.getenv("BACKTEST_TASK_TIME_LIMIT", "3600"))
+_REAPER_RUNNING_GRACE_SECONDS = int(os.getenv("BACKTEST_REAPER_RUNNING_GRACE", "300"))
+# A PENDING row older than this (but younger than the fail threshold) is assumed
+# to have lost its enqueue and is re-driven; older than the fail threshold it is
+# failed as "never picked up".
+_REAPER_PENDING_REQUEUE_SECONDS = int(os.getenv("BACKTEST_REAPER_PENDING_REQUEUE", "300"))
+_REAPER_PENDING_FAIL_SECONDS = int(os.getenv("BACKTEST_REAPER_PENDING_FAIL", "3600"))
 
 logger = logging.getLogger(__name__)
 
@@ -191,7 +207,11 @@ class GRPCMarketDataClient:
         start_date: date,
         end_date: date,
     ) -> dict[str, list[dict[str, object]]]:
-        """Fetch historical bars using gRPC.
+        """Fetch historical bars for all symbols in a single batched RPC (16B).
+
+        The market-data service fans out across symbols server-side, so one
+        ``GetMultiBars`` call replaces N per-symbol round-trips. A symbol with no
+        data maps to an empty list; the run path surfaces truly-missing data.
 
         Raises:
             MarketDataError: If the timeframe is unsupported or the fetch fails.
@@ -219,25 +239,27 @@ class GRPCMarketDataClient:
                 f"Unsupported timeframe '{timeframe}'. Must be one of: {', '.join(sorted(tf_map))}"
             )
 
+        # Pre-seed every requested symbol so absent ones map to an empty list;
+        # the run path surfaces truly-missing data.
+        result: dict[str, list[dict[str, object]]] = {symbol: [] for symbol in symbols}
+        requested = set(symbols)
+
         try:
             client = await self._get_client()
-        except Exception as e:
-            raise MarketDataError(f"Failed to fetch bars: {e}") from e
-
-        # Fetch symbols concurrently over the shared channel, bounded by a
-        # semaphore so large universes don't stampede the market-data service
-        semaphore = asyncio.Semaphore(MARKET_DATA_FETCH_CONCURRENCY)
-
-        async def fetch_symbol(symbol: str) -> list[dict[str, object]]:
-            async with semaphore:
-                bars = await client.get_historical_bars(
-                    symbol=symbol,
-                    start=datetime.combine(start_date, datetime.min.time()).replace(tzinfo=UTC),
-                    end=datetime.combine(end_date, datetime.max.time()).replace(tzinfo=UTC),
-                    timeframe=grpc_timeframe,
-                )
-
-                return [
+            # Consume the server-streamed bars incrementally (13B): each bar is
+            # converted and appended, so we never buffer the whole response as a
+            # single list before building the engine's input. The stream arrives
+            # in timestamp order, so each symbol's list stays chronological.
+            async for bar in client.stream_historical_bars(
+                symbols=symbols,
+                start=datetime.combine(start_date, datetime.min.time()).replace(tzinfo=UTC),
+                end=datetime.combine(end_date, datetime.max.time()).replace(tzinfo=UTC),
+                timeframe=grpc_timeframe,
+                limit=MARKET_DATA_MAX_BARS_PER_SYMBOL,
+            ):
+                if bar.symbol not in requested:
+                    continue
+                result[bar.symbol].append(
                     {
                         # Normalize to tz-aware UTC so comparisons with the
                         # backtest window are well-defined
@@ -250,29 +272,11 @@ class GRPCMarketDataClient:
                         "close": float(bar.close),
                         "volume": bar.volume,
                     }
-                    for bar in bars
-                ]
+                )
+        except Exception as e:
+            raise MarketDataError(f"Failed to fetch bars: {e}") from e
 
-        fetched = await asyncio.gather(
-            *(fetch_symbol(symbol) for symbol in symbols), return_exceptions=True
-        )
-
-        # Aggregate per-symbol failures into one error naming the symbols
-        failures = [
-            (symbol, res)
-            for symbol, res in zip(symbols, fetched, strict=True)
-            if isinstance(res, BaseException)
-        ]
-        if failures:
-            failed_names = ", ".join(symbol for symbol, _ in failures)
-            raise MarketDataError(
-                f"Failed to fetch bars for: {failed_names} ({failures[0][1]})"
-            ) from failures[0][1]
-
-        return {
-            symbol: cast(list[dict[str, object]], res)
-            for symbol, res in zip(symbols, fetched, strict=True)
-        }
+        return result
 
     async def close(self) -> None:
         """Close the client."""
@@ -487,6 +491,28 @@ class BacktestService:
             return None
 
         return self._to_result_response(backtest, backtest_result)
+
+    async def get_backtest_trades(
+        self,
+        backtest_id: UUID,
+        tenant_id: UUID,
+        page: int = 1,
+        page_size: int = 50,
+    ) -> tuple[list[TradeRecord], int]:
+        """Return one page of a completed backtest's trades plus the total count.
+
+        Tenant-scoped via ``get_results``. Pagination bounds the response size so
+        a pathological trade count never bloats a single read (14B).
+        """
+        results = await self.get_results(backtest_id, tenant_id)
+        if results is None:
+            return [], 0
+
+        page = max(1, page)
+        page_size = max(1, min(page_size, MAX_TRADES_PAGE_SIZE))
+        start = (page - 1) * page_size
+        total = len(results.trades)
+        return results.trades[start : start + page_size], total
 
     async def run_backtest(
         self,
@@ -840,10 +866,27 @@ class BacktestService:
         )
         self.db.add(backtest_result)
 
-        # Update backtest status
-        backtest.status = BACKTEST_STATUS_COMPLETED
-        backtest.completed_at = datetime.now(UTC)
+        # Finalize atomically (3A): only complete if the row is still RUNNING.
+        # A CancelBacktest that committed CANCELLED between the refresh above and
+        # here would otherwise be clobbered by an unconditional COMPLETED write.
+        completed_at = datetime.now(UTC)
+        finalize = cast(
+            CursorResult[Any],
+            await self.db.execute(
+                update(Backtest)
+                .where(
+                    Backtest.id == backtest.id,
+                    Backtest.status == BACKTEST_STATUS_RUNNING,
+                )
+                .values(status=BACKTEST_STATUS_COMPLETED, completed_at=completed_at)
+            ),
+        )
+        if finalize.rowcount == 0:
+            # Lost the race to a concurrent cancel — discard the result.
+            await self.db.rollback()
+            raise BacktestCancelled("Backtest was cancelled during execution")
         await self.db.commit()
+        await self.db.refresh(backtest)
         await self.db.refresh(backtest_result)
 
         # Publish completion
@@ -935,6 +978,29 @@ class BacktestService:
         metrics.backtest.job(state="enqueued")
         return str(task.id)
 
+    async def fail_backtest(
+        self,
+        backtest_id: UUID,
+        tenant_id: UUID,
+        error_message: str,
+    ) -> bool:
+        """Mark a backtest FAILED.
+
+        Compensating action (2A): ``create_backtest`` commits the PENDING row
+        before the Celery enqueue, so a failed enqueue would strand a zombie
+        PENDING row. Failing it here keeps the DB state consistent with the
+        error the caller receives.
+        """
+        backtest = await self._get_backtest_by_id(tenant_id, backtest_id)
+        if not backtest:
+            return False
+        backtest.status = BACKTEST_STATUS_FAILED
+        backtest.error_message = error_message
+        backtest.completed_at = datetime.now(UTC)
+        await self.db.commit()
+        metrics.backtest.job(state="failed")
+        return True
+
     async def get_task_status(self, task_id: str) -> dict[str, object]:
         """Get the status of a Celery task.
 
@@ -952,6 +1018,97 @@ class BacktestService:
             "status": status,
             "result": result.result if is_ready else None,
         }
+
+    async def reap_stale_backtests(self, now: datetime | None = None) -> dict[str, int]:
+        """Recover orphaned backtests; the only automatic recovery path (1A).
+
+        - **Stale RUNNING** (started_at older than the hard time limit + grace):
+          the worker was lost before its except handlers could run, so the row
+          is stranded. Fail it as worker-lost.
+        - **Stale PENDING** in the requeue window: the enqueue was likely lost;
+          re-drive it. (A duplicate run is harmless — the one-result-per-backtest
+          unique constraint rejects a second result row.)
+        - **Stale PENDING** past the fail threshold: never picked up; fail it.
+
+        Args:
+            now: Override for the current time (testing/time-travel). Defaults to
+                ``datetime.now(UTC)``.
+
+        Returns:
+            Counts: ``running_failed`` / ``pending_requeued`` / ``pending_failed``.
+        """
+        now = now or datetime.now(UTC)
+        running_cutoff = now - timedelta(
+            seconds=_TASK_TIME_LIMIT_SECONDS + _REAPER_RUNNING_GRACE_SECONDS
+        )
+        requeue_cutoff = now - timedelta(seconds=_REAPER_PENDING_REQUEUE_SECONDS)
+        fail_cutoff = now - timedelta(seconds=_REAPER_PENDING_FAIL_SECONDS)
+
+        counts = {"running_failed": 0, "pending_requeued": 0, "pending_failed": 0}
+
+        # 1) Orphaned RUNNING -> FAILED (worker lost).
+        running_rows = (
+            (
+                await self.db.execute(
+                    select(Backtest).where(
+                        Backtest.status == BACKTEST_STATUS_RUNNING,
+                        Backtest.started_at.is_not(None),
+                        Backtest.started_at < running_cutoff,
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        for bt in running_rows:
+            bt.status = BACKTEST_STATUS_FAILED
+            bt.error_message = "Backtest worker was lost; run reaped after exceeding the time limit"
+            bt.completed_at = now
+            counts["running_failed"] += 1
+
+        # 2) Orphaned PENDING -> re-drive (requeue window) or FAIL (too old).
+        pending_rows = (
+            (
+                await self.db.execute(
+                    select(Backtest).where(
+                        Backtest.status == BACKTEST_STATUS_PENDING,
+                        Backtest.created_at < requeue_cutoff,
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        to_requeue: list[Backtest] = []
+        for bt in pending_rows:
+            if bt.created_at < fail_cutoff:
+                bt.status = BACKTEST_STATUS_FAILED
+                bt.error_message = "Backtest was never picked up by a worker; failed by reaper"
+                bt.completed_at = now
+                counts["pending_failed"] += 1
+            else:
+                to_requeue.append(bt)
+
+        # Durably persist the status writes before re-enqueueing, so a requeued
+        # row is never lost if the broker call below fails mid-batch.
+        await self.db.commit()
+
+        if to_requeue:
+            from src.workers import celery_tasks
+
+            run_task = getattr(celery_tasks, "run_backtest_task")
+            for bt in to_requeue:
+                run_task.delay(str(bt.id), str(bt.tenant_id))
+                counts["pending_requeued"] += 1
+
+        for _ in range(counts["running_failed"] + counts["pending_failed"]):
+            metrics.backtest.job(state="failed")
+        for _ in range(counts["pending_requeued"]):
+            metrics.backtest.job(state="enqueued")
+
+        if any(counts.values()):
+            logger.warning("Reaper recovered stale backtests: %s", counts)
+        return counts
 
     # ===================
     # Private helpers

@@ -60,7 +60,11 @@ class MockServicerContext:
 class FakeStore:
     """In-memory backtest store shared by all fake DB sessions."""
 
-    def __init__(self) -> None:
+    def __init__(self, cancel_on_finalize: bool = False) -> None:
+        # When True, the conditional terminal UPDATE reports 0 rows (3A): a
+        # concurrent CancelBacktest committed CANCELLED first, so the run must
+        # discard its result rather than overwrite the cancel.
+        self.cancel_on_finalize = cancel_on_finalize
         self.strategy = MagicMock()
         self.strategy.id = TEST_STRATEGY_ID
         self.strategy.tenant_id = TEST_TENANT_ID
@@ -89,7 +93,10 @@ class FakeStore:
 
         session = AsyncMock()
         session.add = MagicMock()
-        session.commit = AsyncMock()
+        # Staged rows are promoted to the shared store only on commit, and
+        # dropped on rollback — so a discarded result (3A cancel race) truly
+        # disappears rather than lingering from the add().
+        pending: dict[str, object] = {}
 
         def handle_add(obj) -> None:
             from llamatrade_db.models.backtest import Backtest, BacktestResult
@@ -97,13 +104,27 @@ class FakeStore:
             if isinstance(obj, Backtest):
                 obj.id = uuid4()
                 obj.created_at = datetime.now(UTC)
-                store.backtest = obj
+                pending["backtest"] = obj
             elif isinstance(obj, BacktestResult):
                 obj.id = uuid4()
                 obj.created_at = datetime.now(UTC)
-                store.result = obj
+                pending["result"] = obj
 
         session.add.side_effect = handle_add
+
+        async def handle_commit() -> None:
+            if "backtest" in pending:
+                store.backtest = pending["backtest"]
+            if "result" in pending:
+                store.result = pending["result"]
+            pending.clear()
+
+        session.commit = AsyncMock(side_effect=handle_commit)
+
+        async def handle_rollback() -> None:
+            pending.clear()
+
+        session.rollback = AsyncMock(side_effect=handle_rollback)
 
         async def handle_refresh(obj) -> None:
             return None
@@ -111,8 +132,21 @@ class FakeStore:
         session.refresh = AsyncMock(side_effect=handle_refresh)
 
         async def handle_execute(stmt):
+            from sqlalchemy.sql.dml import Update
+
             from llamatrade_db.models.backtest import Backtest, BacktestResult
             from llamatrade_db.models.strategy import Strategy, StrategyVersion
+
+            if isinstance(stmt, Update):
+                # 3A conditional terminal write (WHERE status=RUNNING).
+                if store.cancel_on_finalize:
+                    if store.backtest is not None:
+                        store.backtest.status = backtest_pb2.BACKTEST_STATUS_CANCELLED
+                    return MagicMock(rowcount=0)
+                if store.backtest is not None:
+                    for col, val in stmt._values.items():
+                        setattr(store.backtest, col.name, getattr(val, "value", val))
+                return MagicMock(rowcount=1)
 
             entity = stmt.column_descriptions[0]["entity"]
             if entity is Strategy:
@@ -296,6 +330,30 @@ class TestE2ELifecycle:
         # A failure progress update was published WITH explicit FAILED status —
         # consumers must never have to infer status from the progress number
         assert any(status == BACKTEST_STATUS_FAILED for _, _, status in quiet_progress)
+
+    async def test_cancel_during_finalize_discards_result(
+        self, eager_celery, quiet_progress, monkeypatch
+    ):
+        """3A: a cancel that lands during finalize keeps CANCELLED and drops the result."""
+        from src.grpc.servicer import BacktestServicer
+
+        store = FakeStore(cancel_on_finalize=True)
+        servicer = BacktestServicer()
+
+        @asynccontextmanager
+        async def fake_get_db():
+            yield store.make_session()
+
+        monkeypatch.setattr(servicer, "_get_db", fake_get_db)
+        patch_worker_dependencies(monkeypatch, store, make_fake_market_client())
+
+        await servicer.RunBacktest(make_run_request(), MockServicerContext())
+
+        assert store.backtest is not None
+        assert store.backtest.status == backtest_pb2.BACKTEST_STATUS_CANCELLED
+        assert store.result is None, (
+            "A result must not be persisted when a cancel wins the finalize race"
+        )
 
     async def test_get_backtest_for_pending_run_has_no_results(self, servicer, store):
         """List/poll responses for unexecuted runs must stay slim."""

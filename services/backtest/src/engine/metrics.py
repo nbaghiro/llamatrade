@@ -75,8 +75,12 @@ def calculate_max_drawdown(equity: np.ndarray) -> tuple[float, int]:
         return 0.0, 0
 
     peak = np.maximum.accumulate(equity)
-    drawdown = (peak - equity) / peak
-    max_drawdown = float(np.max(drawdown))
+    # Guard against a non-positive peak (equity that started at/below zero):
+    # (peak - equity) / peak would be inf/nan and poison np.max (7A).
+    with np.errstate(divide="ignore", invalid="ignore"):
+        drawdown = np.where(peak > 0, (peak - equity) / peak, 0.0)
+    drawdown = np.nan_to_num(drawdown, nan=0.0, posinf=0.0, neginf=0.0)
+    max_drawdown = float(np.max(drawdown)) if drawdown.size else 0.0
 
     # Calculate duration
     max_dd_duration = 0
@@ -180,18 +184,26 @@ def calculate_returns(
         return 0.0, 0.0, []
 
     final = float(equity[-1])
-    total_return = (final - initial_capital) / initial_capital
+    total_return = (final - initial_capital) / initial_capital if initial_capital > 0 else 0.0
 
-    # Annual return (assuming 252 trading days)
-    if num_days > 0:
+    # Annual return (assuming 252 trading days). When the portfolio is wiped out
+    # (final equity <= 0, i.e. 1 + total_return <= 0) a fractional power of a
+    # negative base is complex/nan, so clamp to -100% annualized (7A).
+    if num_days <= 0:
+        annual_return = 0.0
+    elif 1 + total_return > 0:
         annual_return = ((1 + total_return) ** (252 / num_days)) - 1
     else:
-        annual_return = 0.0
+        annual_return = -1.0
 
-    # Daily returns
+    # Daily returns. Skip non-positive prior-equity denominators so a zero/
+    # negative equity point never yields inf/nan (7A).
     daily_returns_list: list[float]
     if len(equity) > 1:
-        daily_returns_arr = np.diff(equity) / equity[:-1]
+        prev = equity[:-1]
+        with np.errstate(divide="ignore", invalid="ignore"):
+            daily_returns_arr = np.where(prev > 0, np.diff(equity) / prev, 0.0)
+        daily_returns_arr = np.nan_to_num(daily_returns_arr, nan=0.0, posinf=0.0, neginf=0.0)
         daily_returns_list = cast(list[float], daily_returns_arr.tolist())
     else:
         daily_returns_list = []

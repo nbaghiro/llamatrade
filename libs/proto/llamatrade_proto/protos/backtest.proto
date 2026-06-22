@@ -42,7 +42,7 @@ message BacktestConfig {
   repeated string symbols = 6;
 
   // Execution settings
-  Decimal commission = 7;          // Per-trade commission
+  Decimal commission = 7;          // Flat fee per fill (entry and each exit), not a percentage
   Decimal slippage_percent = 8;    // Simulated slippage
   bool allow_shorting = 9;
   Decimal max_position_size = 10;  // As percent of portfolio
@@ -237,6 +237,20 @@ message BacktestProgressUpdate {
   BacktestMetrics partial_metrics = 7;
 }
 
+// Get a page of a completed backtest's trades. GetBacktest returns only a
+// bounded preview of trades; this RPC pages through the full trade log so a
+// pathological trade count never bloats a single response.
+message GetBacktestTradesRequest {
+  TenantContext context = 1;
+  string backtest_id = 2;
+  PaginationRequest pagination = 3;
+}
+
+message GetBacktestTradesResponse {
+  repeated BacktestTrade trades = 1;
+  PaginationResponse pagination = 2;
+}
+
 // Compare backtests
 message CompareBacktestsRequest {
   TenantContext context = 1;
@@ -265,4 +279,5 @@ service BacktestService {
 
   // Analysis
   rpc CompareBacktests(CompareBacktestsRequest) returns (CompareBacktestsResponse);
+  rpc GetBacktestTrades(GetBacktestTradesRequest) returns (GetBacktestTradesResponse);
 }

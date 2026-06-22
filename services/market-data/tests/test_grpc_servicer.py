@@ -281,6 +281,38 @@ class TestGetMultiBars:
                 await servicer.get_multi_bars(request, mock_context)
 
 
+# === StreamHistoricalBars Tests (13B) ===
+
+
+class TestStreamHistoricalBars:
+    """Tests for the StreamHistoricalBars server-streaming method."""
+
+    async def test_stream_historical_bars_success(self, servicer, mock_context, sample_bar):
+        """All symbols' bars are streamed (server-side fan-out via get_multi_bars)."""
+        mock_client = MagicMock()
+        mock_client.get_multi_bars = AsyncMock(
+            return_value={"AAPL": [sample_bar], "GOOGL": [sample_bar]}
+        )
+
+        with patch("src.grpc.servicer.get_market_data_service", return_value=mock_client):
+            request = create_mock_multi_bars_request(symbols=["AAPL", "GOOGL"])
+            bars = [bar async for bar in servicer.stream_historical_bars(request, mock_context)]
+
+            assert len(bars) == 2
+            mock_client.get_multi_bars.assert_called_once()
+
+    async def test_stream_historical_bars_error(self, servicer, mock_context):
+        """A fetch failure surfaces as ConnectError before any bar is yielded."""
+        mock_client = MagicMock()
+        mock_client.get_multi_bars = AsyncMock(side_effect=Exception("API error"))
+
+        with patch("src.grpc.servicer.get_market_data_service", return_value=mock_client):
+            request = create_mock_multi_bars_request(symbols=["AAPL"])
+
+            with pytest.raises(ConnectError, match="Failed to fetch historical bars"):
+                _ = [bar async for bar in servicer.stream_historical_bars(request, mock_context)]
+
+
 # === GetSnapshot Tests ===
 
 

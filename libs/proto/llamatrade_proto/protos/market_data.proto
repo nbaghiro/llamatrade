@@ -129,6 +129,17 @@ message BarList {
   repeated Bar bars = 1;
 }
 
+// Stream historical bars for many symbols in one call, in timestamp order, so a
+// consumer (e.g. the backtest engine) can process incrementally without the
+// server materializing the entire response as one buffer.
+message StreamHistoricalBarsRequest {
+  repeated string symbols = 1;
+  Timestamp start = 2;
+  Timestamp end = 3;
+  Timeframe timeframe = 4;
+  int32 limit = 5;
+}
+
 // Stream quotes request
 message StreamQuotesRequest {
   repeated string symbols = 1;
@@ -174,6 +185,7 @@ service MarketDataService {
   // Historical data
   rpc GetHistoricalBars(GetHistoricalBarsRequest) returns (GetHistoricalBarsResponse);
   rpc GetMultiBars(GetMultiBarsRequest) returns (GetMultiBarsResponse);
+  rpc StreamHistoricalBars(StreamHistoricalBarsRequest) returns (stream Bar);
 
   // Snapshots
   rpc GetSnapshot(GetSnapshotRequest) returns (Snapshot);

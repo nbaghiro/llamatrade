@@ -1015,6 +1015,7 @@ class TestZeroVsNullSemantics:
         mock_db.execute.side_effect = [
             MagicMock(scalar_one_or_none=MagicMock(return_value=mock_backtest)),
             MagicMock(scalar_one_or_none=MagicMock(return_value=mock_strategy_version)),
+            MagicMock(rowcount=1),  # 3A finalize conditional UPDATE
         ]
 
         saved = []
@@ -1058,6 +1059,7 @@ class TestZeroVsNullSemantics:
         mock_db.execute.side_effect = [
             MagicMock(scalar_one_or_none=MagicMock(return_value=mock_backtest)),
             MagicMock(scalar_one_or_none=MagicMock(return_value=mock_strategy_version)),
+            MagicMock(rowcount=1),  # 3A finalize conditional UPDATE
         ]
 
         saved = []
@@ -1201,70 +1203,157 @@ class TestCancellationFlow:
         assert flagged == [str(TEST_BACKTEST_ID)]
 
 
-class TestParallelFetching:
-    """Concurrent per-symbol fetching in GRPCMarketDataClient."""
+def _bar(symbol: str, close: str, ts: datetime):
+    from llamatrade_proto.clients.market_data import Bar
+
+    return Bar(
+        symbol=symbol,
+        timestamp=ts,
+        open=Decimal(close),
+        high=Decimal(close),
+        low=Decimal(close),
+        close=Decimal(close),
+        volume=10,
+    )
+
+
+class TestStreamingFetch:
+    """Single streamed StreamHistoricalBars fetch in GRPCMarketDataClient (13B/16B)."""
 
     @staticmethod
-    def _make_client_with_fake_grpc(fetch_fn):
+    def _make_client_with_fake_grpc(bars=None, *, raises=None):
         from src.services.backtest_service import GRPCMarketDataClient
+
+        calls = []
+
+        def stream_fn(*, symbols, start, end, timeframe, limit):
+            calls.append(list(symbols))
+
+            async def gen():
+                if raises is not None:
+                    raise raises
+                for bar in bars or []:
+                    yield bar
+
+            return gen()
 
         client = GRPCMarketDataClient("unused:1")
         fake_grpc = MagicMock()
-        fake_grpc.get_historical_bars = fetch_fn
+        fake_grpc.stream_historical_bars = stream_fn
         client._client = fake_grpc
-        return client
+        return client, calls
 
     @pytest.mark.asyncio
-    async def test_symbols_fetched_concurrently_with_cap(self):
-        """Fetches overlap (not sequential) but never exceed the semaphore cap."""
-        import asyncio
-
-        from src.services.backtest_service import MARKET_DATA_FETCH_CONCURRENCY
-
-        active = 0
-        max_active = 0
-
-        async def slow_fetch(symbol, start, end, timeframe):
-            nonlocal active, max_active
-            active += 1
-            max_active = max(max_active, active)
-            await asyncio.sleep(0.02)
-            active -= 1
-            return []
-
-        client = self._make_client_with_fake_grpc(slow_fetch)
-        symbols = [f"SYM{i}" for i in range(20)]
-
+    async def test_one_streamed_call_for_all_symbols(self):
+        """fetch_bars issues a single streaming call covering every symbol."""
+        bars = [
+            _bar("AAPL", "150", datetime(2024, 1, 2, tzinfo=UTC)),
+            _bar("SPY", "400", datetime(2024, 1, 2, tzinfo=UTC)),
+            _bar("TLT", "90", datetime(2024, 1, 2, tzinfo=UTC)),
+        ]
+        client, calls = self._make_client_with_fake_grpc(bars)
         result = await client.fetch_bars(
-            symbols=symbols,
+            symbols=["AAPL", "SPY", "TLT"],
             timeframe="1D",
             start_date=date(2024, 1, 1),
             end_date=date(2024, 1, 31),
         )
 
-        assert set(result) == set(symbols)
-        assert max_active > 1, "fetches ran sequentially"
-        assert max_active <= MARKET_DATA_FETCH_CONCURRENCY
+        assert len(calls) == 1, "must batch into one streaming RPC, not N per-symbol calls"
+        assert calls[0] == ["AAPL", "SPY", "TLT"]
+        assert set(result) == {"AAPL", "SPY", "TLT"}
+        assert result["AAPL"][0]["timestamp"].tzinfo is not None
 
     @pytest.mark.asyncio
-    async def test_partial_failures_aggregate_symbol_names(self):
-        """One failing symbol must produce an error naming it."""
+    async def test_missing_symbol_maps_to_empty_list(self):
+        """A symbol with no streamed bars is returned as an empty list."""
+        bars = [_bar("SPY", "400", datetime(2024, 1, 2, tzinfo=UTC))]
+        client, _ = self._make_client_with_fake_grpc(bars)
+        result = await client.fetch_bars(
+            symbols=["AAPL", "SPY"],
+            timeframe="1D",
+            start_date=date(2024, 1, 1),
+            end_date=date(2024, 1, 31),
+        )
+
+        assert result["AAPL"] == []
+        assert len(result["SPY"]) == 1
+
+    @pytest.mark.asyncio
+    async def test_stream_failure_raises_market_data_error(self):
+        """A failed stream surfaces as MarketDataError."""
         from src.services.backtest_service import MarketDataError
 
-        async def flaky_fetch(symbol, start, end, timeframe):
-            if symbol in ("BAD1", "BAD2"):
-                raise RuntimeError(f"upstream error for {symbol}")
-            return []
+        client, _ = self._make_client_with_fake_grpc(raises=RuntimeError("upstream down"))
 
-        client = self._make_client_with_fake_grpc(flaky_fetch)
-
-        with pytest.raises(MarketDataError) as exc_info:
+        with pytest.raises(MarketDataError, match="Failed to fetch bars"):
             await client.fetch_bars(
-                symbols=["GOOD", "BAD1", "BAD2"],
+                symbols=["AAPL"],
                 timeframe="1D",
                 start_date=date(2024, 1, 1),
                 end_date=date(2024, 1, 31),
             )
 
-        assert "BAD1" in str(exc_info.value)
-        assert "BAD2" in str(exc_info.value)
+
+class TestGetBacktestTradesService:
+    """Service-layer pagination for trades (14B)."""
+
+    @staticmethod
+    def _trades(n: int):
+        from src.models import TradeRecord
+
+        return [
+            TradeRecord(
+                entry_date=datetime(2024, 1, 2, tzinfo=UTC),
+                exit_date=datetime(2024, 1, 3, tzinfo=UTC),
+                symbol=f"S{i}",
+                side="long",
+                entry_price=1.0,
+                exit_price=1.0,
+                quantity=1.0,
+                pnl=0.0,
+                pnl_percent=0.0,
+                commission=0.0,
+            )
+            for i in range(n)
+        ]
+
+    @pytest.mark.asyncio
+    async def test_paginates_slice_and_total(self, mock_db):
+        service = BacktestService(mock_db, market_data_client=AsyncMock())
+        fake_results = MagicMock()
+        fake_results.trades = self._trades(10)
+        service.get_results = AsyncMock(return_value=fake_results)
+
+        page, total = await service.get_backtest_trades(
+            TEST_BACKTEST_ID, TEST_TENANT_ID, page=2, page_size=3
+        )
+
+        assert total == 10
+        assert [t.symbol for t in page] == ["S3", "S4", "S5"]
+
+    @pytest.mark.asyncio
+    async def test_page_size_is_clamped(self, mock_db):
+        from src.services.backtest_service import MAX_TRADES_PAGE_SIZE
+
+        service = BacktestService(mock_db, market_data_client=AsyncMock())
+        fake_results = MagicMock()
+        fake_results.trades = self._trades(MAX_TRADES_PAGE_SIZE + 50)
+        service.get_results = AsyncMock(return_value=fake_results)
+
+        page, total = await service.get_backtest_trades(
+            TEST_BACKTEST_ID, TEST_TENANT_ID, page=1, page_size=10_000
+        )
+
+        assert total == MAX_TRADES_PAGE_SIZE + 50
+        assert len(page) == MAX_TRADES_PAGE_SIZE  # clamped
+
+    @pytest.mark.asyncio
+    async def test_no_results_returns_empty(self, mock_db):
+        service = BacktestService(mock_db, market_data_client=AsyncMock())
+        service.get_results = AsyncMock(return_value=None)
+
+        page, total = await service.get_backtest_trades(TEST_BACKTEST_ID, TEST_TENANT_ID)
+
+        assert page == []
+        assert total == 0

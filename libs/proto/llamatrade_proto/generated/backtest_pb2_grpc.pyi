@@ -45,6 +45,7 @@ class BacktestServiceStub:
     """Real-time progress"""
     CompareBacktests: _grpc.UnaryUnaryMultiCallable[_backtest_pb2.CompareBacktestsRequest, _backtest_pb2.CompareBacktestsResponse]
     """Analysis"""
+    GetBacktestTrades: _grpc.UnaryUnaryMultiCallable[_backtest_pb2.GetBacktestTradesRequest, _backtest_pb2.GetBacktestTradesResponse]
 
 @_typing.type_check_only
 class BacktestServiceAsyncStub(BacktestServiceStub):
@@ -63,6 +64,7 @@ class BacktestServiceAsyncStub(BacktestServiceStub):
     """Real-time progress"""
     CompareBacktests: _aio.UnaryUnaryMultiCallable[_backtest_pb2.CompareBacktestsRequest, _backtest_pb2.CompareBacktestsResponse]  # type: ignore[assignment]
     """Analysis"""
+    GetBacktestTrades: _aio.UnaryUnaryMultiCallable[_backtest_pb2.GetBacktestTradesRequest, _backtest_pb2.GetBacktestTradesResponse]  # type: ignore[assignment]
 
 class BacktestServiceServicer(metaclass=_abc_1.ABCMeta):
     """=============================================================================
@@ -114,5 +116,12 @@ class BacktestServiceServicer(metaclass=_abc_1.ABCMeta):
         context: _ServicerContext,
     ) -> _typing.Union[_backtest_pb2.CompareBacktestsResponse, _abc.Awaitable[_backtest_pb2.CompareBacktestsResponse]]:
         """Analysis"""
+
+    @_abc_1.abstractmethod
+    def GetBacktestTrades(
+        self,
+        request: _backtest_pb2.GetBacktestTradesRequest,
+        context: _ServicerContext,
+    ) -> _typing.Union[_backtest_pb2.GetBacktestTradesResponse, _abc.Awaitable[_backtest_pb2.GetBacktestTradesResponse]]: ...
 
 def add_BacktestServiceServicer_to_server(servicer: BacktestServiceServicer, server: _typing.Union[_grpc.Server, _aio.Server]) -> None: ...

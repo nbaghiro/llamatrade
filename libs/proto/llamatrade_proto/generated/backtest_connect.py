@@ -34,6 +34,9 @@ class BacktestService(Protocol):
     async def compare_backtests(self, request: backtest__pb2.CompareBacktestsRequest, ctx: RequestContext) -> backtest__pb2.CompareBacktestsResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
+    async def get_backtest_trades(self, request: backtest__pb2.GetBacktestTradesRequest, ctx: RequestContext) -> backtest__pb2.GetBacktestTradesResponse:
+        raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
+
 
 class BacktestServiceASGIApplication(ConnectASGIApplication[BacktestService]):
     def __init__(self, service: BacktestService | AsyncGenerator[BacktestService], *, interceptors: Iterable[Interceptor]=(), read_max_bytes: int | None = None) -> None:
@@ -99,6 +102,16 @@ class BacktestServiceASGIApplication(ConnectASGIApplication[BacktestService]):
                         idempotency_level=IdempotencyLevel.UNKNOWN,
                     ),
                     function=svc.compare_backtests,
+                ),
+                "/llamatrade.BacktestService/GetBacktestTrades": Endpoint.unary(
+                    method=MethodInfo(
+                        name="GetBacktestTrades",
+                        service_name="llamatrade.BacktestService",
+                        input=backtest__pb2.GetBacktestTradesRequest,
+                        output=backtest__pb2.GetBacktestTradesResponse,
+                        idempotency_level=IdempotencyLevel.UNKNOWN,
+                    ),
+                    function=svc.get_backtest_trades,
                 ),
             },
             interceptors=interceptors,
@@ -232,6 +245,26 @@ class BacktestServiceClient(ConnectClient):
             timeout_ms=timeout_ms,
         )
 
+    async def get_backtest_trades(
+        self,
+        request: backtest__pb2.GetBacktestTradesRequest,
+        *,
+        headers: Headers | Mapping[str, str] | None = None,
+        timeout_ms: int | None = None,
+    ) -> backtest__pb2.GetBacktestTradesResponse:
+        return await self.execute_unary(
+            request=request,
+            method=MethodInfo(
+                name="GetBacktestTrades",
+                service_name="llamatrade.BacktestService",
+                input=backtest__pb2.GetBacktestTradesRequest,
+                output=backtest__pb2.GetBacktestTradesResponse,
+                idempotency_level=IdempotencyLevel.UNKNOWN,
+            ),
+            headers=headers,
+            timeout_ms=timeout_ms,
+        )
+
 
 class BacktestServiceSync(Protocol):
     def run_backtest(self, request: backtest__pb2.RunBacktestRequest, ctx: RequestContext) -> backtest__pb2.RunBacktestResponse:
@@ -245,6 +278,8 @@ class BacktestServiceSync(Protocol):
     def stream_backtest_progress(self, request: backtest__pb2.StreamBacktestProgressRequest, ctx: RequestContext) -> Iterator[backtest__pb2.BacktestProgressUpdate]:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
     def compare_backtests(self, request: backtest__pb2.CompareBacktestsRequest, ctx: RequestContext) -> backtest__pb2.CompareBacktestsResponse:
+        raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
+    def get_backtest_trades(self, request: backtest__pb2.GetBacktestTradesRequest, ctx: RequestContext) -> backtest__pb2.GetBacktestTradesResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
 
@@ -311,6 +346,16 @@ class BacktestServiceWSGIApplication(ConnectWSGIApplication):
                         idempotency_level=IdempotencyLevel.UNKNOWN,
                     ),
                     function=service.compare_backtests,
+                ),
+                "/llamatrade.BacktestService/GetBacktestTrades": EndpointSync.unary(
+                    method=MethodInfo(
+                        name="GetBacktestTrades",
+                        service_name="llamatrade.BacktestService",
+                        input=backtest__pb2.GetBacktestTradesRequest,
+                        output=backtest__pb2.GetBacktestTradesResponse,
+                        idempotency_level=IdempotencyLevel.UNKNOWN,
+                    ),
+                    function=service.get_backtest_trades,
                 ),
             },
             interceptors=interceptors,
@@ -438,6 +483,26 @@ class BacktestServiceClientSync(ConnectClientSync):
                 service_name="llamatrade.BacktestService",
                 input=backtest__pb2.CompareBacktestsRequest,
                 output=backtest__pb2.CompareBacktestsResponse,
+                idempotency_level=IdempotencyLevel.UNKNOWN,
+            ),
+            headers=headers,
+            timeout_ms=timeout_ms,
+        )
+
+    def get_backtest_trades(
+        self,
+        request: backtest__pb2.GetBacktestTradesRequest,
+        *,
+        headers: Headers | Mapping[str, str] | None = None,
+        timeout_ms: int | None = None,
+    ) -> backtest__pb2.GetBacktestTradesResponse:
+        return self.execute_unary(
+            request=request,
+            method=MethodInfo(
+                name="GetBacktestTrades",
+                service_name="llamatrade.BacktestService",
+                input=backtest__pb2.GetBacktestTradesRequest,
+                output=backtest__pb2.GetBacktestTradesResponse,
                 idempotency_level=IdempotencyLevel.UNKNOWN,
             ),
             headers=headers,

@@ -177,7 +177,14 @@ class TestMarketDataClientInit:
         interceptor = object()
         client = MarketDataClient(interceptors=[interceptor])
 
-        assert client._interceptors == [interceptor]
+        from llamatrade_proto.interceptors import (
+            ServiceAuthClientInterceptor,
+            TelemetryClientInterceptor,
+        )
+
+        assert isinstance(client._interceptors[0], TelemetryClientInterceptor)
+        assert isinstance(client._interceptors[1], ServiceAuthClientInterceptor)
+        assert client._interceptors[2:] == [interceptor]
 
     def test_init_with_custom_options(self) -> None:
         """Test MarketDataClient initialization with custom options."""
@@ -304,6 +311,113 @@ class TestMarketDataClientGetHistoricalBars:
             )
 
         assert result == []
+
+
+class TestMarketDataClientGetMultiBars:
+    """Tests for MarketDataClient.get_multi_bars (batched fetch, 16B)."""
+
+    @pytest.mark.asyncio
+    async def test_get_multi_bars_success(self) -> None:
+        """One batch call returns a per-symbol map of bars."""
+        client = MarketDataClient()
+
+        def make_bar(symbol: str, close: str) -> MagicMock:
+            bar = MagicMock()
+            bar.symbol = symbol
+            bar.timestamp = MagicMock(seconds=1705320000)
+            for field in ("open", "high", "low", "close"):
+                setattr(bar, field, MagicMock(value=close))
+            bar.volume = 1000
+            bar.trade_count = 0
+            bar.HasField = lambda f: f in ("open", "high", "low", "close")
+            bar.vwap = None
+            return bar
+
+        aapl_list = MagicMock(bars=[make_bar("AAPL", "150.00")])
+        spy_list = MagicMock(bars=[make_bar("SPY", "400.00")])
+        mock_response = MagicMock()
+        mock_response.bars = {"AAPL": aapl_list, "SPY": spy_list}
+
+        mock_stub = MagicMock()
+        mock_stub.GetMultiBars = AsyncMock(return_value=mock_response)
+        client._stub = mock_stub
+
+        mock_market_data_pb2 = MagicMock()
+        mock_market_data_pb2.TIMEFRAME_1DAY = 7
+
+        with patch.dict(
+            "sys.modules",
+            {
+                "llamatrade_proto.generated": MagicMock(),
+                "llamatrade_proto.generated.market_data_pb2": mock_market_data_pb2,
+                "llamatrade_proto.generated.common_pb2": MagicMock(),
+            },
+        ):
+            result = await client.get_multi_bars(
+                symbols=["AAPL", "SPY"],
+                start=datetime(2024, 1, 1),
+                end=datetime(2024, 1, 31),
+                timeframe="1D",
+                limit=5000,
+            )
+
+        assert set(result) == {"AAPL", "SPY"}
+        assert result["AAPL"][0].close == Decimal("150.00")
+        assert result["SPY"][0].close == Decimal("400.00")
+        mock_stub.GetMultiBars.assert_awaited_once()
+
+
+class TestMarketDataClientStreamHistoricalBars:
+    """Tests for MarketDataClient.stream_historical_bars (streamed batch, 13B)."""
+
+    @pytest.mark.asyncio
+    async def test_stream_historical_bars_yields_bars(self) -> None:
+        """The streamed bars are converted and yielded incrementally."""
+        client = MarketDataClient()
+
+        def make_bar(symbol: str, close: str) -> MagicMock:
+            bar = MagicMock()
+            bar.symbol = symbol
+            bar.timestamp = MagicMock(seconds=1705320000)
+            for field in ("open", "high", "low", "close"):
+                setattr(bar, field, MagicMock(value=close))
+            bar.volume = 1000
+            bar.trade_count = 0
+            bar.HasField = lambda f: f in ("open", "high", "low", "close")
+            bar.vwap = None
+            return bar
+
+        async def fake_stream(_request):
+            yield make_bar("AAPL", "150.00")
+            yield make_bar("SPY", "400.00")
+
+        mock_stub = MagicMock()
+        mock_stub.StreamHistoricalBars = fake_stream
+        client._stub = mock_stub
+
+        mock_market_data_pb2 = MagicMock()
+        mock_market_data_pb2.TIMEFRAME_1DAY = 7
+
+        with patch.dict(
+            "sys.modules",
+            {
+                "llamatrade_proto.generated": MagicMock(),
+                "llamatrade_proto.generated.market_data_pb2": mock_market_data_pb2,
+                "llamatrade_proto.generated.common_pb2": MagicMock(),
+            },
+        ):
+            out = [
+                bar
+                async for bar in client.stream_historical_bars(
+                    symbols=["AAPL", "SPY"],
+                    start=datetime(2024, 1, 1),
+                    end=datetime(2024, 1, 31),
+                    timeframe="1D",
+                )
+            ]
+
+        assert [bar.symbol for bar in out] == ["AAPL", "SPY"]
+        assert out[0].close == Decimal("150.00")
 
 
 class TestMarketDataClientProtoConversion:

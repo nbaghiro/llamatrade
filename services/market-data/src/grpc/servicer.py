@@ -323,6 +323,64 @@ class MarketDataServicer:
             logger.error("get_multi_bars error: %s", e, exc_info=True)
             raise ConnectError(Code.INTERNAL, f"Failed to fetch multi bars: {e}") from e
 
+    async def stream_historical_bars(
+        self,
+        request: market_data_pb2.StreamHistoricalBarsRequest,
+        ctx: AnyContext,
+    ) -> AsyncIterator[market_data_pb2.Bar]:
+        """Stream historical bars for many symbols, in timestamp order.
+
+        One call covers all symbols (server-side fan-out, like GetMultiBars) but
+        streams bars incrementally, so a consumer (the backtest engine) need not
+        receive the whole dataset as a single buffered response.
+        """
+        tenant_ctx = _extract_tenant_context(ctx)
+        symbols = _validate_symbols(list(request.symbols))
+
+        logger.info(
+            "stream_historical_bars request",
+            extra={"symbols": symbols, "count": len(symbols), **tenant_ctx.log_context()},
+        )
+
+        try:
+            service = await get_market_data_service()
+
+            start = datetime.fromtimestamp(request.start.seconds, tz=UTC)
+            end = (
+                datetime.fromtimestamp(request.end.seconds, tz=UTC)
+                if request.HasField("end")
+                else None
+            )
+            timeframe = self._TIMEFRAME_MAP.get(request.timeframe, Timeframe.DAY_1)
+            limit = request.limit if request.limit > 0 else 1000
+
+            multi_bars = await service.get_multi_bars(
+                symbols=symbols,
+                timeframe=timeframe,
+                start=start,
+                end=end,
+                limit=limit,
+            )
+
+            for requested in symbols:
+                symbol_bars = multi_bars.get(requested) or []
+                if symbol_bars:
+                    md_metrics.record_bar_staleness(symbol_bars)
+                    md_metrics.record_bar_series_gaps(timeframe.value, symbol_bars)
+                else:
+                    md_metrics.record_missing_symbol()
+        except Exception as e:
+            logger.error("stream_historical_bars error: %s", e, exc_info=True)
+            raise ConnectError(Code.INTERNAL, f"Failed to fetch historical bars: {e}") from e
+
+        # Stream in timestamp order so the consumer can process chronologically.
+        ordered = sorted(
+            ((symbol, bar) for symbol, bars in multi_bars.items() for bar in bars),
+            key=lambda sb: sb[1].timestamp,
+        )
+        for symbol, bar in ordered:
+            yield self._bar_to_proto(symbol, bar)
+
     async def get_snapshot(
         self,
         request: market_data_pb2.GetSnapshotRequest,

@@ -31,6 +31,9 @@ class MarketDataService(Protocol):
     async def get_multi_bars(self, request: market__data__pb2.GetMultiBarsRequest, ctx: RequestContext) -> market__data__pb2.GetMultiBarsResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
+    def stream_historical_bars(self, request: market__data__pb2.StreamHistoricalBarsRequest, ctx: RequestContext) -> AsyncIterator[market__data__pb2.Bar]:
+        raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
+
     async def get_snapshot(self, request: market__data__pb2.GetSnapshotRequest, ctx: RequestContext) -> market__data__pb2.Snapshot:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
@@ -95,6 +98,16 @@ class MarketDataServiceASGIApplication(ConnectASGIApplication[MarketDataService]
                         idempotency_level=IdempotencyLevel.UNKNOWN,
                     ),
                     function=svc.get_multi_bars,
+                ),
+                "/llamatrade.MarketDataService/StreamHistoricalBars": Endpoint.server_stream(
+                    method=MethodInfo(
+                        name="StreamHistoricalBars",
+                        service_name="llamatrade.MarketDataService",
+                        input=market__data__pb2.StreamHistoricalBarsRequest,
+                        output=market__data__pb2.Bar,
+                        idempotency_level=IdempotencyLevel.UNKNOWN,
+                    ),
+                    function=svc.stream_historical_bars,
                 ),
                 "/llamatrade.MarketDataService/GetSnapshot": Endpoint.unary(
                     method=MethodInfo(
@@ -238,6 +251,26 @@ class MarketDataServiceClient(ConnectClient):
             timeout_ms=timeout_ms,
         )
 
+    def stream_historical_bars(
+        self,
+        request: market__data__pb2.StreamHistoricalBarsRequest,
+        *,
+        headers: Headers | Mapping[str, str] | None = None,
+        timeout_ms: int | None = None,
+    ) -> AsyncIterator[market__data__pb2.Bar]:
+        return self.execute_server_stream(
+            request=request,
+            method=MethodInfo(
+                name="StreamHistoricalBars",
+                service_name="llamatrade.MarketDataService",
+                input=market__data__pb2.StreamHistoricalBarsRequest,
+                output=market__data__pb2.Bar,
+                idempotency_level=IdempotencyLevel.UNKNOWN,
+            ),
+            headers=headers,
+            timeout_ms=timeout_ms,
+        )
+
     async def get_snapshot(
         self,
         request: market__data__pb2.GetSnapshotRequest,
@@ -310,6 +343,8 @@ class MarketDataServiceSync(Protocol):
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
     def get_multi_bars(self, request: market__data__pb2.GetMultiBarsRequest, ctx: RequestContext) -> market__data__pb2.GetMultiBarsResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
+    def stream_historical_bars(self, request: market__data__pb2.StreamHistoricalBarsRequest, ctx: RequestContext) -> Iterator[market__data__pb2.Bar]:
+        raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
     def get_snapshot(self, request: market__data__pb2.GetSnapshotRequest, ctx: RequestContext) -> market__data__pb2.Snapshot:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
     def get_snapshots(self, request: market__data__pb2.GetSnapshotsRequest, ctx: RequestContext) -> market__data__pb2.GetSnapshotsResponse:
@@ -371,6 +406,16 @@ class MarketDataServiceWSGIApplication(ConnectWSGIApplication):
                         idempotency_level=IdempotencyLevel.UNKNOWN,
                     ),
                     function=service.get_multi_bars,
+                ),
+                "/llamatrade.MarketDataService/StreamHistoricalBars": EndpointSync.server_stream(
+                    method=MethodInfo(
+                        name="StreamHistoricalBars",
+                        service_name="llamatrade.MarketDataService",
+                        input=market__data__pb2.StreamHistoricalBarsRequest,
+                        output=market__data__pb2.Bar,
+                        idempotency_level=IdempotencyLevel.UNKNOWN,
+                    ),
+                    function=service.stream_historical_bars,
                 ),
                 "/llamatrade.MarketDataService/GetSnapshot": EndpointSync.unary(
                     method=MethodInfo(
@@ -508,6 +553,26 @@ class MarketDataServiceClientSync(ConnectClientSync):
                 service_name="llamatrade.MarketDataService",
                 input=market__data__pb2.GetMultiBarsRequest,
                 output=market__data__pb2.GetMultiBarsResponse,
+                idempotency_level=IdempotencyLevel.UNKNOWN,
+            ),
+            headers=headers,
+            timeout_ms=timeout_ms,
+        )
+
+    def stream_historical_bars(
+        self,
+        request: market__data__pb2.StreamHistoricalBarsRequest,
+        *,
+        headers: Headers | Mapping[str, str] | None = None,
+        timeout_ms: int | None = None,
+    ) -> Iterator[market__data__pb2.Bar]:
+        return self.execute_server_stream(
+            request=request,
+            method=MethodInfo(
+                name="StreamHistoricalBars",
+                service_name="llamatrade.MarketDataService",
+                input=market__data__pb2.StreamHistoricalBarsRequest,
+                output=market__data__pb2.Bar,
                 idempotency_level=IdempotencyLevel.UNKNOWN,
             ),
             headers=headers,

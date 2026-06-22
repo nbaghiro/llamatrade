@@ -21,9 +21,10 @@ class TestBenchmarkMetrics:
         assert metrics.spy_return == 0.0
         assert metrics.portfolio_60_40_return == 0.0
         assert metrics.risk_free_return == 0.0
-        assert metrics.alpha == 0.0
-        assert metrics.beta == 0.0
-        assert metrics.information_ratio == 0.0
+        # Relative metrics default to None (undefined until computed) (8A)
+        assert metrics.alpha is None
+        assert metrics.beta is None
+        assert metrics.information_ratio is None
 
 
 class TestBenchmarkCalculator:
@@ -128,8 +129,19 @@ class TestBenchmarkCalculator:
 
         alpha, beta = calculator.calculate_alpha_beta(strategy_returns, benchmark_returns)
 
-        assert alpha == 0.0
-        assert beta == 0.0
+        # Undefined with <2 points: None, not a misleading 0.0 (8A)
+        assert alpha is None
+        assert beta is None
+
+    def test_alpha_beta_none_for_flat_benchmark(self, calculator):
+        """A zero-variance benchmark makes beta a 0/0 — undefined, so None (8A)."""
+        benchmark_returns = np.array([0.0, 0.0, 0.0, 0.0, 0.0])
+        strategy_returns = np.array([0.01, -0.005, 0.008, -0.003, 0.012])
+
+        alpha, beta = calculator.calculate_alpha_beta(strategy_returns, benchmark_returns)
+
+        assert alpha is None
+        assert beta is None
 
     def test_alpha_beta_different_lengths(self, calculator):
         """Test alpha/beta with different length arrays."""
@@ -160,7 +172,8 @@ class TestBenchmarkCalculator:
 
         ir = calculator.calculate_information_ratio(strategy_returns, benchmark_returns)
 
-        assert ir == 0.0
+        # Undefined with <2 points: None, not a misleading 0.0 (8A)
+        assert ir is None
 
     def test_calculate_all_metrics(self, calculator, spy_bars, bond_bars):
         """Test calculating all metrics at once."""

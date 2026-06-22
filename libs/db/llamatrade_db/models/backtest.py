@@ -28,6 +28,10 @@ class Backtest(Base, UUIDPrimaryKeyMixin, TenantMixin, TimestampMixin):
     __table_args__ = (
         Index("ix_backtests_tenant_status", "tenant_id", "status"),
         Index("ix_backtests_strategy", "strategy_id"),
+        # Support the reaper's tenant-agnostic stale-row sweeps (1A/15A):
+        # RUNNING by started_at, PENDING by created_at.
+        Index("ix_backtests_status_started_at", "status", "started_at"),
+        Index("ix_backtests_status_created_at", "status", "created_at"),
     )
 
     strategy_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)

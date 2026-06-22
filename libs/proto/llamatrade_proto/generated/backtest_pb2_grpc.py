@@ -48,6 +48,11 @@ class BacktestServiceStub(object):
                 request_serializer=backtest__pb2.CompareBacktestsRequest.SerializeToString,
                 response_deserializer=backtest__pb2.CompareBacktestsResponse.FromString,
                 _registered_method=True)
+        self.GetBacktestTrades = channel.unary_unary(
+                '/llamatrade.BacktestService/GetBacktestTrades',
+                request_serializer=backtest__pb2.GetBacktestTradesRequest.SerializeToString,
+                response_deserializer=backtest__pb2.GetBacktestTradesResponse.FromString,
+                _registered_method=True)
 
 
 class BacktestServiceServicer(object):
@@ -96,6 +101,12 @@ class BacktestServiceServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def GetBacktestTrades(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
 
 def add_BacktestServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
@@ -128,6 +139,11 @@ def add_BacktestServiceServicer_to_server(servicer, server):
                     servicer.CompareBacktests,
                     request_deserializer=backtest__pb2.CompareBacktestsRequest.FromString,
                     response_serializer=backtest__pb2.CompareBacktestsResponse.SerializeToString,
+            ),
+            'GetBacktestTrades': grpc.unary_unary_rpc_method_handler(
+                    servicer.GetBacktestTrades,
+                    request_deserializer=backtest__pb2.GetBacktestTradesRequest.FromString,
+                    response_serializer=backtest__pb2.GetBacktestTradesResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -296,6 +312,33 @@ class BacktestService(object):
             '/llamatrade.BacktestService/CompareBacktests',
             backtest__pb2.CompareBacktestsRequest.SerializeToString,
             backtest__pb2.CompareBacktestsResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def GetBacktestTrades(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/llamatrade.BacktestService/GetBacktestTrades',
+            backtest__pb2.GetBacktestTradesRequest.SerializeToString,
+            backtest__pb2.GetBacktestTradesResponse.FromString,
             options,
             channel_credentials,
             insecure,

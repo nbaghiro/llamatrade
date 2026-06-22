@@ -184,6 +184,86 @@ class TestRunBacktest:
                 assert response.backtest.id == str(TEST_BACKTEST_ID)
                 assert response.backtest.status == backtest_pb2.BACKTEST_STATUS_PENDING
 
+    async def test_run_backtest_enqueue_failure_marks_failed(self, backtest_servicer, grpc_context):
+        """2A: if enqueue raises, the committed PENDING row is failed, RPC aborts."""
+        from llamatrade_proto.generated import backtest_pb2, common_pb2
+
+        mock_backtest = make_mock_backtest()
+
+        mock_service = MagicMock()
+        mock_service.create_backtest = AsyncMock(return_value=mock_backtest)
+        mock_service.queue_backtest = AsyncMock(side_effect=RuntimeError("broker down"))
+        mock_service.fail_backtest = AsyncMock(return_value=True)
+
+        mock_db = MagicMock()
+
+        with patch.object(backtest_servicer, "_get_db", new=create_mock_get_db(mock_db)):
+            with patch(
+                "src.grpc.servicer.BacktestService",
+                new=create_mock_service_class(mock_service),
+            ):
+                request = backtest_pb2.RunBacktestRequest(
+                    context=common_pb2.TenantContext(
+                        tenant_id=str(TEST_TENANT_ID),
+                        user_id=str(TEST_USER_ID),
+                    ),
+                    config=backtest_pb2.BacktestConfig(
+                        strategy_id=str(TEST_STRATEGY_ID),
+                        start_date=common_pb2.Timestamp(
+                            seconds=int(datetime(2024, 1, 1).timestamp())
+                        ),
+                        end_date=common_pb2.Timestamp(
+                            seconds=int(datetime(2024, 6, 30).timestamp())
+                        ),
+                        initial_capital=common_pb2.Decimal(value="100000"),
+                    ),
+                )
+
+                with pytest.raises(grpc.aio.AioRpcError) as exc_info:
+                    await backtest_servicer.RunBacktest(request, grpc_context)
+
+                assert exc_info.value.code() == grpc.StatusCode.INTERNAL
+                mock_service.fail_backtest.assert_awaited_once()
+
+    @pytest.mark.parametrize(
+        "field_setter",
+        [
+            lambda cfg: setattr(cfg, "allow_shorting", True),
+            lambda cfg: setattr(cfg, "use_adjusted_prices", True),
+            lambda cfg: cfg.max_position_size.MergeFrom(
+                __import__("llamatrade_proto.generated.common_pb2", fromlist=["Decimal"]).Decimal(
+                    value="25"
+                )
+            ),
+            lambda cfg: cfg.parameters.update({"rsi_period": "21"}),
+        ],
+    )
+    async def test_run_backtest_rejects_unsupported_config(
+        self, backtest_servicer, grpc_context, field_setter
+    ):
+        """5A: unsupported config fields are rejected loudly, not silently ignored."""
+        from llamatrade_proto.generated import backtest_pb2, common_pb2
+
+        config = backtest_pb2.BacktestConfig(
+            strategy_id=str(TEST_STRATEGY_ID),
+            start_date=common_pb2.Timestamp(seconds=int(datetime(2024, 1, 1).timestamp())),
+            end_date=common_pb2.Timestamp(seconds=int(datetime(2024, 6, 30).timestamp())),
+            initial_capital=common_pb2.Decimal(value="100000"),
+        )
+        field_setter(config)
+        request = backtest_pb2.RunBacktestRequest(
+            context=common_pb2.TenantContext(
+                tenant_id=str(TEST_TENANT_ID),
+                user_id=str(TEST_USER_ID),
+            ),
+            config=config,
+        )
+
+        with pytest.raises(grpc.aio.AioRpcError) as exc_info:
+            await backtest_servicer.RunBacktest(request, grpc_context)
+
+        assert exc_info.value.code() == grpc.StatusCode.INVALID_ARGUMENT
+
     async def test_run_backtest_invalid_argument(self, backtest_servicer, grpc_context):
         """Test running backtest with invalid arguments."""
         from llamatrade_proto.generated import backtest_pb2, common_pb2
@@ -591,3 +671,52 @@ class TestStreamBacktestProgress:
                 # Should get one initial status update then stop
                 assert len(updates) == 1
                 assert updates[0].status == backtest_pb2.BACKTEST_STATUS_COMPLETED
+
+
+class TestGetBacktestTrades:
+    """Tests for the paginated GetBacktestTrades RPC (14B)."""
+
+    async def test_get_backtest_trades_paginated(self, backtest_servicer, grpc_context):
+        """Returns a page of trades with correct pagination metadata."""
+        from llamatrade_proto.generated import backtest_pb2, common_pb2
+
+        from src.models import TradeRecord
+
+        trade = TradeRecord(
+            entry_date=datetime(2024, 1, 2, tzinfo=UTC),
+            exit_date=datetime(2024, 1, 3, tzinfo=UTC),
+            symbol="AAPL",
+            side="long",
+            entry_price=100.0,
+            exit_price=110.0,
+            quantity=10.0,
+            pnl=100.0,
+            pnl_percent=10.0,
+            commission=2.0,
+        )
+
+        mock_service = MagicMock()
+        mock_service.get_backtest_trades = AsyncMock(return_value=([trade], 25))
+        mock_db = MagicMock()
+
+        with patch.object(backtest_servicer, "_get_db", new=create_mock_get_db(mock_db)):
+            with patch(
+                "src.grpc.servicer.BacktestService",
+                new=create_mock_service_class(mock_service),
+            ):
+                request = backtest_pb2.GetBacktestTradesRequest(
+                    context=common_pb2.TenantContext(tenant_id=str(TEST_TENANT_ID)),
+                    backtest_id=str(TEST_BACKTEST_ID),
+                    pagination=common_pb2.PaginationRequest(page=1, page_size=10),
+                )
+
+                response = await backtest_servicer.GetBacktestTrades(request, grpc_context)
+
+        assert len(response.trades) == 1
+        assert response.trades[0].symbol == "AAPL"
+        assert response.pagination.total_items == 25
+        assert response.pagination.total_pages == 3
+        assert response.pagination.current_page == 1
+        assert response.pagination.has_next is True
+        assert response.pagination.has_previous is False
+        mock_service.get_backtest_trades.assert_awaited_once()

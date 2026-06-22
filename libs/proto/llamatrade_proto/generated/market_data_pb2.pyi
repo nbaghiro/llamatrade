@@ -428,6 +428,42 @@ class BarList(message.Message):
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
+class StreamHistoricalBarsRequest(message.Message):
+    """Stream historical bars for many symbols in one call, in timestamp order, so a
+    consumer (e.g. the backtest engine) can process incrementally without the
+    server materializing the entire response as one buffer.
+    """
+
+    DESCRIPTOR: descriptor.Descriptor
+
+    SYMBOLS_FIELD_NUMBER: builtins.int
+    START_FIELD_NUMBER: builtins.int
+    END_FIELD_NUMBER: builtins.int
+    TIMEFRAME_FIELD_NUMBER: builtins.int
+    LIMIT_FIELD_NUMBER: builtins.int
+    timeframe: Timeframe.ValueType
+    limit: builtins.int
+    @builtins.property
+    def symbols(self) -> containers.RepeatedScalarFieldContainer[builtins.str]: ...
+    @builtins.property
+    def start(self) -> common_pb2.Timestamp: ...
+    @builtins.property
+    def end(self) -> common_pb2.Timestamp: ...
+    def __init__(
+        self,
+        *,
+        symbols: abc.Iterable[builtins.str] | None = ...,
+        start: common_pb2.Timestamp | None = ...,
+        end: common_pb2.Timestamp | None = ...,
+        timeframe: Timeframe.ValueType = ...,
+        limit: builtins.int = ...,
+    ) -> None: ...
+    _HasFieldArgType: _TypeAlias = typing.Literal["end", b"end", "start", b"start"]  # noqa: Y015
+    def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
+    _ClearFieldArgType: _TypeAlias = typing.Literal["end", b"end", "limit", b"limit", "start", b"start", "symbols", b"symbols", "timeframe", b"timeframe"]  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+
+@typing.final
 class StreamQuotesRequest(message.Message):
     """Stream quotes request"""
 

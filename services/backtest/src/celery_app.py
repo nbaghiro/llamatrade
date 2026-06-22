@@ -19,6 +19,9 @@ celery_app = Celery(
 TASK_SOFT_TIME_LIMIT = int(os.getenv("BACKTEST_TASK_SOFT_TIME_LIMIT", "1800"))
 TASK_TIME_LIMIT = int(os.getenv("BACKTEST_TASK_TIME_LIMIT", "3600"))
 
+# How often the reaper sweeps for orphaned RUNNING/PENDING runs (1A).
+REAPER_INTERVAL_SECONDS = int(os.getenv("BACKTEST_REAPER_INTERVAL", "300"))
+
 # Celery configuration
 celery_app.conf.update(
     # Task execution settings
@@ -44,7 +47,17 @@ celery_app.conf.update(
     enable_utc=True,
 )
 
-# Task routing for different queues
+# Task routing for different queues. The reaper runs on a dedicated maintenance
+# queue so it is never starved behind long-running backtests on the main queue.
 celery_app.conf.task_routes = {
     "src.workers.celery_tasks.run_backtest_task": {"queue": "backtest"},
+    "src.workers.celery_tasks.reap_stale_backtests_task": {"queue": "backtest_maintenance"},
+}
+
+# Beat schedule: periodically reap orphaned RUNNING/PENDING runs (1A).
+celery_app.conf.beat_schedule = {
+    "reap-stale-backtests": {
+        "task": "src.workers.celery_tasks.reap_stale_backtests_task",
+        "schedule": float(REAPER_INTERVAL_SECONDS),
+    },
 }

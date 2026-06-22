@@ -43,6 +43,7 @@ class MarketDataServiceStub:
     GetHistoricalBars: _grpc.UnaryUnaryMultiCallable[_market_data_pb2.GetHistoricalBarsRequest, _market_data_pb2.GetHistoricalBarsResponse]
     """Historical data"""
     GetMultiBars: _grpc.UnaryUnaryMultiCallable[_market_data_pb2.GetMultiBarsRequest, _market_data_pb2.GetMultiBarsResponse]
+    StreamHistoricalBars: _grpc.UnaryStreamMultiCallable[_market_data_pb2.StreamHistoricalBarsRequest, _market_data_pb2.Bar]
     GetSnapshot: _grpc.UnaryUnaryMultiCallable[_market_data_pb2.GetSnapshotRequest, _market_data_pb2.Snapshot]
     """Snapshots"""
     GetSnapshots: _grpc.UnaryUnaryMultiCallable[_market_data_pb2.GetSnapshotsRequest, _market_data_pb2.GetSnapshotsResponse]
@@ -64,6 +65,7 @@ class MarketDataServiceAsyncStub(MarketDataServiceStub):
     GetHistoricalBars: _aio.UnaryUnaryMultiCallable[_market_data_pb2.GetHistoricalBarsRequest, _market_data_pb2.GetHistoricalBarsResponse]  # type: ignore[assignment]
     """Historical data"""
     GetMultiBars: _aio.UnaryUnaryMultiCallable[_market_data_pb2.GetMultiBarsRequest, _market_data_pb2.GetMultiBarsResponse]  # type: ignore[assignment]
+    StreamHistoricalBars: _aio.UnaryStreamMultiCallable[_market_data_pb2.StreamHistoricalBarsRequest, _market_data_pb2.Bar]  # type: ignore[assignment]
     GetSnapshot: _aio.UnaryUnaryMultiCallable[_market_data_pb2.GetSnapshotRequest, _market_data_pb2.Snapshot]  # type: ignore[assignment]
     """Snapshots"""
     GetSnapshots: _aio.UnaryUnaryMultiCallable[_market_data_pb2.GetSnapshotsRequest, _market_data_pb2.GetSnapshotsResponse]  # type: ignore[assignment]
@@ -112,6 +114,13 @@ class MarketDataServiceServicer(metaclass=_abc_1.ABCMeta):
         request: _market_data_pb2.GetMultiBarsRequest,
         context: _ServicerContext,
     ) -> _typing.Union[_market_data_pb2.GetMultiBarsResponse, _abc.Awaitable[_market_data_pb2.GetMultiBarsResponse]]: ...
+
+    @_abc_1.abstractmethod
+    def StreamHistoricalBars(
+        self,
+        request: _market_data_pb2.StreamHistoricalBarsRequest,
+        context: _ServicerContext,
+    ) -> _typing.Union[_abc.Iterator[_market_data_pb2.Bar], _abc.AsyncIterator[_market_data_pb2.Bar]]: ...
 
     @_abc_1.abstractmethod
     def GetSnapshot(

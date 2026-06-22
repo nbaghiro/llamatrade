@@ -234,6 +234,9 @@ export default function BacktestPage() {
     cancelBacktest,
     clearError,
     reset,
+    fullTrades,
+    tradesLoading,
+    loadAllTrades,
   } = useBacktestStore();
 
   // Get strategy ID from URL query param
@@ -606,7 +609,33 @@ export default function BacktestPage() {
               </div>
 
               {resultsTab === 'trades' && (
-                <TradesTable trades={currentBacktest.results.trades} />
+                <div className="space-y-3">
+                  {(() => {
+                    const previewTrades = currentBacktest.results.trades;
+                    const totalTrades = currentBacktest.results.metrics?.totalTrades ?? 0;
+                    const displayedTrades = fullTrades ?? previewTrades;
+                    const isTruncated = !fullTrades && totalTrades > previewTrades.length;
+                    return (
+                      <>
+                        {isTruncated && (
+                          <div className="flex items-center justify-between px-4 py-2 text-sm rounded-lg bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-800">
+                            <span>
+                              Showing the first {previewTrades.length} of {totalTrades} trades.
+                            </span>
+                            <button
+                              onClick={() => loadAllTrades(currentBacktest.id)}
+                              disabled={tradesLoading}
+                              className="font-medium underline disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                              {tradesLoading ? 'Loading…' : `Load all ${totalTrades} trades`}
+                            </button>
+                          </div>
+                        )}
+                        <TradesTable trades={displayedTrades} />
+                      </>
+                    );
+                  })()}
+                </div>
               )}
 
               {resultsTab === 'monthly' && (

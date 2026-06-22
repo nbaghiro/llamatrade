@@ -121,7 +121,7 @@ class BacktestConfig(message.Message):
     @builtins.property
     def commission(self) -> common_pb2.Decimal:
         """Execution settings
-        Per-trade commission
+        Flat fee per fill (entry and each exit), not a percentage
         """
 
     @builtins.property
@@ -781,6 +781,56 @@ class BacktestProgressUpdate(message.Message):
     _HasFieldArgType: _TypeAlias = typing.Literal["partial_metrics", b"partial_metrics", "timestamp", b"timestamp"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
     _ClearFieldArgType: _TypeAlias = typing.Literal["backtest_id", b"backtest_id", "current_date", b"current_date", "message", b"message", "partial_metrics", b"partial_metrics", "progress_percent", b"progress_percent", "status", b"status", "timestamp", b"timestamp"]  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+
+@typing.final
+class GetBacktestTradesRequest(message.Message):
+    """Get a page of a completed backtest's trades. GetBacktest returns only a
+    bounded preview of trades; this RPC pages through the full trade log so a
+    pathological trade count never bloats a single response.
+    """
+
+    DESCRIPTOR: descriptor.Descriptor
+
+    CONTEXT_FIELD_NUMBER: builtins.int
+    BACKTEST_ID_FIELD_NUMBER: builtins.int
+    PAGINATION_FIELD_NUMBER: builtins.int
+    backtest_id: builtins.str
+    @builtins.property
+    def context(self) -> common_pb2.TenantContext: ...
+    @builtins.property
+    def pagination(self) -> common_pb2.PaginationRequest: ...
+    def __init__(
+        self,
+        *,
+        context: common_pb2.TenantContext | None = ...,
+        backtest_id: builtins.str = ...,
+        pagination: common_pb2.PaginationRequest | None = ...,
+    ) -> None: ...
+    _HasFieldArgType: _TypeAlias = typing.Literal["context", b"context", "pagination", b"pagination"]  # noqa: Y015
+    def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
+    _ClearFieldArgType: _TypeAlias = typing.Literal["backtest_id", b"backtest_id", "context", b"context", "pagination", b"pagination"]  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+
+@typing.final
+class GetBacktestTradesResponse(message.Message):
+    DESCRIPTOR: descriptor.Descriptor
+
+    TRADES_FIELD_NUMBER: builtins.int
+    PAGINATION_FIELD_NUMBER: builtins.int
+    @builtins.property
+    def trades(self) -> containers.RepeatedCompositeFieldContainer[BacktestTrade]: ...
+    @builtins.property
+    def pagination(self) -> common_pb2.PaginationResponse: ...
+    def __init__(
+        self,
+        *,
+        trades: abc.Iterable[BacktestTrade] | None = ...,
+        pagination: common_pb2.PaginationResponse | None = ...,
+    ) -> None: ...
+    _HasFieldArgType: _TypeAlias = typing.Literal["pagination", b"pagination"]  # noqa: Y015
+    def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
+    _ClearFieldArgType: _TypeAlias = typing.Literal["pagination", b"pagination", "trades", b"trades"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final

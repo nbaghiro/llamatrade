@@ -31,10 +31,11 @@ class BenchmarkMetrics:
     portfolio_60_40_return: float = 0.0
     risk_free_return: float = 0.0
 
-    # Relative metrics
-    alpha: float = 0.0
-    beta: float = 0.0
-    information_ratio: float = 0.0
+    # Relative metrics (None when undefined — see calculate_alpha_beta /
+    # calculate_information_ratio)
+    alpha: float | None = None
+    beta: float | None = None
+    information_ratio: float | None = None
 
     # Excess returns
     excess_return_vs_spy: float = 0.0
@@ -251,11 +252,16 @@ class BenchmarkCalculator:
         strategy_returns: np.ndarray,
         benchmark_returns: np.ndarray,
         risk_free_rate: float | None = None,
-    ) -> tuple[float, float]:
+    ) -> tuple[float | None, float | None]:
         """Calculate alpha and beta vs benchmark.
 
         Alpha = strategy_return - (rf + beta * (benchmark_return - rf))
         Beta = cov(strategy, benchmark) / var(benchmark)
+
+        Returns ``(None, None)`` when alpha/beta are genuinely undefined — fewer
+        than two joined points, or a benchmark with zero variance (beta would be
+        a 0/0). None means "undefined", which a 0.0 would silently misrepresent
+        as "market-neutral" (8A; matches the profit_factor convention).
 
         Args:
             strategy_returns: Daily strategy returns
@@ -263,10 +269,10 @@ class BenchmarkCalculator:
             risk_free_rate: Annual risk-free rate (uses class default if None)
 
         Returns:
-            Tuple of (alpha, beta)
+            Tuple of (alpha, beta), each None when undefined
         """
         if len(strategy_returns) < 2 or len(benchmark_returns) < 2:
-            return 0.0, 0.0
+            return None, None
 
         # Ensure same length
         min_len = min(len(strategy_returns), len(benchmark_returns))
@@ -279,10 +285,12 @@ class BenchmarkCalculator:
         covariance = np.cov(strategy_returns, benchmark_returns)[0, 1]
         variance = np.var(benchmark_returns)
 
-        if variance > 0:
-            beta = covariance / variance
-        else:
-            beta = 0.0
+        if variance <= 0:
+            # A flat benchmark has no variance: beta (and thus alpha) are
+            # undefined, not zero.
+            return None, None
+
+        beta = covariance / variance
 
         # Calculate alpha (annualized)
         strategy_annual = np.mean(strategy_returns) * 252
@@ -296,21 +304,25 @@ class BenchmarkCalculator:
         self,
         strategy_returns: np.ndarray,
         benchmark_returns: np.ndarray,
-    ) -> float:
+    ) -> float | None:
         """Calculate Information Ratio.
 
         IR = (strategy - benchmark) / tracking_error
         Tracking error = std(strategy - benchmark)
+
+        Returns ``None`` when IR is undefined — fewer than two joined points, or
+        zero tracking error (a 0/0 when the strategy perfectly tracks the
+        benchmark) — rather than a misleading 0.0 (8A).
 
         Args:
             strategy_returns: Daily strategy returns
             benchmark_returns: Daily benchmark returns
 
         Returns:
-            Information ratio
+            Information ratio, or None when undefined
         """
         if len(strategy_returns) < 2 or len(benchmark_returns) < 2:
-            return 0.0
+            return None
 
         # Ensure same length
         min_len = min(len(strategy_returns), len(benchmark_returns))
@@ -323,13 +335,11 @@ class BenchmarkCalculator:
         # Tracking error
         tracking_error = np.std(active_returns)
 
-        if tracking_error > 0:
-            # Annualized
-            ir = float(np.sqrt(252) * np.mean(active_returns) / tracking_error)
-        else:
-            ir = 0.0
+        if tracking_error <= 0:
+            return None
 
-        return ir
+        # Annualized
+        return float(np.sqrt(252) * np.mean(active_returns) / tracking_error)
 
     def calculate_all_metrics(
         self,

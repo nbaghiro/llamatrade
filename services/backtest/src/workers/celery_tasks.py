@@ -87,6 +87,13 @@ async def _execute_backtest(backtest_id: str, tenant_id: str) -> dict[str, str |
             }
 
 
+async def _reap_stale_backtests() -> dict[str, int]:
+    """Run one reaper pass through the service layer."""
+    async with _session_scope() as db:
+        async with BacktestService(db, market_data_client=_create_market_data_client()) as service:
+            return await service.reap_stale_backtests()
+
+
 async def _reset_to_pending(backtest_id: str, tenant_id: str) -> None:
     """Reset a FAILED backtest to PENDING so a retry attempt can run.
 
@@ -149,3 +156,16 @@ def run_backtest_task(
     except Exception as e:
         logger.error(f"Backtest failed: {backtest_id} - {e}")
         raise
+
+
+@shared_task
+def reap_stale_backtests_task() -> dict[str, int]:
+    """Periodic reaper for orphaned RUNNING/PENDING backtests (1A).
+
+    Scheduled via Celery beat and routed to the maintenance queue so it is not
+    starved behind long-running backtests on the main queue. Returns recovery
+    counts for observability.
+    """
+    counts = _run_async(_reap_stale_backtests())
+    logger.info(f"Reaper pass complete: {counts}")
+    return counts

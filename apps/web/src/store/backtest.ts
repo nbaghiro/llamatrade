@@ -89,10 +89,15 @@ interface BacktestState {
   // Stream abort controller
   abortController: AbortController | null;
 
+  // Full trade log, fetched on demand when GetBacktest returns a capped preview (14B)
+  fullTrades: BacktestTrade[] | null;
+  tradesLoading: boolean;
+
   // Actions
   setConfig: (config: Partial<BacktestConfig>) => void;
   runBacktest: () => Promise<string | null>;
   getBacktest: (id: string) => Promise<void>;
+  loadAllTrades: (id: string) => Promise<void>;
   listBacktests: (strategyId?: string, page?: number) => Promise<void>;
   cancelBacktest: (id: string) => Promise<void>;
   streamProgress: (id: string) => Promise<void>;
@@ -175,6 +180,8 @@ export const useBacktestStore = create<BacktestState>((set, get) => ({
   progressMessage: '',
   error: null,
   abortController: null,
+  fullTrades: null,
+  tradesLoading: false,
 
   // Update config
   setConfig: (updates) => {
@@ -297,7 +304,7 @@ export const useBacktestStore = create<BacktestState>((set, get) => ({
       return;
     }
 
-    set({ loading: true, error: null });
+    set({ loading: true, error: null, fullTrades: null });
     try {
       const response = await backtestClient.getBacktest({ context, backtestId: id });
       set({
@@ -309,6 +316,40 @@ export const useBacktestStore = create<BacktestState>((set, get) => ({
         error: getErrorMessage(error),
         loading: false,
       });
+    }
+  },
+
+  // Fetch the FULL trade log by paging GetBacktestTrades. GetBacktest returns
+  // only a bounded preview, so this is used when the user wants every trade
+  // (e.g. CSV export) on a high-trade-count backtest (14B).
+  loadAllTrades: async (id) => {
+    const context = getTenantContext();
+    if (!context) {
+      set({ error: 'Please log in to view backtests' });
+      return;
+    }
+
+    set({ tradesLoading: true, error: null });
+    try {
+      const all: BacktestTrade[] = [];
+      const pageSize = 200;
+      let page = 1;
+      for (;;) {
+        const response = await backtestClient.getBacktestTrades({
+          context,
+          backtestId: id,
+          pagination: { page, pageSize },
+        });
+        all.push(...response.trades);
+        const total = response.pagination?.totalItems ?? all.length;
+        if (response.trades.length === 0 || all.length >= total) {
+          break;
+        }
+        page += 1;
+      }
+      set({ fullTrades: all, tradesLoading: false });
+    } catch (error) {
+      set({ error: getErrorMessage(error), tradesLoading: false });
     }
   },
 
@@ -451,6 +492,8 @@ export const useBacktestStore = create<BacktestState>((set, get) => ({
       progress: 0,
       progressMessage: '',
       error: null,
+      fullTrades: null,
+      tradesLoading: false,
     });
   },
 }));

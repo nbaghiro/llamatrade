@@ -260,3 +260,34 @@ class TestAlignDailyReturns:
 
         strat, bench = align_daily_returns(points, bars)
         assert np.allclose(strat, bench)
+
+
+class TestDegenerateEquityGuards:
+    """7A: degenerate equity (zero/negative) must never yield inf/nan metrics."""
+
+    def test_max_drawdown_with_zero_equity_is_finite(self):
+        equity = np.array([100.0, 0.0, 50.0])
+        max_dd, duration = calculate_max_drawdown(equity)
+        assert np.isfinite(max_dd)
+        assert max_dd >= 0.0
+        assert isinstance(duration, int)
+
+    def test_max_drawdown_all_zero_is_finite(self):
+        equity = np.array([0.0, 0.0, 0.0])
+        max_dd, _ = calculate_max_drawdown(equity)
+        assert np.isfinite(max_dd)
+
+    def test_daily_returns_skip_nonpositive_denominators(self):
+        # Equity touches zero then recovers — the division must not produce inf.
+        equity = np.array([100.0, 0.0, 10.0])
+        _total, _annual, daily = calculate_returns(equity, initial_capital=100.0, num_days=3)
+        assert all(np.isfinite(r) for r in daily)
+
+    def test_annual_return_finite_when_portfolio_wiped_out(self):
+        # Final equity below zero would make (1 + total_return) negative and a
+        # fractional power complex/nan; it must clamp to a finite value.
+        equity = np.array([100.0, 50.0, -10.0])
+        total, annual, daily = calculate_returns(equity, initial_capital=100.0, num_days=3)
+        assert isinstance(annual, float) and np.isfinite(annual)
+        assert isinstance(total, float) and np.isfinite(total)
+        assert all(np.isfinite(r) for r in daily)

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 from collections.abc import AsyncGenerator, AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import UTC, date, datetime
@@ -16,10 +17,43 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from llamatrade_db import get_session_maker
 from llamatrade_proto.generated import backtest_pb2
 
-from src.models import BacktestMetrics, BacktestResponse, BacktestResultResponse
+from src.models import BacktestMetrics, BacktestResponse, BacktestResultResponse, TradeRecord
 from src.services.backtest_service import BacktestService
 
 logger = logging.getLogger(__name__)
+
+# GetBacktest returns at most this many trades inline; the full log is paged via
+# GetBacktestTrades so a pathological trade count never bloats one response (14B).
+_GET_BACKTEST_TRADES_PREVIEW = int(os.getenv("BACKTEST_TRADES_PREVIEW", "500"))
+
+
+def _reject_unsupported_config(config: backtest_pb2.BacktestConfig) -> None:
+    """Reject config fields the engine cannot honor (5A).
+
+    These proto fields were previously accepted and silently ignored, which
+    silently produces misleading results (e.g. unadjusted prices across a split,
+    or an unenforced position cap). Until they are honored — enforcing
+    ``max_position_size`` and applying split/dividend adjustment for
+    ``use_adjusted_prices`` are tracked as fast-follow work — we fail loudly so
+    a caller is never misled.
+    """
+    unsupported: list[str] = []
+    if config.allow_shorting:
+        unsupported.append("allow_shorting (engine is long-only)")
+    if config.HasField("max_position_size"):
+        raw = config.max_position_size.value
+        try:
+            capped = Decimal(raw) if raw else Decimal(0)
+        except ArithmeticError, ValueError:
+            capped = Decimal(0)
+        if capped > 0:
+            unsupported.append("max_position_size (per-position cap not yet enforced)")
+    if config.use_adjusted_prices:
+        unsupported.append("use_adjusted_prices (split/dividend adjustment not yet applied)")
+    if len(config.parameters) > 0:
+        unsupported.append("parameters (strategy parameter override not supported)")
+    if unsupported:
+        raise ValueError("Unsupported backtest config field(s) set: " + "; ".join(unsupported))
 
 
 class BacktestServicer:
@@ -70,6 +104,9 @@ class BacktestServicer:
 
             config = request.config
 
+            # Fail fast on config the engine can't honor, before touching the DB.
+            _reject_unsupported_config(config)
+
             # Create the backtest
             async with self._get_db() as db:
                 async with BacktestService(db) as service:
@@ -101,10 +138,27 @@ class BacktestServicer:
 
                     # Queue execution — the Celery worker is the only
                     # execution path; nothing runs in the API process.
-                    await service.queue_backtest(
-                        backtest_id=backtest.id,
-                        tenant_id=tenant_id,
-                    )
+                    try:
+                        await service.queue_backtest(
+                            backtest_id=backtest.id,
+                            tenant_id=tenant_id,
+                        )
+                    except Exception as enqueue_error:
+                        # Compensating action (2A): the PENDING row was already
+                        # committed, so a failed enqueue would strand it. Mark it
+                        # FAILED so the DB matches the error the caller gets.
+                        logger.error(
+                            "Failed to enqueue backtest %s; marking FAILED: %s",
+                            backtest.id,
+                            enqueue_error,
+                            exc_info=True,
+                        )
+                        await service.fail_backtest(
+                            backtest.id,
+                            tenant_id,
+                            f"Failed to enqueue backtest: {enqueue_error}",
+                        )
+                        raise
 
                     return backtest_pb2.RunBacktestResponse(
                         backtest=self._to_proto_backtest(backtest),
@@ -238,6 +292,10 @@ class BacktestServicer:
 
             async with self._get_db() as db:
                 async with BacktestService(db) as service:
+                    # AUTHORIZATION (4A): the cancel flag is keyed by backtest_id
+                    # only. cancel_backtest is tenant-scoped and returns False for
+                    # a backtest the caller's tenant does not own, so a cross-tenant
+                    # cancel cannot set the flag.
                     success = await service.cancel_backtest(
                         backtest_id=backtest_id,
                         tenant_id=tenant_id,
@@ -304,7 +362,10 @@ class BacktestServicer:
         subscriber = ProgressSubscriber()
 
         try:
-            # First check if the backtest exists and get initial status
+            # AUTHORIZATION (4A): the progress stream below is keyed by
+            # backtest_id only and carries no tenant scope of its own. This
+            # tenant-scoped ownership lookup is the gate — a caller from another
+            # tenant gets NOT_FOUND and never reaches subscriber.tail().
             async with self._get_db() as db:
                 async with BacktestService(db) as service:
                     backtest = await service.get_backtest(
@@ -407,6 +468,55 @@ class BacktestServicer:
                 f"Failed to compare backtests: {e}",
             )
 
+    async def GetBacktestTrades(
+        self,
+        request: backtest_pb2.GetBacktestTradesRequest,
+        context: grpc.aio.ServicerContext[object, object],
+    ) -> backtest_pb2.GetBacktestTradesResponse:
+        """Return a page of a completed backtest's trades (14B)."""
+        from llamatrade_proto.generated import backtest_pb2, common_pb2
+
+        try:
+            tenant_id = UUID(request.context.tenant_id)
+            backtest_id = UUID(request.backtest_id)
+            page = request.pagination.page if request.HasField("pagination") else 1
+            page_size = request.pagination.page_size if request.HasField("pagination") else 50
+
+            async with self._get_db() as db:
+                async with BacktestService(db) as service:
+                    # Tenant-scoped: get_backtest_trades resolves the backtest by
+                    # (id, tenant), so a foreign tenant gets an empty page.
+                    trades, total = await service.get_backtest_trades(
+                        backtest_id=backtest_id,
+                        tenant_id=tenant_id,
+                        page=page,
+                        page_size=page_size,
+                    )
+
+            effective_page = max(1, page)
+            effective_size = max(1, page_size)
+            total_pages = (total + effective_size - 1) // effective_size if total else 0
+            return backtest_pb2.GetBacktestTradesResponse(
+                trades=[self._to_proto_trade(t) for t in trades],
+                pagination=common_pb2.PaginationResponse(
+                    total_items=total,
+                    total_pages=total_pages,
+                    current_page=effective_page,
+                    page_size=effective_size,
+                    has_next=effective_page < total_pages,
+                    has_previous=effective_page > 1,
+                ),
+            )
+
+        except ValueError as e:
+            await context.abort(grpc.StatusCode.INVALID_ARGUMENT, str(e))
+        except Exception as e:
+            logger.error("GetBacktestTrades error: %s", e, exc_info=True)
+            await context.abort(
+                grpc.StatusCode.INTERNAL,
+                f"Failed to fetch trades: {e}",
+            )
+
     def _to_proto_metrics(self, m: BacktestMetrics) -> backtest_pb2.BacktestMetrics:
         """Convert internal metrics to proto BacktestMetrics."""
         from llamatrade_proto.generated import backtest_pb2, common_pb2
@@ -446,13 +556,43 @@ class BacktestServicer:
 
         return metrics
 
+    @staticmethod
+    def _to_proto_trade(trade: TradeRecord) -> backtest_pb2.BacktestTrade:
+        """Convert one internal trade record to a proto BacktestTrade."""
+        from llamatrade_proto.generated import backtest_pb2, common_pb2
+        from llamatrade_proto.generated.trading_pb2 import ORDER_SIDE_BUY
+
+        def dec(value: float) -> common_pb2.Decimal:
+            return common_pb2.Decimal(value=str(value))
+
+        def ts(value: datetime) -> common_pb2.Timestamp:
+            return common_pb2.Timestamp(seconds=int(value.timestamp()))
+
+        return backtest_pb2.BacktestTrade(
+            symbol=trade.symbol,
+            side=ORDER_SIDE_BUY,  # engine is long-only
+            quantity=dec(trade.quantity),
+            entry_price=dec(trade.entry_price),
+            exit_price=dec(trade.exit_price)
+            if trade.exit_price is not None
+            else common_pb2.Decimal(value="0"),
+            entry_time=ts(trade.entry_date),
+            exit_time=ts(trade.exit_date) if trade.exit_date else None,
+            pnl=dec(trade.pnl),
+            pnl_percent=dec(trade.pnl_percent),
+            commission=dec(trade.commission),
+        )
+
     def _to_proto_results(
         self,
         results: BacktestResultResponse,
     ) -> backtest_pb2.BacktestResults:
-        """Convert internal result response to proto BacktestResults."""
+        """Convert internal result response to proto BacktestResults.
+
+        Trades are capped at a preview size; the full log is paged via
+        GetBacktestTrades (14B).
+        """
         from llamatrade_proto.generated import backtest_pb2, common_pb2
-        from llamatrade_proto.generated.trading_pb2 import ORDER_SIDE_BUY
 
         def dec(value: float) -> common_pb2.Decimal:
             return common_pb2.Decimal(value=str(value))
@@ -471,21 +611,8 @@ class BacktestServicer:
                 for point in results.equity_curve
             ],
             trades=[
-                backtest_pb2.BacktestTrade(
-                    symbol=trade.symbol,
-                    side=ORDER_SIDE_BUY,  # engine is long-only
-                    quantity=dec(trade.quantity),
-                    entry_price=dec(trade.entry_price),
-                    exit_price=dec(trade.exit_price)
-                    if trade.exit_price is not None
-                    else common_pb2.Decimal(value="0"),
-                    entry_time=ts(trade.entry_date),
-                    exit_time=ts(trade.exit_date) if trade.exit_date else None,
-                    pnl=dec(trade.pnl),
-                    pnl_percent=dec(trade.pnl_percent),
-                    commission=dec(trade.commission),
-                )
-                for trade in results.trades
+                self._to_proto_trade(trade)
+                for trade in results.trades[:_GET_BACKTEST_TRADES_PREVIEW]
             ],
             benchmark_equity_curve=[
                 backtest_pb2.EquityPoint(

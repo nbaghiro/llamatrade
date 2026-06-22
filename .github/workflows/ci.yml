@@ -145,13 +145,35 @@ jobs:
           pip install -e services/agent[dev]
           cd services/agent && pytest tests -v --cov=src --cov-report=term-missing
 
-      - name: Run backtest tests with coverage
+      - name: Run backtest tests with coverage (>=80% gate)
         env:
           DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/test
           REDIS_URL: redis://localhost:6379
         run: |
           pip install -e services/backtest[dev]
-          cd services/backtest && pytest tests -v --cov=src --cov-report=term-missing
+          cd services/backtest && pytest tests -v --cov=src --cov-report=term-missing --cov-fail-under=80
+
+      - name: Run portfolio tests with coverage (>=80% gate)
+        # Full suite (unit + Docker-backed integration via testcontainers): the
+        # ledger IO shells are only covered by integration, so the gate needs it.
+        # ubuntu-latest provides the Docker daemon testcontainers uses. Portfolio
+        # depends on llamatrade-alpaca, which isn't in the shared-libs step.
+        env:
+          DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/test
+          REDIS_URL: redis://localhost:6379
+        run: |
+          pip install -e libs/alpaca
+          pip install -e services/portfolio[dev,integration]
+          cd services/portfolio && pytest tests --cov=src --cov-report=term-missing --cov-fail-under=80
+
+      - name: Run trading tests with coverage (>=80% gate)
+        env:
+          DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/test
+          REDIS_URL: redis://localhost:6379
+        run: |
+          pip install -e libs/alpaca
+          pip install -e services/trading[dev]
+          cd services/trading && pytest tests -v --cov=src --cov-report=term-missing --cov-fail-under=80
 
   lint-frontend:
     name: Lint & Type Check Frontend

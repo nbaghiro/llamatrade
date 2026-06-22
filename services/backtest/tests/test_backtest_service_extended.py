@@ -428,7 +428,12 @@ class TestGRPCMarketDataClient:
         mock_bar.low = 149.0
         mock_bar.close = 154.0
         mock_bar.volume = 1000000
-        mock_grpc_client.get_historical_bars = AsyncMock(return_value=[mock_bar])
+        mock_bar.symbol = "AAPL"
+
+        async def fake_stream(**kwargs):
+            yield mock_bar
+
+        mock_grpc_client.stream_historical_bars = fake_stream
 
         with patch.object(client, "_get_client", AsyncMock(return_value=mock_grpc_client)):
             result = await client.fetch_bars(
@@ -446,7 +451,11 @@ class TestGRPCMarketDataClient:
         client = GRPCMarketDataClient("localhost:8840")
 
         mock_grpc_client = MagicMock()
-        mock_grpc_client.get_historical_bars = AsyncMock(side_effect=Exception("Connection failed"))
+
+        def fake_stream(**kwargs):
+            raise Exception("Connection failed")
+
+        mock_grpc_client.stream_historical_bars = fake_stream
 
         with patch.object(client, "_get_client", AsyncMock(return_value=mock_grpc_client)):
             with pytest.raises(MarketDataError, match="Failed to fetch bars"):

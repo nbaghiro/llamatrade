@@ -23,6 +23,28 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+def _timeframe_to_proto(timeframe: str) -> market_data_pb2.Timeframe.ValueType:
+    """Map a timeframe string (e.g. "1D", "1MIN") to the proto Timeframe enum.
+
+    Unknown values fall back to daily. Shared by the historical-bar RPCs.
+    """
+    from llamatrade_proto.generated import market_data_pb2
+
+    timeframe_map = {
+        "1MIN": market_data_pb2.TIMEFRAME_1MIN,
+        "5MIN": market_data_pb2.TIMEFRAME_5MIN,
+        "15MIN": market_data_pb2.TIMEFRAME_15MIN,
+        "30MIN": market_data_pb2.TIMEFRAME_30MIN,
+        "1HOUR": market_data_pb2.TIMEFRAME_1HOUR,
+        "4HOUR": market_data_pb2.TIMEFRAME_4HOUR,
+        "1DAY": market_data_pb2.TIMEFRAME_1DAY,
+        "1D": market_data_pb2.TIMEFRAME_1DAY,
+        "1WEEK": market_data_pb2.TIMEFRAME_1WEEK,
+        "1MONTH": market_data_pb2.TIMEFRAME_1MONTH,
+    }
+    return timeframe_map.get(timeframe.upper(), market_data_pb2.TIMEFRAME_1DAY)
+
+
 @dataclass
 class Bar:
     """OHLCV bar data."""
@@ -164,25 +186,11 @@ class MarketDataClient(BaseGRPCClient):
         """
         from llamatrade_proto.generated import common_pb2, market_data_pb2
 
-        # Map timeframe string to enum
-        timeframe_map = {
-            "1MIN": market_data_pb2.TIMEFRAME_1MIN,
-            "5MIN": market_data_pb2.TIMEFRAME_5MIN,
-            "15MIN": market_data_pb2.TIMEFRAME_15MIN,
-            "30MIN": market_data_pb2.TIMEFRAME_30MIN,
-            "1HOUR": market_data_pb2.TIMEFRAME_1HOUR,
-            "4HOUR": market_data_pb2.TIMEFRAME_4HOUR,
-            "1DAY": market_data_pb2.TIMEFRAME_1DAY,
-            "1D": market_data_pb2.TIMEFRAME_1DAY,
-            "1WEEK": market_data_pb2.TIMEFRAME_1WEEK,
-            "1MONTH": market_data_pb2.TIMEFRAME_1MONTH,
-        }
-
         request = market_data_pb2.GetHistoricalBarsRequest(
             symbol=symbol,
             start=common_pb2.Timestamp(seconds=int(start.timestamp())),
             end=common_pb2.Timestamp(seconds=int(end.timestamp())),
-            timeframe=timeframe_map.get(timeframe.upper(), market_data_pb2.TIMEFRAME_1DAY),
+            timeframe=_timeframe_to_proto(timeframe),
             adjust_for_splits=adjust_for_splits,
             pagination=common_pb2.PaginationRequest(page=1, page_size=page_size),
         )
@@ -190,6 +198,85 @@ class MarketDataClient(BaseGRPCClient):
         response = await self.stub.GetHistoricalBars(request)
 
         return [self._proto_to_bar(bar) for bar in response.bars]
+
+    async def get_multi_bars(
+        self,
+        symbols: list[str],
+        start: datetime,
+        end: datetime,
+        timeframe: str = "1D",
+        *,
+        limit: int = 0,
+    ) -> dict[str, list[Bar]]:
+        """Fetch historical bars for many symbols in a single batch RPC.
+
+        Replaces N per-symbol GetHistoricalBars round-trips with one call; the
+        server fans out across symbols. A symbol with no data is returned with
+        an empty list (or omitted from the map).
+
+        Args:
+            symbols: Ticker symbols to fetch
+            start: Start datetime
+            end: End datetime
+            timeframe: Bar timeframe (1MIN, 5MIN, 1HOUR, 1DAY, ...)
+            limit: Max bars per symbol; 0 lets the server apply its default
+
+        Returns:
+            Mapping of symbol -> list of Bar objects
+        """
+        from llamatrade_proto.generated import common_pb2, market_data_pb2
+
+        request = market_data_pb2.GetMultiBarsRequest(
+            symbols=symbols,
+            start=common_pb2.Timestamp(seconds=int(start.timestamp())),
+            end=common_pb2.Timestamp(seconds=int(end.timestamp())),
+            timeframe=_timeframe_to_proto(timeframe),
+            limit=limit,
+        )
+
+        response = await self.stub.GetMultiBars(request)
+
+        return {
+            symbol: [self._proto_to_bar(bar) for bar in bar_list.bars]
+            for symbol, bar_list in response.bars.items()
+        }
+
+    async def stream_historical_bars(
+        self,
+        symbols: list[str],
+        start: datetime,
+        end: datetime,
+        timeframe: str = "1D",
+        *,
+        limit: int = 0,
+    ) -> AsyncIterator[Bar]:
+        """Stream historical bars for many symbols in timestamp order (one call).
+
+        Yields bars incrementally so the consumer never buffers the whole dataset
+        as a single response, while still replacing N per-symbol round-trips.
+
+        Args:
+            symbols: Ticker symbols to fetch
+            start: Start datetime
+            end: End datetime
+            timeframe: Bar timeframe (1MIN, 5MIN, 1HOUR, 1DAY, ...)
+            limit: Max bars per symbol; 0 lets the server apply its default
+
+        Yields:
+            Bar objects in ascending timestamp order across all symbols
+        """
+        from llamatrade_proto.generated import common_pb2, market_data_pb2
+
+        request = market_data_pb2.StreamHistoricalBarsRequest(
+            symbols=symbols,
+            start=common_pb2.Timestamp(seconds=int(start.timestamp())),
+            end=common_pb2.Timestamp(seconds=int(end.timestamp())),
+            timeframe=_timeframe_to_proto(timeframe),
+            limit=limit,
+        )
+
+        async for bar in self.stub.StreamHistoricalBars(request):
+            yield self._proto_to_bar(bar)
 
     async def stream_bars(
         self,

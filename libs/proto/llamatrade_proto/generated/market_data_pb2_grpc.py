@@ -43,6 +43,11 @@ class MarketDataServiceStub(object):
                 request_serializer=market__data__pb2.GetMultiBarsRequest.SerializeToString,
                 response_deserializer=market__data__pb2.GetMultiBarsResponse.FromString,
                 _registered_method=True)
+        self.StreamHistoricalBars = channel.unary_stream(
+                '/llamatrade.MarketDataService/StreamHistoricalBars',
+                request_serializer=market__data__pb2.StreamHistoricalBarsRequest.SerializeToString,
+                response_deserializer=market__data__pb2.Bar.FromString,
+                _registered_method=True)
         self.GetSnapshot = channel.unary_unary(
                 '/llamatrade.MarketDataService/GetSnapshot',
                 request_serializer=market__data__pb2.GetSnapshotRequest.SerializeToString,
@@ -99,6 +104,12 @@ class MarketDataServiceServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def StreamHistoricalBars(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
     def GetSnapshot(self, request, context):
         """Snapshots
         """
@@ -146,6 +157,11 @@ def add_MarketDataServiceServicer_to_server(servicer, server):
                     servicer.GetMultiBars,
                     request_deserializer=market__data__pb2.GetMultiBarsRequest.FromString,
                     response_serializer=market__data__pb2.GetMultiBarsResponse.SerializeToString,
+            ),
+            'StreamHistoricalBars': grpc.unary_stream_rpc_method_handler(
+                    servicer.StreamHistoricalBars,
+                    request_deserializer=market__data__pb2.StreamHistoricalBarsRequest.FromString,
+                    response_serializer=market__data__pb2.Bar.SerializeToString,
             ),
             'GetSnapshot': grpc.unary_unary_rpc_method_handler(
                     servicer.GetSnapshot,
@@ -302,6 +318,33 @@ class MarketDataService(object):
             '/llamatrade.MarketDataService/GetMultiBars',
             market__data__pb2.GetMultiBarsRequest.SerializeToString,
             market__data__pb2.GetMultiBarsResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def StreamHistoricalBars(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_stream(
+            request,
+            target,
+            '/llamatrade.MarketDataService/StreamHistoricalBars',
+            market__data__pb2.StreamHistoricalBarsRequest.SerializeToString,
+            market__data__pb2.Bar.FromString,
             options,
             channel_credentials,
             insecure,

@@ -71,6 +71,97 @@ class TestTrade:
         assert len(engine.rejected_signals) == 3
         assert all("Unsupported signal type" in r.reason for r in engine.rejected_signals)
 
+    def test_sell_with_no_position_is_recorded(self):
+        """8A: a sell for a symbol with no open position is recorded, not dropped."""
+        engine = BacktestEngine(BacktestConfig(initial_capital=100000))
+        bar: BarData = {
+            "timestamp": datetime(2024, 1, 2, tzinfo=UTC),
+            "open": 100.0,
+            "high": 101.0,
+            "low": 99.0,
+            "close": 100.0,
+            "volume": 1000,
+        }
+        engine._current_date = bar["timestamp"]
+
+        engine._process_signal({"type": "sell", "symbol": "AAPL", "quantity": 10}, bar)
+
+        assert not engine.trades
+        assert len(engine.rejected_signals) == 1
+        assert "no open position" in engine.rejected_signals[0].reason
+
+    def test_unclosable_position_at_end_is_recorded(self):
+        """8A: a position with no last price to liquidate against is recorded."""
+        engine = BacktestEngine(BacktestConfig(initial_capital=100000))
+        engine._current_date = datetime(2024, 1, 2, tzinfo=UTC)
+        engine.positions["AAPL"] = Position(
+            "AAPL", "long", 100.0, 10, datetime(2024, 1, 2, tzinfo=UTC)
+        )
+        # No entry in _last_prices for AAPL → cannot liquidate.
+
+        engine._close_all_positions()
+
+        assert "AAPL" in engine.positions  # not closed
+        assert not engine.trades
+        assert len(engine.rejected_signals) == 1
+        assert "no last price" in engine.rejected_signals[0].reason
+
+
+class TestCommissionReconciliation:
+    """6A: per-trade commission/P&L must reconcile with the equity curve,
+    including across partial exits (DRIFT rebalancing routinely trims positions).
+    """
+
+    @staticmethod
+    def _bars(closes: list[float]) -> dict:
+        base = datetime(2024, 1, 2, tzinfo=UTC)
+        return {
+            "AAPL": [
+                {
+                    "timestamp": base + timedelta(days=i),
+                    "open": c,
+                    "high": c + 1,
+                    "low": c - 1,
+                    "close": c,
+                    "volume": 1000,
+                }
+                for i, c in enumerate(closes)
+            ]
+        }
+
+    def test_partial_exits_reconcile_with_equity(self):
+        closes = [100.0, 105.0, 110.0, 108.0, 112.0]
+        bars = self._bars(closes)
+        engine = BacktestEngine(BacktestConfig(initial_capital=100000, commission_rate=1.0))
+
+        steps = {"n": 0}
+
+        def strategy_fn(eng, bars_dict, warm_up):
+            if warm_up:
+                return []
+            i = steps["n"]
+            steps["n"] += 1
+            if i == 0:
+                return [{"type": "buy", "symbol": "AAPL", "quantity": 90}]
+            if i in (1, 2):
+                return [{"type": "sell", "symbol": "AAPL", "quantity": 30}]
+            return []
+
+        result = engine.run(
+            bars=bars,
+            strategy_fn=strategy_fn,
+            start_date=datetime(2024, 1, 2, tzinfo=UTC),
+            end_date=datetime(2024, 1, 6, tzinfo=UTC),
+        )
+
+        # 1 buy + 2 partial sells + the engine's end-of-run close = 3 exit trades.
+        assert len(result.trades) == 3
+        # Commission is charged once per fill (4 fills total), never double-counted.
+        assert sum(t.commission for t in result.trades) == pytest.approx(4.0)
+        # The decisive invariant: realized P&L equals the actual equity change.
+        realized = sum(t.pnl for t in result.trades)
+        assert realized == pytest.approx(result.final_equity - 100000, abs=1e-6)
+
 
 class TestBacktestConfig:
     """Tests for BacktestConfig."""

@@ -36,6 +36,44 @@ repos:
         files: ^(services|libs)/.*\.py$
         pass_filenames: false
 
+  # Backtest service: run its test suite, which enforces the >=80% coverage gate
+  # (--cov-fail-under=80 lives in services/backtest/pyproject.toml addopts).
+  # Runs only when backtest Python sources/tests change.
+  - repo: local
+    hooks:
+      - id: backtest-tests-coverage
+        name: Backtest tests (>=80% coverage)
+        entry: bash -c 'cd services/backtest && ../../.venv/bin/python -m pytest -q'
+        language: system
+        files: ^services/backtest/.*\.py$
+        pass_filenames: false
+
+  # Portfolio service (book-of-record ledger): run its FULL suite with coverage,
+  # enforcing the >=80% gate (fail_under lives in services/portfolio/
+  # pyproject.toml [tool.coverage.report]). The gate needs the Docker-backed
+  # integration tests — the IO shells (servicers/writer/ingestion) are only
+  # covered there — so this requires Docker. Runs only when portfolio code changes.
+  - repo: local
+    hooks:
+      - id: portfolio-tests-coverage
+        name: Portfolio tests (>=80% coverage, requires Docker)
+        entry: bash -c 'cd services/portfolio && ../../.venv/bin/python -m pytest tests --cov=src -q'
+        language: system
+        files: ^services/portfolio/.*\.py$
+        pass_filenames: false
+
+  # Trading service: run its test suite, which enforces the >=80% coverage gate
+  # (--cov-fail-under=80 lives in services/trading/pyproject.toml addopts).
+  # Runs only when trading Python sources/tests change.
+  - repo: local
+    hooks:
+      - id: trading-tests-coverage
+        name: Trading tests (>=80% coverage)
+        entry: bash -c 'cd services/trading && ../../.venv/bin/python -m pytest -q'
+        language: system
+        files: ^services/trading/.*\.py$
+        pass_filenames: false
+
   # Frontend linting
   - repo: local
     hooks:

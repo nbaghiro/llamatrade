@@ -57,6 +57,19 @@ services:
       - ../../libs/proto/llamatrade_proto:/app/libs/proto/llamatrade_proto:cached
     command: celery -A src.celery_app:celery_app worker --queues backtest --loglevel info
 
+  # Embedded beat scheduler + maintenance-queue worker: runs the periodic
+  # reaper (1A) that recovers orphaned RUNNING/PENDING runs.
+  backtest-beat:
+    build:
+      context: ../..
+      dockerfile: services/backtest/Dockerfile.dev
+    volumes:
+      - ../../services/backtest/src:/app/src:cached
+      - ../../libs/common/llamatrade_common:/app/libs/common/llamatrade_common:cached
+      - ../../libs/db/llamatrade_db:/app/libs/db/llamatrade_db:cached
+      - ../../libs/proto/llamatrade_proto:/app/libs/proto/llamatrade_proto:cached
+    command: celery -A src.celery_app:celery_app worker -B --queues backtest_maintenance --concurrency 1 --loglevel info
+
   market-data:
     build:
       context: ../..

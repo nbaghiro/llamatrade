@@ -1,4 +1,13 @@
-"""Progress tracking and publishing for backtests."""
+"""Progress tracking and publishing for backtests.
+
+Tenant-isolation invariant (4A): the Redis progress streams and the cancellation
+flag are keyed by ``backtest_id`` ONLY — they carry no tenant scope of their own.
+A backtest_id is an unguessable UUIDv4, but that is not an authorization boundary.
+Every caller MUST verify tenant ownership of the backtest (via a tenant-scoped DB
+lookup) BEFORE subscribing to its progress (`ProgressSubscriber`) or requesting
+its cancellation (`CancellationFlag`). The gRPC servicer enforces this at each
+boundary; see the AUTHORIZATION comments in ``grpc/servicer.py``.
+"""
 
 import logging
 import os

@@ -1,5 +1,6 @@
 """Backtesting engine - runs historical simulations."""
 
+import math
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -8,6 +9,17 @@ from typing import TypedDict, cast
 import numpy as np
 
 from src.engine import metrics
+
+
+def _finite(value: float, default: float = 0.0) -> float:
+    """Return ``value`` if finite, else ``default``.
+
+    Defensive nan/inf guard (7A): the metric functions already guard their
+    divisions, but this ensures a non-finite scalar can never reach the DB
+    (``Decimal('NaN')`` would fail the Numeric columns).
+    """
+    return value if math.isfinite(value) else default
+
 
 # Type alias for progress callback
 # Signature: (current_bar: int, total_bars: int, current_date: datetime) -> None
@@ -84,6 +96,10 @@ class Position:
     entry_price: float
     quantity: float
     entry_date: datetime
+    # Entry commission paid (accumulated across adds) and not yet allocated to a
+    # closing trade. Allocated proportionally on (partial) exits so commission is
+    # counted exactly once per fill and trade P&L reconciles with equity (6A).
+    entry_commission_remaining: float = 0.0
 
 
 @dataclass
@@ -91,7 +107,7 @@ class BacktestConfig:
     """Configuration for a backtest run."""
 
     initial_capital: float = 100000
-    commission_rate: float = 0  # Per trade
+    commission_rate: float = 0  # Flat fee per fill (entry and each exit), not a %
     slippage_rate: float = 0  # Percentage
     risk_free_rate: float = 0.02  # For Sharpe ratio
 
@@ -278,6 +294,14 @@ class BacktestEngine:
         # Close all remaining positions at the last known prices
         self._close_all_positions()
 
+        # The last recorded equity point was marked-to-market *before* this
+        # end-of-run liquidation, so it excludes the liquidation's commission
+        # (and any exit slippage). Replace it with the realized equity so the
+        # curve's final value reconciles with the trade ledger (6A).
+        if self.equity_curve:
+            last_date = self.equity_curve[-1][0]
+            self.equity_curve[-1] = (last_date, self._calculate_equity())
+
         # Calculate metrics
         return self._calculate_results()
 
@@ -307,6 +331,19 @@ class BacktestEngine:
         elif signal_type == "sell":
             if symbol in self.positions:
                 self._close_position(symbol, price, quantity if quantity > 0 else None)
+            elif self._current_date is not None:
+                # Sell with no open position: record it instead of silently
+                # dropping it, so a strategy bug surfaces (8A).
+                self.rejected_signals.append(
+                    RejectedSignal(
+                        date=self._current_date,
+                        symbol=symbol,
+                        signal_type="sell",
+                        quantity=quantity,
+                        price=price,
+                        reason="Sell signal for a symbol with no open position",
+                    )
+                )
         elif self._current_date is not None:
             self.rejected_signals.append(
                 RejectedSignal(
@@ -356,6 +393,7 @@ class BacktestEngine:
                 existing.entry_price * existing.quantity + price * quantity
             ) / total_quantity
             existing.quantity = total_quantity
+            existing.entry_commission_remaining += commission
         else:
             self.positions[symbol] = Position(
                 symbol=symbol,
@@ -363,6 +401,7 @@ class BacktestEngine:
                 entry_price=price,
                 quantity=quantity,
                 entry_date=self._current_date,
+                entry_commission_remaining=commission,
             )
 
     def _close_position(self, symbol: str, price: float, quantity: float | None = None) -> None:
@@ -377,10 +416,19 @@ class BacktestEngine:
         if pos is None or self._current_date is None:
             return
 
-        commission = self.config.commission_rate
+        exit_commission = self.config.commission_rate
         sell_quantity = pos.quantity if quantity is None else min(quantity, pos.quantity)
         if sell_quantity <= 0:
             return
+
+        # Allocate the entry commission (paid once for the whole position) to this
+        # exit in proportion to the quantity sold, so commission is counted once
+        # per fill and trade P&L reconciles with the cash/equity curve even on
+        # partial exits (6A). commission_rate is a flat per-fill fee, not a %.
+        if sell_quantity >= pos.quantity:
+            entry_commission_alloc = pos.entry_commission_remaining
+        else:
+            entry_commission_alloc = pos.entry_commission_remaining * (sell_quantity / pos.quantity)
 
         trade = Trade(
             entry_date=pos.entry_date,
@@ -390,15 +438,18 @@ class BacktestEngine:
             entry_price=pos.entry_price,
             exit_price=price,
             quantity=sell_quantity,
-            commission=commission * 2,  # Entry + exit
+            commission=entry_commission_alloc + exit_commission,
         )
 
         self.trades.append(trade)
-        self.cash += price * sell_quantity - commission
+        # Only the exit commission hits cash here; the entry commission was
+        # already debited when the position was opened.
+        self.cash += price * sell_quantity - exit_commission
 
         if sell_quantity >= pos.quantity:
             del self.positions[symbol]
         else:
+            pos.entry_commission_remaining -= entry_commission_alloc
             pos.quantity -= sell_quantity
 
     def _close_all_positions(self) -> None:
@@ -407,6 +458,20 @@ class BacktestEngine:
             price = self._last_prices.get(symbol)
             if price:
                 self._close_position(symbol, price)
+            else:
+                # No usable last price to liquidate against: record it instead
+                # of silently leaving the position out of the trade ledger (8A).
+                pos = self.positions[symbol]
+                self.rejected_signals.append(
+                    RejectedSignal(
+                        date=self._current_date or pos.entry_date,
+                        symbol=symbol,
+                        signal_type="close",
+                        quantity=pos.quantity,
+                        price=0.0,
+                        reason="Could not close position at end of run: no last price available",
+                    )
+                )
 
     def _calculate_equity(self) -> float:
         """Calculate current equity from cash and marked-to-market positions."""
@@ -456,18 +521,20 @@ class BacktestEngine:
             equity_curve=self.equity_curve,
             daily_equity_curve=daily_curve,
             rejected_signals=self.rejected_signals,
-            final_equity=float(daily_equities[-1]),
-            total_return=total_return,
-            annual_return=annual_return,
-            sharpe_ratio=sharpe_ratio,
-            sortino_ratio=sortino_ratio,
-            max_drawdown=max_drawdown,
+            final_equity=_finite(float(daily_equities[-1]), initial),
+            total_return=_finite(total_return),
+            annual_return=_finite(annual_return),
+            sharpe_ratio=_finite(sharpe_ratio),
+            sortino_ratio=_finite(sortino_ratio),
+            max_drawdown=_finite(max_drawdown),
             max_drawdown_duration=max_dd_duration,
-            win_rate=win_rate,
-            profit_factor=profit_factor,
+            win_rate=_finite(win_rate),
+            profit_factor=(
+                profit_factor if (profit_factor is None or math.isfinite(profit_factor)) else None
+            ),
             daily_returns=daily_returns_list,
             monthly_returns=monthly_returns,
-            exposure_time=exposure_time,
+            exposure_time=_finite(exposure_time),
         )
 
     # Convenience methods for strategies

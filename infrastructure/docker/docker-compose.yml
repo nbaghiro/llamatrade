@@ -137,6 +137,26 @@ services:
       redis:
         condition: service_healthy
 
+  # Embedded beat scheduler + maintenance-queue worker: runs the periodic
+  # reaper (1A) that recovers orphaned RUNNING/PENDING runs. Single instance.
+  backtest-beat:
+    build:
+      context: ../../services/backtest
+      dockerfile: Dockerfile
+    container_name: llamatrade-backtest-beat
+    command: celery -A src.celery_app:celery_app worker -B --queues backtest_maintenance --concurrency 1 --loglevel info
+    environment:
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/llamatrade
+      REDIS_URL: redis://redis:6379
+      MARKET_DATA_GRPC_TARGET: market-data:8840
+      DB_POOL_SIZE: "2"
+      DB_MAX_OVERFLOW: "2"
+    depends_on:
+      db-migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+
   # Dedicated Timescale instance for the market-data store (separate from the
   # shared pgvector Postgres — different workload, retention, failure domain).
   timescaledb:
