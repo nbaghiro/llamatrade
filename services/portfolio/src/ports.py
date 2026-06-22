@@ -92,11 +92,23 @@ class LedgerStore(Protocol):
     async def project_account(self, tenant_id: UUID, account_id: UUID) -> AccountProjection: ...
 
 
+class BrokerUnavailableError(Exception):
+    """The broker truth couldn't be read (missing credentials / transport fault).
+
+    Distinct from "the broker holds nothing": reconciliation MUST NOT treat an
+    unreadable account as an empty one, or every ledger holding would look like a
+    ``MISSING_AT_BROKER`` drift and freeze every sleeve. Callers skip the account
+    for this pass and retry next cycle.
+    """
+
+
 class BrokerPositions(Protocol):
     """Read aggregate broker truth for reconciliation (one qty per symbol).
 
     Production adapter resolves the account's Alpaca credentials and calls the
     broker via ``llamatrade_alpaca``; tests supply a static in-memory map.
+    Raises :class:`BrokerUnavailableError` when the broker can't be read (so an
+    unreadable account is never mistaken for an empty one).
     """
 
     async def positions(self, tenant_id: UUID, account: Account) -> dict[str, Decimal]:

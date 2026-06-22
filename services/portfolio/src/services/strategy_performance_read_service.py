@@ -14,6 +14,7 @@ sleeve is funded) link the execution to its ledger sleeve.
 
 from __future__ import annotations
 
+import asyncio
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from uuid import UUID
@@ -187,8 +188,10 @@ class StrategyPerformanceReadService:
             current_value: Decimal | None = marked.equity
             positions_count = sum(1 for p in sleeve.positions.values() if p.qty != ZERO)
         else:
-            current_value = execution.current_value
-            positions_count = execution.positions_count or 0
+            # Unfunded execution: no sleeve to mark; live value/position count are
+            # not tracked off-ledger.
+            current_value = None
+            positions_count = 0
 
         series = await self._sleeve_series(tenant_id, execution.sleeve_id, None, None)
         returns = self._period_returns([(t, float(e)) for t, e in series])
@@ -216,7 +219,8 @@ class StrategyPerformanceReadService:
     ) -> LiveMetrics:
         series = await self._sleeve_series(tenant_id, execution.sleeve_id, None, None)
         equities = np.array([float(e) for _, e in series], dtype=np.float64)
-        m = analytics.equity_metrics(equities) if len(equities) >= 2 else None
+        # Numpy is CPU-bound — run it off the event loop (see portfolio_read_service).
+        m = await asyncio.to_thread(analytics.equity_metrics, equities) if len(equities) >= 2 else None
 
         # Trade stats from the sleeve's realized sells.
         stats = read_model.TradeStats(0, 0, 0, 0.0, 0.0, 0.0, 0.0, 0.0)
@@ -224,7 +228,7 @@ class StrategyPerformanceReadService:
             events = await self._projector.read_events(tenant_id, execution.account_id)
             stats = read_model.sleeve_trade_stats(events, str(execution.sleeve_id))
 
-        current_equity = Decimal(str(equities[-1])) if len(equities) else execution.current_value
+        current_equity = Decimal(str(equities[-1])) if len(equities) else None
         peak_equity = Decimal(str(float(np.max(equities)))) if len(equities) else None
         current_dd = None
         if len(equities):

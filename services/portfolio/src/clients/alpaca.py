@@ -11,7 +11,7 @@ resolution + HTTP call is the thin IO shell (exercised by the integration suite)
 from __future__ import annotations
 
 import logging
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from typing import TYPE_CHECKING
 from uuid import UUID
 
@@ -22,7 +22,7 @@ from llamatrade_alpaca import TradingClient
 from llamatrade_common.utils import decrypt_value
 from llamatrade_db.models.auth import AlpacaCredentials
 
-from src.ports import BrokerHolding, BrokerSnapshot
+from src.ports import BrokerHolding, BrokerSnapshot, BrokerUnavailableError
 
 if TYPE_CHECKING:
     from llamatrade_alpaca.models.trading import Position
@@ -30,31 +30,56 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+_ZERO = Decimal("0")
+
+
+def _safe_decimal(value: object) -> Decimal | None:
+    """Parse a broker-supplied numeric, or None if it's malformed."""
+    try:
+        return Decimal(str(value))
+    except (InvalidOperation, TypeError, ValueError):
+        return None
+
 
 def positions_to_qty_map(positions: list[Position]) -> dict[str, Decimal]:
     """Reduce broker positions to a signed aggregate quantity per symbol.
 
     Alpaca already nets to one position per symbol, but we aggregate defensively
-    so duplicates (or a future per-account split) collapse correctly.
+    so duplicates (or a future per-account split) collapse correctly. A position
+    with an unparseable quantity is skipped (logged) rather than failing the whole
+    reconciliation pass for the account.
     """
     qty_map: dict[str, Decimal] = {}
     for pos in positions:
-        qty = Decimal(str(pos.qty))
-        qty_map[pos.symbol] = qty_map.get(pos.symbol, Decimal("0")) + qty
+        qty = _safe_decimal(pos.qty)
+        if qty is None:
+            logger.warning("skipping broker position with unparseable qty: %s=%r", pos.symbol, pos.qty)
+            continue
+        qty_map[pos.symbol] = qty_map.get(pos.symbol, _ZERO) + qty
     return qty_map
 
 
 def positions_to_holdings(positions: list[Position]) -> list[BrokerHolding]:
-    """Translate broker positions into backfill holdings (symbol/qty/avg_price)."""
-    return [
-        BrokerHolding(
-            symbol=pos.symbol,
-            qty=Decimal(str(pos.qty)),
-            avg_price=Decimal(str(pos.avg_entry_price)),
-        )
-        for pos in positions
-        if Decimal(str(pos.qty)) != Decimal("0")
-    ]
+    """Translate broker positions into backfill holdings (symbol/qty/avg_price).
+
+    A position with an unparseable qty or average price is skipped (logged), so a
+    single malformed broker row can't abort onboarding/backfill.
+    """
+    holdings: list[BrokerHolding] = []
+    for pos in positions:
+        qty = _safe_decimal(pos.qty)
+        avg_price = _safe_decimal(pos.avg_entry_price)
+        if qty is None or avg_price is None:
+            logger.warning(
+                "skipping malformed broker position: %s qty=%r avg=%r",
+                pos.symbol,
+                pos.qty,
+                pos.avg_entry_price,
+            )
+            continue
+        if qty != _ZERO:
+            holdings.append(BrokerHolding(symbol=pos.symbol, qty=qty, avg_price=avg_price))
+    return holdings
 
 
 class AlpacaBrokerPositions:
@@ -70,7 +95,12 @@ class AlpacaBrokerPositions:
     async def positions(self, tenant_id: UUID, account: Account) -> dict[str, Decimal]:
         client = await self._client_for(tenant_id, account)
         if client is None:
-            return {}
+            # No usable credentials → broker truth is UNKNOWN, not empty. Raising
+            # (vs. returning {}) keeps reconciliation from reading every ledger
+            # holding as MISSING_AT_BROKER and freezing every sleeve.
+            raise BrokerUnavailableError(
+                f"no active Alpaca credentials for account {account.id}"
+            )
         try:
             broker_positions = await client.get_positions()
         finally:

@@ -18,6 +18,7 @@ to a session factory for the reconciliation loop.
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import logging
 from typing import TYPE_CHECKING
@@ -36,9 +37,14 @@ from llamatrade_telemetry import metrics
 from src.ledger.reconciliation import Drift, DriftKind
 
 if TYPE_CHECKING:
-    from src.ports import BrokerSnapshotProvider, LedgerStore, SleeveRepository
+    from src.ports import BrokerSnapshot, BrokerSnapshotProvider, LedgerStore, SleeveRepository
 
 logger = logging.getLogger(__name__)
+
+# Bounded retry for the broker snapshot during adoption: a transient broker
+# hiccup shouldn't make us skip a real external trade for a whole pass.
+_SNAPSHOT_ATTEMPTS = 3
+_SNAPSHOT_BASE_DELAY = 0.5
 
 # Drift kinds that contradict the ledger's own record → freeze, never correct.
 _FREEZE_KINDS = {DriftKind.MISSING_AT_BROKER, DriftKind.QTY_MISMATCH}
@@ -68,6 +74,30 @@ async def apply_drift_action(
     return "observed"
 
 
+async def _snapshot_with_retry(
+    broker: BrokerSnapshotProvider, account: Account
+) -> BrokerSnapshot | None:
+    """Fetch the broker snapshot with bounded exponential backoff.
+
+    Returns None if it never succeeds — a transient broker outage shouldn't make
+    us skip a real external trade; the next pass retries (detection is idempotent).
+    """
+    for attempt in range(_SNAPSHOT_ATTEMPTS):
+        try:
+            return await broker.snapshot(account.tenant_id, account)
+        except Exception as e:  # broker faults are opaque; retry then defer
+            if attempt == _SNAPSHOT_ATTEMPTS - 1:
+                logger.warning(
+                    "broker snapshot failed after %d attempts (account=%s): %s",
+                    _SNAPSHOT_ATTEMPTS,
+                    account.id,
+                    e,
+                )
+                return None
+            await asyncio.sleep(_SNAPSHOT_BASE_DELAY * (2**attempt))
+    return None
+
+
 async def _adopt_external_trade(
     repo: SleeveRepository,
     store: LedgerStore,
@@ -83,7 +113,16 @@ async def _adopt_external_trade(
         )
         return "skipped"
 
-    snapshot = await broker.snapshot(account.tenant_id, account)
+    snapshot = await _snapshot_with_retry(broker, account)
+    if snapshot is None:
+        # Broker unavailable after retries — leave the drift for the next pass
+        # rather than guessing a price (the detection is idempotent).
+        logger.warning(
+            "broker snapshot unavailable for adoption of %s (account=%s); retry next pass",
+            drift.symbol,
+            account.id,
+        )
+        return "skipped"
     holding = next((h for h in snapshot.holdings if h.symbol == drift.symbol), None)
     if holding is None:
         # The position vanished between reconciliation and now — let the next

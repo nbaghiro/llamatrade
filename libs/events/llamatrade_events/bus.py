@@ -11,6 +11,7 @@ from collections.abc import AsyncIterator
 from llamatrade_events.codec import EventEnvelope, decode_envelope, encode_envelope
 from llamatrade_events.transport.base import CURSOR_NEW, Cursor, EventTransport
 from llamatrade_events.transport.redis_streams import RedisStreamsTransport
+from llamatrade_telemetry import inject_context
 
 
 class EventBus:
@@ -28,6 +29,12 @@ class EventBus:
     async def publish_envelope(
         self, stream: str, envelope: EventEnvelope, *, maxlen: int, key: str | None = None
     ) -> Cursor:
+        # Carry the current trace context in the envelope so a consumer can link
+        # its processing span to the producer (e.g. fill → ledger projection).
+        carrier: dict[str, str] = {}
+        inject_context(carrier)
+        for header, value in carrier.items():
+            envelope.metadata[header] = value
         return await self._transport.publish(
             stream, encode_envelope(envelope), key=key, maxlen=maxlen
         )
@@ -57,10 +64,29 @@ class EventBus:
     async def ensure_group(self, stream: str, group: str) -> None:
         await self._transport.ensure_group(stream, group)
 
+    async def consume_raw(
+        self, stream: str, group: str, consumer: str, *, group_start_id: Cursor = CURSOR_NEW
+    ) -> AsyncIterator[tuple[Cursor, bytes]]:
+        """Durable consume yielding the raw entry bytes (undecoded).
+
+        Lets the caller decode inside its own error boundary so a corrupt entry
+        is handled (DLQ/skip) instead of crashing the loop. ``group_start_id``
+        sets where a brand-new group begins.
+        """
+        async for cursor, value in self._transport.consume(
+            stream, group, consumer, group_start_id=group_start_id
+        ):
+            yield cursor, value
+
     async def consume_envelopes(
-        self, stream: str, group: str, consumer: str
+        self, stream: str, group: str, consumer: str, *, group_start_id: Cursor = CURSOR_NEW
     ) -> AsyncIterator[tuple[Cursor, EventEnvelope]]:
-        async for cursor, value in self._transport.consume(stream, group, consumer):
+        """Durable consume yielding decoded envelopes. NOTE: a corrupt entry
+        raises out of this generator — use :meth:`consume_raw` if the caller
+        needs to handle undecodable entries gracefully."""
+        async for cursor, value in self._transport.consume(
+            stream, group, consumer, group_start_id=group_start_id
+        ):
             yield cursor, decode_envelope(value)
 
     async def ack(self, stream: str, group: str, cursor: Cursor) -> None:

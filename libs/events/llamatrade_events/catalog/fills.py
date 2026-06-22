@@ -21,7 +21,7 @@ from llamatrade_events.channels import LEDGER_FILLS
 from llamatrade_events.codec import EventEnvelope, make_envelope, parse_payload, register_payload
 from llamatrade_events.consumer import StreamConsumer
 from llamatrade_events.idempotency import DedupStore, derive_event_id
-from llamatrade_events.transport.base import Cursor
+from llamatrade_events.transport.base import CURSOR_BEGIN, Cursor
 from llamatrade_proto.generated import events_pb2
 
 LedgerFill = events_pb2.LedgerFill
@@ -76,10 +76,22 @@ class FillEvents:
         consumer_name: str,
         group: str = PORTFOLIO_GROUP,
         dedup: DedupStore | None = None,
+        group_start: str = CURSOR_BEGIN,
+        claim_min_idle_ms: int = 60_000,
     ) -> StreamConsumer:
-        """A durable consumer for the ledger stream (handler gets the envelope)."""
+        """A durable consumer for the ledger stream (handler gets the envelope).
+
+        Defaults to ``group_start=CURSOR_BEGIN`` (never miss a fill: a fresh group
+        replays the retained stream — safe given the writer's event-id dedupe).
+        """
         return StreamConsumer(
-            self._bus, self._stream, group, consumer_name=consumer_name, dedup=dedup
+            self._bus,
+            self._stream,
+            group,
+            consumer_name=consumer_name,
+            dedup=dedup,
+            group_start=group_start,
+            claim_min_idle_ms=claim_min_idle_ms,
         )
 
     @staticmethod

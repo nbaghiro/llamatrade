@@ -16,6 +16,8 @@ import logging
 from collections.abc import AsyncIterator, Iterable
 from typing import Generic, TypeVar
 
+from llamatrade_events.observability import EVENTS_FANOUT_CLIENTS, EVENTS_FANOUT_DROPPED_TOTAL
+
 logger = logging.getLogger(__name__)
 
 T = TypeVar("T")
@@ -23,9 +25,14 @@ QUEUE_MAX = 1000
 
 
 class StreamFanout(Generic[T]):
-    """Routes keyed items to subscribed clients via per-client bounded queues."""
+    """Routes keyed items to subscribed clients via per-client bounded queues.
 
-    def __init__(self, *, queue_max: int = QUEUE_MAX) -> None:
+    ``name`` is the metric label (bounded cardinality) distinguishing one
+    fan-out (e.g. "bars" vs "orders") in ``events_fanout_*``.
+    """
+
+    def __init__(self, *, name: str = "default", queue_max: int = QUEUE_MAX) -> None:
+        self._name = name
         self._queue_max = queue_max
         self._queues: dict[int, asyncio.Queue[T]] = {}
         self._subs: dict[int, set[str]] = {}  # client_id → keys ("" set = all)
@@ -37,15 +44,23 @@ class StreamFanout(Generic[T]):
 
     async def connect(self, client_id: int, keys: Iterable[str] = ()) -> asyncio.Queue[T]:
         async with self._lock:
+            if client_id in self._queues:
+                # A duplicate id would orphan the previous client's queue (its
+                # stream() blocks forever) — surface the caller bug loudly.
+                raise ValueError(
+                    f"client_id {client_id} already connected to fanout {self._name!r}"
+                )
             queue: asyncio.Queue[T] = asyncio.Queue(maxsize=self._queue_max)
             self._queues[client_id] = queue
             self._subs[client_id] = {k.upper() for k in keys}
+            EVENTS_FANOUT_CLIENTS.labels(fanout=self._name).set(len(self._queues))
             return queue
 
     async def disconnect(self, client_id: int) -> None:
         async with self._lock:
             self._queues.pop(client_id, None)
             self._subs.pop(client_id, None)
+            EVENTS_FANOUT_CLIENTS.labels(fanout=self._name).set(len(self._queues))
 
     async def broadcast(self, key: str, item: T) -> None:
         """Deliver ``item`` to every client subscribed to ``key`` (or to all)."""
@@ -61,7 +76,8 @@ class StreamFanout(Generic[T]):
                 queue.put_nowait(item)
             except asyncio.QueueFull:
                 # Backpressure = drop; a slow client never stalls the producer.
-                logger.warning("fanout queue full for client %s; dropping", cid)
+                EVENTS_FANOUT_DROPPED_TOTAL.labels(fanout=self._name).inc()
+                logger.warning("fanout %s queue full for client %s; dropping", self._name, cid)
 
     async def stream(self, client_id: int, keys: Iterable[str] = ()) -> AsyncIterator[T]:
         """Serve one gRPC client: subscribe, yield items, clean up on disconnect."""

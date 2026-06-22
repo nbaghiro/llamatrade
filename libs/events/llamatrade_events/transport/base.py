@@ -73,11 +73,14 @@ class EventTransport(Protocol):
         block_ms: int = 5000,
         count: int = 10,
         claim_min_idle_ms: int = 60_000,
+        group_start_id: str = CURSOR_NEW,
     ) -> AsyncIterator[tuple[Cursor, bytes]]:
         """Durable competing consumption. Yields ``(cursor, value)``; caller MUST
         :meth:`ack`. ``claim_min_idle_ms`` governs dead-consumer reclaim where the
         backend needs it explicitly (Redis); ignored where failover is automatic
-        (Kafka rebalance)."""
+        (Kafka rebalance). ``group_start_id`` is where a *brand-new* group begins
+        (``CURSOR_BEGIN`` = never miss pre-existing entries; ``CURSOR_NEW`` =
+        only-new); ignored once the group exists."""
         ...
 
     async def ack(self, stream: str, group: str, cursor: Cursor) -> None:

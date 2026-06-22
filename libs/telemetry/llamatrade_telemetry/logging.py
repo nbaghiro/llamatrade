@@ -132,20 +132,30 @@ class JSONFormatter(logging.Formatter):
         return json.dumps(log_dict, default=str)
 
 
+def _resolve_level(level: str) -> int:
+    """Map a level name to its number, defaulting to INFO for unknown names.
+
+    A typo in ``LOG_LEVEL`` must never crash startup (the old
+    ``getattr(logging, level.upper())`` raised ``AttributeError``).
+    """
+    return logging.getLevelNamesMapping().get(level.upper(), logging.INFO)
+
+
 def configure_logging(
     service_name: str,
     level: str = "INFO",
     json_output: bool = True,
 ) -> None:
     """Configure root logging for a service (JSON for prod, text for dev)."""
+    level_no = _resolve_level(level)
     root_logger = logging.getLogger()
-    root_logger.setLevel(getattr(logging, level.upper()))
+    root_logger.setLevel(level_no)
 
     for handler in root_logger.handlers[:]:
         root_logger.removeHandler(handler)
 
     handler = logging.StreamHandler(sys.stdout)
-    handler.setLevel(getattr(logging, level.upper()))
+    handler.setLevel(level_no)
     if json_output:
         handler.setFormatter(JSONFormatter(service_name))
     else:

@@ -27,6 +27,7 @@ from llamatrade_db.models.ledger import Account
 from src.clients.alpaca import AlpacaBrokerPositions
 from src.ledger.projector import LedgerProjector
 from src.ledger.reconciliation import DriftKind
+from src.ports import BrokerUnavailableError
 
 if TYPE_CHECKING:
     from src.ledger.reconciliation import Drift
@@ -35,6 +36,11 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 DEFAULT_INTERVAL_SECONDS = 300.0
+# Per-account work fans out concurrently so a pass scales with concurrency, not
+# account count; the per-account timeout keeps one slow broker from stalling the
+# rest. Concurrency is capped to respect the Alpaca rate limiter in the lib.
+DEFAULT_CONCURRENCY = 8
+DEFAULT_PER_ACCOUNT_TIMEOUT_SECONDS = 30.0
 
 # Drift classifications that warrant an alert (vs. log-only noise).
 MATERIAL_DRIFT_KINDS = {
@@ -64,10 +70,11 @@ class AccountReconResult:
     account_id: UUID
     drifts: list[Drift]
     error: str | None = None
+    skipped: bool = False  # broker truth unreadable this pass — not reconciled
 
     @property
     def ok(self) -> bool:
-        return self.error is None and not self.drifts
+        return self.error is None and not self.drifts and not self.skipped
 
 
 async def run_reconciliation_pass(
@@ -76,26 +83,44 @@ async def run_reconciliation_pass(
     broker: BrokerPositions,
     accounts: list[Account],
     on_material_drift: MaterialDriftHandler | None = None,
+    concurrency: int = DEFAULT_CONCURRENCY,
+    per_account_timeout: float = DEFAULT_PER_ACCOUNT_TIMEOUT_SECONDS,
 ) -> list[AccountReconResult]:
-    """Reconcile each account once. A failure on one account never aborts the
-    pass — it is captured on that account's result so the rest still run.
+    """Reconcile accounts concurrently (bounded). A failure or timeout on one
+    account never aborts the pass — it is captured on that account's result so
+    the rest still run; results preserve account order.
 
     Material drifts (qty mismatch / missing either side) are logged at WARNING
-    and forwarded to ``on_material_drift`` when wired; dust is debug-only.
+    and forwarded to ``on_material_drift`` when wired; dust is debug-only. The
+    semaphore caps in-flight broker reads so the pass scales with concurrency
+    while respecting the broker rate limiter.
     """
-    results: list[AccountReconResult] = []
-    for account in accounts:
-        try:
-            broker_positions = await broker.positions(account.tenant_id, account)
-            drifts = await projector.reconcile_account(
-                account.tenant_id, account.id, broker_positions
-            )
-            await _surface_drifts(account, drifts, on_material_drift)
-            results.append(AccountReconResult(account_id=account.id, drifts=drifts))
-        except Exception as e:  # isolate per-account failures
-            logger.exception("reconciliation failed for account %s", account.id)
-            results.append(AccountReconResult(account_id=account.id, drifts=[], error=str(e)))
-    return results
+    sem = asyncio.Semaphore(concurrency)
+
+    async def _reconcile_one(account: Account) -> AccountReconResult:
+        async with sem:
+            try:
+                broker_positions = await asyncio.wait_for(
+                    broker.positions(account.tenant_id, account), per_account_timeout
+                )
+                drifts = await projector.reconcile_account(
+                    account.tenant_id, account.id, broker_positions
+                )
+                await _surface_drifts(account, drifts, on_material_drift)
+                return AccountReconResult(account_id=account.id, drifts=drifts)
+            except BrokerUnavailableError as e:
+                # Broker truth is unreadable — skip (do NOT reconcile against an
+                # empty map, which would freeze every sleeve). Retry next pass.
+                logger.info("skipping reconciliation for account %s: %s", account.id, e)
+                return AccountReconResult(account_id=account.id, drifts=[], skipped=True)
+            except TimeoutError:
+                logger.warning("reconciliation timed out for account %s", account.id)
+                return AccountReconResult(account_id=account.id, drifts=[], error="timeout")
+            except Exception as e:  # isolate per-account failures
+                logger.exception("reconciliation failed for account %s", account.id)
+                return AccountReconResult(account_id=account.id, drifts=[], error=str(e))
+
+    return list(await asyncio.gather(*(_reconcile_one(a) for a in accounts)))
 
 
 async def _surface_drifts(
@@ -144,32 +169,68 @@ async def _load_accounts(db: AsyncSession) -> list[Account]:
     return list(result.all())
 
 
+class _SessionPerCallProjector:
+    """``ReconcilingProjector`` that opens a fresh session per call.
+
+    The pass reconciles accounts concurrently, and an ``AsyncSession`` is not safe
+    for concurrent use — so each account gets its own short-lived session.
+    """
+
+    def __init__(self, session_factory: async_sessionmaker[AsyncSession]) -> None:
+        self._sf = session_factory
+
+    async def reconcile_account(
+        self, tenant_id: UUID, account_id: UUID, broker_positions: dict[str, Decimal]
+    ) -> list[Drift]:
+        async with self._sf() as db:
+            return await LedgerProjector(db).reconcile_account(
+                tenant_id, account_id, broker_positions
+            )
+
+
+class _SessionPerCallBroker:
+    """``BrokerPositions`` that opens a fresh session per call (see above)."""
+
+    def __init__(self, session_factory: async_sessionmaker[AsyncSession]) -> None:
+        self._sf = session_factory
+
+    async def positions(self, tenant_id: UUID, account: Account) -> dict[str, Decimal]:
+        async with self._sf() as db:
+            return await AlpacaBrokerPositions(db).positions(tenant_id, account)
+
+
 async def reconciliation_loop(
     session_factory: async_sessionmaker[AsyncSession],
     *,
     interval_seconds: float = DEFAULT_INTERVAL_SECONDS,
     stop_event: asyncio.Event,
+    concurrency: int = DEFAULT_CONCURRENCY,
 ) -> None:  # pragma: no cover - scheduler shell, logic covered via run_reconciliation_pass
     """Run reconciliation passes until ``stop_event`` is set.
 
-    Material drifts are routed to the drift policy (adopt external trades into
-    Unmanaged / freeze contradicted sleeves — see ``tasks/drift_policy.py``).
+    Accounts are loaded in one session, then reconciled concurrently via
+    session-per-account adapters. Material drifts are routed to the drift policy
+    (adopt external trades into Unmanaged / freeze contradicted sleeves — see
+    ``tasks/drift_policy.py``).
     """
     from src.tasks.drift_policy import make_drift_handler
 
     on_material_drift = make_drift_handler(session_factory)
+    projector = _SessionPerCallProjector(session_factory)
+    broker = _SessionPerCallBroker(session_factory)
     logger.info("ledger reconciliation loop started (interval=%ss)", interval_seconds)
     while not stop_event.is_set():
         try:
             async with session_factory() as db:
                 accounts = await _load_accounts(db)
-                if accounts:
-                    await run_reconciliation_pass(
-                        projector=LedgerProjector(db),
-                        broker=AlpacaBrokerPositions(db),
-                        accounts=accounts,
-                        on_material_drift=on_material_drift,
-                    )
+            if accounts:
+                await run_reconciliation_pass(
+                    projector=projector,
+                    broker=broker,
+                    accounts=accounts,
+                    on_material_drift=on_material_drift,
+                    concurrency=concurrency,
+                )
         except Exception:  # never let a bad pass kill the loop
             logger.exception("reconciliation pass errored")
         try:

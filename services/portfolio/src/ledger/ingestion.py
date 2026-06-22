@@ -64,6 +64,17 @@ class LedgerAppend:
     occurred_at: datetime
 
 
+class FillQuarantineError(Exception):
+    """A fill that cannot be safely recorded must be quarantined, not retried.
+
+    Raised when a sell can't have its cost basis resolved (no/insufficient open
+    lots — an oversell or an untracked position). Recording it would either
+    fabricate a wrong-but-balanced event (silent P&L corruption) or, if retried,
+    wedge the single-consumer FIFO ingestion forever. The consumer instead drops
+    it from the stream, alerts, and leaves it for human/reconciliation review.
+    """
+
+
 def _require(value: str, name: str) -> str:
     """A required proto scalar must be non-empty; empty → poison (drop)."""
     if not value:
@@ -183,9 +194,11 @@ def enrich_sell_fill(append: LedgerAppend, lots: list[Lot]) -> LedgerAppend:
     """Resolve FIFO cost basis + realized P&L into a sell fill's event data.
 
     The consumer calls this at ingestion (the ledger owns the lots; trading
-    only reports broker facts). If the open lots can't cover the sell, the
-    fill is recorded unenriched (cost defaults to notional → zero P&L) and
-    reconciliation surfaces the discrepancy.
+    only reports broker facts). If the open lots can't cover the sell (an
+    oversell or untracked position), the fill is **quarantined** — raising
+    :class:`FillQuarantineError` — rather than recorded with a fabricated cost basis,
+    because a balanced-but-wrong sell would silently corrupt realized P&L and the
+    remaining lots' basis.
     """
     if not needs_cost_basis(append):
         return append
@@ -194,14 +207,10 @@ def enrich_sell_fill(append: LedgerAppend, lots: list[Lot]) -> LedgerAppend:
     try:
         result = select_lots_fifo(lots, qty)
     except ValueError as e:
-        logger.warning(
-            "cannot resolve FIFO cost basis for sell (sleeve=%s symbol=%s qty=%s): %s",
-            append.sleeve_id,
-            append.data.get("symbol"),
-            qty,
-            e,
-        )
-        return append
+        raise FillQuarantineError(
+            f"cannot resolve FIFO cost basis for sell "
+            f"(sleeve={append.sleeve_id} symbol={append.data.get('symbol')} qty={qty}): {e}"
+        ) from e
 
     price = Decimal(append.data["price"])
     fees = Decimal(append.data["fees"]) if "fees" in append.data else Decimal("0")

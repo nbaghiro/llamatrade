@@ -168,6 +168,16 @@ class LedgerMetrics:
         self._sleeves_frozen = registry.counter(
             "llamatrade_ledger_sleeves_frozen_total", (), "Sleeves frozen on irreconcilable drift"
         )
+        self._poison_events = registry.counter(
+            "llamatrade_ledger_poison_events_total",
+            (),
+            "Unparseable events skipped during projection fold",
+        )
+        self.fill_consumer_active = registry.gauge(
+            "llamatrade_ledger_fill_consumer_active",
+            (),
+            "1 on the pod holding the fill-consumer lock, else 0 (sum across pods should be 1)",
+        )
         self._capital_insufficient = registry.counter(
             "llamatrade_ledger_capital_insufficient_total", (), "Under-capitalized allocations"
         )
@@ -195,6 +205,10 @@ class LedgerMetrics:
 
     def drift_action(self, action: str) -> None:
         self._drift_actions.labels(action=action).inc()
+
+    def poison_event(self) -> None:
+        """An event was skipped during fold because its data couldn't be applied."""
+        self._poison_events.inc()
 
     def sleeve_frozen(self) -> None:
         self._sleeves_frozen.inc()

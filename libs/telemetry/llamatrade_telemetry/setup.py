@@ -7,6 +7,7 @@ observer. Idempotent and safe to call at import time.
 
 from __future__ import annotations
 
+import socket
 from collections.abc import Callable
 
 from opentelemetry.sdk.resources import Resource
@@ -20,6 +21,7 @@ from llamatrade_telemetry.instrumentation.db import PoolStatsLike, register_pool
 from llamatrade_telemetry.instrumentation.http import TelemetryMiddleware
 from llamatrade_telemetry.logging import configure_logging, get_logger
 from llamatrade_telemetry.registry import configure_metrics, get_metrics
+from llamatrade_telemetry.runtime import ensure_runtime_monitor
 from llamatrade_telemetry.tracing import configure_tracing
 
 logger = get_logger(__name__)
@@ -30,14 +32,26 @@ async def _metrics_endpoint(request: Request) -> Response:
 
 
 def _wire_app(app: Starlette, service: str) -> None:
-    # Idempotent: some services call both setup_observability and
-    # enable_db_pool_metrics, which both route here.
+    # Idempotent: safe even if init_telemetry is called more than once per app.
     already = any(getattr(m, "cls", None) is TelemetryMiddleware for m in app.user_middleware)
     if not already:
         app.add_middleware(TelemetryMiddleware, service_name=service)
     has_metrics = any(getattr(route, "path", None) == "/metrics" for route in app.routes)
     if not has_metrics:
         app.add_route("/metrics", _metrics_endpoint, methods=["GET"], include_in_schema=False)
+
+
+def _build_resource(service: str, version: str, settings: TelemetrySettings) -> Resource:
+    """Build the OTel Resource (identity surfaced on Prometheus ``target_info``)."""
+    attrs: dict[str, str] = {
+        "service.name": service,
+        "service.version": version or settings.service_version or "0.0.0",
+        "deployment.environment": settings.environment,
+        "service.instance.id": socket.gethostname(),
+    }
+    if settings.git_sha:
+        attrs["service.git_sha"] = settings.git_sha
+    return Resource.create(attrs)
 
 
 def init_telemetry(
@@ -59,20 +73,20 @@ def init_telemetry(
         settings: override env-derived settings (mainly for tests).
     """
     resolved = settings or load_settings()
-    resource = Resource.create(
-        {
-            "service.name": service,
-            "service.version": version or resolved.service_version or "0.0.0",
-            "deployment.environment": resolved.environment,
-        }
-    )
+    resource = _build_resource(service, version, resolved)
 
     configure_logging(service, resolved.log_level, resolved.json_logs)
-    configure_metrics(resource, enabled=resolved.metrics_enabled)
+    configure_metrics(
+        resource, enabled=resolved.metrics_enabled, strict_labels=resolved.strict_labels
+    )
     configure_tracing(resource, resolved)
 
     if pool_stats_provider is not None:
         register_pool_observer(pool_stats_provider)
+
+    # Start the event-loop monitor when init runs inside a running loop (async
+    # workers); HTTP services start it lazily from the first request instead.
+    ensure_runtime_monitor()
 
     if app is not None:
         _wire_app(app, service)

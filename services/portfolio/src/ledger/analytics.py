@@ -66,7 +66,10 @@ def max_drawdown(equities: NDArray[np.float64]) -> float:
     if len(equities) == 0:
         return 0.0
     peak = np.maximum.accumulate(equities)
-    drawdown = (peak - equities) / peak
+    # NaN-safe: a zero running peak (all-zero equity) is a 0% drawdown, not 0/0.
+    drawdown = np.divide(
+        peak - equities, peak, out=np.zeros_like(peak, dtype=np.float64), where=peak != 0
+    )
     return float(np.max(drawdown) * 100) if len(drawdown) > 0 else 0.0
 
 
@@ -130,7 +133,13 @@ def equity_metrics(equities: NDArray[np.float64]) -> EquityMetrics:
     if len(equities) < 2:
         return EquityMetrics(*([0.0] * 12))
 
-    daily_returns = np.diff(equities) / equities[:-1]
+    # NaN-safe daily returns: a zero prior-equity point (e.g. a fully-withdrawn
+    # account) would otherwise yield 0/0 = NaN and poison every downstream metric
+    # (and the JSON response). Treat those steps as a 0% return.
+    prev = equities[:-1]
+    daily_returns = np.divide(
+        np.diff(equities), prev, out=np.zeros_like(prev, dtype=np.float64), where=prev != 0
+    )
     initial, final = float(equities[0]), float(equities[-1])
     total_return = final - initial
     total_return_percent = (total_return / initial) * 100 if initial != 0 else 0.0

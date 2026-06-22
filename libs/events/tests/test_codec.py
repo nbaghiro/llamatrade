@@ -60,8 +60,10 @@ def test_parse_payload_returns_registered_type() -> None:
 
 
 def test_parse_unregistered_raises() -> None:
+    from llamatrade_events.codec import UnknownEventTypeError
+
     env = make_envelope(events_pb2.EVENT_TYPE_UNSPECIFIED, trading_pb2.OrderUpdate())
-    with pytest.raises(KeyError):
+    with pytest.raises(UnknownEventTypeError):
         parse_payload(env)
 
 
@@ -69,3 +71,31 @@ def test_register_conflict_raises() -> None:
     register_payload(ORDER_FILLED, trading_pb2.OrderUpdate)  # idempotent re-register
     with pytest.raises(ValueError, match="already registered"):
         register_payload(ORDER_FILLED, trading_pb2.PositionUpdate)
+
+
+# -- payload edge cases --
+
+
+def test_empty_payload_round_trips() -> None:
+    """A message with no set fields serializes to empty bytes; the envelope and
+    its registered type still round-trip (an empty payload is valid, not poison)."""
+    env = make_envelope(ORDER_FILLED, trading_pb2.OrderUpdate())
+    assert env.payload == b""
+    parsed = parse_payload(decode_envelope(encode_envelope(env)))
+    assert isinstance(parsed, trading_pb2.OrderUpdate)
+    assert parsed.event_type == ""
+
+
+def test_large_payload_round_trips() -> None:
+    big = "x" * 200_000
+    env = make_envelope(ORDER_FILLED, trading_pb2.OrderUpdate(event_type=big))
+    parsed = parse_payload(decode_envelope(encode_envelope(env)))
+    assert isinstance(parsed, trading_pb2.OrderUpdate)
+    assert parsed.event_type == big
+
+
+def test_metadata_multiple_keys_preserved_through_round_trip() -> None:
+    meta = {"trace_id": "abc", "span_id": "def", "source": "trading"}
+    env = make_envelope(ORDER_FILLED, trading_pb2.OrderUpdate(), metadata=meta)
+    back = decode_envelope(encode_envelope(env))
+    assert dict(back.metadata) == meta

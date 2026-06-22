@@ -5,12 +5,14 @@ account, surface drift, and isolate per-account failures so one bad account
 never aborts the pass.
 """
 
+import asyncio
 from decimal import Decimal
 from uuid import uuid4
 
 from llamatrade_db.models.ledger import Account
 
 from src.ledger.reconciliation import Drift, DriftKind
+from src.ports import BrokerUnavailableError
 from src.tasks.reconciliation import run_reconciliation_pass
 
 TENANT = uuid4()
@@ -25,13 +27,18 @@ def _account() -> Account:
 class FakeBroker:
     """``ports.BrokerPositions`` returning a preset qty map (or raising)."""
 
-    def __init__(self, positions: dict[str, Decimal], *, fail: bool = False) -> None:
+    def __init__(
+        self, positions: dict[str, Decimal], *, fail: bool = False, unavailable: bool = False
+    ) -> None:
         self._positions = positions
         self._fail = fail
+        self._unavailable = unavailable
         self.calls: list = []
 
     async def positions(self, tenant_id, account) -> dict[str, Decimal]:
         self.calls.append((tenant_id, account.id))
+        if self._unavailable:
+            raise BrokerUnavailableError("no active credentials")
         if self._fail:
             raise RuntimeError("broker unreachable")
         return self._positions
@@ -101,6 +108,64 @@ async def test_pass_isolates_per_account_failure() -> None:
     assert all(r.error == "broker unreachable" for r in results)
     assert all(r.ok is False for r in results)
     assert {r.account_id for r in results} == {good.id, bad.id}
+
+
+async def test_unreadable_broker_skips_account_without_freezing() -> None:
+    """A BrokerUnavailableError read must SKIP the account — never reconcile against an
+    empty map (which would flag every holding MISSING_AT_BROKER and freeze it)."""
+    acct = _account()
+    projector = FakeProjector(
+        [Drift("AAPL", Decimal("10"), Decimal("0"), DriftKind.MISSING_AT_BROKER)]
+    )
+    handler = _DriftRecorder()
+
+    results = await run_reconciliation_pass(
+        projector=projector,
+        broker=FakeBroker({}, unavailable=True),
+        accounts=[acct],
+        on_material_drift=handler,
+    )
+
+    assert results[0].skipped is True
+    assert results[0].error is None
+    assert results[0].ok is False
+    assert projector.seen == []  # never reconciled against an empty broker map
+    assert handler.calls == []  # so nothing was frozen
+
+
+class _SlowBroker:
+    """Broker whose read exceeds the per-account timeout."""
+
+    async def positions(self, tenant_id, account) -> dict[str, Decimal]:
+        await asyncio.sleep(1.0)
+        return {}
+
+
+async def test_slow_broker_times_out_and_is_isolated() -> None:
+    """A broker read past the per-account timeout fails just that account; the
+    pass returns a timeout error rather than hanging."""
+    acct = _account()
+    results = await run_reconciliation_pass(
+        projector=FakeProjector([]),
+        broker=_SlowBroker(),
+        accounts=[acct],
+        per_account_timeout=0.01,
+    )
+    assert results[0].error == "timeout"
+    assert results[0].ok is False
+
+
+async def test_pass_processes_all_accounts_concurrently() -> None:
+    """Bounded fan-out still returns one result per account, in account order."""
+    accounts = [_account() for _ in range(5)]
+    results = await run_reconciliation_pass(
+        projector=FakeProjector([]),
+        broker=FakeBroker({"AAPL": Decimal("1")}),
+        accounts=accounts,
+        concurrency=3,
+    )
+    assert [r.account_id for r in results] == [a.id for a in accounts]
+    assert all(r.ok for r in results)
 
 
 async def test_pass_empty_accounts_returns_empty() -> None:

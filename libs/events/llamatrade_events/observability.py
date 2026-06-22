@@ -1,33 +1,60 @@
-"""Event-system metrics.
+"""Event-system metrics, on the unified telemetry library.
 
-Plain ``prometheus_client`` counters/gauges — ``llamatrade_telemetry`` bridges
-the default Prometheus registry into its OTel export, so these surface on every
-service's ``/metrics`` without this lib depending on the telemetry stack.
+Counters/gauges are created through ``llamatrade_telemetry`` so event metrics
+share the platform's OTel→Prometheus pipeline, the ``llamatrade_events_*`` naming
+convention, and label-cardinality validation. ``stream_label`` keeps the
+``stream`` label bounded. The public handle names are unchanged, so call sites
+(transport / consumer / fan-out) keep their ``.labels(...).inc()/.set()`` shape.
 """
 
 from __future__ import annotations
 
-from prometheus_client import Counter, Gauge
+from llamatrade_telemetry import counter, gauge
 
-# Labeled by the stream's logical prefix only (e.g. "trading:orders"), never the
-# full per-session key — bounded metric cardinality.
-EVENTS_PUBLISHED_TOTAL = Counter(
-    "events_published_total",
-    "Events published to the bus",
+
+def stream_label(stream: str) -> str:
+    """The bounded metric label for a stream: its logical prefix (first two
+    colon-segments), never the full per-entity key.
+
+    ``"trading:orders:<sid>"`` → ``"trading:orders"``; ``"ledger:fills"`` →
+    ``"ledger:fills"``. Shared by the transport and the consumer so the same
+    logical stream carries one label value across every event metric.
+    """
+    return ":".join(stream.split(":")[:2])
+
+
+# --- publish / read transport ---
+EVENTS_PUBLISHED_TOTAL = counter(
+    "llamatrade_events_published_total",
     ["stream"],
+    "Events published to the bus",
 )
-EVENTS_RECONNECTS_TOTAL = Counter(
-    "events_reconnects_total",
-    "Transport-error reconnects in bus readers",
+EVENTS_RECONNECTS_TOTAL = counter(
+    "llamatrade_events_reconnects_total",
     ["stream", "mode"],  # mode: tail / consume
+    "Transport-error reconnects in bus readers",
 )
-EVENTS_CONSUMED_TOTAL = Counter(
-    "events_consumed_total",
+
+# --- durable consumer group ---
+EVENTS_CONSUMED_TOTAL = counter(
+    "llamatrade_events_consumed_total",
+    ["stream", "group", "outcome"],  # outcome: ok / deduped / error / dlq / poison
     "Events handled by a consumer group",
-    ["stream", "group", "outcome"],  # outcome: ok / deduped / dlq / error
 )
-EVENTS_CONSUMER_LAG = Gauge(
-    "events_consumer_lag",
-    "Delivered-but-unacked entries per consumer group (PEL depth)",
+EVENTS_CONSUMER_LAG = gauge(
+    "llamatrade_events_consumer_lag",
     ["stream", "group"],
+    "Delivered-but-unacked entries per consumer group (PEL depth)",
+)
+
+# --- gRPC fan-out ---
+EVENTS_FANOUT_DROPPED_TOTAL = counter(
+    "llamatrade_events_fanout_dropped_total",
+    ["fanout"],
+    "Items dropped because a client's fan-out queue was full (slow consumer)",
+)
+EVENTS_FANOUT_CLIENTS = gauge(
+    "llamatrade_events_fanout_clients",
+    ["fanout"],
+    "Connected gRPC clients on a fan-out",
 )

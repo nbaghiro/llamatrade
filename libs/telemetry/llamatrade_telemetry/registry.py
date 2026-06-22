@@ -3,8 +3,8 @@
 Instruments are created via the OpenTelemetry Metrics API and exported in
 Prometheus exposition format by a ``PrometheusMetricReader`` (see
 ``.docs/telemetry.md`` §5.1). The public handles (`Counter`, `Histogram`,
-`Gauge`, `UpDownCounter`) keep the familiar ``.labels(...).inc()`` shape so the
-back-compat shims in ``llamatrade_common`` and every call site read naturally.
+`Gauge`, `UpDownCounter`) keep the familiar ``.labels(...).inc()`` shape so every
+call site reads naturally.
 
 Design notes:
 
@@ -20,6 +20,7 @@ Design notes:
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from time import perf_counter
@@ -49,6 +50,8 @@ from prometheus_client.registry import Collector
 
 from llamatrade_telemetry import conventions
 
+_logger = logging.getLogger(__name__)
+
 # A callback for observable gauges: CallbackOptions -> iterable of Observation.
 ObservableCallback = Callable[[CallbackOptions], Iterable[Observation]]
 
@@ -58,6 +61,10 @@ _reader: PrometheusMetricReader | None = None
 _configured = False
 _global_meter_set = False
 _enabled = True
+# Strict: a label mismatch raises (fail-fast in dev/test). Lenient: it logs and
+# drops the sample (so a code bug never crashes a request in prod). Set by
+# ``configure_metrics`` from settings.
+_strict_labels = True
 
 # name -> handle wrapper, so repeated factory calls return the same singleton
 # (avoids OTel "duplicate instrument" warnings and keeps module-level shims stable).
@@ -74,13 +81,16 @@ def _build_views() -> list[View]:
     ]
 
 
-def configure_metrics(resource: Resource, *, enabled: bool = True) -> None:
+def configure_metrics(
+    resource: Resource, *, enabled: bool = True, strict_labels: bool = True
+) -> None:
     """Build the MeterProvider (with histogram Views) and Prometheus reader.
 
     Idempotent: the first call wins. Call ``reset_for_testing`` to rebuild.
     """
-    global _provider, _meter, _reader, _configured, _enabled, _global_meter_set
+    global _provider, _meter, _reader, _configured, _enabled, _global_meter_set, _strict_labels
     _enabled = enabled
+    _strict_labels = strict_labels
     if _configured:
         return
     _reader = PrometheusMetricReader()
@@ -134,18 +144,35 @@ def _check_labels(declared: tuple[str, ...], provided: Mapping[str, str]) -> Non
         )
 
 
+def _labels_ok(name: str, declared: tuple[str, ...], provided: Mapping[str, str]) -> bool:
+    """Validate labels: raise in strict mode, log-and-drop in lenient (prod) mode."""
+    try:
+        _check_labels(declared, provided)
+        return True
+    except conventions.LabelError:
+        if _strict_labels:
+            raise
+        _logger.warning(
+            "metric %s called with invalid labels %s (expected %s); dropping sample",
+            name,
+            sorted(provided),
+            sorted(declared),
+        )
+        return False
+
+
 # ---------------------------------------------------------------------------
 # Handles
 # ---------------------------------------------------------------------------
 class _CounterChild:
     __slots__ = ("_instr", "_attrs")
 
-    def __init__(self, instr: _OTelCounter, attrs: dict[str, str]) -> None:
+    def __init__(self, instr: _OTelCounter | None, attrs: dict[str, str]) -> None:
         self._instr = instr
         self._attrs = attrs
 
     def inc(self, amount: float = 1.0) -> None:
-        if _enabled:
+        if self._instr is not None and _enabled:
             self._instr.add(amount, self._attrs)
 
 
@@ -166,8 +193,9 @@ class Counter:
         return self._instr
 
     def labels(self, **labels: str) -> _CounterChild:
-        _check_labels(self._labelnames, labels)
-        return _CounterChild(self._instrument(), labels)
+        if _labels_ok(self._name, self._labelnames, labels):
+            return _CounterChild(self._instrument(), labels)
+        return _CounterChild(None, {})
 
     def inc(self, amount: float = 1.0) -> None:
         if self._labelnames:
@@ -179,12 +207,12 @@ class Counter:
 class _HistogramChild:
     __slots__ = ("_instr", "_attrs")
 
-    def __init__(self, instr: _OTelHistogram, attrs: dict[str, str]) -> None:
+    def __init__(self, instr: _OTelHistogram | None, attrs: dict[str, str]) -> None:
         self._instr = instr
         self._attrs = attrs
 
     def observe(self, value: float) -> None:
-        if _enabled:
+        if self._instr is not None and _enabled:
             self._instr.record(value, self._attrs)
 
 
@@ -206,8 +234,9 @@ class Histogram:
         return self._instr
 
     def labels(self, **labels: str) -> _HistogramChild:
-        _check_labels(self._labelnames, labels)
-        return _HistogramChild(self._instrument(), labels)
+        if _labels_ok(self._name, self._labelnames, labels):
+            return _HistogramChild(self._instrument(), labels)
+        return _HistogramChild(None, {})
 
     def observe(self, value: float) -> None:
         if self._labelnames:
@@ -231,16 +260,16 @@ class Histogram:
 class _UpDownChild:
     __slots__ = ("_instr", "_attrs")
 
-    def __init__(self, instr: _OTelUpDown, attrs: dict[str, str]) -> None:
+    def __init__(self, instr: _OTelUpDown | None, attrs: dict[str, str]) -> None:
         self._instr = instr
         self._attrs = attrs
 
     def inc(self, amount: float = 1.0) -> None:
-        if _enabled:
+        if self._instr is not None and _enabled:
             self._instr.add(amount, self._attrs)
 
     def dec(self, amount: float = 1.0) -> None:
-        if _enabled:
+        if self._instr is not None and _enabled:
             self._instr.add(-amount, self._attrs)
 
 
@@ -261,8 +290,9 @@ class UpDownCounter:
         return self._instr
 
     def labels(self, **labels: str) -> _UpDownChild:
-        _check_labels(self._labelnames, labels)
-        return _UpDownChild(self._instrument(), labels)
+        if _labels_ok(self._name, self._labelnames, labels):
+            return _UpDownChild(self._instrument(), labels)
+        return _UpDownChild(None, {})
 
     def inc(self, amount: float = 1.0) -> None:
         if not self._labelnames and _enabled:
@@ -278,14 +308,15 @@ class _GaugeChild:
 
     def __init__(
         self,
-        values: dict[tuple[tuple[str, str], ...], float],
+        values: dict[tuple[tuple[str, str], ...], float] | None,
         key: tuple[tuple[str, str], ...],
     ) -> None:
         self._values = values
         self._key = key
 
     def set(self, value: float) -> None:
-        self._values[self._key] = value
+        if self._values is not None:
+            self._values[self._key] = value
 
 
 class Gauge:
@@ -310,10 +341,13 @@ class Gauge:
             self._registered = True
 
     def _observe(self, options: CallbackOptions) -> Iterable[Observation]:
-        return [Observation(value, dict(key)) for key, value in self._values.items()]
+        # Snapshot the holder: collection may run while another context calls
+        # ``.set()`` ("dict changed size during iteration" otherwise).
+        return [Observation(value, dict(key)) for key, value in list(self._values.items())]
 
     def labels(self, **labels: str) -> _GaugeChild:
-        _check_labels(self._labelnames, labels)
+        if not _labels_ok(self._name, self._labelnames, labels):
+            return _GaugeChild(None, ())
         self._ensure()
         key = tuple(sorted(labels.items()))
         return _GaugeChild(self._values, key)

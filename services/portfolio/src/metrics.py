@@ -9,7 +9,7 @@ gauges defined in the shared library:
 * ingestion throughput/failures -> ``llamatrade_ledger_events_ingested_total``
 * reconciliation drift by classification -> ``llamatrade_ledger_reconciliation_drift_total``
 * drift-policy actions -> ``llamatrade_ledger_drift_actions_total``
-* consumer-group pending lag -> ``events_consumer_lag`` (the events lib's gauge)
+* consumer-group pending lag -> ``llamatrade_events_consumer_lag`` (the events lib's gauge)
 
 This is the rollout dashboard for the shadow soak.
 """
@@ -45,7 +45,7 @@ class _StreamPendingGauge:
     """``.set(entries)`` handle for the consumer-group pending-lag gauge.
 
     Preserves the call site (``LEDGER_STREAM_PENDING.set(...)``) while routing to
-    the events lib's ``events_consumer_lag`` gauge under the portfolio-ledger
+    the events lib's ``llamatrade_events_consumer_lag`` gauge under the portfolio-ledger
     stream/group labels (the single event-lag metric across the system).
     """
 

@@ -69,8 +69,11 @@ class MarketDataClient:
             return await client.get_latest_prices(symbols)
         except Exception as e:
             logger.warning("Failed to get prices for %s: %s", symbols, e)
-            # Return zeros for failed lookups
-            return {symbol: Decimal(0) for symbol in symbols}
+            # OMIT failed lookups rather than fabricating zeros: a missing symbol
+            # lets callers fall back to cost basis, whereas a fake $0 price would
+            # mark positions to zero and flatline the equity curve on a transient
+            # market-data outage.
+            return {}
 
     async def get_snapshot(self, symbol: str) -> Snapshot | None:
         """Get full market snapshot for a symbol.

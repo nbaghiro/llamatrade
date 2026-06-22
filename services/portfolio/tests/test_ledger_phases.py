@@ -22,7 +22,7 @@ from src.ledger.funds import (
 )
 from src.ledger.netting import net_orders
 from src.ledger.performance import account_pnl, sleeve_pnl
-from src.ledger.projection import AccountProjection, PositionState, SleeveProjection
+from src.ledger.projection import AccountProjection, PositionState, SleeveProjection, fold
 from src.ledger.sizing import (
     IntendedOrder,
     Lot,
@@ -198,6 +198,60 @@ class TestPerformance:
         assert pnl.unrealized_pnl == D("800")  # 20000 - 19200
         assert pnl.equity == D("41000")  # 21000 + 20000
         assert pnl.realized_pnl == D("200")
+
+    def test_fold_skips_poison_event_and_keeps_account_readable(self) -> None:
+        """A malformed event is skipped (on_error fired), not fatal — the good
+        events before AND after it still fold (one bad event can't break an account)."""
+        from types import SimpleNamespace
+
+        from llamatrade_db.models.ledger import LedgerEventType
+
+        good1 = SimpleNamespace(
+            event_id="e1",
+            event_type=LedgerEventType.FUNDS_DEPOSITED,
+            data={"sleeve_id": "s1", "amount": "1000"},
+        )
+        poison = SimpleNamespace(
+            event_id="bad",
+            event_type=LedgerEventType.ORDER_FILLED,
+            data={"sleeve_id": "s1"},  # missing symbol/side/qty/price → KeyError in build_postings
+        )
+        good2 = SimpleNamespace(
+            event_id="e2",
+            event_type=LedgerEventType.FUNDS_DEPOSITED,
+            data={"sleeve_id": "s1", "amount": "500"},
+        )
+        seen: list[str | None] = []
+        acc = fold([good1, poison, good2], on_error=lambda eid, _exc: seen.append(eid))
+
+        assert acc.sleeve("s1").cash == D("1500")  # both good deposits applied
+        assert seen == ["bad"]  # poison surfaced to the handler exactly once
+
+    def test_fold_skips_unbalanced_event(self) -> None:
+        """A conservation-violating event is skipped, not fatal."""
+        from types import SimpleNamespace
+
+        from llamatrade_db.models.ledger import LedgerEventType
+
+        # CAPITAL_ALLOCATED with a missing to_sleeve_id → KeyError; account stays empty.
+        bad = SimpleNamespace(
+            event_id="x",
+            event_type=LedgerEventType.CAPITAL_ALLOCATED,
+            data={"from_sleeve_id": "a", "amount": "100"},
+        )
+        acc = fold([bad])
+        assert acc.total_cash() == D("0")
+
+    def test_sleeve_pnl_values_unpriced_positions_at_cost(self) -> None:
+        """A position with no current price is marked at cost (0 unrealized)."""
+        sleeve = SleeveProjection(
+            cash=D("1000"),
+            positions={"XYZ": PositionState(qty=D("10"), cost_basis=D("5000"))},
+        )
+        pnl = sleeve_pnl("A", sleeve, {})  # no price available for XYZ
+        assert pnl.positions_value == D("5000")  # valued at cost basis
+        assert pnl.unrealized_pnl == D("0")
+        assert pnl.equity == D("6000")  # cash + cost
 
     def test_account_pnl_marks_every_sleeve_ordered_by_id(self) -> None:
         acc = AccountProjection(

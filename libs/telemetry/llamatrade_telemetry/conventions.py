@@ -48,6 +48,7 @@ ALLOWED_LABEL_KEYS: frozenset[str] = frozenset(
         "task",
         "table",
         "direction",
+        "fanout",
         # domain enums (each small and bounded)
         "kind",
         "type",
@@ -129,7 +130,6 @@ HISTOGRAM_BUCKETS: dict[str, tuple[float, ...]] = {
     "llamatrade_db_query_duration_seconds": LATENCY_DEP,
     "llamatrade_db_pool_acquire_wait_seconds": LATENCY_DEP,
     "llamatrade_cache_op_duration_seconds": LATENCY_DEP,
-    "llamatrade_eventbus_processing_duration_seconds": LATENCY_DEP,
     "llamatrade_runtime_event_loop_lag_seconds": LATENCY_TIGHT,
     "llamatrade_celery_task_duration_seconds": DURATION_JOB,
     "llamatrade_celery_task_queue_wait_seconds": DURATION_JOB,

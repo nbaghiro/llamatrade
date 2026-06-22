@@ -21,6 +21,16 @@ from llamatrade_proto.generated import events_pb2
 EventEnvelope = events_pb2.EventEnvelope
 _EventTypeValue = events_pb2.EventType.ValueType
 
+
+class UnknownEventTypeError(Exception):
+    """No payload class is registered for an envelope's ``EventType``.
+
+    Signals schema skew — e.g. a newer producer emitting a type this (older)
+    consumer doesn't know. Distinct so a consumer can route it to a DLQ instead
+    of treating it as a transient failure to retry forever.
+    """
+
+
 # EventType (int) → the proto message class carried in payload.
 _PAYLOAD_REGISTRY: dict[int, type[Message]] = {}
 
@@ -70,7 +80,7 @@ def parse_payload(envelope: EventEnvelope) -> Message:
     """Parse ``envelope.payload`` into its registered domain message."""
     cls = _PAYLOAD_REGISTRY.get(envelope.type)
     if cls is None:
-        raise KeyError(f"No payload registered for EventType {envelope.type}")
+        raise UnknownEventTypeError(f"No payload registered for EventType {envelope.type}")
     return cls.FromString(envelope.payload)
 
 

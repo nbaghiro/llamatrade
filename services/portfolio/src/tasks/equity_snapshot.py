@@ -93,6 +93,22 @@ async def _latest_sequence(db: AsyncSession, account_id: UUID) -> int:
     return int(seq) if seq is not None else 0
 
 
+def _add_snapshot_rows(db: AsyncSession, tenant_id: UUID, values: list[SnapshotValue]) -> None:
+    """Stage one ``SleeveSnapshot`` row per computed value. The caller commits."""
+    for v in values:
+        db.add(
+            SleeveSnapshot(
+                tenant_id=tenant_id,
+                sleeve_id=UUID(v.sleeve_id),
+                as_of_sequence=v.as_of_sequence,
+                cash_balance=v.cash_balance,
+                reserved_cash=v.reserved_cash,
+                equity=v.equity,
+                lots=v.lots,
+            )
+        )
+
+
 async def snapshot_account(
     db: AsyncSession,
     projector: LedgerProjector,
@@ -110,19 +126,51 @@ async def snapshot_account(
         prices = await prices_provider.get_prices(symbols)
     sequence = await _latest_sequence(db, account.id)
     values = compute_snapshot_values(projection, prices, sequence)
-    for v in values:
-        db.add(
-            SleeveSnapshot(
-                tenant_id=account.tenant_id,
-                sleeve_id=UUID(v.sleeve_id),
-                as_of_sequence=v.as_of_sequence,
-                cash_balance=v.cash_balance,
-                reserved_cash=v.reserved_cash,
-                equity=v.equity,
-                lots=v.lots,
-            )
-        )
+    _add_snapshot_rows(db, account.tenant_id, values)
     return len(values)
+
+
+async def run_snapshot_pass(
+    session_factory: async_sessionmaker[AsyncSession],
+    prices_provider: PriceProvider,
+) -> int:
+    """One snapshot pass over all accounts, fetching prices in a SINGLE batch.
+
+    Projects every account, unions their held symbols, and fetches all prices in
+    one ``get_prices`` call (vs. one per account); then persists each account's
+    sleeve snapshots in its own transaction so one failure is isolated. Returns
+    the total rows written.
+    """
+    plans: list[tuple[Account, AccountProjection, int]] = []
+    symbols: set[str] = set()
+    async with session_factory() as db:
+        projector = LedgerProjector(db)
+        for account in await _load_accounts(db):
+            try:
+                projection = await projector.project_account(account.tenant_id, account.id)
+                sequence = await _latest_sequence(db, account.id)
+            except Exception:
+                logger.exception("equity snapshot projection failed for account %s", account.id)
+                continue
+            plans.append((account, projection, sequence))
+            symbols.update(projection_symbols(projection))
+
+    prices = await prices_provider.get_prices(sorted(symbols)) if symbols else {}
+
+    total = 0
+    for account, projection, sequence in plans:
+        values = compute_snapshot_values(projection, prices, sequence)
+        if not values:
+            continue
+        async with session_factory() as db:
+            try:
+                _add_snapshot_rows(db, account.tenant_id, values)
+                await db.commit()
+                total += len(values)
+            except Exception:
+                await db.rollback()
+                logger.exception("equity snapshot persist failed for account %s", account.id)
+    return total
 
 
 async def _load_accounts(db: AsyncSession) -> list[Account]:
@@ -145,18 +193,8 @@ async def snapshot_loop(
     logger.info("ledger equity-snapshot loop started (interval=%ss)", interval_seconds)
     while not stop_event.is_set():
         try:
-            async with session_factory() as db:
-                accounts = await _load_accounts(db)
-                for account in accounts:
-                    try:
-                        n = await snapshot_account(
-                            db, LedgerProjector(db), prices_provider, account
-                        )
-                        await db.commit()
-                        logger.debug("equity snapshot: account=%s rows=%d", account.id, n)
-                    except Exception:
-                        await db.rollback()
-                        logger.exception("equity snapshot failed for account %s", account.id)
+            n = await run_snapshot_pass(session_factory, prices_provider)
+            logger.debug("equity-snapshot pass wrote %d rows", n)
         except Exception:
             logger.exception("equity-snapshot pass errored")
         try:

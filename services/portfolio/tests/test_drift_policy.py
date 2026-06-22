@@ -43,9 +43,6 @@ def _sleeve(account: Account, stype: SleeveType, name: str) -> Sleeve:
         name=name,
         strategy_execution_id=uuid4() if stype is SleeveType.STRATEGY else None,
         allocated_capital=D("0"),
-        cash_balance=D("0"),
-        reserved_cash=D("0"),
-        unsettled_cash=D("0"),
     )
     s.id = uuid4()
     return s
@@ -136,6 +133,64 @@ async def test_missing_in_ledger_adopted_into_unmanaged(account: Account) -> Non
     # The adoption heals the invariant: ledger now matches broker for SPY
     projection = await store.project_account(TENANT, account.id)
     assert projection.account_positions() == {"SPY": D("10")}
+
+
+class _FlakyBroker:
+    """Broker whose snapshot raises ``failures`` times before succeeding."""
+
+    def __init__(self, holdings: list[BrokerHolding], *, failures: int) -> None:
+        self._snapshot = BrokerSnapshot(cash=D("0"), holdings=holdings)
+        self._failures = failures
+        self.calls = 0
+
+    async def snapshot(self, tenant_id: Any, account: Any) -> BrokerSnapshot:
+        self.calls += 1
+        if self._failures > 0:
+            self._failures -= 1
+            raise ConnectionError("broker down")
+        return self._snapshot
+
+
+async def test_adoption_retries_broker_snapshot_then_succeeds(
+    account: Account, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("src.tasks.drift_policy._SNAPSHOT_BASE_DELAY", 0.0)  # no real backoff
+    repo = FakeRepo([_sleeve(account, SleeveType.UNMANAGED, "Unmanaged")])
+    store = FakeStore()
+    broker = _FlakyBroker(
+        [BrokerHolding(symbol="SPY", qty=D("10"), avg_price=D("480"))], failures=2
+    )
+
+    action = await apply_drift_action(
+        repo=repo,
+        store=store,
+        broker=broker,
+        account=account,
+        drift=_drift(DriftKind.MISSING_IN_LEDGER),
+    )
+
+    assert action == "adopted"
+    assert broker.calls == 3  # 2 transient failures + 1 success
+
+
+async def test_adoption_skips_when_broker_unavailable(
+    account: Account, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("src.tasks.drift_policy._SNAPSHOT_BASE_DELAY", 0.0)
+    repo = FakeRepo([_sleeve(account, SleeveType.UNMANAGED, "Unmanaged")])
+    store = FakeStore()
+    broker = _FlakyBroker([], failures=99)  # never recovers
+
+    action = await apply_drift_action(
+        repo=repo,
+        store=store,
+        broker=broker,
+        account=account,
+        drift=_drift(DriftKind.MISSING_IN_LEDGER),
+    )
+
+    assert action == "skipped"
+    assert not store.appended  # nothing adopted when the broker can't be reached
 
 
 async def test_adoption_is_idempotent(account: Account) -> None:

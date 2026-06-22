@@ -18,12 +18,22 @@ import asyncio
 import logging
 from typing import Literal, cast
 
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from llamatrade_events import EventBus, EventEnvelope, FillEvents, LedgerFill, LedgerReservation
+from llamatrade_db.models.ledger import LedgerEventType
+from llamatrade_events import (
+    CURSOR_BEGIN,
+    EventBus,
+    FillEvents,
+    LedgerFill,
+    LedgerReservation,
+    decode_envelope,
+)
 
 from src.ledger.ingestion import (
     FillHandler,
+    FillQuarantineError,
     LedgerAppend,
     append_from_message,
     enrich_sell_fill,
@@ -41,6 +51,60 @@ logger = logging.getLogger(__name__)
 # on it; a replacement pod takes over pending entries via XAUTOCLAIM.
 LEDGER_FILLS_STREAM = "ledger:fills"
 PORTFOLIO_LEDGER_GROUP = "portfolio-ledger"
+# Unrecordable entries (undecodable bytes / quarantined fills) are parked here
+# instead of being silently lost — recoverable for operator review.
+LEDGER_FILLS_DLQ_STREAM = "ledger:fills:dlq"
+_DLQ_MAXLEN = 10_000
+
+
+async def _dead_letter(bus: EventBus, raw: bytes) -> None:
+    """Park an unrecordable raw stream entry on the DLQ (best-effort).
+
+    Dropping a poison/quarantined entry keeps the single FIFO consumer alive, but
+    losing it outright is worse than a recoverable parking spot. A DLQ publish
+    failure must not wedge the consumer, so it's swallowed (logged).
+    """
+    try:
+        await bus.publish_raw(LEDGER_FILLS_DLQ_STREAM, raw, maxlen=_DLQ_MAXLEN)
+    except Exception:
+        logger.exception("failed to dead-letter ledger entry to %s", LEDGER_FILLS_DLQ_STREAM)
+
+# Process-wide advisory-lock id for the single active fill consumer. Per-account
+# FIFO (buy-before-sell for cost basis) requires exactly one consumer; a second
+# pod that loses the lock serves reads only. A stable bigint ("ledger" in hex).
+_FILL_CONSUMER_LOCK_KEY = 0x6C6564676572
+
+
+async def acquire_fill_consumer_lock(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> AsyncSession | None:
+    """Try to become the single active fill consumer via a Postgres advisory lock.
+
+    Returns the holding session if acquired (keep it open for the lock's lifetime;
+    release with :func:`release_fill_consumer_lock`), else None — another pod holds
+    it and this one should not ingest. Failover is via the consumer group's
+    XAUTOCLAIM once the active pod dies and its lock releases on connection close.
+    """
+    db = session_factory()
+    try:
+        got = await db.scalar(
+            text("SELECT pg_try_advisory_lock(:k)"), {"k": _FILL_CONSUMER_LOCK_KEY}
+        )
+    except Exception:
+        await db.close()
+        raise
+    if got:
+        return db
+    await db.close()
+    return None
+
+
+async def release_fill_consumer_lock(db: AsyncSession) -> None:
+    """Release the fill-consumer advisory lock and close the holding session."""
+    try:
+        await db.scalar(text("SELECT pg_advisory_unlock(:k)"), {"k": _FILL_CONSUMER_LOCK_KEY})
+    finally:
+        await db.close()
 
 
 async def persist_append(db: AsyncSession, append: LedgerAppend) -> None:
@@ -71,7 +135,61 @@ async def persist_append(db: AsyncSession, append: LedgerAppend) -> None:
         event_id=append.event_id,
         occurred_at=append.occurred_at,
     )
+    if append.event_type is LedgerEventType.ORDER_FILLED:
+        await _freeze_if_invariant_violated(db, append)
     await db.commit()
+
+
+async def _freeze_if_invariant_violated(db: AsyncSession, append: LedgerAppend) -> None:
+    """Freeze the affected sleeve if this fill drove it into an impossible state.
+
+    Fund ops can't overdraw (the planners guard free cash), so a negative-cash or
+    negative-position sleeve means a fill escaped trading's reservation/risk guard
+    (or an oversell). Freeze it (orders on frozen sleeves are rejected by trading)
+    and record a ``SLEEVE_FROZEN`` audit event for human review. Idempotent: an
+    already-FROZEN sleeve is left alone, and the freeze event id derives from the
+    triggering fill so a re-ingested fill never double-freezes.
+    """
+    import hashlib
+    from uuid import UUID
+
+    from llamatrade_db.models.ledger import SleeveStatus
+    from llamatrade_telemetry import metrics
+
+    from src.ledger.invariants import check_sleeve_invariants
+    from src.ledger.projector import LedgerProjector
+    from src.repositories import SqlSleeveRepository
+
+    projection = await LedgerProjector(db).project_account(append.tenant_id, append.account_id)
+    violations = check_sleeve_invariants(projection.sleeve(str(append.sleeve_id)))
+    if not violations:
+        return
+
+    repo = SqlSleeveRepository(db)
+    sleeve = await repo.get_sleeve(append.tenant_id, append.sleeve_id)
+    if sleeve is None or sleeve.status == SleeveStatus.FROZEN.value:
+        return  # already frozen (or re-homed away) — nothing to do
+
+    await repo.set_sleeve_status(sleeve, SleeveStatus.FROZEN.value)
+    reason = "; ".join(f"{v.kind}({v.detail})" for v in violations)
+    freeze_event_id = UUID(
+        bytes=hashlib.sha256(f"{append.event_id}:invariant_freeze".encode()).digest()[:16]
+    )
+    await LedgerWriter(db).append(
+        tenant_id=append.tenant_id,
+        account_id=append.account_id,
+        event_type=LedgerEventType.SLEEVE_FROZEN,
+        data={"sleeve_id": str(append.sleeve_id), "reason": f"invariant violation — {reason}"},
+        sleeve_id=append.sleeve_id,
+        event_id=freeze_event_id,
+    )
+    metrics.ledger.sleeve_frozen()
+    logger.critical(
+        "froze sleeve %s (account=%s) after fill: invariant violation — %s; manual review required",
+        append.sleeve_id,
+        append.account_id,
+        reason,
+    )
 
 
 async def _reroute_if_sleeve_closed(db: AsyncSession, append: LedgerAppend) -> LedgerAppend:
@@ -149,8 +267,9 @@ async def process_stream_entry(
     """Process one parsed ledger message; the verdict drives acking.
 
     - ``ack``: persisted (or deduped) — remove from the pending list.
-    - ``drop``: poison payload (translation failed) — ack anyway after logging,
-      or it would redeliver forever.
+    - ``drop``: poison payload (translation failed) or a quarantined fill (a
+      sell with no resolvable cost basis) — ack anyway after alerting, or it
+      would redeliver forever and wedge the single-consumer FIFO ingestion.
     - ``retry``: transient persistence failure — leave pending so the group
       redelivers (idempotent at the writer, so a half-applied retry is safe).
     """
@@ -164,6 +283,17 @@ async def process_stream_entry(
         return "drop"
     try:
         await handler(append)
+    except FillQuarantineError as e:
+        # A balanced-but-wrong record (or an infinite retry) is worse than a
+        # surfaced, recoverable drop. Log at ERROR with the order id so the fill
+        # is identifiable for reconciliation / manual review.
+        logger.error(
+            "quarantining unrecordable ledger fill (client_order_id=%s): %s",
+            getattr(message, "client_order_id", "?"),
+            e,
+        )
+        record_ingest("quarantine")
+        return "drop"
     except Exception:
         logger.exception("transient failure persisting ledger stream entry; leaving pending")
         record_ingest("retry")
@@ -180,12 +310,15 @@ async def consume_fill_stream(
 ) -> None:  # pragma: no cover - IO loop, logic covered via process_stream_entry
     """Durably consume the global fill stream via the consumer group.
 
-    Parses each envelope to its ``LedgerFill`` / ``LedgerReservation`` and drives
-    the translation. Manual ack (not the lib's ``StreamConsumer``): a transient
+    Decodes each entry to its ``LedgerFill`` / ``LedgerReservation`` and drives
+    the translation. Consumes the RAW bytes (``consume_raw``) so a corrupt /
+    unknown-type entry is dropped (acked) instead of crash-looping the single
+    ledger consumer. Manual ack (not the lib's ``StreamConsumer``): a transient
     failure is left pending and redelivers indefinitely — the ledger self-heals
-    when the DB recovers, rather than dead-lettering a fill. Runs until cancelled
-    (the lifespan cancels it on shutdown); a dead pod's pending entries are
-    reclaimed via the transport's XAUTOCLAIM pass.
+    when the DB recovers, rather than dead-lettering a fill. ``group_start`` =
+    begin so a fresh group never misses a published fill (writer dedupes).
+    Runs until cancelled (the lifespan cancels it on shutdown); a dead pod's
+    pending entries are reclaimed via the transport's XAUTOCLAIM pass.
     """
     logger.info(
         "ledger fill stream consumer started (stream=%s group=%s consumer=%s)",
@@ -193,22 +326,65 @@ async def consume_fill_stream(
         PORTFOLIO_LEDGER_GROUP,
         consumer_name,
     )
+    from src.metrics import record_ingest
+
     bus = fills.bus
-    async for entry_id, env in bus.consume_envelopes(
-        LEDGER_FILLS_STREAM, PORTFOLIO_LEDGER_GROUP, consumer_name
+    async for entry_id, raw in bus.consume_raw(
+        LEDGER_FILLS_STREAM, PORTFOLIO_LEDGER_GROUP, consumer_name, group_start_id=CURSOR_BEGIN
     ):
-        message = _payload_of(env)
+        message = _decode_message(raw)
+        if message is None:
+            # Undecodable / unknown-type entry: poison, not transient — dead-letter
+            # for review and drop so one bad entry can't wedge the FIFO consumer.
+            await _dead_letter(bus, raw)
+            record_ingest("poison")
+            await bus.ack(LEDGER_FILLS_STREAM, PORTFOLIO_LEDGER_GROUP, entry_id)
+            continue
         verdict = await process_stream_entry(handler, message)
+        if verdict == "drop":
+            # Translation poison or a quarantined fill — park it before acking so
+            # it's recoverable rather than silently lost.
+            await _dead_letter(bus, raw)
         if verdict in ("ack", "drop"):
             await bus.ack(LEDGER_FILLS_STREAM, PORTFOLIO_LEDGER_GROUP, entry_id)
 
 
-def _payload_of(env: EventEnvelope) -> LedgerFill | LedgerReservation:
-    """Parse an envelope to its ledger message (narrowed from the registry)."""
-    return FillEvents.payload(env)
+def _decode_message(raw: bytes) -> LedgerFill | LedgerReservation | None:
+    """Decode raw bytes → ledger message, or ``None`` if undecodable / unknown type."""
+    try:
+        return FillEvents.payload(decode_envelope(raw))
+    except Exception:
+        logger.exception("undecodable or unknown-type ledger stream entry; dropping")
+        return None
 
 
 LAG_SAMPLE_INTERVAL_SECONDS = 30.0
+
+
+class FillLagTracker:
+    """Tracks the fill-stream backlog so the health probe can fail on a stall.
+
+    The active consumer holds an advisory lock for its whole life, so a *hung*
+    (not crashed) consumer keeps the lock and silently stops draining — only the
+    growing pending count reveals it. When the backlog stays above ``threshold``
+    for ``sustained_samples`` consecutive samples, :attr:`is_backlogged` trips so
+    the liveness probe can fail and let K8s recycle the pod (releasing the lock
+    to a standby).
+    """
+
+    def __init__(self, *, threshold: int = 1000, sustained_samples: int = 3) -> None:
+        self.threshold = threshold
+        self.sustained_samples = sustained_samples
+        self.pending = 0
+        self._consecutive_high = 0
+
+    def record(self, pending: int) -> None:
+        self.pending = pending
+        self._consecutive_high = self._consecutive_high + 1 if pending > self.threshold else 0
+
+    @property
+    def is_backlogged(self) -> bool:
+        return self._consecutive_high >= self.sustained_samples
 
 
 async def monitor_stream_lag(
@@ -216,20 +392,23 @@ async def monitor_stream_lag(
     *,
     stop_event: asyncio.Event,
     interval_seconds: float = LAG_SAMPLE_INTERVAL_SECONDS,
+    tracker: FillLagTracker | None = None,
 ) -> None:  # pragma: no cover - timing shell over pending_count
-    """Sample the consumer group's pending-entry count into a gauge.
+    """Sample the consumer group's pending-entry count into a gauge (and tracker).
 
     The pending list (PEL) is the lag signal: sustained growth means the
     consumer is down or stuck, and it must alert before MAXLEN trimming could
-    drop unacked entries.
+    drop unacked entries. The optional ``tracker`` lets the health probe see a
+    sustained backlog and fail liveness for a hung active consumer.
     """
     from src.metrics import LEDGER_STREAM_PENDING
 
     while not stop_event.is_set():
         try:
-            LEDGER_STREAM_PENDING.set(
-                await bus.pending(LEDGER_FILLS_STREAM, PORTFOLIO_LEDGER_GROUP)
-            )
+            pending = await bus.pending(LEDGER_FILLS_STREAM, PORTFOLIO_LEDGER_GROUP)
+            LEDGER_STREAM_PENDING.set(pending)
+            if tracker is not None:
+                tracker.record(pending)
         except Exception:  # sampling is best-effort
             logger.debug("stream lag sample failed", exc_info=True)
         await _interruptible_sleep(stop_event, interval_seconds)

@@ -332,24 +332,6 @@ class PortfolioServicer:
                 f"Failed to list transactions: {e}",
             ) from e
 
-    async def record_transaction(
-        self,
-        request: portfolio_pb2.RecordTransactionRequest,
-        ctx: AnyContext,
-    ) -> portfolio_pb2.RecordTransactionResponse:
-        """Record a manual transaction.
-
-        Transactions are now derived from the ledger event log (the single source
-        of truth) — fills arrive on the ``ledger:fills`` channel and cash moves go
-        through the LedgerService fund ops. Recording an ad-hoc transaction row no
-        longer has a home; manual transactions as ledger events are future work.
-        """
-        raise ConnectError(
-            Code.UNIMPLEMENTED,
-            "manual transaction recording is superseded by the ledger event log "
-            "(fills via ledger:fills, cash via LedgerService fund ops)",
-        )
-
     async def sync_portfolio(
         self,
         request: portfolio_pb2.SyncPortfolioRequest,

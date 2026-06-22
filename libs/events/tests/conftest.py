@@ -79,7 +79,10 @@ class FakeTransport:
                 yield cursor, value
 
     async def ensure_group(self, stream: str, group: str, *, start_id: str = CURSOR_NEW) -> None:
-        self._groups.setdefault((stream, group), _GroupState())
+        if (stream, group) not in self._groups:
+            # CURSOR_NEW = only entries after now; CURSOR_BEGIN = replay all.
+            cursor = self._seq if start_id == CURSOR_NEW else 0
+            self._groups[(stream, group)] = _GroupState(cursor=cursor)
 
     async def consume(
         self,
@@ -90,8 +93,9 @@ class FakeTransport:
         block_ms: int = 5000,
         count: int = 10,
         claim_min_idle_ms: int = 60_000,
+        group_start_id: str = CURSOR_NEW,
     ) -> AsyncIterator[tuple[Cursor, bytes]]:
-        await self.ensure_group(stream, group)
+        await self.ensure_group(stream, group, start_id=group_start_id)
         state = self._groups[(stream, group)]
         # Redeliver unacked entries first (mimics XAUTOCLAIM of dead-consumer work).
         for cursor, value in list(state.pending.items()):

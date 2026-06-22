@@ -285,23 +285,6 @@ message ListTransactionsResponse {
   PaginationResponse pagination = 2;
 }
 
-// Record transaction (internal use)
-message RecordTransactionRequest {
-  TenantContext context = 1;
-  string portfolio_id = 2;
-  TransactionType type = 3;
-  string symbol = 4;
-  Decimal quantity = 5;
-  Decimal price = 6;
-  Decimal fees = 7;
-  string description = 8;
-  string reference_id = 9;
-}
-
-message RecordTransactionResponse {
-  Transaction transaction = 1;
-}
-
 // Get asset allocation
 message GetAssetAllocationRequest {
   TenantContext context = 1;
@@ -402,7 +385,6 @@ service PortfolioService {
 
   // Transactions
   rpc ListTransactions(ListTransactionsRequest) returns (ListTransactionsResponse);
-  rpc RecordTransaction(RecordTransactionRequest) returns (RecordTransactionResponse);
 
   // Sync with trading
   rpc SyncPortfolio(SyncPortfolioRequest) returns (SyncPortfolioResponse);

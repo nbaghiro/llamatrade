@@ -11,8 +11,12 @@ from uuid import UUID, uuid4
 from llamatrade_db.models.ledger import LedgerEventType
 from llamatrade_events import LedgerFill, LedgerReservation
 
-from src.ledger.ingestion import LedgerAppend
-from src.tasks.fill_ingestion import process_stream_entry
+from src.ledger.ingestion import FillQuarantineError, LedgerAppend
+from src.tasks.fill_ingestion import (
+    LEDGER_FILLS_DLQ_STREAM,
+    _dead_letter,
+    process_stream_entry,
+)
 
 TENANT = str(uuid4())
 ACCOUNT = str(uuid4())
@@ -125,6 +129,48 @@ async def test_transient_failure_retries() -> None:
     assert len(rec.appends) == 1
 
 
+async def test_quarantined_fill_is_dropped_not_retried() -> None:
+    """A sell with no resolvable cost basis (FillQuarantineError) is dropped + alerted,
+    never left pending — or it would redeliver forever and wedge the FIFO consumer."""
+
+    async def _quarantine(_append: LedgerAppend) -> None:
+        raise FillQuarantineError("no open lots to cover the sell")
+
+    verdict = await process_stream_entry(_quarantine, _fill(side="sell"))
+    assert verdict == "drop"  # NOT "retry"
+
+
+class _FakeBus:
+    """Records publish_raw calls (the DLQ park)."""
+
+    def __init__(self) -> None:
+        self.published: list[tuple[str, bytes, int]] = []
+
+    async def publish_raw(
+        self, stream: str, value: bytes, *, maxlen: int, key: str | None = None
+    ) -> str:
+        self.published.append((stream, value, maxlen))
+        return "0-1"
+
+
+async def test_dead_letter_parks_unrecordable_entry() -> None:
+    """An unrecordable raw entry is parked on the DLQ stream (recoverable)."""
+    bus = _FakeBus()
+    await _dead_letter(bus, b"corrupt-bytes")
+    assert bus.published[0][0] == LEDGER_FILLS_DLQ_STREAM
+    assert bus.published[0][1] == b"corrupt-bytes"
+
+
+async def test_dead_letter_swallows_publish_failure() -> None:
+    """A DLQ publish failure must not propagate and wedge the consumer."""
+
+    class _BadBus:
+        async def publish_raw(self, *args: object, **kwargs: object) -> str:
+            raise RuntimeError("redis down")
+
+    await _dead_letter(_BadBus(), b"x")  # must not raise
+
+
 async def test_routes_lifecycle_events() -> None:
     rec = _Recorder()
     verdict = await process_stream_entry(
@@ -160,9 +206,6 @@ def _ledger_sleeve(stype, status, *, tenant: UUID, account: UUID):
         name=stype.value,
         strategy_execution_id=None,
         allocated_capital=Decimal("0"),
-        cash_balance=Decimal("0"),
-        reserved_cash=Decimal("0"),
-        unsettled_cash=Decimal("0"),
     )
     s.id = uuid4()
     return s

@@ -43,15 +43,40 @@ async def test_consume_ack_and_pending(bus: EventBus) -> None:
         events_pb2.EVENT_TYPE_LEDGER_FILL, events_pb2.LedgerFill(client_order_id="o1")
     )
     await bus.publish_envelope("ledger:fills", env, maxlen=10)
-    await bus.ensure_group("ledger:fills", "g1")
 
     seen = []
-    async for cursor, e in bus.consume_envelopes("ledger:fills", "g1", "c1"):
+    # group_start=BEGIN: a fresh group replays the entry published before it.
+    async for cursor, e in bus.consume_envelopes(
+        "ledger:fills", "g1", "c1", group_start_id=CURSOR_BEGIN
+    ):
         seen.append(e)
         assert await bus.pending("ledger:fills", "g1") == 1  # delivered, unacked
         await bus.ack("ledger:fills", "g1", cursor)
     assert len(seen) == 1
     assert await bus.pending("ledger:fills", "g1") == 0
+
+
+async def test_consume_raw_yields_undecodable_bytes(bus: EventBus) -> None:
+    """consume_raw must NOT decode — it hands back the raw bytes so the caller
+    can guard the decode (corrupt entries go to a DLQ instead of crashing)."""
+    garbage = b"\xff\x00 not an envelope"
+    await bus.publish_raw("ledger:fills", garbage, maxlen=10)
+
+    out = []
+    async for cursor, raw in bus.consume_raw(
+        "ledger:fills", "g1", "c1", group_start_id=CURSOR_BEGIN
+    ):
+        out.append(raw)
+        await bus.ack("ledger:fills", "g1", cursor)
+    assert out == [garbage]
+
+
+async def test_consume_raw_new_group_skips_preexisting(bus: EventBus) -> None:
+    """Default group_start (CURSOR_NEW) means a fresh group ignores entries that
+    predate it."""
+    await bus.publish_raw("ledger:fills", b"early", maxlen=10)
+    out = [raw async for _, raw in bus.consume_raw("ledger:fills", "g1", "c1")]
+    assert out == []
 
 
 async def test_close_delegates_to_transport(bus: EventBus, transport: FakeTransport) -> None:

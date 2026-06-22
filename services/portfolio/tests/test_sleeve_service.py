@@ -113,13 +113,13 @@ async def test_ensure_base_sleeves_creates_three_singletons() -> None:
     assert len(repo.sleeves) == 3
 
 
-async def test_base_sleeves_are_active_zero_cash() -> None:
+async def test_base_sleeves_are_active() -> None:
     repo = FakeSleeveRepository()
     svc = SleeveService(repo)
     acct = await svc.get_or_create_account(TENANT, CREDS)
     u = (await svc.ensure_base_sleeves(acct))[SleeveType.UNALLOCATED]
     assert u.status == SleeveStatus.ACTIVE.value
-    assert u.cash_balance == Decimal("0")
+    assert u.allocated_capital == Decimal("0")
     assert u.strategy_execution_id is None
 
 

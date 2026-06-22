@@ -88,9 +88,6 @@ def _sleeve(stype: SleeveType, *, strategy_execution_id: UUID | None = None) -> 
         name=stype.value,
         strategy_execution_id=strategy_execution_id,
         allocated_capital=ZERO,
-        cash_balance=ZERO,
-        reserved_cash=ZERO,
-        unsettled_cash=ZERO,
     )
     s.id = uuid4()
     return s

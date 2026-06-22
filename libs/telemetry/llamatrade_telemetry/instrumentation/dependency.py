@@ -11,7 +11,10 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from time import perf_counter
 
+from opentelemetry.trace import SpanKind
+
 from llamatrade_telemetry import registry
+from llamatrade_telemetry.tracing import span as _trace_span
 
 DEPENDENCY_REQUESTS_TOTAL = registry.counter(
     "llamatrade_dependency_requests_total",
@@ -32,16 +35,25 @@ def record_dependency(target: str, operation: str, status: str, duration: float)
 
 @contextmanager
 def time_dependency(target: str, operation: str) -> Iterator[None]:
-    """Time a dependency call; records status success/error/timeout on exit."""
+    """Time a dependency call + open a CLIENT span; records status on exit.
+
+    The CLIENT span makes the outbound call (Alpaca, Stripe, …) visible in the
+    trace; metrics record success/error/timeout.
+    """
     start = perf_counter()
     status = "success"
-    try:
-        yield
-    except TimeoutError:
-        status = "timeout"
-        raise
-    except Exception:
-        status = "error"
-        raise
-    finally:
-        record_dependency(target, operation, status, perf_counter() - start)
+    with _trace_span(
+        f"{target} {operation}",
+        kind=SpanKind.CLIENT,
+        attributes={"dependency.target": target, "dependency.operation": operation},
+    ):
+        try:
+            yield
+        except TimeoutError:
+            status = "timeout"
+            raise
+        except Exception:
+            status = "error"
+            raise
+        finally:
+            record_dependency(target, operation, status, perf_counter() - start)

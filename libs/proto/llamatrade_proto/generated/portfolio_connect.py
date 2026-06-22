@@ -34,9 +34,6 @@ class PortfolioService(Protocol):
     async def list_transactions(self, request: portfolio__pb2.ListTransactionsRequest, ctx: RequestContext) -> portfolio__pb2.ListTransactionsResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
-    async def record_transaction(self, request: portfolio__pb2.RecordTransactionRequest, ctx: RequestContext) -> portfolio__pb2.RecordTransactionResponse:
-        raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
-
     async def sync_portfolio(self, request: portfolio__pb2.SyncPortfolioRequest, ctx: RequestContext) -> portfolio__pb2.SyncPortfolioResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
@@ -114,16 +111,6 @@ class PortfolioServiceASGIApplication(ConnectASGIApplication[PortfolioService]):
                         idempotency_level=IdempotencyLevel.UNKNOWN,
                     ),
                     function=svc.list_transactions,
-                ),
-                "/llamatrade.PortfolioService/RecordTransaction": Endpoint.unary(
-                    method=MethodInfo(
-                        name="RecordTransaction",
-                        service_name="llamatrade.PortfolioService",
-                        input=portfolio__pb2.RecordTransactionRequest,
-                        output=portfolio__pb2.RecordTransactionResponse,
-                        idempotency_level=IdempotencyLevel.UNKNOWN,
-                    ),
-                    function=svc.record_transaction,
                 ),
                 "/llamatrade.PortfolioService/SyncPortfolio": Endpoint.unary(
                     method=MethodInfo(
@@ -297,26 +284,6 @@ class PortfolioServiceClient(ConnectClient):
             timeout_ms=timeout_ms,
         )
 
-    async def record_transaction(
-        self,
-        request: portfolio__pb2.RecordTransactionRequest,
-        *,
-        headers: Headers | Mapping[str, str] | None = None,
-        timeout_ms: int | None = None,
-    ) -> portfolio__pb2.RecordTransactionResponse:
-        return await self.execute_unary(
-            request=request,
-            method=MethodInfo(
-                name="RecordTransaction",
-                service_name="llamatrade.PortfolioService",
-                input=portfolio__pb2.RecordTransactionRequest,
-                output=portfolio__pb2.RecordTransactionResponse,
-                idempotency_level=IdempotencyLevel.UNKNOWN,
-            ),
-            headers=headers,
-            timeout_ms=timeout_ms,
-        )
-
     async def sync_portfolio(
         self,
         request: portfolio__pb2.SyncPortfolioRequest,
@@ -411,8 +378,6 @@ class PortfolioServiceSync(Protocol):
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
     def list_transactions(self, request: portfolio__pb2.ListTransactionsRequest, ctx: RequestContext) -> portfolio__pb2.ListTransactionsResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
-    def record_transaction(self, request: portfolio__pb2.RecordTransactionRequest, ctx: RequestContext) -> portfolio__pb2.RecordTransactionResponse:
-        raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
     def sync_portfolio(self, request: portfolio__pb2.SyncPortfolioRequest, ctx: RequestContext) -> portfolio__pb2.SyncPortfolioResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
     def list_strategy_performance(self, request: portfolio__pb2.ListStrategyPerformanceRequest, ctx: RequestContext) -> portfolio__pb2.ListStrategyPerformanceResponse:
@@ -486,16 +451,6 @@ class PortfolioServiceWSGIApplication(ConnectWSGIApplication):
                         idempotency_level=IdempotencyLevel.UNKNOWN,
                     ),
                     function=service.list_transactions,
-                ),
-                "/llamatrade.PortfolioService/RecordTransaction": EndpointSync.unary(
-                    method=MethodInfo(
-                        name="RecordTransaction",
-                        service_name="llamatrade.PortfolioService",
-                        input=portfolio__pb2.RecordTransactionRequest,
-                        output=portfolio__pb2.RecordTransactionResponse,
-                        idempotency_level=IdempotencyLevel.UNKNOWN,
-                    ),
-                    function=service.record_transaction,
                 ),
                 "/llamatrade.PortfolioService/SyncPortfolio": EndpointSync.unary(
                     method=MethodInfo(
@@ -663,26 +618,6 @@ class PortfolioServiceClientSync(ConnectClientSync):
                 service_name="llamatrade.PortfolioService",
                 input=portfolio__pb2.ListTransactionsRequest,
                 output=portfolio__pb2.ListTransactionsResponse,
-                idempotency_level=IdempotencyLevel.UNKNOWN,
-            ),
-            headers=headers,
-            timeout_ms=timeout_ms,
-        )
-
-    def record_transaction(
-        self,
-        request: portfolio__pb2.RecordTransactionRequest,
-        *,
-        headers: Headers | Mapping[str, str] | None = None,
-        timeout_ms: int | None = None,
-    ) -> portfolio__pb2.RecordTransactionResponse:
-        return self.execute_unary(
-            request=request,
-            method=MethodInfo(
-                name="RecordTransaction",
-                service_name="llamatrade.PortfolioService",
-                input=portfolio__pb2.RecordTransactionRequest,
-                output=portfolio__pb2.RecordTransactionResponse,
                 idempotency_level=IdempotencyLevel.UNKNOWN,
             ),
             headers=headers,

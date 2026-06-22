@@ -31,9 +31,6 @@ def _sleeve(stype: SleeveType, *, strategy_execution_id=None, allocated=ZERO) ->
         name="Test",
         strategy_execution_id=strategy_execution_id,
         allocated_capital=allocated,
-        cash_balance=ZERO,
-        reserved_cash=Decimal("12.50"),
-        unsettled_cash=ZERO,
     )
     s.id = uuid4()
     return s
@@ -61,8 +58,8 @@ def test_sleeve_to_proto_maps_fields_and_enums() -> None:
     assert proto.status == ledger_pb2.SLEEVE_STATUS_ACTIVE
     assert proto.strategy_execution_id == str(s.strategy_execution_id)
     assert proto.allocated_capital.value == "1000"
-    assert proto.cash.balance.value == "750.25"  # projected cash, not the row column
-    assert proto.cash.reserved.value == "12.50"
+    assert proto.cash.balance.value == "750.25"  # projected cash
+    assert proto.cash.reserved.value == "0"  # 0 when no projected reserved is passed
 
 
 def test_sleeve_to_proto_base_sleeve_has_empty_execution_id() -> None:
@@ -92,14 +89,14 @@ def test_account_to_proto_maps_fields() -> None:
 def test_sleeve_to_proto_projected_reserved_and_realized() -> None:
     s = _sleeve(SleeveType.STRATEGY)
     proto = _sleeve_to_proto(s, Decimal("750"), Decimal("100"), Decimal("42.50"))
-    assert proto.cash.reserved.value == "100"  # projection wins over the row column
+    assert proto.cash.reserved.value == "100"  # projected reservation total
     assert proto.realized_pnl.value == "42.50"
 
 
 def test_sleeve_to_proto_defaults_without_projection() -> None:
     s = _sleeve(SleeveType.STRATEGY)
     proto = _sleeve_to_proto(s, Decimal("750"))
-    assert proto.cash.reserved.value == "12.50"  # row column fallback
+    assert proto.cash.reserved.value == "0"  # no off-ledger fallback; 0 when unset
     assert proto.realized_pnl.value == "0"
 
 

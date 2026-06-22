@@ -3,9 +3,21 @@
 from __future__ import annotations
 
 import asyncio
+import re
 from collections.abc import AsyncIterator
 
+import pytest
+
 from llamatrade_events.fanout import StreamFanout
+from llamatrade_telemetry import get_metrics
+
+
+def _metric_value(name: str, **labels: str) -> float:
+    """Read a single metric value from the Prometheus exposition (0.0 if absent)."""
+    label_str = ",".join(f'{k}="{v}"' for k, v in sorted(labels.items()))
+    pattern = re.compile(rf"^{re.escape(name)}\{{{re.escape(label_str)}\}} (.+)$", re.M)
+    match = pattern.search(get_metrics().decode())
+    return float(match.group(1)) if match else 0.0
 
 
 async def test_routes_by_key_and_broadcasts_to_wildcard() -> None:
@@ -80,3 +92,44 @@ async def test_stream_yields_then_cleans_up_on_cancel() -> None:
         pass
     assert received == ["hello"]
     assert fo.client_count == 0  # stream()'s finally disconnected
+
+
+# -- duplicate client id (caller bug) --
+
+
+async def test_duplicate_client_id_raises() -> None:
+    """A reused client_id would orphan the first client's queue — fail loudly."""
+    fo: StreamFanout[str] = StreamFanout()
+    await fo.connect(1)
+    with pytest.raises(ValueError, match="already connected"):
+        await fo.connect(1)
+
+
+# -- drop metric + name label --
+
+
+async def test_drop_on_full_increments_named_metric() -> None:
+    fo: StreamFanout[str] = StreamFanout(name="bars-test", queue_max=1)
+    await fo.connect(1)
+    before = _metric_value("llamatrade_events_fanout_dropped_total", fanout="bars-test")
+
+    await fo.broadcast("K", "first")
+    await fo.broadcast("K", "second")  # queue full → dropped
+
+    after = _metric_value("llamatrade_events_fanout_dropped_total", fanout="bars-test")
+    assert after == before + 1
+
+
+# -- connected-clients gauge --
+
+
+async def test_clients_gauge_tracks_connect_and_disconnect() -> None:
+    fo: StreamFanout[str] = StreamFanout(name="orders-test")
+
+    await fo.connect(1)
+    await fo.connect(2)
+    assert _metric_value("llamatrade_events_fanout_clients", fanout="orders-test") == 2
+    await fo.disconnect(1)
+    assert _metric_value("llamatrade_events_fanout_clients", fanout="orders-test") == 1
+    await fo.disconnect(2)
+    assert _metric_value("llamatrade_events_fanout_clients", fanout="orders-test") == 0

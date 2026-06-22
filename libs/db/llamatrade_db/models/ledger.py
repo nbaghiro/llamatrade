@@ -152,17 +152,9 @@ class Sleeve(Base, UUIDPrimaryKeyMixin, TenantMixin, TimestampMixin):
     # Set only for SLEEVE_TYPE_STRATEGY sleeves.
     strategy_execution_id: Mapped[UUID | None] = mapped_column(PG_UUID(as_uuid=True), nullable=True)
 
-    # Capital accounting (cash sub-ledger). free = balance - reserved (derived).
+    # The original capital allocated to this sleeve. Live cash/positions/reserved
+    # are NOT stored — they are projected from the ledger event log (book of record).
     allocated_capital: Mapped[Decimal] = mapped_column(
-        Numeric(precision=18, scale=2), nullable=False, default=Decimal("0")
-    )
-    cash_balance: Mapped[Decimal] = mapped_column(
-        Numeric(precision=18, scale=2), nullable=False, default=Decimal("0")
-    )
-    reserved_cash: Mapped[Decimal] = mapped_column(
-        Numeric(precision=18, scale=2), nullable=False, default=Decimal("0")
-    )
-    unsettled_cash: Mapped[Decimal] = mapped_column(
         Numeric(precision=18, scale=2), nullable=False, default=Decimal("0")
     )
 

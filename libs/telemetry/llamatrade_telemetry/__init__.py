@@ -34,6 +34,7 @@ from llamatrade_telemetry.registry import (
     observable_gauge,
     up_down_counter,
 )
+from llamatrade_telemetry.runtime import ensure_runtime_monitor
 from llamatrade_telemetry.setup import init_telemetry, shutdown
 from llamatrade_telemetry.tracing import (
     extract_context,
@@ -46,6 +47,7 @@ __all__ = [
     # setup
     "init_telemetry",
     "shutdown",
+    "ensure_runtime_monitor",
     # metrics
     "metrics",
     "get_metrics",

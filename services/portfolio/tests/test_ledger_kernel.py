@@ -16,6 +16,7 @@ from llamatrade_events import LedgerFill, LedgerReservation
 
 from src.ledger.backfill import BrokerPosition, plan_backfill
 from src.ledger.ingestion import (
+    FillQuarantineError,
     append_from_message,
     enrich_sell_fill,
     fill_to_append,
@@ -23,11 +24,12 @@ from src.ledger.ingestion import (
 )
 from src.ledger.postings import (
     Bucket,
+    Posting,
     UnbalancedEventError,
     assert_balanced,
     build_postings,
 )
-from src.ledger.projection import fold, holding_history, open_lots
+from src.ledger.projection import AccountProjection, _fold_into, fold, holding_history, open_lots
 from src.ledger.reconciliation import DriftKind, reconcile
 from src.ledger.sizing import Lot
 
@@ -136,10 +138,20 @@ class TestPostingsConservation:
         assert build_postings(LedgerEventType.ORDER_SUBMITTED, {}) == []
 
     def test_unbalanced_detected(self) -> None:
-        from src.ledger.postings import Posting
-
         with pytest.raises(UnbalancedEventError):
             assert_balanced([Posting(A, Bucket.CASH, D("10"))])
+
+    def test_opposite_signed_position_rejected(self) -> None:
+        """A position leg that adds shares while removing cost (or vice versa) is
+        rejected even though the dollar total nets to zero — sign-consistency, not
+        just the sum, must hold."""
+        with pytest.raises(UnbalancedEventError, match="opposite-signed"):
+            assert_balanced(
+                [
+                    Posting(A, Bucket.CASH, D("100")),
+                    Posting(A, Bucket.POSITION, D("-100"), symbol="SPY", qty=D("5")),
+                ]
+            )
 
 
 class TestProjection:
@@ -404,10 +416,19 @@ class TestSellEnrichment:
         append = self._sell_append(cost_basis="25000")
         assert enrich_sell_fill(append, []) is append
 
-    def test_insufficient_lots_leaves_fill_unenriched(self) -> None:
+    def test_insufficient_lots_quarantines_sell(self) -> None:
+        """A sell the open lots can't cover is quarantined (fail-closed), not
+        silently recorded with a fabricated cost basis."""
         lots = [Lot(qty=D("10"), cost_basis=D("4800"), opened_seq=1)]
-        enriched = enrich_sell_fill(self._sell_append("60"), lots)
-        assert "cost_basis" not in enriched.data
+        with pytest.raises(FillQuarantineError):
+            enrich_sell_fill(self._sell_append("60"), lots)
+
+    def test_build_postings_rejects_sell_without_cost_basis(self) -> None:
+        """The writer/fold path refuses a basis-less sell rather than defaulting
+        cost to notional (which would fabricate zero realized P&L)."""
+        data = {"sleeve_id": A, "symbol": "SPY", "side": "sell", "qty": "50", "price": "500"}
+        with pytest.raises(ValueError, match="cost_basis"):
+            build_postings(LedgerEventType.ORDER_FILLED, data)
 
 
 class TestReservationProjection:
@@ -535,3 +556,35 @@ class TestBackfillPlanner:
             unmanaged_sleeve_id=uuid4(),
         )
         assert planned == []
+
+
+def test_fold_split_invariance() -> None:
+    """fold(checkpoint at any split) + delta == fold from zero.
+
+    This is the invariant the incremental projection (LedgerProjector.
+    project_account_incremental) relies on: resuming a fold from a checkpoint
+    plus the delta must be IDENTICAL to a full replay — across every posting
+    type, the reservation lifecycle spanning the split, AND a poison event.
+    """
+    s, u = "strat-x", "unalloc"
+    events = [
+        Ev(LedgerEventType.FUNDS_DEPOSITED, {"sleeve_id": u, "amount": "100000"}),
+        Ev(LedgerEventType.CAPITAL_ALLOCATED, {"from_sleeve_id": u, "to_sleeve_id": s, "amount": "40000"}),
+        Ev(LedgerEventType.ORDER_SUBMITTED, {"sleeve_id": s, "client_order_id": "o1", "reserved": "5000"}),
+        Ev(LedgerEventType.ORDER_FILLED, {"sleeve_id": s, "client_order_id": "o1", "symbol": "SPY", "side": "buy", "qty": "50", "price": "100"}),
+        Ev(LedgerEventType.DIVIDEND_RECEIVED, {"sleeve_id": s, "amount": "120"}),
+        Ev(LedgerEventType.FEE_CHARGED, {"sleeve_id": s, "amount": "3"}),
+        Ev(LedgerEventType.ORDER_FILLED, {"sleeve_id": s, "symbol": "SPY", "side": "sell", "qty": "20", "price": "110", "cost_basis": "2000"}),
+        Ev(LedgerEventType.ORDER_SUBMITTED, {"sleeve_id": s, "client_order_id": "o2", "reserved": "1000"}),
+        Ev(LedgerEventType.ORDER_CANCELLED, {"sleeve_id": s, "client_order_id": "o2"}),
+        Ev(LedgerEventType.SPLIT_APPLIED, {"sleeve_id": s, "symbol": "SPY", "qty_delta": "30"}),
+        Ev(LedgerEventType.ORDER_FILLED, {"sleeve_id": s, "symbol": "SPY"}),  # poison: missing side/qty/price
+        Ev(LedgerEventType.SYMBOL_CHANGED, {"sleeve_id": s, "old_symbol": "SPY", "new_symbol": "SPYX", "qty": "60", "cost_basis": "3000"}),
+    ]
+    full = fold(events)
+    for k in range(len(events) + 1):
+        base = AccountProjection()
+        pending: dict[str, tuple[str, Decimal]] = {}
+        _fold_into(base, pending, events[:k], on_error=None)
+        _fold_into(base, pending, events[k:], on_error=None)
+        assert base == full, f"checkpoint split at index {k} diverged from full fold"

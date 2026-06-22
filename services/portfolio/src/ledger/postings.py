@@ -52,10 +52,24 @@ class UnbalancedEventError(ValueError):
 
 
 def assert_balanced(postings: list[Posting]) -> None:
-    """Assert the conservation invariant: postings sum to zero dollars."""
+    """Assert conservation: postings sum to zero dollars, and no POSITION leg
+    moves shares opposite to its cost.
+
+    The dollar checksum alone can't catch a leg that *adds* shares while
+    *removing* cost (or vice versa) — a sign inconsistency that would corrupt a
+    sleeve's average cost. A zero-dollar position move (a split) is exempt: it
+    legitimately changes qty at no incremental cost.
+    """
     total = sum((p.amount for p in postings), ZERO)
     if total != ZERO:
         raise UnbalancedEventError(f"postings sum to {total}, expected 0")
+    for p in postings:
+        if p.bucket is Bucket.POSITION and p.qty is not None:
+            if (p.amount > ZERO and p.qty < ZERO) or (p.amount < ZERO and p.qty > ZERO):
+                raise UnbalancedEventError(
+                    f"position leg {p.symbol!r} has opposite-signed "
+                    f"qty={p.qty} and amount={p.amount}"
+                )
 
 
 def _d(data: dict[str, object], key: str) -> Decimal:
@@ -185,8 +199,14 @@ def _order_filled_postings(data: dict[str, object]) -> list[Posting]:
         ]
 
     if side == "sell":
-        # Cost basis of the closed quantity is provided by the lot selector.
-        cost = _d(data, "cost_basis") if "cost_basis" in data else notional
+        # Fail-closed: a sell MUST carry a resolved cost basis (the consumer
+        # enriches via FIFO at ingestion). Defaulting to notional would fabricate
+        # zero realized P&L and silently corrupt the remaining lots' basis, so we
+        # refuse to build postings for a basis-less sell — the writer rejects it
+        # and the fill is quarantined rather than recorded wrong-but-balanced.
+        if "cost_basis" not in data:
+            raise ValueError("sell ORDER_FILLED missing cost_basis (FIFO enrichment did not run)")
+        cost = _d(data, "cost_basis")
         realized = notional - cost - fees
         return [
             Posting(sleeve, Bucket.POSITION, -cost, symbol=symbol, qty=-qty),

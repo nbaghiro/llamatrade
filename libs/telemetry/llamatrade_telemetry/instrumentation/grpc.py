@@ -1,8 +1,9 @@
-"""gRPC metrics for native HTTP/2 inter-service calls.
+"""gRPC metric instruments + recorders for native ``grpc.aio`` inter-service calls.
 
-Connect RPCs (mounted under ``/``) are already captured by the HTTP middleware;
-these instruments cover server/client interceptors for raw ``grpcio`` paths and
-streaming RPCs when those are wired.
+The actual ``grpc.aio`` interceptors live in ``llamatrade_proto.interceptors.telemetry``
+(next to the other interceptors, where the server/client chains are wired); they
+call these recorders plus ``llamatrade_telemetry``'s trace inject/extract helpers.
+Connect RPCs (mounted under ``/``) are captured by the HTTP middleware instead.
 """
 
 from __future__ import annotations

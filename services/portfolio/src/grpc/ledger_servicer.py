@@ -76,10 +76,10 @@ def _sleeve_to_proto(
         allocated_capital=_dec(sleeve.allocated_capital),
         cash=ledger_pb2.SleeveCash(
             balance=_dec(cash),
-            # Projected from the reservation lifecycle when available; the
-            # row column is a legacy fallback.
-            reserved=_dec(reserved if reserved is not None else sleeve.reserved_cash),
-            unsettled=_dec(sleeve.unsettled_cash),
+            # All cash state is projected from the event log; default to 0 when a
+            # caller builds the proto without the projected reservation total.
+            reserved=_dec(reserved if reserved is not None else 0),
+            unsettled=_dec(0),  # settlement tracking not modeled yet
         ),
         realized_pnl=_dec(realized_pnl if realized_pnl is not None else Decimal("0")),
     )

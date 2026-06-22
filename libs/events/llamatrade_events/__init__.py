@@ -43,13 +43,14 @@ from llamatrade_events.channels import (
     Delivery,
 )
 from llamatrade_events.codec import (
+    UnknownEventTypeError,
     decode_envelope,
     encode_envelope,
     make_envelope,
     parse_payload,
     register_payload,
 )
-from llamatrade_events.consumer import StreamConsumer
+from llamatrade_events.consumer import PoisonError, StreamConsumer
 from llamatrade_events.fanout import StreamFanout
 from llamatrade_events.idempotency import (
     DedupStore,
@@ -96,10 +97,12 @@ __all__ = [
     "LedgerReservation",
     "OrderEvents",
     "OrderUpdate",
+    "PoisonError",
     "PositionEvents",
     "PositionUpdate",
     "ProgressEvents",
     "RedisStreamsTransport",
+    "UnknownEventTypeError",
     # runtime
     "StreamConsumer",
     "StreamFanout",

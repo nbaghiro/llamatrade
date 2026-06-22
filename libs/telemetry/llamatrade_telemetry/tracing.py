@@ -1,8 +1,8 @@
 """Distributed tracing: provider, W3C propagation, and span helpers.
 
 Traces export via OTLP/HTTP when ``OTEL_EXPORTER_OTLP_ENDPOINT`` is set; with no
-endpoint the provider still records spans (so ``trace_id`` shows up in logs and
-exemplars) but exports nothing — zero-config for dev and tests.
+endpoint the provider still records spans (so ``trace_id`` shows up in logs) but
+exports nothing — zero-config for dev and tests.
 """
 
 from __future__ import annotations

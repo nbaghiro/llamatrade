@@ -48,11 +48,6 @@ class PortfolioServiceStub(object):
                 request_serializer=portfolio__pb2.ListTransactionsRequest.SerializeToString,
                 response_deserializer=portfolio__pb2.ListTransactionsResponse.FromString,
                 _registered_method=True)
-        self.RecordTransaction = channel.unary_unary(
-                '/llamatrade.PortfolioService/RecordTransaction',
-                request_serializer=portfolio__pb2.RecordTransactionRequest.SerializeToString,
-                response_deserializer=portfolio__pb2.RecordTransactionResponse.FromString,
-                _registered_method=True)
         self.SyncPortfolio = channel.unary_unary(
                 '/llamatrade.PortfolioService/SyncPortfolio',
                 request_serializer=portfolio__pb2.SyncPortfolioRequest.SerializeToString,
@@ -122,12 +117,6 @@ class PortfolioServiceServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
-    def RecordTransaction(self, request, context):
-        """Missing associated documentation comment in .proto file."""
-        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
-        context.set_details('Method not implemented!')
-        raise NotImplementedError('Method not implemented!')
-
     def SyncPortfolio(self, request, context):
         """Sync with trading
         """
@@ -186,11 +175,6 @@ def add_PortfolioServiceServicer_to_server(servicer, server):
                     servicer.ListTransactions,
                     request_deserializer=portfolio__pb2.ListTransactionsRequest.FromString,
                     response_serializer=portfolio__pb2.ListTransactionsResponse.SerializeToString,
-            ),
-            'RecordTransaction': grpc.unary_unary_rpc_method_handler(
-                    servicer.RecordTransaction,
-                    request_deserializer=portfolio__pb2.RecordTransactionRequest.FromString,
-                    response_serializer=portfolio__pb2.RecordTransactionResponse.SerializeToString,
             ),
             'SyncPortfolio': grpc.unary_unary_rpc_method_handler(
                     servicer.SyncPortfolio,
@@ -379,33 +363,6 @@ class PortfolioService(object):
             '/llamatrade.PortfolioService/ListTransactions',
             portfolio__pb2.ListTransactionsRequest.SerializeToString,
             portfolio__pb2.ListTransactionsResponse.FromString,
-            options,
-            channel_credentials,
-            insecure,
-            call_credentials,
-            compression,
-            wait_for_ready,
-            timeout,
-            metadata,
-            _registered_method=True)
-
-    @staticmethod
-    def RecordTransaction(request,
-            target,
-            options=(),
-            channel_credentials=None,
-            call_credentials=None,
-            insecure=False,
-            compression=None,
-            wait_for_ready=None,
-            timeout=None,
-            metadata=None):
-        return grpc.experimental.unary_unary(
-            request,
-            target,
-            '/llamatrade.PortfolioService/RecordTransaction',
-            portfolio__pb2.RecordTransactionRequest.SerializeToString,
-            portfolio__pb2.RecordTransactionResponse.FromString,
             options,
             channel_credentials,
             insecure,

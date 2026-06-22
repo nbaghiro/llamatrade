@@ -11,6 +11,7 @@ log; the performance curve derives from ``SleeveSnapshot`` rows.
 
 from __future__ import annotations
 
+import asyncio
 from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
 from uuid import UUID
@@ -191,7 +192,9 @@ class PortfolioReadService:
 
         dates = [d for d, _ in series]
         equities = np.array([e for _, e in series], dtype=np.float64)
-        m = equity_metrics(equities)
+        # Numpy is CPU-bound; keep it off the event loop so concurrent reads
+        # don't stall on a large series.
+        m = await asyncio.to_thread(equity_metrics, equities)
 
         beta, alpha, benchmark_return = 0.0, 0.0, 0.0
         if self.market_data is not None:
@@ -200,7 +203,9 @@ class PortfolioReadService:
                 datetime.combine(dates[0], time.min, tzinfo=UTC),
                 datetime.combine(dates[-1] + timedelta(days=1), time.min, tzinfo=UTC),
             )
-            beta, alpha, benchmark_return = benchmark_metrics(dates, equities, bench_closes)
+            beta, alpha, benchmark_return = await asyncio.to_thread(
+                benchmark_metrics, dates, equities, bench_closes
+            )
 
         return PerformanceMetrics(
             period=period,

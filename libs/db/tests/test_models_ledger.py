@@ -77,9 +77,6 @@ class TestSleeveModel:
             "name",
             "strategy_execution_id",
             "allocated_capital",
-            "cash_balance",
-            "reserved_cash",
-            "unsettled_cash",
         ):
             assert name in cols
 

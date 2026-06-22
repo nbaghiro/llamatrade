@@ -33,6 +33,10 @@ class TelemetrySettings(BaseSettings):
     service_version: str | None = Field(default=None, alias="SERVICE_VERSION")
     git_sha: str | None = Field(default=None, alias="GIT_SHA")
 
+    # When None, strictness is derived from the environment (strict in dev/test so
+    # a bad label fails fast; lenient in prod/staging so it never crashes a request).
+    strict_labels_override: bool | None = Field(default=None, alias="TELEMETRY_STRICT_LABELS")
+
     @property
     def json_logs(self) -> bool:
         return self.log_format.lower() == "json"
@@ -40,6 +44,12 @@ class TelemetrySettings(BaseSettings):
     @property
     def export_traces(self) -> bool:
         return self.tracing_enabled and self.otlp_endpoint is not None
+
+    @property
+    def strict_labels(self) -> bool:
+        if self.strict_labels_override is not None:
+            return self.strict_labels_override
+        return self.environment.lower() not in {"production", "staging"}
 
 
 def load_settings() -> TelemetrySettings:

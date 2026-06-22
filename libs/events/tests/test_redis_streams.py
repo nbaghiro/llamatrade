@@ -9,6 +9,7 @@ fields as raw bytes (unlike the string-field bus fake in common).
 
 from __future__ import annotations
 
+import re
 from typing import cast
 
 import pytest
@@ -17,6 +18,15 @@ import redis.asyncio as aioredis
 from llamatrade_events.transport import redis_streams
 from llamatrade_events.transport.base import CURSOR_BEGIN, CURSOR_NEW
 from llamatrade_events.transport.redis_streams import RedisStreamsTransport
+from llamatrade_telemetry import get_metrics
+
+
+def _metric_value(name: str, **labels: str) -> float:
+    """Read a single metric value from the Prometheus exposition (0.0 if absent)."""
+    label_str = ",".join(f'{k}="{v}"' for k, v in sorted(labels.items()))
+    pattern = re.compile(rf"^{re.escape(name)}\{{{re.escape(label_str)}\}} (.+)$", re.M)
+    match = pattern.search(get_metrics().decode())
+    return float(match.group(1)) if match else 0.0
 
 
 class FakeRedis:
@@ -82,7 +92,7 @@ class FakeRedis:
                 out.append((key.encode(), entries))
         return out
 
-    async def xautoclaim(self, key, group, consumer, min_idle_time=0, count=None):
+    async def xautoclaim(self, key, group, consumer, min_idle_time=0, start_id="0-0", count=None):
         state = self.groups.get((key, group))
         claimed = []
         if state is not None:
@@ -267,9 +277,9 @@ async def test_tail_reconnects_after_transient_error(monkeypatch: pytest.MonkeyP
     fake = FlakyRedis("xread", fail_times=1)
     t = _transport(fake)
     await t.publish("s", b"a", maxlen=10)
-    before = redis_streams.EVENTS_RECONNECTS_TOTAL.labels(stream="s", mode="tail")._value.get()
+    before = _metric_value("llamatrade_events_reconnects_total", stream="s", mode="tail")
     got = await _take(t.tail("s", from_cursor=CURSOR_BEGIN), 1)
-    after = redis_streams.EVENTS_RECONNECTS_TOTAL.labels(stream="s", mode="tail")._value.get()
+    after = _metric_value("llamatrade_events_reconnects_total", stream="s", mode="tail")
     assert got[0][1] == b"a"  # recovered and delivered
     assert after == before + 1  # one reconnect recorded
 
@@ -290,3 +300,122 @@ def test_backoff_delay_grows_and_is_bounded() -> None:
     # Jittered, so assert the bounded envelope rather than exact values.
     assert 0 < d1 <= redis_streams.RECONNECT_BASE_DELAY_SECONDS
     assert d5 <= redis_streams.RECONNECT_MAX_DELAY_SECONDS
+
+
+# -- NOGROUP recovery (Redis lost the consumer group) --
+
+
+class NoGroupOnceRedis(FakeRedis):
+    """Raises NOGROUP on the first XAUTOCLAIM (group vanished), then behaves."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._raised = False
+
+    async def xautoclaim(self, key, group, consumer, min_idle_time=0, start_id="0-0", count=None):
+        if not self._raised:
+            self._raised = True
+            self.groups.pop((key, group), None)  # simulate the group being gone
+            raise aioredis.ResponseError("NOGROUP No such key or consumer group")
+        return await super().xautoclaim(
+            key, group, consumer, min_idle_time=min_idle_time, start_id=start_id, count=count
+        )
+
+
+async def test_consume_recovers_after_nogroup(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(redis_streams, "_backoff_delay", lambda _a: 0.0)
+    fake = NoGroupOnceRedis()
+    t = _transport(fake)
+    await t.publish("s", b"z", maxlen=10)
+    before = _metric_value("llamatrade_events_reconnects_total", stream="s", mode="consume")
+    # group_start=BEGIN so the recreated group replays the pre-existing entry.
+    got = await _take(t.consume("s", "g", "c1", group_start_id=CURSOR_BEGIN), 1)
+    after = _metric_value("llamatrade_events_reconnects_total", stream="s", mode="consume")
+    assert got[0][1] == b"z"  # group recreated and the entry delivered
+    assert after == before + 1  # one consume reconnect recorded
+    assert ("lt:s", "g") in fake.groups  # group was recreated
+
+
+# -- trimmed-while-pending: XAUTOCLAIM returns (id, None) --
+
+
+class TrimmedPendingRedis(FakeRedis):
+    """First XAUTOCLAIM hands back one entry whose fields were trimmed (None)."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._served = False
+
+    async def xautoclaim(self, key, group, consumer, min_idle_time=0, start_id="0-0", count=None):
+        if not self._served:
+            self._served = True
+            return b"0-0", [(b"99-0", None)], []  # trimmed-while-pending entry
+        return b"0-0", [], []
+
+
+async def test_consume_skips_trimmed_pending_entry() -> None:
+    fake = TrimmedPendingRedis()
+    t = _transport(fake)
+    await t.ensure_group("s", "g", start_id=CURSOR_BEGIN)
+    await t.publish("s", b"real", maxlen=10)
+    # The None-field claimed entry must be skipped, not yielded; only the live
+    # XREADGROUP entry comes through.
+    got = await _take(t.consume("s", "g", "c1"), 1)
+    assert [v for _, v in got] == [b"real"]
+
+
+# -- connection pool / health-check config --
+
+
+async def test_client_configures_bounded_pool(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_from_url(url, **kwargs):
+        captured["url"] = url
+        captured.update(kwargs)
+        return FakeRedis()
+
+    monkeypatch.setattr(redis_streams.aioredis, "from_url", fake_from_url)
+    t = RedisStreamsTransport("redis://example:6379/0", max_connections=7)
+    await t._client()
+    assert captured["url"] == "redis://example:6379/0"
+    assert captured["max_connections"] == 7
+    assert captured["health_check_interval"] == redis_streams.HEALTH_CHECK_INTERVAL_SECONDS
+
+
+async def test_client_is_cached_across_calls(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls = 0
+
+    def fake_from_url(url, **kwargs):
+        nonlocal calls
+        calls += 1
+        return FakeRedis()
+
+    monkeypatch.setattr(redis_streams.aioredis, "from_url", fake_from_url)
+    t = RedisStreamsTransport("redis://example:6379/0")
+    first = await t._client()
+    second = await t._client()
+    assert first is second  # one pool, reused
+    assert calls == 1
+
+
+# -- group-start position threaded into the consumer group --
+
+
+async def test_consume_group_start_begin_replays_preexisting() -> None:
+    fake = FakeRedis()
+    t = _transport(fake)
+    await t.publish("ledger:fills", b"f1", maxlen=10)  # published before any group
+    got = await _take(t.consume("ledger:fills", "g", "c1", group_start_id=CURSOR_BEGIN), 1)
+    assert got[0][1] == b"f1"  # fresh group created at "0" replayed it
+
+
+async def test_consume_new_group_starts_at_tail() -> None:
+    fake = FakeRedis()
+    t = _transport(fake)
+    await t.publish("s", b"old", maxlen=10)
+    # CURSOR_NEW → consume() creates the group at the latest id, so a pre-existing
+    # entry is not in its backlog (it would otherwise block reading). Assert the
+    # group cursor sits at the tail rather than draining the generator.
+    await t.ensure_group("s", "g", start_id=CURSOR_NEW)
+    assert fake.groups[("lt:s", "g")]["cursor"] == "1-0"

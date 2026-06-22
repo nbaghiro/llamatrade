@@ -46,7 +46,6 @@ class PortfolioServiceStub:
     """Positions"""
     ListTransactions: _grpc.UnaryUnaryMultiCallable[_portfolio_pb2.ListTransactionsRequest, _portfolio_pb2.ListTransactionsResponse]
     """Transactions"""
-    RecordTransaction: _grpc.UnaryUnaryMultiCallable[_portfolio_pb2.RecordTransactionRequest, _portfolio_pb2.RecordTransactionResponse]
     SyncPortfolio: _grpc.UnaryUnaryMultiCallable[_portfolio_pb2.SyncPortfolioRequest, _portfolio_pb2.SyncPortfolioResponse]
     """Sync with trading"""
     ListStrategyPerformance: _grpc.UnaryUnaryMultiCallable[_portfolio_pb2.ListStrategyPerformanceRequest, _portfolio_pb2.ListStrategyPerformanceResponse]
@@ -72,7 +71,6 @@ class PortfolioServiceAsyncStub(PortfolioServiceStub):
     """Positions"""
     ListTransactions: _aio.UnaryUnaryMultiCallable[_portfolio_pb2.ListTransactionsRequest, _portfolio_pb2.ListTransactionsResponse]  # type: ignore[assignment]
     """Transactions"""
-    RecordTransaction: _aio.UnaryUnaryMultiCallable[_portfolio_pb2.RecordTransactionRequest, _portfolio_pb2.RecordTransactionResponse]  # type: ignore[assignment]
     SyncPortfolio: _aio.UnaryUnaryMultiCallable[_portfolio_pb2.SyncPortfolioRequest, _portfolio_pb2.SyncPortfolioResponse]  # type: ignore[assignment]
     """Sync with trading"""
     ListStrategyPerformance: _aio.UnaryUnaryMultiCallable[_portfolio_pb2.ListStrategyPerformanceRequest, _portfolio_pb2.ListStrategyPerformanceResponse]  # type: ignore[assignment]
@@ -131,13 +129,6 @@ class PortfolioServiceServicer(metaclass=_abc_1.ABCMeta):
         context: _ServicerContext,
     ) -> _typing.Union[_portfolio_pb2.ListTransactionsResponse, _abc.Awaitable[_portfolio_pb2.ListTransactionsResponse]]:
         """Transactions"""
-
-    @_abc_1.abstractmethod
-    def RecordTransaction(
-        self,
-        request: _portfolio_pb2.RecordTransactionRequest,
-        context: _ServicerContext,
-    ) -> _typing.Union[_portfolio_pb2.RecordTransactionResponse, _abc.Awaitable[_portfolio_pb2.RecordTransactionResponse]]: ...
 
     @_abc_1.abstractmethod
     def SyncPortfolio(

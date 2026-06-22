@@ -98,7 +98,4 @@ class SleeveService:
             name=name,
             strategy_execution_id=strategy_execution_id,
             allocated_capital=allocated_capital,
-            cash_balance=ZERO,
-            reserved_cash=ZERO,
-            unsettled_cash=ZERO,
         )

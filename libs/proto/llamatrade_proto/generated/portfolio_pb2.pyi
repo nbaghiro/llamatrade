@@ -936,69 +936,6 @@ class ListTransactionsResponse(message.Message):
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
-class RecordTransactionRequest(message.Message):
-    """Record transaction (internal use)"""
-
-    DESCRIPTOR: descriptor.Descriptor
-
-    CONTEXT_FIELD_NUMBER: builtins.int
-    PORTFOLIO_ID_FIELD_NUMBER: builtins.int
-    TYPE_FIELD_NUMBER: builtins.int
-    SYMBOL_FIELD_NUMBER: builtins.int
-    QUANTITY_FIELD_NUMBER: builtins.int
-    PRICE_FIELD_NUMBER: builtins.int
-    FEES_FIELD_NUMBER: builtins.int
-    DESCRIPTION_FIELD_NUMBER: builtins.int
-    REFERENCE_ID_FIELD_NUMBER: builtins.int
-    portfolio_id: builtins.str
-    type: TransactionType.ValueType
-    symbol: builtins.str
-    description: builtins.str
-    reference_id: builtins.str
-    @builtins.property
-    def context(self) -> common_pb2.TenantContext: ...
-    @builtins.property
-    def quantity(self) -> common_pb2.Decimal: ...
-    @builtins.property
-    def price(self) -> common_pb2.Decimal: ...
-    @builtins.property
-    def fees(self) -> common_pb2.Decimal: ...
-    def __init__(
-        self,
-        *,
-        context: common_pb2.TenantContext | None = ...,
-        portfolio_id: builtins.str = ...,
-        type: TransactionType.ValueType = ...,
-        symbol: builtins.str = ...,
-        quantity: common_pb2.Decimal | None = ...,
-        price: common_pb2.Decimal | None = ...,
-        fees: common_pb2.Decimal | None = ...,
-        description: builtins.str = ...,
-        reference_id: builtins.str = ...,
-    ) -> None: ...
-    _HasFieldArgType: _TypeAlias = typing.Literal["context", b"context", "fees", b"fees", "price", b"price", "quantity", b"quantity"]  # noqa: Y015
-    def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal["context", b"context", "description", b"description", "fees", b"fees", "portfolio_id", b"portfolio_id", "price", b"price", "quantity", b"quantity", "reference_id", b"reference_id", "symbol", b"symbol", "type", b"type"]  # noqa: Y015
-    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
-
-@typing.final
-class RecordTransactionResponse(message.Message):
-    DESCRIPTOR: descriptor.Descriptor
-
-    TRANSACTION_FIELD_NUMBER: builtins.int
-    @builtins.property
-    def transaction(self) -> Transaction: ...
-    def __init__(
-        self,
-        *,
-        transaction: Transaction | None = ...,
-    ) -> None: ...
-    _HasFieldArgType: _TypeAlias = typing.Literal["transaction", b"transaction"]  # noqa: Y015
-    def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal["transaction", b"transaction"]  # noqa: Y015
-    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
-
-@typing.final
 class GetAssetAllocationRequest(message.Message):
     """Get asset allocation"""
 
