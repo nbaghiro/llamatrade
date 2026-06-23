@@ -12,13 +12,17 @@ import pytest
 import pytest_asyncio
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
-from testcontainers.postgres import PostgresContainer
 
 from llamatrade_db.base import Base
 from llamatrade_db.models.strategy import Strategy, StrategyExecution, StrategyVersion
 
 from src.models import ExecutionCreate, StrategyCreate
 from src.services.strategy_service import StrategyService
+
+# testcontainers is an optional integration dependency (strategy[integration]); when
+# it's absent (unit-only installs) this whole module skips instead of erroring at
+# collection time.
+PostgresContainer = pytest.importorskip("testcontainers.postgres").PostgresContainer
 
 
 def _docker_available() -> bool:

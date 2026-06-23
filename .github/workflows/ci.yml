@@ -134,7 +134,7 @@ jobs:
           DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/test
           REDIS_URL: redis://localhost:6379
         run: |
-          pip install -e services/strategy[dev]
+          pip install -e services/strategy[dev,integration]
           cd services/strategy && pytest tests -v --cov=src --cov-report=term-missing --cov-fail-under=80
 
       - name: Run agent tests with coverage
