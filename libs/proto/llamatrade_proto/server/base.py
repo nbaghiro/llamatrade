@@ -59,9 +59,13 @@ class GRPCServer:
             interceptors: Optional list of server interceptors
             options: Optional channel options
         """
+        from llamatrade_proto.interceptors.telemetry import TelemetryServerInterceptor
+
         self._port = port
         self._host = host
-        self._interceptors = interceptors or []
+        # Telemetry first so every RPC extracts the inbound trace context and is
+        # measured, regardless of any service-provided interceptors.
+        self._interceptors = [TelemetryServerInterceptor(), *(interceptors or [])]
         self._options = options or [
             ("grpc.max_receive_message_length", 50 * 1024 * 1024),  # 50MB
             ("grpc.max_send_message_length", 50 * 1024 * 1024),  # 50MB

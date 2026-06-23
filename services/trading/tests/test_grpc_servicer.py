@@ -102,6 +102,7 @@ def make_mock_order(
     order.stop_price = stop_price
     order.filled_avg_price = average_fill_price  # Servicer expects 'filled_avg_price'
     order.alpaca_order_id = client_order_id  # Servicer expects 'alpaca_order_id'
+    order.client_order_id = client_order_id  # Proto client_order_id (idempotency key)
     order.submitted_at = created_at or datetime.now(UTC)  # Servicer expects 'submitted_at'
     return order
 

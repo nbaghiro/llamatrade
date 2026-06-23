@@ -745,6 +745,39 @@ class TestSessionIdentityAndGuards:
             await service._resolve_ledger_identity(TENANT_ID, uuid4(), uuid4())
 
     @pytest.mark.asyncio
+    async def test_single_funded_execution_resolves_without_id(self) -> None:
+        # No execution_id + exactly one open funded execution -> unambiguous.
+        service = self._service()
+        execution = MagicMock()
+        execution.sleeve_id = SLEEVE_ID
+        execution.account_id = ACCOUNT_ID
+        service.db.scalars = AsyncMock(return_value=[execution])
+
+        sleeve_id, account_id = await service._resolve_ledger_identity(TENANT_ID, uuid4(), None)
+
+        assert sleeve_id == SLEEVE_ID
+        assert account_id == ACCOUNT_ID
+
+    @pytest.mark.asyncio
+    async def test_multiple_funded_executions_rejected_without_id(self) -> None:
+        # 1A: refuse to silently guess which sleeve when several are funded.
+        service = self._service()
+        service.db.scalars = AsyncMock(return_value=[MagicMock(), MagicMock()])
+
+        with pytest.raises(ValueError, match="[Mm]ultiple funded"):
+            await service._resolve_ledger_identity(TENANT_ID, uuid4(), None)
+
+    @pytest.mark.asyncio
+    async def test_no_funded_execution_is_legacy_session(self) -> None:
+        service = self._service()
+        service.db.scalars = AsyncMock(return_value=[])
+
+        sleeve_id, account_id = await service._resolve_ledger_identity(TENANT_ID, uuid4(), None)
+
+        assert sleeve_id is None
+        assert account_id is None
+
+    @pytest.mark.asyncio
     async def test_sleeve_in_use_blocks_second_session(self) -> None:
         service = self._service()
         active = MagicMock()

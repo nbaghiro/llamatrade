@@ -5,7 +5,7 @@ from enum import IntEnum
 from typing import Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from llamatrade_proto.generated.common_pb2 import (
     EXECUTION_MODE_PAPER,
@@ -140,6 +140,28 @@ class OrderCreate(BaseModel):
     # Reference price for market orders (signal price), used to size the
     # §4 cash reservation. Never sent to the broker.
     est_price: float | None = None
+
+    @model_validator(mode="after")
+    def _validate_price_for_type(self) -> OrderCreate:
+        """Reject orders missing the price their type requires (6A).
+
+        A limit/stop/trailing order with no price would only be rejected at the
+        broker after a wasted round-trip — fail fast with a clear message
+        instead. Market orders need no price.
+        """
+        if self.order_type == ORDER_TYPE_LIMIT and not (self.limit_price and self.limit_price > 0):
+            raise ValueError("limit order requires a positive limit_price")
+        if self.order_type == ORDER_TYPE_STOP and not (self.stop_price and self.stop_price > 0):
+            raise ValueError("stop order requires a positive stop_price")
+        if self.order_type == ORDER_TYPE_STOP_LIMIT and not (
+            self.limit_price and self.limit_price > 0 and self.stop_price and self.stop_price > 0
+        ):
+            raise ValueError("stop-limit order requires positive limit_price and stop_price")
+        if self.order_type == ORDER_TYPE_TRAILING_STOP and not (
+            self.trail_percent and self.trail_percent > 0
+        ):
+            raise ValueError("trailing-stop order requires a positive trail_percent")
+        return self
 
 
 class BracketOrderInfo(BaseModel):

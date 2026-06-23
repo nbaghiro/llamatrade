@@ -15,6 +15,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.types import ASGIApp
 
+from llamatrade_common import AuthMiddleware
 from llamatrade_db import close_db, get_pool_stats, init_db
 from llamatrade_telemetry import init_telemetry
 
@@ -62,6 +63,11 @@ app = FastAPI(
     version="0.1.0",
     lifespan=lifespan,
 )
+
+# Authentication (fail-closed); added before CORS so CORS stays outermost.
+# Stripe webhooks use a separate /webhooks HTTP router (not Connect) and are
+# signature-verified there, so they are not subject to this middleware.
+app.add_middleware(AuthMiddleware)
 
 # CORS middleware
 app.add_middleware(

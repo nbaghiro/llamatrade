@@ -97,6 +97,25 @@ class OrderExecutor(OrderSubmissionMixin):
         self.risk = risk_manager
         self.alerts = alert_service
         self.publisher = event_publisher
+        # True when this executor built a session-specific Alpaca client it owns
+        # (manual order path); the shared singleton must never be closed.
+        self._owns_alpaca = False
+
+    async def aclose(self) -> None:
+        """Release request-scoped resources (the DB session, owned Alpaca client).
+
+        Called by the gRPC servicer in a ``finally`` so each RPC returns its
+        connection to the pool instead of leaking it (trading-hardening 13A).
+        """
+        from sqlalchemy.ext.asyncio import AsyncSession
+
+        if isinstance(self.db, AsyncSession):
+            await self.db.close()
+        if self._owns_alpaca:
+            try:
+                await self.alpaca.close()
+            except Exception:
+                logger.debug("Failed to close session Alpaca client", exc_info=True)
 
     async def submit_order(
         self,
@@ -126,16 +145,23 @@ class OrderExecutor(OrderSubmissionMixin):
                 signal_timestamp=signal_timestamp,
             )
             existing = await self._find_order_by_client_id(client_order_id, tenant_id)
-            if existing is not None:
-                # Idempotent retry: we already recorded this order.
-                record_idempotent_replay()
-                logger.info(
-                    "Order already submitted for client_order_id=%s; returning existing",
+            if existing is None:
+                resume_order = None
+            else:
+                replay = await self._idempotent_replay(existing, client_order_id)
+                if replay is not None:
+                    return replay
+                # Stranded: recorded PENDING but never reached the broker (crash in
+                # the submit window). Resume by reusing the existing row — neither
+                # drop the signal nor place a duplicate (3A).
+                logger.warning(
+                    "Resuming stranded order client_order_id=%s (recorded, never submitted)",
                     client_order_id,
                 )
-                return self._to_response(existing)
+                resume_order = existing
         else:
             client_order_id = str(uuid4())
+            resume_order = None
 
         # Run risk checks (using mixin method)
         risk_result = await self._run_risk_check(
@@ -157,37 +183,41 @@ class OrderExecutor(OrderSubmissionMixin):
 
         now = datetime.now(UTC)
 
-        # Create order record in pending state
-        db_order = Order(
-            tenant_id=tenant_id,
-            session_id=session_id,
-            client_order_id=client_order_id,
-            symbol=order.symbol.upper(),
-            side=order.side,  # Already int from Pydantic model
-            order_type=order.order_type,  # Already int from Pydantic model
-            time_in_force=order.time_in_force,  # Already int from Pydantic model
-            qty=Decimal(str(order.qty)),
-            limit_price=Decimal(str(order.limit_price)) if order.limit_price else None,
-            stop_price=Decimal(str(order.stop_price)) if order.stop_price else None,
-            status=ORDER_STATUS_PENDING,  # Use proto constant (int)
-            filled_qty=Decimal("0"),
-            # Store bracket order prices on parent order
-            stop_loss_price=(
-                Decimal(str(order.stop_loss_price)) if order.stop_loss_price else None
-            ),
-            take_profit_price=(
-                Decimal(str(order.take_profit_price)) if order.take_profit_price else None
-            ),
-            # Ledger attribution, fixed at origination (CONTRACTS.md §5)
-            sleeve_id=order.sleeve_id,
-            account_id=order.account_id,
-        )
-        # Store bracket TIF in metadata if specified
-        if order.stop_loss_price or order.take_profit_price:
-            db_order.metadata_ = {"bracket_tif": order.bracket_time_in_force}
-        self.db.add(db_order)
-        await self.db.commit()
-        await self.db.refresh(db_order)
+        if resume_order is not None:
+            # The row is already persisted (PENDING); just (re)dispatch it.
+            db_order = resume_order
+        else:
+            # Create order record in pending state
+            db_order = Order(
+                tenant_id=tenant_id,
+                session_id=session_id,
+                client_order_id=client_order_id,
+                symbol=order.symbol.upper(),
+                side=order.side,  # Already int from Pydantic model
+                order_type=order.order_type,  # Already int from Pydantic model
+                time_in_force=order.time_in_force,  # Already int from Pydantic model
+                qty=Decimal(str(order.qty)),
+                limit_price=Decimal(str(order.limit_price)) if order.limit_price else None,
+                stop_price=Decimal(str(order.stop_price)) if order.stop_price else None,
+                status=ORDER_STATUS_PENDING,  # Use proto constant (int)
+                filled_qty=Decimal("0"),
+                # Store bracket order prices on parent order
+                stop_loss_price=(
+                    Decimal(str(order.stop_loss_price)) if order.stop_loss_price else None
+                ),
+                take_profit_price=(
+                    Decimal(str(order.take_profit_price)) if order.take_profit_price else None
+                ),
+                # Ledger attribution, fixed at origination (CONTRACTS.md §5)
+                sleeve_id=order.sleeve_id,
+                account_id=order.account_id,
+            )
+            # Store bracket TIF in metadata if specified
+            if order.stop_loss_price or order.take_profit_price:
+                db_order.metadata_ = {"bracket_tif": order.bracket_time_in_force}
+            self.db.add(db_order)
+            await self.db.commit()
+            await self.db.refresh(db_order)
 
         # Submit to Alpaca (using mixin method). Passing our client_order_id
         # lets the broker enforce idempotency on retry.
@@ -240,6 +270,94 @@ class OrderExecutor(OrderSubmissionMixin):
             raise ValueError(f"Failed to submit order to Alpaca: {e}")
 
         return self._to_response(db_order)
+
+    async def _idempotent_replay(
+        self, existing: Order, client_order_id: str
+    ) -> OrderResponse | None:
+        """Resolve a re-submitted deterministic order (3A).
+
+        Returns the existing order's response when it was already dispatched
+        (has a broker id or has advanced past PENDING), or when the broker
+        confirms it was actually placed before a crash lost our response (adopt
+        it). Returns ``None`` when the order was recorded PENDING but never
+        reached the broker — the caller then resumes submission with that row.
+        """
+        if existing.alpaca_order_id is not None or existing.status != ORDER_STATUS_PENDING:
+            record_idempotent_replay()
+            logger.info(
+                "Order already submitted for client_order_id=%s; returning existing",
+                client_order_id,
+            )
+            return self._to_response(existing)
+
+        # Recorded PENDING with no broker id: did it reach the broker before we crashed?
+        broker_order = await self.alpaca.get_order_by_client_id(client_order_id)
+        if broker_order is None:
+            return None
+
+        existing.alpaca_order_id = broker_order.id
+        self._update_from_alpaca(existing, broker_order)
+        existing.submitted_at = existing.submitted_at or datetime.now(UTC)
+        await self.db.commit()
+        await self.db.refresh(existing)
+        record_idempotent_replay()
+        logger.info("Adopted broker order for stranded client_order_id=%s", client_order_id)
+        return self._to_response(existing)
+
+    async def recover_stranded_orders(self, tenant_id: UUID, session_id: UUID) -> int:
+        """Reconcile orders left PENDING with no broker id by a submit-window crash (3A).
+
+        For each, ask the broker by ``client_order_id``: if it actually went
+        through, adopt it (and emit any terminal ledger events the stream missed);
+        otherwise it never reached the broker, so mark it rejected (the live
+        runner re-emits a fresh signal if the condition still holds). A
+        never-submitted order never reserved cash, so no ledger release is needed.
+
+        Returns the number of orders reconciled.
+        """
+        stmt = (
+            select(Order)
+            .where(Order.tenant_id == tenant_id)
+            .where(Order.session_id == session_id)
+            .where(Order.status == ORDER_STATUS_PENDING)
+            .where(Order.alpaca_order_id.is_(None))
+        )
+        orders = list((await self.db.execute(stmt)).scalars().all())
+        if not orders:
+            return 0
+
+        reconciled = 0
+        adopted: list[tuple[Order, int]] = []
+        for order in orders:
+            try:
+                broker_order = await self.alpaca.get_order_by_client_id(order.client_order_id)
+            except Exception as e:
+                logger.warning(
+                    "Stranded-order broker lookup failed for %s: %s", order.client_order_id, e
+                )
+                continue
+
+            old_status = order.status
+            if broker_order is not None:
+                order.alpaca_order_id = broker_order.id
+                self._update_from_alpaca(order, broker_order)
+                order.submitted_at = order.submitted_at or datetime.now(UTC)
+                adopted.append((order, old_status))
+            else:
+                order.status = ORDER_STATUS_REJECTED
+                order.failed_at = datetime.now(UTC)
+                order.metadata_ = {
+                    **(order.metadata_ or {}),
+                    "error": "stranded: recorded but never submitted to broker",
+                }
+            reconciled += 1
+
+        await self.db.commit()
+        # Emit terminal ledger events only for orders actually placed at the broker.
+        for order, old_status in adopted:
+            await self._publish_ledger_events_for_sync(order, old_status)
+
+        return reconciled
 
     async def get_order(
         self,
@@ -348,14 +466,19 @@ class OrderExecutor(OrderSubmissionMixin):
         reservation release. Idempotent at the ledger, so re-syncing or racing
         the stream path never double-counts. Failures log, never raise.
         """
-        if (
-            self.publisher is None
-            or order.sleeve_id is None
-            or order.account_id is None
-            or order.status == old_status
-        ):
+        if order.status == old_status:
             return
+        await self._emit_ledger_for_terminal(order)
 
+    async def _emit_ledger_for_terminal(self, order: Order) -> None:
+        """Emit the §1a fill (or filled portion) + §4 release for a terminal order.
+
+        Idempotent at the ledger (dedup on event_id), so safe to call repeatedly.
+        No-op for unattributed orders or when no publisher is configured. Failures
+        log, never raise.
+        """
+        if self.publisher is None or order.sleeve_id is None or order.account_id is None:
+            return
         try:
             payload = build_ledger_fill_payload_from_order(order)
             if payload is not None:
@@ -380,9 +503,45 @@ class OrderExecutor(OrderSubmissionMixin):
                 )
                 await self.publisher.publish_ledger_fill(release)
         except Exception as e:
-            logger.error(
-                f"Failed to publish ledger events for synced order {order.client_order_id}: {e}"
+            logger.error(f"Failed to publish ledger events for order {order.client_order_id}: {e}")
+
+    async def republish_ledger_for_terminal_orders(
+        self, tenant_id: UUID, session_id: UUID, since: datetime | None = None
+    ) -> int:
+        """Re-emit ledger events for already-terminal, sleeve-attributed orders (4A).
+
+        A safety net for the narrow window where an order reached a terminal
+        state but its ledger publish failed (e.g. Redis briefly down): a later
+        REST sync won't re-fire it because the DB status no longer changes.
+        Re-publishing is idempotent at the ledger (dedup on event_id), so this
+        never double-counts. ``since`` bounds the scan to recent orders. Returns
+        the number of orders re-published.
+        """
+        if self.publisher is None:
+            return 0
+        stmt = (
+            select(Order)
+            .where(Order.tenant_id == tenant_id)
+            .where(Order.session_id == session_id)
+            .where(Order.sleeve_id.is_not(None))
+            .where(
+                Order.status.in_(
+                    [
+                        ORDER_STATUS_FILLED,
+                        ORDER_STATUS_PARTIAL,
+                        ORDER_STATUS_CANCELLED,
+                        ORDER_STATUS_REJECTED,
+                        ORDER_STATUS_EXPIRED,
+                    ]
+                )
             )
+        )
+        if since is not None:
+            stmt = stmt.where(Order.created_at >= since)
+        orders = list((await self.db.execute(stmt)).scalars().all())
+        for order in orders:
+            await self._emit_ledger_for_terminal(order)
+        return len(orders)
 
     @staticmethod
     def _reservation_amount(order: OrderCreate) -> Decimal | None:
@@ -1155,24 +1314,51 @@ async def get_order_executor(
     )
 
 
-async def create_order_executor() -> OrderExecutor:
-    """Create order executor without dependency injection.
+async def create_order_executor(
+    session_id: UUID | None = None,
+    tenant_id: UUID | None = None,
+) -> OrderExecutor:
+    """Create an order executor with a request-scoped DB session.
 
-    Used by gRPC servicer where FastAPI DI is not available.
+    Used by the gRPC servicer where FastAPI DI is not available. The caller MUST
+    ``await executor.aclose()`` when done so the DB session is returned to the
+    pool (trading-hardening 13A).
+
+    When ``session_id``/``tenant_id`` are given (the manual order path), the
+    Alpaca client is built from the *session's own* per-tenant credentials —
+    never the platform/env default (trading-hardening 2A). Raises ``ValueError``
+    if those credentials can't be resolved.
     """
-    from llamatrade_alpaca import get_trading_client
-    from llamatrade_db import get_db
+    from llamatrade_alpaca import TradingClient, get_trading_client
+    from llamatrade_db import get_session_maker
 
+    from src.credentials import resolve_session_credentials
     from src.risk.risk_manager import get_risk_manager
 
-    db = await anext(get_db())
-    alpaca = get_trading_client()
-    risk_manager = get_risk_manager()
+    db = get_session_maker()()
+    owns_alpaca = False
+    if session_id is not None and tenant_id is not None:
+        creds = await resolve_session_credentials(db, session_id, tenant_id)
+        if creds is None:
+            await db.close()
+            raise ValueError(
+                "No active Alpaca credentials for this session; cannot place the order"
+            )
+        alpaca: TradingClient = TradingClient(
+            api_key=creds.api_key,
+            api_secret=creds.api_secret,
+            paper=creds.is_paper,
+        )
+        owns_alpaca = True
+    else:
+        alpaca = get_trading_client()
 
-    return OrderExecutor(
+    executor = OrderExecutor(
         db=db,
         alpaca_client=alpaca,
-        risk_manager=risk_manager,
+        risk_manager=get_risk_manager(),
         alert_service=None,  # Alert service requires async init, optional for gRPC
         event_publisher=get_trading_event_publisher(),
     )
+    executor._owns_alpaca = owns_alpaca
+    return executor

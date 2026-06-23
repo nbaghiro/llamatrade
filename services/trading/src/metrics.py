@@ -88,6 +88,11 @@ CIRCUIT_BREAKER_RESETS_TOTAL = counter(
     (),
     "Circuit breaker reset events",
 )
+STRATEGY_DEGRADED_EVALS_TOTAL = counter(
+    "llamatrade_trading_strategy_degraded_evals_total",
+    (),
+    "Strategy conditions that could not be evaluated (NaN/missing data) and were treated as False",
+)
 
 
 # ---------------------------------------------------------------------------
@@ -202,6 +207,16 @@ def record_bar_processed(duration: float) -> None:
 def record_strategy_error(error_type: str) -> None:
     """Record a strategy execution error (signal_generation, order_submission, ...)."""
     metrics.trading.strategy_error(error_type=error_type)
+
+
+def record_degraded_evals(count: int) -> None:
+    """Record `count` newly-degraded condition evaluations (NaN/missing data).
+
+    A rising rate means a strategy's indicators are stale or data is missing,
+    so it is silently producing "no signal". No session/tenant labels (forbidden).
+    """
+    if count > 0:
+        STRATEGY_DEGRADED_EVALS_TOTAL.inc(count)
 
 
 def update_runner_gauge(active_count: int) -> None:

@@ -32,10 +32,21 @@ class BaseGRPCClient:
             interceptors: Optional list of client interceptors
             options: Optional channel options
         """
+        from llamatrade_proto.interceptors.auth import ServiceAuthClientInterceptor
+        from llamatrade_proto.interceptors.telemetry import TelemetryClientInterceptor
+
         self._target = target
         self._secure = secure
         self._credentials = credentials
-        self._interceptors = interceptors or []
+        # Telemetry first so every outgoing call injects the current trace context
+        # and is measured. ServiceAuth next so every inter-service call carries an
+        # internal service token and passes the callee's fail-closed AuthMiddleware
+        # (it won't override a caller-set Authorization, e.g. a forwarded user token).
+        self._interceptors = [
+            TelemetryClientInterceptor(),
+            ServiceAuthClientInterceptor(),
+            *(interceptors or []),
+        ]
         self._options = options or [
             ("grpc.keepalive_time_ms", 30000),
             ("grpc.keepalive_timeout_ms", 10000),

@@ -25,6 +25,7 @@ from llamatrade_alpaca import (
 from llamatrade_alpaca import (
     init_market_data_stream as init_alpaca_stream,
 )
+from llamatrade_common import AuthMiddleware
 from llamatrade_db import close_db, get_pool_stats
 from llamatrade_events import EventBus, RedisStreamsTransport
 from llamatrade_telemetry import init_telemetry
@@ -158,6 +159,9 @@ init_telemetry(app, service=SERVICE_NAME, pool_stats_provider=get_pool_stats)
 
 # Register error handlers
 register_error_handlers(app)
+
+# Authentication (fail-closed); added before CORS so CORS stays outermost.
+app.add_middleware(AuthMiddleware)
 
 # CORS middleware
 app.add_middleware(

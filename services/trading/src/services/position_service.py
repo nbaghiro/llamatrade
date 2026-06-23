@@ -32,6 +32,11 @@ class PositionService:
         self.db = db
         self.market_data = market_data
 
+    async def aclose(self) -> None:
+        """Release the request-scoped DB session (trading-hardening 13A)."""
+        if isinstance(self.db, AsyncSession):
+            await self.db.close()
+
     async def open_position(
         self,
         tenant_id: UUID,
@@ -376,10 +381,13 @@ async def get_position_service(
 
 
 async def create_position_service() -> PositionService:
-    """Create position service without dependency injection.
+    """Create position service with a request-scoped DB session.
 
-    Used by gRPC servicer where FastAPI DI is not available.
+    Used by the gRPC servicer where FastAPI DI is not available. The caller MUST
+    ``await service.aclose()`` when done (trading-hardening 13A).
     """
-    db = await anext(get_db())
+    from llamatrade_db import get_session_maker
+
+    db = get_session_maker()()
     market_data = get_market_data_client()
     return PositionService(db=db, market_data=market_data)

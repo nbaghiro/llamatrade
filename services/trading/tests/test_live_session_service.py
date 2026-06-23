@@ -6,7 +6,7 @@ from uuid import uuid4
 
 import pytest
 
-from llamatrade_alpaca import Account
+from llamatrade_alpaca import Account, Asset
 from llamatrade_proto.generated.billing_pb2 import PLAN_TIER_FREE
 from llamatrade_proto.generated.common_pb2 import (
     EXECUTION_MODE_LIVE,
@@ -158,6 +158,42 @@ class TestLiveSessionServiceInit:
         assert service.order_executor is mock_order_executor
         assert service.risk_manager is mock_risk_manager
         assert service.alpaca_client is mock_alpaca_client
+
+
+class TestCheckSymbolsTradable:
+    """Tests for _check_symbols_tradable (Issue 4A): reject non-tradable symbols."""
+
+    @staticmethod
+    def _client(asset_map: dict[str, Asset | None]) -> MagicMock:
+        client = MagicMock()
+        client.get_asset = AsyncMock(side_effect=lambda symbol: asset_map.get(symbol))
+        return client
+
+    async def test_all_tradable_passes(self, live_session_service: LiveSessionService) -> None:
+        client = self._client(
+            {
+                "AAPL": Asset(id="1", symbol="AAPL", status="active", tradable=True),
+                "MSFT": Asset(id="2", symbol="MSFT", status="active", tradable=True),
+            }
+        )
+        await live_session_service._check_symbols_tradable(client, ["AAPL", "MSFT"])
+
+    async def test_non_tradable_rejected(self, live_session_service: LiveSessionService) -> None:
+        client = self._client(
+            {
+                "AAPL": Asset(id="1", symbol="AAPL", status="active", tradable=True),
+                "XYZ": Asset(id="2", symbol="XYZ", status="inactive", tradable=False),
+            }
+        )
+        with pytest.raises(ValueError, match="XYZ"):
+            await live_session_service._check_symbols_tradable(client, ["AAPL", "XYZ"])
+
+    async def test_unknown_symbol_rejected(self, live_session_service: LiveSessionService) -> None:
+        client = self._client(
+            {"AAPL": Asset(id="1", symbol="AAPL", status="active", tradable=True)}
+        )
+        with pytest.raises(ValueError, match="NOPE"):
+            await live_session_service._check_symbols_tradable(client, ["AAPL", "NOPE"])
 
 
 class TestLiveSessionServiceStopRunner:
@@ -408,7 +444,10 @@ class TestLiveSessionServiceStartRunner:
             mock_session_cls.return_value = mock_session
 
             with patch("src.services.live_session_service.BarStreamClient"):
-                with patch("src.services.live_session_service.TradingClient"):
+                with patch("src.services.live_session_service.TradingClient") as mock_tc:
+                    mock_tc.return_value.get_asset = AsyncMock(
+                        return_value=Asset(id="1", symbol="AAPL", status="active", tradable=True)
+                    )
                     await live_session_service._start_runner(
                         session_id=session_id,
                         tenant_id=tenant_id,
@@ -447,7 +486,10 @@ class TestLiveSessionServiceStartRunner:
             mock_session_cls.return_value = mock_session
 
             with patch("src.services.live_session_service.BarStreamClient"):
-                with patch("src.services.live_session_service.TradingClient"):
+                with patch("src.services.live_session_service.TradingClient") as mock_tc:
+                    mock_tc.return_value.get_asset = AsyncMock(
+                        return_value=Asset(id="1", symbol="GOOGL", status="active", tradable=True)
+                    )
                     await live_session_service._start_runner(
                         session_id=session_id,
                         tenant_id=tenant_id,
@@ -1076,7 +1118,7 @@ class TestLiveSessionServiceGetCredentials:
         mock_result.scalar_one_or_none.return_value = mock_creds
         mock_db.execute.return_value = mock_result
 
-        with patch("src.services.live_session_service.decrypt_value") as mock_decrypt:
+        with patch("src.credentials.decrypt_value") as mock_decrypt:
             mock_decrypt.side_effect = ["decrypted_key", "decrypted_secret"]
 
             result = await live_session_service._get_credentials_by_id(credentials_id, tenant_id)

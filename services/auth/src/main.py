@@ -14,6 +14,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.types import ASGIApp
 
+from llamatrade_common import AuthMiddleware
 from llamatrade_db import close_db, get_pool_stats, init_db
 from llamatrade_telemetry import init_telemetry
 
@@ -59,6 +60,13 @@ app = FastAPI(
     description="Authentication and authorization service for LlamaTrade (Connect protocol)",
     version="0.1.0",
     lifespan=lifespan,
+)
+
+# Authentication (fail-closed); Login/Register/RefreshToken stay public.
+# Added before CORS so CORS remains outermost (preflight + headers on 401s).
+app.add_middleware(
+    AuthMiddleware,
+    public_suffixes=["/Login", "/Register", "/RefreshToken"],
 )
 
 # CORS middleware - must allow Connect protocol headers

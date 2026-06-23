@@ -43,12 +43,16 @@ pythonpath = ["."]
 python_files = ["test_*.py"]
 python_functions = ["test_*"]
 asyncio_default_fixture_loop_scope = "function"
+# Enforce the trading service coverage floor on every full-suite run (local,
+# pre-commit, and CI). Run a subset with --no-cov to skip the gate while iterating.
+addopts = "--cov=src --cov-report=term-missing --cov-fail-under=80"
 
 [tool.coverage.run]
 source = ["src"]
 omit = ["tests/*"]
 
 [tool.coverage.report]
+fail_under = 80
 exclude_lines = [
     "pragma: no cover",
     "if TYPE_CHECKING:",

@@ -108,23 +108,14 @@ spec:
     - name: slo_eventbus_lag
       rules:
         - alert: EventBusConsumerLagEntriesHigh
-          expr: llamatrade_eventbus_consumer_lag_entries > 1000
+          expr: llamatrade_events_consumer_lag > 1000
           for: 10m
           labels:
             severity: ticket
             slo: eventbus_lag
           annotations:
             summary: "EventBus backlog on {{ $labels.stream }}/{{ $labels.group }}"
-            description: "{{ $value }} unacked entries pending for 10m — consumer not keeping up."
-        - alert: EventBusConsumerLagSecondsHigh
-          expr: llamatrade_eventbus_consumer_lag_seconds > 300
-          for: 5m
-          labels:
-            severity: page
-            slo: eventbus_lag
-          annotations:
-            summary: "EventBus oldest unacked > 5m on {{ $labels.stream }}/{{ $labels.group }}"
-            description: "Fill → ledger projection may be stalled (reconciliation-freshness SLO < 5m)."
+            description: "{{ $value }} unacked entries pending for 10m — consumer not keeping up (fill → ledger projection may be stalled)."
     - name: slo_db_pool
       rules:
         - alert: DBPoolExhausted

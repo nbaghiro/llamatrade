@@ -14,9 +14,13 @@ class TestGRPCServerInit:
         """Test GRPCServer initialization with port."""
         server = GRPCServer(port=8810)
 
+        from llamatrade_proto.interceptors import TelemetryServerInterceptor
+
         assert server._port == 8810
         assert server._host == "0.0.0.0"
-        assert server._interceptors == []
+        # Telemetry server interceptor is prepended by default.
+        assert len(server._interceptors) == 1
+        assert isinstance(server._interceptors[0], TelemetryServerInterceptor)
         assert server._server is None
         assert server._servicer_registrations == []
 
@@ -33,7 +37,10 @@ class TestGRPCServerInit:
 
         server = GRPCServer(port=8810, interceptors=[interceptor1, interceptor2])
 
-        assert server._interceptors == [interceptor1, interceptor2]
+        from llamatrade_proto.interceptors import TelemetryServerInterceptor
+
+        assert isinstance(server._interceptors[0], TelemetryServerInterceptor)
+        assert server._interceptors[1:] == [interceptor1, interceptor2]
 
     def test_init_with_custom_options(self) -> None:
         """Test GRPCServer initialization with custom options."""

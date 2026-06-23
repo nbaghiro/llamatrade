@@ -61,6 +61,7 @@ class TestStreamOrderUpdates:
 
         mock_request = MagicMock()
         mock_request.context.tenant_id = str(uuid4())
+        mock_request.context.user_id = str(uuid4())
         mock_request.session_id = session_id
         mock_request.last_seen_id = ""
 
@@ -104,6 +105,7 @@ class TestStreamOrderUpdates:
 
         mock_request = MagicMock()
         mock_request.context.tenant_id = str(uuid4())
+        mock_request.context.user_id = str(uuid4())
         mock_request.session_id = session_id
         mock_request.last_seen_id = ""
 
@@ -139,6 +141,7 @@ class TestStreamOrderUpdates:
 
         mock_request = MagicMock()
         mock_request.context.tenant_id = str(uuid4())
+        mock_request.context.user_id = str(uuid4())
         mock_request.session_id = session_id
         mock_request.last_seen_id = ""
 
@@ -185,6 +188,7 @@ class TestStreamPositionUpdates:
 
         mock_request = MagicMock()
         mock_request.context.tenant_id = str(uuid4())
+        mock_request.context.user_id = str(uuid4())
         mock_request.session_id = session_id
         mock_request.last_seen_id = ""
 
@@ -231,6 +235,7 @@ class TestStreamPositionUpdates:
 
         mock_request = MagicMock()
         mock_request.context.tenant_id = str(uuid4())
+        mock_request.context.user_id = str(uuid4())
         mock_request.session_id = session_id
         mock_request.last_seen_id = ""
 

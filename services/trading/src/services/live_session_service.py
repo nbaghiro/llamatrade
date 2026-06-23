@@ -15,7 +15,6 @@ from typing import cast
 from uuid import UUID
 
 from fastapi import Depends
-from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -25,10 +24,8 @@ from llamatrade_alpaca import (
     TradingStreamClient,
     get_trading_client,
 )
-from llamatrade_common.utils import decrypt_value
 from llamatrade_compiler import SizingMode, StrategySession
 from llamatrade_db import get_db
-from llamatrade_db.models.auth import AlpacaCredentials
 from llamatrade_db.models.billing import Plan, Subscription
 from llamatrade_db.models.strategy import StrategyExecution, StrategyVersion
 from llamatrade_proto.generated.billing_pb2 import PLAN_TIER_FREE
@@ -37,6 +34,7 @@ from llamatrade_proto.generated.common_pb2 import (
 )
 
 from src.clients.portfolio_client import get_portfolio_ledger_client
+from src.credentials import DecryptedCredentials, resolve_credentials
 from src.executor.order_executor import OrderExecutor, get_order_executor
 from src.metrics import (
     record_bar_stream_reconnect,
@@ -51,16 +49,6 @@ from src.services.session_service import SessionService
 from src.streaming.publisher import get_trading_event_publisher
 
 logger = logging.getLogger(__name__)
-
-
-class DecryptedCredentials(BaseModel):
-    """Decrypted Alpaca credentials for internal use."""
-
-    id: UUID
-    name: str
-    api_key: str
-    api_secret: str
-    is_paper: bool
 
 
 class LiveSessionService(SessionService):
@@ -84,6 +72,28 @@ class LiveSessionService(SessionService):
         self.order_executor = order_executor
         self.risk_manager = risk_manager
         self.alpaca_client = alpaca_client
+        # The order executor's DB session is request-scoped UNLESS it is handed
+        # to a runner (then the runner owns it for the session's lifetime).
+        self._executor_handed_off = False
+
+    async def aclose(self) -> None:
+        """Release the request-scoped DB session (trading-hardening 13A).
+
+        Closes this service's own session always; closes the order executor's
+        session too unless it was handed to a runner (which then owns it).
+        """
+        import inspect
+
+        from sqlalchemy.ext.asyncio import AsyncSession as _AsyncSession
+
+        if isinstance(self.db, _AsyncSession):
+            await self.db.close()
+        if not self._executor_handed_off:
+            closer = getattr(self.order_executor, "aclose", None)
+            if closer is not None:
+                result = closer()
+                if inspect.isawaitable(result):
+                    await result
 
     async def start_session(
         self,
@@ -217,10 +227,11 @@ class LiveSessionService(SessionService):
 
         The strategy service persists them on the execution when it funds a
         sleeve (CONTRACTS.md §5). An explicit ``execution_id`` resolves that
-        exact execution (and fails loudly if it doesn't match the strategy);
-        otherwise we take the most recently created funded execution.
-        (None, None) means a legacy/unfunded session — no ledger events will
-        be emitted for it.
+        exact execution (and fails loudly if it doesn't match the strategy). With
+        no ``execution_id`` we resolve the strategy's *single* open funded
+        execution; if more than one exists the binding is ambiguous and we refuse
+        rather than silently guess (the old "most recent" heuristic could trade
+        the wrong sleeve). (None, None) means a legacy/unfunded session.
         """
         if execution_id is not None:
             execution = await self.db.scalar(
@@ -235,19 +246,41 @@ class LiveSessionService(SessionService):
                 raise ValueError(f"Execution {execution_id} belongs to a different strategy")
             return execution.sleeve_id, execution.account_id
 
-        execution = await self.db.scalar(
-            select(StrategyExecution)
-            .where(
-                StrategyExecution.tenant_id == tenant_id,
-                StrategyExecution.strategy_id == strategy_id,
-                StrategyExecution.sleeve_id.is_not(None),
-            )
-            .order_by(StrategyExecution.created_at.desc())
-            .limit(1)
+        from llamatrade_proto.generated.common_pb2 import (
+            EXECUTION_STATUS_PAUSED,
+            EXECUTION_STATUS_PENDING,
+            EXECUTION_STATUS_RUNNING,
         )
-        if execution is None:
+
+        # Open funded executions only (a released sleeve has sleeve_id cleared);
+        # limit 2 is enough to detect ambiguity.
+        funded = list(
+            await self.db.scalars(
+                select(StrategyExecution)
+                .where(
+                    StrategyExecution.tenant_id == tenant_id,
+                    StrategyExecution.strategy_id == strategy_id,
+                    StrategyExecution.sleeve_id.is_not(None),
+                    StrategyExecution.status.in_(
+                        [
+                            EXECUTION_STATUS_PENDING,
+                            EXECUTION_STATUS_RUNNING,
+                            EXECUTION_STATUS_PAUSED,
+                        ]
+                    ),
+                )
+                .order_by(StrategyExecution.created_at.desc())
+                .limit(2)
+            )
+        )
+        if not funded:
             return None, None
-        return execution.sleeve_id, execution.account_id
+        if len(funded) > 1:
+            raise ValueError(
+                "Multiple funded executions exist for this strategy; pass an explicit "
+                "execution_id to choose which sleeve this session trades."
+            )
+        return funded[0].sleeve_id, funded[0].account_id
 
     async def _ensure_sleeve_not_in_use(self, tenant_id: UUID, sleeve_id: UUID) -> None:
         """Reject a start when another live session already trades the sleeve."""
@@ -353,6 +386,14 @@ class LiveSessionService(SessionService):
             paper=credentials.is_paper,
         )
 
+        # Fail fast if any strategy symbol is not tradable on this account —
+        # otherwise the session starts and every order for it is rejected.
+        try:
+            await self._check_symbols_tradable(session_alpaca_client, actual_symbols)
+        except Exception:
+            await session_alpaca_client.close()
+            raise
+
         # Create runner config
         runner_config = RunnerConfig(
             tenant_id=tenant_id,
@@ -385,6 +426,9 @@ class LiveSessionService(SessionService):
             ledger_publisher=ledger_publisher,
             portfolio_client=portfolio_client,
         )
+        # The runner now owns the order executor (and its DB session) for the
+        # session's lifetime — don't close it when this RPC returns.
+        self._executor_handed_off = True
 
         logger.info(f"Started runner for session {session_id} (credentials: {credentials.name})")
 
@@ -520,6 +564,26 @@ class LiveSessionService(SessionService):
                 f"Minimum required: $500.00"
             )
 
+    async def _check_symbols_tradable(self, client: TradingClient, symbols: list[str]) -> None:
+        """Reject the session if any strategy symbol is unknown or not tradable.
+
+        A delisted or mistyped symbol would otherwise start a live session whose
+        every order for it is rejected by the broker — fail fast instead.
+
+        Raises:
+            ValueError: Listing the offending symbols.
+        """
+        not_tradable: list[str] = []
+        for symbol in symbols:
+            asset = await client.get_asset(symbol)
+            if asset is None or not asset.tradable:
+                not_tradable.append(symbol)
+        if not_tradable:
+            raise ValueError(
+                "Cannot start session: these symbols are not tradable on this account: "
+                + ", ".join(sorted(not_tradable))
+            )
+
     async def _get_credentials_by_id(
         self, credentials_id: UUID, tenant_id: UUID
     ) -> DecryptedCredentials | None:
@@ -534,25 +598,7 @@ class LiveSessionService(SessionService):
         Returns:
             Decrypted credentials or None if not found/not authorized
         """
-        stmt = (
-            select(AlpacaCredentials)
-            .where(AlpacaCredentials.id == credentials_id)
-            .where(AlpacaCredentials.tenant_id == tenant_id)  # Tenant isolation
-            .where(AlpacaCredentials.is_active.is_(True))
-        )
-        result = await self.db.execute(stmt)
-        creds = result.scalar_one_or_none()
-
-        if not creds:
-            return None
-
-        return DecryptedCredentials(
-            id=creds.id,
-            name=creds.name,
-            api_key=decrypt_value(creds.api_key_encrypted),
-            api_secret=decrypt_value(creds.api_secret_encrypted),
-            is_paper=creds.is_paper,
-        )
+        return await resolve_credentials(self.db, credentials_id, tenant_id)
 
     def _get_strategy_sexpr(self, strategy_ver: StrategyVersion) -> str | None:
         """Extract S-expression from strategy version.
@@ -577,11 +623,11 @@ async def create_live_session_service() -> LiveSessionService:
 
     Used by the gRPC servicer where FastAPI DI is not available.
     """
-    from llamatrade_db import get_db
+    from llamatrade_db import get_session_maker
 
     from src.executor.order_executor import create_order_executor
 
-    db = await anext(get_db())
+    db = get_session_maker()()
     order_executor = await create_order_executor()
     return LiveSessionService(
         db=db,

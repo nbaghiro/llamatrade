@@ -283,7 +283,14 @@ class TestTradingClientInit:
         interceptor = object()
         client = TradingClient(interceptors=[interceptor])
 
-        assert client._interceptors == [interceptor]
+        from llamatrade_proto.interceptors import (
+            ServiceAuthClientInterceptor,
+            TelemetryClientInterceptor,
+        )
+
+        assert isinstance(client._interceptors[0], TelemetryClientInterceptor)
+        assert isinstance(client._interceptors[1], ServiceAuthClientInterceptor)
+        assert client._interceptors[2:] == [interceptor]
 
 
 class TestTradingClientStub:

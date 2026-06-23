@@ -14,10 +14,18 @@ class TestBaseGRPCClientInit:
         """Test client initialization with default values."""
         client = BaseGRPCClient("localhost:8810")
 
+        from llamatrade_proto.interceptors import (
+            ServiceAuthClientInterceptor,
+            TelemetryClientInterceptor,
+        )
+
         assert client._target == "localhost:8810"
         assert client._secure is False
         assert client._credentials is None
-        assert client._interceptors == []
+        # Telemetry + service-auth client interceptors are prepended by default.
+        assert len(client._interceptors) == 2
+        assert isinstance(client._interceptors[0], TelemetryClientInterceptor)
+        assert isinstance(client._interceptors[1], ServiceAuthClientInterceptor)
         assert client._channel is None
 
     def test_init_with_secure(self) -> None:
@@ -38,7 +46,14 @@ class TestBaseGRPCClientInit:
         interceptor = MagicMock()
         client = BaseGRPCClient("localhost:8810", interceptors=[interceptor])
 
-        assert client._interceptors == [interceptor]
+        from llamatrade_proto.interceptors import (
+            ServiceAuthClientInterceptor,
+            TelemetryClientInterceptor,
+        )
+
+        assert isinstance(client._interceptors[0], TelemetryClientInterceptor)
+        assert isinstance(client._interceptors[1], ServiceAuthClientInterceptor)
+        assert client._interceptors[2:] == [interceptor]
 
     def test_init_with_custom_options(self) -> None:
         """Test client initialization with custom options."""

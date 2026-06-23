@@ -155,7 +155,7 @@ groups:
     rules:
       - alert: EventBusConsumerLagEntriesHigh
         expr: |
-          llamatrade_eventbus_consumer_lag_entries > 1000
+          llamatrade_events_consumer_lag > 1000
         for: 10m
         labels:
           severity: ticket
@@ -164,21 +164,8 @@ groups:
           summary: "EventBus backlog on {{ $labels.stream }}/{{ $labels.group }}"
           description: >
             {{ $value }} unacked entries pending on stream {{ $labels.stream }}
-            (group {{ $labels.group }}) for 10m — consumer not keeping up.
-
-      - alert: EventBusConsumerLagSecondsHigh
-        expr: |
-          llamatrade_eventbus_consumer_lag_seconds > 300
-        for: 5m
-        labels:
-          severity: page
-          slo: eventbus_lag
-        annotations:
-          summary: "EventBus oldest unacked > 5m on {{ $labels.stream }}/{{ $labels.group }}"
-          description: >
-            Oldest unacked entry on {{ $labels.stream }} (group
-            {{ $labels.group }}) is {{ $value | humanizeDuration }} old. Fill →
-            ledger projection may be stalled (reconciliation-freshness SLO < 5m).
+            (group {{ $labels.group }}) for 10m — consumer not keeping up. The
+            fill → ledger projection may be stalled (reconciliation-freshness SLO).
 
   # ---------------------------------------------------------------------------
   # SLO 6: DB pool exhaustion — should be 0. Per-service pool budgets are tight

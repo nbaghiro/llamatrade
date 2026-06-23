@@ -175,12 +175,9 @@ class StrategyExecution(Base, UUIDPrimaryKeyMixin, TenantMixin, TimestampMixin):
     # Error info if status is ERROR
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
 
-    # Performance tracking columns
+    # Capital allocated when the execution is funded. Live value + position count
+    # are derived from the ledger sleeve projection, not stored here.
     allocated_capital: Mapped[Decimal | None] = mapped_column(Numeric(18, 2), nullable=True)
-    current_value: Mapped[Decimal | None] = mapped_column(Numeric(18, 2), nullable=True)
-    positions_count: Mapped[int] = mapped_column(
-        Integer, nullable=True, default=0, server_default="0"
-    )
     color: Mapped[str | None] = mapped_column(String(20), nullable=True)  # UI color for charts
 
     # Ledger identity (set when the execution is funded; trading threads these

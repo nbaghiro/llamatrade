@@ -6,7 +6,7 @@ import time
 from collections import deque
 from collections.abc import Sequence
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any, Literal, Protocol
 from uuid import UUID
 
@@ -43,6 +43,7 @@ from src.ledger_events import build_ledger_fill_payload, build_ledger_lifecycle_
 from src.metrics import (
     record_bar_latency,
     record_bar_processed,
+    record_degraded_evals,
     record_fill_processed,
     record_position_reconciliation,
     record_signal,
@@ -169,6 +170,8 @@ class StrategyRunner:
         self._latest_bars: dict[str, CompilerBar] = {}
         self._latest_ts: dict[str, datetime] = {}
         self._last_evaluated_ts: datetime | None = None
+        # Last observed cumulative degraded-eval count, to emit per-eval deltas.
+        self._last_degraded_eval_count = 0
         self.bar_stream = bar_stream
         self.order_executor = order_executor
         self.risk_manager = risk_manager
@@ -300,6 +303,33 @@ class StrategyRunner:
         # Sync equity before starting. Positions are recovered from the broker
         # (source of truth) via the periodic reconciliation loop below.
         await self._sync_equity()
+
+        # Reconcile any orders a previous crash left PENDING with no broker id
+        # (3A): adopt those the broker actually placed, reject those it never
+        # received. Best-effort — a recovery hiccup must not block session start.
+        try:
+            recovered = await self.order_executor.recover_stranded_orders(
+                self.config.tenant_id, self.config.execution_id
+            )
+            if recovered:
+                logger.info("Recovered %d stranded order(s) at startup", recovered)
+        except Exception as e:
+            logger.warning("Stranded-order recovery failed at startup: %s", e)
+
+        # Re-emit ledger events for recently-terminal orders whose original
+        # publish may have failed before a crash (4A safety net). Idempotent at
+        # the ledger; only meaningful for sleeve-attributed sessions.
+        if self.config.sleeve_id is not None:
+            try:
+                republished = await self.order_executor.republish_ledger_for_terminal_orders(
+                    self.config.tenant_id,
+                    self.config.execution_id,
+                    since=datetime.now(UTC) - timedelta(days=1),
+                )
+                if republished:
+                    logger.info("Re-published ledger events for %d terminal order(s)", republished)
+            except Exception as e:
+                logger.warning("Ledger re-publish at startup failed: %s", e)
 
         # Connect to bar stream
         if not self.bar_stream.connected:
@@ -582,7 +612,20 @@ class StrategyRunner:
             return
 
         holdings = {s: Holding(s, p.quantity) for s, p in self._positions.items() if p.quantity > 0}
-        orders = self._session.evaluate(self._latest_bars, holdings, self._equity)
+        # Offload the strategy/indicator math (NumPy, releases the GIL) to a worker
+        # thread so it never blocks the event loop driving the fill/equity loops (15A).
+        # Safe: this session is owned solely by this runner and evaluated serially.
+        orders = await asyncio.to_thread(
+            self._session.evaluate, self._latest_bars, holdings, self._equity
+        )
+
+        # Surface conditions that couldn't be evaluated (NaN/missing data) as a
+        # metric, so a strategy silently producing "no signal" is observable.
+        degraded = self._session.degraded_eval_count
+        if degraded > self._last_degraded_eval_count:
+            record_degraded_evals(degraded - self._last_degraded_eval_count)
+            self._last_degraded_eval_count = degraded
+
         for order in orders:
             signal = Signal(
                 type=order.side,

@@ -314,3 +314,23 @@ class TestExpositionShape:
         # Emit a representative signal so the trading metrics exist in output.
         record_order_submission(side="buy", order_type="market", status="success", duration=0.1)
         assert forbidden not in _exposition()
+
+
+class TestDegradedEvalsMetric:
+    """record_degraded_evals — strategy conditions that couldn't be evaluated (Issue 5A)."""
+
+    def test_increments_by_count(self) -> None:
+        from src.metrics import record_degraded_evals
+
+        metric = "llamatrade_trading_strategy_degraded_evals_total"
+        before = _sample(_exposition(), metric)
+        record_degraded_evals(3)
+        assert _sample(_exposition(), metric) == before + 3
+
+    def test_nonpositive_is_noop(self) -> None:
+        from src.metrics import record_degraded_evals
+
+        metric = "llamatrade_trading_strategy_degraded_evals_total"
+        before = _sample(_exposition(), metric)
+        record_degraded_evals(0)
+        assert _sample(_exposition(), metric) == before
