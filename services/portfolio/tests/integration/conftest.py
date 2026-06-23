@@ -47,11 +47,17 @@ def postgres_url() -> Iterator[str]:
 @pytest_asyncio.fixture
 async def session_factory(postgres_url: str) -> AsyncIterator[async_sessionmaker]:
     """A migrated async session factory with a fresh schema per test."""
-    # Import the model modules so their tables register on Base.metadata.
-    import llamatrade_db.models.auth  # noqa: F401
-    import llamatrade_db.models.ledger  # noqa: F401
-    import llamatrade_db.models.strategy  # noqa: F401
+    # Import the model modules so their tables register on Base.metadata. Only
+    # these three load (not the whole models package) so the integration schema
+    # stays free of extension-backed tables such as pgvector embeddings.
+    import llamatrade_db.models.auth
+    import llamatrade_db.models.ledger
+    import llamatrade_db.models.strategy
     from llamatrade_db.base import Base
+
+    # Touch the modules so they are not pruned as unused; the imports exist purely
+    # for their table-registration side effects above.
+    _ = (llamatrade_db.models.auth, llamatrade_db.models.ledger, llamatrade_db.models.strategy)
 
     engine = create_async_engine(postgres_url)
     async with engine.begin() as conn:

@@ -6,9 +6,13 @@ HTTP calls are the thin IO shell, exercised by the integration suite.
 
 from decimal import Decimal
 from types import SimpleNamespace
+from typing import cast
 from uuid import uuid4
 
 import pytest
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from llamatrade_db.models.ledger import Account
 
 from src.clients.alpaca import AlpacaBrokerPositions, positions_to_holdings, positions_to_qty_map
 from src.ports import BrokerUnavailableError
@@ -64,7 +68,7 @@ class _NoCredsDB:
 async def test_positions_raises_broker_unavailable_without_credentials() -> None:
     """No active credentials → BrokerUnavailableError (not an empty {} that would make
     reconciliation freeze every sleeve)."""
-    account = SimpleNamespace(id=uuid4(), credentials_id=uuid4())
-    adapter = AlpacaBrokerPositions(_NoCredsDB())  # type: ignore[arg-type]
+    account = cast(Account, SimpleNamespace(id=uuid4(), credentials_id=uuid4()))
+    adapter = AlpacaBrokerPositions(cast(AsyncSession, _NoCredsDB()))
     with pytest.raises(BrokerUnavailableError):
-        await adapter.positions(uuid4(), account)  # type: ignore[arg-type]
+        await adapter.positions(uuid4(), account)

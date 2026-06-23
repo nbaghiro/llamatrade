@@ -146,8 +146,9 @@ def test_resolve_nil_uuid_rejected() -> None:
 
 def test_resolve_bad_type_rejected() -> None:
     # A non-string wire value (e.g. an unconfigured mock) is invalid, not a crash.
+    bad_wire: Any = object()
     with pytest.raises(AuthError) as exc:
-        resolve_identity(object(), object())  # type: ignore[arg-type]
+        resolve_identity(bad_wire, bad_wire)
     assert exc.value.code in {"unauthenticated", "invalid_argument"}
 
 
