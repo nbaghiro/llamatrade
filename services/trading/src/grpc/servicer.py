@@ -7,7 +7,7 @@ import inspect
 import logging
 from collections.abc import AsyncGenerator
 from decimal import Decimal
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, NoReturn
 from uuid import UUID
 
 import grpc.aio
@@ -53,8 +53,8 @@ def _identity(request_context: Any) -> tuple[UUID, UUID]:
     )
 
 
-async def _abort_auth(context: grpc.aio.ServicerContext[Any, Any], err: AuthError) -> None:
-    """Abort with the gRPC status code for an auth failure."""
+async def _abort_auth(context: grpc.aio.ServicerContext[Any, Any], err: AuthError) -> NoReturn:
+    """Abort with the gRPC status code for an auth failure (``context.abort`` never returns)."""
     await context.abort(
         _AUTH_CODE_TO_GRPC.get(err.code, grpc.StatusCode.UNAUTHENTICATED), err.message
     )

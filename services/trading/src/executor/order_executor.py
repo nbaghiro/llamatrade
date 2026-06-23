@@ -91,6 +91,7 @@ class OrderExecutor(OrderSubmissionMixin):
         risk_manager: RiskManager,
         alert_service: AlertService | None = None,
         event_publisher: TradingEventPublisher | None = None,
+        owns_alpaca: bool = False,
     ):
         self.db = db
         self.alpaca = alpaca_client
@@ -99,7 +100,7 @@ class OrderExecutor(OrderSubmissionMixin):
         self.publisher = event_publisher
         # True when this executor built a session-specific Alpaca client it owns
         # (manual order path); the shared singleton must never be closed.
-        self._owns_alpaca = False
+        self._owns_alpaca = owns_alpaca
 
     async def aclose(self) -> None:
         """Release request-scoped resources (the DB session, owned Alpaca client).
@@ -107,10 +108,7 @@ class OrderExecutor(OrderSubmissionMixin):
         Called by the gRPC servicer in a ``finally`` so each RPC returns its
         connection to the pool instead of leaking it (trading-hardening 13A).
         """
-        from sqlalchemy.ext.asyncio import AsyncSession
-
-        if isinstance(self.db, AsyncSession):
-            await self.db.close()
+        await self.db.close()
         if self._owns_alpaca:
             try:
                 await self.alpaca.close()
@@ -1359,6 +1357,6 @@ async def create_order_executor(
         risk_manager=get_risk_manager(),
         alert_service=None,  # Alert service requires async init, optional for gRPC
         event_publisher=get_trading_event_publisher(),
+        owns_alpaca=owns_alpaca,
     )
-    executor._owns_alpaca = owns_alpaca
     return executor

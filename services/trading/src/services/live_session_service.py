@@ -84,10 +84,7 @@ class LiveSessionService(SessionService):
         """
         import inspect
 
-        from sqlalchemy.ext.asyncio import AsyncSession as _AsyncSession
-
-        if isinstance(self.db, _AsyncSession):
-            await self.db.close()
+        await self.db.close()
         if not self._executor_handed_off:
             closer = getattr(self.order_executor, "aclose", None)
             if closer is not None:

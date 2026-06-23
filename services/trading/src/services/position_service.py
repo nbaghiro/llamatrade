@@ -34,8 +34,7 @@ class PositionService:
 
     async def aclose(self) -> None:
         """Release the request-scoped DB session (trading-hardening 13A)."""
-        if isinstance(self.db, AsyncSession):
-            await self.db.close()
+        await self.db.close()
 
     async def open_position(
         self,

@@ -23,8 +23,8 @@ from llamatrade_telemetry import metrics
 from src.ledger.projection import (
     AccountProjection,
     LedgerEventLike,
-    _fold_into,
     fold,
+    fold_into,
     holding_history,
 )
 from src.ledger.reconciliation import Drift, reconcile
@@ -47,7 +47,7 @@ class _Checkpoint:
 
 # Process-level incremental-projection cache. Populated ONLY from committed reads
 # (a fresh read-only session): folding the delta since a checkpoint onto a deep
-# copy of it equals a full fold by construction (shared ``_fold_into`` + the
+# copy of it equals a full fold by construction (shared ``fold_into`` + the
 # split-invariance property test). In-transaction writers must NOT use the
 # incremental path — a mid-transaction (uncommitted) read would seed a checkpoint
 # with events that may roll back. Keyed by (tenant_id, account_id).
@@ -118,7 +118,7 @@ class LedgerProjector:
     ) -> AccountProjection:
         """Project from the latest cached checkpoint + only the delta since it.
 
-        Equivalent to :meth:`project_account` by construction (same ``_fold_into``),
+        Equivalent to :meth:`project_account` by construction (same ``fold_into``),
         but O(new events) instead of O(all events). **Caller contract:** the
         session must read COMMITTED state (a fresh read-only session) — a
         mid-transaction caller could seed the checkpoint with events that later
@@ -138,7 +138,7 @@ class LedgerProjector:
         projection = copy.deepcopy(cp.projection) if cp is not None else AccountProjection()
         pending = dict(cp.pending) if cp is not None else {}
         with metrics.ledger.projection_fold_duration.time():
-            last_seq = _fold_into(projection, pending, delta, on_error=self._on_poison)
+            last_seq = fold_into(projection, pending, delta, on_error=self._on_poison)
 
         new_seq = last_seq if delta else after
         # Advance the checkpoint forward-only; replacement is atomic so concurrent

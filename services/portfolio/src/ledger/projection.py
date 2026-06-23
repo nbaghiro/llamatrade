@@ -105,11 +105,11 @@ def fold(
     acc = AccountProjection()
     # Open cash reservations: client_order_id -> (sleeve_id, amount)
     pending_reservations: dict[str, tuple[str, Decimal]] = {}
-    _fold_into(acc, pending_reservations, events, on_error=on_error)
+    fold_into(acc, pending_reservations, events, on_error=on_error)
     return acc
 
 
-def _fold_into(
+def fold_into(
     acc: AccountProjection,
     pending: dict[str, tuple[str, Decimal]],
     events: Iterable[LedgerEventLike],
