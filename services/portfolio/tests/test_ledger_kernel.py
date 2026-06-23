@@ -29,7 +29,7 @@ from src.ledger.postings import (
     assert_balanced,
     build_postings,
 )
-from src.ledger.projection import AccountProjection, _fold_into, fold, holding_history, open_lots
+from src.ledger.projection import AccountProjection, fold, fold_into, holding_history, open_lots
 from src.ledger.reconciliation import DriftKind, reconcile
 from src.ledger.sizing import Lot
 
@@ -625,6 +625,6 @@ def test_fold_split_invariance() -> None:
     for k in range(len(events) + 1):
         base = AccountProjection()
         pending: dict[str, tuple[str, Decimal]] = {}
-        _fold_into(base, pending, events[:k], on_error=None)
-        _fold_into(base, pending, events[k:], on_error=None)
+        fold_into(base, pending, events[:k], on_error=None)
+        fold_into(base, pending, events[k:], on_error=None)
         assert base == full, f"checkpoint split at index {k} diverged from full fold"
