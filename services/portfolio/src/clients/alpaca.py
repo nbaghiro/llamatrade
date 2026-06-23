@@ -37,7 +37,7 @@ def _safe_decimal(value: object) -> Decimal | None:
     """Parse a broker-supplied numeric, or None if it's malformed."""
     try:
         return Decimal(str(value))
-    except (InvalidOperation, TypeError, ValueError):
+    except InvalidOperation, TypeError, ValueError:
         return None
 
 
@@ -53,7 +53,9 @@ def positions_to_qty_map(positions: list[Position]) -> dict[str, Decimal]:
     for pos in positions:
         qty = _safe_decimal(pos.qty)
         if qty is None:
-            logger.warning("skipping broker position with unparseable qty: %s=%r", pos.symbol, pos.qty)
+            logger.warning(
+                "skipping broker position with unparseable qty: %s=%r", pos.symbol, pos.qty
+            )
             continue
         qty_map[pos.symbol] = qty_map.get(pos.symbol, _ZERO) + qty
     return qty_map
@@ -98,9 +100,7 @@ class AlpacaBrokerPositions:
             # No usable credentials → broker truth is UNKNOWN, not empty. Raising
             # (vs. returning {}) keeps reconciliation from reading every ledger
             # holding as MISSING_AT_BROKER and freezing every sleeve.
-            raise BrokerUnavailableError(
-                f"no active Alpaca credentials for account {account.id}"
-            )
+            raise BrokerUnavailableError(f"no active Alpaca credentials for account {account.id}")
         try:
             broker_positions = await client.get_positions()
         finally:

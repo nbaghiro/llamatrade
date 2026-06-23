@@ -113,7 +113,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
             ledger_tasks.append(
                 asyncio.create_task(
                     supervise(
-                        lambda: consume_fill_stream(fills, fill_handler, consumer_name=consumer_name),
+                        lambda: consume_fill_stream(
+                            fills, fill_handler, consumer_name=consumer_name
+                        ),
                         name="fill-consumer",
                         stop_event=stop_event,
                     )

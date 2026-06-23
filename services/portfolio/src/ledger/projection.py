@@ -130,7 +130,7 @@ def _fold_into(
         if seq is not None:
             try:
                 max_sequence = max(max_sequence, int(seq))
-            except (TypeError, ValueError):
+            except TypeError, ValueError:
                 pass
         try:
             event_type = _coerce(ev.event_type)

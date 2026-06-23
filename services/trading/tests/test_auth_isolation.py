@@ -149,9 +149,7 @@ async def test_service_principal_trusts_wire_tenant(servicer):
     mock_executor = MagicMock()
     mock_executor.submit_order = AsyncMock(return_value=mock_order)
 
-    token = set_context(
-        TenantContext(tenant_id=UUID(int=0), user_id=UUID(int=0), is_service=True)
-    )
+    token = set_context(TenantContext(tenant_id=UUID(int=0), user_id=UUID(int=0), is_service=True))
     try:
         with patch(
             "src.grpc.servicer.create_order_executor",

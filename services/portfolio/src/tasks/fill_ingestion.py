@@ -69,6 +69,7 @@ async def _dead_letter(bus: EventBus, raw: bytes) -> None:
     except Exception:
         logger.exception("failed to dead-letter ledger entry to %s", LEDGER_FILLS_DLQ_STREAM)
 
+
 # Process-wide advisory-lock id for the single active fill consumer. Per-account
 # FIFO (buy-before-sell for cost basis) requires exactly one consumer; a second
 # pod that loses the lock serves reads only. A stable bigint ("ledger" in hex).

@@ -1429,9 +1429,8 @@ class TestExecutionFunding:
 
     async def test_start_execution_funding_failure_blocks_start(self, mock_db: AsyncMock) -> None:
         """A funding RPC failure surfaces as ValueError and start aborts."""
-        import grpc.aio
-
         import grpc
+        import grpc.aio
 
         service = StrategyService(mock_db)
         execution = self._pending_execution()
@@ -1527,9 +1526,9 @@ class TestExecutionStopRelease:
 
     async def test_stop_close_failure_is_best_effort(self, mock_db: AsyncMock) -> None:
         """A close RPC failure (e.g. in-flight order) never fails the stop."""
+        import grpc
         import grpc.aio
 
-        import grpc
         from llamatrade_proto.generated.common_pb2 import EXECUTION_STATUS_STOPPED
 
         service = StrategyService(mock_db)
@@ -1572,9 +1571,9 @@ class TestExecutionStopRelease:
 
     async def test_reconcile_skips_when_close_fails(self, mock_db: AsyncMock) -> None:
         """A still-failing close leaves the sleeve marked for the next sweep."""
+        import grpc
         import grpc.aio
 
-        import grpc
         from llamatrade_proto.generated.common_pb2 import EXECUTION_STATUS_STOPPED
 
         service = StrategyService(mock_db)

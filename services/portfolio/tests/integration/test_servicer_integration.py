@@ -334,9 +334,7 @@ async def test_snapshot_pass_batches_prices_across_accounts(
         ctx = _tenant_ctx(str(uuid4()))
         account_id = await _bootstrap_account(servicer, ctx)
         await servicer.deposit_funds(
-            ledger_pb2.DepositFundsRequest(
-                context=ctx, account_id=account_id, amount=_dec("1000")
-            ),
+            ledger_pb2.DepositFundsRequest(context=ctx, account_id=account_id, amount=_dec("1000")),
             _ctx(),
         )
         sleeve_id = (

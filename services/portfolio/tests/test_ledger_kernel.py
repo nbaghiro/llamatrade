@@ -569,17 +569,57 @@ def test_fold_split_invariance() -> None:
     s, u = "strat-x", "unalloc"
     events = [
         Ev(LedgerEventType.FUNDS_DEPOSITED, {"sleeve_id": u, "amount": "100000"}),
-        Ev(LedgerEventType.CAPITAL_ALLOCATED, {"from_sleeve_id": u, "to_sleeve_id": s, "amount": "40000"}),
-        Ev(LedgerEventType.ORDER_SUBMITTED, {"sleeve_id": s, "client_order_id": "o1", "reserved": "5000"}),
-        Ev(LedgerEventType.ORDER_FILLED, {"sleeve_id": s, "client_order_id": "o1", "symbol": "SPY", "side": "buy", "qty": "50", "price": "100"}),
+        Ev(
+            LedgerEventType.CAPITAL_ALLOCATED,
+            {"from_sleeve_id": u, "to_sleeve_id": s, "amount": "40000"},
+        ),
+        Ev(
+            LedgerEventType.ORDER_SUBMITTED,
+            {"sleeve_id": s, "client_order_id": "o1", "reserved": "5000"},
+        ),
+        Ev(
+            LedgerEventType.ORDER_FILLED,
+            {
+                "sleeve_id": s,
+                "client_order_id": "o1",
+                "symbol": "SPY",
+                "side": "buy",
+                "qty": "50",
+                "price": "100",
+            },
+        ),
         Ev(LedgerEventType.DIVIDEND_RECEIVED, {"sleeve_id": s, "amount": "120"}),
         Ev(LedgerEventType.FEE_CHARGED, {"sleeve_id": s, "amount": "3"}),
-        Ev(LedgerEventType.ORDER_FILLED, {"sleeve_id": s, "symbol": "SPY", "side": "sell", "qty": "20", "price": "110", "cost_basis": "2000"}),
-        Ev(LedgerEventType.ORDER_SUBMITTED, {"sleeve_id": s, "client_order_id": "o2", "reserved": "1000"}),
+        Ev(
+            LedgerEventType.ORDER_FILLED,
+            {
+                "sleeve_id": s,
+                "symbol": "SPY",
+                "side": "sell",
+                "qty": "20",
+                "price": "110",
+                "cost_basis": "2000",
+            },
+        ),
+        Ev(
+            LedgerEventType.ORDER_SUBMITTED,
+            {"sleeve_id": s, "client_order_id": "o2", "reserved": "1000"},
+        ),
         Ev(LedgerEventType.ORDER_CANCELLED, {"sleeve_id": s, "client_order_id": "o2"}),
         Ev(LedgerEventType.SPLIT_APPLIED, {"sleeve_id": s, "symbol": "SPY", "qty_delta": "30"}),
-        Ev(LedgerEventType.ORDER_FILLED, {"sleeve_id": s, "symbol": "SPY"}),  # poison: missing side/qty/price
-        Ev(LedgerEventType.SYMBOL_CHANGED, {"sleeve_id": s, "old_symbol": "SPY", "new_symbol": "SPYX", "qty": "60", "cost_basis": "3000"}),
+        Ev(
+            LedgerEventType.ORDER_FILLED, {"sleeve_id": s, "symbol": "SPY"}
+        ),  # poison: missing side/qty/price
+        Ev(
+            LedgerEventType.SYMBOL_CHANGED,
+            {
+                "sleeve_id": s,
+                "old_symbol": "SPY",
+                "new_symbol": "SPYX",
+                "qty": "60",
+                "cost_basis": "3000",
+            },
+        ),
     ]
     full = fold(events)
     for k in range(len(events) + 1):

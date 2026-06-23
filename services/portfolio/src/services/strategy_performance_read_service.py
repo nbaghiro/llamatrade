@@ -220,7 +220,11 @@ class StrategyPerformanceReadService:
         series = await self._sleeve_series(tenant_id, execution.sleeve_id, None, None)
         equities = np.array([float(e) for _, e in series], dtype=np.float64)
         # Numpy is CPU-bound — run it off the event loop (see portfolio_read_service).
-        m = await asyncio.to_thread(analytics.equity_metrics, equities) if len(equities) >= 2 else None
+        m = (
+            await asyncio.to_thread(analytics.equity_metrics, equities)
+            if len(equities) >= 2
+            else None
+        )
 
         # Trade stats from the sleeve's realized sells.
         stats = read_model.TradeStats(0, 0, 0, 0.0, 0.0, 0.0, 0.0, 0.0)

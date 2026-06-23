@@ -39,7 +39,8 @@ def test_negative_position_is_flagged() -> None:
 
 def test_both_violations_reported() -> None:
     sleeve = SleeveProjection(
-        cash=D("-5"), positions={"SPY": PositionState(qty=D("-1")), "QQQ": PositionState(qty=D("2"))}
+        cash=D("-5"),
+        positions={"SPY": PositionState(qty=D("-1")), "QQQ": PositionState(qty=D("2"))},
     )
     kinds = {v.kind for v in check_sleeve_invariants(sleeve)}
     assert kinds == {"negative_cash", "negative_position"}
