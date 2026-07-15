@@ -2,7 +2,8 @@
   "name": "llamatrade",
   "private": true,
   "workspaces": [
-    "apps/*"
+    "apps/*",
+    "packages/*"
   ],
   "scripts": {
     "dev": "npm run dev --workspace=apps/web",

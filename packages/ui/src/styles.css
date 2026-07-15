@@ -1,0 +1,247 @@
+/* ============================================
+   LlamaTrade Design System — "Monolith"
+   Brutalist / Swiss-grid, light-only.
+   bone/ink/orange · Anton · Archivo · Space Mono
+
+   Shared design-system layer for @llamatrade/ui.
+
+   This file intentionally contains NO `@tailwind base/components/utilities`
+   directives — those stay in each consuming app's entry CSS. An app imports
+   this file AFTER its own `@tailwind` directives:
+
+       @tailwind base;
+       @tailwind components;
+       @tailwind utilities;
+       @import '@llamatrade/ui/styles.css';
+
+   Vite inlines this `@import` (via its built-in postcss-import) before Tailwind
+   runs, so every `@apply` / `@layer` below resolves against the consuming app's
+   Tailwind context (which must load the `@llamatrade/ui/tailwind-preset`).
+   ============================================ */
+
+@layer base {
+  html {
+    @apply antialiased;
+  }
+
+  body {
+    @apply bg-bone text-ink font-sans;
+  }
+
+  /* Real heading tags get the condensed display face. */
+  h1, h2 {
+    @apply font-display tracking-tight;
+  }
+
+  /* Monospace tabular numerics for data/figures */
+  .font-data {
+    @apply font-mono tabular-nums;
+  }
+}
+
+/* Scrollbar — ink thumb on bone, auto-hide */
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+*::-webkit-scrollbar-thumb {
+  background-color: transparent;
+  border-radius: 0;
+  transition: background-color 0.2s;
+}
+*:hover::-webkit-scrollbar-thumb {
+  background-color: rgb(var(--lt-ink) / 0.25);
+}
+*::-webkit-scrollbar-thumb:hover {
+  background-color: rgb(var(--lt-ink) / 0.5);
+}
+* {
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+*:hover {
+  scrollbar-color: rgb(var(--lt-ink) / 0.25) transparent;
+}
+
+/* Focus — sharp orange ring (follows the now-zero radius) */
+:focus-visible {
+  @apply outline-none ring-2 ring-orange-500 ring-offset-2 ring-offset-bone;
+}
+
+/* Selection — signal orange */
+::selection {
+  background: rgb(var(--lt-orange-500));
+  color: rgb(var(--lt-ink));
+}
+
+/* ============================================
+   Component Layer
+   ============================================ */
+
+@layer components {
+  /* ---------- Buttons ---------- */
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 px-4 py-2 font-mono font-bold text-xs uppercase tracking-wider;
+    @apply border-2 border-ink transition-transform duration-75;
+    @apply disabled:opacity-40 disabled:cursor-not-allowed disabled:shadow-none disabled:translate-x-0 disabled:translate-y-0;
+  }
+
+  .btn-primary {
+    @apply bg-orange-500 text-ink shadow-[3px_3px_0_rgb(var(--lt-ink))];
+    @apply hover:bg-ink hover:text-orange-500 hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-[5px_5px_0_rgb(var(--lt-ink))];
+    @apply active:translate-x-0 active:translate-y-0 active:shadow-[1px_1px_0_rgb(var(--lt-ink))];
+  }
+
+  .btn-secondary {
+    @apply bg-bone text-ink shadow-[3px_3px_0_rgb(var(--lt-ink))];
+    @apply hover:bg-ink hover:text-bone hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-[5px_5px_0_rgb(var(--lt-ink))];
+    @apply active:translate-x-0 active:translate-y-0 active:shadow-[1px_1px_0_rgb(var(--lt-ink))];
+  }
+
+  .btn-ghost {
+    @apply border-transparent text-ink/70 shadow-none hover:text-ink hover:bg-ink/5;
+  }
+
+  .btn-danger {
+    @apply bg-red-500 text-bone shadow-[3px_3px_0_rgb(var(--lt-ink))];
+    @apply hover:bg-ink hover:text-red-500 hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-[5px_5px_0_rgb(var(--lt-ink))];
+    @apply active:translate-x-0 active:translate-y-0 active:shadow-[1px_1px_0_rgb(var(--lt-ink))];
+  }
+
+  .btn-sm {
+    @apply text-[10px] px-3 py-1.5;
+  }
+
+  .btn-lg {
+    @apply text-sm px-5 py-2.5;
+  }
+
+  /* ---------- Cards / surfaces ---------- */
+  .card {
+    @apply bg-paper border-2 border-ink;
+  }
+
+  .card-shadow {
+    @apply bg-paper border-2 border-ink shadow-[4px_4px_0_rgb(var(--lt-ink))];
+  }
+
+  /* ---------- Form inputs ---------- */
+  .input {
+    @apply w-full px-3 py-2 font-sans transition-colors;
+    @apply bg-paper border-2 border-ink text-ink;
+    @apply focus:outline-none focus:ring-2 focus:ring-orange-500 focus:ring-offset-0 focus:border-ink;
+  }
+
+  .input::placeholder {
+    @apply text-ink/40 font-mono text-xs;
+  }
+
+  .input:-webkit-autofill,
+  .input:-webkit-autofill:hover,
+  .input:-webkit-autofill:focus,
+  .input:-webkit-autofill:active {
+    -webkit-box-shadow: 0 0 0 30px rgb(var(--lt-paper)) inset !important;
+    -webkit-text-fill-color: rgb(var(--lt-ink)) !important;
+  }
+
+  .input-error {
+    @apply border-red-500 focus:ring-red-500;
+  }
+
+  .label {
+    @apply block text-[11px] font-mono font-bold uppercase tracking-wider mb-1.5 text-ink/70;
+  }
+
+  /* ---------- Select ---------- */
+  .select {
+    @apply input appearance-none bg-no-repeat pr-10;
+    /* THEME EXCEPTION: this chevron color (%230d0d0d = ink) is baked into a
+       data-URI, which cannot reference a CSS custom property. It is the one
+       documented spot the token layer does not drive; keep it in sync with
+       --lt-ink by hand if the ink hue ever changes. */
+    background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%230d0d0d' stroke-linecap='square' stroke-linejoin='miter' stroke-width='2' d='M6 8l4 4 4-4'/%3e%3c/svg%3e");
+    background-position: right 0.5rem center;
+    background-size: 1.4em 1.4em;
+  }
+
+  /* ---------- Badges / tags ---------- */
+  .badge {
+    @apply inline-flex items-center px-2 py-0.5 border border-ink text-[10px] font-mono font-bold uppercase tracking-wide;
+  }
+
+  .badge-primary {
+    @apply bg-orange-500 text-ink border-ink;
+  }
+
+  .badge-accent {
+    @apply bg-blue-500 text-bone border-ink;
+  }
+
+  .badge-gray {
+    @apply bg-bone text-ink border-ink;
+  }
+
+  .badge-success {
+    @apply bg-green-600 text-bone border-ink;
+  }
+
+  .badge-danger {
+    @apply bg-red-500 text-bone border-ink;
+  }
+
+  /* ---------- Dividers ---------- */
+  .divider {
+    @apply border-t border-ink/15;
+  }
+
+  /* ---------- Dropdown menu ---------- */
+  .dropdown {
+    @apply absolute z-50 py-0 bg-paper border-2 border-ink shadow-[4px_4px_0_rgb(var(--lt-ink))];
+  }
+
+  .dropdown-item {
+    @apply flex items-center gap-3 px-4 py-2.5 text-sm cursor-pointer;
+    @apply text-ink hover:bg-ink hover:text-bone;
+  }
+
+  .dropdown-item-icon {
+    @apply w-5 h-5;
+  }
+
+  /* ---------- Nav links ---------- */
+  .nav-link {
+    @apply px-3 py-2 text-[11px] font-mono font-bold uppercase tracking-wider transition-colors;
+    @apply text-ink/60 hover:text-ink hover:bg-ink/5;
+  }
+
+  .nav-link-active {
+    @apply text-ink bg-ink/5;
+    box-shadow: inset 3px 0 0 rgb(var(--lt-orange-500));
+  }
+}
+
+/* ============================================
+   Canvas / Grid Background (Strategy Builder)
+   ============================================ */
+
+@layer utilities {
+  /* Exposed grid — ink dots on bone */
+  .bg-dotted-grid {
+    background-image: radial-gradient(circle, rgb(var(--lt-ink) / 0.18) 1px, transparent 1px);
+    background-size: 22px 22px;
+  }
+
+  .bg-canvas {
+    @apply bg-bone;
+    background-image: radial-gradient(circle, rgb(var(--lt-ink) / 0.18) 1px, transparent 1px);
+    background-size: 22px 22px;
+  }
+
+  /* Tree connector lines */
+  .bg-connector {
+    @apply bg-ink;
+  }
+}

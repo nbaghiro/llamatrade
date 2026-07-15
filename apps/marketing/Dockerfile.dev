@@ -1,0 +1,36 @@
+# Dev image for the standalone marketing site — workspace-aware so the shared
+# @llamatrade/ui package (packages/ui) resolves inside the container.
+#
+# NOTE: the build context is the REPO ROOT (see docker-compose.dev.yml), not
+# apps/marketing, so we can copy the root lockfile + every workspace manifest and
+# run a single workspace-aware install. At runtime, apps/marketing and packages/ui
+# are bind-mounted for hot-reload; node_modules is preserved from the image via
+# anonymous volumes.
+#
+# This image is for LOCAL PREVIEW ONLY. The production deploy is the static
+# `dist/` output (see apps/marketing/README.md) — no server required.
+FROM node:20-alpine
+
+WORKDIR /app
+
+# Workspace manifests + lockfile. A workspace-aware `npm ci` needs the root
+# lockfile and each workspace's package.json present.
+COPY package.json package-lock.json ./
+COPY apps/marketing/package.json ./apps/marketing/package.json
+# packages/ui ships SOURCE (no build step); copy it whole so the workspace
+# symlink target exists at install time. It is also bind-mounted at runtime.
+COPY packages/ui ./packages/ui
+
+# Workspace-aware install: creates node_modules/@llamatrade/ui -> ../packages/ui
+# (and node_modules/llamatrade-marketing -> ../apps/marketing) and hoists shared
+# deps to /app/node_modules.
+RUN if [ -f package-lock.json ]; then npm ci; else npm install; fi
+
+WORKDIR /app/apps/marketing
+
+# Internal dev-server port (Vite base "/m/"). The single origin is the Caddy
+# reverse proxy on :8800 (see infrastructure/docker/Caddyfile); the host port
+# 8801 is still published (mapped to 8811) for standalone marketing testing.
+EXPOSE 8811
+
+CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0", "--port", "8811"]

@@ -1,0 +1,137 @@
+/* ============================================================================
+   LlamaTrade Design System — "Monolith" THEME TOKEN LAYER
+   ----------------------------------------------------------------------------
+   The single source of truth for every themeable value in the design system.
+   The Tailwind preset (`tailwind-preset.cjs`), the shared `styles.css` layer,
+   and the shared React components ALL read from these custom properties — so
+   the entire product reskins by editing this one file (or by shipping a sibling
+   theme file with different values; see README "Theming").
+
+   ── Two selectors, identical values ────────────────────────────────────────
+   Tokens are declared under BOTH `:root` (so the theme works the instant this
+   file is imported, no attribute required) and `[data-theme="monolith"]` (so an
+   app can switch themes later by toggling `data-theme` on <html>). Keep the two
+   blocks in sync.
+
+   ── Colors are stored as SPACE-SEPARATED RGB CHANNELS ──────────────────────
+   e.g. `--lt-orange-500: 255 77 28;` — NOT `#ff4d1c`, NOT `rgb(255,77,28)`.
+   The preset consumes them as `rgb(var(--lt-<name>) / <alpha-value>)`, which is
+   the required Tailwind-with-CSS-vars form: it lets opacity modifiers such as
+   `bg-ink/50`, `text-ink/40`, `border-bone/25` keep working (Tailwind swaps
+   `<alpha-value>` for the utility's `--tw-*-opacity`). Values that carry a baked
+   alpha (e.g. `--lt-line`) or are composite (shadows) are stored as full color /
+   value strings instead — noted inline where they occur.
+   ============================================================================ */
+
+:root,
+[data-theme='monolith'] {
+  /* ---- Semantic aliases — quick-reskin levers ----------------------------
+     Point INTO the ramps below. Edit an alias's target (or the ramp step it
+     references) to retheme a role in one line. The concrete ramp tokens stay
+     independently overridable for deep customization. */
+  --lt-surface: var(--lt-bone);
+  --lt-text: var(--lt-ink);
+  --lt-accent: var(--lt-orange-500);
+  --lt-success: var(--lt-green-600);
+  --lt-danger: var(--lt-red-500);
+  --lt-info: var(--lt-blue-600);
+
+  /* ---- Core surfaces / brand --------------------------------------------- */
+  --lt-bone: 242 239 230; /* #f2efe6 — primary surface */
+  --lt-ink: 13 13 13; /* #0d0d0d — text / borders / hard shadows */
+  --lt-paper: 255 255 255; /* #ffffff — raised card surface */
+  /* Hairline rule = ink @ 14%. Carries a baked alpha, so it is a full color
+     string (not a channel triplet) and is mapped 1:1 in the preset. */
+  --lt-line: rgb(var(--lt-ink) / 0.14); /* was rgba(13,13,13,0.14) */
+
+  /* ---- Orange — signal / brand accent (primary) -------------------------- */
+  --lt-orange-50: 255 241 236; /* #fff1ec */
+  --lt-orange-100: 255 221 208; /* #ffddd0 */
+  --lt-orange-200: 255 181 158; /* #ffb59e */
+  --lt-orange-300: 255 140 107; /* #ff8c6b */
+  --lt-orange-400: 255 106 61; /* #ff6a3d */
+  --lt-orange-500: 255 77 28; /* #ff4d1c */
+  --lt-orange-600: 230 62 16; /* #e63e10 */
+  --lt-orange-700: 184 48 11; /* #b8300b */
+  --lt-orange-800: 143 38 9; /* #8f2609 */
+  --lt-orange-900: 107 29 8; /* #6b1d08 */
+  --lt-orange-950: 69 18 4; /* #451204 */
+
+  /* ---- Blue — info / links (accent) -------------------------------------- */
+  --lt-blue-50: 236 236 255; /* #ececff */
+  --lt-blue-100: 208 208 255; /* #d0d0ff */
+  --lt-blue-200: 163 163 255; /* #a3a3ff */
+  --lt-blue-300: 118 118 255; /* #7676ff */
+  --lt-blue-400: 74 74 255; /* #4a4aff */
+  --lt-blue-500: 26 26 255; /* #1a1aff */
+  --lt-blue-600: 20 20 204; /* #1414cc */
+  --lt-blue-700: 15 15 153; /* #0f0f99 */
+  --lt-blue-800: 10 10 112; /* #0a0a70 */
+  --lt-blue-900: 7 7 80; /* #070750 */
+  --lt-blue-950: 4 4 51; /* #040433 */
+
+  /* ---- Green — success / up ---------------------------------------------- */
+  --lt-green-50: 232 243 236; /* #e8f3ec */
+  --lt-green-100: 201 228 210; /* #c9e4d2 */
+  --lt-green-200: 148 201 168; /* #94c9a8 */
+  --lt-green-300: 95 174 126; /* #5fae7e */
+  --lt-green-400: 47 146 87; /* #2f9257 */
+  --lt-green-500: 15 122 52; /* #0f7a34 */
+  --lt-green-600: 12 106 45; /* #0c6a2d */
+  --lt-green-700: 9 83 36; /* #095324 */
+  --lt-green-800: 6 64 28; /* #06401c */
+  --lt-green-900: 4 46 20; /* #042e14 */
+  --lt-green-950: 2 29 13; /* #021d0d */
+
+  /* ---- Red — danger / down ----------------------------------------------- */
+  --lt-red-50: 251 234 233; /* #fbeae9 */
+  --lt-red-100: 245 201 198; /* #f5c9c6 */
+  --lt-red-200: 235 151 147; /* #eb9793 */
+  --lt-red-300: 224 101 96; /* #e06560 */
+  --lt-red-400: 214 63 57; /* #d63f39 */
+  --lt-red-500: 200 30 30; /* #c81e1e */
+  --lt-red-600: 168 25 25; /* #a81919 */
+  --lt-red-700: 132 20 20; /* #841414 */
+  --lt-red-800: 99 16 16; /* #631010 */
+  --lt-red-900: 70 17 15; /* #46110f */
+  --lt-red-950: 43 10 9; /* #2b0a09 */
+
+  /* ---- Gray — warm ink-biased neutral ramp (bone -> ink) ----------------- */
+  --lt-gray-50: 247 245 239; /* #f7f5ef */
+  --lt-gray-100: 242 239 230; /* #f2efe6 */
+  --lt-gray-200: 230 225 212; /* #e6e1d4 */
+  --lt-gray-300: 212 205 186; /* #d4cdba */
+  --lt-gray-400: 168 160 140; /* #a8a08c */
+  --lt-gray-500: 122 115 98; /* #7a7362 */
+  --lt-gray-600: 86 80 68; /* #565044 */
+  --lt-gray-700: 58 53 45; /* #3a352d */
+  --lt-gray-800: 34 31 26; /* #221f1a */
+  --lt-gray-900: 20 18 16; /* #141210 */
+  --lt-gray-950: 13 13 13; /* #0d0d0d */
+
+  /* ---- Warning — amber (partial ramp; 50 reuses orange-50) --------------- */
+  --lt-warning-500: 255 140 0; /* #ff8c00 */
+  --lt-warning-600: 224 120 0; /* #e07800 */
+
+  /* ---- Typography — full font stacks ------------------------------------- */
+  --lt-font-display: Anton, 'Arial Narrow', sans-serif;
+  --lt-font-sans: Archivo, system-ui, -apple-system, sans-serif;
+  --lt-font-mono: 'Space Mono', ui-monospace, monospace;
+
+  /* ---- Radius — zeroed everywhere (brutalist) ---------------------------- */
+  --lt-radius: 0px;
+
+  /* ---- Shadows — hard brutalist offsets built from the ink channels ------ */
+  --lt-shadow-sm: 2px 2px 0 rgb(var(--lt-ink));
+  --lt-shadow: 4px 4px 0 rgb(var(--lt-ink));
+  --lt-shadow-lg: 8px 8px 0 rgb(var(--lt-ink));
+  --lt-shadow-xl: 12px 12px 0 rgb(var(--lt-ink));
+  --lt-shadow-inner: inset 0 2px 0 0 rgb(var(--lt-ink) / 0.08);
+
+  /* ---- Block editor (StrategyTree) --------------------------------------- */
+  --lt-block-else-bg: 230 224 210; /* #e6e0d2 — "else" branch fill */
+  --lt-block-weight-bg: 212 237 219; /* #d4eddb — "weight" branch fill */
+  /* Bone-tinted drop the tree blocks cast on the ink ground (ink is invisible
+     there, so this is intentionally bone @ 12%, not ink). */
+  --lt-block-shadow: 3px 3px 0 rgb(var(--lt-bone) / 0.12); /* was rgba(242,239,230,0.12) */
+}
