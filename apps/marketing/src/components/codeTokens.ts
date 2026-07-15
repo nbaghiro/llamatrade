@@ -25,5 +25,7 @@ export const s = (t: string): Tok => ({ c: 's', t });
 export const m = (t: string): Tok => ({ c: 'm', t });
 /** Plain token. */
 export const p = (t: string): Tok => ({ t });
-/** Plain token of `n` non-breaking spaces (indentation where `white-space: pre` is absent). */
-export const nb = (n: number): Tok => ({ t: ' '.repeat(n) });
+/** Plain token of `n` non-breaking spaces — indentation that survives even where
+ *  `white-space: pre` is absent (e.g. the `.code-mini` cards), since NBSP does
+ *  not collapse in normal HTML flow the way ASCII spaces do. */
+export const nb = (n: number): Tok => ({ t: '\u00A0'.repeat(n) });
