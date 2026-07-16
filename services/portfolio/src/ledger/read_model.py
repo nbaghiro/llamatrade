@@ -67,6 +67,7 @@ class TransactionView:
     amount: float
     fees: float
     occurred_at: object  # datetime | None
+    sleeve_id: str | None = None  # target sleeve for allocations/transfers (name resolved by caller)
 
 
 def _price(prices: dict[str, Decimal], symbol: str, fallback: Decimal) -> Decimal:
@@ -234,6 +235,7 @@ def transactions_view(events: Iterable[LedgerEventLike]) -> list[TransactionView
                 amount=abs(amount),
                 fees=0.0,
                 occurred_at=occurred,
+                sleeve_id=str(data["to_sleeve_id"]) if data.get("to_sleeve_id") else None,
             )
         )
     out.reverse()  # events arrive oldest-first; history is newest-first

@@ -14,7 +14,10 @@ from uuid import uuid4
 import pytest
 
 from llamatrade_db.models.ledger import LedgerEventType
-from llamatrade_proto.generated.portfolio_pb2 import TRANSACTION_TYPE_BUY
+from llamatrade_proto.generated.portfolio_pb2 import (
+    TRANSACTION_TYPE_BUY,
+    TRANSACTION_TYPE_TRANSFER_IN,
+)
 
 from src.ledger.projection import AccountProjection, PositionState
 from src.services.portfolio_read_service import PortfolioReadService
@@ -147,3 +150,29 @@ async def test_list_transactions_symbol_filter() -> None:
     )
     assert total == 1
     assert txns[0].symbol == "AAPL"
+
+
+async def test_list_transactions_labels_allocation_with_strategy() -> None:
+    """An allocation row surfaces as transfer_in and is described by its strategy."""
+    svc = _svc()
+    unallocated, strategy_sleeve = str(uuid4()), str(uuid4())
+    acct = SimpleNamespace(id=uuid4(), tenant_id=TENANT)
+    svc._accounts = AsyncMock(return_value=[acct])
+    events = [
+        SimpleNamespace(
+            event_id=str(uuid4()),
+            event_type=LedgerEventType.CAPITAL_ALLOCATED,
+            data={"from_sleeve_id": unallocated, "to_sleeve_id": strategy_sleeve, "amount": "15000"},
+            occurred_at=datetime(2026, 1, 4, tzinfo=UTC),
+        ),
+    ]
+    svc._projector = SimpleNamespace(read_events=AsyncMock(return_value=events))
+    svc._sleeve_names = AsyncMock(return_value={strategy_sleeve: "Momentum Rotation"})
+
+    txns, total = await svc.list_transactions(TENANT, type=None, symbol=None, page=1, page_size=10)
+
+    assert total == 1
+    assert txns[0].type == TRANSACTION_TYPE_TRANSFER_IN
+    assert txns[0].amount == 15000.0
+    assert txns[0].description == "Momentum Rotation"
+    svc._sleeve_names.assert_awaited_once_with({strategy_sleeve})

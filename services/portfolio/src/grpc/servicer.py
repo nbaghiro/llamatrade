@@ -612,6 +612,8 @@ class PortfolioServicer:
             portfolio_pb2.TRANSACTION_TYPE_DIVIDEND,
             portfolio_pb2.TRANSACTION_TYPE_INTEREST,
             portfolio_pb2.TRANSACTION_TYPE_FEE,
+            portfolio_pb2.TRANSACTION_TYPE_TRANSFER_IN,
+            portfolio_pb2.TRANSACTION_TYPE_TRANSFER_OUT,
         }
         for valid_type in valid_types:
             if txn_type == valid_type:

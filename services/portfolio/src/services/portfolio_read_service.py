@@ -20,7 +20,7 @@ import numpy as np
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from llamatrade_db.models.ledger import Account, SleeveSnapshot
+from llamatrade_db.models.ledger import Account, Sleeve, SleeveSnapshot
 from llamatrade_proto.generated.portfolio_pb2 import (
     TRANSACTION_TYPE_BUY,
     TRANSACTION_TYPE_DEPOSIT,
@@ -144,10 +144,20 @@ class PortfolioReadService:
         total = len(views)
         start = (page - 1) * page_size
         page_views = views[start : start + page_size]
-        return [self._to_txn_response(tenant_id, v) for v in page_views], total
+        sleeve_names = await self._sleeve_names({v.sleeve_id for v in page_views if v.sleeve_id})
+        return [self._to_txn_response(tenant_id, v, sleeve_names) for v in page_views], total
+
+    async def _sleeve_names(self, sleeve_ids: set[str]) -> dict[str, str]:
+        """Map sleeve id -> human name, so allocation rows can name their strategy."""
+        if not sleeve_ids:
+            return {}
+        rows = await self.db.execute(
+            select(Sleeve.id, Sleeve.name).where(Sleeve.id.in_({UUID(s) for s in sleeve_ids}))
+        )
+        return {str(sid): name for sid, name in rows.all()}
 
     def _to_txn_response(
-        self, tenant_id: UUID, v: read_model.TransactionView
+        self, tenant_id: UUID, v: read_model.TransactionView, sleeve_names: dict[str, str]
     ) -> TransactionResponse:
         created = v.occurred_at if isinstance(v.occurred_at, datetime) else datetime.now(UTC)
         try:
@@ -163,7 +173,7 @@ class PortfolioReadService:
             price=v.price,
             amount=v.amount,
             fees=v.fees,
-            description=None,
+            description=sleeve_names.get(v.sleeve_id) if v.sleeve_id else None,
             reference_id=None,
             created_at=created,
         )

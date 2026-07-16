@@ -115,6 +115,29 @@ def test_transactions_view_from_events() -> None:
     assert views[1].amount == 10000.0
 
 
+def test_transactions_view_allocation_carries_target_sleeve() -> None:
+    """CAPITAL_ALLOCATED renders as transfer_in and exposes the target sleeve id."""
+    unallocated = str(uuid4())
+    strategy_sleeve = str(uuid4())
+    events = [
+        SimpleNamespace(
+            event_id=str(uuid4()),
+            event_type=LedgerEventType.CAPITAL_ALLOCATED,
+            data={
+                "from_sleeve_id": unallocated,
+                "to_sleeve_id": strategy_sleeve,
+                "amount": "15000",
+            },
+            occurred_at=None,
+        ),
+    ]
+    views = transactions_view(events)
+    assert len(views) == 1
+    assert views[0].type == "transfer_in"
+    assert views[0].amount == 15000.0
+    assert views[0].sleeve_id == strategy_sleeve  # so the caller can name the strategy
+
+
 def test_sleeve_trade_stats_wins_losses() -> None:
     sleeve = "s1"
 

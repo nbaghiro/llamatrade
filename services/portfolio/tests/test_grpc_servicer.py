@@ -82,18 +82,28 @@ class TestTransactionTypeConversion:
     """Tests for transaction type conversion helpers."""
 
     def test_to_proto_transaction_type_mapping(self) -> None:
-        """Test transaction type enum mapping logic."""
-        # Test the mapping logic without importing the actual servicer
-        type_map = {
-            "deposit": 1,  # TRANSACTION_TYPE_DEPOSIT
-            "withdrawal": 2,  # TRANSACTION_TYPE_WITHDRAWAL
-            "buy": 3,  # TRANSACTION_TYPE_BUY
-            "sell": 4,  # TRANSACTION_TYPE_SELL
-            "dividend": 5,  # TRANSACTION_TYPE_DIVIDEND
-        }
+        """Every real TransactionType value round-trips through the servicer mapper.
 
-        for txn_type in type_map:
-            assert txn_type in type_map
+        Regression: TRANSFER_IN/OUT (strategy allocations) must NOT collapse to
+        DEPOSIT — that would make allocations indistinguishable from deposits.
+        """
+        from llamatrade_proto.generated import portfolio_pb2
+
+        from src.grpc.servicer import PortfolioServicer
+
+        servicer = PortfolioServicer()
+        for value in (
+            portfolio_pb2.TRANSACTION_TYPE_DEPOSIT,
+            portfolio_pb2.TRANSACTION_TYPE_WITHDRAWAL,
+            portfolio_pb2.TRANSACTION_TYPE_BUY,
+            portfolio_pb2.TRANSACTION_TYPE_SELL,
+            portfolio_pb2.TRANSACTION_TYPE_DIVIDEND,
+            portfolio_pb2.TRANSACTION_TYPE_INTEREST,
+            portfolio_pb2.TRANSACTION_TYPE_FEE,
+            portfolio_pb2.TRANSACTION_TYPE_TRANSFER_IN,
+            portfolio_pb2.TRANSACTION_TYPE_TRANSFER_OUT,
+        ):
+            assert servicer._to_proto_transaction_type(value) == value
 
     def test_from_proto_transaction_type_mapping(self) -> None:
         """Test reverse transaction type mapping."""
