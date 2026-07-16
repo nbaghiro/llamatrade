@@ -1,0 +1,950 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>LlamaTrade — App Explorer · themes · pages · directions</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Manrope:wght@400;500;600;700;800&family=Sora:wght@400;500;600;700;800&family=Hanken+Grotesk:wght@400;500;600;700;800&family=IBM+Plex+Sans:wght@400;500;600;700&family=Archivo:wght@400;500;600;700;800;900&family=Albert+Sans:wght@400;500;600;700;800&family=Space+Grotesk:wght@400;500;600;700&family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&family=JetBrains+Mono:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=DM+Mono:wght@400;500&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  *{box-sizing:border-box}html,body{margin:0}
+  body{background:#0b0d12;color:#e7e9ec;font-family:"Inter",system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+
+  /* ── top switcher bar ── */
+  .bar{position:sticky;top:0;z-index:60;background:#0b0d12;border-bottom:1px solid #1b212b;display:flex;flex-direction:column;gap:9px;padding:11px 20px 12px}
+  .barrow{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+  .lead{font-weight:700;font-size:15px;color:#eef0f3;display:flex;align-items:center;gap:9px;margin-right:6px}
+  .lead .g{display:grid;place-items:center;width:25px;height:25px;border-radius:7px;background:linear-gradient(135deg,#6D28D9,#2563EB 45%,#059669);color:#fff;font-weight:800;font-size:13px}
+  .bar .grp{display:flex;align-items:center;gap:6px}
+  .seggrp{display:flex;align-items:center;gap:3px;background:#11151c;border:1px solid #1f2632;border-radius:10px;padding:3px}
+  .gl{font-family:"JetBrains Mono",monospace;font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:#5d6571;margin-right:3px}
+  .tab{font-size:12.5px;color:#aab2be;background:transparent;border:1px solid transparent;padding:6px 12px;border-radius:7px;cursor:pointer;white-space:nowrap;font-family:inherit;font-weight:500;transition:all .12s}
+  .tab:hover{color:#eef0f3}
+  .tab.on{background:#eef0f3;color:#0b0d12;font-weight:700}
+  .themestrip .tab{background:#141922;border:1px solid #232b37;padding:6px 11px;border-radius:99px}
+  .themestrip .tab:hover{border-color:#3a4453}
+  .themestrip .tab.on{background:#eef0f3;color:#0b0d12;border-color:#eef0f3}
+  .tab .sw{display:inline-block;width:9px;height:9px;border-radius:3px;margin-right:6px;vertical-align:-1px}
+  .barnote{margin-left:auto;font-family:"JetBrains Mono",monospace;font-size:11px;color:#5d6571}
+  .themerow{display:flex;align-items:center;gap:10px}
+  .themestrip{display:flex;align-items:center;gap:6px;overflow-x:auto;padding-bottom:2px;scrollbar-width:thin;scrollbar-color:#2a323f transparent}
+  .themestrip::-webkit-scrollbar{height:6px}
+  .themestrip::-webkit-scrollbar-thumb{background:#2a323f;border-radius:9px}
+
+  /* ── stage / browser frame ── */
+  .stagewrap{padding:22px clamp(12px,2.5vw,40px) 60px;display:flex;justify-content:center}
+  .cap{font-family:"JetBrains Mono",monospace;font-size:10.5px;letter-spacing:.05em;text-transform:uppercase;color:#6b7480;margin:0 0 10px;text-align:center}
+  .browser{width:100%;max-width:1400px;border-radius:14px;overflow:hidden;border:1px solid var(--line);box-shadow:0 30px 80px rgba(0,0,0,.55);background:var(--bg);color:var(--ink);font-family:var(--fu)}
+  .chrome{height:38px;background:var(--surface);display:flex;align-items:center;gap:7px;padding:0 14px;border-bottom:1px solid var(--line)}
+  .chrome i{width:10px;height:10px;border-radius:50%;background:color-mix(in srgb,var(--muted) 45%,transparent)}
+  .chrome .url{margin-left:10px;height:23px;flex:0 1 360px;background:var(--bg);border:1px solid var(--line);border-radius:7px;display:flex;align-items:center;padding:0 12px;font-family:var(--fm);font-size:11px;color:var(--muted)}
+
+  .mode{display:none}.mode.on{display:block}
+  .page{display:none}.page.on{display:block}
+  .num{font-family:var(--fm);font-variant-numeric:tabular-nums;letter-spacing:-.01em}
+  .browser .ic{width:16px;height:16px;flex:none;vertical-align:-3px}
+  .kpi .d .ic{width:15px;height:15px}.search .ic{width:15px;height:15px}.run .ic{width:15px;height:15px}
+  .tree-head .ico .ic,.ico .ic{width:15px;height:15px;vertical-align:-2px}
+  .pos{color:var(--pos)}.neg{color:var(--neg)}
+  .dotgrid{background-image:radial-gradient(color-mix(in srgb,var(--ink) 13%,transparent) 1px,transparent 1px);background-size:22px 22px}
+
+  /* ── shared primitives ── */
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow)}
+  .btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;font-family:var(--fu);font-weight:600;font-size:12.5px;border-radius:calc(var(--radius)*.7);border:1px solid transparent;padding:8px 14px;cursor:pointer;white-space:nowrap}
+  .btn-primary{background:var(--accent);color:var(--accent-ink)}
+  .btn-out{background:transparent;color:var(--ink);border-color:var(--line)}
+  .btn-ghost{background:transparent;color:var(--soft)}
+  .btn-sm{padding:6px 10px;font-size:11.5px}
+  .badge{display:inline-flex;align-items:center;gap:5px;font-family:var(--fm);font-size:10px;font-weight:600;letter-spacing:.04em;padding:3px 8px;border-radius:99px;text-transform:uppercase}
+  .badge.live{background:color-mix(in srgb,var(--pos) 16%,transparent);color:var(--pos)}
+  .badge.paper{background:color-mix(in srgb,var(--accent) 15%,transparent);color:var(--accent)}
+  .badge.draft{background:color-mix(in srgb,var(--muted) 22%,transparent);color:var(--soft)}
+  .badge.paused{background:color-mix(in srgb,var(--warn,#f59e0b) 18%,transparent);color:var(--warn,#f59e0b)}
+  .badge .dot{width:6px;height:6px;border-radius:50%;background:currentColor}
+  .chip{font-size:11.5px;color:var(--soft);background:color-mix(in srgb,var(--ink) 5%,transparent);border:1px solid var(--line);border-radius:99px;padding:3px 10px}
+  .seg{display:inline-flex;background:color-mix(in srgb,var(--ink) 6%,transparent);border:1px solid var(--line);border-radius:9px;padding:3px}
+  .seg button{border:none;background:transparent;font-family:var(--fu);font-weight:600;font-size:11.5px;color:var(--muted);padding:4px 11px;border-radius:6px;cursor:pointer}
+  .seg button.on{background:var(--surface);color:var(--ink);box-shadow:var(--shadow)}
+  .lbl{font-family:var(--fm);font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:var(--muted);font-weight:600}
+
+  /* ── app shell (sidebar + topbar) ── */
+  .app{display:flex;height:792px;background:var(--bg)}
+  .sidebar{width:220px;flex:none;background:var(--surface);border-right:1px solid var(--line);display:flex;flex-direction:column;padding:14px 12px}
+  .sb-brand{display:flex;align-items:center;gap:10px;padding:4px 8px 14px;font-family:var(--fd);font-weight:var(--hw);font-size:18px;color:var(--ink);letter-spacing:-.01em}
+  .sb-brand .g{display:grid;place-items:center;width:26px;height:26px;border-radius:8px;background:linear-gradient(135deg,#6D28D9,#2563EB 45%,#059669);color:#fff;font-weight:800;font-size:13px}
+  .acct{display:flex;align-items:center;gap:9px;background:var(--bg);border:1px solid var(--line);border-radius:11px;padding:8px 10px;margin-bottom:12px;cursor:pointer}
+  .acct .av{width:30px;height:30px;border-radius:8px;background:var(--accent);color:var(--accent-ink);display:grid;place-items:center;font-weight:700;font-size:12px;flex:none}
+  .acct .nm{font-size:12.5px;font-weight:700;color:var(--ink);line-height:1.1}
+  .acct .sb{font-size:10.5px;color:var(--muted)}
+  .navi{display:flex;align-items:center;gap:11px;padding:8px 10px;border-radius:9px;color:var(--soft);font-size:13px;font-weight:500;cursor:pointer;margin-bottom:1px}
+  .navi svg{width:17px;height:17px;flex:none;opacity:.85}
+  .navi:hover{background:color-mix(in srgb,var(--ink) 5%,transparent);color:var(--ink)}
+  .navi.on{background:color-mix(in srgb,var(--accent) 14%,transparent);color:var(--accent);font-weight:700}
+  .navi.on svg{opacity:1}
+  .navi .ct{margin-left:auto;font-family:var(--fm);font-size:10px;font-weight:700;background:color-mix(in srgb,var(--muted) 22%,transparent);color:var(--soft);border-radius:99px;padding:1px 7px}
+  .sb-sec{font-family:var(--fm);font-size:9.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);margin:14px 8px 5px;font-weight:600}
+  .sb-foot{margin-top:auto;border-top:1px solid var(--line);padding-top:11px}
+  .plan{border:1px solid var(--line);border-radius:11px;background:var(--bg);padding:10px 11px}
+  .plan-h{display:flex;justify-content:space-between;align-items:center;font-size:11.5px;font-weight:700;color:var(--ink)}
+  .plan-bar{height:5px;border-radius:9px;background:color-mix(in srgb,var(--ink) 9%,transparent);overflow:hidden;margin:8px 0 5px}
+  .plan-bar span{display:block;height:100%;background:var(--accent);border-radius:9px}
+  .plan-c{font-family:var(--fm);font-size:10px;color:var(--muted)}
+
+  .main{flex:1;min-width:0;display:flex;flex-direction:column;background:var(--bg)}
+  .topbar{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:13px 22px;border-bottom:1px solid var(--line);background:var(--surface)}
+  .topbar .eyebrow{font-family:var(--fm);font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:var(--muted);font-weight:600}
+  .topbar h1{font-family:var(--fd);font-size:21px;font-weight:var(--hw);letter-spacing:-.01em;margin:3px 0 0;color:var(--ink)}
+  .tr{display:flex;align-items:center;gap:10px}
+  .search{display:flex;align-items:center;gap:8px;background:var(--bg);border:1px solid var(--line);color:var(--muted);border-radius:9px;padding:8px 12px;font-size:12.5px;min-width:210px}
+  .search .k{margin-left:auto;font-family:var(--fm);font-size:10px;border:1px solid var(--line);border-radius:5px;padding:0 5px;color:var(--muted)}
+  .me{width:33px;height:33px;border-radius:9px;background:var(--accent);color:var(--accent-ink);display:grid;place-items:center;font-size:12px;font-weight:700}
+  .content{flex:1;overflow:auto}
+  .pad{padding:22px}
+
+  /* ── KPI / stat cards ── */
+  .kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
+  .kpi{padding:15px 16px}
+  .kpi .k{font-size:12px;color:var(--muted);font-weight:500}
+  .kpi .v{font-size:25px;font-weight:700;margin-top:7px;color:var(--ink)}
+  .kpi .d{font-size:12px;margin-top:5px;font-weight:600;display:flex;align-items:center;gap:5px}
+  .grid2{display:grid;grid-template-columns:1.55fr 1fr;gap:14px;margin-top:14px}
+  .grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:14px}
+  .ch{display:flex;align-items:center;justify-content:space-between;padding:14px 16px 6px}
+  .ch h3{font-family:var(--fd);font-size:15px;font-weight:var(--hw);margin:0;color:var(--ink)}
+  .ch .s{font-size:12px;color:var(--muted)}
+  .stat-row{display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:1px solid color-mix(in srgb,var(--line) 65%,transparent);font-size:13px}
+  .stat-row:last-child{border-bottom:none}
+  .stat-row .lk{color:var(--muted)} .stat-row .vv{font-weight:700;color:var(--ink)}
+
+  /* tables */
+  table.tbl{width:100%;border-collapse:collapse}
+  table.tbl thead th{text-align:left;font-family:var(--fm);font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);font-weight:600;padding:9px 16px;border-bottom:1px solid var(--line)}
+  table.tbl th.num,table.tbl td.num{text-align:right}
+  table.tbl tbody td{padding:10px 16px;border-bottom:1px solid color-mix(in srgb,var(--line) 55%,transparent);font-size:12.5px;color:var(--soft);vertical-align:middle}
+  table.tbl tbody tr:last-child td{border-bottom:none}
+  table.tbl tbody tr:hover td{background:color-mix(in srgb,var(--ink) 3%,transparent)}
+  .tk{font-weight:700;color:var(--ink)}
+  .tname{color:var(--muted);font-size:11.5px}
+  .ico{width:26px;height:26px;border-radius:7px;display:grid;place-items:center;font-family:var(--fm);font-size:10px;font-weight:700;color:var(--accent-ink);background:var(--accent);flex:none}
+
+  /* sparkline helper */
+  .spark{display:block}
+  .donut-leg{display:flex;flex-direction:column;gap:7px}
+  .donut-leg .lr{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--soft)}
+  .donut-leg .lr i{width:9px;height:9px;border-radius:3px;flex:none}
+  .donut-leg .lr b{margin-left:auto;color:var(--ink);font-family:var(--fm)}
+
+  /* ── builder (triptych: 320 / fluid / 360, matching the real app) ── */
+  .builder{display:flex;gap:16px;padding:16px;height:792px;background:var(--bg);--cxn:color-mix(in srgb,var(--ink) 24%,transparent)}
+  .b-left{width:300px;flex:none;display:flex;flex-direction:column;gap:11px;overflow:auto}
+  .b-center{flex:1;min-width:0;display:flex;flex-direction:column;gap:12px;overflow:hidden}
+  .b-right{width:352px;flex:none;display:flex;flex-direction:column;gap:11px;overflow:auto}
+  .bcard{padding:13px 14px}
+  .bcard h4{margin:0 0 10px;font-size:13px;font-weight:700;color:var(--ink);display:flex;align-items:center;justify-content:space-between}
+  .field{margin-bottom:11px}
+  .field .l{font-size:11px;color:var(--muted);font-weight:600;margin-bottom:5px;display:block}
+  .inp{width:100%;border:1px solid var(--line);background:var(--bg);border-radius:calc(var(--radius)*.6);padding:8px 10px;font-size:12.5px;color:var(--ink);font-family:var(--fu)}
+  .tree-head{display:flex;align-items:center;gap:9px;padding:10px 13px;flex:none}
+  .tree-head .tico{width:27px;height:27px;border-radius:8px;display:grid;place-items:center;background:color-mix(in srgb,var(--accent) 16%,transparent);color:var(--accent)}
+  .tree-head .nm{font-weight:700;font-size:14px;color:var(--ink)}
+  .canvas{flex:1;border:1px solid var(--line);border-radius:var(--radius);padding:18px 16px 40px;overflow:auto;background:var(--bg)}
+
+  /* org-chart connectors (per-node, like TreeNode.tsx) */
+  .tchildren{display:flex;flex-direction:column;gap:13px;margin-top:13px}
+  .tnode{position:relative;padding-left:26px}
+  .tnode::before{content:"";position:absolute;left:11px;top:0;width:2px;height:100%;background:var(--cxn)}
+  .tnode:last-child::before{height:22px}
+  .tnode::after{content:"";position:absolute;left:11px;top:22px;width:13px;height:2px;background:var(--cxn)}
+  .troot>.tchildren{margin-top:0}
+  .trow{display:flex;align-items:center}
+
+  /* colored pills (weight/if/else/filter) */
+  .pill{--c:var(--accent);--ct:var(--accent-ink);display:inline-flex;align-items:center;gap:7px;font-size:12.5px;padding:5px 12px 5px 9px;border-radius:99px;line-height:1.2;white-space:nowrap}
+  .pill .x{opacity:.75;font-size:11px;cursor:pointer;display:inline-grid;place-items:center;width:16px;height:16px;border-radius:50%}
+  .pill .cv{opacity:.85;font-size:9px}
+  .pill .lab{font-weight:700}
+  .pill .desc{font-weight:500;opacity:.92}
+  .pill .pen{opacity:.7;margin-left:2px}
+  .pill .pen .ic{width:12px;height:12px}
+  .pill .tag{display:none;width:7px;height:7px;border-radius:2px;background:var(--c);flex:none}
+  .pill.w{--c:var(--accent);--ct:var(--accent-ink)}
+  .pill.iff{--c:#3b6fe0;--ct:#fff}
+  .pill.els{--c:#8b5cf6;--ct:#fff}
+  .pill.flt{--c:#7c5cd6;--ct:#fff}
+
+  /* % allocation badge (only under specified weight) */
+  .pct{display:inline-grid;place-items:center;min-width:36px;height:22px;padding:0 7px;border-radius:7px;background:#3b6fe0;color:#fff;font-family:var(--fm);font-size:11px;font-weight:700;margin-right:9px;flex:none}
+
+  /* node cards (group / asset) */
+  .ncard{background:var(--surface);border:1px solid var(--line);border-radius:calc(var(--radius)*.85)}
+  .grouprow{display:inline-flex;align-items:center;gap:9px;padding:8px 13px}
+  .grouprow .cv{color:var(--muted);font-size:10px}
+  .grouprow .gi{color:var(--accent);display:inline-flex}
+  .grouprow .gn{font-weight:600;font-size:13px;color:var(--ink)}
+  .assetrow{display:flex;align-items:center;gap:11px;padding:9px 12px;width:430px;max-width:100%}
+  .assetrow .bul{width:11px;height:11px;border-radius:50%;border:2px solid var(--accent);flex:none}
+  .assetrow .tk{font-weight:700;color:var(--ink);font-size:13px}
+  .assetrow .an{color:var(--muted);font-size:11.5px}
+  .assetrow .ex{margin-left:auto;font-family:var(--fm);font-size:10px;color:var(--muted)}
+  .addblk{display:inline-flex;align-items:center;gap:8px;border:1.5px dashed var(--line);border-radius:calc(var(--radius)*.7);padding:8px 13px;color:var(--muted);font-size:12px;cursor:pointer}
+  .addblk b{color:var(--soft);font-weight:600}
+  .runbtn{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;padding:9px;border-radius:calc(var(--radius)*.7);background:color-mix(in srgb,var(--pos) 15%,transparent);color:var(--pos);font-weight:700;font-size:13px;border:1px solid color-mix(in srgb,var(--pos) 30%,transparent);cursor:pointer;margin-top:10px}
+
+  /* ===== BLOCK-STYLE treatments (the builder sub-axis) ===== */
+  .bs-soft .pill{background:color-mix(in srgb,var(--c) 82%,transparent);color:var(--ct)}
+  .bs-solid .pill{background:var(--c);color:var(--ct)}
+  .bs-outline .pill{background:color-mix(in srgb,var(--c) 12%,var(--surface));color:color-mix(in srgb,var(--c) 70%,var(--ink));border:1px solid color-mix(in srgb,var(--c) 42%,transparent)}
+  .bs-outline .ncard{background:transparent}
+  .bs-outline .pct{background:color-mix(in srgb,#3b6fe0 12%,var(--surface));color:#3b6fe0;border:1px solid color-mix(in srgb,#3b6fe0 42%,transparent)}
+  .bs-mono{--cxn:color-mix(in srgb,var(--ink) 18%,transparent)}
+  .bs-mono .pill{background:color-mix(in srgb,var(--ink) 6%,transparent);color:var(--ink);border:1px solid var(--line);border-radius:5px;font-family:var(--fm);font-size:11px;text-transform:uppercase;letter-spacing:.02em;padding:5px 10px}
+  .bs-mono .pill .tag{display:inline-block}
+  .bs-mono .pill .lab{font-weight:600}
+  .bs-mono .pill .desc{text-transform:none}
+  .bs-mono .ncard{border-radius:5px;background:transparent}
+  .bs-mono .assetrow .tk{font-family:var(--fm)}
+  .bs-mono .pct{border-radius:4px;background:transparent;border:1px solid var(--line);color:var(--ink)}
+  .bs-mono .tnode::before{width:1px}.bs-mono .tnode::after{height:1px}
+  .bs-mono .grouprow .gn{font-family:var(--fm);font-size:12px}
+
+  /* ── auth ── */
+  .auth{display:grid;grid-template-columns:1.05fr .95fr;height:792px}
+  .auth-side{position:relative;overflow:hidden;padding:38px;display:flex;flex-direction:column;justify-content:space-between;background:linear-gradient(160deg,color-mix(in srgb,var(--accent) 40%,var(--bg)),var(--bg))}
+  .auth-side .wm{font-family:var(--fd);font-weight:var(--hw);font-size:19px;color:var(--ink);display:flex;align-items:center;gap:10px}
+  .auth-side .wm .g{width:28px;height:28px;border-radius:8px;background:linear-gradient(135deg,#6D28D9,#2563EB 45%,#059669);display:grid;place-items:center;color:#fff;font-weight:800}
+  .auth-side .quote{font-family:var(--fd);font-style:italic;font-size:23px;line-height:1.3;color:var(--ink);max-width:22ch}
+  .auth-side .by{font-family:var(--fm);font-size:11px;color:var(--muted);margin-top:8px}
+  .auth-mini{position:relative;z-index:2;border:1px solid var(--line);border-radius:14px;background:var(--surface);padding:16px;box-shadow:var(--shadow)}
+  .auth-main{display:grid;place-items:center;padding:34px;background:var(--bg)}
+  .auth-card{width:340px}
+  .auth-card h2{font-family:var(--fd);font-size:27px;font-weight:var(--hw);letter-spacing:-.01em;margin:0 0 3px;color:var(--ink)}
+  .auth-card p.s{font-size:13px;color:var(--muted);margin:0 0 22px}
+  .auth-card .fld{width:100%;border:1px solid var(--line);background:var(--surface);border-radius:calc(var(--radius)*.55);padding:10px 12px;font-size:13.5px;color:var(--ink);margin-bottom:13px;font-family:var(--fu)}
+  .or{display:flex;align-items:center;gap:12px;margin:16px 0;font-family:var(--fm);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+  .or span{height:1px;flex:1;background:var(--line)}
+  .oauth{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+
+  /* misc */
+  .secrow{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
+  .secrow h2{font-family:var(--fd);font-size:17px;font-weight:var(--hw);margin:0;color:var(--ink)}
+  .stratgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+  .sc{padding:0;overflow:hidden;cursor:pointer;transition:transform .15s}
+  .sc:hover{transform:translateY(-2px)}
+  .sc .top{padding:14px 15px 10px}
+  .sc .nm{font-weight:700;font-size:14px;color:var(--ink)}
+  .sc .ds{font-size:11.5px;color:var(--muted);margin-top:3px;line-height:1.4}
+  .sc .mc{height:64px;position:relative}
+  .sc .mr{display:flex;justify-content:space-between;padding:11px 15px;border-top:1px solid var(--line);font-size:11.5px}
+  .sc .mr .mk{color:var(--muted)}.sc .mr .mv{font-weight:700;color:var(--ink)}
+  .ticket .row{display:flex;gap:8px;margin-bottom:9px}
+  .ticket .seg{width:100%}
+  .ticket .seg button{flex:1}
+  .ord-buy{background:var(--pos);color:#04130b}
+  .ord-sell{background:var(--neg);color:#fff}
+
+  /* ── logo explorer ── */
+  .logopage{height:792px;overflow:auto;background:var(--bg);padding:24px 28px 40px}
+  .loghead{display:flex;align-items:flex-end;justify-content:space-between;gap:24px;margin-bottom:20px}
+  .loghead h1{font-family:var(--fd);font-weight:var(--hw);font-size:24px;letter-spacing:-.01em;margin:4px 0 0;color:var(--ink)}
+  .loghead p{font-size:12.5px;color:var(--muted);max-width:46ch;margin:0;line-height:1.5}
+  .logogrid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+  .lcard{padding:16px 16px 14px}
+  .lhero{display:flex;align-items:center;gap:14px}
+  .licon{width:58px;height:58px;border-radius:15px;display:grid;place-items:center;flex:none;background:linear-gradient(150deg,color-mix(in srgb,var(--accent) 88%,#fff),color-mix(in srgb,var(--accent) 72%,#000));box-shadow:0 6px 16px color-mix(in srgb,var(--accent) 30%,transparent)}
+  .licon svg{width:32px;height:32px;color:var(--accent-ink)}
+  .llock{display:flex;align-items:center;gap:9px;min-width:0}
+  .llock .lm{width:25px;height:25px;color:var(--accent);flex:none}
+  .llock .lw{font-family:var(--fd);font-weight:var(--hw);font-size:18px;letter-spacing:-.02em;color:var(--ink);white-space:nowrap}
+  .llock .lw b{color:var(--accent);font-weight:var(--hw)}
+  .lmeta{margin-top:13px}
+  .lmeta .ln{font-weight:700;font-size:13px;color:var(--ink)}
+  .lmeta .ld{font-size:11.5px;color:var(--muted);margin-top:2px;line-height:1.4}
+  .lrow{display:flex;align-items:center;gap:13px;margin-top:13px;padding-top:13px;border-top:1px solid color-mix(in srgb,var(--line) 70%,transparent)}
+  .lsz{display:flex;align-items:flex-end;gap:10px}
+  .lsz svg{color:var(--ink)}
+  .ltile{width:30px;height:30px;border-radius:8px;display:grid;place-items:center;flex:none}
+  .ltile.dk{background:#0b0d12}.ltile.dk svg{width:18px;height:18px;color:#fff}
+  .ltile.ac{background:color-mix(in srgb,var(--accent) 16%,transparent)}.ltile.ac svg{width:18px;height:18px;color:var(--accent)}
+  .lsoft{margin-left:auto;font-family:var(--fm);font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+
+  /* ════════ THEME TOKENS ════════ */
+  /* token set: --bg --surface --surface2 --ink --soft --muted --accent --accent-ink --line --pos --neg --warn --radius --shadow + fonts(--fd/--fu/--fm) --hw */
+  .t-composer{--bg:#F6F8F5;--surface:#FFFFFF;--surface2:#EEF2EC;--ink:#0F1A14;--soft:#3C4842;--muted:#79857E;--accent:#16A34A;--accent-ink:#FFFFFF;--line:#E4E9E2;--pos:#16A34A;--neg:#DC2626;--warn:#D97706;--radius:9px;--shadow:0 1px 2px rgba(16,40,25,.05);--fd:'Inter';--fu:'Inter';--fm:'JetBrains Mono';--hw:700}
+  .t-pine{--bg:#0B1410;--surface:#11201A;--surface2:#0E1B15;--ink:#E7F0E9;--soft:#A6BBAE;--muted:#6C8377;--accent:#34D399;--accent-ink:#04130C;--line:#21362C;--pos:#34D399;--neg:#FB7185;--warn:#FBBF24;--radius:13px;--shadow:0 2px 14px rgba(0,0,0,.4);--fd:'Hanken Grotesk';--fu:'Manrope';--fm:'JetBrains Mono';--hw:700}
+  .t-midnight{--bg:#0A0A0F;--surface:#14141C;--surface2:#0F0F16;--ink:#F5F5F7;--soft:#B6B7C2;--muted:#6F7080;--accent:#6366F1;--accent-ink:#FFFFFF;--line:#23232F;--pos:#22C55E;--neg:#EF4444;--warn:#F59E0B;--radius:11px;--shadow:0 2px 16px rgba(0,0,0,.45);--fd:'Sora';--fu:'Inter';--fm:'JetBrains Mono';--hw:700}
+  .t-terminal{--bg:#06090A;--surface:#0D1311;--surface2:#0A100E;--ink:#CFEFCE;--soft:#7FB07C;--muted:#4E6E4C;--accent:#39E08D;--accent-ink:#041A0C;--line:#193024;--pos:#39E08D;--neg:#FF5C5C;--warn:#E3C949;--radius:4px;--shadow:0 2px 12px rgba(0,0,0,.5);--fd:'JetBrains Mono';--fu:'JetBrains Mono';--fm:'JetBrains Mono';--hw:600}
+  .t-amber{--bg:#0A0A08;--surface:#15140E;--surface2:#100F0A;--ink:#F5EAD2;--soft:#C2B492;--muted:#867B5C;--accent:#F5A623;--accent-ink:#1A1404;--line:#2C2716;--pos:#5BD68A;--neg:#FF5C5C;--warn:#F5A623;--radius:3px;--shadow:0 2px 12px rgba(0,0,0,.5);--fd:'IBM Plex Sans';--fu:'IBM Plex Sans';--fm:'IBM Plex Mono';--hw:600}
+  .t-cobalt{--bg:#F1F4F9;--surface:#FFFFFF;--surface2:#E7ECF5;--ink:#0E1A2B;--soft:#33425A;--muted:#6A788E;--accent:#1E50E5;--accent-ink:#FFFFFF;--line:#DDE4EF;--pos:#0E9F6E;--neg:#E02424;--warn:#D97706;--radius:6px;--shadow:0 1px 2px rgba(14,26,43,.06);--fd:'Archivo';--fu:'Archivo';--fm:'IBM Plex Mono';--hw:700}
+  .t-slate{--bg:#0E1217;--surface:#171D25;--surface2:#121820;--ink:#E8ECF1;--soft:#AAB4C0;--muted:#697482;--accent:#22D3EE;--accent-ink:#04161A;--line:#26303B;--pos:#34D399;--neg:#FB7185;--warn:#FBBF24;--radius:10px;--shadow:0 2px 14px rgba(0,0,0,.4);--fd:'Space Grotesk';--fu:'Inter';--fm:'JetBrains Mono';--hw:600}
+  .t-almanac{--bg:#F4F0E8;--surface:#FFFDF8;--surface2:#EDE7DA;--ink:#211C16;--soft:#4D453A;--muted:#8C8273;--accent:#2F6B4F;--accent-ink:#FFFFFF;--line:#E5DCCB;--pos:#2F6B4F;--neg:#B3402E;--warn:#B5703A;--radius:14px;--shadow:0 1px 2px rgba(40,30,15,.06);--fd:'Fraunces';--fu:'Hanken Grotesk';--fm:'DM Mono';--hw:560}
+  .t-carbon{--bg:#0A0A0A;--surface:#141414;--surface2:#0F0F0F;--ink:#EDEDED;--soft:#ABABAB;--muted:#6E6E6E;--accent:#FAFAFA;--accent-ink:#0A0A0A;--line:#242424;--pos:#4ADE80;--neg:#F87171;--warn:#FBBF24;--radius:5px;--shadow:0 2px 14px rgba(0,0,0,.5);--fd:'Space Grotesk';--fu:'Space Grotesk';--fm:'JetBrains Mono';--hw:600}
+  .t-mint{--bg:#ECF5EF;--surface:#FFFFFF;--surface2:#E0EDE6;--ink:#16241C;--soft:#38493F;--muted:#6E847A;--accent:#0E9C84;--accent-ink:#FFFFFF;--line:#D5E6DD;--pos:#0E9C84;--neg:#E5484D;--warn:#D97706;--radius:14px;--shadow:0 1px 2px rgba(16,40,25,.05);--fd:'Albert Sans';--fu:'Albert Sans';--fm:'JetBrains Mono';--hw:700}
+  .t-aurora{--bg:#120E1E;--surface:#1C1630;--surface2:#161025;--ink:#F0EAF7;--soft:#BCB0CC;--muted:#80748F;--accent:#A78BFA;--accent-ink:#160826;--line:#2E2547;--pos:#34D399;--neg:#FB7185;--warn:#FBBF24;--radius:14px;--shadow:0 2px 16px rgba(0,0,0,.45);--fd:'Sora';--fu:'Manrope';--fm:'JetBrains Mono';--hw:700}
+  .t-paper{--bg:#FBFBFA;--surface:#FFFFFF;--surface2:#F3F3F1;--ink:#18181B;--soft:#3F3F46;--muted:#8A8A93;--accent:#4F46E5;--accent-ink:#FFFFFF;--line:#E8E8E5;--pos:#16A34A;--neg:#DC2626;--warn:#D97706;--radius:8px;--shadow:0 1px 2px rgba(0,0,0,.05);--fd:'IBM Plex Sans';--fu:'IBM Plex Sans';--fm:'IBM Plex Mono';--hw:600}
+</style>
+</head>
+<body>
+
+  <!-- ── TOP SWITCHER ── -->
+  <div class="bar">
+    <div class="barrow">
+      <div class="lead"><span class="g">L</span> LlamaTrade · App Explorer</div>
+      <div class="grp"><span class="gl">Page</span>
+        <div class="seggrp">
+          <button class="tab scrtab on" data-scr="signin">Sign in</button>
+          <button class="tab scrtab" data-scr="dashboard">Dashboard</button>
+          <button class="tab scrtab" data-scr="builder">Builder</button>
+          <button class="tab scrtab" data-scr="backtest">Backtest</button>
+          <button class="tab scrtab" data-scr="portfolio">Portfolio</button>
+          <button class="tab scrtab" data-scr="trading">Trading</button>
+          <button class="tab scrtab" data-scr="strategies">Strategies</button>
+          <button class="tab scrtab" data-scr="logo">Logo</button>
+        </div>
+      </div>
+      <div class="grp bsctl" id="bsctl" style="display:none"><span class="gl">Block style</span>
+        <div class="seggrp">
+          <button class="tab bstab on" data-bs="bs-soft">Soft</button>
+          <button class="tab bstab" data-bs="bs-solid">Solid</button>
+          <button class="tab bstab" data-bs="bs-outline">Outline</button>
+          <button class="tab bstab" data-bs="bs-mono">Terminal</button>
+        </div>
+      </div>
+      <span class="barnote" id="barnote">12 themes · 7 pages · live</span>
+    </div>
+    <div class="barrow themerow"><span class="gl">Theme</span>
+      <div class="themestrip">
+        <button class="tab themetab on" data-theme="t-composer"><span class="sw" style="background:#16A34A"></span>Composer</button>
+        <button class="tab themetab" data-theme="t-pine"><span class="sw" style="background:#34D399"></span>Pine</button>
+        <button class="tab themetab" data-theme="t-midnight"><span class="sw" style="background:#6366F1"></span>Midnight</button>
+        <button class="tab themetab" data-theme="t-terminal"><span class="sw" style="background:#39E08D"></span>Terminal</button>
+        <button class="tab themetab" data-theme="t-amber"><span class="sw" style="background:#F5A623"></span>Amber</button>
+        <button class="tab themetab" data-theme="t-cobalt"><span class="sw" style="background:#1E50E5"></span>Cobalt</button>
+        <button class="tab themetab" data-theme="t-slate"><span class="sw" style="background:#22D3EE"></span>Slate</button>
+        <button class="tab themetab" data-theme="t-almanac"><span class="sw" style="background:#2F6B4F"></span>Almanac</button>
+        <button class="tab themetab" data-theme="t-carbon"><span class="sw" style="background:#FAFAFA"></span>Carbon</button>
+        <button class="tab themetab" data-theme="t-mint"><span class="sw" style="background:#0E9C84"></span>Mint</button>
+        <button class="tab themetab" data-theme="t-aurora"><span class="sw" style="background:#A78BFA"></span>Aurora</button>
+        <button class="tab themetab" data-theme="t-paper"><span class="sw" style="background:#4F46E5"></span>Paper</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="stagewrap">
+    <div style="width:100%;max-width:1400px">
+      <p class="cap" id="cap">Sign in · Composer</p>
+      <div class="browser t-composer" id="stage">
+        <div class="chrome"><i></i><i></i><i></i><span class="url" id="url">app.llamatrade.io/login</span></div>
+
+        <!-- ════ SIGN IN ════ -->
+        <div class="mode mode-signin on" data-mode="signin">
+          <div class="auth">
+            <div class="auth-side dotgrid">
+              <div class="wm"><span class="g">L</span> LlamaTrade</div>
+              <div>
+                <p class="quote">"Build it. Backtest it. Trust it — then let it trade."</p>
+                <p class="by">— algorithmic trading, without the black box</p>
+              </div>
+              <div class="auth-mini">
+                <div class="lbl" style="margin-bottom:8px">Core Satellite · backtest</div>
+                <svg class="spark" viewBox="0 0 280 70" width="100%" height="70" preserveAspectRatio="none">
+                  <defs><linearGradient id="ag1" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="var(--pos)" stop-opacity=".28"/><stop offset="1" stop-color="var(--pos)" stop-opacity="0"/></linearGradient></defs>
+                  <path d="M0,52 L0,52 C30,48 50,42 80,40 C120,37 150,30 180,22 C210,16 240,12 280,8 L280,70 L0,70 Z" fill="url(#ag1)"/>
+                  <path d="M0,52 C30,48 50,42 80,40 C120,37 150,30 180,22 C210,16 240,12 280,8" fill="none" stroke="var(--pos)" stroke-width="2"/>
+                  <path d="M0,55 C40,53 90,50 140,46 C190,42 230,40 280,36" fill="none" stroke="var(--muted)" stroke-width="1.4" stroke-dasharray="3 3"/>
+                </svg>
+                <div style="display:flex;gap:14px;margin-top:8px;font-size:11px"><span class="num pos">+38.4%</span><span class="num" style="color:var(--muted)">vs SPY +21.0%</span></div>
+              </div>
+            </div>
+            <div class="auth-main">
+              <div class="auth-card">
+                <h2>Welcome back</h2>
+                <p class="s">Sign in to your trading workspace.</p>
+                <label class="lbl">Email</label>
+                <input class="fld" value="demo@llamatrade.io" style="margin-top:6px"/>
+                <label class="lbl">Password</label>
+                <input class="fld" type="password" value="............" style="margin-top:6px"/>
+                <button class="btn btn-primary" style="width:100%;margin-top:4px">Sign in</button>
+                <div class="or"><span></span>or<span></span></div>
+                <div class="oauth"><button class="btn btn-out">Google</button><button class="btn btn-out">Microsoft</button></div>
+                <p style="font-size:12.5px;color:var(--muted);margin-top:20px">New here? <b style="color:var(--accent)">Create an account</b></p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ════ APP SHELL (all in-app pages) ════ -->
+        <div class="mode mode-app" data-mode="app">
+          <div class="app">
+            <!-- sidebar -->
+            <aside class="sidebar">
+              <div class="sb-brand"><span class="g">L</span> LlamaTrade</div>
+              <div class="acct"><span class="av">DT</span><span style="flex:1"><span class="nm">Demo Trader</span><br><span class="sb">Paper · Alpaca</span></span><span style="color:var(--muted);font-size:10px">▾</span></div>
+              <a class="navi" data-go="dashboard">$ICON_grid Dashboard</a>
+              <a class="navi" data-go="strategies">$ICON_layers Strategies <span class="ct">6</span></a>
+              <a class="navi" data-go="builder">$ICON_git Builder</a>
+              <a class="navi" data-go="backtest">$ICON_flask Backtest</a>
+              <a class="navi" data-go="portfolio">$ICON_wallet Portfolio</a>
+              <a class="navi" data-go="trading">$ICON_activity Trading <span class="ct">2</span></a>
+              <div class="sb-sec">Account</div>
+              <a class="navi">$ICON_bell Alerts</a>
+              <a class="navi">$ICON_link Broker</a>
+              <a class="navi">$ICON_card Billing</a>
+              <a class="navi">$ICON_cog Settings</a>
+              <div class="sb-foot">
+                <div class="plan">
+                  <div class="plan-h">Starter plan <span class="num" style="color:var(--muted);font-weight:600">5/10</span></div>
+                  <div class="plan-bar"><span style="width:50%"></span></div>
+                  <div class="plan-c">5 of 10 strategies · <span style="color:var(--accent)">Upgrade</span></div>
+                </div>
+              </div>
+            </aside>
+
+            <!-- main -->
+            <div class="main">
+              <header class="topbar">
+                <div><div class="eyebrow" id="tb-eye">Overview</div><h1 id="tb-title">Dashboard</h1></div>
+                <div class="tr">
+                  <div class="search">$ICON_search Search symbols, strategies… <span class="k">⌘K</span></div>
+                  <button class="btn btn-primary btn-sm">$ICON_plus New strategy</button>
+                  <div class="me">DT</div>
+                </div>
+              </header>
+              <div class="content" id="content">
+
+                <!-- ── DASHBOARD ── -->
+                <div class="page on" data-page="dashboard">
+                  <div class="pad">
+                    <div class="kpis">
+                      <div class="kpi card"><div class="k">Portfolio value</div><div class="v num">$128,450.32</div><div class="d pos">$ICON_up +$1,240.18 · +0.97% today</div></div>
+                      <div class="kpi card"><div class="k">Total return</div><div class="v num pos">+28.45%</div><div class="d" style="color:var(--muted)">since Jan 2026 · vs SPY +21.0%</div></div>
+                      <div class="kpi card"><div class="k">Buying power</div><div class="v num">$23,910.00</div><div class="d" style="color:var(--muted)">Cash · paper account</div></div>
+                      <div class="kpi card"><div class="k">Open positions</div><div class="v num">14</div><div class="d" style="color:var(--muted)">across 3 strategies</div></div>
+                    </div>
+                    <div class="grid2">
+                      <div class="card">
+                        <div class="ch"><h3>Equity curve</h3><div class="seg"><button class="on">1M</button><button>3M</button><button>1Y</button><button>All</button></div></div>
+                        <svg viewBox="0 0 720 220" width="100%" height="220" preserveAspectRatio="none" style="display:block">
+                          <defs><linearGradient id="eq" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="var(--accent)" stop-opacity=".22"/><stop offset="1" stop-color="var(--accent)" stop-opacity="0"/></linearGradient></defs>
+                          <path d="M0,170 C60,160 100,150 150,140 C210,128 250,150 300,130 C360,106 400,118 450,96 C520,70 560,86 620,58 C660,42 690,40 720,30 L720,220 L0,220 Z" fill="url(#eq)"/>
+                          <path d="M0,170 C60,160 100,150 150,140 C210,128 250,150 300,130 C360,106 400,118 450,96 C520,70 560,86 620,58 C660,42 690,40 720,30" fill="none" stroke="var(--accent)" stroke-width="2.4"/>
+                          <path d="M0,178 C80,172 160,166 240,158 C360,146 440,140 540,126 C620,116 680,110 720,104" fill="none" stroke="var(--muted)" stroke-width="1.5" stroke-dasharray="4 4"/>
+                        </svg>
+                        <div style="display:flex;gap:18px;padding:6px 16px 14px;font-size:12px"><span style="display:flex;align-items:center;gap:6px"><i style="width:14px;height:3px;background:var(--accent);display:inline-block;border-radius:2px"></i>Strategy</span><span style="display:flex;align-items:center;gap:6px;color:var(--muted)"><i style="width:14px;height:0;border-top:2px dashed var(--muted);display:inline-block"></i>SPY benchmark</span></div>
+                      </div>
+                      <div class="card">
+                        <div class="ch"><h3>Allocation</h3><span class="s">by sleeve</span></div>
+                        <div style="display:flex;gap:18px;align-items:center;padding:6px 16px 16px">
+                          <svg viewBox="0 0 120 120" width="118" height="118">
+                            <circle cx="60" cy="60" r="46" fill="none" stroke="color-mix(in srgb,var(--ink) 8%,transparent)" stroke-width="16"/>
+                            <circle cx="60" cy="60" r="46" fill="none" stroke="var(--accent)" stroke-width="16" stroke-dasharray="130 289" transform="rotate(-90 60 60)"/>
+                            <circle cx="60" cy="60" r="46" fill="none" stroke="var(--pos)" stroke-width="16" stroke-dasharray="72 289" stroke-dashoffset="-130" transform="rotate(-90 60 60)"/>
+                            <circle cx="60" cy="60" r="46" fill="none" stroke="color-mix(in srgb,var(--accent) 45%,var(--bg))" stroke-width="16" stroke-dasharray="50 289" stroke-dashoffset="-202" transform="rotate(-90 60 60)"/>
+                            <text x="60" y="58" text-anchor="middle" font-size="9" fill="var(--muted)" font-family="var(--fm)">TOTAL</text>
+                            <text x="60" y="71" text-anchor="middle" font-size="13" font-weight="700" fill="var(--ink)" font-family="var(--fm)">$128k</text>
+                          </svg>
+                          <div class="donut-leg" style="flex:1">
+                            <div class="lr"><i style="background:var(--accent)"></i>Core Satellite <b class="num">45%</b></div>
+                            <div class="lr"><i style="background:var(--pos)"></i>Momentum Top 10 <b class="num">25%</b></div>
+                            <div class="lr"><i style="background:color-mix(in srgb,var(--accent) 45%,var(--bg))"></i>RSI Reversion <b class="num">17%</b></div>
+                            <div class="lr"><i style="background:color-mix(in srgb,var(--ink) 12%,transparent)"></i>Unallocated <b class="num">13%</b></div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                    <div class="grid2">
+                      <div class="card">
+                        <div class="ch"><h3>Active strategies</h3><span class="s">3 running</span></div>
+                        <table class="tbl">
+                          <thead><tr><th>Strategy</th><th>Mode</th><th class="num">Allocated</th><th class="num">Value</th><th class="num">Today</th><th class="num">Total</th></tr></thead>
+                          <tbody>
+                            <tr><td><span class="tk">Core Satellite</span></td><td><span class="badge paper"><span class="dot"></span>Paper</span></td><td class="num">$57,800</td><td class="num">$61,240</td><td class="num pos">+0.8%</td><td class="num pos">+6.0%</td></tr>
+                            <tr><td><span class="tk">Momentum Top 10</span></td><td><span class="badge paper"><span class="dot"></span>Paper</span></td><td class="num">$32,100</td><td class="num">$34,560</td><td class="num pos">+1.4%</td><td class="num pos">+7.7%</td></tr>
+                            <tr><td><span class="tk">RSI Mean Reversion</span></td><td><span class="badge paper"><span class="dot"></span>Paper</span></td><td class="num">$21,400</td><td class="num">$20,910</td><td class="num neg">−0.5%</td><td class="num neg">−2.3%</td></tr>
+                          </tbody>
+                        </table>
+                      </div>
+                      <div class="card">
+                        <div class="ch"><h3>Recent fills</h3><span class="s">live</span></div>
+                        <table class="tbl">
+                          <thead><tr><th>Symbol</th><th>Side</th><th class="num">Qty</th><th class="num">Price</th><th class="num">Time</th></tr></thead>
+                          <tbody>
+                            <tr><td><span class="tk">SPY</span></td><td><span class="pos">BUY</span></td><td class="num">12</td><td class="num">$598.20</td><td class="num" style="color:var(--muted)">09:31:04</td></tr>
+                            <tr><td><span class="tk">NVDA</span></td><td><span class="pos">BUY</span></td><td class="num">8</td><td class="num">$141.55</td><td class="num" style="color:var(--muted)">09:31:02</td></tr>
+                            <tr><td><span class="tk">TLT</span></td><td><span class="neg">SELL</span></td><td class="num">20</td><td class="num">$92.10</td><td class="num" style="color:var(--muted)">09:30:58</td></tr>
+                            <tr><td><span class="tk">QQQ</span></td><td><span class="pos">BUY</span></td><td class="num">6</td><td class="num">$521.40</td><td class="num" style="color:var(--muted)">09:30:55</td></tr>
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- ── BACKTEST ── -->
+                <div class="page" data-page="backtest">
+                  <div class="pad">
+                    <div class="secrow"><div><div class="lbl">Core Satellite · v3</div><h2 style="margin-top:3px">Backtest · Jan 2020 – Jun 2026</h2></div><div style="display:flex;gap:8px"><button class="btn btn-out btn-sm">Configure</button><button class="btn btn-primary btn-sm">$ICON_play Re-run</button></div></div>
+                    <div class="kpis">
+                      <div class="kpi card"><div class="k">Total return</div><div class="v num pos">+138.4%</div><div class="d" style="color:var(--muted)">vs SPY +96.2%</div></div>
+                      <div class="kpi card"><div class="k">Sharpe ratio</div><div class="v num">1.42</div><div class="d" style="color:var(--muted)">Sortino 1.98</div></div>
+                      <div class="kpi card"><div class="k">Max drawdown</div><div class="v num neg">−18.6%</div><div class="d" style="color:var(--muted)">May 2022</div></div>
+                      <div class="kpi card"><div class="k">Win rate</div><div class="v num">61.4%</div><div class="d" style="color:var(--muted)">312 trades · PF 1.8</div></div>
+                    </div>
+                    <div class="grid2">
+                      <div class="card">
+                        <div class="ch"><h3>Equity curve</h3><span class="s">strategy vs SPY</span></div>
+                        <svg viewBox="0 0 720 240" width="100%" height="240" preserveAspectRatio="none">
+                          <defs><linearGradient id="bt" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="var(--pos)" stop-opacity=".2"/><stop offset="1" stop-color="var(--pos)" stop-opacity="0"/></linearGradient></defs>
+                          <path d="M0,210 C80,200 120,160 180,170 C240,180 270,120 330,110 C390,100 420,140 470,110 C540,70 580,90 640,50 C680,30 700,28 720,22 L720,240 L0,240 Z" fill="url(#bt)"/>
+                          <path d="M0,210 C80,200 120,160 180,170 C240,180 270,120 330,110 C390,100 420,140 470,110 C540,70 580,90 640,50 C680,30 700,28 720,22" fill="none" stroke="var(--pos)" stroke-width="2.4"/>
+                          <path d="M0,214 C100,206 180,190 280,182 C400,172 480,150 580,134 C650,122 690,116 720,110" fill="none" stroke="var(--muted)" stroke-width="1.5" stroke-dasharray="4 4"/>
+                        </svg>
+                      </div>
+                      <div class="card">
+                        <div class="ch"><h3>Risk & stats</h3></div>
+                        <div class="pad" style="padding-top:4px">
+                          <div class="stat-row"><span class="lk">Annualized return</span><span class="vv num pos">+14.8%</span></div>
+                          <div class="stat-row"><span class="lk">Volatility</span><span class="vv num">11.2%</span></div>
+                          <div class="stat-row"><span class="lk">Alpha / Beta</span><span class="vv num">4.1% · 0.82</span></div>
+                          <div class="stat-row"><span class="lk">Calmar ratio</span><span class="vv num">0.80</span></div>
+                          <div class="stat-row"><span class="lk">Avg holding period</span><span class="vv num">23 days</span></div>
+                          <div class="stat-row"><span class="lk">Total commission</span><span class="vv num">$214.50</span></div>
+                        </div>
+                      </div>
+                    </div>
+                    <div class="card" style="margin-top:14px">
+                      <div class="ch"><h3>Trades</h3><div class="seg"><button class="on">Trades</button><button>Monthly returns</button></div></div>
+                      <table class="tbl">
+                        <thead><tr><th>Symbol</th><th>Side</th><th class="num">Entry</th><th class="num">Exit</th><th class="num">Qty</th><th class="num">P&L</th><th class="num">Return</th><th class="num">Held</th></tr></thead>
+                        <tbody>
+                          <tr><td><span class="tk">NVDA</span></td><td><span class="pos">LONG</span></td><td class="num">$118.20</td><td class="num">$141.55</td><td class="num">40</td><td class="num pos">+$934</td><td class="num pos">+19.7%</td><td class="num">31d</td></tr>
+                          <tr><td><span class="tk">SPY</span></td><td><span class="pos">LONG</span></td><td class="num">$571.00</td><td class="num">$598.20</td><td class="num">60</td><td class="num pos">+$1,632</td><td class="num pos">+4.8%</td><td class="num">44d</td></tr>
+                          <tr><td><span class="tk">TLT</span></td><td><span class="pos">LONG</span></td><td class="num">$96.40</td><td class="num">$92.10</td><td class="num">80</td><td class="num neg">−$344</td><td class="num neg">−4.5%</td><td class="num">18d</td></tr>
+                          <tr><td><span class="tk">XLK</span></td><td><span class="pos">LONG</span></td><td class="num">$228.10</td><td class="num">$251.30</td><td class="num">25</td><td class="num pos">+$580</td><td class="num pos">+10.2%</td><td class="num">52d</td></tr>
+                          <tr><td><span class="tk">IWM</span></td><td><span class="pos">LONG</span></td><td class="num">$214.80</td><td class="num">$208.40</td><td class="num">30</td><td class="num neg">−$192</td><td class="num neg">−3.0%</td><td class="num">12d</td></tr>
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- ── PORTFOLIO ── -->
+                <div class="page" data-page="portfolio">
+                  <div class="pad">
+                    <div class="kpis">
+                      <div class="kpi card"><div class="k">Total value</div><div class="v num">$128,450.32</div><div class="d pos">$ICON_up +$1,240.18 today</div></div>
+                      <div class="kpi card"><div class="k">Unrealized P&L</div><div class="v num pos">+$9,820.40</div><div class="d" style="color:var(--muted)">cost basis $118,630</div></div>
+                      <div class="kpi card"><div class="k">Realized P&L · YTD</div><div class="v num pos">+$4,512.10</div><div class="d" style="color:var(--muted)">after $214 fees</div></div>
+                      <div class="kpi card"><div class="k">Sharpe · 1Y</div><div class="v num">1.31</div><div class="d" style="color:var(--muted)">max DD −12.4%</div></div>
+                    </div>
+                    <div class="grid2">
+                      <div class="card">
+                        <div class="ch"><h3>Holdings</h3><span class="s">14 positions</span></div>
+                        <table class="tbl">
+                          <thead><tr><th>Symbol</th><th class="num">Qty</th><th class="num">Avg cost</th><th class="num">Price</th><th class="num">Value</th><th class="num">P&L</th><th class="num">Weight</th></tr></thead>
+                          <tbody>
+                            <tr><td><div style="display:flex;align-items:center;gap:9px"><span class="ico">SP</span><span><span class="tk">SPY</span><br><span class="tname">S&P 500 ETF</span></span></div></td><td class="num">110</td><td class="num">$571.00</td><td class="num">$598.20</td><td class="num">$65,802</td><td class="num pos">+$2,992</td><td class="num">21%</td></tr>
+                            <tr><td><div style="display:flex;align-items:center;gap:9px"><span class="ico">NV</span><span><span class="tk">NVDA</span><br><span class="tname">NVIDIA Corp</span></span></div></td><td class="num">120</td><td class="num">$118.20</td><td class="num">$141.55</td><td class="num">$16,986</td><td class="num pos">+$2,802</td><td class="num">13%</td></tr>
+                            <tr><td><div style="display:flex;align-items:center;gap:9px"><span class="ico">VT</span><span><span class="tk">VTI</span><br><span class="tname">Total Market ETF</span></span></div></td><td class="num">60</td><td class="num">$284.10</td><td class="num">$301.40</td><td class="num">$18,084</td><td class="num pos">+$1,038</td><td class="num">14%</td></tr>
+                            <tr><td><div style="display:flex;align-items:center;gap:9px"><span class="ico">QQ</span><span><span class="tk">QQQ</span><br><span class="tname">Nasdaq 100 ETF</span></span></div></td><td class="num">22</td><td class="num">$498.40</td><td class="num">$521.40</td><td class="num">$11,471</td><td class="num pos">+$506</td><td class="num">9%</td></tr>
+                            <tr><td><div style="display:flex;align-items:center;gap:9px"><span class="ico">TL</span><span><span class="tk">TLT</span><br><span class="tname">20Y Treasury ETF</span></span></div></td><td class="num">140</td><td class="num">$96.40</td><td class="num">$92.10</td><td class="num">$12,894</td><td class="num neg">−$602</td><td class="num">10%</td></tr>
+                          </tbody>
+                        </table>
+                      </div>
+                      <div class="card">
+                        <div class="ch"><h3>By strategy (sleeves)</h3></div>
+                        <div class="pad" style="padding-top:6px">
+                          <div class="stat-row"><span style="display:flex;align-items:center;gap:8px"><i style="width:9px;height:9px;border-radius:3px;background:var(--accent)"></i>Core Satellite</span><span class="vv num">$61,240 <span class="pos" style="font-size:11px">+6.0%</span></span></div>
+                          <div class="stat-row"><span style="display:flex;align-items:center;gap:8px"><i style="width:9px;height:9px;border-radius:3px;background:var(--pos)"></i>Momentum Top 10</span><span class="vv num">$34,560 <span class="pos" style="font-size:11px">+7.7%</span></span></div>
+                          <div class="stat-row"><span style="display:flex;align-items:center;gap:8px"><i style="width:9px;height:9px;border-radius:3px;background:color-mix(in srgb,var(--accent) 45%,var(--bg))"></i>RSI Reversion</span><span class="vv num">$20,910 <span class="neg" style="font-size:11px">−2.3%</span></span></div>
+                          <div class="stat-row"><span style="display:flex;align-items:center;gap:8px"><i style="width:9px;height:9px;border-radius:3px;background:color-mix(in srgb,var(--ink) 14%,transparent)"></i>Unallocated cash</span><span class="vv num">$11,740</span></div>
+                          <div style="margin-top:14px;padding:12px;border-radius:var(--radius);background:color-mix(in srgb,var(--accent) 8%,transparent);border:1px solid color-mix(in srgb,var(--accent) 20%,transparent);font-size:12px;color:var(--soft);display:flex;gap:9px;align-items:flex-start"><span style="color:var(--accent)">$ICON_check</span><span>Ledger reconciled with Alpaca — 14/14 positions match. Last check 2m ago.</span></div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- ── TRADING (live session) ── -->
+                <div class="page" data-page="trading">
+                  <div class="pad">
+                    <div class="secrow">
+                      <div style="display:flex;align-items:center;gap:12px"><h2 style="margin:0">Momentum Top 10</h2><span class="badge paper"><span class="dot"></span>Paper</span><span class="badge live"><span class="dot"></span>Running</span></div>
+                      <div style="display:flex;gap:8px"><button class="btn btn-out btn-sm">$ICON_pause Pause</button><button class="btn btn-out btn-sm" style="color:var(--neg);border-color:color-mix(in srgb,var(--neg) 40%,var(--line))">Stop</button></div>
+                    </div>
+                    <div class="kpis">
+                      <div class="kpi card"><div class="k">Session equity</div><div class="v num">$34,560.00</div><div class="d pos">$ICON_up +$486.20 · +1.4%</div></div>
+                      <div class="kpi card"><div class="k">Today's P&L</div><div class="v num pos">+$486.20</div><div class="d" style="color:var(--muted)">8 fills today</div></div>
+                      <div class="kpi card"><div class="k">Trades</div><div class="v num">47</div><div class="d" style="color:var(--muted)">win rate 63%</div></div>
+                      <div class="kpi card"><div class="k">Uptime</div><div class="v num">6d 04h</div><div class="d" style="color:var(--muted)">rebalances daily</div></div>
+                    </div>
+                    <div class="grid2">
+                      <div class="card">
+                        <div class="ch"><h3>Session equity</h3><div class="seg"><button>1D</button><button class="on">1W</button><button>All</button></div></div>
+                        <svg viewBox="0 0 720 200" width="100%" height="200" preserveAspectRatio="none">
+                          <defs><linearGradient id="tr" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="var(--pos)" stop-opacity=".2"/><stop offset="1" stop-color="var(--pos)" stop-opacity="0"/></linearGradient></defs>
+                          <path d="M0,150 C60,140 100,148 160,130 C220,112 260,124 320,100 C380,78 420,92 480,80 C540,68 580,58 640,50 C680,44 700,40 720,36 L720,200 L0,200 Z" fill="url(#tr)"/>
+                          <path d="M0,150 C60,140 100,148 160,130 C220,112 260,124 320,100 C380,78 420,92 480,80 C540,68 580,58 640,50 C680,44 700,40 720,36" fill="none" stroke="var(--pos)" stroke-width="2.4"/>
+                        </svg>
+                      </div>
+                      <div class="card ticket">
+                        <div class="ch"><h3>Open positions</h3><span class="s">6</span></div>
+                        <table class="tbl">
+                          <thead><tr><th>Symbol</th><th class="num">Qty</th><th class="num">Mkt val</th><th class="num">P&L</th></tr></thead>
+                          <tbody>
+                            <tr><td><span class="tk">NVDA</span></td><td class="num">40</td><td class="num">$5,662</td><td class="num pos">+$934</td></tr>
+                            <tr><td><span class="tk">META</span></td><td class="num">8</td><td class="num">$4,910</td><td class="num pos">+$310</td></tr>
+                            <tr><td><span class="tk">AVGO</span></td><td class="num">18</td><td class="num">$4,120</td><td class="num pos">+$208</td></tr>
+                            <tr><td><span class="tk">AMD</span></td><td class="num">22</td><td class="num">$3,540</td><td class="num neg">−$96</td></tr>
+                            <tr><td><span class="tk">CRWD</span></td><td class="num">10</td><td class="num">$3,210</td><td class="num pos">+$142</td></tr>
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                    <div class="card" style="margin-top:14px">
+                      <div class="ch"><h3>Order stream</h3><span class="badge live"><span class="dot"></span>Live</span></div>
+                      <table class="tbl">
+                        <thead><tr><th>Time</th><th>Symbol</th><th>Side</th><th>Type</th><th class="num">Qty</th><th class="num">Fill price</th><th>Status</th></tr></thead>
+                        <tbody>
+                          <tr><td class="num" style="color:var(--muted)">09:31:04</td><td><span class="tk">NVDA</span></td><td><span class="pos">BUY</span></td><td>Market</td><td class="num">8</td><td class="num">$141.55</td><td><span class="badge live"><span class="dot"></span>Filled</span></td></tr>
+                          <tr><td class="num" style="color:var(--muted)">09:31:01</td><td><span class="tk">AMD</span></td><td><span class="neg">SELL</span></td><td>Market</td><td class="num">5</td><td class="num">$160.90</td><td><span class="badge live"><span class="dot"></span>Filled</span></td></tr>
+                          <tr><td class="num" style="color:var(--muted)">09:30:59</td><td><span class="tk">META</span></td><td><span class="pos">BUY</span></td><td>Limit</td><td class="num">3</td><td class="num">$613.20</td><td><span class="badge draft">Working</span></td></tr>
+                          <tr><td class="num" style="color:var(--muted)">09:30:55</td><td><span class="tk">CRWD</span></td><td><span class="pos">BUY</span></td><td>Market</td><td class="num">4</td><td class="num">$321.00</td><td><span class="badge live"><span class="dot"></span>Filled</span></td></tr>
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- ── STRATEGIES (library) ── -->
+                <div class="page" data-page="strategies">
+                  <div class="pad">
+                    <div class="secrow">
+                      <div style="display:flex;align-items:center;gap:10px"><div class="search" style="min-width:240px">$ICON_search Search strategies…</div><span class="chip">All</span><span class="chip">Active</span><span class="chip">Draft</span></div>
+                      <button class="btn btn-primary btn-sm">$ICON_plus New strategy</button>
+                    </div>
+                    <div class="stratgrid">
+                      <div class="card sc"><div class="top"><div style="display:flex;justify-content:space-between;align-items:flex-start"><span class="nm">Core Satellite</span><span class="badge paper"><span class="dot"></span>Active</span></div><div class="ds">60/25/15 core-growth-bonds, rebalanced daily.</div></div><div class="mc"><svg viewBox="0 0 300 64" width="100%" height="64" preserveAspectRatio="none"><path d="M0,48 C40,44 70,38 110,34 C160,29 200,20 240,16 C270,13 290,10 300,8" fill="none" stroke="var(--pos)" stroke-width="2"/></svg></div><div class="mr"><span class="mk">Return</span><span class="mv num pos">+38.4%</span><span class="mk">Sharpe</span><span class="mv num">1.42</span></div></div>
+                      <div class="card sc"><div class="top"><div style="display:flex;justify-content:space-between;align-items:flex-start"><span class="nm">Momentum Top 10</span><span class="badge paper"><span class="dot"></span>Active</span></div><div class="ds">Top-10 momentum rotation, monthly.</div></div><div class="mc"><svg viewBox="0 0 300 64" width="100%" height="64" preserveAspectRatio="none"><path d="M0,50 C40,52 70,40 110,42 C160,30 200,34 240,18 C270,12 290,14 300,6" fill="none" stroke="var(--pos)" stroke-width="2"/></svg></div><div class="mr"><span class="mk">Return</span><span class="mv num pos">+52.1%</span><span class="mk">Sharpe</span><span class="mv num">1.18</span></div></div>
+                      <div class="card sc"><div class="top"><div style="display:flex;justify-content:space-between;align-items:flex-start"><span class="nm">RSI Mean Reversion</span><span class="badge paused"><span class="dot"></span>Paused</span></div><div class="ds">Buy oversold SPY (RSI&lt;30), exit&gt;70.</div></div><div class="mc"><svg viewBox="0 0 300 64" width="100%" height="64" preserveAspectRatio="none"><path d="M0,30 C40,24 70,36 110,32 C160,40 200,26 240,34 C270,30 290,38 300,30" fill="none" stroke="var(--neg)" stroke-width="2"/></svg></div><div class="mr"><span class="mk">Return</span><span class="mv num neg">−2.3%</span><span class="mk">Sharpe</span><span class="mv num">0.41</span></div></div>
+                      <div class="card sc"><div class="top"><div style="display:flex;justify-content:space-between;align-items:flex-start"><span class="nm">Golden Cross</span><span class="badge draft">Draft</span></div><div class="ds">SMA50/200 crossover, risk-on/off.</div></div><div class="mc"><svg viewBox="0 0 300 64" width="100%" height="64" preserveAspectRatio="none"><path d="M0,46 C40,42 70,44 110,30 C160,26 200,28 240,18 C270,16 290,12 300,12" fill="none" stroke="var(--accent)" stroke-width="2"/></svg></div><div class="mr"><span class="mk">Return</span><span class="mv num pos">+24.0%</span><span class="mk">Sharpe</span><span class="mv num">1.05</span></div></div>
+                      <div class="card sc"><div class="top"><div style="display:flex;justify-content:space-between;align-items:flex-start"><span class="nm">All-Weather RP</span><span class="badge draft">Draft</span></div><div class="ds">Risk-parity across 4 asset classes.</div></div><div class="mc"><svg viewBox="0 0 300 64" width="100%" height="64" preserveAspectRatio="none"><path d="M0,44 C40,42 70,40 110,38 C160,34 200,32 240,26 C270,22 290,20 300,18" fill="none" stroke="var(--accent)" stroke-width="2"/></svg></div><div class="mr"><span class="mk">Return</span><span class="mv num pos">+11.8%</span><span class="mk">Sharpe</span><span class="mv num">1.61</span></div></div>
+                      <div class="card sc" style="display:grid;place-items:center;min-height:188px;border-style:dashed;color:var(--muted)"><div style="text-align:center"><div style="font-size:26px;color:var(--accent)">＋</div><div style="font-size:13px;font-weight:600;margin-top:6px;color:var(--soft)">New strategy</div><div style="font-size:11.5px;margin-top:3px">Blocks · code · or ask the copilot</div></div></div>
+                    </div>
+                  </div>
+                </div>
+
+              </div><!-- /content -->
+            </div><!-- /main -->
+          </div><!-- /app -->
+        </div><!-- /mode-app -->
+
+        <!-- ════ BUILDER (faithful triptych + block-style sub-axis) ════ -->
+        <div class="mode mode-builder" data-mode="builder">
+          <div class="app">
+            <aside class="sidebar">
+              <div class="sb-brand"><span class="g">L</span> LlamaTrade</div>
+              <div class="acct"><span class="av">DT</span><span style="flex:1"><span class="nm">Demo Trader</span><br><span class="sb">Paper · Alpaca</span></span><span style="color:var(--muted);font-size:10px">▾</span></div>
+              <a class="navi" data-go="dashboard">$ICON_grid Dashboard</a>
+              <a class="navi" data-go="strategies">$ICON_layers Strategies <span class="ct">6</span></a>
+              <a class="navi on" data-go="builder">$ICON_git Builder</a>
+              <a class="navi" data-go="backtest">$ICON_flask Backtest</a>
+              <a class="navi" data-go="portfolio">$ICON_wallet Portfolio</a>
+              <a class="navi" data-go="trading">$ICON_activity Trading <span class="ct">2</span></a>
+              <div class="sb-sec">Account</div>
+              <a class="navi">$ICON_bell Alerts</a>
+              <a class="navi">$ICON_link Broker</a>
+              <a class="navi">$ICON_card Billing</a>
+              <a class="navi">$ICON_cog Settings</a>
+            </aside>
+            <div class="main">
+              <div class="builder dotgrid bs-soft" id="builderEl">
+                <!-- left: config -->
+                <div class="b-left">
+                  <button class="btn btn-primary" style="width:100%">Save changes</button>
+                  <div style="display:flex;gap:7px">
+                    <button class="btn btn-out btn-sm" style="flex:1">$ICON_undo Undo</button>
+                    <button class="btn btn-out btn-sm" style="flex:1">$ICON_redo Redo</button>
+                    <button class="btn btn-out btn-sm" style="color:var(--neg);border-color:color-mix(in srgb,var(--neg) 35%,var(--line))">$ICON_trash</button>
+                  </div>
+                  <div class="card ncard bcard">
+                    <h4>Strategy Details <span class="cv" style="color:var(--muted)">▼</span></h4>
+                    <div class="field"><label class="l">Name</label><input class="inp" value="Core Satellite Strategy"/></div>
+                    <div class="field"><label class="l">Description</label><textarea class="inp" rows="3" style="resize:none">Diversified core with a momentum satellite and bond ballast.</textarea></div>
+                    <div class="field" style="margin-bottom:0"><label class="l">Timeframe</label><select class="inp"><option>Daily</option><option>Weekly</option><option>Monthly</option><option>Quarterly</option></select></div>
+                  </div>
+                  <div style="display:flex;gap:7px">
+                    <button class="btn btn-out btn-sm" style="flex:1">$ICON_eye Watch</button>
+                    <button class="btn btn-out btn-sm" style="flex:1">$ICON_share Share</button>
+                  </div>
+                </div>
+
+                <!-- center: header strip + tree canvas -->
+                <div class="b-center">
+                  <div class="card ncard tree-head">
+                    <span class="cv" style="color:var(--muted)">▼</span>
+                    <span class="tico">$ICON_layers</span>
+                    <span class="nm">Core Satellite Strategy</span>
+                    <button class="btn btn-out btn-sm" style="padding:5px;margin-left:4px">$ICON_eye</button>
+                    <span style="flex:1"></span>
+                    <span class="seg"><button class="on">$ICON_git Visual</button><button>$ICON_code Code</button></span>
+                  </div>
+                  <div class="canvas">
+                    <div class="tchildren" style="margin-top:0">
+                      <!-- WEIGHT · Specified (root weight) -->
+                      <div class="tnode">
+                        <div class="trow"><span class="pill w"><span class="tag"></span><span class="x">×</span><span class="cv">▼</span><span class="lab">WEIGHT</span><span class="desc">Specified</span></span></div>
+                        <div class="tchildren">
+                          <!-- 60% Core Holdings -->
+                          <div class="tnode">
+                            <div class="trow"><span class="pct">60%</span><div class="ncard grouprow"><span class="cv">▼</span><span class="gi">$ICON_layers</span><span class="gn">Core Holdings</span></div></div>
+                            <div class="tchildren">
+                              <div class="tnode">
+                                <div class="trow"><span class="pill w"><span class="tag"></span><span class="x">×</span><span class="cv">▼</span><span class="lab">WEIGHT</span><span class="desc">Equal Weight</span></span></div>
+                                <div class="tchildren">
+                                  <div class="tnode"><div class="trow"><div class="ncard assetrow"><span class="bul"></span><span class="tk">SPY</span><span class="an">SPDR S&P 500 ETF</span><span class="ex">NYSEARCA</span></div></div></div>
+                                  <div class="tnode"><div class="trow"><div class="ncard assetrow"><span class="bul"></span><span class="tk">VTI</span><span class="an">Vanguard Total Market</span><span class="ex">NYSEARCA</span></div></div></div>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                          <!-- 25% Growth with IF / ELSE -->
+                          <div class="tnode">
+                            <div class="trow"><span class="pct">25%</span><div class="ncard grouprow"><span class="cv">▼</span><span class="gi">$ICON_layers</span><span class="gn">Growth</span></div></div>
+                            <div class="tchildren">
+                              <div class="tnode">
+                                <div class="trow"><span class="pill iff"><span class="tag"></span><span class="x">×</span><span class="cv">▼</span><span class="lab">IF</span><span class="desc">SMA(50) of SPY &gt; SMA(200)</span><span class="pen">$ICON_pencil</span></span></div>
+                                <div class="tchildren">
+                                  <div class="tnode">
+                                    <div class="trow"><span class="pill w"><span class="tag"></span><span class="x">×</span><span class="cv">▼</span><span class="lab">WEIGHT</span><span class="desc">Equal Weight</span></span></div>
+                                    <div class="tchildren">
+                                      <div class="tnode"><div class="trow"><div class="ncard assetrow"><span class="bul"></span><span class="tk">QQQ</span><span class="an">Invesco Nasdaq 100</span><span class="ex">NASDAQ</span></div></div></div>
+                                      <div class="tnode"><div class="trow"><div class="ncard assetrow"><span class="bul"></span><span class="tk">XLK</span><span class="an">Technology Select</span><span class="ex">NYSEARCA</span></div></div></div>
+                                    </div>
+                                  </div>
+                                  <div class="tnode">
+                                    <div class="trow"><span class="pill els"><span class="tag"></span><span class="x">×</span><span class="cv">▼</span><span class="lab">ELSE</span></span></div>
+                                    <div class="tchildren">
+                                      <div class="tnode"><div class="trow"><div class="ncard assetrow"><span class="bul"></span><span class="tk">BND</span><span class="an">Vanguard Total Bond</span><span class="ex">NYSEARCA</span></div></div></div>
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                          <!-- 15% Tactical Sectors with FILTER -->
+                          <div class="tnode">
+                            <div class="trow"><span class="pct">15%</span><div class="ncard grouprow"><span class="cv">▼</span><span class="gi">$ICON_layers</span><span class="gn">Tactical Sectors</span></div></div>
+                            <div class="tchildren">
+                              <div class="tnode">
+                                <div class="trow"><span class="pill flt"><span class="tag"></span><span class="x">×</span><span class="cv">▼</span><span class="lab">FILTER</span><span class="desc">top 2 · momentum 90d</span><span class="pen">$ICON_pencil</span></span></div>
+                                <div class="tchildren">
+                                  <div class="tnode"><div class="trow"><div class="ncard assetrow"><span class="bul"></span><span class="tk">XLE</span><span class="an">Energy Select</span><span class="ex">NYSEARCA</span></div></div></div>
+                                  <div class="tnode"><div class="trow"><div class="ncard assetrow"><span class="bul"></span><span class="tk">XLF</span><span class="an">Financials Select</span><span class="ex">NYSEARCA</span></div></div></div>
+                                  <div class="tnode"><div class="trow"><div class="ncard assetrow"><span class="bul"></span><span class="tk">XLV</span><span class="an">Health Care Select</span><span class="ex">NYSEARCA</span></div></div></div>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                          <!-- add block -->
+                          <div class="tnode"><div class="trow"><span class="addblk">$ICON_plus <b>Add a block</b> — Stocks, Weights, Conditions…</span></div></div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- right: backtest preview + quick stats -->
+                <div class="b-right">
+                  <div class="card ncard bcard">
+                    <h4>Backtest Preview <span class="cv" style="color:var(--muted)">▼</span></h4>
+                    <svg class="spark" viewBox="0 0 320 96" width="100%" height="96" preserveAspectRatio="none">
+                      <defs><linearGradient id="bp" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="var(--pos)" stop-opacity=".24"/><stop offset="1" stop-color="var(--pos)" stop-opacity="0"/></linearGradient></defs>
+                      <path d="M0,74 C46,70 80,60 126,52 C184,42 230,28 276,20 C298,16 310,14 320,11 L320,96 L0,96 Z" fill="url(#bp)"/>
+                      <path d="M0,74 C46,70 80,60 126,52 C184,42 230,28 276,20 C298,16 310,14 320,11" fill="none" stroke="var(--pos)" stroke-width="2"/>
+                      <path d="M0,78 C70,73 160,64 230,55 C276,49 305,46 320,44" fill="none" stroke="var(--muted)" stroke-width="1.3" stroke-dasharray="3 3"/>
+                    </svg>
+                    <div style="display:flex;gap:14px;margin:8px 0 2px;font-size:11px"><span style="display:flex;align-items:center;gap:5px"><i style="width:12px;height:3px;background:var(--pos);border-radius:2px"></i>Strategy</span><span style="display:flex;align-items:center;gap:5px;color:var(--muted)"><i style="width:12px;height:0;border-top:2px dashed var(--muted)"></i>SPY</span></div>
+                    <button class="runbtn">$ICON_play RUN BACKTEST</button>
+                    <div style="text-align:center;margin-top:8px;font-size:11.5px;color:var(--accent);cursor:pointer">→ Jump to full backtest</div>
+                  </div>
+                  <div class="card ncard bcard">
+                    <h4>Quick Stats</h4>
+                    <div class="stat-row"><span class="lk">CAGR</span><span class="vv num pos">+14.8%</span></div>
+                    <div class="stat-row"><span class="lk">Max Drawdown</span><span class="vv num neg">−18.6%</span></div>
+                    <div class="stat-row"><span class="lk">Sharpe Ratio</span><span class="vv num">1.42</span></div>
+                    <div class="stat-row"><span class="lk">Volatility</span><span class="vv num">11.2%</span></div>
+                    <div class="stat-row"><span class="lk">Win Rate</span><span class="vv num">61.4%</span></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div><!-- /mode-builder -->
+
+        <!-- ════ LOGO EXPLORER ════ -->
+        <div class="mode mode-logo" data-mode="logo">
+          <!-- symbol library (viewBox 0 0 32 32) -->
+          <svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+            <symbol id="m-hist" viewBox="0 0 32 32"><rect x="4" y="15" width="4.6" height="12" rx="2.3" fill="currentColor"/><rect x="11.4" y="7" width="4.6" height="20" rx="2.3" fill="currentColor"/><rect x="18.8" y="18" width="4.6" height="9" rx="2.3" fill="currentColor"/><rect x="26.2" y="12" width="4.6" height="15" rx="2.3" fill="currentColor"/></symbol>
+            <symbol id="m-candle" viewBox="0 0 32 32"><g stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="8" y1="9" x2="8" y2="25"/><line x1="16" y1="6" x2="16" y2="23"/><line x1="24" y1="8" x2="24" y2="22"/></g><rect x="5.4" y="13" width="5.2" height="8" rx="1.5" fill="currentColor"/><rect x="13.4" y="10" width="5.2" height="9" rx="1.5" fill="currentColor"/><rect x="21.4" y="11" width="5.2" height="7" rx="1.5" fill="currentColor"/></symbol>
+            <symbol id="m-pulse" viewBox="0 0 32 32"><path d="M4 23 L11.5 16.5 L16.5 20 L22.5 10.5 L28 6" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><circle cx="28" cy="6" r="2.8" fill="currentColor"/></symbol>
+            <symbol id="m-alloc" viewBox="0 0 32 32"><circle cx="16" cy="16" r="9.4" fill="none" stroke="currentColor" stroke-width="2.4"/><path d="M16 16 L16 6.6 A9.4 9.4 0 0 1 24.2 11.3 Z" fill="currentColor"/></symbol>
+            <symbol id="m-summit" viewBox="0 0 32 32"><circle cx="22.5" cy="8" r="3.1" fill="currentColor"/><path d="M3 26 L11 13 L16.5 21 L21 14.5 L29 26 Z" fill="currentColor"/></symbol>
+            <symbol id="m-nodes" viewBox="0 0 32 32"><path d="M16 10 L16 15 M9 21 L9 16 L23 16 L23 21" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/><circle cx="16" cy="7" r="3" fill="currentColor"/><circle cx="9" cy="24" r="3" fill="currentColor"/><circle cx="23" cy="24" r="3" fill="currentColor"/></symbol>
+            <symbol id="m-target" viewBox="0 0 32 32"><circle cx="16" cy="16" r="10" fill="none" stroke="currentColor" stroke-width="2.3"/><circle cx="16" cy="16" r="5.4" fill="none" stroke="currentColor" stroke-width="2.3"/><circle cx="16" cy="16" r="1.9" fill="currentColor"/></symbol>
+            <symbol id="m-rebal" viewBox="0 0 32 32"><g fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M7.4 13.4 A9 9 0 0 1 22.6 10"/><path d="M24.6 18.6 A9 9 0 0 1 9.4 22"/><path d="M22.9 5.6 L23.2 10.4 L18.4 10"/><path d="M9.1 26.4 L8.8 21.6 L13.6 22"/></g></symbol>
+            <symbol id="m-funnel" viewBox="0 0 32 32"><path d="M5.5 7 H26.5 L18.5 16.5 V23.5 L13.5 26 V16.5 Z" fill="currentColor"/></symbol>
+            <symbol id="m-compass" viewBox="0 0 32 32"><circle cx="16" cy="16" r="10" fill="none" stroke="currentColor" stroke-width="2.3"/><path d="M20.8 11.2 L17.4 17.4 L11.2 20.8 L14.6 14.6 Z" fill="currentColor"/><circle cx="16" cy="16" r="1.3" fill="currentColor"/></symbol>
+            <symbol id="m-layers" viewBox="0 0 32 32"><g fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="16" cy="9.5" rx="9" ry="3.4"/><path d="M7 9.5 V14 A9 3.4 0 0 0 25 14 V9.5"/><path d="M7 14 V18.5 A9 3.4 0 0 0 25 18.5 V14"/><path d="M7 18.5 V23 A9 3.4 0 0 0 25 23 V18.5"/></g></symbol>
+            <symbol id="m-ecg" viewBox="0 0 32 32"><path d="M3 18 H10.5 L13 11 L16 24 L18.5 18 H26.5" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/><circle cx="28.5" cy="18" r="2.3" fill="currentColor"/></symbol>
+            <symbol id="m-area" viewBox="0 0 32 32"><path d="M4 23 C8 22 11 16 16 14.6 C20 13.4 23.6 17 28 10.6 L28 26 H4 Z" fill="currentColor"/></symbol>
+            <symbol id="m-waterfall" viewBox="0 0 32 32"><rect x="4" y="7" width="4.4" height="7" rx="1.5" fill="currentColor"/><rect x="10.5" y="15" width="4.4" height="6" rx="1.5" fill="currentColor"/><rect x="17" y="11" width="4.4" height="6" rx="1.5" fill="currentColor"/><rect x="23.5" y="18" width="4.4" height="8" rx="1.5" fill="currentColor"/></symbol>
+            <symbol id="m-heatmap" viewBox="0 0 32 32"><g fill="currentColor"><rect x="5" y="5" width="6" height="6" rx="1.6" opacity="1"/><rect x="13" y="5" width="6" height="6" rx="1.6"/><rect x="21" y="5" width="6" height="6" rx="1.6"/><rect x="5" y="13" width="6" height="6" rx="1.6"/><rect x="13" y="13" width="6" height="6" rx="1.6"/><rect x="21" y="13" width="6" height="6" rx="1.6"/><rect x="5" y="21" width="6" height="6" rx="1.6"/><rect x="13" y="21" width="6" height="6" rx="1.6"/><rect x="21" y="21" width="6" height="6" rx="1.6"/></g><g fill="none" stroke="currentColor" stroke-width="1.8"><rect x="13" y="5" width="6" height="6" rx="1.6"/><rect x="5" y="13" width="6" height="6" rx="1.6"/><rect x="21" y="13" width="6" height="6" rx="1.6"/><rect x="13" y="21" width="6" height="6" rx="1.6"/></g></symbol>
+            <symbol id="m-ohlc" viewBox="0 0 32 32"><g stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="8" y1="9" x2="8" y2="22"/><line x1="5" y1="12" x2="8" y2="12"/><line x1="8" y1="18" x2="11" y2="18"/><line x1="16" y1="6" x2="16" y2="21"/><line x1="13" y1="16" x2="16" y2="16"/><line x1="16" y1="10" x2="19" y2="10"/><line x1="24" y1="9" x2="24" y2="25"/><line x1="21" y1="21" x2="24" y2="21"/><line x1="24" y1="13" x2="27" y2="13"/></g></symbol>
+            <symbol id="m-gauge" viewBox="0 0 32 32"><path d="M5 23 A11 11 0 0 1 27 23" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/><path d="M16 23 L21.5 13.5" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/><circle cx="16" cy="23" r="2.1" fill="currentColor"/></symbol>
+            <symbol id="m-scatter" viewBox="0 0 32 32"><g fill="currentColor"><circle cx="7" cy="22" r="1.7"/><circle cx="11.5" cy="18.5" r="1.7"/><circle cx="14.5" cy="21" r="1.7"/><circle cx="18" cy="15" r="1.7"/><circle cx="21" cy="17.5" r="1.7"/><circle cx="24.5" cy="11" r="1.7"/><circle cx="27.5" cy="8" r="2.6"/></g></symbol>
+            <symbol id="m-radar" viewBox="0 0 32 32"><path d="M16 4 L27 12 L23 25 L9 25 L5 12 Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M16 10 L22 14.2 L19 21 L12 20 L11 14 Z" fill="currentColor"/></symbol>
+            <symbol id="m-step" viewBox="0 0 32 32"><path d="M4 24 H9 V18.5 H15 V21 H20 V12.5 H25 V8 H28.5" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+            <symbol id="m-bubble" viewBox="0 0 32 32"><circle cx="10" cy="20" r="5" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="20.5" cy="13" r="6.5" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="24.5" cy="23" r="3.6" fill="currentColor"/></symbol>
+            <symbol id="m-wave" viewBox="0 0 32 32"><path d="M3 16 C6 9 10 9 13 16 C16 23 20 23 23 16 C25.2 11.4 27 11.4 29 14" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+            <symbol id="m-stacked" viewBox="0 0 32 32"><path d="M4 25 C9 24 12 20.5 16 19.5 C20 18.5 24 21.5 28 16.5 L28 26 H4 Z" fill="currentColor"/><path d="M4 17.5 C9 15.5 12 11.5 16 11.5 C20 11.5 24 13.5 28 9.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+            <symbol id="m-band" viewBox="0 0 32 32"><path d="M4 10 C9 8 12 12 16 10 C20 8 24 11 28 8 L28 16 C24 19 20 16 16 18 C12 20 9 16 4 18 Z" fill="currentColor" opacity="0.22"/><path d="M4 14 C9 12 12 16 16 14 C20 12 24 15 28 12" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+            <symbol id="m-treemap" viewBox="0 0 32 32"><rect x="4.5" y="5.5" width="11.5" height="11" rx="1.5" fill="currentColor"/><g fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><rect x="4" y="5" width="24" height="22" rx="2.5"/><path d="M16 5 V27 M4 16.5 H16 M22 16 V27 M16 21.5 H28"/></g></symbol>
+            <symbol id="m-box" viewBox="0 0 32 32"><g stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="16" y1="4.5" x2="16" y2="11"/><line x1="12" y1="4.5" x2="20" y2="4.5"/><line x1="16" y1="21" x2="16" y2="27.5"/><line x1="12" y1="27.5" x2="20" y2="27.5"/><line x1="9.7" y1="16" x2="22.3" y2="16"/></g><rect x="9.5" y="11" width="13" height="10" rx="1.6" fill="none" stroke="currentColor" stroke-width="2"/></symbol>
+            <symbol id="m-combo" viewBox="0 0 32 32"><g fill="currentColor" opacity="0.38"><rect x="5" y="16" width="4" height="11" rx="1.5"/><rect x="11.5" y="13" width="4" height="14" rx="1.5"/><rect x="18" y="18" width="4" height="9" rx="1.5"/><rect x="24.5" y="11" width="4" height="16" rx="1.5"/></g><path d="M7 17.5 L13.5 11.5 L20 15.5 L26.5 8" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"/><circle cx="26.5" cy="8" r="2.2" fill="currentColor"/></symbol>
+          </defs></svg>
+
+          <div class="logopage">
+            <div class="loghead">
+              <div><div class="lbl">Brand · logomark exploration</div><h1>LlamaTrade logo directions</h1></div>
+              <p>Twenty-seven chart-driven logomarks. The theme switcher recolors every mark, lockup and app-icon live — pick a direction, then we refine it.</p>
+            </div>
+            <div class="logogrid" id="logogrid"></div>
+          </div>
+        </div><!-- /mode-logo -->
+
+      </div><!-- /stage -->
+    </div>
+  </div>
+
+<script>
+  // ── inline icon set (stroke = currentColor) ──
+  const I = {
+    grid:'<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>',
+    layers:'<path d="M12 3 21 8 12 13 3 8z"/><path d="M3 12 12 17 21 12"/><path d="M3 16 12 21 21 16"/>',
+    git:'<circle cx="6" cy="6" r="2.5"/><circle cx="6" cy="18" r="2.5"/><circle cx="18" cy="9" r="2.5"/><path d="M6 8.5v7M18 11.5c0 4-6 1-6 4.5"/>',
+    flask:'<path d="M9 3h6M10 3v6l-5 9a2 2 0 0 0 1.8 3h10.4A2 2 0 0 0 19 18l-5-9V3"/>',
+    wallet:'<rect x="3" y="6" width="18" height="14" rx="2.5"/><path d="M3 10h18M16 14h2"/>',
+    activity:'<path d="M3 12h4l3 8 4-16 3 8h4"/>',
+    bell:'<path d="M6 9a6 6 0 0 1 12 0c0 5 2 6 2 6H4s2-1 2-6"/><path d="M10 20a2 2 0 0 0 4 0"/>',
+    link:'<path d="M9 12a3 3 0 0 1 3-3h3a3 3 0 0 1 0 6h-1.5"/><path d="M15 12a3 3 0 0 1-3 3H9a3 3 0 0 1 0-6h1.5"/>',
+    card:'<rect x="2.5" y="5" width="19" height="14" rx="2.5"/><path d="M2.5 9.5h19"/>',
+    cog:'<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4 12H1M23 12h-3M5 5l2 2M17 17l2 2M19 5l-2 2M7 17l-2 2"/>',
+    search:'<circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/>',
+    plus:'<path d="M12 5v14M5 12h14"/>',
+    up:'<path d="M12 19V5M5 12l7-7 7 7"/>',
+    play:'<path d="M7 4l13 8-13 8z" fill="currentColor" stroke="none"/>',
+    pause:'<rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/>',
+    code:'<path d="M9 18l-6-6 6-6M15 6l6 6-6 6"/>',
+    pencil:'<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/>',
+    undo:'<path d="M3 7v6h6"/><path d="M3 13a9 9 0 1 0 3-7.7L3 8"/>',
+    redo:'<path d="M21 7v6h-6"/><path d="M21 13a9 9 0 1 1-3-7.7L21 8"/>',
+    trash:'<path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/>',
+    eye:'<path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>',
+    share:'<circle cx="6" cy="12" r="2.5"/><circle cx="18" cy="6" r="2.5"/><circle cx="18" cy="18" r="2.5"/><path d="M8 11l8-4M8 13l8 4"/>',
+    check:'<path d="M4 12l6 6L20 6"/>'
+  };
+  // replace $ICON_x tokens with inline svg
+  function svg(name){return '<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">'+(I[name]||'')+'</svg>';}
+  document.getElementById('stage').innerHTML = document.getElementById('stage').innerHTML.replace(/\$ICON_(\w+)/g, (m,n)=>svg(n));
+
+  // ── logo concepts ──
+  const CONCEPTS=[
+    {id:'pulse',n:'Trendline',d:'A rising price line closing on a peak node.'},
+    {id:'candle',n:'Candles',d:'Three candlesticks stepping up — pure market signal.'},
+    {id:'nodes',n:'Strategy Tree',d:'The block-tree builder distilled to a branching node mark.'},
+    {id:'summit',n:'Andes',d:'Andean range + sun — the llama’s home as a market high.'},
+    {id:'hist',n:'Returns',d:'A clean histogram of returns — performance at a glance.'},
+    {id:'alloc',n:'Allocation',d:'A portfolio ring with one sleeve highlighted.'},
+    {id:'target',n:'Target',d:'Concentric rings on a bullseye — precision and conviction.'},
+    {id:'rebal',n:'Rebalance',d:'Two arrows in a cycle — systematic rebalancing.'},
+    {id:'funnel',n:'Filter',d:'A funnel — the universe narrowed to a selection.'},
+    {id:'compass',n:'Compass',d:'A needle in a ring — direction and strategy.'},
+    {id:'ecg',n:'Pulse',d:'A baseline with one live spike — the market’s heartbeat.'},
+    {id:'layers',n:'Sleeves',d:'Stacked capital — a portfolio of strategies.'},
+    {id:'area',n:'Area',d:'A filled area chart — momentum you can feel.'},
+    {id:'waterfall',n:'Waterfall',d:'Floating bars — contribution to return, step by step.'},
+    {id:'heatmap',n:'Heatmap',d:'A grid of monthly returns, hot and cold at a glance.'},
+    {id:'ohlc',n:'OHLC',d:'Open-high-low-close bars — the trader’s tape.'},
+    {id:'gauge',n:'Gauge',d:'A performance gauge — risk dialed in.'},
+    {id:'scatter',n:'Scatter',d:'Data points trending up — signal from noise.'},
+    {id:'radar',n:'Radar',d:'A factor radar — a strategy across dimensions.'},
+    {id:'step',n:'Step',d:'A step curve — discrete rebalances, compounding.'},
+    {id:'bubble',n:'Bubble',d:'Sized bubbles — weight and conviction.'},
+    {id:'wave',n:'Oscillator',d:'A clean oscillation — momentum and mean-reversion.'},
+    {id:'stacked',n:'Stacked Area',d:'Layered bands — allocations summing to the whole.'},
+    {id:'band',n:'Bands',d:'Price inside a volatility band — Bollinger at a glance.'},
+    {id:'treemap',n:'Treemap',d:'Holdings sized by weight — the portfolio as area.'},
+    {id:'box',n:'Distribution',d:'A box-and-whisker — the shape of your returns.'},
+    {id:'combo',n:'Combo',d:'Bars and a line — volume meets price.'},
+  ];
+  const m32=(id,extra)=>`<svg ${extra||''} viewBox="0 0 32 32"><use href="#m-${id}"/></svg>`;
+  document.getElementById('logogrid').innerHTML = CONCEPTS.map(c=>`
+    <div class="card lcard">
+      <div class="lhero">
+        <div class="licon">${m32(c.id)}</div>
+        <div class="llock"><span class="lm">${m32(c.id)}</span><span class="lw">Llama<b>Trade</b></span></div>
+      </div>
+      <div class="lmeta"><div class="ln">${c.n}</div><div class="ld">${c.d}</div></div>
+      <div class="lrow">
+        <div class="lsz">${m32(c.id,'width="32" height="32"')}${m32(c.id,'width="24" height="24"')}${m32(c.id,'width="16" height="16"')}</div>
+        <div class="ltile dk">${m32(c.id)}</div>
+        <div class="ltile ac">${m32(c.id)}</div>
+        <span class="lsoft">${c.id}</span>
+      </div>
+    </div>`).join('');
+
+  // ── switcher ──
+  const stage = document.getElementById('stage'), cap = document.getElementById('cap'), url = document.getElementById('url');
+  let theme='t-composer', themeName='Composer', scr='signin', bsStyle='bs-soft', bsName='Soft';
+  const URL_OF={signin:'app.llamatrade.io/login',dashboard:'app.llamatrade.io/dashboard',builder:'app.llamatrade.io/strategies/core-satellite/edit',backtest:'app.llamatrade.io/backtest/core-satellite',portfolio:'app.llamatrade.io/portfolio',trading:'app.llamatrade.io/trading/momentum-top-10',strategies:'app.llamatrade.io/strategies',logo:'brand.llamatrade.io/logo'};
+  const TITLE={dashboard:['Overview','Dashboard'],backtest:['Core Satellite · v3','Backtest'],portfolio:['Book of record','Portfolio'],trading:['Live session','Trading'],strategies:['6 strategies','Strategies']};
+  const PAGE_NAME={signin:'Sign in',dashboard:'Dashboard',builder:'Builder',backtest:'Backtest',portfolio:'Portfolio',trading:'Trading',strategies:'Strategies',logo:'Logo'};
+
+  function apply(){
+    stage.className = 'browser '+theme;
+    try{ location.hash = scr+'/'+theme+(scr==='builder'?'/'+bsStyle:''); }catch(e){}
+    // which top-level mode?
+    const mode = scr==='signin' ? 'signin' : (scr==='builder' ? 'builder' : (scr==='logo' ? 'logo' : 'app'));
+    document.querySelectorAll('.mode').forEach(m=>m.classList.toggle('on', m.dataset.mode.split(' ').includes(mode) ));
+    // app sub-pages
+    if(mode==='app'){
+      document.querySelectorAll('.page').forEach(p=>p.classList.toggle('on', p.dataset.page===scr));
+      const t=TITLE[scr]; if(t){document.getElementById('tb-eye').textContent=t[0];document.getElementById('tb-title').textContent=t[1];}
+      document.querySelectorAll('.mode-app .navi').forEach(n=>n.classList.toggle('on', n.dataset.go===scr));
+    }
+    // builder block-style sub-axis
+    const isBuilder = scr==='builder';
+    document.getElementById('bsctl').style.display = isBuilder ? '' : 'none';
+    const bEl = document.getElementById('builderEl');
+    if(bEl) bEl.className = 'builder dotgrid '+bsStyle;
+    url.textContent = URL_OF[scr];
+    cap.textContent = PAGE_NAME[scr]+' · '+themeName+(isBuilder ? ' · '+bsName+' blocks' : '');
+  }
+  document.querySelectorAll('.themetab').forEach(b=>b.onclick=()=>{document.querySelector('.themetab.on').classList.remove('on');b.classList.add('on');theme=b.dataset.theme;themeName=b.textContent.trim();apply();});
+  document.querySelectorAll('.scrtab').forEach(b=>b.onclick=()=>{document.querySelector('.scrtab.on').classList.remove('on');b.classList.add('on');scr=b.dataset.scr;apply();});
+  document.querySelectorAll('.bstab').forEach(b=>b.onclick=()=>{document.querySelector('.bstab.on').classList.remove('on');b.classList.add('on');bsStyle=b.dataset.bs;bsName=b.textContent.trim();apply();});
+  document.querySelectorAll('[data-go]').forEach(n=>n.onclick=()=>{document.querySelectorAll('.scrtab').forEach(t=>{if(t.dataset.scr===n.dataset.go)t.click();});});
+  // deep-link: #page/theme
+  (function(){
+    const h=(location.hash||'').replace('#','').split('/');
+    const pg=h[0], th=h[1], bs=h[2];
+    if(pg){const b=document.querySelector('.scrtab[data-scr="'+pg+'"]'); if(b){document.querySelector('.scrtab.on').classList.remove('on');b.classList.add('on');scr=pg;}}
+    if(th){const b=document.querySelector('.themetab[data-theme="'+th+'"]'); if(b){document.querySelector('.themetab.on').classList.remove('on');b.classList.add('on');theme=th;themeName=b.textContent.trim();}}
+    if(bs){const b=document.querySelector('.bstab[data-bs="'+bs+'"]'); if(b){document.querySelector('.bstab.on').classList.remove('on');b.classList.add('on');bsStyle=bs;bsName=b.textContent.trim();}}
+  })();
+  apply();
+</script>
+</body>
+</html>

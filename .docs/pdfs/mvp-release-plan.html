@@ -46,7 +46,7 @@
   .footer {
     position: fixed;
     bottom: 6mm;
-    left: 0; right: 0;            /* full page width */
+    left: 0; right: 0;            /* paper edges; small padding pins text near the border */
     height: 5mm;
     background: #fff;
     display: flex;
@@ -56,7 +56,7 @@
     color: var(--ink-3);
     letter-spacing: .02em;
     border-top: 1px solid var(--line);
-    padding: 2.5mm 15mm 0;        /* rule spans full width; text aligns with body */
+    padding: 2.5mm 5mm 0;         /* rule edge-to-edge; text pinned 5mm from the border */
   }
   .footer .fl { display: flex; align-items: center; gap: 6px; font-weight: 600; }
   .footer .dot { width: 7px; height: 7px; border-radius: 2px; background: var(--grad); }

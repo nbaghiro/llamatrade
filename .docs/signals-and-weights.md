@@ -4,6 +4,8 @@ A team reference for the signals and allocation methods behind LlamaTrade strate
 
 > **Sourcing note.** Platform-coverage and academic claims in this doc were verified against primary sources in June 2026 (TA-Lib function list, TradingView built-in indicator docs, QuantConnect/LEAN supported-indicators docs, and the original papers for 1/N, ERC, and HRP — links in [Sources](#sources)). Indicator default parameters and classic signal rules are standard textbook conventions (Wilder, Bollinger, et al.) as shipped by those same platforms.
 
+> **Implementation status (updated June 2026).** Every indicator below is now **numerically validated against TA-Lib** by a golden-value test suite (`libs/compiler/tests/test_indicators_golden.py`). That suite caught and fixed real bugs: ADX, Stochastic, and the MACD signal/histogram were silently returning all-NaN (so conditions using them were always false), and ATR/ADX used SMA instead of Wilder's smoothing — all corrected. On the allocation side, `risk-parity` and `min-variance` are now **real covariance-based optimizers** (previously inverse-volatility stubs), and `market-cap` is now **rejected by the validator** rather than silently falling back to equal weight. Status markers throughout reflect this current state.
+
 ---
 
 ## Table of Contents
@@ -51,7 +53,7 @@ End-to-end flow:
 1-min bars (live) / historical bars (backtest)
         │
         ▼
- Indicator computation (NumPy, libs/compiler/pipeline.py)
+ Indicator computation (NumPy, libs/compiler/indicators/library.py)
         │
         ▼
  Condition evaluation (comparisons, crossovers, and/or/not)
@@ -195,17 +197,19 @@ Derived statistics (implemented in our DSL as the third value-expression family 
 
 The second half of every strategy. The DSL's `weight :method` block answers "given these N assets, how much of each?"
 
-### Implemented today (with honest status — see `libs/compiler/compiled.py`)
+### Implemented today (status — see `libs/compiler/llamatrade_compiler/evaluation/compiled.py`)
 
 | Method | Status | What it does | Notes / gaps |
 |---|---|---|---|
 | `specified` | ✅ full | Manual percentages (must sum to ~100) | The 60/40 classic |
 | `equal` | ✅ full | 100/N each | See research note below — this is a *strong* baseline, not a naive placeholder |
-| `momentum` | ⚠️ partial | Ranks by trailing return over `:lookback`, keeps `:top N`… then **equal-weights the survivors** | Score-*proportional* weighting (winners get more) is documented but not implemented |
 | `inverse-volatility` | ✅ full | wᵢ ∝ 1/σᵢ of daily returns over `:lookback` | Edge case: assets with missing history get a floor σ=0.0001 → they *dominate* the block instead of degrading gracefully |
-| `risk-parity` | ⚠️ stub | Aliases inverse-volatility | True ERC needs the correlation matrix (see below) |
-| `min-variance` | ⚠️ stub | Aliases inverse-volatility | True version needs covariance optimization |
-| `market-cap` | ⚠️ stub | Falls back to equal | No market-cap data source wired up |
+| `risk-parity` | ✅ full | Equal-risk-contribution (ERC): fixed-point iteration `wᵢ ∝ 1/(Σw)ᵢ` on the return covariance matrix, long-only, normalized | Accounts for correlations (reduces to inverse-vol only when assets are uncorrelated). Falls back to inverse-vol on insufficient history |
+| `min-variance` | ✅ full | Long-only minimum-variance: `w ∝ Σ⁻¹·1` via pseudo-inverse (robust to singular Σ), negatives clipped, renormalized | Estimation-error sensitive on short windows (see research note 1); falls back to inverse-vol when history is too short |
+| `momentum` | ⚠️ partial | Ranks by trailing return over `:lookback`, keeps `:top N`… then **equal-weights the survivors** | Score-*proportional* weighting (winners get more) is documented but not implemented |
+| `market-cap` | ❌ rejected | The validator blocks it — no fundamental-data (shares-outstanding) source | Was a silent equal-weight fallback; now a hard validation error so strategies don't get surprised |
+
+Both `risk-parity` and `min-variance` share covariance scaffolding that builds an aligned daily-returns matrix across the candidate symbols and falls back to `inverse-volatility` when fewer than two symbols have enough history.
 
 ### What the research says (verified against the original papers)
 
@@ -213,17 +217,17 @@ Three results every team member researching allocation should know:
 
 1. **Equal weight is genuinely hard to beat.** DeMiguel, Garlappi & Uppal (*Review of Financial Studies*, 2009) evaluated 14 sample-based mean-variance models across 7 datasets and found **none consistently beats 1/N** on Sharpe ratio, certainty-equivalent return, or turnover. The killer is *estimation error*: out of sample, the gains from "optimal" diversification are more than offset by errors in estimating expected returns and covariances. Their simulations suggest mean-variance needs on the order of **3,000 months of data for 25 assets** (≈250 years) to reliably win. *Takeaway: `equal` is a first-class method, and any optimizer we add must document its data appetite. (Later literature — Kirby & Ostdiek 2012, Tu & Zhou 2011 — shows some refinements do beat 1/N, so it's a high bar, not a no-go.)*
 
-2. **Inverse-volatility is formally a special case of risk parity.** Maillard, Roncalli & Teïletche (*Journal of Portfolio Management*, 2010) proved the equal-risk-contribution (ERC) portfolio's volatility sits **between minimum-variance and equal weight** (σ_MV ≤ σ_ERC ≤ σ_1/N), and that under constant correlation ERC has the closed form wᵢ = σᵢ⁻¹ / Σσⱼ⁻¹ — *exactly* our inverse-volatility method. *Takeaway: our `risk-parity` → inverse-vol stub is theoretically defensible as the "no correlation estimate" simplification; full ERC adds the covariance matrix + a numerical solver and only matters when correlations differ a lot across the basket.*
+2. **Inverse-volatility is formally a special case of risk parity.** Maillard, Roncalli & Teïletche (*Journal of Portfolio Management*, 2010) proved the equal-risk-contribution (ERC) portfolio's volatility sits **between minimum-variance and equal weight** (σ_MV ≤ σ_ERC ≤ σ_1/N), and that under constant correlation ERC has the closed form wᵢ = σᵢ⁻¹ / Σσⱼ⁻¹ — *exactly* our inverse-volatility method. *Takeaway: this is why our three vol-based methods form a ladder — `inverse-volatility` (ignores correlation) → `risk-parity` (full ERC, accounts for correlation) → `min-variance` (lowest total vol). All three are now implemented; ERC and min-variance only diverge from inverse-vol when correlations differ meaningfully across the basket, and they cost a covariance estimate + a solver.*
 
 3. **HRP is the modern covariance-only alternative.** López de Prado (*Journal of Portfolio Management*, 2016) introduced Hierarchical Risk Parity to fix three documented failures of quadratic optimizers — instability, concentration, underperformance. It clusters assets by correlation, then allocates top-down by recursive bisection. Crucially it **never inverts the covariance matrix**, so it works even when the matrix is ill-conditioned (more assets than observations — "Markowitz's curse") and needs **no expected-return estimates**. In the paper's Monte Carlo tests HRP beat CLA min-variance out of sample on variance itself, though independent replications since are mixed — treat HRP as a robust, well-motivated option, not a guaranteed winner.
 
 ### Candidate methods to research
 
+> Already implemented (no longer candidates): **ERC risk-parity** and **minimum-variance** — see the Weight Methods table above.
+
 | Method | What it does | Why / when | Data needs | Pitfalls |
 |---|---|---|---|---|
 | **Score-proportional momentum** | wᵢ ∝ trailing return | Lets winners compound; our docs already promise it | prices | Concentration; negative scores need handling |
-| **True ERC risk parity** | Equal risk *contribution* incl. correlations | Diversifies risk, not dollars | covariance matrix, solver | Long-only constraint needed for uniqueness |
-| **True min-variance** | minimize wᵀΣw | Lowest-vol portfolio | covariance | Estimation error; corner solutions without constraints |
 | **Max Sharpe / mean-variance** | Markowitz tangency portfolio | The textbook optimum | returns **and** covariance | Worst estimation-error sensitivity (see DeMiguel) |
 | **HRP** | Cluster + recursive bisection | Robust when many assets / short history | covariance only | Linkage-method sensitivity; mixed replication |
 | **Volatility targeting** | Scale total exposure to hit target portfolio vol; rest to cash | Smooths returns; "vol-managed portfolios" literature | portfolio vol estimate | Whipsaw in vol spikes; leverage if target > realized |
@@ -247,7 +251,7 @@ How indicators + weight methods combine into the named strategies a researcher w
 | **Turtle / Donchian breakout** | 20-day Donchian breakout entry, 10-day exit | ATR-based position sizing | `if` + `donchian` (+ ATR sizing = research item) |
 | **Sector momentum rotation** | rank sectors by 3–12-month return | top N, equal or momentum-weighted | `filter :by momentum` + `weight :method momentum` |
 | **Dual momentum / GEM** (Antonacci) | relative: US vs intl equity 12-mo return; absolute: winner vs T-bill return | 100% in winner, else bonds | `if` + `return` metric + `filter` |
-| **All-weather / risk parity** | none — pure allocation | inverse-vol or ERC across stocks/bonds/gold/commodities | `weight :method inverse-volatility` |
+| **All-weather / risk parity** | none — pure allocation | inverse-vol or ERC across stocks/bonds/gold/commodities | `weight :method risk-parity` (or `inverse-volatility` / `min-variance`) |
 | **Vol-managed portfolio** | realized vol vs target | scale equity weight by target/realized vol | needs **volatility targeting** method (research item) |
 | **TTM squeeze breakout** | Bollinger inside Keltner = squeeze; breakout direction entry | full sleeve | `bbands` + `keltner` conditions |
 
@@ -268,7 +272,7 @@ Verified June 2026 against official docs. The cross-platform **table-stakes set*
 | ✅ We have | 14 of ~24 | SMA, EMA, RSI, MACD, Stoch, CCI, Williams %R, ADX, BBands, ATR, OBV, MFI, VWAP, Donchian, Keltner (+ stddev, momentum) |
 | ❌ Missing from table-stakes | ~9 | WMA/Hull/KAMA (MA variants), Stochastic RSI, Aroon, ROC, Ultimate Oscillator, Chaikin A/D & CMF, Parabolic SAR, Ichimoku, pivot points |
 
-On the **allocation** side, Composer (the closest product analog — also a declarative weights-based strategy builder) exposes equal, specified, inverse-volatility, and market-cap weight blocks plus threshold/rank filters; Portfolio Visualizer's tactical models cover relative-strength rotation, dual momentum, target-vol, and risk-parity style optimization. Our seven methods match Composer's surface well; the gap vs Portfolio Visualizer is **dual momentum and volatility targeting**.
+On the **allocation** side, Composer (the closest product analog — also a declarative weights-based strategy builder) exposes equal, specified, inverse-volatility, and market-cap weight blocks plus threshold/rank filters; Portfolio Visualizer's tactical models cover relative-strength rotation, dual momentum, target-vol, and risk-parity style optimization. Our six usable methods (market-cap excluded) match Composer's surface and go beyond it with real **ERC risk-parity** and **minimum-variance** optimizers; the remaining gap vs Portfolio Visualizer is **dual momentum and volatility targeting**.
 
 ---
 
@@ -284,15 +288,14 @@ Ranked by (strategy families unlocked) ÷ (implementation effort), given the gap
 5. **Ichimoku** — bigger lift (5 lines), large retail mindshare.
 6. **CMF / A-D line + RVOL** — completes the volume-confirmation family.
 
-**Weight methods**
+**Weight methods** (ERC risk-parity and min-variance are now done — see above)
 1. **Score-proportional momentum** — already documented, just not implemented.
 2. **Volatility targeting** — unlocks the whole vol-managed family; needs only realized vol we already compute.
 3. **Dual momentum** — mostly composition of existing blocks + `return`-vs-cash-proxy comparison; huge name recognition (Antonacci GEM).
-4. **True ERC risk parity** — replaces the stub honestly; needs covariance + solver.
-5. **HRP** — strong robustness story (no matrix inversion, no return estimates); medium effort.
-6. Fix the **inverse-vol missing-data floor** (σ=0.0001 makes data-less assets dominate — should fall back to equal or exclude).
+4. **HRP** — strong robustness story (no matrix inversion, no return estimates); medium effort, and a natural next step now that the covariance scaffolding exists.
+5. Fix the **inverse-vol missing-data floor** (σ=0.0001 makes data-less assets dominate — should fall back to equal or exclude). Note `risk-parity`/`min-variance` inherit this via their inverse-vol fallback.
 
-**Also worth fixing while in the area:** `filter :by volume` should average over `:lookback` instead of reading one bar; `min-variance` and `market-cap` should either be implemented or removed from the DSL surface until they are (silent fallback to a different method is a correctness trap for users).
+**Also worth fixing while in the area:** `filter :by volume` should average over `:lookback` instead of reading one bar. (`min-variance` is now implemented and `market-cap` now hard-fails validation, so the old "silent fallback" trap is resolved.)
 
 ---
 

@@ -45,7 +45,7 @@ history for what has shipped.
 | Alpaca metrics | defined 3× under 3 names | 1 set in `libs/alpaca` |
 | Logging | full JSON formatter exists, only `market-data` configures it | configured everywhere, with `trace_id`/`span_id` |
 | Tracing | none (only an `X-Request-ID` header) | OTel spans + W3C propagation across services |
-| Events (`llamatrade_events`) | n/a (predecessor `eventbus_*` shim removed) | `events_published_total`, `events_consumed_total{outcome}`, `events_reconnects_total`, `events_consumer_lag` |
+| Events (`llamatrade_events`) | n/a (predecessor `eventbus_*` shim removed) | `llamatrade_events_published_total`, `llamatrade_events_consumed_total{outcome}`, `llamatrade_events_reconnects_total`, `llamatrade_events_consumer_lag` (via the telemetry registry; W3C trace propagated through the envelope) |
 | Scraping | every service exposes `/metrics`; **nothing scrapes them** | Prometheus + Grafana + OTel Collector + Alertmanager (compose + k8s) |
 | Frontend | `console.error` only | `@llamatrade/telemetry`: web-vitals, RPC latency, JS errors, trace propagation |
 | Workers | Celery backtests have **zero** task/queue metrics | full Celery instrumentation |

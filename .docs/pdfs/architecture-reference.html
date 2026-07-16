@@ -1,0 +1,1272 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>LlamaTrade — Engineering Architecture Reference</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+  :root{
+    --violet:#6D28D9; --blue:#2563EB; --emerald:#059669; --emerald-dk:#047857;
+    --green-600:#16a34a; --green-700:#15803d; --accent:#ec4899;
+    --ink:#171717; --ink-2:#404040; --ink-3:#737373; --line:#e5e5e5; --bg-soft:#fafafa;
+    --grad:linear-gradient(120deg,#6D28D9 0%,#2563EB 36%,#059669 72%,#047857 100%);
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;font-family:'Inter',-apple-system,'SF Pro Display','Helvetica Neue',Arial,sans-serif;
+    color:var(--ink);font-size:10pt;line-height:1.5;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+  @page{size:Letter;margin:17mm 15mm 28mm 15mm;}
+  .sysmap{width:90%;height:auto;display:block;margin:6px auto 0;}
+
+  /* running footer (full width) */
+  /* footer is fixed relative to the full page (paper edges): left/right:0 = paper edge.
+     The rule spans edge-to-edge; a small 5mm padding pins the text near the border. */
+  .footer{position:fixed;bottom:6mm;left:0;right:0;height:5mm;background:#fff;display:flex;
+    align-items:center;justify-content:space-between;font-size:7.5pt;color:var(--ink-3);
+    letter-spacing:.02em;border-top:1px solid var(--line);padding:2.5mm 5mm 0;}
+  .footer .fl{display:flex;align-items:center;gap:6px;font-weight:600;}
+  .footer .dot{width:7px;height:7px;border-radius:2px;background:var(--grad);}
+
+  h1,h2,h3{margin:0;font-weight:700;letter-spacing:-0.01em;}
+  .page-break{break-before:page;}
+  section{margin-top:26px;}
+  .sec-head{break-after:avoid;display:flex;align-items:center;gap:10px;margin-bottom:4px;}
+  h2{break-after:avoid;font-size:16pt;letter-spacing:-0.02em;}
+  h3{font-size:11.5pt;margin:16px 0 4px;color:var(--ink);break-after:avoid;}
+  tr{break-inside:avoid;}
+  .callout,.diagram,.code,.inv,.hflow,.metacard,.two{break-inside:avoid;}
+  /* distribute a short single-page section's blocks to fill the page height */
+  .fillbody{display:flex;flex-direction:column;justify-content:space-between;min-height:200mm;}
+  .sec-num{font-family:'JetBrains Mono',monospace;font-size:9pt;font-weight:600;color:#fff;
+    background:var(--grad);border-radius:6px;padding:2px 8px;}
+  .sec-rule{height:3px;width:46px;background:var(--grad);border-radius:3px;margin:9px 0 16px;}
+  p{margin:0 0 10px;color:var(--ink-2);}
+  strong{color:var(--ink);font-weight:600;}
+  .lead{font-size:10.5pt;color:var(--ink-2);}
+  .muted{color:var(--ink-3);font-size:8.5pt;}
+  a{color:var(--blue);text-decoration:none;}
+
+  /* cover */
+  .cover{position:relative;padding-top:4mm;}
+  .cover .band{height:6px;width:100%;background:var(--grad);border-radius:4px;margin-bottom:26mm;}
+  .brandrow{display:flex;align-items:center;gap:14px;margin-bottom:28mm;}
+  .brandrow .wordmark{font-size:19pt;font-weight:800;letter-spacing:-0.02em;}
+  .accentword{color:var(--green-600);}
+  .cover .eyebrow{text-transform:uppercase;letter-spacing:.22em;font-size:9pt;font-weight:700;color:var(--green-600);margin-bottom:10px;}
+  .cover h1{font-size:38pt;line-height:1.05;letter-spacing:-0.025em;margin-bottom:14px;}
+  .cover .lede{font-size:12pt;color:var(--ink-2);max-width:150mm;line-height:1.55;margin-bottom:26mm;}
+  .metacard{border:1px solid var(--line);border-radius:12px;padding:16px 20px;display:grid;
+    grid-template-columns:repeat(4,1fr);gap:8px 18px;background:var(--bg-soft);}
+  .metacard .k{font-size:7.5pt;text-transform:uppercase;letter-spacing:.14em;color:var(--ink-3);font-weight:700;margin-bottom:3px;}
+  .metacard .v{font-size:10pt;font-weight:600;color:var(--ink);}
+  .badge-status{display:inline-block;background:#dcfce7;color:var(--green-700);font-weight:700;font-size:8pt;letter-spacing:.04em;padding:3px 9px;border-radius:999px;}
+
+  /* TOC */
+  .toc{margin-top:6px;}
+  .toc .ti{break-inside:avoid;display:flex;gap:14px;align-items:baseline;padding:11px 2px;border-bottom:1px solid #f1f1f1;}
+  .toc .ti:last-child{border-bottom:none;}
+  .toc .tn{font-family:'JetBrains Mono',monospace;font-size:9pt;font-weight:600;color:#fff;background:var(--grad);border-radius:6px;padding:2px 8px;}
+  .toc .tt{font-weight:700;font-size:11pt;color:var(--ink);}
+  .toc .td{font-size:8.7pt;color:var(--ink-3);margin-top:1px;}
+
+  /* tables */
+  table{width:100%;border-collapse:collapse;margin:8px 0 6px;font-size:8.7pt;}
+  thead th{text-align:left;font-size:7.5pt;text-transform:uppercase;letter-spacing:.1em;color:var(--ink-3);font-weight:700;padding:6px 9px;border-bottom:2px solid var(--line);}
+  tbody td{padding:5px 9px;border-bottom:1px solid #f0f0f0;vertical-align:top;color:var(--ink-2);}
+  tbody tr:nth-child(even){background:#fcfcfc;}
+  td .cap{font-weight:600;color:var(--ink);}
+  .mono{font-family:'JetBrains Mono',monospace;font-size:8pt;}
+  code{font-family:'JetBrains Mono',monospace;font-size:8.6pt;background:#f1f5f9;padding:1px 5px;border-radius:4px;color:#7c3aed;}
+
+  /* code block */
+  .code{font-family:'JetBrains Mono',monospace;font-size:8.4pt;line-height:1.55;background:#0f172a;color:#e2e8f0;
+    border-radius:10px;padding:12px 14px;white-space:pre;overflow:hidden;margin:8px 0;}
+  .code .lbl{display:block;font-family:'Inter',sans-serif;font-size:7pt;letter-spacing:.14em;text-transform:uppercase;color:#94a3b8;font-weight:700;margin-bottom:7px;}
+  .code .kw{color:#7dd3fc;} .code .str{color:#fca5a5;} .code .cmt{color:#64748b;font-style:italic;}
+  .code .fn{color:#86efac;} .code .num{color:#fcd34d;} .code .key{color:#c4b5fd;}
+
+  /* pill */
+  .pill{display:inline-block;font-size:7.5pt;font-weight:700;padding:2px 8px;border-radius:999px;white-space:nowrap;}
+  .pill.g{background:#dcfce7;color:#15803d;} .pill.b{background:#dbeafe;color:#1d4ed8;}
+  .pill.v{background:#ede9fe;color:#6d28d9;} .pill.a{background:#fce7f3;color:#be185d;}
+
+  /* diagram container */
+  .diagram{border:1px solid var(--line);border-radius:12px;background:#fff;padding:12px 14px;margin:9px 0;}
+  .diagram .cap{font-size:7.5pt;text-transform:uppercase;letter-spacing:.13em;color:var(--ink-3);font-weight:700;margin-bottom:8px;}
+
+  /* horizontal flow */
+  .hflow{display:flex;align-items:stretch;gap:6px;flex-wrap:nowrap;}
+  .hflow .fbox{flex:1;min-width:0;border:1px solid var(--line);border-radius:9px;padding:9px 9px;background:#fff;position:relative;}
+  .hflow .fbox::before{content:"";position:absolute;top:0;left:0;width:100%;height:3px;border-radius:9px 9px 0 0;background:var(--grad);}
+  .hflow .fbox .n{font-family:'JetBrains Mono',monospace;font-size:7pt;color:var(--ink-3);font-weight:600;}
+  .hflow .fbox .t{font-weight:700;font-size:8.7pt;margin:2px 0 2px;color:var(--ink);}
+  .hflow .fbox .d{font-size:7.3pt;color:var(--ink-3);line-height:1.35;}
+  .hflow .arr{display:flex;align-items:center;color:var(--ink-3);font-weight:700;font-size:12pt;}
+
+  /* vertical flow */
+  .vflow{display:flex;flex-direction:column;gap:0;}
+  .vrow{display:flex;align-items:stretch;gap:12px;}
+  .vrow .stepno{flex:0 0 26px;display:flex;flex-direction:column;align-items:center;}
+  .vrow .stepno .num{width:21px;height:21px;border-radius:6px;background:var(--grad);color:#fff;font-family:'JetBrains Mono',monospace;font-weight:700;font-size:8.5pt;display:flex;align-items:center;justify-content:center;}
+  .vrow .stepno .line{flex:1;width:2px;background:linear-gradient(#cbd5e1,#e2e8f0);margin:2px 0;}
+  .vrow:last-child .stepno .line{display:none;}
+  .vrow .body{padding-bottom:7px;flex:1;}
+  .vrow .body .t{font-weight:700;font-size:9pt;color:var(--ink);}
+  .vrow .body .t .tag{font-family:'JetBrains Mono',monospace;font-size:7.5pt;font-weight:600;color:var(--green-700);background:#dcfce7;border-radius:5px;padding:1px 6px;margin-left:6px;}
+  .vrow .body .d{font-size:8.3pt;color:var(--ink-2);margin-top:1px;line-height:1.35;}
+
+  /* invariant box */
+  .inv{font-family:'JetBrains Mono',monospace;font-size:8.6pt;line-height:1.7;background:linear-gradient(180deg,#f3fdf7,#fff);
+    border:1px solid #d9f0e3;border-left:5px solid transparent;border-image:var(--grad) 1;border-radius:10px;padding:12px 14px;color:var(--ink);margin:8px 0;}
+  .inv b{color:var(--green-700);}
+
+  /* callout */
+  .callout{border-radius:12px;padding:14px 16px;margin:11px 0;border:1px solid #d9f0e3;background:linear-gradient(180deg,#f3fdf7,#ffffff);position:relative;}
+  .callout::before{content:"";position:absolute;left:0;top:0;bottom:0;width:5px;border-radius:12px 0 0 12px;background:var(--grad);}
+  .callout .label{text-transform:uppercase;letter-spacing:.16em;font-size:7.5pt;font-weight:800;color:var(--green-600);margin-bottom:6px;}
+  .callout p{margin:0;font-size:9.5pt;}
+
+  /* service tier map */
+  .tiermap{display:flex;flex-direction:column;gap:6px;}
+  .tier{display:flex;gap:6px;align-items:stretch;}
+  .tier .tlabel{flex:0 0 22mm;font-size:7pt;text-transform:uppercase;letter-spacing:.08em;font-weight:700;color:var(--ink-3);display:flex;align-items:center;}
+  .tier .tboxes{flex:1;display:flex;gap:8px;}
+  .svc{flex:1;border:1px solid var(--line);border-radius:9px;padding:6px 9px;background:#fff;}
+  .svc .nm{font-weight:700;font-size:8.7pt;color:var(--ink);}
+  .svc .pt{font-family:'JetBrains Mono',monospace;font-size:7pt;color:var(--blue);font-weight:600;}
+  .svc .ds{font-size:7.2pt;color:var(--ink-3);line-height:1.3;margin-top:1px;}
+  .svc.web{background:linear-gradient(180deg,#faf5ff,#fff);border-color:#e9d5ff;}
+  .svc.ledger{background:var(--grad);border:none;color:#fff;}
+  .svc.ledger .nm,.svc.ledger .pt{color:#fff;} .svc.ledger .ds{color:rgba(255,255,255,.9);}
+  .infra{display:flex;gap:8px;}
+  .infra .ib{flex:1;text-align:center;border:1px dashed var(--line);border-radius:8px;padding:6px;font-size:7.6pt;color:var(--ink-3);font-weight:600;}
+
+  ul.tight{margin:4px 0 10px;padding-left:16px;}
+  ul.tight li{font-size:9pt;color:var(--ink-2);margin-bottom:4px;line-height:1.45;}
+  ul.tight li b{color:var(--ink);}
+  .two{display:grid;grid-template-columns:1fr 1fr;gap:0 24px;}
+
+  .kv{display:grid;grid-template-columns:auto 1fr;gap:3px 12px;font-size:8.7pt;margin:6px 0;}
+  .kv .k{font-weight:700;color:var(--ink);font-family:'JetBrains Mono',monospace;font-size:8pt;}
+  .kv .v{color:var(--ink-2);}
+
+  .prins{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:6px;}
+  .prin{border:1px solid var(--line);border-radius:9px;padding:9px 12px 9px 13px;background:#fff;position:relative;break-inside:avoid;}
+  .prin::before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;border-radius:9px 0 0 9px;background:var(--grad);}
+  .prin .pt{font-weight:700;font-size:9pt;color:var(--ink);}
+  .prin .pd{font-size:8.2pt;color:var(--ink-3);line-height:1.4;margin-top:2px;}
+</style>
+</head>
+<body>
+
+<div class="footer">
+  <div class="fl"><span class="dot"></span> LlamaTrade · Engineering Architecture Reference</div>
+  <div>Internal — Engineering</div>
+</div>
+
+<!-- ===== COVER ===== -->
+<div class="cover">
+  <div class="band"></div>
+  <div class="brandrow">
+    <svg width="46" height="46" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <rect width="32" height="32" rx="8" fill="url(#g)"/>
+      <path d="M4 28 L8 26 L12 24 L16 22 L20 20 L24 21 L28 18" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" stroke-opacity="0.7"/>
+      <path d="M4 28 L8 24 L12 20 L16 18 L20 14 L24 16 L28 10" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" stroke-opacity="0.7"/>
+      <path d="M4 28 L8 22 L12 18 L16 12 L20 10 L24 8 L28 4" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" stroke-opacity="0.7"/>
+      <circle cx="28" cy="18" r="1.5" fill="white" fill-opacity="0.7"/><circle cx="28" cy="10" r="1.5" fill="white" fill-opacity="0.7"/><circle cx="28" cy="4" r="1.5" fill="white" fill-opacity="0.7"/>
+      <defs><linearGradient id="g" x1="0" y1="0" x2="32" y2="32" gradientUnits="userSpaceOnUse">
+        <stop stop-color="#6D28D9"/><stop offset="0.33" stop-color="#2563EB"/><stop offset="0.66" stop-color="#059669"/><stop offset="1" stop-color="#047857"/>
+      </linearGradient></defs>
+    </svg>
+    <div class="wordmark"><span>Llama</span><span class="accentword">Trade</span></div>
+  </div>
+  <div class="eyebrow">Engineering Reference</div>
+  <h1>Architecture &amp;<br><span class="accentword">System Design</span></h1>
+  <div class="lede">How every part of the platform works, end to end — services and their boundaries, the
+  strategy DSL and compiler, the event-sourced portfolio ledger, data &amp; multi-tenancy, durability,
+  the event fabric, and observability. The single technical reference for the engineering team.</div>
+  <div class="metacard">
+    <div><div class="k">Status</div><div class="v"><span class="badge-status">LIVING DOC</span></div></div>
+    <div><div class="k">Date</div><div class="v">June 16, 2026</div></div>
+    <div><div class="k">Audience</div><div class="v">Engineering</div></div>
+    <div><div class="k">Scope</div><div class="v">Full system, end to end</div></div>
+  </div>
+</div>
+
+<!-- ===== CONTENTS ===== -->
+<div class="page-break"></div>
+<section>
+  <div class="sec-head"><span class="sec-num">—</span><h2>Contents</h2></div>
+  <div class="sec-rule"></div>
+  <div class="toc">
+    <div class="ti"><span class="tn">01</span><div><div class="tt">System at a Glance</div><div class="td">product loop · microservices · communication model</div></div></div>
+    <div class="ti"><span class="tn">02</span><div><div class="tt">Service Topology</div><div class="td">the service map · ports · responsibilities · dependencies</div></div></div>
+    <div class="ti"><span class="tn">03</span><div><div class="tt">Communication &amp; Protocols</div><div class="td">Connect vs gRPC · Redis · proto source of truth · no gateway</div></div></div>
+    <div class="ti"><span class="tn">04</span><div><div class="tt">End-to-End Flows</div><div class="td">strategy lifecycle · live runner · market data · backtest</div></div></div>
+    <div class="ti"><span class="tn">05</span><div><div class="tt">Strategy DSL &amp; Compiler</div><div class="td">grammar · indicators · weight methods · compilation</div></div></div>
+    <div class="ti"><span class="tn">06</span><div><div class="tt">The Portfolio Ledger</div><div class="td">sleeves · lots · invariants · reconciliation · block-and-allocate</div></div></div>
+    <div class="ti"><span class="tn">07</span><div><div class="tt">Data Model</div><div class="td">tenant boundary · ledger cluster · shared bars</div></div></div>
+    <div class="ti"><span class="tn">08</span><div><div class="tt">Multi-Tenancy &amp; Security</div><div class="td">JWT · RLS · RBAC · encryption · audit</div></div></div>
+    <div class="ti"><span class="tn">09</span><div><div class="tt">Durability &amp; State Authority</div><div class="td">layered authority · idempotent orders · crash recovery</div></div></div>
+    <div class="ti"><span class="tn">10</span><div><div class="tt">Event Fabric</div><div class="td">Redis Streams · two delivery modes · idempotency · libs/events</div></div></div>
+    <div class="ti"><span class="tn">11</span><div><div class="tt">Observability</div><div class="td">three signals · cardinality rules · metric catalog · the money path</div></div></div>
+    <div class="ti"><span class="tn">12</span><div><div class="tt">Stack &amp; Deployment</div><div class="td">tech stack · GKE · CI/CD · runtime</div></div></div>
+  </div>
+</section>
+
+<!-- ===== 01 SYSTEM AT A GLANCE ===== -->
+<div class="page-break"></div>
+<section>
+  <div class="sec-head"><span class="sec-num">01</span><h2>System at a Glance</h2></div>
+  <div class="sec-rule"></div>
+  <p class="lead">LlamaTrade is a multi-tenant SaaS for algorithmic trading. Users build (or pick) strategies in a
+  visual builder, backtest them against historical data, and run them live or in paper mode against
+  <strong>their own Alpaca brokerage account</strong>. We never custody funds — Alpaca is the broker of record;
+  we are the automation layer.</p>
+
+  <div class="diagram">
+    <div class="cap">The product loop — every feature serves one cycle</div>
+    <div class="hflow">
+      <div class="fbox"><div class="n">01</div><div class="t">Build / Pick</div><div class="d">visual builder · template · AI copilot → DSL</div></div>
+      <div class="arr">›</div>
+      <div class="fbox"><div class="n">02</div><div class="t">Backtest</div><div class="d">vs SPY · Sharpe · drawdown · win rate</div></div>
+      <div class="arr">›</div>
+      <div class="fbox"><div class="n">03</div><div class="t">Deploy Paper</div><div class="d">simulated money on live data</div></div>
+      <div class="arr">›</div>
+      <div class="fbox"><div class="n">04</div><div class="t">Go Live</div><div class="d">real money · risk guardrails · circuit breaker</div></div>
+    </div>
+    <div class="muted" style="margin-top:9px;text-align:center">iterate ◄ tweak → re-test → redeploy — every run pins an immutable strategy version</div>
+  </div>
+
+  <h3>The shape of the system</h3>
+  <p>It is a set of <strong>focused microservices</strong>. The browser talks <strong>directly</strong> to each service over
+  the Connect protocol (no API gateway); services talk to each other over gRPC; and asynchronous / real-time
+  work flows through Redis. One service — <strong>Portfolio</strong> — owns the event-sourced
+  <strong>ledger</strong> that is the book of record for money and positions.</p>
+
+  <div class="two">
+    <ul class="tight">
+      <li><b>10 services</b> (9 backend + web), ports <code>88xx</code></li>
+      <li><b>Connect</b> (HTTP/1.1+JSON) browser→service; <b>gRPC</b> (HTTP/2) service→service</li>
+      <li><b>Redis</b> for Celery jobs, live streams, and the ledger fill bus</li>
+    </ul>
+    <ul class="tight">
+      <li><b>Postgres 16 + TimescaleDB</b> (bars); per-tenant <b>Row-Level Security</b></li>
+      <li><b>Proto</b> is the single source of truth for contracts &amp; enums</li>
+      <li><b>BYO Alpaca keys</b>, encrypted per tenant (AES-256-GCM)</li>
+    </ul>
+  </div>
+
+  <h3>Core design principles</h3>
+  <div class="prins">
+    <div class="prin"><div class="pt">The ledger is the book of record</div><div class="pd">Event-sourced, double-entry; per-sleeve positions, cash &amp; P&amp;L are pure folds. Conservation is a checksum, so drift is never silent.</div></div>
+    <div class="prin"><div class="pt">Proto is the single source of truth</div><div class="pd">Contracts &amp; enums defined once, generated for Python + TypeScript. Integers internally; strings only at external boundaries.</div></div>
+    <div class="prin"><div class="pt">Durability layered by authority</div><div class="pd">The broker owns live positions, the ledger owns money &amp; P&amp;L, the executor owns order intent — no single session log to keep in sync.</div></div>
+    <div class="prin"><div class="pt">Idempotent by construction</div><div class="pd">A deterministic <code>client_order_id</code> gives exactly-once submission and doubles as the ledger's attribution key on every fill.</div></div>
+    <div class="prin"><div class="pt">Isolated by default</div><div class="pd"><code>tenant_id</code> on every row, Row-Level Security as a backstop, and <code>X-Tenant-ID</code> propagated across services.</div></div>
+    <div class="prin"><div class="pt">Bring your own brokerage</div><div class="pd">Users connect their own Alpaca account; LlamaTrade automates it but never custodies funds — Alpaca is the broker of record.</div></div>
+  </div>
+</section>
+
+<!-- ===== SYSTEM DIAGRAM (landscape) ===== -->
+<div class="page-break"></div>
+<section>
+  <div class="sec-head"><span class="sec-num">◆</span><h2>The System in Action</h2></div>
+  <div class="sec-rule"></div>
+  <svg class="sysmap" viewBox="0 0 800 838" font-family="Inter, -apple-system, sans-serif" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0" stop-color="#6D28D9"/><stop offset="0.36" stop-color="#2563EB"/>
+        <stop offset="0.72" stop-color="#059669"/><stop offset="1" stop-color="#047857"/>
+      </linearGradient>
+      <marker id="aBlue" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 Z" fill="#2563EB"/></marker>
+      <marker id="aGreen" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 Z" fill="#16a34a"/></marker>
+      <marker id="aViolet" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 Z" fill="#7c3aed"/></marker>
+      <marker id="aOrange" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 Z" fill="#ea580c"/></marker>
+      <marker id="aGray" markerWidth="8" markerHeight="8" refX="6" refY="2.6" orient="auto"><path d="M0 0 L6 2.6 L0 5.2 Z" fill="#94a3b8"/></marker>
+    </defs>
+
+    <!-- ===== CONNECTORS (under boxes) ===== -->
+    <!-- Connect (blue) -->
+    <path d="M330 86 V114 H152 V140" fill="none" stroke="#2563EB" stroke-width="2" marker-end="url(#aBlue)"/>
+    <path d="M400 86 V114 H410 V140" fill="none" stroke="#2563EB" stroke-width="2" marker-end="url(#aBlue)"/>
+    <!-- gRPC (green) -->
+    <path d="M410 226 V210" fill="none" stroke="#16a34a" stroke-width="2" marker-end="url(#aGreen)"/>
+    <path d="M410 374 V400" fill="none" stroke="#16a34a" stroke-width="2" marker-end="url(#aGreen)"/>
+    <path d="M300 188 H282 V634" fill="none" stroke="#16a34a" stroke-width="2" marker-end="url(#aGreen)"/>
+    <path d="M410 484 V510" fill="none" stroke="#16a34a" stroke-width="2" marker-end="url(#aGreen)"/>
+    <!-- Alpaca (orange) -->
+    <path d="M520 430 H556" fill="none" stroke="#ea580c" stroke-width="2" marker-end="url(#aOrange)"/>
+    <path d="M556 450 H520" fill="none" stroke="#ea580c" stroke-width="2" marker-end="url(#aOrange)"/>
+    <path d="M520 528 H556" fill="none" stroke="#ea580c" stroke-width="2" marker-end="url(#aOrange)"/>
+    <path d="M556 544 H520" fill="none" stroke="#ea580c" stroke-width="2" marker-end="url(#aOrange)"/>
+    <!-- Redis Streams (violet dashed) -->
+    <path d="M360 602 V634" fill="none" stroke="#7c3aed" stroke-width="2" stroke-dasharray="6 4" marker-end="url(#aViolet)"/>
+    <path d="M414 634 V604" fill="none" stroke="#7c3aed" stroke-width="1.6" stroke-dasharray="6 4" marker-end="url(#aViolet)"/>
+    <path d="M40 690 H22 V330 H38" fill="none" stroke="#7c3aed" stroke-width="1.6" stroke-dasharray="6 4" marker-end="url(#aViolet)"/>
+    <!-- persistence (faint gray) -->
+    <path d="M150 358 V762" fill="none" stroke="#cbd5e1" stroke-width="1.4" marker-end="url(#aGray)"/>
+    <path d="M520 462 H540 V752 H404 V762" fill="none" stroke="#cbd5e1" stroke-width="1.4" marker-end="url(#aGray)"/>
+    <path d="M500 736 V750 H612 V762" fill="none" stroke="#cbd5e1" stroke-width="1.4" marker-end="url(#aGray)"/>
+
+    <!-- ===== CONNECTOR LABELS ===== -->
+    <g font-size="12" font-weight="600">
+      <g><rect x="246" y="92" width="108" height="18" rx="4" fill="#fff"/><text x="300" y="105" text-anchor="middle" fill="#2563EB">Connect · JWT</text></g>
+      <g><rect x="428" y="208" width="80" height="17" rx="4" fill="#fff"/><text x="468" y="221" text-anchor="middle" fill="#16a34a">drafts DSL</text></g>
+      <g><rect x="428" y="378" width="80" height="17" rx="4" fill="#fff"/><text x="468" y="391" text-anchor="middle" fill="#16a34a">gRPC · bars</text></g>
+      <g><rect x="96" y="438" width="156" height="18" rx="4" fill="#fff"/><text x="174" y="451" text-anchor="middle" fill="#16a34a">gRPC · AllocateCapital</text></g>
+      <g><rect x="428" y="488" width="62" height="17" rx="4" fill="#fff"/><text x="459" y="501" text-anchor="middle" fill="#16a34a">live bars</text></g>
+      <g><rect x="284" y="610" width="152" height="18" rx="4" fill="#fff"/><text x="360" y="623" text-anchor="middle" fill="#7c3aed">Redis Streams · fills</text></g>
+      <g><rect x="78" y="520" width="150" height="18" rx="4" fill="#fff"/><text x="153" y="533" text-anchor="middle" fill="#7c3aed">drift / freeze alerts</text></g>
+    </g>
+
+    <!-- ===== BOXES ===== -->
+    <!-- BROWSER -->
+    <g>
+      <rect x="270" y="22" width="260" height="64" rx="11" fill="#faf5ff" stroke="#d8b4fe" stroke-width="1.4"/>
+      <rect x="270" y="22" width="260" height="5" rx="2.5" fill="url(#bg)"/>
+      <text x="288" y="51" font-size="17" font-weight="700" fill="#171717">Web <tspan font-size="13" font-weight="600" fill="#2563EB" font-family="'JetBrains Mono',monospace">:8800</tspan></text>
+      <text x="288" y="71" font-size="12" fill="#64748b">React SPA · visual builder · dashboards</text>
+    </g>
+    <!-- AUTH -->
+    <g>
+      <rect x="40" y="140" width="220" height="58" rx="10" fill="#fff" stroke="#e2e8f0" stroke-width="1.4"/>
+      <text x="56" y="167" font-size="15" font-weight="700" fill="#171717">Auth <tspan font-size="12" font-weight="600" fill="#2563EB" font-family="'JetBrains Mono',monospace">:8810</tspan></text>
+      <text x="56" y="185" font-size="11.5" fill="#64748b">JWT · tenants · encrypted creds</text>
+    </g>
+    <!-- BILLING -->
+    <g>
+      <rect x="40" y="220" width="220" height="58" rx="10" fill="#fff" stroke="#e2e8f0" stroke-width="1.4"/>
+      <text x="56" y="247" font-size="15" font-weight="700" fill="#171717">Billing <tspan font-size="12" font-weight="600" fill="#2563EB" font-family="'JetBrains Mono',monospace">:8880</tspan></text>
+      <text x="56" y="265" font-size="11.5" fill="#64748b">Stripe · plans · entitlements</text>
+    </g>
+    <!-- NOTIFICATION -->
+    <g>
+      <rect x="40" y="300" width="220" height="58" rx="10" fill="#fff" stroke="#e2e8f0" stroke-width="1.4"/>
+      <text x="56" y="327" font-size="15" font-weight="700" fill="#171717">Notification <tspan font-size="12" font-weight="600" fill="#2563EB" font-family="'JetBrains Mono',monospace">:8870</tspan></text>
+      <text x="56" y="345" font-size="11.5" fill="#64748b">alerts · email / SMS / webhook</text>
+    </g>
+    <!-- STRATEGY -->
+    <g>
+      <rect x="300" y="140" width="220" height="66" rx="10" fill="#fff" stroke="#e2e8f0" stroke-width="1.4"/>
+      <text x="316" y="166" font-size="15" font-weight="700" fill="#171717">Strategy <tspan font-size="12" font-weight="600" fill="#2563EB" font-family="'JetBrains Mono',monospace">:8820</tspan></text>
+      <text x="316" y="184" font-size="11.5" fill="#64748b">DSL parse · validate ·</text>
+      <text x="316" y="199" font-size="11.5" fill="#64748b">version · compile</text>
+    </g>
+    <!-- AGENT -->
+    <g>
+      <rect x="300" y="226" width="220" height="54" rx="10" fill="#fff" stroke="#e2e8f0" stroke-width="1.4"/>
+      <text x="316" y="252" font-size="15" font-weight="700" fill="#171717">Agent <tspan font-size="12" font-weight="600" fill="#2563EB" font-family="'JetBrains Mono',monospace">:8890</tspan></text>
+      <text x="316" y="270" font-size="11.5" fill="#64748b">AI copilot → DSL</text>
+    </g>
+    <!-- BACKTEST -->
+    <g>
+      <rect x="300" y="308" width="220" height="66" rx="10" fill="#fff" stroke="#e2e8f0" stroke-width="1.4"/>
+      <text x="316" y="334" font-size="15" font-weight="700" fill="#171717">Backtest <tspan font-size="12" font-weight="600" fill="#2563EB" font-family="'JetBrains Mono',monospace">:8830</tspan></text>
+      <text x="316" y="352" font-size="11.5" fill="#64748b">Celery engine · metrics ·</text>
+      <text x="316" y="367" font-size="11.5" fill="#64748b">benchmark vs SPY</text>
+    </g>
+    <!-- MARKET-DATA -->
+    <g>
+      <rect x="300" y="400" width="220" height="84" rx="10" fill="#fff" stroke="#e2e8f0" stroke-width="1.4"/>
+      <text x="316" y="426" font-size="15" font-weight="700" fill="#171717">Market-Data <tspan font-size="12" font-weight="600" fill="#2563EB" font-family="'JetBrains Mono',monospace">:8840</tspan></text>
+      <text x="316" y="444" font-size="11.5" fill="#64748b">the only Alpaca data gateway</text>
+      <text x="316" y="460" font-size="11.5" fill="#64748b">Timescale store · IEX stream</text>
+    </g>
+    <!-- TRADING -->
+    <g>
+      <rect x="300" y="510" width="220" height="92" rx="10" fill="#fff" stroke="#e2e8f0" stroke-width="1.4"/>
+      <rect x="300" y="510" width="220" height="5" rx="2.5" fill="url(#bg)"/>
+      <text x="316" y="540" font-size="15" font-weight="700" fill="#171717">Trading <tspan font-size="12" font-weight="600" fill="#2563EB" font-family="'JetBrains Mono',monospace">:8850</tspan></text>
+      <text x="316" y="558" font-size="11.5" fill="#64748b">runner: bars → strategy →</text>
+      <text x="316" y="573" font-size="11.5" fill="#64748b">risk → order executor</text>
+      <text x="316" y="590" font-size="11.5" fill="#64748b">fills = position truth</text>
+    </g>
+    <!-- ALPACA -->
+    <g>
+      <rect x="560" y="308" width="216" height="252" rx="11" fill="#fff7ed" stroke="#fdba74" stroke-width="1.5"/>
+      <rect x="560" y="308" width="216" height="5" rx="2.5" fill="#ea580c"/>
+      <text x="576" y="340" font-size="16" font-weight="700" fill="#9a3412">Alpaca Markets</text>
+      <text x="576" y="360" font-size="11.5" fill="#9a3412">external broker of record</text>
+      <text x="576" y="375" font-size="11.5" fill="#9a3412">(FINRA / SIPC)</text>
+      <line x1="576" y1="389" x2="760" y2="389" stroke="#fdba74"/>
+      <text x="576" y="410" font-size="12" font-weight="700" fill="#9a3412">Trading API</text>
+      <text x="576" y="426" font-size="11" fill="#b45309">orders · account · positions</text>
+      <text x="576" y="440" font-size="11" fill="#b45309">trade_updates (WS)</text>
+      <text x="576" y="464" font-size="12" font-weight="700" fill="#9a3412">Market Data API</text>
+      <text x="576" y="480" font-size="11" fill="#b45309">bars · quotes · snapshots</text>
+      <text x="576" y="494" font-size="11" fill="#b45309">IEX stream (WS)</text>
+    </g>
+    <!-- LEDGER -->
+    <g>
+      <rect x="40" y="636" width="480" height="100" rx="12" fill="url(#bg)"/>
+      <text x="60" y="670" font-size="17" font-weight="800" fill="#fff">Portfolio · The Ledger <tspan font-size="13" font-weight="600" fill="#e9d5ff" font-family="'JetBrains Mono',monospace">:8860</tspan></text>
+      <text x="60" y="692" font-size="12.5" fill="#f0fdfa">book of record — sleeves · lots · double-entry · per-strategy P&amp;L</text>
+      <text x="60" y="713" font-size="11" font-weight="600" fill="#ffffff" font-family="'JetBrains Mono',monospace">Σ sleeve_qty = broker_qty · Σ cash = broker_cash · nets to 0</text>
+    </g>
+    <!-- STORES -->
+    <g>
+      <rect x="40" y="764" width="220" height="62" rx="10" fill="#f8fafc" stroke="#e2e8f0" stroke-width="1.4"/>
+      <text x="56" y="792" font-size="14" font-weight="700" fill="#334155">Postgres 16 · RLS</text>
+      <text x="56" y="810" font-size="12" fill="#64748b">tenant-scoped data</text>
+      <rect x="290" y="764" width="220" height="62" rx="10" fill="#f8fafc" stroke="#e2e8f0" stroke-width="1.4"/>
+      <text x="306" y="792" font-size="14" font-weight="700" fill="#334155">TimescaleDB</text>
+      <text x="306" y="810" font-size="12" fill="#64748b">bars hypertable (shared)</text>
+      <rect x="540" y="764" width="236" height="62" rx="10" fill="#f8fafc" stroke="#e2e8f0" stroke-width="1.4"/>
+      <text x="556" y="792" font-size="14" font-weight="700" fill="#334155">Redis 7</text>
+      <text x="556" y="810" font-size="12" fill="#64748b">Streams · Celery queue · cache</text>
+    </g>
+    <!-- LEGEND -->
+    <g>
+      <rect x="560" y="22" width="216" height="100" rx="11" fill="#f8fafc" stroke="#e2e8f0" stroke-width="1.4"/>
+      <text x="576" y="44" font-size="11" font-weight="700" fill="#64748b" letter-spacing="1">CONNECTION TYPES</text>
+      <line x1="576" y1="60" x2="606" y2="60" stroke="#2563EB" stroke-width="2.4"/><text x="614" y="64" font-size="11.5" fill="#334155">Connect (browser)</text>
+      <line x1="576" y1="78" x2="606" y2="78" stroke="#16a34a" stroke-width="2.4"/><text x="614" y="82" font-size="11.5" fill="#334155">gRPC (service↔service)</text>
+      <line x1="576" y1="96" x2="606" y2="96" stroke="#7c3aed" stroke-width="2.4" stroke-dasharray="6 4"/><text x="614" y="100" font-size="11.5" fill="#334155">Redis Streams (events)</text>
+      <line x1="576" y1="114" x2="606" y2="114" stroke="#ea580c" stroke-width="2.4"/><text x="614" y="118" font-size="11.5" fill="#334155">Alpaca REST / WS</text>
+    </g>
+  </svg>
+  <p class="muted" style="margin-top:10px">Everything flows downhill — <b style="color:#2563EB">Connect</b> from the browser, <b style="color:#16a34a">gRPC</b> between services, <b style="color:#ea580c">Alpaca</b> for execution, and <b style="color:#7c3aed">Redis-Streams</b> fills into the ledger, the double-entry book of record.</p>
+</section>
+
+<!-- ===== 02 SERVICE TOPOLOGY ===== -->
+<div class="page-break"></div>
+<section>
+  <div class="sec-head"><span class="sec-num">02</span><h2>Service Topology</h2></div>
+  <div class="sec-rule"></div>
+
+  <p>The browser talks to every service directly over <strong>Connect</strong> (a JWT per request); services call each
+  other over <strong>gRPC</strong>; and <strong>Portfolio</strong> owns the event-sourced ledger — the book of record. The full
+  flow map is on the previous page (<em>The System in Action</em>); grouped by role:</p>
+  <div class="kv" style="margin:8px 0 6px;font-size:9pt">
+    <div class="k">Build</div><div class="v">Strategy · Agent (AI copilot → DSL)</div>
+    <div class="k">Test &amp; data</div><div class="v">Backtest · Market-Data — the only Alpaca data gateway</div>
+    <div class="k">Execute</div><div class="v">Trading — runner · risk + circuit breaker · orders ⇄ Alpaca</div>
+    <div class="k">Identity / ops</div><div class="v">Auth · Billing · Notification</div>
+    <div class="k">Book of record</div><div class="v">★ Portfolio — the ledger (sleeves · double-entry · Σ sleeve = broker)</div>
+    <div class="k">Stores</div><div class="v">Postgres 16 (RLS) · TimescaleDB (bars) · Redis 7 (queues · fills · progress)</div>
+  </div>
+
+  <div style="border-top:1px solid var(--line);margin:20px 0 14px;"></div>
+
+  <table>
+    <thead><tr><th>Service</th><th>Port</th><th>Responsibility</th><th>Key dependencies</th></tr></thead>
+    <tbody>
+      <tr><td class="cap">Web</td><td class="mono">8800</td><td>React SPA — builder, dashboards (nginx/CDN)</td><td>all services (Connect)</td></tr>
+      <tr><td class="cap">Auth</td><td class="mono">8810</td><td>Users, tenants, roles, API keys, JWT, encrypted Alpaca creds</td><td>Postgres</td></tr>
+      <tr><td class="cap">Strategy</td><td class="mono">8820</td><td>Strategy CRUD, versioning, compile/validate, templates</td><td>Postgres · dsl · compiler</td></tr>
+      <tr><td class="cap">Backtest</td><td class="mono">8830</td><td>Historical simulation, metrics, benchmark comparison</td><td>Celery/Redis · Market Data · compiler</td></tr>
+      <tr><td class="cap">Market Data</td><td class="mono">8840</td><td>Historical bars (stored) + real-time Alpaca streaming; only data gateway</td><td>Alpaca · TimescaleDB · Redis</td></tr>
+      <tr><td class="cap">Trading</td><td class="mono">8850</td><td>Live/paper execution, risk, position tracking; emits fills to ledger</td><td>Alpaca (WS+REST) · Redis · Portfolio</td></tr>
+      <tr><td class="cap">Portfolio</td><td class="mono">8860</td><td><b>The ledger</b> — book of record; positions, P&amp;L, performance</td><td>Postgres · Redis · Market Data</td></tr>
+      <tr><td class="cap">Notification</td><td class="mono">8870</td><td>Alerts, webhooks, email/SMS/Slack</td><td>Postgres · SMTP/Twilio/Slack</td></tr>
+      <tr><td class="cap">Billing</td><td class="mono">8880</td><td>Subscriptions, plan limits, usage (Stripe); webhooks on :8881</td><td>Postgres · Stripe</td></tr>
+      <tr><td class="cap">Agent</td><td class="mono">8890</td><td>AI copilot — natural-language strategy building</td><td>LLM · Strategy · Backtest</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- ===== 03 COMMUNICATION ===== -->
+<div class="page-break"></div>
+<section>
+  <div class="sec-head"><span class="sec-num">03</span><h2>Communication &amp; Protocols</h2></div>
+  <div class="sec-rule"></div>
+  <p>Three transport lanes, each for a job. Contracts are shared via <strong>Protocol Buffers</strong>;
+  <code>make proto</code> generates Python and TypeScript from <code>libs/proto</code>.</p>
+
+  <div class="hflow">
+    <div class="fbox"><div class="n">browser → service</div><div class="t">Connect</div><div class="d">HTTP/1.1 + JSON · Bearer JWT validated by each service's shared middleware · visible in DevTools · native streaming</div></div>
+    <div class="arr">·</div>
+    <div class="fbox"><div class="n">service → service</div><div class="t">gRPC</div><div class="d">HTTP/2 + binary protobuf · e.g. Backtest→Market Data, Trading→Portfolio · X-Tenant-ID propagated</div></div>
+    <div class="arr">·</div>
+    <div class="fbox"><div class="n">async / real-time</div><div class="t">Redis</div><div class="d">Celery backtests · live price &amp; order streams · the ledger fill bus (Streams)</div></div>
+  </div>
+
+  <h3>Proto is the source of truth</h3>
+  <p>Enums are defined once in proto and generated for both languages — integers internally and for storage,
+  strings only at external boundaries (Alpaca, display).</p>
+  <div class="code"><span class="lbl">enums — integers internally, strings only at the edge</span><span class="kw">from</span> llamatrade_proto.generated <span class="kw">import</span> ORDER_SIDE_BUY, ORDER_STATUS_FILLED
+<span class="kw">from</span> src.models <span class="kw">import</span> order_side_to_str          <span class="cmt"># int → "buy"/"sell" for Alpaca</span>
+
+<span class="kw">if</span> order.side == ORDER_SIDE_BUY:                    <span class="cmt"># integers internally</span>
+    <span class="kw">await</span> alpaca.submit_order(side=<span class="fn">order_side_to_str</span>(order.side))  <span class="cmt"># strings only at the boundary</span></div>
+
+  <h3>Why no API gateway <span class="pill g" style="vertical-align:middle">decided</span></h3>
+  <p>LlamaTrade uses <strong>direct service communication</strong> via Connect rather than a gateway. The rationale,
+  for a frontend-only API with &lt;15 services and strong shared-library discipline:</p>
+  <div class="two">
+    <ul class="tight">
+      <li><b>No SPOF</b> — a gateway down means all APIs down; per-service auth failures stay isolated.</li>
+      <li><b>Lower latency</b> — no proxy hop (+1–5ms), important for real-time data.</li>
+      <li><b>Native streaming</b> — Connect streams without gRPC-Web transcoding.</li>
+    </ul>
+    <ul class="tight">
+      <li><b>Independent scaling</b> — each service scales to its own load.</li>
+      <li><b>Simpler local dev</b> — no gateway process to run.</li>
+      <li><b>Consistency</b> via <code>llamatrade_common</code> shared middleware (auth, logging, errors).</li>
+    </ul>
+  </div>
+  <p class="muted">Revisit if we expose a public third-party API, need per-key quotas, or grow past ~20 services — services
+  already own their auth, so a gateway would layer on rather than replace.</p>
+</section>
+
+<!-- ===== 04 FLOWS ===== -->
+<div class="page-break"></div>
+<section>
+  <div class="sec-head"><span class="sec-num">04</span><h2>End-to-End Flows</h2></div>
+  <div class="sec-rule"></div>
+
+  <h3>4.1 — Strategy lifecycle (immutable versions)</h3>
+  <p>The visual builder compiles to a portable <strong>DSL</strong> (S-expression). Saving mints an <strong>immutable
+  <code>StrategyVersion</code></strong> (visual <code>config</code> JSON + compiled <code>sexpr</code>); edits always create vN+1.
+  Every backtest and live session pins an exact version, so runs are reproducible.</p>
+  <div class="hflow">
+    <div class="fbox"><div class="t">Visual Builder</div><div class="d">blocks · JSON state</div></div>
+    <div class="arr">›</div>
+    <div class="fbox"><div class="t">DSL (S-expr)</div><div class="d">portable · runnable</div></div>
+    <div class="arr">›</div>
+    <div class="fbox"><div class="t">StrategyVersion vN</div><div class="d">immutable — edits mint vN+1</div></div>
+    <div class="arr">›</div>
+    <div class="fbox"><div class="t">Backtest / Live</div><div class="d">both pin an exact vN</div></div>
+  </div>
+
+  <h3>4.2 — Live trading runner (two clocks, four loops)</h3>
+  <p>Deploying a strategy starts a <strong>runner</strong> bound to the tenant's Alpaca credentials. It ticks on a
+  <strong>1-minute bar clock</strong>, but a <strong>date-based rebalance gate</strong> (the <code>:rebalance</code> frequency, ≤ once/day)
+  decides when target weights recompute.</p>
+  <div class="diagram">
+    <div class="cap">The runner loop — fills are the source of truth for positions</div>
+    <div class="vflow">
+      <div class="vrow"><div class="stepno"><div class="num">1</div><div class="line"></div></div><div class="body"><div class="t">Data in <span class="tag">1-min bars</span></div><div class="d">Runner consumes the live bar stream from Market Data and ticks every minute the market is open.</div></div></div>
+      <div class="vrow"><div class="stepno"><div class="num">2</div><div class="line"></div></div><div class="body"><div class="t">Strategy logic <span class="tag">rebalance gate</span></div><div class="d">On a qualifying bar (gate open ≤ once/day) the compiled strategy recomputes target weights for its sleeve; otherwise it holds.</div></div></div>
+      <div class="vrow"><div class="stepno"><div class="num">3</div><div class="line"></div></div><div class="body"><div class="t">Risk + circuit breaker</div><div class="d">Sleeve-aware risk checks (buying power, position/order/daily-loss limits, rate); consecutive-loss / drawdown circuit breaker can halt the session.</div></div></div>
+      <div class="vrow"><div class="stepno"><div class="num">4</div><div class="line"></div></div><div class="body"><div class="t">Order out <span class="tag">deterministic id</span></div><div class="d">One rebalance can emit many orders (one per symbol whose holding changes). Executor submits to Alpaca immediately (market/limit/stop/stop-limit/bracket) with a deterministic <code>client_order_id</code> for exactly-once submission.</div></div></div>
+      <div class="vrow"><div class="stepno"><div class="num">5</div><div class="line"></div></div><div class="body"><div class="t">Fills in <span class="tag">trade_updates</span></div><div class="d">A <code>trade_updates</code> WebSocket delivers fills asynchronously — submission ≠ instant fill. Fills are the source of truth for positions, not optimistic local state.</div></div></div>
+      <div class="vrow"><div class="stepno"><div class="num">6</div><div class="line"></div></div><div class="body"><div class="t">Reconcile + book</div><div class="d">Every ~5 min the runner reconciles local positions against the broker and corrects drift; terminal fills are published to the portfolio ledger for per-sleeve P&amp;L.</div></div></div>
+    </div>
+  </div>
+
+  <h3>4.3 — Market data &amp; backtest</h3>
+  <div class="two">
+    <div>
+      <p><strong>Market Data</strong> is the single gateway to Alpaca and the system of record for price history.
+      Historical bars live in a shared <strong>TimescaleDB hypertable</strong>; real-time trades/quotes/bars stream from
+      Alpaca's WebSocket and fan out to clients, hottest values cached in Redis. <em>No other service calls Alpaca
+      for data directly.</em></p>
+    </div>
+    <div>
+      <p><strong>Backtest</strong> fetches bars from Market Data over gRPC and runs the compiled strategy bar-by-bar
+      with slippage and commission. It computes return, Sharpe, Sortino, max drawdown, win rate, profit factor and
+      an equity curve — vs a benchmark (<strong>SPY default</strong>) for alpha/beta. Jobs run on <strong>Celery</strong>;
+      progress streams to the UI.</p>
+    </div>
+  </div>
+
+  <h3>4.4 — The Alpaca surface (everything via <code>libs/alpaca</code>)</h3>
+  <p>Every Alpaca call — REST and WebSocket — goes through the shared <code>llamatrade_alpaca</code> library; no service
+  talks to Alpaca directly or loads credentials itself. <code>paper=True</code> selects the paper environment
+  (<code>paper-api.alpaca.markets</code> vs <code>api.alpaca.markets</code>; market data from <code>data.alpaca.markets</code>).</p>
+  <div class="two">
+    <div>
+      <h3 style="margin-top:6px;font-size:10pt">Trading REST · <code>TradingClient</code></h3>
+      <div class="kv">
+        <div class="k">get_account()</div><div class="v">equity · buying power · cash → risk checks</div>
+        <div class="k">submit_order()</div><div class="v">place an order (types below) with a deterministic <code>client_order_id</code></div>
+        <div class="k">cancel_order() · get_order()</div><div class="v">cancel · status (<code>filled_qty</code>, avg price)</div>
+        <div class="k">get_positions() · close_position()</div><div class="v">broker positions · flatten a symbol</div>
+        <div class="k">get_clock()</div><div class="v">market open/close · next session</div>
+        <div class="k">get_order_by_client_id()</div><div class="v">crash recovery — collapse a retry onto the same order</div>
+      </div>
+    </div>
+    <div>
+      <h3 style="margin-top:6px;font-size:10pt">Market Data REST · <code>MarketDataClient</code></h3>
+      <div class="kv">
+        <div class="k">get_bars() · get_multi_bars()</div><div class="v">OHLCV — 1Min·5Min·15Min·1H·1D · store-first, Alpaca gap-fill</div>
+        <div class="k">get_latest_quote() · _trade()</div><div class="v">top of book · last print</div>
+        <div class="k">get_snapshot() · get_multi_snapshots()</div><div class="v">bar + quote + trade, combined</div>
+      </div>
+      <p class="muted">Served from the TimescaleDB store first; Alpaca only fills gaps. Redis TTLs: historical <b>24h</b> · today <b>5m</b> · quote <b>10s</b> · snapshot <b>15s</b>.</p>
+    </div>
+  </div>
+
+  <h3>Order types &amp; time-in-force</h3>
+  <div class="two">
+    <table>
+      <thead><tr><th>Order type</th><th>Behavior</th></tr></thead>
+      <tbody>
+        <tr><td class="mono">market</td><td>immediate at best available price</td></tr>
+        <tr><td class="mono">limit</td><td>at <code>limit_price</code> or better</td></tr>
+        <tr><td class="mono">stop</td><td>becomes a market order when <code>stop_price</code> hits</td></tr>
+        <tr><td class="mono">stop_limit</td><td>becomes a limit order at the stop</td></tr>
+        <tr><td class="mono">trailing_stop</td><td>stop trails by <code>trail_price</code> / <code>trail_percent</code></td></tr>
+        <tr><td class="mono">bracket / OCO</td><td>entry + attached stop-loss + take-profit</td></tr>
+      </tbody>
+    </table>
+    <table>
+      <thead><tr><th>Time-in-force</th><th>Behavior</th></tr></thead>
+      <tbody>
+        <tr><td class="mono">day</td><td>cancels at the session close</td></tr>
+        <tr><td class="mono">gtc</td><td>good-til-cancelled</td></tr>
+        <tr><td class="mono">ioc</td><td>fill what's available now, cancel the rest</td></tr>
+        <tr><td class="mono">fok</td><td>fill the whole order at once or cancel</td></tr>
+        <tr><td class="mono" style="border:none">&nbsp;</td><td style="border:none"><span class="muted">fills arrive async on <code>trade_updates</code> — submission ≠ fill (§4.5)</span></td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="page-break"></div>
+  <h3>4.5 — Real-time streams &amp; resilience</h3>
+  <div class="two">
+    <div>
+      <h3 style="margin-top:6px;font-size:10pt">WebSocket streams</h3>
+      <ul class="tight">
+        <li><b><code>MarketDataStreamClient</code></b> — IEX trades/quotes/bars; <b>callback</b> delivery (<code>set_callbacks()</code> + <code>run()</code>); singleton with ref-counted subscriptions.</li>
+        <li><b><code>TradingStreamClient</code></b> — <code>trade_updates</code> order/fill events; <b>async-generator</b> (<code>async for event in stream()</code>). <b>Fills are the source of truth for positions.</b></li>
+        <li><b><code>MockTradeStream</code></b> — in-memory trade stream for tests.</li>
+      </ul>
+    </div>
+    <div>
+      <h3 style="margin-top:6px;font-size:10pt">Resilience &amp; credentials</h3>
+      <ul class="tight">
+        <li><b>REST</b> (<code>AlpacaClientBase</code>): token-bucket rate limiter · circuit breaker · retry w/ exponential backoff + jitter · Prometheus per-endpoint metrics.</li>
+        <li><b>WebSocket</b> (<code>AlpacaWebSocketBase</code>): shared transport · auth · reconnect w/ backoff + jitter.</li>
+        <li><b>Credentials</b> resolve: explicit <code>AlpacaCredentials</code> → per-tenant (decrypted from DB) → <code>ALPACA_API_KEY/SECRET</code> env fallback.</li>
+        <li><b>Singletons</b>: <code>get_trading_client()</code>/<code>_async()</code> · <code>get_market_data_client()</code>/<code>_async()</code> · <code>get_market_data_stream()</code>.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ===== 05 DSL ===== -->
+<section>
+  <div class="sec-head"><span class="sec-num">05</span><h2>Strategy DSL &amp; Compiler</h2></div>
+  <div class="sec-rule"></div>
+  <p class="lead">The DSL is an <strong>allocation language</strong>, not a signal language — a strategy computes
+  <strong>target portfolio weights</strong> (e.g. <code>{VTI: 60%, BND: 40%}</code>), never share counts. It is an
+  S-expression with a lossless round-trip between text, AST, JSON, and visual blocks.</p>
+
+  <div class="code"><span class="lbl">example — sector rotation (regime filter + momentum top-N)</span>(<span class="kw">strategy</span> <span class="str">"Sector Rotation"</span>
+  <span class="key">:rebalance</span> monthly  <span class="key">:benchmark</span> SPY
+  (<span class="kw">if</span> (&gt; (<span class="fn">price</span> SPY) (<span class="fn">sma</span> SPY <span class="num">200</span>))            <span class="cmt">; bull regime?</span>
+    (<span class="kw">filter</span> <span class="key">:by</span> momentum <span class="key">:select</span> (top <span class="num">3</span>) <span class="key">:lookback</span> <span class="num">90</span>   <span class="cmt">; top 3 sectors</span>
+      (<span class="kw">weight</span> <span class="key">:method</span> momentum <span class="key">:lookback</span> <span class="num">90</span>
+        (<span class="fn">asset</span> XLK) (<span class="fn">asset</span> XLF) (<span class="fn">asset</span> XLE) (<span class="fn">asset</span> XLV) (<span class="fn">asset</span> XLI)))
+    (<span class="kw">else</span> (<span class="kw">weight</span> <span class="key">:method</span> equal (<span class="fn">asset</span> BND) (<span class="fn">asset</span> GLD)))))   <span class="cmt">; defensive</span></div>
+
+  <h3>Six block types</h3>
+  <table>
+    <thead><tr><th>Block</th><th>Role</th><th>Form</th></tr></thead>
+    <tbody>
+      <tr><td class="cap">strategy</td><td>Root container (exactly one); name, <code>:rebalance</code>, <code>:benchmark</code></td><td class="mono">(strategy "…" :rebalance … children)</td></tr>
+      <tr><td class="cap">asset</td><td>Leaf — the only construct that holds capital</td><td class="mono">(asset SYM :weight n)</td></tr>
+      <tr><td class="cap">weight</td><td>Allocation engine — assigns each child a fraction by <code>:method</code></td><td class="mono">(weight :method m :lookback d :top n …)</td></tr>
+      <tr><td class="cap">group</td><td>Transparent named container (readability/UI)</td><td class="mono">(group "…" :weight n …)</td></tr>
+      <tr><td class="cap">if / else</td><td>Conditional allocation — branch on a market condition</td><td class="mono">(if &lt;cond&gt; then (else else))</td></tr>
+      <tr><td class="cap">filter</td><td>Rank candidates by a metric, keep top/bottom N before weighting</td><td class="mono">(filter :by c :select (top n) …)</td></tr>
+    </tbody>
+  </table>
+
+  <div class="two">
+    <div>
+      <h3>Weight methods</h3>
+      <table>
+        <thead><tr><th>Method</th><th>Status</th></tr></thead>
+        <tbody>
+          <tr><td class="mono">specified</td><td><span class="pill g">full</span> manual %</td></tr>
+          <tr><td class="mono">equal</td><td><span class="pill g">full</span> 100/N</td></tr>
+          <tr><td class="mono">momentum</td><td><span class="pill a">partial</span> equal-weights winners</td></tr>
+          <tr><td class="mono">inverse-volatility</td><td><span class="pill g">full</span> 1/σ</td></tr>
+          <tr><td class="mono">risk-parity</td><td><span class="pill g">full</span> ERC (covariance)</td></tr>
+          <tr><td class="mono">min-variance</td><td><span class="pill g">full</span> Σ⁻¹·1 long-only</td></tr>
+          <tr><td class="mono">market-cap</td><td><span class="pill a">rejected</span> no fundamentals</td></tr>
+        </tbody>
+      </table>
+      <p class="muted" style="margin:3px 0 0"><b>Roadmap methods:</b> volatility-targeting · HRP · dual-momentum · score-proportional momentum.</p>
+    </div>
+    <div>
+      <h3>Indicators (16+)</h3>
+      <ul class="tight">
+        <li><b>Trend:</b> SMA, EMA, MACD, ADX</li>
+        <li><b>Momentum:</b> RSI, Stochastic, CCI, Williams %R, MFI, Momentum</li>
+        <li><b>Volatility:</b> Bollinger, ATR, Keltner, StdDev</li>
+        <li><b>Volume/channel:</b> OBV, VWAP, Donchian</li>
+      </ul>
+      <p class="muted" style="margin:3px 0 0">14 of ~24 cross-platform table-stakes shipped. <b>Roadmap (researched):</b> ROC, Stochastic RSI, Aroon, Parabolic SAR, SuperTrend, Ichimoku, Hull/KAMA, A/D · CMF, pivot points, 52-wk-high, Z-score-vs-MA.</p>
+      <h3>Conditions</h3>
+      <ul class="tight">
+        <li><b>Comparison</b> <code>&gt; &lt; &gt;= &lt;= = !=</code> — true every bar it holds</li>
+        <li><b>Crossover</b> <code>crosses-above/below</code> — true only on the transition (needs 2 bars)</li>
+        <li><b>Logical</b> <code>and / or / not</code></li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="callout">
+    <div class="label">Two clocks — the behavior-defining gate</div>
+    <p>Conditions are <strong>evaluated</strong> every bar but only <strong>acted on</strong> at the <code>:rebalance</code> cadence
+    (<code>daily</code> … <code>annually</code>; finest grain is daily). A <code>crosses-above</code> that fires between rebalance
+    dates of a <code>monthly</code> strategy is <strong>missed</strong> — prefer state comparisons (<code>&gt;</code>) for low-frequency strategies.</p>
+  </div>
+
+  <h3>Compilation pipeline</h3>
+  <div class="hflow">
+    <div class="fbox"><div class="t">Parse</div><div class="d">tokenize → recursive-descent → AST (frozen dataclasses, source locations)</div></div>
+    <div class="arr">›</div>
+    <div class="fbox"><div class="t">Validate</div><div class="d">methods, weight sums, params; "did you mean" suggestions</div></div>
+    <div class="arr">›</div>
+    <div class="fbox"><div class="t">Compile</div><div class="d">extract indicators, min-bars warm-up; bar-by-bar (live) + vectorized (backtest)</div></div>
+    <div class="arr">›</div>
+    <div class="fbox"><div class="t">Evaluate</div><div class="d">target weights {sym:%} → ledger → orders</div></div>
+  </div>
+  <p class="muted">Stored on <code>StrategyVersion</code> in both forms: <code>config_sexpr</code> (canonical text) and <code>config_json</code> (compiled IR),
+  plus extracted <code>symbols</code> / <code>timeframe</code>. The same compiled <code>StrategySession</code> drives live and backtest identically — no drift.</p>
+
+  <div class="page-break"></div>
+  <h3>Rebalance frequencies &amp; metrics</h3>
+  <div class="two">
+    <div>
+      <table>
+        <thead><tr><th>Frequency</th><th>Recomputes target weights</th></tr></thead>
+        <tbody>
+          <tr><td class="mono">daily</td><td>first qualifying bar each trading day</td></tr>
+          <tr><td class="mono">weekly</td><td>first trading day of the week</td></tr>
+          <tr><td class="mono">monthly</td><td>first trading day of the month</td></tr>
+          <tr><td class="mono">quarterly</td><td>first trading day of the quarter</td></tr>
+          <tr><td class="mono">annually</td><td>first trading day of the year</td></tr>
+        </tbody>
+      </table>
+      <p class="muted">Finest grain is <code>daily</code> — no sub-daily rebalancing today, even though 1-minute bars are ingested.</p>
+    </div>
+    <div>
+      <p><strong>Metrics</strong> usable in any condition: <code>(drawdown SYM)</code> · <code>(return SYM n)</code> ·
+      <code>(volatility SYM [n])</code> — e.g. de-risk when <code>(&gt; (drawdown SPY) 0.15)</code>.</p>
+      <div class="code" style="font-size:8pt"><span class="lbl">example — risk-balanced core (all-weather)</span>(<span class="kw">strategy</span> <span class="str">"All-Weather Core"</span>
+  <span class="key">:rebalance</span> quarterly  <span class="key">:benchmark</span> SPY
+  (<span class="kw">weight</span> <span class="key">:method</span> inverse-volatility <span class="key">:lookback</span> <span class="num">60</span>
+    (<span class="fn">asset</span> SPY) (<span class="fn">asset</span> TLT)
+    (<span class="fn">asset</span> GLD) (<span class="fn">asset</span> DBC)))</div>
+    </div>
+  </div>
+
+  <h3>Value expressions — the operands of conditions</h3>
+  <div class="two">
+    <ul class="tight">
+      <li><b>Numeric</b> — <code>50</code>, <code>0.30</code>, <code>-2.5</code> (no <code>%</code> — compare RSI to <code>30</code>, not <code>30%</code>).</li>
+      <li><b>Price</b> — <code>(price SYM [:close|:open|:high|:low|:volume])</code>; the field <i>is</i> the keyword.</li>
+    </ul>
+    <ul class="tight">
+      <li><b>Indicator</b> — <code>(name SYM params [:output])</code>, e.g. <code>(macd SPY 12 26 9 :signal)</code>.</li>
+      <li><b>Metric</b> — <code>(drawdown SYM)</code> · <code>(return SYM n)</code> · <code>(volatility SYM [n])</code>.</li>
+    </ul>
+  </div>
+
+  <h3>How indicators shape weights — three mechanisms</h3>
+  <p class="muted">The DSL is allocation, not signals: an indicator can only influence the target weights in one of three ways.</p>
+  <div class="hflow">
+    <div class="fbox"><div class="n">branch</div><div class="t">if / else</div><div class="d">a condition flips the subtree between two allocations (regime switch)</div></div>
+    <div class="arr">·</div>
+    <div class="fbox"><div class="n">rank</div><div class="t">filter</div><div class="d"><code>:by</code> a metric → keep <code>(top N)</code> / <code>(bottom N)</code> candidates before weighting</div></div>
+    <div class="arr">·</div>
+    <div class="fbox"><div class="n">weight</div><div class="t">weight :method</div><div class="d">the method computes weights from price history (momentum, inv-vol…)</div></div>
+  </div>
+
+  <h3>Example gallery — the language's range</h3>
+  <div class="two">
+    <div>
+      <div class="code" style="font-size:7.7pt"><span class="lbl">static — classic 60/40</span>(<span class="kw">strategy</span> <span class="str">"Classic 60/40"</span>
+  <span class="key">:rebalance</span> quarterly <span class="key">:benchmark</span> SPY
+  (<span class="kw">weight</span> <span class="key">:method</span> specified
+    (<span class="fn">asset</span> VTI <span class="key">:weight</span> <span class="num">60</span>)
+    (<span class="fn">asset</span> BND <span class="key">:weight</span> <span class="num">40</span>)))</div>
+    </div>
+    <div>
+      <div class="code" style="font-size:7.7pt"><span class="lbl">tactical — trend regime switch</span>(<span class="kw">strategy</span> <span class="str">"Trend Regime"</span>
+  <span class="key">:rebalance</span> daily <span class="key">:benchmark</span> SPY
+  (<span class="kw">if</span> (&gt; (<span class="fn">sma</span> SPY <span class="num">50</span>) (<span class="fn">sma</span> SPY <span class="num">200</span>))
+    (<span class="kw">weight</span> <span class="key">:method</span> specified
+      (<span class="fn">asset</span> SPY <span class="key">:weight</span> <span class="num">60</span>) (<span class="fn">asset</span> QQQ <span class="key">:weight</span> <span class="num">40</span>))
+    (<span class="kw">else</span> (<span class="kw">weight</span> <span class="key">:method</span> specified
+      (<span class="fn">asset</span> TLT <span class="key">:weight</span> <span class="num">50</span>) (<span class="fn">asset</span> GLD <span class="key">:weight</span> <span class="num">50</span>)))))</div>
+    </div>
+  </div>
+  <div class="two">
+    <div>
+      <div class="code" style="font-size:7.7pt"><span class="lbl">mean-reversion — nested RSI regimes</span>(<span class="kw">strategy</span> <span class="str">"RSI Mean Reversion"</span>
+  <span class="key">:rebalance</span> daily <span class="key">:benchmark</span> SPY
+  (<span class="kw">if</span> (&lt; (<span class="fn">rsi</span> SPY <span class="num">14</span>) <span class="num">30</span>)
+    (<span class="fn">asset</span> SPY <span class="key">:weight</span> <span class="num">100</span>)
+    (<span class="kw">else</span> (<span class="kw">if</span> (&gt; (<span class="fn">rsi</span> SPY <span class="num">14</span>) <span class="num">70</span>)
+      (<span class="fn">asset</span> TLT <span class="key">:weight</span> <span class="num">100</span>)
+      (<span class="kw">else</span> (<span class="kw">weight</span> <span class="key">:method</span> equal
+        (<span class="fn">asset</span> SPY) (<span class="fn">asset</span> TLT)))))))</div>
+    </div>
+    <div>
+      <div class="code" style="font-size:7.7pt"><span class="lbl">confirmation — multi-condition crossover</span>(<span class="kw">strategy</span> <span class="str">"Confirmed Trend"</span>
+  <span class="key">:rebalance</span> daily <span class="key">:benchmark</span> SPY
+  (<span class="kw">if</span> (<span class="kw">and</span> (<span class="fn">crosses-above</span> (<span class="fn">sma</span> SPY <span class="num">50</span>) (<span class="fn">sma</span> SPY <span class="num">200</span>))
+           (&lt; (<span class="fn">rsi</span> SPY <span class="num">14</span>) <span class="num">70</span>)
+           (<span class="kw">not</span> (&gt; (<span class="fn">drawdown</span> SPY) <span class="num">0.10</span>)))
+    (<span class="kw">weight</span> <span class="key">:method</span> specified
+      (<span class="fn">asset</span> SPY <span class="key">:weight</span> <span class="num">70</span>) (<span class="fn">asset</span> QQQ <span class="key">:weight</span> <span class="num">30</span>))
+    (<span class="kw">else</span> (<span class="fn">asset</span> BIL <span class="key">:weight</span> <span class="num">100</span>))))</div>
+    </div>
+  </div>
+
+  <h3>Authoring tips</h3>
+  <div class="two">
+    <ul class="tight">
+      <li><b>Start static, then add logic</b> — begin with <code>specified</code>/<code>equal</code>, layer in <code>if</code>/<code>filter</code> once it works.</li>
+      <li><b>Match cadence to logic</b> — comparisons for low-frequency rebalances; crossovers shine on <code>daily</code>.</li>
+      <li><b>Always set a <code>:benchmark</code></b> so reporting can compute alpha/beta.</li>
+    </ul>
+    <ul class="tight">
+      <li><b>Mind the warm-up</b> — <code>(sma SPY 200)</code> needs ≥ 200 bars before it produces signals.</li>
+      <li><b>Diversify the universe</b> for dynamic methods — momentum / inverse-vol need several uncorrelated candidates.</li>
+      <li><b>Target weights are per-sleeve</b>, not your whole account — see §06.</li>
+    </ul>
+  </div>
+
+  <div class="page-break"></div>
+  <h3>Built-in strategy families — what the DSL expresses</h3>
+  <p class="muted">The platform ships templates for the allocation-expressible families below. Shorts, options, and
+  pairs need execution features beyond today's long-only allocation model (roadmap).</p>
+  <table>
+    <thead><tr><th>Family</th><th>Idea</th><th>DSL building blocks</th><th>Status</th></tr></thead>
+    <tbody>
+      <tr><td class="cap">MA crossover</td><td>golden / death cross → risk-on vs risk-off</td><td class="mono">if · sma/ema · crosses-above</td><td><span class="pill g">ships</span></td></tr>
+      <tr><td class="cap">Tactical regime (Faber GTAA)</td><td>hold above the 200-day, else cash/bonds</td><td class="mono">if · sma · weight equal</td><td><span class="pill g">ships</span></td></tr>
+      <tr><td class="cap">RSI mean reversion</td><td>buy oversold, trim overbought</td><td class="mono">if · rsi (nested)</td><td><span class="pill g">ships</span></td></tr>
+      <tr><td class="cap">Sector momentum rotation</td><td>hold the top-N sectors by trailing return</td><td class="mono">filter :by momentum · weight momentum</td><td><span class="pill g">ships</span></td></tr>
+      <tr><td class="cap">Dual momentum (GEM)</td><td>absolute + relative momentum → winner or bonds</td><td class="mono">if · return · filter</td><td><span class="pill g">ships</span></td></tr>
+      <tr><td class="cap">Risk parity / all-weather</td><td>ERC / inverse-vol across stocks/bonds/gold/commodities</td><td class="mono">weight :method risk-parity</td><td><span class="pill g">ships</span></td></tr>
+      <tr><td class="cap">MACD trend</td><td>MACD line crossing its signal</td><td class="mono">if · macd :signal · crosses-above</td><td><span class="pill g">ships</span></td></tr>
+      <tr><td class="cap">Donchian / Turtle breakout</td><td>20-day channel breakout, ATR-sized</td><td class="mono">if · donchian (+ ATR sizing)</td><td><span class="pill a">partial</span></td></tr>
+      <tr><td class="cap">Volatility-managed</td><td>scale equity by realized vs target vol</td><td class="mono">needs a vol-target method</td><td><span class="pill a">roadmap</span></td></tr>
+      <tr><td class="cap">Pairs / stat-arb</td><td>cointegrated spread z-score (long/short)</td><td class="mono">needs shorts + spread legs</td><td><span class="pill a">roadmap</span></td></tr>
+      <tr><td class="cap">Options income</td><td>covered call · iron condor</td><td class="mono">needs options orders</td><td><span class="pill a">roadmap</span></td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- ===== 06 LEDGER ===== -->
+<div class="page-break"></div>
+<section>
+  <div class="sec-head"><span class="sec-num">06</span><h2>The Portfolio Ledger</h2></div>
+  <div class="sec-rule"></div>
+  <p class="lead">The hard problem: one Alpaca account serves <strong>multiple strategies + manual trades</strong>, but the broker
+  only knows aggregates (one position per symbol, one cash balance). The ledger gives every holding
+  <strong>provenance</strong>, prevents strategies from <strong>interfering</strong>, and accounts each strategy's capital correctly —
+  via an <strong>event-sourced, double-entry</strong> book (the UMA / overlay-manager pattern).</p>
+
+  <div class="diagram">
+    <div class="cap">Account → virtual sleeves → provenance-bearing lots</div>
+    <div class="tiermap">
+      <div class="tier"><div class="tlabel">Account</div><div class="tboxes">
+        <div class="svc ledger"><div class="nm">ACCOUNT — 1 per broker credential set</div><div class="ds">reconciliation anchor · broker truth: aggregate position/symbol · cash · equity</div></div>
+      </div></div>
+      <div class="tier"><div class="tlabel">Sleeves</div><div class="tboxes">
+        <div class="svc"><div class="nm">Unallocated</div><div class="ds">free cash pool</div></div>
+        <div class="svc"><div class="nm">Manual</div><div class="ds">hand-traded cash + lots</div></div>
+        <div class="svc"><div class="nm">Unmanaged</div><div class="ds">pre-existing / external</div></div>
+        <div class="svc"><div class="nm">Strategy A · B …</div><div class="ds">type=strategy · alloc_capital · cash + lots</div></div>
+      </div></div>
+      <div class="tier"><div class="tlabel">Lots</div><div class="tboxes">
+        <div class="svc"><div class="nm">LOT — provenance-bearing</div><div class="ds">symbol · qty · cost_basis · opened_by_order · opened_at / closed_at &nbsp;|&nbsp; a user "holding" = Σ lots across sleeves</div></div>
+      </div></div>
+    </div>
+  </div>
+
+  <div class="inv"><b>Invariants (continuously assertable):</b>
+(1) POSITIONS:  Σ<sub>sleeves</sub> sleeve_qty(symbol)  ==  broker_qty(symbol)   ∀ symbol
+(2) CASH:       Σ<sub>sleeves</sub> sleeve_cash          ==  broker_cash
+(3) SLEEVE:     sleeve.equity = sleeve.cash + Σ(lot market value)</div>
+  <p class="muted">Double-entry means every share/cash movement has matched legs summing to zero, so conservation is a
+  <strong>checksum</strong> — drift is detectable, never silent. Projections (sleeve positions, cash, P&amp;L, account aggregate,
+  holding history) are <strong>pure folds</strong> of the log and cannot diverge; crash recovery is a replay.</p>
+
+  <h3>The two one-directional, self-healing sync surfaces</h3>
+  <div class="hflow">
+    <div class="fbox"><div class="t">Signal sources</div><div class="d">strategies (DSL): target weights × sleeve equity · manual actions</div></div>
+    <div class="arr">›</div>
+    <div class="fbox"><div class="t">Desired-state reconciler</div><div class="d">diff desired vs projected actual → intended orders, by sleeve (K8s-style reconcile)</div></div>
+    <div class="arr">›</div>
+    <div class="fbox"><div class="t">Block-and-allocate executor</div><div class="d">risk checks · bunch intents → net block order → broker · allocate fills @ avg price</div></div>
+    <div class="arr">›</div>
+    <div class="fbox"><div class="t">Append-only ledger</div><div class="d">balanced events tagged by sleeve · SSOT → folds + shadow reconcile vs broker</div></div>
+  </div>
+
+  <div class="page-break"></div>
+  <div class="two">
+    <div>
+      <h3>Event taxonomy</h3>
+      <div class="kv">
+        <div class="k">Capital</div><div class="v">FundsDeposited/Withdrawn, CapitalAllocated, CapitalTransferred</div>
+        <div class="k">Trading</div><div class="v">OrderIntended/Submitted/Accepted/Rejected/Filled/Cancelled</div>
+        <div class="k">Positions</div><div class="v">LotOpened/Increased/Reduced/Closed (+ realized P&amp;L)</div>
+        <div class="k">Cash</div><div class="v">CashDebited/Credited, DividendReceived, FeeCharged</div>
+        <div class="k">Corporate</div><div class="v">SplitApplied, SymbolChanged, MergerApplied</div>
+        <div class="k">Recon</div><div class="v">ExternalTradeDetected, DriftCorrected, ReconciliationAdjusted</div>
+        <div class="k">Sleeve</div><div class="v">SleeveOpened/Closed/Frozen/Resumed</div>
+      </div>
+    </div>
+    <div>
+      <h3>Shadow reconciliation (by cause)</h3>
+      <ul class="tight">
+        <li><b>Our fill</b> not yet booked → match by <code>client_order_id</code> → sleeve. Deterministic.</li>
+        <li><b>External trade</b> (unknown id) → <code>ExternalTradeDetected</code> into <b>Unmanaged</b> + alert; never a strategy.</li>
+        <li><b>Corporate action</b> → apply lot-by-lot from activities feed, preserve provenance.</li>
+        <li><b>Material drift</b> → <code>SleeveFrozen</code> + alert — don't trade on a book you can't trust.</li>
+      </ul>
+    </div>
+  </div>
+
+  <h3>Projections — read models folded from the log</h3>
+  <div class="kv">
+    <div class="k">Sleeve positions / lots</div><div class="v">open lots per sleeve with cost basis — the source of truth for attribution</div>
+    <div class="k">Sleeve cash</div><div class="v"><code>balance</code> · <code>reserved</code> (open buys) · <code>free = balance − reserved</code> · settled vs unsettled</div>
+    <div class="k">Sleeve P&amp;L</div><div class="v">realized (from lot closes) + unrealized (lots × current price), per sleeve &amp; strategy</div>
+    <div class="k">Account aggregate</div><div class="v">Σ across sleeves — the value reconciled against broker truth</div>
+    <div class="k">Holding history</div><div class="v">per-symbol lot open/close timeline with source labels (the "who traded this" view)</div>
+  </div>
+
+  <h3>Cash mechanics — one broker pool, per-sleeve virtual balances</h3>
+  <ul class="tight">
+    <li><b>Allocate</b> (<code>Unallocated → strategy sleeve</code>) — emits <code>CapitalAllocated</code> after checking <code>Unallocated.free ≥ X</code>. Purely virtual; no broker movement.</li>
+    <li><b>Reserve → debit → release</b> — a buy <b>reserves</b> est. cost on submit, converts it to a real <b>debit</b> (<code>qty×price + fees</code>) on fill, and <b>releases</b> it on cancel/reject; sells credit the sleeve.</li>
+    <li><b>Transfer</b> (<code>sleeve → sleeve</code>) — virtual if free cash covers it; if cash is tied up in positions the coordinator <b>raises cash</b> (sells in the source sleeve) first.</li>
+    <li><b>Deposit / withdraw</b> — deposits land in <code>Unallocated</code>; withdrawals draw free cash, liquidating if short.</li>
+    <li><b>Dividends / fees</b> — attributed to the lot owner; a dividend on a <b>shared</b> symbol splits <b>pro-rata by lot quantity</b> across the sleeves holding it.</li>
+  </ul>
+  <p class="muted"><b>Settlement</b> is a real fork: cash accounts track <code>settled</code> vs <code>unsettled</code> (T+1) to respect good-faith / free-ride rules; margin accounts rotate same-day on buying power.</p>
+
+  <div class="page-break"></div>
+  <div class="fillbody">
+  <h3>Worked example — provenance after a regime flip</h3>
+  <p class="muted">One broker position per symbol, but the ledger keeps every lot's origin. After Strategy B rotates risk-off
+  into TLT that Strategy A already holds, the user-facing holding history stays a faithful audit trail:</p>
+  <div class="code" style="font-size:8pt"><span class="lbl">holding history — TLT · total 327.1 shares · one broker position, three attributed lots</span>TLT
+<span class="fn">├─ Strategy A</span>   126.32 sh   bought Jan 2  @ $95.00    <span class="cmt">(initial all-weather)</span>
+<span class="fn">├─ Strategy A</span>    14.27 sh   bought Apr 1  @ $100.00   <span class="cmt">(quarterly rebalance add)</span>
+<span class="fn">└─ Strategy B</span>   186.50 sh   bought Apr 1  @ $100.00   <span class="cmt">(regime flip → risk-off)</span></div>
+
+  <div class="callout">
+    <div class="label">Sizing against the sleeve — why strategies don't collide</div>
+    <p>An intended order is the delta between target and the sleeve's <em>own</em> holdings:
+    <code>target_value = sleeve_equity × (weight/100)</code>; sells reduce that sleeve's lots (FIFO). Sizing against
+    <strong>sleeve equity, not account equity</strong> is exactly what lets many strategies share one account without
+    double-counting capital. A drift tolerance (e.g. 5%) avoids churn.</p>
+  </div>
+  <h3>Block-and-allocate execution</h3>
+  <p>When multiple sleeves trade the same symbol in one cycle, the coordinator doesn't fire competing orders —
+  it follows the institutional <strong>block-and-allocate</strong> pattern:</p>
+  <div class="hflow">
+    <div class="fbox"><div class="n">1</div><div class="t">Bunch</div><div class="d">net all sleeve intents for a symbol into one block (A +5, B −50 → broker −45)</div></div>
+    <div class="arr">›</div>
+    <div class="fbox"><div class="n">2</div><div class="t">Submit</div><div class="d">a single block order to the broker</div></div>
+    <div class="arr">›</div>
+    <div class="fbox"><div class="n">3</div><div class="t">Allocate</div><div class="d">fills back to sleeves at VWAP; offsetting intents become an internal cross</div></div>
+  </div>
+  <p class="muted">Gross execution (separate orders) makes attribution trivially 1 order ↔ 1 sleeve; netting / internal-cross
+  adds proportional fill-splitting — where the subtle accounting bugs live — so it graduates from gross only once the ledger is proven.</p>
+
+  <p class="muted">Ownership: Portfolio (:8860) owns the ledger, allocation brain, projections, and reconciliation (book of
+  record). Trading (:8850) is the execution arm — risk checks, block orders, fills. Fills flow Trading → Portfolio;
+  intended orders flow Portfolio → Trading.</p>
+  </div>
+</section>
+
+<!-- ===== 07 DATA MODEL ===== -->
+<div class="page-break"></div>
+<section>
+  <div class="sec-head"><span class="sec-num">07</span><h2>Data Model</h2></div>
+  <div class="sec-rule"></div>
+  <div class="fillbody">
+  <p>PostgreSQL with SQLAlchemy 2.0 (async). Every tenant-scoped model carries <code>tenant_id → tenants.id</code>;
+  price <code>bars</code> are shared (TimescaleDB, no tenant scope). The ledger cluster is owned by Portfolio.</p>
+
+  <div class="diagram">
+    <div class="cap">Tenant boundary — every entity carries tenant_id (except shared Bars)</div>
+    <div class="tiermap">
+      <div class="tier"><div class="tlabel">Root</div><div class="tboxes">
+        <div class="svc web"><div class="nm">TENANT</div><div class="ds">id · name · slug · settings (JSONB)</div></div>
+      </div></div>
+      <div class="tier"><div class="tlabel">Identity</div><div class="tboxes">
+        <div class="svc"><div class="nm">User</div><div class="ds">email · role · bcrypt pw</div></div>
+        <div class="svc"><div class="nm">ApiKey</div><div class="ds">hash · scopes · expiry</div></div>
+        <div class="svc"><div class="nm">AlpacaCreds</div><div class="ds">enc keys · is_paper</div></div>
+        <div class="svc"><div class="nm">Subscription</div><div class="ds">plan · status · stripe_id</div></div>
+      </div></div>
+      <div class="tier"><div class="tlabel">Strategy</div><div class="tboxes">
+        <div class="svc"><div class="nm">Strategy</div><div class="ds">name · status · created_by</div></div>
+        <div class="svc"><div class="nm">StrategyVersion</div><div class="ds">sexpr + JSON · immutable</div></div>
+        <div class="svc"><div class="nm">StrategyExecution</div><div class="ds">mode · allocated_capital · sleeve_id→ledger</div></div>
+        <div class="svc"><div class="nm">Backtest → Result</div><div class="ds">range · capital · 1:1 metrics</div></div>
+      </div></div>
+      <div class="tier"><div class="tlabel">Execution</div><div class="tboxes">
+        <div class="svc"><div class="nm">TradingSession</div><div class="ds">runner · mode paper|live · status</div></div>
+        <div class="svc"><div class="nm">Order</div><div class="ds">side · qty · status · client_order_id</div></div>
+        <div class="svc"><div class="nm">Position</div><div class="ds">qty · avg_cost · realized pnl</div></div>
+      </div></div>
+      <div class="tier"><div class="tlabel">Ledger</div><div class="tboxes">
+        <div class="svc ledger"><div class="nm">Account → Sleeve(s) → Lot · LedgerEvent (seq, event_id, double-entry)</div><div class="ds">append-only book of record — sleeves/lots/cash are projections folded from events, never mutated directly</div></div>
+      </div></div>
+      <div class="tier"><div class="tlabel">Shared</div><div class="tboxes">
+        <div class="svc" style="background:#fffbeb;border-color:#fde68a"><div class="nm">Bar (no tenant scope)</div><div class="ds">TimescaleDB hypertable · PK (symbol, timestamp, timeframe) · OHLCV · 1Min…1Day</div></div>
+      </div></div>
+    </div>
+  </div>
+  <p class="muted">A Tenant owns Users, API keys, Alpaca creds, a Subscription, Strategies, and Audit logs. Each Strategy owns
+  immutable Versions and spawns Executions (funded with a ledger sleeve, running as TradingSessions → Orders/Positions)
+  and Backtests (→ 1:1 Result). Models live in <code>libs/db</code>; migrations via Alembic.</p>
+  </div>
+</section>
+
+<!-- ===== 08 MULTI-TENANCY & SECURITY ===== -->
+<div class="page-break"></div>
+<section>
+  <div class="sec-head"><span class="sec-num">08</span><h2>Multi-Tenancy &amp; Security</h2></div>
+  <div class="sec-rule"></div>
+  <div class="fillbody">
+
+  <h3>Tenant isolation — defense in depth</h3>
+  <div class="hflow">
+    <div class="fbox"><div class="n">1</div><div class="t">JWT claim</div><div class="d">token carries tenant_id</div></div>
+    <div class="arr">›</div>
+    <div class="fbox"><div class="n">2</div><div class="t">Middleware</div><div class="d">resolves TenantContext = Depends(require_auth)</div></div>
+    <div class="arr">›</div>
+    <div class="fbox"><div class="n">3</div><div class="t">Every query</div><div class="d">filters by ctx.tenant_id</div></div>
+    <div class="arr">›</div>
+    <div class="fbox"><div class="n">4</div><div class="t">RLS</div><div class="d">Postgres row-level security backstop</div></div>
+  </div>
+  <div class="code"><span class="lbl">row-level security — database backstop</span><span class="kw">ALTER TABLE</span> strategies <span class="kw">ENABLE ROW LEVEL SECURITY</span>;
+<span class="kw">CREATE POLICY</span> tenant_isolation <span class="kw">ON</span> strategies
+    <span class="kw">FOR ALL USING</span> (tenant_id = current_setting(<span class="str">'app.tenant_id'</span>)::uuid);</div>
+  <p class="muted">Service-to-service calls propagate tenant via <code>X-Tenant-ID</code>. Missing rows return <code>NOT_FOUND</code> — never leak existence.
+  <strong>When in doubt, add tenant filtering.</strong> Tenant-isolation tests assert no cross-tenant reads.</p>
+
+  <div class="two">
+    <div>
+      <h3>Authentication</h3>
+      <p>JWT access tokens (30 min, in-memory) + refresh tokens (7 days, HttpOnly cookie). API keys
+      <code>lt_&lt;prefix&gt;_&lt;random&gt;</code> store only a SHA-256 hash; passwords bcrypt-hashed.</p>
+      <div class="code" style="font-size:7.8pt"><span class="lbl">access token payload</span>{ <span class="key">"sub"</span>: <span class="str">"user-uuid"</span>, <span class="key">"tenant_id"</span>: <span class="str">"tenant-uuid"</span>,
+  <span class="key">"roles"</span>: [<span class="str">"admin"</span>], <span class="key">"exp"</span>: <span class="num">1705314000</span>,
+  <span class="key">"type"</span>: <span class="str">"access"</span> }</div>
+    </div>
+    <div>
+      <h3>RBAC &amp; data protection</h3>
+      <table>
+        <thead><tr><th>Role</th><th>Permissions</th></tr></thead>
+        <tbody>
+          <tr><td class="mono">owner</td><td>full access, billing, users</td></tr>
+          <tr><td class="mono">admin</td><td>everything except billing</td></tr>
+          <tr><td class="mono">user</td><td>CRUD own strategies, view portfolio</td></tr>
+          <tr><td class="mono">viewer</td><td>read-only</td></tr>
+        </tbody>
+      </table>
+      <p class="muted">Alpaca creds encrypted at rest (AES-256-GCM); TLS everywhere; secrets in GCP Secret Manager.
+      Audit log records <code>user.login</code>, <code>api_key.created</code>, <code>strategy.deployed</code>, <code>order.submitted</code>, per tenant.</p>
+    </div>
+  </div>
+  </div>
+</section>
+
+<!-- ===== 09 DURABILITY ===== -->
+<div class="page-break"></div>
+<section>
+  <div class="sec-head"><span class="sec-num">09</span><h2>Durability &amp; State Authority</h2></div>
+  <div class="sec-rule"></div>
+  <div class="fillbody">
+  <p class="lead">Durability is <strong>layered by authority</strong> — each kind of state is owned by the system that is
+  actually its source of truth, rather than one session-level event log. This avoids keeping multiple authorities in sync.</p>
+
+  <table>
+    <thead><tr><th>State</th><th>Authority</th><th>Mechanism</th></tr></thead>
+    <tbody>
+      <tr><td class="cap">Live order status &amp; positions</td><td>Broker (Alpaca)</td><td>trade-updates stream + periodic reconciliation; <b>fills are truth</b></td></tr>
+      <tr><td class="cap">Money, lots, cost basis, per-strategy P&amp;L, provenance</td><td>Portfolio ledger</td><td>account-grain, append-only, double-entry event log</td></tr>
+      <tr><td class="cap">Order intent / exactly-once submission</td><td>Trading order executor</td><td>durable order rows keyed by a deterministic <code>client_order_id</code></td></tr>
+      <tr><td class="cap">Strategy runtime (indicator windows, rebalance clock)</td><td>Runner</td><td>rehydrated on restart from market data + broker/ledger (checkpoint, not replay)</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Idempotent submission &amp; crash recovery</h3>
+  <p>Orders use a deterministic <code>client_order_id</code> derived from the signal, so the same signal always yields the
+  same id and Alpaca treats it as an idempotency key — a retry after a crash collapses onto the same broker order
+  instead of placing a second one.</p>
+  <div class="code"><span class="lbl">deterministic client_order_id (also the ledger attribution key)</span>data = <span class="str">f"{session_id}:{symbol}:{side}:{signal_timestamp.isoformat()}"</span>
+client_order_id = <span class="str">"lt-"</span> + hashlib.sha256(data.encode()).hexdigest()[:<span class="num">16</span>]</div>
+  <p>On restart the runner re-syncs equity, reconciles positions against the broker (source of truth), and re-warms
+  indicators from market data. An order recorded but not persisted before a crash is rejected as a duplicate at the
+  broker instead of double-filling.</p>
+  <div class="callout">
+    <div class="label">Retired</div>
+    <p>The trading service previously carried a separate session-level event-sourcing subsystem
+    (<code>trading_events</code>, <code>EventSourcedOrderExecutor</code>, <code>SessionState</code> replay). It was never wired into the live
+    path and has been <strong>retired</strong> — the portfolio ledger is the event-sourced book of record.</p>
+  </div>
+  </div>
+</section>
+
+<!-- ===== 10 EVENT FABRIC ===== -->
+<div class="page-break"></div>
+<section>
+  <div class="sec-head"><span class="sec-num">10</span><h2>Event Fabric</h2></div>
+  <div class="sec-rule"></div>
+  <div class="fillbody">
+  <p>Real-time and async delivery runs on <strong>Redis Streams</strong> (pub/sub fully retired). The new
+  <code>libs/events</code> wraps a <strong>proto envelope + pluggable transport + a typed catalog</strong>, so producers/consumers
+  swap transports (Redis Streams today, Kafka later) without changes.</p>
+
+  <div class="two">
+    <div>
+      <h3>Two delivery modes</h3>
+      <ul class="tight">
+        <li><b>Tail read</b> — live UI/gRPC clients read from a cursor (<code>XREAD</code>); each sees the full stream and a
+        reconnect <b>replays the gap</b> (no lost fills).</li>
+        <li><b>Consumer group</b> — durable competing consumers (ledger ingestion) via <code>XREADGROUP</code> + <code>XACK</code> +
+        <code>XAUTOCLAIM</code>; each group gets every message once, unacked entries reclaimable on restart.</li>
+      </ul>
+    </div>
+    <div>
+      <h3>Idempotency &amp; outbox</h3>
+      <ul class="tight">
+        <li>Stable <code>Event.id</code>; ledger dedups on <code>event_id = sha256(client_order_id)</code>.</li>
+        <li>At-least-once delivery + dedupe = <b>effectively exactly-once</b>.</li>
+        <li>Trading's <code>trading_events</code> table is the producer outbox; a periodic sweep backstops any stream loss — self-healing.</li>
+      </ul>
+    </div>
+  </div>
+
+  <h3>Outbox → stream → ledger (self-healing)</h3>
+  <div class="hflow">
+    <div class="fbox"><div class="n">producer</div><div class="t">Outbox</div><div class="d"><code>trading_events</code> (Postgres) — the producer-side source of truth</div></div>
+    <div class="arr">›</div>
+    <div class="fbox"><div class="n">transport</div><div class="t">Redis Stream</div><div class="d">low-latency delivery; carries <code>traceparent</code> in the entry</div></div>
+    <div class="arr">›</div>
+    <div class="fbox"><div class="n">consumer</div><div class="t">Ledger</div><div class="d"><code>LedgerEvent</code> destination of record; dedupes on <code>event_id</code></div></div>
+  </div>
+  <p class="muted">A periodic <strong>outbox sweep</strong> compares <code>trading_events</code> against ledger-applied events and re-emits anything
+  the stream dropped — so the transport can fail or restart without ever losing a fill. Recovery is convergence, not a manual replay.</p>
+
+  <div class="diagram">
+    <div class="cap">Channels (logical-prefix bounded cardinality)</div>
+    <div class="kv">
+      <div class="k">lt:trading:account:{account_id}</div><div class="v">order + position updates — tailed by UI, consumed by ledger ingestion (group <code>portfolio-ledger</code>)</div>
+      <div class="k">lt:backtest:progress:{backtest_id}</div><div class="v">backtest progress events — tailed by the watching UI</div>
+    </div>
+  </div>
+  <p class="muted"><code>libs/events</code> layout: proto <code>EventEnvelope</code> codec · <code>EventTransport</code> Protocol (redis_streams / kafka) ·
+  typed catalog (orders, positions, fills, progress, bars) · <code>StreamConsumer</code> (group, ack, retry, DLQ, lag) · <code>StreamFanout</code> (one stream → N client queues).</p>
+  </div>
+</section>
+
+<!-- ===== 11 OBSERVABILITY ===== -->
+<div class="page-break"></div>
+<section>
+  <div class="sec-head"><span class="sec-num">11</span><h2>Observability</h2></div>
+  <div class="sec-rule"></div>
+  <p>One library, one setup call: <code>init_telemetry(app, service=…)</code> wires JSON logs, a <code>/metrics</code> endpoint,
+  RED middleware, runtime collectors, and W3C trace propagation. <strong>OTel-native, Prometheus-exposed.</strong></p>
+
+  <table>
+    <thead><tr><th>Signal</th><th>Backend</th><th>Cardinality</th><th>tenant/session?</th><th>Answers</th></tr></thead>
+    <tbody>
+      <tr><td class="cap">Metrics</td><td>Prometheus (via OTel)</td><td><b>low</b></td><td>no (labels); <code>plan</code> yes</td><td>"fleet p99 order latency? error rate up?"</td></tr>
+      <tr><td class="cap">Logs</td><td>JSON → Loki / Cloud Logging</td><td>high</td><td><b>yes</b>: request/tenant/user/trace</td><td>"everything that happened for tenant X"</td></tr>
+      <tr><td class="cap">Traces</td><td>OTLP → Tempo / Cloud Trace</td><td>high</td><td><b>yes</b> (span attrs)</td><td>"why was <i>this</i> order slow end-to-end"</td></tr>
+    </tbody>
+  </table>
+
+  <div class="callout">
+    <div class="label">Cardinality is sacred</div>
+    <p><strong>Forbidden as metric labels:</strong> <code>tenant_id, session_id, user_id, order_id, client_order_id, symbol,
+    backtest_id, request_id</code>, raw URLs, emails. They live on logs/traces. <code>plan</code> (<code>free/starter/pro</code>) is
+    <strong>the</strong> per-segment business label. Per-tenant numbers come from logs/traces or bounded top-N gauges — never a label.</p>
+  </div>
+
+  <h3>The money path — one trace across services</h3>
+  <div class="hflow" style="font-size:7pt">
+    <div class="fbox"><div class="t">SubmitOrder</div><div class="d">connect</div></div><div class="arr">›</div>
+    <div class="fbox"><div class="t">risk.check</div><div class="d">sleeve-aware</div></div><div class="arr">›</div>
+    <div class="fbox"><div class="t">alpaca.submit</div><div class="d">REST</div></div><div class="arr">›</div>
+    <div class="fbox"><div class="t">trade_stream.fill</div><div class="d">async WS</div></div><div class="arr">›</div>
+    <div class="fbox"><div class="t">publish ledger:fills</div><div class="d">traceparent in entry</div></div><div class="arr">›</div>
+    <div class="fbox"><div class="t">ledger.ingest+project</div><div class="d">span link</div></div>
+  </div>
+
+  <div class="two" style="margin-top:8px">
+    <div>
+      <h3>Key SLOs</h3>
+      <table>
+        <thead><tr><th>SLO</th><th>Target</th></tr></thead>
+        <tbody>
+          <tr><td>Service availability</td><td>99.9%</td></tr>
+          <tr><td>Order submission p99</td><td>&lt; 1s</td></tr>
+          <tr><td>Order success (ex-reject)</td><td>&gt; 99%</td></tr>
+          <tr><td>Market-data freshness p95</td><td>&lt; 2s</td></tr>
+          <tr><td>Ledger reconcile freshness</td><td>&lt; 5 min</td></tr>
+          <tr><td>Backtest completion p95</td><td>&lt; 120s</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div>
+      <h3>Naming &amp; layout</h3>
+      <p class="muted"><code>llamatrade_&lt;domain&gt;_&lt;noun&gt;_&lt;unit&gt;</code> with a validated label allow-list. Typed domain
+      namespaces: <code>metrics.trading.*</code>, <code>metrics.ledger.*</code>, <code>metrics.marketdata.*</code>, … The crown jewels are
+      Trading (submission/fill latency, slippage, circuit breaker) and Ledger (events ingested, reconciliation drift,
+      <code>ledger_vs_broker_mismatch_dollars</code> ≈ 0).</p>
+      <p class="muted">Graceful degradation: no OTLP collector → tracing no-ops; no <code>prometheus_client</code> → metrics
+      no-op. Telemetry never crashes a request.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ===== 12 STACK & DEPLOY ===== -->
+<div class="page-break"></div>
+<section>
+  <div class="sec-head"><span class="sec-num">12</span><h2>Stack &amp; Deployment</h2></div>
+  <div class="sec-rule"></div>
+  <div class="fillbody">
+  <div class="two">
+    <div>
+      <h3>Technology</h3>
+      <ul class="tight">
+        <li><b>Backend:</b> Python 3.14, FastAPI hosting Connect/gRPC ASGI; Celery + Redis for jobs.</li>
+        <li><b>Data:</b> PostgreSQL 16 + TimescaleDB (bars); Redis 7 (cache, streams).</li>
+        <li><b>Frontend:</b> React 18 + Vite, TypeScript, Tailwind, Zustand, Connect client, canvas builder.</li>
+        <li><b>Libs:</b> alpaca · proto · db · dsl · compiler · common · telemetry · events.</li>
+      </ul>
+      <h3>Runtime</h3>
+      <ul class="tight">
+        <li>≥2 replicas/service, CPU/mem requests+limits, gRPC liveness probes, HPA (CPU 70%).</li>
+        <li>Every service exposes <code>/health</code> → <code>{status, service, version}</code>.</li>
+      </ul>
+    </div>
+    <div>
+      <h3>Infrastructure (GCP)</h3>
+      <ul class="tight">
+        <li>GKE Autopilot · Cloud SQL (Postgres/Timescale) · Memorystore (Redis).</li>
+        <li>Cloud Storage · Cloud CDN · L7 LB (TLS termination) · Secret Manager.</li>
+        <li>Cloud Monitoring/Logging; CI/CD via GitHub Actions + Cloud Build.</li>
+      </ul>
+      <h3>Environments</h3>
+      <ul class="tight">
+        <li><b>Staging</b> — auto-deploy on merge to <code>main</code>.</li>
+        <li><b>Production</b> — tag + manual approval (<code>make deploy-prod</code>).</li>
+        <li>Backups: daily DB snapshots (7-day), Redis persistence, versioned object storage; Terraform-reproducible.</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="callout">
+    <div class="label">Where to go deeper</div>
+    <p>This reference summarizes the canonical docs in <code>.docs/</code>: <code>architecture.md</code> (spine),
+    <code>portfolio-ledger.md</code>, <code>strategy-dsl.md</code>, <code>telemetry.md</code>, the per-service docs under <code>services/</code>,
+    and the <code>decisions/</code> and <code>planning/</code> folders. Proto contracts in <code>libs/proto</code> are authoritative for every RPC.</p>
+  </div>
+  </div>
+</section>
+
+</body>
+</html>

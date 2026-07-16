@@ -1,0 +1,319 @@
+<title>LlamaTrade — Logo Explorations</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root{
+    --bg:#efece3; --panel:#f6f3ec; --panel-2:#e9e5da;
+    --ink:#14110c; --fg:#14110c; --muted:#6f6a5c;
+    --line:rgba(20,17,12,.16); --line-2:rgba(20,17,12,.30);
+    --orange:#ff4d1c; --green:#1c9b46; --red:#d1352b;
+    --shadow:6px 6px 0 var(--ink);
+    --display:Impact,"Haettenschweiler","Arial Narrow Bold","Arial Narrow",sans-serif;
+    --sans:"Helvetica Neue",Arial,system-ui,sans-serif;
+    --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  }
+  @media (prefers-color-scheme:dark){
+    :root{
+      --bg:#0c0c0b; --panel:#151511; --panel-2:#1c1b16;
+      --ink:#0c0c0b; --fg:#f2efe6; --muted:#8c8779;
+      --line:rgba(242,239,230,.16); --line-2:rgba(242,239,230,.3);
+      --shadow:6px 6px 0 rgba(0,0,0,.6);
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#0c0c0b; --panel:#151511; --panel-2:#1c1b16;
+    --ink:#0c0c0b; --fg:#f2efe6; --muted:#8c8779;
+    --line:rgba(242,239,230,.16); --line-2:rgba(242,239,230,.3);
+    --shadow:6px 6px 0 rgba(0,0,0,.6);
+  }
+  :root[data-theme="light"]{
+    --bg:#efece3; --panel:#f6f3ec; --panel-2:#e9e5da;
+    --ink:#14110c; --fg:#14110c; --muted:#6f6a5c;
+    --line:rgba(20,17,12,.16); --line-2:rgba(20,17,12,.30);
+    --shadow:6px 6px 0 var(--ink);
+  }
+
+  *{box-sizing:border-box}
+  body{
+    margin:0; background:var(--bg); color:var(--fg);
+    font-family:var(--sans); line-height:1.55;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:1180px; margin:0 auto; padding:40px 24px 80px}
+
+  /* ---------- header ---------- */
+  header{display:flex; align-items:flex-start; justify-content:space-between; gap:24px; flex-wrap:wrap;
+    border-bottom:3px solid var(--fg); padding-bottom:22px; margin-bottom:36px}
+  .eyebrow{font-family:var(--mono); font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.22em; color:var(--orange)}
+  h1{font-family:var(--display); font-weight:400; text-transform:uppercase; letter-spacing:.01em;
+    font-size:clamp(38px,6vw,72px); line-height:.92; margin:12px 0 0; text-wrap:balance}
+  .lede{max-width:60ch; margin-top:16px; font-size:16px; color:var(--muted)}
+  .toolbar{display:flex; gap:10px; align-items:center; flex:none}
+  .btn{font-family:var(--mono); font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:.06em;
+    background:var(--panel); color:var(--fg); border:2px solid var(--fg); padding:9px 13px; cursor:pointer}
+  .btn:hover{background:var(--orange); color:#0c0c0b; border-color:var(--orange)}
+  .btn:focus-visible{outline:3px solid var(--orange); outline-offset:2px}
+
+  /* ---------- grid ---------- */
+  .grid{display:grid; grid-template-columns:repeat(2,1fr); gap:22px}
+  @media (max-width:760px){ .grid{grid-template-columns:1fr} }
+
+  .card{border:3px solid var(--fg); background:var(--panel); box-shadow:var(--shadow); display:flex; flex-direction:column}
+  .stage{position:relative; height:190px; display:grid; place-items:center; border-bottom:3px solid var(--fg);
+    background:
+      linear-gradient(var(--line) 1px,transparent 1px) 0 0/100% 32px,
+      linear-gradient(90deg,var(--line) 1px,transparent 1px) 0 0/32px 100%,
+      var(--panel-2);
+    overflow:hidden}
+  .stage .mk{width:118px; height:118px; color:var(--fg)}
+  .stage .mk.wide{width:auto; height:74px}
+  .idxbadge{position:absolute; top:0; left:0; font-family:var(--mono); font-weight:700; font-size:12px;
+    background:var(--fg); color:var(--bg); padding:5px 9px; letter-spacing:.05em}
+  .fmt{position:absolute; top:8px; right:8px; font-family:var(--mono); font-size:10px; font-weight:700;
+    text-transform:uppercase; letter-spacing:.08em; color:var(--muted); border:1.5px solid var(--line-2); padding:3px 7px}
+
+  .tests{display:flex; align-items:stretch; border-bottom:3px solid var(--fg)}
+  .chip{flex:1; display:flex; align-items:center; justify-content:center; gap:12px; padding:16px 10px; min-height:78px}
+  .chip + .chip{border-left:3px solid var(--fg)}
+  .chip.lite{background:#efece3; color:#14110c}
+  .chip.drk{background:#0c0c0b; color:#f2efe6}
+  .chip .mk{width:44px; height:44px}
+  .chip .mk.wide{width:auto; height:30px}
+  .chip .mk.fav{width:22px; height:22px}
+  .chip .caplabel{font-family:var(--mono); font-size:9px; letter-spacing:.1em; text-transform:uppercase; opacity:.5}
+
+  .meta{padding:16px 18px 18px; display:flex; flex-direction:column; gap:6px}
+  .meta h3{font-family:var(--display); font-weight:400; text-transform:uppercase; letter-spacing:.02em;
+    font-size:26px; line-height:1; margin:0}
+  .meta p{margin:0; font-size:14px; color:var(--muted)}
+
+  /* ---------- wordmark helpers (font-based concepts) ---------- */
+  .wm{font-family:var(--display); text-transform:uppercase; color:var(--fg); line-height:.86; letter-spacing:.005em}
+  .wm .o{color:var(--orange)}
+  .stack{font-size:54px}
+  .stack.sm{font-size:26px}
+  .lockup{display:inline-flex; align-items:center; gap:12px}
+  .lockup .name{font-family:var(--display); text-transform:uppercase; font-size:40px; letter-spacing:.01em; line-height:1}
+  .lockup.sm .name{font-size:20px}
+  .lockup .name .o{color:var(--orange)}
+
+  footer{margin-top:44px; border-top:3px solid var(--fg); padding-top:18px; display:flex; justify-content:space-between; gap:16px; flex-wrap:wrap;
+    font-family:var(--mono); font-size:12px; color:var(--muted)}
+  .note{font-family:var(--mono); font-size:11px; color:var(--muted); margin-top:26px; line-height:1.7}
+  .note b{color:var(--fg)}
+  @media (prefers-reduced-motion:no-preference){
+    .card{transition:transform .18s ease, box-shadow .18s ease}
+    .card:hover{transform:translate(-3px,-3px); box-shadow:9px 9px 0 var(--orange)}
+  }
+</style>
+
+<!-- ============ SVG SYMBOL LIBRARY (each logo defined once, reused at every size/ground) ============ -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <!-- shared geometric llama head (referenced by #lg-llama / #lg-long / #lg-herd) -->
+    <g id="llamahead">
+      <path d="M48 46 Q41 30 42 18 Q42 13 47 16 Q52 26 55 46 Z" fill="currentColor"/>
+      <path d="M72 46 Q79 30 78 18 Q78 13 73 16 Q68 26 65 46 Z" fill="currentColor"/>
+      <path d="M46 44 Q33 47 33 66 Q33 82 44 90 Q46 96 54 97 Q60 98 66 97 Q74 96 76 90 Q87 82 87 66 Q87 47 74 44 Q60 40 46 44 Z" fill="currentColor"/>
+      <circle cx="50" cy="63" r="4.4" fill="#ff4d1c"/>
+      <circle cx="70" cy="63" r="4.4" fill="#ff4d1c"/>
+    </g>
+
+    <!-- 01 · LT monogram -->
+    <symbol id="lg-lt" viewBox="0 0 120 120">
+      <rect x="30" y="26" width="17" height="52" fill="currentColor"/>
+      <rect x="30" y="61" width="39" height="17" fill="currentColor"/>
+      <rect x="54" y="26" width="40" height="17" fill="#ff4d1c"/>
+      <rect x="68" y="26" width="17" height="52" fill="#ff4d1c"/>
+    </symbol>
+
+    <!-- 02 · Bull Run — rising candlesticks -->
+    <symbol id="lg-bull" viewBox="0 0 120 120">
+      <rect x="14" y="95" width="94" height="3.5" fill="currentColor"/>
+      <g stroke-width="3" stroke-linecap="butt">
+        <line x1="27" y1="60" x2="27" y2="90" stroke="#1c9b46"/>
+        <rect x="20" y="66" width="14" height="20" fill="#1c9b46"/>
+        <line x1="51" y1="44" x2="51" y2="78" stroke="#1c9b46"/>
+        <rect x="44" y="50" width="14" height="22" fill="#1c9b46"/>
+        <line x1="75" y1="40" x2="75" y2="66" stroke="#d1352b"/>
+        <rect x="68" y="45" width="14" height="16" fill="#d1352b"/>
+        <line x1="99" y1="20" x2="99" y2="56" stroke="#1c9b46"/>
+        <rect x="92" y="26" width="14" height="26" fill="#1c9b46"/>
+      </g>
+    </symbol>
+
+    <!-- 03 · The Llama — geometric head -->
+    <symbol id="lg-llama" viewBox="0 0 120 120">
+      <use href="#llamahead"/>
+    </symbol>
+
+    <!-- 04 · Llama Long — head riding a rising trend -->
+    <symbol id="lg-long" viewBox="0 0 120 120">
+      <!-- trend line + arrow (orange) -->
+      <polyline points="14,100 40,86 60,92 92,52" fill="none" stroke="#ff4d1c" stroke-width="7" stroke-linejoin="round" stroke-linecap="round"/>
+      <path d="M92 52 L78 54 L88 66 Z" fill="#ff4d1c"/>
+      <!-- small llama head sitting above the peak -->
+      <use href="#llamahead" transform="translate(48,-12) scale(.56)"/>
+    </symbol>
+
+    <!-- 05 · Lambda — λ as a rising chart tick -->
+    <symbol id="lg-lambda" viewBox="0 0 120 120">
+      <g fill="none" stroke="currentColor" stroke-width="13" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M30 96 L74 30"/>
+        <path d="M52 62 L62 96"/>
+      </g>
+      <path d="M74 30 L58 32 L70 46 Z" fill="#ff4d1c"/>
+    </symbol>
+
+    <!-- 06 · 8-bit Llama — pixel grid (rects injected by JS) -->
+    <symbol id="lg-pixel" viewBox="0 0 120 120">
+      <g id="pixelgrid" fill="currentColor"></g>
+      <rect id="pixeleye" x="78" y="24" width="8" height="8" fill="#ff4d1c"/>
+    </symbol>
+
+    <!-- 09 · The Seal — roundel -->
+    <symbol id="lg-seal" viewBox="0 0 140 140">
+      <circle cx="70" cy="70" r="66" fill="none" stroke="currentColor" stroke-width="3"/>
+      <circle cx="70" cy="70" r="47" fill="none" stroke="currentColor" stroke-width="1.5"/>
+      <path id="sealring" d="M70 12 a58 58 0 1 1 -0.1 0" fill="none"/>
+      <text font-family="ui-monospace, Menlo, monospace" font-size="9.5" font-weight="700" letter-spacing="3.4" fill="currentColor">
+        <textPath href="#sealring" startOffset="0">LLAMATRADE · ALGORITHMIC · OPEN · YOUR ACCOUNT · </textPath>
+      </text>
+      <!-- center lambda -->
+      <g fill="none" stroke="currentColor" stroke-width="8" stroke-linecap="round" stroke-linejoin="round" transform="translate(38,38) scale(.53)">
+        <path d="M30 96 L74 30"/>
+        <path d="M52 62 L62 96"/>
+      </g>
+      <path d="M113 55 L104 56 L110 65 Z" fill="#ff4d1c"/>
+    </symbol>
+
+    <!-- 10 · Herd on the Tape — llama atop candlesticks -->
+    <symbol id="lg-herd" viewBox="0 0 120 120">
+      <rect x="14" y="99" width="94" height="3.5" fill="currentColor"/>
+      <g>
+        <line x1="27" y1="72" x2="27" y2="96" stroke="#1c9b46" stroke-width="3"/>
+        <rect x="20" y="76" width="14" height="16" fill="#1c9b46"/>
+        <line x1="51" y1="60" x2="51" y2="90" stroke="#d1352b" stroke-width="3"/>
+        <rect x="44" y="66" width="14" height="18" fill="#d1352b"/>
+        <line x1="93" y1="52" x2="93" y2="84" stroke="#1c9b46" stroke-width="3"/>
+        <rect x="86" y="58" width="14" height="20" fill="#1c9b46"/>
+      </g>
+      <!-- little llama perched on the tallest candle -->
+      <use href="#llamahead" transform="translate(63,12) scale(.44)"/>
+    </symbol>
+  </defs>
+</svg>
+
+<div class="wrap">
+  <header>
+    <div>
+      <div class="eyebrow">LlamaTrade · Brand exploration</div>
+      <h1>Ten marks<br>for the machine.</h1>
+      <p class="lede">The name has two halves — a <b>llama</b> and a <b>trade</b> — and the current arrow-in-a-square uses neither. Here are ten directions across formats: monograms, chart marks, a mascot, a lambda, a pixel llama, wordmarks, a seal. Each is shown large, on light and dark, and at favicon size — a logo has to work everywhere.</p>
+    </div>
+    <div class="toolbar">
+      <button class="btn" id="themeBtn" type="button" aria-label="Toggle light or dark theme">◐ Theme</button>
+    </div>
+  </header>
+
+  <div class="grid" id="grid"></div>
+
+  <p class="note">
+    <b>Notes.</b> Every mark is vector (SVG) and adapts to light/dark automatically; the market green/red and signal-orange stay fixed as brand accents.
+    Wordmark concepts use a condensed heavy stand-in font — in production they'd be set in the site's display face (<b>Anton</b>).
+    Tell me the numbers you like and I'll refine them (weight, proportion, a full lockup + favicon set), or mix elements across two.
+  </p>
+
+  <footer>
+    <span>LlamaTrade · logo-explorations</span>
+    <span>10 directions · pick by number</span>
+  </footer>
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  // ----- theme toggle (respects OS default, overrides on click) -----
+  var root=document.documentElement, btn=document.getElementById("themeBtn");
+  btn.addEventListener("click",function(){
+    var cur=root.getAttribute("data-theme");
+    if(!cur){ cur=matchMedia("(prefers-color-scheme:dark)").matches?"dark":"light"; }
+    root.setAttribute("data-theme", cur==="dark"?"light":"dark");
+  });
+
+  // ----- pixel llama: build rects from a 12x12 pattern -----
+  var pat=[
+    "............",
+    "........##..",
+    ".......###..",
+    ".......##...",
+    "......##....",
+    "....####....",
+    "..######....",
+    ".#######....",
+    "..######....",
+    "..#.##.#....",
+    "..#.##.#....",
+    "..#.##.#...."
+  ];
+  var g=document.getElementById("pixelgrid"), cell=10, ns="http://www.w3.org/2000/svg";
+  for(var r=0;r<pat.length;r++){ for(var c=0;c<pat[r].length;c++){ if(pat[r][c]==="#"){
+    var rc=document.createElementNS(ns,"rect");
+    rc.setAttribute("x",c*cell); rc.setAttribute("y",r*cell);
+    rc.setAttribute("width",cell+0.6); rc.setAttribute("height",cell+0.6);
+    g.appendChild(rc);
+  }}}
+
+  // ----- data for the ten cards -----
+  var svgMk=function(id,cls){ return '<svg class="mk '+(cls||"")+'" viewBox="'+(id==="lg-seal"?"0 0 140 140":"0 0 120 120")+'"><use href="#'+id+'"/></svg>'; };
+  var wmStack=function(sz){ return '<div class="wm stack '+(sz||"")+'">Llama<br><span class="o">Trade</span></div>'; };
+  var wmLock=function(sz){ return '<span class="lockup '+(sz||"")+'">'+svgMk("lg-bull")+'<span class="name">Llama<span class="o">Trade</span></span></span>'; };
+
+  var items=[
+    {n:"01", fmt:"Monogram", name:"LT Monogram", type:"mk", id:"lg-lt",
+     desc:"An interlocking L + T in the brutalist grid — the T locks into the L's baseline. Zero-nonsense, scales to a 16px favicon."},
+    {n:"02", fmt:"Chart icon", name:"Bull Run", type:"mk", id:"lg-bull",
+     desc:"Four candlesticks climbing a baseline — one red pullback for honesty. Reads instantly as “markets” and carries the green/red system color."},
+    {n:"03", fmt:"Mascot", name:"The Llama", type:"mk", id:"lg-llama",
+     desc:"A geometric llama head — banana ears, long snout, orange eyes. The friendly face of the name; strong as an app icon."},
+    {n:"04", fmt:"Combination", name:"Llama Long", type:"mk", id:"lg-long",
+     desc:"The mascot riding a rising trend line into an orange arrow. “Long the llama” — mascot and market in one mark."},
+    {n:"05", fmt:"Abstract monogram", name:"Lambda", type:"mk", id:"lg-lambda",
+     desc:"A λ (lambda) drawn as a rising line capped by an up-tick. Nods to “Llama,” to code, and to quant — minimal and sharp."},
+    {n:"06", fmt:"Retro icon", name:"8-Bit Llama", type:"mk", id:"lg-pixel",
+     desc:"A pixel-grid llama — a wink at the terminal / open-source / DSL side of the product. Playful, distinctive, very ownable."},
+    {n:"07", fmt:"Wordmark", name:"Stacked Type", type:"stack",
+     desc:"Llama over Trade in condensed heavy type, split ink / orange. The logotype for headers and the nav lockup."},
+    {n:"08", fmt:"Lockup", name:"Primary Lockup", type:"lock",
+     desc:"Icon + wordmark, horizontal — how a chosen mark reads as the full logo in the nav bar. (Shown with the candlestick mark.)"},
+    {n:"09", fmt:"Emblem / seal", name:"The Seal", type:"mk", id:"lg-seal",
+     desc:"A circular stamp — lambda in the center, brand words orbiting. For merch, stickers, the “open-source” badge, a watermark."},
+    {n:"10", fmt:"Playful combo", name:"Herd on the Tape", type:"mk", id:"lg-herd",
+     desc:"A little llama perched on top of the candlesticks — topping the chart. The most narrative of the set; great for social."}
+  ];
+
+  var body=function(it){
+    if(it.type==="stack") return {big:wmStack(), lite:wmStack("sm"), drk:wmStack("sm"), fav:'<span class="wm stack" style="font-size:15px">L<span class="o">T</span></span>'};
+    if(it.type==="lock")  return {big:wmLock(), lite:wmLock("sm"), drk:wmLock("sm"), fav:svgMk("lg-bull","fav")};
+    var wide = (it.id==="lg-seal") ? "" : "";
+    return {big:svgMk(it.id), lite:svgMk(it.id), drk:svgMk(it.id), fav:svgMk(it.id,"fav")};
+  };
+
+  document.getElementById("grid").innerHTML = items.map(function(it){
+    var b=body(it);
+    return ''
+    + '<article class="card">'
+    +   '<div class="stage">'
+    +     '<span class="idxbadge">'+it.n+'</span><span class="fmt">'+it.fmt+'</span>'
+    +     '<span class="mk-slot">'+b.big+'</span>'
+    +   '</div>'
+    +   '<div class="tests">'
+    +     '<div class="chip lite"><span class="caplabel">on light</span>'+b.lite+'</div>'
+    +     '<div class="chip drk"><span class="caplabel">on dark</span>'+b.drk+'</div>'
+    +     '<div class="chip lite"><span class="caplabel">favicon</span>'+b.fav+'</div>'
+    +   '</div>'
+    +   '<div class="meta"><h3>'+it.name+'</h3><p>'+it.desc+'</p></div>'
+    + '</article>';
+  }).join("");
+})();
+</script>
