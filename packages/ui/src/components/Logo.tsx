@@ -20,9 +20,11 @@ export function Logo({ size = 32, showText = false }: LogoProps) {
         style={{ width: size, height: size }}
       >
         <svg width={glyph} height={glyph} viewBox="0 0 120 120" fill="none" aria-hidden="true">
-          {/* L — bone */}
-          <rect x="30" y="26" width="17" height="52" fill="#f2efe6" />
-          <rect x="30" y="61" width="39" height="17" fill="#f2efe6" />
+          {/* L — bone (CSS fill reads the token; SVG fill attrs don't resolve var()) */}
+          <g style={{ fill: 'rgb(var(--lt-bone))' }}>
+            <rect x="30" y="26" width="17" height="52" />
+            <rect x="30" y="61" width="39" height="17" />
+          </g>
           {/* T — signal orange */}
           <rect x="54" y="26" width="40" height="17" fill="#ff4d1c" />
           <rect x="68" y="26" width="17" height="52" fill="#ff4d1c" />

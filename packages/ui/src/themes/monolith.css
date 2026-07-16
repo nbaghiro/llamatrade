@@ -37,12 +37,17 @@
   --lt-info: var(--lt-blue-600);
 
   /* ---- Core surfaces / brand --------------------------------------------- */
-  --lt-bone: 242 239 230; /* #f2efe6 — primary surface */
+  --lt-bone: 251 248 241; /* #fbf8f1 — primary surface */
   --lt-ink: 13 13 13; /* #0d0d0d — text / borders / hard shadows */
   --lt-paper: 255 255 255; /* #ffffff — raised card surface */
   /* Hairline rule = ink @ 14%. Carries a baked alpha, so it is a full color
      string (not a channel triplet) and is mapped 1:1 in the preset. */
   --lt-line: rgb(var(--lt-ink) / 0.14); /* was rgba(13,13,13,0.14) */
+  /* Grid backgrounds (baked-alpha ink, kept light so they read as texture, not
+     weight). --lt-grid-line drives the 12-column .bg-grid scaffold — marketing
+     parity, so it aliases --lt-line; --lt-grid-dot drives the dotted .bg-canvas. */
+  --lt-grid-line: var(--lt-line);
+  --lt-grid-dot: rgb(var(--lt-ink) / 0.1);
 
   /* ---- Orange — signal / brand accent (primary) -------------------------- */
   --lt-orange-50: 255 241 236; /* #fff1ec */
