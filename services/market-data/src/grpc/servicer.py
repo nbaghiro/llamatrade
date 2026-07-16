@@ -19,6 +19,7 @@ from connectrpc.request import RequestContext
 type AnyContext = RequestContext[object, object]
 
 from llamatrade_alpaca import get_trading_client_async
+from llamatrade_common import current_context
 
 from src import metrics as md_metrics
 from src.models import BarData, QuoteData, Timeframe, TradeData
@@ -58,46 +59,20 @@ class RequestTenantContext:
 
 
 def _extract_tenant_context(ctx: AnyContext) -> RequestTenantContext:
-    """Extract tenant context from request headers.
+    """Tenant context for logging/rate-limiting, from the *verified* principal.
 
-    For market data (public data), authentication is optional but
-    we extract context for logging and rate limiting purposes.
-
-    Headers checked:
-    - X-Tenant-ID: Tenant identifier
-    - X-User-ID: User identifier
-    - Authorization: Bearer token (for future JWT extraction)
+    Reads the identity established by ``AuthMiddleware`` (the JWT via its
+    ContextVar), never forgeable ``X-Tenant-ID`` request headers. Market data is
+    shared (not tenant-scoped), so auth is used only for observability; a service
+    token (nil identity) or no context reads as anonymous.
     """
-    tenant_id: UUID | None = None
-    user_id: UUID | None = None
-
-    # Try to extract from headers via request_headers() method
-    headers = ctx.request_headers()
-
-    # Extract tenant ID
-    tenant_id_str = headers.get("x-tenant-id") or headers.get("X-Tenant-ID")
-    if tenant_id_str:
-        try:
-            tenant_id = UUID(tenant_id_str)
-            if tenant_id == _NIL_UUID:
-                tenant_id = None
-        except ValueError:
-            pass
-
-    # Extract user ID
-    user_id_str = headers.get("x-user-id") or headers.get("X-User-ID")
-    if user_id_str:
-        try:
-            user_id = UUID(user_id_str)
-            if user_id == _NIL_UUID:
-                user_id = None
-        except ValueError:
-            pass
-
+    verified = current_context()
+    if verified is None or verified.tenant_id == _NIL_UUID:
+        return RequestTenantContext(tenant_id=None, user_id=None, is_authenticated=False)
     return RequestTenantContext(
-        tenant_id=tenant_id,
-        user_id=user_id,
-        is_authenticated=tenant_id is not None,
+        tenant_id=verified.tenant_id,
+        user_id=None if verified.user_id == _NIL_UUID else verified.user_id,
+        is_authenticated=True,
     )
 
 

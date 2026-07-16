@@ -165,7 +165,7 @@ class TradingServicer:
         service = None
         try:
             tenant_id, user_id = _identity(request.context)
-            service = await create_live_session_service()
+            service = await create_live_session_service(tenant_id)
             session = await service.start_session(
                 tenant_id=tenant_id,
                 user_id=user_id,
@@ -203,7 +203,7 @@ class TradingServicer:
         service = None
         try:
             tenant_id, _user_id = _identity(request.context)
-            service = await create_live_session_service()
+            service = await create_live_session_service(tenant_id)
             session = await service.stop_session(
                 session_id=UUID(request.session_id),
                 tenant_id=tenant_id,
@@ -236,7 +236,7 @@ class TradingServicer:
         service = None
         try:
             tenant_id, _user_id = _identity(request.context)
-            service = await create_live_session_service()
+            service = await create_live_session_service(tenant_id)
             session = await service.pause_session(
                 session_id=UUID(request.session_id),
                 tenant_id=tenant_id,
@@ -269,7 +269,7 @@ class TradingServicer:
         service = None
         try:
             tenant_id, _user_id = _identity(request.context)
-            service = await create_live_session_service()
+            service = await create_live_session_service(tenant_id)
             session = await service.resume_session(
                 session_id=UUID(request.session_id),
                 tenant_id=tenant_id,
@@ -302,7 +302,7 @@ class TradingServicer:
         service = None
         try:
             tenant_id, _user_id = _identity(request.context)
-            service = await create_live_session_service()
+            service = await create_live_session_service(tenant_id)
             session = await service.get_session(
                 session_id=UUID(request.session_id),
                 tenant_id=tenant_id,
@@ -333,7 +333,7 @@ class TradingServicer:
         service = None
         try:
             tenant_id, _user_id = _identity(request.context)
-            service = await create_live_session_service()
+            service = await create_live_session_service(tenant_id)
             page = request.pagination.page if request.HasField("pagination") else 1
             page_size = request.pagination.page_size if request.HasField("pagination") else 20
             sessions, total = await service.list_sessions(
@@ -438,7 +438,7 @@ class TradingServicer:
             tenant_id, _user_id = _identity(request.context)
             order_id = UUID(request.order_id)
 
-            executor = await create_order_executor()
+            executor = await create_order_executor(tenant_id=tenant_id)
             success = await executor.cancel_order(order_id=order_id, tenant_id=tenant_id)
             if not success:
                 await context.abort(grpc.StatusCode.FAILED_PRECONDITION, "Cannot cancel order")
@@ -471,7 +471,7 @@ class TradingServicer:
             tenant_id, _user_id = _identity(request.context)
             order_id = UUID(request.order_id)
 
-            executor = await create_order_executor()
+            executor = await create_order_executor(tenant_id=tenant_id)
             order = await executor.get_order(order_id=order_id, tenant_id=tenant_id)
             if not order:
                 await context.abort(grpc.StatusCode.NOT_FOUND, f"Order not found: {order_id}")
@@ -504,7 +504,7 @@ class TradingServicer:
             page = request.pagination.page if request.HasField("pagination") else 1
             page_size = request.pagination.page_size if request.HasField("pagination") else 20
 
-            executor = await create_order_executor()
+            executor = await create_order_executor(tenant_id=tenant_id)
             orders, total = await executor.list_orders(
                 tenant_id=tenant_id,
                 session_id=session_id,
@@ -553,7 +553,7 @@ class TradingServicer:
             session_id = UUID(request.session_id)
             symbol = request.symbol
 
-            service = await create_position_service()
+            service = await create_position_service(tenant_id)
             position = await service.get_position(
                 tenant_id=tenant_id,
                 session_id=session_id,
@@ -590,7 +590,7 @@ class TradingServicer:
             tenant_id, _user_id = _identity(request.context)
             session_id = UUID(request.session_id)
 
-            service = await create_position_service()
+            service = await create_position_service(tenant_id)
             positions = await service.list_open_positions(
                 tenant_id=tenant_id,
                 session_id=session_id,
@@ -625,7 +625,7 @@ class TradingServicer:
             session_id = UUID(request.session_id)
             symbol = request.symbol
 
-            service = await create_position_service()
+            service = await create_position_service(tenant_id)
             position = await service.get_position(
                 tenant_id=tenant_id,
                 session_id=session_id,

@@ -18,7 +18,8 @@ from connectrpc.errors import ConnectError
 from connectrpc.request import RequestContext
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from llamatrade_db import get_session_maker
+from llamatrade_common.connect import resolve_identity_connect
+from llamatrade_db import get_session_maker, tenant_session
 from llamatrade_proto.generated import agent_pb2, common_pb2
 from llamatrade_proto.generated.agent_pb2 import (
     MESSAGE_ROLE_ASSISTANT,
@@ -38,38 +39,14 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# Nil UUID used to detect missing/invalid context
-_NIL_UUID = UUID("00000000-0000-0000-0000-000000000000")
-
 
 def _validate_tenant_context(context: common_pb2.TenantContext) -> tuple[UUID, UUID]:
-    """Validate and extract tenant_id and user_id from context.
+    """Verified ``(tenant_id, user_id)`` for the call.
 
-    Raises:
-        ConnectError: If context is invalid (empty or nil UUIDs)
+    Derives identity from the authenticated principal (JWT via ``AuthMiddleware``),
+    rejecting a request whose wire ``context`` tenant doesn't match the token.
     """
-    if not context.tenant_id or not context.user_id:
-        raise ConnectError(
-            Code.UNAUTHENTICATED,
-            "Valid tenant context is required",
-        )
-
-    try:
-        tenant_id = UUID(context.tenant_id)
-        user_id = UUID(context.user_id)
-    except ValueError as e:
-        raise ConnectError(
-            Code.INVALID_ARGUMENT,
-            f"Invalid UUID in context: {e}",
-        )
-
-    if tenant_id == _NIL_UUID or user_id == _NIL_UUID:
-        raise ConnectError(
-            Code.UNAUTHENTICATED,
-            "Valid tenant context is required (nil UUID not allowed)",
-        )
-
-    return tenant_id, user_id
+    return resolve_identity_connect(context)
 
 
 def _timestamp_to_proto(dt: datetime) -> common_pb2.Timestamp:
@@ -87,16 +64,11 @@ class AgentServicer:
         """Initialize the servicer."""
         self._session_maker: async_sessionmaker[AsyncSession] | None = None
 
-    def _get_db(self) -> AsyncSession:
-        """Get a database session.
-
-        Returns an AsyncSession that should be used with `async with`.
-        The session automatically handles commit/rollback on exit.
-        """
+    def _maker(self) -> async_sessionmaker[AsyncSession]:
+        """The session factory (lazily created; tests inject a test-DB factory)."""
         if self._session_maker is None:
             self._session_maker = get_session_maker()
-        assert self._session_maker is not None
-        return self._session_maker()
+        return self._session_maker
 
     # =========================================================================
     # Session Management
@@ -114,7 +86,7 @@ class AgentServicer:
         # Create session in database
         from src.services.conversation_service import ConversationService
 
-        async with self._get_db() as db:
+        async with tenant_session(tenant_id, self._maker()) as db:
             service = ConversationService(db)
             session = await service.create_session(
                 tenant_id=tenant_id,
@@ -148,7 +120,7 @@ class AgentServicer:
 
         from src.services.conversation_service import ConversationService
 
-        async with self._get_db() as db:
+        async with tenant_session(tenant_id, self._maker()) as db:
             service = ConversationService(db)
             session = await service.get_session(tenant_id, session_id)
 
@@ -236,7 +208,7 @@ class AgentServicer:
         page = request.pagination.page if request.HasField("pagination") else 1
         page_size = request.pagination.page_size if request.HasField("pagination") else 20
 
-        async with self._get_db() as db:
+        async with tenant_session(tenant_id, self._maker()) as db:
             service = ConversationService(db)
             sessions, total = await service.list_sessions(
                 tenant_id=tenant_id,
@@ -284,7 +256,7 @@ class AgentServicer:
 
         from src.services.conversation_service import ConversationService
 
-        async with self._get_db() as db:
+        async with tenant_session(tenant_id, self._maker()) as db:
             service = ConversationService(db)
             success = await service.delete_session(tenant_id, session_id)
 
@@ -316,7 +288,7 @@ class AgentServicer:
         from src.services.agent_service import AgentService
         from src.services.conversation_service import ConversationService
 
-        async with self._get_db() as db:
+        async with tenant_session(tenant_id, self._maker()) as db:
             conv_service = ConversationService(db)
 
             # Verify session exists and belongs to tenant
@@ -432,7 +404,7 @@ class AgentServicer:
             from src.services.agent_service import AgentService
             from src.services.conversation_service import ConversationService
 
-            async with self._get_db() as db:
+            async with tenant_session(tenant_id, self._maker()) as db:
                 conv_service = ConversationService(db)
 
                 # Verify session exists
@@ -574,7 +546,7 @@ class AgentServicer:
 
         from src.services.artifact_service import ArtifactService
 
-        async with self._get_db() as db:
+        async with tenant_session(tenant_id, self._maker()) as db:
             service = ArtifactService(db, tenant_id, user_id)
 
             # Get overrides from proto map
@@ -638,7 +610,7 @@ class AgentServicer:
 
         from src.services.artifact_service import ArtifactService
 
-        async with self._get_db() as db:
+        async with tenant_session(tenant_id, self._maker()) as db:
             service = ArtifactService(db, tenant_id, user_id)
             artifact = await service.get_artifact(artifact_id)
 

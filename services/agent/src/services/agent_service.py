@@ -313,17 +313,22 @@ class AgentService:
             if not facts:
                 return
 
-            # Store extracted facts
-            memory_service = MemoryService(
-                db=self.db,
-                tenant_id=self.tenant_id,
-                user_id=self.user_id,
-            )
+            # Store extracted facts in a fresh tenant-scoped session: this runs
+            # fire-and-forget after the request session closes, and the RLS GUC
+            # must be bound for the agent_memory_facts INSERT to pass WITH CHECK.
+            from llamatrade_db import tenant_session
 
-            await memory_service.store_facts(
-                facts=facts,
-                session_id=session_id,
-            )
+            async with tenant_session(self.tenant_id) as db:
+                memory_service = MemoryService(
+                    db=db,
+                    tenant_id=self.tenant_id,
+                    user_id=self.user_id,
+                )
+                await memory_service.store_facts(
+                    facts=facts,
+                    session_id=session_id,
+                )
+                await db.commit()
 
             logger.debug(
                 "Extracted and stored %d memory facts from session %s",

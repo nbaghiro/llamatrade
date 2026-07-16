@@ -38,9 +38,14 @@ def create_test_token(tenant_id=None, expired=False):
 
 @pytest.fixture
 def servicer():
-    """Create a BillingServicer instance."""
+    """BillingServicer with a mock session factory (the RLS set_config is a no-op)."""
     with patch.dict("os.environ", {"JWT_SECRET": TEST_JWT_SECRET}):
-        return BillingServicer()
+        servicer = BillingServicer()
+    session = AsyncMock()
+    session.__aenter__ = AsyncMock(return_value=session)
+    session.__aexit__ = AsyncMock(return_value=None)
+    servicer._session_maker = lambda: session
+    return servicer
 
 
 @pytest.fixture
@@ -155,21 +160,16 @@ class TestGetSubscription:
         mock_service = MagicMock()
         mock_service.get_subscription = AsyncMock(return_value=sample_subscription)
 
-        mock_db = MagicMock()
-        mock_db.__aenter__ = AsyncMock(return_value=mock_db)
-        mock_db.__aexit__ = AsyncMock()
-
         with patch.object(servicer, "_get_tenant_id", return_value=TEST_TENANT_ID):
-            with patch.object(servicer, "_get_db", AsyncMock(return_value=mock_db)):
-                with patch("src.grpc.servicer.get_stripe_client", return_value=MagicMock()):
-                    with patch(
-                        "src.services.billing_service.BillingService",
-                        return_value=mock_service,
-                    ):
-                        request = billing_pb2.GetSubscriptionRequest()
-                        response = await servicer.get_subscription(request, mock_ctx)
+            with patch("src.grpc.servicer.get_stripe_client", return_value=MagicMock()):
+                with patch(
+                    "src.services.billing_service.BillingService",
+                    return_value=mock_service,
+                ):
+                    request = billing_pb2.GetSubscriptionRequest()
+                    response = await servicer.get_subscription(request, mock_ctx)
 
-                        assert response.subscription is not None
+                    assert response.subscription is not None
 
 
 # === get_usage Tests ===
@@ -243,20 +243,15 @@ class TestListPlans:
         mock_service = MagicMock()
         mock_service.list_plans = AsyncMock(return_value=[sample_plan])
 
-        mock_db = MagicMock()
-        mock_db.__aenter__ = AsyncMock(return_value=mock_db)
-        mock_db.__aexit__ = AsyncMock()
+        with patch("src.grpc.servicer.get_stripe_client", return_value=MagicMock()):
+            with patch(
+                "src.services.billing_service.BillingService",
+                return_value=mock_service,
+            ):
+                request = billing_pb2.ListPlansRequest()
+                response = await servicer.list_plans(request, mock_ctx)
 
-        with patch.object(servicer, "_get_db", AsyncMock(return_value=mock_db)):
-            with patch("src.grpc.servicer.get_stripe_client", return_value=MagicMock()):
-                with patch(
-                    "src.services.billing_service.BillingService",
-                    return_value=mock_service,
-                ):
-                    request = billing_pb2.ListPlansRequest()
-                    response = await servicer.list_plans(request, mock_ctx)
-
-                    assert len(response.plans) == 1
+                assert len(response.plans) == 1
 
 
 # === create_checkout_session Tests ===

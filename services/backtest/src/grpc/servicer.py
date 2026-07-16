@@ -9,12 +9,14 @@ from collections.abc import AsyncGenerator, AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import UTC, date, datetime
 from decimal import Decimal
+from typing import Any, NoReturn
 from uuid import UUID
 
 import grpc.aio
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from llamatrade_db import get_session_maker
+from llamatrade_common import AuthError, resolve_identity
+from llamatrade_db import get_session_maker, tenant_session
 from llamatrade_proto.generated import backtest_pb2
 
 from src.models import BacktestMetrics, BacktestResponse, BacktestResultResponse, TradeRecord
@@ -25,6 +27,29 @@ logger = logging.getLogger(__name__)
 # GetBacktest returns at most this many trades inline; the full log is paged via
 # GetBacktestTrades so a pathological trade count never bloats one response (14B).
 _GET_BACKTEST_TRADES_PREVIEW = int(os.getenv("BACKTEST_TRADES_PREVIEW", "500"))
+
+# Map the transport-neutral AuthError codes to gRPC status codes.
+_AUTH_CODE_TO_GRPC = {
+    "unauthenticated": grpc.StatusCode.UNAUTHENTICATED,
+    "permission_denied": grpc.StatusCode.PERMISSION_DENIED,
+    "invalid_argument": grpc.StatusCode.INVALID_ARGUMENT,
+}
+
+
+def _identity(request_context: Any) -> tuple[UUID, UUID]:
+    """Verified ``(tenant_id, user_id)`` from the authenticated principal.
+
+    Derives identity from the JWT (via ``AuthMiddleware``'s contextvar) rather
+    than trusting the wire ``context``; rejects a mismatch. Raises ``AuthError``.
+    """
+    return resolve_identity(request_context.tenant_id or None, request_context.user_id or None)
+
+
+async def _abort_auth(context: grpc.aio.ServicerContext[Any, Any], err: AuthError) -> NoReturn:
+    """Abort with the gRPC status code for an auth failure (never returns)."""
+    await context.abort(
+        _AUTH_CODE_TO_GRPC.get(err.code, grpc.StatusCode.UNAUTHENTICATED), err.message
+    )
 
 
 def _reject_unsupported_config(config: backtest_pb2.BacktestConfig) -> None:
@@ -67,30 +92,23 @@ class BacktestServicer:
         self._session_maker: async_sessionmaker[AsyncSession] | None = None
 
     @asynccontextmanager
-    async def _get_db(self) -> AsyncGenerator[AsyncSession]:
-        """Get a database session with proper lifecycle management.
+    async def _get_db(self, tenant_id: UUID) -> AsyncGenerator[AsyncSession]:
+        """Tenant-scoped DB session: binds the RLS GUC, commits on success.
 
-        Usage:
-            async with self._get_db() as db:
-                service = BacktestService(db)
-                # ... use service ...
-            # Session is automatically closed here
-
-        Yields:
-            AsyncSession: Database session that will be properly cleaned up.
+        The session is bound to ``tenant_id`` (Postgres RLS), so every query is
+        scoped to it even if an app-layer filter is missing. Rolls back and
+        re-raises on error; the session is closed on exit.
         """
         if self._session_maker is None:
             self._session_maker = get_session_maker()
         assert self._session_maker is not None
-        session: AsyncSession = self._session_maker()
-        try:
-            yield session
-            await session.commit()
-        except Exception:
-            await session.rollback()
-            raise
-        finally:
-            await session.close()
+        async with tenant_session(tenant_id, self._session_maker) as session:
+            try:
+                yield session
+                await session.commit()
+            except Exception:
+                await session.rollback()
+                raise
 
     async def RunBacktest(
         self,
@@ -99,8 +117,7 @@ class BacktestServicer:
     ) -> backtest_pb2.RunBacktestResponse:
         """Start a new backtest run."""
         try:
-            tenant_id = UUID(request.context.tenant_id)
-            user_id = UUID(request.context.user_id)
+            tenant_id, user_id = _identity(request.context)
 
             config = request.config
 
@@ -108,7 +125,7 @@ class BacktestServicer:
             _reject_unsupported_config(config)
 
             # Create the backtest
-            async with self._get_db() as db:
+            async with self._get_db(tenant_id) as db:
                 async with BacktestService(db) as service:
                     backtest = await service.create_backtest(
                         tenant_id=tenant_id,
@@ -169,6 +186,8 @@ class BacktestServicer:
                 grpc.StatusCode.INVALID_ARGUMENT,
                 str(e),
             )
+        except AuthError as e:
+            await _abort_auth(context, e)
         except Exception as e:
             logger.error("RunBacktest error: %s", e, exc_info=True)
             await context.abort(
@@ -185,10 +204,10 @@ class BacktestServicer:
         from llamatrade_proto.generated import backtest_pb2
 
         try:
-            tenant_id = UUID(request.context.tenant_id)
+            tenant_id, _ = _identity(request.context)
             backtest_id = UUID(request.backtest_id)
 
-            async with self._get_db() as db:
+            async with self._get_db(tenant_id) as db:
                 async with BacktestService(db) as service:
                     backtest = await service.get_backtest(
                         backtest_id=backtest_id,
@@ -218,6 +237,8 @@ class BacktestServicer:
 
         except grpc.aio.AioRpcError:
             raise
+        except AuthError as e:
+            await _abort_auth(context, e)
         except Exception as e:
             logger.error("GetBacktest error: %s", e, exc_info=True)
             await context.abort(
@@ -234,7 +255,7 @@ class BacktestServicer:
         from llamatrade_proto.generated import backtest_pb2, common_pb2
 
         try:
-            tenant_id = UUID(request.context.tenant_id)
+            tenant_id, _ = _identity(request.context)
             strategy_id = UUID(request.strategy_id) if request.strategy_id else None
 
             # Status filter - proto constants are used directly throughout
@@ -246,7 +267,7 @@ class BacktestServicer:
             page = request.pagination.page if request.HasField("pagination") else 1
             page_size = request.pagination.page_size if request.HasField("pagination") else 20
 
-            async with self._get_db() as db:
+            async with self._get_db(tenant_id) as db:
                 async with BacktestService(db) as service:
                     backtests, total = await service.list_backtests(
                         tenant_id=tenant_id,
@@ -271,6 +292,8 @@ class BacktestServicer:
                         ),
                     )
 
+        except AuthError as e:
+            await _abort_auth(context, e)
         except Exception as e:
             logger.error("ListBacktests error: %s", e, exc_info=True)
             await context.abort(
@@ -287,10 +310,10 @@ class BacktestServicer:
         from llamatrade_proto.generated import backtest_pb2
 
         try:
-            tenant_id = UUID(request.context.tenant_id)
+            tenant_id, _ = _identity(request.context)
             backtest_id = UUID(request.backtest_id)
 
-            async with self._get_db() as db:
+            async with self._get_db(tenant_id) as db:
                 async with BacktestService(db) as service:
                     # AUTHORIZATION (4A): the cancel flag is keyed by backtest_id
                     # only. cancel_backtest is tenant-scoped and returns False for
@@ -326,6 +349,8 @@ class BacktestServicer:
 
         except grpc.aio.AioRpcError:
             raise
+        except AuthError as e:
+            await _abort_auth(context, e)
         except Exception as e:
             logger.error("CancelBacktest error: %s", e, exc_info=True)
             await context.abort(
@@ -348,7 +373,10 @@ class BacktestServicer:
 
         from src.progress import ProgressSubscriber
 
-        tenant_id = request.context.tenant_id
+        try:
+            tenant_id, _ = _identity(request.context)
+        except AuthError as e:
+            await _abort_auth(context, e)
         backtest_id = request.backtest_id
         logger.info("Starting progress stream for backtest: %s", backtest_id)
 
@@ -366,11 +394,11 @@ class BacktestServicer:
             # backtest_id only and carries no tenant scope of its own. This
             # tenant-scoped ownership lookup is the gate — a caller from another
             # tenant gets NOT_FOUND and never reaches subscriber.tail().
-            async with self._get_db() as db:
+            async with self._get_db(tenant_id) as db:
                 async with BacktestService(db) as service:
                     backtest = await service.get_backtest(
                         backtest_id=UUID(backtest_id),
-                        tenant_id=UUID(tenant_id),
+                        tenant_id=tenant_id,
                     )
 
                     if not backtest:
@@ -430,10 +458,10 @@ class BacktestServicer:
         from llamatrade_proto.generated import backtest_pb2
 
         try:
-            tenant_id = UUID(request.context.tenant_id)
+            tenant_id, _ = _identity(request.context)
             backtest_ids = [UUID(bid) for bid in request.backtest_ids]
 
-            async with self._get_db() as db:
+            async with self._get_db(tenant_id) as db:
                 async with BacktestService(db) as service:
                     backtests: list[BacktestResponse] = []
                     metrics_by_id: dict[str, backtest_pb2.BacktestMetrics] = {}
@@ -461,6 +489,8 @@ class BacktestServicer:
                         metrics_by_id=metrics_by_id,
                     )
 
+        except AuthError as e:
+            await _abort_auth(context, e)
         except Exception as e:
             logger.error("CompareBacktests error: %s", e, exc_info=True)
             await context.abort(
@@ -477,12 +507,12 @@ class BacktestServicer:
         from llamatrade_proto.generated import backtest_pb2, common_pb2
 
         try:
-            tenant_id = UUID(request.context.tenant_id)
+            tenant_id, _ = _identity(request.context)
             backtest_id = UUID(request.backtest_id)
             page = request.pagination.page if request.HasField("pagination") else 1
             page_size = request.pagination.page_size if request.HasField("pagination") else 50
 
-            async with self._get_db() as db:
+            async with self._get_db(tenant_id) as db:
                 async with BacktestService(db) as service:
                     # Tenant-scoped: get_backtest_trades resolves the backtest by
                     # (id, tenant), so a foreign tenant gets an empty page.
@@ -510,6 +540,8 @@ class BacktestServicer:
 
         except ValueError as e:
             await context.abort(grpc.StatusCode.INVALID_ARGUMENT, str(e))
+        except AuthError as e:
+            await _abort_auth(context, e)
         except Exception as e:
             logger.error("GetBacktestTrades error: %s", e, exc_info=True)
             await context.abort(

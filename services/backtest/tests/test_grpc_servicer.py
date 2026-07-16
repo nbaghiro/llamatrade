@@ -114,7 +114,7 @@ def create_mock_get_db(mock_db):
     The @asynccontextmanager decorated _get_db() returns a context manager
     synchronously (not awaited), which then uses __aenter__/__aexit__.
     """
-    return lambda: MockAsyncContextManager(mock_db)
+    return lambda *args, **kwargs: MockAsyncContextManager(mock_db)
 
 
 def create_mock_service_class(mock_service):
@@ -705,7 +705,10 @@ class TestGetBacktestTrades:
                 new=create_mock_service_class(mock_service),
             ):
                 request = backtest_pb2.GetBacktestTradesRequest(
-                    context=common_pb2.TenantContext(tenant_id=str(TEST_TENANT_ID)),
+                    context=common_pb2.TenantContext(
+                        tenant_id=str(TEST_TENANT_ID),
+                        user_id=str(TEST_USER_ID),
+                    ),
                     backtest_id=str(TEST_BACKTEST_ID),
                     pagination=common_pb2.PaginationRequest(page=1, page_size=10),
                 )

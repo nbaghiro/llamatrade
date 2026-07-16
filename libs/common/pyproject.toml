@@ -13,6 +13,7 @@ dependencies = [
     "fastapi>=0.109.0",
     "httpx>=0.26.0",
     "redis>=5.0.0",
+    "connect-python>=0.8.1",
     "llamatrade-telemetry",
 ]
 

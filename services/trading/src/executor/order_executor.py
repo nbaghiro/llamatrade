@@ -1328,12 +1328,14 @@ async def create_order_executor(
     if those credentials can't be resolved.
     """
     from llamatrade_alpaca import TradingClient, get_trading_client
-    from llamatrade_db import get_session_maker
+    from llamatrade_db import get_session_maker, set_tenant_guc
 
     from src.credentials import resolve_session_credentials
     from src.risk.risk_manager import get_risk_manager
 
     db = get_session_maker()()
+    if tenant_id is not None:
+        await set_tenant_guc(db, tenant_id)
     owns_alpaca = False
     if session_id is not None and tenant_id is not None:
         creds = await resolve_session_credentials(db, session_id, tenant_id)

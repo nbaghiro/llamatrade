@@ -12,7 +12,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from llamatrade_db import get_db
+from llamatrade_db import get_db, set_tenant_guc
 
 from src.services.memory_service import MemoryService
 from src.tools.base import BaseTool, ToolContext, ToolResult
@@ -95,6 +95,7 @@ class RecallMemoryTool(BaseTool):
 
         try:
             async for db in get_db():
+                await set_tenant_guc(db, context.tenant_id)
                 memory_service = MemoryService(
                     db=db,
                     tenant_id=context.tenant_id,
@@ -198,6 +199,7 @@ class GetUserProfileTool(BaseTool):
 
         try:
             async for db in get_db():
+                await set_tenant_guc(db, context.tenant_id)
                 memory_service = MemoryService(
                     db=db,
                     tenant_id=context.tenant_id,
@@ -325,6 +327,7 @@ class SearchPastStrategiesTool(BaseTool):
 
         try:
             async for db in get_db():
+                await set_tenant_guc(db, context.tenant_id)
                 memory_service = MemoryService(
                     db=db,
                     tenant_id=context.tenant_id,
@@ -447,6 +450,7 @@ class GetSessionSummaryTool(BaseTool):
 
         try:
             async for db in get_db():
+                await set_tenant_guc(db, context.tenant_id)
                 memory_service = MemoryService(
                     db=db,
                     tenant_id=context.tenant_id,

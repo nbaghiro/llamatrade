@@ -17,7 +17,8 @@ from connectrpc.errors import ConnectError
 from connectrpc.request import RequestContext
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from llamatrade_db import get_session_maker
+from llamatrade_common.connect import resolve_identity_connect
+from llamatrade_db import get_session_maker, tenant_session
 from llamatrade_proto.generated import common_pb2, ledger_pb2
 
 from src.ledger.funds import FundError
@@ -104,10 +105,11 @@ class LedgerServicer:
     def __init__(self) -> None:
         self._session_factory: async_sessionmaker[AsyncSession] | None = None
 
-    def _get_db(self) -> AsyncSession:
+    def _maker(self) -> async_sessionmaker[AsyncSession]:
+        """The session factory (lazily created; tests inject a test-DB factory)."""
         if self._session_factory is None:
             self._session_factory = get_session_maker()
-        return self._session_factory()
+        return self._session_factory
 
     # ----------------------------------------------------- identity bootstrap
 
@@ -123,13 +125,13 @@ class LedgerServicer:
         best-effort: a broker outage logs and proceeds — re-onboarding is
         idempotent and reconciliation surfaces the gap until then.
         """
-        tenant_id = UUID(request.context.tenant_id)
+        tenant_id, _ = resolve_identity_connect(request.context)
         try:
             credentials_id = UUID(request.credentials_id)
         except ValueError as e:
             raise ConnectError(Code.INVALID_ARGUMENT, "credentials_id must be a UUID") from e
         try:
-            async with self._get_db() as db:
+            async with tenant_session(tenant_id, self._maker()) as db:
                 repo = SqlSleeveRepository(db)
                 sleeves = SleeveService(repo)
                 existed = (
@@ -179,10 +181,10 @@ class LedgerServicer:
     async def deposit_funds(
         self, request: ledger_pb2.DepositFundsRequest, ctx: AnyContext
     ) -> ledger_pb2.DepositFundsResponse:
-        tenant_id = UUID(request.context.tenant_id)
+        tenant_id, _ = resolve_identity_connect(request.context)
         account_id = UUID(request.account_id)
         try:
-            async with self._get_db() as db:
+            async with tenant_session(tenant_id, self._maker()) as db:
                 fund = FundService(SqlSleeveRepository(db), SqlLedgerStore(db))
                 view = await fund.deposit(
                     tenant_id=tenant_id, account_id=account_id, amount=_amount(request.amount)
@@ -198,10 +200,10 @@ class LedgerServicer:
     async def withdraw_funds(
         self, request: ledger_pb2.WithdrawFundsRequest, ctx: AnyContext
     ) -> ledger_pb2.WithdrawFundsResponse:
-        tenant_id = UUID(request.context.tenant_id)
+        tenant_id, _ = resolve_identity_connect(request.context)
         account_id = UUID(request.account_id)
         try:
-            async with self._get_db() as db:
+            async with tenant_session(tenant_id, self._maker()) as db:
                 fund = FundService(SqlSleeveRepository(db), SqlLedgerStore(db))
                 view = await fund.withdraw(
                     tenant_id=tenant_id, account_id=account_id, amount=_amount(request.amount)
@@ -223,14 +225,14 @@ class LedgerServicer:
         strategy sleeve linked to that execution is opened (or reused) and
         funded in the same transaction (CONTRACTS.md §5).
         """
-        tenant_id = UUID(request.context.tenant_id)
+        tenant_id, _ = resolve_identity_connect(request.context)
         account_id = UUID(request.account_id)
         if not request.to_sleeve_id and not request.strategy_execution_id:
             raise ConnectError(
                 Code.INVALID_ARGUMENT, "to_sleeve_id or strategy_execution_id required"
             )
         try:
-            async with self._get_db() as db:
+            async with tenant_session(tenant_id, self._maker()) as db:
                 repo = SqlSleeveRepository(db)
                 to_sleeve_id = await self._resolve_allocation_target(repo, request, tenant_id)
                 fund = FundService(repo, SqlLedgerStore(db))
@@ -272,10 +274,10 @@ class LedgerServicer:
     async def transfer_capital(
         self, request: ledger_pb2.TransferCapitalRequest, ctx: AnyContext
     ) -> ledger_pb2.TransferCapitalResponse:
-        tenant_id = UUID(request.context.tenant_id)
+        tenant_id, _ = resolve_identity_connect(request.context)
         account_id = UUID(request.account_id)
         try:
-            async with self._get_db() as db:
+            async with tenant_session(tenant_id, self._maker()) as db:
                 fund = FundService(SqlSleeveRepository(db), SqlLedgerStore(db))
                 from_view, to_view = await fund.transfer(
                     tenant_id=tenant_id,
@@ -304,10 +306,10 @@ class LedgerServicer:
         Idempotent. The strategy service calls this when an execution stops or
         its strategy is archived (the ledger owns sleeve lifecycle).
         """
-        tenant_id = UUID(request.context.tenant_id)
+        tenant_id, _ = resolve_identity_connect(request.context)
         account_id = UUID(request.account_id)
         try:
-            async with self._get_db() as db:
+            async with tenant_session(tenant_id, self._maker()) as db:
                 lifecycle = SleeveLifecycleService(SqlSleeveRepository(db), SqlLedgerStore(db))
                 result = await lifecycle.close_sleeve(
                     tenant_id=tenant_id,
@@ -344,10 +346,10 @@ class LedgerServicer:
     async def list_sleeves(
         self, request: ledger_pb2.ListSleevesRequest, ctx: AnyContext
     ) -> ledger_pb2.ListSleevesResponse:
-        tenant_id = UUID(request.context.tenant_id)
+        tenant_id, _ = resolve_identity_connect(request.context)
         account_id = UUID(request.account_id)
         try:
-            async with self._get_db() as db:
+            async with tenant_session(tenant_id, self._maker()) as db:
                 repo = SqlSleeveRepository(db)
                 projection = await LedgerProjector(db).project_account(tenant_id, account_id)
                 rows = await repo.list_sleeves(tenant_id, account_id)
@@ -368,9 +370,9 @@ class LedgerServicer:
     async def get_sleeve(
         self, request: ledger_pb2.GetSleeveRequest, ctx: AnyContext
     ) -> ledger_pb2.GetSleeveResponse:
-        tenant_id = UUID(request.context.tenant_id)
+        tenant_id, _ = resolve_identity_connect(request.context)
         try:
-            async with self._get_db() as db:
+            async with tenant_session(tenant_id, self._maker()) as db:
                 repo = SqlSleeveRepository(db)
                 sleeve = await repo.get_sleeve(tenant_id, UUID(request.sleeve_id))
                 if sleeve is None:
@@ -408,10 +410,10 @@ class LedgerServicer:
     async def get_holding_history(
         self, request: ledger_pb2.GetHoldingHistoryRequest, ctx: AnyContext
     ) -> ledger_pb2.GetHoldingHistoryResponse:
-        tenant_id = UUID(request.context.tenant_id)
+        tenant_id, _ = resolve_identity_connect(request.context)
         account_id = UUID(request.account_id)
         try:
-            async with self._get_db() as db:
+            async with tenant_session(tenant_id, self._maker()) as db:
                 raw = cast(
                     list[HoldingHistoryEntry],
                     await LedgerProjector(db).holding_history(

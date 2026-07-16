@@ -230,7 +230,7 @@ def servicer(store, monkeypatch):
     servicer = BacktestServicer()
 
     @asynccontextmanager
-    async def fake_get_db():
+    async def fake_get_db(tenant_id):
         yield store.make_session()
 
     monkeypatch.setattr(servicer, "_get_db", fake_get_db)
@@ -295,7 +295,9 @@ class TestE2ELifecycle:
         # 2. GetBacktest returns the run WITH populated results
         get_response = await servicer.GetBacktest(
             backtest_pb2.GetBacktestRequest(
-                context=common_pb2.TenantContext(tenant_id=str(TEST_TENANT_ID)),
+                context=common_pb2.TenantContext(
+                    tenant_id=str(TEST_TENANT_ID), user_id=str(TEST_USER_ID)
+                ),
                 backtest_id=str(store.backtest.id),
             ),
             MockServicerContext(),
@@ -341,7 +343,7 @@ class TestE2ELifecycle:
         servicer = BacktestServicer()
 
         @asynccontextmanager
-        async def fake_get_db():
+        async def fake_get_db(tenant_id):
             yield store.make_session()
 
         monkeypatch.setattr(servicer, "_get_db", fake_get_db)
@@ -377,7 +379,9 @@ class TestE2ELifecycle:
 
         get_response = await servicer.GetBacktest(
             backtest_pb2.GetBacktestRequest(
-                context=common_pb2.TenantContext(tenant_id=str(TEST_TENANT_ID)),
+                context=common_pb2.TenantContext(
+                    tenant_id=str(TEST_TENANT_ID), user_id=str(TEST_USER_ID)
+                ),
                 backtest_id=str(store.backtest.id),
             ),
             MockServicerContext(),

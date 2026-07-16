@@ -3,10 +3,12 @@
 import os
 import re
 from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from time import perf_counter
+from uuid import UUID
 
-from sqlalchemy import event
+from sqlalchemy import event, text
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
@@ -16,6 +18,7 @@ from sqlalchemy.ext.asyncio import (
 )
 
 from llamatrade_db.base import Base
+from llamatrade_db.rls import BYPASS_GUC, TENANT_GUC
 from llamatrade_telemetry.instrumentation.db import DB_QUERY_DURATION
 
 # Module-level engine and session maker (initialized lazily)
@@ -180,6 +183,57 @@ async def close_db() -> None:
         await _engine.dispose()
         _engine = None
         _async_session_maker = None
+
+
+async def set_tenant_guc(session: AsyncSession, tenant_id: UUID) -> None:
+    """Bind the transaction-local RLS tenant GUC to ``tenant_id`` (fail-closed).
+
+    Uses ``set_config(..., is_local => true)`` so the binding is scoped to the
+    current transaction and cannot leak across pooled connections. Callers must
+    not ``commit()`` between this and the queries it protects (commit clears it).
+    """
+    await session.execute(
+        text(f"SELECT set_config('{TENANT_GUC}', :tenant, true)"),
+        {"tenant": str(tenant_id)},
+    )
+
+
+async def set_rls_bypass(session: AsyncSession) -> None:
+    """Enable the transaction-local RLS system bypass for trusted cross-tenant work.
+
+    Only server-owned background sweeps (equity snapshot, reconciliation) may use
+    this; the value is never derived from request input.
+    """
+    await session.execute(text(f"SELECT set_config('{BYPASS_GUC}', 'on', true)"))
+
+
+@asynccontextmanager
+async def tenant_session(
+    tenant_id: UUID,
+    session_maker: async_sessionmaker[AsyncSession] | None = None,
+) -> AsyncGenerator[AsyncSession]:
+    """Open a session bound to ``tenant_id`` for RLS (request / per-tenant paths).
+
+    The tenant GUC is set on the session's transaction before yielding, so every
+    query inside is scoped to ``tenant_id`` by Postgres even if an app-layer
+    filter is missing. Pass ``session_maker`` to reuse a specific factory (tests
+    inject the test-DB factory); otherwise the process default is used.
+    """
+    maker = session_maker or get_session_maker()
+    async with maker() as session:
+        await set_tenant_guc(session, tenant_id)
+        yield session
+
+
+@asynccontextmanager
+async def system_session(
+    session_maker: async_sessionmaker[AsyncSession] | None = None,
+) -> AsyncGenerator[AsyncSession]:
+    """Open a session with the RLS system bypass (trusted cross-tenant sweeps)."""
+    maker = session_maker or get_session_maker()
+    async with maker() as session:
+        await set_rls_bypass(session)
+        yield session
 
 
 async def get_db() -> AsyncGenerator[AsyncSession]:

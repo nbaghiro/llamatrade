@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 # Type alias for generic request context (accepts any request/response types)
 type AnyContext = RequestContext[object, object]
 
-from llamatrade_db import get_session_maker
+from llamatrade_db import get_session_maker, system_session, tenant_session
 from llamatrade_proto.generated import billing_pb2, common_pb2
 
 from src.models import (
@@ -42,13 +42,11 @@ class BillingServicer:
         """Initialize the servicer."""
         self._session_maker: async_sessionmaker[AsyncSession] | None = None
 
-    async def _get_db(self) -> AsyncSession:
-        """Get a database session."""
+    def _maker(self) -> async_sessionmaker[AsyncSession]:
+        """The session factory (lazily created; tests inject a test-DB factory)."""
         if self._session_maker is None:
             self._session_maker = get_session_maker()
-        assert self._session_maker is not None
-        session: AsyncSession = self._session_maker()
-        return session
+        return self._session_maker
 
     def _get_tenant_id(self, ctx: AnyContext) -> UUID:
         """Extract tenant_id from JWT token in Authorization header."""
@@ -83,7 +81,7 @@ class BillingServicer:
 
         tenant_id = self._get_tenant_id(ctx)
 
-        async with await self._get_db() as db:
+        async with tenant_session(tenant_id, self._maker()) as db:
             stripe_client = get_stripe_client()
             service = BillingService(db, stripe_client)
             subscription = await service.get_subscription(tenant_id)
@@ -116,7 +114,7 @@ class BillingServicer:
         )
 
         try:
-            async with await self._get_db() as db:
+            async with tenant_session(tenant_id, self._maker()) as db:
                 stripe_client = get_stripe_client()
                 service = BillingService(db, stripe_client)
 
@@ -146,7 +144,7 @@ class BillingServicer:
         tenant_id = self._get_tenant_id(ctx)
 
         try:
-            async with await self._get_db() as db:
+            async with tenant_session(tenant_id, self._maker()) as db:
                 stripe_client = get_stripe_client()
                 service = BillingService(db, stripe_client)
                 subscription = await service.update_subscription(
@@ -171,7 +169,7 @@ class BillingServicer:
         tenant_id = self._get_tenant_id(ctx)
 
         try:
-            async with await self._get_db() as db:
+            async with tenant_session(tenant_id, self._maker()) as db:
                 stripe_client = get_stripe_client()
                 service = BillingService(db, stripe_client)
                 subscription = await service.cancel_subscription(
@@ -196,7 +194,7 @@ class BillingServicer:
         tenant_id = self._get_tenant_id(ctx)
 
         try:
-            async with await self._get_db() as db:
+            async with tenant_session(tenant_id, self._maker()) as db:
                 stripe_client = get_stripe_client()
                 service = BillingService(db, stripe_client)
                 subscription = await service.reactivate_subscription(tenant_id)
@@ -264,10 +262,10 @@ class BillingServicer:
         request: billing_pb2.ListPlansRequest,
         ctx: AnyContext,
     ) -> billing_pb2.ListPlansResponse:
-        """List available plans."""
+        """List available plans (global catalog — not tenant-scoped)."""
         from src.services.billing_service import BillingService
 
-        async with await self._get_db() as db:
+        async with system_session(self._maker()) as db:
             stripe_client = get_stripe_client()
             service = BillingService(db, stripe_client)
             plans = await service.list_plans()
@@ -287,7 +285,7 @@ class BillingServicer:
 
         tenant_id = self._get_tenant_id(ctx)
 
-        async with await self._get_db() as db:
+        async with tenant_session(tenant_id, self._maker()) as db:
             stripe_client = get_stripe_client()
             billing_service = BillingService(db, stripe_client)
             service = PaymentMethodService(db, stripe_client, billing_service)
@@ -310,7 +308,7 @@ class BillingServicer:
         email = f"user-{tenant_id}@llamatrade.example"
 
         try:
-            async with await self._get_db() as db:
+            async with tenant_session(tenant_id, self._maker()) as db:
                 stripe_client = get_stripe_client()
                 billing_service = BillingService(db, stripe_client)
                 service = PaymentMethodService(db, stripe_client, billing_service)
@@ -339,7 +337,7 @@ class BillingServicer:
         payment_method_id = UUID(request.payment_method_id)
 
         try:
-            async with await self._get_db() as db:
+            async with tenant_session(tenant_id, self._maker()) as db:
                 stripe_client = get_stripe_client()
                 billing_service = BillingService(db, stripe_client)
                 service = PaymentMethodService(db, stripe_client, billing_service)

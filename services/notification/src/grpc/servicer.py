@@ -4,15 +4,36 @@ from __future__ import annotations
 
 import logging
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, Any
-from uuid import uuid4
+from typing import TYPE_CHECKING, Any, NoReturn
+from uuid import UUID, uuid4
 
 import grpc.aio
+
+from llamatrade_common import AuthError, resolve_identity
 
 if TYPE_CHECKING:
     from llamatrade_proto.generated import notification_pb2
 
 logger = logging.getLogger(__name__)
+
+# Map the transport-neutral AuthError codes to gRPC status codes.
+_AUTH_CODE_TO_GRPC = {
+    "unauthenticated": grpc.StatusCode.UNAUTHENTICATED,
+    "permission_denied": grpc.StatusCode.PERMISSION_DENIED,
+    "invalid_argument": grpc.StatusCode.INVALID_ARGUMENT,
+}
+
+
+def _identity(request_context: Any) -> tuple[UUID, UUID]:
+    """Verified ``(tenant_id, user_id)`` from the authenticated principal (raises AuthError)."""
+    return resolve_identity(request_context.tenant_id or None, request_context.user_id or None)
+
+
+async def _abort_auth(context: grpc.aio.ServicerContext[Any, Any], err: AuthError) -> NoReturn:
+    """Abort with the gRPC status code for an auth failure (never returns)."""
+    await context.abort(
+        _AUTH_CODE_TO_GRPC.get(err.code, grpc.StatusCode.UNAUTHENTICATED), err.message
+    )
 
 
 class NotificationServicer:
@@ -40,8 +61,8 @@ class NotificationServicer:
         from llamatrade_proto.generated import common_pb2, notification_pb2
 
         try:
-            tenant_id = request.context.tenant_id
-            user_id = request.context.user_id
+            verified_tenant, verified_user = _identity(request.context)
+            tenant_id, user_id = str(verified_tenant), str(verified_user)
 
             # Get notifications from stub storage
             key = f"{tenant_id}:{user_id}"
@@ -79,6 +100,8 @@ class NotificationServicer:
                 unread_count=unread_count,
             )
 
+        except AuthError as e:
+            await _abort_auth(context, e)
         except Exception as e:
             logger.error("ListNotifications error: %s", e, exc_info=True)
             await context.abort(
@@ -95,8 +118,8 @@ class NotificationServicer:
         from llamatrade_proto.generated import notification_pb2
 
         try:
-            tenant_id = request.context.tenant_id
-            user_id = request.context.user_id
+            verified_tenant, verified_user = _identity(request.context)
+            tenant_id, user_id = str(verified_tenant), str(verified_user)
             key = f"{tenant_id}:{user_id}"
 
             marked_count = 0
@@ -121,6 +144,8 @@ class NotificationServicer:
 
             return notification_pb2.MarkAsReadResponse(marked_count=marked_count)
 
+        except AuthError as e:
+            await _abort_auth(context, e)
         except Exception as e:
             logger.error("MarkAsRead error: %s", e, exc_info=True)
             await context.abort(
@@ -137,8 +162,8 @@ class NotificationServicer:
         from llamatrade_proto.generated import notification_pb2
 
         try:
-            tenant_id = request.context.tenant_id
-            user_id = request.context.user_id
+            verified_tenant, verified_user = _identity(request.context)
+            tenant_id, user_id = str(verified_tenant), str(verified_user)
             key = f"{tenant_id}:{user_id}"
 
             alerts = self._alerts.get(key, [])
@@ -151,6 +176,8 @@ class NotificationServicer:
                 alerts=[self._to_proto_alert(a) for a in alerts],
             )
 
+        except AuthError as e:
+            await _abort_auth(context, e)
         except Exception as e:
             logger.error("ListAlerts error: %s", e, exc_info=True)
             await context.abort(
@@ -167,8 +194,8 @@ class NotificationServicer:
         from llamatrade_proto.generated import notification_pb2
 
         try:
-            tenant_id = request.context.tenant_id
-            user_id = request.context.user_id
+            verified_tenant, verified_user = _identity(request.context)
+            tenant_id, user_id = str(verified_tenant), str(verified_user)
             key = f"{tenant_id}:{user_id}"
 
             # Create alert
@@ -207,6 +234,8 @@ class NotificationServicer:
                 alert=self._to_proto_alert(alert),
             )
 
+        except AuthError as e:
+            await _abort_auth(context, e)
         except Exception as e:
             logger.error("CreateAlert error: %s", e, exc_info=True)
             await context.abort(
@@ -223,8 +252,8 @@ class NotificationServicer:
         from llamatrade_proto.generated import notification_pb2
 
         try:
-            tenant_id = request.context.tenant_id
-            user_id = request.context.user_id
+            verified_tenant, verified_user = _identity(request.context)
+            tenant_id, user_id = str(verified_tenant), str(verified_user)
             key = f"{tenant_id}:{user_id}"
 
             alerts = self._alerts.get(key, [])
@@ -243,6 +272,8 @@ class NotificationServicer:
 
         except grpc.aio.AioRpcError:
             raise
+        except AuthError as e:
+            await _abort_auth(context, e)
         except Exception as e:
             logger.error("DeleteAlert error: %s", e, exc_info=True)
             await context.abort(
@@ -259,8 +290,8 @@ class NotificationServicer:
         from llamatrade_proto.generated import notification_pb2
 
         try:
-            tenant_id = request.context.tenant_id
-            user_id = request.context.user_id
+            verified_tenant, verified_user = _identity(request.context)
+            tenant_id, user_id = str(verified_tenant), str(verified_user)
             key = f"{tenant_id}:{user_id}"
 
             alerts = self._alerts.get(key, [])
@@ -285,6 +316,8 @@ class NotificationServicer:
 
         except grpc.aio.AioRpcError:
             raise
+        except AuthError as e:
+            await _abort_auth(context, e)
         except Exception as e:
             logger.error("ToggleAlert error: %s", e, exc_info=True)
             await context.abort(
@@ -301,8 +334,8 @@ class NotificationServicer:
         from llamatrade_proto.generated import notification_pb2
 
         try:
-            tenant_id = request.context.tenant_id
-            user_id = request.context.user_id
+            verified_tenant, verified_user = _identity(request.context)
+            tenant_id, user_id = str(verified_tenant), str(verified_user)
             key = f"{tenant_id}:{user_id}"
 
             channels: list[dict[str, Any]] = self._channels.get(key, [])
@@ -327,6 +360,8 @@ class NotificationServicer:
                 channels=[self._to_proto_channel(c) for c in channels],
             )
 
+        except AuthError as e:
+            await _abort_auth(context, e)
         except Exception as e:
             logger.error("ListChannels error: %s", e, exc_info=True)
             await context.abort(
@@ -343,8 +378,8 @@ class NotificationServicer:
         from llamatrade_proto.generated import notification_pb2
 
         try:
-            tenant_id = request.context.tenant_id
-            user_id = request.context.user_id
+            verified_tenant, verified_user = _identity(request.context)
+            tenant_id, user_id = str(verified_tenant), str(verified_user)
             key = f"{tenant_id}:{user_id}"
 
             channels = self._channels.get(key, [])
@@ -380,6 +415,8 @@ class NotificationServicer:
                 channel=self._to_proto_channel(channel),
             )
 
+        except AuthError as e:
+            await _abort_auth(context, e)
         except Exception as e:
             logger.error("UpdateChannel error: %s", e, exc_info=True)
             await context.abort(

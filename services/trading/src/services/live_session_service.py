@@ -615,17 +615,20 @@ class LiveSessionService(SessionService):
         return None
 
 
-async def create_live_session_service() -> LiveSessionService:
+async def create_live_session_service(tenant_id: UUID | None = None) -> LiveSessionService:
     """Create a live session service without dependency injection.
 
-    Used by the gRPC servicer where FastAPI DI is not available.
+    Used by the gRPC servicer where FastAPI DI is not available. When a
+    ``tenant_id`` is given, the session is bound to it for Postgres RLS.
     """
-    from llamatrade_db import get_session_maker
+    from llamatrade_db import get_session_maker, set_tenant_guc
 
     from src.executor.order_executor import create_order_executor
 
     db = get_session_maker()()
-    order_executor = await create_order_executor()
+    if tenant_id is not None:
+        await set_tenant_guc(db, tenant_id)
+    order_executor = await create_order_executor(tenant_id=tenant_id)
     return LiveSessionService(
         db=db,
         runner_manager=get_runner_manager(),

@@ -26,6 +26,7 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from llamatrade_db import tenant_session
 from llamatrade_db.models.ledger import (
     Account,
     LedgerEventType,
@@ -205,7 +206,7 @@ def make_drift_handler(session_factory: async_sessionmaker[AsyncSession]):
     async def handle(account: Account, drift: Drift) -> None:
         from src.metrics import record_drift_action
 
-        async with session_factory() as db:
+        async with tenant_session(account.tenant_id, session_factory) as db:
             action = await apply_drift_action(
                 repo=SqlSleeveRepository(db),
                 store=SqlLedgerStore(db),

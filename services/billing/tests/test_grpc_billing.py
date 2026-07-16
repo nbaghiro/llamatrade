@@ -6,7 +6,7 @@ Tests the BillingServicer directly without HTTP layer.
 import os
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 from uuid import UUID, uuid4
 
 import jwt
@@ -384,8 +384,13 @@ def mock_stripe_client() -> MockStripeClient:
 
 @pytest.fixture
 def billing_servicer() -> BillingServicer:
-    """Create BillingServicer with mocked dependencies."""
-    return BillingServicer()
+    """BillingServicer with a mock session factory (the RLS set_config is a no-op)."""
+    servicer = BillingServicer()
+    session = AsyncMock()
+    session.__aenter__ = AsyncMock(return_value=session)
+    session.__aexit__ = AsyncMock(return_value=None)
+    servicer._session_maker = lambda: session
+    return servicer
 
 
 # ===================

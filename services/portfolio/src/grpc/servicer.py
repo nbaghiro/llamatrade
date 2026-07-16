@@ -15,7 +15,8 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 # Type alias for generic request context (accepts any request/response types)
 type AnyContext = RequestContext[object, object]
 
-from llamatrade_db import get_session_maker
+from llamatrade_common.connect import resolve_identity_connect
+from llamatrade_db import get_session_maker, tenant_session
 
 from src.clients.market_data import get_market_data_client
 
@@ -38,12 +39,11 @@ class PortfolioServicer:
         """Initialize the servicer."""
         self._session_factory: async_sessionmaker[AsyncSession] | None = None
 
-    async def _get_db(self) -> AsyncSession:
-        """Get a database session."""
+    def _maker(self) -> async_sessionmaker[AsyncSession]:
+        """The session factory (lazily created; tests inject a test-DB factory)."""
         if self._session_factory is None:
             self._session_factory = get_session_maker()
-        assert self._session_factory is not None
-        return self._session_factory()
+        return self._session_factory
 
     # All portfolio/strategy reads derive from the ledger projection — the single
     # source of truth. (Summary, positions, performance, transactions, and
@@ -72,9 +72,9 @@ class PortfolioServicer:
         from llamatrade_proto.generated import portfolio_pb2
 
         try:
-            tenant_id = UUID(request.context.tenant_id)
+            tenant_id, _ = resolve_identity_connect(request.context)
 
-            async with await self._get_db() as db:
+            async with tenant_session(tenant_id, self._maker()) as db:
                 service = self._reader(db)
                 summary = await service.get_summary(tenant_id)
                 positions = await service.list_positions(tenant_id)
@@ -84,6 +84,8 @@ class PortfolioServicer:
                     positions=[self._to_proto_position(p) for p in positions],
                 )
 
+        except ConnectError:
+            raise
         except Exception as e:
             logger.error("get_portfolio error: %s", e, exc_info=True)
             raise ConnectError(
@@ -100,9 +102,9 @@ class PortfolioServicer:
         from llamatrade_proto.generated import common_pb2, portfolio_pb2
 
         try:
-            tenant_id = UUID(request.context.tenant_id)
+            tenant_id, _ = resolve_identity_connect(request.context)
 
-            async with await self._get_db() as db:
+            async with tenant_session(tenant_id, self._maker()) as db:
                 service = self._reader(db)
                 summary = await service.get_summary(tenant_id)
 
@@ -121,6 +123,8 @@ class PortfolioServicer:
                     ),
                 )
 
+        except ConnectError:
+            raise
         except Exception as e:
             logger.error("list_portfolios error: %s", e, exc_info=True)
             raise ConnectError(
@@ -137,9 +141,9 @@ class PortfolioServicer:
         from llamatrade_proto.generated import common_pb2, portfolio_pb2
 
         try:
-            tenant_id = UUID(request.context.tenant_id)
+            tenant_id, _ = resolve_identity_connect(request.context)
 
-            async with await self._get_db() as db:
+            async with tenant_session(tenant_id, self._maker()) as db:
                 service = self._reader(db)
 
                 # Get portfolio summary for basic metrics
@@ -201,6 +205,8 @@ class PortfolioServicer:
 
                 return portfolio_pb2.GetPerformanceResponse(metrics=proto_metrics)
 
+        except ConnectError:
+            raise
         except Exception as e:
             logger.error("get_performance error: %s", e, exc_info=True)
             raise ConnectError(
@@ -217,9 +223,9 @@ class PortfolioServicer:
         from llamatrade_proto.generated import common_pb2, portfolio_pb2
 
         try:
-            tenant_id = UUID(request.context.tenant_id)
+            tenant_id, _ = resolve_identity_connect(request.context)
 
-            async with await self._get_db() as db:
+            async with tenant_session(tenant_id, self._maker()) as db:
                 service = self._reader(db)
                 positions = await service.list_positions(tenant_id)
 
@@ -255,6 +261,8 @@ class PortfolioServicer:
 
                 return portfolio_pb2.GetAssetAllocationResponse(allocations=allocations)
 
+        except ConnectError:
+            raise
         except Exception as e:
             logger.error("get_asset_allocation error: %s", e, exc_info=True)
             raise ConnectError(
@@ -271,9 +279,9 @@ class PortfolioServicer:
         from llamatrade_proto.generated import portfolio_pb2
 
         try:
-            tenant_id = UUID(request.context.tenant_id)
+            tenant_id, _ = resolve_identity_connect(request.context)
 
-            async with await self._get_db() as db:
+            async with tenant_session(tenant_id, self._maker()) as db:
                 service = self._reader(db)
                 positions = await service.list_positions(tenant_id)
 
@@ -281,6 +289,8 @@ class PortfolioServicer:
                     positions=[self._to_proto_position(p) for p in positions],
                 )
 
+        except ConnectError:
+            raise
         except Exception as e:
             logger.error("get_positions error: %s", e, exc_info=True)
             raise ConnectError(
@@ -297,11 +307,11 @@ class PortfolioServicer:
         from llamatrade_proto.generated import common_pb2, portfolio_pb2
 
         try:
-            tenant_id = UUID(request.context.tenant_id)
+            tenant_id, _ = resolve_identity_connect(request.context)
             page = request.pagination.page if request.HasField("pagination") else 1
             page_size = request.pagination.page_size if request.HasField("pagination") else 20
 
-            async with await self._get_db() as db:
+            async with tenant_session(tenant_id, self._maker()) as db:
                 service = self._reader(db)
                 transactions, total = await service.list_transactions(
                     tenant_id=tenant_id,
@@ -325,6 +335,8 @@ class PortfolioServicer:
                     ),
                 )
 
+        except ConnectError:
+            raise
         except Exception as e:
             logger.error("list_transactions error: %s", e, exc_info=True)
             raise ConnectError(
@@ -341,11 +353,11 @@ class PortfolioServicer:
         from llamatrade_proto.generated import portfolio_pb2
 
         try:
-            tenant_id = UUID(request.context.tenant_id)
+            tenant_id, _ = resolve_identity_connect(request.context)
 
             # This would call the trading service to get current positions
             # and sync them to the portfolio
-            async with await self._get_db() as db:
+            async with tenant_session(tenant_id, self._maker()) as db:
                 service = self._reader(db)
                 summary = await service.get_summary(tenant_id)
                 positions = await service.list_positions(tenant_id)
@@ -356,6 +368,8 @@ class PortfolioServicer:
                     transactions_recorded=0,
                 )
 
+        except ConnectError:
+            raise
         except Exception as e:
             logger.error("sync_portfolio error: %s", e, exc_info=True)
             raise ConnectError(
@@ -378,7 +392,7 @@ class PortfolioServicer:
         try:
             from src.services.strategy_performance_service import ListPerformanceFilters
 
-            tenant_id = UUID(request.context.tenant_id)
+            tenant_id, _ = resolve_identity_connect(request.context)
             page = request.pagination.page if request.HasField("pagination") else 1
             page_size = request.pagination.page_size if request.HasField("pagination") else 20
 
@@ -389,7 +403,7 @@ class PortfolioServicer:
             if request.status != common_pb2.EXECUTION_STATUS_UNSPECIFIED:
                 filters.status = request.status
 
-            async with await self._get_db() as db:
+            async with tenant_session(tenant_id, self._maker()) as db:
                 service = self._strategy_perf_reader(db)
                 result = await service.list_strategy_performance(
                     tenant_id=tenant_id,
@@ -417,6 +431,8 @@ class PortfolioServicer:
                     ),
                 )
 
+        except ConnectError:
+            raise
         except Exception as e:
             logger.error("list_strategy_performance error: %s", e, exc_info=True)
             raise ConnectError(
@@ -433,10 +449,10 @@ class PortfolioServicer:
         from llamatrade_proto.generated import portfolio_pb2
 
         try:
-            tenant_id = UUID(request.context.tenant_id)
+            tenant_id, _ = resolve_identity_connect(request.context)
             execution_id = UUID(request.execution_id)
 
-            async with await self._get_db() as db:
+            async with tenant_session(tenant_id, self._maker()) as db:
                 service = self._strategy_perf_reader(db)
                 detail = await service.get_strategy_performance(
                     tenant_id=tenant_id,
@@ -475,7 +491,7 @@ class PortfolioServicer:
         from llamatrade_proto.generated import common_pb2, portfolio_pb2
 
         try:
-            tenant_id = UUID(request.context.tenant_id)
+            tenant_id, _ = resolve_identity_connect(request.context)
             execution_id = UUID(request.execution_id)
 
             # Parse time range
@@ -487,7 +503,7 @@ class PortfolioServicer:
                 if request.time_range.end.seconds > 0:
                     end_time = datetime.fromtimestamp(request.time_range.end.seconds, tz=UTC)
 
-            async with await self._get_db() as db:
+            async with tenant_session(tenant_id, self._maker()) as db:
                 service = self._strategy_perf_reader(db)
                 result = await service.get_strategy_equity_curve(
                     tenant_id=tenant_id,
