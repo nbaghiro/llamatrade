@@ -416,8 +416,13 @@ def mock_stripe_client() -> MockStripeClient:
 
 @pytest.fixture
 def billing_servicer() -> BillingServicer:
-    """Create BillingServicer with mocked dependencies."""
-    return BillingServicer()
+    """BillingServicer with a mock session factory (the RLS set_config is a no-op)."""
+    servicer = BillingServicer()
+    session = AsyncMock()
+    session.__aenter__ = AsyncMock(return_value=session)
+    session.__aexit__ = AsyncMock(return_value=None)
+    servicer._session_maker = lambda: session
+    return servicer
 
 
 # ===================

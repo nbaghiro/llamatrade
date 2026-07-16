@@ -16,7 +16,8 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 # Type alias for generic request context (accepts any request/response types)
 type AnyContext = RequestContext[object, object]
 
-from llamatrade_db import get_session_maker
+from llamatrade_common import current_context
+from llamatrade_db import get_session_maker, set_rls_bypass
 from llamatrade_proto.generated import auth_pb2, common_pb2
 from llamatrade_telemetry import metrics
 
@@ -62,11 +63,18 @@ class AuthServicer:
         self._session_maker: async_sessionmaker[AsyncSession] | None = None
 
     async def _get_db(self) -> AsyncSession:
-        """Get a database session."""
+        """DB session for the identity authority.
+
+        Auth legitimately operates *pre-tenant* (login by email) and
+        *cross-tenant* (S2S user/tenant lookups), so its session runs with the
+        RLS system bypass; per-request tenant scoping is enforced in the app
+        layer (e.g. ``get_user``/``get_tenant``).
+        """
         if self._session_maker is None:
             self._session_maker = get_session_maker()
         assert self._session_maker is not None
         session: AsyncSession = self._session_maker()
+        await set_rls_bypass(session)
         return session
 
     def _get_auth_token(self, ctx: AnyContext) -> str:
@@ -283,7 +291,17 @@ class AuthServicer:
             result = await db.execute(select(User).where(User.id == user_id))
             user = result.scalar_one_or_none()
 
-            if not user:
+            # Cross-tenant guard: a user token may only read users in its own
+            # tenant; a service token (S2S) may read any. NOT_FOUND (not
+            # PERMISSION_DENIED) so cross-tenant existence isn't leaked.
+            caller = current_context()
+            outside_tenant = (
+                caller is not None
+                and not caller.is_service
+                and user is not None
+                and user.tenant_id != caller.tenant_id
+            )
+            if not user or outside_tenant:
                 raise ConnectError(
                     Code.NOT_FOUND,
                     f"User not found: {request.user_id}",
@@ -300,6 +318,12 @@ class AuthServicer:
         from uuid import UUID
 
         tenant_id = UUID(request.tenant_id)
+
+        # Cross-tenant guard: a user token may only read its own tenant; a
+        # service token (S2S) may read any. NOT_FOUND so existence isn't leaked.
+        caller = current_context()
+        if caller is not None and not caller.is_service and tenant_id != caller.tenant_id:
+            raise ConnectError(Code.NOT_FOUND, f"Tenant not found: {request.tenant_id}")
 
         async with await self._get_db() as db:
             from sqlalchemy import select
@@ -608,7 +632,10 @@ class AuthServicer:
         ctx: AnyContext,
     ) -> auth_pb2.CheckPermissionResponse:
         """Check if user has permission for a resource/action."""
-        roles = list(request.context.roles)
+        # Authorize off the *verified* roles (the JWT), not body-supplied roles.
+        # Fall back to the wire only with no middleware context (unit tests).
+        caller = current_context()
+        roles = list(caller.roles) if caller is not None else list(request.context.roles)
         resource = request.resource
         action = request.action
 
