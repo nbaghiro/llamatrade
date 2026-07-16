@@ -9,8 +9,6 @@ Tables:
 - pending_artifacts: Generated resources awaiting user confirmation
 - tool_call_logs: Audit trail of tool executions
 - agent_memory_facts: Extracted user facts and preferences
-- agent_memory_embeddings: Vector embeddings for semantic search
-- agent_session_summaries: Condensed session summaries
 """
 
 from __future__ import annotations
@@ -30,7 +28,7 @@ from sqlalchemy import (
     String,
     Text,
 )
-from sqlalchemy.dialects.postgresql import ARRAY, JSONB
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -43,9 +41,7 @@ from llamatrade_db.models._enum_types import (
 )
 from llamatrade_proto.generated import agent_pb2
 
-# =============================================================================
 # Memory Fact Categories (stored as PostgreSQL ENUM)
-# =============================================================================
 
 
 class MemoryFactCategory(StrEnum):
@@ -60,8 +56,7 @@ class MemoryFactCategory(StrEnum):
     FEEDBACK = "feedback"  # "liked the momentum suggestion"
 
 
-# Note: Enum type decorators are defined in _enum_types.py
-# They convert between proto int values and PostgreSQL ENUM strings
+# Enum type decorators (proto int <-> PostgreSQL ENUM string) live in _enum_types.py
 
 
 class AgentSession(Base, UUIDPrimaryKeyMixin, TenantMixin, TimestampMixin):
@@ -104,12 +99,6 @@ class AgentSession(Base, UUIDPrimaryKeyMixin, TenantMixin, TimestampMixin):
         back_populates="session",
         cascade="all, delete-orphan",
     )
-    summary: Mapped[AgentSessionSummary | None] = relationship(
-        "AgentSessionSummary",
-        back_populates="session",
-        cascade="all, delete-orphan",
-        uselist=False,  # 1:1 relationship
-    )
 
 
 class AgentMessage(Base, UUIDPrimaryKeyMixin, TenantMixin, TimestampMixin):
@@ -137,6 +126,9 @@ class AgentMessage(Base, UUIDPrimaryKeyMixin, TenantMixin, TimestampMixin):
     # Tool calls made during this assistant message (JSON array)
     # Format: [{"id": "...", "name": "...", "arguments": {...}, "result": {...}}]
     tool_calls_json: Mapped[list[dict[str, Any]] | None] = mapped_column(JSONB, nullable=True)
+
+    # Draft artifact IDs rendered inline with this message; persisted so a reloaded session rebuilds the cards.
+    inline_artifact_ids: Mapped[list[str] | None] = mapped_column(JSONB, nullable=True)
 
     # Relationships
     session: Mapped[AgentSession] = relationship("AgentSession", back_populates="messages")
@@ -217,9 +209,7 @@ class ToolCallLog(Base, UUIDPrimaryKeyMixin, TenantMixin, TimestampMixin):
     session: Mapped[AgentSession] = relationship("AgentSession", back_populates="tool_call_logs")
 
 
-# =============================================================================
 # Memory Models
-# =============================================================================
 
 
 class AgentMemoryFact(Base, UUIDPrimaryKeyMixin, TenantMixin, TimestampMixin):
@@ -275,72 +265,5 @@ class AgentMemoryFact(Base, UUIDPrimaryKeyMixin, TenantMixin, TimestampMixin):
     access_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
 
 
-class AgentMemoryEmbedding(Base, UUIDPrimaryKeyMixin, TenantMixin, TimestampMixin):
-    """
-    Vector embeddings for semantic memory search.
-
-    Stores embeddings for facts, summaries, and strategies to enable
-    semantic similarity search via pgvector.
-    """
-
-    __tablename__ = "agent_memory_embeddings"
-    __table_args__ = (
-        Index("ix_agent_memory_embeddings_tenant_user", "tenant_id", "user_id"),
-        Index("ix_agent_memory_embeddings_source", "source_id"),
-        # Note: Vector index is created in migration with specific parameters
-    )
-
-    user_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False, index=True)
-    embedding_type: Mapped[str] = mapped_column(
-        String(20), nullable=False
-    )  # "fact" | "summary" | "strategy"
-
-    # Vector embedding - stored as array, indexed via pgvector
-    # Using ARRAY for compatibility; pgvector operations done via raw SQL
-    embedding: Mapped[list[float]] = mapped_column(ARRAY(Float, dimensions=1536), nullable=False)
-
-    # Source reference
-    content_text: Mapped[str] = mapped_column(Text, nullable=False)
-    source_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
-    embedding_model: Mapped[str] = mapped_column(
-        String(50), nullable=False, default="text-embedding-3-small"
-    )
-
-
-class AgentSessionSummary(Base, UUIDPrimaryKeyMixin, TenantMixin, TimestampMixin):
-    """
-    Condensed summaries of agent conversation sessions.
-
-    Generated when a session completes or after extended inactivity.
-    Enables quick recall of past conversation context without
-    loading full message history.
-    """
-
-    __tablename__ = "agent_session_summaries"
-    __table_args__ = (
-        Index("ix_agent_session_summaries_tenant_user", "tenant_id", "user_id"),
-        Index("ix_agent_session_summaries_session", "session_id"),
-    )
-
-    user_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False, index=True)
-    session_id: Mapped[UUID] = mapped_column(
-        PG_UUID(as_uuid=True),
-        ForeignKey("agent_sessions.id", ondelete="CASCADE"),
-        nullable=False,
-        unique=True,  # 1:1 with sessions
-    )
-
-    # Summary content
-    summary_short: Mapped[str] = mapped_column(Text, nullable=False)  # 1-2 sentences
-    summary_detailed: Mapped[str] = mapped_column(Text, nullable=False)  # Full summary
-
-    # Structured metadata (JSONB for flexibility)
-    topics: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
-    strategies_discussed: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
-    decisions: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
-
-    # State tracking for incremental updates
-    message_count_at_summary: Mapped[int] = mapped_column(Integer, nullable=False)
-
-    # Relationships
-    session: Mapped[AgentSession] = relationship("AgentSession", back_populates="summary")
+# Tables agent_memory_embeddings and agent_session_summaries are deprecated; their
+# ORM models were removed and a drop-migration is pending.

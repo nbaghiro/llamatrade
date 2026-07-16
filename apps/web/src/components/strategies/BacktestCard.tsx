@@ -5,12 +5,12 @@
 
 import { Link } from 'react-router-dom';
 
-import type { BacktestRun } from '../../data/demo-strategies';
+import type { BacktestRunView } from '../../types/backtest';
 
 import { MiniChart } from './MiniChart';
 
 interface BacktestCardProps {
-  backtest: BacktestRun;
+  backtest: BacktestRunView;
 }
 
 function formatDate(date: Date): string {
@@ -27,7 +27,7 @@ export function BacktestCard({ backtest }: BacktestCardProps) {
   return (
     <Link
       to={`/backtest?strategy=${backtest.strategyId}&run=${backtest.id}`}
-      className="block bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800 p-3 hover:shadow-md hover:border-gray-300 dark:hover:border-gray-700 transition-all duration-200"
+      className="block card-shadow p-3 transition-all duration-200 hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-lg"
     >
       {/* Equity Curve Chart */}
       <div className="mb-2">
@@ -42,7 +42,7 @@ export function BacktestCard({ backtest }: BacktestCardProps) {
       </div>
 
       {/* Strategy Name */}
-      <h3 className="font-medium text-gray-900 dark:text-gray-100 text-sm truncate mb-1">
+      <h3 className="font-display uppercase tracking-tight text-ink text-sm truncate mb-1">
         {backtest.strategyName}
       </h3>
 

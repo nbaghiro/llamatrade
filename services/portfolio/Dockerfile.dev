@@ -13,10 +13,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Copy shared libraries first
 COPY libs/common /app/libs/common
 COPY libs/db /app/libs/db
+COPY libs/telemetry /app/libs/telemetry
+COPY libs/events /app/libs/events
 COPY libs/proto /app/libs/proto
+COPY libs/alpaca /app/libs/alpaca
 
 # Install shared libraries (editable for hot-reload)
-RUN pip install --no-cache-dir -e /app/libs/common -e /app/libs/db -e /app/libs/proto
+RUN pip install --no-cache-dir -e /app/libs/telemetry -e /app/libs/common -e /app/libs/db -e /app/libs/proto -e /app/libs/alpaca -e /app/libs/events
 
 # Copy service dependencies
 COPY services/portfolio/pyproject.toml services/portfolio/README.md ./

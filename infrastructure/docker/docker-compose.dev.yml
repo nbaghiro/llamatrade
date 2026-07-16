@@ -160,28 +160,45 @@ services:
     command: uvicorn src.main:app --host 0.0.0.0 --port 8890 --reload --reload-dir /app/src
 
   # ===================
+  # Single-origin reverse proxy (Caddy) — dev upstreams
+  # ===================
+  # In dev the web app is the Vite dev server on :8802 (not the nginx prod
+  # image), so repoint WEB_UPSTREAM. Web serves the marketing page at "/" now.
+  proxy:
+    environment:
+      WEB_UPSTREAM: web:8802
+
+  # ===================
   # Frontend with Vite HMR
   # ===================
   web:
     build:
-      context: ../../apps/web
-      dockerfile: Dockerfile.dev
+      # Repo-root context (not apps/web) so the workspace-aware Dockerfile can
+      # copy the root lockfile + every workspace manifest and install once,
+      # linking the shared @llamatrade/ui package into node_modules.
+      context: ../..
+      dockerfile: apps/web/Dockerfile.dev
     volumes:
-      # Mount the whole app so Vite sees index.html, vite.config.ts and tsconfig*
-      # (they live at the app root, not in src/). The anonymous node_modules
-      # volume preserves the image's installed deps instead of the host's.
-      - ../../apps/web:/app:cached
+      # Mount the app AND the shared UI package at their in-container workspace
+      # paths (WORKDIR is /app/apps/web). Vite sees index.html, vite.config.ts,
+      # tsconfig* (app root) and packages/ui source for hot-reload. The anonymous
+      # node_modules volumes preserve the image's workspace-linked install
+      # (including node_modules/@llamatrade/ui -> ../packages/ui) instead of the
+      # host's.
+      - ../../apps/web:/app/apps/web:cached
+      - ../../packages/ui:/app/packages/ui:cached
       - /app/node_modules
-    # !override replaces the base file's "8800:80" mapping instead of Compose's
-    # default list-concatenation, which would publish host 8800 twice (->80 and
-    # ->8800) and fail with "port is already allocated". Dev Vite serves on 8800.
-    ports: !override
-      - "8800:8800"
+      - /app/apps/web/node_modules
+    # The single origin is the Caddy proxy on host :8800; the web dev server is
+    # NOT published to the host. !override replaces the base file's port list
+    # with an empty one (Compose would otherwise concatenate). The proxy reaches
+    # it in-network on :8802.
+    ports: !override []
     environment:
       # Agent's host port is remapped to 8990 (see docker-compose.yml). The
       # browser talks to the agent directly, so point it at the remapped port.
       VITE_AGENT_URL: http://localhost:8990
-    command: npm run dev -- --host 0.0.0.0 --port 8800
+    command: npm run dev -- --host 0.0.0.0 --port 8802
 
   # ===================
   # Observability stack (dev) — scrapes every service's /metrics and receives

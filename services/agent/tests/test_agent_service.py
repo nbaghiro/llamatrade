@@ -9,11 +9,13 @@ from uuid import UUID, uuid4
 import pytest
 
 from llamatrade_proto.generated.agent_pb2 import (
+    STREAM_EVENT_TYPE_ARTIFACT_CREATED,
     STREAM_EVENT_TYPE_COMPLETE,
     STREAM_EVENT_TYPE_CONTENT_DELTA,
     STREAM_EVENT_TYPE_ERROR,
     STREAM_EVENT_TYPE_TOOL_CALL_COMPLETE,
     STREAM_EVENT_TYPE_TOOL_CALL_START,
+    STREAM_EVENT_TYPE_TOOL_CONFIRMATION_REQUIRED,
 )
 
 from src.prompts.system import ContextData
@@ -131,6 +133,36 @@ class TestBuildLLMMessages:
         assert hasattr(agent_service, "_current_system_prompt")
         assert "Test Strategy" in agent_service._current_system_prompt
 
+    def test_build_messages_coalesces_consecutive_roles(
+        self, agent_service: AgentService
+    ) -> None:
+        """Consecutive same-role turns are merged so alternation stays strict.
+
+        A history window may begin mid-conversation (on an assistant turn) or
+        end on a user turn; either way the built messages must never place two
+        same-role turns adjacently (Anthropic rejects that).
+        """
+        history = [
+            {"role": "assistant", "content": "Earlier reply A"},
+            {"role": "assistant", "content": "Earlier reply B"},
+            {"role": "user", "content": "Follow-up question"},
+        ]
+
+        messages = agent_service._build_llm_messages(
+            user_message="And one more thing",
+            history=history,
+            context_data=None,
+        )
+
+        # No two adjacent messages share a role.
+        for prev, nxt in zip(messages, messages[1:], strict=False):
+            assert prev.role != nxt.role
+
+        # The trailing user turns (history + current) are merged into one.
+        assert messages[-1].role == "user"
+        assert "Follow-up question" in messages[-1].content
+        assert "And one more thing" in messages[-1].content
+
 
 class TestBuildContext:
     """Tests for context building."""
@@ -228,12 +260,9 @@ class TestStreamMessage:
         # Patch the LLM client and conversation service
         agent_service._llm_client = mock_client
 
-        with (
-            patch.object(agent_service, "_store_assistant_message", return_value=None),
-        ):
-            events = []
-            async for event in agent_service.stream_message(session_id, "Hello"):
-                events.append(event)
+        events = []
+        async for event in agent_service.stream_message(session_id, "Hello"):
+            events.append(event)
 
         # Should have content deltas and complete event
         content_events = [e for e in events if e.get("type") == STREAM_EVENT_TYPE_CONTENT_DELTA]
@@ -274,7 +303,6 @@ class TestStreamMessage:
         )
 
         with (
-            patch.object(agent_service, "_store_assistant_message", return_value=None),
             patch.object(agent_service._executor, "execute", return_value=mock_tool_result),
         ):
             events = []
@@ -292,6 +320,49 @@ class TestStreamMessage:
         assert len(tool_start_events) >= 1
         assert len(tool_complete_events) >= 1
         assert tool_start_events[0].get("tool_name") == "list_strategies"
+
+    @pytest.mark.asyncio
+    async def test_stream_message_emits_artifact_event(
+        self,
+        agent_service: AgentService,
+        session_id: UUID,
+    ) -> None:
+        """A draft artifact created mid-turn is emitted as an ARTIFACT_CREATED event.
+
+        The servicer links the emitted artifact id to the stored assistant
+        message (covered in test_servicer).
+        """
+        from tests.fixtures.mock_llm import MockLLMClient
+
+        from src.tools.base import ToolResult
+
+        mock_client = MockLLMClient()
+        mock_client.add_tool_call_response(
+            tool_name="validate_dsl",
+            tool_input={"dsl_code": '(strategy "S" :rebalance daily)'},
+            content="Validating your strategy.",
+        )
+        mock_client.add_simple_response("Here's your strategy.")
+        agent_service._llm_client = mock_client
+
+        mock_tool_result = ToolResult(
+            success=True, data={"valid": True, "extracted_symbols": ["SPY"]}
+        )
+        fake_artifact = MagicMock()
+        fake_artifact.id = "artifact-xyz"
+
+        with (
+            patch.object(agent_service, "_maybe_create_artifact", return_value=fake_artifact),
+            patch.object(agent_service._executor, "execute", return_value=mock_tool_result),
+        ):
+            events = [
+                event
+                async for event in agent_service.stream_message(session_id, "Build a strategy")
+            ]
+
+        artifact_events = [e for e in events if e.get("type") == STREAM_EVENT_TYPE_ARTIFACT_CREATED]
+        assert len(artifact_events) == 1
+        assert artifact_events[0]["artifact"] is fake_artifact
 
     @pytest.mark.asyncio
     async def test_stream_message_error_handling(
@@ -334,12 +405,9 @@ class TestProcessMessage:
 
         agent_service._llm_client = mock_client
 
-        with (
-            patch.object(agent_service, "_store_assistant_message", return_value=None),
-        ):
-            content, tool_calls, artifacts = await agent_service.process_message(
-                session_id, "Show my portfolio"
-            )
+        content, tool_calls, artifacts = await agent_service.process_message(
+            session_id, "Show my portfolio"
+        )
 
         assert "portfolio" in content.lower()
         assert isinstance(tool_calls, list)
@@ -480,7 +548,6 @@ class TestMultiIterationToolLoop:
             return ToolResult(success=True, data={"result": "mock"})
 
         with (
-            patch.object(agent_service, "_store_assistant_message", return_value=None),
             patch.object(agent_service._executor, "execute", side_effect=mock_execute),
             patch.object(agent_service._executor, "format_tool_result_for_llm", return_value="{}"),
         ):
@@ -525,7 +592,6 @@ class TestMultiIterationToolLoop:
             return ToolResult(success=True, data={})
 
         with (
-            patch.object(agent_service, "_store_assistant_message", return_value=None),
             patch.object(agent_service._executor, "execute", side_effect=mock_execute),
             patch.object(agent_service._executor, "format_tool_result_for_llm", return_value="{}"),
         ):
@@ -565,7 +631,6 @@ class TestMultiIterationToolLoop:
             return ToolResult(success=False, error="Tool execution failed")
 
         with (
-            patch.object(agent_service, "_store_assistant_message", return_value=None),
             patch.object(agent_service._executor, "execute", side_effect=mock_execute),
             patch.object(
                 agent_service._executor,
@@ -594,43 +659,127 @@ class TestMultiIterationToolLoop:
 
 
 # =============================================================================
-# Conversation History Tests
+# Tool Confirmation Flow
 # =============================================================================
 
 
-# =============================================================================
-# Store Assistant Message Tests
-# =============================================================================
-
-
-class TestStoreAssistantMessage:
-    """Tests for storing assistant messages."""
+class TestToolConfirmation:
+    """Tests for propose-and-confirm handling of write tools."""
 
     @pytest.mark.asyncio
-    async def test_store_assistant_message(
+    async def test_stream_message_halts_on_confirmation_required(
         self,
         agent_service: AgentService,
         session_id: UUID,
     ) -> None:
-        """Test that assistant message is stored correctly."""
-        from llamatrade_proto.generated.agent_pb2 import MESSAGE_ROLE_ASSISTANT
+        """A confirmation-gated tool (run_backtest) is proposed, not executed."""
+        from tests.fixtures.mock_llm import MockLLMClient
 
-        mock_conv_service = MagicMock()
-        mock_conv_service.add_message = AsyncMock()
+        from src.tools.base import ToolResult
 
-        with patch(
-            "src.services.conversation_service.ConversationService",
-            return_value=mock_conv_service,
-        ):
-            await agent_service._store_assistant_message(session_id, "This is the response")
+        mock_client = MockLLMClient()
+        mock_client.add_tool_call_response(
+            tool_name="run_backtest",
+            tool_input={"strategy_id": "s1"},
+            content="I'll run a backtest.",
+        )
+        agent_service._llm_client = mock_client
 
-        # Verify correct parameters
-        mock_conv_service.add_message.assert_called_once()
-        call_kwargs = mock_conv_service.add_message.call_args[1]
-        assert call_kwargs["session_id"] == session_id
-        assert call_kwargs["tenant_id"] == agent_service.tenant_id
-        assert call_kwargs["role"] == MESSAGE_ROLE_ASSISTANT
-        assert call_kwargs["content"] == "This is the response"
+        executed = False
+
+        async def mock_execute(*_args: Any, **_kwargs: Any) -> ToolResult:
+            nonlocal executed
+            executed = True
+            return ToolResult(success=True, data={})
+
+        with patch.object(agent_service._executor, "execute", side_effect=mock_execute):
+            events = [
+                e async for e in agent_service.stream_message(session_id, "backtest my strategy")
+            ]
+
+        confirm = [
+            e for e in events if e.get("type") == STREAM_EVENT_TYPE_TOOL_CONFIRMATION_REQUIRED
+        ]
+        assert len(confirm) == 1
+        assert confirm[0]["tool_name"] == "run_backtest"
+        assert '"strategy_id": "s1"' in confirm[0]["arguments_json"]
+        assert confirm[0]["confirmation_id"]
+        assert executed is False  # halted, awaiting approval
+
+    @pytest.mark.asyncio
+    async def test_resume_with_tool_approved_executes_and_summarizes(
+        self,
+        agent_service: AgentService,
+        session_id: UUID,
+    ) -> None:
+        """Approval executes the tool and streams a follow-up summary."""
+        from tests.fixtures.mock_llm import MockLLMClient
+
+        from src.tools.base import ToolResult
+
+        mock_client = MockLLMClient()
+        mock_client.add_simple_response("Your backtest is running; results soon.")
+        agent_service._llm_client = mock_client
+
+        execute = AsyncMock(return_value=ToolResult(success=True, data={"backtest_id": "bt1"}))
+        with patch.object(agent_service._executor, "execute", execute):
+            events = [
+                e
+                async for e in agent_service.resume_with_tool(
+                    session_id, "run_backtest", '{"strategy_id": "s1"}', approved=True
+                )
+            ]
+
+        execute.assert_awaited_once()
+        tool_complete = [
+            e for e in events if e.get("type") == STREAM_EVENT_TYPE_TOOL_CALL_COMPLETE
+        ]
+        content = [e for e in events if e.get("type") == STREAM_EVENT_TYPE_CONTENT_DELTA]
+        complete = [e for e in events if e.get("type") == STREAM_EVENT_TYPE_COMPLETE]
+        assert len(tool_complete) == 1
+        assert tool_complete[0]["success"] is True
+        assert len(content) >= 1
+        assert len(complete) == 1
+
+    @pytest.mark.asyncio
+    async def test_resume_with_tool_denied_acknowledges_without_executing(
+        self,
+        agent_service: AgentService,
+        session_id: UUID,
+    ) -> None:
+        """Denial acknowledges and never executes the tool."""
+        execute = AsyncMock()
+        with patch.object(agent_service._executor, "execute", execute):
+            events = [
+                e
+                async for e in agent_service.resume_with_tool(
+                    session_id, "run_backtest", "{}", approved=False
+                )
+            ]
+
+        execute.assert_not_awaited()
+        content = [e for e in events if e.get("type") == STREAM_EVENT_TYPE_CONTENT_DELTA]
+        complete = [e for e in events if e.get("type") == STREAM_EVENT_TYPE_COMPLETE]
+        assert len(content) == 1
+        assert "held off" in content[0]["delta"]
+        assert len(complete) == 1
+
+    @pytest.mark.asyncio
+    async def test_resume_with_tool_rejects_non_confirmable_tool(
+        self,
+        agent_service: AgentService,
+        session_id: UUID,
+    ) -> None:
+        """Only confirmation-gated tools may be resumed via this path."""
+        events = [
+            e
+            async for e in agent_service.resume_with_tool(
+                session_id, "list_strategies", "{}", approved=True
+            )
+        ]
+        errors = [e for e in events if e.get("type") == STREAM_EVENT_TYPE_ERROR]
+        assert len(errors) == 1
+        assert "not a confirmable action" in errors[0]["error"]
 
 
 # =============================================================================
@@ -684,7 +833,6 @@ class TestArtifactCreationFlow:
             return mock_artifact
 
         with (
-            patch.object(agent_service, "_store_assistant_message", return_value=None),
             patch.object(agent_service._executor, "execute", return_value=mock_validation_result),
             patch.object(
                 agent_service._executor,
@@ -738,7 +886,6 @@ class TestArtifactCreationFlow:
             return None
 
         with (
-            patch.object(agent_service, "_store_assistant_message", return_value=None),
             patch.object(agent_service._executor, "execute", return_value=mock_validation_result),
             patch.object(
                 agent_service._executor,

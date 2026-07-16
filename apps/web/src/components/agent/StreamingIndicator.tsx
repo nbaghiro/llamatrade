@@ -1,10 +1,6 @@
-/**
- * Streaming indicator component.
- *
- * Shows a typing animation while the assistant is generating a response.
- */
+/** Copilot response-in-progress row: ✦ mark + streaming text or typing dots. */
 
-import { Bot } from 'lucide-react';
+import { Sparkles } from 'lucide-react';
 
 interface StreamingIndicatorProps {
   content?: string;
@@ -12,24 +8,22 @@ interface StreamingIndicatorProps {
 
 export function StreamingIndicator({ content }: StreamingIndicatorProps) {
   return (
-    <div className="flex gap-3">
-      {/* Avatar */}
-      <div className="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400">
-        <Bot className="w-4 h-4" />
+    <div className="flex gap-3.5">
+      <div className="grid h-9 w-9 flex-none place-items-center border-2 border-ink bg-ink">
+        <Sparkles className="h-4 w-4 text-orange-500" />
       </div>
 
-      {/* Message bubble */}
-      <div className="flex-1 max-w-[80%] rounded-lg px-4 py-2 bg-gray-100 dark:bg-gray-800">
+      <div className="max-w-[80%] border-2 border-ink bg-paper px-4 py-3 shadow-[4px_4px_0_rgb(var(--lt-ink))]">
         {content ? (
-          <div className="text-sm text-gray-900 dark:text-gray-100 whitespace-pre-wrap">
+          <div className="whitespace-pre-wrap text-sm text-ink">
             {content}
-            <span className="inline-block w-2 h-4 ml-0.5 bg-purple-500 animate-pulse" />
+            <span className="ml-0.5 inline-block h-4 w-2 animate-pulse bg-orange-500 align-[-2px]" />
           </div>
         ) : (
           <div className="flex items-center gap-1 py-1">
-            <span className="w-2 h-2 rounded-full bg-purple-500 animate-bounce" style={{ animationDelay: '0ms' }} />
-            <span className="w-2 h-2 rounded-full bg-purple-500 animate-bounce" style={{ animationDelay: '150ms' }} />
-            <span className="w-2 h-2 rounded-full bg-purple-500 animate-bounce" style={{ animationDelay: '300ms' }} />
+            <span className="h-2 w-2 animate-bounce bg-orange-500" style={{ animationDelay: '0ms' }} />
+            <span className="h-2 w-2 animate-bounce bg-orange-500" style={{ animationDelay: '150ms' }} />
+            <span className="h-2 w-2 animate-bounce bg-orange-500" style={{ animationDelay: '300ms' }} />
           </div>
         )}
       </div>

@@ -6,6 +6,9 @@ interface User {
   email: string;
   roles: string[];
   tenantId: string;
+  firstName?: string;
+  lastName?: string;
+  avatarUrl?: string;
 }
 
 interface AuthState {
@@ -16,6 +19,17 @@ interface AuthState {
   login: (user: User, accessToken: string, refreshToken: string) => void;
   logout: () => void;
   setTokens: (accessToken: string, refreshToken: string) => void;
+}
+
+/** True when the JWT is missing, malformed, or past its `exp`. */
+export function isTokenExpired(token: string | null | undefined): boolean {
+  if (!token) return true;
+  try {
+    const { exp } = JSON.parse(atob(token.split('.')[1])) as { exp?: number };
+    return typeof exp !== 'number' || exp * 1000 <= Date.now();
+  } catch {
+    return true;
+  }
 }
 
 /**

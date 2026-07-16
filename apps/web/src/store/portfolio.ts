@@ -1,18 +1,24 @@
-// Portfolio Store
-// Manages portfolio state including strategy performance data for the portfolio page
+// Portfolio store: strategy performance data for the portfolio page
 
 import { create } from 'zustand';
 
 import {
   ExecutionMode,
   ExecutionStatus,
+  type Decimal,
+  type Timestamp,
 } from '../generated/proto/common_pb';
-import { portfolioClient } from '../services/grpc-client';
+import { MarketStatus } from '../generated/proto/market_data_pb';
+import type {
+  GetStrategyEquityCurveResponse,
+  StrategyEquityPoint,
+} from '../generated/proto/portfolio_pb';
+import { PositionSide, type Position as ProtoPosition } from '../generated/proto/trading_pb';
+import { marketDataClient, portfolioClient } from '../services/grpc-client';
 
-import { useAuthStore } from './auth';
+import { getTenantContext } from './auth';
 
-// Re-export proto enums for convenience
-export { ExecutionMode, ExecutionStatus };
+export { ExecutionMode, ExecutionStatus, MarketStatus };
 
 export interface Position {
   symbol: string;
@@ -90,6 +96,7 @@ interface PortfolioState {
   // Data
   strategies: StrategyPerformance[];
   benchmarkData: EquityPoint[];
+  portfolioCurve: EquityPoint[]; // blended account equity line (the hero series)
 
   // UI State
   selectedPeriod: Period;
@@ -102,15 +109,27 @@ interface PortfolioState {
   loading: boolean;
   error: string | null;
 
-  // Computed
+  // Account-level computed values
   totalEquity: number;
   dayPnl: number;
   dayPnlPercent: number;
   totalReturn: number;
   totalReturnPercent: number;
+  freeCash: number;
+  freeCashPercent: number;
+  deployedValue: number;
+  liveStrategiesCount: number;
+  openPositionsCount: number;
+  accountMode: ExecutionMode;
+
+  // Market clock
+  marketStatus: MarketStatus | null;
+  marketNextOpen: Date | null;
+  marketNextClose: Date | null;
 
   // Actions
   fetchPortfolio: () => Promise<void>;
+  fetchMarketStatus: () => Promise<void>;
   setSelectedPeriod: (period: Period) => void;
   setSelectedBenchmark: (benchmark: Benchmark) => void;
   toggleStrategyExpanded: (id: string) => void;
@@ -119,19 +138,16 @@ interface PortfolioState {
   clearError: () => void;
 }
 
-// Color palette for strategies
+// Categorical series palette (Monolith tokens), assigned per strategy slot; colorblind-safe (validated with the dataviz skill).
 const STRATEGY_COLORS = [
-  '#22c55e', // green
-  '#3b82f6', // blue
-  '#f59e0b', // amber
-  '#ef4444', // red
-  '#8b5cf6', // violet
-  '#ec4899', // pink
-  '#06b6d4', // cyan
-  '#84cc16', // lime
+  '#0f7a34', // green  — Monolith success
+  '#1a1aff', // blue   — Monolith info
+  '#ff4d1c', // orange — Monolith signal accent
+  '#c81e1e', // red    — Monolith danger
+  '#6b2fb3', // violet — overflow
+  '#0e8ba0', // cyan   — overflow
 ];
 
-// Helper to map proto ExecutionStatus number to enum
 function mapProtoStatus(status: number): ExecutionStatus {
   // Proto enum values: 0=UNSPECIFIED, 1=PENDING, 2=RUNNING, 3=PAUSED, 4=STOPPED, 5=ERROR
   switch (status) {
@@ -150,244 +166,129 @@ function mapProtoStatus(status: number): ExecutionStatus {
   }
 }
 
-// Demo data generator
-function generateDemoEquityCurve(
-  _startValue: number,
-  returnPercent: number,
-  volatility: number,
-  days: number
+// Proto → local conversion helpers
+
+function decimalToNumber(d: Decimal | undefined): number {
+  return d?.value ? parseFloat(d.value) : 0;
+}
+
+function timestampToISO(ts: Timestamp | undefined): string {
+  if (!ts?.seconds) return new Date().toISOString();
+  return new Date(Number(ts.seconds) * 1000).toISOString();
+}
+
+function mapProtoPosition(p: ProtoPosition): Position {
+  return {
+    symbol: p.symbol,
+    name: '', // Proto Position carries no asset-class label — left blank.
+    qty: decimalToNumber(p.quantity),
+    side: p.side === PositionSide.SHORT ? 'short' : 'long',
+    currentPrice: decimalToNumber(p.currentPrice),
+    avgEntryPrice: decimalToNumber(p.averageEntryPrice),
+    marketValue: decimalToNumber(p.marketValue),
+    unrealizedPnl: decimalToNumber(p.unrealizedPnl),
+    unrealizedPnlPercent: decimalToNumber(p.unrealizedPnlPercent),
+  };
+}
+
+/**
+ * Convert a strategy equity curve into the chart's `EquityPoint[]`. The chart
+ * plots `value` as a cumulative-return percentage, so we derive it from the
+ * real absolute `equity` series (normalized against the first point) rather
+ * than the backend `return_percent` field, which is not always populated.
+ */
+function normalizeEquityCurve(points: StrategyEquityPoint[]): EquityPoint[] {
+  if (points.length === 0) return [];
+  const base = decimalToNumber(points[0].equity);
+  return points.map((p) => {
+    const equity = decimalToNumber(p.equity);
+    return {
+      timestamp: timestampToISO(p.timestamp),
+      value: base !== 0 ? (equity / base - 1) * 100 : 0,
+      drawdown: decimalToNumber(p.drawdown),
+      benchmarkValue: p.benchmarkValue ? decimalToNumber(p.benchmarkValue) : undefined,
+    };
+  });
+}
+
+/**
+ * Normalize a benchmark equity series (absolute values) into a percentage
+ * return series comparable to the strategy lines.
+ */
+function normalizeBenchmark(points: StrategyEquityPoint[]): EquityPoint[] {
+  if (points.length === 0) return [];
+  const base = decimalToNumber(points[0].equity);
+  return points.map((p) => ({
+    timestamp: timestampToISO(p.timestamp),
+    value: base !== 0 ? (decimalToNumber(p.equity) / base - 1) * 100 : 0,
+  }));
+}
+
+/**
+ * Blend the per-strategy absolute-equity curves into one account-level return
+ * series. Series are right-anchored to "now": a strategy with less history
+ * contributes its capital-at-cost for the periods before it began, so the
+ * portfolio line reflects the whole book rather than only the longest-lived leg.
+ */
+function buildPortfolioCurve(
+  rawCurves: (GetStrategyEquityCurveResponse | null)[],
+  strategies: StrategyPerformance[]
 ): EquityPoint[] {
-  const points: EquityPoint[] = [];
-  const now = new Date();
-  let value = 0; // Start at 0% return
+  const series: { equity: number[]; timestamps: string[]; baseline: number }[] = [];
+  rawCurves.forEach((curve, i) => {
+    const pts = curve?.equityCurve;
+    if (!pts || pts.length === 0) return;
+    const equity = pts.map((p) => decimalToNumber(p.equity));
+    series.push({
+      equity,
+      timestamps: pts.map((p) => timestampToISO(p.timestamp)),
+      baseline: strategies[i].allocatedCapital || equity[0],
+    });
+  });
+  if (series.length === 0) return [];
 
-  for (let i = days; i >= 0; i--) {
-    const date = new Date(now);
-    date.setDate(date.getDate() - i);
+  const maxLen = Math.max(...series.map((s) => s.equity.length));
+  const totalBaseline = series.reduce((sum, s) => sum + s.baseline, 0);
+  const longest = series.find((s) => s.equity.length === maxLen) ?? series[0];
 
-    // Random walk with drift toward final return
-    const progress = (days - i) / days;
-    const targetReturn = returnPercent * progress;
-    const noise = (Math.random() - 0.5) * volatility;
-    value = targetReturn + noise;
-
-    points.push({
-      timestamp: date.toISOString(),
-      value: value * 100, // Store as percentage
+  const out: EquityPoint[] = [];
+  for (let j = 0; j < maxLen; j++) {
+    let sum = 0;
+    for (const s of series) {
+      const pos = s.equity.length - maxLen + j;
+      sum += pos >= 0 ? s.equity[pos] : s.baseline;
+    }
+    out.push({
+      timestamp: longest.timestamps[j] ?? new Date().toISOString(),
+      value: totalBaseline > 0 ? (sum / totalBaseline - 1) * 100 : 0,
     });
   }
-
-  // Ensure last point matches final return
-  if (points.length > 0) {
-    points[points.length - 1].value = returnPercent * 100;
-  }
-
-  return points;
+  return out;
 }
 
-function generateBenchmarkData(days: number, returnPercent: number): EquityPoint[] {
-  return generateDemoEquityCurve(100000, returnPercent, 0.02, days);
-}
+const EMPTY_PORTFOLIO = {
+  strategies: [] as StrategyPerformance[],
+  benchmarkData: [] as EquityPoint[],
+  portfolioCurve: [] as EquityPoint[],
+  visibleStrategyIds: new Set<string>(),
+  totalEquity: 0,
+  dayPnl: 0,
+  dayPnlPercent: 0,
+  totalReturn: 0,
+  totalReturnPercent: 0,
+  freeCash: 0,
+  freeCashPercent: 0,
+  deployedValue: 0,
+  liveStrategiesCount: 0,
+  openPositionsCount: 0,
+  accountMode: ExecutionMode.PAPER,
+};
 
-// Demo strategies (used as fallback when gRPC is unavailable)
-const DEMO_STRATEGIES: StrategyPerformance[] = [
-  {
-    id: 'exec-1',
-    strategyId: 'strat-1',
-    name: 'Momentum Alpha',
-    mode: ExecutionMode.LIVE,
-    status: ExecutionStatus.RUNNING,
-    color: STRATEGY_COLORS[0],
-    allocatedCapital: 50000,
-    currentValue: 56200,
-    positionsCount: 5,
-    returns: {
-      '1D': 0.008,
-      '1W': 0.032,
-      '1M': 0.124,
-      '3M': 0.185,
-      '6M': 0.22,
-      '1Y': 0.35,
-      'YTD': 0.28,
-      'ALL': 0.42,
-    },
-    startedAt: new Date(Date.now() - 90 * 24 * 60 * 60 * 1000), // 90 days ago
-    updatedAt: new Date(),
-    equityCurve: generateDemoEquityCurve(50000, 0.124, 0.03, 30),
-    positions: [
-      {
-        symbol: 'NVDA',
-        name: 'NVIDIA Corp.',
-        qty: 15,
-        side: 'long',
-        currentPrice: 880,
-        avgEntryPrice: 750,
-        marketValue: 13200,
-        unrealizedPnl: 1950,
-        unrealizedPnlPercent: 17.33,
-      },
-      {
-        symbol: 'META',
-        name: 'Meta Platforms',
-        qty: 20,
-        side: 'long',
-        currentPrice: 505,
-        avgEntryPrice: 480,
-        marketValue: 10100,
-        unrealizedPnl: 500,
-        unrealizedPnlPercent: 5.21,
-      },
-      {
-        symbol: 'AAPL',
-        name: 'Apple Inc.',
-        qty: 30,
-        side: 'long',
-        currentPrice: 192,
-        avgEntryPrice: 185,
-        marketValue: 5760,
-        unrealizedPnl: 210,
-        unrealizedPnlPercent: 3.78,
-      },
-    ],
-    recentActivity: [
-      { id: '1', type: 'buy', symbol: 'NVDA', qty: 5, price: 875, timestamp: new Date(Date.now() - 3600000) },
-      { id: '2', type: 'sell', symbol: 'TSLA', qty: 10, price: 205, timestamp: new Date(Date.now() - 86400000) },
-    ],
-  },
-  {
-    id: 'exec-2',
-    strategyId: 'strat-2',
-    name: 'Mean Reversion',
-    mode: ExecutionMode.PAPER,
-    status: ExecutionStatus.RUNNING,
-    color: STRATEGY_COLORS[1],
-    allocatedCapital: 30000,
-    currentValue: 32460,
-    positionsCount: 3,
-    returns: {
-      '1D': 0.005,
-      '1W': 0.018,
-      '1M': 0.082,
-      '3M': 0.12,
-      '6M': 0.15,
-      '1Y': 0.22,
-      'YTD': 0.18,
-      'ALL': 0.28,
-    },
-    startedAt: new Date(Date.now() - 60 * 24 * 60 * 60 * 1000), // 60 days ago
-    updatedAt: new Date(),
-    equityCurve: generateDemoEquityCurve(30000, 0.082, 0.02, 30),
-    positions: [
-      {
-        symbol: 'JPM',
-        name: 'JPMorgan Chase',
-        qty: 25,
-        side: 'long',
-        currentPrice: 198,
-        avgEntryPrice: 190,
-        marketValue: 4950,
-        unrealizedPnl: 200,
-        unrealizedPnlPercent: 4.21,
-      },
-      {
-        symbol: 'BAC',
-        name: 'Bank of America',
-        qty: 100,
-        side: 'long',
-        currentPrice: 38,
-        avgEntryPrice: 36,
-        marketValue: 3800,
-        unrealizedPnl: 200,
-        unrealizedPnlPercent: 5.56,
-      },
-    ],
-    recentActivity: [
-      { id: '3', type: 'buy', symbol: 'JPM', qty: 10, price: 195, timestamp: new Date(Date.now() - 7200000) },
-    ],
-  },
-  {
-    id: 'exec-3',
-    strategyId: 'strat-3',
-    name: 'Value Screener',
-    mode: ExecutionMode.LIVE,
-    status: ExecutionStatus.RUNNING,
-    color: STRATEGY_COLORS[2],
-    allocatedCapital: 25000,
-    currentValue: 24475,
-    positionsCount: 4,
-    returns: {
-      '1D': -0.003,
-      '1W': -0.012,
-      '1M': -0.021,
-      '3M': 0.05,
-      '6M': 0.08,
-      '1Y': 0.12,
-      'YTD': 0.06,
-      'ALL': 0.15,
-    },
-    startedAt: new Date(Date.now() - 120 * 24 * 60 * 60 * 1000), // 120 days ago
-    updatedAt: new Date(),
-    equityCurve: generateDemoEquityCurve(25000, -0.021, 0.025, 30),
-    positions: [
-      {
-        symbol: 'INTC',
-        name: 'Intel Corp.',
-        qty: 50,
-        side: 'long',
-        currentPrice: 31,
-        avgEntryPrice: 34,
-        marketValue: 1550,
-        unrealizedPnl: -150,
-        unrealizedPnlPercent: -8.82,
-      },
-      {
-        symbol: 'WFC',
-        name: 'Wells Fargo',
-        qty: 40,
-        side: 'long',
-        currentPrice: 58,
-        avgEntryPrice: 55,
-        marketValue: 2320,
-        unrealizedPnl: 120,
-        unrealizedPnlPercent: 5.45,
-      },
-    ],
-    recentActivity: [
-      { id: '4', type: 'buy', symbol: 'INTC', qty: 20, price: 32, timestamp: new Date(Date.now() - 172800000) },
-    ],
-  },
-  {
-    id: 'exec-4',
-    strategyId: 'strat-4',
-    name: 'Tech Growth',
-    mode: ExecutionMode.PAPER,
-    status: ExecutionStatus.PAUSED,
-    color: STRATEGY_COLORS[3],
-    allocatedCapital: 20000,
-    currentValue: 21800,
-    positionsCount: 0,
-    returns: {
-      '1D': 0,
-      '1W': 0,
-      '1M': 0.09,
-      '3M': 0.15,
-      '6M': 0.18,
-      '1Y': 0.25,
-      'YTD': 0.2,
-      'ALL': 0.32,
-    },
-    startedAt: new Date(Date.now() - 180 * 24 * 60 * 60 * 1000), // 180 days ago
-    updatedAt: new Date(),
-    equityCurve: generateDemoEquityCurve(20000, 0.09, 0.015, 30),
-    positions: [],
-    recentActivity: [],
-  },
-];
-
-export const usePortfolioStore = create<PortfolioState>((set) => ({
+export const usePortfolioStore = create<PortfolioState>((set, get) => ({
   // Initial state
   strategies: [],
   benchmarkData: [],
+  portfolioCurve: [],
 
   selectedPeriod: '1M',
   selectedBenchmark: 'SPY',
@@ -404,90 +305,187 @@ export const usePortfolioStore = create<PortfolioState>((set) => ({
   dayPnlPercent: 0,
   totalReturn: 0,
   totalReturnPercent: 0,
+  freeCash: 0,
+  freeCashPercent: 0,
+  deployedValue: 0,
+  liveStrategiesCount: 0,
+  openPositionsCount: 0,
+  accountMode: ExecutionMode.PAPER,
+
+  marketStatus: null,
+  marketNextOpen: null,
+  marketNextClose: null,
 
   // Actions
   fetchPortfolio: async () => {
     set({ loading: true, error: null });
 
+    const context = getTenantContext();
+
+    // Not authenticated → clean empty state. Never fall back to mock data.
+    if (!context) {
+      set({ ...EMPTY_PORTFOLIO, loading: false, error: null });
+      return;
+    }
+
     try {
-      const tenantId = useAuthStore.getState().user?.tenantId;
-      let strategies: StrategyPerformance[];
+      const { selectedBenchmark } = get();
+      const benchmarkSymbol = selectedBenchmark === 'none' ? '' : selectedBenchmark;
 
-      // Try gRPC call if authenticated
-      if (tenantId) {
-        try {
-          const response = await portfolioClient.listStrategyPerformance({
-            context: { tenantId },
-            pagination: { page: 1, pageSize: 50 },
-          });
+      const response = await portfolioClient.listStrategyPerformance({
+        context,
+        pagination: { page: 1, pageSize: 50 },
+      });
 
-          // Transform proto response to local types
-          strategies = response.strategies.map((s, i) => ({
-            id: s.executionId,
-            strategyId: s.strategyId,
-            name: s.strategyName,
-            mode: s.mode === ExecutionMode.PAPER ? ExecutionMode.PAPER : ExecutionMode.LIVE,
-            status: mapProtoStatus(s.status),
-            color: s.color || STRATEGY_COLORS[i % STRATEGY_COLORS.length],
-            allocatedCapital: parseFloat(s.allocatedCapital?.value || '0'),
-            currentValue: parseFloat(s.currentValue?.value || '0'),
-            positionsCount: s.positionsCount,
-            returns: {
-              '1D': parseFloat(s.returns?.return1d?.value || '0'),
-              '1W': parseFloat(s.returns?.return1w?.value || '0'),
-              '1M': parseFloat(s.returns?.return1m?.value || '0'),
-              '3M': parseFloat(s.returns?.return3m?.value || '0'),
-              '6M': parseFloat(s.returns?.return6m?.value || '0'),
-              '1Y': parseFloat(s.returns?.return1y?.value || '0'),
-              'YTD': parseFloat(s.returns?.returnYtd?.value || '0'),
-              'ALL': parseFloat(s.returns?.returnAll?.value || '0'),
-            },
-            startedAt: s.startedAt?.seconds ? new Date(Number(s.startedAt.seconds) * 1000) : null,
-            updatedAt: s.updatedAt?.seconds ? new Date(Number(s.updatedAt.seconds) * 1000) : new Date(),
-            equityCurve: [], // Loaded separately via getStrategyEquityCurve
-            positions: [],   // Loaded separately via getStrategyPerformance
-            recentActivity: [],
-          }));
+      // Map summaries → local StrategyPerformance. Period returns are stored as
+      // decimals (0.12 = 12%); the backend sends percentages, so divide by 100.
+      const strategies: StrategyPerformance[] = response.strategies.map((s, i) => ({
+        id: s.executionId,
+        strategyId: s.strategyId,
+        name: s.strategyName,
+        mode: s.mode === ExecutionMode.LIVE ? ExecutionMode.LIVE : ExecutionMode.PAPER,
+        status: mapProtoStatus(s.status),
+        color: s.color || STRATEGY_COLORS[i % STRATEGY_COLORS.length],
+        allocatedCapital: decimalToNumber(s.allocatedCapital),
+        currentValue: decimalToNumber(s.currentValue),
+        positionsCount: s.positionsCount,
+        returns: {
+          '1D': decimalToNumber(s.returns?.return1d) / 100,
+          '1W': decimalToNumber(s.returns?.return1w) / 100,
+          '1M': decimalToNumber(s.returns?.return1m) / 100,
+          '3M': decimalToNumber(s.returns?.return3m) / 100,
+          '6M': decimalToNumber(s.returns?.return6m) / 100,
+          '1Y': decimalToNumber(s.returns?.return1y) / 100,
+          'YTD': decimalToNumber(s.returns?.returnYtd) / 100,
+          'ALL': decimalToNumber(s.returns?.returnAll) / 100,
+        },
+        startedAt: s.startedAt?.seconds ? new Date(Number(s.startedAt.seconds) * 1000) : null,
+        updatedAt: s.updatedAt?.seconds ? new Date(Number(s.updatedAt.seconds) * 1000) : new Date(),
+        equityCurve: [],
+        positions: [],
+        recentActivity: [],
+      }));
 
-          // Fall back to demo data if no strategies returned
-          if (strategies.length === 0) {
-            strategies = DEMO_STRATEGIES;
+      // Fetch account summary + per-strategy curves + positions in parallel; each tolerates null so one failure can't blank the page.
+      const [portfolioList, curves, perfs] = await Promise.all([
+        portfolioClient.listPortfolios({ context, pagination: { page: 1, pageSize: 1 } }).catch(() => null),
+        Promise.all(
+          strategies.map((s) =>
+            portfolioClient
+              .getStrategyEquityCurve({
+                context,
+                executionId: s.id,
+                benchmarkSymbol,
+                sampleIntervalMinutes: 0,
+              })
+              .catch(() => null)
+          )
+        ),
+        Promise.all(
+          strategies.map((s) =>
+            portfolioClient
+              .getStrategyPerformance({ context, executionId: s.id })
+              .catch(() => null)
+          )
+        ),
+      ]);
+
+      let benchmarkData: EquityPoint[] = [];
+      curves.forEach((curve, i) => {
+        if (!curve) return;
+        strategies[i].equityCurve = normalizeEquityCurve(curve.equityCurve);
+
+        // Shared benchmark line from the first strategy with benchmark data (dedicated series, else per-point benchmark_value).
+        if (benchmarkData.length === 0 && benchmarkSymbol) {
+          if (curve.benchmark?.equityCurve?.length) {
+            benchmarkData = normalizeBenchmark(curve.benchmark.equityCurve);
+          } else {
+            const withBench = curve.equityCurve.filter((p) => p.benchmarkValue);
+            if (withBench.length > 0) {
+              const base = decimalToNumber(withBench[0].benchmarkValue);
+              benchmarkData = withBench.map((p) => ({
+                timestamp: timestampToISO(p.timestamp),
+                value: base !== 0 ? (decimalToNumber(p.benchmarkValue) / base - 1) * 100 : 0,
+              }));
+            }
           }
-        } catch {
-          // gRPC unavailable, fall back to demo data
-          strategies = DEMO_STRATEGIES;
         }
-      } else {
-        // Use demo data when not authenticated
-        strategies = DEMO_STRATEGIES;
-      }
+      });
 
+      // Attach real open positions per strategy for the expandable detail rows.
+      perfs.forEach((perf, i) => {
+        if (!perf) return;
+        strategies[i].positions = perf.positions.map(mapProtoPosition);
+        if (perf.positions.length > 0) {
+          strategies[i].positionsCount = perf.positions.length;
+        }
+      });
+
+      const portfolioCurve = buildPortfolioCurve(curves, strategies);
       const visibleIds = new Set(strategies.map((s) => s.id));
 
-      // Calculate totals
-      const totalEquity = strategies.reduce((sum, s) => sum + s.currentValue, 0);
+      // Strategy book: market value (positions + sleeve cash) and cost basis.
+      const totalStrategyValue = strategies.reduce((sum, s) => sum + s.currentValue, 0);
       const totalAllocated = strategies.reduce((sum, s) => sum + s.allocatedCapital, 0);
-      const totalReturn = totalEquity - totalAllocated;
-      const totalReturnPercent = totalAllocated > 0 ? (totalReturn / totalAllocated) * 100 : 0;
+      const hasStrategies = strategies.length > 0;
 
-      // Day P&L from individual strategies
-      const dayPnl = strategies.reduce((sum, s) => {
-        return sum + s.currentValue * s.returns['1D'];
-      }, 0);
-      const dayPnlPercent = totalEquity > 0 ? (dayPnl / (totalEquity - dayPnl)) * 100 : 0;
+      // Prefer the real account summary; otherwise derive from the strategy book.
+      const summary = portfolioList?.portfolios[0];
+      const summaryTotal = summary ? decimalToNumber(summary.totalValue) : 0;
+      const summaryCash = summary ? decimalToNumber(summary.cashBalance) : 0;
+      const summaryPositions = summary ? decimalToNumber(summary.positionsValue) : 0;
 
-      // Generate benchmark data
-      const benchmarkData = generateBenchmarkData(30, 0.05); // SPY ~5% for 1M
+      const totalEquity = summaryTotal || totalStrategyValue + summaryCash;
+      const freeCash = summaryCash || Math.max(0, totalEquity - totalStrategyValue);
+      const freeCashPercent = totalEquity > 0 ? (freeCash / totalEquity) * 100 : 0;
+
+      // Deployed = positions marked to market, NOT Σ sleeve equity (which double-counts sleeve cash free cash already covers).
+      const deployedValue = summaryPositions || Math.max(0, totalEquity - freeCash);
+
+      // Total return + Day P&L share one basis with the rows (Σ current − Σ allocated) so the header equals the row sum.
+      const derivedReturn = totalStrategyValue - totalAllocated;
+      const derivedDayPnl = strategies.reduce((sum, s) => sum + s.currentValue * s.returns['1D'], 0);
+      const summaryReturn = summary ? decimalToNumber(summary.totalReturn) : 0;
+      const summaryReturnPct = summary ? decimalToNumber(summary.totalReturnPercent) : 0;
+      const summaryDayPct = summary ? decimalToNumber(summary.dayReturnPercent) : 0;
+
+      const totalReturn = hasStrategies ? derivedReturn : summaryReturn;
+      const totalReturnPercent = hasStrategies
+        ? totalAllocated > 0
+          ? (derivedReturn / totalAllocated) * 100
+          : 0
+        : summaryReturnPct;
+      const dayPnl = hasStrategies ? derivedDayPnl : summary ? decimalToNumber(summary.dayReturn) : 0;
+      const dayPnlPercent = hasStrategies
+        ? totalEquity - dayPnl > 0
+          ? (dayPnl / (totalEquity - dayPnl)) * 100
+          : 0
+        : summaryDayPct;
+
+      const liveStrategiesCount = strategies.filter(
+        (s) => s.status === ExecutionStatus.RUNNING
+      ).length;
+      const openPositionsCount = strategies.reduce((sum, s) => sum + s.positionsCount, 0);
+      const accountMode = strategies.some((s) => s.mode === ExecutionMode.LIVE)
+        ? ExecutionMode.LIVE
+        : ExecutionMode.PAPER;
 
       set({
         strategies,
         benchmarkData,
+        portfolioCurve,
         visibleStrategyIds: visibleIds,
         totalEquity,
         dayPnl,
         dayPnlPercent,
         totalReturn,
         totalReturnPercent,
+        freeCash,
+        freeCashPercent,
+        deployedValue,
+        liveStrategiesCount,
+        openPositionsCount,
+        accountMode,
         loading: false,
       });
     } catch (error) {
@@ -498,14 +496,32 @@ export const usePortfolioStore = create<PortfolioState>((set) => ({
     }
   },
 
+  // Market clock is best-effort and never gates the page render. On failure the
+  // header falls back to deriving open/closed from the browser's ET clock.
+  fetchMarketStatus: async () => {
+    try {
+      const res = await marketDataClient.getMarketStatus({});
+      set({
+        marketStatus: res.status,
+        marketNextOpen: res.nextOpen?.seconds ? new Date(Number(res.nextOpen.seconds) * 1000) : null,
+        marketNextClose: res.nextClose?.seconds
+          ? new Date(Number(res.nextClose.seconds) * 1000)
+          : null,
+      });
+    } catch {
+      set({ marketStatus: null, marketNextOpen: null, marketNextClose: null });
+    }
+  },
+
   setSelectedPeriod: (period) => {
     set({ selectedPeriod: period });
-    // TODO: Refetch data for new period if needed
+    // Period is applied client-side over the full equity curve.
   },
 
   setSelectedBenchmark: (benchmark) => {
     set({ selectedBenchmark: benchmark });
-    // TODO: Fetch new benchmark data
+    // The benchmark series is fetched alongside the equity curves, so refetch.
+    get().fetchPortfolio();
   },
 
   toggleStrategyExpanded: (id) => {

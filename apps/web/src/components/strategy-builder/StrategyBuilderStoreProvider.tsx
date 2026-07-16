@@ -40,8 +40,7 @@ export function StrategyBuilderStoreProvider({
   previewId,
   children,
 }: StrategyBuilderStoreProviderProps) {
-  // Create a new store instance with the provided tree
-  // Memoize to avoid recreating on every render
+  // Memoize to avoid recreating the store on every render
   const store = useMemo(
     () => createStrategyBuilderStore(tree, previewId),
     [tree, previewId]

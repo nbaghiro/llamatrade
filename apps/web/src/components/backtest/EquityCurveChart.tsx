@@ -1,303 +1,189 @@
 /**
- * Equity Curve Chart Component
- * Shows equity curve over time with drawdown visualization.
- * Uses custom SVG for zero dependencies.
+ * Equity Curve vs Benchmark panel.
+ * Plots the strategy equity curve against its benchmark with a value-mode
+ * toggle ($ / % / log). Pure SVG, zero chart dependencies.
  */
 
 import { useMemo, useState } from 'react';
 
-import type { EquityPoint } from '../../generated/proto/backtest_pb';
-import { toDate, toNumber } from '../../store/backtest';
+import type { BacktestMetrics, EquityPoint } from '../../generated/proto/backtest_pb';
+import { toNumber } from '../../store/backtest';
 
 interface EquityCurveChartProps {
   data: EquityPoint[];
-  initialCapital: number;
-  showDrawdown?: boolean;
+  benchmark: EquityPoint[];
+  benchmarkSymbol: string;
+  strategyName: string;
+  metrics?: BacktestMetrics;
 }
 
-interface ChartDataPoint {
-  date: Date;
-  equity: number;
-  drawdown: number;
-  dailyReturn: number;
+type ValueMode = 'dollar' | 'pct' | 'log';
+
+const STRATEGY_UP = '#0f7a34';
+const STRATEGY_DOWN = '#c81e1e';
+const BENCHMARK_COLOR = '#7a7362';
+const W = 900;
+const H = 250;
+const PAD = 14;
+
+function signedPercent(value: number): string {
+  return `${value >= 0 ? '+' : ''}${(value * 100).toFixed(1)}%`;
 }
 
 function formatCurrency(value: number): string {
-  if (value >= 1_000_000) {
-    return `$${(value / 1_000_000).toFixed(1)}M`;
-  }
-  if (value >= 1_000) {
-    return `$${(value / 1_000).toFixed(0)}K`;
-  }
-  return `$${value.toFixed(0)}`;
-}
-
-function formatDateShort(date: Date): string {
-  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-}
-
-function formatDateFull(date: Date): string {
-  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  return new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    maximumFractionDigits: 0,
+  }).format(value);
 }
 
 export default function EquityCurveChart({
   data,
-  initialCapital,
+  benchmark,
+  benchmarkSymbol,
+  strategyName,
+  metrics,
 }: EquityCurveChartProps) {
-  const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
+  const [mode, setMode] = useState<ValueMode>('pct');
 
-  const chartData = useMemo<ChartDataPoint[]>(() => {
-    return data.map((point) => {
-      const date = toDate(point.timestamp);
-      return {
-        date: date ?? new Date(),
-        equity: toNumber(point.equity),
-        drawdown: toNumber(point.drawdown),
-        dailyReturn: toNumber(point.dailyReturn),
-      };
-    });
-  }, [data]);
+  const equities = useMemo(() => data.map((p) => toNumber(p.equity)), [data]);
+  const benchEquities = useMemo(() => benchmark.map((p) => toNumber(p.equity)), [benchmark]);
 
-  const { minEquity, maxEquity } = useMemo(() => {
-    if (chartData.length === 0) {
-      return { minEquity: initialCapital * 0.8, maxEquity: initialCapital * 1.2 };
-    }
-    const equities = chartData.map((d) => d.equity);
-    const min = Math.min(...equities);
-    const max = Math.max(...equities);
-    const pad = (max - min) * 0.1 || max * 0.1;
-    return {
-      minEquity: min - pad,
-      maxEquity: max + pad,
+  const chart = useMemo(() => {
+    if (equities.length < 2) return null;
+
+    // Plotted value for a series under the active mode.
+    const plot = (series: number[]): number[] => {
+      if (series.length === 0) return [];
+      if (mode === 'pct') {
+        const base = series[0] || 1;
+        return series.map((v) => (v / base - 1) * 100);
+      }
+      return series; // dollar + log both plot raw equity (log scales the axis)
     };
-  }, [chartData, initialCapital]);
+    // Axis transform (log compresses the value axis).
+    const t = (v: number): number => (mode === 'log' ? Math.log10(Math.max(v, 1e-9)) : v);
 
-  // Y-axis ticks - must be before early return
-  const yTicks = useMemo(() => {
-    const tickCount = 5;
-    const range = maxEquity - minEquity;
-    const step = range / (tickCount - 1);
-    return Array.from({ length: tickCount }, (_, i) => minEquity + i * step);
-  }, [minEquity, maxEquity]);
+    const stratPlot = plot(equities);
+    const benchPlot = benchEquities.length >= 2 ? plot(benchEquities) : [];
 
-  // X-axis ticks (show ~5 dates) - must be before early return
-  const xTicks = useMemo(() => {
-    if (chartData.length <= 1) return [0];
-    const count = Math.min(5, chartData.length);
-    const step = Math.floor((chartData.length - 1) / (count - 1));
-    return Array.from({ length: count }, (_, i) => Math.min(i * step, chartData.length - 1));
-  }, [chartData.length]);
+    const transformed = [...stratPlot, ...benchPlot].map(t);
+    let min = Math.min(...transformed);
+    let max = Math.max(...transformed);
+    if (min === max) {
+      min -= 1;
+      max += 1;
+    }
+    const span = max - min;
 
-  if (chartData.length === 0) {
-    return (
-      <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-6">
-        <div className="flex items-center justify-center h-64 text-gray-400 dark:text-gray-500">
-          No equity data available
-        </div>
-      </div>
-    );
-  }
+    const x = (i: number, n: number) => (n <= 1 ? 0 : (i / (n - 1)) * W);
+    const y = (v: number) => PAD + (1 - (t(v) - min) / span) * (H - 2 * PAD);
 
-  const finalEquity = chartData[chartData.length - 1]?.equity ?? initialCapital;
-  const isPositive = finalEquity >= initialCapital;
+    const linePath = (vals: number[]): string =>
+      vals.map((v, i) => `${i === 0 ? 'M' : 'L'} ${x(i, vals.length).toFixed(1)},${y(v).toFixed(1)}`).join(' ');
 
-  // Chart dimensions
-  const width = 800;
-  const height = 300;
-  const padding = { top: 20, right: 60, bottom: 40, left: 70 };
-  const chartWidth = width - padding.left - padding.right;
-  const chartHeight = height - padding.top - padding.bottom;
+    const stratLine = linePath(stratPlot);
+    const areaPath = `${stratLine} L ${W},${H} L 0,${H} Z`;
+    const benchLine = benchPlot.length >= 2 ? linePath(benchPlot) : '';
 
-  // Scale functions
-  const xScale = (i: number) => padding.left + (i / (chartData.length - 1)) * chartWidth;
-  const yScale = (equity: number) =>
-    padding.top + chartHeight - ((equity - minEquity) / (maxEquity - minEquity)) * chartHeight;
+    return { stratLine, areaPath, benchLine };
+  }, [equities, benchEquities, mode]);
 
-  // Generate path
-  const linePath = chartData
-    .map((d, i) => `${i === 0 ? 'M' : 'L'} ${xScale(i)},${yScale(d.equity)}`)
-    .join(' ');
+  const totalReturn = metrics
+    ? toNumber(metrics.totalReturn)
+    : equities.length >= 2
+      ? equities[equities.length - 1] / (equities[0] || 1) - 1
+      : 0;
+  const benchmarkReturn = metrics
+    ? toNumber(metrics.benchmarkReturn)
+    : benchEquities.length >= 2
+      ? benchEquities[benchEquities.length - 1] / (benchEquities[0] || 1) - 1
+      : 0;
+  const finalEquity = metrics
+    ? toNumber(metrics.endingCapital)
+    : equities[equities.length - 1] ?? 0;
+  const stratColor = totalReturn >= 0 ? STRATEGY_UP : STRATEGY_DOWN;
+  const hasBenchmark = !!chart?.benchLine && benchEquities.length >= 2;
 
-  const areaPath = `${linePath} L ${xScale(chartData.length - 1)},${height - padding.bottom} L ${padding.left},${height - padding.bottom} Z`;
-
-  // Initial capital line Y position
-  const initialCapitalY = yScale(initialCapital);
-
-  // Hovered point
-  const hoveredPoint = hoveredIndex !== null ? chartData[hoveredIndex] : null;
+  const chip = (m: ValueMode, label: string) => (
+    <button
+      key={m}
+      onClick={() => setMode(m)}
+      className={`font-mono text-[10px] font-bold uppercase tracking-[0.04em] border-[1.5px] border-ink px-1.5 py-[3px] transition-colors ${
+        mode === m ? 'bg-ink text-bone' : 'bg-paper hover:bg-bone'
+      }`}
+    >
+      {label}
+    </button>
+  );
 
   return (
-    <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-6">
-      <div className="flex items-center justify-between mb-4">
-        <h3 className="font-medium text-gray-900 dark:text-gray-100">Equity Curve</h3>
-        <div className="flex items-center gap-4 text-sm">
-          <div className="flex items-center gap-2">
-            <div className={`w-3 h-0.5 ${isPositive ? 'bg-green-500' : 'bg-red-500'}`} />
-            <span className="text-gray-500 dark:text-gray-400">Equity</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="w-3 h-0 border-t border-dashed border-gray-400" />
-            <span className="text-gray-500 dark:text-gray-400">Initial</span>
-          </div>
-        </div>
+    <div className="bg-paper border-2 border-ink shadow-[4px_4px_0_#0d0d0d]">
+      <div className="flex items-center justify-between px-4 py-3 border-b-2 border-ink">
+        <span className="font-mono text-[11px] font-bold uppercase tracking-[0.1em]">
+          Equity Curve vs Benchmark
+        </span>
+        <span className="flex gap-1.5">
+          {chip('dollar', '$')}
+          {chip('pct', '%')}
+          {chip('log', 'Log')}
+        </span>
       </div>
 
-      <div className="relative">
-        <svg
-          viewBox={`0 0 ${width} ${height}`}
-          className="w-full h-auto"
-          preserveAspectRatio="xMidYMid meet"
-          onMouseLeave={() => setHoveredIndex(null)}
-        >
-          <defs>
-            <linearGradient id="equityGradient" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor={isPositive ? '#22c55e' : '#ef4444'} stopOpacity="0.2" />
-              <stop offset="100%" stopColor={isPositive ? '#22c55e' : '#ef4444'} stopOpacity="0.02" />
-            </linearGradient>
-          </defs>
-
-          {/* Grid lines */}
-          {yTicks.map((tick, i) => (
-            <line
-              key={i}
-              x1={padding.left}
-              y1={yScale(tick)}
-              x2={width - padding.right}
-              y2={yScale(tick)}
-              stroke="currentColor"
-              strokeOpacity={0.1}
-              className="text-gray-400"
-            />
-          ))}
-
-          {/* Initial capital reference line */}
-          <line
-            x1={padding.left}
-            y1={initialCapitalY}
-            x2={width - padding.right}
-            y2={initialCapitalY}
-            stroke="currentColor"
-            strokeDasharray="4 4"
-            strokeOpacity={0.5}
-            className="text-gray-400"
-          />
-
-          {/* Area fill */}
-          <path d={areaPath} fill="url(#equityGradient)" />
-
-          {/* Line */}
-          <path
-            d={linePath}
-            fill="none"
-            stroke={isPositive ? '#22c55e' : '#ef4444'}
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-
-          {/* Y-axis labels */}
-          {yTicks.map((tick, i) => (
-            <text
-              key={i}
-              x={padding.left - 10}
-              y={yScale(tick)}
-              textAnchor="end"
-              dominantBaseline="middle"
-              className="fill-gray-400 text-[10px]"
-            >
-              {formatCurrency(tick)}
-            </text>
-          ))}
-
-          {/* X-axis labels */}
-          {xTicks.map((idx) => (
-            <text
-              key={idx}
-              x={xScale(idx)}
-              y={height - padding.bottom + 20}
-              textAnchor="middle"
-              className="fill-gray-400 text-[10px]"
-            >
-              {formatDateShort(chartData[idx].date)}
-            </text>
-          ))}
-
-          {/* Invisible hover targets */}
-          {chartData.map((_, i) => (
-            <rect
-              key={i}
-              x={xScale(i) - chartWidth / chartData.length / 2}
-              y={padding.top}
-              width={chartWidth / chartData.length}
-              height={chartHeight}
-              fill="transparent"
-              onMouseEnter={() => setHoveredIndex(i)}
-            />
-          ))}
-
-          {/* Hover indicator */}
-          {hoveredIndex !== null && (
-            <>
+      <div className="px-4 pt-3.5 pb-1.5">
+        {chart ? (
+          <svg viewBox={`0 0 ${W} ${H}`} width="100%" height={H} preserveAspectRatio="none">
+            {[0.25, 0.5, 0.75].map((f) => (
               <line
-                x1={xScale(hoveredIndex)}
-                y1={padding.top}
-                x2={xScale(hoveredIndex)}
-                y2={height - padding.bottom}
-                stroke="currentColor"
-                strokeOpacity={0.3}
-                strokeDasharray="2 2"
-                className="text-gray-500"
+                key={f}
+                x1={0}
+                x2={W}
+                y1={PAD + f * (H - 2 * PAD)}
+                y2={PAD + f * (H - 2 * PAD)}
+                stroke="#0d0d0d"
+                strokeOpacity={0.1}
+                vectorEffect="non-scaling-stroke"
               />
-              <circle
-                cx={xScale(hoveredIndex)}
-                cy={yScale(chartData[hoveredIndex].equity)}
-                r="5"
-                fill={isPositive ? '#22c55e' : '#ef4444'}
-                stroke="white"
-                strokeWidth="2"
+            ))}
+            <path d={chart.areaPath} fill={stratColor} fillOpacity={0.12} />
+            {hasBenchmark && (
+              <path
+                d={chart.benchLine}
+                fill="none"
+                stroke={BENCHMARK_COLOR}
+                strokeWidth={2}
+                strokeDasharray="6 4"
+                vectorEffect="non-scaling-stroke"
               />
-            </>
-          )}
-        </svg>
-
-        {/* Tooltip */}
-        {hoveredPoint && hoveredIndex !== null && (
-          <div
-            className="absolute bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg p-3 pointer-events-none z-10"
-            style={{
-              left: `${((xScale(hoveredIndex) / width) * 100).toFixed(1)}%`,
-              top: '10px',
-              transform: 'translateX(-50%)',
-            }}
-          >
-            <p className="text-sm font-medium text-gray-900 dark:text-gray-100 mb-2">
-              {formatDateFull(hoveredPoint.date)}
-            </p>
-            <div className="space-y-1 text-sm">
-              <div className="flex justify-between gap-4">
-                <span className="text-gray-500 dark:text-gray-400">Equity:</span>
-                <span className="font-mono text-gray-900 dark:text-gray-100">
-                  {formatCurrency(hoveredPoint.equity)}
-                </span>
-              </div>
-              <div className="flex justify-between gap-4">
-                <span className="text-gray-500 dark:text-gray-400">Daily Return:</span>
-                <span
-                  className={`font-mono ${hoveredPoint.dailyReturn >= 0 ? 'text-green-600' : 'text-red-600'}`}
-                >
-                  {hoveredPoint.dailyReturn >= 0 ? '+' : ''}
-                  {(hoveredPoint.dailyReturn * 100).toFixed(2)}%
-                </span>
-              </div>
-              <div className="flex justify-between gap-4">
-                <span className="text-gray-500 dark:text-gray-400">Drawdown:</span>
-                <span className="font-mono text-red-600 dark:text-red-400">
-                  {(hoveredPoint.drawdown * 100).toFixed(2)}%
-                </span>
-              </div>
-            </div>
+            )}
+            <path
+              d={chart.stratLine}
+              fill="none"
+              stroke={stratColor}
+              strokeWidth={2.5}
+              vectorEffect="non-scaling-stroke"
+            />
+          </svg>
+        ) : (
+          <div className="h-[250px] flex items-center justify-center font-mono text-[11px] uppercase tracking-[0.05em] text-ink/40">
+            No equity data
           </div>
         )}
+      </div>
+
+      <div className="flex items-center gap-4 flex-wrap px-4 pt-0.5 pb-3.5 font-mono text-[10.5px] font-bold uppercase tracking-[0.05em] text-ink/60">
+        <span className="flex items-center gap-1.5">
+          <span className="inline-block w-3.5 h-[3px]" style={{ backgroundColor: stratColor }} />
+          {strategyName} · <span className={totalReturn >= 0 ? 'text-green-600' : 'text-red-600'}>{signedPercent(totalReturn)}</span>
+        </span>
+        {hasBenchmark && (
+          <span className="flex items-center gap-1.5">
+            <span className="inline-block w-3.5 border-t-2 border-dashed" style={{ borderColor: BENCHMARK_COLOR }} />
+            {benchmarkSymbol || 'Benchmark'} · {signedPercent(benchmarkReturn)}
+          </span>
+        )}
+        <span className="ml-auto text-ink/45">Final equity {formatCurrency(finalEquity)}</span>
       </div>
     </div>
   );

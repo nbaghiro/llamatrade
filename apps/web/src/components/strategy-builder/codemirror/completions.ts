@@ -3,7 +3,6 @@
 import type { CompletionContext, CompletionResult, Completion } from '@codemirror/autocomplete';
 import { autocompletion } from '@codemirror/autocomplete';
 
-// Block type completions
 const blockTypes: Completion[] = [
   { label: 'strategy', type: 'keyword', info: 'Define a trading strategy' },
   { label: 'weight', type: 'keyword', info: 'Set weight allocation method', detail: '(allocation ...)' },
@@ -16,12 +15,11 @@ const blockTypes: Completion[] = [
   { label: 'filter', type: 'keyword', info: 'Filter assets by criteria', detail: ':selection :count :sort-by' },
 ];
 
-// Parameter completions
 const parameters: Completion[] = [
   { label: ':name', type: 'property', info: 'Name of the strategy or group' },
   { label: ':method', type: 'property', info: 'Weight allocation method' },
   { label: ':symbol', type: 'property', info: 'Ticker symbol' },
-  { label: ':weight', type: 'property', info: 'Weight percentage (0-1)' },
+  { label: ':weight', type: 'property', info: 'Weight percent, 0–100 (siblings sum to 100)' },
   { label: ':symbols', type: 'property', info: 'List of ticker symbols' },
   { label: ':timeframe', type: 'property', info: 'Trading timeframe (1D, 1H, etc.)' },
   { label: ':entry', type: 'property', info: 'Entry condition' },
@@ -42,7 +40,6 @@ const parameters: Completion[] = [
   { label: ':benchmark', type: 'property', info: 'Benchmark symbol for comparison' },
 ];
 
-// Weight method completions
 const weightMethods: Completion[] = [
   { label: 'equal', type: 'type', info: 'Equal weight all assets' },
   { label: 'specified', type: 'type', info: 'Manually specified weights' },
@@ -52,13 +49,11 @@ const weightMethods: Completion[] = [
   { label: 'risk-parity', type: 'type', info: 'Risk parity weighting' },
 ];
 
-// Filter methods
 const filterMethods: Completion[] = [
   { label: 'top', type: 'type', info: 'Select top N assets' },
   { label: 'bottom', type: 'type', info: 'Select bottom N assets' },
 ];
 
-// Sort criteria
 const sortCriteria: Completion[] = [
   { label: 'momentum', type: 'type', info: 'Sort by momentum' },
   { label: 'market_cap', type: 'type', info: 'Sort by market cap' },
@@ -68,7 +63,6 @@ const sortCriteria: Completion[] = [
   { label: 'dividend_yield', type: 'type', info: 'Sort by dividend yield' },
 ];
 
-// Rebalance frequency options
 const rebalanceFrequencies: Completion[] = [
   { label: 'daily', type: 'type', info: 'Rebalance every trading day' },
   { label: 'weekly', type: 'type', info: 'Rebalance once per week' },
@@ -77,7 +71,6 @@ const rebalanceFrequencies: Completion[] = [
   { label: 'annually', type: 'type', info: 'Rebalance once per year' },
 ];
 
-// Indicator completions
 // Syntax: (indicator SYMBOL params... [:output])
 // Multi-output indicators support :output specifier for specific outputs
 const indicators: Completion[] = [
@@ -117,7 +110,6 @@ const indicators: Completion[] = [
   { label: 'vwap', type: 'function', info: 'Volume Weighted Average Price', detail: '(vwap SYMBOL)' },
 ];
 
-// Price fields
 const priceFields: Completion[] = [
   { label: 'close', type: 'variable', info: 'Closing price' },
   { label: 'open', type: 'variable', info: 'Opening price' },
@@ -126,7 +118,6 @@ const priceFields: Completion[] = [
   { label: 'volume', type: 'variable', info: 'Trading volume' },
 ];
 
-// Comparison operators
 const operators: Completion[] = [
   { label: '>', type: 'operator', info: 'Greater than' },
   { label: '<', type: 'operator', info: 'Less than' },
@@ -136,14 +127,12 @@ const operators: Completion[] = [
   { label: 'cross-below', type: 'operator', info: 'Crosses below' },
 ];
 
-// Logical operators
 const logicalOps: Completion[] = [
   { label: 'and', type: 'keyword', info: 'Logical AND' },
   { label: 'or', type: 'keyword', info: 'Logical OR' },
   { label: 'not', type: 'keyword', info: 'Logical NOT' },
 ];
 
-// Common ticker symbols
 const commonSymbols: Completion[] = [
   // Major ETFs
   { label: 'SPY', type: 'constant', info: 'SPDR S&P 500 ETF' },

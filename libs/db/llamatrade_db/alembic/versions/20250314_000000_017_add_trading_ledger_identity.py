@@ -9,7 +9,7 @@ Unmanaged sleeve).
 See .docs/planning/CONTRACTS.md §5 (identity threading).
 
 Revision ID: 017_add_trading_ledger_identity
-Revises: 016_add_execution_ledger_identity
+Revises: 016_add_exec_ledger_identity
 Create Date: 2025-03-14
 """
 
@@ -21,7 +21,7 @@ from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
 revision: str = "017_add_trading_ledger_identity"
-down_revision: str | None = "016_add_execution_ledger_identity"
+down_revision: str | None = "016_add_exec_ledger_identity"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

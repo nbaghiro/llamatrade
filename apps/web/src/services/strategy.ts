@@ -14,9 +14,7 @@ import {
 
 import { strategyClient } from './grpc-client';
 
-// ============================================
 // Strategy CRUD
-// ============================================
 
 export async function listStrategies(params: {
   page?: number;
@@ -109,9 +107,7 @@ export async function compileStrategy(dslCode: string, validateOnly = false) {
   return strategyClient.compileStrategy({ dslCode, validateOnly });
 }
 
-// ============================================
-// Version Management
-// ============================================
+// Version management
 
 export async function listStrategyVersions(strategyId: string, pagination?: { page?: number; pageSize?: number }) {
   return strategyClient.listStrategyVersions({
@@ -120,9 +116,7 @@ export async function listStrategyVersions(strategyId: string, pagination?: { pa
   });
 }
 
-// ============================================
-// Template Operations
-// ============================================
+// Template operations
 
 export async function listTemplates(params: {
   category?: TemplateCategory;
@@ -140,9 +134,7 @@ export async function getTemplate(templateId: string) {
   return strategyClient.getTemplate({ templateId });
 }
 
-// ============================================
 // Convenience exports
-// ============================================
 
 export const strategyApi = {
   // Strategies

@@ -7,7 +7,7 @@ import {
   StrategyStatus,
   type Strategy,
 } from '../../generated/proto/strategy_pb';
-import { useStrategiesStore } from '../../store/strategies';
+import { useStrategiesStore } from '@llamatrade/core/stores/strategies';
 
 interface StrategyCardProps {
   strategy: Strategy;
@@ -15,13 +15,12 @@ interface StrategyCardProps {
 
 type StatusKey = 'draft' | 'active' | 'paused' | 'archived';
 
-// Strategy implementation type - derived from strategy fields
 type ImplementationType = 'dsl' | 'template' | 'custom';
 
 const STATUS_COLORS: Record<StatusKey, { bg: string; text: string }> = {
   draft: { bg: 'bg-gray-100 dark:bg-gray-800', text: 'text-gray-700 dark:text-gray-300' },
-  active: { bg: 'bg-green-100 dark:bg-green-900/30', text: 'text-green-700 dark:text-green-400' },
-  paused: { bg: 'bg-yellow-100 dark:bg-yellow-900/30', text: 'text-yellow-700 dark:text-yellow-400' },
+  active: { bg: 'bg-orange-100 dark:bg-orange-900/30', text: 'text-orange-700 dark:text-orange-400' },
+  paused: { bg: 'bg-blue-100 dark:bg-blue-900/30', text: 'text-blue-700 dark:text-blue-400' },
   archived: { bg: 'bg-red-100 dark:bg-red-900/30', text: 'text-red-700 dark:text-red-400' },
 };
 
@@ -40,7 +39,6 @@ function getStatusKey(status: StrategyStatus): StatusKey {
   }
 }
 
-// Derive implementation type from strategy fields
 function getImplementationType(strategy: Strategy): ImplementationType {
   if (strategy.templateId) return 'template';
   if (strategy.dslCode) return 'dsl';
@@ -83,7 +81,6 @@ export function StrategyCard({ strategy }: StrategyCardProps) {
   const statusKey = getStatusKey(strategy.status);
   const statusColors = STATUS_COLORS[statusKey];
 
-  // Close menu when clicking outside
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
       if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
@@ -122,45 +119,40 @@ export function StrategyCard({ strategy }: StrategyCardProps) {
   };
 
   return (
-    <div className="bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-700 p-4 hover:shadow-md transition-shadow">
-      {/* Header */}
+    <div className="card-shadow p-4 transition-all hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-lg">
       <div className="flex items-start justify-between mb-3">
-        <h3 className="font-semibold text-gray-900 dark:text-gray-100 truncate pr-2">
+        <h3 className="font-display uppercase tracking-tight text-ink truncate pr-2">
           {strategy.name}
         </h3>
         <div className="flex items-center gap-1 shrink-0">
           <span
-            className={`px-2 py-0.5 text-xs font-medium rounded ${statusColors.bg} ${statusColors.text}`}
+            className={`px-2 py-0.5 text-[11px] font-mono font-bold uppercase tracking-wide border border-ink ${statusColors.bg} ${statusColors.text}`}
           >
             {statusKey.toUpperCase()}
           </span>
         </div>
       </div>
 
-      {/* Type badge */}
       <div className="mb-3">
-        <span className="px-2 py-0.5 text-xs font-medium rounded bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400">
+        <span className="px-2 py-0.5 text-[11px] font-mono font-bold uppercase tracking-wide border border-ink bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400">
           {getTypeLabel(getImplementationType(strategy))}
         </span>
       </div>
 
-      {/* Description */}
       {strategy.description && (
-        <p className="text-sm text-gray-600 dark:text-gray-400 mb-3 line-clamp-2">
+        <p className="text-sm text-ink/70 dark:text-gray-400 mb-3 line-clamp-2">
           {strategy.description}
         </p>
       )}
 
-      {/* Meta */}
-      <div className="text-xs text-gray-500 dark:text-gray-500 mb-4">
+      <div className="text-[11px] font-mono uppercase tracking-wide text-ink/50 mb-4">
         Updated {formatTimeAgo(strategy.updatedAt)}
       </div>
 
-      {/* Actions */}
       <div className="flex items-center gap-2">
         <button
           onClick={handleEdit}
-          className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-md transition-colors"
+          className="btn btn-secondary btn-sm"
         >
           <Edit2 className="w-3.5 h-3.5" />
           Edit
@@ -169,17 +161,17 @@ export function StrategyCard({ strategy }: StrategyCardProps) {
         <div className="relative" ref={menuRef}>
           <button
             onClick={() => setMenuOpen(!menuOpen)}
-            className="p-1.5 text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-md transition-colors"
+            className="p-1.5 text-ink/60 hover:text-ink hover:bg-ink/5 transition-colors"
           >
             <MoreHorizontal className="w-4 h-4" />
           </button>
 
           {menuOpen && (
-            <div className="absolute right-0 top-full mt-1 w-40 bg-white dark:bg-gray-900 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 py-1 z-10">
+            <div className="dropdown right-0 top-full mt-1 w-40 z-10">
               {(strategy.status === StrategyStatus.DRAFT || strategy.status === StrategyStatus.PAUSED) && (
                 <button
                   onClick={handleToggleStatus}
-                  className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800"
+                  className="dropdown-item w-full"
                 >
                   <Play className="w-4 h-4" />
                   Activate
@@ -188,7 +180,7 @@ export function StrategyCard({ strategy }: StrategyCardProps) {
               {strategy.status === StrategyStatus.ACTIVE && (
                 <button
                   onClick={handleToggleStatus}
-                  className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800"
+                  className="dropdown-item w-full"
                 >
                   <Pause className="w-4 h-4" />
                   Pause
@@ -196,15 +188,15 @@ export function StrategyCard({ strategy }: StrategyCardProps) {
               )}
               <button
                 onClick={handleClone}
-                className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800"
+                className="dropdown-item w-full"
               >
                 <Copy className="w-4 h-4" />
                 Duplicate
               </button>
-              <hr className="my-1 border-gray-200 dark:border-gray-700" />
+              <hr className="my-1 border-ink/15" />
               <button
                 onClick={handleDelete}
-                className="w-full flex items-center gap-2 px-3 py-2 text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20"
+                className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-red-600 hover:bg-red-500 hover:text-bone transition-colors"
               >
                 <Trash2 className="w-4 h-4" />
                 Delete

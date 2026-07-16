@@ -50,7 +50,6 @@ class SessionService:
         if not strategy:
             raise ValueError(f"Strategy {strategy_id} not found")
 
-        # Use current version if not specified
         version = strategy_version or strategy.current_version
 
         # Get strategy version for symbols
@@ -58,7 +57,6 @@ class SessionService:
         if not strategy_ver:
             raise ValueError(f"Strategy version {version} not found")
 
-        # Use symbols from strategy if not provided
         actual_symbols = symbols or strategy_ver.symbols or []
         if not actual_symbols:
             raise ValueError("No symbols specified")
@@ -126,12 +124,10 @@ class SessionService:
         if strategy_id:
             stmt = stmt.where(TradingSession.strategy_id == strategy_id)
 
-        # Count total
         count_stmt = select(func.count()).select_from(stmt.subquery())
         total_result = await self.db.execute(count_stmt)
         total = total_result.scalar() or 0
 
-        # Paginate
         stmt = stmt.order_by(TradingSession.created_at.desc())
         stmt = stmt.offset((page - 1) * page_size).limit(page_size)
 
@@ -289,10 +285,6 @@ class SessionService:
         )
         result = await self.db.execute(stmt)
         return result.scalar() or 0
-
-    # ===================
-    # Private helpers
-    # ===================
 
     async def _get_session_by_id(self, tenant_id: UUID, session_id: UUID) -> TradingSession | None:
         """Get session ensuring tenant isolation."""

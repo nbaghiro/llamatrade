@@ -1,0 +1,23 @@
+# LlamaTrade single-origin reverse proxy (Caddy)
+# =================================================
+# The web app serves EVERYTHING now — the marketing page renders at "/" for
+# logged-out visitors and the app for signed-in users (see apps/web/src/App.tsx
+# `PublicHome`). There is no separate marketing upstream and no "/m/" split; this
+# stays a thin proxy so the single-origin model (and prod TLS/domain) remain
+# env-driven. `reverse_proxy` transparently proxies the Vite HMR websocket too.
+#
+# Env vars (with local-dev defaults):
+#   SITE_ADDRESS  listen address / site  (":8800" locally; a domain in prod)
+#   WEB_UPSTREAM  web app host:port      (Vite dev "web:8802"; nginx "web:80")
+{
+	admin off
+	# Caddy logs to stderr by default; surface proxy activity for `docker logs`.
+	log {
+		output stdout
+		format console
+	}
+}
+
+{$SITE_ADDRESS::8800} {
+	reverse_proxy {$WEB_UPSTREAM:web:8802}
+}

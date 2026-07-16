@@ -27,18 +27,14 @@ from __future__ import annotations
 
 from llamatrade_telemetry import counter, histogram, metrics
 
-# ---------------------------------------------------------------------------
 # Shared domain handles (histograms/gauges exposed for direct ``.observe()``
 # / ``.set()`` use by call sites that already held a handle reference).
-# ---------------------------------------------------------------------------
 ORDER_SUBMISSION_DURATION = metrics.trading.order_submission_latency
 ACTIVE_RUNNERS = metrics.trading.active_runners
 BAR_STREAM_CONNECTED = metrics.trading.bar_stream_connected
 TRADE_STREAM_CONNECTED = metrics.trading.trade_stream_connected
 
-# ---------------------------------------------------------------------------
 # Pre-declared "extra" histograms (buckets registered in telemetry conventions).
-# ---------------------------------------------------------------------------
 ORDER_SYNC_DURATION = histogram(
     "llamatrade_trading_order_sync_duration_seconds",
     (),
@@ -55,9 +51,7 @@ POSITION_RECONCILIATION_DURATION = histogram(
     "Time to perform position reconciliation",
 )
 
-# ---------------------------------------------------------------------------
 # Trading-only counters not covered by the shared domain namespace.
-# ---------------------------------------------------------------------------
 ORDERS_SYNCED_TOTAL = counter(
     "llamatrade_trading_orders_synced_total",
     ["status_change"],  # filled, cancelled, partial, no_change
@@ -95,9 +89,6 @@ STRATEGY_DEGRADED_EVALS_TOTAL = counter(
 )
 
 
-# ---------------------------------------------------------------------------
-# Order metrics
-# ---------------------------------------------------------------------------
 def record_order_submission(
     side: str,
     order_type: str,
@@ -130,9 +121,6 @@ def record_idempotent_replay() -> None:
     metrics.trading.idempotent_replay()
 
 
-# ---------------------------------------------------------------------------
-# Bracket order metrics
-# ---------------------------------------------------------------------------
 def record_bracket_order_submitted(bracket_type: str) -> None:
     """Record a bracket order submission (bracket_type: stop_loss, take_profit)."""
     BRACKET_ORDERS_SUBMITTED.labels(bracket_type=bracket_type).inc()
@@ -152,9 +140,6 @@ def record_bracket_oco_conflict(outcome: str) -> None:
     BRACKET_OCO_CONFLICTS.labels(outcome=outcome).inc()
 
 
-# ---------------------------------------------------------------------------
-# Risk metrics
-# ---------------------------------------------------------------------------
 def _classify_violation(violation: str) -> str:
     """Normalize a free-text violation message to a bounded violation type."""
     lowered = violation.lower()
@@ -186,9 +171,6 @@ def record_risk_check(passed: bool, violations: list[str], duration: float) -> N
         metrics.trading.risk_violation(violation_type=_classify_violation(violation))
 
 
-# ---------------------------------------------------------------------------
-# Strategy runner metrics
-# ---------------------------------------------------------------------------
 def record_signal(signal_type: str) -> None:
     """Record a generated trading signal (buy, sell, short, cover)."""
     metrics.trading.signal_generated(signal_type=signal_type)
@@ -224,9 +206,6 @@ def update_runner_gauge(active_count: int) -> None:
     ACTIVE_RUNNERS.set(active_count)
 
 
-# ---------------------------------------------------------------------------
-# Bar stream metrics
-# ---------------------------------------------------------------------------
 def record_bar_latency(latency_seconds: float) -> None:
     """Record bar-stream latency (bar timestamp -> receipt)."""
     metrics.trading.bar_stream_latency.observe(latency_seconds)
@@ -242,9 +221,6 @@ def set_bar_stream_connected(connected: bool) -> None:
     BAR_STREAM_CONNECTED.set(1 if connected else 0)
 
 
-# ---------------------------------------------------------------------------
-# Trade stream metrics
-# ---------------------------------------------------------------------------
 def record_trade_stream_event(event_type: str) -> None:
     """Record a trade-stream event (new, fill, partial_fill, canceled, ...)."""
     TRADE_STREAM_EVENTS_TOTAL.labels(event_type=event_type).inc()
@@ -290,9 +266,6 @@ def record_slippage(side: str, fill_price: float, est_price: float) -> None:
     metrics.trading.slippage_bps.labels(side=side).observe(bps)
 
 
-# ---------------------------------------------------------------------------
-# Position reconciliation metrics
-# ---------------------------------------------------------------------------
 def record_position_reconciliation(
     result: str,
     duration: float,

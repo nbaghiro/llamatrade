@@ -20,7 +20,6 @@ interface TreeNodeProps {
 }
 
 export function TreeNode({ blockId, depth = 0, isLast = true, parentWeightId, readOnly }: TreeNodeProps) {
-  // Use context-aware hook to support both global and scoped stores
   const { tree, ui } = useStrategyBuilderStoreWithContext();
   const block = tree.blocks[blockId];
 
@@ -37,17 +36,14 @@ export function TreeNode({ blockId, depth = 0, isLast = true, parentWeightId, re
     tree.blocks[parentWeightId]?.type === 'weight' &&
     (tree.blocks[parentWeightId] as { method: string }).method === 'specified';
 
-  // Get allocation percentage for this block if parent is specified weight
   const allocationPercent = parentIsSpecifiedWeight
     ? (tree.blocks[parentWeightId] as { allocations: Record<string, number> }).allocations[
         blockId
       ] ?? 0
     : undefined;
 
-  // For weight blocks, pass the weightId to children
   const childWeightId = block.type === 'weight' ? blockId : undefined;
 
-  // Render the appropriate block component
   const renderBlock = () => {
     switch (block.type) {
       case 'root':
@@ -69,7 +65,6 @@ export function TreeNode({ blockId, depth = 0, isLast = true, parentWeightId, re
     }
   };
 
-  // Determine spacing based on block type
   const getChildSpacing = () => {
     if (block.type === 'root' || block.type === 'weight' || block.type === 'if' || block.type === 'else' || block.type === 'filter') {
       return 'space-y-4';
@@ -84,23 +79,21 @@ export function TreeNode({ blockId, depth = 0, isLast = true, parentWeightId, re
         <div className="absolute left-0 top-0 bottom-0 w-6">
           {/* Vertical line */}
           <div
-            className={`absolute left-3 top-0 w-0.5 bg-gray-300 dark:bg-gray-600 ${isLast ? 'h-7' : 'h-full'}`}
+            className={`absolute left-3 top-0 w-0.5 bg-ink/25 ${isLast ? 'h-7' : 'h-full'}`}
           />
           {/* Horizontal connector */}
-          <div className="absolute left-3 top-7 w-3 h-0.5 bg-gray-300 dark:bg-gray-600" />
+          <div className="absolute left-3 top-7 w-3 h-0.5 bg-ink/25" />
         </div>
       )}
 
-      {/* Block content */}
       <div className={depth > 0 ? 'pl-6' : ''}>
         {renderBlock()}
 
-        {/* Children */}
         {canHaveChildren && isExpanded && (
           <div className="relative mt-3">
             {/* Vertical connector line for children */}
             {block.childIds.length > 0 && (
-              <div className="absolute left-3 top-0 w-0.5 h-full bg-gray-300 dark:bg-gray-600" />
+              <div className="absolute left-3 top-0 w-0.5 h-full bg-ink/25" />
             )}
 
             <div className={getChildSpacing()}>
@@ -116,12 +109,11 @@ export function TreeNode({ blockId, depth = 0, isLast = true, parentWeightId, re
               ))}
             </div>
 
-            {/* Add block button - hidden in readOnly mode */}
             {!readOnly && (
               <div className="relative pl-6 mt-3">
                 {/* Connector for add button */}
-                <div className="absolute left-3 top-0 h-7 w-0.5 bg-gray-300 dark:bg-gray-600" />
-                <div className="absolute left-3 top-7 w-3 h-0.5 bg-gray-300 dark:bg-gray-600" />
+                <div className="absolute left-3 top-0 h-7 w-0.5 bg-ink/25" />
+                <div className="absolute left-3 top-7 w-3 h-0.5 bg-ink/25" />
                 <AddBlockButton parentId={blockId} />
               </div>
             )}

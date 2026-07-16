@@ -1,17 +1,13 @@
-/**
- * Chat message bubble component.
- *
- * Renders user and assistant messages with appropriate styling.
- * Supports markdown rendering for assistant messages.
- * Supports inline artifact rendering for strategy visualizations.
- */
+/** Copilot chat turn: ink user bubble / paper assistant bubble, tool rows, inline artifacts. */
 
-import { Bot, User } from 'lucide-react';
+import { Sparkles } from 'lucide-react';
 import { useMemo } from 'react';
 
-import { AgentMessage, ArtifactType, MessageRole, type PendingArtifact } from '../../store/agent';
+import { AgentMessage, MessageRole, type PendingArtifact } from '../../store/agent';
+import { useAuthStore } from '../../store/auth';
 
-import { InlineStrategyViewer } from './InlineStrategyViewer';
+import { PendingArtifactCard } from './PendingArtifactCard';
+import { ToolCallIndicator } from './ToolCallIndicator';
 
 interface ChatMessageProps {
   message: AgentMessage;
@@ -19,66 +15,77 @@ interface ChatMessageProps {
   artifacts?: Map<string, PendingArtifact>;
 }
 
+/** Format a proto Timestamp into a compact "9:47 ET" label. */
+function formatTime(seconds?: bigint): string {
+  if (!seconds) return '';
+  const d = new Date(Number(seconds) * 1000);
+  const h = d.getHours();
+  const m = d.getMinutes().toString().padStart(2, '0');
+  return `${h}:${m} ET`;
+}
+
+/** Condense a tool call's args/result into a short dim summary. */
+function toolDetail(tc: AgentMessage['toolCalls'][number]): string {
+  const raw = (tc.resultJson || tc.argumentsJson || '').replace(/[{}'"]/g, '').trim();
+  return raw.length > 56 ? `${raw.slice(0, 56)}…` : raw;
+}
+
 export function ChatMessage({ message, artifacts }: ChatMessageProps) {
   const isUser = message.role === MessageRole.USER;
+  const firstName = useAuthStore((s) => s.user?.firstName);
 
-  // Get linked artifacts for this message (only for assistant messages)
   const linkedArtifacts = useMemo(() => {
-    if (isUser || !message.inlineArtifactIds?.length || !artifacts) {
-      return [];
-    }
+    if (isUser || !message.inlineArtifactIds?.length || !artifacts) return [];
     return message.inlineArtifactIds
       .map((id) => artifacts.get(id))
       .filter((a): a is PendingArtifact => a !== undefined);
   }, [isUser, message.inlineArtifactIds, artifacts]);
 
+  const time = formatTime(message.createdAt?.seconds);
+  const label = isUser ? [firstName || 'You', time].filter(Boolean).join(' · ') : 'Copilot';
+
   return (
-    <div className={`flex gap-3 ${isUser ? 'flex-row-reverse' : ''}`}>
-      {/* Avatar */}
+    <div className={`flex gap-3.5 ${isUser ? 'flex-row-reverse' : ''}`}>
       <div
-        className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center ${
-          isUser
-            ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400'
-            : 'bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400'
+        className={`h-9 w-9 flex-none border-2 border-ink ${
+          isUser ? 'bg-gradient-to-br from-orange-300 to-orange-500' : 'grid place-items-center bg-ink'
         }`}
       >
-        {isUser ? <User className="w-4 h-4" /> : <Bot className="w-4 h-4" />}
+        {!isUser && <Sparkles className="h-4 w-4 text-orange-500" />}
       </div>
 
-      {/* Message content */}
-      <div className={`flex-1 max-w-[80%] ${isUser ? 'ml-auto' : ''}`}>
-        {/* Text bubble */}
+      <div className={`flex min-w-0 max-w-[80%] flex-col gap-2.5 ${isUser ? 'items-end' : 'items-start'}`}>
+        <span className="font-mono text-[9.5px] font-bold uppercase tracking-[0.1em] text-ink/45">{label}</span>
+
         <div
-          className={`rounded-lg px-4 py-2 ${
+          className={`min-w-0 max-w-full border-2 px-4 py-3 text-sm leading-relaxed ${
             isUser
-              ? 'bg-blue-600 text-white'
-              : 'bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-gray-100'
+              ? 'border-orange-500 bg-ink text-bone shadow-[4px_4px_0_rgb(var(--lt-orange-500))]'
+              : 'border-ink bg-paper text-ink shadow-[4px_4px_0_rgb(var(--lt-ink))]'
           }`}
         >
-          {/* Render content with basic markdown support */}
           <MessageContent content={message.content} isUser={isUser} />
         </div>
 
-        {/* Inline artifact viewers (only for assistant messages with artifacts) */}
+        {/* Tool calls recorded on this message (historical sessions). */}
+        {!isUser &&
+          message.toolCalls?.map((tc) => (
+            <ToolCallIndicator
+              key={tc.id || tc.name}
+              toolName={tc.name}
+              status={tc.success ? 'complete' : 'error'}
+              detail={toolDetail(tc)}
+              durationMs={tc.durationMs}
+            />
+          ))}
+
+        {/* Inline strategy artifacts linked to this message. */}
         {linkedArtifacts.map((artifact) => (
-          <InlineArtifactRenderer key={artifact.id} artifact={artifact} />
+          <PendingArtifactCard key={artifact.id} artifact={artifact} />
         ))}
       </div>
     </div>
   );
-}
-
-/**
- * Renders the appropriate inline viewer based on artifact type.
- */
-function InlineArtifactRenderer({ artifact }: { artifact: PendingArtifact }) {
-  switch (artifact.artifactType) {
-    case ArtifactType.STRATEGY:
-      return <InlineStrategyViewer artifact={artifact} />;
-    default:
-      // Unknown artifact type - don't render
-      return null;
-  }
 }
 
 interface MessageContentProps {
@@ -87,36 +94,27 @@ interface MessageContentProps {
 }
 
 function MessageContent({ content, isUser }: MessageContentProps) {
-  // Split by code blocks first
   const parts = content.split(/(```[\s\S]*?```)/g);
 
   return (
-    <div className="text-sm break-words prose-sm max-w-none">
+    <div className="min-w-0 max-w-full break-words text-sm">
       {parts.map((part, index) => {
-        // Check if this is a code block
         if (part.startsWith('```') && part.endsWith('```')) {
           const lines = part.slice(3, -3).split('\n');
           const language = lines[0].trim() || 'text';
           const code = lines.slice(1).join('\n');
-
           return (
             <pre
               key={index}
-              className={`my-2 p-3 rounded-md overflow-x-auto text-xs font-mono ${
-                isUser
-                  ? 'bg-blue-700/50 text-blue-100'
-                  : 'bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200'
+              className={`my-2 max-w-full overflow-x-auto p-3 font-mono text-xs ${
+                isUser ? 'border border-bone/30 bg-ink/70 text-bone' : 'border border-ink bg-bone text-ink'
               }`}
             >
-              <div className="text-[10px] uppercase tracking-wider opacity-60 mb-1">
-                {language}
-              </div>
+              <div className="mb-1 text-[10px] uppercase tracking-wider opacity-60">{language}</div>
               <code>{code}</code>
             </pre>
           );
         }
-
-        // Parse markdown blocks (headers, lists, paragraphs)
         return <MarkdownBlock key={index} content={part} isUser={isUser} />;
       })}
     </div>
@@ -129,7 +127,6 @@ interface MarkdownBlockProps {
 }
 
 function MarkdownBlock({ content, isUser }: MarkdownBlockProps) {
-  // Split into lines and process
   const lines = content.split('\n');
   const elements: React.ReactNode[] = [];
   let currentList: { type: 'ul' | 'ol'; items: string[] } | null = null;
@@ -156,14 +153,11 @@ function MarkdownBlock({ content, isUser }: MarkdownBlockProps) {
 
   lines.forEach((line, lineIndex) => {
     const trimmedLine = line.trim();
-
-    // Empty line
     if (!trimmedLine) {
       flushList();
       return;
     }
 
-    // Headers
     const headerMatch = trimmedLine.match(/^(#{1,6})\s+(.+)$/);
     if (headerMatch) {
       flushList();
@@ -185,19 +179,14 @@ function MarkdownBlock({ content, isUser }: MarkdownBlockProps) {
       return;
     }
 
-    // Horizontal rule
     if (/^[-*_]{3,}$/.test(trimmedLine)) {
       flushList();
       elements.push(
-        <hr
-          key={`hr-${lineIndex}`}
-          className={`my-3 border-t ${isUser ? 'border-blue-400/30' : 'border-gray-300 dark:border-gray-600'}`}
-        />
+        <hr key={`hr-${lineIndex}`} className={`my-3 border-t ${isUser ? 'border-bone/30' : 'border-ink/20'}`} />
       );
       return;
     }
 
-    // Unordered list
     const ulMatch = trimmedLine.match(/^[-*+]\s+(.+)$/);
     if (ulMatch) {
       if (currentList?.type !== 'ul') {
@@ -208,7 +197,6 @@ function MarkdownBlock({ content, isUser }: MarkdownBlockProps) {
       return;
     }
 
-    // Ordered list
     const olMatch = trimmedLine.match(/^\d+[.)]\s+(.+)$/);
     if (olMatch) {
       if (currentList?.type !== 'ol') {
@@ -219,7 +207,6 @@ function MarkdownBlock({ content, isUser }: MarkdownBlockProps) {
       return;
     }
 
-    // Regular paragraph
     flushList();
     elements.push(
       <p key={`p-${lineIndex}`} className="my-1">
@@ -228,9 +215,7 @@ function MarkdownBlock({ content, isUser }: MarkdownBlockProps) {
     );
   });
 
-  // Flush any remaining list
   flushList();
-
   return <>{elements}</>;
 }
 
@@ -240,37 +225,30 @@ interface InlineMarkdownProps {
 }
 
 function InlineMarkdown({ content, isUser }: InlineMarkdownProps) {
-  // Pattern for bold, italic, inline code, and links
   const pattern = /(\*\*[^*]+\*\*|\*[^*]+\*|`[^`]+`|\[[^\]]+\]\([^)]+\))/g;
   const parts = content.split(pattern);
 
   return (
     <>
       {parts.map((segment, index) => {
-        // Bold
         if (segment.startsWith('**') && segment.endsWith('**')) {
           return <strong key={index}>{segment.slice(2, -2)}</strong>;
         }
-        // Italic
         if (segment.startsWith('*') && segment.endsWith('*') && !segment.startsWith('**')) {
           return <em key={index}>{segment.slice(1, -1)}</em>;
         }
-        // Inline code
         if (segment.startsWith('`') && segment.endsWith('`')) {
           return (
             <code
               key={index}
-              className={`px-1 py-0.5 rounded text-xs font-mono ${
-                isUser
-                  ? 'bg-blue-700/50'
-                  : 'bg-gray-200 dark:bg-gray-700'
+              className={`px-1 py-0.5 font-mono text-xs font-bold ${
+                isUser ? 'bg-bone/20 text-bone' : 'border border-line bg-bone text-ink'
               }`}
             >
               {segment.slice(1, -1)}
             </code>
           );
         }
-        // Links
         const linkMatch = segment.match(/^\[([^\]]+)\]\(([^)]+)\)$/);
         if (linkMatch) {
           return (
@@ -279,11 +257,7 @@ function InlineMarkdown({ content, isUser }: InlineMarkdownProps) {
               href={linkMatch[2]}
               target="_blank"
               rel="noopener noreferrer"
-              className={`underline ${
-                isUser
-                  ? 'text-blue-200 hover:text-white'
-                  : 'text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300'
-              }`}
+              className={`underline ${isUser ? 'text-orange-400 hover:text-orange-300' : 'text-blue-600 hover:text-blue-800'}`}
             >
               {linkMatch[1]}
             </a>

@@ -70,8 +70,6 @@ class BarStore:
         # Injectable so tests bind it to a throwaway (testcontainer) engine.
         self._session_factory = session_factory or get_sessionmaker()
 
-    # ---------------------------------------------------------------- writes
-
     async def upsert_bars(self, rows: Sequence[BarRow], timeframe: str) -> int:
         """Idempotently insert/update bars, keyed on ``(symbol, time)``.
 
@@ -136,8 +134,6 @@ class BarStore:
             result = await session.execute(delete(table).where(table.c.time < cutoff))
             await session.commit()
             return cast(CursorResult[Any], result).rowcount or 0
-
-    # ----------------------------------------------------------------- reads
 
     async def select_bars(
         self, symbol: str, timeframe: str, start: datetime, end: datetime

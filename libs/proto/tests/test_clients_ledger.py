@@ -69,13 +69,12 @@ class TestLedgerClientInit:
 
     def test_init_with_defaults(self) -> None:
         client = LedgerClient()
-        assert client._target == "portfolio:8860"
-        assert client._secure is False
-        assert client._stub is None
+        assert client.target == "http://portfolio:8860"
+        assert client._client is None
 
     def test_init_with_custom_target(self) -> None:
         client = LedgerClient("localhost:9000")
-        assert client._target == "localhost:9000"
+        assert client.target == "http://localhost:9000"
 
 
 class TestGetOrCreateAccount:
@@ -97,9 +96,9 @@ class TestGetOrCreateAccount:
                 _pb_sleeve("sleeve-unmanaged"),
             ],
         )
-        mock_stub = MagicMock()
-        mock_stub.GetOrCreateAccount = AsyncMock(return_value=response)
-        client._stub = mock_stub
+        mock_client = MagicMock()
+        mock_client.get_or_create_account = AsyncMock(return_value=response)
+        client._client = mock_client
 
         result = await client.get_or_create_account(TENANT, USER, "creds-1")
 
@@ -110,7 +109,7 @@ class TestGetOrCreateAccount:
             "sleeve-manual",
             "sleeve-unmanaged",
         ]
-        request = mock_stub.GetOrCreateAccount.call_args[0][0]
+        request = mock_client.get_or_create_account.call_args[0][0]
         assert request.credentials_id == "creds-1"
         assert request.context.tenant_id == TENANT
         assert request.context.user_id == USER
@@ -121,9 +120,9 @@ class TestGetOrCreateAccount:
         response = ledger_pb2.GetOrCreateAccountResponse(
             account=ledger_pb2.LedgerAccount(id="account-1", tenant_id=TENANT)
         )
-        mock_stub = MagicMock()
-        mock_stub.GetOrCreateAccount = AsyncMock(return_value=response)
-        client._stub = mock_stub
+        mock_client = MagicMock()
+        mock_client.get_or_create_account = AsyncMock(return_value=response)
+        client._client = mock_client
 
         result = await client.get_or_create_account(TENANT, USER, "creds-1")
 
@@ -138,9 +137,9 @@ class TestAllocateCapital:
     async def test_sends_amount_and_parses_sleeve(self) -> None:
         client = LedgerClient()
         response = ledger_pb2.AllocateCapitalResponse(sleeve=_pb_sleeve())
-        mock_stub = MagicMock()
-        mock_stub.AllocateCapital = AsyncMock(return_value=response)
-        client._stub = mock_stub
+        mock_client = MagicMock()
+        mock_client.allocate_capital = AsyncMock(return_value=response)
+        client._client = mock_client
 
         sleeve = await client.allocate_capital(
             TENANT, USER, "account-1", "sleeve-1", Decimal("40000")
@@ -150,7 +149,7 @@ class TestAllocateCapital:
         assert sleeve.allocated_capital == Decimal("40000")
         assert sleeve.cash.balance == Decimal("40000")
         assert sleeve.cash.free == Decimal("40000")
-        request = mock_stub.AllocateCapital.call_args[0][0]
+        request = mock_client.allocate_capital.call_args[0][0]
         assert request.account_id == "account-1"
         assert request.to_sleeve_id == "sleeve-1"
         assert request.amount.value == "40000"
@@ -158,9 +157,9 @@ class TestAllocateCapital:
     @pytest.mark.asyncio
     async def test_rpc_error_propagates(self) -> None:
         client = LedgerClient()
-        mock_stub = MagicMock()
-        mock_stub.AllocateCapital = AsyncMock(side_effect=RuntimeError("unavailable"))
-        client._stub = mock_stub
+        mock_client = MagicMock()
+        mock_client.allocate_capital = AsyncMock(side_effect=RuntimeError("unavailable"))
+        client._client = mock_client
 
         with pytest.raises(RuntimeError, match="unavailable"):
             await client.allocate_capital(TENANT, USER, "account-1", "sleeve-1", Decimal("1"))
@@ -176,9 +175,9 @@ class TestTransferCapital:
             from_sleeve=_pb_sleeve("sleeve-from", balance="10000"),
             to_sleeve=_pb_sleeve("sleeve-to", balance="30000"),
         )
-        mock_stub = MagicMock()
-        mock_stub.TransferCapital = AsyncMock(return_value=response)
-        client._stub = mock_stub
+        mock_client = MagicMock()
+        mock_client.transfer_capital = AsyncMock(return_value=response)
+        client._client = mock_client
 
         from_sleeve, to_sleeve = await client.transfer_capital(
             TENANT, USER, "account-1", "sleeve-from", "sleeve-to", Decimal("30000")
@@ -199,14 +198,14 @@ class TestFundOps:
         response = ledger_pb2.DepositFundsResponse(
             unallocated=_pb_sleeve("sleeve-unalloc", balance="100000")
         )
-        mock_stub = MagicMock()
-        mock_stub.DepositFunds = AsyncMock(return_value=response)
-        client._stub = mock_stub
+        mock_client = MagicMock()
+        mock_client.deposit_funds = AsyncMock(return_value=response)
+        client._client = mock_client
 
         sleeve = await client.deposit_funds(TENANT, USER, "account-1", Decimal("100000"))
 
         assert sleeve.cash.balance == Decimal("100000")
-        assert mock_stub.DepositFunds.call_args[0][0].amount.value == "100000"
+        assert mock_client.deposit_funds.call_args[0][0].amount.value == "100000"
 
     @pytest.mark.asyncio
     async def test_withdraw_returns_unallocated(self) -> None:
@@ -214,9 +213,9 @@ class TestFundOps:
         response = ledger_pb2.WithdrawFundsResponse(
             unallocated=_pb_sleeve("sleeve-unalloc", balance="60000")
         )
-        mock_stub = MagicMock()
-        mock_stub.WithdrawFunds = AsyncMock(return_value=response)
-        client._stub = mock_stub
+        mock_client = MagicMock()
+        mock_client.withdraw_funds = AsyncMock(return_value=response)
+        client._client = mock_client
 
         sleeve = await client.withdraw_funds(TENANT, USER, "account-1", Decimal("40000"))
 
@@ -232,9 +231,9 @@ class TestSleeveQueries:
         response = ledger_pb2.ListSleevesResponse(
             sleeves=[_pb_sleeve("sleeve-1"), _pb_sleeve("sleeve-2")]
         )
-        mock_stub = MagicMock()
-        mock_stub.ListSleeves = AsyncMock(return_value=response)
-        client._stub = mock_stub
+        mock_client = MagicMock()
+        mock_client.list_sleeves = AsyncMock(return_value=response)
+        client._client = mock_client
 
         sleeves = await client.list_sleeves(TENANT, USER, "account-1")
 
@@ -260,9 +259,9 @@ class TestSleeveQueries:
                 )
             ],
         )
-        mock_stub = MagicMock()
-        mock_stub.GetSleeve = AsyncMock(return_value=response)
-        client._stub = mock_stub
+        mock_client = MagicMock()
+        mock_client.get_sleeve = AsyncMock(return_value=response)
+        client._client = mock_client
 
         detail = await client.get_sleeve(TENANT, USER, "sleeve-1")
 
@@ -296,9 +295,9 @@ class TestHoldingHistory:
                 )
             ]
         )
-        mock_stub = MagicMock()
-        mock_stub.GetHoldingHistory = AsyncMock(return_value=response)
-        client._stub = mock_stub
+        mock_client = MagicMock()
+        mock_client.get_holding_history = AsyncMock(return_value=response)
+        client._client = mock_client
 
         entries = await client.get_holding_history(TENANT, USER, "account-1", "SPY")
 
@@ -309,5 +308,5 @@ class TestHoldingHistory:
         assert entry.qty == Decimal("83")
         assert entry.realized_pnl == Decimal("0")
         assert entry.occurred_at_seconds == 1765476600
-        request = mock_stub.GetHoldingHistory.call_args[0][0]
+        request = mock_client.get_holding_history.call_args[0][0]
         assert request.symbol == "SPY"

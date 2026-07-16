@@ -30,23 +30,17 @@ import { hasChildren } from '../types/strategy-builder';
 
 import { getTenantContext } from './auth';
 
-// Re-export validation types for consumers
 export type { ValidationResult, ValidationIssue };
 
-// Enable immer support for Map and Set
 enableMapSet();
 
 // View mode type (defined early for use in persistence helpers)
 export type ViewMode = 'tree' | 'code';
 
-// =============================================================================
 // Expand/Collapse State Persistence
-// =============================================================================
 const COLLAPSED_STORAGE_KEY = 'strategy-builder-collapsed';
 
-// =============================================================================
 // View Mode Persistence
-// =============================================================================
 const VIEW_MODE_STORAGE_KEY = 'strategy-builder-viewmode';
 
 /**
@@ -163,7 +157,6 @@ function loadCollapsedState(strategyId: string | null, blocks: Record<BlockId, B
 
     if (collapsedPaths.length === 0) return collapsedIds;
 
-    // Build path -> blockId map
     const pathToId = new Map<string, BlockId>();
     for (const block of Object.values(blocks)) {
       pathToId.set(getBlockPath(blocks, block.id), block.id);
@@ -189,7 +182,6 @@ const MAX_HISTORY = 50;
 // Debounce delay for auto-save (in milliseconds)
 const DEBOUNCE_SAVE_MS = 2000;
 
-// Debounce timer reference
 let saveDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 
 // Create empty initial state (just root block, no demo content)
@@ -743,7 +735,6 @@ export const useStrategyBuilderStore = create<StrategyBuilderState>()(
       syncTreeFromCode: () => {
         const { dslCode } = get();
 
-        // Try to parse the DSL code
         const parsed = fromDSLString(dslCode);
         if (!parsed) {
           set((s) => {
@@ -754,7 +745,6 @@ export const useStrategyBuilderStore = create<StrategyBuilderState>()(
 
         const { tree, metadata } = parsed;
 
-        // Validate the parsed tree
         const validation = validateTree(tree);
         if (!validation.valid) {
           set((s) => {
@@ -1021,7 +1011,6 @@ export const useStrategyBuilderStore = create<StrategyBuilderState>()(
       },
 
       loadFromDSL: (dslCode, name, description) => {
-        // Parse the DSL string
         const parsed = fromDSLString(dslCode);
         if (!parsed) {
           set((state) => {
@@ -1099,7 +1088,6 @@ export const useStrategyBuilderStore = create<StrategyBuilderState>()(
             throw new Error('Artifact has no DSL code');
           }
 
-          // Parse the DSL
           const parsed = fromDSLString(preview.dsl_code);
           if (!parsed) {
             set((state) => {
@@ -1399,9 +1387,7 @@ export const useStrategyBuilderStore = create<StrategyBuilderState>()(
     }))
 );
 
-// =============================================================================
 // Scoped Store Pattern for Inline Previews
-// =============================================================================
 
 /**
  * Type for a scoped strategy builder store instance
@@ -1485,8 +1471,7 @@ export function createStrategyBuilderStore(initialTree?: StrategyTree, previewId
       validationResult: emptyValidationResult,
       isValid: true,
 
-      // Minimal implementations for preview stores
-      // Most actions are no-ops in preview mode
+      // Preview stores are read-only — most actions are no-ops.
 
       addAsset: () => '',
       addGroup: () => '',

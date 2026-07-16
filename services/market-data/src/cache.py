@@ -26,6 +26,7 @@ TTL_TODAY_BARS = 5 * 60  # 5 minutes for today's data (still updating)
 TTL_LATEST_BAR = 2 * 60  # 2 minutes
 TTL_LATEST_QUOTE = 10  # 10 seconds (near real-time)
 TTL_SNAPSHOT = 15  # 15 seconds
+TTL_ASSET = 24 * 60 * 60  # 24 hours — asset reference data is near-static
 
 
 class MarketDataCache:
@@ -38,8 +39,6 @@ class MarketDataCache:
     def redis(self) -> Redis:
         """Get the Redis client."""
         return self._redis
-
-    # === Key Generation ===
 
     @staticmethod
     def bars_key(
@@ -69,7 +68,10 @@ class MarketDataCache:
         """Generate cache key for snapshot."""
         return f"market:snapshot:{symbol}"
 
-    # === TTL Calculation ===
+    @staticmethod
+    def asset_key(symbol: str) -> str:
+        """Generate cache key for asset reference data."""
+        return f"market:asset:{symbol}"
 
     @staticmethod
     def calculate_bars_ttl(start: datetime, end: datetime | None) -> int:
@@ -80,8 +82,6 @@ class MarketDataCache:
             return TTL_TODAY_BARS
         # Historical data (before today) is immutable, use long TTL
         return TTL_HISTORICAL_BARS
-
-    # === Serialization ===
 
     @staticmethod
     def serialize_model(model: BaseModel) -> str:
@@ -133,8 +133,6 @@ class MarketDataCache:
             symbol: [bar_class.model_validate(bar) for bar in bar_list]
             for symbol, bar_list in items.items()
         }
-
-    # === Cache Operations ===
 
     async def get(self, key: str) -> str | None:
         """Get a value from cache. Returns None on cache miss or error."""
@@ -209,8 +207,6 @@ class MarketDataCache:
         except RedisError:
             return False
 
-
-# === Lifecycle Functions ===
 
 _cache: MarketDataCache | None = None
 _cache_lock: asyncio.Lock | None = None

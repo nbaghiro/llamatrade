@@ -31,9 +31,7 @@ _INDICATOR_TYPE_PREFIX = "INDICATOR_TYPE_"
 _TEMPLATE_DIFFICULTY_PREFIX = "TEMPLATE_DIFFICULTY_"
 
 
-# ===================
 # Conversion helpers: proto ValueType -> str (for display/API)
-# ===================
 
 
 def strategy_status_to_str(value: StrategyStatus.ValueType) -> str:
@@ -93,9 +91,7 @@ def template_difficulty_to_str(value: TemplateDifficulty.ValueType) -> str:
     return name.lower()
 
 
-# ===================
 # String to Proto conversion helpers (for API request filters)
-# ===================
 
 
 def str_to_template_category(value: str) -> TemplateCategory.ValueType | None:
@@ -132,11 +128,8 @@ def str_to_template_difficulty(value: str) -> TemplateDifficulty.ValueType | Non
         return None
 
 
-# Type alias for strategy config JSON (parsed S-expression)
-# Using dict[str, object] instead of TypedDict because:
-# 1. DSL produces various JSON structures (traditional strategies, allocation strategies)
-# 2. TypedDict strips unknown fields during Pydantic validation
-# 3. The actual structure depends on strategy type and DSL features
+# Parsed S-expression config: dict (not TypedDict) because DSL JSON shape varies
+# and TypedDict strips unknown fields during Pydantic validation.
 StrategyConfigJSON = dict[str, object]
 
 
@@ -151,24 +144,14 @@ class ConfigOverride(TypedDict, total=False):
     sizing_value: float
 
 
-# TemplateCategory, AssetClass, IndicatorType, TemplateDifficulty are now imported from proto
-
-
-# ===================
-# Request field bounds
-# ===================
-
-# Caps on user-supplied strategy fields. The S-expression cap is generous but
-# guards the parser/DB against pathological input; the capital ceiling guards
-# the money path against absurd or overflow values.
+# Request field bounds. Caps guard the parser/DB against pathological input and
+# the capital ceiling guards the money path against absurd or overflow values.
 _MAX_SEXPR_LEN = 100_000
 _MAX_DESCRIPTION_LEN = 2_000
 _MAX_ALLOCATED_CAPITAL = Decimal("1000000000")
 
 
-# ===================
 # Request Schemas
-# ===================
 
 
 class StrategyCreate(BaseModel):
@@ -245,13 +228,16 @@ class ExecutionCreate(BaseModel):
     )
 
 
-# ===================
 # Response Schemas
-# ===================
 
 
 class StrategyResponse(BaseModel):
-    """Basic strategy info (without config)."""
+    """Basic strategy info (without config).
+
+    symbols/timeframe come from the current version and are populated by
+    list_strategies; status-only responses (archive, status change) leave them
+    at their empty defaults.
+    """
 
     id: UUID
     name: str
@@ -260,6 +246,8 @@ class StrategyResponse(BaseModel):
     current_version: int
     created_at: datetime
     updated_at: datetime
+    symbols: list[str] = Field(default_factory=list)
+    timeframe: str = ""
 
 
 class StrategyDetailResponse(StrategyResponse):

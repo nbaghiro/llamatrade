@@ -1,0 +1,49 @@
+{
+  "expo": {
+    "name": "LlamaTrade",
+    "slug": "llamatrade-mobile",
+    "scheme": "llamatrade",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "backgroundColor": "#fbf8f1",
+    "icon": "./assets/icon.png",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "ai.llamatrade.app",
+      "infoPlist": {
+        "NSAppTransportSecurity": {
+          "//": "DEV ONLY — lets the app reach cleartext http://<LAN-IP>:88xx dev services. Remove for production (HTTPS behind a gateway).",
+          "NSAllowsArbitraryLoads": true
+        }
+      }
+    },
+    "android": {
+      "package": "ai.llamatrade.app",
+      "usesCleartextTraffic": true,
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#0d0d0d"
+      }
+    },
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      "expo-font",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash-icon.png",
+          "imageWidth": 160,
+          "resizeMode": "contain",
+          "backgroundColor": "#0d0d0d"
+        }
+      ],
+      "expo-status-bar"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}

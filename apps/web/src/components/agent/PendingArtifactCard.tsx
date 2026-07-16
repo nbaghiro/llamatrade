@@ -1,305 +1,13 @@
-/**
- * Pending artifact card component.
- *
- * Shows a preview of generated strategies with commit/dismiss actions.
- */
+/** Inline strategy artifact card: dark-terminal DSL + open/backtest/save actions. */
 
-import { Check, CheckCircle2, ChevronDown, ChevronUp, ExternalLink, FileCode2, FlaskConical, Save, X } from 'lucide-react';
-import { useMemo, useState } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { AlertTriangle, Check, FlaskConical, LayoutGrid, Loader2, Play, Sparkles } from 'lucide-react';
+import { lazy, Suspense, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 
-import { ArtifactType, PendingArtifact } from '../../store/agent';
-import { useStrategyBuilderStore } from '../../store/strategy-builder';
+import { ArtifactType, PendingArtifact, useAgentStore } from '../../store/agent';
 
-/**
- * Format DSL code with proper indentation for readability.
- */
-function formatDSL(code: string): string {
-  const result: string[] = [];
-  let indent = 0;
-  let i = 0;
-  let lineStart = true;
-
-  const addIndent = () => '  '.repeat(indent);
-
-  while (i < code.length) {
-    const char = code[i];
-
-    if (char === '(') {
-      // Check what follows the opening paren
-      const rest = code.slice(i + 1).trimStart();
-      const keyword = rest.match(/^(strategy|weight|group|if|else|filter|asset|and|or)\b/)?.[1];
-
-      if (keyword === 'strategy') {
-        // Strategy is the root - start on new line if not at start
-        if (result.length > 0) {
-          result.push('\n' + addIndent());
-        } else if (lineStart) {
-          result.push(addIndent());
-        }
-        result.push('(');
-        indent++;
-        lineStart = false;
-      } else if (keyword && keyword !== 'asset') {
-        // Major blocks get their own line
-        result.push('\n' + addIndent() + '(');
-        indent++;
-        lineStart = false;
-      } else if (keyword === 'asset') {
-        // Assets on their own line
-        result.push('\n' + addIndent() + '(');
-        lineStart = false;
-      } else {
-        result.push('(');
-        lineStart = false;
-      }
-    } else if (char === ')') {
-      // Check if this closes a major block
-      const nextChar = code[i + 1];
-      if (nextChar === ')' || !nextChar) {
-        result.push(')');
-        indent = Math.max(0, indent - 1);
-      } else {
-        result.push(')');
-        if (indent > 0) indent--;
-      }
-      lineStart = false;
-    } else if (char === ' ' || char === '\t' || char === '\n') {
-      // Collapse whitespace
-      if (!lineStart && result[result.length - 1] !== ' ' && result[result.length - 1] !== '\n') {
-        result.push(' ');
-      }
-      // Skip consecutive whitespace
-      while (i + 1 < code.length && /\s/.test(code[i + 1])) {
-        i++;
-      }
-    } else {
-      result.push(char);
-      lineStart = false;
-    }
-    i++;
-  }
-
-  return result.join('').trim();
-}
-
-interface PendingArtifactCardProps {
-  artifact: PendingArtifact;
-  onDismiss?: (artifactId: string) => void;
-}
-
-export function PendingArtifactCard({
-  artifact,
-  onDismiss,
-}: PendingArtifactCardProps) {
-  const navigate = useNavigate();
-  const location = useLocation();
-  const [isExpanded, setIsExpanded] = useState(false);
-  const [hasBeenOpened, setHasBeenOpened] = useState(false);
-
-  // Check if we're on the strategy builder page
-  const isOnBuilderPage = location.pathname.includes('/strategies/builder') ||
-    (location.pathname.startsWith('/strategies/') && location.pathname !== '/strategies');
-
-  // Get builder store actions for when on builder page
-  const { saveStrategy, isDirty, saving, strategyId } = useStrategyBuilderStore();
-
-  // Parse the preview JSON
-  let preview: StrategyPreview | null = null;
-  try {
-    preview = JSON.parse(artifact.previewJson) as StrategyPreview;
-  } catch {
-    // Invalid JSON
-  }
-
-  // Format DSL code with proper indentation
-  const formattedDSL = useMemo(() => {
-    if (!preview?.dsl_code) return '';
-    return formatDSL(preview.dsl_code);
-  }, [preview?.dsl_code]);
-
-  const handleOpenInBuilder = () => {
-    if (!preview?.dsl_code) return;
-
-    setHasBeenOpened(true);
-
-    // Navigate to builder with artifact ID - strategy survives page refresh
-    navigate(`/strategies/builder?artifact=${artifact.id}`);
-  };
-
-  const handleSaveStrategy = async () => {
-    await saveStrategy();
-  };
-
-  const handleRunBacktest = () => {
-    // Navigate to backtest page
-    if (strategyId) {
-      navigate(`/backtest?strategy=${strategyId}`);
-    } else {
-      navigate('/backtest');
-    }
-  };
-
-  const isStrategy = artifact.artifactType === ArtifactType.STRATEGY;
-  const isCommitted = artifact.isCommitted;
-  const showOpenedState = hasBeenOpened || isOnBuilderPage;
-
-  return (
-    <div className={`rounded-lg border overflow-hidden ${
-      showOpenedState
-        ? 'border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-900/10'
-        : 'border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-900/10'
-    }`}>
-      {/* Header */}
-      <div className={`flex items-center justify-between px-3 py-2 border-b ${
-        showOpenedState
-          ? 'border-green-200 dark:border-green-800'
-          : 'border-blue-200 dark:border-blue-800'
-      }`}>
-        <div className="flex items-center gap-2">
-          <FileCode2 className={`w-4 h-4 ${showOpenedState ? 'text-green-500' : 'text-blue-500'}`} />
-          <span className="font-medium text-sm text-gray-900 dark:text-gray-100">
-            {artifact.name}
-          </span>
-          {isStrategy && !showOpenedState && (
-            <span className="px-1.5 py-0.5 text-[10px] uppercase tracking-wide font-medium rounded bg-blue-200 dark:bg-blue-800 text-blue-700 dark:text-blue-300">
-              Strategy
-            </span>
-          )}
-          {showOpenedState && (
-            <span className="flex items-center gap-1 px-1.5 py-0.5 text-[10px] uppercase tracking-wide font-medium rounded bg-green-200 dark:bg-green-800 text-green-700 dark:text-green-300">
-              <CheckCircle2 className="w-3 h-3" />
-              In Builder
-            </span>
-          )}
-        </div>
-
-        {/* Actions */}
-        <div className="flex items-center gap-1">
-          {!isCommitted && !showOpenedState && (
-            <>
-              <button
-                onClick={handleOpenInBuilder}
-                disabled={!preview?.dsl_code}
-                className="flex items-center gap-1 px-2 py-1 text-xs font-medium rounded text-white disabled:opacity-50 transition-all"
-                style={{
-                  background: 'linear-gradient(90deg, #2563EB 0%, #0891B2 100%)',
-                }}
-              >
-                <ExternalLink className="w-3 h-3" />
-                Open
-              </button>
-              {onDismiss && (
-                <button
-                  onClick={() => onDismiss(artifact.id)}
-                  className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
-                  title="Dismiss"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              )}
-            </>
-          )}
-          {!isCommitted && showOpenedState && (
-            <>
-              <button
-                onClick={handleSaveStrategy}
-                disabled={!isDirty || saving}
-                className="flex items-center gap-1 px-2 py-1 text-xs font-medium rounded bg-green-600 hover:bg-green-700 text-white disabled:opacity-50 transition-all"
-              >
-                <Save className="w-3 h-3" />
-                {saving ? 'Saving...' : 'Save'}
-              </button>
-              <button
-                onClick={handleRunBacktest}
-                className="flex items-center gap-1 px-2 py-1 text-xs font-medium rounded bg-purple-600 hover:bg-purple-700 text-white transition-all"
-              >
-                <FlaskConical className="w-3 h-3" />
-                Backtest
-              </button>
-              {onDismiss && (
-                <button
-                  onClick={() => onDismiss(artifact.id)}
-                  className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
-                  title="Dismiss"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              )}
-            </>
-          )}
-          {isCommitted && (
-            <a
-              href={`/strategies/${artifact.committedResourceId}`}
-              className="flex items-center gap-1 px-2 py-1 text-xs font-medium rounded bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400"
-            >
-              <Check className="w-3 h-3" />
-              Saved
-              <ExternalLink className="w-3 h-3" />
-            </a>
-          )}
-          <button
-            onClick={() => setIsExpanded(!isExpanded)}
-            className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
-          >
-            {isExpanded ? (
-              <ChevronUp className="w-4 h-4" />
-            ) : (
-              <ChevronDown className="w-4 h-4" />
-            )}
-          </button>
-        </div>
-      </div>
-
-      {/* Collapsed preview - show formatted code with more lines */}
-      {!isExpanded && formattedDSL && (
-        <pre className="px-3 py-2 text-xs text-gray-600 dark:text-gray-400 font-mono whitespace-pre-wrap max-h-24 overflow-hidden">
-          {formattedDSL}
-        </pre>
-      )}
-
-      {/* Expanded preview */}
-      {isExpanded && preview && (
-        <div className="p-3 space-y-3">
-          {artifact.description && (
-            <p className="text-sm text-gray-600 dark:text-gray-400">
-              {artifact.description}
-            </p>
-          )}
-
-          {formattedDSL && (
-            <div>
-              <div className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">
-                DSL Code
-              </div>
-              <pre className="p-3 rounded bg-gray-100 dark:bg-gray-800 text-xs font-mono text-gray-800 dark:text-gray-200 overflow-x-auto max-h-64 overflow-y-auto whitespace-pre-wrap">
-                {formattedDSL}
-              </pre>
-            </div>
-          )}
-
-          {preview.symbols && preview.symbols.length > 0 && (
-            <div>
-              <div className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">
-                Symbols
-              </div>
-              <div className="flex flex-wrap gap-1">
-                {preview.symbols.map((symbol) => (
-                  <span
-                    key={symbol}
-                    className="px-1.5 py-0.5 text-xs font-mono rounded bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300"
-                  >
-                    {symbol}
-                  </span>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
+// Lazy so the shared viewer stays in one chunk (the drawer lazy-loads it too).
+const DslCodeBlock = lazy(() => import('../strategies/DslCodeBlock'));
 
 interface StrategyPreview {
   name?: string;
@@ -307,4 +15,173 @@ interface StrategyPreview {
   dsl_code?: string;
   symbols?: string[];
   timeframe?: string;
+}
+
+interface PendingArtifactCardProps {
+  artifact: PendingArtifact;
+}
+
+/**
+ * Pretty-print DSL from scratch, since the agent stores the LLM's raw (often
+ * inconsistently indented) text. Each nested list starts on its own line at its
+ * paren depth; the list head and its inline atoms/`:params` stay on that line.
+ * Depth tracks every paren (open + close), so indentation can't drift.
+ */
+function formatDSL(code: string): string {
+  const tokens = code.match(/"(?:[^"\\]|\\.)*"|;[^\n]*|[()]|[^\s()]+/g);
+  if (!tokens) return code.trim();
+
+  let out = '';
+  let depth = 0;
+  let prevWasOpen = false;
+
+  for (const tok of tokens) {
+    if (tok === '(') {
+      if (out !== '') out += '\n' + '  '.repeat(depth);
+      out += '(';
+      depth++;
+      prevWasOpen = true;
+    } else if (tok === ')') {
+      depth = Math.max(0, depth - 1);
+      out += ')';
+      prevWasOpen = false;
+    } else {
+      out += prevWasOpen ? tok : ` ${tok}`;
+      prevWasOpen = false;
+    }
+  }
+  return out.trim();
+}
+
+/** Build the "REBALANCE MONTHLY · BENCHMARK SPY · N ASSETS" meta line from real data. */
+function buildMeta(dsl: string, preview: StrategyPreview | null): string {
+  const parts: string[] = [];
+  const rebalance = dsl.match(/:rebalance\s+([A-Za-z-]+)/)?.[1];
+  const benchmark = dsl.match(/:benchmark\s+([A-Za-z0-9]+)/)?.[1];
+  if (rebalance) parts.push(`rebalance ${rebalance}`);
+  if (benchmark) parts.push(`benchmark ${benchmark}`);
+  const assetCount = (dsl.match(/\(asset\b/g) || []).length || preview?.symbols?.length || 0;
+  if (assetCount > 0) parts.push(`${assetCount} assets`);
+  if (parts.length === 0 && preview?.timeframe) parts.push(preview.timeframe);
+  return parts.join(' · ');
+}
+
+export function PendingArtifactCard({ artifact }: PendingArtifactCardProps) {
+  const navigate = useNavigate();
+  const commitArtifact = useAgentStore((s) => s.commitArtifact);
+  const [saved, setSaved] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [failed, setFailed] = useState(false);
+
+  const preview = useMemo<StrategyPreview | null>(() => {
+    try {
+      return JSON.parse(artifact.previewJson) as StrategyPreview;
+    } catch {
+      return null;
+    }
+  }, [artifact.previewJson]);
+
+  const formattedDSL = useMemo(() => (preview?.dsl_code ? formatDSL(preview.dsl_code) : ''), [preview?.dsl_code]);
+  const meta = useMemo(() => buildMeta(formattedDSL, preview), [formattedDSL, preview]);
+
+  const isStrategy = artifact.artifactType === ArtifactType.STRATEGY;
+  const isSaved = artifact.isCommitted || saved;
+
+  const handleOpenInBuilder = () => {
+    if (!preview?.dsl_code) return;
+    navigate(`/strategies/builder?artifact=${artifact.id}`);
+  };
+
+  const handleBacktest = () => {
+    if (artifact.committedResourceId) {
+      navigate(`/backtest?strategy=${artifact.committedResourceId}`);
+    } else {
+      navigate('/backtest');
+    }
+  };
+
+  // Commit the draft into a real strategy server-side (single source of truth).
+  const handleSave = async () => {
+    if (isSaved || saving) return;
+    setSaving(true);
+    setFailed(false);
+    const id = await commitArtifact(artifact.id);
+    setSaving(false);
+    if (id) setSaved(true);
+    else setFailed(true);
+  };
+
+  return (
+    <div className="w-full min-w-0 max-w-full border-2 border-ink bg-paper shadow-[4px_4px_0_rgb(var(--lt-ink))]">
+      {/* Header */}
+      <div className="flex items-center gap-2.5 border-b-2 border-ink bg-bone px-3.5 py-2.5">
+        <span className="flex items-center gap-1.5 font-mono text-[10px] font-bold uppercase tracking-[0.12em] text-ink/50">
+          <Sparkles className="h-3 w-3 text-orange-500" />
+          {isStrategy ? 'Strategy' : 'Artifact'}
+        </span>
+        <span className="text-sm font-black tracking-tight text-ink">{artifact.name || 'Strategy'}</span>
+        <span
+          className={`ml-auto border-2 border-ink px-2 py-0.5 font-mono text-[9px] font-bold uppercase tracking-[0.08em] ${
+            isSaved ? 'bg-green-600 text-bone' : 'bg-orange-500 text-ink'
+          }`}
+        >
+          {isSaved ? 'Saved' : 'Draft'}
+        </span>
+      </div>
+
+      {/* Meta line */}
+      {meta && (
+        <div className="px-3.5 pt-2.5 font-mono text-[10.5px] uppercase tracking-[0.03em] text-ink/55">{meta}</div>
+      )}
+
+      {/* Dark-terminal DSL — shared read-only viewer (same highlighter as the builder/drawer) */}
+      {formattedDSL ? (
+        <Suspense fallback={<div className="mx-3.5 mb-3.5 mt-2.5 h-24 border-2 border-ink bg-ink" />}>
+          <DslCodeBlock code={formattedDSL} className="mx-3.5 mb-3.5 mt-2.5 border-2 border-ink" />
+        </Suspense>
+      ) : (
+        artifact.description && <p className="px-3.5 py-3 text-sm text-ink/70">{artifact.description}</p>
+      )}
+
+      {/* Actions */}
+      <div className="flex flex-wrap gap-2.5 border-t-2 border-ink px-3.5 py-3">
+        <button
+          onClick={handleOpenInBuilder}
+          disabled={!preview?.dsl_code}
+          className="flex items-center gap-1.5 border-2 border-ink bg-orange-500 px-3 py-2 font-mono text-[11px] font-bold uppercase tracking-[0.04em] text-ink shadow-[3px_3px_0_rgb(var(--lt-ink))] transition-all hover:bg-orange-600 disabled:opacity-40 disabled:shadow-none"
+        >
+          <LayoutGrid className="h-3.5 w-3.5" />
+          Open in builder
+        </button>
+        <button
+          onClick={handleBacktest}
+          className="flex items-center gap-1.5 border-2 border-ink bg-paper px-3 py-2 font-mono text-[11px] font-bold uppercase tracking-[0.04em] text-ink shadow-[3px_3px_0_rgb(var(--lt-ink))] transition-all hover:bg-bone"
+        >
+          <Play className="h-3.5 w-3.5" />
+          Backtest
+        </button>
+        <button
+          onClick={handleSave}
+          disabled={isSaved || saving || !preview?.dsl_code}
+          title={failed ? 'Saving failed — click to retry' : undefined}
+          className={`flex items-center gap-1.5 border-2 px-3 py-2 font-mono text-[11px] font-bold uppercase tracking-[0.04em] shadow-[3px_3px_0_rgb(var(--lt-ink))] transition-all disabled:opacity-40 disabled:shadow-none ${
+            failed && !saving && !isSaved
+              ? 'border-red-600 bg-red-50 text-red-700 hover:bg-red-100'
+              : 'border-ink bg-paper text-ink hover:bg-bone'
+          }`}
+        >
+          {saving ? (
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          ) : isSaved ? (
+            <Check className="h-3.5 w-3.5" />
+          ) : failed ? (
+            <AlertTriangle className="h-3.5 w-3.5" />
+          ) : (
+            <FlaskConical className="h-3.5 w-3.5" />
+          )}
+          {isSaved ? 'Saved' : saving ? 'Saving…' : failed ? 'Retry save' : 'Save'}
+        </button>
+      </div>
+    </div>
+  );
 }

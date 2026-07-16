@@ -70,11 +70,11 @@ export default function SubscriptionStatus({
   const isYearly = subscription.interval === BillingInterval.YEARLY;
 
   return (
-    <div className="rounded-lg border border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-900">
+    <div className="border-2 border-ink bg-paper p-6 dark:border-gray-700 dark:bg-gray-900">
       <div className="flex items-start justify-between">
         <div>
           <div className="flex items-center gap-3">
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+            <h3 className="text-lg font-display uppercase tracking-tight text-ink">
               {planName} Plan
             </h3>
             <StatusBadge status={statusStr} cancelling={isCancelling} />
@@ -87,25 +87,24 @@ export default function SubscriptionStatus({
         </div>
 
         <div className="text-right">
-          <p className="text-sm text-gray-500 dark:text-gray-400">
+          <p className="text-[11px] font-mono uppercase tracking-wide text-ink/50">
             {isCancelling ? 'Cancels on' : 'Next billing date'}
           </p>
-          <p className="font-medium text-gray-900 dark:text-gray-100">
+          <p className="font-medium text-ink dark:text-gray-100">
             {formatDate(subscription.currentPeriodEnd)}
           </p>
         </div>
       </div>
 
-      {/* Trial status */}
       {isTrialing && subscription.trialEnd && (
-        <div className="mt-4 rounded-lg bg-amber-50 p-4 dark:bg-amber-900/20">
+        <div className="mt-4 border-2 border-ink bg-orange-50 p-4 dark:bg-amber-900/20">
           <div className="flex items-center gap-2">
-            <Clock className="h-5 w-5 text-amber-600 dark:text-amber-400" />
-            <span className="font-medium text-amber-700 dark:text-amber-400">
+            <Clock className="h-5 w-5 text-orange-600 dark:text-amber-400" />
+            <span className="font-medium text-orange-700 dark:text-amber-400">
               Trial Period Active
             </span>
           </div>
-          <p className="mt-1 text-sm text-amber-600 dark:text-amber-400">
+          <p className="mt-1 text-sm text-orange-700 dark:text-amber-400">
             Your trial ends on {formatDate(subscription.trialEnd)}.
             {trialDaysRemaining > 0
               ? ` ${trialDaysRemaining} day${trialDaysRemaining === 1 ? '' : 's'} remaining.`
@@ -114,9 +113,8 @@ export default function SubscriptionStatus({
         </div>
       )}
 
-      {/* Past due warning */}
       {isPastDue && (
-        <div className="mt-4 rounded-lg bg-red-50 p-4 dark:bg-red-900/20">
+        <div className="mt-4 border-2 border-red-500 bg-red-50 p-4 dark:bg-red-900/20">
           <div className="flex items-center gap-2">
             <AlertTriangle className="h-5 w-5 text-red-600 dark:text-red-400" />
             <span className="font-medium text-red-700 dark:text-red-400">Payment Failed</span>
@@ -127,12 +125,11 @@ export default function SubscriptionStatus({
         </div>
       )}
 
-      {/* Cancellation notice */}
       {isCancelling && (
-        <div className="mt-4 rounded-lg bg-gray-100 p-4 dark:bg-gray-800">
+        <div className="mt-4 border-2 border-ink bg-bone p-4 dark:bg-gray-800">
           <div className="flex items-center gap-2">
-            <Calendar className="h-5 w-5 text-gray-600 dark:text-gray-400" />
-            <span className="font-medium text-gray-700 dark:text-gray-300">
+            <Calendar className="h-5 w-5 text-ink/60 dark:text-gray-400" />
+            <span className="font-medium text-ink dark:text-gray-300">
               Subscription Cancelled
             </span>
           </div>
@@ -143,13 +140,12 @@ export default function SubscriptionStatus({
         </div>
       )}
 
-      {/* Actions */}
       <div className="mt-6 flex items-center gap-3">
         {isCancelling ? (
           <button
             onClick={onReactivate}
             disabled={loading}
-            className="flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
+            className="btn btn-primary"
           >
             <RefreshCw className="h-4 w-4" />
             Reactivate Subscription
@@ -158,7 +154,7 @@ export default function SubscriptionStatus({
           <button
             onClick={onCancel}
             disabled={loading}
-            className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-800 disabled:opacity-50"
+            className="btn btn-secondary"
           >
             Cancel Subscription
           </button>
@@ -177,7 +173,7 @@ function StatusBadge({
 }) {
   if (cancelling) {
     return (
-      <span className="rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-medium text-gray-600 dark:bg-gray-800 dark:text-gray-400">
+      <span className="badge badge-gray">
         Cancelling
       </span>
     );
@@ -186,25 +182,25 @@ function StatusBadge({
   switch (status) {
     case 'active':
       return (
-        <span className="rounded-full bg-green-100 px-2.5 py-0.5 text-xs font-medium text-green-700 dark:bg-green-900/30 dark:text-green-400">
+        <span className="badge badge-success">
           Active
         </span>
       );
     case 'trialing':
       return (
-        <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-medium text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
+        <span className="badge bg-orange-500 text-ink">
           Trial
         </span>
       );
     case 'past_due':
       return (
-        <span className="rounded-full bg-red-100 px-2.5 py-0.5 text-xs font-medium text-red-700 dark:bg-red-900/30 dark:text-red-400">
+        <span className="badge badge-danger">
           Past Due
         </span>
       );
     case 'cancelled':
       return (
-        <span className="rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-medium text-gray-600 dark:bg-gray-800 dark:text-gray-400">
+        <span className="badge badge-gray">
           Cancelled
         </span>
       );

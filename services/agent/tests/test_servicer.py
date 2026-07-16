@@ -14,11 +14,20 @@ from connectrpc.errors import ConnectError
 from llamatrade_proto.generated import agent_pb2, common_pb2
 from llamatrade_proto.generated.agent_pb2 import (
     AGENT_SESSION_STATUS_ACTIVE,
+    MESSAGE_ROLE_ASSISTANT,
     MESSAGE_ROLE_USER,
+    STREAM_EVENT_TYPE_ARTIFACT_CREATED,
+    STREAM_EVENT_TYPE_COMPLETE,
+    STREAM_EVENT_TYPE_CONTENT_DELTA,
     STREAM_EVENT_TYPE_ERROR,
 )
 
-from src.grpc.servicer import AgentServicer, _validate_tenant_context
+from src.grpc.servicer import (
+    HISTORY_MESSAGE_LIMIT,
+    AgentServicer,
+    _history_from_messages,
+    _validate_tenant_context,
+)
 
 # =============================================================================
 # Helper Functions
@@ -299,6 +308,238 @@ class TestStreamMessage:
                 pass
 
         assert exc_info.value.code == Code.UNAUTHENTICATED
+
+    @pytest.mark.asyncio
+    async def test_stream_message_replays_history_and_single_writes(
+        self,
+        mock_request_context: MagicMock,
+        tenant_id: UUID,
+        user_id: UUID,
+    ) -> None:
+        """Prior turns are loaded before the user write and replayed; the
+        assistant message is written exactly once with artifact links."""
+        servicer = AgentServicer()
+        session_uuid = uuid4()
+
+        # Prior conversation returned by get_recent_messages (excludes the new turn).
+        prior = [
+            make_mock_message(role=MESSAGE_ROLE_USER, content="Earlier question"),
+            make_mock_message(role=MESSAGE_ROLE_ASSISTANT, content="Earlier answer"),
+        ]
+
+        mock_conv = MagicMock()
+        mock_conv.get_session = AsyncMock(return_value=make_mock_session(session_id=session_uuid))
+        mock_conv.get_recent_messages = AsyncMock(return_value=prior)
+        mock_conv.add_message = AsyncMock(return_value=make_mock_message())
+
+        # Draft artifact emitted mid-stream.
+        artifact = MagicMock()
+        artifact.id = uuid4()
+        artifact.session_id = session_uuid
+        artifact.artifact_type = 1
+        artifact.name = "Draft"
+        artifact.description = "d"
+        artifact.artifact_json = {}
+        artifact.is_committed = False
+        artifact.created_at = MagicMock()
+        artifact.created_at.timestamp.return_value = datetime.now(UTC).timestamp()
+
+        captured: dict[str, object] = {}
+
+        async def fake_stream(**kwargs: object):
+            captured["history"] = kwargs.get("history")
+            yield {"type": STREAM_EVENT_TYPE_CONTENT_DELTA, "delta": "Here you go"}
+            yield {"type": STREAM_EVENT_TYPE_ARTIFACT_CREATED, "artifact": artifact}
+            yield {"type": STREAM_EVENT_TYPE_COMPLETE, "session_id": str(session_uuid)}
+
+        mock_agent = MagicMock()
+        mock_agent.stream_message = fake_stream
+
+        request = agent_pb2.SendMessageRequest(
+            context=common_pb2.TenantContext(
+                tenant_id=str(tenant_id),
+                user_id=str(user_id),
+            ),
+            session_id=str(session_uuid),
+            content="Build me a strategy",
+        )
+
+        with (
+            patch.object(servicer, "_maker", return_value=MagicMock()),
+            patch("src.grpc.servicer.tenant_session", return_value=make_mock_db_session()),
+            patch(
+                "src.services.conversation_service.ConversationService",
+                return_value=mock_conv,
+            ),
+            patch("src.services.agent_service.AgentService", return_value=mock_agent),
+        ):
+            events = [e async for e in servicer.stream_message(request, mock_request_context)]
+
+        # History was loaded (windowed) and the converted prior turns were replayed —
+        # crucially WITHOUT the current user message.
+        mock_conv.get_recent_messages.assert_awaited_once_with(
+            session_uuid, limit=HISTORY_MESSAGE_LIMIT
+        )
+        assert captured["history"] == [
+            {"role": "user", "content": "Earlier question"},
+            {"role": "assistant", "content": "Earlier answer"},
+        ]
+
+        # Exactly two writes: the user turn and a single assistant turn (no double-write).
+        assert mock_conv.add_message.await_count == 2
+        user_call = mock_conv.add_message.await_args_list[0].kwargs
+        assistant_call = mock_conv.add_message.await_args_list[1].kwargs
+        assert user_call["role"] == MESSAGE_ROLE_USER
+        assert assistant_call["role"] == MESSAGE_ROLE_ASSISTANT
+        # The drafted artifact is linked to the stored assistant message.
+        assert assistant_call["inline_artifact_ids"] == [str(artifact.id)]
+
+        # The stream surfaced the artifact and completed.
+        assert any(e.event_type == STREAM_EVENT_TYPE_ARTIFACT_CREATED for e in events)
+        assert any(e.event_type == STREAM_EVENT_TYPE_COMPLETE for e in events)
+
+    @pytest.mark.asyncio
+    async def test_stream_message_degrades_when_history_load_fails(
+        self,
+        mock_request_context: MagicMock,
+        tenant_id: UUID,
+        user_id: UUID,
+    ) -> None:
+        """A history-load failure degrades to no history; the turn still completes."""
+        servicer = AgentServicer()
+        session_uuid = uuid4()
+
+        mock_conv = MagicMock()
+        mock_conv.get_session = AsyncMock(return_value=make_mock_session(session_id=session_uuid))
+        mock_conv.get_recent_messages = AsyncMock(side_effect=RuntimeError("db hiccup"))
+        mock_conv.add_message = AsyncMock(return_value=make_mock_message())
+
+        captured: dict[str, object] = {}
+
+        async def fake_stream(**kwargs: object):
+            captured["history"] = kwargs.get("history")
+            yield {"type": STREAM_EVENT_TYPE_COMPLETE, "session_id": str(session_uuid)}
+
+        mock_agent = MagicMock()
+        mock_agent.stream_message = fake_stream
+
+        request = agent_pb2.SendMessageRequest(
+            context=common_pb2.TenantContext(tenant_id=str(tenant_id), user_id=str(user_id)),
+            session_id=str(session_uuid),
+            content="Hello again",
+        )
+
+        with (
+            patch.object(servicer, "_maker", return_value=MagicMock()),
+            patch("src.grpc.servicer.tenant_session", return_value=make_mock_db_session()),
+            patch(
+                "src.services.conversation_service.ConversationService",
+                return_value=mock_conv,
+            ),
+            patch("src.services.agent_service.AgentService", return_value=mock_agent),
+        ):
+            events = [e async for e in servicer.stream_message(request, mock_request_context)]
+
+        # History degraded to empty, but the turn still ran and persisted both messages.
+        assert captured["history"] == []
+        assert any(e.event_type == STREAM_EVENT_TYPE_COMPLETE for e in events)
+        assert mock_conv.add_message.await_count == 2
+
+
+class TestConfirmToolCall:
+    """Tests for the ConfirmToolCall resume endpoint."""
+
+    @pytest.mark.asyncio
+    async def test_confirm_tool_call_resumes_and_single_writes(
+        self,
+        mock_request_context: MagicMock,
+        tenant_id: UUID,
+        user_id: UUID,
+    ) -> None:
+        """Approval threads the proposal to resume_with_tool and stores one
+        assistant message via the shared relay."""
+        servicer = AgentServicer()
+        session_uuid = uuid4()
+
+        mock_conv = MagicMock()
+        mock_conv.get_session = AsyncMock(return_value=make_mock_session(session_id=session_uuid))
+        mock_conv.get_recent_messages = AsyncMock(return_value=[])
+        mock_conv.add_message = AsyncMock(return_value=make_mock_message())
+
+        captured: dict[str, object] = {}
+
+        async def fake_resume(**kwargs: object):
+            captured.update(kwargs)
+            yield {"type": STREAM_EVENT_TYPE_CONTENT_DELTA, "delta": "Backtest started."}
+            yield {"type": STREAM_EVENT_TYPE_COMPLETE, "session_id": str(session_uuid)}
+
+        mock_agent = MagicMock()
+        mock_agent.resume_with_tool = fake_resume
+
+        request = agent_pb2.ConfirmToolCallRequest(
+            context=common_pb2.TenantContext(tenant_id=str(tenant_id), user_id=str(user_id)),
+            session_id=str(session_uuid),
+            confirmation_id="c1",
+            tool_name="run_backtest",
+            tool_arguments_json='{"strategy_id": "s1"}',
+            approved=True,
+        )
+
+        with (
+            patch.object(servicer, "_maker", return_value=MagicMock()),
+            patch("src.grpc.servicer.tenant_session", return_value=make_mock_db_session()),
+            patch(
+                "src.services.conversation_service.ConversationService",
+                return_value=mock_conv,
+            ),
+            patch("src.services.agent_service.AgentService", return_value=mock_agent),
+        ):
+            events = [e async for e in servicer.confirm_tool_call(request, mock_request_context)]
+
+        assert captured["approved"] is True
+        assert captured["tool_name"] == "run_backtest"
+        assert captured["arguments_json"] == '{"strategy_id": "s1"}'
+        assert mock_conv.add_message.await_count == 1
+        assert any(e.event_type == STREAM_EVENT_TYPE_COMPLETE for e in events)
+
+    @pytest.mark.asyncio
+    async def test_confirm_tool_call_requires_tool_name(
+        self,
+        mock_request_context: MagicMock,
+        tenant_id: UUID,
+        user_id: UUID,
+    ) -> None:
+        """A missing tool_name yields an ERROR event."""
+        servicer = AgentServicer()
+        request = agent_pb2.ConfirmToolCallRequest(
+            context=common_pb2.TenantContext(tenant_id=str(tenant_id), user_id=str(user_id)),
+            session_id=str(uuid4()),
+            approved=True,
+        )
+
+        events = [e async for e in servicer.confirm_tool_call(request, mock_request_context)]
+
+        assert len(events) == 1
+        assert events[0].event_type == STREAM_EVENT_TYPE_ERROR
+
+
+class TestHistoryFromMessages:
+    """Tests for the message → LLM-history conversion helper."""
+
+    def test_maps_roles_and_skips_empty(self) -> None:
+        """User/assistant roles map to strings; empty-content rows are dropped."""
+        messages = [
+            make_mock_message(role=MESSAGE_ROLE_USER, content="hi"),
+            make_mock_message(role=MESSAGE_ROLE_ASSISTANT, content="hello"),
+            make_mock_message(role=MESSAGE_ROLE_USER, content=""),
+        ]
+
+        history = _history_from_messages(messages)
+
+        assert history == [
+            {"role": "user", "content": "hi"},
+            {"role": "assistant", "content": "hello"},
+        ]
 
 
 # =============================================================================

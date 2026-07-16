@@ -58,9 +58,6 @@ __all__ = [
 ]
 
 
-# === Service-specific Request/Response Schemas ===
-
-
 class BarsRequest(BaseModel):
     """Request for historical bars."""
 

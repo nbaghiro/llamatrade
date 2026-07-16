@@ -11,7 +11,9 @@ from datetime import UTC, date, datetime
 from decimal import Decimal
 from uuid import UUID
 
-import grpc.aio
+from connectrpc.code import Code
+from connectrpc.errors import ConnectError
+from connectrpc.request import RequestContext
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from llamatrade_db import get_session_maker
@@ -21,6 +23,9 @@ from src.models import BacktestMetrics, BacktestResponse, BacktestResultResponse
 from src.services.backtest_service import BacktestService
 
 logger = logging.getLogger(__name__)
+
+# Connect handlers get a RequestContext (no .abort()); errors raise ConnectError.
+type AnyContext = RequestContext[object, object]
 
 # GetBacktest returns at most this many trades inline; the full log is paged via
 # GetBacktestTrades so a pathological trade count never bloats one response (14B).
@@ -92,10 +97,10 @@ class BacktestServicer:
         finally:
             await session.close()
 
-    async def RunBacktest(
+    async def run_backtest(
         self,
         request: backtest_pb2.RunBacktestRequest,
-        context: grpc.aio.ServicerContext[object, object],
+        context: AnyContext,
     ) -> backtest_pb2.RunBacktestResponse:
         """Start a new backtest run."""
         try:
@@ -128,7 +133,7 @@ class BacktestServicer:
                         slippage=float(Decimal(config.slippage_percent.value))
                         if config.HasField("slippage_percent")
                         else 0.0,
-                        # Phase 1 & 2: Timeframe and benchmark configuration
+                        # Timeframe and benchmark configuration
                         timeframe=config.timeframe if config.timeframe else None,
                         benchmark_symbol=config.benchmark_symbol
                         if config.benchmark_symbol
@@ -165,21 +170,17 @@ class BacktestServicer:
                     )
 
         except ValueError as e:
-            await context.abort(
-                grpc.StatusCode.INVALID_ARGUMENT,
-                str(e),
-            )
+            raise ConnectError(Code.INVALID_ARGUMENT, str(e)) from e
+        except ConnectError:
+            raise
         except Exception as e:
             logger.error("RunBacktest error: %s", e, exc_info=True)
-            await context.abort(
-                grpc.StatusCode.INTERNAL,
-                f"Failed to run backtest: {e}",
-            )
+            raise ConnectError(Code.INTERNAL, f"Failed to run backtest: {e}") from e
 
-    async def GetBacktest(
+    async def get_backtest(
         self,
         request: backtest_pb2.GetBacktestRequest,
-        context: grpc.aio.ServicerContext[object, object],
+        context: AnyContext,
     ) -> backtest_pb2.GetBacktestResponse:
         """Get a backtest by ID."""
         from llamatrade_proto.generated import backtest_pb2
@@ -196,11 +197,9 @@ class BacktestServicer:
                     )
 
                     if not backtest:
-                        await context.abort(
-                            grpc.StatusCode.NOT_FOUND,
-                            f"Backtest not found: {request.backtest_id}",
+                        raise ConnectError(
+                            Code.NOT_FOUND, f"Backtest not found: {request.backtest_id}"
                         )
-                        return backtest_pb2.GetBacktestResponse()  # Never reached
 
                     proto_backtest = self._to_proto_backtest(backtest)
 
@@ -216,19 +215,16 @@ class BacktestServicer:
 
                     return backtest_pb2.GetBacktestResponse(backtest=proto_backtest)
 
-        except grpc.aio.AioRpcError:
+        except ConnectError:
             raise
         except Exception as e:
             logger.error("GetBacktest error: %s", e, exc_info=True)
-            await context.abort(
-                grpc.StatusCode.INTERNAL,
-                f"Failed to get backtest: {e}",
-            )
+            raise ConnectError(Code.INTERNAL, f"Failed to get backtest: {e}") from e
 
-    async def ListBacktests(
+    async def list_backtests(
         self,
         request: backtest_pb2.ListBacktestsRequest,
-        context: grpc.aio.ServicerContext[object, object],
+        context: AnyContext,
     ) -> backtest_pb2.ListBacktestsResponse:
         """List backtests for a tenant."""
         from llamatrade_proto.generated import backtest_pb2, common_pb2
@@ -273,15 +269,12 @@ class BacktestServicer:
 
         except Exception as e:
             logger.error("ListBacktests error: %s", e, exc_info=True)
-            await context.abort(
-                grpc.StatusCode.INTERNAL,
-                f"Failed to list backtests: {e}",
-            )
+            raise ConnectError(Code.INTERNAL, f"Failed to list backtests: {e}") from e
 
-    async def CancelBacktest(
+    async def cancel_backtest(
         self,
         request: backtest_pb2.CancelBacktestRequest,
-        context: grpc.aio.ServicerContext[object, object],
+        context: AnyContext,
     ) -> backtest_pb2.CancelBacktestResponse:
         """Cancel a running backtest."""
         from llamatrade_proto.generated import backtest_pb2
@@ -302,11 +295,7 @@ class BacktestServicer:
                     )
 
                     if not success:
-                        await context.abort(
-                            grpc.StatusCode.FAILED_PRECONDITION,
-                            "Cannot cancel backtest",
-                        )
-                        return backtest_pb2.CancelBacktestResponse()  # Never reached
+                        raise ConnectError(Code.FAILED_PRECONDITION, "Cannot cancel backtest")
 
                     backtest = await service.get_backtest(
                         backtest_id=backtest_id,
@@ -314,29 +303,22 @@ class BacktestServicer:
                     )
 
                     if not backtest:
-                        await context.abort(
-                            grpc.StatusCode.NOT_FOUND,
-                            f"Backtest not found: {backtest_id}",
-                        )
-                        return backtest_pb2.CancelBacktestResponse()  # Never reached
+                        raise ConnectError(Code.NOT_FOUND, f"Backtest not found: {backtest_id}")
 
                     return backtest_pb2.CancelBacktestResponse(
                         backtest=self._to_proto_backtest(backtest),
                     )
 
-        except grpc.aio.AioRpcError:
+        except ConnectError:
             raise
         except Exception as e:
             logger.error("CancelBacktest error: %s", e, exc_info=True)
-            await context.abort(
-                grpc.StatusCode.INTERNAL,
-                f"Failed to cancel backtest: {e}",
-            )
+            raise ConnectError(Code.INTERNAL, f"Failed to cancel backtest: {e}") from e
 
-    async def StreamBacktestProgress(
+    async def stream_backtest_progress(
         self,
         request: backtest_pb2.StreamBacktestProgressRequest,
-        context: grpc.aio.ServicerContext[object, object],
+        context: AnyContext,
     ) -> AsyncIterator[backtest_pb2.BacktestProgressUpdate]:
         """Stream backtest progress updates via Redis pub/sub."""
         from llamatrade_proto.generated import backtest_pb2, common_pb2
@@ -374,11 +356,7 @@ class BacktestServicer:
                     )
 
                     if not backtest:
-                        await context.abort(
-                            grpc.StatusCode.NOT_FOUND,
-                            f"Backtest not found: {backtest_id}",
-                        )
-                        return
+                        raise ConnectError(Code.NOT_FOUND, f"Backtest not found: {backtest_id}")
 
                     # Send initial status (backtest.status is already proto ValueType).
                     # Progress is derivable from status (terminal=100 if completed),
@@ -405,9 +383,6 @@ class BacktestServicer:
             # progress number is wrong: failed runs also publish progress=100 and
             # would be reported as COMPLETED.
             async for update in subscriber.tail(backtest_id):
-                if context.cancelled():
-                    break
-
                 if update.status == backtest_pb2.BACKTEST_STATUS_UNSPECIFIED:
                     update.status = backtest_pb2.BACKTEST_STATUS_RUNNING
 
@@ -421,10 +396,10 @@ class BacktestServicer:
         finally:
             await subscriber.close()
 
-    async def CompareBacktests(
+    async def compare_backtests(
         self,
         request: backtest_pb2.CompareBacktestsRequest,
-        context: grpc.aio.ServicerContext[object, object],
+        context: AnyContext,
     ) -> backtest_pb2.CompareBacktestsResponse:
         """Compare multiple backtests."""
         from llamatrade_proto.generated import backtest_pb2
@@ -463,15 +438,12 @@ class BacktestServicer:
 
         except Exception as e:
             logger.error("CompareBacktests error: %s", e, exc_info=True)
-            await context.abort(
-                grpc.StatusCode.INTERNAL,
-                f"Failed to compare backtests: {e}",
-            )
+            raise ConnectError(Code.INTERNAL, f"Failed to compare backtests: {e}") from e
 
-    async def GetBacktestTrades(
+    async def get_backtest_trades(
         self,
         request: backtest_pb2.GetBacktestTradesRequest,
-        context: grpc.aio.ServicerContext[object, object],
+        context: AnyContext,
     ) -> backtest_pb2.GetBacktestTradesResponse:
         """Return a page of a completed backtest's trades (14B)."""
         from llamatrade_proto.generated import backtest_pb2, common_pb2
@@ -509,13 +481,12 @@ class BacktestServicer:
             )
 
         except ValueError as e:
-            await context.abort(grpc.StatusCode.INVALID_ARGUMENT, str(e))
+            raise ConnectError(Code.INVALID_ARGUMENT, str(e)) from e
+        except ConnectError:
+            raise
         except Exception as e:
             logger.error("GetBacktestTrades error: %s", e, exc_info=True)
-            await context.abort(
-                grpc.StatusCode.INTERNAL,
-                f"Failed to fetch trades: {e}",
-            )
+            raise ConnectError(Code.INTERNAL, f"Failed to fetch trades: {e}") from e
 
     def _to_proto_metrics(self, m: BacktestMetrics) -> backtest_pb2.BacktestMetrics:
         """Convert internal metrics to proto BacktestMetrics."""
@@ -670,12 +641,3 @@ class BacktestServicer:
             )
 
         return proto
-
-    # Connect protocol expects snake_case method names
-    # These aliases provide compatibility with both gRPC and Connect
-    run_backtest = RunBacktest
-    get_backtest = GetBacktest
-    list_backtests = ListBacktests
-    cancel_backtest = CancelBacktest
-    stream_backtest_progress = StreamBacktestProgress
-    compare_backtests = CompareBacktests

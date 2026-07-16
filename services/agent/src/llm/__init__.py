@@ -9,10 +9,16 @@ from src.llm.client import (
     StreamEvent,
     StreamEventType,
     ToolCall,
+    create_llm_client,
+    default_model,
+    fast_model,
+    get_provider,
 )
+from src.llm.gemini import GeminiClient
 
 __all__ = [
     "AnthropicClient",
+    "GeminiClient",
     "LLMClient",
     "LLMConfig",
     "LLMResponse",
@@ -20,4 +26,8 @@ __all__ = [
     "StreamEvent",
     "StreamEventType",
     "ToolCall",
+    "create_llm_client",
+    "default_model",
+    "fast_model",
+    "get_provider",
 ]

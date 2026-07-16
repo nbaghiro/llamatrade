@@ -198,25 +198,14 @@ class TestMarketDataClientInit:
     """Tests for MarketDataClient initialization."""
 
     def test_init_default_target(self):
-        """Test default target initialization."""
-        with patch("grpc.aio.insecure_channel") as mock_channel:
-            mock_channel.return_value = MagicMock()
-            client = MarketDataClient()
-            # Channel is created lazily, so access the property to trigger creation
-            _ = client.channel
-            mock_channel.assert_called()
-            call_args = mock_channel.call_args[0][0]
-            assert call_args == "market-data:8840"
+        """Default target is normalized to an absolute Connect URL."""
+        client = MarketDataClient()
+        assert client.target == "http://market-data:8840"
 
     def test_init_custom_target(self):
-        """Test custom target initialization."""
-        with patch("grpc.aio.insecure_channel") as mock_channel:
-            mock_channel.return_value = MagicMock()
-            client = MarketDataClient(target="custom-host:9999")
-            # Channel is created lazily, so access the property to trigger creation
-            _ = client.channel
-            call_args = mock_channel.call_args[0][0]
-            assert call_args == "custom-host:9999"
+        """Custom target is normalized to an absolute Connect URL."""
+        client = MarketDataClient(target="custom-host:9999")
+        assert client.target == "http://custom-host:9999"
 
 
 class TestBarDataclass:

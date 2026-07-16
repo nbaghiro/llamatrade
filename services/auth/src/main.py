@@ -20,7 +20,6 @@ from llamatrade_telemetry import init_telemetry
 
 logger = logging.getLogger(__name__)
 
-# Configuration
 CORS_ORIGINS = os.getenv(
     "CORS_ORIGINS", "http://localhost:8800,http://localhost:3000,http://localhost:47333"
 ).split(",")
@@ -29,14 +28,12 @@ CORS_ORIGINS = os.getenv(
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     """Application lifespan handler."""
-    # Startup
     try:
         await init_db()
     except Exception as e:
         # Log but don't fail - allows testing without database
         logger.warning("Database initialization failed (non-critical): %s", e)
 
-    # Mount Connect ASGI app
     try:
         from llamatrade_proto.generated.auth_connect import AuthServiceASGIApplication
 
@@ -51,7 +48,6 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
 
     yield
 
-    # Shutdown
     await close_db()
 
 

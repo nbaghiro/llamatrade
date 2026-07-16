@@ -280,7 +280,7 @@ class TestE2ELifecycle:
         context = MockServicerContext()
 
         # 1. RunBacktest creates the backtest AND triggers execution
-        run_response = await servicer.RunBacktest(make_run_request(), context)
+        run_response = await servicer.run_backtest(make_run_request(), context)
         backtest_id = run_response.backtest.id
         assert backtest_id
 
@@ -293,7 +293,7 @@ class TestE2ELifecycle:
         assert store.result is not None, "No BacktestResult row was persisted"
 
         # 2. GetBacktest returns the run WITH populated results
-        get_response = await servicer.GetBacktest(
+        get_response = await servicer.get_backtest(
             backtest_pb2.GetBacktestRequest(
                 context=common_pb2.TenantContext(tenant_id=str(TEST_TENANT_ID)),
                 backtest_id=str(store.backtest.id),
@@ -321,7 +321,7 @@ class TestE2ELifecycle:
         patch_worker_dependencies(monkeypatch, store, make_fake_market_client(fail=True))
         context = MockServicerContext()
 
-        await servicer.RunBacktest(make_run_request(), context)
+        await servicer.run_backtest(make_run_request(), context)
 
         assert store.backtest is not None
         assert store.backtest.status == BACKTEST_STATUS_FAILED
@@ -347,7 +347,7 @@ class TestE2ELifecycle:
         monkeypatch.setattr(servicer, "_get_db", fake_get_db)
         patch_worker_dependencies(monkeypatch, store, make_fake_market_client())
 
-        await servicer.RunBacktest(make_run_request(), MockServicerContext())
+        await servicer.run_backtest(make_run_request(), MockServicerContext())
 
         assert store.backtest is not None
         assert store.backtest.status == backtest_pb2.BACKTEST_STATUS_CANCELLED
@@ -375,7 +375,7 @@ class TestE2ELifecycle:
         store.backtest.id = uuid4()
         store.backtest.created_at = datetime.now(UTC)
 
-        get_response = await servicer.GetBacktest(
+        get_response = await servicer.get_backtest(
             backtest_pb2.GetBacktestRequest(
                 context=common_pb2.TenantContext(tenant_id=str(TEST_TENANT_ID)),
                 backtest_id=str(store.backtest.id),

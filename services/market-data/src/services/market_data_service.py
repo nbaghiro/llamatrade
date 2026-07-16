@@ -12,7 +12,7 @@ from src.cache import (
     MarketDataCache,
     get_cache,
 )
-from src.models import Bar, Quote, Snapshot, Timeframe
+from src.models import Bar, Quote, Snapshot, Timeframe, Trade
 from src.store.intervals import subtract
 from src.store.models import (
     AGGREGATE_RELATION_BY_TIMEFRAME,
@@ -86,8 +86,6 @@ class MarketDataService:
         self._cache = cache
         self._store = store
 
-    # === Historical Bars ===
-
     async def get_bars(
         self,
         symbol: str,
@@ -139,9 +137,21 @@ class MarketDataService:
 
         fetched: list[Bar] = []
         for gap_start, gap_end in gaps:
-            bars = await self._alpaca.get_bars(
-                symbol=symbol, timeframe=timeframe, start=gap_start, end=gap_end, limit=limit
-            )
+            try:
+                bars = await self._alpaca.get_bars(
+                    symbol=symbol, timeframe=timeframe, start=gap_start, end=gap_end, limit=limit
+                )
+            except Exception:
+                # Serve stored bars if the live gap fetch fails (creds/outage) rather than 500 the whole read.
+                logger.warning(
+                    "Alpaca gap fetch failed for %s %s [%s, %s); serving stored bars",
+                    symbol,
+                    tf,
+                    gap_start,
+                    gap_end,
+                    exc_info=True,
+                )
+                continue
             if not bars:
                 continue
             fetched.extend(bars)
@@ -216,12 +226,10 @@ class MarketDataService:
 
         # Check cache for all symbols in one round-trip (unless refresh requested)
         if self._cache and not refresh:
-            # Build key -> symbol mapping
             key_to_symbol = {
                 MarketDataCache.bars_key(symbol, timeframe, start, end, limit): symbol
                 for symbol in symbols
             }
-            # Batch fetch from cache
             cached_values = await self._cache.mget(list(key_to_symbol.keys()))
             for key, value in cached_values.items():
                 symbol = key_to_symbol[key]
@@ -232,7 +240,6 @@ class MarketDataService:
         else:
             symbols_to_fetch = symbols
 
-        # Fetch remaining from Alpaca
         if symbols_to_fetch:
             fetched = await self._alpaca.get_multi_bars(
                 symbols=symbols_to_fetch,
@@ -242,7 +249,6 @@ class MarketDataService:
                 limit=limit,
             )
 
-            # Cache and merge results
             for symbol, bars in fetched.items():
                 result[symbol] = bars
                 if self._cache and bars:
@@ -253,8 +259,6 @@ class MarketDataService:
 
         return result
 
-    # === Latest Bar ===
-
     async def get_latest_bar(
         self,
         symbol: str,
@@ -263,25 +267,20 @@ class MarketDataService:
         """Get the latest bar for a symbol with caching."""
         symbol = symbol.upper()
 
-        # Try cache first (unless refresh requested)
         if self._cache and not refresh:
             cache_key = MarketDataCache.latest_bar_key(symbol)
             cached = await self._cache.get(cache_key)
             if cached:
                 return MarketDataCache.deserialize_model(cached, Bar)
 
-        # Fetch from Alpaca
         bar = await self._alpaca.get_latest_bar(symbol=symbol)
 
-        # Cache the result
         if self._cache and bar:
             cache_key = MarketDataCache.latest_bar_key(symbol)
             serialized = MarketDataCache.serialize_model(bar)
             await self._cache.set(cache_key, serialized, TTL_LATEST_BAR)
 
         return bar
-
-    # === Latest Quote ===
 
     async def get_latest_quote(
         self,
@@ -291,25 +290,20 @@ class MarketDataService:
         """Get the latest quote for a symbol with caching."""
         symbol = symbol.upper()
 
-        # Try cache first (unless refresh requested)
         if self._cache and not refresh:
             cache_key = MarketDataCache.latest_quote_key(symbol)
             cached = await self._cache.get(cache_key)
             if cached:
                 return MarketDataCache.deserialize_model(cached, Quote)
 
-        # Fetch from Alpaca
         quote = await self._alpaca.get_latest_quote(symbol=symbol)
 
-        # Cache the result
         if self._cache and quote:
             cache_key = MarketDataCache.latest_quote_key(symbol)
             serialized = MarketDataCache.serialize_model(quote)
             await self._cache.set(cache_key, serialized, TTL_LATEST_QUOTE)
 
         return quote
-
-    # === Snapshot ===
 
     async def get_snapshot(
         self,
@@ -319,23 +313,66 @@ class MarketDataService:
         """Get a market snapshot for a symbol with caching."""
         symbol = symbol.upper()
 
-        # Try cache first (unless refresh requested)
         if self._cache and not refresh:
             cache_key = MarketDataCache.snapshot_key(symbol)
             cached = await self._cache.get(cache_key)
             if cached:
                 return MarketDataCache.deserialize_model(cached, Snapshot)
 
-        # Fetch from Alpaca
-        snapshot = await self._alpaca.get_snapshot(symbol=symbol)
+        # Fetch from Alpaca; fall back to the durable store on failure/absence.
+        snapshot: Snapshot | None = None
+        try:
+            snapshot = await self._alpaca.get_snapshot(symbol=symbol)
+        except Exception:
+            logger.warning("Alpaca snapshot fetch failed for %s; trying store", symbol)
+        if snapshot is None:
+            snapshot = await self._snapshot_from_store(symbol)
 
-        # Cache the result
         if self._cache and snapshot:
             cache_key = MarketDataCache.snapshot_key(symbol)
             serialized = MarketDataCache.serialize_model(snapshot)
             await self._cache.set(cache_key, serialized, TTL_SNAPSHOT)
 
         return snapshot
+
+    async def _snapshot_from_store(self, symbol: str) -> Snapshot | None:
+        """Build a snapshot from the latest stored daily bars.
+
+        Fallback for when the live Alpaca feed is unavailable (no valid
+        credentials, an outage, or an out-of-hours symbol): the durable
+        Timescale store still holds official daily bars, so we serve the last
+        close as the latest price and the last two daily bars as
+        daily/previous for change computation. This marks open positions to the
+        last known close instead of leaving them stuck at cost basis.
+        """
+        if self._store is None:
+            return None
+        end = _utcnow() + timedelta(days=1)
+        start = end - timedelta(days=30)
+        try:
+            rows = await self._store.select_bars(symbol, Timeframe.DAY_1.value, start, end)
+        except Exception:
+            logger.warning("Store snapshot fallback failed for %s", symbol, exc_info=True)
+            return None
+        if not rows:
+            return None
+
+        last = rows[-1]
+        prev = rows[-2] if len(rows) >= 2 else None
+        return Snapshot(
+            symbol=symbol,
+            latest_trade=Trade(
+                symbol=symbol,
+                price=float(last.close),
+                size=0,
+                timestamp=last.time,
+                exchange=None,
+            ),
+            latest_quote=None,
+            minute_bar=None,
+            daily_bar=_bar_row_to_bar(last),
+            prev_daily_bar=_bar_row_to_bar(prev) if prev is not None else None,
+        )
 
     async def get_multi_snapshots(
         self,
@@ -352,9 +389,7 @@ class MarketDataService:
 
         # Check cache for all symbols in one round-trip (unless refresh requested)
         if self._cache and not refresh:
-            # Build key -> symbol mapping
             key_to_symbol = {MarketDataCache.snapshot_key(symbol): symbol for symbol in symbols}
-            # Batch fetch from cache
             cached_values = await self._cache.mget(list(key_to_symbol.keys()))
             for key, value in cached_values.items():
                 symbol = key_to_symbol[key]
@@ -365,11 +400,16 @@ class MarketDataService:
         else:
             symbols_to_fetch = symbols
 
-        # Fetch remaining from Alpaca
+        # Fetch remaining from Alpaca; fall back to the durable store per symbol.
         if symbols_to_fetch:
-            fetched = await self._alpaca.get_multi_snapshots(symbols=symbols_to_fetch)
+            fetched: dict[str, Snapshot] = {}
+            try:
+                fetched = await self._alpaca.get_multi_snapshots(symbols=symbols_to_fetch)
+            except Exception:
+                logger.warning(
+                    "Alpaca multi-snapshot fetch failed for %s; trying store", symbols_to_fetch
+                )
 
-            # Cache and merge results
             for symbol, snapshot in fetched.items():
                 result[symbol] = snapshot
                 if self._cache:
@@ -377,10 +417,20 @@ class MarketDataService:
                     serialized = MarketDataCache.serialize_model(snapshot)
                     await self._cache.set(cache_key, serialized, TTL_SNAPSHOT)
 
+            # Any symbol the live feed didn't return: serve the last stored bar.
+            for symbol in symbols_to_fetch:
+                if symbol in result:
+                    continue
+                store_snapshot = await self._snapshot_from_store(symbol)
+                if store_snapshot is None:
+                    continue
+                result[symbol] = store_snapshot
+                if self._cache:
+                    cache_key = MarketDataCache.snapshot_key(symbol)
+                    serialized = MarketDataCache.serialize_model(store_snapshot)
+                    await self._cache.set(cache_key, serialized, TTL_SNAPSHOT)
+
         return result
-
-
-# === FastAPI Dependency ===
 
 
 async def get_market_data_service() -> MarketDataService:

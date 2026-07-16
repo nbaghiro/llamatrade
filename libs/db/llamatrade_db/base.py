@@ -8,8 +8,7 @@ from sqlalchemy import DateTime, Index, func
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, declared_attr, mapped_column
 
-# Type alias for SQLAlchemy __table_args__
-# Can be a tuple of schema items (Index, Constraint, etc.) optionally ending with a dict
+# SQLAlchemy __table_args__: tuple of schema items, optionally ending with a dict
 TableArgsType = tuple[Any, ...]
 
 
@@ -32,8 +31,7 @@ class UUIDPrimaryKeyMixin:
 class TenantMixin:
     """Mixin that adds tenant_id column with index for multi-tenant tables."""
 
-    # Note: index is created via __table_args__ below with explicit name
-    # Do NOT add index=True here as it creates a duplicate index
+    # Index is created in __table_args__ below; don't add index=True here (duplicate index)
     tenant_id: Mapped[UUID] = mapped_column(
         PG_UUID(as_uuid=True),
         nullable=False,

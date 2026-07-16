@@ -1,14 +1,33 @@
+# Dev image for the web app — workspace-aware so the shared @llamatrade/ui
+# package (packages/ui) resolves inside the container.
+#
+# NOTE: the build context is the REPO ROOT (see docker-compose.dev.yml), not
+# apps/web, so we can copy the root lockfile + every workspace manifest and run
+# a single workspace-aware install. At runtime, apps/web and packages/ui are
+# bind-mounted for hot-reload; node_modules is preserved from the image via
+# anonymous volumes.
 FROM node:20-alpine
 
 WORKDIR /app
 
-# Copy package files
-COPY package.json package-lock.json* ./
+# Workspace manifests + lockfile. A workspace-aware `npm ci` needs the root
+# lockfile and each workspace's package.json present.
+COPY package.json package-lock.json ./
+COPY apps/web/package.json ./apps/web/package.json
+# packages/ui ships SOURCE (no build step); copy it whole so the workspace
+# symlink target exists at install time. It is also bind-mounted at runtime.
+COPY packages/ui ./packages/ui
 
-# Install dependencies (use npm install if no lock file exists)
+# Workspace-aware install: creates node_modules/@llamatrade/ui -> ../packages/ui
+# (and node_modules/llamatrade-web -> ../apps/web) and hoists shared deps to
+# /app/node_modules.
 RUN if [ -f package-lock.json ]; then npm ci; else npm install; fi
 
-# Source code is mounted via volume
-EXPOSE 3000
+WORKDIR /app/apps/web
 
-CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0"]
+# Internal dev-server port. The single origin is the Caddy reverse proxy on
+# :8800 (see infrastructure/docker/Caddyfile); this app is not published to the
+# host directly — the proxy routes to it as the catch-all.
+EXPOSE 8802
+
+CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0", "--port", "8802"]

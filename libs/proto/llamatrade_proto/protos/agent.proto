@@ -36,6 +36,7 @@ enum StreamEventType {
   STREAM_EVENT_TYPE_ARTIFACT_CREATED = 4;   // New pending artifact
   STREAM_EVENT_TYPE_ERROR = 5;              // Error occurred
   STREAM_EVENT_TYPE_COMPLETE = 6;           // Stream finished
+  STREAM_EVENT_TYPE_TOOL_CONFIRMATION_REQUIRED = 7; // Agent proposes a write action awaiting user approval
 }
 
 // Pending artifact type
@@ -115,6 +116,10 @@ message AgentStreamEvent {
 
   // Message info (for COMPLETE events)
   string message_id = 9;
+
+  // Tool confirmation info (for TOOL_CONFIRMATION_REQUIRED events)
+  string tool_arguments_json = 10;  // Proposed tool-call arguments (JSON)
+  string confirmation_id = 11;      // Opaque id echoed back to ConfirmToolCall
 }
 
 // Context data passed to agent for contextual prompts
@@ -206,6 +211,16 @@ message CommitArtifactResponse {
   string resource_type = 3;   // Type of created resource (e.g., "strategy")
 }
 
+// Approve or deny a proposed tool call, then resume the agent turn.
+message ConfirmToolCallRequest {
+  TenantContext context = 1;
+  string session_id = 2;
+  string confirmation_id = 3;        // From the TOOL_CONFIRMATION_REQUIRED event
+  string tool_name = 4;              // Proposed tool (echoed back)
+  string tool_arguments_json = 5;    // Proposed arguments (echoed back)
+  bool approved = 6;                 // true = execute, false = decline
+}
+
 // Get suggested prompts based on context
 message GetSuggestedPromptsRequest {
   TenantContext context = 1;
@@ -240,6 +255,7 @@ service AgentService {
   // Messaging
   rpc SendMessage(SendMessageRequest) returns (SendMessageResponse);
   rpc StreamMessage(SendMessageRequest) returns (stream AgentStreamEvent);
+  rpc ConfirmToolCall(ConfirmToolCallRequest) returns (stream AgentStreamEvent);
 
   // Artifacts
   rpc CommitArtifact(CommitArtifactRequest) returns (CommitArtifactResponse);

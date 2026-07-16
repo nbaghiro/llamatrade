@@ -20,7 +20,6 @@ from tests.fixtures.memory_factories import (
 
 from src.tools.base import ToolContext
 from src.tools.memory_tools import (
-    GetSessionSummaryTool,
     GetUserProfileTool,
     RecallMemoryTool,
     SearchPastStrategiesTool,
@@ -710,201 +709,6 @@ class TestSearchPastStrategiesTool:
 
 
 # =============================================================================
-# GetSessionSummaryTool Tests
-# =============================================================================
-
-
-class TestGetSessionSummaryTool:
-    """Tests for GetSessionSummaryTool."""
-
-    @pytest.fixture
-    def tool(self) -> GetSessionSummaryTool:
-        """Create tool instance."""
-        return GetSessionSummaryTool()
-
-    @pytest.fixture
-    def context(self, tenant_id: UUID, user_id: UUID, session_id: UUID) -> ToolContext:
-        """Create tool context."""
-        return ToolContext(
-            tenant_id=tenant_id,
-            user_id=user_id,
-            session_id=session_id,
-        )
-
-    def test_tool_properties(self, tool: GetSessionSummaryTool) -> None:
-        """Test tool properties."""
-        assert tool.name == "get_session_summary"
-        assert "summary" in tool.description.lower()
-        assert tool.parameters_schema["required"] == []
-
-    @pytest.mark.asyncio
-    async def test_execute_by_session_id(
-        self,
-        tool: GetSessionSummaryTool,
-        context: ToolContext,
-    ) -> None:
-        """Test execution with session_id."""
-        session_id = uuid4()
-        mock_summary = MagicMock()
-        mock_summary.session_id = session_id
-        mock_summary.summary_short = "Short summary"
-        mock_summary.summary_detailed = "Detailed summary"
-        mock_summary.topics = ["investing"]
-        mock_summary.strategies_discussed = ["60/40"]
-        mock_summary.decisions = ["chose conservative"]
-        mock_summary.created_at = datetime.now(UTC)
-        mock_summary.message_count = 15
-
-        with patch("src.tools.memory_tools.get_db") as mock_get_db:
-            mock_db = AsyncMock()
-            mock_get_db.return_value = mock_db_context(mock_db)
-
-            with patch("src.tools.memory_tools.MemoryService") as mock_memory_service_cls:
-                mock_service = MagicMock()
-                mock_service.get_session_summary = AsyncMock(return_value=mock_summary)
-                mock_memory_service_cls.return_value = mock_service
-
-                result = await tool.execute(
-                    {"session_id": str(session_id)},
-                    context,
-                )
-
-        assert result.success is True
-        assert result.data["summary"]["session_id"] == str(session_id)
-        assert result.data["summary"]["summary_short"] == "Short summary"
-
-    @pytest.mark.asyncio
-    async def test_execute_by_date(
-        self,
-        tool: GetSessionSummaryTool,
-        context: ToolContext,
-    ) -> None:
-        """Test execution with session_date."""
-        mock_summary = MagicMock()
-        mock_summary.session_id = uuid4()
-        mock_summary.summary_short = "Summary"
-        mock_summary.summary_detailed = "Detailed"
-        mock_summary.topics = []
-        mock_summary.strategies_discussed = []
-        mock_summary.decisions = []
-        mock_summary.created_at = datetime.now(UTC)
-        mock_summary.message_count = 10
-
-        with patch("src.tools.memory_tools.get_db") as mock_get_db:
-            mock_db = AsyncMock()
-            mock_get_db.return_value = mock_db_context(mock_db)
-
-            with patch("src.tools.memory_tools.MemoryService") as mock_memory_service_cls:
-                mock_service = MagicMock()
-                mock_service.get_session_summary = AsyncMock(return_value=mock_summary)
-                mock_memory_service_cls.return_value = mock_service
-
-                result = await tool.execute(
-                    {"session_date": "2024-01-15"},
-                    context,
-                )
-
-        assert result.success is True
-        mock_service.get_session_summary.assert_called_once()
-        call_kwargs = mock_service.get_session_summary.call_args[1]
-        assert call_kwargs["session_date"] == "2024-01-15"
-
-    @pytest.mark.asyncio
-    async def test_invalid_uuid_fails(
-        self,
-        tool: GetSessionSummaryTool,
-        context: ToolContext,
-    ) -> None:
-        """Test that invalid UUID returns error."""
-        result = await tool.execute(
-            {"session_id": "not-a-valid-uuid"},
-            context,
-        )
-
-        assert result.success is False
-        assert "Invalid session_id" in result.error
-
-    @pytest.mark.asyncio
-    async def test_not_found_returns_null_summary(
-        self,
-        tool: GetSessionSummaryTool,
-        context: ToolContext,
-    ) -> None:
-        """Test that not found returns null summary."""
-        with patch("src.tools.memory_tools.get_db") as mock_get_db:
-            mock_db = AsyncMock()
-            mock_get_db.return_value = mock_db_context(mock_db)
-
-            with patch("src.tools.memory_tools.MemoryService") as mock_memory_service_cls:
-                mock_service = MagicMock()
-                mock_service.get_session_summary = AsyncMock(return_value=None)
-                mock_memory_service_cls.return_value = mock_service
-
-                result = await tool.execute(
-                    {"session_id": str(uuid4())},
-                    context,
-                )
-
-        assert result.success is True
-        assert result.data["summary"] is None
-        assert "No session summary found" in result.data["message"]
-
-    @pytest.mark.asyncio
-    async def test_include_messages_parameter(
-        self,
-        tool: GetSessionSummaryTool,
-        context: ToolContext,
-    ) -> None:
-        """Test include_messages parameter is passed."""
-        mock_summary = MagicMock()
-        mock_summary.session_id = uuid4()
-        mock_summary.summary_short = "Summary"
-        mock_summary.summary_detailed = "Detailed"
-        mock_summary.topics = []
-        mock_summary.strategies_discussed = []
-        mock_summary.decisions = []
-        mock_summary.created_at = datetime.now(UTC)
-        mock_summary.message_count = 10
-
-        with patch("src.tools.memory_tools.get_db") as mock_get_db:
-            mock_db = AsyncMock()
-            mock_get_db.return_value = mock_db_context(mock_db)
-
-            with patch("src.tools.memory_tools.MemoryService") as mock_memory_service_cls:
-                mock_service = MagicMock()
-                mock_service.get_session_summary = AsyncMock(return_value=mock_summary)
-                mock_memory_service_cls.return_value = mock_service
-
-                await tool.execute(
-                    {"include_messages": True},
-                    context,
-                )
-
-        call_kwargs = mock_service.get_session_summary.call_args[1]
-        assert call_kwargs["include_messages"] is True
-
-    @pytest.mark.asyncio
-    async def test_handles_service_exception(
-        self,
-        tool: GetSessionSummaryTool,
-        context: ToolContext,
-    ) -> None:
-        """Test handling of service exception."""
-        with patch("src.tools.memory_tools.get_db") as mock_get_db:
-            mock_db = AsyncMock()
-            mock_get_db.return_value = mock_db_context(mock_db)
-
-            with patch("src.tools.memory_tools.MemoryService") as mock_memory_service_cls:
-                mock_service = MagicMock()
-                mock_service.get_session_summary = AsyncMock(side_effect=Exception("Error"))
-                mock_memory_service_cls.return_value = mock_service
-
-                result = await tool.execute({}, context)
-
-        assert result.success is False
-
-
-# =============================================================================
 # Tool Registration Tests
 # =============================================================================
 
@@ -918,7 +722,6 @@ class TestToolRegistration:
             RecallMemoryTool(),
             GetUserProfileTool(),
             SearchPastStrategiesTool(),
-            GetSessionSummaryTool(),
         ]
 
         for tool in tools:
@@ -932,7 +735,6 @@ class TestToolRegistration:
             RecallMemoryTool(),
             GetUserProfileTool(),
             SearchPastStrategiesTool(),
-            GetSessionSummaryTool(),
         ]
 
         for tool in tools:

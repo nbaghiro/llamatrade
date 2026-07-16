@@ -960,7 +960,7 @@ class BacktestService:
         Returns:
             Celery task ID
         """
-        # Import inline to avoid circular imports; celery types are incomplete
+        # Import inline to avoid circular imports; celery types are incomplete.
         from src.workers import celery_tasks
 
         backtest = await self._get_backtest_by_id(tenant_id, backtest_id)
@@ -970,9 +970,9 @@ class BacktestService:
         if backtest.status != BACKTEST_STATUS_PENDING:
             raise ValueError(f"Backtest is {backtest.status}, cannot queue")
 
-        # Queue the task
-        # Celery's @shared_task returns a task object with delay() method,
-        # but type stubs are incomplete. Access via getattr for type safety.
+        # The task is bound to the redis-configured ``celery_app`` (@celery_app.task),
+        # so ``.delay()`` routes to our broker in the API process too — not Celery's
+        # default app — and still honours eager mode under test.
         run_task = getattr(celery_tasks, "run_backtest_task")
         task = run_task.delay(str(backtest_id), str(tenant_id))
         metrics.backtest.job(state="enqueued")
@@ -1110,9 +1110,7 @@ class BacktestService:
             logger.warning("Reaper recovered stale backtests: %s", counts)
         return counts
 
-    # ===================
     # Private helpers
-    # ===================
 
     async def _get_backtest_by_id(self, tenant_id: UUID, backtest_id: UUID) -> Backtest | None:
         """Get backtest ensuring tenant isolation."""

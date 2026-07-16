@@ -25,9 +25,7 @@ class ConversationService:
         """
         self.db = db
 
-    # =========================================================================
     # Session Operations
-    # =========================================================================
 
     async def create_session(
         self,
@@ -99,7 +97,6 @@ class ConversationService:
         Returns:
             Tuple of (sessions list, total count)
         """
-        # Base query
         base_query = select(AgentSession).where(
             (AgentSession.tenant_id == tenant_id) & (AgentSession.user_id == user_id)
         )
@@ -107,12 +104,10 @@ class ConversationService:
         if status is not None and status > 0:
             base_query = base_query.where(AgentSession.status == status)
 
-        # Get total count
         count_query = select(func.count()).select_from(base_query.subquery())
         total_result = await self.db.execute(count_query)
         total = total_result.scalar_one()
 
-        # Get paginated results
         offset = (page - 1) * page_size
         paginated_query = (
             base_query.order_by(AgentSession.last_activity_at.desc())
@@ -179,9 +174,7 @@ class ConversationService:
         await self.db.commit()
         return True
 
-    # =========================================================================
     # Message Operations
-    # =========================================================================
 
     async def add_message(
         self,
@@ -190,6 +183,7 @@ class ConversationService:
         role: int,
         content: str,
         tool_calls: list[dict[str, Any]] | None = None,
+        inline_artifact_ids: list[str] | None = None,
     ) -> AgentMessage:
         """Add a message to a session.
 
@@ -199,6 +193,7 @@ class ConversationService:
             role: Message role (proto int value)
             content: Message content
             tool_calls: Optional list of tool calls
+            inline_artifact_ids: Draft artifact IDs produced during this turn
 
         Returns:
             Created AgentMessage
@@ -209,6 +204,7 @@ class ConversationService:
             role=role,
             content=content,
             tool_calls_json=tool_calls,
+            inline_artifact_ids=inline_artifact_ids,
         )
         self.db.add(message)
 
@@ -255,9 +251,36 @@ class ConversationService:
         result = await self.db.execute(query)
         return list(result.scalars().all())
 
-    # =========================================================================
+    async def get_recent_messages(
+        self,
+        session_id: UUID,
+        limit: int = 40,
+    ) -> list[AgentMessage]:
+        """Get the most recent messages for a session, in chronological order.
+
+        Unlike `get_messages` (which returns the oldest ``limit`` rows), this
+        returns the newest ``limit`` rows so a long conversation is windowed to
+        its most recent turns. Ordered oldest-first for LLM replay.
+
+        Args:
+            session_id: Session UUID
+            limit: Maximum number of most-recent messages to return
+
+        Returns:
+            List of messages ordered by created_at ascending (oldest first)
+        """
+        query = (
+            select(AgentMessage)
+            .where(AgentMessage.session_id == session_id)
+            .order_by(AgentMessage.created_at.desc())
+            .limit(limit)
+        )
+        result = await self.db.execute(query)
+        messages = list(result.scalars().all())
+        messages.reverse()
+        return messages
+
     # Artifact Operations
-    # =========================================================================
 
     async def get_pending_artifacts(
         self,

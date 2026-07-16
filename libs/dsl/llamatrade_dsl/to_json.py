@@ -31,9 +31,7 @@ from llamatrade_dsl.ast import (
     WeightMethod,
 )
 
-# =============================================================================
 # JSON Type Definitions
-# =============================================================================
 
 
 class NumericLiteralJSON(TypedDict):
@@ -137,9 +135,7 @@ class StrategyJSON(TypedDict, total=False):
 BlockJSON = StrategyJSON | GroupJSON | WeightJSON | AssetJSON | IfJSON | FilterJSON
 
 
-# =============================================================================
 # To JSON Functions
-# =============================================================================
 
 
 def to_json(strategy: Strategy) -> StrategyJSON:
@@ -323,9 +319,7 @@ def _value_to_json(value: Value) -> ValueJSON:
             raise TypeError(f"Cannot convert value to JSON: {type(value)}")
 
 
-# =============================================================================
 # From JSON Functions
-# =============================================================================
 
 
 def from_json(data: StrategyJSON) -> Strategy:

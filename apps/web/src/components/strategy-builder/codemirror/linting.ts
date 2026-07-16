@@ -5,13 +5,11 @@ import type { EditorView } from '@codemirror/view';
 
 import { tokenizeWithPositions, type TokenWithPosition } from '../../../services/strategy-serializer';
 
-// Valid methods for weight allocation
 const VALID_WEIGHT_METHODS = new Set([
   'equal', 'specified', 'momentum', 'inverse-volatility', 'min-variance', 'risk-parity',
   'inverse_volatility', 'min_variance', 'risk_parity',
 ]);
 
-// Valid selection values for filter
 const VALID_SELECTIONS = new Set(['top', 'bottom']);
 
 /**
@@ -149,7 +147,8 @@ function checkCounts(tokens: TokenWithPosition[]): Diagnostic[] {
 }
 
 /**
- * Check for weight percentages outside valid range
+ * Check for weight percentages outside the valid 0–100 range. Weights are
+ * percents (sibling weights sum to 100), not 0–1 fractions.
  */
 function checkWeights(tokens: TokenWithPosition[]): Diagnostic[] {
   const diagnostics: Diagnostic[] = [];
@@ -161,13 +160,96 @@ function checkWeights(tokens: TokenWithPosition[]): Diagnostic[] {
       const next = tokens[i + 1];
       if (next && next.type === 'number') {
         const value = parseFloat(next.value);
-        if (value < 0 || value > 1) {
+        if (value < 0 || value > 100) {
           diagnostics.push({
             from: next.start,
             to: next.end,
             severity: 'warning',
-            message: 'Weight should be between 0 and 1 (e.g., 0.5 for 50%)',
+            message: 'Weight is a percent from 0 to 100 (sibling weights should sum to 100).',
           });
+        }
+      }
+    }
+  }
+
+  return diagnostics;
+}
+
+const WEIGHT_SUM_TARGET = 100;
+const WEIGHT_SUM_TOLERANCE = 0.5; // allow decimal rounding (e.g. 33.3 × 3 = 99.9)
+
+interface WeightScope {
+  head: string | null;
+  isSpecified: boolean;
+  anchor: TokenWithPosition | null;
+  sum: number;
+  count: number;
+  awaitingHead: boolean;
+}
+
+/**
+ * Check that each `(weight :method specified …)` block's direct child weights
+ * sum to 100. Weights are percents, so a specified block must total 100. Blocks
+ * with a computed method (equal/momentum/…) are skipped; blocks are only checked
+ * on their closing paren (an unclosed block mid-edit is left alone), and only
+ * once they carry ≥1 explicit child weight (avoids flagging a half-typed block).
+ */
+export function checkWeightSums(tokens: TokenWithPosition[]): Diagnostic[] {
+  const diagnostics: Diagnostic[] = [];
+  const stack: WeightScope[] = [];
+
+  for (let i = 0; i < tokens.length; i++) {
+    const token = tokens[i];
+
+    if (token.type === 'bracket') {
+      if (token.value === '(') {
+        stack.push({ head: null, isSpecified: false, anchor: null, sum: 0, count: 0, awaitingHead: true });
+      } else if (token.value === ')') {
+        const scope = stack.pop();
+        if (
+          scope &&
+          scope.isSpecified &&
+          scope.count >= 1 &&
+          Math.abs(scope.sum - WEIGHT_SUM_TARGET) > WEIGHT_SUM_TOLERANCE
+        ) {
+          const total = parseFloat(scope.sum.toFixed(2));
+          const anchor = scope.anchor ?? token;
+          diagnostics.push({
+            from: anchor.start,
+            to: anchor.end,
+            severity: 'warning',
+            message: `Specified weights sum to ${total}, not 100 — adjust the ${scope.count} weights to total 100.`,
+          });
+        }
+      }
+      continue;
+    }
+
+    const scope = stack[stack.length - 1];
+    if (!scope) continue;
+
+    // First non-bracket token in a list is its head keyword.
+    if (scope.awaitingHead) {
+      scope.awaitingHead = false;
+      scope.head = token.type === 'keyword' ? token.value.toLowerCase() : null;
+      if (scope.head === 'weight') scope.anchor = token;
+    }
+
+    // `(weight :method specified …)` → this block must total 100.
+    if (token.type === 'parameter' && token.value === ':method' && scope.head === 'weight') {
+      const next = tokens[i + 1];
+      if (next && next.value.toLowerCase() === 'specified') scope.isSpecified = true;
+    }
+
+    // A child's `:weight <num>` counts toward its PARENT specified block.
+    if (token.type === 'parameter' && token.value === ':weight') {
+      const next = tokens[i + 1];
+      const parent = stack[stack.length - 2];
+      if (next && next.type === 'number' && parent && parent.isSpecified) {
+        const value = parseFloat(next.value);
+        if (!Number.isNaN(value)) {
+          parent.sum += value;
+          parent.count += 1;
         }
       }
     }
@@ -224,6 +306,7 @@ function lintDSL(view: EditorView): Diagnostic[] {
   diagnostics.push(...checkWeightMethods(tokens));
   diagnostics.push(...checkCounts(tokens));
   diagnostics.push(...checkWeights(tokens));
+  diagnostics.push(...checkWeightSums(tokens));
   diagnostics.push(...checkSymbols(tokens));
 
   return diagnostics;

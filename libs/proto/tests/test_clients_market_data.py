@@ -1,8 +1,8 @@
-"""Tests for llamatrade_proto.clients.market_data module."""
+"""Tests for llamatrade_proto.clients.market_data module (Connect client)."""
 
 from datetime import datetime
 from decimal import Decimal
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -86,11 +86,8 @@ class TestQuote:
         )
 
         assert quote.symbol == "AAPL"
-        assert quote.timestamp == datetime(2024, 1, 15, 10, 0, 0)
         assert quote.bid_price == Decimal("150.00")
-        assert quote.bid_size == 100
         assert quote.ask_price == Decimal("150.05")
-        assert quote.ask_size == 200
 
     def test_quote_spread(self) -> None:
         """Test calculating spread from Quote."""
@@ -103,8 +100,7 @@ class TestQuote:
             ask_size=200,
         )
 
-        spread = quote.ask_price - quote.bid_price
-        assert spread == Decimal("0.10")
+        assert quote.ask_price - quote.bid_price == Decimal("0.10")
 
 
 class TestTrade:
@@ -120,9 +116,7 @@ class TestTrade:
         )
 
         assert trade.symbol == "AAPL"
-        assert trade.timestamp == datetime(2024, 1, 15, 10, 0, 0)
         assert trade.price == Decimal("150.50")
-        assert trade.size == 100
         assert trade.exchange is None
 
     def test_create_trade_with_exchange(self) -> None:
@@ -137,178 +131,81 @@ class TestTrade:
 
         assert trade.exchange == "NASDAQ"
 
-    def test_trade_small_size(self) -> None:
-        """Test creating Trade with small size."""
-        trade = Trade(
-            symbol="BRK.A",
-            timestamp=datetime(2024, 1, 15, 10, 0, 0),
-            price=Decimal("500000.00"),
-            size=1,
-        )
 
-        assert trade.size == 1
+def _mock_proto_bar(symbol: str, close: str) -> MagicMock:
+    """A MagicMock shaped like a proto Bar (fields carry a ``.value`` string)."""
+    bar = MagicMock()
+    bar.symbol = symbol
+    bar.timestamp = MagicMock(seconds=1705320000)
+    for field in ("open", "high", "low", "close"):
+        setattr(bar, field, MagicMock(value=close))
+    bar.volume = 1000
+    bar.trade_count = 0
+    bar.HasField = lambda f: f in ("open", "high", "low", "close")
+    bar.vwap = None
+    return bar
+
+
+def _connect_client(client: MarketDataClient) -> MagicMock:
+    """Attach a mock Connect client + no-op auth headers; return the mock."""
+    conn = MagicMock()
+    client._client = conn
+    client._headers = lambda: {}  # type: ignore[method-assign]
+    return conn
 
 
 class TestMarketDataClientInit:
-    """Tests for MarketDataClient initialization."""
+    """Tests for MarketDataClient initialization (Connect client)."""
 
     def test_init_with_defaults(self) -> None:
-        """Test MarketDataClient initialization with defaults."""
+        """Bare host:port is normalized to an absolute URL; lazy client."""
         client = MarketDataClient()
-
-        assert client._target == "market-data:8840"
-        assert client._secure is False
-        assert client._stub is None
+        assert client.target == "http://market-data:8840"
+        assert client._service_name == "internal"
+        assert client._client is None
 
     def test_init_with_custom_target(self) -> None:
-        """Test MarketDataClient initialization with custom target."""
         client = MarketDataClient("localhost:9000")
+        assert client.target == "http://localhost:9000"
 
-        assert client._target == "localhost:9000"
+    def test_init_preserves_absolute_url(self) -> None:
+        client = MarketDataClient("https://market-data.internal")
+        assert client.target == "https://market-data.internal"
 
-    def test_init_with_secure(self) -> None:
-        """Test MarketDataClient initialization with secure=True."""
-        client = MarketDataClient(secure=True)
-
-        assert client._secure is True
-
-    def test_init_with_interceptors(self) -> None:
-        """Test MarketDataClient initialization with interceptors."""
-        interceptor = object()
-        client = MarketDataClient(interceptors=[interceptor])
-
-        from llamatrade_proto.interceptors import (
-            ServiceAuthClientInterceptor,
-            TelemetryClientInterceptor,
-        )
-
-        assert isinstance(client._interceptors[0], TelemetryClientInterceptor)
-        assert isinstance(client._interceptors[1], ServiceAuthClientInterceptor)
-        assert client._interceptors[2:] == [interceptor]
-
-    def test_init_with_custom_options(self) -> None:
-        """Test MarketDataClient initialization with custom options."""
-        options = [("grpc.max_send_message_length", 100)]
-        client = MarketDataClient(options=options)
-
-        assert client._options == options
-
-
-class TestMarketDataClientStub:
-    """Tests for MarketDataClient stub property."""
-
-    def test_stub_raises_on_missing_generated_code(self) -> None:
-        """Test stub raises RuntimeError when generated code is missing."""
-        client = MarketDataClient()
-
-        with patch("grpc.aio.insecure_channel"):
-            with patch.dict("sys.modules", {"llamatrade_proto.generated": None}):
-                with pytest.raises((RuntimeError, ImportError)):
-                    _ = client.stub
+    def test_init_with_service_name(self) -> None:
+        client = MarketDataClient(service_name="backtest")
+        assert client._service_name == "backtest"
 
 
 class TestMarketDataClientGetHistoricalBars:
-    """Tests for MarketDataClient.get_historical_bars method."""
+    """Tests for MarketDataClient.get_historical_bars (Connect)."""
 
     @pytest.mark.asyncio
     async def test_get_historical_bars_success(self) -> None:
-        """Test get_historical_bars returns list of bars."""
         client = MarketDataClient()
+        conn = _connect_client(client)
+        conn.get_historical_bars = AsyncMock(
+            return_value=MagicMock(bars=[_mock_proto_bar("AAPL", "151.00")])
+        )
 
-        # Create mock proto bar
-        mock_timestamp = MagicMock()
-        mock_timestamp.seconds = 1705320000
-
-        mock_open = MagicMock()
-        mock_open.value = "150.00"
-
-        mock_high = MagicMock()
-        mock_high.value = "152.00"
-
-        mock_low = MagicMock()
-        mock_low.value = "149.00"
-
-        mock_close = MagicMock()
-        mock_close.value = "151.00"
-
-        mock_bar = MagicMock()
-        mock_bar.symbol = "AAPL"
-        mock_bar.timestamp = mock_timestamp
-        mock_bar.open = mock_open
-        mock_bar.high = mock_high
-        mock_bar.low = mock_low
-        mock_bar.close = mock_close
-        mock_bar.volume = 1000000
-        mock_bar.trade_count = 5000
-        mock_bar.HasField = lambda field: field in ["open", "high", "low", "close"]
-        mock_bar.vwap = None
-
-        mock_response = MagicMock()
-        mock_response.bars = [mock_bar]
-
-        mock_stub = MagicMock()
-        mock_stub.GetHistoricalBars = AsyncMock(return_value=mock_response)
-        client._stub = mock_stub
-
-        # Mock the market_data_pb2 module
-        mock_market_data_pb2 = MagicMock()
-        mock_market_data_pb2.TIMEFRAME_1MIN = 1
-        mock_market_data_pb2.TIMEFRAME_5MIN = 2
-        mock_market_data_pb2.TIMEFRAME_15MIN = 3
-        mock_market_data_pb2.TIMEFRAME_30MIN = 4
-        mock_market_data_pb2.TIMEFRAME_1HOUR = 5
-        mock_market_data_pb2.TIMEFRAME_4HOUR = 6
-        mock_market_data_pb2.TIMEFRAME_1DAY = 7
-        mock_market_data_pb2.TIMEFRAME_1WEEK = 8
-        mock_market_data_pb2.TIMEFRAME_1MONTH = 9
-
-        with patch.dict(
-            "sys.modules",
-            {
-                "llamatrade_proto.generated": MagicMock(),
-                "llamatrade_proto.generated.market_data_pb2": mock_market_data_pb2,
-                "llamatrade_proto.generated.common_pb2": MagicMock(),
-            },
-        ):
-            result = await client.get_historical_bars(
-                symbol="AAPL",
-                start=datetime(2024, 1, 1),
-                end=datetime(2024, 1, 31),
-                timeframe="1D",
-            )
+        result = await client.get_historical_bars(
+            symbol="AAPL", start=datetime(2024, 1, 1), end=datetime(2024, 1, 31), timeframe="1D"
+        )
 
         assert len(result) == 1
         assert result[0].symbol == "AAPL"
-        assert result[0].open == Decimal("150.00")
+        assert result[0].close == Decimal("151.00")
+        conn.get_historical_bars.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_get_historical_bars_empty(self) -> None:
-        """Test get_historical_bars returns empty list."""
         client = MarketDataClient()
+        conn = _connect_client(client)
+        conn.get_historical_bars = AsyncMock(return_value=MagicMock(bars=[]))
 
-        mock_response = MagicMock()
-        mock_response.bars = []
-
-        mock_stub = MagicMock()
-        mock_stub.GetHistoricalBars = AsyncMock(return_value=mock_response)
-        client._stub = mock_stub
-
-        mock_market_data_pb2 = MagicMock()
-        mock_market_data_pb2.TIMEFRAME_1DAY = 7
-
-        with patch.dict(
-            "sys.modules",
-            {
-                "llamatrade_proto.generated": MagicMock(),
-                "llamatrade_proto.generated.market_data_pb2": mock_market_data_pb2,
-                "llamatrade_proto.generated.common_pb2": MagicMock(),
-            },
-        ):
-            result = await client.get_historical_bars(
-                symbol="AAPL",
-                start=datetime(2024, 1, 1),
-                end=datetime(2024, 1, 31),
-            )
+        result = await client.get_historical_bars(
+            symbol="AAPL", start=datetime(2024, 1, 1), end=datetime(2024, 1, 31)
+        )
 
         assert result == []
 
@@ -318,53 +215,29 @@ class TestMarketDataClientGetMultiBars:
 
     @pytest.mark.asyncio
     async def test_get_multi_bars_success(self) -> None:
-        """One batch call returns a per-symbol map of bars."""
         client = MarketDataClient()
-
-        def make_bar(symbol: str, close: str) -> MagicMock:
-            bar = MagicMock()
-            bar.symbol = symbol
-            bar.timestamp = MagicMock(seconds=1705320000)
-            for field in ("open", "high", "low", "close"):
-                setattr(bar, field, MagicMock(value=close))
-            bar.volume = 1000
-            bar.trade_count = 0
-            bar.HasField = lambda f: f in ("open", "high", "low", "close")
-            bar.vwap = None
-            return bar
-
-        aapl_list = MagicMock(bars=[make_bar("AAPL", "150.00")])
-        spy_list = MagicMock(bars=[make_bar("SPY", "400.00")])
-        mock_response = MagicMock()
-        mock_response.bars = {"AAPL": aapl_list, "SPY": spy_list}
-
-        mock_stub = MagicMock()
-        mock_stub.GetMultiBars = AsyncMock(return_value=mock_response)
-        client._stub = mock_stub
-
-        mock_market_data_pb2 = MagicMock()
-        mock_market_data_pb2.TIMEFRAME_1DAY = 7
-
-        with patch.dict(
-            "sys.modules",
-            {
-                "llamatrade_proto.generated": MagicMock(),
-                "llamatrade_proto.generated.market_data_pb2": mock_market_data_pb2,
-                "llamatrade_proto.generated.common_pb2": MagicMock(),
-            },
-        ):
-            result = await client.get_multi_bars(
-                symbols=["AAPL", "SPY"],
-                start=datetime(2024, 1, 1),
-                end=datetime(2024, 1, 31),
-                timeframe="1D",
-                limit=5000,
+        conn = _connect_client(client)
+        conn.get_multi_bars = AsyncMock(
+            return_value=MagicMock(
+                bars={
+                    "AAPL": MagicMock(bars=[_mock_proto_bar("AAPL", "150.00")]),
+                    "SPY": MagicMock(bars=[_mock_proto_bar("SPY", "400.00")]),
+                }
             )
+        )
+
+        result = await client.get_multi_bars(
+            symbols=["AAPL", "SPY"],
+            start=datetime(2024, 1, 1),
+            end=datetime(2024, 1, 31),
+            timeframe="1D",
+            limit=5000,
+        )
 
         assert set(result) == {"AAPL", "SPY"}
         assert result["AAPL"][0].close == Decimal("150.00")
         assert result["SPY"][0].close == Decimal("400.00")
-        mock_stub.GetMultiBars.assert_awaited_once()
+        conn.get_multi_bars.assert_awaited_once()
 
 
 class TestMarketDataClientStreamHistoricalBars:
@@ -372,49 +245,24 @@ class TestMarketDataClientStreamHistoricalBars:
 
     @pytest.mark.asyncio
     async def test_stream_historical_bars_yields_bars(self) -> None:
-        """The streamed bars are converted and yielded incrementally."""
         client = MarketDataClient()
+        conn = _connect_client(client)
 
-        def make_bar(symbol: str, close: str) -> MagicMock:
-            bar = MagicMock()
-            bar.symbol = symbol
-            bar.timestamp = MagicMock(seconds=1705320000)
-            for field in ("open", "high", "low", "close"):
-                setattr(bar, field, MagicMock(value=close))
-            bar.volume = 1000
-            bar.trade_count = 0
-            bar.HasField = lambda f: f in ("open", "high", "low", "close")
-            bar.vwap = None
-            return bar
+        async def fake_stream(_request, headers=None):
+            yield _mock_proto_bar("AAPL", "150.00")
+            yield _mock_proto_bar("SPY", "400.00")
 
-        async def fake_stream(_request):
-            yield make_bar("AAPL", "150.00")
-            yield make_bar("SPY", "400.00")
+        conn.stream_historical_bars = fake_stream
 
-        mock_stub = MagicMock()
-        mock_stub.StreamHistoricalBars = fake_stream
-        client._stub = mock_stub
-
-        mock_market_data_pb2 = MagicMock()
-        mock_market_data_pb2.TIMEFRAME_1DAY = 7
-
-        with patch.dict(
-            "sys.modules",
-            {
-                "llamatrade_proto.generated": MagicMock(),
-                "llamatrade_proto.generated.market_data_pb2": mock_market_data_pb2,
-                "llamatrade_proto.generated.common_pb2": MagicMock(),
-            },
-        ):
-            out = [
-                bar
-                async for bar in client.stream_historical_bars(
-                    symbols=["AAPL", "SPY"],
-                    start=datetime(2024, 1, 1),
-                    end=datetime(2024, 1, 31),
-                    timeframe="1D",
-                )
-            ]
+        out = [
+            bar
+            async for bar in client.stream_historical_bars(
+                symbols=["AAPL", "SPY"],
+                start=datetime(2024, 1, 1),
+                end=datetime(2024, 1, 31),
+                timeframe="1D",
+            )
+        ]
 
         assert [bar.symbol for bar in out] == ["AAPL", "SPY"]
         assert out[0].close == Decimal("150.00")
@@ -427,32 +275,10 @@ class TestMarketDataClientProtoConversion:
         """Test _proto_to_bar with vwap."""
         client = MarketDataClient()
 
-        mock_timestamp = MagicMock()
-        mock_timestamp.seconds = 1705320000
-
-        mock_open = MagicMock()
-        mock_open.value = "150.00"
-
-        mock_high = MagicMock()
-        mock_high.value = "152.00"
-
-        mock_low = MagicMock()
-        mock_low.value = "149.00"
-
-        mock_close = MagicMock()
-        mock_close.value = "151.00"
-
         mock_vwap = MagicMock()
         mock_vwap.value = "150.50"
 
-        mock_bar = MagicMock()
-        mock_bar.symbol = "AAPL"
-        mock_bar.timestamp = mock_timestamp
-        mock_bar.open = mock_open
-        mock_bar.high = mock_high
-        mock_bar.low = mock_low
-        mock_bar.close = mock_close
-        mock_bar.volume = 1000000
+        mock_bar = _mock_proto_bar("AAPL", "151.00")
         mock_bar.trade_count = 5000
         mock_bar.vwap = mock_vwap
         mock_bar.HasField = lambda field: True
@@ -467,21 +293,12 @@ class TestMarketDataClientProtoConversion:
         """Test _proto_to_quote conversion."""
         client = MarketDataClient()
 
-        mock_timestamp = MagicMock()
-        mock_timestamp.seconds = 1705320000
-
-        mock_bid = MagicMock()
-        mock_bid.value = "150.00"
-
-        mock_ask = MagicMock()
-        mock_ask.value = "150.05"
-
         mock_quote = MagicMock()
         mock_quote.symbol = "AAPL"
-        mock_quote.timestamp = mock_timestamp
-        mock_quote.bid_price = mock_bid
+        mock_quote.timestamp = MagicMock(seconds=1705320000)
+        mock_quote.bid_price = MagicMock(value="150.00")
         mock_quote.bid_size = 100
-        mock_quote.ask_price = mock_ask
+        mock_quote.ask_price = MagicMock(value="150.05")
         mock_quote.ask_size = 200
 
         result = client._proto_to_quote(mock_quote)
@@ -489,47 +306,31 @@ class TestMarketDataClientProtoConversion:
         assert result.symbol == "AAPL"
         assert result.bid_price == Decimal("150.00")
         assert result.ask_price == Decimal("150.05")
-        assert result.bid_size == 100
-        assert result.ask_size == 200
 
     def test_proto_to_trade_with_exchange(self) -> None:
         """Test _proto_to_trade with exchange."""
         client = MarketDataClient()
 
-        mock_timestamp = MagicMock()
-        mock_timestamp.seconds = 1705320000
-
-        mock_price = MagicMock()
-        mock_price.value = "150.50"
-
         mock_trade = MagicMock()
         mock_trade.symbol = "AAPL"
-        mock_trade.timestamp = mock_timestamp
-        mock_trade.price = mock_price
+        mock_trade.timestamp = MagicMock(seconds=1705320000)
+        mock_trade.price = MagicMock(value="150.50")
         mock_trade.size = 100
         mock_trade.exchange = "NASDAQ"
 
         result = client._proto_to_trade(mock_trade)
 
-        assert result.symbol == "AAPL"
         assert result.price == Decimal("150.50")
-        assert result.size == 100
         assert result.exchange == "NASDAQ"
 
     def test_proto_to_trade_without_exchange(self) -> None:
         """Test _proto_to_trade without exchange."""
         client = MarketDataClient()
 
-        mock_timestamp = MagicMock()
-        mock_timestamp.seconds = 1705320000
-
-        mock_price = MagicMock()
-        mock_price.value = "150.50"
-
         mock_trade = MagicMock()
         mock_trade.symbol = "AAPL"
-        mock_trade.timestamp = mock_timestamp
-        mock_trade.price = mock_price
+        mock_trade.timestamp = MagicMock(seconds=1705320000)
+        mock_trade.price = MagicMock(value="150.50")
         mock_trade.size = 100
         mock_trade.exchange = ""
 

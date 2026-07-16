@@ -1,0 +1,11 @@
+version: v2
+managed:
+  enabled: true
+plugins:
+  # TypeScript Connect codegen (protoc-gen-es v2) into the shared @llamatrade/core
+  # package. Single source of truth — apps/web and apps/mobile both import these
+  # from @llamatrade/core/proto instead of generating their own copies.
+  - remote: buf.build/bufbuild/es:v2.2.3
+    out: ../../apps/core/src/proto
+    opt:
+      - target=ts

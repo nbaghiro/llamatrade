@@ -62,15 +62,15 @@ function MiniChart({ data, positive }: { data: number[]; positive: boolean }) {
     <svg width="100" height="32" viewBox="0 0 100 32" className="overflow-visible">
       <defs>
         <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor={positive ? '#22c55e' : '#ef4444'} stopOpacity="0.2" />
-          <stop offset="100%" stopColor={positive ? '#22c55e' : '#ef4444'} stopOpacity="0" />
+          <stop offset="0%" stopColor={positive ? '#0f7a34' : '#c81e1e'} stopOpacity="0.2" />
+          <stop offset="100%" stopColor={positive ? '#0f7a34' : '#c81e1e'} stopOpacity="0" />
         </linearGradient>
       </defs>
       <polygon points={fillPoints} fill={`url(#${gradientId})`} />
       <polyline
         points={points}
         fill="none"
-        stroke={positive ? '#22c55e' : '#ef4444'}
+        stroke={positive ? '#0f7a34' : '#c81e1e'}
         strokeWidth="1.5"
         strokeLinecap="round"
         strokeLinejoin="round"
@@ -147,30 +147,30 @@ export default function StrategyPickerModal({
       <div className="absolute inset-0 bg-black/50" onClick={onClose} />
 
       {/* Modal */}
-      <div className="relative bg-white dark:bg-gray-900 rounded-xl shadow-2xl w-full max-w-2xl max-h-[80vh] overflow-hidden">
+      <div className="relative bg-paper border-2 border-ink shadow-2xl w-full max-w-2xl max-h-[80vh] overflow-hidden">
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+        <div className="flex items-center justify-between px-6 py-4 border-b-2 border-ink">
+          <h2 className="text-lg font-display uppercase tracking-tight text-ink">
             Select Strategy
           </h2>
           <button
             onClick={onClose}
-            className="p-1 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-md"
+            className="p-1 hover:bg-bone"
           >
-            <X className="w-5 h-5 text-gray-500" />
+            <X className="w-5 h-5 text-ink/60" />
           </button>
         </div>
 
         {/* Search */}
-        <div className="px-6 py-3 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50">
+        <div className="px-6 py-3 border-b-2 border-ink bg-bone">
           <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-ink/40" />
             <input
               type="text"
               placeholder="Search strategies..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-9 pr-4 py-2 text-sm border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 placeholder:text-gray-400 focus:border-primary-500 focus:ring-1 focus:ring-primary-500 outline-none"
+              className="w-full pl-9 pr-4 py-2 text-sm border-2 border-ink bg-paper text-ink placeholder:text-ink/40 focus:border-orange-500 outline-none"
               autoFocus
             />
           </div>
@@ -184,12 +184,12 @@ export default function StrategyPickerModal({
             </div>
           ) : filteredStrategies.length === 0 ? (
             <div className="text-center py-12">
-              <p className="text-gray-500 dark:text-gray-400">
+              <p className="font-mono uppercase tracking-wide text-ink/50">
                 {strategies.length === 0 ? 'No strategies found' : 'No matching strategies'}
               </p>
             </div>
           ) : (
-            <div className="divide-y divide-gray-100 dark:divide-gray-800">
+            <div className="divide-y divide-ink/12">
               {filteredStrategies.map((strategy) => (
                 <button
                   key={strategy.id}
@@ -197,9 +197,9 @@ export default function StrategyPickerModal({
                     onSelect(strategy);
                     onClose();
                   }}
-                  className={`w-full flex items-center gap-4 px-6 py-4 text-left hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors ${
+                  className={`w-full flex items-center gap-4 px-6 py-4 text-left hover:bg-bone transition-colors ${
                     selectedId === strategy.id
-                      ? 'bg-primary-50 dark:bg-primary-900/20 border-l-2 border-primary-500'
+                      ? 'bg-orange-50 border-l-4 border-orange-500'
                       : ''
                   }`}
                 >
@@ -210,23 +210,23 @@ export default function StrategyPickerModal({
 
                   {/* Info */}
                   <div className="flex-1 min-w-0">
-                    <h3 className="font-medium text-gray-900 dark:text-gray-100 truncate">
+                    <h3 className="font-bold text-ink truncate">
                       {strategy.name}
                     </h3>
-                    <p className="text-sm text-gray-500 dark:text-gray-400 truncate">
+                    <p className="text-sm text-ink/60 truncate">
                       {strategy.description || 'No description'}
                     </p>
                     <div className="flex items-center gap-2 mt-1">
                       {strategy.symbols.slice(0, 3).map((symbol) => (
                         <span
                           key={symbol}
-                          className="px-1.5 py-0.5 text-xs rounded bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400"
+                          className="px-1.5 py-0.5 text-xs font-mono border border-ink bg-bone text-ink/70"
                         >
                           {symbol}
                         </span>
                       ))}
                       {strategy.symbols.length > 3 && (
-                        <span className="text-xs text-gray-400">
+                        <span className="text-xs font-mono text-ink/40">
                           +{strategy.symbols.length - 3}
                         </span>
                       )}
@@ -236,16 +236,16 @@ export default function StrategyPickerModal({
                   {/* Return */}
                   <div className="text-right">
                     <p
-                      className={`text-sm font-semibold font-mono ${
+                      className={`text-sm font-mono font-bold tabular-nums ${
                         strategy.returnValue >= 0
-                          ? 'text-green-600 dark:text-green-400'
-                          : 'text-red-600 dark:text-red-400'
+                          ? 'text-green-600'
+                          : 'text-red-600'
                       }`}
                     >
                       {strategy.returnValue >= 0 ? '+' : ''}
                       {strategy.returnValue.toFixed(1)}%
                     </p>
-                    <p className="text-xs text-gray-400">Best Return</p>
+                    <p className="text-[11px] font-mono uppercase tracking-wide text-ink/40">Best Return</p>
                   </div>
                 </button>
               ))}

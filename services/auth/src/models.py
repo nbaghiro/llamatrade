@@ -6,7 +6,6 @@ from uuid import UUID
 from pydantic import BaseModel, EmailStr, Field, field_validator
 
 
-# Request/Response Schemas
 class TenantCreate(BaseModel):
     """Schema for creating a tenant."""
 
@@ -190,11 +189,6 @@ class APIKeyValidationResult(BaseModel):
     tenant_id: UUID
     email: EmailStr
     scopes: list[str]
-
-
-# ===================
-# Per-Credential Alpaca Credentials
-# ===================
 
 
 class AlpacaCredentialsCreate(BaseModel):

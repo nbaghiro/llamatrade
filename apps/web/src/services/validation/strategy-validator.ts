@@ -20,9 +20,7 @@ import {
   isFilterBlock,
 } from '../../types/strategy-builder';
 
-// ============================================
-// Validation Types
-// ============================================
+// Validation types
 
 export type ValidationSeverity = 'error' | 'warning';
 
@@ -51,10 +49,6 @@ export interface ValidationResult {
   warnings: ValidationIssue[];
 }
 
-// ============================================
-// Validation Rule Interface
-// ============================================
-
 export interface ValidationRule {
   /** Unique rule ID for grouping and filtering */
   id: string;
@@ -68,9 +62,7 @@ export interface ValidationRule {
   validate: (tree: StrategyTree) => ValidationIssue[];
 }
 
-// ============================================
-// Helper Functions
-// ============================================
+// Helper functions
 
 /**
  * Get all blocks of a specific type
@@ -134,10 +126,6 @@ function countAssetsInSubtree(tree: StrategyTree, blockId: BlockId): number {
   return 0;
 }
 
-// ============================================
-// Helper: Check if block is a container (handles its own allocation)
-// ============================================
-
 /**
  * Check if a block is a container that handles its own allocation logic.
  * Groups, weights, filters, and if blocks are containers.
@@ -164,9 +152,7 @@ function hasOnlyContainerChildren(tree: StrategyTree, weightBlockId: BlockId): b
   return weight.childIds.length > 0;
 }
 
-// ============================================
-// Validation Rules
-// ============================================
+// Validation rules
 
 /**
  * Rule: Strategy must have at least one asset
@@ -656,10 +642,6 @@ const noDuplicateAssetsRule: ValidationRule = {
   },
 };
 
-// ============================================
-// All Validation Rules
-// ============================================
-
 export const VALIDATION_RULES: ValidationRule[] = [
   // Critical structure rules
   hasAssetsRule,
@@ -685,9 +667,7 @@ export const VALIDATION_RULES: ValidationRule[] = [
   noDuplicateAssetsRule,
 ];
 
-// ============================================
-// Main Validation Function
-// ============================================
+// Main validation function
 
 /**
  * Run all validation rules on a strategy tree

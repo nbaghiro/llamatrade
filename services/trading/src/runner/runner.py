@@ -156,17 +156,13 @@ class StrategyRunner:
         portfolio_client: PortfolioLedgerClient | None = None,
         session: StrategySession | None = None,
     ):
-        # Strategy evaluation comes from EITHER the shared merged-symbol session
-        # (production: cross-symbol conditions + portfolio-level rebalance gate) OR a
-        # per-symbol strategy_fn (tests / legacy). Exactly one must be provided.
+        # One eval source: the merged-symbol session (prod) or a per-symbol strategy_fn (tests).
         if session is None and strategy_fn is None:
             raise ValueError("StrategyRunner requires either a session or a strategy_fn")
         self.config = config
         self.strategy_fn = strategy_fn
         self._session = session
-        # Merged-symbol live evaluation buffers (session path): latest bar + timestamp per
-        # symbol, and the last period actually evaluated (so we evaluate once per bar period
-        # only when every subscribed symbol's bar for that timestamp has arrived).
+        # Session-path eval buffers: latest bar + timestamp per symbol; last period evaluated.
         self._latest_bars: dict[str, CompilerBar] = {}
         self._latest_ts: dict[str, datetime] = {}
         self._last_evaluated_ts: datetime | None = None
@@ -197,8 +193,7 @@ class StrategyRunner:
         self._position_sync_task: asyncio.Task[None] | None = None
         self._trade_stream_task: asyncio.Task[None] | None = None
 
-        # Track pending orders (submitted but not yet filled)
-        # Maps client_order_id -> signal info for position updates on fill
+        # Pending (submitted, unfilled) orders: client_order_id -> signal, for fill-time updates.
         self._pending_orders: dict[str, Signal] = {}
 
         # Circuit breaker
@@ -491,9 +486,7 @@ class StrategyRunner:
         start_time = time.perf_counter()
         symbol = bar.symbol
 
-        # Record receive latency (bar timestamp -> now); previously done in the
-        # in-service bar stream, now recorded here since the shared lib stream
-        # is metrics-agnostic.
+        # Bar receive latency (bar ts -> now); the shared lib stream is metrics-agnostic.
         latency = (datetime.now(UTC) - bar.timestamp).total_seconds()
         if latency > 0:
             record_bar_latency(latency)
@@ -718,8 +711,7 @@ class StrategyRunner:
             if result.client_order_id:
                 self._pending_orders[result.client_order_id] = signal
 
-            # Position updates happen via trade stream fill events, not here
-            # This ensures positions match broker reality
+            # Position updates come from trade-stream fill events (broker reality), not here.
 
         except Exception as e:
             logger.error(f"Order submission failed: {e}")

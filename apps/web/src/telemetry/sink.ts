@@ -179,9 +179,7 @@ export function createDefaultSink(config: TelemetryConfig): TelemetrySink {
   return noopSink;
 }
 
-// ----------------------------------------------------------------------------
 // Active sink registry — modules call `getSink()` to emit events.
-// ----------------------------------------------------------------------------
 
 let activeSink: TelemetrySink = noopSink;
 

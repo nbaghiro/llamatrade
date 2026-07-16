@@ -115,8 +115,6 @@ class CombinedConnectApp:
             # Only handle HTTP requests
             return
 
-        # Try each app - Connect apps will handle their routes
-        # and return 404 for routes they don't handle
         for app in self._apps:
             try:
                 await app(scope, receive, send)

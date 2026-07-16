@@ -161,7 +161,6 @@ class OrderExecutor(OrderSubmissionMixin):
             client_order_id = str(uuid4())
             resume_order = None
 
-        # Run risk checks (using mixin method)
         risk_result = await self._run_risk_check(
             tenant_id=tenant_id,
             order=order,
@@ -169,7 +168,6 @@ class OrderExecutor(OrderSubmissionMixin):
         )
 
         if not risk_result.passed:
-            # Handle rejection with metrics and alerts (using mixin method)
             await self._handle_risk_rejection(
                 tenant_id=tenant_id,
                 session_id=session_id,
@@ -229,7 +227,6 @@ class OrderExecutor(OrderSubmissionMixin):
             await self.db.commit()
             await self.db.refresh(db_order)
 
-            # Record success metric (using mixin method)
             self._record_submission_success(order=order, start_time=start_time)
 
             # Publish order submitted event
@@ -251,7 +248,6 @@ class OrderExecutor(OrderSubmissionMixin):
             )
 
         except Exception as e:
-            # Handle API rejection with metrics and alerts (using mixin method)
             await self._handle_alpaca_rejection(
                 tenant_id=tenant_id,
                 session_id=session_id,
@@ -763,10 +759,6 @@ class OrderExecutor(OrderSubmissionMixin):
 
         return updated
 
-    # ===================
-    # Bracket order methods
-    # ===================
-
     async def _submit_bracket_orders(
         self,
         tenant_id: UUID,
@@ -1047,8 +1039,7 @@ class OrderExecutor(OrderSubmissionMixin):
                     filled_price=filled_price,
                 )
 
-        # Acquire exclusive lock on sibling orders to prevent race conditions
-        # This prevents concurrent _handle_bracket_fill calls from conflicting
+        # Acquire exclusive lock on sibling orders to prevent concurrent _handle_bracket_fill races.
         stmt = (
             select(Order)
             .where(Order.parent_order_id == filled_bracket.parent_order_id)
@@ -1227,10 +1218,6 @@ class OrderExecutor(OrderSubmissionMixin):
 
         return sl_order, tp_order
 
-    # ===================
-    # Private helpers
-    # ===================
-
     async def _get_order_by_id(self, tenant_id: UUID, order_id: UUID) -> Order | None:
         """Get order ensuring tenant isolation."""
         stmt = select(Order).where(Order.id == order_id).where(Order.tenant_id == tenant_id)
@@ -1246,8 +1233,6 @@ class OrderExecutor(OrderSubmissionMixin):
         )
         result = await self.db.execute(stmt)
         return result.scalar_one_or_none()
-
-    # Note: _map_alpaca_status is now inherited from OrderSubmissionMixin
 
     def _update_from_alpaca(self, order: Order, alpaca_order: AlpacaOrder) -> bool:
         """Update order from Alpaca response.
@@ -1328,12 +1313,14 @@ async def create_order_executor(
     if those credentials can't be resolved.
     """
     from llamatrade_alpaca import TradingClient, get_trading_client
-    from llamatrade_db import get_session_maker
+    from llamatrade_db import get_session_maker, set_tenant_guc
 
     from src.credentials import resolve_session_credentials
     from src.risk.risk_manager import get_risk_manager
 
     db = get_session_maker()()
+    if tenant_id is not None:
+        await set_tenant_guc(db, tenant_id)
     owns_alpaca = False
     if session_id is not None and tenant_id is not None:
         creds = await resolve_session_credentials(db, session_id, tenant_id)

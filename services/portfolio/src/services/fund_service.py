@@ -131,8 +131,6 @@ class FundService:
             SleeveView(to_sleeve, proj.sleeve(str(to_sleeve_id)).cash),
         )
 
-    # ----------------------------------------------------------------- helpers
-
     async def _require_unallocated(self, tenant_id: UUID, account_id: UUID) -> Sleeve:
         sleeve = await self._repo.get_sleeve_by_type(tenant_id, account_id, SleeveType.UNALLOCATED)
         if sleeve is None:

@@ -336,3 +336,82 @@ class TestSyncPortfolio:
         positions_synced = len(positions)
 
         assert positions_synced == 0
+
+
+# === Strategy Performance Positions ===
+
+
+class _Session:
+    async def __aenter__(self) -> _Session:
+        return self
+
+    async def __aexit__(self, *exc: object) -> bool:
+        return False
+
+
+async def test_get_strategy_performance_maps_positions() -> None:
+    """GetStrategyPerformance carries the sleeve's marked-to-market positions."""
+    from llamatrade_proto.generated import common_pb2, portfolio_pb2
+
+    from src.grpc.servicer import PortfolioServicer
+    from src.models import PositionResponse
+    from src.services.strategy_performance_service import (
+        LiveMetrics,
+        PeriodReturns,
+        StrategyPerformanceDetail,
+        StrategyPerformanceSummary,
+    )
+
+    execution_id, tenant_id = uuid4(), uuid4()
+    detail = StrategyPerformanceDetail(
+        summary=StrategyPerformanceSummary(
+            execution_id=execution_id,
+            strategy_id=uuid4(),
+            strategy_name="Trend",
+            mode="paper",
+            status="running",
+            color="#fff",
+            allocated_capital=Decimal("10000"),
+            current_value=Decimal("10500"),
+            positions_count=1,
+            returns=PeriodReturns(),
+            started_at=datetime.now(UTC),
+            updated_at=datetime.now(UTC),
+        ),
+        metrics=LiveMetrics(),
+        positions=[
+            PositionResponse(
+                symbol="AAPL",
+                qty=10.0,
+                side="long",
+                cost_basis=4000.0,
+                market_value=5000.0,
+                unrealized_pnl=1000.0,
+                unrealized_pnl_percent=25.0,
+                current_price=500.0,
+                avg_entry_price=400.0,
+            )
+        ],
+    )
+
+    reader = MagicMock()
+    reader.get_strategy_performance = AsyncMock(return_value=detail)
+
+    servicer = PortfolioServicer()
+    servicer._get_db = AsyncMock(return_value=_Session())
+    servicer._strategy_perf_reader = MagicMock(return_value=reader)
+
+    request = portfolio_pb2.GetStrategyPerformanceRequest(
+        context=common_pb2.TenantContext(tenant_id=str(tenant_id)),
+        execution_id=str(execution_id),
+    )
+    resp = await servicer.get_strategy_performance(request, MagicMock())
+
+    assert len(resp.positions) == 1
+    pos = resp.positions[0]
+    assert pos.symbol == "AAPL"
+    assert Decimal(pos.quantity.value) == Decimal("10")
+    assert Decimal(pos.average_entry_price.value) == Decimal("400")
+    assert Decimal(pos.current_price.value) == Decimal("500")
+    assert Decimal(pos.market_value.value) == Decimal("5000")
+    assert Decimal(pos.unrealized_pnl.value) == Decimal("1000")

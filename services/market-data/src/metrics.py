@@ -33,10 +33,8 @@ from src.models import Bar
 # ``marketdata`` cache.
 _CACHE = "marketdata"
 
-# Service-specific stream-fan-out counters. These have no equivalent in the
-# shared domain catalog because they count messages this service relays to its
-# own clients (and what it receives upstream), so they live here via the
-# registry factory (still validated by ``conventions``).
+# Service-specific stream fan-out counters — no shared-catalog equivalent (they
+# count messages relayed to / received from this service), so registered locally.
 _STREAM_MESSAGES_TOTAL = counter(
     "llamatrade_marketdata_stream_messages_total",
     ["type"],

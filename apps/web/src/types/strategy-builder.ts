@@ -1,5 +1,3 @@
-// Strategy Builder Type Definitions
-
 export type BlockId = string;
 export type BlockType = 'root' | 'asset' | 'group' | 'weight' | 'if' | 'else' | 'filter';
 export type WeightMethod =
@@ -11,13 +9,11 @@ export type WeightMethod =
   | 'min_variance'
   | 'risk_parity';
 
-// Base block interface
 interface BaseBlock {
   id: BlockId;
   parentId: BlockId | null;
 }
 
-// Root block - strategy container
 export interface RootBlock extends BaseBlock {
   type: 'root';
   parentId: null;
@@ -25,7 +21,6 @@ export interface RootBlock extends BaseBlock {
   childIds: BlockId[];
 }
 
-// Asset block - individual stock/ETF
 export interface AssetBlock extends BaseBlock {
   type: 'asset';
   parentId: BlockId;
@@ -34,7 +29,6 @@ export interface AssetBlock extends BaseBlock {
   displayName: string;
 }
 
-// Group block - named container for organizing assets
 export interface GroupBlock extends BaseBlock {
   type: 'group';
   parentId: BlockId;
@@ -42,7 +36,6 @@ export interface GroupBlock extends BaseBlock {
   childIds: BlockId[];
 }
 
-// Weight block - allocation method
 export interface WeightBlock extends BaseBlock {
   type: 'weight';
   parentId: BlockId;
@@ -52,11 +45,8 @@ export interface WeightBlock extends BaseBlock {
   childIds: BlockId[];
 }
 
-// ============================================
 // Condition Block Types (IF/ELSE)
-// ============================================
 
-// Indicator reference for conditions
 export type IndicatorName =
   | 'sma'
   | 'ema'
@@ -80,7 +70,6 @@ export type PriceField = 'current' | 'open' | 'high' | 'low' | 'close' | 'volume
 export type IndicatorSource = 'price' | 'close' | 'high' | 'low' | 'open' | 'volume';
 export type Comparator = 'gt' | 'lt' | 'gte' | 'lte' | 'cross_above' | 'cross_below';
 
-// Operand types for conditions
 export interface IndicatorRef {
   type: 'indicator';
   indicator: IndicatorName;
@@ -109,14 +98,12 @@ export interface NumberValue {
 
 export type ConditionOperand = IndicatorRef | PriceRef | NumberValue;
 
-// Structured condition expression
 export interface ConditionExpression {
   left: ConditionOperand;
   comparator: Comparator;
   right: ConditionOperand;
 }
 
-// If block - conditional allocation
 export interface IfBlock extends BaseBlock {
   type: 'if';
   parentId: BlockId;
@@ -129,13 +116,11 @@ export interface IfBlock extends BaseBlock {
 export interface ElseBlock extends BaseBlock {
   type: 'else';
   parentId: BlockId;
-  ifBlockId: BlockId; // Reference to the associated IfBlock
+  ifBlockId: BlockId;
   childIds: BlockId[];
 }
 
-// ============================================
 // Filter Block Types
-// ============================================
 
 export type FilterSelection = 'top' | 'bottom';
 export type FilterUniverse = 'sp500' | 'nasdaq100' | 'russell2000' | 'dow30' | 'custom';
@@ -157,7 +142,6 @@ export interface FilterConfig {
   period: FilterPeriod;
 }
 
-// Filter block - dynamic asset selection
 export interface FilterBlock extends BaseBlock {
   type: 'filter';
   parentId: BlockId;
@@ -166,10 +150,8 @@ export interface FilterBlock extends BaseBlock {
   childIds: BlockId[]; // Populated dynamically based on filter results
 }
 
-// Union type for all blocks
 export type Block = RootBlock | AssetBlock | GroupBlock | WeightBlock | IfBlock | ElseBlock | FilterBlock;
 
-// Type guards
 export function isRootBlock(block: Block): block is RootBlock {
   return block.type === 'root';
 }
@@ -198,7 +180,6 @@ export function isFilterBlock(block: Block): block is FilterBlock {
   return block.type === 'filter';
 }
 
-// Blocks that can have children
 export type ParentBlock = RootBlock | GroupBlock | WeightBlock | IfBlock | ElseBlock | FilterBlock;
 
 export function hasChildren(block: Block): block is ParentBlock {
@@ -212,20 +193,17 @@ export function hasChildren(block: Block): block is ParentBlock {
   );
 }
 
-// Strategy tree structure
 export interface StrategyTree {
   rootId: BlockId;
   blocks: Record<BlockId, Block>;
 }
 
-// UI state
 export interface StrategyBuilderUI {
   selectedBlockId: BlockId | null;
   expandedBlocks: Set<BlockId>;
   editingBlockId: BlockId | null;
 }
 
-// Weight method metadata for UI
 export interface WeightMethodInfo {
   method: WeightMethod;
   label: string;
@@ -298,14 +276,12 @@ export function getWeightMethodInfo(method: WeightMethod): WeightMethodInfo {
   return info;
 }
 
-// ============================================
 // Indicator Metadata for UI
-// ============================================
 
 export interface IndicatorInfo {
   name: IndicatorName;
   label: string;
-  shortLabel: string; // For compact display
+  shortLabel: string;
   hasPeriod: boolean;
   defaultPeriod?: number;
   category: 'trend' | 'momentum' | 'volatility' | 'volume';
@@ -339,9 +315,7 @@ export function getIndicatorInfo(name: IndicatorName): IndicatorInfo {
   return info;
 }
 
-// ============================================
 // Comparator Metadata for UI
-// ============================================
 
 export interface ComparatorInfo {
   value: Comparator;
@@ -366,9 +340,7 @@ export function getComparatorInfo(value: Comparator): ComparatorInfo {
   return info;
 }
 
-// ============================================
 // Filter Metadata for UI
-// ============================================
 
 export interface FilterUniverseInfo {
   value: FilterUniverse;
@@ -411,7 +383,6 @@ export const FILTER_PERIODS: FilterPeriodInfo[] = [
   { value: '12m', label: '12 months' },
 ];
 
-// Node position for connector rendering
 export interface NodePosition {
   blockId: BlockId;
   x: number;
@@ -420,7 +391,6 @@ export interface NodePosition {
   height: number;
 }
 
-// Connector path data
 export interface ConnectorPath {
   parentId: BlockId;
   childId: BlockId;

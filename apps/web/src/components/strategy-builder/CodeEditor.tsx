@@ -24,12 +24,10 @@ export function CodeEditor({ readOnly = false }: CodeEditorProps) {
   const isInitializedRef = useRef(false);
   const { dslCode, dslParseError, updateDSLCode, clearDSLParseError } = useStrategyBuilderStoreWithContext();
 
-  // Detect dark mode
   const [isDark, setIsDark] = useState(() =>
     document.documentElement.classList.contains('dark')
   );
 
-  // Watch for theme changes
   useEffect(() => {
     const observer = new MutationObserver((mutations) => {
       mutations.forEach((mutation) => {
@@ -43,14 +41,12 @@ export function CodeEditor({ readOnly = false }: CodeEditorProps) {
     return () => observer.disconnect();
   }, []);
 
-  // Handle code changes from the editor
   const handleChange = useCallback((value: string) => {
     // Skip updates during initialization
     if (!isInitializedRef.current) return;
     updateDSLCode(value);
   }, [updateDSLCode]);
 
-  // Reconfigure theme when it changes
   useEffect(() => {
     if (viewRef.current && themeCompartmentRef.current) {
       viewRef.current.dispatch({
@@ -59,7 +55,6 @@ export function CodeEditor({ readOnly = false }: CodeEditorProps) {
     }
   }, [isDark]);
 
-  // Reconfigure readOnly when it changes
   useEffect(() => {
     if (viewRef.current && readOnlyCompartmentRef.current) {
       viewRef.current.dispatch({
@@ -70,17 +65,14 @@ export function CodeEditor({ readOnly = false }: CodeEditorProps) {
     }
   }, [readOnly]);
 
-  // Initialize the editor
   useEffect(() => {
     if (!editorRef.current || viewRef.current) return;
 
-    // Create compartments for dynamic configuration
     const themeCompartment = new Compartment();
     const readOnlyCompartment = new Compartment();
     themeCompartmentRef.current = themeCompartment;
     readOnlyCompartmentRef.current = readOnlyCompartment;
 
-    // Create new editor
     const state = EditorState.create({
       doc: dslCode,
       extensions: [
@@ -147,24 +139,22 @@ export function CodeEditor({ readOnly = false }: CodeEditorProps) {
 
   return (
     <div className="flex flex-col h-full">
-      {/* Error banner */}
       {dslParseError && (
-        <div className="flex items-center gap-2 mx-4 mt-2 px-3 py-2 bg-red-100/80 dark:bg-red-900/40 rounded-lg border border-red-200 dark:border-red-800/50">
-          <AlertCircle size={14} className="text-red-600 dark:text-red-400 flex-shrink-0" />
-          <span className="text-sm text-red-700 dark:text-red-300 flex-1">{dslParseError}</span>
+        <div className="flex items-center gap-2 mx-4 mt-2 px-3 py-2 bg-red-100 border-2 border-ink">
+          <AlertCircle size={14} className="text-red-600 flex-shrink-0" />
+          <span className="text-sm text-red-700 flex-1">{dslParseError}</span>
           <button
             onClick={clearDSLParseError}
-            className="text-xs text-red-600 dark:text-red-400 hover:underline"
+            className="text-xs text-red-600 hover:underline"
           >
             Dismiss
           </button>
         </div>
       )}
 
-      {/* Editor container - transparent to show dotted grid */}
       <div
         ref={editorRef}
-        className="flex-1 overflow-auto"
+        className="flex-1 overflow-auto border-2 border-ink bg-ink shadow-[4px_4px_0_#ff4d1c] mx-4 mt-2 mb-3"
       />
     </div>
   );

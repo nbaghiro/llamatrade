@@ -17,7 +17,6 @@ interface PlanCardProps {
   onSelect: (plan: Plan) => void;
 }
 
-// Helper to get numeric price from Money type
 function getPrice(money: Money | undefined): number {
   if (!money) return 0;
   return parseFloat(money.amount) || 0;
@@ -39,7 +38,6 @@ export default function PlanCard({
   const isPro = plan.tier === PlanTier.PRO;
   const isFree = plan.tier === PlanTier.FREE;
 
-  // Build features list from plan limits
   const features: string[] = [];
 
   if (plan.maxBacktestsPerMonth > 0) {
@@ -58,15 +56,15 @@ export default function PlanCard({
 
   return (
     <div
-      className={`relative flex flex-col rounded-2xl border p-6 ${
+      className={`relative flex flex-col border-2 p-6 ${
         isPro
-          ? 'border-indigo-500 bg-indigo-50/50 dark:border-indigo-400 dark:bg-indigo-950/20'
-          : 'border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-900'
-      } ${isCurrentPlan ? 'ring-2 ring-indigo-500' : ''}`}
+          ? 'border-orange-500 bg-orange-50 dark:border-indigo-400 dark:bg-indigo-950/20'
+          : 'border-ink bg-paper dark:border-gray-700 dark:bg-gray-900'
+      } ${isCurrentPlan ? 'ring-2 ring-orange-500' : ''}`}
     >
       {isPro && (
         <div className="absolute -top-3 left-1/2 -translate-x-1/2">
-          <span className="rounded-full bg-indigo-600 px-3 py-1 text-xs font-medium text-white">
+          <span className="border-2 border-ink bg-orange-500 px-3 py-1 text-[10px] font-mono font-bold uppercase tracking-wide text-ink">
             Most Popular
           </span>
         </div>
@@ -74,19 +72,19 @@ export default function PlanCard({
 
       {isCurrentPlan && (
         <div className="absolute -top-3 right-4">
-          <span className="rounded-full bg-green-600 px-3 py-1 text-xs font-medium text-white">
+          <span className="border-2 border-ink bg-green-600 px-3 py-1 text-[10px] font-mono font-bold uppercase tracking-wide text-bone">
             Current Plan
           </span>
         </div>
       )}
 
       <div className="mb-4">
-        <h3 className="text-xl font-semibold text-gray-900 dark:text-gray-100">{plan.name}</h3>
+        <h3 className="text-xl font-display uppercase tracking-tight text-ink">{plan.name}</h3>
       </div>
 
       <div className="mb-6">
         <div className="flex items-baseline">
-          <span className="text-4xl font-bold text-gray-900 dark:text-gray-100">
+          <span className="text-4xl font-display text-ink">
             ${isFree ? '0' : monthlyEquivalent}
           </span>
           {!isFree && (
@@ -125,13 +123,7 @@ export default function PlanCard({
       <button
         onClick={() => onSelect(plan)}
         disabled={isCurrentPlan}
-        className={`w-full rounded-lg px-4 py-2.5 text-sm font-medium transition-colors ${
-          isCurrentPlan
-            ? 'cursor-not-allowed bg-gray-100 text-gray-400 dark:bg-gray-800 dark:text-gray-500'
-            : isPro
-              ? 'bg-indigo-600 text-white hover:bg-indigo-700'
-              : 'bg-gray-900 text-white hover:bg-gray-800 dark:bg-gray-100 dark:text-gray-900 dark:hover:bg-gray-200'
-        }`}
+        className={`btn w-full ${isPro ? 'btn-primary' : 'btn-secondary'}`}
       >
         {isCurrentPlan ? 'Current Plan' : isFree ? 'Downgrade' : 'Subscribe'}
       </button>

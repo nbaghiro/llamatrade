@@ -73,6 +73,15 @@ class BaseTool(ABC):
         """JSON Schema for tool parameters."""
         ...
 
+    @property
+    def requires_confirmation(self) -> bool:
+        """Whether a proposed call to this tool must be user-approved before it runs.
+
+        Defaults to False (read-only tools). Write/side-effecting tools override
+        this to True so the agent proposes the action rather than auto-executing it.
+        """
+        return False
+
     @abstractmethod
     async def execute(
         self,

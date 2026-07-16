@@ -596,3 +596,98 @@ class GetMarketStatusResponse(message.Message):
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
     _ClearFieldArgType: _TypeAlias = typing.Literal["next_close", b"next_close", "next_open", b"next_open", "status", b"status"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+
+@typing.final
+class Asset(message.Message):
+    """Tradable-asset reference metadata — a passthrough of the core section of
+    Alpaca's /v2/assets payload, so callers get identity (name), venue and
+    tradability in one place rather than each inventing its own lookup.
+    """
+
+    DESCRIPTOR: descriptor.Descriptor
+
+    ID_FIELD_NUMBER: builtins.int
+    SYMBOL_FIELD_NUMBER: builtins.int
+    NAME_FIELD_NUMBER: builtins.int
+    EXCHANGE_FIELD_NUMBER: builtins.int
+    ASSET_CLASS_FIELD_NUMBER: builtins.int
+    STATUS_FIELD_NUMBER: builtins.int
+    TRADABLE_FIELD_NUMBER: builtins.int
+    FRACTIONABLE_FIELD_NUMBER: builtins.int
+    id: builtins.str
+    symbol: builtins.str
+    name: builtins.str
+    """Human display name, e.g. "Energy Select Sector SPDR Fund"."""
+    exchange: builtins.str
+    asset_class: builtins.str
+    """Alpaca "class" field, e.g. "us_equity", "crypto"."""
+    status: builtins.str
+    """"active" or "inactive"."""
+    tradable: builtins.bool
+    fractionable: builtins.bool
+    def __init__(
+        self,
+        *,
+        id: builtins.str = ...,
+        symbol: builtins.str = ...,
+        name: builtins.str = ...,
+        exchange: builtins.str = ...,
+        asset_class: builtins.str = ...,
+        status: builtins.str = ...,
+        tradable: builtins.bool = ...,
+        fractionable: builtins.bool = ...,
+    ) -> None: ...
+    _ClearFieldArgType: _TypeAlias = typing.Literal["asset_class", b"asset_class", "exchange", b"exchange", "fractionable", b"fractionable", "id", b"id", "name", b"name", "status", b"status", "symbol", b"symbol", "tradable", b"tradable"]  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+
+@typing.final
+class GetAssetsRequest(message.Message):
+    DESCRIPTOR: descriptor.Descriptor
+
+    SYMBOLS_FIELD_NUMBER: builtins.int
+    @builtins.property
+    def symbols(self) -> containers.RepeatedScalarFieldContainer[builtins.str]: ...
+    def __init__(
+        self,
+        *,
+        symbols: abc.Iterable[builtins.str] | None = ...,
+    ) -> None: ...
+    _ClearFieldArgType: _TypeAlias = typing.Literal["symbols", b"symbols"]  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+
+@typing.final
+class GetAssetsResponse(message.Message):
+    DESCRIPTOR: descriptor.Descriptor
+
+    @typing.final
+    class AssetsEntry(message.Message):
+        DESCRIPTOR: descriptor.Descriptor
+
+        KEY_FIELD_NUMBER: builtins.int
+        VALUE_FIELD_NUMBER: builtins.int
+        key: builtins.str
+        @builtins.property
+        def value(self) -> Asset: ...
+        def __init__(
+            self,
+            *,
+            key: builtins.str = ...,
+            value: Asset | None = ...,
+        ) -> None: ...
+        _HasFieldArgType: _TypeAlias = typing.Literal["value", b"value"]  # noqa: Y015
+        def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
+        _ClearFieldArgType: _TypeAlias = typing.Literal["key", b"key", "value", b"value"]  # noqa: Y015
+        def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+
+    ASSETS_FIELD_NUMBER: builtins.int
+    @builtins.property
+    def assets(self) -> containers.MessageMap[builtins.str, Asset]:
+        """Keyed by symbol; unknown symbols are omitted."""
+
+    def __init__(
+        self,
+        *,
+        assets: abc.Mapping[builtins.str, Asset] | None = ...,
+    ) -> None: ...
+    _ClearFieldArgType: _TypeAlias = typing.Literal["assets", b"assets"]  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...

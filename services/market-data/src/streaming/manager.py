@@ -54,7 +54,6 @@ class StreamManager:
         self._quote_subs: dict[str, set[int]] = defaultdict(set)
         self._bar_subs: dict[str, set[int]] = defaultdict(set)
 
-        # Lock for thread-safe operations
         self._lock = asyncio.Lock()
 
         # Callbacks for subscription changes (for bridge integration)
@@ -117,7 +116,6 @@ class StreamManager:
         removed_bars: list[str] = []
 
         async with self._lock:
-            # Remove from queues
             self._queues.pop(client_id, None)
 
             # Remove from all subscriptions and track what was removed
@@ -287,12 +285,10 @@ class StreamManager:
             else:
                 disconnected.append(client_id)
 
-        # Clean up disconnected clients
         for client_id in disconnected:
             await self.disconnect(client_id)
 
 
-# Singleton instance
 _manager: StreamManager | None = None
 
 

@@ -11,7 +11,6 @@ import {
   TemplateDifficulty,
 } from '../generated/proto/strategy_pb';
 
-// Re-export proto enums for convenience
 export { AssetClass, TemplateCategory, TemplateDifficulty };
 
 /**

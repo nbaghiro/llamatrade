@@ -2,15 +2,9 @@
  * Billing and subscription types
  */
 
-// Import enum types from proto-generated code (single source of truth)
 import { InvoiceStatus } from '../generated/proto/billing_pb';
 
-// Re-export proto enums
 export { InvoiceStatus };
-
-// ============================================
-// Enum Display Helpers
-// ============================================
 
 export function getInvoiceStatusLabel(status: InvoiceStatus): string {
   switch (status) {

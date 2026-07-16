@@ -1,5 +1,3 @@
-// Strategy configuration types
-
 export interface StrategyConfigJSON {
   name?: string;
   symbols: string[];

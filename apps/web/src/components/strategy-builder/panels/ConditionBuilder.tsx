@@ -135,28 +135,24 @@ export function ConditionBuilder({
   };
 
   return (
-    <div className="bg-white dark:bg-gray-900 rounded-lg shadow-xl border border-gray-200 dark:border-gray-700 w-[400px]">
-      {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-gray-700">
-        <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+    <div className="bg-paper border-2 border-ink shadow-lg w-[400px]">
+      <div className="flex items-center justify-between px-4 py-3 border-b-2 border-ink">
+        <h3 className="text-sm font-mono font-bold uppercase tracking-wide text-ink">
           {initialCondition ? 'Edit Condition' : 'Create Condition'}
         </h3>
         <button
           onClick={onCancel}
-          className="p-1 hover:bg-gray-100 dark:hover:bg-gray-800 rounded"
+          className="p-1 hover:bg-ink/10"
         >
-          <X className="w-4 h-4 text-gray-500" />
+          <X className="w-4 h-4 text-ink/60" />
         </button>
       </div>
 
-      {/* Content */}
       <div className="p-4 space-y-4">
-        {/* Label */}
-        <div className="text-xs font-semibold uppercase tracking-wide text-amber-600 dark:text-amber-400">
+        <div className="text-xs font-mono font-bold uppercase tracking-wide text-blue-600">
           IF
         </div>
 
-        {/* Left operand */}
         <OperandSelector
           label="When"
           state={left}
@@ -164,15 +160,14 @@ export function ConditionBuilder({
           showNumber={false}
         />
 
-        {/* Comparator */}
         <div>
-          <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">
+          <label className="block text-[11px] font-mono uppercase tracking-wide text-ink/70 mb-1">
             Condition
           </label>
           <select
             value={comparator}
             onChange={(e) => setComparator(e.target.value as Comparator)}
-            className="w-full px-3 py-2 text-sm bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-amber-500"
+            className="w-full px-3 py-2 text-sm bg-paper text-ink border-2 border-ink focus:outline-none focus:ring-2 focus:ring-blue-500"
           >
             {COMPARATORS.map((c) => (
               <option key={c.value} value={c.value}>
@@ -182,21 +177,19 @@ export function ConditionBuilder({
           </select>
         </div>
 
-        {/* Right operand */}
         <OperandSelector label="Compare to" state={right} onChange={updateRight} showNumber />
       </div>
 
-      {/* Footer */}
-      <div className="flex justify-end gap-2 px-4 py-3 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800">
+      <div className="flex justify-end gap-2 px-4 py-3 border-t-2 border-ink bg-bone">
         <button
           onClick={onCancel}
-          className="px-3 py-1.5 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-md transition-colors"
+          className="px-3 py-1.5 text-sm text-ink border-2 border-ink hover:bg-ink hover:text-bone transition-colors"
         >
           Cancel
         </button>
         <button
           onClick={handleSave}
-          className="px-3 py-1.5 text-sm bg-amber-500 hover:bg-amber-600 text-white rounded-md transition-colors"
+          className="px-3 py-1.5 text-sm font-mono font-bold uppercase tracking-wide bg-blue-600 hover:bg-blue-700 text-bone border-2 border-ink transition-colors"
         >
           {initialCondition ? 'Update' : 'Add Condition'}
         </button>
@@ -217,28 +210,27 @@ function OperandSelector({ label, state, onChange, showNumber = true }: OperandS
 
   return (
     <div className="space-y-2">
-      <label className="block text-xs font-medium text-gray-500 dark:text-gray-400">
+      <label className="block text-[11px] font-mono uppercase tracking-wide text-ink/70">
         {label}
       </label>
 
-      {/* Type selector */}
       <div className="flex gap-1">
         <button
           onClick={() => onChange({ type: 'price' })}
-          className={`px-3 py-1.5 text-xs rounded-md transition-colors ${
+          className={`px-3 py-1.5 text-xs border-2 border-ink transition-colors ${
             state.type === 'price'
-              ? 'bg-amber-500 text-white'
-              : 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700'
+              ? 'bg-blue-600 text-bone'
+              : 'bg-paper text-ink hover:bg-ink hover:text-bone'
           }`}
         >
           Price
         </button>
         <button
           onClick={() => onChange({ type: 'indicator' })}
-          className={`px-3 py-1.5 text-xs rounded-md transition-colors ${
+          className={`px-3 py-1.5 text-xs border-2 border-ink transition-colors ${
             state.type === 'indicator'
-              ? 'bg-amber-500 text-white'
-              : 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700'
+              ? 'bg-blue-600 text-bone'
+              : 'bg-paper text-ink hover:bg-ink hover:text-bone'
           }`}
         >
           Indicator
@@ -246,10 +238,10 @@ function OperandSelector({ label, state, onChange, showNumber = true }: OperandS
         {showNumber && (
           <button
             onClick={() => onChange({ type: 'number' })}
-            className={`px-3 py-1.5 text-xs rounded-md transition-colors ${
+            className={`px-3 py-1.5 text-xs border-2 border-ink transition-colors ${
               state.type === 'number'
-                ? 'bg-amber-500 text-white'
-                : 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700'
+                ? 'bg-blue-600 text-bone'
+                : 'bg-paper text-ink hover:bg-ink hover:text-bone'
             }`}
           >
             Value
@@ -257,13 +249,12 @@ function OperandSelector({ label, state, onChange, showNumber = true }: OperandS
         )}
       </div>
 
-      {/* Type-specific inputs */}
       {state.type === 'price' && (
         <div className="flex gap-2">
           <select
             value={state.priceField}
             onChange={(e) => onChange({ priceField: e.target.value as PriceField })}
-            className="flex-1 px-3 py-2 text-sm bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-amber-500"
+            className="flex-1 px-3 py-2 text-sm bg-paper text-ink border-2 border-ink focus:outline-none focus:ring-2 focus:ring-blue-500"
           >
             <option value="current">Current price</option>
             <option value="open">Open</option>
@@ -276,7 +267,7 @@ function OperandSelector({ label, state, onChange, showNumber = true }: OperandS
             value={state.priceSymbol}
             onChange={(e) => onChange({ priceSymbol: e.target.value.toUpperCase() })}
             placeholder="Symbol"
-            className="w-24 px-3 py-2 text-sm bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-amber-500"
+            className="w-24 px-3 py-2 text-sm bg-paper text-ink border-2 border-ink focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
         </div>
       )}
@@ -293,7 +284,7 @@ function OperandSelector({ label, state, onChange, showNumber = true }: OperandS
                 indicatorPeriod: info.defaultPeriod || 20,
               });
             }}
-            className="w-full px-3 py-2 text-sm bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-amber-500"
+            className="w-full px-3 py-2 text-sm bg-paper text-ink border-2 border-ink focus:outline-none focus:ring-2 focus:ring-blue-500"
           >
             {INDICATORS.map((ind) => (
               <option key={ind.name} value={ind.name}>
@@ -310,9 +301,9 @@ function OperandSelector({ label, state, onChange, showNumber = true }: OperandS
                   onChange={(e) => onChange({ indicatorPeriod: parseInt(e.target.value) || 1 })}
                   min={1}
                   max={500}
-                  className="w-20 px-3 py-2 text-sm bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-amber-500"
+                  className="w-20 px-3 py-2 text-sm bg-paper text-ink border-2 border-ink focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
-                <span className="text-xs text-gray-500">days</span>
+                <span className="text-xs text-ink/60">days</span>
               </div>
             )}
             <input
@@ -320,7 +311,7 @@ function OperandSelector({ label, state, onChange, showNumber = true }: OperandS
               value={state.indicatorSymbol}
               onChange={(e) => onChange({ indicatorSymbol: e.target.value.toUpperCase() })}
               placeholder="Symbol"
-              className="w-24 px-3 py-2 text-sm bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-amber-500"
+              className="w-24 px-3 py-2 text-sm bg-paper text-ink border-2 border-ink focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
           </div>
         </div>
@@ -333,14 +324,14 @@ function OperandSelector({ label, state, onChange, showNumber = true }: OperandS
             value={state.numberValue}
             onChange={(e) => onChange({ numberValue: parseFloat(e.target.value) || 0 })}
             step="any"
-            className="flex-1 px-3 py-2 text-sm bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-amber-500"
+            className="flex-1 px-3 py-2 text-sm bg-paper text-ink border-2 border-ink focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
-          <label className="flex items-center gap-1 text-sm text-gray-600 dark:text-gray-400">
+          <label className="flex items-center gap-1 text-sm text-ink/70">
             <input
               type="checkbox"
               checked={state.isPercent}
               onChange={(e) => onChange({ isPercent: e.target.checked })}
-              className="rounded border-gray-300 dark:border-gray-600"
+              className="border-2 border-ink"
             />
             %
           </label>

@@ -1,4 +1,4 @@
-.PHONY: dev dev-up dev-down dev-infra dev-setup build test lint clean ci migrate migrate-status migrate-history
+.PHONY: dev dev-up dev-down dev-infra dev-setup build test lint clean ci migrate migrate-status migrate-history seed-demo
 
 # Helper to load .env file
 ifneq (,$(wildcard ./.env))
@@ -263,6 +263,16 @@ migrate-history:
 migrate-new:
 	@read -p "Migration name: " name && \
 	$(LOAD_ENV) && cd libs/db/llamatrade_db/alembic && ../../../../.venv/bin/alembic revision -m "$$name"
+
+# Seed a polished, internally-consistent demo tenant (demo@llamatrade.ai / demo1234).
+# Runs inside the portfolio container to reuse the real ledger kernel. Idempotent:
+# re-running purges and recreates the demo tenant only. See scripts/seed_demo_account.py
+# and .docs/planning/demo-seed-blueprint.md.
+seed-demo:
+	@echo "Seeding demo account (demo@llamatrade.ai / demo1234)..."
+	docker cp scripts/demo_seed_data llamatrade-portfolio:/app/demo_seed_data
+	docker cp scripts/seed_demo_account.py llamatrade-portfolio:/app/seed_demo_account.py
+	docker exec -w /app llamatrade-portfolio python seed_demo_account.py
 
 # Deployment
 deploy-staging:

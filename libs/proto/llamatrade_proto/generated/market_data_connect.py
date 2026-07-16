@@ -43,6 +43,9 @@ class MarketDataService(Protocol):
     async def get_market_status(self, request: market__data__pb2.GetMarketStatusRequest, ctx: RequestContext) -> market__data__pb2.GetMarketStatusResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
+    async def get_assets(self, request: market__data__pb2.GetAssetsRequest, ctx: RequestContext) -> market__data__pb2.GetAssetsResponse:
+        raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
+
 
 class MarketDataServiceASGIApplication(ConnectASGIApplication[MarketDataService]):
     def __init__(self, service: MarketDataService | AsyncGenerator[MarketDataService], *, interceptors: Iterable[Interceptor]=(), read_max_bytes: int | None = None) -> None:
@@ -138,6 +141,16 @@ class MarketDataServiceASGIApplication(ConnectASGIApplication[MarketDataService]
                         idempotency_level=IdempotencyLevel.UNKNOWN,
                     ),
                     function=svc.get_market_status,
+                ),
+                "/llamatrade.MarketDataService/GetAssets": Endpoint.unary(
+                    method=MethodInfo(
+                        name="GetAssets",
+                        service_name="llamatrade.MarketDataService",
+                        input=market__data__pb2.GetAssetsRequest,
+                        output=market__data__pb2.GetAssetsResponse,
+                        idempotency_level=IdempotencyLevel.UNKNOWN,
+                    ),
+                    function=svc.get_assets,
                 ),
             },
             interceptors=interceptors,
@@ -331,6 +344,26 @@ class MarketDataServiceClient(ConnectClient):
             timeout_ms=timeout_ms,
         )
 
+    async def get_assets(
+        self,
+        request: market__data__pb2.GetAssetsRequest,
+        *,
+        headers: Headers | Mapping[str, str] | None = None,
+        timeout_ms: int | None = None,
+    ) -> market__data__pb2.GetAssetsResponse:
+        return await self.execute_unary(
+            request=request,
+            method=MethodInfo(
+                name="GetAssets",
+                service_name="llamatrade.MarketDataService",
+                input=market__data__pb2.GetAssetsRequest,
+                output=market__data__pb2.GetAssetsResponse,
+                idempotency_level=IdempotencyLevel.UNKNOWN,
+            ),
+            headers=headers,
+            timeout_ms=timeout_ms,
+        )
+
 
 class MarketDataServiceSync(Protocol):
     def stream_bars(self, request: market__data__pb2.StreamBarsRequest, ctx: RequestContext) -> Iterator[market__data__pb2.Bar]:
@@ -350,6 +383,8 @@ class MarketDataServiceSync(Protocol):
     def get_snapshots(self, request: market__data__pb2.GetSnapshotsRequest, ctx: RequestContext) -> market__data__pb2.GetSnapshotsResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
     def get_market_status(self, request: market__data__pb2.GetMarketStatusRequest, ctx: RequestContext) -> market__data__pb2.GetMarketStatusResponse:
+        raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
+    def get_assets(self, request: market__data__pb2.GetAssetsRequest, ctx: RequestContext) -> market__data__pb2.GetAssetsResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
 
@@ -446,6 +481,16 @@ class MarketDataServiceWSGIApplication(ConnectWSGIApplication):
                         idempotency_level=IdempotencyLevel.UNKNOWN,
                     ),
                     function=service.get_market_status,
+                ),
+                "/llamatrade.MarketDataService/GetAssets": EndpointSync.unary(
+                    method=MethodInfo(
+                        name="GetAssets",
+                        service_name="llamatrade.MarketDataService",
+                        input=market__data__pb2.GetAssetsRequest,
+                        output=market__data__pb2.GetAssetsResponse,
+                        idempotency_level=IdempotencyLevel.UNKNOWN,
+                    ),
+                    function=service.get_assets,
                 ),
             },
             interceptors=interceptors,
@@ -633,6 +678,26 @@ class MarketDataServiceClientSync(ConnectClientSync):
                 service_name="llamatrade.MarketDataService",
                 input=market__data__pb2.GetMarketStatusRequest,
                 output=market__data__pb2.GetMarketStatusResponse,
+                idempotency_level=IdempotencyLevel.UNKNOWN,
+            ),
+            headers=headers,
+            timeout_ms=timeout_ms,
+        )
+
+    def get_assets(
+        self,
+        request: market__data__pb2.GetAssetsRequest,
+        *,
+        headers: Headers | Mapping[str, str] | None = None,
+        timeout_ms: int | None = None,
+    ) -> market__data__pb2.GetAssetsResponse:
+        return self.execute_unary(
+            request=request,
+            method=MethodInfo(
+                name="GetAssets",
+                service_name="llamatrade.MarketDataService",
+                input=market__data__pb2.GetAssetsRequest,
+                output=market__data__pb2.GetAssetsResponse,
                 idempotency_level=IdempotencyLevel.UNKNOWN,
             ),
             headers=headers,

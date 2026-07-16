@@ -110,7 +110,6 @@ class TradingEventSubscriber:
             self._bus = None
 
 
-# Factory function for easy instantiation
 def get_trading_event_subscriber(redis_url: str | None = None) -> TradingEventSubscriber:
     """Create a trading event subscriber.
 

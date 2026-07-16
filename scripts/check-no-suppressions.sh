@@ -20,8 +20,7 @@ RED='\033[0;31m'
 GREEN='\033[0;32m'
 NC='\033[0m'
 
-# Directories to check (top-level tests/ included so integration suites can't
-# silently reintroduce suppressions — that's exactly where they used to live)
+# tests/ is included so integration suites can't silently reintroduce suppressions
 DIRS="services/ libs/ tests/"
 
 # Generated code is exempt: the stub/Connect generators emit their own

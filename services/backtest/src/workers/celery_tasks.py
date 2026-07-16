@@ -14,7 +14,6 @@ from collections.abc import AsyncGenerator, Coroutine
 from contextlib import asynccontextmanager
 from uuid import UUID
 
-from celery import shared_task
 from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
@@ -24,6 +23,7 @@ from llamatrade_proto.generated.backtest_pb2 import (
     BACKTEST_STATUS_PENDING,
 )
 
+from src.celery_app import celery_app
 from src.services.backtest_service import (
     BacktestService,
     MarketDataError,
@@ -113,7 +113,7 @@ async def _reset_to_pending(backtest_id: str, tenant_id: str) -> None:
         await db.commit()
 
 
-@shared_task(bind=True, max_retries=3, default_retry_delay=60, retry_backoff=True)
+@celery_app.task(bind=True, max_retries=3, default_retry_delay=60, retry_backoff=True)
 def run_backtest_task(
     self: object, backtest_id: str, tenant_id: str
 ) -> dict[str, str | float | int]:
@@ -158,7 +158,7 @@ def run_backtest_task(
         raise
 
 
-@shared_task
+@celery_app.task
 def reap_stale_backtests_task() -> dict[str, int]:
     """Periodic reaper for orphaned RUNNING/PENDING backtests (1A).
 

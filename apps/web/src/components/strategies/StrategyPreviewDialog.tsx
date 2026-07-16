@@ -1,13 +1,11 @@
 /**
- * Strategy Preview Dialog
  * Shows a preview of a strategy template before opening in the full editor.
  */
 
 import { ArrowLeft, ArrowRight, X } from 'lucide-react';
-import { useCallback, useEffect, useMemo } from 'react';
+import { useCallback, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 
-import { generateBenchmarkData, generateChartData } from '../../data/demo-strategies';
 import {
   CATEGORY_LABELS,
   DIFFICULTY_LABELS,
@@ -23,75 +21,21 @@ import { StrategyBuilder } from '../strategy-builder/StrategyBuilder';
 
 const DIFFICULTY_COLORS: Record<TemplateDifficulty, string> = {
   [TemplateDifficulty.UNSPECIFIED]: 'bg-gray-100 text-gray-700 dark:bg-gray-900/30 dark:text-gray-400',
-  [TemplateDifficulty.BEGINNER]: 'bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-400',
-  [TemplateDifficulty.INTERMEDIATE]: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
+  [TemplateDifficulty.BEGINNER]: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
+  [TemplateDifficulty.INTERMEDIATE]: 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400',
   [TemplateDifficulty.ADVANCED]: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
 };
 
 const CATEGORY_COLORS: Record<TemplateCategory, string> = {
   [TemplateCategory.UNSPECIFIED]: 'bg-gray-100 text-gray-700 dark:bg-gray-900/30 dark:text-gray-400',
-  [TemplateCategory.BUY_AND_HOLD]: 'bg-slate-100 text-slate-700 dark:bg-slate-900/30 dark:text-slate-400',
-  [TemplateCategory.TACTICAL]: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
-  [TemplateCategory.FACTOR]: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400',
-  [TemplateCategory.INCOME]: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400',
-  [TemplateCategory.TREND]: 'bg-cyan-100 text-cyan-700 dark:bg-cyan-900/30 dark:text-cyan-400',
+  [TemplateCategory.BUY_AND_HOLD]: 'bg-gray-100 text-gray-700 dark:bg-gray-900/30 dark:text-gray-400',
+  [TemplateCategory.TACTICAL]: 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400',
+  [TemplateCategory.FACTOR]: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
+  [TemplateCategory.INCOME]: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
+  [TemplateCategory.TREND]: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
   [TemplateCategory.MEAN_REVERSION]: 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400',
-  [TemplateCategory.ALTERNATIVES]: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400',
+  [TemplateCategory.ALTERNATIVES]: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
 };
-
-function MiniChart({
-  data,
-  benchmarkData,
-  positive,
-}: {
-  data: number[];
-  benchmarkData: number[];
-  positive: boolean;
-}) {
-  const allValues = [...data, ...benchmarkData];
-  const min = Math.min(...allValues);
-  const max = Math.max(...allValues);
-  const range = max - min || 1;
-
-  const toPoints = (values: number[], width: number, height: number) =>
-    values
-      .map((v, i) => {
-        const x = (i / (values.length - 1)) * width;
-        const y = height - ((v - min) / range) * (height - 16);
-        return `${x},${y}`;
-      })
-      .join(' ');
-
-  const height = 120;
-  const gradientId = `preview-gradient-${positive ? 'pos' : 'neg'}`;
-
-  return (
-    <svg viewBox="0 0 200 120" preserveAspectRatio="none" className="w-full h-[120px]">
-      <defs>
-        <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor={positive ? '#22c55e' : '#ef4444'} stopOpacity="0.2" />
-          <stop offset="100%" stopColor={positive ? '#22c55e' : '#ef4444'} stopOpacity="0" />
-        </linearGradient>
-      </defs>
-      <polygon points={`0,${height} ${toPoints(data, 200, height)} 200,${height}`} fill={`url(#${gradientId})`} />
-      <polyline
-        points={toPoints(benchmarkData, 200, height)}
-        fill="none"
-        stroke="#9ca3af"
-        strokeWidth="1"
-        strokeDasharray="3,2"
-        vectorEffect="non-scaling-stroke"
-      />
-      <polyline
-        points={toPoints(data, 200, height)}
-        fill="none"
-        stroke={positive ? '#22c55e' : '#ef4444'}
-        strokeWidth="2"
-        vectorEffect="non-scaling-stroke"
-      />
-    </svg>
-  );
-}
 
 export default function StrategyPreviewDialog() {
   const navigate = useNavigate();
@@ -101,7 +45,6 @@ export default function StrategyPreviewDialog() {
   useEffect(() => {
     if (!previewDialogOpen || !previewTemplate) return;
 
-    // Parse the S-expression DSL into a block tree
     const parseResult = fromDSLString(previewTemplate.config_sexpr);
 
     if (!parseResult) {
@@ -142,7 +85,6 @@ export default function StrategyPreviewDialog() {
     });
   }, [previewDialogOpen, previewTemplate]);
 
-  // Handle ESC key to close preview dialog
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
     if (e.key === 'Escape') {
       closePreviewDialog();
@@ -164,26 +106,6 @@ export default function StrategyPreviewDialog() {
     navigate(`/strategies/builder?template=${previewTemplate.id}`);
   }, [previewTemplate, closeAllStrategyDialogs, navigate]);
 
-  // Generate mock performance data
-  const templateIndex = useMemo(() => {
-    if (!previewTemplate) return 0;
-    // Use template ID hash for consistent data
-    let hash = 0;
-    for (let i = 0; i < previewTemplate.id.length; i++) {
-      hash = ((hash << 5) - hash) + previewTemplate.id.charCodeAt(i);
-      hash |= 0;
-    }
-    return Math.abs(hash) % 100;
-  }, [previewTemplate]);
-
-  const chartData = useMemo(() => generateChartData(templateIndex * 7 + 3), [templateIndex]);
-  const benchmarkData = useMemo(() => generateBenchmarkData(templateIndex * 5 + 2), [templateIndex]);
-  const isPositive = chartData[chartData.length - 1] > chartData[0];
-
-  const returnPct = ((chartData[chartData.length - 1] / chartData[0] - 1) * 100).toFixed(1);
-  const sharpe = (1.2 + (templateIndex % 5) * 0.15).toFixed(2);
-  const maxDD = (-(3 + (templateIndex % 7) * 1.5)).toFixed(1);
-
   if (!previewDialogOpen || !previewTemplate) return null;
 
   const difficultyColor = DIFFICULTY_COLORS[previewTemplate.difficulty] || '';
@@ -194,112 +116,83 @@ export default function StrategyPreviewDialog() {
       {/* Backdrop - lighter since it sits on top of the template dialog's backdrop */}
       <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" onClick={closePreviewDialog} />
 
-      {/* Modal */}
-      <div className="relative bg-white dark:bg-gray-900 rounded-xl shadow-2xl w-[calc(100vw-120px)] h-[calc(100vh-100px)] max-w-[1100px] overflow-hidden mx-4 flex flex-col">
-        {/* Header */}
-        <div className="flex items-center justify-between px-6 py-3 border-b border-gray-200 dark:border-gray-700 flex-shrink-0">
-          <h2 className="text-sm font-medium text-gray-500 dark:text-gray-400">
+      <div className="relative bg-paper border-2 border-ink shadow-2xl w-[calc(100vw-120px)] h-[calc(100vh-100px)] max-w-[1100px] overflow-hidden mx-4 flex flex-col">
+        <div className="flex items-center justify-between px-6 py-3 border-b-2 border-ink flex-shrink-0">
+          <h2 className="text-[11px] font-mono font-bold uppercase tracking-wide text-ink/60">
             Template Preview
           </h2>
           <button
             onClick={closePreviewDialog}
-            className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors"
+            className="p-2 hover:bg-ink/5 transition-colors"
           >
-            <X className="w-5 h-5 text-gray-500" />
+            <X className="w-5 h-5 text-ink/60" />
           </button>
         </div>
 
-        {/* Content - Two panel layout */}
         <div className="flex-1 flex overflow-hidden">
-          {/* Left Panel - Template Info */}
-          <div className="w-80 flex-shrink-0 border-r border-gray-200 dark:border-gray-700 p-6 overflow-y-auto">
-            {/* Template Name */}
-            <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100 mb-2">
+          <div className="w-80 flex-shrink-0 border-r-2 border-ink p-6 overflow-y-auto">
+            <h2 className="text-xl font-display uppercase tracking-tight text-ink mb-2">
               {previewTemplate.name}
             </h2>
 
-            {/* Description */}
             <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
               {previewTemplate.description}
             </p>
 
-            {/* Badges */}
             <div className="flex items-center gap-2 flex-wrap mb-6">
-              <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${difficultyColor}`}>
+              <span className={`text-[10px] px-2 py-0.5 border border-ink font-mono font-bold uppercase tracking-wide ${difficultyColor}`}>
                 {DIFFICULTY_LABELS[previewTemplate.difficulty] || previewTemplate.difficulty}
               </span>
-              <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${categoryColor}`}>
+              <span className={`text-[10px] px-2 py-0.5 border border-ink font-mono font-bold uppercase tracking-wide ${categoryColor}`}>
                 {CATEGORY_LABELS[previewTemplate.category] || previewTemplate.category}
               </span>
             </div>
 
-            {/* Mini Chart */}
-            <div className="bg-gray-50 dark:bg-gray-800/50 rounded-lg p-4 mb-4">
-              <div className="flex items-center justify-between mb-3">
-                <span className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
-                  Simulated Performance
+            {previewTemplate.tags.length > 0 && (
+              <div className="mb-6">
+                <span className="text-[11px] font-mono font-bold text-ink/50 uppercase tracking-wide">
+                  Tags
                 </span>
-              </div>
-              <MiniChart data={chartData} benchmarkData={benchmarkData} positive={isPositive} />
-              <div className="flex items-center justify-center gap-4 mt-3 text-xs text-gray-400 dark:text-gray-500">
-                <span className="flex items-center gap-1">
-                  <span className={`w-3 h-0.5 ${isPositive ? 'bg-green-500' : 'bg-red-500'}`} />
-                  Strategy
-                </span>
-                <span className="flex items-center gap-1">
-                  <span className="w-3 h-0.5 bg-gray-400 opacity-50" style={{ borderTop: '1px dashed' }} />
-                  Benchmark
-                </span>
-              </div>
-            </div>
-
-            {/* Performance Stats */}
-            <div className="grid grid-cols-3 gap-3 mb-6">
-              <div className="text-center p-3 bg-gray-50 dark:bg-gray-800/50 rounded-lg">
-                <div className={`text-lg font-bold ${isPositive ? 'text-green-500' : 'text-red-500'}`}>
-                  {isPositive ? '+' : ''}{returnPct}%
+                <div className="flex flex-wrap gap-2 mt-2">
+                  {previewTemplate.tags.map((tag) => (
+                    <span
+                      key={tag}
+                      className="text-[10px] px-2 py-0.5 bg-bone border border-ink/20 font-mono uppercase tracking-wide text-ink/70"
+                    >
+                      {tag}
+                    </span>
+                  ))}
                 </div>
-                <div className="text-xs text-gray-500 dark:text-gray-400">Return</div>
               </div>
-              <div className="text-center p-3 bg-gray-50 dark:bg-gray-800/50 rounded-lg">
-                <div className="text-lg font-bold text-gray-700 dark:text-gray-300">{sharpe}</div>
-                <div className="text-xs text-gray-500 dark:text-gray-400">Sharpe</div>
-              </div>
-              <div className="text-center p-3 bg-gray-50 dark:bg-gray-800/50 rounded-lg">
-                <div className="text-lg font-bold text-red-500">{maxDD}%</div>
-                <div className="text-xs text-gray-500 dark:text-gray-400">Max DD</div>
-              </div>
-            </div>
+            )}
 
-            {/* Info Note */}
-            <div className="text-xs text-gray-400 dark:text-gray-500 bg-gray-50 dark:bg-gray-800/50 rounded-lg p-3">
+            <div className="text-xs text-ink/60 bg-bone border-2 border-ink p-3">
               <p className="mb-1">
-                <strong>Note:</strong> Performance shown is simulated and for demonstration purposes only.
+                <strong>Preview:</strong> The panel on the right shows this template&apos;s strategy logic.
               </p>
               <p>
-                Past performance does not guarantee future results.
+                Open it in the editor to customize symbols, parameters, and rules, then run a backtest
+                to see real performance.
               </p>
             </div>
           </div>
 
-          {/* Right Panel - Strategy Builder Preview */}
           <div className="flex-1 min-w-0 overflow-hidden">
             <StrategyBuilder readOnly />
           </div>
         </div>
 
-        {/* Footer */}
-        <div className="flex items-center justify-between px-6 py-4 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 flex-shrink-0">
+        <div className="flex items-center justify-between px-6 py-4 border-t-2 border-ink bg-bone flex-shrink-0">
           <button
             onClick={closePreviewDialog}
-            className="flex items-center gap-2 px-4 py-2 text-sm text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-lg transition-colors"
+            className="btn btn-ghost"
           >
             <ArrowLeft className="w-4 h-4" />
             Back to Templates
           </button>
           <button
             onClick={handleOpenInEditor}
-            className="flex items-center gap-2 px-6 py-2.5 text-sm font-medium text-white bg-primary-600 hover:bg-primary-700 rounded-lg transition-colors"
+            className="btn btn-primary btn-lg"
           >
             Open in Editor
             <ArrowRight className="w-4 h-4" />

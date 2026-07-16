@@ -38,15 +38,15 @@ export function BlockPicker({ parentId, onClose }: BlockPickerProps) {
   if (view === 'asset') {
     return (
       <div className="absolute top-full left-0 mt-2 z-20">
-        <div className="bg-white dark:bg-gray-900 rounded-lg shadow-xl border border-gray-200 dark:border-gray-700 overflow-hidden min-w-[280px]">
-          <div className="flex items-center gap-2 px-3 py-2 border-b border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-gray-800">
+        <div className="bg-paper border-2 border-ink shadow-lg min-w-[280px]">
+          <div className="flex items-center gap-2 px-3 py-2 border-b-2 border-ink bg-bone">
             <button
               onClick={() => setView('main')}
-              className="p-1 hover:bg-gray-200 dark:hover:bg-gray-700 rounded"
+              className="p-1 hover:bg-ink/10"
             >
-              <ArrowLeft className="w-4 h-4 text-gray-500 dark:text-gray-400" />
+              <ArrowLeft className="w-4 h-4 text-ink/60" />
             </button>
-            <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Add Asset</span>
+            <span className="text-[11px] font-mono uppercase tracking-wide text-ink/70">Add Asset</span>
           </div>
           <AssetPicker parentId={parentId} onClose={onClose} />
         </div>
@@ -57,15 +57,15 @@ export function BlockPicker({ parentId, onClose }: BlockPickerProps) {
   if (view === 'weight') {
     return (
       <div className="absolute top-full left-0 mt-2 z-20">
-        <div className="bg-white dark:bg-gray-900 rounded-lg shadow-xl border border-gray-200 dark:border-gray-700 overflow-hidden min-w-[280px]">
-          <div className="flex items-center gap-2 px-3 py-2 border-b border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-gray-800">
+        <div className="bg-paper border-2 border-ink shadow-lg min-w-[280px]">
+          <div className="flex items-center gap-2 px-3 py-2 border-b-2 border-ink bg-bone">
             <button
               onClick={() => setView('main')}
-              className="p-1 hover:bg-gray-200 dark:hover:bg-gray-700 rounded"
+              className="p-1 hover:bg-ink/10"
             >
-              <ArrowLeft className="w-4 h-4 text-gray-500 dark:text-gray-400" />
+              <ArrowLeft className="w-4 h-4 text-ink/60" />
             </button>
-            <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Choose Weight Method</span>
+            <span className="text-[11px] font-mono uppercase tracking-wide text-ink/70">Choose Weight Method</span>
           </div>
           <WeightMethodPicker parentId={parentId} onClose={onClose} />
         </div>
@@ -97,21 +97,21 @@ export function BlockPicker({ parentId, onClose }: BlockPickerProps) {
 
   return (
     <div className="absolute top-full left-0 mt-2 z-20">
-      <div className="bg-white dark:bg-gray-900 rounded-lg shadow-xl border border-gray-200 dark:border-gray-700 overflow-hidden min-w-[200px]">
-        <div className="px-3 py-2 border-b border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-gray-800">
-          <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Add Block</span>
+      <div className="bg-paper border-2 border-ink shadow-lg min-w-[200px]">
+        <div className="px-3 py-2 border-b-2 border-ink bg-bone">
+          <span className="text-[11px] font-mono uppercase tracking-wide text-ink/70">Add Block</span>
         </div>
         <div className="p-2">
           <button
             onClick={() => setView('asset')}
-            className="w-full flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+            className="group w-full flex items-center gap-3 px-3 py-2 hover:bg-ink transition-colors"
           >
             <div className={`p-1.5 ${pickerColors.asset.bg} rounded`}>
               <TrendingUp className={`w-4 h-4 ${pickerColors.asset.icon}`} />
             </div>
             <div className="text-left">
-              <div className="text-sm font-medium text-gray-900 dark:text-gray-100">Asset</div>
-              <div className="text-xs text-gray-500 dark:text-gray-400">Stock, ETF, or crypto</div>
+              <div className="text-sm font-medium text-ink group-hover:text-bone">Asset</div>
+              <div className="text-xs text-ink/60 group-hover:text-bone">Stock, ETF, or crypto</div>
             </div>
           </button>
 
@@ -120,55 +120,55 @@ export function BlockPicker({ parentId, onClose }: BlockPickerProps) {
               addGroup(parentId, 'New Group');
               onClose();
             }}
-            className="w-full flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+            className="group w-full flex items-center gap-3 px-3 py-2 hover:bg-ink transition-colors"
           >
             <div className={`p-1.5 ${pickerColors.group.bg} rounded`}>
               <Folder className={`w-4 h-4 ${pickerColors.group.icon}`} />
             </div>
             <div className="text-left">
-              <div className="text-sm font-medium text-gray-900 dark:text-gray-100">Group</div>
-              <div className="text-xs text-gray-500 dark:text-gray-400">Container for organizing</div>
+              <div className="text-sm font-medium text-ink group-hover:text-bone">Group</div>
+              <div className="text-xs text-ink/60 group-hover:text-bone">Container for organizing</div>
             </div>
           </button>
 
           <button
             onClick={() => setView('weight')}
-            className="w-full flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+            className="group w-full flex items-center gap-3 px-3 py-2 hover:bg-ink transition-colors"
           >
             <div className={`p-1.5 ${pickerColors.weight.bg} rounded`}>
               <Scale className={`w-4 h-4 ${pickerColors.weight.icon}`} />
             </div>
             <div className="text-left">
-              <div className="text-sm font-medium text-gray-900 dark:text-gray-100">Weight</div>
-              <div className="text-xs text-gray-500 dark:text-gray-400">Allocation method</div>
+              <div className="text-sm font-medium text-ink group-hover:text-bone">Weight</div>
+              <div className="text-xs text-ink/60 group-hover:text-bone">Allocation method</div>
             </div>
           </button>
 
-          <div className="my-2 border-t border-gray-100 dark:border-gray-800" />
+          <div className="my-2 border-t-2 border-ink/15" />
 
           <button
             onClick={() => setView('condition')}
-            className="w-full flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+            className="group w-full flex items-center gap-3 px-3 py-2 hover:bg-ink transition-colors"
           >
             <div className={`p-1.5 ${pickerColors.ifElse.bg} rounded`}>
               <GitBranch className={`w-4 h-4 ${pickerColors.ifElse.icon}`} />
             </div>
             <div className="text-left">
-              <div className="text-sm font-medium text-gray-900 dark:text-gray-100">If/Else</div>
-              <div className="text-xs text-gray-500 dark:text-gray-400">Conditional allocation</div>
+              <div className="text-sm font-medium text-ink group-hover:text-bone">If/Else</div>
+              <div className="text-xs text-ink/60 group-hover:text-bone">Conditional allocation</div>
             </div>
           </button>
 
           <button
             onClick={() => setView('filter')}
-            className="w-full flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+            className="group w-full flex items-center gap-3 px-3 py-2 hover:bg-ink transition-colors"
           >
             <div className={`p-1.5 ${pickerColors.filter.bg} rounded`}>
               <Filter className={`w-4 h-4 ${pickerColors.filter.icon}`} />
             </div>
             <div className="text-left">
-              <div className="text-sm font-medium text-gray-900 dark:text-gray-100">Filter</div>
-              <div className="text-xs text-gray-500 dark:text-gray-400">Dynamic asset selection</div>
+              <div className="text-sm font-medium text-ink group-hover:text-bone">Filter</div>
+              <div className="text-xs text-ink/60 group-hover:text-bone">Dynamic asset selection</div>
             </div>
           </button>
         </div>

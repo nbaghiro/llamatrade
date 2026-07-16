@@ -406,10 +406,6 @@ class AuditService:
             summary=f"Restored connection to {service}",
         )
 
-    # ===================
-    # Private helpers
-    # ===================
-
     async def _log(
         self,
         tenant_id: UUID,

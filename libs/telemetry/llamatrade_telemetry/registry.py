@@ -161,9 +161,7 @@ def _labels_ok(name: str, declared: tuple[str, ...], provided: Mapping[str, str]
         return False
 
 
-# ---------------------------------------------------------------------------
 # Handles
-# ---------------------------------------------------------------------------
 class _CounterChild:
     __slots__ = ("_instr", "_attrs")
 
@@ -359,9 +357,7 @@ class Gauge:
         self._values[()] = value
 
 
-# ---------------------------------------------------------------------------
 # Factories (validated + cached singletons)
-# ---------------------------------------------------------------------------
 def _labelnames(
     labelnames: Sequence[str],
     *,

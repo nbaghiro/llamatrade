@@ -44,16 +44,9 @@ class TemplateData(TypedDict):
     config_sexpr: str
 
 
-# =============================================================================
-# CURATED STRATEGY TEMPLATES (80 total)
-# Quality over quantity - each template properly matches its difficulty level
-# =============================================================================
-
+# Curated strategy templates.
 TEMPLATES: dict[str, TemplateData] = {
-    # =========================================================================
-    # BUY-AND-HOLD STRATEGIES (8)
-    # Static allocations with periodic rebalancing
-    # =========================================================================
+    # Buy-and-hold: static allocations with periodic rebalancing
     "classic-60-40": {
         "id": "classic-60-40",
         "name": "Classic 60/40",
@@ -298,10 +291,7 @@ TEMPLATES: dict[str, TemplateData] = {
           (asset GLD)
           (asset SHY))))))""",
     },
-    # =========================================================================
-    # FACTOR STRATEGIES (8)
-    # Factor-tilted strategies (momentum, value, quality, size)
-    # =========================================================================
+    # Factor-tilted: momentum, value, quality, size
     "larry-portfolio": {
         "id": "larry-portfolio",
         "name": "Larry Portfolio",
@@ -622,10 +612,7 @@ TEMPLATES: dict[str, TemplateData] = {
         (asset NOBL)
         (asset SDY)))))""",
     },
-    # =========================================================================
-    # INCOME STRATEGIES (8)
-    # Dividend and yield-focused strategies
-    # =========================================================================
+    # Income: dividend and yield-focused
     "dividend-aristocrats": {
         "id": "dividend-aristocrats",
         "name": "Dividend Aristocrats",
@@ -940,10 +927,7 @@ TEMPLATES: dict[str, TemplateData] = {
                   (asset SHY)
                   (asset BIL)))))))))""",
     },
-    # =========================================================================
-    # TACTICAL STRATEGIES (8)
-    # Market timing and regime-based switching
-    # =========================================================================
+    # Tactical: market timing and regime-based switching
     "tail-risk-hedged": {
         "id": "tail-risk-hedged",
         "name": "Tail Risk Hedged",
@@ -1539,10 +1523,7 @@ TEMPLATES: dict[str, TemplateData] = {
         (asset BNDX)
         (asset VNQ)))))""",
     },
-    # =========================================================================
-    # TREND-FOLLOWING STRATEGIES (8)
-    # Trend-following and breakout strategies
-    # =========================================================================
+    # Trend-following and breakout
     "ma-crossover": {
         "id": "ma-crossover",
         "name": "Moving Average Crossover",
@@ -2040,10 +2021,7 @@ TEMPLATES: dict[str, TemplateData] = {
         (asset GLD)
         (asset VNQ)))))""",
     },
-    # =========================================================================
-    # MEAN REVERSION STRATEGIES (8)
-    # Counter-trend strategies
-    # =========================================================================
+    # Mean reversion: counter-trend
     "pullback-buyer": {
         "id": "pullback-buyer",
         "name": "Pullback Buyer",
@@ -2561,10 +2539,7 @@ TEMPLATES: dict[str, TemplateData] = {
           (asset GLD)
           (asset TAIL))))))""",
     },
-    # =========================================================================
-    # ALTERNATIVES STRATEGIES (8)
-    # Non-traditional assets (Crypto, Managed Futures, Commodities)
-    # =========================================================================
+    # Alternatives: crypto, managed futures, commodities
     "crypto-market-cap": {
         "id": "crypto-market-cap",
         "name": "Crypto Market Cap",
@@ -2924,9 +2899,7 @@ TEMPLATES: dict[str, TemplateData] = {
               (asset USDC)
               (asset USDT))))))))""",
     },
-    # =========================================================================
-    # NEW TEMPLATES - BUY & HOLD (2 new)
-    # =========================================================================
+    # Buy & hold
     "ivy-portfolio": {
         "id": "ivy-portfolio",
         "name": "Ivy Portfolio",
@@ -3053,9 +3026,7 @@ TEMPLATES: dict[str, TemplateData] = {
         (asset SCHZ)
         (asset BIV)))))""",
     },
-    # =========================================================================
-    # NEW TEMPLATES - TREND FOLLOWING (3 new)
-    # =========================================================================
+    # Trend following
     "accelerating-dual-momentum": {
         "id": "accelerating-dual-momentum",
         "name": "Accelerating Dual Momentum",
@@ -3303,9 +3274,7 @@ TEMPLATES: dict[str, TemplateData] = {
           (asset USFR)
           (asset GLD))))))""",
     },
-    # =========================================================================
-    # NEW TEMPLATES - TACTICAL (5 new, including 2 leveraged)
-    # =========================================================================
+    # Tactical (including leveraged)
     "credit-spread-tactical": {
         "id": "credit-spread-tactical",
         "name": "Credit Spread Tactical",
@@ -3737,9 +3706,7 @@ TEMPLATES: dict[str, TemplateData] = {
               (asset BIL)
               (asset SGOV)))))))""",
     },
-    # =========================================================================
-    # NEW TEMPLATES - MEAN REVERSION (2 new)
-    # =========================================================================
+    # Mean reversion
     "vix-mean-reversion-confirmed": {
         "id": "vix-mean-reversion-confirmed",
         "name": "VIX Mean Reversion with Confirmation",
@@ -3993,9 +3960,7 @@ TEMPLATES: dict[str, TemplateData] = {
               (asset GLD)
               (asset IAU)))))))""",
     },
-    # =========================================================================
-    # NEW TEMPLATES - INCOME (2 new)
-    # =========================================================================
+    # Income
     "bond-duration-switch": {
         "id": "bond-duration-switch",
         "name": "Bond Duration Switch",
@@ -4180,9 +4145,7 @@ TEMPLATES: dict[str, TemplateData] = {
               (asset BIL)
               (asset MINT))))))))""",
     },
-    # =========================================================================
-    # NEW TEMPLATES - ALTERNATIVES (2 new)
-    # =========================================================================
+    # Alternatives
     "country-momentum-rotation": {
         "id": "country-momentum-rotation",
         "name": "Country Momentum Rotation",
@@ -4374,9 +4337,7 @@ TEMPLATES: dict[str, TemplateData] = {
                   (asset SGOV)
                   (asset USFR)))))))))""",
     },
-    # =========================================================================
-    # ADDITIONAL TEMPLATES - FACTOR (3 new)
-    # =========================================================================
+    # Factor
     "quality-factor-portfolio": {
         "id": "quality-factor-portfolio",
         "name": "Quality Factor Portfolio",
@@ -4611,9 +4572,7 @@ TEMPLATES: dict[str, TemplateData] = {
               (asset GLD)
               (asset SGOV)))))))""",
     },
-    # =========================================================================
-    # ADDITIONAL TEMPLATES - BUY & HOLD (1 new)
-    # =========================================================================
+    # Buy & hold
     "coffeehouse-portfolio": {
         "id": "coffeehouse-portfolio",
         "name": "Coffeehouse Portfolio",
@@ -4668,9 +4627,7 @@ TEMPLATES: dict[str, TemplateData] = {
         (asset IYR)
         (asset XLRE)))))""",
     },
-    # =========================================================================
-    # ADDITIONAL TEMPLATES - TREND (1 new)
-    # =========================================================================
+    # Trend
     "adx-trend-confirmation": {
         "id": "adx-trend-confirmation",
         "name": "ADX Trend Confirmation",
@@ -4778,9 +4735,7 @@ TEMPLATES: dict[str, TemplateData] = {
                   (asset VNQ)
                   (asset TIP)))))))))""",
     },
-    # =========================================================================
-    # ADDITIONAL TEMPLATES - INCOME (1 new)
-    # =========================================================================
+    # Income
     "preferred-stock-ladder": {
         "id": "preferred-stock-ladder",
         "name": "Preferred Stock Ladder",
@@ -4851,9 +4806,7 @@ TEMPLATES: dict[str, TemplateData] = {
                   (asset IEF)
                   (asset BIL)))))))))""",
     },
-    # =========================================================================
-    # ADDITIONAL TEMPLATES - MEAN REVERSION (1 new)
-    # =========================================================================
+    # Mean reversion
     "turn-of-month-effect": {
         "id": "turn-of-month-effect",
         "name": "Turn-of-Month Effect",
@@ -4941,9 +4894,7 @@ TEMPLATES: dict[str, TemplateData] = {
                   (asset GLD)
                   (asset IAU)))))))))""",
     },
-    # =========================================================================
-    # ADDITIONAL TEMPLATES - ALTERNATIVES (1 new)
-    # =========================================================================
+    # Alternatives
     "volatility-risk-premium": {
         "id": "volatility-risk-premium",
         "name": "Volatility Risk Premium",

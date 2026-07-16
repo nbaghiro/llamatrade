@@ -88,7 +88,6 @@ class AlertService:
         """Send alert via configured channels."""
         success = True
 
-        # Get webhooks for tenant
         webhooks = await self._get_webhooks(alert.tenant_id)
 
         for webhook in webhooks:
@@ -290,7 +289,6 @@ class AlertService:
             broker_qty: Quantity at broker.
             action: Action taken (corrected, alerted).
         """
-        # Determine priority based on drift type and action
         if drift_type == "side_mismatch":
             priority = AlertPriority.CRITICAL
         elif action == "alerted":
@@ -298,7 +296,6 @@ class AlertService:
         else:
             priority = AlertPriority.MEDIUM
 
-        # Build message based on drift type
         if drift_type == "missing_local":
             message = f"Position {symbol} found at broker ({broker_qty} shares) but not tracked locally. Auto-added."
         elif drift_type == "missing_broker":
@@ -597,7 +594,6 @@ class AlertService:
             reason: Reason for circuit breaker activation.
             details: Additional details about the trigger.
         """
-        # Format reason for display
         reason_display = reason.replace("_", " ").title()
 
         await self.send(
@@ -638,10 +634,6 @@ class AlertService:
             )
         )
 
-    # ===================
-    # Private helpers
-    # ===================
-
     async def _get_webhooks(self, tenant_id: UUID) -> list[Webhook]:
         """Get active webhooks for tenant."""
         if not self.db:
@@ -655,7 +647,6 @@ class AlertService:
 
     def _should_send(self, alert: Alert, webhook: Webhook) -> bool:
         """Check if alert should be sent to this webhook."""
-        # Check if webhook is configured for this alert type
         # Cast required because Webhook.events is typed as Mapped[list] without type args
         webhook_events: list[str] = getattr(webhook, "events", [])
         if webhook_events:
@@ -690,7 +681,6 @@ class AlertService:
 
         headers = {"Content-Type": "application/json"}
 
-        # Add HMAC signature if secret is configured
         if webhook.secret:
             signature = hmac.new(
                 webhook.secret.encode("utf-8"),
@@ -699,12 +689,10 @@ class AlertService:
             ).hexdigest()
             headers["X-Webhook-Signature"] = f"sha256={signature}"
 
-        # Add custom headers from webhook config
         if webhook.headers:
             for key, value in webhook.headers.items():
                 headers[str(key)] = str(value)
 
-        # Send with retry logic
         status_code: int | None = None
         try:
             status_code = await self._send_webhook_with_retry(

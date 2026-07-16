@@ -36,19 +36,17 @@ export function ElseBlock({ block, readOnly }: ElseBlockProps) {
 
   return (
     <div className="relative">
-      {/* Main pill - uses centralized theme */}
       <div
         data-testid="else-block"
         className={`
-          inline-flex items-center gap-1.5 py-1.5 rounded-full
+          inline-flex items-center gap-1.5 py-1.5
           transition-all duration-150 select-none
-          ${elseColors.bg} text-white text-sm
+          ${elseColors.bg} text-sm
           ${readOnly ? 'cursor-default pl-3 pr-3' : 'cursor-pointer pl-1.5 pr-3'}
-          ${isSelected ? `ring-2 ${elseColors.ring} ring-offset-2 ring-offset-white dark:ring-offset-gray-900` : readOnly ? '' : elseColors.hover}
+          ${isSelected ? `ring-2 ${elseColors.ring} ring-offset-2 ring-offset-bone` : readOnly ? '' : elseColors.hover}
         `}
         onClick={handleClick}
       >
-        {/* Delete button - hidden in readOnly mode */}
         {!readOnly && (
           <button
             onClick={handleDeleteClick}
@@ -59,7 +57,6 @@ export function ElseBlock({ block, readOnly }: ElseBlockProps) {
           </button>
         )}
 
-        {/* Expand toggle */}
         <button
           onClick={handleExpandClick}
           className={`p-0.5 rounded-full ${elseColors.hover} transition-colors`}
@@ -67,8 +64,7 @@ export function ElseBlock({ block, readOnly }: ElseBlockProps) {
           <ChevronDown className={`w-3.5 h-3.5 transition-transform ${isExpanded ? '' : '-rotate-90'}`} />
         </button>
 
-        {/* ELSE label */}
-        <span className="font-semibold">ELSE</span>
+        <span className="font-mono font-bold tracking-wide">ELSE</span>
       </div>
     </div>
   );

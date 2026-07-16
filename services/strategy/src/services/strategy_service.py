@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Any, cast
 from uuid import UUID
 
 from fastapi import Depends
-from sqlalchemy import func, or_, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 if TYPE_CHECKING:
@@ -51,13 +51,18 @@ from src.models import (
 
 logger = logging.getLogger(__name__)
 
+
+def _naive_utc_now() -> datetime:
+    """UTC now, tz-stripped: ``strategy_executions.started_at``/``stopped_at`` are
+    TIMESTAMP WITHOUT TIME ZONE, and asyncpg rejects aware values for those."""
+    return datetime.now(UTC).replace(tzinfo=None)
+
 # Valid status transitions: (from_status, to_status) using proto int values
 # Rules: DRAFT→ACTIVE, ACTIVE↔PAUSED, any→ARCHIVED
 _VALID_STATUS_TRANSITIONS: set[tuple[int, int]] = {
     (STRATEGY_STATUS_DRAFT, STRATEGY_STATUS_ACTIVE),
     (STRATEGY_STATUS_ACTIVE, STRATEGY_STATUS_PAUSED),
     (STRATEGY_STATUS_PAUSED, STRATEGY_STATUS_ACTIVE),
-    # Any status can transition to ARCHIVED
     (STRATEGY_STATUS_DRAFT, STRATEGY_STATUS_ARCHIVED),
     (STRATEGY_STATUS_ACTIVE, STRATEGY_STATUS_ARCHIVED),
     (STRATEGY_STATUS_PAUSED, STRATEGY_STATUS_ARCHIVED),
@@ -310,8 +315,18 @@ class StrategyService:
             page: Page number (1-indexed)
             page_size: Items per page
         """
-        # Build query
-        stmt = select(Strategy).where(Strategy.tenant_id == tenant_id)
+        # Outer-join current version for symbols/timeframe (no DSL blob); outer so a missing version row still lists the strategy.
+        stmt = (
+            select(Strategy, StrategyVersion.symbols, StrategyVersion.timeframe)
+            .outerjoin(
+                StrategyVersion,
+                and_(
+                    StrategyVersion.strategy_id == Strategy.id,
+                    StrategyVersion.version == Strategy.current_version,
+                ),
+            )
+            .where(Strategy.tenant_id == tenant_id)
+        )
 
         if status:
             stmt = stmt.where(Strategy.status == status)  # Already proto int
@@ -330,25 +345,22 @@ class StrategyService:
         if not status:
             stmt = stmt.where(Strategy.status != STRATEGY_STATUS_ARCHIVED)
 
-        # Count total
         count_stmt = select(func.count()).select_from(stmt.subquery())
         total_result = await self.db.execute(count_stmt)
         total = total_result.scalar() or 0
 
-        # Apply sorting
         sort_column = self._get_sort_column(sort_field)
         if sort_direction == "asc":
             stmt = stmt.order_by(sort_column.asc())
         else:
             stmt = stmt.order_by(sort_column.desc())
 
-        # Paginate
         stmt = stmt.offset((page - 1) * page_size).limit(page_size)
 
         result = await self.db.execute(stmt)
-        strategies = result.scalars().all()
+        rows = result.all()
 
-        return [self._to_response(s) for s in strategies], total
+        return [self._to_response(s, symbols, timeframe) for s, symbols, timeframe in rows], total
 
     def _get_sort_column(self, field: str | None) -> Any:
         """Get SQLAlchemy column for sorting."""
@@ -379,8 +391,7 @@ class StrategyService:
         Raises:
             ValueError: If status transition is invalid or config is invalid.
         """
-        # Use for_update=True to acquire row-level lock and prevent race conditions
-        # when multiple saves happen concurrently (e.g., rapid save clicks)
+        # for_update acquires a row-level lock to prevent races from concurrent saves.
         strategy = await self._get_strategy_by_id(tenant_id, strategy_id, for_update=True)
         if not strategy:
             return None
@@ -436,7 +447,7 @@ class StrategyService:
                     symbols=symbols,
                     timeframe=timeframe,
                     parameters=data.parameters or {},
-                    changelog=data.changelog,  # Persist change summary
+                    changelog=data.changelog,
                     created_by=user_id,
                 )
                 self.db.add(version)
@@ -512,7 +523,7 @@ class StrategyService:
             StrategyExecution.strategy_id == strategy_id,
             StrategyExecution.status == EXECUTION_STATUS_PENDING,
         )
-        now = datetime.now(UTC)
+        now = _naive_utc_now()
         for execution in (await self.db.execute(stmt)).scalars().all():
             execution.status = EXECUTION_STATUS_STOPPED
             execution.stopped_at = now
@@ -653,10 +664,8 @@ class StrategyService:
 
         config_sexpr = template["config_sexpr"]
 
-        # Apply template parameter overrides. Each override is validated and must
-        # match an existing field — an unmatched override raises rather than
-        # silently doing nothing (a strategy that quietly trades the wrong
-        # symbols is a money-safety hazard, not a no-op).
+        # Overrides are validated; an unmatched one raises rather than silently
+        # trading the wrong symbols (a money-safety hazard, not a no-op).
         if template_params:
             config_sexpr = _apply_template_params(config_sexpr, template_id, template_params)
 
@@ -734,9 +743,7 @@ class StrategyService:
                 detected_indicators=[],
             )
 
-    # ===================
     # Execution methods
-    # ===================
 
     async def create_execution(
         self,
@@ -796,12 +803,10 @@ class StrategyService:
         if mode:
             stmt = stmt.where(StrategyExecution.mode == mode)  # Already proto int
 
-        # Count total
         count_stmt = select(func.count()).select_from(stmt.subquery())
         total_result = await self.db.execute(count_stmt)
         total = total_result.scalar() or 0
 
-        # Paginate and order
         stmt = stmt.order_by(StrategyExecution.created_at.desc())
         stmt = stmt.offset((page - 1) * page_size).limit(page_size)
 
@@ -851,7 +856,7 @@ class StrategyService:
         await self._fund_sleeve(tenant_id, execution, ledger=ledger, user_id=user_id)
 
         execution.status = EXECUTION_STATUS_RUNNING
-        execution.started_at = datetime.now(UTC)
+        execution.started_at = _naive_utc_now()
         await self.db.commit()
         await self.db.refresh(execution)
 
@@ -879,7 +884,7 @@ class StrategyService:
         ):
             return
 
-        import grpc.aio
+        from connectrpc.errors import ConnectError
 
         strategy = await self._get_strategy_by_id(tenant_id, execution.strategy_id)
         sleeve_name = strategy.name if strategy else f"Strategy {execution.strategy_id}"
@@ -896,8 +901,8 @@ class StrategyService:
                 strategy_execution_id=str(execution.id),
                 sleeve_name=sleeve_name,
             )
-        except grpc.aio.AioRpcError as e:
-            raise ValueError(f"Cannot start execution: sleeve funding failed: {e.details()}") from e
+        except ConnectError as e:
+            raise ValueError(f"Cannot start execution: sleeve funding failed: {e.message}") from e
 
         execution.sleeve_id = UUID(sleeve.id)
         execution.account_id = UUID(bootstrap.account.id)
@@ -989,7 +994,7 @@ class StrategyService:
             raise ValueError("Cannot stop execution: execution has not started yet")
 
         execution.status = EXECUTION_STATUS_STOPPED
-        execution.stopped_at = datetime.now(UTC)
+        execution.stopped_at = _naive_utc_now()
         if reason:
             execution.error_message = f"Stopped: {reason}"
         await self.db.commit()
@@ -1026,7 +1031,7 @@ class StrategyService:
         if ledger is None or execution.sleeve_id is None or execution.account_id is None:
             return
 
-        import grpc.aio
+        from connectrpc.errors import ConnectError
 
         try:
             await ledger.close_sleeve(
@@ -1036,13 +1041,13 @@ class StrategyService:
                 str(execution.sleeve_id),
                 reason=reason or "strategy execution stopped",
             )
-        except grpc.aio.AioRpcError as e:
+        except ConnectError as e:
             # Leave sleeve_id set as the "needs release" marker for the sweeper.
             logger.warning(
                 "sleeve close deferred for execution %s (sleeve %s): %s",
                 execution.id,
                 execution.sleeve_id,
-                e.details(),
+                e.message,
             )
             return
 
@@ -1098,9 +1103,7 @@ class StrategyService:
         result = await self.db.execute(stmt)
         return result.scalar_one_or_none()
 
-    # ===================
     # Private helpers
-    # ===================
 
     async def _get_strategy_by_id(
         self, tenant_id: UUID, strategy_id: UUID, for_update: bool = False
@@ -1142,8 +1145,14 @@ class StrategyService:
         result = await self.db.execute(stmt)
         return result.scalar_one_or_none()
 
-    def _to_response(self, s: Strategy) -> StrategyResponse:
-        """Convert DB model to response schema."""
+    def _to_response(
+        self, s: Strategy, symbols: list[str] | None = None, timeframe: str = ""
+    ) -> StrategyResponse:
+        """Convert DB model to response schema.
+
+        symbols/timeframe come from the current version (supplied by
+        list_strategies); status-only callers omit them.
+        """
         return StrategyResponse(
             id=s.id,
             name=s.name,
@@ -1152,6 +1161,8 @@ class StrategyService:
             current_version=s.current_version,
             created_at=s.created_at,
             updated_at=s.updated_at,
+            symbols=symbols or [],
+            timeframe=timeframe,
         )
 
     def _to_detail_response(self, s: Strategy, v: StrategyVersion) -> StrategyDetailResponse:

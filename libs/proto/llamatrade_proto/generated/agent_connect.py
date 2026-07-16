@@ -34,6 +34,9 @@ class AgentService(Protocol):
     def stream_message(self, request: agent__pb2.SendMessageRequest, ctx: RequestContext) -> AsyncIterator[agent__pb2.AgentStreamEvent]:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
+    def confirm_tool_call(self, request: agent__pb2.ConfirmToolCallRequest, ctx: RequestContext) -> AsyncIterator[agent__pb2.AgentStreamEvent]:
+        raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
+
     async def commit_artifact(self, request: agent__pb2.CommitArtifactRequest, ctx: RequestContext) -> agent__pb2.CommitArtifactResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
@@ -108,6 +111,16 @@ class AgentServiceASGIApplication(ConnectASGIApplication[AgentService]):
                         idempotency_level=IdempotencyLevel.UNKNOWN,
                     ),
                     function=svc.stream_message,
+                ),
+                "/llamatrade.AgentService/ConfirmToolCall": Endpoint.server_stream(
+                    method=MethodInfo(
+                        name="ConfirmToolCall",
+                        service_name="llamatrade.AgentService",
+                        input=agent__pb2.ConfirmToolCallRequest,
+                        output=agent__pb2.AgentStreamEvent,
+                        idempotency_level=IdempotencyLevel.UNKNOWN,
+                    ),
+                    function=svc.confirm_tool_call,
                 ),
                 "/llamatrade.AgentService/CommitArtifact": Endpoint.unary(
                     method=MethodInfo(
@@ -271,6 +284,26 @@ class AgentServiceClient(ConnectClient):
             timeout_ms=timeout_ms,
         )
 
+    def confirm_tool_call(
+        self,
+        request: agent__pb2.ConfirmToolCallRequest,
+        *,
+        headers: Headers | Mapping[str, str] | None = None,
+        timeout_ms: int | None = None,
+    ) -> AsyncIterator[agent__pb2.AgentStreamEvent]:
+        return self.execute_server_stream(
+            request=request,
+            method=MethodInfo(
+                name="ConfirmToolCall",
+                service_name="llamatrade.AgentService",
+                input=agent__pb2.ConfirmToolCallRequest,
+                output=agent__pb2.AgentStreamEvent,
+                idempotency_level=IdempotencyLevel.UNKNOWN,
+            ),
+            headers=headers,
+            timeout_ms=timeout_ms,
+        )
+
     async def commit_artifact(
         self,
         request: agent__pb2.CommitArtifactRequest,
@@ -345,6 +378,8 @@ class AgentServiceSync(Protocol):
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
     def stream_message(self, request: agent__pb2.SendMessageRequest, ctx: RequestContext) -> Iterator[agent__pb2.AgentStreamEvent]:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
+    def confirm_tool_call(self, request: agent__pb2.ConfirmToolCallRequest, ctx: RequestContext) -> Iterator[agent__pb2.AgentStreamEvent]:
+        raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
     def commit_artifact(self, request: agent__pb2.CommitArtifactRequest, ctx: RequestContext) -> agent__pb2.CommitArtifactResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
     def get_artifact(self, request: agent__pb2.GetArtifactRequest, ctx: RequestContext) -> agent__pb2.GetArtifactResponse:
@@ -416,6 +451,16 @@ class AgentServiceWSGIApplication(ConnectWSGIApplication):
                         idempotency_level=IdempotencyLevel.UNKNOWN,
                     ),
                     function=service.stream_message,
+                ),
+                "/llamatrade.AgentService/ConfirmToolCall": EndpointSync.server_stream(
+                    method=MethodInfo(
+                        name="ConfirmToolCall",
+                        service_name="llamatrade.AgentService",
+                        input=agent__pb2.ConfirmToolCallRequest,
+                        output=agent__pb2.AgentStreamEvent,
+                        idempotency_level=IdempotencyLevel.UNKNOWN,
+                    ),
+                    function=service.confirm_tool_call,
                 ),
                 "/llamatrade.AgentService/CommitArtifact": EndpointSync.unary(
                     method=MethodInfo(
@@ -572,6 +617,26 @@ class AgentServiceClientSync(ConnectClientSync):
                 name="StreamMessage",
                 service_name="llamatrade.AgentService",
                 input=agent__pb2.SendMessageRequest,
+                output=agent__pb2.AgentStreamEvent,
+                idempotency_level=IdempotencyLevel.UNKNOWN,
+            ),
+            headers=headers,
+            timeout_ms=timeout_ms,
+        )
+
+    def confirm_tool_call(
+        self,
+        request: agent__pb2.ConfirmToolCallRequest,
+        *,
+        headers: Headers | Mapping[str, str] | None = None,
+        timeout_ms: int | None = None,
+    ) -> Iterator[agent__pb2.AgentStreamEvent]:
+        return self.execute_server_stream(
+            request=request,
+            method=MethodInfo(
+                name="ConfirmToolCall",
+                service_name="llamatrade.AgentService",
+                input=agent__pb2.ConfirmToolCallRequest,
                 output=agent__pb2.AgentStreamEvent,
                 idempotency_level=IdempotencyLevel.UNKNOWN,
             ),

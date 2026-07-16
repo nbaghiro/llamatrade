@@ -63,6 +63,11 @@ class MarketDataServiceStub(object):
                 request_serializer=market__data__pb2.GetMarketStatusRequest.SerializeToString,
                 response_deserializer=market__data__pb2.GetMarketStatusResponse.FromString,
                 _registered_method=True)
+        self.GetAssets = channel.unary_unary(
+                '/llamatrade.MarketDataService/GetAssets',
+                request_serializer=market__data__pb2.GetAssetsRequest.SerializeToString,
+                response_deserializer=market__data__pb2.GetAssetsResponse.FromString,
+                _registered_method=True)
 
 
 class MarketDataServiceServicer(object):
@@ -130,6 +135,13 @@ class MarketDataServiceServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def GetAssets(self, request, context):
+        """Reference data
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
 
 def add_MarketDataServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
@@ -177,6 +189,11 @@ def add_MarketDataServiceServicer_to_server(servicer, server):
                     servicer.GetMarketStatus,
                     request_deserializer=market__data__pb2.GetMarketStatusRequest.FromString,
                     response_serializer=market__data__pb2.GetMarketStatusResponse.SerializeToString,
+            ),
+            'GetAssets': grpc.unary_unary_rpc_method_handler(
+                    servicer.GetAssets,
+                    request_deserializer=market__data__pb2.GetAssetsRequest.FromString,
+                    response_serializer=market__data__pb2.GetAssetsResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -426,6 +443,33 @@ class MarketDataService(object):
             '/llamatrade.MarketDataService/GetMarketStatus',
             market__data__pb2.GetMarketStatusRequest.SerializeToString,
             market__data__pb2.GetMarketStatusResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def GetAssets(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/llamatrade.MarketDataService/GetAssets',
+            market__data__pb2.GetAssetsRequest.SerializeToString,
+            market__data__pb2.GetAssetsResponse.FromString,
             options,
             channel_credentials,
             insecure,

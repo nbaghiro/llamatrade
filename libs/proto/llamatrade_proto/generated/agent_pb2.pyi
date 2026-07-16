@@ -82,6 +82,8 @@ class _StreamEventTypeEnumTypeWrapper(enum_type_wrapper._EnumTypeWrapper[_Stream
     """Error occurred"""
     STREAM_EVENT_TYPE_COMPLETE: _StreamEventType.ValueType  # 6
     """Stream finished"""
+    STREAM_EVENT_TYPE_TOOL_CONFIRMATION_REQUIRED: _StreamEventType.ValueType  # 7
+    """Agent proposes a write action awaiting user approval"""
 
 class StreamEventType(_StreamEventType, metaclass=_StreamEventTypeEnumTypeWrapper):
     """Stream event type for real-time updates"""
@@ -99,6 +101,8 @@ STREAM_EVENT_TYPE_ERROR: StreamEventType.ValueType  # 5
 """Error occurred"""
 STREAM_EVENT_TYPE_COMPLETE: StreamEventType.ValueType  # 6
 """Stream finished"""
+STREAM_EVENT_TYPE_TOOL_CONFIRMATION_REQUIRED: StreamEventType.ValueType  # 7
+"""Agent proposes a write action awaiting user approval"""
 
 class _ArtifactType:
     ValueType = typing.NewType("ValueType", builtins.int)
@@ -293,6 +297,8 @@ class AgentStreamEvent(message.Message):
     ARTIFACT_FIELD_NUMBER: builtins.int
     ERROR_MESSAGE_FIELD_NUMBER: builtins.int
     MESSAGE_ID_FIELD_NUMBER: builtins.int
+    TOOL_ARGUMENTS_JSON_FIELD_NUMBER: builtins.int
+    CONFIRMATION_ID_FIELD_NUMBER: builtins.int
     event_type: StreamEventType.ValueType
     session_id: builtins.str
     content_delta: builtins.str
@@ -305,6 +311,12 @@ class AgentStreamEvent(message.Message):
     """Error info (for ERROR events)"""
     message_id: builtins.str
     """Message info (for COMPLETE events)"""
+    tool_arguments_json: builtins.str
+    """Tool confirmation info (for TOOL_CONFIRMATION_REQUIRED events)
+    Proposed tool-call arguments (JSON)
+    """
+    confirmation_id: builtins.str
+    """Opaque id echoed back to ConfirmToolCall"""
     @builtins.property
     def artifact(self) -> PendingArtifact:
         """Artifact info (for ARTIFACT_CREATED events)"""
@@ -321,10 +333,12 @@ class AgentStreamEvent(message.Message):
         artifact: PendingArtifact | None = ...,
         error_message: builtins.str = ...,
         message_id: builtins.str = ...,
+        tool_arguments_json: builtins.str = ...,
+        confirmation_id: builtins.str = ...,
     ) -> None: ...
     _HasFieldArgType: _TypeAlias = typing.Literal["artifact", b"artifact"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal["artifact", b"artifact", "content_delta", b"content_delta", "error_message", b"error_message", "event_type", b"event_type", "message_id", b"message_id", "session_id", b"session_id", "tool_name", b"tool_name", "tool_result_preview", b"tool_result_preview", "tool_status", b"tool_status"]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["artifact", b"artifact", "confirmation_id", b"confirmation_id", "content_delta", b"content_delta", "error_message", b"error_message", "event_type", b"event_type", "message_id", b"message_id", "session_id", b"session_id", "tool_arguments_json", b"tool_arguments_json", "tool_name", b"tool_name", "tool_result_preview", b"tool_result_preview", "tool_status", b"tool_status"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -682,6 +696,44 @@ class CommitArtifactResponse(message.Message):
         resource_type: builtins.str = ...,
     ) -> None: ...
     _ClearFieldArgType: _TypeAlias = typing.Literal["resource_id", b"resource_id", "resource_type", b"resource_type", "success", b"success"]  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+
+@typing.final
+class ConfirmToolCallRequest(message.Message):
+    """Approve or deny a proposed tool call, then resume the agent turn."""
+
+    DESCRIPTOR: descriptor.Descriptor
+
+    CONTEXT_FIELD_NUMBER: builtins.int
+    SESSION_ID_FIELD_NUMBER: builtins.int
+    CONFIRMATION_ID_FIELD_NUMBER: builtins.int
+    TOOL_NAME_FIELD_NUMBER: builtins.int
+    TOOL_ARGUMENTS_JSON_FIELD_NUMBER: builtins.int
+    APPROVED_FIELD_NUMBER: builtins.int
+    session_id: builtins.str
+    confirmation_id: builtins.str
+    """From the TOOL_CONFIRMATION_REQUIRED event"""
+    tool_name: builtins.str
+    """Proposed tool (echoed back)"""
+    tool_arguments_json: builtins.str
+    """Proposed arguments (echoed back)"""
+    approved: builtins.bool
+    """true = execute, false = decline"""
+    @builtins.property
+    def context(self) -> common_pb2.TenantContext: ...
+    def __init__(
+        self,
+        *,
+        context: common_pb2.TenantContext | None = ...,
+        session_id: builtins.str = ...,
+        confirmation_id: builtins.str = ...,
+        tool_name: builtins.str = ...,
+        tool_arguments_json: builtins.str = ...,
+        approved: builtins.bool = ...,
+    ) -> None: ...
+    _HasFieldArgType: _TypeAlias = typing.Literal["context", b"context"]  # noqa: Y015
+    def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
+    _ClearFieldArgType: _TypeAlias = typing.Literal["approved", b"approved", "confirmation_id", b"confirmation_id", "context", b"context", "session_id", b"session_id", "tool_arguments_json", b"tool_arguments_json", "tool_name", b"tool_name"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final

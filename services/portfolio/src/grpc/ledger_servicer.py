@@ -109,8 +109,6 @@ class LedgerServicer:
             self._session_factory = get_session_maker()
         return self._session_factory()
 
-    # ----------------------------------------------------- identity bootstrap
-
     async def get_or_create_account(
         self, request: ledger_pb2.GetOrCreateAccountRequest, ctx: AnyContext
     ) -> ledger_pb2.GetOrCreateAccountResponse:
@@ -173,8 +171,6 @@ class LedgerServicer:
                 "reconciliation will surface the gap until re-onboarded",
                 credentials_id,
             )
-
-    # ------------------------------------------------------------- fund ops
 
     async def deposit_funds(
         self, request: ledger_pb2.DepositFundsRequest, ctx: AnyContext
@@ -294,8 +290,6 @@ class LedgerServicer:
             logger.error("transfer_capital error: %s", e, exc_info=True)
             raise ConnectError(Code.INTERNAL, f"transfer failed: {e}") from e
 
-    # ----------------------------------------------------------- sleeve lifecycle
-
     async def close_sleeve(
         self, request: ledger_pb2.CloseSleeveRequest, ctx: AnyContext
     ) -> ledger_pb2.CloseSleeveResponse:
@@ -338,8 +332,6 @@ class LedgerServicer:
         except Exception as e:
             logger.error("close_sleeve error: %s", e, exc_info=True)
             raise ConnectError(Code.INTERNAL, f"close sleeve failed: {e}") from e
-
-    # --------------------------------------------------------------- queries
 
     async def list_sleeves(
         self, request: ledger_pb2.ListSleevesRequest, ctx: AnyContext

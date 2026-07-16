@@ -10,7 +10,7 @@ import json
 import logging
 from collections.abc import AsyncIterator
 from datetime import datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
 from connectrpc.code import Code
@@ -18,7 +18,8 @@ from connectrpc.errors import ConnectError
 from connectrpc.request import RequestContext
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from llamatrade_db import get_session_maker
+from llamatrade_common.connect import resolve_identity_connect
+from llamatrade_db import get_session_maker, tenant_session
 from llamatrade_proto.generated import agent_pb2, common_pb2
 from llamatrade_proto.generated.agent_pb2 import (
     MESSAGE_ROLE_ASSISTANT,
@@ -29,47 +30,56 @@ from llamatrade_proto.generated.agent_pb2 import (
     STREAM_EVENT_TYPE_ERROR,
     STREAM_EVENT_TYPE_TOOL_CALL_COMPLETE,
     STREAM_EVENT_TYPE_TOOL_CALL_START,
+    STREAM_EVENT_TYPE_TOOL_CONFIRMATION_REQUIRED,
 )
 
 from src.grpc.error_handler import handle_service_errors, parse_uuid
 
 if TYPE_CHECKING:
-    pass
+    from llamatrade_db.models import AgentMessage
+
+    from src.services.conversation_service import ConversationService
 
 logger = logging.getLogger(__name__)
 
-# Nil UUID used to detect missing/invalid context
-_NIL_UUID = UUID("00000000-0000-0000-0000-000000000000")
+# Number of most-recent prior turns replayed into the LLM for a session.
+HISTORY_MESSAGE_LIMIT = 40
+
+
+def _history_from_messages(messages: list[AgentMessage]) -> list[dict[str, str]]:
+    """Convert stored messages into role/content dicts for LLM replay."""
+    role_map = {MESSAGE_ROLE_USER: "user", MESSAGE_ROLE_ASSISTANT: "assistant"}
+    history: list[dict[str, str]] = []
+    for message in messages:
+        role = role_map.get(message.role)
+        if role and message.content:
+            history.append({"role": role, "content": message.content})
+    return history
+
+
+async def _load_history(
+    conv_service: ConversationService, session_id: UUID
+) -> list[dict[str, str]]:
+    """Load the recent prior turns for LLM replay (windowed).
+
+    Degrades to no history — rather than failing the user's message — if the
+    lookup errors, so a history hiccup can't take down the conversation.
+    """
+    try:
+        prior = await conv_service.get_recent_messages(session_id, limit=HISTORY_MESSAGE_LIMIT)
+        return _history_from_messages(prior)
+    except Exception:
+        logger.exception("Failed to load conversation history for session %s", session_id)
+        return []
 
 
 def _validate_tenant_context(context: common_pb2.TenantContext) -> tuple[UUID, UUID]:
-    """Validate and extract tenant_id and user_id from context.
+    """Verified ``(tenant_id, user_id)`` for the call.
 
-    Raises:
-        ConnectError: If context is invalid (empty or nil UUIDs)
+    Derives identity from the authenticated principal (JWT via ``AuthMiddleware``),
+    rejecting a request whose wire ``context`` tenant doesn't match the token.
     """
-    if not context.tenant_id or not context.user_id:
-        raise ConnectError(
-            Code.UNAUTHENTICATED,
-            "Valid tenant context is required",
-        )
-
-    try:
-        tenant_id = UUID(context.tenant_id)
-        user_id = UUID(context.user_id)
-    except ValueError as e:
-        raise ConnectError(
-            Code.INVALID_ARGUMENT,
-            f"Invalid UUID in context: {e}",
-        )
-
-    if tenant_id == _NIL_UUID or user_id == _NIL_UUID:
-        raise ConnectError(
-            Code.UNAUTHENTICATED,
-            "Valid tenant context is required (nil UUID not allowed)",
-        )
-
-    return tenant_id, user_id
+    return resolve_identity_connect(context)
 
 
 def _timestamp_to_proto(dt: datetime) -> common_pb2.Timestamp:
@@ -87,20 +97,13 @@ class AgentServicer:
         """Initialize the servicer."""
         self._session_maker: async_sessionmaker[AsyncSession] | None = None
 
-    def _get_db(self) -> AsyncSession:
-        """Get a database session.
-
-        Returns an AsyncSession that should be used with `async with`.
-        The session automatically handles commit/rollback on exit.
-        """
+    def _maker(self) -> async_sessionmaker[AsyncSession]:
+        """The session factory (lazily created; tests inject a test-DB factory)."""
         if self._session_maker is None:
             self._session_maker = get_session_maker()
-        assert self._session_maker is not None
-        return self._session_maker()
+        return self._session_maker
 
-    # =========================================================================
     # Session Management
-    # =========================================================================
 
     @handle_service_errors
     async def create_session(
@@ -114,7 +117,7 @@ class AgentServicer:
         # Create session in database
         from src.services.conversation_service import ConversationService
 
-        async with self._get_db() as db:
+        async with tenant_session(tenant_id, self._maker()) as db:
             service = ConversationService(db)
             session = await service.create_session(
                 tenant_id=tenant_id,
@@ -148,7 +151,7 @@ class AgentServicer:
 
         from src.services.conversation_service import ConversationService
 
-        async with self._get_db() as db:
+        async with tenant_session(tenant_id, self._maker()) as db:
             service = ConversationService(db)
             session = await service.get_session(tenant_id, session_id)
 
@@ -180,6 +183,7 @@ class AgentServicer:
                             )
                             for tc in (m.tool_calls_json or [])
                         ],
+                        inline_artifact_ids=m.inline_artifact_ids or [],
                         created_at=_timestamp_to_proto(m.created_at),
                     )
                     for m in db_messages
@@ -236,7 +240,7 @@ class AgentServicer:
         page = request.pagination.page if request.HasField("pagination") else 1
         page_size = request.pagination.page_size if request.HasField("pagination") else 20
 
-        async with self._get_db() as db:
+        async with tenant_session(tenant_id, self._maker()) as db:
             service = ConversationService(db)
             sessions, total = await service.list_sessions(
                 tenant_id=tenant_id,
@@ -284,7 +288,7 @@ class AgentServicer:
 
         from src.services.conversation_service import ConversationService
 
-        async with self._get_db() as db:
+        async with tenant_session(tenant_id, self._maker()) as db:
             service = ConversationService(db)
             success = await service.delete_session(tenant_id, session_id)
 
@@ -296,9 +300,7 @@ class AgentServicer:
 
             return agent_pb2.DeleteSessionResponse(success=True)
 
-    # =========================================================================
     # Messaging
-    # =========================================================================
 
     @handle_service_errors
     async def send_message(
@@ -316,7 +318,7 @@ class AgentServicer:
         from src.services.agent_service import AgentService
         from src.services.conversation_service import ConversationService
 
-        async with self._get_db() as db:
+        async with tenant_session(tenant_id, self._maker()) as db:
             conv_service = ConversationService(db)
 
             # Verify session exists and belongs to tenant
@@ -326,6 +328,10 @@ class AgentServicer:
                     Code.NOT_FOUND,
                     f"Session not found: {request.session_id}",
                 )
+
+            # Load prior turns before persisting the new user message so the
+            # current turn isn't duplicated in the replayed history.
+            history = await _load_history(conv_service, session_id)
 
             # Store user message
             user_msg = await conv_service.add_message(
@@ -351,15 +357,17 @@ class AgentServicer:
                 session_id=session_id,
                 user_message=request.content,
                 ui_context=ui_context,
+                history=history,
             )
 
-            # Store assistant message
+            # Store assistant message (single writer for this turn)
             assistant_msg = await conv_service.add_message(
                 session_id=session_id,
                 tenant_id=tenant_id,
                 role=MESSAGE_ROLE_ASSISTANT,
                 content=response_content,
                 tool_calls=tool_calls,
+                inline_artifact_ids=[str(a.id) for a in new_artifacts] or None,
             )
 
             # Convert messages to proto
@@ -432,7 +440,7 @@ class AgentServicer:
             from src.services.agent_service import AgentService
             from src.services.conversation_service import ConversationService
 
-            async with self._get_db() as db:
+            async with tenant_session(tenant_id, self._maker()) as db:
                 conv_service = ConversationService(db)
 
                 # Verify session exists
@@ -444,6 +452,10 @@ class AgentServicer:
                         error_message=f"Session not found: {request.session_id}",
                     )
                     return
+
+                # Load prior turns before persisting the new user message so the
+                # current turn isn't duplicated in the replayed history.
+                history = await _load_history(conv_service, session_id)
 
                 # Store user message
                 await conv_service.add_message(
@@ -467,79 +479,19 @@ class AgentServicer:
                     "strategy_name": request.strategy_name or "",
                 }
 
-                # Stream agent response
+                # Stream agent response; the relay maps events, persists the
+                # assistant message once, and emits COMPLETE.
                 agent_service = AgentService(db, tenant_id, user_id)
-                full_content = ""
-
-                async for event in agent_service.stream_message(
+                events = agent_service.stream_message(
                     session_id=session_id,
                     user_message=request.content,
                     ui_context=ui_context,
+                    history=history,
+                )
+                async for proto_event in self._relay_agent_events(
+                    events, conv_service, session_id, tenant_id
                 ):
-                    event_type = event.get("type")
-                    if event_type == STREAM_EVENT_TYPE_CONTENT_DELTA:
-                        full_content += event.get("delta", "")
-                        yield agent_pb2.AgentStreamEvent(
-                            event_type=STREAM_EVENT_TYPE_CONTENT_DELTA,
-                            session_id=str(session_id),
-                            content_delta=event.get("delta", ""),
-                        )
-                    elif event_type == STREAM_EVENT_TYPE_TOOL_CALL_START:
-                        yield agent_pb2.AgentStreamEvent(
-                            event_type=STREAM_EVENT_TYPE_TOOL_CALL_START,
-                            session_id=str(session_id),
-                            tool_name=event.get("tool_name", ""),
-                            tool_status="running",
-                        )
-                    elif event_type == STREAM_EVENT_TYPE_TOOL_CALL_COMPLETE:
-                        yield agent_pb2.AgentStreamEvent(
-                            event_type=STREAM_EVENT_TYPE_TOOL_CALL_COMPLETE,
-                            session_id=str(session_id),
-                            tool_name=event.get("tool_name", ""),
-                            tool_status="complete",
-                            tool_result_preview=event.get("tool_result", ""),
-                        )
-                    elif event_type == STREAM_EVENT_TYPE_ARTIFACT_CREATED:
-                        artifact = event.get("artifact")
-                        if artifact:
-                            yield agent_pb2.AgentStreamEvent(
-                                event_type=STREAM_EVENT_TYPE_ARTIFACT_CREATED,
-                                session_id=str(session_id),
-                                artifact=agent_pb2.PendingArtifact(
-                                    id=str(artifact.id),
-                                    session_id=str(artifact.session_id),
-                                    artifact_type=artifact.artifact_type,
-                                    name=artifact.name,
-                                    description=artifact.description or "",
-                                    preview_json=json.dumps(artifact.artifact_json),
-                                    is_committed=artifact.is_committed,
-                                    created_at=_timestamp_to_proto(artifact.created_at),
-                                ),
-                            )
-                    elif event_type == STREAM_EVENT_TYPE_ERROR:
-                        yield agent_pb2.AgentStreamEvent(
-                            event_type=STREAM_EVENT_TYPE_ERROR,
-                            session_id=str(session_id),
-                            error_message=event.get("error", "Unknown error"),
-                        )
-                    elif event_type == STREAM_EVENT_TYPE_COMPLETE:
-                        # Completion event is handled after the loop
-                        pass
-
-                # Store assistant message
-                assistant_msg = await conv_service.add_message(
-                    session_id=session_id,
-                    tenant_id=tenant_id,
-                    role=MESSAGE_ROLE_ASSISTANT,
-                    content=full_content,
-                )
-
-                # Send completion event
-                yield agent_pb2.AgentStreamEvent(
-                    event_type=STREAM_EVENT_TYPE_COMPLETE,
-                    session_id=str(session_id),
-                    message_id=str(assistant_msg.id),
-                )
+                    yield proto_event
 
         except ConnectError:
             raise
@@ -551,9 +503,155 @@ class AgentServicer:
                 error_message=f"Internal error: {type(e).__name__}",
             )
 
-    # =========================================================================
+    async def _relay_agent_events(
+        self,
+        events: AsyncIterator[dict[str, Any]],
+        conv_service: ConversationService,
+        session_id: UUID,
+        tenant_id: UUID,
+    ) -> AsyncIterator[agent_pb2.AgentStreamEvent]:
+        """Map agent event dicts to proto stream events, then persist the
+        assistant message once (single writer) and emit COMPLETE.
+
+        Shared by ``stream_message`` and ``confirm_tool_call``.
+        """
+        full_content = ""
+        inline_artifact_ids: list[str] = []
+
+        async for event in events:
+            event_type = event.get("type")
+            if event_type == STREAM_EVENT_TYPE_CONTENT_DELTA:
+                full_content += event.get("delta", "")
+                yield agent_pb2.AgentStreamEvent(
+                    event_type=STREAM_EVENT_TYPE_CONTENT_DELTA,
+                    session_id=str(session_id),
+                    content_delta=event.get("delta", ""),
+                )
+            elif event_type == STREAM_EVENT_TYPE_TOOL_CALL_START:
+                yield agent_pb2.AgentStreamEvent(
+                    event_type=STREAM_EVENT_TYPE_TOOL_CALL_START,
+                    session_id=str(session_id),
+                    tool_name=event.get("tool_name", ""),
+                    tool_status="running",
+                )
+            elif event_type == STREAM_EVENT_TYPE_TOOL_CALL_COMPLETE:
+                yield agent_pb2.AgentStreamEvent(
+                    event_type=STREAM_EVENT_TYPE_TOOL_CALL_COMPLETE,
+                    session_id=str(session_id),
+                    tool_name=event.get("tool_name", ""),
+                    tool_status="complete",
+                    tool_result_preview=event.get("tool_result", ""),
+                )
+            elif event_type == STREAM_EVENT_TYPE_ARTIFACT_CREATED:
+                artifact = event.get("artifact")
+                if artifact:
+                    inline_artifact_ids.append(str(artifact.id))
+                    yield agent_pb2.AgentStreamEvent(
+                        event_type=STREAM_EVENT_TYPE_ARTIFACT_CREATED,
+                        session_id=str(session_id),
+                        artifact=agent_pb2.PendingArtifact(
+                            id=str(artifact.id),
+                            session_id=str(artifact.session_id),
+                            artifact_type=artifact.artifact_type,
+                            name=artifact.name,
+                            description=artifact.description or "",
+                            preview_json=json.dumps(artifact.artifact_json),
+                            is_committed=artifact.is_committed,
+                            created_at=_timestamp_to_proto(artifact.created_at),
+                        ),
+                    )
+            elif event_type == STREAM_EVENT_TYPE_TOOL_CONFIRMATION_REQUIRED:
+                yield agent_pb2.AgentStreamEvent(
+                    event_type=STREAM_EVENT_TYPE_TOOL_CONFIRMATION_REQUIRED,
+                    session_id=str(session_id),
+                    tool_name=event.get("tool_name", ""),
+                    tool_arguments_json=event.get("arguments_json", ""),
+                    confirmation_id=event.get("confirmation_id", ""),
+                )
+            elif event_type == STREAM_EVENT_TYPE_ERROR:
+                yield agent_pb2.AgentStreamEvent(
+                    event_type=STREAM_EVENT_TYPE_ERROR,
+                    session_id=str(session_id),
+                    error_message=event.get("error", "Unknown error"),
+                )
+            elif event_type == STREAM_EVENT_TYPE_COMPLETE:
+                # Completion event is emitted after the assistant message is stored.
+                pass
+
+        # Store assistant message (single writer for this turn).
+        assistant_msg = await conv_service.add_message(
+            session_id=session_id,
+            tenant_id=tenant_id,
+            role=MESSAGE_ROLE_ASSISTANT,
+            content=full_content,
+            inline_artifact_ids=inline_artifact_ids or None,
+        )
+
+        yield agent_pb2.AgentStreamEvent(
+            event_type=STREAM_EVENT_TYPE_COMPLETE,
+            session_id=str(session_id),
+            message_id=str(assistant_msg.id),
+        )
+
+    async def confirm_tool_call(
+        self,
+        request: agent_pb2.ConfirmToolCallRequest,
+        ctx: RequestContext[object, object],
+    ) -> AsyncIterator[agent_pb2.AgentStreamEvent]:
+        """Approve or deny a proposed tool call, then resume the agent turn."""
+        try:
+            tenant_id, user_id = _validate_tenant_context(request.context)
+            session_id = parse_uuid(request.session_id, "session_id")
+
+            if not request.tool_name:
+                yield agent_pb2.AgentStreamEvent(
+                    event_type=STREAM_EVENT_TYPE_ERROR,
+                    session_id=str(session_id),
+                    error_message="tool_name is required",
+                )
+                return
+
+            from src.services.agent_service import AgentService
+            from src.services.conversation_service import ConversationService
+
+            async with tenant_session(tenant_id, self._maker()) as db:
+                conv_service = ConversationService(db)
+
+                session = await conv_service.get_session(tenant_id, session_id)
+                if not session:
+                    yield agent_pb2.AgentStreamEvent(
+                        event_type=STREAM_EVENT_TYPE_ERROR,
+                        session_id=str(session_id),
+                        error_message=f"Session not found: {request.session_id}",
+                    )
+                    return
+
+                history = await _load_history(conv_service, session_id)
+
+                agent_service = AgentService(db, tenant_id, user_id)
+                events = agent_service.resume_with_tool(
+                    session_id=session_id,
+                    tool_name=request.tool_name,
+                    arguments_json=request.tool_arguments_json,
+                    approved=request.approved,
+                    history=history,
+                )
+                async for proto_event in self._relay_agent_events(
+                    events, conv_service, session_id, tenant_id
+                ):
+                    yield proto_event
+
+        except ConnectError:
+            raise
+        except Exception as e:
+            logger.exception("Error in confirm_tool_call")
+            yield agent_pb2.AgentStreamEvent(
+                event_type=STREAM_EVENT_TYPE_ERROR,
+                session_id=request.session_id,
+                error_message=f"Internal error: {type(e).__name__}",
+            )
+
     # Artifacts
-    # =========================================================================
 
     @handle_service_errors
     async def commit_artifact(
@@ -574,7 +672,7 @@ class AgentServicer:
 
         from src.services.artifact_service import ArtifactService
 
-        async with self._get_db() as db:
+        async with tenant_session(tenant_id, self._maker()) as db:
             service = ArtifactService(db, tenant_id, user_id)
 
             # Get overrides from proto map
@@ -594,9 +692,7 @@ class AgentServicer:
                 resource_type=result["resource_type"],
             )
 
-    # =========================================================================
     # Context-Aware Suggestions
-    # =========================================================================
 
     @handle_service_errors
     async def get_suggested_prompts(
@@ -638,7 +734,7 @@ class AgentServicer:
 
         from src.services.artifact_service import ArtifactService
 
-        async with self._get_db() as db:
+        async with tenant_session(tenant_id, self._maker()) as db:
             service = ArtifactService(db, tenant_id, user_id)
             artifact = await service.get_artifact(artifact_id)
 

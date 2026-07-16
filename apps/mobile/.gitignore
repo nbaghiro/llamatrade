@@ -1,0 +1,17 @@
+# Expo / RN
+.expo/
+dist/
+web-build/
+*.orig.*
+# native
+ios/
+android/
+# proto codegen (run `npm run proto`)
+src/generated/
+# deps
+node_modules/
+# env
+.env*.local
+# misc
+npm-debug.*
+expo-env.d.ts

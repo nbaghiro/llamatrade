@@ -19,11 +19,9 @@ export default function StrategyEditorPage() {
     useStrategyBuilderStore();
 
   useEffect(() => {
-    // Prevent double-execution in React 18 Strict Mode
     if (hasLoadedRef.current) return;
 
     if (id) {
-      // Edit existing strategy
       hasLoadedRef.current = true;
       loadStrategy(id);
     } else if (artifactId) {
@@ -31,11 +29,9 @@ export default function StrategyEditorPage() {
       hasLoadedRef.current = true;
       loadFromArtifact(artifactId);
     } else if (templateId) {
-      // Create from template
       hasLoadedRef.current = true;
       loadTemplate(templateId);
     } else {
-      // New strategy without template
       // Check if tree was already populated (e.g., from preview dialog)
       const currentTree = useStrategyBuilderStore.getState().tree;
       const hasContent = Object.keys(currentTree.blocks).length > 1;
@@ -72,12 +68,11 @@ export default function StrategyEditorPage() {
     navigate('/strategies');
   };
 
-  // Loading state
   if (loading) {
     return (
       <div className="flex items-center justify-center h-[calc(100vh-56px)]">
         <div className="text-center">
-          <Loader2 className="w-8 h-8 animate-spin text-blue-500 mx-auto mb-4" />
+          <Loader2 className="w-8 h-8 animate-spin text-orange-500 mx-auto mb-4" />
           <p className="text-gray-500 dark:text-gray-400">
             {id ? 'Loading strategy...' : artifactId ? 'Loading artifact...' : templateId ? 'Loading template...' : 'Initializing...'}
           </p>
@@ -94,21 +89,21 @@ export default function StrategyEditorPage() {
       <div className="flex items-center justify-center h-[calc(100vh-56px)]">
         <div className="text-center max-w-md">
           <AlertCircle className="w-12 h-12 text-red-500 mx-auto mb-4" />
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">
+          <h2 className="text-lg font-display uppercase tracking-tight text-gray-900 dark:text-gray-100 mb-2">
             Failed to load strategy
           </h2>
           <p className="text-gray-500 dark:text-gray-400 mb-4">{error}</p>
           <div className="flex items-center justify-center gap-3">
             <button
               onClick={handleBack}
-              className="flex items-center gap-2 px-4 py-2 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors"
+              className="btn btn-ghost"
             >
               <ArrowLeft className="w-4 h-4" />
               Back to Strategies
             </button>
             <button
               onClick={clearError}
-              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+              className="btn btn-primary"
             >
               Try Again
             </button>

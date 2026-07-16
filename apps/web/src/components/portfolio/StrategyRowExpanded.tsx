@@ -1,188 +1,100 @@
 /**
- * Strategy Row Expanded Content
- * Shows positions, recent activity, and action buttons when a strategy row is expanded.
+ * Open-positions detail shown when a strategy row is expanded.
  */
 
-import { Edit, Eye, Pause, Play, Square } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import type { Position } from '../../store/portfolio';
 
-import type { Activity, Position } from '../../store/portfolio';
+import { STRAT_GRID_COLS } from './StrategyRow';
 
 interface StrategyRowExpandedProps {
-  strategyId: string;
-  status: 'live' | 'paper' | 'paused';
+  strategyValue: number;
   positions: Position[];
-  recentActivity: Activity[];
-  onPause?: () => void;
-  onResume?: () => void;
-  onStop?: () => void;
 }
 
-function formatCurrency(value: number): string {
+function currency(value: number, digits = 0): string {
   return new Intl.NumberFormat('en-US', {
     style: 'currency',
     currency: 'USD',
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
+    minimumFractionDigits: digits,
+    maximumFractionDigits: digits,
   }).format(value);
 }
 
-function formatPercent(value: number): string {
-  const sign = value >= 0 ? '+' : '';
-  return `${sign}${value.toFixed(1)}%`;
+function signedCurrency(value: number): string {
+  return `${value >= 0 ? '+' : '-'}${currency(Math.abs(value))}`;
 }
 
-function formatTimeAgo(date: Date): string {
-  const now = new Date();
-  const diff = now.getTime() - date.getTime();
-  const hours = Math.floor(diff / 3600000);
-  const days = Math.floor(diff / 86400000);
-
-  if (days > 0) {
-    return days === 1 ? 'yesterday' : `${days}d ago`;
-  }
-  if (hours > 0) {
-    return `${hours}h ago`;
-  }
-  return 'just now';
-}
-
-export default function StrategyRowExpanded({
-  strategyId,
-  status,
-  positions,
-  recentActivity,
-  onPause,
-  onResume,
-  onStop,
-}: StrategyRowExpandedProps) {
-  const displayPositions = positions.slice(0, 4);
-  const morePositionsCount = positions.length - displayPositions.length;
+export default function StrategyRowExpanded({ strategyValue, positions }: StrategyRowExpandedProps) {
+  const costBasis = positions.reduce((sum, p) => sum + p.avgEntryPrice * p.qty, 0);
+  const unrealized = positions.reduce((sum, p) => sum + p.unrealizedPnl, 0);
 
   return (
-    <div className="px-4 pb-4 pt-2 bg-gray-50 dark:bg-gray-800/50 border-t border-gray-100 dark:border-gray-800">
-      {/* Positions */}
-      <div className="mb-4">
-        <h4 className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-2">
-          Positions
-        </h4>
-        {positions.length === 0 ? (
-          <p className="text-sm text-gray-400 dark:text-gray-500 italic">No open positions</p>
-        ) : (
-          <div className="flex flex-wrap gap-2">
-            {displayPositions.map((pos) => (
+    <div className="bg-bone border-t-2 border-ink border-b border-line pt-1 pb-2">
+      <div className="flex items-center gap-3.5 px-[18px] pt-1.5 pb-1 font-mono text-[10px] text-ink/55 uppercase tracking-wide flex-wrap">
+        Open positions
+        <span className="border-[1.5px] border-ink px-2 py-0.5 font-bold bg-paper tabular-nums">{positions.length}</span>
+        · Cost basis
+        <span className="border-[1.5px] border-ink px-2 py-0.5 font-bold bg-paper tabular-nums">{currency(costBasis)}</span>
+        · Unrealized
+        <span
+          className={`border-[1.5px] border-ink px-2 py-0.5 font-bold bg-paper tabular-nums ${
+            unrealized >= 0 ? 'text-green-600' : 'text-red-600'
+          }`}
+        >
+          {signedCurrency(unrealized)}
+        </span>
+      </div>
+
+      {positions.length === 0 ? (
+        <div className="px-[18px] py-3 font-mono text-xs text-ink/40 italic">No open positions</div>
+      ) : (
+        <>
+          <div
+            className="grid items-center gap-2.5 px-[18px] py-2"
+            style={{ gridTemplateColumns: STRAT_GRID_COLS }}
+          >
+            <span />
+            <span className="font-mono text-[8.5px] font-bold uppercase tracking-[0.08em] text-ink/40">Symbol · Asset</span>
+            <span className="font-mono text-[8.5px] font-bold uppercase tracking-[0.08em] text-ink/40 text-right">Weight</span>
+            <span className="font-mono text-[8.5px] font-bold uppercase tracking-[0.08em] text-ink/40 text-right">Qty</span>
+            <span className="font-mono text-[8.5px] font-bold uppercase tracking-[0.08em] text-ink/40 text-right">Avg Cost</span>
+            <span className="font-mono text-[8.5px] font-bold uppercase tracking-[0.08em] text-ink/40 text-right">Last</span>
+            <span className="font-mono text-[8.5px] font-bold uppercase tracking-[0.08em] text-ink/40 text-right">Mkt Value</span>
+            <span className="font-mono text-[8.5px] font-bold uppercase tracking-[0.08em] text-ink/40 text-right">Total P&L</span>
+          </div>
+
+          {positions.map((p) => {
+            const weight = strategyValue > 0 ? (p.marketValue / strategyValue) * 100 : 0;
+            return (
               <div
-                key={pos.symbol}
-                className="flex flex-col bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-700 px-3 py-2 min-w-[100px]"
+                key={p.symbol}
+                className="grid items-center gap-2.5 px-[18px] py-2"
+                style={{ gridTemplateColumns: STRAT_GRID_COLS }}
               >
-                <span className="text-sm font-medium text-gray-900 dark:text-gray-100">
-                  {pos.symbol}
-                </span>
-                <span
-                  className={`text-xs font-data ${
-                    pos.unrealizedPnl >= 0
-                      ? 'text-green-600 dark:text-green-400'
-                      : 'text-red-600 dark:text-red-400'
+                <span />
+                <div className="flex items-baseline gap-2.5 min-w-0">
+                  <span className="font-mono font-bold text-[13px] text-ink">{p.symbol}</span>
+                  {p.name && (
+                    <span className="font-mono text-[9.5px] text-ink/50 truncate">{p.name}</span>
+                  )}
+                </div>
+                <div className="font-mono font-bold text-[13px] text-right tabular-nums">{weight.toFixed(0)}%</div>
+                <div className="font-mono font-bold text-[13px] text-right tabular-nums">{p.qty}</div>
+                <div className="font-mono font-bold text-[13px] text-right tabular-nums">{currency(p.avgEntryPrice, 2)}</div>
+                <div className="font-mono font-bold text-[13px] text-right tabular-nums">{currency(p.currentPrice, 2)}</div>
+                <div className="font-mono font-bold text-[13px] text-right tabular-nums">{currency(p.marketValue)}</div>
+                <div
+                  className={`font-mono font-bold text-[13px] text-right tabular-nums ${
+                    p.unrealizedPnl >= 0 ? 'text-green-600' : 'text-red-600'
                   }`}
                 >
-                  {pos.unrealizedPnl >= 0 ? '+' : ''}
-                  {formatCurrency(pos.unrealizedPnl)} ({formatPercent(pos.unrealizedPnlPercent)})
-                </span>
+                  {signedCurrency(p.unrealizedPnl)}
+                </div>
               </div>
-            ))}
-            {morePositionsCount > 0 && (
-              <div className="flex items-center justify-center bg-gray-100 dark:bg-gray-800 rounded-lg px-3 py-2 min-w-[80px]">
-                <span className="text-xs text-gray-500 dark:text-gray-400">
-                  +{morePositionsCount} more
-                </span>
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-
-      {/* Recent Activity */}
-      <div className="mb-4">
-        <h4 className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-2">
-          Recent Activity
-        </h4>
-        {recentActivity.length === 0 ? (
-          <p className="text-sm text-gray-400 dark:text-gray-500 italic">No recent activity</p>
-        ) : (
-          <div className="space-y-1">
-            {recentActivity.slice(0, 3).map((activity) => (
-              <div key={activity.id} className="flex items-center gap-2 text-sm">
-                <span
-                  className={`font-medium ${
-                    activity.type === 'buy'
-                      ? 'text-green-600 dark:text-green-400'
-                      : 'text-red-600 dark:text-red-400'
-                  }`}
-                >
-                  {activity.type === 'buy' ? 'Bought' : 'Sold'}
-                </span>
-                <span className="text-gray-700 dark:text-gray-300">
-                  {activity.qty} {activity.symbol}
-                </span>
-                <span className="text-gray-500 dark:text-gray-400">
-                  @ {formatCurrency(activity.price)}
-                </span>
-                <span className="text-gray-400 dark:text-gray-500">—</span>
-                <span className="text-gray-400 dark:text-gray-500">
-                  {formatTimeAgo(activity.timestamp)}
-                </span>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* Actions */}
-      <div className="flex items-center gap-2">
-        <Link
-          to={`/strategies/${strategyId}`}
-          className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
-        >
-          <Eye className="w-4 h-4" />
-          View Details
-        </Link>
-
-        <Link
-          to={`/strategies/${strategyId}/edit`}
-          className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
-        >
-          <Edit className="w-4 h-4" />
-          Edit
-        </Link>
-
-        {status === 'live' || status === 'paper' ? (
-          <button
-            onClick={onPause}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg hover:bg-amber-100 dark:hover:bg-amber-900/30 transition-colors"
-          >
-            <Pause className="w-4 h-4" />
-            Pause
-          </button>
-        ) : (
-          <button
-            onClick={onResume}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-green-700 dark:text-green-400 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg hover:bg-green-100 dark:hover:bg-green-900/30 transition-colors"
-          >
-            <Play className="w-4 h-4" />
-            Resume
-          </button>
-        )}
-
-        {(status === 'live' || status === 'paper') && (
-          <button
-            onClick={onStop}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-red-700 dark:text-red-400 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg hover:bg-red-100 dark:hover:bg-red-900/30 transition-colors"
-          >
-            <Square className="w-4 h-4" />
-            Stop
-          </button>
-        )}
-      </div>
+            );
+          })}
+        </>
+      )}
     </div>
   );
 }

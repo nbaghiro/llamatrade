@@ -32,7 +32,8 @@ class PortfolioLedgerClient:
         ledger: LedgerClient | None = None,
     ) -> None:
         self._ledger = ledger or LedgerClient(
-            target or os.getenv("PORTFOLIO_GRPC_TARGET", "portfolio:8860")
+            target or os.getenv("PORTFOLIO_GRPC_TARGET", "portfolio:8860"),
+            service_name="trading",
         )
         self._cache_ttl = cache_ttl_seconds
         self._cache: dict[str, tuple[float, SleeveDetail]] = {}

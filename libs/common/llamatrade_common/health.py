@@ -280,9 +280,7 @@ class HealthChecker:
         return router
 
 
-# =============================================================================
 # Common Health Check Functions
-# =============================================================================
 
 
 async def check_postgres(database_url: str) -> bool:

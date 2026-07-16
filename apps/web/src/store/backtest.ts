@@ -62,6 +62,8 @@ export interface BacktestConfig {
   commission: number;
   slippage: number;
   timeframe: string;
+  // Benchmark symbol to compare against (empty string = no benchmark)
+  benchmarkSymbol: string;
 }
 
 interface BacktestState {
@@ -71,6 +73,10 @@ interface BacktestState {
   // History of backtests
   backtests: BacktestRun[];
   totalCount: number;
+
+  // Recent completed runs hydrated with full results (metrics + curves) for gallery/sparkline surfaces.
+  recentRuns: BacktestRun[];
+  recentRunsLoading: boolean;
 
   // Available strategies for selector
   strategies: Strategy[];
@@ -99,6 +105,8 @@ interface BacktestState {
   getBacktest: (id: string) => Promise<void>;
   loadAllTrades: (id: string) => Promise<void>;
   listBacktests: (strategyId?: string, page?: number) => Promise<void>;
+  fetchRecentRuns: (limit?: number) => Promise<void>;
+  fetchLatestCompletedBacktest: (strategyId: string) => Promise<BacktestRun | null>;
   cancelBacktest: (id: string) => Promise<void>;
   streamProgress: (id: string) => Promise<void>;
   stopStreaming: () => void;
@@ -121,6 +129,7 @@ const defaultConfig: BacktestConfig = {
   commission: 0.001,
   slippage: 0.001,
   timeframe: '1D',
+  benchmarkSymbol: 'SPY',
 };
 
 function getDefaultStartDate(): string {
@@ -171,6 +180,8 @@ export const useBacktestStore = create<BacktestState>((set, get) => ({
   currentBacktest: null,
   backtests: [],
   totalCount: 0,
+  recentRuns: [],
+  recentRunsLoading: false,
   strategies: [],
   strategiesLoading: false,
   config: { ...defaultConfig },
@@ -270,6 +281,8 @@ export const useBacktestStore = create<BacktestState>((set, get) => ({
           allowShorting: false,
           useAdjustedPrices: true,
           parameters: {},
+          benchmarkSymbol: config.benchmarkSymbol,
+          includeBenchmark: config.benchmarkSymbol !== '',
         },
       });
 
@@ -381,6 +394,76 @@ export const useBacktestStore = create<BacktestState>((set, get) => ({
     }
   },
 
+  // Fetch the most recent completed runs, hydrated via per-run GetBacktest, for the gallery + sparklines.
+  fetchRecentRuns: async (limit = 12) => {
+    const context = getTenantContext();
+    if (!context) {
+      set({ recentRuns: [], recentRunsLoading: false });
+      return;
+    }
+
+    set({ recentRunsLoading: true });
+    try {
+      const response = await backtestClient.listBacktests({
+        context,
+        strategyId: '',
+        pagination: { page: 1, pageSize: 50 },
+      });
+
+      const runTime = (b: BacktestRun): number =>
+        (toDate(b.completedAt) ?? toDate(b.createdAt) ?? new Date(0)).getTime();
+
+      const completed = response.backtests
+        .filter((b) => b.status === BacktestStatus.COMPLETED)
+        .sort((a, b) => runTime(b) - runTime(a))
+        .slice(0, limit);
+
+      const detailed = await Promise.all(
+        completed.map((b) =>
+          backtestClient
+            .getBacktest({ context, backtestId: b.id })
+            .then((r) => r.backtest ?? null)
+            .catch(() => null)
+        )
+      );
+
+      set({
+        recentRuns: detailed.filter((b): b is BacktestRun => b !== null),
+        recentRunsLoading: false,
+      });
+    } catch {
+      // Gallery is non-blocking: degrade to a clean empty state on failure.
+      set({ recentRuns: [], recentRunsLoading: false });
+    }
+  },
+
+  // Fetch one strategy's latest completed run, hydrated, without touching shared display state (currentBacktest/backtests).
+  fetchLatestCompletedBacktest: async (strategyId) => {
+    const context = getTenantContext();
+    if (!context || !strategyId) return null;
+
+    try {
+      const response = await backtestClient.listBacktests({
+        context,
+        strategyId,
+        pagination: { page: 1, pageSize: 50 },
+      });
+
+      const runTime = (b: BacktestRun): number =>
+        (toDate(b.completedAt) ?? toDate(b.createdAt) ?? new Date(0)).getTime();
+
+      const latest = response.backtests
+        .filter((b) => b.status === BacktestStatus.COMPLETED)
+        .sort((a, b) => runTime(b) - runTime(a))[0];
+      if (!latest) return null;
+
+      const detail = await backtestClient.getBacktest({ context, backtestId: latest.id });
+      return detail.backtest ?? null;
+    } catch {
+      return null;
+    }
+  },
+
   // Cancel a running backtest
   cancelBacktest: async (id) => {
     const context = getTenantContext();
@@ -486,6 +569,8 @@ export const useBacktestStore = create<BacktestState>((set, get) => ({
       currentBacktest: null,
       backtests: [],
       totalCount: 0,
+      recentRuns: [],
+      recentRunsLoading: false,
       config: { ...defaultConfig },
       loading: false,
       streaming: false,

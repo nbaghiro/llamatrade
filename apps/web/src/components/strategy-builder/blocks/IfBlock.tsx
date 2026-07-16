@@ -21,10 +21,8 @@ export function IfBlock({ block, readOnly }: IfBlockProps) {
   const [isEditing, setIsEditing] = useState(false);
   const blockRef = useRef<HTMLDivElement>(null);
 
-  // Get fresh condition text
   const displayText = conditionToText(block.condition);
 
-  // Get first symbol from strategy for default
   const firstSymbol = Object.values(tree.blocks).find(b => b.type === 'asset')?.symbol || 'SPY';
 
   const handleClick = (e: React.MouseEvent) => {
@@ -56,7 +54,6 @@ export function IfBlock({ block, readOnly }: IfBlockProps) {
     setIsEditing(false);
   };
 
-  // Close editor when clicking outside
   useEffect(() => {
     if (!isEditing) return;
 
@@ -70,24 +67,21 @@ export function IfBlock({ block, readOnly }: IfBlockProps) {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [isEditing]);
 
-  // Use theme colors for IF block
   const colors = theme.ifBlock;
 
   return (
     <div ref={blockRef} className="relative">
-      {/* Main pill - emerald for price, teal for indicator conditions */}
       <div
         data-testid="if-block"
         className={`
-          inline-flex items-center gap-1.5 py-1.5 rounded-full
+          inline-flex items-center gap-1.5 py-1.5
           transition-all duration-150 select-none
-          ${colors.bg} text-white text-sm
+          ${colors.bg} text-sm
           ${readOnly ? 'cursor-default pl-3 pr-3' : 'cursor-pointer pl-1.5 pr-3'}
-          ${isSelected ? `ring-2 ${colors.ring} ring-offset-2 ring-offset-white dark:ring-offset-gray-900` : readOnly ? '' : colors.hover}
+          ${isSelected ? `ring-2 ${colors.ring} ring-offset-2 ring-offset-bone` : readOnly ? '' : colors.hover}
         `}
         onClick={handleClick}
       >
-        {/* Delete button - hidden in readOnly mode */}
         {!readOnly && (
           <button
             onClick={handleDeleteClick}
@@ -98,7 +92,6 @@ export function IfBlock({ block, readOnly }: IfBlockProps) {
           </button>
         )}
 
-        {/* Expand toggle */}
         <button
           onClick={handleExpandClick}
           className={`p-0.5 rounded-full ${colors.hover} transition-colors`}
@@ -106,11 +99,9 @@ export function IfBlock({ block, readOnly }: IfBlockProps) {
           <ChevronDown className={`w-3.5 h-3.5 transition-transform ${isExpanded ? '' : '-rotate-90'}`} />
         </button>
 
-        {/* IF label and condition text */}
-        <span className="font-semibold">IF</span>
+        <span className="font-mono font-bold tracking-wide">IF</span>
         <span className="font-normal opacity-90">{displayText}</span>
 
-        {/* Edit button - hidden in readOnly mode */}
         {!readOnly && (
           <button
             onClick={handleEditClick}
@@ -122,7 +113,6 @@ export function IfBlock({ block, readOnly }: IfBlockProps) {
         )}
       </div>
 
-      {/* Inline Condition Editor Popover */}
       {isEditing && (
         <div className="absolute left-0 top-full mt-2 z-50">
           <ConditionEditor

@@ -1,17 +1,43 @@
 /**
- * Portfolio Page
- * Shows strategy performance chart and scrollable strategy list.
+ * Portfolio overview: identity header, KPI rail, equity curve, and the
+ * strategies allocation & performance table.
  */
 
 import { Loader2 } from 'lucide-react';
-import { useEffect } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
-import { PortfolioSummaryBar, StrategyChart, StrategyList } from '../../components/portfolio';
+import { AddFundsModal } from '../../components/funding/AddFundsModal';
+import {
+  AllocationPanel,
+  PortfolioHeader,
+  PortfolioSummaryBar,
+  PositionsBlotter,
+  StrategyChart,
+  StrategyList,
+} from '../../components/portfolio';
+import { useAuthStore } from '../../store/auth';
 import { usePortfolioStore } from '../../store/portfolio';
 
+// Prefer the real name; fall back to the email local-part ("alex.rivera" → "Alex Rivera").
+function holderFrom(
+  user: { firstName?: string; lastName?: string; email?: string } | null | undefined
+): string {
+  const full = [user?.firstName, user?.lastName].filter(Boolean).join(' ');
+  if (full) return full;
+  const local = user?.email?.split('@')[0];
+  if (!local) return '';
+  return local
+    .split(/[._-]+/)
+    .filter(Boolean)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(' ');
+}
+
 export default function PortfolioPage() {
+  const user = useAuthStore((state) => state.user);
   const {
     strategies,
+    portfolioCurve,
     benchmarkData,
     selectedPeriod,
     selectedBenchmark,
@@ -25,7 +51,17 @@ export default function PortfolioPage() {
     dayPnlPercent,
     totalReturn,
     totalReturnPercent,
+    freeCash,
+    freeCashPercent,
+    deployedValue,
+    liveStrategiesCount,
+    openPositionsCount,
+    accountMode,
+    marketStatus,
+    marketNextOpen,
+    marketNextClose,
     fetchPortfolio,
+    fetchMarketStatus,
     setSelectedPeriod,
     setSelectedBenchmark,
     toggleStrategyExpanded,
@@ -34,16 +70,25 @@ export default function PortfolioPage() {
     clearError,
   } = usePortfolioStore();
 
+  const [fundOpen, setFundOpen] = useState(false);
+
   useEffect(() => {
     fetchPortfolio();
-  }, [fetchPortfolio]);
+    fetchMarketStatus();
+  }, [fetchPortfolio, fetchMarketStatus]);
+
+  const holderName = useMemo(() => holderFrom(user), [user]);
+  const accountRef = useMemo(
+    () => (user?.tenantId ? user.tenantId.replace(/[^a-zA-Z0-9]/g, '').slice(0, 6).toUpperCase() : ''),
+    [user?.tenantId]
+  );
 
   if (loading && strategies.length === 0) {
     return (
-      <div className="flex items-center justify-center h-[calc(100vh-56px)] bg-gray-50 dark:bg-gray-950">
+      <div className="flex items-center justify-center h-[calc(100vh-56px)] bg-bone bg-grid">
         <div className="flex flex-col items-center gap-3">
-          <Loader2 className="w-8 h-8 text-green-500 animate-spin" />
-          <span className="text-sm text-gray-500 dark:text-gray-400">Loading portfolio...</span>
+          <Loader2 className="w-8 h-8 text-orange-500 animate-spin" />
+          <span className="text-xs font-mono uppercase tracking-wide text-ink/60">Loading portfolio...</span>
         </div>
       </div>
     );
@@ -51,15 +96,15 @@ export default function PortfolioPage() {
 
   if (error) {
     return (
-      <div className="flex items-center justify-center h-[calc(100vh-56px)] bg-gray-50 dark:bg-gray-950">
+      <div className="flex items-center justify-center h-[calc(100vh-56px)] bg-bone bg-grid">
         <div className="flex flex-col items-center gap-3 text-center">
-          <div className="text-red-500 dark:text-red-400 text-sm">{error}</div>
+          <div className="text-red-600 text-xs font-mono uppercase tracking-wide">{error}</div>
           <button
             onClick={() => {
               clearError();
               fetchPortfolio();
             }}
-            className="px-4 py-2 text-sm font-medium text-white bg-green-600 hover:bg-green-700 rounded-lg transition-colors"
+            className="btn btn-primary"
           >
             Try Again
           </button>
@@ -69,20 +114,40 @@ export default function PortfolioPage() {
   }
 
   return (
-    <div className="h-[calc(100vh-56px)] bg-gray-50 dark:bg-gray-950 bg-dotted-grid overflow-y-auto">
-      <div className="flex flex-col px-12 py-8 gap-4 min-h-full">
-        {/* Summary Bar */}
+    <div className="h-[calc(100vh-56px)] bg-bone bg-grid overflow-y-auto">
+      <div className="max-w-[1760px] mx-auto px-6 lg:px-8 py-7 flex flex-col gap-[18px]">
+        <PortfolioHeader
+          mode={accountMode}
+          holderName={holderName}
+          accountRef={accountRef}
+          openPositions={openPositionsCount}
+          marketStatus={marketStatus}
+          marketNextOpen={marketNextOpen}
+          marketNextClose={marketNextClose}
+        />
+
         <PortfolioSummaryBar
           totalEquity={totalEquity}
           dayPnl={dayPnl}
           dayPnlPercent={dayPnlPercent}
           totalReturn={totalReturn}
           totalReturnPercent={totalReturnPercent}
+          freeCash={freeCash}
+          freeCashPercent={freeCashPercent}
+          deployedValue={deployedValue}
+          liveStrategiesCount={liveStrategiesCount}
+          onAddFunds={() => setFundOpen(true)}
         />
 
-        {/* Chart */}
+        <AddFundsModal
+          isOpen={fundOpen}
+          onClose={() => setFundOpen(false)}
+          onFunded={() => void fetchPortfolio()}
+        />
+
         <StrategyChart
           strategies={strategies}
+          portfolioCurve={portfolioCurve}
           benchmarkData={benchmarkData}
           selectedPeriod={selectedPeriod}
           selectedBenchmark={selectedBenchmark}
@@ -94,18 +159,18 @@ export default function PortfolioPage() {
           onHoverStrategy={setHoveredStrategy}
         />
 
-        {/* Strategy List - grows to fill remaining space */}
-        <div className="flex-1">
-          <StrategyList
-            strategies={strategies}
-            selectedPeriod={selectedPeriod}
-            expandedStrategyId={expandedStrategyId}
-            visibleStrategyIds={visibleStrategyIds}
-            hoveredStrategyId={hoveredStrategyId}
-            onToggleExpanded={toggleStrategyExpanded}
-            onToggleVisibility={toggleStrategyVisibility}
-            onHoverStrategy={setHoveredStrategy}
-          />
+        <StrategyList
+          strategies={strategies}
+          totalBook={totalEquity}
+          expandedStrategyId={expandedStrategyId}
+          hoveredStrategyId={hoveredStrategyId}
+          onToggleExpanded={toggleStrategyExpanded}
+          onHoverStrategy={setHoveredStrategy}
+        />
+
+        <div className="grid grid-cols-1 lg:grid-cols-[1fr_1.5fr] gap-[18px] items-start">
+          <AllocationPanel strategies={strategies} freeCash={freeCash} totalBook={totalEquity} />
+          <PositionsBlotter strategies={strategies} />
         </div>
       </div>
     </div>

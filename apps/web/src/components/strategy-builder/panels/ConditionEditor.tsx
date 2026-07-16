@@ -21,7 +21,6 @@ interface ConditionEditorProps {
 
 type OperandType = 'price' | 'indicator' | 'number';
 
-// Extract operand details for the form
 function getOperandDetails(operand: ConditionOperand) {
   if (operand.type === 'price') {
     return {
@@ -50,7 +49,6 @@ function getOperandDetails(operand: ConditionOperand) {
   };
 }
 
-// Build operand from form state
 function buildOperand(
   type: OperandType,
   func: string,
@@ -114,7 +112,6 @@ export function ConditionEditor({ condition, defaultSymbol, onSave, onCancel }: 
     });
   }, [leftFunc, leftSymbol, leftPeriod, comparator, rightType, rightFunc, rightSymbol, rightPeriod, rightValue, onSave]);
 
-  // Function options for dropdowns
   const functionOptions = [
     { value: 'current_price', label: 'current price' },
     ...INDICATORS.map((i) => ({
@@ -127,27 +124,23 @@ export function ConditionEditor({ condition, defaultSymbol, onSave, onCancel }: 
   const rightInfo = rightFunc !== 'current_price' ? INDICATORS.find(i => i.name === rightFunc) : null;
 
   return (
-    <div data-testid="condition-editor" className="bg-white dark:bg-gray-900 rounded-lg shadow-xl border border-gray-200 dark:border-gray-700 w-[420px]">
-      {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-gray-700">
-        <span className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+    <div data-testid="condition-editor" className="bg-paper border-2 border-ink shadow-lg w-[420px]">
+      <div className="flex items-center justify-between px-4 py-3 border-b-2 border-ink">
+        <span className="text-[11px] font-mono font-bold uppercase tracking-wide text-ink/70">
           Edit Conditional
         </span>
         <button
           onClick={onCancel}
-          className="p-1 hover:bg-gray-100 dark:hover:bg-gray-800 rounded transition-colors"
+          className="p-1 hover:bg-ink/10 transition-colors"
         >
-          <X className="w-4 h-4 text-gray-400" />
+          <X className="w-4 h-4 text-ink/60" />
         </button>
       </div>
 
-      {/* Content */}
       <div className="p-4 space-y-4">
-        {/* Left side: "if [function] of [asset]" */}
         <div className="flex items-center gap-2 flex-wrap">
-          <span className="text-sm text-gray-500 dark:text-gray-400 w-6">if</span>
+          <span className="text-sm text-ink/60 w-6">if</span>
 
-          {/* Function dropdown */}
           <select
             value={leftFunc}
             onChange={(e) => {
@@ -155,7 +148,7 @@ export function ConditionEditor({ condition, defaultSymbol, onSave, onCancel }: 
               const info = INDICATORS.find(i => i.name === e.target.value);
               if (info?.defaultPeriod) setLeftPeriod(info.defaultPeriod);
             }}
-            className="px-3 py-1.5 text-sm bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-full focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            className="px-3 py-1.5 text-sm bg-paper text-ink border-2 border-ink focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
           >
             {functionOptions.map((opt) => (
               <option key={opt.value} value={opt.value}>
@@ -164,7 +157,6 @@ export function ConditionEditor({ condition, defaultSymbol, onSave, onCancel }: 
             ))}
           </select>
 
-          {/* Period input for indicators */}
           {leftInfo?.hasPeriod && (
             <div className="flex items-center gap-1">
               <input
@@ -173,35 +165,33 @@ export function ConditionEditor({ condition, defaultSymbol, onSave, onCancel }: 
                 onChange={(e) => setLeftPeriod(parseInt(e.target.value) || 1)}
                 min={1}
                 max={500}
-                className="w-14 px-2 py-1.5 text-sm text-center bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-full focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-14 px-2 py-1.5 text-sm text-center bg-paper text-ink border-2 border-ink focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
-              <span className="text-xs text-gray-400">d</span>
+              <span className="text-xs text-ink/60">d</span>
             </div>
           )}
 
-          <span className="text-sm text-gray-500 dark:text-gray-400">of</span>
+          <span className="text-sm text-ink/60">of</span>
 
-          {/* Asset input */}
-          <div className="flex items-center gap-1 px-3 py-1.5 bg-emerald-500 text-white rounded-full">
-            <span className="w-2 h-2 rounded-full bg-white/80" />
+          <div className="flex items-center gap-1 px-3 py-1.5 bg-green-600 text-bone border-2 border-ink">
+            <span className="w-2 h-2 rounded-full bg-bone" />
             <input
               type="text"
               value={leftSymbol}
               onChange={(e) => setLeftSymbol(e.target.value.toUpperCase())}
-              className="w-12 bg-transparent text-sm font-medium focus:outline-none placeholder:text-white/60"
+              className="w-12 bg-transparent text-sm font-mono font-bold focus:outline-none placeholder:text-bone/60"
               placeholder="SPY"
             />
           </div>
         </div>
 
-        {/* Comparator: "is [comparator]" */}
         <div className="flex items-center gap-2">
-          <span className="text-sm text-gray-500 dark:text-gray-400 w-6">is</span>
+          <span className="text-sm text-ink/60 w-6">is</span>
 
           <select
             value={comparator}
             onChange={(e) => setComparator(e.target.value as Comparator)}
-            className="px-3 py-1.5 text-sm bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-full focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="px-3 py-1.5 text-sm bg-paper text-ink border-2 border-ink focus:outline-none focus:ring-2 focus:ring-blue-500"
           >
             {COMPARATORS.map((c) => (
               <option key={c.value} value={c.value}>
@@ -211,18 +201,16 @@ export function ConditionEditor({ condition, defaultSymbol, onSave, onCancel }: 
           </select>
         </div>
 
-        {/* Right side: value or function */}
         <div className="flex items-center gap-2 flex-wrap">
-          <span className="text-sm text-gray-500 dark:text-gray-400 w-6" />
+          <span className="text-sm text-ink/60 w-6" />
 
-          {/* Type toggle */}
-          <div className="flex rounded-full border border-gray-300 dark:border-gray-600 overflow-hidden">
+          <div className="flex border-2 border-ink overflow-hidden">
             <button
               onClick={() => setRightType('indicator')}
               className={`px-3 py-1 text-xs font-medium transition-colors ${
                 rightType === 'indicator'
-                  ? 'bg-blue-500 text-white'
-                  : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'
+                  ? 'bg-blue-600 text-bone'
+                  : 'bg-paper text-ink hover:bg-ink hover:text-bone'
               }`}
             >
               Function
@@ -231,8 +219,8 @@ export function ConditionEditor({ condition, defaultSymbol, onSave, onCancel }: 
               onClick={() => setRightType('value')}
               className={`px-3 py-1 text-xs font-medium transition-colors ${
                 rightType === 'value'
-                  ? 'bg-blue-500 text-white'
-                  : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'
+                  ? 'bg-blue-600 text-bone'
+                  : 'bg-paper text-ink hover:bg-ink hover:text-bone'
               }`}
             >
               Value
@@ -245,11 +233,10 @@ export function ConditionEditor({ condition, defaultSymbol, onSave, onCancel }: 
               value={rightValue}
               onChange={(e) => setRightValue(parseFloat(e.target.value) || 0)}
               step="any"
-              className="w-20 px-3 py-1.5 text-sm bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-full focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-20 px-3 py-1.5 text-sm bg-paper text-ink border-2 border-ink focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
           ) : (
             <>
-              {/* Function dropdown */}
               <select
                 value={rightFunc}
                 onChange={(e) => {
@@ -257,7 +244,7 @@ export function ConditionEditor({ condition, defaultSymbol, onSave, onCancel }: 
                   const info = INDICATORS.find(i => i.name === e.target.value);
                   if (info?.defaultPeriod) setRightPeriod(info.defaultPeriod);
                 }}
-                className="px-3 py-1.5 text-sm bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-full focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="px-3 py-1.5 text-sm bg-paper text-ink border-2 border-ink focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
                 {functionOptions.map((opt) => (
                   <option key={opt.value} value={opt.value}>
@@ -266,7 +253,6 @@ export function ConditionEditor({ condition, defaultSymbol, onSave, onCancel }: 
                 ))}
               </select>
 
-              {/* Period input */}
               {rightInfo?.hasPeriod && (
                 <div className="flex items-center gap-1">
                   <input
@@ -275,22 +261,21 @@ export function ConditionEditor({ condition, defaultSymbol, onSave, onCancel }: 
                     onChange={(e) => setRightPeriod(parseInt(e.target.value) || 1)}
                     min={1}
                     max={500}
-                    className="w-14 px-2 py-1.5 text-sm text-center bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-full focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-14 px-2 py-1.5 text-sm text-center bg-paper text-ink border-2 border-ink focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
-                  <span className="text-xs text-gray-400">d</span>
+                  <span className="text-xs text-ink/60">d</span>
                 </div>
               )}
 
-              <span className="text-sm text-gray-500 dark:text-gray-400">of</span>
+              <span className="text-sm text-ink/60">of</span>
 
-              {/* Asset */}
-              <div className="flex items-center gap-1 px-3 py-1.5 bg-emerald-500 text-white rounded-full">
-                <span className="w-2 h-2 rounded-full bg-white/80" />
+              <div className="flex items-center gap-1 px-3 py-1.5 bg-green-600 text-bone border-2 border-ink">
+                <span className="w-2 h-2 rounded-full bg-bone" />
                 <input
                   type="text"
                   value={rightSymbol}
                   onChange={(e) => setRightSymbol(e.target.value.toUpperCase())}
-                  className="w-12 bg-transparent text-sm font-medium focus:outline-none placeholder:text-white/60"
+                  className="w-12 bg-transparent text-sm font-mono font-bold focus:outline-none placeholder:text-bone/60"
                   placeholder="SPY"
                 />
               </div>
@@ -299,17 +284,16 @@ export function ConditionEditor({ condition, defaultSymbol, onSave, onCancel }: 
         </div>
       </div>
 
-      {/* Footer */}
-      <div className="flex justify-end gap-2 px-4 py-3 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50">
+      <div className="flex justify-end gap-2 px-4 py-3 border-t-2 border-ink bg-bone">
         <button
           onClick={onCancel}
-          className="px-4 py-1.5 text-sm text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-full transition-colors"
+          className="px-4 py-1.5 text-sm text-ink border-2 border-ink hover:bg-ink hover:text-bone transition-colors"
         >
           Cancel
         </button>
         <button
           onClick={handleSave}
-          className="px-4 py-1.5 text-sm bg-emerald-500 hover:bg-emerald-600 text-white rounded-full transition-colors font-medium"
+          className="px-4 py-1.5 text-sm bg-blue-600 hover:bg-blue-700 text-bone border-2 border-ink transition-colors font-mono font-bold uppercase tracking-wide"
         >
           Save
         </button>

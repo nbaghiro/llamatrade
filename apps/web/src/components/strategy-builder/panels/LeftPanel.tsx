@@ -26,7 +26,6 @@ export function LeftPanel() {
     canRedo,
     deleteBlock,
     getBlock,
-    // Metadata
     strategyId,
     strategyName,
     strategyDescription,
@@ -35,7 +34,6 @@ export function LeftPanel() {
     setStrategyName,
     setStrategyDescription,
     setTimeframe,
-    // Async
     saving,
     error,
     saveStrategy,
@@ -91,12 +89,11 @@ export function LeftPanel() {
 
   return (
     <div className="w-[320px] flex-shrink-0 flex flex-col gap-3 p-4 overflow-y-auto">
-      {/* Error Banner */}
       {error && (
-        <div className="flex items-start gap-2 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
+        <div className="flex items-start gap-2 p-3 bg-red-50 border-2 border-ink">
           <AlertCircle className="w-4 h-4 text-red-500 mt-0.5 shrink-0" />
           <div className="flex-1 min-w-0">
-            <p className="text-sm text-red-700 dark:text-red-400">{error}</p>
+            <p className="text-sm text-red-700">{error}</p>
             <button
               onClick={clearError}
               className="text-xs text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300 mt-1"
@@ -107,11 +104,10 @@ export function LeftPanel() {
         </div>
       )}
 
-      {/* Back + Save */}
       <div className="flex gap-2">
         <button
           onClick={handleBack}
-          className="p-1.5 rounded-md hover:bg-gray-200 dark:hover:bg-gray-800 text-gray-600 dark:text-gray-400 transition-colors"
+          className="p-1.5 border-2 border-ink bg-paper text-ink hover:bg-ink hover:text-bone transition-colors"
           title={strategyId ? 'Back to Strategies' : 'Back to Templates'}
         >
           <ArrowLeft className="w-4 h-4" />
@@ -119,10 +115,10 @@ export function LeftPanel() {
         <button
           onClick={handleSave}
           disabled={saving || !isDirty}
-          className={`flex-1 font-medium py-2.5 px-4 rounded-lg flex items-center justify-center gap-2 transition-all shadow-sm bg-primary-600 text-white ${
+          className={`flex-1 font-mono font-bold uppercase tracking-wide py-2.5 px-4 flex items-center justify-center gap-2 transition-all shadow bg-orange-500 text-bone border-2 border-ink ${
             saving || !isDirty
               ? 'opacity-50'
-              : 'hover:bg-primary-700'
+              : 'hover:bg-orange-600'
           }`}
         >
           {saving ? (
@@ -136,15 +132,14 @@ export function LeftPanel() {
         </button>
       </div>
 
-      {/* Undo/Redo/Delete */}
       <div className="flex gap-2">
         <button
           onClick={() => undo()}
           disabled={!canUndo()}
-          className={`flex-1 flex items-center justify-center gap-1.5 py-2 px-2 rounded-lg border transition-colors ${
+          className={`flex-1 flex items-center justify-center gap-1.5 py-2 px-2 border-2 transition-colors ${
             canUndo()
-              ? 'bg-white dark:bg-gray-900 border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 text-gray-700 dark:text-gray-300 shadow-sm'
-              : 'bg-white/50 dark:bg-gray-900/50 border-gray-100 dark:border-gray-800 text-gray-300 dark:text-gray-600 cursor-not-allowed'
+              ? 'bg-paper border-ink hover:bg-ink hover:text-bone text-ink'
+              : 'bg-paper border-ink/30 text-ink/30 cursor-not-allowed'
           }`}
           title="Undo (Cmd+Z)"
         >
@@ -154,10 +149,10 @@ export function LeftPanel() {
         <button
           onClick={() => redo()}
           disabled={!canRedo()}
-          className={`flex-1 flex items-center justify-center gap-1.5 py-2 px-2 rounded-lg border transition-colors ${
+          className={`flex-1 flex items-center justify-center gap-1.5 py-2 px-2 border-2 transition-colors ${
             canRedo()
-              ? 'bg-white dark:bg-gray-900 border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 text-gray-700 dark:text-gray-300 shadow-sm'
-              : 'bg-white/50 dark:bg-gray-900/50 border-gray-100 dark:border-gray-800 text-gray-300 dark:text-gray-600 cursor-not-allowed'
+              ? 'bg-paper border-ink hover:bg-ink hover:text-bone text-ink'
+              : 'bg-paper border-ink/30 text-ink/30 cursor-not-allowed'
           }`}
           title="Redo (Cmd+Shift+Z)"
         >
@@ -167,10 +162,10 @@ export function LeftPanel() {
         <button
           onClick={() => ui.selectedBlockId && deleteBlock(ui.selectedBlockId)}
           disabled={!canDelete}
-          className={`flex items-center justify-center p-2 rounded-lg border transition-colors ${
+          className={`flex items-center justify-center p-2 border-2 transition-colors ${
             canDelete
-              ? 'bg-white dark:bg-gray-900 border-gray-200 dark:border-gray-700 hover:bg-red-50 dark:hover:bg-red-900/20 hover:border-red-200 dark:hover:border-red-800 text-red-600 dark:text-red-400 shadow-sm'
-              : 'bg-white/50 dark:bg-gray-900/50 border-gray-100 dark:border-gray-800 text-gray-300 dark:text-gray-600 cursor-not-allowed'
+              ? 'bg-paper border-ink hover:bg-red-500 hover:text-bone text-red-600'
+              : 'bg-paper border-ink/30 text-ink/30 cursor-not-allowed'
           }`}
           title="Delete selected (Del)"
         >
@@ -178,15 +173,14 @@ export function LeftPanel() {
         </button>
       </div>
 
-      {/* Strategy Details */}
-      <div className="bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden shadow-sm">
+      <div className="bg-paper border-2 border-ink shadow">
         <button
           onClick={() => setIsDetailsOpen(!isDetailsOpen)}
-          className="w-full flex items-center justify-between px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+          className="w-full flex items-center justify-between px-4 py-3 hover:bg-ink/5 transition-colors"
         >
-          <span className="text-sm font-medium text-gray-900 dark:text-gray-100">Strategy Details</span>
+          <span className="text-[11px] font-mono uppercase tracking-wide text-ink/70">Strategy Details</span>
           <ChevronDown
-            className={`w-4 h-4 text-gray-500 dark:text-gray-400 transition-transform ${
+            className={`w-4 h-4 text-ink/60 transition-transform ${
               isDetailsOpen ? '' : '-rotate-90'
             }`}
           />
@@ -194,32 +188,29 @@ export function LeftPanel() {
 
         {isDetailsOpen && (
           <div className="px-4 pb-4 space-y-4">
-            {/* Name */}
             <div>
-              <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Name</label>
+              <label className="block text-[11px] font-mono uppercase tracking-wide text-ink/70 mb-1">Name</label>
               <input
                 type="text"
                 value={strategyName}
                 onChange={handleNameChange}
-                className="w-full px-3 py-2 text-sm border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:border-blue-400 focus:ring-1 focus:ring-blue-400 outline-none"
+                className="w-full px-3 py-2 text-sm border-2 border-ink bg-paper text-ink focus:border-orange-500 outline-none"
               />
             </div>
 
-            {/* Description */}
             <div>
-              <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Description</label>
+              <label className="block text-[11px] font-mono uppercase tracking-wide text-ink/70 mb-1">Description</label>
               <textarea
                 placeholder="Describe your strategy..."
                 value={strategyDescription}
                 onChange={handleDescriptionChange}
                 rows={3}
-                className="w-full px-3 py-2 text-sm border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder:text-gray-400 focus:border-blue-400 focus:ring-1 focus:ring-blue-400 outline-none resize-none"
+                className="w-full px-3 py-2 text-sm border-2 border-ink bg-paper text-ink placeholder:text-ink/40 focus:border-orange-500 outline-none resize-none"
               />
             </div>
 
-            {/* Timeframe */}
             <div>
-              <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">
+              <label className="block text-[11px] font-mono uppercase tracking-wide text-ink/70 mb-1">
                 Timeframe
               </label>
               <Select
@@ -232,53 +223,51 @@ export function LeftPanel() {
         )}
       </div>
 
-      {/* Actions */}
       <div className="flex gap-2">
-        <button className="flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 hover:bg-gray-50 dark:hover:bg-gray-800 text-gray-700 dark:text-gray-300 transition-colors shadow-sm">
+        <button className="flex-1 flex items-center justify-center gap-2 py-2 px-3 border-2 border-ink bg-paper hover:bg-ink hover:text-bone text-ink transition-colors">
           <Eye className="w-4 h-4" />
           <span className="text-sm">Watch</span>
         </button>
-        <button className="flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 hover:bg-gray-50 dark:hover:bg-gray-800 text-gray-700 dark:text-gray-300 transition-colors shadow-sm">
+        <button className="flex-1 flex items-center justify-center gap-2 py-2 px-3 border-2 border-ink bg-paper hover:bg-ink hover:text-bone text-ink transition-colors">
           <Share2 className="w-4 h-4" />
           <span className="text-sm">Share</span>
         </button>
       </div>
 
-      {/* Unsaved changes confirmation dialog */}
       {showLeaveConfirm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
           <div
-            className="absolute inset-0 bg-black/40"
+            className="absolute inset-0 bg-ink/40"
             onClick={() => !savingAndExiting && setShowLeaveConfirm(false)}
           />
-          <div className="relative bg-white dark:bg-gray-900 rounded-xl shadow-2xl max-w-sm w-full mx-4 overflow-hidden">
+          <div className="relative bg-paper border-2 border-ink shadow-lg max-w-sm w-full mx-4 overflow-hidden">
             <div className="p-5">
-              <h2 className="text-base font-semibold text-gray-900 dark:text-gray-100">
+              <h2 className="font-display text-lg uppercase tracking-tight text-ink">
                 Save changes?
               </h2>
-              <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+              <p className="text-sm text-ink/60 mt-1">
                 Your changes will be lost if you do not save them.
               </p>
             </div>
-            <div className="flex border-t border-gray-200 dark:border-gray-700">
+            <div className="flex border-t-2 border-ink">
               <button
                 onClick={handleDiscard}
                 disabled={savingAndExiting}
-                className="flex-1 px-4 py-3 text-sm font-medium text-red-600 dark:text-red-400 hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-50 transition-colors border-r border-gray-200 dark:border-gray-700"
+                className="flex-1 px-4 py-3 text-sm font-medium text-red-600 hover:bg-bone disabled:opacity-50 transition-colors border-r-2 border-ink"
               >
                 Discard
               </button>
               <button
                 onClick={() => setShowLeaveConfirm(false)}
                 disabled={savingAndExiting}
-                className="flex-1 px-4 py-3 text-sm font-medium text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-50 transition-colors border-r border-gray-200 dark:border-gray-700"
+                className="flex-1 px-4 py-3 text-sm font-medium text-ink/70 hover:bg-bone disabled:opacity-50 transition-colors border-r-2 border-ink"
               >
                 Cancel
               </button>
               <button
                 onClick={handleSaveAndExit}
                 disabled={savingAndExiting}
-                className="flex-1 px-4 py-3 text-sm font-medium text-primary-600 dark:text-primary-400 hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-50 transition-colors flex items-center justify-center gap-1.5"
+                className="flex-1 px-4 py-3 text-sm font-medium text-orange-600 hover:bg-bone disabled:opacity-50 transition-colors flex items-center justify-center gap-1.5"
               >
                 {savingAndExiting ? (
                   <Loader2 className="w-4 h-4 animate-spin" />

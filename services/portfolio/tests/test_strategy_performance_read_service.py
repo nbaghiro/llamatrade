@@ -58,9 +58,12 @@ def test_positions_marks_to_market() -> None:
     assert len(out) == 1
     p = out[0]
     assert p.symbol == "AAPL"
-    assert p.avg_entry_price == Decimal("400")
-    assert p.market_value == Decimal("5000")  # 10 * 500
-    assert p.unrealized_pnl == Decimal("1000")  # 5000 - 4000
+    assert p.side == "long"
+    assert p.qty == 10
+    assert p.cost_basis == 4000
+    assert p.avg_entry_price == 400
+    assert p.market_value == 5000  # 10 * 500
+    assert p.unrealized_pnl == 1000  # 5000 - 4000
 
 
 def test_period_returns_from_series() -> None:

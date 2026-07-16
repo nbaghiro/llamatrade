@@ -12,7 +12,6 @@ export function AddBlockButton({ parentId }: AddBlockButtonProps) {
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // Close when clicking outside
   useEffect(() => {
     if (!isOpen) return;
 
@@ -26,7 +25,6 @@ export function AddBlockButton({ parentId }: AddBlockButtonProps) {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [isOpen]);
 
-  // Close on escape
   useEffect(() => {
     if (!isOpen) return;
 
@@ -45,17 +43,17 @@ export function AddBlockButton({ parentId }: AddBlockButtonProps) {
       <button
         onClick={() => setIsOpen(!isOpen)}
         className={`
-          w-full flex items-center gap-3 px-4 py-3 rounded-lg border-2 border-dashed
+          w-full flex items-center gap-3 px-4 py-3 border-2 border-dashed
           transition-colors overflow-hidden
           ${
             isOpen
-              ? 'border-primary-400 bg-primary-50 dark:bg-primary-900/20 text-primary-700 dark:text-primary-400'
-              : 'border-gray-300 dark:border-gray-600 text-gray-500 dark:text-gray-400 hover:border-gray-400 dark:hover:border-gray-500 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800/50'
+              ? 'border-orange-500 bg-orange-50 text-orange-700'
+              : 'border-ink/40 text-ink/60 hover:border-ink hover:text-ink hover:bg-bone'
           }
         `}
       >
         <PlusCircle className="w-5 h-5 shrink-0" />
-        <span className="font-medium whitespace-nowrap">Add a Block</span>
+        <span className="font-mono font-bold uppercase tracking-wide whitespace-nowrap">Add a Block</span>
         <span className="text-sm opacity-75 truncate">Stocks or Securities, Weights, Conditions...</span>
       </button>
 

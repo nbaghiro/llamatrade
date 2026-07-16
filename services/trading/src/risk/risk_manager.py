@@ -29,8 +29,7 @@ logger = logging.getLogger(__name__)
 class RiskManager:
     """Manages risk limits and validates orders against them."""
 
-    # Shared config cache across all RiskManager instances
-    # TTL of 60 seconds reduces DB queries while allowing timely config updates
+    # Shared config cache (60s TTL) across all RiskManager instances — cuts DB queries.
     _config_cache: AsyncTTLCache = AsyncTTLCache(default_ttl=60.0, max_size=100)
 
     def __init__(
@@ -390,10 +389,6 @@ class RiskManager:
             else:
                 daily.losing_trades += 1
             await self.db.commit()
-
-    # ===================
-    # Private helpers
-    # ===================
 
     async def _get_config(
         self,

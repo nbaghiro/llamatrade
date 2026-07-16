@@ -9,6 +9,8 @@ from uuid import UUID
 
 import httpx
 
+from llamatrade_common.auth import mint_service_token
+
 logger = logging.getLogger(__name__)
 
 # Strategy service URL
@@ -86,12 +88,14 @@ class StrategyClient:
             # Connect protocol URL: /{package}.{Service}/{Method}
             url = "/llamatrade.StrategyService/CreateStrategy"
 
-            # Make Connect RPC request
+            # Make Connect RPC request. The Strategy service is fail-closed, so
+            # attach a service token; it reads tenant/user from the body context.
             response = await client.post(
                 url,
                 json=payload,
                 headers={
                     "Content-Type": "application/json",
+                    "Authorization": f"Bearer {mint_service_token(service_name='agent')}",
                 },
             )
 

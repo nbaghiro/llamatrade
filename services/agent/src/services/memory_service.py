@@ -2,9 +2,7 @@
 
 This service handles:
 - Storing and retrieving memory facts (extracted user preferences)
-- Semantic search via pgvector embeddings
 - User profile consolidation
-- Session summary management
 """
 
 from __future__ import annotations
@@ -14,14 +12,12 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from uuid import UUID
 
-from sqlalchemy import and_, func, or_, select, text
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from llamatrade_db.models import (
-    AgentMemoryEmbedding,
     AgentMemoryFact,
     AgentSession,
-    AgentSessionSummary,
     MemoryFactCategory,
     Strategy,
 )
@@ -29,9 +25,7 @@ from llamatrade_db.models import (
 logger = logging.getLogger(__name__)
 
 
-# =============================================================================
 # Data Classes
-# =============================================================================
 
 
 @dataclass
@@ -84,20 +78,6 @@ class StrategyMemory:
 
 
 @dataclass
-class SessionSummaryResult:
-    """Summary of a past session."""
-
-    session_id: UUID
-    summary_short: str
-    summary_detailed: str
-    topics: list[str]
-    strategies_discussed: list[str]
-    decisions: list[str]
-    created_at: datetime
-    message_count: int
-
-
-@dataclass
 class MemoryHint:
     """Lightweight memory hint for system prompt injection."""
 
@@ -108,16 +88,14 @@ class MemoryHint:
     recent_strategies: list[str] = field(default_factory=list)
 
 
-# =============================================================================
 # Memory Service
-# =============================================================================
 
 
 class MemoryService:
     """Service for managing user memory across sessions.
 
-    Provides CRUD operations for memory facts, semantic search via embeddings,
-    and user profile consolidation from historical data.
+    Provides CRUD operations for memory facts and user profile consolidation
+    from historical data.
     """
 
     def __init__(self, db: AsyncSession, tenant_id: UUID, user_id: UUID) -> None:
@@ -132,9 +110,7 @@ class MemoryService:
         self.tenant_id = tenant_id
         self.user_id = user_id
 
-    # =========================================================================
     # Fact Storage
-    # =========================================================================
 
     async def store_facts(
         self,
@@ -158,7 +134,12 @@ class MemoryService:
         created_facts: list[AgentMemoryFact] = []
 
         for fact in facts:
-            # Check for existing similar fact to potentially supersede
+            # Skip an exact re-mention already on file (any category) so repeated
+            # phrasing across turns doesn't accumulate duplicate facts.
+            if await self._active_fact_exists(fact.category, fact.content):
+                continue
+
+            # Replace-categories (e.g. risk tolerance) supersede the prior value.
             existing = await self._find_similar_fact(fact.category, fact.content)
 
             db_fact = AgentMemoryFact(
@@ -180,6 +161,9 @@ class MemoryService:
 
             self.db.add(db_fact)
             created_facts.append(db_fact)
+
+        if not created_facts:
+            return []
 
         await self.db.commit()
 
@@ -236,9 +220,26 @@ class MemoryService:
         result = await self.db.execute(stmt)
         return result.scalar_one_or_none()
 
-    # =========================================================================
+    async def _active_fact_exists(self, category: str, content: str) -> bool:
+        """Whether an active fact with the same category and (case-insensitive)
+        content already exists for this user."""
+        stmt = (
+            select(AgentMemoryFact.id)
+            .where(
+                and_(
+                    AgentMemoryFact.tenant_id == self.tenant_id,
+                    AgentMemoryFact.user_id == self.user_id,
+                    AgentMemoryFact.category == category,
+                    AgentMemoryFact.is_active.is_(True),
+                    func.lower(AgentMemoryFact.content) == content.strip().lower(),
+                )
+            )
+            .limit(1)
+        )
+        result = await self.db.execute(stmt)
+        return result.first() is not None
+
     # Fact Retrieval
-    # =========================================================================
 
     async def search(
         self,
@@ -258,7 +259,6 @@ class MemoryService:
         Returns:
             List of MemorySearchResult objects
         """
-        # Build base query
         stmt = select(AgentMemoryFact).where(
             and_(
                 AgentMemoryFact.tenant_id == self.tenant_id,
@@ -267,7 +267,6 @@ class MemoryService:
             )
         )
 
-        # Apply category filter
         if categories:
             stmt = stmt.where(AgentMemoryFact.category.in_(categories))
 
@@ -314,138 +313,7 @@ class MemoryService:
             for fact in facts
         ]
 
-    async def semantic_search(
-        self,
-        query_embedding: list[float],
-        limit: int = 10,
-        min_similarity: float = 0.7,
-    ) -> list[MemorySearchResult]:
-        """Search memory using semantic similarity via pgvector.
-
-        If pgvector is not available, falls back to returning recent facts
-        (semantic search is not possible without vector operations).
-
-        Args:
-            query_embedding: Query embedding vector (1536 dimensions)
-            limit: Maximum results to return
-            min_similarity: Minimum cosine similarity threshold
-
-        Returns:
-            List of MemorySearchResult objects with relevance scores
-        """
-        try:
-            # Check if pgvector is available by checking the column type
-            check_sql = text(
-                """
-                SELECT data_type FROM information_schema.columns
-                WHERE table_name = 'agent_memory_embeddings' AND column_name = 'embedding'
-                """
-            )
-            type_result = await self.db.execute(check_sql)
-            column_type = type_result.scalar_one_or_none()
-
-            # If column is not vector type (e.g., jsonb), fall back to text search
-            if column_type != "USER-DEFINED":  # pgvector creates a USER-DEFINED type
-                logger.warning("pgvector not available, falling back to text-based fact retrieval")
-                return await self._fallback_recent_facts(limit)
-
-            # Use raw SQL for pgvector operations
-            sql = text(
-                """
-                SELECT
-                    e.source_id as fact_id,
-                    e.content_text,
-                    f.category,
-                    f.confidence,
-                    f.created_at,
-                    f.source_session_id,
-                    1 - (e.embedding <=> :query_embedding::vector) as similarity
-                FROM agent_memory_embeddings e
-                JOIN agent_memory_facts f ON f.id = e.source_id
-                WHERE e.tenant_id = :tenant_id
-                  AND e.user_id = :user_id
-                  AND e.embedding_type = 'fact'
-                  AND f.is_active = true
-                  AND 1 - (e.embedding <=> :query_embedding::vector) >= :min_similarity
-                ORDER BY e.embedding <=> :query_embedding::vector
-                LIMIT :limit
-                """
-            )
-
-            # Convert embedding to PostgreSQL array format
-            embedding_str = "[" + ",".join(str(x) for x in query_embedding) + "]"
-
-            result = await self.db.execute(
-                sql,
-                {
-                    "tenant_id": str(self.tenant_id),
-                    "user_id": str(self.user_id),
-                    "query_embedding": embedding_str,
-                    "min_similarity": min_similarity,
-                    "limit": limit,
-                },
-            )
-
-            rows = result.fetchall()
-
-            return [
-                MemorySearchResult(
-                    fact_id=row.fact_id,
-                    category=row.category,
-                    content=row.content_text,
-                    confidence=row.confidence,
-                    created_at=row.created_at,
-                    source_session_id=row.source_session_id,
-                    relevance_score=row.similarity,
-                )
-                for row in rows
-            ]
-
-        except Exception as e:
-            logger.warning("Semantic search failed, falling back to recent facts: %s", e)
-            return await self._fallback_recent_facts(limit)
-
-    async def _fallback_recent_facts(self, limit: int = 10) -> list[MemorySearchResult]:
-        """Fallback to returning recent facts when semantic search unavailable.
-
-        Args:
-            limit: Maximum results to return
-
-        Returns:
-            List of recent facts as MemorySearchResult
-        """
-        stmt = (
-            select(AgentMemoryFact)
-            .where(
-                and_(
-                    AgentMemoryFact.tenant_id == self.tenant_id,
-                    AgentMemoryFact.user_id == self.user_id,
-                    AgentMemoryFact.is_active.is_(True),
-                )
-            )
-            .order_by(AgentMemoryFact.created_at.desc())
-            .limit(limit)
-        )
-
-        result = await self.db.execute(stmt)
-        facts = result.scalars().all()
-
-        return [
-            MemorySearchResult(
-                fact_id=fact.id,
-                category=fact.category,
-                content=fact.content,
-                confidence=fact.confidence,
-                created_at=fact.created_at,
-                source_session_id=fact.source_session_id,
-                relevance_score=0.5,  # Unknown relevance without semantic search
-            )
-            for fact in facts
-        ]
-
-    # =========================================================================
     # User Profile
-    # =========================================================================
 
     async def get_user_profile(
         self,
@@ -507,9 +375,7 @@ class MemoryService:
 
         return profile
 
-    # =========================================================================
     # Strategy Memory
-    # =========================================================================
 
     async def search_past_strategies(
         self,
@@ -588,152 +454,7 @@ class MemoryService:
 
         return memories[:limit]
 
-    # =========================================================================
-    # Session Summaries
-    # =========================================================================
-
-    async def get_session_summary(
-        self,
-        session_id: UUID | None = None,
-        session_date: str | None = None,
-        include_messages: bool = False,
-    ) -> SessionSummaryResult | None:
-        """Get summary of a past session.
-
-        Args:
-            session_id: Optional session ID to fetch
-            session_date: Optional date string to find session (YYYY-MM-DD)
-            include_messages: Include recent message excerpts
-
-        Returns:
-            SessionSummaryResult or None
-        """
-        if session_id:
-            stmt = select(AgentSessionSummary).where(
-                and_(
-                    AgentSessionSummary.tenant_id == self.tenant_id,
-                    AgentSessionSummary.user_id == self.user_id,
-                    AgentSessionSummary.session_id == session_id,
-                )
-            )
-        elif session_date:
-            # Parse date and find session from that day
-            from datetime import timedelta
-
-            try:
-                date = datetime.strptime(session_date, "%Y-%m-%d").replace(tzinfo=UTC)
-            except ValueError:
-                return None
-
-            next_date = date + timedelta(days=1)
-
-            # Find session summary where session was created on that date
-            stmt = (
-                select(AgentSessionSummary)
-                .join(AgentSession, AgentSession.id == AgentSessionSummary.session_id)
-                .where(
-                    and_(
-                        AgentSessionSummary.tenant_id == self.tenant_id,
-                        AgentSessionSummary.user_id == self.user_id,
-                        AgentSession.created_at >= date,
-                        AgentSession.created_at < next_date,
-                    )
-                )
-                .order_by(AgentSession.created_at.desc())
-            )
-        else:
-            # Get most recent session summary
-            stmt = (
-                select(AgentSessionSummary)
-                .where(
-                    and_(
-                        AgentSessionSummary.tenant_id == self.tenant_id,
-                        AgentSessionSummary.user_id == self.user_id,
-                    )
-                )
-                .order_by(AgentSessionSummary.created_at.desc())
-            )
-
-        result = await self.db.execute(stmt.limit(1))
-        summary = result.scalar_one_or_none()
-
-        if not summary:
-            return None
-
-        return SessionSummaryResult(
-            session_id=summary.session_id,
-            summary_short=summary.summary_short,
-            summary_detailed=summary.summary_detailed,
-            topics=summary.topics,
-            strategies_discussed=summary.strategies_discussed,
-            decisions=summary.decisions,
-            created_at=summary.created_at,
-            message_count=summary.message_count_at_summary,
-        )
-
-    async def store_session_summary(
-        self,
-        session_id: UUID,
-        summary_short: str,
-        summary_detailed: str,
-        topics: list[str],
-        strategies_discussed: list[str],
-        decisions: list[str],
-        message_count: int,
-    ) -> AgentSessionSummary:
-        """Store a session summary.
-
-        Args:
-            session_id: Session UUID
-            summary_short: Short summary (1-2 sentences)
-            summary_detailed: Full detailed summary
-            topics: Key topics discussed
-            strategies_discussed: Strategy names mentioned
-            decisions: Key decisions made
-            message_count: Number of messages at time of summary
-
-        Returns:
-            Created AgentSessionSummary
-        """
-        # Check for existing summary
-        stmt = select(AgentSessionSummary).where(AgentSessionSummary.session_id == session_id)
-        result = await self.db.execute(stmt)
-        existing = result.scalar_one_or_none()
-
-        if existing:
-            # Update existing summary
-            existing.summary_short = summary_short
-            existing.summary_detailed = summary_detailed
-            existing.topics = topics
-            existing.strategies_discussed = strategies_discussed
-            existing.decisions = decisions
-            existing.message_count_at_summary = message_count
-            await self.db.commit()
-            await self.db.refresh(existing)
-            return existing
-
-        # Create new summary
-        summary = AgentSessionSummary(
-            tenant_id=self.tenant_id,
-            user_id=self.user_id,
-            session_id=session_id,
-            summary_short=summary_short,
-            summary_detailed=summary_detailed,
-            topics=topics,
-            strategies_discussed=strategies_discussed,
-            decisions=decisions,
-            message_count_at_summary=message_count,
-        )
-
-        self.db.add(summary)
-        await self.db.commit()
-        await self.db.refresh(summary)
-
-        return summary
-
-    # =========================================================================
     # Memory Hint
-    # =========================================================================
 
     async def get_memory_hint(self) -> MemoryHint:
         """Get lightweight memory hint for system prompt injection.
@@ -810,103 +531,3 @@ class MemoryService:
             goal_summary=goal_summary,
             recent_strategies=recent_strategies,
         )
-
-    # =========================================================================
-    # Embedding Storage
-    # =========================================================================
-
-    async def store_embedding(
-        self,
-        embedding: list[float],
-        content_text: str,
-        source_id: UUID,
-        embedding_type: str = "fact",
-        embedding_model: str = "text-embedding-3-small",
-    ) -> AgentMemoryEmbedding | None:
-        """Store a vector embedding.
-
-        Handles both pgvector (vector type) and fallback (JSONB) storage.
-
-        Args:
-            embedding: Vector embedding (1536 dimensions)
-            content_text: Original text that was embedded
-            source_id: ID of the source (fact, summary, or strategy)
-            embedding_type: Type of embedding ("fact", "summary", "strategy")
-            embedding_model: Model used to generate embedding
-
-        Returns:
-            Created AgentMemoryEmbedding or None if storage failed
-        """
-        try:
-            # Check if pgvector is available
-            check_sql = text(
-                """
-                SELECT data_type FROM information_schema.columns
-                WHERE table_name = 'agent_memory_embeddings' AND column_name = 'embedding'
-                """
-            )
-            type_result = await self.db.execute(check_sql)
-            column_type = type_result.scalar_one_or_none()
-
-            use_pgvector = column_type == "USER-DEFINED"
-
-            if use_pgvector:
-                # Use pgvector format
-                embedding_str = "[" + ",".join(str(x) for x in embedding) + "]"
-                sql = text(
-                    """
-                    INSERT INTO agent_memory_embeddings
-                    (id, tenant_id, user_id, embedding_type, embedding, content_text, source_id, embedding_model, created_at, updated_at)
-                    VALUES
-                    (gen_random_uuid(), :tenant_id, :user_id, :embedding_type, :embedding::vector, :content_text, :source_id, :embedding_model, NOW(), NOW())
-                    RETURNING id
-                    """
-                )
-                params = {
-                    "tenant_id": str(self.tenant_id),
-                    "user_id": str(self.user_id),
-                    "embedding_type": embedding_type,
-                    "embedding": embedding_str,
-                    "content_text": content_text,
-                    "source_id": str(source_id),
-                    "embedding_model": embedding_model,
-                }
-            else:
-                # Use JSONB format
-                import json
-
-                embedding_json = json.dumps(embedding)
-                sql = text(
-                    """
-                    INSERT INTO agent_memory_embeddings
-                    (id, tenant_id, user_id, embedding_type, embedding, content_text, source_id, embedding_model, created_at, updated_at)
-                    VALUES
-                    (gen_random_uuid(), :tenant_id, :user_id, :embedding_type, :embedding::jsonb, :content_text, :source_id, :embedding_model, NOW(), NOW())
-                    RETURNING id
-                    """
-                )
-                params = {
-                    "tenant_id": str(self.tenant_id),
-                    "user_id": str(self.user_id),
-                    "embedding_type": embedding_type,
-                    "embedding": embedding_json,
-                    "content_text": content_text,
-                    "source_id": str(source_id),
-                    "embedding_model": embedding_model,
-                }
-
-            result = await self.db.execute(sql, params)
-            row = result.fetchone()
-            await self.db.commit()
-
-            if row:
-                # Fetch the created embedding
-                stmt = select(AgentMemoryEmbedding).where(AgentMemoryEmbedding.id == row[0])
-                fetch_result = await self.db.execute(stmt)
-                return fetch_result.scalar_one_or_none()
-
-            return None
-
-        except Exception as e:
-            logger.exception("Failed to store embedding: %s", e)
-            return None

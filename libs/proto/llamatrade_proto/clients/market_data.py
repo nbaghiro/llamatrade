@@ -1,4 +1,14 @@
-"""Market Data gRPC client."""
+"""Market Data client (MarketDataService, hosted by the market-data service).
+
+The market-data service serves MarketDataService as a Connect ASGI app
+(HTTP/1.1), so callers use the generated Connect client — not a native-gRPC
+channel. Inter-service calls carry a minted service token so they clear the
+service's fail-closed auth.
+
+Consumed by the trading service (risk / position pricing) and the backtest
+engine (historical-bar streaming). The portfolio service has its own equivalent
+Connect client.
+"""
 
 from __future__ import annotations
 
@@ -9,18 +19,20 @@ from datetime import datetime
 from decimal import Decimal
 from typing import TYPE_CHECKING
 
-import grpc
-import grpc.aio
-
-from llamatrade_proto.clients.base import BaseGRPCClient
+from llamatrade_common.auth import mint_service_token
+from llamatrade_proto.generated.market_data_connect import MarketDataServiceClient
 
 if TYPE_CHECKING:
-    from llamatrade_proto.generated import (
-        market_data_pb2,
-        market_data_pb2_grpc,
-    )
+    from llamatrade_proto.generated import market_data_pb2
 
 logger = logging.getLogger(__name__)
+
+
+def _normalize_target(target: str) -> str:
+    """Connect needs an absolute URL; accept bare ``host:port`` too."""
+    if target.startswith(("http://", "https://")):
+        return target
+    return f"http://{target}"
 
 
 def _timeframe_to_proto(timeframe: str) -> market_data_pb2.Timeframe.ValueType:
@@ -96,70 +108,42 @@ class Snapshot:
     change_percent: Decimal | None = None
 
 
-class MarketDataClient(BaseGRPCClient):
-    """Client for the Market Data gRPC service.
-
-    This client provides methods for fetching historical market data
-    and streaming real-time updates.
+class MarketDataClient:
+    """Connect client for the MarketDataService API (market-data service, :8840).
 
     Example:
         async with MarketDataClient("market-data:8840") as client:
-            # Fetch historical bars
             bars = await client.get_historical_bars(
-                symbol="AAPL",
-                start=datetime(2024, 1, 1),
-                end=datetime(2024, 1, 31),
-                timeframe="1D"
+                symbol="AAPL", start=..., end=..., timeframe="1D"
             )
-
-            # Stream real-time bars
             async for bar in client.stream_bars(["AAPL", "GOOGL"]):
                 print(f"{bar.symbol}: {bar.close}")
     """
 
-    def __init__(
-        self,
-        target: str = "market-data:8840",
-        *,
-        secure: bool = False,
-        credentials: grpc.ChannelCredentials | None = None,
-        interceptors: list[grpc.aio.ClientInterceptor] | None = None,
-        options: list[tuple[str, str | int | bool]] | None = None,
-    ) -> None:
-        """Initialize the Market Data client.
+    def __init__(self, target: str = "market-data:8840", *, service_name: str = "internal") -> None:
+        self.target = _normalize_target(target)
+        self._service_name = service_name
+        self._client: MarketDataServiceClient | None = None
 
-        Args:
-            target: The gRPC server address
-            secure: Whether to use TLS
-            credentials: Optional channel credentials
-            interceptors: Optional client interceptors
-            options: Optional channel options
-        """
-        super().__init__(
-            target,
-            secure=secure,
-            credentials=credentials,
-            interceptors=interceptors,
-            options=options,
-        )
-        self._stub: market_data_pb2_grpc.MarketDataServiceStub | None = None
+    def _get_client(self) -> MarketDataServiceClient:
+        if self._client is None:
+            self._client = MarketDataServiceClient(self.target)
+        return self._client
 
-    @property
-    def stub(self) -> market_data_pb2_grpc.MarketDataServiceStub:
-        """Get the gRPC stub (lazy initialization)."""
-        if self._stub is None:
-            # Import generated code (will be available after buf generate)
-            try:
-                from llamatrade_proto.generated import (
-                    market_data_pb2_grpc,
-                )
+    def _headers(self) -> dict[str, str]:
+        """Internal service token so the call clears market-data's fail-closed auth."""
+        return {"Authorization": f"Bearer {mint_service_token(service_name=self._service_name)}"}
 
-                self._stub = market_data_pb2_grpc.MarketDataServiceStub(self.channel)
-            except ImportError:
-                raise RuntimeError(
-                    "Generated gRPC code not found. Run 'make generate' in libs/proto"
-                )
-        return self._stub
+    async def close(self) -> None:
+        if self._client is not None:
+            await self._client.close()
+            self._client = None
+
+    async def __aenter__(self) -> MarketDataClient:
+        return self
+
+    async def __aexit__(self, *_exc: object) -> None:
+        await self.close()
 
     async def get_historical_bars(
         self,
@@ -171,19 +155,7 @@ class MarketDataClient(BaseGRPCClient):
         adjust_for_splits: bool = True,
         page_size: int = 1000,
     ) -> list[Bar]:
-        """Fetch historical bar data.
-
-        Args:
-            symbol: The ticker symbol
-            start: Start datetime
-            end: End datetime
-            timeframe: Bar timeframe (1MIN, 5MIN, 15MIN, 1HOUR, 1DAY, etc.)
-            adjust_for_splits: Whether to adjust prices for splits
-            page_size: Number of bars per page
-
-        Returns:
-            List of Bar objects
-        """
+        """Fetch historical bar data for a single symbol."""
         from llamatrade_proto.generated import common_pb2, market_data_pb2
 
         request = market_data_pb2.GetHistoricalBarsRequest(
@@ -194,9 +166,7 @@ class MarketDataClient(BaseGRPCClient):
             adjust_for_splits=adjust_for_splits,
             pagination=common_pb2.PaginationRequest(page=1, page_size=page_size),
         )
-
-        response = await self.stub.GetHistoricalBars(request)
-
+        response = await self._get_client().get_historical_bars(request, headers=self._headers())
         return [self._proto_to_bar(bar) for bar in response.bars]
 
     async def get_multi_bars(
@@ -210,19 +180,8 @@ class MarketDataClient(BaseGRPCClient):
     ) -> dict[str, list[Bar]]:
         """Fetch historical bars for many symbols in a single batch RPC.
 
-        Replaces N per-symbol GetHistoricalBars round-trips with one call; the
-        server fans out across symbols. A symbol with no data is returned with
-        an empty list (or omitted from the map).
-
-        Args:
-            symbols: Ticker symbols to fetch
-            start: Start datetime
-            end: End datetime
-            timeframe: Bar timeframe (1MIN, 5MIN, 1HOUR, 1DAY, ...)
-            limit: Max bars per symbol; 0 lets the server apply its default
-
-        Returns:
-            Mapping of symbol -> list of Bar objects
+        The server fans out across symbols; a symbol with no data maps to an
+        empty list (or is omitted from the map).
         """
         from llamatrade_proto.generated import common_pb2, market_data_pb2
 
@@ -233,9 +192,7 @@ class MarketDataClient(BaseGRPCClient):
             timeframe=_timeframe_to_proto(timeframe),
             limit=limit,
         )
-
-        response = await self.stub.GetMultiBars(request)
-
+        response = await self._get_client().get_multi_bars(request, headers=self._headers())
         return {
             symbol: [self._proto_to_bar(bar) for bar in bar_list.bars]
             for symbol, bar_list in response.bars.items()
@@ -253,17 +210,7 @@ class MarketDataClient(BaseGRPCClient):
         """Stream historical bars for many symbols in timestamp order (one call).
 
         Yields bars incrementally so the consumer never buffers the whole dataset
-        as a single response, while still replacing N per-symbol round-trips.
-
-        Args:
-            symbols: Ticker symbols to fetch
-            start: Start datetime
-            end: End datetime
-            timeframe: Bar timeframe (1MIN, 5MIN, 1HOUR, 1DAY, ...)
-            limit: Max bars per symbol; 0 lets the server apply its default
-
-        Yields:
-            Bar objects in ascending timestamp order across all symbols
+        as a single response.
         """
         from llamatrade_proto.generated import common_pb2, market_data_pb2
 
@@ -274,8 +221,7 @@ class MarketDataClient(BaseGRPCClient):
             timeframe=_timeframe_to_proto(timeframe),
             limit=limit,
         )
-
-        async for bar in self.stub.StreamHistoricalBars(request):
+        async for bar in self._get_client().stream_historical_bars(request, headers=self._headers()):
             yield self._proto_to_bar(bar)
 
     async def stream_bars(
@@ -283,124 +229,68 @@ class MarketDataClient(BaseGRPCClient):
         symbols: list[str],
         timeframe: str = "1MIN",
     ) -> AsyncIterator[Bar]:
-        """Stream real-time bar updates.
-
-        Args:
-            symbols: List of ticker symbols
-            timeframe: Bar timeframe
-
-        Yields:
-            Bar objects as they arrive
-        """
+        """Stream real-time bar updates."""
         from llamatrade_proto.generated import market_data_pb2
 
         timeframe_map = {
             "1MIN": market_data_pb2.TIMEFRAME_1MIN,
             "5MIN": market_data_pb2.TIMEFRAME_5MIN,
         }
-
         request = market_data_pb2.StreamBarsRequest(
             symbols=symbols,
             timeframe=timeframe_map.get(timeframe.upper(), market_data_pb2.TIMEFRAME_1MIN),
         )
-
-        async for bar in self.stub.StreamBars(request):
+        async for bar in self._get_client().stream_bars(request, headers=self._headers()):
             yield self._proto_to_bar(bar)
 
     async def stream_quotes(self, symbols: list[str]) -> AsyncIterator[Quote]:
-        """Stream real-time quote updates.
-
-        Args:
-            symbols: List of ticker symbols
-
-        Yields:
-            Quote objects as they arrive
-        """
+        """Stream real-time quote updates."""
         from llamatrade_proto.generated import market_data_pb2
 
         request = market_data_pb2.StreamQuotesRequest(symbols=symbols)
-
-        async for quote in self.stub.StreamQuotes(request):
+        async for quote in self._get_client().stream_quotes(request, headers=self._headers()):
             yield self._proto_to_quote(quote)
 
     async def stream_trades(self, symbols: list[str]) -> AsyncIterator[Trade]:
-        """Stream real-time trade ticks.
-
-        Args:
-            symbols: List of ticker symbols
-
-        Yields:
-            Trade objects as they arrive
-        """
+        """Stream real-time trade ticks."""
         from llamatrade_proto.generated import market_data_pb2
 
         request = market_data_pb2.StreamTradesRequest(symbols=symbols)
-
-        async for trade in self.stub.StreamTrades(request):
+        async for trade in self._get_client().stream_trades(request, headers=self._headers()):
             yield self._proto_to_trade(trade)
 
     async def get_snapshot(self, symbol: str) -> Snapshot:
-        """Get current market snapshot for a symbol.
-
-        Args:
-            symbol: The ticker symbol
-
-        Returns:
-            Snapshot with latest price, bid/ask, and daily change
-        """
+        """Get current market snapshot for a symbol."""
         from llamatrade_proto.generated import market_data_pb2
 
         request = market_data_pb2.GetSnapshotRequest(symbol=symbol)
-        response = await self.stub.GetSnapshot(request)
+        response = await self._get_client().get_snapshot(request, headers=self._headers())
         return self._proto_to_snapshot(response)
 
     async def get_snapshots(self, symbols: list[str]) -> dict[str, Snapshot]:
-        """Get current market snapshots for multiple symbols.
-
-        Args:
-            symbols: List of ticker symbols
-
-        Returns:
-            Dictionary mapping symbol to Snapshot
-        """
+        """Get current market snapshots for multiple symbols."""
         from llamatrade_proto.generated import market_data_pb2
 
         request = market_data_pb2.GetSnapshotsRequest(symbols=symbols)
-        response = await self.stub.GetSnapshots(request)
+        response = await self._get_client().get_snapshots(request, headers=self._headers())
         return {
             symbol: self._proto_to_snapshot(snapshot)
             for symbol, snapshot in response.snapshots.items()
         }
 
     async def get_latest_price(self, symbol: str) -> Decimal:
-        """Get the latest price for a symbol.
-
-        Convenience method that extracts price from snapshot.
-
-        Args:
-            symbol: The ticker symbol
-
-        Returns:
-            Latest price as Decimal
-        """
+        """Get the latest price for a symbol (extracted from its snapshot)."""
         snapshot = await self.get_snapshot(symbol)
         return snapshot.latest_price
 
     async def get_latest_prices(self, symbols: list[str]) -> dict[str, Decimal]:
-        """Get latest prices for multiple symbols.
-
-        Args:
-            symbols: List of ticker symbols
-
-        Returns:
-            Dictionary mapping symbol to latest price
-        """
+        """Get latest prices for multiple symbols."""
         snapshots = await self.get_snapshots(symbols)
         return {symbol: snapshot.latest_price for symbol, snapshot in snapshots.items()}
 
     def _proto_to_snapshot(self, proto_snapshot: market_data_pb2.Snapshot) -> Snapshot:
         """Convert protobuf Snapshot to dataclass."""
-        # Determine latest price: prefer trade price, then quote midpoint, then bar close
+        # Latest price: prefer trade price, then quote midpoint, then bar close.
         latest_price = Decimal(0)
         bid_price = None
         ask_price = None
@@ -416,7 +306,6 @@ class MarketDataClient(BaseGRPCClient):
                 bid_price = Decimal(quote.bid_price.value)
             if quote.HasField("ask_price"):
                 ask_price = Decimal(quote.ask_price.value)
-            # If no trade price, use quote midpoint
             if latest_price == 0 and bid_price and ask_price:
                 latest_price = (bid_price + ask_price) / 2
 

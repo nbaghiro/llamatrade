@@ -4,7 +4,6 @@ These tools enable the agent to access and utilize user memory:
 - recall_memory: Semantic search across past conversations and facts
 - get_user_profile: Get consolidated user preferences
 - search_past_strategies: Find strategies user has created/discussed
-- get_session_summary: Get details of a past conversation
 """
 
 from __future__ import annotations
@@ -12,7 +11,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from llamatrade_db import get_db
+from llamatrade_db import get_db, set_tenant_guc
 
 from src.services.memory_service import MemoryService
 from src.tools.base import BaseTool, ToolContext, ToolResult
@@ -95,6 +94,7 @@ class RecallMemoryTool(BaseTool):
 
         try:
             async for db in get_db():
+                await set_tenant_guc(db, context.tenant_id)
                 memory_service = MemoryService(
                     db=db,
                     tenant_id=context.tenant_id,
@@ -198,6 +198,7 @@ class GetUserProfileTool(BaseTool):
 
         try:
             async for db in get_db():
+                await set_tenant_guc(db, context.tenant_id)
                 memory_service = MemoryService(
                     db=db,
                     tenant_id=context.tenant_id,
@@ -325,6 +326,7 @@ class SearchPastStrategiesTool(BaseTool):
 
         try:
             async for db in get_db():
+                await set_tenant_guc(db, context.tenant_id)
                 memory_service = MemoryService(
                     db=db,
                     tenant_id=context.tenant_id,
@@ -379,119 +381,4 @@ class SearchPastStrategiesTool(BaseTool):
         return ToolResult(
             success=True,
             data={"strategies": [], "count": 0},
-        )
-
-
-class GetSessionSummaryTool(BaseTool):
-    """Get summary of a past conversation session."""
-
-    @property
-    def name(self) -> str:
-        return "get_session_summary"
-
-    @property
-    def description(self) -> str:
-        return (
-            "Get summary of a past conversation session. Use when user asks about "
-            "a specific past discussion or wants to continue where they left off. "
-            "Provide either session_id (from recall_memory results) or session_date."
-        )
-
-    @property
-    def parameters_schema(self) -> dict[str, Any]:
-        return {
-            "type": "object",
-            "properties": {
-                "session_id": {
-                    "type": "string",
-                    "description": "Session UUID (from recall_memory results)",
-                },
-                "session_date": {
-                    "type": "string",
-                    "description": "Find session by date (YYYY-MM-DD format)",
-                    "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
-                },
-                "include_messages": {
-                    "type": "boolean",
-                    "description": "Include recent message excerpts (default: false)",
-                },
-            },
-            "required": [],
-        }
-
-    async def execute(
-        self,
-        arguments: dict[str, Any],
-        context: ToolContext,
-    ) -> ToolResult:
-        """Execute the get_session_summary tool."""
-        session_id_str = arguments.get("session_id")
-        session_date = arguments.get("session_date")
-        include_messages = arguments.get("include_messages", False)
-
-        if not session_id_str and not session_date:
-            # Return most recent session
-            pass
-
-        session_id = None
-        if session_id_str:
-            from uuid import UUID
-
-            try:
-                session_id = UUID(session_id_str)
-            except ValueError:
-                return ToolResult(
-                    success=False,
-                    error="Invalid session_id format. Must be a valid UUID.",
-                )
-
-        try:
-            async for db in get_db():
-                memory_service = MemoryService(
-                    db=db,
-                    tenant_id=context.tenant_id,
-                    user_id=context.user_id,
-                )
-
-                result = await memory_service.get_session_summary(
-                    session_id=session_id,
-                    session_date=session_date,
-                    include_messages=include_messages,
-                )
-
-                if not result:
-                    return ToolResult(
-                        success=True,
-                        data={
-                            "summary": None,
-                            "message": "No session summary found for the specified criteria.",
-                        },
-                    )
-
-                summary_data = {
-                    "session_id": str(result.session_id),
-                    "summary_short": result.summary_short,
-                    "summary_detailed": result.summary_detailed,
-                    "topics": result.topics,
-                    "strategies_discussed": result.strategies_discussed,
-                    "decisions": result.decisions,
-                    "date": result.created_at.strftime("%Y-%m-%d"),
-                    "message_count": result.message_count,
-                }
-
-                return ToolResult(
-                    success=True,
-                    data={"summary": summary_data},
-                )
-
-        except Exception as e:
-            logger.exception("get_session_summary failed: %s", e)
-            return ToolResult(
-                success=False,
-                error=f"Failed to get session summary: {e}",
-            )
-
-        return ToolResult(
-            success=True,
-            data={"summary": None},
         )

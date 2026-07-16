@@ -1,22 +1,26 @@
-// Strategy Serializer
-// Converts between visual block tree and S-expression DSL format
-// Also provides tokenization with position tracking for editor integration
+// Converts between the visual block tree and the S-expression DSL, and tokenizes with position tracking for the editor.
 
-import type { StrategyConfigJSON } from '../types/strategy';
 import type {
   Block,
   BlockId,
   StrategyTree,
   RootBlock,
   AssetBlock,
+  GroupBlock,
   WeightBlock,
+  WeightMethod,
   IfBlock,
   ElseBlock,
   FilterBlock,
   FilterConfig,
+  FilterSortBy,
+  FilterSelection,
+  FilterPeriod,
   ConditionExpression,
   ConditionOperand,
   Comparator,
+  IndicatorName,
+  PriceField,
 } from '../types/strategy-builder';
 import {
   hasChildren,
@@ -27,10 +31,6 @@ import {
   isGroupBlock,
   isFilterBlock,
 } from '../types/strategy-builder';
-
-// ============================================
-// Strategy Metadata for Serialization
-// ============================================
 
 export interface StrategyMetadata {
   name: string;
@@ -50,10 +50,6 @@ export interface ParsedDSL {
   metadata: Partial<StrategyMetadata>;
 }
 
-// ============================================
-// Validation Types
-// ============================================
-
 export interface ValidationError {
   blockId?: BlockId;
   field?: string;
@@ -67,9 +63,7 @@ export interface ValidationResult {
   warnings: ValidationError[];
 }
 
-// ============================================
-// Token Types for Editor Integration
-// ============================================
+// Token types for editor integration
 
 export type TokenType =
   | 'keyword'      // strategy, weight, asset, group, if, else, filter
@@ -102,9 +96,7 @@ export interface ParseError {
   end: number;
 }
 
-// ============================================
-// Case Conversion Helpers
-// ============================================
+// Case conversion helpers
 
 // DSL keywords that should use kebab-case
 const KEBAB_CASE_KEYWORDS = new Set([
@@ -150,9 +142,7 @@ export function isKebabCaseKeyword(str: string): boolean {
   return KEBAB_CASE_KEYWORDS.has(str);
 }
 
-// ============================================
-// Verbose Text Generation
-// ============================================
+// Verbose text generation
 
 /**
  * Format an operand (left or right side of condition) to verbose text
@@ -244,9 +234,7 @@ export function conditionToText(condition: ConditionExpression): string {
   return `${left} ${comp} ${right}`;
 }
 
-// ============================================
-// DSL Serialization (Block Tree → S-expression)
-// ============================================
+// DSL serialization (block tree → S-expression)
 
 /**
  * Serialize an operand to S-expression
@@ -400,16 +388,9 @@ function serializeWeightBlock(
   const children = block.childIds.map((id) => tree.blocks[id]);
   const lines: string[] = [];
 
-  // Determine method - backend DSL doesn't support groups under "specified"
-  // If we have non-asset children (groups, nested weights), use "equal" instead
-  let method = block.method;
-  if (method === 'specified') {
-    const hasNonAssetChildren = children.some((child) => !isAssetBlock(child));
-    if (hasNonAssetChildren) {
-      // Can't use specified with groups - fallback to equal
-      method = 'equal';
-    }
-  }
+  // Preserve the authored method: the backend DSL supports `specified` weights whose group children carry their own `:weight`, so downgrading to `equal` would silently rewrite allocations (e.g. a 60/40 sleeve becoming equal-weight).
+  const method = block.method;
+  const specified = method === 'specified';
 
   // Convert method to DSL format (snake_case to kebab-case for multi-word methods)
   const methodStr = method.replace(/_/g, '-');
@@ -422,14 +403,20 @@ function serializeWeightBlock(
   for (const child of children) {
     if (isAssetBlock(child)) {
       const allocation = block.allocations[child.id] ?? 0;
-      // Only output :weight when using specified method AND we have a valid allocation
-      if (method === 'specified' && allocation > 0) {
+      // Under `specified`, every asset child MUST carry a :weight (backend requirement); emit even when 0 so the DSL stays structurally valid.
+      if (specified) {
         lines.push(`${indent}  (asset ${child.symbol} :weight ${allocation})`);
       } else {
         lines.push(`${indent}  (asset ${child.symbol})`);
       }
     } else if (isGroupBlock(child)) {
-      lines.push(`${indent}  (group "${child.name}"`);
+      // Groups under a `specified` weight carry their allocation as `(group "Name" :weight N ...)` so the round-trip preserves the sleeve split.
+      if (specified) {
+        const allocation = block.allocations[child.id] ?? 0;
+        lines.push(`${indent}  (group "${child.name}" :weight ${allocation}`);
+      } else {
+        lines.push(`${indent}  (group "${child.name}"`);
+      }
       lines.push(serializeChildren(child.childIds, tree, indent + '    '));
       lines.push(`${indent}  )`);
     } else if (isWeightBlock(child)) {
@@ -455,8 +442,7 @@ function serializeIfBlock(block: IfBlock, tree: StrategyTree, indent: string): s
 
   lines.push(`${indent}(if ${conditionToDSL(block.condition)}`);
 
-  // Serialize then block - backend expects a single block, not wrapped in (then ...)
-  // If there are multiple children, wrap them in a weight block
+  // Serialize the then-block as a single block (backend has no (then ...) wrapper); wrap multiple children in a weight block.
   if (block.childIds.length === 0) {
     // No children - add a placeholder weight block
     lines.push(`${indent}  (weight :method equal)`);
@@ -477,7 +463,6 @@ function serializeIfBlock(block: IfBlock, tree: StrategyTree, indent: string): s
   const parent = tree.blocks[block.parentId];
   if (parent && hasChildren(parent)) {
     const parentBlock = parent as { childIds: BlockId[] };
-    // Search all siblings for an else block that references this if block
     for (const siblingId of parentBlock.childIds) {
       const siblingBlock = tree.blocks[siblingId];
       if (isElseBlock(siblingBlock) && siblingBlock.ifBlockId === block.id) {
@@ -537,7 +522,6 @@ function serializeFilterBlockWithTree(block: FilterBlock, tree: StrategyTree, in
   const config = block.config;
   const lines: string[] = [];
 
-  // Map sortBy to filter criteria
   // Backend only accepts: momentum, volatility, volume
   const criteriaMap: Record<string, string> = {
     momentum: 'momentum',
@@ -693,9 +677,7 @@ export function toDSL(tree: StrategyTree, metadata: StrategyMetadata): string {
   return lines.join('\n');
 }
 
-// ============================================
-// DSL Deserialization (config_json → Block Tree)
-// ============================================
+// DSL deserialization (config_json → block tree)
 
 let blockIdCounter = 0;
 
@@ -704,55 +686,544 @@ function generateBlockId(): BlockId {
 }
 
 /**
- * Convert backend config_json to block tree
+ * Convert a strategy's backend `compiled_json` (the parsed AST produced by
+ * `libs/dsl` `to_json`) into the visual builder's block tree.
+ *
+ * Resolution order:
+ *   1. If a saved `ui_state` block tree is present, use it verbatim — it is the
+ *      lossless record of the last editor session (preserves ids/layout).
+ *   2. Otherwise walk the compiled AST (`{type:'strategy', children:[...]}`),
+ *      inverting every node type the compiler can emit (strategy/weight/group/
+ *      asset/if+else/filter and their conditions/indicators). This is the path
+ *      taken by seeded, AI-generated, template-derived and imported strategies —
+ *      none of which carry a `ui_state`.
+ *   3. As a last resort, fall back to a flat list of asset blocks built from a
+ *      legacy `{ name, symbols }` config shape.
+ *
+ * A non-empty AST NEVER yields an empty tree: unrecognised node types degrade to
+ * a passthrough group (if they have children) or asset (if they are leaves)
+ * rather than being dropped.
  */
 export function fromDSL(
-  configJson: StrategyConfigJSON,
+  compiled: unknown,
   uiState?: Record<string, unknown>
 ): StrategyTree {
-  // If UI state exists, use it directly (it's the saved block tree)
+  // 1. Saved UI block tree (lossless round-trip for previously-edited strategies)
   if (uiState && uiState.rootId && uiState.blocks) {
     return uiState as unknown as StrategyTree;
   }
 
-  // Otherwise, create a minimal tree from config
   blockIdCounter = 0;
-
-  const rootId = generateBlockId();
   const blocks: Record<BlockId, Block> = {};
+  const node = asRecord(compiled);
 
-  const root: RootBlock = {
+  // 2. Compiled AST path — a `strategy` node (or anything carrying `children`).
+  if (node && (node.type === 'strategy' || Array.isArray(node.children))) {
+    const rootId = generateBlockId();
+    const root: RootBlock = {
+      id: rootId,
+      type: 'root',
+      parentId: null,
+      name: asString(node.name) ?? 'Imported Strategy',
+      childIds: [],
+    };
+    blocks[rootId] = root;
+
+    for (const child of asArray(node.children)) {
+      root.childIds.push(...parseBlockFromJson(child, rootId, blocks));
+    }
+
+    return { rootId, blocks };
+  }
+
+  // 3. Legacy flat `{ name, symbols }` fallback.
+  const rootId = generateBlockId();
+  const legacyRoot: RootBlock = {
     id: rootId,
     type: 'root',
     parentId: null,
-    name: configJson.name || 'Imported Strategy',
+    name: asString(node?.name) ?? 'Imported Strategy',
     childIds: [],
   };
-  blocks[rootId] = root;
+  blocks[rootId] = legacyRoot;
 
-  // Create asset blocks from symbols
-  for (const symbol of configJson.symbols || []) {
+  for (const rawSymbol of node ? asArray(node.symbols) : []) {
+    const symbol = asString(rawSymbol);
+    if (!symbol) continue;
     const assetId = generateBlockId();
-    const asset: AssetBlock = {
+    blocks[assetId] = {
       id: assetId,
       type: 'asset',
       parentId: rootId,
       symbol,
-      exchange: 'NASDAQ', // Default
+      exchange: 'NASDAQ',
       displayName: symbol,
     };
-    blocks[assetId] = asset;
-    root.childIds.push(assetId);
+    legacyRoot.childIds.push(assetId);
   }
 
   return { rootId, blocks };
 }
 
-// ============================================
-// Validation
-// ============================================
+// Compiled-AST (config_json) → block tree: faithful inverse of libs/dsl `to_json`, narrowing unknown JSON defensively.
 
-// Import comprehensive validation module
+/** Narrow an unknown JSON value to a plain object, or null. */
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function asString(value: unknown): string | undefined {
+  return typeof value === 'string' ? value : undefined;
+}
+
+function asNumber(value: unknown): number | undefined {
+  return typeof value === 'number' && !Number.isNaN(value) ? value : undefined;
+}
+
+function asArray(value: unknown): unknown[] {
+  return Array.isArray(value) ? value : [];
+}
+
+const WEIGHT_METHOD_VALUES: ReadonlySet<string> = new Set<WeightMethod>([
+  'specified',
+  'equal',
+  'inverse_volatility',
+  'market_cap',
+  'momentum',
+  'min_variance',
+  'risk_parity',
+]);
+
+const FILTER_CRITERIA_VALUES: ReadonlySet<string> = new Set<FilterSortBy>([
+  'momentum',
+  'volatility',
+  'volume',
+]);
+
+/**
+ * Parse one compiled block node into the builder's block map, returning the
+ * created block id(s). `if` nodes return `[ifId, elseId?]` so the caller inserts
+ * the sibling ELSE block in the correct order.
+ */
+function parseBlockFromJson(
+  raw: unknown,
+  parentId: BlockId,
+  blocks: Record<BlockId, Block>
+): BlockId[] {
+  const node = asRecord(raw);
+  if (!node) return [];
+
+  switch (node.type) {
+    case 'asset':
+      return [parseAssetJson(node, parentId, blocks)];
+    case 'weight':
+      return [parseWeightJson(node, parentId, blocks)];
+    case 'group':
+      return [parseGroupJson(node, parentId, blocks)];
+    case 'filter':
+      return [parseFilterJson(node, parentId, blocks)];
+    case 'if':
+      return parseIfJson(node, parentId, blocks);
+    case 'strategy':
+      // A nested strategy is unusual; flatten its children into the parent so nothing is lost.
+      return asArray(node.children).flatMap((child) =>
+        parseBlockFromJson(child, parentId, blocks)
+      );
+    default:
+      return [parseUnknownJson(node, parentId, blocks)];
+  }
+}
+
+/** Parse `{type:'asset', symbol, weight?}`. */
+function parseAssetJson(
+  node: Record<string, unknown>,
+  parentId: BlockId,
+  blocks: Record<BlockId, Block>
+): BlockId {
+  const id = generateBlockId();
+  const symbol = asString(node.symbol) ?? 'UNKNOWN';
+  const asset: AssetBlock = {
+    id,
+    type: 'asset',
+    parentId,
+    symbol,
+    exchange: 'NASDAQ',
+    displayName: symbol,
+  };
+  blocks[id] = asset;
+  return id;
+}
+
+function methodFromJson(raw: unknown): WeightMethod {
+  const snake = (asString(raw) ?? 'equal').replace(/-/g, '_');
+  return (WEIGHT_METHOD_VALUES.has(snake) ? snake : 'equal') as WeightMethod;
+}
+
+/**
+ * Parse `{type:'weight', method, lookback?, children:[...]}`. Any child carrying
+ * its own `weight` (assets and groups under a `specified` method) has that value
+ * recorded in this block's `allocations` map, keyed by the child block id.
+ */
+function parseWeightJson(
+  node: Record<string, unknown>,
+  parentId: BlockId,
+  blocks: Record<BlockId, Block>
+): BlockId {
+  const id = generateBlockId();
+  const weightBlock: WeightBlock = {
+    id,
+    type: 'weight',
+    parentId,
+    method: methodFromJson(node.method),
+    allocations: {},
+    lookbackDays: asNumber(node.lookback),
+    childIds: [],
+  };
+  blocks[id] = weightBlock;
+
+  for (const rawChild of asArray(node.children)) {
+    const childIds = parseBlockFromJson(rawChild, id, blocks);
+    weightBlock.childIds.push(...childIds);
+
+    const childRecord = asRecord(rawChild);
+    const childWeight = childRecord ? asNumber(childRecord.weight) : undefined;
+    if (childWeight !== undefined && childIds.length > 0) {
+      weightBlock.allocations[childIds[0]] = childWeight;
+    }
+  }
+
+  return id;
+}
+
+/** Parse `{type:'group', name, weight?, children:[...]}`. */
+function parseGroupJson(
+  node: Record<string, unknown>,
+  parentId: BlockId,
+  blocks: Record<BlockId, Block>
+): BlockId {
+  const id = generateBlockId();
+  const group: GroupBlock = {
+    id,
+    type: 'group',
+    parentId,
+    name: asString(node.name) ?? 'Group',
+    childIds: [],
+  };
+  blocks[id] = group;
+
+  for (const rawChild of asArray(node.children)) {
+    group.childIds.push(...parseBlockFromJson(rawChild, id, blocks));
+  }
+
+  return id;
+}
+
+/** Map a filter lookback (in days) to the builder's coarse period buckets. */
+function lookbackToPeriod(days: number | undefined): FilterPeriod {
+  if (days === undefined) return '3m';
+  if (days <= 21) return '1m';
+  if (days <= 63) return '3m';
+  if (days <= 126) return '6m';
+  return '12m';
+}
+
+/**
+ * Parse `{type:'filter', by, select_direction, select_count, lookback?,
+ * children:[...]}`.
+ */
+function parseFilterJson(
+  node: Record<string, unknown>,
+  parentId: BlockId,
+  blocks: Record<BlockId, Block>
+): BlockId {
+  const id = generateBlockId();
+  const byRaw = asString(node.by) ?? 'momentum';
+  const sortBy = (FILTER_CRITERIA_VALUES.has(byRaw) ? byRaw : 'momentum') as FilterSortBy;
+  const selection: FilterSelection = node.select_direction === 'bottom' ? 'bottom' : 'top';
+  const count = asNumber(node.select_count) ?? 3;
+  const period = lookbackToPeriod(asNumber(node.lookback));
+
+  const filter: FilterBlock = {
+    id,
+    type: 'filter',
+    parentId,
+    config: {
+      sortBy,
+      selection,
+      count,
+      period,
+      // Universe is the filter's explicit child blocks (authored), not a named index preset.
+      universe: 'custom',
+    },
+    displayText: `${selection === 'top' ? 'Top' : 'Bottom'} ${count} by ${sortBy}`,
+    childIds: [],
+  };
+  blocks[id] = filter;
+
+  for (const rawChild of asArray(node.children)) {
+    filter.childIds.push(...parseBlockFromJson(rawChild, id, blocks));
+  }
+
+  return id;
+}
+
+function defaultCondition(): ConditionExpression {
+  return {
+    left: { type: 'price', symbol: 'SPY', field: 'close' },
+    comparator: 'gt',
+    right: { type: 'number', value: 0 },
+  };
+}
+
+/**
+ * Parse `{type:'if', condition, then, else_block?}`. The THEN block becomes the
+ * IF block's child; an ELSE block, when present, is emitted as a SIBLING of the
+ * IF (matching how the builder models and serializes if/else).
+ */
+function parseIfJson(
+  node: Record<string, unknown>,
+  parentId: BlockId,
+  blocks: Record<BlockId, Block>
+): BlockId[] {
+  const ifId = generateBlockId();
+  const condition = conditionFromJson(node.condition) ?? defaultCondition();
+  const ifBlock: IfBlock = {
+    id: ifId,
+    type: 'if',
+    parentId,
+    condition,
+    conditionText: conditionToText(condition),
+    childIds: [],
+  };
+  blocks[ifId] = ifBlock;
+
+  ifBlock.childIds.push(...parseBlockFromJson(node.then, ifId, blocks));
+
+  if (asRecord(node.else_block)) {
+    const elseId = generateBlockId();
+    const elseBlock: ElseBlock = {
+      id: elseId,
+      type: 'else',
+      parentId,
+      ifBlockId: ifId,
+      childIds: [],
+    };
+    blocks[elseId] = elseBlock;
+    elseBlock.childIds.push(...parseBlockFromJson(node.else_block, elseId, blocks));
+    return [ifId, elseId];
+  }
+
+  return [ifId];
+}
+
+/**
+ * Degrade an unrecognised node so it is never dropped: containers become a
+ * passthrough group (keeping their subtree), leaves become an asset placeholder.
+ */
+function parseUnknownJson(
+  node: Record<string, unknown>,
+  parentId: BlockId,
+  blocks: Record<BlockId, Block>
+): BlockId {
+  const children = asArray(node.children);
+  const typeLabel = asString(node.type) ?? 'unknown';
+
+  if (children.length > 0) {
+    const id = generateBlockId();
+    const group: GroupBlock = {
+      id,
+      type: 'group',
+      parentId,
+      name: asString(node.name) ?? `Unsupported (${typeLabel})`,
+      childIds: [],
+    };
+    blocks[id] = group;
+    for (const rawChild of children) {
+      group.childIds.push(...parseBlockFromJson(rawChild, id, blocks));
+    }
+    return id;
+  }
+
+  const id = generateBlockId();
+  const asset: AssetBlock = {
+    id,
+    type: 'asset',
+    parentId,
+    symbol: asString(node.symbol) ?? typeLabel.toUpperCase(),
+    exchange: 'NASDAQ',
+    displayName: `Unsupported (${typeLabel})`,
+  };
+  blocks[id] = asset;
+  return id;
+}
+
+/** Map a compiled comparison operator to the builder's comparator vocabulary. */
+function comparatorFromOperator(operator: string): Comparator | null {
+  switch (operator) {
+    case '>':
+      return 'gt';
+    case '<':
+      return 'lt';
+    case '>=':
+      return 'gte';
+    case '<=':
+      return 'lte';
+    // '=' / '!=' have no builder equivalent.
+    default:
+      return null;
+  }
+}
+
+/**
+ * Convert a compiled condition node to the builder's flat comparison shape. The
+ * builder only models a single left/comparator/right comparison, so logical
+ * `and`/`or`/`not` conditions degrade to their first representable operand.
+ */
+function conditionFromJson(raw: unknown): ConditionExpression | null {
+  const node = asRecord(raw);
+  if (!node) return null;
+
+  switch (node.type) {
+    case 'comparison': {
+      const comparator = comparatorFromOperator(asString(node.operator) ?? '');
+      const left = valueFromJson(node.left);
+      const right = valueFromJson(node.right);
+      if (comparator && left && right) return { left, comparator, right };
+      return null;
+    }
+    case 'crossover': {
+      const comparator: Comparator = node.direction === 'below' ? 'cross_below' : 'cross_above';
+      const left = valueFromJson(node.fast);
+      const right = valueFromJson(node.slow);
+      if (left && right) return { left, comparator, right };
+      return null;
+    }
+    case 'logical': {
+      for (const operand of asArray(node.operands)) {
+        const parsed = conditionFromJson(operand);
+        if (parsed) return parsed;
+      }
+      return null;
+    }
+    default:
+      return null;
+  }
+}
+
+function normalizePriceField(field: string | undefined): PriceField {
+  switch (field) {
+    case 'open':
+      return 'open';
+    case 'high':
+      return 'high';
+    case 'low':
+      return 'low';
+    case 'volume':
+      return 'volume';
+    default:
+      return 'close';
+  }
+}
+
+/** Convert a compiled condition value node to a builder operand. */
+function valueFromJson(raw: unknown): ConditionOperand | null {
+  const node = asRecord(raw);
+  if (!node) return null;
+
+  switch (node.type) {
+    case 'numeric': {
+      const value = asNumber(node.value);
+      return value === undefined ? null : { type: 'number', value };
+    }
+    case 'price':
+      return {
+        type: 'price',
+        symbol: asString(node.symbol) ?? 'SPY',
+        field: normalizePriceField(asString(node.field)),
+      };
+    case 'indicator':
+      return indicatorFromJson(node);
+    case 'metric':
+      // Builder has no metric operand; degrade to the symbol's price so the condition still renders.
+      return { type: 'price', symbol: asString(node.symbol) ?? 'SPY', field: 'close' };
+    default:
+      return null;
+  }
+}
+
+/**
+ * Map a compiled indicator node (`name` + positional `params` + optional
+ * multi-output `output`) to the builder's indicator operand. Indicators with no
+ * builder equivalent degrade to an SMA placeholder so the block still renders.
+ */
+function indicatorFromJson(node: Record<string, unknown>): ConditionOperand | null {
+  const name = asString(node.name);
+  if (!name) return null;
+  const symbol = asString(node.symbol) ?? 'SPY';
+  const output = asString(node.output);
+  const params = asArray(node.params)
+    .map(asNumber)
+    .filter((n): n is number => n !== undefined);
+  const param = (index: number, fallback: number): number => params[index] ?? fallback;
+
+  switch (name) {
+    case 'sma':
+      return { type: 'indicator', indicator: 'sma', symbol, period: param(0, 20), source: 'close' };
+    case 'ema':
+      return { type: 'indicator', indicator: 'ema', symbol, period: param(0, 20), source: 'close' };
+    case 'rsi':
+      return { type: 'indicator', indicator: 'rsi', symbol, period: param(0, 14), source: 'close' };
+    case 'macd': {
+      const indicator: IndicatorName = output === 'signal' ? 'macd_signal' : 'macd_line';
+      return {
+        type: 'indicator',
+        indicator,
+        symbol,
+        fastPeriod: param(0, 12),
+        slowPeriod: param(1, 26),
+        signalPeriod: param(2, 9),
+      };
+    }
+    case 'bbands': {
+      let indicator: IndicatorName = 'bb_middle';
+      if (output === 'upper') indicator = 'bb_upper';
+      else if (output === 'lower') indicator = 'bb_lower';
+      return {
+        type: 'indicator',
+        indicator,
+        symbol,
+        period: param(0, 20),
+        stdDev: param(1, 2),
+        source: 'close',
+      };
+    }
+    case 'atr':
+      return { type: 'indicator', indicator: 'atr', symbol, period: param(0, 14) };
+    case 'adx':
+      return { type: 'indicator', indicator: 'adx', symbol, period: param(0, 14) };
+    case 'stoch': {
+      const indicator: IndicatorName = output === 'd' ? 'stochastic_d' : 'stochastic_k';
+      return { type: 'indicator', indicator, symbol, period: param(0, 14) };
+    }
+    case 'cci':
+      return { type: 'indicator', indicator: 'cci', symbol, period: param(0, 20) };
+    case 'williams-r':
+      return { type: 'indicator', indicator: 'williams_r', symbol, period: param(0, 14) };
+    case 'obv':
+      return { type: 'indicator', indicator: 'obv', symbol };
+    case 'mfi':
+      return { type: 'indicator', indicator: 'mfi', symbol, period: param(0, 14) };
+    case 'vwap':
+      return { type: 'indicator', indicator: 'vwap', symbol };
+    // momentum/roc/keltner/donchian/stddev have no builder indicator — represent as SMA so the condition still shows.
+    default:
+      return { type: 'indicator', indicator: 'sma', symbol, period: param(0, 20), source: 'close' };
+  }
+}
+
+// Validation
 import {
   validateStrategy,
   type ValidationIssue as ComprehensiveIssue,
@@ -820,9 +1291,7 @@ export function validateTreeComprehensive(tree: StrategyTree): ComprehensiveResu
 }
 
 
-// ============================================
-// S-Expression DSL Parsing (config_sexpr → Block Tree)
-// ============================================
+// S-expression DSL parsing (config_sexpr → block tree)
 
 interface ParsedCondition {
   comparator: Comparator;
@@ -1522,8 +1991,7 @@ function parseWeightExpr(
 ): BlockId {
   const id = generateBlockId();
 
-  // Create weight block FIRST with empty childIds, so that parseIfExpr
-  // can find the parent and add else blocks to it
+  // Create the weight block first with empty childIds so parseIfExpr can find the parent and attach else blocks.
   const weightBlock: WeightBlock = {
     id,
     type: 'weight',
@@ -1580,8 +2048,7 @@ function parseWeightExpr(
           weightBlock.childIds.push(childId);
         }
 
-        // Extract :weight from any child block type (groups, filters, etc.)
-        // Handles syntax like: (group "Name" :weight 50 children...)
+        // Extract :weight from any child block type, e.g. (group "Name" :weight 50 ...).
         for (let j = 1; j < item.length; j++) {
           if (item[j] === ':weight' && typeof item[j + 1] === 'number') {
             // Apply weight to the first child ID (the primary block, not else block)
@@ -1611,8 +2078,7 @@ function parseGroupExpr(
   const id = generateBlockId();
   const name = typeof expr[1] === 'string' ? expr[1] : 'Group';
 
-  // Create group block FIRST with empty childIds, so that parseIfExpr
-  // can find the parent and add else blocks to it
+  // Create the group block first with empty childIds so parseIfExpr can find the parent and attach else blocks.
   const groupBlock = {
     id,
     type: 'group' as const,
@@ -1670,8 +2136,7 @@ function parseIfExpr(
         }
       }
     } else if (item[0] === 'else') {
-      // Parse else children (we'll create the else block later)
-      // Use a placeholder parent ID that we'll fix after creating the else block
+      // Parse else children with ifId as a placeholder parent; fixed up after the else block is created.
       for (let j = 1; j < item.length; j++) {
         if (Array.isArray(item[j])) {
           const childIds = parseBlockFromExpr(item[j], ifId, blocks);
@@ -1684,8 +2149,7 @@ function parseIfExpr(
       // First array that's not then/else is the condition
       conditionExpr = item;
     } else {
-      // Any other block after condition is the then-block content (no wrapper)
-      // This handles: (if CONDITION (weight ...) (else ...))
+      // Any other block after the condition is unwrapped then-content, e.g. (if CONDITION (weight ...) (else ...)).
       const childIds = parseBlockFromExpr(item, ifId, blocks);
       for (const childId of childIds) {
         ifChildIds.push(childId);
@@ -1746,8 +2210,7 @@ function parseIfExpr(
     };
     blocks[elseId] = elseBlock;
 
-    // Return both IF and ELSE IDs in correct order
-    // The caller will add them to parent.childIds in this order
+    // Return IF and ELSE IDs in order; the caller appends them to parent.childIds as-is.
     return [ifId, elseId];
   }
 
@@ -1834,10 +2297,6 @@ function parseFilterExpr(
   blocks[id] = filter;
   return id;
 }
-
-// ============================================
-// Utility Exports
-// ============================================
 
 export const strategySerializer = {
   toDSL,

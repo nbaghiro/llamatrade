@@ -74,9 +74,7 @@ class MarketDataClient(AlpacaClientBase):
             timeout=timeout,
         )
 
-    # =========================================================================
     # Historical Bars
-    # =========================================================================
 
     @retry_with_backoff(RetryConfig())
     async def get_bars(
@@ -212,9 +210,7 @@ class MarketDataClient(AlpacaClientBase):
                 result[symbol] = parse_bar(bar_data)
             return result
 
-    # =========================================================================
     # Quotes
-    # =========================================================================
 
     @retry_with_backoff(RetryConfig())
     async def get_latest_quote(self, symbol: str) -> Quote | None:
@@ -264,9 +260,7 @@ class MarketDataClient(AlpacaClientBase):
                 result[symbol] = parse_quote(quote_data, symbol)
             return result
 
-    # =========================================================================
     # Snapshots
-    # =========================================================================
 
     @retry_with_backoff(RetryConfig())
     async def get_snapshot(self, symbol: str) -> Snapshot | None:

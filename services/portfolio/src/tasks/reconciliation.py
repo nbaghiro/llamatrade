@@ -22,6 +22,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from llamatrade_db import system_session, tenant_session
 from llamatrade_db.models.ledger import Account
 
 from src.clients.alpaca import AlpacaBrokerPositions
@@ -182,7 +183,7 @@ class _SessionPerCallProjector:
     async def reconcile_account(
         self, tenant_id: UUID, account_id: UUID, broker_positions: dict[str, Decimal]
     ) -> list[Drift]:
-        async with self._sf() as db:
+        async with tenant_session(tenant_id, self._sf) as db:
             return await LedgerProjector(db).reconcile_account(
                 tenant_id, account_id, broker_positions
             )
@@ -195,7 +196,7 @@ class _SessionPerCallBroker:
         self._sf = session_factory
 
     async def positions(self, tenant_id: UUID, account: Account) -> dict[str, Decimal]:
-        async with self._sf() as db:
+        async with tenant_session(tenant_id, self._sf) as db:
             return await AlpacaBrokerPositions(db).positions(tenant_id, account)
 
 
@@ -221,7 +222,7 @@ async def reconciliation_loop(
     logger.info("ledger reconciliation loop started (interval=%ss)", interval_seconds)
     while not stop_event.is_set():
         try:
-            async with session_factory() as db:
+            async with system_session(session_factory) as db:
                 accounts = await _load_accounts(db)
             if accounts:
                 await run_reconciliation_pass(

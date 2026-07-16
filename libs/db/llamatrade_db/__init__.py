@@ -9,6 +9,10 @@ from llamatrade_db.session import (
     get_pool_stats,
     get_session_maker,
     init_db,
+    set_rls_bypass,
+    set_tenant_guc,
+    system_session,
+    tenant_session,
 )
 
 __all__ = [
@@ -23,6 +27,11 @@ __all__ = [
     "get_db",
     "init_db",
     "close_db",
+    # RLS tenant scoping
+    "set_tenant_guc",
+    "set_rls_bypass",
+    "tenant_session",
+    "system_session",
     # Pool observability
     "PoolStats",
     "get_pool_stats",

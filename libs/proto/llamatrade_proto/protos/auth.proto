@@ -22,6 +22,7 @@ message User {
   bool is_active = 7;
   Timestamp created_at = 8;
   Timestamp last_login = 9;
+  string avatar_url = 10;
 }
 
 // Tenant (organization) information

@@ -35,7 +35,6 @@ export function WeightBlock({ block, allocationPercent, readOnly }: WeightBlockP
     deleteBlock(block.id);
   };
 
-  // Get display text for the weight method
   const getDisplayText = () => {
     let text = methodInfo.label;
     if (methodInfo.hasLookback && block.lookbackDays) {
@@ -49,26 +48,23 @@ export function WeightBlock({ block, allocationPercent, readOnly }: WeightBlockP
 
   return (
     <div className="relative">
-      {/* Percentage badge for specified weight children */}
       {allocationPercent !== undefined && (
-        <span className={`absolute -left-12 top-1/2 -translate-y-1/2 px-2 py-0.5 text-xs font-semibold ${allocationBadgeColors.bg} ${allocationBadgeColors.text} rounded`}>
+        <span className={`absolute -left-12 top-1/2 -translate-y-1/2 px-2 py-0.5 text-xs font-mono font-bold tabular-nums ${allocationBadgeColors.bg} ${allocationBadgeColors.text}`}>
           {allocationPercent}%
         </span>
       )}
 
-      {/* Weight pill - orange style based on method */}
       <div
         data-testid="weight-block"
         className={`
-          inline-flex items-center gap-1.5 py-1.5 rounded-full
+          inline-flex items-center gap-1.5 py-1.5
           transition-all duration-150 select-none
-          ${colors.bg} text-white text-sm
+          ${colors.bg} text-sm
           ${readOnly ? 'cursor-default pl-3 pr-3' : 'cursor-pointer pl-1.5 pr-3'}
-          ${isSelected ? `ring-2 ${colors.ring} ring-offset-2 ring-offset-white dark:ring-offset-gray-900` : readOnly ? '' : colors.hover}
+          ${isSelected ? `ring-2 ${colors.ring} ring-offset-2 ring-offset-bone` : readOnly ? '' : colors.hover}
         `}
         onClick={handleClick}
       >
-        {/* Delete button - hidden in readOnly mode */}
         {!readOnly && (
           <button
             onClick={handleDeleteClick}
@@ -79,7 +75,6 @@ export function WeightBlock({ block, allocationPercent, readOnly }: WeightBlockP
           </button>
         )}
 
-        {/* Expand toggle */}
         <button
           onClick={handleExpandClick}
           className={`p-0.5 rounded-full ${colors.hover} transition-colors`}
@@ -87,8 +82,7 @@ export function WeightBlock({ block, allocationPercent, readOnly }: WeightBlockP
           <ChevronDown className={`w-3.5 h-3.5 transition-transform ${isExpanded ? '' : '-rotate-90'}`} />
         </button>
 
-        {/* WEIGHT label and method */}
-        <span className="font-semibold">WEIGHT</span>
+        <span className="font-mono font-bold tracking-wide">WEIGHT</span>
         <span className="font-normal opacity-90">{getDisplayText()}</span>
       </div>
     </div>

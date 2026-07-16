@@ -18,10 +18,12 @@ from connectrpc.request import RequestContext
 # Type alias for generic request context (accepts any request/response types)
 type AnyContext = RequestContext[object, object]
 
-from llamatrade_alpaca import get_trading_client_async
+from llamatrade_alpaca import AlpacaCredentials, Asset, get_trading_client_async
 
 from src import metrics as md_metrics
+from src.market_calendar import MarketState, market_status
 from src.models import BarData, QuoteData, Timeframe, TradeData
+from src.services.asset_service import get_asset_service
 from src.services.market_data_service import get_market_data_service
 from src.streaming.manager import StreamType, get_stream_manager
 
@@ -197,10 +199,8 @@ class MarketDataServicer:
         """Get historical OHLCV bars for a symbol."""
         from llamatrade_proto.generated import common_pb2, market_data_pb2
 
-        # Extract tenant context for logging
         tenant_ctx = _extract_tenant_context(ctx)
 
-        # Validate symbol
         symbol = _validate_symbol(request.symbol)
 
         logger.info(
@@ -211,7 +211,6 @@ class MarketDataServicer:
         try:
             service = await get_market_data_service()
 
-            # Parse request parameters
             start = datetime.fromtimestamp(request.start.seconds, tz=UTC)
             end = (
                 datetime.fromtimestamp(request.end.seconds, tz=UTC)
@@ -220,12 +219,10 @@ class MarketDataServicer:
             )
             timeframe = self._TIMEFRAME_MAP.get(request.timeframe, Timeframe.DAY_1)
 
-            # Get limit from pagination if provided
             limit = 1000
             if request.HasField("pagination"):
                 limit = min(request.pagination.page_size, 10000)
 
-            # Fetch bars (Redis-cached service layer)
             bars = await service.get_bars(
                 symbol=symbol,
                 timeframe=timeframe,
@@ -241,7 +238,6 @@ class MarketDataServicer:
             else:
                 md_metrics.record_missing_symbol()
 
-            # Convert to proto response using helper
             proto_bars = [self._bar_to_proto(symbol, bar) for bar in bars]
 
             return market_data_pb2.GetHistoricalBarsResponse(
@@ -268,10 +264,8 @@ class MarketDataServicer:
         """Get historical bars for multiple symbols."""
         from llamatrade_proto.generated import market_data_pb2
 
-        # Extract tenant context for logging
         tenant_ctx = _extract_tenant_context(ctx)
 
-        # Validate symbols
         symbols = _validate_symbols(list(request.symbols))
 
         logger.info(
@@ -291,7 +285,6 @@ class MarketDataServicer:
             timeframe = self._TIMEFRAME_MAP.get(request.timeframe, Timeframe.DAY_1)
             limit = request.limit if request.limit > 0 else 1000
 
-            # Fetch bars (Redis-cached service layer)
             multi_bars = await service.get_multi_bars(
                 symbols=symbols,
                 timeframe=timeframe,
@@ -309,7 +302,6 @@ class MarketDataServicer:
                 else:
                     md_metrics.record_missing_symbol()
 
-            # Convert to proto response using helper
             bars_map = {
                 symbol: market_data_pb2.BarList(
                     bars=[self._bar_to_proto(symbol, bar) for bar in bars]
@@ -387,10 +379,8 @@ class MarketDataServicer:
         ctx: AnyContext,
     ) -> market_data_pb2.Snapshot:
         """Get current market snapshot for a symbol."""
-        # Extract tenant context for logging
         tenant_ctx = _extract_tenant_context(ctx)
 
-        # Validate symbol
         symbol = _validate_symbol(request.symbol)
 
         logger.info(
@@ -424,10 +414,8 @@ class MarketDataServicer:
         """Get snapshots for multiple symbols."""
         from llamatrade_proto.generated import market_data_pb2
 
-        # Extract tenant context for logging
         tenant_ctx = _extract_tenant_context(ctx)
 
-        # Validate symbols
         symbols = _validate_symbols(list(request.symbols))
 
         logger.info(
@@ -455,64 +443,139 @@ class MarketDataServicer:
             logger.error("get_snapshots error: %s", e, exc_info=True)
             raise ConnectError(Code.INTERNAL, f"Failed to fetch snapshots: {e}") from e
 
+    async def get_assets(
+        self,
+        request: market_data_pb2.GetAssetsRequest,
+        ctx: AnyContext,
+    ) -> market_data_pb2.GetAssetsResponse:
+        """Get asset reference data for multiple symbols."""
+        from llamatrade_proto.generated import market_data_pb2
+
+        tenant_ctx = _extract_tenant_context(ctx)
+
+        symbols = _validate_symbols(list(request.symbols))
+
+        logger.info(
+            "get_assets request",
+            extra={"symbols": symbols, "count": len(symbols), **tenant_ctx.log_context()},
+        )
+
+        try:
+            service = await get_asset_service()
+            assets = await service.get_assets(symbols)
+
+            for requested in symbols:
+                if requested not in assets:
+                    md_metrics.record_missing_symbol()
+
+            return market_data_pb2.GetAssetsResponse(
+                assets={symbol: self._asset_to_proto(asset) for symbol, asset in assets.items()}
+            )
+
+        except Exception as e:
+            logger.error("get_assets error: %s", e, exc_info=True)
+            raise ConnectError(Code.INTERNAL, f"Failed to fetch assets: {e}") from e
+
+    @staticmethod
+    def _asset_to_proto(asset: Asset) -> market_data_pb2.Asset:
+        """Map an Alpaca asset to its proto passthrough."""
+        from llamatrade_proto.generated import market_data_pb2
+
+        return market_data_pb2.Asset(
+            id=asset.id,
+            symbol=asset.symbol,
+            name=asset.name,
+            exchange=asset.exchange,
+            asset_class=asset.asset_class,
+            status=asset.status,
+            tradable=asset.tradable,
+            fractionable=asset.fractionable,
+        )
+
     async def get_market_status(
         self,
         request: market_data_pb2.GetMarketStatusRequest,
         ctx: AnyContext,
     ) -> market_data_pb2.GetMarketStatusResponse:
-        """Get current market status from Alpaca clock API.
+        """Get current US-equity market status.
 
-        Uses the Alpaca Trading API's /v2/clock endpoint for accurate
-        market status that accounts for DST, holidays, and early closes.
+        Prefers the Alpaca ``/v2/clock`` endpoint (authoritative for DST,
+        holidays and early closes) when credentials are configured. Falls back
+        to a server-side NYSE calendar when credentials are absent or the Alpaca
+        clock is unavailable, so the endpoint always returns a sane result.
         """
-        from llamatrade_proto.generated import common_pb2, market_data_pb2
-
-        # Extract tenant context for logging (market status is public)
         tenant_ctx = _extract_tenant_context(ctx)
         logger.debug("get_market_status request", extra=tenant_ctx.log_context())
 
-        try:
-            # Clock endpoint is on trading API, not market data API
-            trading_client = await get_trading_client_async()
-            clock = await trading_client.get_clock()
+        if AlpacaCredentials.from_env().is_valid():
+            try:
+                return await self._alpaca_market_status()
+            except Exception as e:  # noqa: BLE001 - degrade to calendar on any Alpaca failure
+                logger.warning("Alpaca clock unavailable; using market calendar fallback: %s", e)
 
-            # Determine status from clock
-            if clock.is_open:
-                status = market_data_pb2.MARKET_STATUS_OPEN
-            else:
-                # Check if we're in pre-market or after-hours
-                now = clock.timestamp
-                if now < clock.next_open:
-                    # Before next open - could be pre-market or closed
-                    # Pre-market is typically 4:00 AM - 9:30 AM ET
-                    hours_until_open = (clock.next_open - now).total_seconds() / 3600
-                    if hours_until_open <= 5.5:  # Within pre-market window
-                        status = market_data_pb2.MARKET_STATUS_PRE_MARKET
-                    else:
-                        status = market_data_pb2.MARKET_STATUS_CLOSED
+        return self._calendar_market_status()
+
+    async def _alpaca_market_status(self) -> market_data_pb2.GetMarketStatusResponse:
+        """Market status via the Alpaca clock endpoint (trading API)."""
+        from llamatrade_proto.generated import common_pb2, market_data_pb2
+
+        trading_client = await get_trading_client_async()
+        clock = await trading_client.get_clock()
+
+        if clock.is_open:
+            status = market_data_pb2.MARKET_STATUS_OPEN
+        else:
+            now = clock.timestamp
+            if now < clock.next_open:
+                # Before next open: pre-market (4:00-9:30 ET) or fully closed.
+                hours_until_open = (clock.next_open - now).total_seconds() / 3600
+                if hours_until_open <= 5.5:
+                    status = market_data_pb2.MARKET_STATUS_PRE_MARKET
                 else:
-                    # After close - after-hours until 8:00 PM ET typically
-                    hours_since_close = (now - clock.next_close).total_seconds() / 3600
-                    if hours_since_close <= 4:  # Within after-hours window
-                        status = market_data_pb2.MARKET_STATUS_AFTER_HOURS
-                    else:
-                        status = market_data_pb2.MARKET_STATUS_CLOSED
+                    status = market_data_pb2.MARKET_STATUS_CLOSED
+            else:
+                # After close: after-hours until ~8:00 PM ET, else closed.
+                hours_since_close = (now - clock.next_close).total_seconds() / 3600
+                if hours_since_close <= 4:
+                    status = market_data_pb2.MARKET_STATUS_AFTER_HOURS
+                else:
+                    status = market_data_pb2.MARKET_STATUS_CLOSED
 
-            return market_data_pb2.GetMarketStatusResponse(
-                status=status,
-                next_open=common_pb2.Timestamp(
-                    seconds=int(clock.next_open.timestamp()),
-                    nanos=clock.next_open.microsecond * 1000,
-                ),
-                next_close=common_pb2.Timestamp(
-                    seconds=int(clock.next_close.timestamp()),
-                    nanos=clock.next_close.microsecond * 1000,
-                ),
-            )
+        return market_data_pb2.GetMarketStatusResponse(
+            status=status,
+            next_open=common_pb2.Timestamp(
+                seconds=int(clock.next_open.timestamp()),
+                nanos=clock.next_open.microsecond * 1000,
+            ),
+            next_close=common_pb2.Timestamp(
+                seconds=int(clock.next_close.timestamp()),
+                nanos=clock.next_close.microsecond * 1000,
+            ),
+        )
 
-        except Exception as e:
-            logger.error("get_market_status error: %s", e, exc_info=True)
-            raise ConnectError(Code.INTERNAL, f"Failed to fetch market status: {e}") from e
+    def _calendar_market_status(self) -> market_data_pb2.GetMarketStatusResponse:
+        """Market status derived from the server-side NYSE calendar."""
+        from llamatrade_proto.generated import common_pb2, market_data_pb2
+
+        cal_to_proto = {
+            MarketState.OPEN: market_data_pb2.MARKET_STATUS_OPEN,
+            MarketState.CLOSED: market_data_pb2.MARKET_STATUS_CLOSED,
+            MarketState.PRE_MARKET: market_data_pb2.MARKET_STATUS_PRE_MARKET,
+            MarketState.AFTER_HOURS: market_data_pb2.MARKET_STATUS_AFTER_HOURS,
+        }
+        result = market_status(datetime.now(UTC))
+
+        return market_data_pb2.GetMarketStatusResponse(
+            status=cal_to_proto[result.state],
+            next_open=common_pb2.Timestamp(
+                seconds=int(result.next_open.timestamp()),
+                nanos=result.next_open.microsecond * 1000,
+            ),
+            next_close=common_pb2.Timestamp(
+                seconds=int(result.next_close.timestamp()),
+                nanos=result.next_close.microsecond * 1000,
+            ),
+        )
 
     async def stream_bars(
         self,
@@ -522,10 +585,8 @@ class MarketDataServicer:
         """Stream real-time bar updates."""
         from llamatrade_proto.generated import common_pb2, market_data_pb2
 
-        # Extract tenant context for logging
         tenant_ctx = _extract_tenant_context(ctx)
 
-        # Validate symbols
         symbols = _validate_symbols(list(request.symbols))
 
         logger.info(
@@ -537,10 +598,8 @@ class MarketDataServicer:
         stream_id = id(ctx)
 
         try:
-            # Connect and get our queue
             queue = await stream_manager.connect(stream_id)
 
-            # Subscribe to bar updates for requested symbols
             await stream_manager.subscribe(
                 client_id=stream_id,
                 trades=[],
@@ -553,7 +612,6 @@ class MarketDataServicer:
                     # Wait for data with timeout for keepalive
                     message = await asyncio.wait_for(queue.get(), timeout=30.0)
 
-                    # Only yield bar messages
                     if message.stream_type == StreamType.BAR:
                         data = cast(BarData, message.data)
                         yield market_data_pb2.Bar(
@@ -585,10 +643,8 @@ class MarketDataServicer:
         """Stream real-time quote updates."""
         from llamatrade_proto.generated import common_pb2, market_data_pb2
 
-        # Extract tenant context for logging
         tenant_ctx = _extract_tenant_context(ctx)
 
-        # Validate symbols
         symbols = _validate_symbols(list(request.symbols))
 
         logger.info(
@@ -600,10 +656,8 @@ class MarketDataServicer:
         stream_id = id(ctx)
 
         try:
-            # Connect and get our queue
             queue = await stream_manager.connect(stream_id)
 
-            # Subscribe to quote updates for requested symbols
             await stream_manager.subscribe(
                 client_id=stream_id,
                 trades=[],
@@ -644,10 +698,8 @@ class MarketDataServicer:
         """Stream real-time trade updates."""
         from llamatrade_proto.generated import common_pb2, market_data_pb2
 
-        # Extract tenant context for logging
         tenant_ctx = _extract_tenant_context(ctx)
 
-        # Validate symbols
         symbols = _validate_symbols(list(request.symbols))
 
         logger.info(
@@ -659,10 +711,8 @@ class MarketDataServicer:
         stream_id = id(ctx)
 
         try:
-            # Connect and get our queue
             queue = await stream_manager.connect(stream_id)
 
-            # Subscribe to trade updates for requested symbols
             await stream_manager.subscribe(
                 client_id=stream_id,
                 trades=symbols,

@@ -49,6 +49,8 @@ class MarketDataServiceStub:
     GetSnapshots: _grpc.UnaryUnaryMultiCallable[_market_data_pb2.GetSnapshotsRequest, _market_data_pb2.GetSnapshotsResponse]
     GetMarketStatus: _grpc.UnaryUnaryMultiCallable[_market_data_pb2.GetMarketStatusRequest, _market_data_pb2.GetMarketStatusResponse]
     """Market info"""
+    GetAssets: _grpc.UnaryUnaryMultiCallable[_market_data_pb2.GetAssetsRequest, _market_data_pb2.GetAssetsResponse]
+    """Reference data"""
 
 @_typing.type_check_only
 class MarketDataServiceAsyncStub(MarketDataServiceStub):
@@ -71,6 +73,8 @@ class MarketDataServiceAsyncStub(MarketDataServiceStub):
     GetSnapshots: _aio.UnaryUnaryMultiCallable[_market_data_pb2.GetSnapshotsRequest, _market_data_pb2.GetSnapshotsResponse]  # type: ignore[assignment]
     GetMarketStatus: _aio.UnaryUnaryMultiCallable[_market_data_pb2.GetMarketStatusRequest, _market_data_pb2.GetMarketStatusResponse]  # type: ignore[assignment]
     """Market info"""
+    GetAssets: _aio.UnaryUnaryMultiCallable[_market_data_pb2.GetAssetsRequest, _market_data_pb2.GetAssetsResponse]  # type: ignore[assignment]
+    """Reference data"""
 
 class MarketDataServiceServicer(metaclass=_abc_1.ABCMeta):
     """=============================================================================
@@ -144,5 +148,13 @@ class MarketDataServiceServicer(metaclass=_abc_1.ABCMeta):
         context: _ServicerContext,
     ) -> _typing.Union[_market_data_pb2.GetMarketStatusResponse, _abc.Awaitable[_market_data_pb2.GetMarketStatusResponse]]:
         """Market info"""
+
+    @_abc_1.abstractmethod
+    def GetAssets(
+        self,
+        request: _market_data_pb2.GetAssetsRequest,
+        context: _ServicerContext,
+    ) -> _typing.Union[_market_data_pb2.GetAssetsResponse, _abc.Awaitable[_market_data_pb2.GetAssetsResponse]]:
+        """Reference data"""
 
 def add_MarketDataServiceServicer_to_server(servicer: MarketDataServiceServicer, server: _typing.Union[_grpc.Server, _aio.Server]) -> None: ...

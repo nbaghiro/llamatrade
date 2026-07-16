@@ -227,25 +227,11 @@ class TestMarketDataClientConnection:
     """Tests for MarketDataClient connection handling."""
 
     def test_client_default_target(self):
-        """Test client uses correct default target for market data service."""
-        with patch("grpc.aio.insecure_channel") as mock_channel:
-            mock_channel.return_value = MagicMock()
-            client = MarketDataClient()
-            # Channel is created lazily, so access the property to trigger creation
-            _ = client.channel
-            call_args = mock_channel.call_args[0][0]
-            assert call_args == "market-data:8840"
+        """The default target is normalized to an absolute Connect URL."""
+        client = MarketDataClient()
+        assert client.target == "http://market-data:8840"
 
     async def test_client_context_manager(self):
-        """Test client can be used as async context manager."""
-        with patch("grpc.aio.insecure_channel") as mock_channel:
-            mock_channel_instance = AsyncMock()
-            mock_channel.return_value = mock_channel_instance
-
-            async with MarketDataClient() as client:
-                # Access the channel to ensure it's created
-                _ = client.channel
-                assert client is not None
-
-            # Channel should be closed on exit
-            mock_channel_instance.close.assert_called_once()
+        """Client works as an async context manager (no-op close when unused)."""
+        async with MarketDataClient() as client:
+            assert client.target == "http://market-data:8840"

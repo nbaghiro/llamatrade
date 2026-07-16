@@ -1,109 +1,105 @@
 /**
- * Backtest Configuration Form
- * Allows users to configure and run backtests.
+ * Configuration rail panel.
+ * Strategy, date range, capital, benchmark and commission inputs plus the
+ * run trigger — the left-rail control surface of the backtest workspace.
  */
 
-import { Calendar, ChevronDown, Loader2, Play, Settings, DollarSign } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { ChevronDown, Loader2, Play } from 'lucide-react';
+import { useEffect, useMemo } from 'react';
+import { Link } from 'react-router-dom';
 
 import { useBacktestStore } from '../../store/backtest';
 
 interface BacktestConfigFormProps {
-  initialStrategyId?: string;
-  onSubmit: () => void;
+  onRun: () => void;
   loading: boolean;
+  lastRunLabel?: string | null;
 }
 
-const TIMEFRAMES = [
-  { value: '1Min', label: '1 Minute' },
-  { value: '5Min', label: '5 Minutes' },
-  { value: '15Min', label: '15 Minutes' },
-  { value: '1H', label: '1 Hour' },
-  { value: '4H', label: '4 Hours' },
-  { value: '1D', label: '1 Day' },
+const BENCHMARKS = ['SPY', 'QQQ', 'IWM', 'DIA'];
+const RANGE_PRESETS: { label: string; years: number }[] = [
+  { label: '1Y', years: 1 },
+  { label: '3Y', years: 3 },
+  { label: '5Y', years: 5 },
+  { label: 'MAX', years: 15 },
 ];
 
-export default function BacktestConfigForm({
-  initialStrategyId,
-  onSubmit,
-  loading,
-}: BacktestConfigFormProps) {
-  const {
-    config,
-    setConfig,
-    strategies,
-    strategiesLoading,
-    fetchStrategies,
-  } = useBacktestStore();
+const MS_PER_YEAR = 365.25 * 24 * 60 * 60 * 1000;
 
-  const [showAdvanced, setShowAdvanced] = useState(false);
-  const [symbolsInput, setSymbolsInput] = useState(config.symbols.join(', '));
+function shiftYears(from: string, years: number): string {
+  const base = from ? new Date(from) : new Date();
+  const d = new Date(base);
+  d.setFullYear(d.getFullYear() - years);
+  return d.toISOString().split('T')[0];
+}
 
-  // Fetch strategies on mount
+export default function BacktestConfigForm({ onRun, loading, lastRunLabel }: BacktestConfigFormProps) {
+  const { config, setConfig, strategies, strategiesLoading, fetchStrategies } = useBacktestStore();
+
   useEffect(() => {
     fetchStrategies();
   }, [fetchStrategies]);
 
-  // Set initial strategy from URL param
-  useEffect(() => {
-    if (initialStrategyId && !config.strategyId) {
-      setConfig({ strategyId: initialStrategyId });
-    }
-  }, [initialStrategyId, config.strategyId, setConfig]);
+  const selectedStrategy = useMemo(
+    () => strategies.find((s) => s.id === config.strategyId),
+    [strategies, config.strategyId]
+  );
 
-  // Update symbols when input changes
-  const handleSymbolsChange = (value: string) => {
-    setSymbolsInput(value);
-    const symbols = value
-      .split(/[,\s]+/)
-      .map((s) => s.trim().toUpperCase())
-      .filter(Boolean);
-    setConfig({ symbols });
-  };
+  // Which quick-range chip (if any) matches the current start→end span.
+  const activePreset = useMemo(() => {
+    if (!config.startDate || !config.endDate) return null;
+    const span = new Date(config.endDate).getTime() - new Date(config.startDate).getTime();
+    const years = Math.round(span / MS_PER_YEAR);
+    if (years <= 1) return '1Y';
+    if (years === 3) return '3Y';
+    if (years === 5) return '5Y';
+    if (years >= 13) return 'MAX';
+    return null;
+  }, [config.startDate, config.endDate]);
 
-  // Validation
-  const isValid = (): boolean => {
-    if (!config.strategyId) return false;
-    const start = new Date(config.startDate);
-    const end = new Date(config.endDate);
-    if (end <= start) return false;
-    if (config.initialCapital <= 0) return false;
-    return true;
-  };
+  const canRun = !loading && !!config.strategyId && !!config.startDate && !!config.endDate;
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (isValid()) {
-      onSubmit();
-    }
-  };
+  const controlBox =
+    'border-2 border-ink bg-bone px-2.5 py-2.5 flex items-center justify-between text-sm font-semibold';
+  const fieldLabel =
+    'block font-mono text-[9.5px] font-bold uppercase tracking-[0.12em] text-ink/55 mb-1.5';
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-6">
-      {/* Main Config Row */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        {/* Strategy Selector */}
-        <div>
-          <label
-            htmlFor="strategy"
-            className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5"
+    <div className="bg-paper border-2 border-ink shadow-[4px_4px_0_#0d0d0d]">
+      <div className="flex items-center justify-between px-[15px] py-3 border-b-2 border-ink">
+        <span className="font-mono text-[11px] font-bold uppercase tracking-[0.1em]">Configuration</span>
+        {selectedStrategy ? (
+          <Link
+            to={`/strategies/${selectedStrategy.id}`}
+            className="font-mono text-[10px] font-bold uppercase tracking-[0.04em] border-[1.5px] border-ink px-1.5 py-[3px] bg-paper hover:bg-ink hover:text-bone transition-colors"
           >
-            Strategy
-          </label>
+            Edit DSL
+          </Link>
+        ) : (
+          <span className="font-mono text-[10px] font-bold uppercase tracking-[0.04em] border-[1.5px] border-ink px-1.5 py-[3px] bg-paper text-ink/40">
+            Edit DSL
+          </span>
+        )}
+      </div>
+
+      <div className="px-[15px] pt-3.5 pb-4">
+        {/* Strategy */}
+        <div className="mb-3">
+          <label htmlFor="bt-strategy" className={fieldLabel}>Strategy</label>
           <div className="relative">
             <select
-              id="strategy"
+              id="bt-strategy"
               value={config.strategyId}
               onChange={(e) => setConfig({ strategyId: e.target.value })}
               disabled={strategiesLoading}
-              className="w-full appearance-none px-3 py-2.5 text-sm border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 focus:border-primary-500 focus:ring-1 focus:ring-primary-500 outline-none disabled:opacity-50"
+              className={`${controlBox} w-full appearance-none pr-8 outline-none focus:border-orange-500 disabled:opacity-60`}
             >
               <option value="">
                 {strategiesLoading
-                  ? 'Loading strategies...'
+                  ? 'Loading…'
                   : strategies.length === 0
-                    ? 'No strategies available'
-                    : 'Select a strategy'}
+                    ? 'No strategies'
+                    : 'Select strategy'}
               </option>
               {strategies.map((s) => (
                 <option key={s.id} value={s.id}>
@@ -111,212 +107,142 @@ export default function BacktestConfigForm({
                 </option>
               ))}
             </select>
-            <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+            <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-ink/60 pointer-events-none" />
             {strategiesLoading && (
-              <Loader2 className="absolute right-8 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 animate-spin" />
+              <Loader2 className="absolute right-7 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-ink/50 animate-spin" />
             )}
           </div>
-          {!strategiesLoading && strategies.length === 0 && (
-            <div className="mt-1.5 flex items-center gap-2">
-              <p className="text-xs text-amber-600 dark:text-amber-400">
-                No strategies found.
-              </p>
-              <button
-                type="button"
-                onClick={() => fetchStrategies()}
-                className="text-xs text-primary-600 dark:text-primary-400 hover:underline"
-              >
-                Retry
-              </button>
-            </div>
-          )}
         </div>
 
-        {/* Start Date */}
-        <div>
-          <label
-            htmlFor="startDate"
-            className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5"
-          >
-            Start Date
-          </label>
-          <div className="relative">
+        {/* DSL preview — only when the selected strategy carries source */}
+        {selectedStrategy?.dslCode && (
+          <pre className="border-2 border-dashed border-line bg-bone px-2.5 py-2 font-mono text-[10.5px] leading-[1.55] text-ink/70 whitespace-pre-wrap overflow-hidden max-h-40 mb-3">
+            {selectedStrategy.dslCode}
+          </pre>
+        )}
+
+        {/* Date range */}
+        <div className="mb-3">
+          <label className={fieldLabel}>Date Range</label>
+          <div className="grid grid-cols-2 gap-2">
             <input
               type="date"
-              id="startDate"
+              aria-label="Start date"
               value={config.startDate}
               onChange={(e) => setConfig({ startDate: e.target.value })}
-              className="w-full px-3 py-2.5 text-sm border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 focus:border-primary-500 focus:ring-1 focus:ring-primary-500 outline-none"
+              className={`${controlBox} font-mono text-[13px] outline-none focus:border-orange-500`}
             />
-            <Calendar className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
-          </div>
-        </div>
-
-        {/* End Date */}
-        <div>
-          <label
-            htmlFor="endDate"
-            className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5"
-          >
-            End Date
-          </label>
-          <div className="relative">
             <input
               type="date"
-              id="endDate"
+              aria-label="End date"
               value={config.endDate}
               onChange={(e) => setConfig({ endDate: e.target.value })}
-              className="w-full px-3 py-2.5 text-sm border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 focus:border-primary-500 focus:ring-1 focus:ring-primary-500 outline-none"
+              className={`${controlBox} font-mono text-[13px] outline-none focus:border-orange-500`}
             />
-            <Calendar className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+          </div>
+          <div className="flex gap-1.5 mt-2">
+            {RANGE_PRESETS.map((preset) => (
+              <button
+                key={preset.label}
+                type="button"
+                onClick={() => setConfig({ startDate: shiftYears(config.endDate, preset.years) })}
+                className={`font-mono text-[10px] font-bold uppercase tracking-[0.04em] border-[1.5px] border-ink px-1.5 py-[3px] transition-colors ${
+                  activePreset === preset.label ? 'bg-ink text-bone' : 'bg-paper hover:bg-bone'
+                }`}
+              >
+                {preset.label}
+              </button>
+            ))}
           </div>
         </div>
 
-        {/* Initial Capital */}
-        <div>
-          <label
-            htmlFor="capital"
-            className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5"
-          >
-            Initial Capital
-          </label>
-          <div className="relative">
-            <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-            <input
-              type="number"
-              id="capital"
-              value={config.initialCapital}
-              onChange={(e) => setConfig({ initialCapital: parseFloat(e.target.value) || 0 })}
-              min={0}
-              step={1000}
-              className="w-full pl-9 pr-3 py-2.5 text-sm border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 focus:border-primary-500 focus:ring-1 focus:ring-primary-500 outline-none"
-            />
+        {/* Initial capital */}
+        <div className="mb-3">
+          <label htmlFor="bt-capital" className={fieldLabel}>Initial Capital</label>
+          <div className={`${controlBox} font-mono text-[15px] font-bold`}>
+            <span className="flex items-center gap-1">
+              <span className="text-ink/50">$</span>
+              <input
+                id="bt-capital"
+                type="number"
+                min={0}
+                step={1000}
+                value={config.initialCapital}
+                onChange={(e) => setConfig({ initialCapital: parseFloat(e.target.value) || 0 })}
+                className="bg-transparent outline-none w-full tabular-nums"
+              />
+            </span>
+            <span className="font-mono text-[11px] text-ink/50">USD</span>
           </div>
         </div>
-      </div>
 
-      {/* Symbols Input */}
-      <div>
-        <label
-          htmlFor="symbols"
-          className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5"
-        >
-          Symbols{' '}
-          <span className="font-normal text-gray-400">(optional, uses strategy defaults if empty)</span>
-        </label>
-        <input
-          type="text"
-          id="symbols"
-          value={symbolsInput}
-          onChange={(e) => handleSymbolsChange(e.target.value)}
-          placeholder="AAPL, MSFT, GOOGL"
-          className="w-full px-3 py-2.5 text-sm border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 placeholder:text-gray-400 focus:border-primary-500 focus:ring-1 focus:ring-primary-500 outline-none"
-        />
-      </div>
-
-      {/* Advanced Settings Toggle */}
-      <button
-        type="button"
-        onClick={() => setShowAdvanced(!showAdvanced)}
-        className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200 transition-colors"
-      >
-        <Settings className="w-4 h-4" />
-        Advanced Settings
-        <ChevronDown
-          className={`w-4 h-4 transition-transform ${showAdvanced ? 'rotate-180' : ''}`}
-        />
-      </button>
-
-      {/* Advanced Settings Panel */}
-      {showAdvanced && (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 p-4 bg-gray-50 dark:bg-gray-800/50 rounded-lg">
-          {/* Timeframe */}
+        {/* Benchmark + commission */}
+        <div className="grid grid-cols-2 gap-2 mb-4">
           <div>
-            <label
-              htmlFor="timeframe"
-              className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5"
-            >
-              Timeframe
-            </label>
+            <label htmlFor="bt-benchmark" className={fieldLabel}>Benchmark</label>
             <div className="relative">
               <select
-                id="timeframe"
-                value={config.timeframe}
-                onChange={(e) => setConfig({ timeframe: e.target.value })}
-                className="w-full appearance-none px-3 py-2 text-sm border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 focus:border-primary-500 focus:ring-1 focus:ring-primary-500 outline-none"
+                id="bt-benchmark"
+                value={config.benchmarkSymbol}
+                onChange={(e) => setConfig({ benchmarkSymbol: e.target.value })}
+                className={`${controlBox} w-full appearance-none pr-7 font-mono text-[13px] outline-none focus:border-orange-500`}
               >
-                {TIMEFRAMES.map((tf) => (
-                  <option key={tf.value} value={tf.value}>
-                    {tf.label}
+                <option value="">None</option>
+                {BENCHMARKS.map((b) => (
+                  <option key={b} value={b}>
+                    {b}
                   </option>
                 ))}
               </select>
-              <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+              <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-ink/60 pointer-events-none" />
             </div>
           </div>
-
-          {/* Commission */}
           <div>
-            <label
-              htmlFor="commission"
-              className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5"
-            >
-              Commission (%)
-            </label>
-            <input
-              type="number"
-              id="commission"
-              value={config.commission * 100}
-              onChange={(e) => setConfig({ commission: (parseFloat(e.target.value) || 0) / 100 })}
-              min={0}
-              max={10}
-              step={0.01}
-              className="w-full px-3 py-2 text-sm border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 focus:border-primary-500 focus:ring-1 focus:ring-primary-500 outline-none"
-            />
-          </div>
-
-          {/* Slippage */}
-          <div>
-            <label
-              htmlFor="slippage"
-              className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5"
-            >
-              Slippage (%)
-            </label>
-            <input
-              type="number"
-              id="slippage"
-              value={config.slippage * 100}
-              onChange={(e) => setConfig({ slippage: (parseFloat(e.target.value) || 0) / 100 })}
-              min={0}
-              max={10}
-              step={0.01}
-              className="w-full px-3 py-2 text-sm border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 focus:border-primary-500 focus:ring-1 focus:ring-primary-500 outline-none"
-            />
+            <label htmlFor="bt-commission" className={fieldLabel}>Commission</label>
+            <div className={`${controlBox} font-mono text-[13px]`}>
+              <span className="flex items-center gap-1">
+                <span className="text-ink/50">$</span>
+                <input
+                  id="bt-commission"
+                  type="number"
+                  min={0}
+                  step={0.001}
+                  value={config.commission}
+                  onChange={(e) => setConfig({ commission: parseFloat(e.target.value) || 0 })}
+                  className="bg-transparent outline-none w-full tabular-nums"
+                />
+              </span>
+              <span className="font-mono text-[10px] text-ink/50">/sh</span>
+            </div>
           </div>
         </div>
-      )}
 
-      {/* Submit Button */}
-      <div className="flex justify-end">
+        {/* Run */}
         <button
-          type="submit"
-          disabled={loading || !isValid()}
-          className="flex items-center gap-2 px-6 py-2.5 bg-primary-600 hover:bg-primary-700 disabled:bg-primary-400 text-white rounded-lg font-medium transition-colors shadow-sm disabled:cursor-not-allowed"
+          type="button"
+          onClick={onRun}
+          disabled={!canRun}
+          className="w-full border-2 border-ink bg-orange-500 shadow-[4px_4px_0_#0d0d0d] py-3.5 font-display uppercase text-[22px] tracking-[0.02em] flex items-center justify-center gap-2.5 transition-transform hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-[6px_6px_0_#0d0d0d] active:translate-x-0 active:translate-y-0 active:shadow-[2px_2px_0_#0d0d0d] disabled:opacity-50 disabled:shadow-[4px_4px_0_#0d0d0d] disabled:translate-x-0 disabled:translate-y-0 disabled:cursor-not-allowed"
         >
           {loading ? (
             <>
-              <Loader2 className="w-4 h-4 animate-spin" />
-              Starting...
+              <Loader2 className="w-[18px] h-[18px] animate-spin" />
+              Running
             </>
           ) : (
             <>
-              <Play className="w-4 h-4" />
+              <Play className="w-[18px] h-[18px] fill-ink" />
               Run Backtest
             </>
           )}
         </button>
+
+        {lastRunLabel && (
+          <div className="mt-2.5 text-center font-mono text-[10px] uppercase tracking-[0.06em] text-ink/50">
+            {lastRunLabel}
+          </div>
+        )}
       </div>
-    </form>
+    </div>
   );
 }

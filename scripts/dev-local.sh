@@ -88,8 +88,7 @@ run_service() {
     source "$venv_dir/bin/activate"
     cd "$svc_dir"
 
-    # Set GRPC_PORT env var and run uvicorn
-    # FastAPI starts gRPC server during lifespan on GRPC_PORT
+    # FastAPI starts the gRPC server during lifespan on GRPC_PORT
     export GRPC_PORT="$grpc_port"
 
     # Billing also needs HTTP_PORT for Stripe webhooks

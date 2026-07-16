@@ -522,6 +522,42 @@ class TestAddMessage:
         assert added_message.tool_calls_json == tool_calls
 
     @pytest.mark.asyncio
+    async def test_add_message_with_inline_artifact_ids(
+        self,
+        conversation_service: ConversationService,
+        tenant_id: UUID,
+    ) -> None:
+        """Draft artifact IDs from the turn are persisted on the message."""
+        session_id = uuid4()
+        mock_session = make_mock_session(session_id=session_id)
+        added_message = None
+
+        def capture_add(obj: Any) -> None:
+            nonlocal added_message
+            if hasattr(obj, "role"):
+                added_message = obj
+
+        conversation_service.db.add = capture_add
+        conversation_service.db.execute = AsyncMock(
+            return_value=mock_scalar_one_or_none(mock_session)
+        )
+        conversation_service.db.commit = AsyncMock()
+        conversation_service.db.refresh = AsyncMock()
+
+        artifact_ids = ["artifact-1", "artifact-2"]
+
+        await conversation_service.add_message(
+            session_id=session_id,
+            tenant_id=tenant_id,
+            role=MESSAGE_ROLE_ASSISTANT,
+            content="Here's the strategy.",
+            inline_artifact_ids=artifact_ids,
+        )
+
+        assert added_message is not None
+        assert added_message.inline_artifact_ids == artifact_ids
+
+    @pytest.mark.asyncio
     async def test_add_message_increments_count(
         self,
         conversation_service: ConversationService,
@@ -659,6 +695,26 @@ class TestGetMessages:
         messages = await conversation_service.get_messages(session_id, limit=3)
 
         assert len(messages) == 3
+
+    @pytest.mark.asyncio
+    async def test_get_recent_messages_reverses_to_chronological(
+        self,
+        conversation_service: ConversationService,
+    ) -> None:
+        """get_recent_messages windows to the newest rows, oldest-first."""
+        session_id = uuid4()
+        # The query orders newest-first (created_at desc); the method reverses it.
+        newest_first = [
+            make_mock_message(session_id=session_id, content="Newest"),
+            make_mock_message(session_id=session_id, content="Middle"),
+            make_mock_message(session_id=session_id, content="Oldest"),
+        ]
+
+        conversation_service.db.execute = AsyncMock(return_value=mock_scalars_all(newest_first))
+
+        messages = await conversation_service.get_recent_messages(session_id, limit=3)
+
+        assert [m.content for m in messages] == ["Oldest", "Middle", "Newest"]
 
 
 # =============================================================================

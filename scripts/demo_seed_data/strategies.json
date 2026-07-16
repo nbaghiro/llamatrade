@@ -1,0 +1,1072 @@
+[
+  {
+    "id": "classic-60-40",
+    "name": "Classic 60/40",
+    "description": "The foundational portfolio\u201460% stocks, 40% bonds. Simple, time-tested, effective.",
+    "category": 1,
+    "asset_class": 3,
+    "difficulty": 1,
+    "tags": [
+      "classic",
+      "balanced"
+    ],
+    "config_sexpr": "(strategy \"Classic 60/40\"\n  :rebalance monthly\n  :benchmark SPY\n  (weight :method specified\n    (group \"Equities\" :weight 60\n      (weight :method equal\n        (asset VTI)\n        (asset VEA)\n        (asset VWO)))\n    (group \"Bonds\" :weight 40\n      (weight :method equal\n        (asset BND)\n        (asset BNDX)))))",
+    "config_json": {
+      "type": "strategy",
+      "name": "Classic 60/40",
+      "children": [
+        {
+          "type": "weight",
+          "method": "specified",
+          "children": [
+            {
+              "type": "group",
+              "name": "Equities",
+              "children": [
+                {
+                  "type": "weight",
+                  "method": "equal",
+                  "children": [
+                    {
+                      "type": "asset",
+                      "symbol": "VTI"
+                    },
+                    {
+                      "type": "asset",
+                      "symbol": "VEA"
+                    },
+                    {
+                      "type": "asset",
+                      "symbol": "VWO"
+                    }
+                  ]
+                }
+              ],
+              "weight": 60.0
+            },
+            {
+              "type": "group",
+              "name": "Bonds",
+              "children": [
+                {
+                  "type": "weight",
+                  "method": "equal",
+                  "children": [
+                    {
+                      "type": "asset",
+                      "symbol": "BND"
+                    },
+                    {
+                      "type": "asset",
+                      "symbol": "BNDX"
+                    }
+                  ]
+                }
+              ],
+              "weight": 40.0
+            }
+          ]
+        }
+      ],
+      "rebalance": "monthly",
+      "benchmark": "SPY"
+    },
+    "symbols": [
+      "BND",
+      "BNDX",
+      "VEA",
+      "VTI",
+      "VWO"
+    ],
+    "timeframe": "1M"
+  },
+  {
+    "id": "all-weather",
+    "name": "All-Weather Portfolio",
+    "description": "Ray Dalio inspired diversified allocation for all economic conditions.",
+    "category": 1,
+    "asset_class": 3,
+    "difficulty": 1,
+    "tags": [
+      "all-weather",
+      "ray-dalio",
+      "famous-portfolio"
+    ],
+    "config_sexpr": "(strategy \"All-Weather Portfolio\"\n  :rebalance quarterly\n  :benchmark SPY\n  (weight :method specified\n    (group \"Equities\" :weight 30\n      (weight :method equal\n        (asset VTI)\n        (asset VEA)\n        (asset VWO)))\n    (group \"Long Bonds\" :weight 40\n      (weight :method specified\n        (asset TLT :weight 60)\n        (asset EDV :weight 40)))\n    (group \"Intermediate Bonds\" :weight 15\n      (weight :method equal\n        (asset IEF)\n        (asset VGIT)))\n    (group \"Commodities\" :weight 15\n      (weight :method equal\n        (asset GLD)\n        (asset DBC)\n        (asset PDBC)))))",
+    "config_json": {
+      "type": "strategy",
+      "name": "All-Weather Portfolio",
+      "children": [
+        {
+          "type": "weight",
+          "method": "specified",
+          "children": [
+            {
+              "type": "group",
+              "name": "Equities",
+              "children": [
+                {
+                  "type": "weight",
+                  "method": "equal",
+                  "children": [
+                    {
+                      "type": "asset",
+                      "symbol": "VTI"
+                    },
+                    {
+                      "type": "asset",
+                      "symbol": "VEA"
+                    },
+                    {
+                      "type": "asset",
+                      "symbol": "VWO"
+                    }
+                  ]
+                }
+              ],
+              "weight": 30.0
+            },
+            {
+              "type": "group",
+              "name": "Long Bonds",
+              "children": [
+                {
+                  "type": "weight",
+                  "method": "specified",
+                  "children": [
+                    {
+                      "type": "asset",
+                      "symbol": "TLT",
+                      "weight": 60.0
+                    },
+                    {
+                      "type": "asset",
+                      "symbol": "EDV",
+                      "weight": 40.0
+                    }
+                  ]
+                }
+              ],
+              "weight": 40.0
+            },
+            {
+              "type": "group",
+              "name": "Intermediate Bonds",
+              "children": [
+                {
+                  "type": "weight",
+                  "method": "equal",
+                  "children": [
+                    {
+                      "type": "asset",
+                      "symbol": "IEF"
+                    },
+                    {
+                      "type": "asset",
+                      "symbol": "VGIT"
+                    }
+                  ]
+                }
+              ],
+              "weight": 15.0
+            },
+            {
+              "type": "group",
+              "name": "Commodities",
+              "children": [
+                {
+                  "type": "weight",
+                  "method": "equal",
+                  "children": [
+                    {
+                      "type": "asset",
+                      "symbol": "GLD"
+                    },
+                    {
+                      "type": "asset",
+                      "symbol": "DBC"
+                    },
+                    {
+                      "type": "asset",
+                      "symbol": "PDBC"
+                    }
+                  ]
+                }
+              ],
+              "weight": 15.0
+            }
+          ]
+        }
+      ],
+      "rebalance": "quarterly",
+      "benchmark": "SPY"
+    },
+    "symbols": [
+      "DBC",
+      "EDV",
+      "GLD",
+      "IEF",
+      "PDBC",
+      "TLT",
+      "VEA",
+      "VGIT",
+      "VTI",
+      "VWO"
+    ],
+    "timeframe": "3M"
+  },
+  {
+    "id": "risk-parity",
+    "name": "Risk Parity",
+    "description": "Allocate by risk contribution using inverse volatility\u2014equal risk across asset classes.",
+    "category": 1,
+    "asset_class": 3,
+    "difficulty": 2,
+    "tags": [
+      "risk-parity",
+      "all-weather"
+    ],
+    "config_sexpr": "(strategy \"Risk Parity\"\n  :rebalance monthly\n  :benchmark SPY\n  (weight :method specified\n    (group \"Equities\" :weight 25\n      (weight :method inverse-volatility :lookback 60\n        (asset SPY)\n        (asset VEA)\n        (asset VWO)\n        (asset IWM)))\n    (group \"Fixed Income\" :weight 25\n      (weight :method inverse-volatility :lookback 60\n        (asset TLT)\n        (asset IEF)\n        (asset LQD)\n        (asset TIP)))\n    (group \"Commodities\" :weight 25\n      (weight :method inverse-volatility :lookback 60\n        (asset GLD)\n        (asset DBC)\n        (asset USO)\n        (asset UNG)))\n    (group \"Alternatives\" :weight 25\n      (weight :method inverse-volatility :lookback 60\n        (asset VNQ)\n        (asset VNQI)\n        (asset DBMF)))))",
+    "config_json": {
+      "type": "strategy",
+      "name": "Risk Parity",
+      "children": [
+        {
+          "type": "weight",
+          "method": "specified",
+          "children": [
+            {
+              "type": "group",
+              "name": "Equities",
+              "children": [
+                {
+                  "type": "weight",
+                  "method": "inverse-volatility",
+                  "children": [
+                    {
+                      "type": "asset",
+                      "symbol": "SPY"
+                    },
+                    {
+                      "type": "asset",
+                      "symbol": "VEA"
+                    },
+                    {
+                      "type": "asset",
+                      "symbol": "VWO"
+                    },
+                    {
+                      "type": "asset",
+                      "symbol": "IWM"
+                    }
+                  ],
+                  "lookback": 60
+                }
+              ],
+              "weight": 25.0
+            },
+            {
+              "type": "group",
+              "name": "Fixed Income",
+              "children": [
+                {
+                  "type": "weight",
+                  "method": "inverse-volatility",
+                  "children": [
+                    {
+                      "type": "asset",
+                      "symbol": "TLT"
+                    },
+                    {
+                      "type": "asset",
+                      "symbol": "IEF"
+                    },
+                    {
+                      "type": "asset",
+                      "symbol": "LQD"
+                    },
+                    {
+                      "type": "asset",
+                      "symbol": "TIP"
+                    }
+                  ],
+                  "lookback": 60
+                }
+              ],
+              "weight": 25.0
+            },
+            {
+              "type": "group",
+              "name": "Commodities",
+              "children": [
+                {
+                  "type": "weight",
+                  "method": "inverse-volatility",
+                  "children": [
+                    {
+                      "type": "asset",
+                      "symbol": "GLD"
+                    },
+                    {
+                      "type": "asset",
+                      "symbol": "DBC"
+                    },
+                    {
+                      "type": "asset",
+                      "symbol": "USO"
+                    },
+                    {
+                      "type": "asset",
+                      "symbol": "UNG"
+                    }
+                  ],
+                  "lookback": 60
+                }
+              ],
+              "weight": 25.0
+            },
+            {
+              "type": "group",
+              "name": "Alternatives",
+              "children": [
+                {
+                  "type": "weight",
+                  "method": "inverse-volatility",
+                  "children": [
+                    {
+                      "type": "asset",
+                      "symbol": "VNQ"
+                    },
+                    {
+                      "type": "asset",
+                      "symbol": "VNQI"
+                    },
+                    {
+                      "type": "asset",
+                      "symbol": "DBMF"
+                    }
+                  ],
+                  "lookback": 60
+                }
+              ],
+              "weight": 25.0
+            }
+          ]
+        }
+      ],
+      "rebalance": "monthly",
+      "benchmark": "SPY"
+    },
+    "symbols": [
+      "DBC",
+      "DBMF",
+      "GLD",
+      "IEF",
+      "IWM",
+      "LQD",
+      "SPY",
+      "TIP",
+      "TLT",
+      "UNG",
+      "USO",
+      "VEA",
+      "VNQ",
+      "VNQI",
+      "VWO"
+    ],
+    "timeframe": "1M"
+  },
+  {
+    "id": "momentum-sectors",
+    "name": "Momentum Sectors",
+    "description": "Weight sectors by recent momentum\u2014more allocation to stronger performers.",
+    "category": 3,
+    "asset_class": 1,
+    "difficulty": 2,
+    "tags": [
+      "momentum",
+      "sectors",
+      "rotation"
+    ],
+    "config_sexpr": "(strategy \"Momentum Sectors\"\n  :rebalance monthly\n  :benchmark SPY\n  (weight :method specified\n    (group \"Cyclical Sectors\" :weight 50\n      (filter :by momentum :select (top 3) :lookback 90\n        (weight :method equal\n          (asset XLK)\n          (asset XLF)\n          (asset XLI)\n          (asset XLY)\n          (asset XLC))))\n    (group \"Defensive Sectors\" :weight 30\n      (filter :by momentum :select (top 2) :lookback 90\n        (weight :method equal\n          (asset XLV)\n          (asset XLP)\n          (asset XLU)\n          (asset XLRE))))\n    (group \"Commodity Sectors\" :weight 20\n      (weight :method momentum :lookback 60\n        (asset XLE)\n        (asset XLB)))))",
+    "config_json": {
+      "type": "strategy",
+      "name": "Momentum Sectors",
+      "children": [
+        {
+          "type": "weight",
+          "method": "specified",
+          "children": [
+            {
+              "type": "group",
+              "name": "Cyclical Sectors",
+              "children": [
+                {
+                  "type": "filter",
+                  "by": "momentum",
+                  "select_direction": "top",
+                  "select_count": 3,
+                  "children": [
+                    {
+                      "type": "weight",
+                      "method": "equal",
+                      "children": [
+                        {
+                          "type": "asset",
+                          "symbol": "XLK"
+                        },
+                        {
+                          "type": "asset",
+                          "symbol": "XLF"
+                        },
+                        {
+                          "type": "asset",
+                          "symbol": "XLI"
+                        },
+                        {
+                          "type": "asset",
+                          "symbol": "XLY"
+                        },
+                        {
+                          "type": "asset",
+                          "symbol": "XLC"
+                        }
+                      ]
+                    }
+                  ],
+                  "lookback": 90
+                }
+              ],
+              "weight": 50.0
+            },
+            {
+              "type": "group",
+              "name": "Defensive Sectors",
+              "children": [
+                {
+                  "type": "filter",
+                  "by": "momentum",
+                  "select_direction": "top",
+                  "select_count": 2,
+                  "children": [
+                    {
+                      "type": "weight",
+                      "method": "equal",
+                      "children": [
+                        {
+                          "type": "asset",
+                          "symbol": "XLV"
+                        },
+                        {
+                          "type": "asset",
+                          "symbol": "XLP"
+                        },
+                        {
+                          "type": "asset",
+                          "symbol": "XLU"
+                        },
+                        {
+                          "type": "asset",
+                          "symbol": "XLRE"
+                        }
+                      ]
+                    }
+                  ],
+                  "lookback": 90
+                }
+              ],
+              "weight": 30.0
+            },
+            {
+              "type": "group",
+              "name": "Commodity Sectors",
+              "children": [
+                {
+                  "type": "weight",
+                  "method": "momentum",
+                  "children": [
+                    {
+                      "type": "asset",
+                      "symbol": "XLE"
+                    },
+                    {
+                      "type": "asset",
+                      "symbol": "XLB"
+                    }
+                  ],
+                  "lookback": 60
+                }
+              ],
+              "weight": 20.0
+            }
+          ]
+        }
+      ],
+      "rebalance": "monthly",
+      "benchmark": "SPY"
+    },
+    "symbols": [
+      "XLB",
+      "XLC",
+      "XLE",
+      "XLF",
+      "XLI",
+      "XLK",
+      "XLP",
+      "XLRE",
+      "XLU",
+      "XLV",
+      "XLY"
+    ],
+    "timeframe": "1M"
+  },
+  {
+    "id": "vigilant-asset-allocation",
+    "name": "Vigilant Asset Allocation (VAA)",
+    "description": "Wouter Keller's defensive momentum strategy\u2014monitors canary assets for crash warnings and shifts to safety.",
+    "category": 5,
+    "asset_class": 3,
+    "difficulty": 3,
+    "tags": [
+      "vaa",
+      "wouter-keller",
+      "canary",
+      "defensive-momentum"
+    ],
+    "config_sexpr": "(strategy \"Vigilant Asset Allocation\"\n  :rebalance monthly\n  :benchmark SPY\n  (if (> (return VWO 63) 0)\n    (if (> (return BND 63) 0)\n      (group \"Both Canaries Positive - Risk On\"\n        (weight :method specified\n          (group \"Offensive Assets\" :weight 75\n            (filter :by momentum :select (top 4) :lookback 63\n              (weight :method equal\n                (asset SPY)\n                (asset VEA)\n                (asset VWO)\n                (asset BND)\n                (asset VNQ)\n                (asset GLD)\n                (asset DBC))))\n          (group \"Safety Net\" :weight 25\n            (weight :method equal\n              (asset SHY)\n              (asset IEF)\n              (asset BIL)))))\n      (else\n        (group \"BND Canary Negative - Partial Defense\"\n          (weight :method specified\n            (group \"Reduced Risk\" :weight 40\n              (filter :by momentum :select (top 2) :lookback 63\n                (weight :method equal\n                  (asset SPY)\n                  (asset VEA)\n                  (asset VNQ)\n                  (asset GLD))))\n            (group \"Safety\" :weight 60\n              (weight :method inverse-volatility :lookback 20\n                (asset SHY)\n                (asset IEF)\n                (asset TLT)\n                (asset BIL)))))))\n    (else\n      (if (> (return BND 63) 0)\n        (group \"VWO Canary Negative - Partial Defense\"\n          (weight :method specified\n            (group \"Reduced Risk\" :weight 40\n              (filter :by momentum :select (top 2) :lookback 63\n                (weight :method equal\n                  (asset SPY)\n                  (asset BND)\n                  (asset GLD)\n                  (asset TLT))))\n            (group \"Safety\" :weight 60\n              (weight :method inverse-volatility :lookback 20\n                (asset SHY)\n                (asset IEF)\n                (asset BIL)))))\n        (else\n          (group \"Both Canaries Negative - Full Crash Protection\"\n            (weight :method inverse-volatility :lookback 20\n              (asset SHY)\n              (asset IEF)\n              (asset BIL)\n              (asset SGOV)\n              (asset USFR))))))))",
+    "config_json": {
+      "type": "strategy",
+      "name": "Vigilant Asset Allocation",
+      "children": [
+        {
+          "type": "if",
+          "condition": {
+            "type": "comparison",
+            "operator": ">",
+            "left": {
+              "type": "metric",
+              "name": "return",
+              "symbol": "VWO",
+              "period": 63
+            },
+            "right": {
+              "type": "numeric",
+              "value": 0.0
+            }
+          },
+          "then": {
+            "type": "if",
+            "condition": {
+              "type": "comparison",
+              "operator": ">",
+              "left": {
+                "type": "metric",
+                "name": "return",
+                "symbol": "BND",
+                "period": 63
+              },
+              "right": {
+                "type": "numeric",
+                "value": 0.0
+              }
+            },
+            "then": {
+              "type": "group",
+              "name": "Both Canaries Positive - Risk On",
+              "children": [
+                {
+                  "type": "weight",
+                  "method": "specified",
+                  "children": [
+                    {
+                      "type": "group",
+                      "name": "Offensive Assets",
+                      "children": [
+                        {
+                          "type": "filter",
+                          "by": "momentum",
+                          "select_direction": "top",
+                          "select_count": 4,
+                          "children": [
+                            {
+                              "type": "weight",
+                              "method": "equal",
+                              "children": [
+                                {
+                                  "type": "asset",
+                                  "symbol": "SPY"
+                                },
+                                {
+                                  "type": "asset",
+                                  "symbol": "VEA"
+                                },
+                                {
+                                  "type": "asset",
+                                  "symbol": "VWO"
+                                },
+                                {
+                                  "type": "asset",
+                                  "symbol": "BND"
+                                },
+                                {
+                                  "type": "asset",
+                                  "symbol": "VNQ"
+                                },
+                                {
+                                  "type": "asset",
+                                  "symbol": "GLD"
+                                },
+                                {
+                                  "type": "asset",
+                                  "symbol": "DBC"
+                                }
+                              ]
+                            }
+                          ],
+                          "lookback": 63
+                        }
+                      ],
+                      "weight": 75.0
+                    },
+                    {
+                      "type": "group",
+                      "name": "Safety Net",
+                      "children": [
+                        {
+                          "type": "weight",
+                          "method": "equal",
+                          "children": [
+                            {
+                              "type": "asset",
+                              "symbol": "SHY"
+                            },
+                            {
+                              "type": "asset",
+                              "symbol": "IEF"
+                            },
+                            {
+                              "type": "asset",
+                              "symbol": "BIL"
+                            }
+                          ]
+                        }
+                      ],
+                      "weight": 25.0
+                    }
+                  ]
+                }
+              ]
+            },
+            "else_block": {
+              "type": "group",
+              "name": "BND Canary Negative - Partial Defense",
+              "children": [
+                {
+                  "type": "weight",
+                  "method": "specified",
+                  "children": [
+                    {
+                      "type": "group",
+                      "name": "Reduced Risk",
+                      "children": [
+                        {
+                          "type": "filter",
+                          "by": "momentum",
+                          "select_direction": "top",
+                          "select_count": 2,
+                          "children": [
+                            {
+                              "type": "weight",
+                              "method": "equal",
+                              "children": [
+                                {
+                                  "type": "asset",
+                                  "symbol": "SPY"
+                                },
+                                {
+                                  "type": "asset",
+                                  "symbol": "VEA"
+                                },
+                                {
+                                  "type": "asset",
+                                  "symbol": "VNQ"
+                                },
+                                {
+                                  "type": "asset",
+                                  "symbol": "GLD"
+                                }
+                              ]
+                            }
+                          ],
+                          "lookback": 63
+                        }
+                      ],
+                      "weight": 40.0
+                    },
+                    {
+                      "type": "group",
+                      "name": "Safety",
+                      "children": [
+                        {
+                          "type": "weight",
+                          "method": "inverse-volatility",
+                          "children": [
+                            {
+                              "type": "asset",
+                              "symbol": "SHY"
+                            },
+                            {
+                              "type": "asset",
+                              "symbol": "IEF"
+                            },
+                            {
+                              "type": "asset",
+                              "symbol": "TLT"
+                            },
+                            {
+                              "type": "asset",
+                              "symbol": "BIL"
+                            }
+                          ],
+                          "lookback": 20
+                        }
+                      ],
+                      "weight": 60.0
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          "else_block": {
+            "type": "if",
+            "condition": {
+              "type": "comparison",
+              "operator": ">",
+              "left": {
+                "type": "metric",
+                "name": "return",
+                "symbol": "BND",
+                "period": 63
+              },
+              "right": {
+                "type": "numeric",
+                "value": 0.0
+              }
+            },
+            "then": {
+              "type": "group",
+              "name": "VWO Canary Negative - Partial Defense",
+              "children": [
+                {
+                  "type": "weight",
+                  "method": "specified",
+                  "children": [
+                    {
+                      "type": "group",
+                      "name": "Reduced Risk",
+                      "children": [
+                        {
+                          "type": "filter",
+                          "by": "momentum",
+                          "select_direction": "top",
+                          "select_count": 2,
+                          "children": [
+                            {
+                              "type": "weight",
+                              "method": "equal",
+                              "children": [
+                                {
+                                  "type": "asset",
+                                  "symbol": "SPY"
+                                },
+                                {
+                                  "type": "asset",
+                                  "symbol": "BND"
+                                },
+                                {
+                                  "type": "asset",
+                                  "symbol": "GLD"
+                                },
+                                {
+                                  "type": "asset",
+                                  "symbol": "TLT"
+                                }
+                              ]
+                            }
+                          ],
+                          "lookback": 63
+                        }
+                      ],
+                      "weight": 40.0
+                    },
+                    {
+                      "type": "group",
+                      "name": "Safety",
+                      "children": [
+                        {
+                          "type": "weight",
+                          "method": "inverse-volatility",
+                          "children": [
+                            {
+                              "type": "asset",
+                              "symbol": "SHY"
+                            },
+                            {
+                              "type": "asset",
+                              "symbol": "IEF"
+                            },
+                            {
+                              "type": "asset",
+                              "symbol": "BIL"
+                            }
+                          ],
+                          "lookback": 20
+                        }
+                      ],
+                      "weight": 60.0
+                    }
+                  ]
+                }
+              ]
+            },
+            "else_block": {
+              "type": "group",
+              "name": "Both Canaries Negative - Full Crash Protection",
+              "children": [
+                {
+                  "type": "weight",
+                  "method": "inverse-volatility",
+                  "children": [
+                    {
+                      "type": "asset",
+                      "symbol": "SHY"
+                    },
+                    {
+                      "type": "asset",
+                      "symbol": "IEF"
+                    },
+                    {
+                      "type": "asset",
+                      "symbol": "BIL"
+                    },
+                    {
+                      "type": "asset",
+                      "symbol": "SGOV"
+                    },
+                    {
+                      "type": "asset",
+                      "symbol": "USFR"
+                    }
+                  ],
+                  "lookback": 20
+                }
+              ]
+            }
+          }
+        }
+      ],
+      "rebalance": "monthly",
+      "benchmark": "SPY"
+    },
+    "symbols": [
+      "BIL",
+      "BND",
+      "DBC",
+      "GLD",
+      "IEF",
+      "SGOV",
+      "SHY",
+      "SPY",
+      "TLT",
+      "USFR",
+      "VEA",
+      "VNQ",
+      "VWO"
+    ],
+    "timeframe": "1M"
+  },
+  {
+    "id": "pullback-buyer",
+    "name": "Pullback Buyer",
+    "description": "Buy 5% pullbacks in uptrending markets for mean reversion entries.",
+    "category": 6,
+    "asset_class": 1,
+    "difficulty": 1,
+    "tags": [
+      "pullback",
+      "dip-buying",
+      "beginner",
+      "mean-reversion"
+    ],
+    "config_sexpr": "(strategy \"Pullback Buyer\"\n  :rebalance daily\n  :benchmark SPY\n  (if (> (price SPY) (sma SPY 200))\n    (if (< (rsi SPY 5) 20)\n      (group \"Deep Oversold\"\n        (weight :method equal\n          (asset SPY)\n          (asset QQQ)\n          (asset VTI)))\n      (else\n        (if (< (rsi SPY 5) 30)\n          (group \"Oversold\"\n            (weight :method equal\n              (asset SPY)\n              (asset VTI)))\n          (else\n            (group \"Neutral\"\n              (weight :method equal\n                (asset SHY)\n                (asset BIL)\n                (asset MINT)))))))\n    (else\n      (group \"Downtrend Safety\"\n        (weight :method equal\n          (asset SHY)\n          (asset IEF)\n          (asset TLT))))))",
+    "config_json": {
+      "type": "strategy",
+      "name": "Pullback Buyer",
+      "children": [
+        {
+          "type": "if",
+          "condition": {
+            "type": "comparison",
+            "operator": ">",
+            "left": {
+              "type": "price",
+              "symbol": "SPY"
+            },
+            "right": {
+              "type": "indicator",
+              "name": "sma",
+              "symbol": "SPY",
+              "params": [
+                200
+              ]
+            }
+          },
+          "then": {
+            "type": "if",
+            "condition": {
+              "type": "comparison",
+              "operator": "<",
+              "left": {
+                "type": "indicator",
+                "name": "rsi",
+                "symbol": "SPY",
+                "params": [
+                  5
+                ]
+              },
+              "right": {
+                "type": "numeric",
+                "value": 20.0
+              }
+            },
+            "then": {
+              "type": "group",
+              "name": "Deep Oversold",
+              "children": [
+                {
+                  "type": "weight",
+                  "method": "equal",
+                  "children": [
+                    {
+                      "type": "asset",
+                      "symbol": "SPY"
+                    },
+                    {
+                      "type": "asset",
+                      "symbol": "QQQ"
+                    },
+                    {
+                      "type": "asset",
+                      "symbol": "VTI"
+                    }
+                  ]
+                }
+              ]
+            },
+            "else_block": {
+              "type": "if",
+              "condition": {
+                "type": "comparison",
+                "operator": "<",
+                "left": {
+                  "type": "indicator",
+                  "name": "rsi",
+                  "symbol": "SPY",
+                  "params": [
+                    5
+                  ]
+                },
+                "right": {
+                  "type": "numeric",
+                  "value": 30.0
+                }
+              },
+              "then": {
+                "type": "group",
+                "name": "Oversold",
+                "children": [
+                  {
+                    "type": "weight",
+                    "method": "equal",
+                    "children": [
+                      {
+                        "type": "asset",
+                        "symbol": "SPY"
+                      },
+                      {
+                        "type": "asset",
+                        "symbol": "VTI"
+                      }
+                    ]
+                  }
+                ]
+              },
+              "else_block": {
+                "type": "group",
+                "name": "Neutral",
+                "children": [
+                  {
+                    "type": "weight",
+                    "method": "equal",
+                    "children": [
+                      {
+                        "type": "asset",
+                        "symbol": "SHY"
+                      },
+                      {
+                        "type": "asset",
+                        "symbol": "BIL"
+                      },
+                      {
+                        "type": "asset",
+                        "symbol": "MINT"
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          },
+          "else_block": {
+            "type": "group",
+            "name": "Downtrend Safety",
+            "children": [
+              {
+                "type": "weight",
+                "method": "equal",
+                "children": [
+                  {
+                    "type": "asset",
+                    "symbol": "SHY"
+                  },
+                  {
+                    "type": "asset",
+                    "symbol": "IEF"
+                  },
+                  {
+                    "type": "asset",
+                    "symbol": "TLT"
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "rebalance": "daily",
+      "benchmark": "SPY"
+    },
+    "symbols": [
+      "BIL",
+      "IEF",
+      "MINT",
+      "QQQ",
+      "SHY",
+      "SPY",
+      "TLT",
+      "VTI"
+    ],
+    "timeframe": "1D"
+  }
+]

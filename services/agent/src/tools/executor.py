@@ -70,7 +70,6 @@ class ToolExecutor:
 
         # Memory tools
         from src.tools.memory_tools import (
-            GetSessionSummaryTool,
             GetUserProfileTool,
             RecallMemoryTool,
             SearchPastStrategiesTool,
@@ -79,7 +78,6 @@ class ToolExecutor:
         self.register(RecallMemoryTool())
         self.register(GetUserProfileTool())
         self.register(SearchPastStrategiesTool())
-        self.register(GetSessionSummaryTool())
 
         logger.info("Registered %d tools", len(self._tools))
 
@@ -115,6 +113,11 @@ class ToolExecutor:
             List of tool definitions in Claude's expected format
         """
         return [tool.to_claude_tool_definition() for tool in self._tools.values()]
+
+    def requires_confirmation(self, tool_name: str) -> bool:
+        """Whether the named tool must be user-approved before it executes."""
+        tool = self._tools.get(tool_name)
+        return tool.requires_confirmation if tool else False
 
     async def execute(
         self,

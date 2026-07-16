@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import os
 from datetime import UTC, datetime, timedelta
+from typing import TYPE_CHECKING
 
 import jwt
 from connectrpc.code import Code
@@ -19,13 +20,34 @@ from llamatrade_db import get_session_maker
 from llamatrade_proto.generated import auth_pb2, common_pb2
 from llamatrade_telemetry import metrics
 
+if TYPE_CHECKING:
+    from llamatrade_db.models import User
+
 logger = logging.getLogger(__name__)
 
-# Configuration
 JWT_SECRET = os.getenv("JWT_SECRET", "dev-secret-change-in-production")
 JWT_ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "30"))
 REFRESH_TOKEN_EXPIRE_DAYS = int(os.getenv("REFRESH_TOKEN_EXPIRE_DAYS", "7"))
+
+
+def _user_to_proto(user: User) -> auth_pb2.User:
+    """Map a DB user row to the auth User proto — the single source for every
+    response that returns a user (login/register/refresh/get)."""
+    return auth_pb2.User(
+        id=str(user.id),
+        tenant_id=str(user.tenant_id),
+        email=user.email,
+        first_name=user.first_name or "",
+        last_name=user.last_name or "",
+        roles=[user.role],
+        is_active=user.is_active,
+        avatar_url=user.avatar_url or "",
+        created_at=common_pb2.Timestamp(seconds=int(user.created_at.timestamp())),
+        last_login=common_pb2.Timestamp(seconds=int(user.last_login.timestamp()))
+        if user.last_login
+        else None,
+    )
 
 
 class AuthServicer:
@@ -66,7 +88,6 @@ class AuthServicer:
         try:
             token = request.token
 
-            # Decode and validate the JWT
             try:
                 payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
             except jwt.ExpiredSignatureError:
@@ -76,7 +97,6 @@ class AuthServicer:
                 metrics.auth.token_validation_failure(reason="invalid_sig")
                 return auth_pb2.ValidateTokenResponse(valid=False)
 
-            # Extract context from payload
             tenant_id = payload.get("tenant_id")
             user_id = payload.get("sub")
             roles = payload.get("roles", [])
@@ -87,7 +107,6 @@ class AuthServicer:
                 metrics.auth.token_validation_failure(reason="missing_tenant")
                 return auth_pb2.ValidateTokenResponse(valid=False)
 
-            # Build response
             response = auth_pb2.ValidateTokenResponse(
                 valid=True,
                 context=common_pb2.TenantContext(
@@ -117,13 +136,11 @@ class AuthServicer:
             api_key = request.api_key
             required_scopes = list(request.required_scopes) if request.required_scopes else []
 
-            # Get API key from database
             async with await self._get_db() as db:
                 from sqlalchemy import select
 
                 from llamatrade_db.models import APIKey
 
-                # Find API key by prefix (first 8 chars) and full hash
                 key_prefix = api_key[:8] if len(api_key) >= 8 else api_key
 
                 result = await db.execute(
@@ -138,13 +155,11 @@ class AuthServicer:
                     metrics.auth.api_key_validation_failure(reason="not_found")
                     return auth_pb2.ValidateAPIKeyResponse(valid=False)
 
-                # Verify full key (in production, would hash and compare)
-                # For simplicity, we check if the key is active and not expired
+                # Full API key is not hash-verified here; only active status + expiry are checked
                 if db_key.expires_at and db_key.expires_at < datetime.now(UTC):
                     metrics.auth.api_key_validation_failure(reason="expired")
                     return auth_pb2.ValidateAPIKeyResponse(valid=False)
 
-                # Check required scopes
                 scopes_raw: list[str] | None = db_key.scopes
                 granted_scopes: list[str] = list(scopes_raw) if scopes_raw else []
                 if required_scopes:
@@ -155,7 +170,6 @@ class AuthServicer:
                             granted_scopes=granted_scopes,
                         )
 
-                # Update last_used_at
                 db_key.last_used_at = datetime.now(UTC)
                 await db.commit()
 
@@ -181,7 +195,6 @@ class AuthServicer:
         """Refresh an access token using a refresh token."""
         refresh_token = request.refresh_token
 
-        # Decode and validate the refresh token
         try:
             payload = jwt.decode(refresh_token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
         except jwt.ExpiredSignatureError:
@@ -191,7 +204,6 @@ class AuthServicer:
             metrics.auth.token_validation_failure(reason="invalid_sig")
             raise ConnectError(Code.UNAUTHENTICATED, "Invalid refresh token")
 
-        # Verify it's a refresh token
         if payload.get("type") != "refresh":
             raise ConnectError(Code.INVALID_ARGUMENT, "Token is not a refresh token")
 
@@ -216,7 +228,6 @@ class AuthServicer:
             if not user:
                 raise ConnectError(Code.UNAUTHENTICATED, "User not found or inactive")
 
-            # Generate new tokens
             now = datetime.now(UTC)
             access_expire = now + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
             refresh_expire = now + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
@@ -278,21 +289,7 @@ class AuthServicer:
                     f"User not found: {request.user_id}",
                 )
 
-            return auth_pb2.GetUserResponse(
-                user=auth_pb2.User(
-                    id=str(user.id),
-                    tenant_id=str(user.tenant_id),
-                    email=user.email,
-                    first_name=user.first_name or "",
-                    last_name=user.last_name or "",
-                    roles=[user.role],
-                    is_active=user.is_active,
-                    created_at=common_pb2.Timestamp(seconds=int(user.created_at.timestamp())),
-                    last_login=common_pb2.Timestamp(seconds=int(user.last_login.timestamp()))
-                    if user.last_login
-                    else None,
-                )
-            )
+            return auth_pb2.GetUserResponse(user=_user_to_proto(user))
 
     async def get_tenant(
         self,
@@ -350,7 +347,6 @@ class AuthServicer:
             import re
             import secrets
 
-            # Check if email already exists
             result = await db.execute(select(User).where(User.email == request.email))
             existing_user = result.scalar_one_or_none()
 
@@ -361,7 +357,6 @@ class AuthServicer:
             base_slug = re.sub(r"[^a-z0-9]+", "-", request.tenant_name.lower()).strip("-")
             slug = f"{base_slug}-{secrets.token_hex(4)}"
 
-            # Create tenant
             tenant = Tenant(
                 id=uuid4(),
                 name=request.tenant_name,
@@ -371,11 +366,9 @@ class AuthServicer:
             db.add(tenant)
             await db.flush()
 
-            # Hash password
             with metrics.auth.bcrypt_hash_duration.time():
                 password_hash = bcrypt.hashpw(request.password.encode(), bcrypt.gensalt()).decode()
 
-            # Create user
             user = User(
                 id=uuid4(),
                 tenant_id=tenant.id,
@@ -392,16 +385,7 @@ class AuthServicer:
             metrics.auth.registration()
 
             return auth_pb2.RegisterResponse(
-                user=auth_pb2.User(
-                    id=str(user.id),
-                    tenant_id=str(user.tenant_id),
-                    email=user.email,
-                    first_name=user.first_name or "",
-                    last_name=user.last_name or "",
-                    roles=[user.role],
-                    is_active=user.is_active,
-                    created_at=common_pb2.Timestamp(seconds=int(user.created_at.timestamp())),
-                ),
+                user=_user_to_proto(user),
                 tenant=auth_pb2.Tenant(
                     id=str(tenant.id),
                     name=tenant.name,
@@ -423,7 +407,6 @@ class AuthServicer:
         from llamatrade_db.models import User
 
         async with await self._get_db() as db:
-            # Find user by email
             result = await db.execute(select(User).where(User.email == request.email))
             user = result.scalar_one_or_none()
 
@@ -431,7 +414,6 @@ class AuthServicer:
                 metrics.auth.login_failure(reason="user_not_found")
                 raise ConnectError(Code.UNAUTHENTICATED, "Invalid email or password")
 
-            # Verify password
             if not bcrypt.checkpw(
                 request.password.encode(),
                 user.password_hash.encode(),
@@ -443,11 +425,9 @@ class AuthServicer:
                 metrics.auth.login_failure(reason="inactive")
                 raise ConnectError(Code.PERMISSION_DENIED, "User account is inactive")
 
-            # Update last login
             user.last_login = datetime.now(UTC)
             await db.commit()
 
-            # Generate tokens
             now = datetime.now(UTC)
             access_expire = now + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
             refresh_expire = now + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
@@ -484,15 +464,7 @@ class AuthServicer:
                 refresh_token_expires_at=common_pb2.Timestamp(
                     seconds=int(refresh_expire.timestamp())
                 ),
-                user=auth_pb2.User(
-                    id=str(user.id),
-                    tenant_id=str(user.tenant_id),
-                    email=user.email,
-                    first_name=user.first_name or "",
-                    last_name=user.last_name or "",
-                    roles=[user.role],
-                    is_active=user.is_active,
-                ),
+                user=_user_to_proto(user),
             )
 
     async def change_password(
@@ -511,7 +483,6 @@ class AuthServicer:
 
         from llamatrade_db.models import User
 
-        # Get token and extract user_id
         token = self._get_auth_token(ctx)
 
         try:
@@ -535,14 +506,12 @@ class AuthServicer:
             if not user:
                 raise ConnectError(Code.NOT_FOUND, "User not found")
 
-            # Verify current password
             if not bcrypt.checkpw(
                 request.current_password.encode(),
                 user.password_hash.encode(),
             ):
                 raise ConnectError(Code.INVALID_ARGUMENT, "Current password is incorrect")
 
-            # Update password
             with metrics.auth.bcrypt_hash_duration.time():
                 user.password_hash = bcrypt.hashpw(
                     request.new_password.encode(), bcrypt.gensalt()
@@ -566,7 +535,6 @@ class AuthServicer:
 
         from llamatrade_db.models import Tenant, User
 
-        # Get token and extract user_id
         token = self._get_auth_token(ctx)
 
         try:
@@ -585,14 +553,12 @@ class AuthServicer:
             raise ConnectError(Code.UNAUTHENTICATED, "Invalid token: missing user or tenant ID")
 
         async with await self._get_db() as db:
-            # Get user
             user_result = await db.execute(select(User).where(User.id == UUID(user_id)))
             user = user_result.scalar_one_or_none()
 
             if not user:
                 raise ConnectError(Code.NOT_FOUND, "User not found")
 
-            # Get tenant
             tenant_result = await db.execute(select(Tenant).where(Tenant.id == UUID(tenant_id)))
             tenant = tenant_result.scalar_one_or_none()
 
@@ -600,19 +566,7 @@ class AuthServicer:
                 raise ConnectError(Code.NOT_FOUND, "Tenant not found")
 
             return auth_pb2.GetCurrentUserResponse(
-                user=auth_pb2.User(
-                    id=str(user.id),
-                    tenant_id=str(user.tenant_id),
-                    email=user.email,
-                    first_name=user.first_name or "",
-                    last_name=user.last_name or "",
-                    roles=[user.role],
-                    is_active=user.is_active,
-                    created_at=common_pb2.Timestamp(seconds=int(user.created_at.timestamp())),
-                    last_login=common_pb2.Timestamp(seconds=int(user.last_login.timestamp()))
-                    if user.last_login
-                    else None,
-                ),
+                user=_user_to_proto(user),
                 tenant=auth_pb2.Tenant(
                     id=str(tenant.id),
                     name=tenant.name,
@@ -631,10 +585,8 @@ class AuthServicer:
 
         In a production system, this would add the token to a blocklist.
         """
-        # Get token from header
         token = self._get_auth_token(ctx)
 
-        # Validate token exists and is valid
         try:
             jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
         except jwt.ExpiredSignatureError:
@@ -644,8 +596,7 @@ class AuthServicer:
             metrics.auth.token_validation_failure(reason="invalid_sig")
             raise ConnectError(Code.UNAUTHENTICATED, "Invalid token")
 
-        # In production, add token to a blocklist (Redis) here
-        # For now, we just return success since JWTs are stateless
+        # JWTs are stateless, so there is nothing to invalidate server-side yet.
         # TODO: Implement token blocklist in Redis
 
         logger.info("User logged out successfully")
@@ -657,20 +608,16 @@ class AuthServicer:
         ctx: AnyContext,
     ) -> auth_pb2.CheckPermissionResponse:
         """Check if user has permission for a resource/action."""
-        # Extract context
         roles = list(request.context.roles)
         resource = request.resource
         action = request.action
 
-        # Simple RBAC implementation
-        # Admin can do everything
         if "admin" in roles:
             return auth_pb2.CheckPermissionResponse(
                 allowed=True,
                 reason="Admin role has full access",
             )
 
-        # Define permissions per role
         role_permissions: dict[str, dict[str, list[str]]] = {
             "admin": {"*": ["*"]},
             "trader": {
@@ -696,14 +643,12 @@ class AuthServicer:
             },
         }
 
-        # Check each role
         for role in roles:
             if role in role_permissions:
                 perms = role_permissions[role]
                 # Check wildcard
                 if "*" in perms and "*" in perms["*"]:
                     return auth_pb2.CheckPermissionResponse(allowed=True)
-                # Check specific resource
                 if resource in perms:
                     if action in perms[resource] or "*" in perms[resource]:
                         return auth_pb2.CheckPermissionResponse(allowed=True)
@@ -712,10 +657,6 @@ class AuthServicer:
             allowed=False,
             reason=f"No role has permission for {action} on {resource}",
         )
-
-    # ===================
-    # Alpaca Credentials Management
-    # ===================
 
     async def create_alpaca_credentials(
         self,
@@ -728,7 +669,6 @@ class AuthServicer:
         from src.models import AlpacaCredentialsCreate
         from src.services.tenant_service import TenantService
 
-        # Get tenant_id from auth token
         token = self._get_auth_token(ctx)
         try:
             payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
@@ -778,7 +718,6 @@ class AuthServicer:
 
         from src.services.tenant_service import TenantService
 
-        # Get tenant_id from auth token
         token = self._get_auth_token(ctx)
         try:
             payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
@@ -829,7 +768,6 @@ class AuthServicer:
 
         from src.services.tenant_service import TenantService
 
-        # Get tenant_id from auth token
         token = self._get_auth_token(ctx)
         try:
             payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
@@ -873,7 +811,6 @@ class AuthServicer:
 
         from src.services.tenant_service import TenantService
 
-        # Get tenant_id from auth token
         token = self._get_auth_token(ctx)
         try:
             payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])

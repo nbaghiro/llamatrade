@@ -1,5 +1,4 @@
-// S-expression language support for CodeMirror 6
-// Provides syntax highlighting for the strategy DSL
+// S-expression syntax highlighting for the strategy DSL
 
 import { StreamLanguage, LanguageSupport } from '@codemirror/language';
 
@@ -89,9 +88,10 @@ const sExprParser = StreamLanguage.define<SExprState>({
       return 'bracket';
     }
 
-    // Parameters (keywords starting with :)
+    // Parameters (`:method`, `:weight`, `:rebalance` …) — tagged as propertyName
+    // so the theme can colour them sage, distinct from orange keywords.
     if (stream.match(/:[a-zA-Z0-9_-]+/)) {
-      return 'keyword';
+      return 'propertyName';
     }
 
     // Numbers (including negative and decimals)

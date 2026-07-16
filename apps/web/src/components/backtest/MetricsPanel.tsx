@@ -1,17 +1,8 @@
 /**
- * Metrics Panel Component
- * Displays backtest performance metrics in a grid layout.
+ * Metrics KPI row.
+ * Six headline figures: CAGR (hero), Sharpe, Sortino, Max Drawdown,
+ * Volatility, Win Rate.
  */
-
-import {
-  TrendingUp,
-  TrendingDown,
-  Activity,
-  BarChart3,
-  Target,
-  Percent,
-  DollarSign,
-} from 'lucide-react';
 
 import type { BacktestMetrics } from '../../generated/proto/backtest_pb';
 import { toNumber } from '../../store/backtest';
@@ -20,202 +11,65 @@ interface MetricsPanelProps {
   metrics: BacktestMetrics;
 }
 
-interface MetricCardProps {
-  label: string;
-  value: string;
-  icon: React.ReactNode;
-  positive?: boolean;
-  neutral?: boolean;
+function signedPercent(value: number): string {
+  return `${value >= 0 ? '+' : ''}${(value * 100).toFixed(1)}%`;
 }
 
-function MetricCard({ label, value, icon, positive, neutral }: MetricCardProps) {
-  let valueColor = 'text-gray-900 dark:text-gray-100';
-  if (!neutral) {
-    if (positive !== undefined) {
-      valueColor = positive
-        ? 'text-green-600 dark:text-green-400'
-        : 'text-red-600 dark:text-red-400';
-    }
-  }
-
-  return (
-    <div className="bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800 p-4">
-      <div className="flex items-center gap-2 mb-2">
-        <span className="text-gray-400">{icon}</span>
-        <span className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
-          {label}
-        </span>
-      </div>
-      <p className={`text-xl font-semibold font-mono ${valueColor}`}>{value}</p>
-    </div>
-  );
-}
-
-function formatPercent(value: number, includeSign = true): string {
-  const pct = value * 100;
-  if (includeSign) {
-    const sign = pct >= 0 ? '+' : '';
-    return `${sign}${pct.toFixed(2)}%`;
-  }
-  return `${pct.toFixed(2)}%`;
-}
-
-function formatCurrency(value: number): string {
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD',
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
-  }).format(value);
-}
-
-function formatNumber(value: number, decimals = 2): string {
-  return value.toFixed(decimals);
+function percent(value: number): string {
+  return `${(value * 100).toFixed(1)}%`;
 }
 
 export default function MetricsPanel({ metrics }: MetricsPanelProps) {
-  const totalReturn = toNumber(metrics.totalReturn);
-  const annualizedReturn = toNumber(metrics.annualizedReturn);
-  const sharpe = toNumber(metrics.sharpeRatio);
-  const sortino = toNumber(metrics.sortinoRatio);
+  const cagr = toNumber(metrics.annualizedReturn);
+  const benchmarkReturn = toNumber(metrics.benchmarkReturn);
   const maxDrawdown = toNumber(metrics.maxDrawdown);
-  const volatility = toNumber(metrics.volatility);
-  const winRate = toNumber(metrics.winRate);
-  const profitFactor = toNumber(metrics.profitFactor);
-  const startingCapital = toNumber(metrics.startingCapital);
-  const endingCapital = toNumber(metrics.endingCapital);
-  const peakCapital = toNumber(metrics.peakCapital);
-  const alpha = toNumber(metrics.alpha);
-  const beta = toNumber(metrics.beta);
-  const avgWin = toNumber(metrics.averageWin);
-  const avgLoss = toNumber(metrics.averageLoss);
+  const ddDuration = Math.round(toNumber(metrics.maxDrawdownDurationDays));
+  const benchmark = metrics.benchmarkSymbol;
+
+  const card = 'bg-paper border-2 border-ink shadow-[4px_4px_0_#0d0d0d] px-3.5 pt-3.5 pb-3';
+  const lab = 'font-mono text-[9px] font-bold uppercase tracking-[0.1em] text-ink/50';
+  const val = 'font-mono font-bold text-[26px] mt-2 tabular-nums tracking-tight';
+  const meta = 'font-mono text-[10px] mt-1 font-bold text-ink/50';
 
   return (
-    <div className="space-y-6">
-      {/* Returns Section */}
-      <div>
-        <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">Returns</h4>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <MetricCard
-            label="Total Return"
-            value={formatPercent(totalReturn)}
-            icon={<TrendingUp className="w-4 h-4" />}
-            positive={totalReturn >= 0}
-          />
-          <MetricCard
-            label="Annual Return"
-            value={formatPercent(annualizedReturn)}
-            icon={<TrendingUp className="w-4 h-4" />}
-            positive={annualizedReturn >= 0}
-          />
-          <MetricCard
-            label="Alpha"
-            value={formatNumber(alpha, 3)}
-            icon={<Target className="w-4 h-4" />}
-            positive={alpha >= 0}
-          />
-          <MetricCard
-            label="Beta"
-            value={formatNumber(beta, 3)}
-            icon={<Activity className="w-4 h-4" />}
-            neutral
-          />
+    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+      {/* CAGR — hero ink tile with orange offset shadow */}
+      <div className="bg-ink text-bone border-2 border-ink shadow-[4px_4px_0_#ff4d1c] px-3.5 pt-3.5 pb-3">
+        <div className="font-mono text-[9px] font-bold uppercase tracking-[0.1em] text-bone/55">CAGR</div>
+        <div className={val}>{signedPercent(cagr)}</div>
+        <div className="font-mono text-[10px] mt-1 font-bold text-bone/60">
+          {benchmark ? `vs ${benchmark} ${signedPercent(benchmarkReturn)}` : 'annualized'}
         </div>
       </div>
 
-      {/* Risk Section */}
-      <div>
-        <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">Risk Metrics</h4>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <MetricCard
-            label="Sharpe Ratio"
-            value={formatNumber(sharpe)}
-            icon={<BarChart3 className="w-4 h-4" />}
-            positive={sharpe >= 1}
-          />
-          <MetricCard
-            label="Sortino Ratio"
-            value={formatNumber(sortino)}
-            icon={<BarChart3 className="w-4 h-4" />}
-            positive={sortino >= 1}
-          />
-          <MetricCard
-            label="Max Drawdown"
-            value={formatPercent(maxDrawdown, false)}
-            icon={<TrendingDown className="w-4 h-4" />}
-            positive={Math.abs(maxDrawdown) < 0.2}
-          />
-          <MetricCard
-            label="Volatility"
-            value={formatPercent(volatility, false)}
-            icon={<Activity className="w-4 h-4" />}
-            neutral
-          />
-        </div>
+      <div className={card}>
+        <div className={lab}>Sharpe</div>
+        <div className={`${val} text-ink`}>{toNumber(metrics.sharpeRatio).toFixed(2)}</div>
+        <div className={meta}>risk-adj</div>
       </div>
 
-      {/* Trade Statistics Section */}
-      <div>
-        <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
-          Trade Statistics
-        </h4>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <MetricCard
-            label="Total Trades"
-            value={metrics.totalTrades.toString()}
-            icon={<Target className="w-4 h-4" />}
-            neutral
-          />
-          <MetricCard
-            label="Win Rate"
-            value={formatPercent(winRate, false)}
-            icon={<Percent className="w-4 h-4" />}
-            positive={winRate >= 0.5}
-          />
-          <MetricCard
-            label="Profit Factor"
-            value={formatNumber(profitFactor)}
-            icon={<BarChart3 className="w-4 h-4" />}
-            positive={profitFactor >= 1}
-          />
-          <MetricCard
-            label="Avg Win / Loss"
-            value={`${formatCurrency(avgWin)} / ${formatCurrency(Math.abs(avgLoss))}`}
-            icon={<DollarSign className="w-4 h-4" />}
-            positive={avgWin > Math.abs(avgLoss)}
-          />
-        </div>
+      <div className={card}>
+        <div className={lab}>Sortino</div>
+        <div className={`${val} text-ink`}>{toNumber(metrics.sortinoRatio).toFixed(2)}</div>
+        <div className={meta}>downside</div>
       </div>
 
-      {/* Capital Section */}
-      <div>
-        <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">Capital</h4>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <MetricCard
-            label="Starting Capital"
-            value={formatCurrency(startingCapital)}
-            icon={<DollarSign className="w-4 h-4" />}
-            neutral
-          />
-          <MetricCard
-            label="Ending Capital"
-            value={formatCurrency(endingCapital)}
-            icon={<DollarSign className="w-4 h-4" />}
-            positive={endingCapital >= startingCapital}
-          />
-          <MetricCard
-            label="Peak Equity"
-            value={formatCurrency(peakCapital)}
-            icon={<TrendingUp className="w-4 h-4" />}
-            neutral
-          />
-          <MetricCard
-            label="Winning Trades"
-            value={`${metrics.winningTrades} / ${metrics.totalTrades}`}
-            icon={<Target className="w-4 h-4" />}
-            positive={metrics.winningTrades > metrics.losingTrades}
-          />
-        </div>
+      <div className={card}>
+        <div className={lab}>Max Drawdown</div>
+        <div className={`${val} text-red-600`}>{signedPercent(maxDrawdown)}</div>
+        <div className={meta}>{ddDuration > 0 ? `${ddDuration} days` : 'peak-to-trough'}</div>
+      </div>
+
+      <div className={card}>
+        <div className={lab}>Volatility</div>
+        <div className={`${val} text-ink`}>{percent(toNumber(metrics.volatility))}</div>
+        <div className={meta}>annualized</div>
+      </div>
+
+      <div className={card}>
+        <div className={lab}>Win Rate</div>
+        <div className={`${val} text-ink`}>{percent(toNumber(metrics.winRate))}</div>
+        <div className={meta}>{metrics.totalTrades} trades</div>
       </div>
     </div>
   );

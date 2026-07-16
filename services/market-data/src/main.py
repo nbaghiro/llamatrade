@@ -52,13 +52,11 @@ def _bars_from_bus() -> bool:
     return os.getenv("REDIS_URL") is not None
 
 
-# Service configuration
 SERVICE_NAME = "market-data"
 SERVICE_VERSION = "0.1.0"
 ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
 
-# Configuration
 CORS_ORIGINS = os.getenv(
     "CORS_ORIGINS", "http://localhost:8800,http://localhost:3000,http://localhost:47333"
 ).split(",")
@@ -76,17 +74,13 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     """Application lifespan handler."""
     global _stream_connected
 
-    # Startup - initialize Redis cache
     cache = await init_cache()
     if cache:
         logger.info("Redis cache initialized successfully")
     else:
         logger.warning("Redis cache unavailable - service will operate without caching")
 
-    # Startup - live bar fan-out. Two modes:
-    #  - bus mode (default when REDIS_URL is set): bars come from the internal
-    #    EventBus fed by the ingest role; serving holds NO Alpaca connection.
-    #  - legacy mode: serving opens its own Alpaca stream directly.
+    # Live bar fan-out: bus mode (EventBus, serving holds no Alpaca conn) or legacy direct-Alpaca.
     global _event_bus, _bus_bridge
     stream_manager = get_stream_manager()
     if _bars_from_bus():
@@ -108,7 +102,6 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
             )
             _stream_connected = False
 
-    # Mount Connect ASGI app
     try:
         from llamatrade_proto.generated.market_data_connect import MarketDataServiceASGIApplication
 
@@ -142,7 +135,6 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# Setup observability (logging, metrics, request tracing)
 init_telemetry(
     app,
     service=SERVICE_NAME,
@@ -157,13 +149,11 @@ init_telemetry(
 # Export DB connection-pool stats (the /metrics endpoint is added above)
 init_telemetry(app, service=SERVICE_NAME, pool_stats_provider=get_pool_stats)
 
-# Register error handlers
 register_error_handlers(app)
 
 # Authentication (fail-closed); added before CORS so CORS stays outermost.
 app.add_middleware(AuthMiddleware)
 
-# CORS middleware
 app.add_middleware(
     CORSMiddleware,
     allow_origins=CORS_ORIGINS,

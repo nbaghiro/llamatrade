@@ -4,8 +4,9 @@ from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import UUID, uuid4
 
-import grpc.aio
 import pytest
+from connectrpc.code import Code
+from connectrpc.errors import ConnectError
 
 from llamatrade_proto.generated.backtest_pb2 import (
     BACKTEST_STATUS_CANCELLED,
@@ -24,34 +25,19 @@ TEST_BACKTEST_ID = UUID("44444444-4444-4444-4444-444444444444")
 pytestmark = pytest.mark.asyncio
 
 
-class MockServicerContext:
-    """Mock gRPC servicer context for testing."""
+class MockRequestContext:
+    """Minimal stand-in for the Connect RequestContext.
 
-    def __init__(self) -> None:
-        self.code = None
-        self.details = None
-        self._cancelled = False
-
-    async def abort(self, code, details: str) -> None:
-        """Mock abort that raises an exception."""
-        self.code = code
-        self.details = details
-        raise grpc.aio.AioRpcError(
-            code=code,
-            initial_metadata=None,
-            trailing_metadata=None,
-            details=details,
-            debug_error_string=None,
-        )
-
-    def cancelled(self) -> bool:
-        return self._cancelled
+    The servicer signals errors by raising ConnectError (never through the
+    context object), so tests never call anything on it — it is only a
+    positional placeholder for the handler's second argument.
+    """
 
 
 @pytest.fixture
-def grpc_context() -> MockServicerContext:
-    """Create a mock gRPC context."""
-    return MockServicerContext()
+def rpc_context() -> MockRequestContext:
+    """Provide a placeholder Connect request context."""
+    return MockRequestContext()
 
 
 @pytest.fixture
@@ -114,7 +100,7 @@ def create_mock_get_db(mock_db):
     The @asynccontextmanager decorated _get_db() returns a context manager
     synchronously (not awaited), which then uses __aenter__/__aexit__.
     """
-    return lambda: MockAsyncContextManager(mock_db)
+    return lambda *args, **kwargs: MockAsyncContextManager(mock_db)
 
 
 def create_mock_service_class(mock_service):
@@ -143,7 +129,7 @@ def create_mock_service_class(mock_service):
 class TestRunBacktest:
     """Tests for RunBacktest gRPC method."""
 
-    async def test_run_backtest_success(self, backtest_servicer, grpc_context):
+    async def test_run_backtest_success(self, backtest_servicer, rpc_context):
         """Test successfully running a backtest."""
         from llamatrade_proto.generated import backtest_pb2, common_pb2
 
@@ -179,12 +165,12 @@ class TestRunBacktest:
                     ),
                 )
 
-                response = await backtest_servicer.RunBacktest(request, grpc_context)
+                response = await backtest_servicer.run_backtest(request, rpc_context)
 
                 assert response.backtest.id == str(TEST_BACKTEST_ID)
                 assert response.backtest.status == backtest_pb2.BACKTEST_STATUS_PENDING
 
-    async def test_run_backtest_enqueue_failure_marks_failed(self, backtest_servicer, grpc_context):
+    async def test_run_backtest_enqueue_failure_marks_failed(self, backtest_servicer, rpc_context):
         """2A: if enqueue raises, the committed PENDING row is failed, RPC aborts."""
         from llamatrade_proto.generated import backtest_pb2, common_pb2
 
@@ -219,10 +205,10 @@ class TestRunBacktest:
                     ),
                 )
 
-                with pytest.raises(grpc.aio.AioRpcError) as exc_info:
-                    await backtest_servicer.RunBacktest(request, grpc_context)
+                with pytest.raises(ConnectError) as exc_info:
+                    await backtest_servicer.run_backtest(request, rpc_context)
 
-                assert exc_info.value.code() == grpc.StatusCode.INTERNAL
+                assert exc_info.value.code == Code.INTERNAL
                 mock_service.fail_backtest.assert_awaited_once()
 
     @pytest.mark.parametrize(
@@ -239,7 +225,7 @@ class TestRunBacktest:
         ],
     )
     async def test_run_backtest_rejects_unsupported_config(
-        self, backtest_servicer, grpc_context, field_setter
+        self, backtest_servicer, rpc_context, field_setter
     ):
         """5A: unsupported config fields are rejected loudly, not silently ignored."""
         from llamatrade_proto.generated import backtest_pb2, common_pb2
@@ -259,12 +245,12 @@ class TestRunBacktest:
             config=config,
         )
 
-        with pytest.raises(grpc.aio.AioRpcError) as exc_info:
-            await backtest_servicer.RunBacktest(request, grpc_context)
+        with pytest.raises(ConnectError) as exc_info:
+            await backtest_servicer.run_backtest(request, rpc_context)
 
-        assert exc_info.value.code() == grpc.StatusCode.INVALID_ARGUMENT
+        assert exc_info.value.code == Code.INVALID_ARGUMENT
 
-    async def test_run_backtest_invalid_argument(self, backtest_servicer, grpc_context):
+    async def test_run_backtest_invalid_argument(self, backtest_servicer, rpc_context):
         """Test running backtest with invalid arguments."""
         from llamatrade_proto.generated import backtest_pb2, common_pb2
 
@@ -291,16 +277,16 @@ class TestRunBacktest:
                     ),
                 )
 
-                with pytest.raises(grpc.aio.AioRpcError) as exc_info:
-                    await backtest_servicer.RunBacktest(request, grpc_context)
+                with pytest.raises(ConnectError) as exc_info:
+                    await backtest_servicer.run_backtest(request, rpc_context)
 
-                assert exc_info.value.code() == grpc.StatusCode.INVALID_ARGUMENT
+                assert exc_info.value.code == Code.INVALID_ARGUMENT
 
 
 class TestGetBacktest:
     """Tests for GetBacktest gRPC method."""
 
-    async def test_get_backtest_success(self, backtest_servicer, grpc_context):
+    async def test_get_backtest_success(self, backtest_servicer, rpc_context):
         """Test getting a backtest by ID."""
         from llamatrade_proto.generated import backtest_pb2, common_pb2
 
@@ -324,12 +310,12 @@ class TestGetBacktest:
                     backtest_id=str(TEST_BACKTEST_ID),
                 )
 
-                response = await backtest_servicer.GetBacktest(request, grpc_context)
+                response = await backtest_servicer.get_backtest(request, rpc_context)
 
                 assert response.backtest.id == str(TEST_BACKTEST_ID)
                 mock_service.get_backtest.assert_called_once()
 
-    async def test_get_backtest_not_found(self, backtest_servicer, grpc_context):
+    async def test_get_backtest_not_found(self, backtest_servicer, rpc_context):
         """Test getting a nonexistent backtest returns NOT_FOUND."""
         from llamatrade_proto.generated import backtest_pb2, common_pb2
 
@@ -351,16 +337,16 @@ class TestGetBacktest:
                     backtest_id=str(uuid4()),
                 )
 
-                with pytest.raises(grpc.aio.AioRpcError) as exc_info:
-                    await backtest_servicer.GetBacktest(request, grpc_context)
+                with pytest.raises(ConnectError) as exc_info:
+                    await backtest_servicer.get_backtest(request, rpc_context)
 
-                assert exc_info.value.code() == grpc.StatusCode.NOT_FOUND
+                assert exc_info.value.code == Code.NOT_FOUND
 
 
 class TestListBacktests:
     """Tests for ListBacktests gRPC method."""
 
-    async def test_list_backtests_empty(self, backtest_servicer, grpc_context):
+    async def test_list_backtests_empty(self, backtest_servicer, rpc_context):
         """Test listing backtests returns empty list when none exist."""
         from llamatrade_proto.generated import backtest_pb2, common_pb2
 
@@ -381,12 +367,12 @@ class TestListBacktests:
                     ),
                 )
 
-                response = await backtest_servicer.ListBacktests(request, grpc_context)
+                response = await backtest_servicer.list_backtests(request, rpc_context)
 
                 assert len(response.backtests) == 0
                 assert response.pagination.total_items == 0
 
-    async def test_list_backtests_with_data(self, backtest_servicer, grpc_context):
+    async def test_list_backtests_with_data(self, backtest_servicer, rpc_context):
         """Test listing backtests with data."""
         from llamatrade_proto.generated import backtest_pb2, common_pb2
 
@@ -412,12 +398,12 @@ class TestListBacktests:
                     ),
                 )
 
-                response = await backtest_servicer.ListBacktests(request, grpc_context)
+                response = await backtest_servicer.list_backtests(request, rpc_context)
 
                 assert len(response.backtests) == 2
                 assert response.pagination.total_items == 2
 
-    async def test_list_backtests_filter_by_strategy(self, backtest_servicer, grpc_context):
+    async def test_list_backtests_filter_by_strategy(self, backtest_servicer, rpc_context):
         """Test filtering backtests by strategy ID."""
         from llamatrade_proto.generated import backtest_pb2, common_pb2
 
@@ -441,13 +427,13 @@ class TestListBacktests:
                     strategy_id=str(TEST_STRATEGY_ID),
                 )
 
-                response = await backtest_servicer.ListBacktests(request, grpc_context)
+                response = await backtest_servicer.list_backtests(request, rpc_context)
 
                 assert len(response.backtests) == 1
                 # Verify the service was called with strategy_id
                 mock_service.list_backtests.assert_called_once()
 
-    async def test_list_backtests_filter_by_status(self, backtest_servicer, grpc_context):
+    async def test_list_backtests_filter_by_status(self, backtest_servicer, rpc_context):
         """Test filtering backtests by status."""
         from llamatrade_proto.generated import backtest_pb2, common_pb2
 
@@ -471,7 +457,7 @@ class TestListBacktests:
                     statuses=[backtest_pb2.BACKTEST_STATUS_COMPLETED],
                 )
 
-                response = await backtest_servicer.ListBacktests(request, grpc_context)
+                response = await backtest_servicer.list_backtests(request, rpc_context)
 
                 assert len(response.backtests) == 1
                 assert response.backtests[0].status == backtest_pb2.BACKTEST_STATUS_COMPLETED
@@ -480,7 +466,7 @@ class TestListBacktests:
 class TestCancelBacktest:
     """Tests for CancelBacktest gRPC method."""
 
-    async def test_cancel_backtest_success(self, backtest_servicer, grpc_context):
+    async def test_cancel_backtest_success(self, backtest_servicer, rpc_context):
         """Test successfully cancelling a backtest."""
         from llamatrade_proto.generated import backtest_pb2, common_pb2
 
@@ -505,12 +491,12 @@ class TestCancelBacktest:
                     backtest_id=str(TEST_BACKTEST_ID),
                 )
 
-                response = await backtest_servicer.CancelBacktest(request, grpc_context)
+                response = await backtest_servicer.cancel_backtest(request, rpc_context)
 
                 assert response.backtest.status == backtest_pb2.BACKTEST_STATUS_CANCELLED
                 mock_service.cancel_backtest.assert_called_once()
 
-    async def test_cancel_backtest_failed_precondition(self, backtest_servicer, grpc_context):
+    async def test_cancel_backtest_failed_precondition(self, backtest_servicer, rpc_context):
         """Test cancelling a backtest that cannot be cancelled."""
         from llamatrade_proto.generated import backtest_pb2, common_pb2
 
@@ -532,16 +518,16 @@ class TestCancelBacktest:
                     backtest_id=str(TEST_BACKTEST_ID),
                 )
 
-                with pytest.raises(grpc.aio.AioRpcError) as exc_info:
-                    await backtest_servicer.CancelBacktest(request, grpc_context)
+                with pytest.raises(ConnectError) as exc_info:
+                    await backtest_servicer.cancel_backtest(request, rpc_context)
 
-                assert exc_info.value.code() == grpc.StatusCode.FAILED_PRECONDITION
+                assert exc_info.value.code == Code.FAILED_PRECONDITION
 
 
 class TestCompareBacktests:
     """Tests for CompareBacktests gRPC method."""
 
-    async def test_compare_backtests_success(self, backtest_servicer, grpc_context):
+    async def test_compare_backtests_success(self, backtest_servicer, rpc_context):
         """Test comparing multiple backtests."""
         from llamatrade_proto.generated import backtest_pb2, common_pb2
 
@@ -571,11 +557,11 @@ class TestCompareBacktests:
                     backtest_ids=[str(backtest_id_1), str(backtest_id_2)],
                 )
 
-                response = await backtest_servicer.CompareBacktests(request, grpc_context)
+                response = await backtest_servicer.compare_backtests(request, rpc_context)
 
                 assert len(response.backtests) == 2
 
-    async def test_compare_backtests_partial_not_found(self, backtest_servicer, grpc_context):
+    async def test_compare_backtests_partial_not_found(self, backtest_servicer, rpc_context):
         """Test comparing backtests when some are not found."""
         from llamatrade_proto.generated import backtest_pb2, common_pb2
 
@@ -603,7 +589,7 @@ class TestCompareBacktests:
                     backtest_ids=[str(backtest_id_1), str(backtest_id_2)],
                 )
 
-                response = await backtest_servicer.CompareBacktests(request, grpc_context)
+                response = await backtest_servicer.compare_backtests(request, rpc_context)
 
                 # Should only return the found backtest
                 assert len(response.backtests) == 1
@@ -612,7 +598,7 @@ class TestCompareBacktests:
 class TestStreamBacktestProgress:
     """Tests for StreamBacktestProgress gRPC method."""
 
-    async def test_stream_progress_backtest_not_found(self, backtest_servicer, grpc_context):
+    async def test_stream_progress_backtest_not_found(self, backtest_servicer, rpc_context):
         """Test streaming progress for nonexistent backtest returns NOT_FOUND."""
         from llamatrade_proto.generated import backtest_pb2, common_pb2
 
@@ -634,13 +620,13 @@ class TestStreamBacktestProgress:
                     backtest_id=str(uuid4()),
                 )
 
-                with pytest.raises(grpc.aio.AioRpcError) as exc_info:
-                    async for _ in backtest_servicer.StreamBacktestProgress(request, grpc_context):
+                with pytest.raises(ConnectError) as exc_info:
+                    async for _ in backtest_servicer.stream_backtest_progress(request, rpc_context):
                         pass
 
-                assert exc_info.value.code() == grpc.StatusCode.NOT_FOUND
+                assert exc_info.value.code == Code.NOT_FOUND
 
-    async def test_stream_progress_completed_backtest(self, backtest_servicer, grpc_context):
+    async def test_stream_progress_completed_backtest(self, backtest_servicer, rpc_context):
         """Test streaming progress for already completed backtest returns immediately."""
         from llamatrade_proto.generated import backtest_pb2, common_pb2
 
@@ -665,7 +651,9 @@ class TestStreamBacktestProgress:
                 )
 
                 updates = []
-                async for update in backtest_servicer.StreamBacktestProgress(request, grpc_context):
+                async for update in backtest_servicer.stream_backtest_progress(
+                    request, rpc_context
+                ):
                     updates.append(update)
 
                 # Should get one initial status update then stop
@@ -676,7 +664,7 @@ class TestStreamBacktestProgress:
 class TestGetBacktestTrades:
     """Tests for the paginated GetBacktestTrades RPC (14B)."""
 
-    async def test_get_backtest_trades_paginated(self, backtest_servicer, grpc_context):
+    async def test_get_backtest_trades_paginated(self, backtest_servicer, rpc_context):
         """Returns a page of trades with correct pagination metadata."""
         from llamatrade_proto.generated import backtest_pb2, common_pb2
 
@@ -705,12 +693,15 @@ class TestGetBacktestTrades:
                 new=create_mock_service_class(mock_service),
             ):
                 request = backtest_pb2.GetBacktestTradesRequest(
-                    context=common_pb2.TenantContext(tenant_id=str(TEST_TENANT_ID)),
+                    context=common_pb2.TenantContext(
+                        tenant_id=str(TEST_TENANT_ID),
+                        user_id=str(TEST_USER_ID),
+                    ),
                     backtest_id=str(TEST_BACKTEST_ID),
                     pagination=common_pb2.PaginationRequest(page=1, page_size=10),
                 )
 
-                response = await backtest_servicer.GetBacktestTrades(request, grpc_context)
+                response = await backtest_servicer.get_backtest_trades(request, rpc_context)
 
         assert len(response.trades) == 1
         assert response.trades[0].symbol == "AAPL"

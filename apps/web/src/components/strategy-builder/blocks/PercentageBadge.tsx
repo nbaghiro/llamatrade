@@ -14,7 +14,6 @@ export function PercentageBadge({ weightBlockId, childBlockId }: PercentageBadge
   const [isEditing, setIsEditing] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // Get current allocation or default to 0
   const allocation =
     weightBlock?.type === 'weight'
       ? weightBlock.allocations[childBlockId] ?? 0
@@ -68,7 +67,7 @@ export function PercentageBadge({ weightBlockId, childBlockId }: PercentageBadge
           onChange={(e) => setEditValue(e.target.value)}
           onKeyDown={handleKeyDown}
           onBlur={handleBlur}
-          className="w-14 px-1 py-0.5 text-xs font-medium text-center bg-white dark:bg-gray-800 border-2 border-blue-500 rounded shadow-sm outline-none"
+          className="w-14 px-1 py-0.5 text-xs font-mono tabular-nums text-center bg-paper text-ink border-2 border-ink shadow-sm outline-none"
           onClick={(e) => e.stopPropagation()}
         />
       </div>
@@ -79,11 +78,11 @@ export function PercentageBadge({ weightBlockId, childBlockId }: PercentageBadge
     <button
       onClick={handleClick}
       className={`
-        absolute -top-2 -right-2 z-10 px-2 py-0.5 text-xs font-medium rounded-full
+        absolute -top-2 -right-2 z-10 px-2 py-0.5 text-xs font-mono font-bold tabular-nums border-2 border-ink
         shadow-sm cursor-pointer transition-colors
         ${allocation > 0
-          ? 'bg-blue-500 text-white hover:bg-blue-600'
-          : 'bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-400 hover:bg-gray-300 dark:hover:bg-gray-600'}
+          ? 'bg-ink text-bone hover:bg-ink/80'
+          : 'bg-paper text-ink/60 hover:bg-bone'}
       `}
     >
       {allocation > 0 ? `${allocation}%` : '0%'}

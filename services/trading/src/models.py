@@ -43,10 +43,6 @@ class BracketType(IntEnum):
     TAKE_PROFIT = 2
 
 
-# ===================
-# Conversion helpers: proto int -> str (for Alpaca API)
-# ===================
-
 _ORDER_SIDE_TO_STR: dict[int, str] = {
     ORDER_SIDE_BUY: "buy",
     ORDER_SIDE_SELL: "sell",

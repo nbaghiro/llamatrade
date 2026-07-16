@@ -1,34 +1,42 @@
 /**
- * Strategy Row Component
- * A single row in the strategy list, showing summary info with expandable details.
+ * One strategy row in the allocation & performance table, expandable to its
+ * open positions.
  */
 
-import { ChevronDown, ChevronRight, Eye, EyeOff, MoreVertical } from 'lucide-react';
-import { useState } from 'react';
-
-import type { Activity, Period, Position } from '../../store/portfolio';
+import { ExecutionMode, ExecutionStatus, type StrategyPerformance } from '../../store/portfolio';
 
 import StrategyRowExpanded from './StrategyRowExpanded';
 
+// Shared 8-column track, reused by the table's header row so both align.
+export const STRAT_GRID_COLS = '26px minmax(0,2.4fr) 1fr 1fr 1fr 1fr 96px 80px';
+
 interface StrategyRowProps {
-  id: string;
-  name: string;
-  status: 'live' | 'paper' | 'paused';
-  color: string;
-  returnPercent: number;
-  allocatedCapital: number;
-  currentValue: number;
-  positionsCount: number;
-  positions: Position[];
-  recentActivity: Activity[];
-  selectedPeriod: Period;
+  strategy: StrategyPerformance;
+  totalBook: number;
   isExpanded: boolean;
-  isVisible: boolean;
   isHovered: boolean;
   onToggleExpand: () => void;
-  onToggleVisibility: () => void;
   onHover: (hovered: boolean) => void;
 }
+
+// Badge reflects the execution MODE (paper vs live) while running; paused/stopped
+// are shown as their own state. A running paper strategy is "PAPER", not "LIVE".
+type DisplayBadge = 'paper' | 'live' | 'paused' | 'stopped';
+
+function displayBadge(status: ExecutionStatus, mode: ExecutionMode): DisplayBadge {
+  if (status === ExecutionStatus.PAUSED) return 'paused';
+  if (status === ExecutionStatus.RUNNING) {
+    return mode === ExecutionMode.LIVE ? 'live' : 'paper';
+  }
+  return 'stopped';
+}
+
+const BADGE_STYLES: Record<DisplayBadge, string> = {
+  paper: 'bg-orange-500 text-ink border-ink',
+  live: 'bg-green-600 text-bone border-ink',
+  paused: 'bg-bone text-orange-500 border-orange-500',
+  stopped: 'bg-bone text-ink/55 border-ink',
+};
 
 function formatCurrency(value: number): string {
   return new Intl.NumberFormat('en-US', {
@@ -39,195 +47,135 @@ function formatCurrency(value: number): string {
   }).format(value);
 }
 
-function formatPercent(value: number): string {
-  const sign = value >= 0 ? '+' : '';
-  return `${sign}${value.toFixed(2)}%`;
+function signedCurrency(value: number): string {
+  return `${value >= 0 ? '+' : '-'}${formatCurrency(Math.abs(value))}`;
 }
 
-const STATUS_STYLES = {
-  live: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
-  paper: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
-  paused: 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400',
-};
+function signedPercent(value: number, digits = 2): string {
+  return `${value >= 0 ? '+' : ''}${value.toFixed(digits)}%`;
+}
+
+function tone(value: number): string {
+  return value >= 0 ? 'text-green-600' : 'text-red-600';
+}
+
+// Compact sparkline from the strategy's cumulative-return curve. Down trends
+// render red; otherwise the strategy's own series color.
+function Sparkline({ curve, color }: { curve: { value: number }[]; color: string }) {
+  if (curve.length < 2) {
+    return (
+      <svg width="90" height="26" viewBox="0 0 90 26" className="justify-self-end">
+        <line x1="0" y1="13" x2="90" y2="13" stroke="rgba(13,13,13,.2)" strokeDasharray="4 4" />
+      </svg>
+    );
+  }
+  const values = curve.map((p) => p.value);
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const range = max - min || 1;
+  const stroke = values[values.length - 1] >= 0 ? color : '#c81e1e';
+  const d = values
+    .map((v, i) => {
+      const x = (i / (values.length - 1)) * 90;
+      const y = 23 - ((v - min) / range) * 20;
+      return `${i === 0 ? 'M' : 'L'}${x.toFixed(1)},${y.toFixed(1)}`;
+    })
+    .join(' ');
+  return (
+    <svg width="90" height="26" viewBox="0 0 90 26" className="justify-self-end">
+      <path d={d} fill="none" stroke={stroke} strokeWidth="2" />
+    </svg>
+  );
+}
 
 export default function StrategyRow({
-  id,
-  name,
-  status,
-  color,
-  returnPercent,
-  allocatedCapital,
-  currentValue,
-  positionsCount,
-  positions,
-  recentActivity,
+  strategy,
+  totalBook,
   isExpanded,
-  isVisible,
   isHovered,
   onToggleExpand,
-  onToggleVisibility,
   onHover,
 }: StrategyRowProps) {
-  const [showMenu, setShowMenu] = useState(false);
-
-  const pnl = currentValue - allocatedCapital;
+  const badge = displayBadge(strategy.status, strategy.mode);
+  const deployed = strategy.currentValue > 0 || strategy.allocatedCapital > 0;
+  const allocationPct = totalBook > 0 ? (strategy.allocatedCapital / totalBook) * 100 : 0;
+  const dayPnl = strategy.currentValue * strategy.returns['1D'];
+  const dayPnlPct = strategy.returns['1D'] * 100;
+  const totalReturnPct = strategy.returns['ALL'] * 100;
+  const totalReturnValue = strategy.currentValue - strategy.allocatedCapital;
+  const modeLabel = strategy.mode === ExecutionMode.LIVE ? 'live' : 'paper';
 
   return (
     <div
-      className={`border-b border-gray-100 dark:border-gray-800 transition-colors ${
-        isHovered ? 'bg-gray-50 dark:bg-gray-800/50' : ''
-      }`}
+      className={`border-b border-line ${isHovered ? 'bg-bone' : ''} ${!deployed ? 'opacity-60' : ''}`}
       onMouseEnter={() => onHover(true)}
       onMouseLeave={() => onHover(false)}
     >
-      {/* Main Row */}
       <div
-        className="flex items-center px-4 py-3 cursor-pointer"
+        className="grid items-center gap-2.5 px-[18px] py-3 cursor-pointer"
+        style={{ gridTemplateColumns: STRAT_GRID_COLS }}
         onClick={onToggleExpand}
       >
-        {/* Expand Icon */}
-        <div className="w-6 flex-shrink-0">
-          {isExpanded ? (
-            <ChevronDown className="w-4 h-4 text-gray-400" />
-          ) : (
-            <ChevronRight className="w-4 h-4 text-gray-400" />
-          )}
+        <span className="font-mono text-xs text-ink/50">{isExpanded ? '▾' : '▸'}</span>
+
+        <div className="flex items-center gap-2.5 min-w-0">
+          <span className="w-[11px] h-[11px] flex-none border-2 border-ink" style={{ backgroundColor: strategy.color }} />
+          <div className="min-w-0">
+            <div className="font-bold text-[14.5px] text-ink truncate">{strategy.name}</div>
+            <div className="font-mono text-[10px] text-ink/50 uppercase tracking-wide mt-0.5 truncate">
+              {modeLabel} · {strategy.positionsCount} pos
+            </div>
+          </div>
         </div>
 
-        {/* Visibility Toggle */}
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            onToggleVisibility();
-          }}
-          className="w-8 flex-shrink-0 flex items-center justify-center"
-        >
-          {isVisible ? (
-            <div
-              className="w-3 h-3 rounded-full"
-              style={{ backgroundColor: color }}
-            />
-          ) : (
-            <div
-              className="w-3 h-3 rounded-full border-2"
-              style={{ borderColor: color }}
-            />
-          )}
-        </button>
-
-        {/* Name */}
-        <div className="flex-1 min-w-0 pr-4">
-          <span className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">
-            {name}
-          </span>
-        </div>
-
-        {/* Status Badge */}
-        <div className="w-20 flex-shrink-0">
-          <span
-            className={`inline-flex px-2 py-0.5 text-xs font-medium rounded-full uppercase ${STATUS_STYLES[status]}`}
-          >
-            {status}
-          </span>
-        </div>
-
-        {/* Return */}
-        <div className="w-24 flex-shrink-0 text-right">
-          <span
-            className={`text-sm font-medium font-data ${
-              returnPercent >= 0
-                ? 'text-green-600 dark:text-green-400'
-                : 'text-red-600 dark:text-red-400'
-            }`}
-          >
-            {formatPercent(returnPercent)}
-          </span>
-        </div>
-
-        {/* P&L */}
-        <div className="w-28 flex-shrink-0 text-right">
-          <span
-            className={`text-sm font-data ${
-              pnl >= 0
-                ? 'text-green-600 dark:text-green-400'
-                : 'text-red-600 dark:text-red-400'
-            }`}
-          >
-            {pnl >= 0 ? '+' : ''}
-            {formatCurrency(pnl)}
-          </span>
-        </div>
-
-        {/* Allocated */}
-        <div className="w-28 flex-shrink-0 text-right">
-          <span className="text-sm text-gray-700 dark:text-gray-300 font-data">
-            {formatCurrency(allocatedCapital)}
-          </span>
-        </div>
-
-        {/* Positions Count */}
-        <div className="w-20 flex-shrink-0 text-right">
-          <span className="text-sm text-gray-500 dark:text-gray-400">
-            {positionsCount} pos
-          </span>
-        </div>
-
-        {/* Actions Menu */}
-        <div className="w-10 flex-shrink-0 flex justify-end relative">
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              setShowMenu(!showMenu);
-            }}
-            className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
-          >
-            <MoreVertical className="w-4 h-4 text-gray-400" />
-          </button>
-
-          {showMenu && (
-            <>
-              <div
-                className="fixed inset-0 z-10"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setShowMenu(false);
-                }}
-              />
-              <div className="absolute right-0 top-full mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg z-20 py-1 min-w-[140px]">
-                <button
-                  className="w-full px-3 py-2 text-left text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-2"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onToggleVisibility();
-                    setShowMenu(false);
-                  }}
-                >
-                  {isVisible ? (
-                    <>
-                      <EyeOff className="w-4 h-4" />
-                      Hide from chart
-                    </>
-                  ) : (
-                    <>
-                      <Eye className="w-4 h-4" />
-                      Show on chart
-                    </>
-                  )}
-                </button>
+        {deployed ? (
+          <>
+            <div className="text-right">
+              <div className="font-mono font-bold text-[13.5px] tabular-nums">{formatCurrency(strategy.allocatedCapital)}</div>
+              <div className="font-mono text-[9px] text-ink/40 uppercase tracking-wide mt-0.5">
+                {allocationPct.toFixed(0)}% of book
               </div>
-            </>
-          )}
-        </div>
+            </div>
+            <div className="text-right">
+              <div className="font-mono font-bold text-[13.5px] tabular-nums">{formatCurrency(strategy.currentValue)}</div>
+              <div className="font-mono text-[9px] text-ink/40 uppercase tracking-wide mt-0.5">marked live</div>
+            </div>
+            <div className="text-right">
+              <div className={`font-mono font-bold text-[13.5px] tabular-nums ${tone(dayPnl)}`}>{signedCurrency(dayPnl)}</div>
+              <div className={`font-mono text-[9px] tabular-nums mt-0.5 ${tone(dayPnl)}`}>{signedPercent(dayPnlPct)}</div>
+            </div>
+            <div className="text-right">
+              <div className={`font-mono font-bold text-[13.5px] tabular-nums ${tone(totalReturnValue)}`}>
+                {signedPercent(totalReturnPct, 1)}
+              </div>
+              <div className={`font-mono text-[9px] tabular-nums mt-0.5 ${tone(totalReturnValue)}`}>
+                {signedCurrency(totalReturnValue)}
+              </div>
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="text-right">
+              <div className="font-mono font-bold text-[13.5px] text-ink/50">—</div>
+              <div className="font-mono text-[9px] text-ink/40 uppercase tracking-wide mt-0.5">unallocated</div>
+            </div>
+            <div className="text-right font-mono font-bold text-[13.5px] text-ink/50">—</div>
+            <div className="text-right font-mono font-bold text-[13.5px] text-ink/50">—</div>
+            <div className="text-right font-mono font-bold text-[13.5px] text-ink/50">—</div>
+          </>
+        )}
+
+        <Sparkline curve={deployed ? strategy.equityCurve : []} color={strategy.color} />
+
+        <span
+          className={`justify-self-end font-mono text-[9px] font-bold uppercase tracking-wide border-[1.5px] px-1.5 py-0.5 ${BADGE_STYLES[badge]}`}
+        >
+          {badge}
+        </span>
       </div>
 
-      {/* Expanded Content */}
       {isExpanded && (
-        <StrategyRowExpanded
-          strategyId={id}
-          status={status}
-          positions={positions}
-          recentActivity={recentActivity}
-        />
+        <StrategyRowExpanded strategyValue={strategy.currentValue} positions={strategy.positions} />
       )}
     </div>
   );

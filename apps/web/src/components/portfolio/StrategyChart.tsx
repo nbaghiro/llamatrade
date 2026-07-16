@@ -1,16 +1,15 @@
 /**
- * Strategy Performance Chart
- * Multi-line chart showing % returns for each strategy over time.
- * Includes interactive legend, benchmark line, and hover tooltips.
+ * Equity-curve panel: blended portfolio line plus per-strategy lines and a
+ * benchmark reference, with an inline-return legend and CSV export.
  */
 
-import { ChevronDown } from 'lucide-react';
 import { useMemo, useState } from 'react';
 
 import type { Benchmark, EquityPoint, Period, StrategyPerformance } from '../../store/portfolio';
 
 interface StrategyChartProps {
   strategies: StrategyPerformance[];
+  portfolioCurve: EquityPoint[];
   benchmarkData: EquityPoint[];
   selectedPeriod: Period;
   selectedBenchmark: Benchmark;
@@ -22,7 +21,7 @@ interface StrategyChartProps {
   onHoverStrategy: (id: string | null) => void;
 }
 
-const PERIODS: Period[] = ['1D', '1W', '1M', '3M', '6M', '1Y', 'YTD', 'ALL'];
+const PERIODS: Period[] = ['1D', '1W', '1M', '3M', '1Y', 'YTD', 'ALL'];
 const BENCHMARKS: { value: Benchmark; label: string }[] = [
   { value: 'none', label: 'None' },
   { value: 'SPY', label: 'SPY' },
@@ -31,7 +30,9 @@ const BENCHMARKS: { value: Benchmark; label: string }[] = [
   { value: 'DIA', label: 'DIA' },
 ];
 
-const BENCHMARK_COLOR = '#9ca3af'; // gray-400
+// Benchmark is a recessive dashed reference line: warm neutral so it doesn't compete with the blue strategy series.
+const BENCHMARK_COLOR = '#7a7362'; // Monolith warm-neutral (gray-500)
+const PORTFOLIO_COLOR = '#0d0d0d'; // Monolith ink — the aggregate hero line
 
 function formatDateShort(date: Date): string {
   return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
@@ -41,13 +42,18 @@ function formatDateFull(date: Date): string {
   return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
-function formatPercent(value: number): string {
+function formatPercent(value: number, digits = 2): string {
   const sign = value >= 0 ? '+' : '';
-  return `${sign}${value.toFixed(2)}%`;
+  return `${sign}${value.toFixed(digits)}%`;
+}
+
+function lastValue(curve: EquityPoint[]): number {
+  return curve.length > 0 ? curve[curve.length - 1].value : 0;
 }
 
 export default function StrategyChart({
   strategies,
+  portfolioCurve,
   benchmarkData,
   selectedPeriod,
   selectedBenchmark,
@@ -61,13 +67,11 @@ export default function StrategyChart({
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
   const [showBenchmarkDropdown, setShowBenchmarkDropdown] = useState(false);
 
-  // Filter to visible strategies
   const visibleStrategies = useMemo(
     () => strategies.filter((s) => visibleStrategyIds.has(s.id)),
     [strategies, visibleStrategyIds]
   );
 
-  // Combine all data points to find chart bounds
   const chartBounds = useMemo(() => {
     const allValues: number[] = [];
     let maxLength = 0;
@@ -76,6 +80,9 @@ export default function StrategyChart({
       s.equityCurve.forEach((p) => allValues.push(p.value));
       maxLength = Math.max(maxLength, s.equityCurve.length);
     });
+
+    portfolioCurve.forEach((p) => allValues.push(p.value));
+    maxLength = Math.max(maxLength, portfolioCurve.length);
 
     if (selectedBenchmark !== 'none') {
       benchmarkData.forEach((p) => allValues.push(p.value));
@@ -95,16 +102,14 @@ export default function StrategyChart({
       maxValue: maxValue + padding,
       dataLength: maxLength,
     };
-  }, [visibleStrategies, benchmarkData, selectedBenchmark]);
+  }, [visibleStrategies, portfolioCurve, benchmarkData, selectedBenchmark]);
 
-  // Chart dimensions
   const width = 1000;
   const height = 320;
   const padding = { top: 30, right: 60, bottom: 50, left: 60 };
   const chartWidth = width - padding.left - padding.right;
   const chartHeight = height - padding.top - padding.bottom;
 
-  // Scale functions
   const xScale = (i: number) =>
     padding.left + (i / Math.max(chartBounds.dataLength - 1, 1)) * chartWidth;
   const yScale = (value: number) => {
@@ -113,7 +118,6 @@ export default function StrategyChart({
     return padding.top + chartHeight - ((value - chartBounds.minValue) / range) * chartHeight;
   };
 
-  // Y-axis ticks
   const yTicks = useMemo(() => {
     const tickCount = 5;
     const range = chartBounds.maxValue - chartBounds.minValue;
@@ -121,7 +125,6 @@ export default function StrategyChart({
     return Array.from({ length: tickCount }, (_, i) => chartBounds.minValue + i * step);
   }, [chartBounds]);
 
-  // X-axis ticks
   const xTicks = useMemo(() => {
     const dataLength = chartBounds.dataLength;
     if (dataLength <= 1) return [0];
@@ -130,130 +133,157 @@ export default function StrategyChart({
     return Array.from({ length: count }, (_, i) => Math.min(i * step, dataLength - 1));
   }, [chartBounds.dataLength]);
 
-  // Generate line path for a strategy
   const getLinePath = (curve: EquityPoint[]) => {
     if (curve.length === 0) return '';
     return curve.map((p, i) => `${i === 0 ? 'M' : 'L'} ${xScale(i)},${yScale(p.value)}`).join(' ');
   };
 
-  // Get date for x-axis label
+  const portfolioAreaPath = useMemo(() => {
+    if (portfolioCurve.length === 0) return '';
+    const line = portfolioCurve
+      .map((p, i) => `${i === 0 ? 'M' : 'L'} ${xScale(i)},${yScale(p.value)}`)
+      .join(' ');
+    const lastX = xScale(portfolioCurve.length - 1);
+    const baseY = padding.top + chartHeight;
+    return `${line} L ${lastX},${baseY} L ${xScale(0)},${baseY} Z`;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [portfolioCurve, chartBounds]);
+
   const getDateAtIndex = (index: number): Date => {
-    // Use first visible strategy's data for dates
-    const firstStrategy = visibleStrategies[0];
-    if (firstStrategy && firstStrategy.equityCurve[index]) {
-      return new Date(firstStrategy.equityCurve[index].timestamp);
-    }
-    // Fallback
+    const source = portfolioCurve[index] ?? visibleStrategies[0]?.equityCurve[index];
+    if (source) return new Date(source.timestamp);
     const date = new Date();
     date.setDate(date.getDate() - (chartBounds.dataLength - 1 - index));
     return date;
   };
 
-  // Get tooltip data at hover index
   const tooltipData = useMemo(() => {
     if (hoveredIndex === null) return null;
 
     const date = getDateAtIndex(hoveredIndex);
     const values: { name: string; color: string; value: number }[] = [];
 
+    if (portfolioCurve[hoveredIndex]) {
+      values.push({ name: 'Portfolio', color: PORTFOLIO_COLOR, value: portfolioCurve[hoveredIndex].value });
+    }
+
     visibleStrategies.forEach((s) => {
       const point = s.equityCurve[hoveredIndex];
-      if (point) {
-        values.push({
-          name: s.name,
-          color: s.color,
-          value: point.value,
-        });
-      }
+      if (point) values.push({ name: s.name, color: s.color, value: point.value });
     });
 
     if (selectedBenchmark !== 'none' && benchmarkData[hoveredIndex]) {
-      values.push({
-        name: selectedBenchmark,
-        color: BENCHMARK_COLOR,
-        value: benchmarkData[hoveredIndex].value,
-      });
+      values.push({ name: selectedBenchmark, color: BENCHMARK_COLOR, value: benchmarkData[hoveredIndex].value });
     }
 
     return { date, values };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hoveredIndex, visibleStrategies, benchmarkData, selectedBenchmark]);
+  }, [hoveredIndex, visibleStrategies, portfolioCurve, benchmarkData, selectedBenchmark]);
 
-  // Zero line Y position
   const zeroY = yScale(0);
 
+  const handleExportCsv = () => {
+    const columns = [
+      'timestamp',
+      'portfolio',
+      ...visibleStrategies.map((s) => s.name),
+      ...(selectedBenchmark !== 'none' ? [selectedBenchmark] : []),
+    ];
+    const rowCount = Math.max(
+      portfolioCurve.length,
+      ...visibleStrategies.map((s) => s.equityCurve.length),
+      selectedBenchmark !== 'none' ? benchmarkData.length : 0
+    );
+    if (rowCount === 0) return;
+
+    const lines = [columns.join(',')];
+    for (let i = 0; i < rowCount; i++) {
+      const ts = portfolioCurve[i]?.timestamp ?? visibleStrategies[0]?.equityCurve[i]?.timestamp ?? '';
+      const cells = [
+        ts,
+        portfolioCurve[i]?.value?.toFixed(4) ?? '',
+        ...visibleStrategies.map((s) => s.equityCurve[i]?.value?.toFixed(4) ?? ''),
+        ...(selectedBenchmark !== 'none' ? [benchmarkData[i]?.value?.toFixed(4) ?? ''] : []),
+      ];
+      lines.push(cells.join(','));
+    }
+
+    const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'portfolio-equity-curve.csv';
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const chipBase =
+    'font-mono text-[10px] font-bold uppercase tracking-wide border-[1.5px] border-ink px-2 py-1 transition-colors';
+
   return (
-    <div className="bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm">
-      {/* Controls */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 dark:border-gray-800">
-        {/* Period Selector */}
-        <div className="flex gap-1">
-          {PERIODS.map((period) => (
+    <div className="bg-paper border-2 border-ink shadow">
+      <div className="flex items-center justify-between px-[18px] py-3.5 border-b-2 border-ink gap-3 flex-wrap">
+        <span className="font-mono text-[11.5px] font-bold uppercase tracking-[0.1em] text-ink">
+          Equity Curve · Portfolio vs Benchmark
+        </span>
+
+        <div className="flex items-center gap-3">
+          <div className="relative">
             <button
-              key={period}
-              onClick={() => onPeriodChange(period)}
-              className={`px-3 py-1.5 text-xs font-medium rounded transition-colors ${
-                selectedPeriod === period
-                  ? 'bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900'
-                  : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800'
-              }`}
+              onClick={() => setShowBenchmarkDropdown(!showBenchmarkDropdown)}
+              className="font-mono text-[10.5px] font-bold uppercase tracking-wide border-2 border-ink px-2.5 py-1 bg-bone shadow-[2px_2px_0_#0d0d0d]"
             >
-              {period}
+              vs {selectedBenchmark === 'none' ? 'None' : selectedBenchmark} ▾
             </button>
-          ))}
-        </div>
 
-        {/* Benchmark Selector */}
-        <div className="relative">
-          <button
-            onClick={() => setShowBenchmarkDropdown(!showBenchmarkDropdown)}
-            className="flex items-center gap-2 px-3 py-1.5 text-sm text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 rounded transition-colors"
-          >
-            <span className="text-xs text-gray-500">Benchmark:</span>
-            <span className="font-medium">
-              {selectedBenchmark === 'none' ? 'None' : selectedBenchmark}
-            </span>
-            <ChevronDown className="w-4 h-4" />
-          </button>
+            {showBenchmarkDropdown && (
+              <>
+                <div className="fixed inset-0 z-10" onClick={() => setShowBenchmarkDropdown(false)} />
+                <div className="absolute right-0 top-full mt-1 bg-paper border-2 border-ink shadow z-20 py-1 min-w-[100px]">
+                  {BENCHMARKS.map((b) => (
+                    <button
+                      key={b.value}
+                      onClick={() => {
+                        onBenchmarkChange(b.value);
+                        setShowBenchmarkDropdown(false);
+                      }}
+                      className={`w-full px-3 py-1.5 text-left text-sm font-mono hover:bg-bone ${
+                        selectedBenchmark === b.value ? 'text-orange-500 font-bold' : 'text-ink/70'
+                      }`}
+                    >
+                      {b.label}
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
 
-          {showBenchmarkDropdown && (
-            <>
-              <div
-                className="fixed inset-0 z-10"
-                onClick={() => setShowBenchmarkDropdown(false)}
-              />
-              <div className="absolute right-0 top-full mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg z-20 py-1 min-w-[100px]">
-                {BENCHMARKS.map((b) => (
-                  <button
-                    key={b.value}
-                    onClick={() => {
-                      onBenchmarkChange(b.value);
-                      setShowBenchmarkDropdown(false);
-                    }}
-                    className={`w-full px-3 py-1.5 text-left text-sm hover:bg-gray-100 dark:hover:bg-gray-700 ${
-                      selectedBenchmark === b.value
-                        ? 'text-green-600 dark:text-green-400 font-medium'
-                        : 'text-gray-700 dark:text-gray-300'
-                    }`}
-                  >
-                    {b.label}
-                  </button>
-                ))}
-              </div>
-            </>
-          )}
+          <div className="flex gap-1.5">
+            {PERIODS.map((period) => (
+              <button
+                key={period}
+                onClick={() => onPeriodChange(period)}
+                className={`${chipBase} ${
+                  selectedPeriod === period
+                    ? 'bg-ink text-bone'
+                    : 'text-ink/70 hover:bg-bone'
+                }`}
+              >
+                {period}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
-      {/* Chart */}
-      <div className="relative p-4">
+      <div className="relative px-[18px] pt-4">
         <svg
           viewBox={`0 0 ${width} ${height}`}
           className="w-full h-auto"
           preserveAspectRatio="xMidYMid meet"
           onMouseLeave={() => setHoveredIndex(null)}
         >
-          {/* Grid lines */}
           {yTicks.map((tick, i) => (
             <line
               key={i}
@@ -261,41 +291,37 @@ export default function StrategyChart({
               y1={yScale(tick)}
               x2={width - padding.right}
               y2={yScale(tick)}
-              stroke="currentColor"
-              strokeOpacity={tick === 0 ? 0.3 : 0.1}
+              stroke="#0d0d0d"
+              strokeOpacity={tick === 0 ? 0.3 : 0.14}
               strokeWidth={tick === 0 ? 1 : 0.5}
-              className="text-gray-400"
             />
           ))}
 
-          {/* Zero line highlight */}
           <line
             x1={padding.left}
             y1={zeroY}
             x2={width - padding.right}
             y2={zeroY}
-            stroke="currentColor"
+            stroke="#0d0d0d"
             strokeOpacity={0.3}
-            className="text-gray-500"
           />
 
-          {/* Benchmark line */}
+          {portfolioAreaPath && <path d={portfolioAreaPath} fill="#0d0d0d" fillOpacity={0.06} />}
+
           {selectedBenchmark !== 'none' && benchmarkData.length > 0 && (
             <path
               d={getLinePath(benchmarkData)}
               fill="none"
               stroke={BENCHMARK_COLOR}
               strokeWidth="2"
-              strokeDasharray="4 4"
-              opacity={hoveredStrategyId ? 0.3 : 0.6}
+              strokeDasharray="6 4"
+              opacity={hoveredStrategyId ? 0.3 : 0.7}
             />
           )}
 
-          {/* Strategy lines */}
           {visibleStrategies.map((strategy) => {
             const isHovered = hoveredStrategyId === strategy.id;
             const isDimmed = hoveredStrategyId && !isHovered;
-
             return (
               <path
                 key={strategy.id}
@@ -305,13 +331,45 @@ export default function StrategyChart({
                 strokeWidth={isHovered ? 3 : 2}
                 strokeLinecap="round"
                 strokeLinejoin="round"
-                opacity={isDimmed ? 0.2 : 1}
+                opacity={isDimmed ? 0.2 : 0.9}
                 style={{ transition: 'opacity 0.15s, stroke-width 0.15s' }}
               />
             );
           })}
 
-          {/* Y-axis labels */}
+          {portfolioCurve.length > 0 && (
+            <path
+              d={getLinePath(portfolioCurve)}
+              fill="none"
+              stroke={PORTFOLIO_COLOR}
+              strokeWidth="3"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              opacity={hoveredStrategyId ? 0.35 : 1}
+            />
+          )}
+
+          {/* End-of-series dots */}
+          {visibleStrategies.map((s) =>
+            s.equityCurve.length > 0 ? (
+              <circle
+                key={`dot-${s.id}`}
+                cx={xScale(s.equityCurve.length - 1)}
+                cy={yScale(lastValue(s.equityCurve))}
+                r={3.5}
+                fill={s.color}
+              />
+            ) : null
+          )}
+          {portfolioCurve.length > 0 && (
+            <circle
+              cx={xScale(portfolioCurve.length - 1)}
+              cy={yScale(lastValue(portfolioCurve))}
+              r={4}
+              fill={PORTFOLIO_COLOR}
+            />
+          )}
+
           {yTicks.map((tick, i) => (
             <text
               key={i}
@@ -319,21 +377,20 @@ export default function StrategyChart({
               y={yScale(tick)}
               textAnchor="end"
               dominantBaseline="middle"
-              className="fill-gray-400 text-[11px] font-data"
+              className="fill-ink text-[11px] font-mono"
             >
               {tick >= 0 ? '+' : ''}
               {tick.toFixed(1)}%
             </text>
           ))}
 
-          {/* X-axis labels */}
           {xTicks.map((idx) => (
             <text
               key={idx}
               x={xScale(idx)}
               y={height - padding.bottom + 20}
               textAnchor="middle"
-              className="fill-gray-400 text-[11px]"
+              className="fill-ink text-[11px] font-mono"
             >
               {formatDateShort(getDateAtIndex(idx))}
             </text>
@@ -352,21 +409,18 @@ export default function StrategyChart({
             />
           ))}
 
-          {/* Hover crosshair */}
           {hoveredIndex !== null && (
             <line
               x1={xScale(hoveredIndex)}
               y1={padding.top}
               x2={xScale(hoveredIndex)}
               y2={height - padding.bottom}
-              stroke="currentColor"
+              stroke="#0d0d0d"
               strokeOpacity={0.3}
               strokeDasharray="2 2"
-              className="text-gray-500"
             />
           )}
 
-          {/* Hover dots */}
           {hoveredIndex !== null &&
             visibleStrategies.map((strategy) => {
               const point = strategy.equityCurve[hoveredIndex];
@@ -378,41 +432,33 @@ export default function StrategyChart({
                   cy={yScale(point.value)}
                   r="5"
                   fill={strategy.color}
-                  stroke="white"
+                  stroke="#ffffff"
                   strokeWidth="2"
                 />
               );
             })}
         </svg>
 
-        {/* Tooltip */}
         {tooltipData && hoveredIndex !== null && (
           <div
-            className="absolute bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg p-3 pointer-events-none z-10"
+            className="absolute bg-paper border-2 border-ink shadow p-3 pointer-events-none z-10 font-mono"
             style={{
               left: `${((xScale(hoveredIndex) / width) * 100).toFixed(1)}%`,
               top: '40px',
               transform: 'translateX(-50%)',
             }}
           >
-            <p className="text-sm font-medium text-gray-900 dark:text-gray-100 mb-2">
+            <p className="text-sm font-bold uppercase tracking-wide text-ink mb-2">
               {formatDateFull(tooltipData.date)}
             </p>
             <div className="space-y-1.5">
               {tooltipData.values.map((v, i) => (
                 <div key={i} className="flex items-center justify-between gap-4 text-sm">
                   <div className="flex items-center gap-2">
-                    <div
-                      className="w-2.5 h-2.5 rounded-full"
-                      style={{ backgroundColor: v.color }}
-                    />
-                    <span className="text-gray-600 dark:text-gray-400">{v.name}</span>
+                    <div className="w-2.5 h-2.5 border border-ink" style={{ backgroundColor: v.color }} />
+                    <span className="text-ink/60">{v.name}</span>
                   </div>
-                  <span
-                    className={`font-mono font-medium ${
-                      v.value >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'
-                    }`}
-                  >
+                  <span className={`font-bold tabular-nums ${v.value >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                     {formatPercent(v.value)}
                   </span>
                 </div>
@@ -422,42 +468,50 @@ export default function StrategyChart({
         )}
       </div>
 
-      {/* Legend */}
-      <div className="flex items-center gap-4 px-4 pb-4 flex-wrap">
+      <div className="flex items-center gap-4 flex-wrap font-mono text-[10.5px] font-bold uppercase tracking-wide text-ink/70 px-[18px] pt-2.5 pb-4 border-t border-line">
+        {portfolioCurve.length > 0 && (
+          <span className="flex items-center gap-2">
+            <span className="inline-block w-4 h-1 bg-ink" />
+            Portfolio <span className="text-ink/50">{formatPercent(lastValue(portfolioCurve))}</span>
+          </span>
+        )}
+
         {strategies.map((strategy) => {
           const isVisible = visibleStrategyIds.has(strategy.id);
           const isHovered = hoveredStrategyId === strategy.id;
-
           return (
             <button
               key={strategy.id}
               onClick={() => onToggleVisibility(strategy.id)}
               onMouseEnter={() => onHoverStrategy(strategy.id)}
               onMouseLeave={() => onHoverStrategy(null)}
-              className={`flex items-center gap-2 px-2 py-1 rounded transition-all ${
-                isVisible
-                  ? 'opacity-100'
-                  : 'opacity-40'
-              } ${isHovered ? 'bg-gray-100 dark:bg-gray-800' : ''}`}
+              className={`flex items-center gap-2 transition-opacity ${isVisible ? 'opacity-100' : 'opacity-40'} ${
+                isHovered ? 'text-ink' : ''
+              }`}
             >
-              <div
-                className="w-3 h-3 rounded-full"
-                style={{
-                  backgroundColor: isVisible ? strategy.color : 'transparent',
-                  border: `2px solid ${strategy.color}`,
-                }}
+              <span
+                className="inline-block w-4 h-[3px]"
+                style={{ backgroundColor: isVisible ? strategy.color : 'transparent', outline: `2px solid ${strategy.color}` }}
               />
-              <span className="text-sm text-gray-700 dark:text-gray-300">{strategy.name}</span>
+              {strategy.name}
+              <span className="text-ink/50">{formatPercent(lastValue(strategy.equityCurve), 1)}</span>
             </button>
           );
         })}
 
         {selectedBenchmark !== 'none' && (
-          <div className="flex items-center gap-2 px-2 py-1">
-            <div className="w-3 h-0 border-t-2 border-dashed border-gray-400" />
-            <span className="text-sm text-gray-500">{selectedBenchmark}</span>
-          </div>
+          <span className="flex items-center gap-2">
+            <span className="inline-block w-4 border-t-2 border-dashed" style={{ borderColor: BENCHMARK_COLOR }} />
+            {selectedBenchmark} <span className="text-ink/50">{formatPercent(lastValue(benchmarkData), 1)}</span>
+          </span>
         )}
+
+        <button
+          onClick={handleExportCsv}
+          className="ml-auto font-mono text-[10.5px] font-bold uppercase tracking-wide text-orange-500 hover:text-orange-600"
+        >
+          Export CSV →
+        </button>
       </div>
     </div>
   );

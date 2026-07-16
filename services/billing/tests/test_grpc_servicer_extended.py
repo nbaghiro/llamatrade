@@ -38,9 +38,14 @@ def create_test_token(tenant_id=None, expired=False):
 
 @pytest.fixture
 def servicer():
-    """Create a BillingServicer instance."""
+    """BillingServicer with a mock session factory (the RLS set_config is a no-op)."""
     with patch.dict("os.environ", {"JWT_SECRET": TEST_JWT_SECRET}):
-        return BillingServicer()
+        servicer = BillingServicer()
+    session = AsyncMock()
+    session.__aenter__ = AsyncMock(return_value=session)
+    session.__aexit__ = AsyncMock(return_value=None)
+    servicer._session_maker = lambda: session
+    return servicer
 
 
 @pytest.fixture
@@ -155,43 +160,180 @@ class TestGetSubscription:
         mock_service = MagicMock()
         mock_service.get_subscription = AsyncMock(return_value=sample_subscription)
 
-        mock_db = MagicMock()
-        mock_db.__aenter__ = AsyncMock(return_value=mock_db)
-        mock_db.__aexit__ = AsyncMock()
-
         with patch.object(servicer, "_get_tenant_id", return_value=TEST_TENANT_ID):
-            with patch.object(servicer, "_get_db", AsyncMock(return_value=mock_db)):
-                with patch("src.grpc.servicer.get_stripe_client", return_value=MagicMock()):
-                    with patch(
-                        "src.services.billing_service.BillingService",
-                        return_value=mock_service,
-                    ):
-                        request = billing_pb2.GetSubscriptionRequest()
-                        response = await servicer.get_subscription(request, mock_ctx)
+            with patch("src.grpc.servicer.get_stripe_client", return_value=MagicMock()):
+                with patch(
+                    "src.services.billing_service.BillingService",
+                    return_value=mock_service,
+                ):
+                    request = billing_pb2.GetSubscriptionRequest()
+                    response = await servicer.get_subscription(request, mock_ctx)
 
-                        assert response.subscription is not None
+                    assert response.subscription is not None
 
 
 # === get_usage Tests ===
+
+
+class _FakeUsageSession:
+    """Async session stub that routes count/sum queries by target table."""
+
+    def __init__(self, counts, subscription=None):
+        self._counts = counts
+        self._subscription = subscription
+        self.seen: list[str] = []
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *exc):
+        return False
+
+    async def scalar(self, statement):
+        sql = str(statement)
+        self.seen.append(sql)
+        if "subscriptions" in sql:
+            return self._subscription
+        if "strategy_executions" in sql:
+            return self._counts["active_strategies"]
+        if "trading_sessions" in sql:
+            return self._counts["live_sessions"]
+        if "agent_sessions" in sql:
+            return self._counts["api_calls"]
+        if "backtests" in sql:
+            return self._counts["backtests_run"]
+        if "strategies" in sql:
+            return self._counts["strategies_created"]
+        raise AssertionError(f"unexpected usage query: {sql}")
 
 
 class TestGetUsage:
     """Tests for get_usage method."""
 
     @pytest.mark.asyncio
-    async def test_get_usage_returns_stubbed(self, servicer, mock_ctx):
-        """Test getting usage returns stubbed data."""
+    async def test_get_usage_returns_real_counts(self, servicer, mock_ctx):
+        """Usage maps each server-side count onto the right proto field."""
+        from types import SimpleNamespace
+
         from llamatrade_proto.generated import billing_pb2
 
-        with patch.object(servicer, "_get_tenant_id", return_value=TEST_TENANT_ID):
+        counts = {
+            "strategies_created": 6,
+            "active_strategies": 3,
+            "backtests_run": 6,
+            "live_sessions": 3,
+            "api_calls": 12,
+        }
+        subscription = SimpleNamespace(
+            current_period_start=datetime(2026, 7, 1, tzinfo=UTC),
+            current_period_end=datetime(2026, 8, 1, tzinfo=UTC),
+        )
+        fake_db = _FakeUsageSession(counts, subscription)
+
+        with (
+            patch.object(servicer, "_get_tenant_id", return_value=TEST_TENANT_ID),
+            patch.object(servicer, "_get_db", AsyncMock(return_value=fake_db)),
+        ):
+            request = billing_pb2.GetUsageRequest(period_id="")
+            response = await servicer.get_usage(request, mock_ctx)
+
+        usage = response.usage
+        assert usage.tenant_id == str(TEST_TENANT_ID)
+        assert usage.strategies_created == 6
+        assert usage.active_strategies == 3
+        assert usage.backtests_run == 6
+        assert usage.live_sessions == 3
+        assert usage.api_calls == 12
+        assert usage.period_id == "2026-07"
+        assert usage.period_start.seconds == int(subscription.current_period_start.timestamp())
+        assert usage.period_end.seconds == int(subscription.current_period_end.timestamp())
+
+    @pytest.mark.asyncio
+    async def test_get_usage_defaults_to_calendar_month_without_subscription(
+        self, servicer, mock_ctx
+    ):
+        """With no subscription the period falls back to the calendar month."""
+        from llamatrade_proto.generated import billing_pb2
+
+        counts = {
+            "strategies_created": 0,
+            "active_strategies": 0,
+            "backtests_run": 0,
+            "live_sessions": 0,
+            "api_calls": 0,
+        }
+        fake_db = _FakeUsageSession(counts, subscription=None)
+
+        with (
+            patch.object(servicer, "_get_tenant_id", return_value=TEST_TENANT_ID),
+            patch.object(servicer, "_get_db", AsyncMock(return_value=fake_db)),
+        ):
             request = billing_pb2.GetUsageRequest(period_id="current")
             response = await servicer.get_usage(request, mock_ctx)
 
-            assert response.usage is not None
-            assert response.usage.tenant_id == str(TEST_TENANT_ID)
+        usage = response.usage
+        assert usage.strategies_created == 0
+        assert usage.period_start.seconds > 0
+        assert usage.period_end.seconds > usage.period_start.seconds
+        # period_id derived as YYYY-MM of the period start
+        assert len(usage.period_id) == 7 and usage.period_id[4] == "-"
+
+    @pytest.mark.asyncio
+    async def test_get_usage_queries_all_source_tables(self, servicer, mock_ctx):
+        """Every meter is sourced from its own tenant-scoped table."""
+        from llamatrade_proto.generated import billing_pb2
+
+        counts = dict.fromkeys(
+            [
+                "strategies_created",
+                "active_strategies",
+                "backtests_run",
+                "live_sessions",
+                "api_calls",
+            ],
+            0,
+        )
+        fake_db = _FakeUsageSession(counts, subscription=None)
+
+        with (
+            patch.object(servicer, "_get_tenant_id", return_value=TEST_TENANT_ID),
+            patch.object(servicer, "_get_db", AsyncMock(return_value=fake_db)),
+        ):
+            await servicer.get_usage(billing_pb2.GetUsageRequest(period_id="current"), mock_ctx)
+
+        joined = " ".join(fake_db.seen)
+        for table in (
+            "strategies",
+            "strategy_executions",
+            "backtests",
+            "trading_sessions",
+            "agent_sessions",
+            "subscriptions",
+        ):
+            assert table in joined
+        # Every query is tenant-scoped.
+        assert all("tenant_id" in sql for sql in fake_db.seen)
 
 
 # === list_invoices Tests ===
+
+
+class _EmptyInvoicesSession:
+    """Async session stub for list_invoices: zero count, no rows."""
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *exc):
+        return False
+
+    async def scalar(self, statement):
+        return 0
+
+    async def execute(self, statement):
+        result = MagicMock()
+        result.scalars.return_value.all.return_value = []
+        return result
 
 
 class TestListInvoices:
@@ -199,11 +341,15 @@ class TestListInvoices:
 
     @pytest.mark.asyncio
     async def test_list_invoices_returns_empty(self, servicer, mock_ctx):
-        """Test listing invoices returns empty list."""
+        """Test listing invoices returns an empty page for a tenant with none."""
         from llamatrade_proto.generated import billing_pb2
 
-        request = billing_pb2.ListInvoicesRequest()
-        response = await servicer.list_invoices(request, mock_ctx)
+        with (
+            patch.object(servicer, "_get_tenant_id", return_value=TEST_TENANT_ID),
+            patch.object(servicer, "_get_db", AsyncMock(return_value=_EmptyInvoicesSession())),
+        ):
+            request = billing_pb2.ListInvoicesRequest()
+            response = await servicer.list_invoices(request, mock_ctx)
 
         assert len(response.invoices) == 0
         assert response.pagination.total_items == 0
@@ -212,21 +358,104 @@ class TestListInvoices:
 # === get_invoice Tests ===
 
 
+class _FakeScalarSession:
+    """Async session stub returning a fixed value from scalar()."""
+
+    def __init__(self, value):
+        self._value = value
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *exc):
+        return False
+
+    async def scalar(self, statement):
+        return self._value
+
+
+def _fake_invoice(invoice_id, tenant_id):
+    """Build an invoice-like row with all fields _to_proto_invoice reads."""
+    from decimal import Decimal
+    from types import SimpleNamespace
+
+    from llamatrade_proto.generated import billing_pb2
+
+    now = datetime.now(UTC)
+    return SimpleNamespace(
+        id=invoice_id,
+        tenant_id=tenant_id,
+        subscription_id=None,
+        amount_due=Decimal("49.00"),
+        amount_paid=Decimal("49.00"),
+        currency="usd",
+        status=billing_pb2.INVOICE_STATUS_PAID,
+        period_start=now - timedelta(days=30),
+        period_end=now,
+        due_date=now,
+        paid_at=now,
+        invoice_pdf="https://pdf.example/inv.pdf",
+        stripe_invoice_id="in_demo_123",
+        line_items=[{"description": "Pro plan", "amount": "49.00"}],
+    )
+
+
 class TestGetInvoice:
     """Tests for get_invoice method."""
 
     @pytest.mark.asyncio
-    async def test_get_invoice_not_found(self, servicer, mock_ctx):
-        """Test getting invoice returns not found."""
+    async def test_get_invoice_not_found_non_uuid(self, servicer, mock_ctx):
+        """A non-UUID invoice id resolves to NOT_FOUND without touching the DB."""
         from connectrpc.errors import ConnectError
 
         from llamatrade_proto.generated import billing_pb2
 
         request = billing_pb2.GetInvoiceRequest(invoice_id="inv_123")
 
-        with pytest.raises(ConnectError) as exc_info:
-            await servicer.get_invoice(request, mock_ctx)
+        with patch.object(servicer, "_get_tenant_id", return_value=TEST_TENANT_ID):
+            with pytest.raises(ConnectError) as exc_info:
+                await servicer.get_invoice(request, mock_ctx)
         assert "Invoice not found" in str(exc_info.value)
+
+    @pytest.mark.asyncio
+    async def test_get_invoice_not_found_missing_row(self, servicer, mock_ctx):
+        """A valid UUID with no matching row resolves to NOT_FOUND."""
+        from connectrpc.errors import ConnectError
+
+        from llamatrade_proto.generated import billing_pb2
+
+        request = billing_pb2.GetInvoiceRequest(invoice_id=str(uuid4()))
+        fake_db = _FakeScalarSession(None)
+
+        with (
+            patch.object(servicer, "_get_tenant_id", return_value=TEST_TENANT_ID),
+            patch.object(servicer, "_get_db", AsyncMock(return_value=fake_db)),
+        ):
+            with pytest.raises(ConnectError) as exc_info:
+                await servicer.get_invoice(request, mock_ctx)
+        assert "Invoice not found" in str(exc_info.value)
+
+    @pytest.mark.asyncio
+    async def test_get_invoice_returns_row(self, servicer, mock_ctx):
+        """A matching invoice is mapped to proto and returned."""
+        from llamatrade_proto.generated import billing_pb2
+
+        invoice_id = uuid4()
+        invoice = _fake_invoice(invoice_id, TEST_TENANT_ID)
+        fake_db = _FakeScalarSession(invoice)
+
+        with (
+            patch.object(servicer, "_get_tenant_id", return_value=TEST_TENANT_ID),
+            patch.object(servicer, "_get_db", AsyncMock(return_value=fake_db)),
+        ):
+            request = billing_pb2.GetInvoiceRequest(invoice_id=str(invoice_id))
+            response = await servicer.get_invoice(request, mock_ctx)
+
+        assert response.invoice.id == str(invoice_id)
+        assert response.invoice.tenant_id == str(TEST_TENANT_ID)
+        assert response.invoice.amount_paid.amount == "49.00"
+        assert response.invoice.stripe_invoice_id == "in_demo_123"
+        assert response.invoice.status == billing_pb2.INVOICE_STATUS_PAID
 
 
 # === list_plans Tests ===
@@ -243,20 +472,15 @@ class TestListPlans:
         mock_service = MagicMock()
         mock_service.list_plans = AsyncMock(return_value=[sample_plan])
 
-        mock_db = MagicMock()
-        mock_db.__aenter__ = AsyncMock(return_value=mock_db)
-        mock_db.__aexit__ = AsyncMock()
+        with patch("src.grpc.servicer.get_stripe_client", return_value=MagicMock()):
+            with patch(
+                "src.services.billing_service.BillingService",
+                return_value=mock_service,
+            ):
+                request = billing_pb2.ListPlansRequest()
+                response = await servicer.list_plans(request, mock_ctx)
 
-        with patch.object(servicer, "_get_db", AsyncMock(return_value=mock_db)):
-            with patch("src.grpc.servicer.get_stripe_client", return_value=MagicMock()):
-                with patch(
-                    "src.services.billing_service.BillingService",
-                    return_value=mock_service,
-                ):
-                    request = billing_pb2.ListPlansRequest()
-                    response = await servicer.list_plans(request, mock_ctx)
-
-                    assert len(response.plans) == 1
+                assert len(response.plans) == 1
 
 
 # === create_checkout_session Tests ===

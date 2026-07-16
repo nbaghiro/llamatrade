@@ -303,9 +303,7 @@ class MarketDataStreamClient(_DataStreamClient):
             return None
 
 
-# =============================================================================
 # Singleton lifecycle helpers
-# =============================================================================
 
 _stream_client: MarketDataStreamClient | None = None
 _stream_lock: asyncio.Lock | None = None
@@ -352,9 +350,7 @@ async def close_market_data_stream() -> None:
             _stream_client = None
 
 
-# =============================================================================
 # Shared data-stream auth + generator-based bar client
-# =============================================================================
 
 
 class BarStreamClient(_DataStreamClient):

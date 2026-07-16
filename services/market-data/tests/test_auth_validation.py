@@ -7,6 +7,8 @@ import pytest
 from connectrpc.code import Code
 from connectrpc.errors import ConnectError
 
+from llamatrade_common import TenantContext, reset_context, set_context
+
 from src.grpc.servicer import (
     RequestTenantContext,
     _extract_tenant_context,
@@ -14,73 +16,43 @@ from src.grpc.servicer import (
     _validate_symbols,
 )
 
+TENANT = UUID("12345678-1234-1234-1234-123456789012")
+USER = UUID("87654321-4321-4321-4321-210987654321")
+
 
 class TestTenantContextExtraction:
-    """Tests for _extract_tenant_context function."""
+    """Tests for ``_extract_tenant_context`` (reads the verified principal, not headers)."""
 
-    def test_extract_with_valid_headers(self):
-        """Test extraction with valid tenant and user headers."""
-        ctx = MagicMock()
-        ctx.request_headers.return_value = {
-            "x-tenant-id": "12345678-1234-1234-1234-123456789012",
-            "x-user-id": "87654321-4321-4321-4321-210987654321",
-        }
+    def test_extract_uses_verified_context(self):
+        """A verified user context yields its tenant/user (headers are ignored)."""
+        token = set_context(TenantContext(tenant_id=TENANT, user_id=USER))
+        try:
+            result = _extract_tenant_context(MagicMock())
+        finally:
+            reset_context(token)
 
-        result = _extract_tenant_context(ctx)
-
-        assert result.tenant_id == UUID("12345678-1234-1234-1234-123456789012")
-        assert result.user_id == UUID("87654321-4321-4321-4321-210987654321")
+        assert result.tenant_id == TENANT
+        assert result.user_id == USER
         assert result.is_authenticated is True
 
-    def test_extract_with_uppercase_headers(self):
-        """Test extraction with uppercase header names."""
-        ctx = MagicMock()
-        ctx.request_headers.return_value = {
-            "X-Tenant-ID": "12345678-1234-1234-1234-123456789012",
-            "X-User-ID": "87654321-4321-4321-4321-210987654321",
-        }
-
-        result = _extract_tenant_context(ctx)
-
-        assert result.tenant_id == UUID("12345678-1234-1234-1234-123456789012")
-        assert result.is_authenticated is True
-
-    def test_extract_without_headers(self):
-        """Test extraction when no auth headers present."""
-        ctx = MagicMock()
-        ctx.request_headers.return_value = {}
-
-        result = _extract_tenant_context(ctx)
+    def test_extract_without_context_is_anonymous(self):
+        """No verified context (unauthenticated) reads as anonymous."""
+        result = _extract_tenant_context(MagicMock())
 
         assert result.tenant_id is None
         assert result.user_id is None
         assert result.is_authenticated is False
 
-    def test_extract_with_invalid_uuid(self):
-        """Test extraction with invalid UUID format."""
-        ctx = MagicMock()
-        ctx.request_headers.return_value = {
-            "x-tenant-id": "not-a-valid-uuid",
-            "x-user-id": "also-not-valid",
-        }
+    def test_extract_service_token_is_anonymous(self):
+        """A service token carries a nil identity → anonymous for observability."""
+        token = set_context(
+            TenantContext(tenant_id=UUID(int=0), user_id=UUID(int=0), is_service=True)
+        )
+        try:
+            result = _extract_tenant_context(MagicMock())
+        finally:
+            reset_context(token)
 
-        result = _extract_tenant_context(ctx)
-
-        assert result.tenant_id is None
-        assert result.user_id is None
-        assert result.is_authenticated is False
-
-    def test_extract_with_nil_uuid(self):
-        """Test extraction rejects nil UUID."""
-        ctx = MagicMock()
-        ctx.request_headers.return_value = {
-            "x-tenant-id": "00000000-0000-0000-0000-000000000000",
-            "x-user-id": "87654321-4321-4321-4321-210987654321",
-        }
-
-        result = _extract_tenant_context(ctx)
-
-        # Nil UUID should be treated as not authenticated
         assert result.tenant_id is None
         assert result.is_authenticated is False
 

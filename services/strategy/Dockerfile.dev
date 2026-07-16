@@ -13,12 +13,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Copy shared libraries first
 COPY libs/common /app/libs/common
 COPY libs/db /app/libs/db
+COPY libs/telemetry /app/libs/telemetry
 COPY libs/proto /app/libs/proto
 COPY libs/dsl /app/libs/dsl
 COPY libs/compiler /app/libs/compiler
 
 # Install shared libraries (editable for hot-reload)
-RUN pip install --no-cache-dir -e /app/libs/common -e /app/libs/db -e /app/libs/proto -e /app/libs/dsl -e /app/libs/compiler
+RUN pip install --no-cache-dir -e /app/libs/telemetry -e /app/libs/common -e /app/libs/db -e /app/libs/proto -e /app/libs/dsl -e /app/libs/compiler
 
 # Copy service dependencies
 COPY services/strategy/pyproject.toml services/strategy/README.md ./

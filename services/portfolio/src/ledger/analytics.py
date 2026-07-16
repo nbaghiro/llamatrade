@@ -16,8 +16,6 @@ from datetime import date
 import numpy as np
 from numpy.typing import NDArray
 
-# ---------------------------------------------------------------- position P&L
-
 
 def unrealized_pnl(side: str, qty: float, entry_price: float, current_price: float) -> float:
     """Unrealized P&L for a position (long: (cur−entry)·qty; short: (entry−cur)·qty)."""
@@ -31,9 +29,6 @@ def pnl_percent(pnl: float, cost_basis: float) -> float:
     if cost_basis == 0:
         return 0.0
     return (pnl / cost_basis) * 100
-
-
-# ----------------------------------------------------------------- risk ratios
 
 
 def sharpe_ratio(daily_returns: NDArray[np.float64], risk_free_rate: float = 0.02) -> float:
@@ -102,9 +97,6 @@ def benchmark_metrics(
     alpha = alpha_daily * 252 * 100
     benchmark_return = (float(np.prod(1 + b)) - 1) * 100
     return beta, alpha, benchmark_return
-
-
-# --------------------------------------------------------- equity-series bundle
 
 
 @dataclass(frozen=True)

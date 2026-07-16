@@ -172,6 +172,32 @@ message GetMarketStatusResponse {
   Timestamp next_close = 3;
 }
 
+// Tradable-asset reference metadata — a passthrough of the core section of
+// Alpaca's /v2/assets payload, so callers get identity (name), venue and
+// tradability in one place rather than each inventing its own lookup.
+message Asset {
+  string id = 1;
+  string symbol = 2;
+  // Human display name, e.g. "Energy Select Sector SPDR Fund".
+  string name = 3;
+  string exchange = 4;
+  // Alpaca "class" field, e.g. "us_equity", "crypto".
+  string asset_class = 5;
+  // "active" or "inactive".
+  string status = 6;
+  bool tradable = 7;
+  bool fractionable = 8;
+}
+
+message GetAssetsRequest {
+  repeated string symbols = 1;
+}
+
+message GetAssetsResponse {
+  // Keyed by symbol; unknown symbols are omitted.
+  map<string, Asset> assets = 1;
+}
+
 // =============================================================================
 // SERVICE
 // =============================================================================
@@ -193,4 +219,7 @@ service MarketDataService {
 
   // Market info
   rpc GetMarketStatus(GetMarketStatusRequest) returns (GetMarketStatusResponse);
+
+  // Reference data
+  rpc GetAssets(GetAssetsRequest) returns (GetAssetsResponse);
 }

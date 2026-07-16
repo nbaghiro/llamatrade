@@ -48,6 +48,11 @@ class AgentServiceStub(object):
                 request_serializer=agent__pb2.SendMessageRequest.SerializeToString,
                 response_deserializer=agent__pb2.AgentStreamEvent.FromString,
                 _registered_method=True)
+        self.ConfirmToolCall = channel.unary_stream(
+                '/llamatrade.AgentService/ConfirmToolCall',
+                request_serializer=agent__pb2.ConfirmToolCallRequest.SerializeToString,
+                response_deserializer=agent__pb2.AgentStreamEvent.FromString,
+                _registered_method=True)
         self.CommitArtifact = channel.unary_unary(
                 '/llamatrade.AgentService/CommitArtifact',
                 request_serializer=agent__pb2.CommitArtifactRequest.SerializeToString,
@@ -110,6 +115,12 @@ class AgentServiceServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def ConfirmToolCall(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
     def CommitArtifact(self, request, context):
         """Artifacts
         """
@@ -161,6 +172,11 @@ def add_AgentServiceServicer_to_server(servicer, server):
             'StreamMessage': grpc.unary_stream_rpc_method_handler(
                     servicer.StreamMessage,
                     request_deserializer=agent__pb2.SendMessageRequest.FromString,
+                    response_serializer=agent__pb2.AgentStreamEvent.SerializeToString,
+            ),
+            'ConfirmToolCall': grpc.unary_stream_rpc_method_handler(
+                    servicer.ConfirmToolCall,
+                    request_deserializer=agent__pb2.ConfirmToolCallRequest.FromString,
                     response_serializer=agent__pb2.AgentStreamEvent.SerializeToString,
             ),
             'CommitArtifact': grpc.unary_unary_rpc_method_handler(
@@ -344,6 +360,33 @@ class AgentService(object):
             target,
             '/llamatrade.AgentService/StreamMessage',
             agent__pb2.SendMessageRequest.SerializeToString,
+            agent__pb2.AgentStreamEvent.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def ConfirmToolCall(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_stream(
+            request,
+            target,
+            '/llamatrade.AgentService/ConfirmToolCall',
+            agent__pb2.ConfirmToolCallRequest.SerializeToString,
             agent__pb2.AgentStreamEvent.FromString,
             options,
             channel_credentials,

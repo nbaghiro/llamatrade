@@ -23,6 +23,7 @@ from uuid import UUID
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from llamatrade_db import system_session, tenant_session
 from llamatrade_db.models.ledger import Account, LedgerEvent, SleeveSnapshot
 
 from src.ledger.performance import account_pnl
@@ -143,7 +144,8 @@ async def run_snapshot_pass(
     """
     plans: list[tuple[Account, AccountProjection, int]] = []
     symbols: set[str] = set()
-    async with session_factory() as db:
+    # Cross-tenant sweep: enumerate + project every account under the RLS bypass.
+    async with system_session(session_factory) as db:
         projector = LedgerProjector(db)
         for account in await _load_accounts(db):
             try:
@@ -162,7 +164,7 @@ async def run_snapshot_pass(
         values = compute_snapshot_values(projection, prices, sequence)
         if not values:
             continue
-        async with session_factory() as db:
+        async with tenant_session(account.tenant_id, session_factory) as db:
             try:
                 _add_snapshot_rows(db, account.tenant_id, values)
                 await db.commit()

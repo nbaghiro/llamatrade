@@ -134,8 +134,7 @@ class GetPortfolioPerformanceTool(BaseTool):
         context: ToolContext,
     ) -> ToolResult:
         """Execute the get_portfolio_performance tool."""
-        # This would require getting the portfolio_id first, then performance
-        # For now, provide a graceful fallback
+        # Requires a portfolio_id first; returns a fallback pointing to get_portfolio_summary.
         return ToolResult(
             success=True,
             data={

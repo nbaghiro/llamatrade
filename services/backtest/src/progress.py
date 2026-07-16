@@ -126,8 +126,7 @@ class ProgressPublisher:
         try:
             await self._get_events().publish(backtest_id, update)
         except Exception:
-            # Record the failure for observability, then preserve existing
-            # behavior by re-raising (the caller maps it to a FAILED run).
+            # Record for observability, then re-raise (caller maps it to a FAILED run).
             metrics.backtest.progress_publish_failure()
             raise
 
@@ -305,11 +304,8 @@ class BacktestProgressReporter:
             with self._lock:
                 self._pending_updates.append((progress, message))
 
-                # Auto-trim queue if it exceeds limit to bound memory usage.
-                # Keep only the most recent half of updates (discarding older ones).
-                # This ensures progress stays bounded even if flush() isn't called.
+                # Auto-trim to bound memory: keep only the most recent half if flush() lags.
                 if len(self._pending_updates) > self._max_pending:
-                    # Keep the most recent updates (second half)
                     trim_count = self._max_pending // 2
                     self._pending_updates = self._pending_updates[-trim_count:]
 

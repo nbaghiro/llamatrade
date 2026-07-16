@@ -16,7 +16,8 @@ from connectrpc.errors import ConnectError
 from connectrpc.request import RequestContext
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from llamatrade_db import get_session_maker
+from llamatrade_common.connect import resolve_identity_connect
+from llamatrade_db import get_session_maker, system_session, tenant_session
 from llamatrade_proto.generated import common_pb2, strategy_pb2
 from llamatrade_proto.generated.common_pb2 import EXECUTION_MODE_PAPER
 from llamatrade_proto.generated.strategy_pb2 import (
@@ -36,38 +37,14 @@ from src.models import (
 
 logger = logging.getLogger(__name__)
 
-# Nil UUID used to detect missing/invalid context
-_NIL_UUID = UUID("00000000-0000-0000-0000-000000000000")
-
 
 def _validate_tenant_context(context: common_pb2.TenantContext) -> tuple[UUID, UUID]:
-    """Validate and extract tenant_id and user_id from context.
+    """Verified ``(tenant_id, user_id)`` for the call.
 
-    Raises:
-        ConnectError: If context is invalid (empty or nil UUIDs)
+    Derives identity from the authenticated principal (JWT via ``AuthMiddleware``),
+    rejecting a request whose wire ``context`` tenant doesn't match the token.
     """
-    if not context.tenant_id or not context.user_id:
-        raise ConnectError(
-            Code.UNAUTHENTICATED,
-            "Valid tenant context is required",
-        )
-
-    try:
-        tenant_id = UUID(context.tenant_id)
-        user_id = UUID(context.user_id)
-    except ValueError as e:
-        raise ConnectError(
-            Code.INVALID_ARGUMENT,
-            f"Invalid UUID in context: {e}",
-        )
-
-    if tenant_id == _NIL_UUID or user_id == _NIL_UUID:
-        raise ConnectError(
-            Code.UNAUTHENTICATED,
-            "Valid tenant context is required (nil UUID not allowed)",
-        )
-
-    return tenant_id, user_id
+    return resolve_identity_connect(context)
 
 
 class StrategyServicer:
@@ -81,13 +58,11 @@ class StrategyServicer:
         self._session_maker: async_sessionmaker[AsyncSession] | None = None
         self._ledger_client: LedgerClient | None = None
 
-    async def _get_db(self) -> AsyncSession:
-        """Get a database session."""
+    def _maker(self) -> async_sessionmaker[AsyncSession]:
+        """The session factory (lazily created; tests inject a test-DB factory)."""
         if self._session_maker is None:
             self._session_maker = get_session_maker()
-        assert self._session_maker is not None
-        session: AsyncSession = self._session_maker()
-        return session
+        return self._session_maker
 
     def _get_ledger(self) -> LedgerClient:
         """Lazy LedgerClient to the portfolio service (sleeve funding)."""
@@ -96,7 +71,9 @@ class StrategyServicer:
 
             from llamatrade_proto.clients.ledger import LedgerClient
 
-            self._ledger_client = LedgerClient(os.getenv("PORTFOLIO_GRPC_TARGET", "portfolio:8860"))
+            self._ledger_client = LedgerClient(
+                os.getenv("PORTFOLIO_GRPC_TARGET", "portfolio:8860"), service_name="strategy"
+            )
         return self._ledger_client
 
     @handle_service_errors
@@ -111,7 +88,7 @@ class StrategyServicer:
         tenant_id, _ = _validate_tenant_context(request.context)
         strategy_id = parse_uuid(request.strategy_id, "strategy_id")
 
-        async with await self._get_db() as db:
+        async with tenant_session(tenant_id, self._maker()) as db:
             service = StrategyService(db)
 
             # Get specific version if requested, otherwise current
@@ -150,7 +127,6 @@ class StrategyServicer:
         # Map status filters - pass proto int value directly
         status = request.statuses[0] if request.statuses else None
 
-        # Extract search term
         search = request.search if request.search else None
 
         # Extract sort parameters
@@ -167,7 +143,7 @@ class StrategyServicer:
         page = request.pagination.page if request.HasField("pagination") else 1
         page_size = request.pagination.page_size if request.HasField("pagination") else 20
 
-        async with await self._get_db() as db:
+        async with tenant_session(tenant_id, self._maker()) as db:
             service = StrategyService(db)
             strategies, total = await service.list_strategies(
                 tenant_id=tenant_id,
@@ -211,7 +187,7 @@ class StrategyServicer:
         tenant_id, user_id = _validate_tenant_context(request.context)
 
         try:
-            async with await self._get_db() as db:
+            async with tenant_session(tenant_id, self._maker()) as db:
                 service = StrategyService(db)
 
                 # Check if creating from template
@@ -262,7 +238,6 @@ class StrategyServicer:
         tenant_id, user_id = _validate_tenant_context(request.context)
         strategy_id = parse_uuid(request.strategy_id, "strategy_id")
 
-        # Build update data
         # Convert proto map to dict
         parameters = dict(request.parameters) if request.parameters else None
         update_data = StrategyUpdate(
@@ -274,7 +249,7 @@ class StrategyServicer:
         )
 
         try:
-            async with await self._get_db() as db:
+            async with tenant_session(tenant_id, self._maker()) as db:
                 service = StrategyService(db)
                 strategy = await service.update_strategy(
                     tenant_id=tenant_id,
@@ -312,7 +287,7 @@ class StrategyServicer:
         tenant_id, _ = _validate_tenant_context(request.context)
         strategy_id = parse_uuid(request.strategy_id, "strategy_id")
 
-        async with await self._get_db() as db:
+        async with tenant_session(tenant_id, self._maker()) as db:
             service = StrategyService(db)
             try:
                 success = await service.delete_strategy(tenant_id, strategy_id)
@@ -334,16 +309,16 @@ class StrategyServicer:
         request: strategy_pb2.CompileStrategyRequest,
         ctx: RequestContext[object, object],
     ) -> strategy_pb2.CompileStrategyResponse:
-        """Compile/validate DSL code."""
+        """Compile/validate DSL code (stateless — touches no tenant data)."""
         from src.services.strategy_service import StrategyService
 
-        async with await self._get_db() as db:
+        # Compilation reads no tenant rows, so it runs outside a tenant scope.
+        async with system_session(self._maker()) as db:
             service = StrategyService(db)
             validation = await service.validate_config(request.dsl_code)
 
-            # If the DSL validates, compile it to JSON. A compile failure on
-            # otherwise-valid DSL is a real error: surface it to the caller
-            # instead of silently returning success with empty compiled output.
+            # Compile validated DSL to JSON; a compile failure on otherwise-valid
+            # DSL is surfaced to the caller, not swallowed.
             compiled_json_str = ""
             compile_error: str | None = None
             if validation.valid:
@@ -353,10 +328,8 @@ class StrategyServicer:
                     ast = parse_strategy(request.dsl_code)
                     compiled_json_str = json.dumps(to_json(ast))
                 except Exception as e:
-                    # Any compile failure is reported to the caller, not swallowed.
                     compile_error = f"compilation failed: {e}"
 
-            # Build the result
             result = strategy_pb2.CompilationResult(
                 success=bool(validation.valid) and compile_error is None,
                 compiled_json=compiled_json_str,
@@ -372,7 +345,6 @@ class StrategyServicer:
                     )
                 )
 
-            # Add errors one by one
             for e in validation.errors:
                 result.errors.append(
                     strategy_pb2.CompilationError(
@@ -383,7 +355,6 @@ class StrategyServicer:
                     )
                 )
 
-            # Add warnings one by one
             for w in validation.warnings:
                 result.warnings.append(
                     strategy_pb2.CompilationWarning(
@@ -408,7 +379,7 @@ class StrategyServicer:
         tenant_id, _ = _validate_tenant_context(request.context)
         strategy_id = parse_uuid(request.strategy_id, "strategy_id")
 
-        async with await self._get_db() as db:
+        async with tenant_session(tenant_id, self._maker()) as db:
             service = StrategyService(db)
             strategy = await service.get_strategy(tenant_id, strategy_id)
 
@@ -466,7 +437,7 @@ class StrategyServicer:
         page = request.pagination.page if request.HasField("pagination") else 1
         page_size = request.pagination.page_size if request.HasField("pagination") else 20
 
-        async with await self._get_db() as db:
+        async with tenant_session(tenant_id, self._maker()) as db:
             service = StrategyService(db)
             versions = await service.list_versions(tenant_id, strategy_id)
 
@@ -514,7 +485,7 @@ class StrategyServicer:
         status = request.status
 
         try:
-            async with await self._get_db() as db:
+            async with tenant_session(tenant_id, self._maker()) as db:
                 service = StrategyService(db)
 
                 # Use appropriate method based on status
@@ -565,7 +536,7 @@ class StrategyServicer:
         if not request.new_name:
             raise ConnectError(Code.INVALID_ARGUMENT, "new_name is required")
 
-        async with await self._get_db() as db:
+        async with tenant_session(tenant_id, self._maker()) as db:
             service = StrategyService(db)
 
             # If specific version requested, get that version first
@@ -646,7 +617,7 @@ class StrategyServicer:
             ),
         )
 
-        async with await self._get_db() as db:
+        async with tenant_session(tenant_id, self._maker()) as db:
             service = StrategyService(db)
             execution = await service.create_execution(
                 tenant_id=tenant_id,
@@ -676,7 +647,7 @@ class StrategyServicer:
         tenant_id, _ = _validate_tenant_context(request.context)
         execution_id = parse_uuid(request.execution_id, "execution_id")
 
-        async with await self._get_db() as db:
+        async with tenant_session(tenant_id, self._maker()) as db:
             service = StrategyService(db)
             execution = await service.get_execution(tenant_id, execution_id)
 
@@ -711,7 +682,7 @@ class StrategyServicer:
         page = request.pagination.page if request.HasField("pagination") else 1
         page_size = request.pagination.page_size if request.HasField("pagination") else 20
 
-        async with await self._get_db() as db:
+        async with tenant_session(tenant_id, self._maker()) as db:
             service = StrategyService(db)
             executions, total = await service.list_executions(
                 tenant_id=tenant_id,
@@ -749,7 +720,7 @@ class StrategyServicer:
         execution_id = parse_uuid(request.execution_id, "execution_id")
 
         try:
-            async with await self._get_db() as db:
+            async with tenant_session(tenant_id, self._maker()) as db:
                 service = StrategyService(db)
                 execution = await service.start_execution(
                     tenant_id,
@@ -784,7 +755,7 @@ class StrategyServicer:
         execution_id = parse_uuid(request.execution_id, "execution_id")
 
         try:
-            async with await self._get_db() as db:
+            async with tenant_session(tenant_id, self._maker()) as db:
                 service = StrategyService(db)
                 execution = await service.pause_execution(tenant_id, execution_id)
 
@@ -816,7 +787,7 @@ class StrategyServicer:
         reason = request.reason if request.reason else None
 
         try:
-            async with await self._get_db() as db:
+            async with tenant_session(tenant_id, self._maker()) as db:
                 service = StrategyService(db)
                 execution = await service.stop_execution(
                     tenant_id=tenant_id,
@@ -854,7 +825,7 @@ class StrategyServicer:
 
         template_service = get_template_service()
 
-        # Request now uses proto enum values directly (0 = unspecified means no filter)
+        # proto enum values; 0 (unspecified) means no filter
         category = request.category if request.category else None
         asset_class = request.asset_class if request.asset_class else None
         difficulty = request.difficulty if request.difficulty else None
@@ -915,9 +886,7 @@ class StrategyServicer:
             ),
         )
 
-    # ===================
     # Helper methods
-    # ===================
 
     def _to_proto_strategy(self, strategy: StrategyDetailResponse) -> strategy_pb2.Strategy:
         """Convert internal strategy to proto Strategy."""
@@ -942,7 +911,11 @@ class StrategyServicer:
         )
 
     def _to_proto_strategy_summary(self, strategy: StrategyResponse) -> strategy_pb2.Strategy:
-        """Convert internal strategy summary to proto Strategy."""
+        """Convert internal strategy summary to proto Strategy.
+
+        Carries the current version's symbols + timeframe so the list can render
+        them; the DSL/compiled config is omitted (fetch via GetStrategy).
+        """
         return strategy_pb2.Strategy(
             id=str(strategy.id),
             tenant_id="",
@@ -950,6 +923,8 @@ class StrategyServicer:
             description=strategy.description or "",
             status=strategy.status,
             version=strategy.current_version,
+            symbols=strategy.symbols,
+            timeframe=strategy.timeframe,
             created_at=common_pb2.Timestamp(seconds=int(strategy.created_at.timestamp())),
             updated_at=common_pb2.Timestamp(seconds=int(strategy.updated_at.timestamp())),
         )

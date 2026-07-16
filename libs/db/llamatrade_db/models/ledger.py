@@ -41,9 +41,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from llamatrade_db.base import Base, TenantMixin, TimestampMixin, UUIDPrimaryKeyMixin
 
-# =============================================================================
 # Enum value sets (mirror ledger.proto; stored as VARCHAR)
-# =============================================================================
 
 
 class SleeveType(StrEnum):
@@ -110,9 +108,7 @@ class LedgerEventType(StrEnum):
     SLEEVE_RESUMED = "sleeve_resumed"
 
 
-# =============================================================================
 # Models
-# =============================================================================
 
 
 class Account(Base, UUIDPrimaryKeyMixin, TenantMixin, TimestampMixin):

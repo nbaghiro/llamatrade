@@ -358,7 +358,7 @@ class TestListStrategies:
 
         # Mock list returns empty
         mock_list_result = MagicMock()
-        mock_list_result.scalars.return_value.all.return_value = []
+        mock_list_result.all.return_value = []
 
         mock_db.execute.side_effect = [mock_count_result, mock_list_result]
 
@@ -390,9 +390,11 @@ class TestListStrategies:
         mock_count_result = MagicMock()
         mock_count_result.scalar.return_value = 3
 
-        # Mock list returns strategies
+        # Mock list returns (strategy, symbols, timeframe) rows from the version join
         mock_list_result = MagicMock()
-        mock_list_result.scalars.return_value.all.return_value = mock_strategies
+        mock_list_result.all.return_value = [
+            (s, ["SPY", "TLT"], "1D") for s in mock_strategies
+        ]
 
         mock_db.execute.side_effect = [mock_count_result, mock_list_result]
 
@@ -404,6 +406,9 @@ class TestListStrategies:
 
         assert len(strategies) == 3
         assert total == 3
+        # Summaries now carry the current version's symbols + timeframe
+        assert strategies[0].symbols == ["SPY", "TLT"]
+        assert strategies[0].timeframe == "1D"
 
     async def test_list_strategies_filter_by_status(
         self, mock_db: AsyncMock, tenant_id: UUID
@@ -420,7 +425,7 @@ class TestListStrategies:
             tenant_id=tenant_id,
             status="active",
         )
-        mock_list_result.scalars.return_value.all.return_value = [mock_active_strategy]
+        mock_list_result.all.return_value = [(mock_active_strategy, ["SPY"], "1D")]
 
         mock_db.execute.side_effect = [mock_count_result, mock_list_result]
 
@@ -1105,7 +1110,7 @@ class TestSearchAndSort:
             name="RSI Strategy",
         )
         mock_list_result = MagicMock()
-        mock_list_result.scalars.return_value.all.return_value = [mock_strategy]
+        mock_list_result.all.return_value = [(mock_strategy, ["SPY"], "1D")]
 
         mock_db.execute.side_effect = [mock_count_result, mock_list_result]
 
@@ -1133,7 +1138,7 @@ class TestSearchAndSort:
             make_mock_strategy(id=uuid4(), tenant_id=tenant_id, name="B Strategy"),
         ]
         mock_list_result = MagicMock()
-        mock_list_result.scalars.return_value.all.return_value = mock_strategies
+        mock_list_result.all.return_value = [(s, ["SPY"], "1D") for s in mock_strategies]
 
         mock_db.execute.side_effect = [mock_count_result, mock_list_result]
 
@@ -1429,19 +1434,14 @@ class TestExecutionFunding:
 
     async def test_start_execution_funding_failure_blocks_start(self, mock_db: AsyncMock) -> None:
         """A funding RPC failure surfaces as ValueError and start aborts."""
-        import grpc
-        import grpc.aio
+        from connectrpc.code import Code
+        from connectrpc.errors import ConnectError
 
         service = StrategyService(mock_db)
         execution = self._pending_execution()
         strategy = make_mock_strategy(id=execution.strategy_id)
         ledger = self._ledger_mock(uuid4(), uuid4())
-        ledger.allocate_capital.side_effect = grpc.aio.AioRpcError(
-            grpc.StatusCode.INVALID_ARGUMENT,
-            grpc.aio.Metadata(),
-            grpc.aio.Metadata(),
-            details="insufficient free cash",
-        )
+        ledger.allocate_capital.side_effect = ConnectError(Code.INVALID_ARGUMENT, "insufficient free cash")
 
         with (
             patch.object(service, "_get_execution_by_id", return_value=execution),
@@ -1526,20 +1526,15 @@ class TestExecutionStopRelease:
 
     async def test_stop_close_failure_is_best_effort(self, mock_db: AsyncMock) -> None:
         """A close RPC failure (e.g. in-flight order) never fails the stop."""
-        import grpc
-        import grpc.aio
+        from connectrpc.code import Code
+        from connectrpc.errors import ConnectError
 
         from llamatrade_proto.generated.common_pb2 import EXECUTION_STATUS_STOPPED
 
         service = StrategyService(mock_db)
         execution = self._running_execution()
         ledger = AsyncMock()
-        ledger.close_sleeve.side_effect = grpc.aio.AioRpcError(
-            grpc.StatusCode.FAILED_PRECONDITION,
-            grpc.aio.Metadata(),
-            grpc.aio.Metadata(),
-            details="sleeve has reserved cash for in-flight orders",
-        )
+        ledger.close_sleeve.side_effect = ConnectError(Code.FAILED_PRECONDITION, "sleeve has reserved cash for in-flight orders")
 
         with patch.object(service, "_get_execution_by_id", return_value=execution):
             result = await service.stop_execution(execution.tenant_id, execution.id, ledger=ledger)
@@ -1571,8 +1566,8 @@ class TestExecutionStopRelease:
 
     async def test_reconcile_skips_when_close_fails(self, mock_db: AsyncMock) -> None:
         """A still-failing close leaves the sleeve marked for the next sweep."""
-        import grpc
-        import grpc.aio
+        from connectrpc.code import Code
+        from connectrpc.errors import ConnectError
 
         from llamatrade_proto.generated.common_pb2 import EXECUTION_STATUS_STOPPED
 
@@ -1583,12 +1578,7 @@ class TestExecutionStopRelease:
         result.scalars.return_value.all.return_value = [execution]
         mock_db.execute = AsyncMock(return_value=result)
         ledger = AsyncMock()
-        ledger.close_sleeve.side_effect = grpc.aio.AioRpcError(
-            grpc.StatusCode.UNAVAILABLE,
-            grpc.aio.Metadata(),
-            grpc.aio.Metadata(),
-            details="ledger down",
-        )
+        ledger.close_sleeve.side_effect = ConnectError(Code.UNAVAILABLE, "ledger down")
 
         released = await service.reconcile_stranded_sleeves(ledger=ledger)
 

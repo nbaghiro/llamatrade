@@ -14,8 +14,7 @@ celery_app = Celery(
     include=["src.workers.celery_tasks"],
 )
 
-# Time limits are env-configurable: long backtests (years of intraday bars)
-# legitimately exceed the old 10-minute hard kill
+# Time limits are env-configurable: long backtests (years of intraday bars) can need > 10 min.
 TASK_SOFT_TIME_LIMIT = int(os.getenv("BACKTEST_TASK_SOFT_TIME_LIMIT", "1800"))
 TASK_TIME_LIMIT = int(os.getenv("BACKTEST_TASK_TIME_LIMIT", "3600"))
 

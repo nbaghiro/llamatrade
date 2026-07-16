@@ -1,9 +1,7 @@
 """Turn target weights into intended orders — the single sizing implementation.
 
-This consolidates the two divergent copies that used to live in the backtest adapter
-(always drift-resized) and the live adapter (binary unless ``sleeve_aware``). Now both
-paths call :func:`size_orders` with a :class:`SizingMode`, so live and backtest size
-positions identically.
+Live and backtest both call :func:`size_orders` with a :class:`SizingMode`, so they
+size positions identically.
 
 The sizing is path-dependent (it reads current holdings and equity), so it is applied
 per evaluation against the live/simulated portfolio state — it is *not* part of the pure
@@ -16,8 +14,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import StrEnum
 
-# Defaults mirror the previous adapters: 0.1 pp minimum weight change to open/close,
-# 0.05 (5%) drift band before a resize trade is worth doing.
+# 0.1 pp minimum weight change to open/close; 0.05 (5%) drift band before a resize is worth doing.
 DEFAULT_MIN_WEIGHT_CHANGE = 0.1
 DEFAULT_DRIFT_TOLERANCE = 0.05
 

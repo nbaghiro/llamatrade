@@ -54,20 +54,20 @@ export function AssetPicker({ parentId, onClose }: AssetPickerProps) {
   return (
     <div className="p-2">
       <div className="relative mb-2">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-ink/40" />
         <input
           type="text"
           placeholder="Search symbols..."
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
           autoFocus
-          className="w-full pl-9 pr-3 py-2 text-sm border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder:text-gray-400 outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400"
+          className="w-full pl-9 pr-3 py-2 text-sm border-2 border-ink bg-paper text-ink placeholder:text-ink/40 outline-none focus:border-orange-500"
         />
       </div>
 
       <div className="max-h-[240px] overflow-y-auto">
         {filteredAssets.length === 0 ? (
-          <div className="px-3 py-4 text-center text-sm text-gray-500 dark:text-gray-400">
+          <div className="px-3 py-4 text-center text-sm text-ink/60">
             No assets found
           </div>
         ) : (
@@ -75,21 +75,21 @@ export function AssetPicker({ parentId, onClose }: AssetPickerProps) {
             <button
               key={asset.symbol}
               onClick={() => handleSelect(asset)}
-              className="w-full flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+              className="group w-full flex items-center gap-3 px-3 py-2 hover:bg-ink transition-colors"
             >
-              <div className="p-1 bg-emerald-100 dark:bg-emerald-900/30 rounded">
-                <TrendingUp className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
+              <div className="p-1 bg-green-100 border-2 border-ink">
+                <TrendingUp className="w-3 h-3 text-green-700" />
               </div>
               <div className="flex-1 text-left">
                 <div className="flex items-center gap-2">
-                  <span className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+                  <span className="text-sm font-mono font-bold text-ink group-hover:text-bone">
                     {asset.symbol}
                   </span>
-                  <span className="px-1.5 py-0.5 text-[10px] font-medium bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 rounded">
+                  <span className="px-1.5 py-0.5 text-[10px] font-mono uppercase tracking-wide border border-ink text-ink/70 group-hover:border-bone group-hover:text-bone">
                     {asset.exchange}
                   </span>
                 </div>
-                <div className="text-xs text-gray-500 dark:text-gray-400 truncate">
+                <div className="text-xs text-ink/60 group-hover:text-bone truncate">
                   {asset.displayName}
                 </div>
               </div>

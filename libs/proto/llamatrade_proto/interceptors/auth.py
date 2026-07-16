@@ -91,8 +91,6 @@ class AuthInterceptor(grpc.aio.ServerInterceptor):
             logger.warning("Invalid token for method: %s", method)
             return self._unauthenticated_handler()
 
-        # Token is valid, continue with the request
-        # The tenant context is available in result.context
         logger.debug(
             "Authenticated request: method=%s, tenant=%s, user=%s",
             method,

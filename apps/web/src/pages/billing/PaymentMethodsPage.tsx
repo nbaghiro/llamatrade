@@ -39,7 +39,6 @@ export default function PaymentMethodsPage() {
         successUrl: `${window.location.origin}/billing/payment-methods?success=true`,
         cancelUrl: `${window.location.origin}/billing/payment-methods`,
       });
-      // Use the session ID from the checkout response as client secret
       // Note: In practice, you'd want a dedicated CreateSetupIntent endpoint
       setClientSecret(response.sessionId);
     } catch {
@@ -75,7 +74,6 @@ export default function PaymentMethodsPage() {
     setActionLoading(true);
     setLocalError(null);
     try {
-      // Re-add the payment method with setAsDefault flag
       // Note: The proto uses setupIntentId, but for setting default we pass the payment method ID
       // The backend should handle this case
       await billingClient.addPaymentMethod({
@@ -114,17 +112,17 @@ export default function PaymentMethodsPage() {
   };
 
   return (
-    <div className="h-[calc(100vh-56px)] overflow-auto bg-gray-50 dark:bg-gray-950 bg-dotted-grid">
+    <div className="h-[calc(100vh-56px)] overflow-auto bg-gray-50 dark:bg-gray-950 bg-grid">
       <div className="mx-auto max-w-2xl px-6 py-8">
         <div className="mb-8">
           <Link
             to="/billing"
-            className="mb-4 inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+            className="mb-4 inline-flex items-center gap-1 text-xs font-mono font-bold uppercase tracking-wide text-ink/60 hover:text-ink dark:text-gray-400 dark:hover:text-gray-200"
           >
             <ArrowLeft className="h-4 w-4" />
             Back to Billing
           </Link>
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">
+          <h1 className="text-2xl font-display uppercase tracking-tight text-gray-900 dark:text-gray-100">
             Payment Methods
           </h1>
           <p className="mt-1 text-gray-500 dark:text-gray-400">
@@ -133,12 +131,12 @@ export default function PaymentMethodsPage() {
         </div>
 
         {displayError && (
-          <div className="mb-6 rounded-lg bg-red-50 p-4 dark:bg-red-900/20">
+          <div className="mb-6 border-2 border-ink bg-red-50 p-4 dark:bg-red-900/20">
             <div className="flex items-center justify-between">
-              <p className="text-sm text-red-600 dark:text-red-400">{displayError}</p>
+              <p className="text-sm font-mono text-red-600 dark:text-red-400">{displayError}</p>
               <button
                 onClick={clearDisplayError}
-                className="text-sm text-red-600 hover:text-red-700 dark:text-red-400"
+                className="text-xs font-mono font-bold uppercase tracking-wide text-red-600 hover:text-red-700 dark:text-red-400"
               >
                 Dismiss
               </button>
@@ -146,10 +144,9 @@ export default function PaymentMethodsPage() {
           </div>
         )}
 
-        {/* Payment Methods List */}
         {loading && !paymentMethods.length ? (
           <div className="flex justify-center py-12">
-            <Loader2 className="h-8 w-8 animate-spin text-gray-400" />
+            <Loader2 className="h-8 w-8 animate-spin text-orange-500" />
           </div>
         ) : (
           <div className="space-y-4">
@@ -164,7 +161,7 @@ export default function PaymentMethodsPage() {
             ))}
 
             {paymentMethods.length === 0 && !showAddForm && (
-              <div className="rounded-lg border border-gray-200 bg-white p-8 text-center dark:border-gray-700 dark:bg-gray-900">
+              <div className="border-2 border-ink bg-white p-8 text-center dark:border-gray-700 dark:bg-gray-900">
                 <p className="text-gray-500 dark:text-gray-400">
                   No payment methods saved yet.
                 </p>
@@ -173,27 +170,25 @@ export default function PaymentMethodsPage() {
           </div>
         )}
 
-        {/* Add Card Button */}
         {!showAddForm && (
           <button
             onClick={handleAddCard}
-            className="mt-6 flex w-full items-center justify-center gap-2 rounded-lg border-2 border-dashed border-gray-300 bg-white py-4 text-gray-500 hover:border-gray-400 hover:text-gray-600 dark:border-gray-600 dark:bg-gray-900 dark:hover:border-gray-500 dark:hover:text-gray-400"
+            className="mt-6 flex w-full items-center justify-center gap-2 border-2 border-dashed border-ink/40 bg-white py-4 text-xs font-mono font-bold uppercase tracking-wide text-ink/60 hover:border-ink hover:text-ink dark:border-gray-600 dark:bg-gray-900 dark:hover:border-gray-500 dark:hover:text-gray-400"
           >
             <Plus className="h-5 w-5" />
             Add a new card
           </button>
         )}
 
-        {/* Add Card Form */}
         {showAddForm && (
-          <div className="mt-6 rounded-lg border border-gray-200 bg-white p-6 dark:border-gray-700 dark:bg-gray-900">
-            <h2 className="mb-4 text-lg font-semibold text-gray-900 dark:text-gray-100">
+          <div className="mt-6 border-2 border-ink shadow-[4px_4px_0_#0d0d0d] bg-white p-6 dark:border-gray-700 dark:bg-gray-900">
+            <h2 className="mb-4 text-lg font-display uppercase tracking-tight text-gray-900 dark:text-gray-100">
               Add New Card
             </h2>
 
             {setupLoading ? (
               <div className="flex justify-center py-8">
-                <Loader2 className="h-8 w-8 animate-spin text-gray-400" />
+                <Loader2 className="h-8 w-8 animate-spin text-orange-500" />
               </div>
             ) : clientSecret ? (
               <Elements stripe={stripePromise}>
@@ -216,7 +211,7 @@ export default function PaymentMethodsPage() {
                 setShowAddForm(false);
                 setClientSecret(null);
               }}
-              className="mt-4 w-full text-center text-sm text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+              className="mt-4 w-full text-center text-xs font-mono font-bold uppercase tracking-wide text-ink/60 hover:text-ink dark:text-gray-400 dark:hover:text-gray-200"
             >
               Cancel
             </button>

@@ -172,8 +172,6 @@ class ServiceClient:
         headers = {"Content-Type": "application/json"}
 
         if ctx:
-            # For service-to-service calls, we could use a service token
-            # or propagate the user's token
             headers["X-Tenant-ID"] = str(ctx.tenant_id)
             headers["X-User-ID"] = str(ctx.user_id)
 

@@ -38,9 +38,7 @@ def _empty_block_list() -> list[Block]:
     return []
 
 
-# =============================================================================
 # Source Location (for error reporting)
-# =============================================================================
 
 
 @dataclass(frozen=True, slots=True)
@@ -63,9 +61,8 @@ class SourceLocation:
         return f"line {self.line}, col {self.column}"
 
 
-# =============================================================================
 # Type Aliases
-# =============================================================================
+
 
 type RebalanceFrequency = TypingLiteral["daily", "weekly", "monthly", "quarterly", "annually"]
 
@@ -91,9 +88,8 @@ type CrossoverDirection = TypingLiteral["above", "below"]
 
 type PriceField = TypingLiteral["close", "open", "high", "low", "volume"]
 
-# =============================================================================
+
 # Value Types (used in conditions)
-# =============================================================================
 
 
 @dataclass(frozen=True, slots=True)
@@ -177,9 +173,7 @@ class Metric:
 type Value = NumericLiteral | Price | Indicator | Metric
 
 
-# =============================================================================
 # Condition Types (used in if blocks)
-# =============================================================================
 
 
 @dataclass(frozen=True, slots=True)
@@ -243,9 +237,7 @@ class LogicalOp:
 type Condition = Comparison | Crossover | LogicalOp
 
 
-# =============================================================================
 # Block Types (strategy structure)
-# =============================================================================
 
 
 @dataclass(frozen=True, slots=True)
@@ -417,16 +409,12 @@ class Strategy:
 type Block = Strategy | Group | Weight | Asset | If | Filter
 
 
-# =============================================================================
 # Constants
-# =============================================================================
 
-# Valid rebalance frequencies
 REBALANCE_FREQUENCIES: frozenset[str] = frozenset(
     {"daily", "weekly", "monthly", "quarterly", "annually"}
 )
 
-# Valid weight methods
 WEIGHT_METHODS: frozenset[str] = frozenset(
     {
         "specified",
@@ -439,20 +427,15 @@ WEIGHT_METHODS: frozenset[str] = frozenset(
     }
 )
 
-# Valid filter criteria
 FILTER_CRITERIA: frozenset[str] = frozenset({"momentum", "volatility", "volume"})
 
-# Valid comparison operators
 COMPARISON_OPS: frozenset[str] = frozenset({">", "<", ">=", "<=", "=", "!="})
 
-# Valid logical operators
 LOGICAL_OPS: frozenset[str] = frozenset({"and", "or", "not"})
 
-# Valid crossover operators
 CROSSOVER_OPS: frozenset[str] = frozenset({"crosses-above", "crosses-below"})
 
-# Supported indicators for conditions
-# This is the single source of truth - extractor.py imports from here
+# Single source of truth for condition indicators - extractor.py imports from here
 INDICATORS: frozenset[str] = frozenset(
     {
         "sma",
@@ -476,5 +459,4 @@ INDICATORS: frozenset[str] = frozenset(
     }
 )
 
-# Supported metrics
 METRICS: frozenset[str] = frozenset({"drawdown", "return", "volatility"})

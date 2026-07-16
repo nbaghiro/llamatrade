@@ -22,6 +22,7 @@ Use these to guide all recommendations:
 - **Bias toward explicit over clever** — readable code beats clever code
 - **Async-first** — all I/O operations must use async/await
 - **Strict typing enforced** — no `Any` in Python, no `any`/`never` in TypeScript
+- **Comments are minimal** — add one ONLY when the code it describes is not self-explanatory; then keep it to a single concise line. No multi-line blocks narrating rationale or history, and never "now X…" / "no longer…" / "previously…" phrasing — describe what the code does, not what it used to do or why the old way was wrong (that belongs in the commit/PR). Docstrings and terse design-decision refs (e.g. `(2A)`) are fine.
 
 ---
 

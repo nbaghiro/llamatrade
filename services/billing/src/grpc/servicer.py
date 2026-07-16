@@ -4,18 +4,23 @@ from __future__ import annotations
 
 import logging
 import os
+from datetime import UTC, datetime
+from decimal import Decimal
+from typing import cast
 from uuid import UUID
 
 import jwt
 from connectrpc.code import Code
 from connectrpc.errors import ConnectError
 from connectrpc.request import RequestContext
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 # Type alias for generic request context (accepts any request/response types)
 type AnyContext = RequestContext[object, object]
 
 from llamatrade_db import get_session_maker
+from llamatrade_db.models import Invoice
 from llamatrade_proto.generated import billing_pb2, common_pb2
 
 from src.models import (
@@ -212,42 +217,174 @@ class BillingServicer:
         request: billing_pb2.GetUsageRequest,
         ctx: AnyContext,
     ) -> billing_pb2.GetUsageResponse:
-        """Get usage metrics for a tenant."""
+        """Get usage metrics for a tenant.
+
+        Counts are lifetime-to-date, computed server-side from the shared DB, and
+        mirror the meters the web app derives client-side (see
+        ``apps/web/src/store/billing.ts::fetchUsageCounts``) so the numbers agree:
+
+        - ``strategies_created`` — non-archived strategies (matches ``listStrategies``)
+        - ``active_strategies`` — RUNNING strategy executions (matches the RUNNING
+          filter over ``listStrategyPerformance``)
+        - ``backtests_run`` — all backtests for the tenant (matches ``listBacktests``)
+        - ``live_sessions`` — currently RUNNING trading sessions
+        - ``api_calls`` — total Copilot messages across agent sessions
+
+        ``period_start``/``period_end`` reflect the current subscription period when
+        a subscription exists, else the calendar month. Fields not tracked in the DB
+        (``backtest_compute_minutes``, ``market_data_requests``, ``storage_bytes``,
+        ``orders_placed``) are left at 0.
+        """
+        from llamatrade_db.models import (
+            AgentSession,
+            Backtest,
+            Strategy,
+            StrategyExecution,
+            TradingSession,
+        )
+        from llamatrade_proto.generated.common_pb2 import EXECUTION_STATUS_RUNNING
+        from llamatrade_proto.generated.strategy_pb2 import STRATEGY_STATUS_ARCHIVED
+
         tenant_id = self._get_tenant_id(ctx)
 
-        # Usage tracking is stubbed for now
+        async with await self._get_db() as db:
+            strategies_created = (
+                await db.scalar(
+                    select(func.count())
+                    .select_from(Strategy)
+                    .where(
+                        Strategy.tenant_id == tenant_id,
+                        Strategy.status != STRATEGY_STATUS_ARCHIVED,
+                    )
+                )
+            ) or 0
+            active_strategies = (
+                await db.scalar(
+                    select(func.count())
+                    .select_from(StrategyExecution)
+                    .where(
+                        StrategyExecution.tenant_id == tenant_id,
+                        StrategyExecution.status == EXECUTION_STATUS_RUNNING,
+                    )
+                )
+            ) or 0
+            backtests_run = (
+                await db.scalar(
+                    select(func.count())
+                    .select_from(Backtest)
+                    .where(Backtest.tenant_id == tenant_id)
+                )
+            ) or 0
+            live_sessions = (
+                await db.scalar(
+                    select(func.count())
+                    .select_from(TradingSession)
+                    .where(
+                        TradingSession.tenant_id == tenant_id,
+                        TradingSession.status == EXECUTION_STATUS_RUNNING,
+                    )
+                )
+            ) or 0
+            api_calls = (
+                await db.scalar(
+                    select(func.coalesce(func.sum(AgentSession.message_count), 0)).where(
+                        AgentSession.tenant_id == tenant_id
+                    )
+                )
+            ) or 0
+
+            period_start, period_end, period_id = await self._resolve_period(
+                db, tenant_id, request.period_id
+            )
+
         return billing_pb2.GetUsageResponse(
             usage=billing_pb2.Usage(
                 tenant_id=str(tenant_id),
-                period_id=request.period_id or "current",
-                strategies_created=0,
-                active_strategies=0,
-                backtests_run=0,
+                period_id=period_id,
+                strategies_created=strategies_created,
+                active_strategies=active_strategies,
+                backtests_run=backtests_run,
                 backtest_compute_minutes=0,
-                live_sessions=0,
+                live_sessions=live_sessions,
                 orders_placed=0,
                 market_data_requests=0,
                 storage_bytes=0,
-                api_calls=0,
+                api_calls=api_calls,
+                period_start=common_pb2.Timestamp(seconds=int(period_start.timestamp())),
+                period_end=common_pb2.Timestamp(seconds=int(period_end.timestamp())),
             ),
         )
+
+    async def _resolve_period(
+        self, db: AsyncSession, tenant_id: UUID, requested_period_id: str
+    ) -> tuple[datetime, datetime, str]:
+        """Resolve the reporting window: current subscription period, else month."""
+        from llamatrade_db.models import Subscription
+
+        subscription = await db.scalar(
+            select(Subscription)
+            .where(Subscription.tenant_id == tenant_id)
+            .order_by(Subscription.created_at.desc())
+            .limit(1)
+        )
+        if subscription is not None:
+            period_start = subscription.current_period_start
+            period_end = subscription.current_period_end
+        else:
+            now = datetime.now(UTC)
+            period_start = datetime(now.year, now.month, 1, tzinfo=UTC)
+            period_end = (
+                datetime(now.year + 1, 1, 1, tzinfo=UTC)
+                if now.month == 12
+                else datetime(now.year, now.month + 1, 1, tzinfo=UTC)
+            )
+
+        if requested_period_id and requested_period_id != "current":
+            period_id = requested_period_id
+        else:
+            period_id = period_start.strftime("%Y-%m")
+        return period_start, period_end, period_id
 
     async def list_invoices(
         self,
         request: billing_pb2.ListInvoicesRequest,
         ctx: AnyContext,
     ) -> billing_pb2.ListInvoicesResponse:
-        """List invoices for a tenant."""
-        # Invoices are managed through Stripe portal
+        """List a tenant's invoices, newest first."""
+        tenant_id = self._get_tenant_id(ctx)
+        page = request.pagination.page or 1
+        page_size = request.pagination.page_size or 20
+
+        async with await self._get_db() as db:
+            total = (
+                await db.scalar(
+                    select(func.count()).select_from(Invoice).where(Invoice.tenant_id == tenant_id)
+                )
+            ) or 0
+            rows = (
+                (
+                    await db.execute(
+                        select(Invoice)
+                        .where(Invoice.tenant_id == tenant_id)
+                        .order_by(Invoice.created_at.desc())
+                        .limit(page_size)
+                        .offset((page - 1) * page_size)
+                    )
+                )
+                .scalars()
+                .all()
+            )
+
+        total_pages = (total + page_size - 1) // page_size if total else 1
         return billing_pb2.ListInvoicesResponse(
-            invoices=[],
+            invoices=[self._to_proto_invoice(inv) for inv in rows],
             pagination=common_pb2.PaginationResponse(
-                total_items=0,
-                total_pages=1,
-                current_page=1,
-                page_size=20,
-                has_next=False,
-                has_previous=False,
+                total_items=total,
+                total_pages=total_pages,
+                current_page=page,
+                page_size=page_size,
+                has_next=page < total_pages,
+                has_previous=page > 1,
             ),
         )
 
@@ -256,8 +393,26 @@ class BillingServicer:
         request: billing_pb2.GetInvoiceRequest,
         ctx: AnyContext,
     ) -> billing_pb2.GetInvoiceResponse:
-        """Get a specific invoice."""
-        raise ConnectError(Code.NOT_FOUND, f"Invoice not found: {request.invoice_id}")
+        """Get a specific invoice, tenant-scoped."""
+        tenant_id = self._get_tenant_id(ctx)
+
+        try:
+            invoice_id = UUID(request.invoice_id)
+        except ValueError, AttributeError:
+            raise ConnectError(Code.NOT_FOUND, f"Invoice not found: {request.invoice_id}")
+
+        async with await self._get_db() as db:
+            invoice = await db.scalar(
+                select(Invoice).where(
+                    Invoice.id == invoice_id,
+                    Invoice.tenant_id == tenant_id,
+                )
+            )
+
+        if invoice is None:
+            raise ConnectError(Code.NOT_FOUND, f"Invoice not found: {request.invoice_id}")
+
+        return billing_pb2.GetInvoiceResponse(invoice=self._to_proto_invoice(invoice))
 
     async def list_plans(
         self,
@@ -379,9 +534,41 @@ class BillingServicer:
             portal_url=f"https://billing.stripe.com/placeholder/{tenant_id}",
         )
 
-    # ===================
     # Helper methods
-    # ===================
+
+    def _to_proto_invoice(self, inv: Invoice) -> billing_pb2.Invoice:
+        """Convert a DB invoice to proto."""
+        cur = (inv.currency or "usd").upper()
+
+        def money(amount: Decimal) -> common_pb2.Money:
+            return common_pb2.Money(currency=cur, amount=str(amount))
+
+        def ts(value: datetime | None) -> common_pb2.Timestamp | None:
+            return common_pb2.Timestamp(seconds=int(value.timestamp())) if value else None
+
+        items = [
+            billing_pb2.InvoiceItem(
+                description=str(li.get("description", "")),
+                amount=common_pb2.Money(currency=cur, amount=str(li.get("amount", "0"))),
+            )
+            for li in (inv.line_items or [])
+        ]
+        return billing_pb2.Invoice(
+            id=str(inv.id),
+            tenant_id=str(inv.tenant_id),
+            subscription_id=str(inv.subscription_id) if inv.subscription_id else "",
+            amount=money(inv.amount_due),
+            amount_paid=money(inv.amount_paid),
+            amount_remaining=money(inv.amount_due - inv.amount_paid),
+            status=cast("billing_pb2.InvoiceStatus.ValueType", inv.status),
+            period_start=ts(inv.period_start),
+            period_end=ts(inv.period_end),
+            due_date=ts(inv.due_date),
+            paid_at=ts(inv.paid_at),
+            pdf_url=inv.invoice_pdf or "",
+            stripe_invoice_id=inv.stripe_invoice_id,
+            items=items,
+        )
 
     def _to_proto_subscription(
         self, subscription: SubscriptionResponse

@@ -22,9 +22,7 @@ from llamatrade_proto.generated.common_pb2 import (
     EXECUTION_STATUS_STOPPED,
 )
 
-# =============================================================================
-# Proto int -> string conversion helpers
-# =============================================================================
+from src.models import PositionResponse
 
 _EXECUTION_MODE_TO_STR: dict[int, str] = {
     EXECUTION_MODE_PAPER: "paper",
@@ -48,11 +46,6 @@ def execution_mode_to_str(value: int) -> str:
 def execution_status_to_str(value: int) -> str:
     """Convert ExecutionStatus proto value to string."""
     return _EXECUTION_STATUS_TO_STR.get(value, "pending")
-
-
-# =============================================================================
-# PYDANTIC MODELS
-# =============================================================================
 
 
 class PeriodReturns(BaseModel):
@@ -122,24 +115,12 @@ class EquityPoint(BaseModel):
     benchmark_value: Decimal | None = None
 
 
-class PositionSummary(BaseModel):
-    """Summary of an open position."""
-
-    symbol: str
-    qty: Decimal
-    avg_entry_price: Decimal
-    current_price: Decimal | None
-    market_value: Decimal | None
-    unrealized_pnl: Decimal | None
-    unrealized_pnl_percent: Decimal | None
-
-
 class StrategyPerformanceDetail(BaseModel):
     """Detailed performance for a single strategy."""
 
     summary: StrategyPerformanceSummary
     metrics: LiveMetrics
-    positions: list[PositionSummary]
+    positions: list[PositionResponse]
 
 
 class ListPerformanceFilters(BaseModel):
@@ -159,10 +140,38 @@ class ListPerformanceResult(BaseModel):
     total: int
 
 
+class BenchmarkSeries(BaseModel):
+    """A benchmark (e.g. SPY) equity series aligned to a strategy's curve.
+
+    Rebased to the strategy's starting equity so a "vs SPY" line is directly
+    comparable to the strategy line on the same axis.
+    """
+
+    symbol: str
+    points: list[EquityPoint]
+    total_return: Decimal | None = None
+
+
 class EquityCurveResult(BaseModel):
     """Equity curve data for a strategy."""
 
     equity_curve: list[EquityPoint]
     benchmark_symbol: str | None = None
     benchmark_return: Decimal | None = None
+    benchmark: BenchmarkSeries | None = None
     period_returns: PeriodReturns
+
+
+class BookTotals(BaseModel):
+    """Strategy-book aggregate returns, matching the per-execution list.
+
+    Lets ``ListPortfolios`` report the SAME day/total return the strategy rows
+    weight-sum to (single basis), instead of the whole-account figure that also
+    folds in non-strategy sleeves (idle cash, manual trades).
+    """
+
+    day_pnl: Decimal
+    day_pnl_percent: Decimal
+    total_return: Decimal
+    total_return_percent: Decimal
+    has_strategies: bool

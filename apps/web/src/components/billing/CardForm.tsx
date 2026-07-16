@@ -83,27 +83,27 @@ export default function CardForm({
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
       <div>
-        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+        <label className="label">
           Card Details
         </label>
         <div className="relative">
           <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
-            <CreditCard className="h-5 w-5 text-gray-400" />
+            <CreditCard className="h-5 w-5 text-ink/40" />
           </div>
-          <div className="pl-10 pr-3 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 focus-within:ring-2 focus-within:ring-indigo-500 focus-within:border-indigo-500">
+          <div className="pl-10 pr-3 py-3 border-2 border-ink bg-paper focus-within:border-orange-500">
             <CardElement
               options={{
                 style: {
                   base: {
                     fontSize: '16px',
-                    color: '#1f2937',
-                    fontFamily: 'ui-sans-serif, system-ui, sans-serif',
+                    color: '#0d0d0d',
+                    fontFamily: 'Archivo, system-ui, sans-serif',
                     '::placeholder': {
-                      color: '#9ca3af',
+                      color: '#7a7362',
                     },
                   },
                   invalid: {
-                    color: '#ef4444',
+                    color: '#c81e1e',
                   },
                 },
                 hidePostalCode: true,
@@ -124,11 +124,7 @@ export default function CardForm({
       <button
         type="submit"
         disabled={isDisabled}
-        className={`w-full flex items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-medium transition-colors ${
-          isDisabled
-            ? 'bg-gray-100 text-gray-400 cursor-not-allowed dark:bg-gray-800 dark:text-gray-500'
-            : 'bg-indigo-600 text-white hover:bg-indigo-700'
-        }`}
+        className="btn btn-primary w-full"
       >
         {(processing || loading) && <Loader2 className="h-4 w-4 animate-spin" />}
         {processing ? 'Processing...' : submitLabel}

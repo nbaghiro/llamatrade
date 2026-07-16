@@ -1,0 +1,32 @@
+# Root .dockerignore — applies to builds that use the repo root as context
+# (apps/web dev + prod, services/agent, libs/db migrate). Keeps the build
+# context small and prevents host-only artifacts (node_modules with native
+# binaries, virtualenvs, caches) from leaking into images. Dependencies are
+# always installed fresh inside the image.
+
+# Node
+**/node_modules
+**/.vite
+**/dist
+**/.turbo
+
+# Python
+**/__pycache__
+**/*.py[cod]
+**/.venv
+**/venv
+**/.mypy_cache
+**/.pytest_cache
+**/.ruff_cache
+**/htmlcov
+**/*.egg-info
+
+# VCS / tooling
+.git
+.github
+**/.DS_Store
+
+# Local env files (images get config via compose environment/env_file)
+**/.env
+**/.env.*
+!**/.env.example

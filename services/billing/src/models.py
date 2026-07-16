@@ -12,9 +12,7 @@ from llamatrade_proto.generated.billing_pb2 import (
     SubscriptionStatus,
 )
 
-# ===================
 # Plan Schemas
-# ===================
 
 
 class PlanResponse(BaseModel):
@@ -32,9 +30,7 @@ class PlanResponse(BaseModel):
     trial_days: int = 0
 
 
-# ===================
 # Subscription Schemas
-# ===================
 
 
 class SubscriptionResponse(BaseModel):
@@ -76,9 +72,7 @@ class SubscriptionCancelRequest(BaseModel):
     at_period_end: bool = True
 
 
-# ===================
 # Payment Method Schemas
-# ===================
 
 
 class SetupIntentResponse(BaseModel):

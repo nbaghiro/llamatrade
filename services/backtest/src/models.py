@@ -8,9 +8,7 @@ from pydantic import BaseModel, Field, field_validator
 
 from llamatrade_proto.generated.backtest_pb2 import BacktestStatus
 
-# ===================
 # Conversion helpers: proto ValueType -> str (for display/API)
-# ===================
 
 _BACKTEST_STATUS_PREFIX = "BACKTEST_STATUS_"
 
@@ -23,10 +21,8 @@ def backtest_status_to_str(value: BacktestStatus.ValueType) -> str:
     return name.lower()
 
 
-# Valid timeframes for backtesting.
-# These values mirror the Timeframe enum in market_data.proto (single source of truth).
-# The string format here is used for API/display; proto uses integer constants internally.
-# See: libs/proto/llamatrade_proto/protos/market_data.proto
+# Valid timeframes; string form mirrors the Timeframe enum in market_data.proto
+# (single source of truth). See: libs/proto/llamatrade_proto/protos/market_data.proto
 VALID_TIMEFRAMES = ("1Min", "5Min", "15Min", "30Min", "1H", "4H", "1D", "1W")
 TimeframeType = Literal["1Min", "5Min", "15Min", "30Min", "1H", "4H", "1D", "1W"]
 
@@ -41,9 +37,8 @@ class BacktestCreate(BaseModel):
     symbols: list[str] | None = None
     commission: float = Field(default=0, ge=0)
     slippage: float = Field(default=0, ge=0)
-    # Phase 1: Timeframe selection
     timeframe: str = Field(default="1D", description="Data timeframe for backtest")
-    # Phase 2: Benchmark configuration
+    # Benchmark configuration
     benchmark_symbol: str | None = Field(default="SPY", max_length=10)
     include_benchmark: bool = Field(default=True)
 
@@ -77,15 +72,14 @@ class BacktestMetrics(BaseModel):
     largest_loss: float
     avg_holding_period: float  # days
     exposure_time: float  # percentage
-    # Phase 5: Benchmark comparison metrics
+    # Benchmark comparison metrics
     benchmark_return: float = 0
     benchmark_symbol: str = "SPY"
     alpha: float = 0
     beta: float = 0
     information_ratio: float = 0
     excess_return: float = 0
-    # Indicates whether benchmark data was successfully fetched
-    # When False, benchmark metrics (benchmark_return, alpha, beta, etc.) are defaults
+    # Whether benchmark data was fetched; when False the benchmark metrics above are defaults.
     benchmark_data_available: bool = True
 
 
@@ -139,5 +133,5 @@ class BacktestResultResponse(BaseModel):
     trades: list[TradeRecord]
     monthly_returns: dict[str, float]
     created_at: datetime
-    # Phase 5: Benchmark equity curve for chart overlay
+    # Benchmark equity curve for chart overlay
     benchmark_equity_curve: list[BenchmarkEquityPoint] = []

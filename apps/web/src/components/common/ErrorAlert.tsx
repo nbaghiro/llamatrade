@@ -30,7 +30,7 @@ export function ErrorAlert({
 
   return (
     <div
-      className={`rounded-lg border border-red-200 bg-red-50 dark:bg-red-900/20 dark:border-red-800 p-4 ${className}`}
+      className={`border-2 border-red-500 bg-red-50 dark:bg-red-900/20 dark:border-red-800 p-4 ${className}`}
       role="alert"
     >
       <div className="flex items-start gap-3">
@@ -54,7 +54,7 @@ export function ErrorAlert({
           {showRetry && onRetry && (
             <button
               onClick={onRetry}
-              className="inline-flex items-center px-3 py-1.5 text-xs font-medium rounded-md text-red-700 bg-red-100 hover:bg-red-200 dark:text-red-200 dark:bg-red-900/40 dark:hover:bg-red-900/60 transition-colors"
+              className="inline-flex items-center px-3 py-1.5 text-xs font-mono font-bold uppercase tracking-wide rounded-md text-red-700 bg-red-100 hover:bg-red-200 dark:text-red-200 dark:bg-red-900/40 dark:hover:bg-red-900/60 transition-colors"
             >
               <RefreshCw className="w-3.5 h-3.5 mr-1.5" />
               Try Again
@@ -63,7 +63,7 @@ export function ErrorAlert({
           {onDismiss && (
             <button
               onClick={onDismiss}
-              className="inline-flex items-center px-3 py-1.5 text-xs font-medium rounded-md text-red-600 hover:text-red-700 hover:bg-red-100 dark:text-red-300 dark:hover:text-red-200 dark:hover:bg-red-900/40 transition-colors"
+              className="inline-flex items-center px-3 py-1.5 text-xs font-mono font-bold uppercase tracking-wide rounded-md text-red-600 hover:text-red-700 hover:bg-red-100 dark:text-red-300 dark:hover:text-red-200 dark:hover:bg-red-900/40 transition-colors"
             >
               Dismiss
             </button>

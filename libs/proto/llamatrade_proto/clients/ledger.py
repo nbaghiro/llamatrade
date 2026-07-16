@@ -1,11 +1,15 @@
-"""Ledger gRPC client (LedgerService, hosted by the portfolio service).
+"""Ledger client (LedgerService, hosted by the portfolio service).
 
 Consumed by the strategy service (GetOrCreateAccount + AllocateCapital when an
 execution is funded) and the trading service (GetSleeve for sleeve equity /
 free cash, Manual-sleeve resolution for unattributed orders).
 
+The portfolio service serves LedgerService as a Connect ASGI app (HTTP/1.1), so
+callers use the generated Connect client — not a native-gRPC channel. Inter-service
+calls carry a minted service token so they pass portfolio's fail-closed auth.
+
 Unlike validation-style clients, fund operations are mutations: RPC errors
-propagate as ``grpc.aio.AioRpcError`` so callers can handle them explicitly.
+propagate as ``connectrpc.errors.ConnectError`` so callers can handle them.
 """
 
 from __future__ import annotations
@@ -15,15 +19,20 @@ from dataclasses import dataclass, field
 from decimal import Decimal
 from typing import TYPE_CHECKING
 
-import grpc
-import grpc.aio
-
-from llamatrade_proto.clients.base import BaseGRPCClient
+from llamatrade_common.auth import mint_service_token
+from llamatrade_proto.generated.ledger_connect import LedgerServiceClient
 
 if TYPE_CHECKING:
-    from llamatrade_proto.generated import ledger_pb2, ledger_pb2_grpc
+    from llamatrade_proto.generated import ledger_pb2
 
 logger = logging.getLogger(__name__)
+
+
+def _normalize_target(target: str) -> str:
+    """Connect needs an absolute URL; accept bare ``host:port`` too."""
+    if target.startswith(("http://", "https://")):
+        return target
+    return f"http://{target}"
 
 
 @dataclass
@@ -138,47 +147,41 @@ def _dec(pb_value: object) -> Decimal:
     return Decimal(raw) if raw else Decimal("0")
 
 
-class LedgerClient(BaseGRPCClient):
-    """Client for the LedgerService gRPC API (served by portfolio, port 8860).
+class LedgerClient:
+    """Connect client for the LedgerService API (served by portfolio, port 8860).
 
     Example:
-        ledger = LedgerClient("portfolio:8860")
+        ledger = LedgerClient("portfolio:8860", service_name="strategy")
         result = await ledger.get_or_create_account(tenant_id, user_id, credentials_id)
         sleeve = await ledger.allocate_capital(
             tenant_id, user_id, result.account.id, sleeve_id, Decimal("40000")
         )
     """
 
-    def __init__(
-        self,
-        target: str = "portfolio:8860",
-        *,
-        secure: bool = False,
-        credentials: grpc.ChannelCredentials | None = None,
-        interceptors: list[grpc.aio.ClientInterceptor] | None = None,
-        options: list[tuple[str, str | int | bool]] | None = None,
-    ) -> None:
-        super().__init__(
-            target,
-            secure=secure,
-            credentials=credentials,
-            interceptors=interceptors,
-            options=options,
-        )
-        self._stub: ledger_pb2_grpc.LedgerServiceStub | None = None
+    def __init__(self, target: str = "portfolio:8860", *, service_name: str = "internal") -> None:
+        self.target = _normalize_target(target)
+        self._service_name = service_name
+        self._client: LedgerServiceClient | None = None
 
-    @property
-    def stub(self) -> ledger_pb2_grpc.LedgerServiceStub:
-        """Get the gRPC stub (lazy initialization)."""
-        if self._stub is None:
-            try:
-                from llamatrade_proto.generated import ledger_pb2_grpc
-            except ImportError:
-                raise RuntimeError(
-                    "Generated gRPC code not found. Run 'make generate' in libs/proto"
-                ) from None
-            self._stub = ledger_pb2_grpc.LedgerServiceStub(self.channel)
-        return self._stub
+    def _get_client(self) -> LedgerServiceClient:
+        if self._client is None:
+            self._client = LedgerServiceClient(self.target)
+        return self._client
+
+    def _headers(self) -> dict[str, str]:
+        """Internal service token so the call clears portfolio's fail-closed auth."""
+        return {"Authorization": f"Bearer {mint_service_token(service_name=self._service_name)}"}
+
+    async def close(self) -> None:
+        if self._client is not None:
+            await self._client.close()
+            self._client = None
+
+    async def __aenter__(self) -> LedgerClient:
+        return self
+
+    async def __aexit__(self, *_exc: object) -> None:
+        await self.close()
 
     async def get_or_create_account(
         self, tenant_id: str, user_id: str, credentials_id: str
@@ -190,7 +193,7 @@ class LedgerClient(BaseGRPCClient):
             context=common_pb2.TenantContext(tenant_id=tenant_id, user_id=user_id),
             credentials_id=credentials_id,
         )
-        response = await self.stub.GetOrCreateAccount(request)
+        response = await self._get_client().get_or_create_account(request, headers=self._headers())
         return AccountBootstrapResult(
             account=self._to_account(response.account),
             base_sleeves=[self._to_sleeve(s) for s in response.base_sleeves],
@@ -223,7 +226,7 @@ class LedgerClient(BaseGRPCClient):
             strategy_execution_id=strategy_execution_id,
             sleeve_name=sleeve_name,
         )
-        response = await self.stub.AllocateCapital(request)
+        response = await self._get_client().allocate_capital(request, headers=self._headers())
         return self._to_sleeve(response.sleeve)
 
     async def transfer_capital(
@@ -245,7 +248,7 @@ class LedgerClient(BaseGRPCClient):
             to_sleeve_id=to_sleeve_id,
             amount=common_pb2.Decimal(value=str(amount)),
         )
-        response = await self.stub.TransferCapital(request)
+        response = await self._get_client().transfer_capital(request, headers=self._headers())
         return self._to_sleeve(response.from_sleeve), self._to_sleeve(response.to_sleeve)
 
     async def close_sleeve(
@@ -268,7 +271,7 @@ class LedgerClient(BaseGRPCClient):
             sleeve_id=sleeve_id,
             reason=reason,
         )
-        response = await self.stub.CloseSleeve(request)
+        response = await self._get_client().close_sleeve(request, headers=self._headers())
         return SleeveCloseInfo(
             sleeve=self._to_sleeve(response.sleeve),
             already_closed=response.already_closed,
@@ -290,7 +293,7 @@ class LedgerClient(BaseGRPCClient):
             account_id=account_id,
             amount=common_pb2.Decimal(value=str(amount)),
         )
-        response = await self.stub.DepositFunds(request)
+        response = await self._get_client().deposit_funds(request, headers=self._headers())
         return self._to_sleeve(response.unallocated)
 
     async def withdraw_funds(
@@ -304,7 +307,7 @@ class LedgerClient(BaseGRPCClient):
             account_id=account_id,
             amount=common_pb2.Decimal(value=str(amount)),
         )
-        response = await self.stub.WithdrawFunds(request)
+        response = await self._get_client().withdraw_funds(request, headers=self._headers())
         return self._to_sleeve(response.unallocated)
 
     async def list_sleeves(self, tenant_id: str, user_id: str, account_id: str) -> list[SleeveInfo]:
@@ -315,7 +318,7 @@ class LedgerClient(BaseGRPCClient):
             context=common_pb2.TenantContext(tenant_id=tenant_id, user_id=user_id),
             account_id=account_id,
         )
-        response = await self.stub.ListSleeves(request)
+        response = await self._get_client().list_sleeves(request, headers=self._headers())
         return [self._to_sleeve(s) for s in response.sleeves]
 
     async def get_sleeve(self, tenant_id: str, user_id: str, sleeve_id: str) -> SleeveDetail:
@@ -326,7 +329,7 @@ class LedgerClient(BaseGRPCClient):
             context=common_pb2.TenantContext(tenant_id=tenant_id, user_id=user_id),
             sleeve_id=sleeve_id,
         )
-        response = await self.stub.GetSleeve(request)
+        response = await self._get_client().get_sleeve(request, headers=self._headers())
         return SleeveDetail(
             sleeve=self._to_sleeve(response.sleeve),
             lots=[self._to_lot(lot) for lot in response.lots],
@@ -343,7 +346,7 @@ class LedgerClient(BaseGRPCClient):
             account_id=account_id,
             symbol=symbol,
         )
-        response = await self.stub.GetHoldingHistory(request)
+        response = await self._get_client().get_holding_history(request, headers=self._headers())
         return [
             HoldingHistoryEntryInfo(
                 sleeve_id=entry.sleeve_id,

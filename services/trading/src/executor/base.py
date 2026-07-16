@@ -164,7 +164,6 @@ class OrderSubmissionMixin:
             violations: List of risk violations.
             start_time: Time when order processing started (for duration metric).
         """
-        # Record rejection metric
         duration = time.perf_counter() - start_time
         record_order_submission(
             side=order_side_to_str(order.side),
@@ -173,7 +172,6 @@ class OrderSubmissionMixin:
             duration=duration,
         )
 
-        # Send rejection alert
         if self.alerts:
             await self.alerts.on_order_rejected(
                 tenant_id=tenant_id,
@@ -247,7 +245,6 @@ class OrderSubmissionMixin:
             error: The exception from Alpaca.
             start_time: Time when order processing started (for duration metric).
         """
-        # Record API error metric
         duration = time.perf_counter() - start_time
         record_order_submission(
             side=order_side_to_str(order.side),
@@ -256,7 +253,6 @@ class OrderSubmissionMixin:
             duration=duration,
         )
 
-        # Send rejection alert
         if self.alerts:
             await self.alerts.on_order_rejected(
                 tenant_id=tenant_id,

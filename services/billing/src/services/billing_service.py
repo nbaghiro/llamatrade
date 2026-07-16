@@ -119,9 +119,7 @@ class BillingService:
         self.db = db
         self.stripe = stripe_client
 
-    # ===================
     # Plans
-    # ===================
 
     async def list_plans(self) -> list[PlanResponse]:
         """List all available plans."""
@@ -189,9 +187,7 @@ class BillingService:
         except ValueError, AttributeError:
             return False
 
-    # ===================
     # Subscriptions
-    # ===================
 
     async def get_subscription(self, tenant_id: UUID) -> SubscriptionResponse | None:
         """Get the current subscription for a tenant."""

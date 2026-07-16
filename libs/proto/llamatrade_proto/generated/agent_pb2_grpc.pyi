@@ -44,6 +44,7 @@ class AgentServiceStub:
     SendMessage: _grpc.UnaryUnaryMultiCallable[_agent_pb2.SendMessageRequest, _agent_pb2.SendMessageResponse]
     """Messaging"""
     StreamMessage: _grpc.UnaryStreamMultiCallable[_agent_pb2.SendMessageRequest, _agent_pb2.AgentStreamEvent]
+    ConfirmToolCall: _grpc.UnaryStreamMultiCallable[_agent_pb2.ConfirmToolCallRequest, _agent_pb2.AgentStreamEvent]
     CommitArtifact: _grpc.UnaryUnaryMultiCallable[_agent_pb2.CommitArtifactRequest, _agent_pb2.CommitArtifactResponse]
     """Artifacts"""
     GetArtifact: _grpc.UnaryUnaryMultiCallable[_agent_pb2.GetArtifactRequest, _agent_pb2.GetArtifactResponse]
@@ -66,6 +67,7 @@ class AgentServiceAsyncStub(AgentServiceStub):
     SendMessage: _aio.UnaryUnaryMultiCallable[_agent_pb2.SendMessageRequest, _agent_pb2.SendMessageResponse]  # type: ignore[assignment]
     """Messaging"""
     StreamMessage: _aio.UnaryStreamMultiCallable[_agent_pb2.SendMessageRequest, _agent_pb2.AgentStreamEvent]  # type: ignore[assignment]
+    ConfirmToolCall: _aio.UnaryStreamMultiCallable[_agent_pb2.ConfirmToolCallRequest, _agent_pb2.AgentStreamEvent]  # type: ignore[assignment]
     CommitArtifact: _aio.UnaryUnaryMultiCallable[_agent_pb2.CommitArtifactRequest, _agent_pb2.CommitArtifactResponse]  # type: ignore[assignment]
     """Artifacts"""
     GetArtifact: _aio.UnaryUnaryMultiCallable[_agent_pb2.GetArtifactRequest, _agent_pb2.GetArtifactResponse]  # type: ignore[assignment]
@@ -119,6 +121,13 @@ class AgentServiceServicer(metaclass=_abc_1.ABCMeta):
     def StreamMessage(
         self,
         request: _agent_pb2.SendMessageRequest,
+        context: _ServicerContext,
+    ) -> _typing.Union[_abc.Iterator[_agent_pb2.AgentStreamEvent], _abc.AsyncIterator[_agent_pb2.AgentStreamEvent]]: ...
+
+    @_abc_1.abstractmethod
+    def ConfirmToolCall(
+        self,
+        request: _agent_pb2.ConfirmToolCallRequest,
         context: _ServicerContext,
     ) -> _typing.Union[_abc.Iterator[_agent_pb2.AgentStreamEvent], _abc.AsyncIterator[_agent_pb2.AgentStreamEvent]]: ...
 

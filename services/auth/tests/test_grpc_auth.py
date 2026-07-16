@@ -45,6 +45,7 @@ class MockUser:
         last_name: str = "User",
         role: str = "admin",
         is_active: bool = True,
+        avatar_url: str | None = None,
     ) -> None:
         self.id = id or uuid4()
         self.tenant_id = tenant_id or uuid4()
@@ -54,6 +55,7 @@ class MockUser:
         self.last_name = last_name
         self.role = role
         self.is_active = is_active
+        self.avatar_url = avatar_url
         self.created_at = datetime.now(UTC)
         self.last_login: datetime | None = None
 
@@ -558,7 +560,34 @@ class TestGetCurrentUser:
 
         assert response.user.id == str(user.id)
         assert response.user.email == user.email
+        assert response.user.avatar_url == ""  # None avatar maps to empty string
         assert response.tenant.id == str(tenant.id)
+
+    async def test_get_current_user_includes_avatar_url(
+        self, auth_servicer: AuthServicer, mock_db: MockAsyncSession
+    ) -> None:
+        """The account's avatar_url flows through to the User proto."""
+        from llamatrade_proto.generated import auth_pb2
+
+        user = MockUser(avatar_url="https://cdn.example.com/alex.jpg")
+        tenant = MockTenant(id=user.tenant_id)
+        token = create_test_token(str(user.id), str(user.tenant_id))
+        context = MockRequestContext(headers={"authorization": f"Bearer {token}"})
+
+        call_count = [0]
+
+        async def mock_execute(query: object) -> MagicMock:
+            call_count[0] += 1
+            result = MagicMock()
+            result.scalar_one_or_none.return_value = user if call_count[0] == 1 else tenant
+            return result
+
+        mock_db.execute = mock_execute
+
+        request = auth_pb2.GetCurrentUserRequest()
+        response = await auth_servicer.get_current_user(request, context)
+
+        assert response.user.avatar_url == "https://cdn.example.com/alex.jpg"
 
     async def test_get_current_user_no_token(
         self, auth_servicer: AuthServicer, context: MockRequestContext

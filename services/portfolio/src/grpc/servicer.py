@@ -46,8 +46,7 @@ class PortfolioServicer:
         return self._session_factory()
 
     # All portfolio/strategy reads derive from the ledger projection — the single
-    # source of truth. (Summary, positions, performance, transactions, and
-    # strategy performance share one read service.)
+    # source of truth.
 
     def _reader(self, db: AsyncSession) -> PortfolioReadService:
         """Ledger-backed reader for summary / positions / performance / transactions."""
@@ -78,9 +77,10 @@ class PortfolioServicer:
                 service = self._reader(db)
                 summary = await service.get_summary(tenant_id)
                 positions = await service.list_positions(tenant_id)
+                book = await self._strategy_perf_reader(db).book_totals(tenant_id)
 
                 return portfolio_pb2.GetPortfolioResponse(
-                    portfolio=self._to_proto_portfolio(summary, tenant_id),
+                    portfolio=self._to_proto_portfolio(summary, tenant_id, book),
                     positions=[self._to_proto_position(p) for p in positions],
                 )
 
@@ -105,9 +105,10 @@ class PortfolioServicer:
             async with await self._get_db() as db:
                 service = self._reader(db)
                 summary = await service.get_summary(tenant_id)
+                book = await self._strategy_perf_reader(db).book_totals(tenant_id)
 
                 # Currently we support one portfolio per tenant
-                portfolios = [self._to_proto_portfolio(summary, tenant_id)]
+                portfolios = [self._to_proto_portfolio(summary, tenant_id, book)]
 
                 return portfolio_pb2.ListPortfoliosResponse(
                     portfolios=portfolios,
@@ -142,7 +143,6 @@ class PortfolioServicer:
             async with await self._get_db() as db:
                 service = self._reader(db)
 
-                # Get portfolio summary for basic metrics
                 summary = await service.get_summary(tenant_id)
 
                 # Convert time range if provided
@@ -178,13 +178,11 @@ class PortfolioServicer:
                     else:
                         period = "ALL"
 
-                # Get performance metrics
                 metrics = await service.get_metrics(
                     tenant_id=tenant_id,
                     period=period,
                 )
 
-                # Build response
                 proto_metrics = portfolio_pb2.PerformanceMetrics(
                     total_return=common_pb2.Decimal(value=str(metrics.total_return)),
                     ytd_return=common_pb2.Decimal(value=str(metrics.ytd_return)),
@@ -349,9 +347,10 @@ class PortfolioServicer:
                 service = self._reader(db)
                 summary = await service.get_summary(tenant_id)
                 positions = await service.list_positions(tenant_id)
+                book = await self._strategy_perf_reader(db).book_totals(tenant_id)
 
                 return portfolio_pb2.SyncPortfolioResponse(
-                    portfolio=self._to_proto_portfolio(summary, tenant_id),
+                    portfolio=self._to_proto_portfolio(summary, tenant_id, book),
                     positions_synced=len(positions),
                     transactions_recorded=0,
                 )
@@ -362,10 +361,6 @@ class PortfolioServicer:
                 Code.INTERNAL,
                 f"Failed to sync portfolio: {e}",
             ) from e
-
-    # ===================
-    # Strategy Performance Methods
-    # ===================
 
     async def list_strategy_performance(
         self,
@@ -452,7 +447,7 @@ class PortfolioServicer:
                 return portfolio_pb2.GetStrategyPerformanceResponse(
                     summary=self._to_proto_strategy_summary(detail.summary),
                     metrics=self._to_proto_live_metrics(detail.metrics),
-                    positions=[],  # Positions handled separately
+                    positions=[self._to_proto_position(p) for p in detail.positions],
                 )
 
         except ConnectError:
@@ -495,12 +490,32 @@ class PortfolioServicer:
                     start_time=start_time,
                     end_time=end_time,
                     sample_interval_minutes=request.sample_interval_minutes,
+                    benchmark_symbol=request.benchmark_symbol,
                 )
 
                 if not result:
                     raise ConnectError(
                         Code.NOT_FOUND,
                         f"Strategy execution {execution_id} not found",
+                    )
+
+                benchmark = None
+                if result.benchmark is not None:
+                    benchmark = portfolio_pb2.BenchmarkData(
+                        symbol=result.benchmark.symbol,
+                        name=result.benchmark.symbol,
+                        equity_curve=[
+                            portfolio_pb2.StrategyEquityPoint(
+                                timestamp=common_pb2.Timestamp(
+                                    seconds=int(p.timestamp.timestamp())
+                                ),
+                                equity=common_pb2.Decimal(value=str(p.equity)),
+                            )
+                            for p in result.benchmark.points
+                        ],
+                        total_return=common_pb2.Decimal(
+                            value=str(result.benchmark.total_return or 0)
+                        ),
                     )
 
                 return portfolio_pb2.GetStrategyEquityCurveResponse(
@@ -517,6 +532,7 @@ class PortfolioServicer:
                         )
                         for p in result.equity_curve
                     ],
+                    benchmark=benchmark,
                     period_returns=self._to_proto_period_returns(result.period_returns),
                 )
 
@@ -529,15 +545,31 @@ class PortfolioServicer:
                 f"Failed to get equity curve: {e}",
             ) from e
 
-    # ===================
-    # Helper methods
-    # ===================
-
     def _to_proto_portfolio(
-        self, summary: PortfolioSummary, tenant_id: UUID
+        self,
+        summary: PortfolioSummary,
+        tenant_id: UUID,
+        book: BookTotals | None = None,
     ) -> portfolio_pb2.Portfolio:
-        """Convert internal portfolio summary to proto Portfolio."""
+        """Convert internal portfolio summary to proto Portfolio.
+
+        Equity / cash / positions value are the whole-account truth. Day and total
+        return are reported on the STRATEGY-book basis (``book``) when the tenant
+        has deployed strategies, so ListPortfolios reconciles with the per-strategy
+        rows the UI renders; otherwise they fall back to the account figures.
+        """
         from llamatrade_proto.generated import common_pb2, portfolio_pb2
+
+        if book is not None and book.has_strategies:
+            total_return = book.total_return
+            total_return_percent = book.total_return_percent
+            day_return = book.day_pnl
+            day_return_percent = book.day_pnl_percent
+        else:
+            total_return = summary.total_unrealized_pnl + summary.total_realized_pnl
+            total_return_percent = summary.total_pnl_percent
+            day_return = summary.day_pnl
+            day_return_percent = summary.day_pnl_percent
 
         return portfolio_pb2.Portfolio(
             id=str(tenant_id),  # Using tenant_id as portfolio ID for now
@@ -547,12 +579,10 @@ class PortfolioServicer:
             total_value=common_pb2.Decimal(value=str(summary.total_equity)),
             cash_balance=common_pb2.Decimal(value=str(summary.cash)),
             positions_value=common_pb2.Decimal(value=str(summary.market_value)),
-            total_return=common_pb2.Decimal(
-                value=str(summary.total_unrealized_pnl + summary.total_realized_pnl)
-            ),
-            total_return_percent=common_pb2.Decimal(value=str(summary.total_pnl_percent)),
-            day_return=common_pb2.Decimal(value=str(summary.day_pnl)),
-            day_return_percent=common_pb2.Decimal(value=str(summary.day_pnl_percent)),
+            total_return=common_pb2.Decimal(value=str(total_return)),
+            total_return_percent=common_pb2.Decimal(value=str(total_return_percent)),
+            day_return=common_pb2.Decimal(value=str(day_return)),
+            day_return_percent=common_pb2.Decimal(value=str(day_return_percent)),
             updated_at=common_pb2.Timestamp(seconds=int(summary.updated_at.timestamp())),
         )
 
@@ -734,6 +764,7 @@ from llamatrade_proto.generated import portfolio_pb2, trading_pb2
 
 from src.models import PortfolioSummary, PositionResponse, TransactionResponse
 from src.services.strategy_performance_service import (
+    BookTotals,
     LiveMetrics,
     PeriodReturns,
     StrategyPerformanceSummary,

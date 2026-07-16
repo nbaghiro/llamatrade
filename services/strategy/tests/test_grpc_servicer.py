@@ -60,10 +60,9 @@ class MockStrategyServicer(StrategyServicer):
     def __init__(self, mock_session: AsyncMock) -> None:
         super().__init__()
         self.mock_session = mock_session
-
-    async def _get_db_session(self) -> AsyncMock:
-        """Return the mock session."""
-        return self.mock_session
+        # Feed the mock session through the tenant_session/_maker path so the
+        # RLS GUC set_config runs as a mocked no-op (no real DB connection).
+        self._session_maker = lambda: mock_session
 
 
 @pytest.fixture

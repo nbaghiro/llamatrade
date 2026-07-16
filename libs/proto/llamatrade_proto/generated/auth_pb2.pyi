@@ -39,12 +39,14 @@ class User(message.Message):
     IS_ACTIVE_FIELD_NUMBER: builtins.int
     CREATED_AT_FIELD_NUMBER: builtins.int
     LAST_LOGIN_FIELD_NUMBER: builtins.int
+    AVATAR_URL_FIELD_NUMBER: builtins.int
     id: builtins.str
     tenant_id: builtins.str
     email: builtins.str
     first_name: builtins.str
     last_name: builtins.str
     is_active: builtins.bool
+    avatar_url: builtins.str
     @builtins.property
     def roles(self) -> containers.RepeatedScalarFieldContainer[builtins.str]: ...
     @builtins.property
@@ -63,10 +65,11 @@ class User(message.Message):
         is_active: builtins.bool = ...,
         created_at: common_pb2.Timestamp | None = ...,
         last_login: common_pb2.Timestamp | None = ...,
+        avatar_url: builtins.str = ...,
     ) -> None: ...
     _HasFieldArgType: _TypeAlias = typing.Literal["created_at", b"created_at", "last_login", b"last_login"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal["created_at", b"created_at", "email", b"email", "first_name", b"first_name", "id", b"id", "is_active", b"is_active", "last_login", b"last_login", "last_name", b"last_name", "roles", b"roles", "tenant_id", b"tenant_id"]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["avatar_url", b"avatar_url", "created_at", b"created_at", "email", b"email", "first_name", b"first_name", "id", b"id", "is_active", b"is_active", "last_login", b"last_login", "last_name", b"last_name", "roles", b"roles", "tenant_id", b"tenant_id"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final

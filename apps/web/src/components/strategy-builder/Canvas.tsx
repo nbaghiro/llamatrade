@@ -13,10 +13,8 @@ export function Canvas({ readOnly }: CanvasProps) {
   const rootBlock = tree.blocks[tree.rootId];
   const isExpanded = ui.expandedBlocks.has(tree.rootId);
 
-  // Combine readOnly prop with compactView state
   const hideEditControls = readOnly || compactView;
 
-  // Deselect when clicking on empty canvas area
   const handleCanvasClick = () => {
     if (!hideEditControls) {
       selectBlock(null);
@@ -32,12 +30,11 @@ export function Canvas({ readOnly }: CanvasProps) {
       className="flex-1 overflow-auto pb-24"
       onClick={handleCanvasClick}
     >
-      {/* Children of root */}
       {isExpanded && (
         <div className="relative">
           {/* Vertical connector line for children */}
           {childIds.length > 0 && (
-            <div className="absolute left-3 top-0 w-0.5 h-full bg-gray-300 dark:bg-gray-600" />
+            <div className="absolute left-3 top-0 w-0.5 h-full bg-ink/25" />
           )}
 
           <div className="space-y-4">
@@ -52,12 +49,11 @@ export function Canvas({ readOnly }: CanvasProps) {
             ))}
           </div>
 
-          {/* Add block button - hidden in readOnly/compact mode */}
           {!hideEditControls && (
             <div className="relative pl-6 mt-4">
               {/* Connector for add button */}
-              <div className="absolute left-3 top-0 h-7 w-0.5 bg-gray-300 dark:bg-gray-600" />
-              <div className="absolute left-3 top-7 w-3 h-0.5 bg-gray-300 dark:bg-gray-600" />
+              <div className="absolute left-3 top-0 h-7 w-0.5 bg-ink/25" />
+              <div className="absolute left-3 top-7 w-3 h-0.5 bg-ink/25" />
               <AddBlockButton parentId={tree.rootId} />
             </div>
           )}

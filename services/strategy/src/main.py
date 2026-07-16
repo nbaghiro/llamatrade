@@ -59,7 +59,11 @@ app = FastAPI(
 )
 
 # Authentication (fail-closed); added before CORS so CORS stays outermost.
-app.add_middleware(AuthMiddleware)
+# Exempt the public template endpoints from auth (the modal loads them without a session).
+app.add_middleware(
+    AuthMiddleware,
+    public_suffixes=["/ListTemplates", "/GetTemplate"],
+)
 
 # CORS middleware
 app.add_middleware(

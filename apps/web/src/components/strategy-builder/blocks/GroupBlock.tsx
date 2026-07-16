@@ -68,7 +68,7 @@ export function GroupBlock({ block, allocationPercent, readOnly }: GroupBlockPro
   return (
     <div
       className={`
-        flex items-center gap-3 px-4 py-3 rounded-lg border ${groupColors.bg}
+        flex items-center gap-3 px-4 py-3 border-2 ${groupColors.bg}
         transition-all duration-150 select-none
         ${readOnly ? 'cursor-default' : 'cursor-pointer'}
         ${isSelected ? `${groupColors.borderSelected} ${groupColors.ringSelected}` : `${groupColors.border} ${readOnly ? '' : groupColors.borderHover}`}
@@ -76,9 +76,8 @@ export function GroupBlock({ block, allocationPercent, readOnly }: GroupBlockPro
       onClick={handleClick}
       onDoubleClick={handleDoubleClick}
     >
-      {/* Percentage badge for specified weight children */}
       {allocationPercent !== undefined && (
-        <span className={`px-2 py-0.5 text-xs font-semibold ${allocationBadgeColors.bg} ${allocationBadgeColors.text} rounded`}>
+        <span className={`px-2 py-0.5 text-xs font-mono font-bold tabular-nums ${allocationBadgeColors.bg} ${allocationBadgeColors.text}`}>
           {allocationPercent}%
         </span>
       )}
@@ -101,7 +100,7 @@ export function GroupBlock({ block, allocationPercent, readOnly }: GroupBlockPro
           onChange={(e) => setEditValue(e.target.value)}
           onKeyDown={handleKeyDown}
           onBlur={handleBlur}
-          className={`flex-1 font-medium ${groupColors.text} bg-amber-50 dark:bg-amber-900/30 px-2 py-0.5 rounded border border-amber-300 dark:border-amber-700 outline-none`}
+          className={`flex-1 font-medium ${groupColors.text} bg-bone px-2 py-0.5 border-2 border-ink outline-none`}
           onClick={(e) => e.stopPropagation()}
         />
       ) : (

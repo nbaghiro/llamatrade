@@ -27,31 +27,27 @@ export function AssetBlock({ block, allocationPercent, readOnly }: AssetBlockPro
       data-testid="asset-block"
       data-symbol={block.symbol}
       className={`
-        flex items-center gap-2 px-3 py-2.5 rounded-lg
+        flex items-center gap-2 px-3 py-2.5
         transition-all duration-150 select-none
-        ${assetColors.bg} border
+        ${assetColors.bg} border-2
         ${readOnly ? 'cursor-default' : 'cursor-pointer'}
         ${isSelected
           ? `${assetColors.borderSelected} ${assetColors.ringSelected}`
-          : `${assetColors.border} ${readOnly ? '' : assetColors.borderHover}`
+          : `${assetColors.border} border-l-4 border-l-blue-600 ${readOnly ? '' : assetColors.borderHover}`
         }
       `}
       onClick={handleClick}
     >
-      {/* Percentage badge for specified weight children */}
       {allocationPercent !== undefined && (
-        <span className={`px-1.5 py-0.5 text-xs font-semibold ${allocationBadgeColors.bg} ${allocationBadgeColors.text} rounded`}>
+        <span className={`px-1.5 py-0.5 text-xs font-mono font-bold tabular-nums ${allocationBadgeColors.bg} ${allocationBadgeColors.text}`}>
           {allocationPercent}%
         </span>
       )}
 
-      {/* Circle bullet - like Composer */}
       <span className={`w-3 h-3 rounded-full border-2 ${assetColors.bullet}`} />
 
-      {/* Ticker */}
-      <span className={`font-semibold ${assetColors.text}`}>{block.symbol}</span>
+      <span className={`font-mono font-bold ${assetColors.text}`}>{block.symbol}</span>
 
-      {/* Full name */}
       <span className={`${assetColors.textMuted} text-sm`}>{block.displayName}</span>
     </div>
   );

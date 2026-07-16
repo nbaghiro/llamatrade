@@ -33,6 +33,7 @@ yarn-error.log*
 
 # Build outputs
 apps/web/dist/
+apps/web/dist-marketing/
 
 # Testing
 .pytest_cache/

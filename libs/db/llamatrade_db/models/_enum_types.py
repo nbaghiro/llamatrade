@@ -34,9 +34,7 @@ from llamatrade_proto.generated import (
 # Generic type variable for proto ValueType
 T = TypeVar("T", bound=int)
 
-# =============================================================================
 # PostgreSQL StrEnums (internal - maps to DB ENUM types)
-# =============================================================================
 
 
 class _OrderSide(StrEnum):
@@ -211,9 +209,7 @@ class _TemplateDifficulty(StrEnum):
     ADVANCED = "advanced"
 
 
-# =============================================================================
 # TypeDecorator Infrastructure
-# =============================================================================
 
 
 class _ProtoEnumType(TypeDecorator[T], Generic[T]):
@@ -253,8 +249,7 @@ class _ProtoEnumType(TypeDecorator[T], Generic[T]):
         """Convert PostgreSQL enum string to proto ValueType."""
         if value is None:
             return None
-        # StrEnum is a subclass of str, so we can treat both the same way
-        # Get the string value (works for both str and StrEnum)
+        # StrEnum subclasses str; normalize both to the raw string value
         str_value = value.value if isinstance(value, StrEnum) else value
         # Find the enum member with this value
         for member in self._str_enum:
@@ -269,9 +264,7 @@ class _ProtoEnumType(TypeDecorator[T], Generic[T]):
         return self
 
 
-# =============================================================================
 # Public TypeDecorators (used by DB models)
-# =============================================================================
 
 
 def _enum_values(enum_cls: type[StrEnum]) -> list[str]:
@@ -672,9 +665,7 @@ class TemplateDifficultyType(_ProtoEnumType[strategy_pb2.TemplateDifficulty.Valu
     _str_to_int = {v: k for k, v in _int_to_str.items()}
 
 
-# =============================================================================
 # Agent Enums
-# =============================================================================
 
 
 class _AgentSessionStatus(StrEnum):
@@ -739,9 +730,7 @@ class ArtifactTypeType(_ProtoEnumType[agent_pb2.ArtifactType.ValueType]):
     _str_to_int = {v: k for k, v in _int_to_str.items()}
 
 
-# =============================================================================
 # Memory Enums (not proto-backed, used directly as StrEnum)
-# =============================================================================
 
 
 class _MemoryFactCategory(StrEnum):

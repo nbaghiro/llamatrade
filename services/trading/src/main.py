@@ -20,7 +20,6 @@ from llamatrade_telemetry import init_telemetry
 
 logger = logging.getLogger(__name__)
 
-# Configuration
 CORS_ORIGINS = os.getenv(
     "CORS_ORIGINS", "http://localhost:8800,http://localhost:3000,http://localhost:47333"
 ).split(",")
@@ -67,7 +66,6 @@ init_telemetry(app, service="trading", version="0.1.0", pool_stats_provider=get_
 # stays outermost and still handles preflight + headers on 401 responses.
 app.add_middleware(AuthMiddleware)
 
-# CORS middleware
 app.add_middleware(
     CORSMiddleware,
     allow_origins=CORS_ORIGINS,

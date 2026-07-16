@@ -18,7 +18,6 @@ from src.streaming.manager import StreamManager
 
 logger = logging.getLogger(__name__)
 
-# Circuit breaker configuration
 CIRCUIT_BREAKER_THRESHOLD = 10  # Consecutive failures before opening circuit
 CIRCUIT_BREAKER_RESET_TIMEOUT = 30.0  # Seconds before attempting reset
 
@@ -95,18 +94,15 @@ class StreamBridge:
         self._running = False
         self._run_task: asyncio.Task[None] | None = None
 
-        # Track symbol reference counts
-        # symbol -> count of clients subscribed
+        # symbol -> count of subscribed clients (ref-counted for Alpaca sub/unsub)
         self._trade_refs: dict[str, int] = defaultdict(int)
         self._quote_refs: dict[str, int] = defaultdict(int)
         self._bar_refs: dict[str, int] = defaultdict(int)
 
         self._lock = asyncio.Lock()
 
-        # Circuit breaker for broadcast failures
         self._circuit_breaker = BroadcastCircuitBreaker()
 
-        # Set up Alpaca callbacks
         self._alpaca.set_callbacks(
             on_trade=self._handle_trade,
             on_quote=self._handle_quote,
@@ -342,7 +338,6 @@ class StreamBridge:
                 logger.error(f"Error broadcasting bar for {symbol}: {e}")
 
 
-# Global instance
 _bridge: StreamBridge | None = None
 
 

@@ -170,6 +170,11 @@ class MockGetMarketStatusRequest:
     pass
 
 
+class MockGetAssetsRequest:
+    def __init__(self, symbols=None):
+        self.symbols = symbols or ["XLE"]
+
+
 class MockStreamBarsRequest:
     def __init__(self, symbols=None):
         self.symbols = symbols or ["AAPL"]
@@ -392,15 +397,90 @@ class TestGetSnapshots:
                 await servicer.get_snapshots(request, mock_context)
 
 
+# === GetAssets Tests ===
+
+
+class TestGetAssets:
+    """Tests for GetAssets method."""
+
+    async def test_get_assets_success(self, servicer, mock_context):
+        """Alpaca asset metadata is passed through to the proto, keyed by symbol."""
+        from llamatrade_alpaca import Asset
+
+        asset = Asset(
+            id="b0b6dd9d-8b9b-48a9-ba46-b9d54906e415",
+            symbol="XLE",
+            name="Energy Select Sector SPDR Fund",
+            asset_class="us_equity",
+            exchange="ARCA",
+            status="active",
+            tradable=True,
+            fractionable=True,
+        )
+        mock_service = MagicMock()
+        mock_service.get_assets = AsyncMock(return_value={"XLE": asset})
+
+        with patch("src.grpc.servicer.get_asset_service", return_value=mock_service):
+            request = MockGetAssetsRequest(symbols=["XLE"])
+            response = await servicer.get_assets(request, mock_context)
+
+            proto = response.assets["XLE"]
+            assert proto.name == "Energy Select Sector SPDR Fund"
+            assert proto.symbol == "XLE"
+            assert proto.exchange == "ARCA"
+            assert proto.asset_class == "us_equity"
+            assert proto.status == "active"
+            assert proto.tradable is True
+            assert proto.fractionable is True
+            mock_service.get_assets.assert_called_once_with(["XLE"])
+
+    async def test_get_assets_unknown_symbol_omitted(self, servicer, mock_context):
+        """A symbol Alpaca doesn't know is simply absent from the map."""
+        mock_service = MagicMock()
+        mock_service.get_assets = AsyncMock(return_value={})
+
+        with patch("src.grpc.servicer.get_asset_service", return_value=mock_service):
+            request = MockGetAssetsRequest(symbols=["NOPE"])
+            response = await servicer.get_assets(request, mock_context)
+
+            assert "NOPE" not in response.assets
+
+    async def test_get_assets_error(self, servicer, mock_context):
+        """Errors surface as a Connect INTERNAL error."""
+        mock_service = MagicMock()
+        mock_service.get_assets = AsyncMock(side_effect=Exception("API error"))
+
+        with patch("src.grpc.servicer.get_asset_service", return_value=mock_service):
+            request = MockGetAssetsRequest(symbols=["XLE"])
+
+            with pytest.raises(ConnectError, match="Failed to fetch assets"):
+                await servicer.get_assets(request, mock_context)
+
+
 # === GetMarketStatus Tests ===
 
 
 class TestGetMarketStatus:
     """Tests for GetMarketStatus method."""
 
-    async def test_get_market_status_returns_response(self, servicer, mock_context):
-        """Test market status returns a valid response."""
+    @staticmethod
+    def _valid_creds():
+        """Patch AlpacaCredentials.from_env() to report present credentials."""
+        creds = MagicMock()
+        creds.is_valid.return_value = True
+        return patch("src.grpc.servicer.AlpacaCredentials.from_env", return_value=creds)
+
+    @staticmethod
+    def _absent_creds():
+        """Patch AlpacaCredentials.from_env() to report missing credentials."""
+        creds = MagicMock()
+        creds.is_valid.return_value = False
+        return patch("src.grpc.servicer.AlpacaCredentials.from_env", return_value=creds)
+
+    async def test_get_market_status_uses_alpaca_when_creds_present(self, servicer, mock_context):
+        """With valid credentials the Alpaca clock is the source of truth."""
         from llamatrade_alpaca import MarketClock
+        from llamatrade_proto.generated import market_data_pb2
 
         mock_clock = MarketClock(
             timestamp=datetime(2024, 1, 15, 14, 30, tzinfo=UTC),
@@ -412,17 +492,75 @@ class TestGetMarketStatus:
         mock_trading_client = MagicMock()
         mock_trading_client.get_clock = AsyncMock(return_value=mock_clock)
 
-        with patch(
-            "src.grpc.servicer.get_trading_client_async",
-            return_value=mock_trading_client,
+        with (
+            self._valid_creds(),
+            patch(
+                "src.grpc.servicer.get_trading_client_async",
+                return_value=mock_trading_client,
+            ),
         ):
-            request = MockGetMarketStatusRequest()
-            response = await servicer.get_market_status(request, mock_context)
+            response = await servicer.get_market_status(MockGetMarketStatusRequest(), mock_context)
 
-            # The response should have a status field
-            assert response is not None
-            assert hasattr(response, "status")
-            mock_trading_client.get_clock.assert_called_once()
+        assert response.status == market_data_pb2.MARKET_STATUS_OPEN
+        assert response.next_open.seconds == int(mock_clock.next_open.timestamp())
+        assert response.next_close.seconds == int(mock_clock.next_close.timestamp())
+        mock_trading_client.get_clock.assert_called_once()
+
+    async def test_get_market_status_calendar_when_creds_absent(self, servicer, mock_context):
+        """Without credentials the calendar is used and Alpaca is never called."""
+        from llamatrade_proto.generated import market_data_pb2
+
+        mock_trading_client = MagicMock()
+        mock_trading_client.get_clock = AsyncMock()
+
+        with (
+            self._absent_creds(),
+            patch(
+                "src.grpc.servicer.get_trading_client_async",
+                return_value=mock_trading_client,
+            ),
+        ):
+            response = await servicer.get_market_status(MockGetMarketStatusRequest(), mock_context)
+
+        assert response.status in {
+            market_data_pb2.MARKET_STATUS_OPEN,
+            market_data_pb2.MARKET_STATUS_CLOSED,
+            market_data_pb2.MARKET_STATUS_PRE_MARKET,
+            market_data_pb2.MARKET_STATUS_AFTER_HOURS,
+        }
+        assert response.next_open.seconds > 0
+        assert response.next_close.seconds > 0
+        mock_trading_client.get_clock.assert_not_called()
+
+    async def test_get_market_status_falls_back_to_calendar_on_alpaca_error(
+        self, servicer, mock_context
+    ):
+        """A failing Alpaca clock degrades to the calendar instead of erroring."""
+        from llamatrade_proto.generated import market_data_pb2
+
+        mock_trading_client = MagicMock()
+        mock_trading_client.get_clock = AsyncMock(
+            side_effect=RuntimeError("Invalid API credentials")
+        )
+
+        with (
+            self._valid_creds(),
+            patch(
+                "src.grpc.servicer.get_trading_client_async",
+                return_value=mock_trading_client,
+            ),
+        ):
+            response = await servicer.get_market_status(MockGetMarketStatusRequest(), mock_context)
+
+        assert response.status in {
+            market_data_pb2.MARKET_STATUS_OPEN,
+            market_data_pb2.MARKET_STATUS_CLOSED,
+            market_data_pb2.MARKET_STATUS_PRE_MARKET,
+            market_data_pb2.MARKET_STATUS_AFTER_HOURS,
+        }
+        assert response.next_open.seconds > 0
+        assert response.next_close.seconds > 0
+        mock_trading_client.get_clock.assert_called_once()
 
 
 # === Streaming Tests ===

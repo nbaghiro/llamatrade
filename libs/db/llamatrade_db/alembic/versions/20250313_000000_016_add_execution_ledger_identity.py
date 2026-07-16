@@ -8,7 +8,7 @@ fills, sizing, and risk. All nullable: unfunded/legacy executions are valid.
 
 See .docs/planning/CONTRACTS.md §5 (identity threading).
 
-Revision ID: 016_add_execution_ledger_identity
+Revision ID: 016_add_exec_ledger_identity
 Revises: 015_add_portfolio_ledger_tables
 Create Date: 2025-03-13
 """
@@ -20,7 +20,7 @@ from alembic import op
 from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
-revision: str = "016_add_execution_ledger_identity"
+revision: str = "016_add_exec_ledger_identity"
 down_revision: str | None = "015_add_portfolio_ledger_tables"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None

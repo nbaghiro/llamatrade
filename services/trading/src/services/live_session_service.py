@@ -213,10 +213,6 @@ class LiveSessionService(SessionService):
         # Update database
         return await super().resume_session(session_id, tenant_id)
 
-    # ===================
-    # Runner management
-    # ===================
-
     async def _resolve_ledger_identity(
         self, tenant_id: UUID, strategy_id: UUID, execution_id: UUID | None = None
     ) -> tuple[UUID | None, UUID | None]:
@@ -356,8 +352,7 @@ class LiveSessionService(SessionService):
             sizing_mode=SizingMode.DRIFT if sleeve_aware else SizingMode.BINARY,
         )
 
-        # Create bar stream with session-specific credentials (shared lib client;
-        # metrics wired via lifecycle hooks since the lib stays service-agnostic).
+        # Bar stream on session credentials; metrics via lifecycle hooks (lib is service-agnostic).
         bar_stream = BarStreamClient(
             api_key=credentials.api_key,
             api_secret=credentials.api_secret,
@@ -366,8 +361,7 @@ class LiveSessionService(SessionService):
             on_connection_change=set_bar_stream_connected,
         )
 
-        # Create trade stream with same credentials (shared lib client; metrics
-        # are wired via lifecycle hooks since the lib stays service-agnostic).
+        # Trade stream on same credentials; metrics via lifecycle hooks (lib is service-agnostic).
         trade_stream = TradingStreamClient(
             api_key=credentials.api_key,
             api_secret=credentials.api_secret,
@@ -383,8 +377,7 @@ class LiveSessionService(SessionService):
             paper=credentials.is_paper,
         )
 
-        # Fail fast if any strategy symbol is not tradable on this account —
-        # otherwise the session starts and every order for it is rejected.
+        # Fail fast if any strategy symbol isn't tradable — else every order for it is rejected.
         try:
             await self._check_symbols_tradable(session_alpaca_client, actual_symbols)
         except Exception:
@@ -434,10 +427,6 @@ class LiveSessionService(SessionService):
         if session_id in self.runner_manager.active_runners:
             await self.runner_manager.stop_runner(session_id)
             logger.info(f"Stopped runner for session {session_id}")
-
-    # ===================
-    # Preflight Checks
-    # ===================
 
     async def _preflight_checks(
         self,
@@ -615,17 +604,20 @@ class LiveSessionService(SessionService):
         return None
 
 
-async def create_live_session_service() -> LiveSessionService:
+async def create_live_session_service(tenant_id: UUID | None = None) -> LiveSessionService:
     """Create a live session service without dependency injection.
 
-    Used by the gRPC servicer where FastAPI DI is not available.
+    Used by the gRPC servicer where FastAPI DI is not available. When a
+    ``tenant_id`` is given, the session is bound to it for Postgres RLS.
     """
-    from llamatrade_db import get_session_maker
+    from llamatrade_db import get_session_maker, set_tenant_guc
 
     from src.executor.order_executor import create_order_executor
 
     db = get_session_maker()()
-    order_executor = await create_order_executor()
+    if tenant_id is not None:
+        await set_tenant_guc(db, tenant_id)
+    order_executor = await create_order_executor(tenant_id=tenant_id)
     return LiveSessionService(
         db=db,
         runner_manager=get_runner_manager(),

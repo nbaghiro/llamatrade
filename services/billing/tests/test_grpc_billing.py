@@ -6,7 +6,7 @@ Tests the BillingServicer directly without HTTP layer.
 import os
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
-from unittest.mock import patch
+from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import UUID, uuid4
 
 import jwt
@@ -160,6 +160,38 @@ class MockServicerContext:
     def request_headers(self) -> dict[str, str]:
         """Return the request headers."""
         return self.headers
+
+
+class _FakeUsageSession:
+    """Async session stub for get_usage: zero counts, no subscription."""
+
+    async def __aenter__(self) -> _FakeUsageSession:
+        return self
+
+    async def __aexit__(self, *exc: object) -> bool:
+        return False
+
+    async def scalar(self, statement: object) -> object:
+        # Subscription lookup returns None; every count/sum returns 0.
+        return None if "subscriptions" in str(statement) else 0
+
+
+class _EmptyInvoicesSession:
+    """Async session stub for list_invoices: zero count, no rows."""
+
+    async def __aenter__(self) -> _EmptyInvoicesSession:
+        return self
+
+    async def __aexit__(self, *exc: object) -> bool:
+        return False
+
+    async def scalar(self, statement: object) -> int:
+        return 0
+
+    async def execute(self, statement: object) -> MagicMock:
+        result = MagicMock()
+        result.scalars.return_value.all.return_value = []
+        return result
 
 
 class MockStripeClient:
@@ -443,7 +475,7 @@ class TestGetUsage:
         context: MockServicerContext,
         tenant_context: common_pb2.TenantContext,
     ) -> None:
-        """Test getting usage metrics."""
+        """Test getting usage metrics (counts sourced from the DB session)."""
         from llamatrade_proto.generated import billing_pb2
 
         request = billing_pb2.GetUsageRequest(
@@ -451,10 +483,13 @@ class TestGetUsage:
             period_id="2024-01",
         )
 
-        response = await billing_servicer.get_usage(request, context)
+        with patch.object(billing_servicer, "_get_db", AsyncMock(return_value=_FakeUsageSession())):
+            response = await billing_servicer.get_usage(request, context)
 
         assert response.usage.tenant_id == tenant_context.tenant_id
         assert response.usage.period_id == "2024-01"
+        # Every count query resolved against the session (no field left unset).
+        assert response.usage.strategies_created == 0
 
 
 # ===================
@@ -471,12 +506,15 @@ class TestListInvoices:
         context: MockServicerContext,
         tenant_context: common_pb2.TenantContext,
     ) -> None:
-        """Test listing invoices returns empty list (stub implementation)."""
+        """Test listing invoices returns an empty page when the tenant has none."""
         from llamatrade_proto.generated import billing_pb2
 
         request = billing_pb2.ListInvoicesRequest(context=tenant_context)
 
-        response = await billing_servicer.list_invoices(request, context)
+        with patch.object(
+            billing_servicer, "_get_db", AsyncMock(return_value=_EmptyInvoicesSession())
+        ):
+            response = await billing_servicer.list_invoices(request, context)
 
         assert len(response.invoices) == 0
         assert response.pagination.total_items == 0

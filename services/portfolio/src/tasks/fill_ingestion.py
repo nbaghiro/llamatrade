@@ -21,6 +21,7 @@ from typing import Literal, cast
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from llamatrade_db import tenant_session
 from llamatrade_db.models.ledger import LedgerEventType
 from llamatrade_events import (
     CURSOR_BEGIN,
@@ -240,7 +241,7 @@ def make_fill_handler(session_factory: async_sessionmaker[AsyncSession]) -> Fill
     """Bind ``persist_append`` to a session factory for the stream consumer."""
 
     async def handle(append: LedgerAppend) -> None:
-        async with session_factory() as db:
+        async with tenant_session(append.tenant_id, session_factory) as db:
             await persist_append(db, append)
         logger.debug(
             "ingested fill into ledger (account=%s symbol=%s event_id=%s)",

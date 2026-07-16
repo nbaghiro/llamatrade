@@ -45,6 +45,22 @@ from src.models import (
 )
 from src.ports import PriceProvider
 
+
+def to_position_response(view: read_model.PositionView) -> PositionResponse:
+    """Map a marked-to-market ``PositionView`` onto the read-API response shape."""
+    return PositionResponse(
+        symbol=view.symbol,
+        qty=view.qty,
+        side=view.side,
+        cost_basis=view.cost_basis,
+        market_value=view.market_value,
+        unrealized_pnl=view.unrealized_pnl,
+        unrealized_pnl_percent=view.unrealized_pnl_percent,
+        current_price=view.current_price,
+        avg_entry_price=view.avg_entry_price,
+    )
+
+
 _TXN_TYPE_TO_PROTO: dict[str, int] = {
     "buy": TRANSACTION_TYPE_BUY,
     "sell": TRANSACTION_TYPE_SELL,
@@ -72,8 +88,6 @@ class PortfolioReadService:
         self._benchmark_symbol = benchmark_symbol
         self._projector = LedgerProjector(db)
 
-    # ----------------------------------------------------------- summary/positions
-
     async def get_summary(self, tenant_id: UUID) -> PortfolioSummary:
         projections = await self._projections(tenant_id)
         prices = await self._prices(projections)
@@ -96,18 +110,7 @@ class PortfolioReadService:
         projections = await self._projections(tenant_id)
         prices = await self._prices(projections)
         return [
-            PositionResponse(
-                symbol=p.symbol,
-                qty=p.qty,
-                side=p.side,
-                cost_basis=p.cost_basis,
-                market_value=p.market_value,
-                unrealized_pnl=p.unrealized_pnl,
-                unrealized_pnl_percent=p.unrealized_pnl_percent,
-                current_price=p.current_price,
-                avg_entry_price=p.avg_entry_price,
-            )
-            for p in read_model.aggregate_positions(projections, prices)
+            to_position_response(p) for p in read_model.aggregate_positions(projections, prices)
         ]
 
     async def get_position(self, tenant_id: UUID, symbol: str) -> PositionResponse | None:
@@ -116,8 +119,6 @@ class PortfolioReadService:
             if pos.symbol == symbol_upper:
                 return pos
         return None
-
-    # ----------------------------------------------------------------- transactions
 
     async def list_transactions(
         self,
@@ -178,8 +179,6 @@ class PortfolioReadService:
             created_at=created,
         )
 
-    # ------------------------------------------------------------------ performance
-
     async def get_metrics(self, tenant_id: UUID, period: str) -> PerformanceMetrics:
         start_date, end_date = _period_dates(period)
         series = await self._daily_equity_series(tenant_id, start_date, end_date)
@@ -235,8 +234,6 @@ class PortfolioReadService:
             alpha=alpha,
             benchmark_return=benchmark_return,
         )
-
-    # ----------------------------------------------------------------------- helpers
 
     async def _accounts(self, tenant_id: UUID) -> list[Account]:
         result = await self.db.scalars(select(Account).where(Account.tenant_id == tenant_id))

@@ -57,26 +57,23 @@ export function FilterBlock({ block, allocationPercent, onEditFilter, readOnly }
 
   return (
     <div className="relative">
-      {/* Percentage badge for specified weight children */}
       {allocationPercent !== undefined && (
-        <span className={`absolute -left-12 top-1/2 -translate-y-1/2 px-2 py-0.5 text-xs font-semibold ${allocationBadgeColors.bg} ${allocationBadgeColors.text} rounded`}>
+        <span className={`absolute -left-12 top-1/2 -translate-y-1/2 px-2 py-0.5 text-xs font-mono font-bold tabular-nums ${allocationBadgeColors.bg} ${allocationBadgeColors.text}`}>
           {allocationPercent}%
         </span>
       )}
 
-      {/* Filter pill - violet inline style */}
       <div
         className={`
-          inline-flex items-center gap-1.5 py-1.5 rounded-full
+          inline-flex items-center gap-1.5 py-1.5
           transition-all duration-150 select-none
-          ${filterColors.bg} text-white text-sm
+          ${filterColors.bg} text-sm
           ${readOnly ? 'cursor-default pl-3 pr-3' : 'cursor-pointer pl-1.5 pr-3'}
-          ${isSelected ? `ring-2 ${filterColors.ring} ring-offset-2 ring-offset-white dark:ring-offset-gray-900` : readOnly ? '' : filterColors.hover}
+          ${isSelected ? `ring-2 ${filterColors.ring} ring-offset-2 ring-offset-bone` : readOnly ? '' : filterColors.hover}
         `}
         onClick={handleClick}
         onDoubleClick={handleDoubleClick}
       >
-        {/* Delete button - hidden in readOnly mode */}
         {!readOnly && (
           <button
             onClick={handleDeleteClick}
@@ -87,7 +84,6 @@ export function FilterBlock({ block, allocationPercent, onEditFilter, readOnly }
           </button>
         )}
 
-        {/* Expand toggle */}
         <button
           onClick={handleExpandClick}
           className={`p-0.5 rounded-full ${filterColors.hover} transition-colors`}
@@ -95,8 +91,7 @@ export function FilterBlock({ block, allocationPercent, onEditFilter, readOnly }
           <ChevronDown className={`w-3.5 h-3.5 transition-transform ${isExpanded ? '' : '-rotate-90'}`} />
         </button>
 
-        {/* FILTER label and config */}
-        <span className="font-semibold">FILTER</span>
+        <span className="font-mono font-bold tracking-wide">FILTER</span>
         <span className="font-normal opacity-90">{getDisplayText()}</span>
       </div>
     </div>

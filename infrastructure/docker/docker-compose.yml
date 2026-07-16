@@ -250,6 +250,8 @@ services:
       ALPACA_API_KEY: ${ALPACA_API_KEY:-}
       ALPACA_API_SECRET: ${ALPACA_API_SECRET:-}
       REDIS_URL: redis://redis:6379
+      # Must match auth's: auth encrypts broker credentials, live sessions decrypt them.
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-dev-encryption-key-change-me}
       GRPC_PORT: "8850"
       # Busiest DB user (orders/positions/risk) — gets the largest slice.
       DB_POOL_SIZE: "8"
@@ -270,6 +272,8 @@ services:
     environment:
       DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/llamatrade
       REDIS_URL: redis://redis:6379
+      # Must match auth's: auth encrypts broker credentials, reconciliation decrypts them.
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-dev-encryption-key-change-me}
       GRPC_PORT: "8860"
       DB_POOL_SIZE: "5"
       DB_MAX_OVERFLOW: "5"
@@ -328,17 +332,21 @@ services:
       context: ../..
       dockerfile: services/agent/Dockerfile
     container_name: llamatrade-agent
-    # LLM credentials (OPENAI_API_KEY / ANTHROPIC_API_KEY) come from the repo-root
-    # .env, which Compose does not auto-interpolate when run from this directory.
-    # env_file injects them directly; the environment block below still wins for
-    # DATABASE_URL/REDIS_URL/targets (environment takes precedence over env_file).
+    # LLM credentials (GOOGLE_API_KEY / ANTHROPIC_API_KEY / OPENAI_API_KEY) come
+    # from the repo-root .env, which Compose does not auto-interpolate when run
+    # from this directory. env_file injects them directly (do NOT restate the keys
+    # in the environment block below — it wins over env_file and would blank them).
+    # The environment block still wins for DATABASE_URL/REDIS_URL/targets.
     env_file:
       - ../../.env
     environment:
       DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/llamatrade
       REDIS_URL: redis://redis:6379
       GRPC_PORT: "8890"
-      AGENT_LLM_MODEL: ${AGENT_LLM_MODEL:-claude-sonnet-4-20250514}
+      # Provider selection is config-driven and defaults to Google Gemini.
+      AGENT_LLM_PROVIDER: ${AGENT_LLM_PROVIDER:-google}
+      AGENT_LLM_MODEL: ${AGENT_LLM_MODEL:-gemini-2.5-flash}
+      AGENT_LLM_FAST_MODEL: ${AGENT_LLM_FAST_MODEL:-gemini-2.5-flash-lite}
       DB_POOL_SIZE: "4"
       DB_MAX_OVERFLOW: "4"
       # Downstream service targets (Connect/HTTP over the Docker network)
@@ -359,15 +367,36 @@ services:
       - "8990:8890"
 
   # ===================
+  # Single-origin reverse proxy (Caddy)
+  # ===================
+  # Publishes the ONE host origin (:8800) and proxies to the web app, which
+  # serves both the marketing page ("/" for visitors) and the app — no
+  # subdomains, no separate marketing upstream. The same Caddyfile serves prod on
+  # one domain: override SITE_ADDRESS with the domain and point WEB_UPSTREAM at
+  # the prod container. Here the default targets the prod web image (nginx on
+  # :80); the dev override (docker-compose.dev.yml) repoints it at Vite :8802.
+  proxy:
+    image: caddy:2-alpine
+    container_name: llamatrade-proxy
+    depends_on:
+      - web
+    ports:
+      - "8800:8800"
+    environment:
+      WEB_UPSTREAM: web:80
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+
+  # ===================
   # Frontend
   # ===================
+  # Not published to the host — the proxy (:8800) is the single origin and
+  # routes to it internally (nginx on :80 here; Vite :8802 in the dev override).
   web:
     build:
       context: ../../apps/web
       dockerfile: Dockerfile
     container_name: llamatrade-web
-    ports:
-      - "8800:80"
     depends_on:
       - auth
 

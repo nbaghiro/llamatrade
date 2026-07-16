@@ -111,9 +111,7 @@ PROJECT_ROOT=$(pwd)
 print_header "Local CI Runner"
 echo "Project root: $PROJECT_ROOT"
 
-# ═══════════════════════════════════════════════════════════════
 # BACKEND LINTING
-# ═══════════════════════════════════════════════════════════════
 if [[ "$RUN_LINT" == "true" && "$RUN_BACKEND" == "true" ]]; then
     print_header "Python Linting"
 
@@ -135,16 +133,13 @@ if [[ "$RUN_LINT" == "true" && "$RUN_BACKEND" == "true" ]]; then
     print_step "Syncing dependencies"
     uv sync --all-packages --all-extras --quiet
 
-    # Run Pyright for type checking (configured in pyproject.toml)
-    # Note: Don't specify paths - let pyright use include/exclude from pyproject.toml
+    # Don't specify paths - pyright uses include/exclude from pyproject.toml.
     # Pinned to match CI (.github/workflows/ci.yml); newer pyright false-positives
     # reportDeprecated on stdlib @contextmanager under strict mode.
     run_step "Pyright" npx pyright@1.1.408
 fi
 
-# ═══════════════════════════════════════════════════════════════
 # FRONTEND LINTING
-# ═══════════════════════════════════════════════════════════════
 if [[ "$RUN_LINT" == "true" && "$RUN_FRONTEND" == "true" ]]; then
     print_header "Frontend Linting"
 
@@ -162,9 +157,7 @@ if [[ "$RUN_LINT" == "true" && "$RUN_FRONTEND" == "true" ]]; then
     fi
 fi
 
-# ═══════════════════════════════════════════════════════════════
 # BACKEND TESTS
-# ═══════════════════════════════════════════════════════════════
 if [[ "$RUN_TESTS" == "true" && "$RUN_BACKEND" == "true" ]]; then
     print_header "Backend Tests"
 
@@ -209,9 +202,7 @@ if [[ "$RUN_TESTS" == "true" && "$RUN_BACKEND" == "true" ]]; then
     pip uninstall -y llamatrade-strategy -q 2>/dev/null || true
 fi
 
-# ═══════════════════════════════════════════════════════════════
 # FRONTEND TESTS
-# ═══════════════════════════════════════════════════════════════
 if [[ "$RUN_TESTS" == "true" && "$RUN_FRONTEND" == "true" ]]; then
     print_header "Frontend Tests"
 
@@ -224,9 +215,7 @@ if [[ "$RUN_TESTS" == "true" && "$RUN_FRONTEND" == "true" ]]; then
     fi
 fi
 
-# ═══════════════════════════════════════════════════════════════
 # INTEGRATION TESTS (Optional - run with --integration flag)
-# ═══════════════════════════════════════════════════════════════
 if [[ "$RUN_TESTS" == "true" && "$RUN_INTEGRATION" == "true" ]]; then
     print_header "Integration Tests"
 
@@ -252,9 +241,7 @@ if [[ "$RUN_TESTS" == "true" && "$RUN_INTEGRATION" == "true" ]]; then
     fi
 fi
 
-# ═══════════════════════════════════════════════════════════════
 # SUMMARY
-# ═══════════════════════════════════════════════════════════════
 print_header "Summary"
 
 if [[ ${#FAILED[@]} -eq 0 ]]; then

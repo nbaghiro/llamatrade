@@ -1,218 +1,117 @@
-// CodeMirror theme for the strategy DSL editor
-// Provides dark and light themes matching the app design
+// CodeMirror DSL theme: a Monolith dark terminal (matches marketing/auth snippets), intentionally dark inside the light app.
 
 import { HighlightStyle, syntaxHighlighting } from '@codemirror/language';
 import { EditorView } from '@codemirror/view';
 import { tags } from '@lezer/highlight';
 
-// Light theme colors - transparent background to show dotted grid
-const lightTheme = EditorView.theme({
-  '&': {
-    color: '#1f2937',
-    backgroundColor: 'transparent',
-    fontSize: '14px',
-    fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace',
-  },
-  '.cm-scroller': {
-    overflow: 'auto',
-  },
-  '.cm-content': {
-    caretColor: '#3b82f6',
-    padding: '16px 0',
-  },
-  '.cm-cursor, .cm-dropCursor': {
-    borderLeftColor: '#3b82f6',
-    borderLeftWidth: '2px',
-  },
-  '&.cm-focused .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection': {
-    backgroundColor: 'rgba(59, 130, 246, 0.2)',
-  },
-  '.cm-gutters': {
-    backgroundColor: 'transparent',
-    color: '#9ca3af',
-    border: 'none',
-  },
-  '.cm-foldPlaceholder': {
-    backgroundColor: 'rgba(0, 0, 0, 0.1)',
-    border: 'none',
-    color: '#6b7280',
-    padding: '0 4px',
-    borderRadius: '4px',
-  },
-  '.cm-tooltip': {
-    backgroundColor: '#ffffff',
-    border: '1px solid #e5e7eb',
-    borderRadius: '8px',
-    boxShadow: '0 4px 12px -2px rgb(0 0 0 / 0.15)',
-  },
-  '.cm-tooltip-autocomplete': {
-    '& > ul': {
-      fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace',
-    },
-    '& > ul > li[aria-selected]': {
-      backgroundColor: '#eff6ff',
-      color: '#1f2937',
-    },
-  },
-  '.cm-matchingBracket': {
-    backgroundColor: 'rgba(59, 130, 246, 0.2)',
-    outline: '1px solid rgba(59, 130, 246, 0.5)',
-    borderRadius: '2px',
-  },
-  '.cm-nonmatchingBracket': {
-    backgroundColor: 'rgba(239, 68, 68, 0.2)',
-    outline: '1px solid rgba(239, 68, 68, 0.5)',
-  },
-  '.cm-panels': {
-    backgroundColor: 'rgba(249, 250, 251, 0.9)',
-    borderTop: '1px solid #e5e7eb',
-  },
-  '.cm-searchMatch': {
-    backgroundColor: 'rgba(250, 204, 21, 0.4)',
-    borderRadius: '2px',
-  },
-  '.cm-searchMatch.cm-searchMatch-selected': {
-    backgroundColor: 'rgba(250, 204, 21, 0.6)',
-  },
-  '.cm-line': {
-    padding: '0 16px',
-  },
-}, { dark: false });
+const MONO_FONT = '"Space Mono", ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace';
 
-// Dark theme colors - transparent background to show dotted grid
-const darkTheme = EditorView.theme({
-  '&': {
-    color: '#e5e7eb',
-    backgroundColor: 'transparent',
-    fontSize: '14px',
-    fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace',
-  },
-  '.cm-scroller': {
-    overflow: 'auto',
-  },
-  '.cm-content': {
-    caretColor: '#60a5fa',
-    padding: '16px 0',
-  },
-  '.cm-cursor, .cm-dropCursor': {
-    borderLeftColor: '#60a5fa',
-    borderLeftWidth: '2px',
-  },
-  '&.cm-focused .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection': {
-    backgroundColor: 'rgba(96, 165, 250, 0.25)',
-  },
-  '.cm-gutters': {
-    backgroundColor: 'transparent',
-    color: '#6b7280',
-    border: 'none',
-  },
-  '.cm-foldPlaceholder': {
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
-    border: 'none',
-    color: '#9ca3af',
-    padding: '0 4px',
-    borderRadius: '4px',
-  },
-  '.cm-tooltip': {
-    backgroundColor: '#1f2937',
-    border: '1px solid #374151',
-    borderRadius: '8px',
-    boxShadow: '0 4px 12px -2px rgb(0 0 0 / 0.4)',
-  },
-  '.cm-tooltip-autocomplete': {
-    '& > ul': {
-      fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace',
-    },
-    '& > ul > li[aria-selected]': {
-      backgroundColor: 'rgba(96, 165, 250, 0.2)',
-      color: '#e5e7eb',
-    },
-  },
-  '.cm-matchingBracket': {
-    backgroundColor: 'rgba(96, 165, 250, 0.25)',
-    outline: '1px solid rgba(96, 165, 250, 0.5)',
-    borderRadius: '2px',
-  },
-  '.cm-nonmatchingBracket': {
-    backgroundColor: 'rgba(239, 68, 68, 0.25)',
-    outline: '1px solid rgba(239, 68, 68, 0.5)',
-  },
-  '.cm-panels': {
-    backgroundColor: 'rgba(15, 23, 42, 0.9)',
-    borderTop: '1px solid #374151',
-  },
-  '.cm-searchMatch': {
-    backgroundColor: 'rgba(250, 204, 21, 0.3)',
-    borderRadius: '2px',
-  },
-  '.cm-searchMatch.cm-searchMatch-selected': {
-    backgroundColor: 'rgba(250, 204, 21, 0.5)',
-  },
-  '.cm-line': {
-    padding: '0 16px',
-  },
-}, { dark: true });
+// Monolith terminal palette (from the marketing snippet: --orange keywords,
+// #3ddc6b symbols, #8ea79b :params, bone-dim parens).
+const INK = '#0d0d0d';
+const BONE = 'rgb(var(--lt-bone))';
+const ORANGE = '#ff4d1c';
+const SYM = '#3ddc6b'; // tickers + strings
+const PARAM = '#8ea79b'; // :params (sage)
+const NUM = '#6ea8ff'; // numbers (readable blue on ink)
+const boneA = (a: number) => `rgb(var(--lt-bone) / ${a})`;
 
-// Light syntax highlighting
-const lightHighlightStyle = HighlightStyle.define([
-  // Keywords: strategy, weight, asset, group, if, else, filter
-  { tag: tags.keyword, color: '#2563eb' },
-  // Parameters: :method, :weight, :rebalance
-  { tag: tags.definitionKeyword, color: '#7c3aed' },
-  // Methods: specified, equal, momentum
-  { tag: tags.typeName, color: '#059669' },
-  // Indicators: sma, ema, rsi
-  { tag: tags.variableName, color: '#0891b2' },
-  { tag: [tags.special(tags.variableName)], color: '#0891b2', fontWeight: 'bold' },
-  // Operators: >, <, cross-above
-  { tag: tags.operator, color: '#dc2626' },
-  { tag: tags.logicOperator, color: '#dc2626' },
-  // Strings: "Strategy Name"
-  { tag: tags.string, color: '#ea580c' },
-  // Numbers: 50, 0.05
-  { tag: tags.number, color: '#ca8a04' },
-  // Comments: ; comment
-  { tag: tags.comment, color: '#6b7280', fontStyle: 'italic' },
-  // Symbols: SPY, VTI (atoms)
-  { tag: tags.atom, color: '#1f2937', fontWeight: '600' },
-  // Brackets
-  { tag: [tags.bracket, tags.paren, tags.squareBracket, tags.brace], color: '#6b7280' },
-]);
+const terminalTheme = EditorView.theme(
+  {
+    '&': {
+      color: BONE,
+      backgroundColor: INK,
+      fontSize: '14px',
+      fontFamily: MONO_FONT,
+    },
+    '.cm-scroller': { overflow: 'auto', fontFamily: MONO_FONT },
+    '.cm-content': { caretColor: ORANGE, padding: '16px 0' },
+    '.cm-cursor, .cm-dropCursor': { borderLeftColor: ORANGE, borderLeftWidth: '2px' },
+    '&.cm-focused .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection': {
+      backgroundColor: 'rgba(255, 77, 28, 0.28)',
+    },
+    '.cm-activeLine': { backgroundColor: boneA(0.05) },
+    '.cm-activeLineGutter': { backgroundColor: boneA(0.07) },
+    '.cm-gutters': {
+      backgroundColor: INK,
+      color: boneA(0.32),
+      border: 'none',
+      borderRight: `2px solid ${boneA(0.16)}`,
+    },
+    '.cm-foldPlaceholder': {
+      backgroundColor: boneA(0.12),
+      border: 'none',
+      color: BONE,
+      padding: '0 4px',
+      borderRadius: '0',
+    },
+    '.cm-tooltip': {
+      backgroundColor: '#141414',
+      border: `2px solid ${boneA(0.35)}`,
+      borderRadius: '0',
+      boxShadow: `4px 4px 0 ${ORANGE}`,
+      color: BONE,
+    },
+    '.cm-tooltip-autocomplete': {
+      '& > ul': { fontFamily: MONO_FONT },
+      '& > ul > li': { color: BONE },
+      '& > ul > li[aria-selected]': { backgroundColor: ORANGE, color: INK },
+    },
+    '.cm-matchingBracket': {
+      backgroundColor: 'rgba(255, 77, 28, 0.22)',
+      outline: `1px solid ${boneA(0.5)}`,
+      borderRadius: '0',
+    },
+    '.cm-nonmatchingBracket': {
+      backgroundColor: 'rgba(200, 30, 30, 0.3)',
+      outline: '1px solid rgba(200, 30, 30, 0.6)',
+    },
+    '.cm-panels': { backgroundColor: INK, borderTop: `2px solid ${boneA(0.16)}`, color: BONE },
+    '.cm-searchMatch': { backgroundColor: 'rgba(255, 77, 28, 0.25)', borderRadius: '0' },
+    '.cm-searchMatch.cm-searchMatch-selected': { backgroundColor: 'rgba(255, 77, 28, 0.45)' },
+    '.cm-line': { padding: '0 16px' },
+  },
+  { dark: true }
+);
 
-// Dark syntax highlighting
-const darkHighlightStyle = HighlightStyle.define([
-  // Keywords: strategy, weight, asset, group, if, else, filter
-  { tag: tags.keyword, color: '#60a5fa' },
-  // Parameters: :method, :weight, :rebalance
-  { tag: tags.definitionKeyword, color: '#a78bfa' },
-  // Methods: specified, equal, momentum
-  { tag: tags.typeName, color: '#34d399' },
-  // Indicators: sma, ema, rsi
-  { tag: tags.variableName, color: '#22d3ee' },
-  { tag: [tags.special(tags.variableName)], color: '#22d3ee', fontWeight: 'bold' },
-  // Operators: >, <, cross-above
-  { tag: tags.operator, color: '#f87171' },
-  { tag: tags.logicOperator, color: '#f87171' },
-  // Strings: "Strategy Name"
-  { tag: tags.string, color: '#fb923c' },
-  // Numbers: 50, 0.05
-  { tag: tags.number, color: '#facc15' },
-  // Comments: ; comment
-  { tag: tags.comment, color: '#6b7280', fontStyle: 'italic' },
-  // Symbols: SPY, VTI (atoms)
-  { tag: tags.atom, color: '#f3f4f6', fontWeight: '600' },
-  // Brackets
-  { tag: [tags.bracket, tags.paren, tags.squareBracket, tags.brace], color: '#9ca3af' },
+// Syntax highlighting — matches the marketing DSL terminal token colors.
+const terminalHighlightStyle = HighlightStyle.define([
+  // Keywords: strategy, weight, asset, group, if, else, filter → orange
+  { tag: tags.keyword, color: ORANGE, fontWeight: 'bold' },
+  // `:params` (:method, :weight, :rebalance, :benchmark, :by …) → sage.
+  // language.ts tags these as propertyName so they read distinct from keywords.
+  { tag: tags.propertyName, color: PARAM },
+  { tag: tags.definitionKeyword, color: PARAM },
+  // Method/enum values (equal, specified, risk-parity, momentum) → soft bone (plain)
+  { tag: tags.typeName, color: boneA(0.8) },
+  // Fallback identifiers → bone
+  { tag: tags.variableName, color: BONE },
+  // Indicators: sma, ema, rsi, price → orange (function-like)
+  { tag: [tags.special(tags.variableName)], color: ORANGE, fontWeight: 'bold' },
+  // Operators: >, <, cross-above → orange
+  { tag: tags.operator, color: ORANGE, fontWeight: 'bold' },
+  { tag: tags.logicOperator, color: ORANGE, fontWeight: 'bold' },
+  // Strings: "Strategy Name" → green
+  { tag: tags.string, color: SYM },
+  // Numbers: 50, 0.05 → blue
+  { tag: tags.number, color: NUM },
+  // Comments: ; comment → dim bone italic
+  { tag: tags.comment, color: boneA(0.42), fontStyle: 'italic' },
+  // Symbols / tickers: SPY, VTI (atoms) → green
+  { tag: tags.atom, color: SYM, fontWeight: '600' },
+  // Brackets / parens → dim bone (marketing `.tp`)
+  { tag: [tags.bracket, tags.paren, tags.squareBracket, tags.brace], color: boneA(0.4) },
 ]);
 
 /**
- * Get the CodeMirror theme extensions for the given color scheme
+ * Get the CodeMirror theme extensions. The code view is always the Monolith dark
+ * terminal (the `isDark` argument is accepted for API compatibility but ignored).
  */
-export function getEditorTheme(isDark: boolean) {
-  if (isDark) {
-    return [darkTheme, syntaxHighlighting(darkHighlightStyle)];
-  }
-  return [lightTheme, syntaxHighlighting(lightHighlightStyle)];
+export function getEditorTheme(_isDark?: boolean) {
+  return [terminalTheme, syntaxHighlighting(terminalHighlightStyle)];
 }
 
-export { lightTheme, darkTheme, lightHighlightStyle, darkHighlightStyle };
+// Back-compat exports (both point at the single terminal theme).
+const lightTheme = terminalTheme;
+const darkTheme = terminalTheme;
+export { lightTheme, darkTheme, terminalTheme, terminalHighlightStyle };

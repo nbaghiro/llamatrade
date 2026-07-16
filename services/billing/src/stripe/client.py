@@ -88,9 +88,7 @@ class StripeClient:
             return None
         return datetime.fromtimestamp(ts, tz=UTC)
 
-    # ===================
     # Customer Management
-    # ===================
 
     async def get_or_create_customer(
         self, tenant_id: str, email: str, name: str | None = None
@@ -127,9 +125,7 @@ class StripeClient:
             logger.error(f"Stripe error getting customer: {e}")
             raise StripeError(str(e), getattr(e, "code", None))
 
-    # ===================
     # Payment Methods
-    # ===================
 
     async def create_setup_intent(self, customer_id: str) -> SetupIntentResult:
         """Create a SetupIntent for collecting card details."""
@@ -220,9 +216,7 @@ class StripeClient:
             card_exp_year=card.exp_year if card else None,
         )
 
-    # ===================
     # Subscriptions
-    # ===================
 
     async def create_subscription(
         self,
@@ -338,9 +332,7 @@ class StripeClient:
             trial_end=self._timestamp_to_datetime(sub.trial_end),
         )
 
-    # ===================
     # Invoices
-    # ===================
 
     async def list_invoices(self, customer_id: str, limit: int = 10) -> list[InvoiceResult]:
         """List invoices for a customer."""
@@ -369,9 +361,7 @@ class StripeClient:
             hosted_invoice_url=inv.hosted_invoice_url,
         )
 
-    # ===================
     # Webhooks
-    # ===================
 
     def verify_webhook_signature(
         self, payload: bytes, sig_header: str, webhook_secret: str

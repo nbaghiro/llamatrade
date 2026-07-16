@@ -49,34 +49,30 @@ export function FilterBuilder({ initialConfig, onSave, onCancel }: FilterBuilder
   }, [selection, count, universe, sortBy, period, customSymbols, onSave]);
 
   return (
-    <div className="bg-white dark:bg-gray-900 rounded-lg shadow-xl border border-gray-200 dark:border-gray-700 w-[380px]">
-      {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-gray-700">
-        <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+    <div className="bg-paper border-2 border-ink shadow-lg w-[380px]">
+      <div className="flex items-center justify-between px-4 py-3 border-b-2 border-ink">
+        <h3 className="text-sm font-mono font-bold uppercase tracking-wide text-ink">
           {initialConfig ? 'Edit Filter' : 'Create Filter'}
         </h3>
         <button
           onClick={onCancel}
-          className="p-1 hover:bg-gray-100 dark:hover:bg-gray-800 rounded"
+          className="p-1 hover:bg-ink/10"
         >
-          <X className="w-4 h-4 text-gray-500" />
+          <X className="w-4 h-4 text-ink/60" />
         </button>
       </div>
 
-      {/* Content */}
       <div className="p-4 space-y-4">
-        {/* Label */}
-        <div className="text-xs font-semibold uppercase tracking-wide text-purple-600 dark:text-purple-400">
+        <div className="text-xs font-mono font-bold uppercase tracking-wide text-orange-600">
           FILTER
         </div>
 
-        {/* Selection type and count */}
         <div className="flex items-center gap-2">
-          <span className="text-sm text-gray-700 dark:text-gray-300">Select</span>
+          <span className="text-sm text-ink">Select</span>
           <select
             value={selection}
             onChange={(e) => setSelection(e.target.value as FilterSelection)}
-            className="px-3 py-2 text-sm bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500"
+            className="px-3 py-2 text-sm bg-paper text-ink border-2 border-ink focus:outline-none focus:border-orange-500"
           >
             <option value="top">Top</option>
             <option value="bottom">Bottom</option>
@@ -87,20 +83,19 @@ export function FilterBuilder({ initialConfig, onSave, onCancel }: FilterBuilder
             onChange={(e) => setCount(Math.max(1, parseInt(e.target.value) || 1))}
             min={1}
             max={100}
-            className="w-20 px-3 py-2 text-sm bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500"
+            className="w-20 px-3 py-2 text-sm bg-paper text-ink border-2 border-ink focus:outline-none focus:border-orange-500"
           />
-          <span className="text-sm text-gray-700 dark:text-gray-300">assets</span>
+          <span className="text-sm text-ink">assets</span>
         </div>
 
-        {/* Universe */}
         <div>
-          <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">
+          <label className="block text-[11px] font-mono uppercase tracking-wide text-ink/70 mb-1">
             From
           </label>
           <select
             value={universe}
             onChange={(e) => setUniverse(e.target.value as FilterUniverse)}
-            className="w-full px-3 py-2 text-sm bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500"
+            className="w-full px-3 py-2 text-sm bg-paper text-ink border-2 border-ink focus:outline-none focus:border-orange-500"
           >
             {FILTER_UNIVERSES.map((u) => (
               <option key={u.value} value={u.value}>
@@ -110,10 +105,9 @@ export function FilterBuilder({ initialConfig, onSave, onCancel }: FilterBuilder
           </select>
         </div>
 
-        {/* Custom symbols (if custom universe) */}
         {universe === 'custom' && (
           <div>
-            <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">
+            <label className="block text-[11px] font-mono uppercase tracking-wide text-ink/70 mb-1">
               Custom Symbols (comma-separated)
             </label>
             <input
@@ -121,20 +115,19 @@ export function FilterBuilder({ initialConfig, onSave, onCancel }: FilterBuilder
               value={customSymbols}
               onChange={(e) => setCustomSymbols(e.target.value)}
               placeholder="AAPL, MSFT, GOOGL, ..."
-              className="w-full px-3 py-2 text-sm bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500"
+              className="w-full px-3 py-2 text-sm bg-paper text-ink border-2 border-ink focus:outline-none focus:border-orange-500"
             />
           </div>
         )}
 
-        {/* Sort by */}
         <div>
-          <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">
+          <label className="block text-[11px] font-mono uppercase tracking-wide text-ink/70 mb-1">
             Sorted by
           </label>
           <select
             value={sortBy}
             onChange={(e) => setSortBy(e.target.value as FilterSortBy)}
-            className="w-full px-3 py-2 text-sm bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500"
+            className="w-full px-3 py-2 text-sm bg-paper text-ink border-2 border-ink focus:outline-none focus:border-orange-500"
           >
             {FILTER_SORT_OPTIONS.map((opt) => (
               <option key={opt.value} value={opt.value}>
@@ -144,15 +137,14 @@ export function FilterBuilder({ initialConfig, onSave, onCancel }: FilterBuilder
           </select>
         </div>
 
-        {/* Period */}
         <div>
-          <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">
+          <label className="block text-[11px] font-mono uppercase tracking-wide text-ink/70 mb-1">
             Period
           </label>
           <select
             value={period}
             onChange={(e) => setPeriod(e.target.value as FilterPeriod)}
-            className="w-full px-3 py-2 text-sm bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500"
+            className="w-full px-3 py-2 text-sm bg-paper text-ink border-2 border-ink focus:outline-none focus:border-orange-500"
           >
             {FILTER_PERIODS.map((p) => (
               <option key={p.value} value={p.value}>
@@ -163,17 +155,16 @@ export function FilterBuilder({ initialConfig, onSave, onCancel }: FilterBuilder
         </div>
       </div>
 
-      {/* Footer */}
-      <div className="flex justify-end gap-2 px-4 py-3 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800">
+      <div className="flex justify-end gap-2 px-4 py-3 border-t-2 border-ink bg-bone">
         <button
           onClick={onCancel}
-          className="px-3 py-1.5 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-md transition-colors"
+          className="px-3 py-1.5 text-sm text-ink border-2 border-ink hover:bg-ink hover:text-bone transition-colors"
         >
           Cancel
         </button>
         <button
           onClick={handleSave}
-          className="px-3 py-1.5 text-sm bg-purple-500 hover:bg-purple-600 text-white rounded-md transition-colors"
+          className="px-3 py-1.5 text-sm font-mono font-bold uppercase tracking-wide bg-orange-500 hover:bg-orange-600 text-ink border-2 border-ink transition-colors"
         >
           {initialConfig ? 'Update' : 'Add Filter'}
         </button>

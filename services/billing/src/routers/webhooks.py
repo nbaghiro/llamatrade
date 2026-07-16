@@ -136,7 +136,6 @@ async def handle_stripe_webhook(
 
     event_type = event.type if hasattr(event, "type") else ""
 
-    # Log the event
     logger.info(f"Processing Stripe webhook: {event_type}")
 
     # Map of handled event types to their dispatch coroutines. Only handled
@@ -168,8 +167,7 @@ async def handle_stripe_webhook(
                 await _handle_payment_method_detached(db, _payload_as(PaymentMethod, event))
     except Exception as e:
         logger.error(f"Error processing webhook {event_type}: {e}")
-        # Don't raise - return 200 so Stripe doesn't retry
-        # We'll investigate failed events through logs
+        # Don't raise — return 200 so Stripe doesn't retry; failed events are checked via logs.
 
     return {"received": True}
 

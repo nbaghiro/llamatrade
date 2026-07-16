@@ -29,10 +29,10 @@ function ViewButton({ mode, currentMode, icon, label, onClick }: ViewButtonProps
       title={label}
       aria-label={label}
       className={`
-        p-1.5 rounded transition-colors
+        p-1.5 transition-colors
         ${isActive
-          ? 'bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-gray-100'
-          : 'text-gray-400 dark:text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-600 dark:hover:text-gray-300'
+          ? 'bg-ink text-bone'
+          : 'text-ink/50 hover:bg-ink/10 hover:text-ink'
         }
       `}
     >
@@ -95,24 +95,24 @@ export function RootBlock({ block, readOnly }: RootBlockProps) {
   return (
     <div
       className={`
-        flex items-center gap-3 px-4 py-3 rounded-lg border bg-white dark:bg-gray-900
+        flex items-center gap-3 px-4 py-3 border-2 bg-paper
         transition-all duration-150 select-none
         ${readOnly ? 'cursor-default' : 'cursor-pointer'}
-        ${isSelected ? 'border-blue-500 ring-2 ring-blue-500/20' : `border-gray-200 dark:border-gray-700 ${readOnly ? '' : 'hover:border-gray-300 dark:hover:border-gray-600'}`}
+        ${isSelected ? 'border-orange-500 ring-2 ring-orange-500' : `border-ink ${readOnly ? '' : 'hover:border-ink'}`}
       `}
       onClick={handleClick}
       onDoubleClick={handleDoubleClick}
     >
-      <button onClick={handleExpandClick} className="p-0.5 hover:bg-gray-100 dark:hover:bg-gray-800 rounded">
+      <button onClick={handleExpandClick} className="p-0.5 hover:bg-ink/5">
         {isExpanded ? (
-          <ChevronDown className="w-4 h-4 text-gray-500 dark:text-gray-400" />
+          <ChevronDown className="w-4 h-4 text-ink/60" />
         ) : (
-          <ChevronRight className="w-4 h-4 text-gray-500 dark:text-gray-400" />
+          <ChevronRight className="w-4 h-4 text-ink/60" />
         )}
       </button>
 
-      <div className="p-1.5 bg-gray-100 dark:bg-gray-800 rounded">
-        <Layers className="w-4 h-4 text-gray-600 dark:text-gray-400" />
+      <div className="p-1.5 bg-orange-500 border-2 border-ink">
+        <Layers className="w-4 h-4 text-ink" />
       </div>
 
       {isEditing ? (
@@ -123,14 +123,13 @@ export function RootBlock({ block, readOnly }: RootBlockProps) {
           onChange={(e) => setEditValue(e.target.value)}
           onKeyDown={handleKeyDown}
           onBlur={handleBlur}
-          className="font-medium text-gray-900 dark:text-gray-100 bg-blue-50 dark:bg-blue-900/30 px-2 py-0.5 rounded border border-blue-300 dark:border-blue-700 outline-none"
+          className="font-display text-lg uppercase tracking-tight text-ink bg-bone px-2 py-0.5 border-2 border-ink outline-none"
           onClick={(e) => e.stopPropagation()}
         />
       ) : (
-        <span className="font-medium text-gray-900 dark:text-gray-100">{block.name}</span>
+        <span className="font-display text-lg uppercase tracking-tight text-ink">{block.name}</span>
       )}
 
-      {/* Compact View Toggle - next to name, only show in non-readOnly mode */}
       {!readOnly && (
         <button
           onClick={(e) => {
@@ -138,17 +137,15 @@ export function RootBlock({ block, readOnly }: RootBlockProps) {
             toggleCompactView();
           }}
           title={compactView ? 'Switch to edit mode' : 'Switch to view mode'}
-          className="p-1.5 rounded bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
+          className="p-1.5 border-2 border-ink bg-paper text-ink hover:bg-ink hover:text-bone transition-colors"
         >
           {compactView ? <Pencil size={14} /> : <Eye size={14} />}
         </button>
       )}
 
-      {/* Spacer */}
       <div className="flex-1" />
 
-      {/* View Switcher */}
-      <div className="flex items-center gap-0.5 bg-gray-100 dark:bg-gray-800 rounded-lg p-0.5">
+      <div className="flex items-center gap-0.5 border-2 border-ink bg-paper p-0.5">
         <ViewButton
           mode="tree"
           currentMode={viewMode}

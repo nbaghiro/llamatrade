@@ -10,7 +10,6 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 
 from llamatrade_proto.generated import agent_pb2, common_pb2
-from tests.fixtures.mock_embedding import MockEmbeddingService
 
 from src.main import app
 
@@ -521,24 +520,6 @@ def extraction_service() -> Any:
     from src.services import extraction_service
 
     return extraction_service
-
-
-@pytest.fixture
-def mock_embedding_service() -> MockEmbeddingService:
-    """Create a mock embedding service."""
-    return MockEmbeddingService()
-
-
-@pytest.fixture
-def session_summary_service(
-    mock_memory_db: AsyncMock,
-    tenant_id: UUID,
-    user_id: UUID,
-) -> Any:
-    """Create a SessionSummaryService with mocked database."""
-    from src.services.session_summary_service import SessionSummaryService
-
-    return SessionSummaryService(mock_memory_db, tenant_id, user_id)
 
 
 @pytest.fixture

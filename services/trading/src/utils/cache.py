@@ -118,13 +118,11 @@ class AsyncTTLCache:
         def decorator(func: Callable[P, Awaitable[T]]) -> Callable[P, Awaitable[T]]:
             @functools.wraps(func)
             async def wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
-                # Build cache key
                 if key_builder:
                     key = f"{func.__name__}:{key_builder(*args, **kwargs)}"
                 else:
                     key = self.build_key(func.__name__, args, kwargs)
 
-                # Try to get from cache
                 cached_value = await self.get(key)
                 if cached_value is not None:
                     return cast(T, cached_value)
@@ -132,7 +130,6 @@ class AsyncTTLCache:
                 # Cache miss - compute value
                 result = await func(*args, **kwargs)
 
-                # Store in cache
                 await self.set(key, result, entry_ttl)
 
                 return result
@@ -187,7 +184,6 @@ class AsyncTTLCache:
         expires_at = time.time() + entry_ttl
 
         async with self._lock:
-            # Evict oldest entries if at max size
             if self.max_size and len(self._cache) >= self.max_size:
                 await self._evict_oldest_locked()
 
@@ -381,13 +377,11 @@ def async_ttl_cache(
     def decorator(func: Callable[P, Awaitable[T]]) -> Callable[P, Awaitable[T]]:
         @functools.wraps(func)
         async def wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
-            # Build cache key
             if key_builder:
                 key = f"{func.__name__}:{key_builder(*args, **kwargs)}"
             else:
                 key = func_cache.build_key(func.__name__, args, kwargs)
 
-            # Try to get from cache
             cached_value = await func_cache.get(key)
             if cached_value is not None:
                 return cast(T, cached_value)
@@ -395,7 +389,6 @@ def async_ttl_cache(
             # Cache miss - compute value
             result = await func(*args, **kwargs)
 
-            # Store in cache
             await func_cache.set(key, result, ttl_seconds)
 
             return result

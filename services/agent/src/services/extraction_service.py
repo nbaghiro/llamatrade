@@ -1,8 +1,6 @@
 """Extraction service for extracting memory facts from conversations.
 
-This service implements a two-tier extraction system:
-- Tier 1: Heuristic (regex-based, inline, no cost)
-- Tier 2: LLM (background, batched, uses Claude Haiku)
+Uses heuristic (regex-based, inline, no-cost) extraction.
 """
 
 from __future__ import annotations
@@ -10,7 +8,6 @@ from __future__ import annotations
 import logging
 import re
 from dataclasses import dataclass
-from typing import Any
 
 from llamatrade_db.models import MemoryFactCategory
 
@@ -19,9 +16,7 @@ from src.services.memory_service import ExtractedFact
 logger = logging.getLogger(__name__)
 
 
-# =============================================================================
 # Extraction Patterns
-# =============================================================================
 
 # Patterns are tuples of (regex, category, confidence_modifier)
 # confidence_modifier adjusts base confidence (0.7 for heuristic)
@@ -175,9 +170,7 @@ RISK_KEYWORDS = {
 }
 
 
-# =============================================================================
 # Heuristic Extractor
-# =============================================================================
 
 
 @dataclass
@@ -322,156 +315,3 @@ def _clean_extracted_content(content: str) -> str:
     content = re.sub(r"\s+", " ", content)
 
     return content
-
-
-# =============================================================================
-# LLM Extractor (Tier 2)
-# =============================================================================
-
-LLM_EXTRACTION_PROMPT = """Extract relevant facts from this conversation that would be useful to remember about the user.
-
-Focus on:
-1. Risk tolerance and investment preferences
-2. Investment goals and time horizons
-3. Asset/sector preferences (likes and dislikes)
-4. Trading behavior and habits
-5. Specific decisions they've made
-
-Return a JSON array of facts. Each fact should have:
-- "category": one of ["user_preference", "risk_tolerance", "investment_goal", "asset_preference", "strategy_decision", "trading_behavior", "feedback"]
-- "content": the extracted fact as a clear, concise statement
-- "confidence": confidence level from 0.5 to 1.0
-
-Only extract facts that are clearly stated or strongly implied. Do not infer beyond what's explicitly said.
-If no relevant facts are found, return an empty array [].
-
-Conversation:
-{messages}
-
-Return only valid JSON, no other text."""
-
-
-async def extract_facts_llm(
-    messages: list[dict[str, str]],
-    llm_client: Any,
-) -> list[ExtractedFact]:
-    """Extract facts from conversation using LLM.
-
-    This is Tier 2 extraction: higher accuracy but has API cost.
-    Should be run in background and batched.
-
-    Args:
-        messages: List of message dicts with "role" and "content"
-        llm_client: LLM client for API calls
-
-    Returns:
-        List of extracted facts
-    """
-    import json
-
-    if not messages:
-        return []
-
-    # Format messages for prompt
-    formatted = "\n".join(f"{msg['role'].upper()}: {msg['content']}" for msg in messages)
-
-    prompt = LLM_EXTRACTION_PROMPT.format(messages=formatted)
-
-    try:
-        # Call LLM (Haiku for cost efficiency)
-        response = await llm_client.complete(
-            prompt=prompt,
-            model="claude-3-5-haiku-20241022",
-            max_tokens=1024,
-            temperature=0.0,
-        )
-
-        # Parse response
-        content = response.content.strip()
-
-        # Handle potential markdown code blocks
-        if content.startswith("```"):
-            content = re.sub(r"^```(?:json)?\n?", "", content)
-            content = re.sub(r"\n?```$", "", content)
-
-        parsed = json.loads(content)
-
-        if not isinstance(parsed, list):
-            logger.warning("LLM extraction returned non-list: %s", type(parsed))
-            return []
-
-        facts: list[ExtractedFact] = []
-        for item in parsed:
-            if not isinstance(item, dict):
-                continue
-
-            category = item.get("category", "")
-            content = item.get("content", "")
-            confidence = item.get("confidence", 0.85)
-
-            # Validate category
-            valid_categories = {c.value for c in MemoryFactCategory}
-            if category not in valid_categories:
-                continue
-
-            if not content or len(content) < 5:
-                continue
-
-            facts.append(
-                ExtractedFact(
-                    category=category,
-                    content=content,
-                    confidence=min(max(float(confidence), 0.5), 1.0),
-                    extraction_method="llm",
-                )
-            )
-
-        logger.info("Extracted %d facts via LLM", len(facts))
-        return facts
-
-    except json.JSONDecodeError as e:
-        logger.warning("Failed to parse LLM extraction response: %s", e)
-        return []
-    except Exception as e:
-        logger.exception("LLM extraction failed: %s", e)
-        return []
-
-
-# =============================================================================
-# Combined Extraction
-# =============================================================================
-
-
-async def extract_facts_combined(
-    user_message: str,
-    conversation_history: list[dict[str, str]] | None = None,
-    context: ExtractionContext | None = None,
-    llm_client: Any | None = None,
-    use_llm: bool = False,
-) -> list[ExtractedFact]:
-    """Extract facts using combined heuristic + optional LLM extraction.
-
-    Args:
-        user_message: Current user message
-        conversation_history: Optional full conversation for LLM
-        context: Extraction context
-        llm_client: LLM client for Tier 2 extraction
-        use_llm: Whether to use LLM extraction
-
-    Returns:
-        Combined list of extracted facts
-    """
-    # Always run heuristic extraction
-    facts = extract_facts_heuristic(user_message, context)
-
-    # Optionally run LLM extraction
-    if use_llm and llm_client and conversation_history:
-        llm_facts = await extract_facts_llm(conversation_history, llm_client)
-
-        # Merge, preferring LLM facts when they overlap
-        existing_content = {f.content.lower() for f in facts}
-        for llm_fact in llm_facts:
-            if llm_fact.content.lower() not in existing_content:
-                facts.append(llm_fact)
-
-    return facts

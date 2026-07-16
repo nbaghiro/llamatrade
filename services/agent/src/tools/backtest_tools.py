@@ -276,6 +276,11 @@ class RunBacktestTool(BaseTool):
         return "run_backtest"
 
     @property
+    def requires_confirmation(self) -> bool:
+        # Submits a real backtest job — the agent proposes it, the user approves.
+        return True
+
+    @property
     def description(self) -> str:
         return (
             "Run a backtest on a strategy. Use this when the user wants to "
@@ -340,9 +345,7 @@ class RunBacktestTool(BaseTool):
                 strategy_id=strategy_id or "",
             )
 
-            # Note: For DSL code backtesting, the service would need to handle
-            # the dsl_code separately. This may require a different endpoint
-            # or field on the config. For now, we only support strategy_id.
+            # DSL-code backtesting is not wired yet; only strategy_id is supported.
 
             request = backtest_pb2.RunBacktestRequest(
                 context=common_pb2.TenantContext(

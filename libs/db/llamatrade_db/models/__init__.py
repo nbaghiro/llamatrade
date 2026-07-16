@@ -1,11 +1,9 @@
 """ORM models for LlamaTrade database."""
 
 from llamatrade_db.models.agent import (
-    AgentMemoryEmbedding,
     AgentMemoryFact,
     AgentMessage,
     AgentSession,
-    AgentSessionSummary,
     MemoryFactCategory,
     PendingArtifact,
     ToolCallLog,
@@ -47,8 +45,7 @@ from llamatrade_db.models.ledger import (
 
 # NOTE: Enum constants should be imported directly from llamatrade_proto.generated.*_pb2
 # e.g., from llamatrade_proto.generated.trading_pb2 import ORDER_SIDE_BUY
-# NOTE: Market-data bars/quotes/trades now live in the dedicated Timescale store
-# owned by the market-data service (services/market-data/src/store), not here.
+# Market-data bars/quotes/trades live in the market-data service's Timescale store, not here.
 from llamatrade_db.models.notification import (
     Alert,
     Notification,
@@ -74,8 +71,6 @@ __all__ = [
     "PendingArtifact",
     "ToolCallLog",
     "AgentMemoryFact",
-    "AgentMemoryEmbedding",
-    "AgentSessionSummary",
     "MemoryFactCategory",
     # Audit
     "AuditLog",

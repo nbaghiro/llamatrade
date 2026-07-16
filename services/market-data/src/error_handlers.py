@@ -20,7 +20,6 @@ from src.models import (
 
 logger = logging.getLogger(__name__)
 
-# Type alias for exception handlers
 type ExceptionHandler[T: Exception] = Callable[[Request, T], Awaitable[JSONResponse]]
 
 

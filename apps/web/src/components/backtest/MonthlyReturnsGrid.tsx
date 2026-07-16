@@ -1,6 +1,7 @@
 /**
- * Monthly Returns Grid Component
- * Calendar-style grid showing monthly returns with color coding.
+ * Monthly Returns heatmap.
+ * Year-by-month grid with a green→red diverging fill keyed off return sign and
+ * magnitude, plus a compounded annual total column.
  */
 
 import { useMemo } from 'react';
@@ -11,187 +12,126 @@ interface MonthlyReturnsGridProps {
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
-function getReturnColor(value: number): string {
-  // Color scale from red (negative) to green (positive)
-  if (value <= -0.1) return 'bg-red-600 text-white';
-  if (value <= -0.05) return 'bg-red-500 text-white';
-  if (value <= -0.02) return 'bg-red-400 text-white';
-  if (value < 0) return 'bg-red-200 dark:bg-red-900/50 text-red-800 dark:text-red-200';
-  if (value === 0) return 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400';
-  if (value <= 0.02) return 'bg-green-200 dark:bg-green-900/50 text-green-800 dark:text-green-200';
-  if (value <= 0.05) return 'bg-green-400 text-white';
-  if (value <= 0.1) return 'bg-green-500 text-white';
-  return 'bg-green-600 text-white';
+// Diverging fill: alpha scales with magnitude, saturating at ±5%.
+function cellStyle(value: number | undefined): React.CSSProperties {
+  if (value === undefined) return { background: 'rgb(var(--lt-bone))', color: 'rgba(13,13,13,.25)' };
+  const pct = value * 100;
+  const a = 0.15 + 0.7 * Math.min(Math.abs(pct) / 5, 1);
+  const rgb = value >= 0 ? '15,122,52' : '200,30,30';
+  return { background: `rgba(${rgb},${a.toFixed(2)})`, color: a > 0.5 ? 'rgb(var(--lt-bone))' : '#0d0d0d' };
 }
 
-function formatPercent(value: number): string {
-  return `${(value * 100).toFixed(1)}%`;
+function signedPercent(pct: number, digits = 1): string {
+  return `${pct >= 0 ? '+' : ''}${pct.toFixed(digits)}`;
 }
 
 export default function MonthlyReturnsGrid({ monthlyReturns }: MonthlyReturnsGridProps) {
-  // Process monthly returns into a grid by year
-  const { years, grid, yearTotals, monthTotals } = useMemo(() => {
-    const entries = Object.entries(monthlyReturns);
-    if (entries.length === 0) {
-      return { years: [], grid: {}, yearTotals: {}, monthTotals: {} };
-    }
+  const { years, grid, yearTotals, best, worst, hasData } = useMemo(() => {
+    const parsed = Object.entries(monthlyReturns)
+      .map(([key, value]) => {
+        const [year, month] = key.split('-').map(Number);
+        return { year, month, value };
+      })
+      .filter((p) => Number.isFinite(p.year) && p.month >= 1 && p.month <= 12);
 
-    // Parse all year-month keys
-    const parsed = entries.map(([key, value]) => {
-      const [year, month] = key.split('-').map(Number);
-      return { year, month, value };
-    });
-
-    // Get unique years sorted
-    const uniqueYears = Array.from(new Set(parsed.map((p) => p.year))).sort();
-
-    // Build grid: year -> month -> value
+    const uniqueYears = Array.from(new Set(parsed.map((p) => p.year))).sort((a, b) => a - b);
     const gridData: Record<number, Record<number, number>> = {};
     for (const { year, month, value } of parsed) {
-      if (!gridData[year]) gridData[year] = {};
-      gridData[year][month] = value;
+      (gridData[year] ??= {})[month] = value;
     }
 
-    // Calculate year totals (sum of monthly returns)
-    const yTotals: Record<number, number> = {};
+    // Compounded annual return from the months present.
+    const totals: Record<number, number> = {};
     for (const year of uniqueYears) {
-      yTotals[year] = Object.values(gridData[year] || {}).reduce((sum, v) => sum + v, 0);
+      const months = Object.values(gridData[year]);
+      totals[year] = months.reduce((acc, v) => acc * (1 + v), 1) - 1;
     }
 
-    // Calculate month averages across years
-    const mTotals: Record<number, number> = {};
-    for (let m = 1; m <= 12; m++) {
-      const monthValues = uniqueYears
-        .map((y) => gridData[y]?.[m])
-        .filter((v): v is number => v !== undefined);
-      if (monthValues.length > 0) {
-        mTotals[m] = monthValues.reduce((sum, v) => sum + v, 0) / monthValues.length;
-      }
-    }
-
+    const values = parsed.map((p) => p.value);
     return {
       years: uniqueYears,
       grid: gridData,
-      yearTotals: yTotals,
-      monthTotals: mTotals,
+      yearTotals: totals,
+      best: values.length ? Math.max(...values) : 0,
+      worst: values.length ? Math.min(...values) : 0,
+      hasData: parsed.length > 0,
     };
   }, [monthlyReturns]);
 
-  if (years.length === 0) {
-    return (
-      <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-6">
-        <div className="flex items-center justify-center h-32 text-gray-400 dark:text-gray-500">
-          No monthly return data available
-        </div>
-      </div>
-    );
-  }
-
   return (
-    <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-6">
-      <h3 className="font-medium text-gray-900 dark:text-gray-100 mb-4">Monthly Returns</h3>
+    <div className="bg-paper border-2 border-ink shadow-[4px_4px_0_#0d0d0d]">
+      <div className="flex items-center justify-between px-4 py-3 border-b-2 border-ink">
+        <span className="font-mono text-[11px] font-bold uppercase tracking-[0.1em]">Monthly Returns</span>
+        {hasData && (
+          <span className="font-mono text-[10px] font-bold uppercase tracking-[0.04em] border-[1.5px] border-ink px-1.5 py-[3px]">
+            Best {signedPercent(best * 100)}% · Worst {signedPercent(worst * 100)}%
+          </span>
+        )}
+      </div>
 
-      <div className="overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead>
-            <tr>
-              <th className="text-left px-2 py-2 text-gray-500 dark:text-gray-400 font-medium">
-                Year
-              </th>
-              {MONTHS.map((month) => (
-                <th
-                  key={month}
-                  className="text-center px-2 py-2 text-gray-500 dark:text-gray-400 font-medium"
-                >
-                  {month}
+      {!hasData ? (
+        <div className="px-4 py-8 font-mono text-[11px] uppercase tracking-[0.05em] text-ink/40 text-center">
+          No monthly return data
+        </div>
+      ) : (
+        <div className="px-4 pt-3.5 pb-4 overflow-x-auto">
+          <table className="w-full border-collapse tabular-nums">
+            <thead>
+              <tr>
+                <th className="text-left pl-0.5 pb-2 pt-1 font-mono text-[9.5px] font-bold uppercase tracking-[0.04em] text-ink/55">
+                  Year
                 </th>
-              ))}
-              <th className="text-center px-2 py-2 text-gray-500 dark:text-gray-400 font-medium">
-                Total
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {years.map((year) => (
-              <tr key={year}>
-                <td className="px-2 py-1 font-medium text-gray-900 dark:text-gray-100">{year}</td>
-                {MONTHS.map((_, monthIdx) => {
-                  const monthNum = monthIdx + 1;
-                  const value = grid[year]?.[monthNum];
-                  return (
-                    <td key={monthIdx} className="px-1 py-1">
-                      {value !== undefined ? (
-                        <div
-                          className={`px-2 py-1.5 text-center rounded font-mono text-xs ${getReturnColor(value)}`}
-                          title={`${year}-${String(monthNum).padStart(2, '0')}: ${formatPercent(value)}`}
-                        >
-                          {formatPercent(value)}
-                        </div>
-                      ) : (
-                        <div className="px-2 py-1.5 text-center text-gray-300 dark:text-gray-700">
-                          -
-                        </div>
-                      )}
-                    </td>
-                  );
-                })}
-                <td className="px-1 py-1">
-                  <div
-                    className={`px-2 py-1.5 text-center rounded font-mono text-xs font-medium ${getReturnColor(yearTotals[year] || 0)}`}
+                {MONTHS.map((m) => (
+                  <th
+                    key={m}
+                    className="text-center pb-2 pt-1 font-mono text-[9.5px] font-bold uppercase tracking-[0.04em] text-ink/55"
                   >
-                    {formatPercent(yearTotals[year] || 0)}
-                  </div>
-                </td>
+                    {m}
+                  </th>
+                ))}
+                <th className="text-center pb-2 pt-1 font-mono text-[9.5px] font-bold uppercase tracking-[0.04em] text-ink/55">
+                  Year
+                </th>
               </tr>
-            ))}
+            </thead>
+            <tbody>
+              {years.map((year) => (
+                <tr key={year}>
+                  <td className="text-left pr-2 font-mono font-bold text-[12px]">{year}</td>
+                  {MONTHS.map((_, idx) => {
+                    const value = grid[year]?.[idx + 1];
+                    return (
+                      <td
+                        key={idx}
+                        className="text-center border-[1.5px] border-ink font-mono text-[11px] font-bold h-[30px] w-[6.7%]"
+                        style={cellStyle(value)}
+                        title={value !== undefined ? `${year}-${String(idx + 1).padStart(2, '0')}: ${signedPercent(value * 100)}%` : undefined}
+                      >
+                        {value !== undefined ? signedPercent(value * 100) : '·'}
+                      </td>
+                    );
+                  })}
+                  <td className="text-center border-2 border-ink bg-ink text-bone font-mono text-[11px] font-bold h-[30px]">
+                    {signedPercent(yearTotals[year] * 100)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
 
-            {/* Average row */}
-            {years.length > 1 && (
-              <tr className="border-t border-gray-200 dark:border-gray-700">
-                <td className="px-2 py-1 font-medium text-gray-500 dark:text-gray-400">Avg</td>
-                {MONTHS.map((_, monthIdx) => {
-                  const monthNum = monthIdx + 1;
-                  const value = monthTotals[monthNum];
-                  return (
-                    <td key={monthIdx} className="px-1 py-1">
-                      {value !== undefined ? (
-                        <div
-                          className={`px-2 py-1.5 text-center rounded font-mono text-xs ${getReturnColor(value)}`}
-                        >
-                          {formatPercent(value)}
-                        </div>
-                      ) : (
-                        <div className="px-2 py-1.5 text-center text-gray-300 dark:text-gray-700">
-                          -
-                        </div>
-                      )}
-                    </td>
-                  );
-                })}
-                <td className="px-1 py-1">
-                  <div className="px-2 py-1.5 text-center text-gray-400 dark:text-gray-500">-</div>
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
-
-      {/* Legend */}
-      <div className="mt-4 flex items-center justify-center gap-4 text-xs text-gray-500 dark:text-gray-400">
-        <div className="flex items-center gap-1.5">
-          <div className="w-4 h-4 rounded bg-red-500" />
-          <span>Negative</span>
+          <div className="flex items-center gap-2 mt-3 font-mono text-[9.5px] font-bold uppercase tracking-[0.05em] text-ink/50">
+            <span>−5%</span>
+            <span className="flex h-3 w-[190px] border-2 border-ink">
+              <span className="flex-1" style={{ background: 'rgba(200,30,30,.85)' }} />
+              <span className="flex-1" style={{ background: 'rgba(200,30,30,.4)' }} />
+              <span className="flex-1 bg-bone" />
+              <span className="flex-1" style={{ background: 'rgba(15,122,52,.4)' }} />
+              <span className="flex-1" style={{ background: 'rgba(15,122,52,.85)' }} />
+            </span>
+            <span>+5%</span>
+          </div>
         </div>
-        <div className="flex items-center gap-1.5">
-          <div className="w-4 h-4 rounded bg-gray-100 dark:bg-gray-800" />
-          <span>Zero</span>
-        </div>
-        <div className="flex items-center gap-1.5">
-          <div className="w-4 h-4 rounded bg-green-500" />
-          <span>Positive</span>
-        </div>
-      </div>
+      )}
     </div>
   );
 }

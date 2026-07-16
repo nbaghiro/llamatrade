@@ -5,10 +5,6 @@ The strategy evaluation (rebalance clock, weight computation, sizing) lives in t
 module only adapts the engine's per-date callback to drive a :class:`StrategySession`:
 convert the engine's bar dicts to compiler bars, read holdings/equity from the engine, and
 turn the session's intended orders into the engine's ``SignalData``.
-
-The previous hand-rolled copy of the rebalance gate and drift sizing has been removed —
-those now have a single implementation in ``llamatrade_compiler`` (``should_rebalance`` and
-``size_orders``), shared with the live runner.
 """
 
 from llamatrade_compiler import Bar, Holding, SizingMode, StrategySession

@@ -173,7 +173,6 @@ class CircuitBreaker:
         self._order_errors = ErrorTracker(window_seconds=config.error_window_seconds)
         self._api_errors = ErrorTracker(window_seconds=config.error_window_seconds)
 
-        # Cooldown task
         self._cooldown_task: asyncio.Task[None] | None = None
 
     @property
@@ -225,7 +224,6 @@ class CircuitBreaker:
         self._daily_pnl += pnl
         self._current_equity += pnl
 
-        # Update peak equity (only track increases)
         if self._current_equity > self._peak_equity:
             self._peak_equity = self._current_equity
 
@@ -390,7 +388,6 @@ class CircuitBreaker:
                 )
                 return False
 
-        # Cancel any pending cooldown task
         if self._cooldown_task:
             self._cooldown_task.cancel()
             try:
@@ -414,7 +411,6 @@ class CircuitBreaker:
             extra={"tenant_id": str(self.tenant_id), "session_id": str(self.session_id)},
         )
 
-        # Notify callback
         if self.callback:
             try:
                 await self.callback.on_circuit_breaker_reset(
@@ -462,10 +458,8 @@ class CircuitBreaker:
             },
         )
 
-        # Record metric
         metrics.trading.circuit_breaker_triggered(reason=reason.value)
 
-        # Notify callback
         if self.callback:
             try:
                 await self.callback.on_circuit_breaker_triggered(
@@ -477,7 +471,6 @@ class CircuitBreaker:
             except Exception as e:
                 logger.error(f"Error in circuit breaker trigger callback: {e}")
 
-        # Start cooldown if auto-reset is enabled
         if self.config.auto_reset:
             self._cooldown_task = asyncio.create_task(self._cooldown_timer())
 

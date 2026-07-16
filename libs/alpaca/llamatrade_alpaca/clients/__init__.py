@@ -37,9 +37,7 @@ def _get_client_lock() -> asyncio.Lock:
     return _client_lock
 
 
-# =============================================================================
 # Sync singleton helpers (for FastAPI Depends)
-# =============================================================================
 
 
 def get_trading_client() -> TradingClient:
@@ -70,9 +68,7 @@ def get_market_data_client() -> MarketDataClient:
     return _market_data_client
 
 
-# =============================================================================
 # Async singleton helpers (thread-safe for concurrent contexts)
-# =============================================================================
 
 
 async def get_trading_client_async() -> TradingClient:
@@ -113,9 +109,7 @@ async def get_market_data_client_async() -> MarketDataClient:
         return _market_data_client
 
 
-# =============================================================================
 # Close helpers
-# =============================================================================
 
 
 async def close_trading_client() -> None:

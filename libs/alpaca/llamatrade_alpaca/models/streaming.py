@@ -19,9 +19,7 @@ from decimal import Decimal
 from enum import Enum
 from typing import Literal, TypedDict
 
-# =============================================================================
 # Market data stream payloads
-# =============================================================================
 
 
 class TradeData(TypedDict):
@@ -78,9 +76,7 @@ class StreamBar:
     trade_count: int | None = None
 
 
-# =============================================================================
 # Trading (account) stream events
-# =============================================================================
 
 
 class TradeEventType(Enum):

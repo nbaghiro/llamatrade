@@ -50,7 +50,6 @@ export default function SubscribePage() {
       return;
     }
 
-    // Create checkout session for card collection
     setSetupLoading(true);
     try {
       const response = await billingClient.createCheckoutSession({
@@ -59,7 +58,6 @@ export default function SubscribePage() {
         successUrl: `${window.location.origin}/billing?success=true`,
         cancelUrl: `${window.location.origin}/subscribe`,
       });
-      // Use sessionId as the client secret for Stripe Elements
       setClientSecret(response.sessionId);
     } catch {
       setLocalError('Failed to create setup intent. Please try again.');
@@ -123,17 +121,17 @@ export default function SubscribePage() {
   };
 
   return (
-    <div className="h-[calc(100vh-56px)] overflow-auto bg-gray-50 dark:bg-gray-950 bg-dotted-grid">
+    <div className="h-[calc(100vh-56px)] overflow-auto bg-gray-50 dark:bg-gray-950 bg-grid">
       <div className="mx-auto max-w-6xl px-6 py-8">
         <div className="mb-8">
           <Link
             to="/billing"
-            className="mb-4 inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+            className="mb-4 inline-flex items-center gap-1 text-xs font-mono font-bold uppercase tracking-wide text-ink/60 hover:text-ink dark:text-gray-400 dark:hover:text-gray-200"
           >
             <ArrowLeft className="h-4 w-4" />
             Back to Billing
           </Link>
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">
+          <h1 className="text-2xl font-display uppercase tracking-tight text-gray-900 dark:text-gray-100">
             Choose Your Plan
           </h1>
           <p className="mt-1 text-gray-500 dark:text-gray-400">
@@ -142,12 +140,12 @@ export default function SubscribePage() {
         </div>
 
         {displayError && (
-          <div className="mb-6 rounded-lg bg-red-50 p-4 dark:bg-red-900/20">
+          <div className="mb-6 border-2 border-ink bg-red-50 p-4 dark:bg-red-900/20">
             <div className="flex items-center justify-between">
-              <p className="text-sm text-red-600 dark:text-red-400">{displayError}</p>
+              <p className="text-sm font-mono text-red-600 dark:text-red-400">{displayError}</p>
               <button
                 onClick={clearDisplayError}
-                className="text-sm text-red-600 hover:text-red-700 dark:text-red-400"
+                className="text-xs font-mono font-bold uppercase tracking-wide text-red-600 hover:text-red-700 dark:text-red-400"
               >
                 Dismiss
               </button>
@@ -155,25 +153,24 @@ export default function SubscribePage() {
           </div>
         )}
 
-        {/* Billing Cycle Toggle */}
         <div className="mb-8 flex justify-center">
-          <div className="inline-flex rounded-lg border border-gray-200 bg-white p-1 dark:border-gray-700 dark:bg-gray-900">
+          <div className="inline-flex border-2 border-ink bg-white p-1 dark:border-gray-700 dark:bg-gray-900">
             <button
               onClick={() => setBillingCycle('monthly')}
-              className={`rounded-md px-4 py-2 text-sm font-medium transition-colors ${
+              className={`px-4 py-2 text-xs font-mono font-bold uppercase tracking-wide transition-colors ${
                 billingCycle === 'monthly'
-                  ? 'bg-gray-900 text-white dark:bg-gray-100 dark:text-gray-900'
-                  : 'text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100'
+                  ? 'bg-ink text-bone dark:bg-gray-100 dark:text-gray-900'
+                  : 'text-ink/60 hover:text-ink dark:text-gray-400 dark:hover:text-gray-100'
               }`}
             >
               Monthly
             </button>
             <button
               onClick={() => setBillingCycle('yearly')}
-              className={`rounded-md px-4 py-2 text-sm font-medium transition-colors ${
+              className={`px-4 py-2 text-xs font-mono font-bold uppercase tracking-wide transition-colors ${
                 billingCycle === 'yearly'
-                  ? 'bg-gray-900 text-white dark:bg-gray-100 dark:text-gray-900'
-                  : 'text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100'
+                  ? 'bg-ink text-bone dark:bg-gray-100 dark:text-gray-900'
+                  : 'text-ink/60 hover:text-ink dark:text-gray-400 dark:hover:text-gray-100'
               }`}
             >
               Yearly
@@ -182,10 +179,9 @@ export default function SubscribePage() {
           </div>
         </div>
 
-        {/* Plan Selection */}
         {loading && !plans.length ? (
           <div className="flex justify-center py-12">
-            <Loader2 className="h-8 w-8 animate-spin text-gray-400" />
+            <Loader2 className="h-8 w-8 animate-spin text-orange-500" />
           </div>
         ) : (
           <div className="grid gap-6 md:grid-cols-3">
@@ -201,11 +197,10 @@ export default function SubscribePage() {
           </div>
         )}
 
-        {/* Payment Form Modal */}
         {selectedPlan && selectedPlan.tier !== 0 && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-            <div className="w-full max-w-md rounded-2xl bg-white p-6 dark:bg-gray-900">
-              <h2 className="mb-4 text-lg font-semibold text-gray-900 dark:text-gray-100">
+            <div className="w-full max-w-md border-2 border-ink bg-white p-6 shadow-lg dark:bg-gray-900">
+              <h2 className="mb-4 text-lg font-display uppercase tracking-tight text-gray-900 dark:text-gray-100">
                 Subscribe to {selectedPlan.name}
               </h2>
               <p className="mb-6 text-sm text-gray-500 dark:text-gray-400">
@@ -214,7 +209,7 @@ export default function SubscribePage() {
 
               {setupLoading ? (
                 <div className="flex justify-center py-8">
-                  <Loader2 className="h-8 w-8 animate-spin text-gray-400" />
+                  <Loader2 className="h-8 w-8 animate-spin text-orange-500" />
                 </div>
               ) : clientSecret ? (
                 <Elements stripe={stripePromise}>
@@ -237,7 +232,7 @@ export default function SubscribePage() {
                   setSelectedPlan(null);
                   setClientSecret(null);
                 }}
-                className="mt-4 w-full text-center text-sm text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+                className="mt-4 w-full text-center text-xs font-mono font-bold uppercase tracking-wide text-ink/60 hover:text-ink dark:text-gray-400 dark:hover:text-gray-200"
               >
                 Cancel
               </button>
@@ -245,11 +240,10 @@ export default function SubscribePage() {
           </div>
         )}
 
-        {/* Free Plan Confirmation */}
         {selectedPlan && selectedPlan.tier === 0 && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-            <div className="w-full max-w-md rounded-2xl bg-white p-6 dark:bg-gray-900">
-              <h2 className="mb-4 text-lg font-semibold text-gray-900 dark:text-gray-100">
+            <div className="w-full max-w-md border-2 border-ink bg-white p-6 shadow-lg dark:bg-gray-900">
+              <h2 className="mb-4 text-lg font-display uppercase tracking-tight text-gray-900 dark:text-gray-100">
                 Switch to Free Plan
               </h2>
               <p className="mb-6 text-sm text-gray-500 dark:text-gray-400">
@@ -260,14 +254,14 @@ export default function SubscribePage() {
                 <button
                   onClick={handleFreePlan}
                   disabled={submitLoading}
-                  className="w-full flex items-center justify-center gap-2 rounded-lg bg-gray-900 px-4 py-2.5 text-sm font-medium text-white hover:bg-gray-800 disabled:opacity-50 dark:bg-gray-100 dark:text-gray-900 dark:hover:bg-gray-200"
+                  className="btn btn-primary w-full"
                 >
                   {submitLoading && <Loader2 className="h-4 w-4 animate-spin" />}
                   Confirm Switch
                 </button>
                 <button
                   onClick={() => setSelectedPlan(null)}
-                  className="w-full text-center text-sm text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+                  className="w-full text-center text-xs font-mono font-bold uppercase tracking-wide text-ink/60 hover:text-ink dark:text-gray-400 dark:hover:text-gray-200"
                 >
                   Cancel
                 </button>

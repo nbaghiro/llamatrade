@@ -1,126 +1,50 @@
 /**
- * Connect client setup for direct service communication.
+ * Connect client setup for the web app.
  *
- * Uses Connect protocol over HTTP/1.1 for browser compatibility.
- * No proxy required - browsers connect directly to services.
- *
- * Usage:
- *   import { marketDataClient, tradingClient } from './grpc-client';
- *
- *   const bars = await marketDataClient.getHistoricalBars({
- *     symbol: 'AAPL',
- *     timeframe: 'TIMEFRAME_1DAY',
- *   });
+ * The clients themselves live in @llamatrade/core (shared with mobile); this file
+ * just configures them for the browser — service URLs from Vite env, the auth
+ * token + tenant context from the auth store, and the telemetry interceptor.
+ * Web uses the global `fetch` (no override).
  */
+import { configure } from '@llamatrade/core/net';
 
-import { createClient, type Interceptor } from '@connectrpc/connect';
-import { createConnectTransport } from '@connectrpc/connect-web';
-
-import { AgentService } from '../generated/proto/agent_pb';
-import { AuthService } from '../generated/proto/auth_pb';
-import { BacktestService } from '../generated/proto/backtest_pb';
-import { BillingService } from '../generated/proto/billing_pb';
-import { MarketDataService } from '../generated/proto/market_data_pb';
-import { NotificationService } from '../generated/proto/notification_pb';
-import { PortfolioService } from '../generated/proto/portfolio_pb';
-import { StrategyService } from '../generated/proto/strategy_pb';
-import { TradingService } from '../generated/proto/trading_pb';
-import { useAuthStore } from '../store/auth';
+import { getTenantContext, useAuthStore } from '../store/auth';
 import { telemetryInterceptor } from '../telemetry';
 
-// Direct service URLs (no proxy needed)
-const SERVICE_URLS = {
-  agent: import.meta.env.VITE_AGENT_URL || 'http://localhost:8890',
-  auth: import.meta.env.VITE_AUTH_URL || 'http://localhost:8810',
-  backtest: import.meta.env.VITE_BACKTEST_URL || 'http://localhost:8830',
-  billing: import.meta.env.VITE_BILLING_URL || 'http://localhost:8880',
-  marketData: import.meta.env.VITE_MARKET_DATA_URL || 'http://localhost:8840',
-  notification: import.meta.env.VITE_NOTIFICATION_URL || 'http://localhost:8870',
-  portfolio: import.meta.env.VITE_PORTFOLIO_URL || 'http://localhost:8860',
-  strategy: import.meta.env.VITE_STRATEGY_URL || 'http://localhost:8820',
-  trading: import.meta.env.VITE_TRADING_URL || 'http://localhost:8850',
-};
+configure({
+  urls: {
+    agent: import.meta.env.VITE_AGENT_URL || 'http://localhost:8990',
+    auth: import.meta.env.VITE_AUTH_URL || 'http://localhost:8810',
+    backtest: import.meta.env.VITE_BACKTEST_URL || 'http://localhost:8830',
+    billing: import.meta.env.VITE_BILLING_URL || 'http://localhost:8880',
+    marketData: import.meta.env.VITE_MARKET_DATA_URL || 'http://localhost:8840',
+    notification: import.meta.env.VITE_NOTIFICATION_URL || 'http://localhost:8870',
+    portfolio: import.meta.env.VITE_PORTFOLIO_URL || 'http://localhost:8860',
+    strategy: import.meta.env.VITE_STRATEGY_URL || 'http://localhost:8820',
+    trading: import.meta.env.VITE_TRADING_URL || 'http://localhost:8850',
+  },
+  getToken: () => useAuthStore.getState().accessToken,
+  getTenantContext,
+  onUnauthenticated: () => {
+    if (useAuthStore.getState().isAuthenticated) useAuthStore.getState().logout();
+  },
+  // telemetry first (outermost) so it times the full call and sets traceparent
+  extraInterceptors: [telemetryInterceptor],
+});
 
-/**
- * Authentication interceptor.
- * Adds Bearer token to requests if available.
- * Skips auth for login/register endpoints.
- */
-const authInterceptor: Interceptor = (next) => async (req) => {
-  // Don't send auth for public endpoints
-  const publicMethods = ['Login', 'Register', 'RefreshToken'];
-  const methodName = req.method.name;
-
-  if (!publicMethods.includes(methodName)) {
-    const token = useAuthStore.getState().accessToken;
-    if (token) {
-      req.header.set('Authorization', `Bearer ${token}`);
-    }
-  }
-  return next(req);
-};
-
-/**
- * Create Connect transport for a service.
- * Uses JSON format for easy debugging in browser DevTools.
- */
-function createServiceTransport(baseUrl: string) {
-  return createConnectTransport({
-    baseUrl,
-    // telemetry first (outermost) so it times the full call and sets traceparent
-    interceptors: [telemetryInterceptor, authInterceptor],
-    useBinaryFormat: false, // JSON for debugging - set to true for production
-  });
-}
-
-// ============================================================================
-// Service clients - each connects directly to its service
-// ============================================================================
-
-export const agentClient = createClient(
-  AgentService,
-  createServiceTransport(SERVICE_URLS.agent)
-);
-
-export const authClient = createClient(
-  AuthService,
-  createServiceTransport(SERVICE_URLS.auth)
-);
-
-export const backtestClient = createClient(
-  BacktestService,
-  createServiceTransport(SERVICE_URLS.backtest)
-);
-
-export const billingClient = createClient(
-  BillingService,
-  createServiceTransport(SERVICE_URLS.billing)
-);
-
-export const marketDataClient = createClient(
-  MarketDataService,
-  createServiceTransport(SERVICE_URLS.marketData)
-);
-
-export const notificationClient = createClient(
-  NotificationService,
-  createServiceTransport(SERVICE_URLS.notification)
-);
-
-export const portfolioClient = createClient(
-  PortfolioService,
-  createServiceTransport(SERVICE_URLS.portfolio)
-);
-
-export const strategyClient = createClient(
-  StrategyService,
-  createServiceTransport(SERVICE_URLS.strategy)
-);
-
-export const tradingClient = createClient(
-  TradingService,
-  createServiceTransport(SERVICE_URLS.trading)
-);
+export {
+  agentClient,
+  authClient,
+  backtestClient,
+  billingClient,
+  // LedgerService is served by the portfolio process (book-of-record kernel).
+  ledgerClient,
+  marketDataClient,
+  notificationClient,
+  portfolioClient,
+  strategyClient,
+  tradingClient,
+} from '@llamatrade/core/net';
 
 // Feature flag - Connect is always enabled
 export const grpcEnabled = true;

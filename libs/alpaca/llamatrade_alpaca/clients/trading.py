@@ -81,9 +81,7 @@ class TradingClient(AlpacaClientBase):
             timeout=timeout,
         )
 
-    # =========================================================================
     # Account
-    # =========================================================================
 
     @retry_with_backoff(RetryConfig())
     async def get_account(self) -> Account:
@@ -100,9 +98,7 @@ class TradingClient(AlpacaClientBase):
             response = await self._get("/account")
             return parse_account(response.json())
 
-    # =========================================================================
     # Orders
-    # =========================================================================
 
     @retry_with_backoff(RetryConfig())
     async def submit_order(
@@ -255,9 +251,7 @@ class TradingClient(AlpacaClientBase):
                 results.append(parse_order(order_data))
             return results
 
-    # =========================================================================
     # Positions
-    # =========================================================================
 
     @retry_with_backoff(RetryConfig())
     async def get_positions(self) -> list[Position]:
@@ -373,9 +367,7 @@ class TradingClient(AlpacaClientBase):
                 orders.append(parse_order(order_data))
             return orders
 
-    # =========================================================================
     # Market Clock
-    # =========================================================================
 
     @retry_with_backoff(RetryConfig())
     async def get_clock(self) -> MarketClock:

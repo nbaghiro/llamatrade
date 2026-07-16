@@ -1,9 +1,4 @@
-/**
- * InlineStrategyViewer - Renders a strategy visualization inline within chat messages.
- *
- * Parses DSL from artifact preview and renders using the StrategyBuilder component
- * in a scoped store context.
- */
+/** Renders a strategy visualization inline within chat messages, parsing DSL from the artifact preview. */
 
 import { AlertCircle, ChevronDown, ChevronRight, GitBranch, RefreshCw } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
@@ -38,7 +33,6 @@ export function InlineStrategyViewer({
   const [error, setError] = useState<string | null>(null);
   const [isExpanded, setIsExpanded] = useState(true);
 
-  // Parse the artifact preview JSON to extract DSL code
   const previewData = useMemo<PreviewData | null>(() => {
     try {
       if (!artifact.previewJson) return null;
@@ -48,7 +42,6 @@ export function InlineStrategyViewer({
     }
   }, [artifact.previewJson]);
 
-  // Parse DSL code into strategy tree
   useEffect(() => {
     setError(null);
     setTree(null);
@@ -70,7 +63,6 @@ export function InlineStrategyViewer({
     }
   }, [previewData]);
 
-  // Show error fallback
   if (error || !tree) {
     return (
       <FallbackView
@@ -82,29 +74,27 @@ export function InlineStrategyViewer({
   }
 
   return (
-    <div className="my-4 rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden bg-white dark:bg-gray-900">
-      {/* Header */}
+    <div className="my-4 border-2 border-ink shadow overflow-hidden bg-paper">
       <button
         onClick={() => setIsExpanded(!isExpanded)}
-        className="w-full px-3 py-2 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 flex items-center justify-between hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+        className="w-full px-3 py-2 border-b-2 border-ink bg-bone flex items-center justify-between hover:bg-bone transition-colors"
       >
         <div className="flex items-center gap-2">
           {isExpanded ? (
-            <ChevronDown className="w-4 h-4 text-gray-500" />
+            <ChevronDown className="w-4 h-4 text-ink/50" />
           ) : (
-            <ChevronRight className="w-4 h-4 text-gray-500" />
+            <ChevronRight className="w-4 h-4 text-ink/50" />
           )}
-          <GitBranch className="w-4 h-4 text-purple-500" />
-          <span className="font-medium text-sm text-gray-900 dark:text-gray-100">
+          <GitBranch className="w-4 h-4 text-orange-500" />
+          <span className="font-bold text-sm text-ink">
             {artifact.name || 'Strategy Preview'}
           </span>
         </div>
-        <span className="text-xs bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400 px-2 py-0.5 rounded">
+        <span className="text-xs font-mono uppercase tracking-wide bg-orange-500 text-ink border border-ink px-2 py-0.5">
           Strategy
         </span>
       </button>
 
-      {/* Strategy visualization */}
       {isExpanded && (
         <StrategyBuilderStoreProvider tree={tree} previewId={artifact.id}>
           <div style={{ maxHeight: maxHeight - 48 }} className="overflow-auto">
@@ -132,17 +122,16 @@ function FallbackView({
   const [showCode, setShowCode] = useState(false);
 
   return (
-    <div className="my-4 rounded-lg border border-amber-200 dark:border-amber-800 overflow-hidden">
-      {/* Error header */}
-      <div className="px-3 py-2 bg-amber-50 dark:bg-amber-900/20 flex items-center gap-2">
-        <AlertCircle className="w-4 h-4 text-amber-600 dark:text-amber-400" />
-        <span className="text-sm text-amber-700 dark:text-amber-300">
+    <div className="my-4 border-2 border-ink shadow overflow-hidden">
+      <div className="px-3 py-2 bg-amber-50 flex items-center gap-2">
+        <AlertCircle className="w-4 h-4 text-amber-600" />
+        <span className="text-sm text-amber-700">
           {error}
         </span>
         {dslCode && (
           <button
             onClick={() => setShowCode(!showCode)}
-            className="ml-auto text-xs text-amber-600 dark:text-amber-400 hover:underline flex items-center gap-1"
+            className="ml-auto text-xs font-mono uppercase tracking-wide text-amber-700 hover:underline flex items-center gap-1"
           >
             <RefreshCw className="w-3 h-3" />
             {showCode ? 'Hide Code' : 'View Code'}
@@ -150,16 +139,14 @@ function FallbackView({
         )}
       </div>
 
-      {/* Code preview */}
       {showCode && dslCode && (
-        <pre className="p-3 text-xs overflow-auto bg-gray-50 dark:bg-gray-900 text-gray-700 dark:text-gray-300 font-mono max-h-48">
+        <pre className="p-3 text-xs overflow-auto bg-bone border-t-2 border-ink text-ink font-mono max-h-48">
           <code>{dslCode}</code>
         </pre>
       )}
 
-      {/* Artifact info */}
-      <div className="px-3 py-2 bg-white dark:bg-gray-900 text-xs text-gray-500 dark:text-gray-400">
-        <span className="font-medium">{artifact.name}</span>
+      <div className="px-3 py-2 bg-paper border-t border-ink text-xs text-ink/60">
+        <span className="font-bold">{artifact.name}</span>
         {artifact.description && (
           <span className="ml-2">&mdash; {artifact.description}</span>
         )}
