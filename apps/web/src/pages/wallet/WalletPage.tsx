@@ -8,9 +8,9 @@ import { useEffect, useState } from 'react';
 
 import { AddFundsForm } from '../../components/funding/AddFundsForm';
 import { WalletActivityDrawer } from '../../components/funding/WalletActivityDrawer';
-import { useActivityStore } from '../../store/activity';
-import { useFundingStore } from '../../store/funding';
-import { usePortfolioStore } from '../../store/portfolio';
+import { useActivityStore } from '@llamatrade/core/stores/activity';
+import { useFundingStore } from '@llamatrade/core/stores/funding';
+import { usePortfolioStore } from '@llamatrade/core/stores/portfolio';
 
 function formatCurrency(value: number): string {
   return new Intl.NumberFormat('en-US', {

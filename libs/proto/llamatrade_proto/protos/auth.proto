@@ -246,6 +246,21 @@ message DeleteAlpacaCredentialsResponse {
   bool success = 1;
 }
 
+// Validate Alpaca credentials against the broker (no persistence)
+message ValidateAlpacaCredentialsRequest {
+  string api_key = 1;
+  string api_secret = 2;
+  bool is_paper = 3;
+  // tenant_id extracted from auth token
+}
+
+message ValidateAlpacaCredentialsResponse {
+  bool valid = 1;
+  string account_status = 2;  // e.g. "ACTIVE" when valid
+  string buying_power = 3;    // decimal string, informational
+  string message = 4;         // reason when not valid
+}
+
 // =============================================================================
 // SERVICE
 // =============================================================================
@@ -281,4 +296,5 @@ service AuthService {
   rpc GetAlpacaCredentials(GetAlpacaCredentialsRequest) returns (GetAlpacaCredentialsResponse);
   rpc ListAlpacaCredentials(ListAlpacaCredentialsRequest) returns (ListAlpacaCredentialsResponse);
   rpc DeleteAlpacaCredentials(DeleteAlpacaCredentialsRequest) returns (DeleteAlpacaCredentialsResponse);
+  rpc ValidateAlpacaCredentials(ValidateAlpacaCredentialsRequest) returns (ValidateAlpacaCredentialsResponse);
 }

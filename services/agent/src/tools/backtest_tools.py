@@ -7,11 +7,31 @@ historical performance data for strategies.
 from __future__ import annotations
 
 import logging
+from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
 from src.tools.base import BaseTool, ToolContext, ToolResult
 
 logger = logging.getLogger(__name__)
+
+
+def _parse_iso_date(value: str | None) -> date | None:
+    """Parse a ``YYYY-MM-DD`` string; None/invalid → None."""
+    if not value:
+        return None
+    try:
+        return date.fromisoformat(value)
+    except ValueError:
+        return None
+
+
+def _date_to_seconds(d: date) -> int:
+    """Unix seconds for NOON UTC on ``d``.
+
+    Noon (not midnight) so the backtest service's local-timezone
+    ``date.fromtimestamp`` can't slip to the adjacent day.
+    """
+    return int(datetime(d.year, d.month, d.day, 12, tzinfo=UTC).timestamp())
 
 
 class GetBacktestResultsTool(BaseTool):
@@ -283,8 +303,10 @@ class RunBacktestTool(BaseTool):
     @property
     def description(self) -> str:
         return (
-            "Run a backtest on a strategy. Use this when the user wants to "
-            "see historical performance of a strategy or pending strategy."
+            "Run a backtest on a SAVED strategy (by strategy_id) over a historical "
+            "window. Use when the user wants to see how a saved strategy would have "
+            "performed. If the strategy is still a draft, it must be saved first. "
+            "Dates default to the last ~3 years and capital to $100k if unspecified."
         )
 
     @property
@@ -326,56 +348,69 @@ class RunBacktestTool(BaseTool):
         strategy_id = arguments.get("strategy_id")
         dsl_code = arguments.get("dsl_code")
 
-        if not strategy_id and not dsl_code:
-            return ToolResult(
-                success=False,
-                error="Either strategy_id or dsl_code is required",
-            )
+        # The backtest engine runs SAVED strategies (by id) only — it can't take
+        # ad-hoc DSL. Guide a draft toward being saved first.
+        if not strategy_id:
+            if dsl_code:
+                return ToolResult(
+                    success=False,
+                    error=(
+                        "That strategy isn't saved yet, so it can't be backtested. "
+                        "Save it first (the Save button on the draft card), then ask "
+                        "me to backtest it."
+                    ),
+                )
+            return ToolResult(success=False, error="strategy_id is required to run a backtest")
+
+        from llamatrade_proto.generated import backtest_pb2, common_pb2
+        from llamatrade_proto.generated.backtest_connect import BacktestServiceClient
+
+        from src.tools.clients import BACKTEST_SERVICE_URL, tenant_headers
+
+        # Resolve window + capital with sensible defaults (last ~3y, $100k). The
+        # service requires all three — an empty config crashes its Decimal parse.
+        end = _parse_iso_date(arguments.get("end_date")) or datetime.now(UTC).date()
+        start = _parse_iso_date(arguments.get("start_date")) or (end - timedelta(days=365 * 3))
+        raw_capital = arguments.get("initial_capital")
+        capital = float(raw_capital) if raw_capital else 100000.0
+
+        config = backtest_pb2.BacktestConfig(
+            strategy_id=strategy_id,
+            start_date=common_pb2.Timestamp(seconds=_date_to_seconds(start)),
+            end_date=common_pb2.Timestamp(seconds=_date_to_seconds(end)),
+            initial_capital=common_pb2.Decimal(value=str(capital)),
+        )
+        request = backtest_pb2.RunBacktestRequest(
+            context=common_pb2.TenantContext(
+                tenant_id=str(context.tenant_id),
+                user_id=str(context.user_id),
+            ),
+            config=config,
+        )
 
         try:
-            from llamatrade_proto.generated import backtest_pb2, common_pb2
-            from llamatrade_proto.generated.backtest_connect import BacktestServiceClient
-
-            from src.tools.clients import BACKTEST_SERVICE_URL, tenant_headers
-
             client = BacktestServiceClient(BACKTEST_SERVICE_URL)
-
-            # Build backtest config
-            config = backtest_pb2.BacktestConfig(
-                strategy_id=strategy_id or "",
-            )
-
-            # DSL-code backtesting is not wired yet; only strategy_id is supported.
-
-            request = backtest_pb2.RunBacktestRequest(
-                context=common_pb2.TenantContext(
-                    tenant_id=str(context.tenant_id),
-                    user_id=str(context.user_id),
-                ),
-                config=config,
-            )
-
             response = await client.run_backtest(
                 request,
                 headers=tenant_headers(str(context.tenant_id), str(context.user_id)),
             )
-
-            return ToolResult(
-                success=True,
-                data={
-                    "backtest_id": response.backtest.id,
-                    "status": "submitted",
-                    "message": "Backtest submitted successfully. Results will be available shortly.",
-                },
-            )
         except Exception as e:
-            logger.warning("Backtest service unavailable: %s", e)
-            return ToolResult(
-                success=True,
-                data={
-                    "note": "Backtest service is currently unavailable. Unable to run backtest.",
-                },
-            )
+            # A confirmed action that fails must report honestly, not masquerade
+            # as success — the user approved it and expects a real outcome.
+            logger.warning("run_backtest failed: %s", e)
+            return ToolResult(success=False, error=f"Couldn't start the backtest: {e}")
+
+        return ToolResult(
+            success=True,
+            data={
+                "backtest_id": response.backtest.id,
+                "status": "submitted",
+                "start_date": start.isoformat(),
+                "end_date": end.isoformat(),
+                "initial_capital": capital,
+                "message": "Backtest submitted; results will be available shortly.",
+            },
+        )
 
 
 def _backtest_status_to_string(status: int) -> str:

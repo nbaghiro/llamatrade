@@ -3,9 +3,9 @@
  * Lists recently completed backtests (hydrated with metrics) for quick recall.
  */
 
-import type { BacktestRun } from '../../generated/proto/backtest_pb';
-import type { Strategy } from '../../generated/proto/strategy_pb';
-import { toDate, toNumber } from '../../store/backtest';
+import type { BacktestRun } from '@llamatrade/core/proto/backtest_pb';
+import type { Strategy } from '@llamatrade/core/proto/strategy_pb';
+import { toDate, toNumber } from '@llamatrade/core/stores/backtest';
 
 interface RecentRunsPanelProps {
   runs: BacktestRun[];

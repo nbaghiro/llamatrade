@@ -10,9 +10,9 @@ import { Link, useNavigate } from 'react-router-dom';
 
 import CardForm from '../../components/billing/CardForm';
 import PlanCard from '../../components/billing/PlanCard';
-import type { Plan } from '../../generated/proto/billing_pb';
+import type { Plan } from '@llamatrade/core/proto/billing_pb';
 import { billingClient } from '../../services/grpc-client';
-import { useBillingStore, BillingInterval } from '../../store/billing';
+import { useBillingStore, BillingInterval } from '@llamatrade/core/stores/billing';
 
 const stripePromise = loadStripe(import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY || '');
 

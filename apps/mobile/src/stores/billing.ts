@@ -1,15 +1,18 @@
 /**
- * Billing read store — the real backend, same RPCs the web app uses
+ * Billing store — the real backend, same RPCs the web app uses
  * (apps/web/src/store/billing.ts): GetSubscription + GetUsage + ListPaymentMethods
- * + ListInvoices. Read-only: subscribe/checkout/cancel stay on the desktop.
+ * + ListInvoices + ListPlans. Reads are the main surface; the only write is a
+ * free downgrade (no payment) — paid upgrades/checkout stay on the desktop (IAP).
  *
- * App-local for now (mirrors auth/agent/portfolio); a future slice can lift the
- * read side into @llamatrade/core alongside the strategies store.
+ * App-local for now (mirrors auth/agent/portfolio); a future slice can lift this
+ * into @llamatrade/core alongside the strategies store.
  */
 import { ConnectError } from '@connectrpc/connect';
 import { create } from 'zustand';
 
-import type { Invoice, PaymentMethod, Subscription, Usage } from '@llamatrade/core/proto/billing_pb';
+import type { Invoice, PaymentMethod, Plan, Subscription, Usage } from '@llamatrade/core/proto/billing_pb';
+import { BillingInterval, PlanTier } from '@llamatrade/core/proto/billing_pb';
+
 import { billingClient } from '../net/clients';
 import { tenantContext } from './auth';
 
@@ -24,19 +27,24 @@ interface BillingState {
   usageLimit: Usage | null;
   paymentMethods: PaymentMethod[];
   invoices: Invoice[];
+  plans: Plan[];
   loading: boolean;
   refreshing: boolean;
   loaded: boolean;
   error: string | null;
   fetch: (opts?: { refresh?: boolean }) => Promise<void>;
+  fetchPlans: () => Promise<void>;
+  /** Switch to the Free plan (no payment). Paid changes go through the web. */
+  downgradeToFree: () => Promise<void>;
 }
 
-export const useBillingStore = create<BillingState>((set) => ({
+export const useBillingStore = create<BillingState>((set, get) => ({
   subscription: null,
   usage: null,
   usageLimit: null,
   paymentMethods: [],
   invoices: [],
+  plans: [],
   loading: false,
   refreshing: false,
   loaded: false,
@@ -74,5 +82,38 @@ export const useBillingStore = create<BillingState>((set) => ({
     } catch (e) {
       set({ error: errorMessage(e), loading: false, refreshing: false });
     }
+  },
+
+  fetchPlans: async () => {
+    const context = tenantContext();
+    if (!context) return;
+    try {
+      const res = await billingClient.listPlans({ context });
+      set({ plans: res.plans });
+    } catch {
+      // non-fatal: the comparison grid falls back to the static plan-tier config
+    }
+  },
+
+  downgradeToFree: async () => {
+    const context = tenantContext();
+    if (!context) throw new Error('Not signed in.');
+    const free = get().plans.find((p) => p.tier === PlanTier.FREE);
+    if (!free) throw new Error('The Free plan is unavailable here — manage your plan on the web.');
+    const res = get().subscription
+      ? await billingClient.updateSubscription({
+          context,
+          planId: free.id,
+          interval: BillingInterval.MONTHLY,
+          prorate: true,
+        })
+      : await billingClient.createSubscription({
+          context,
+          planId: free.id,
+          interval: BillingInterval.MONTHLY,
+          paymentMethodId: '',
+          promoCode: '',
+        });
+    set({ subscription: res.subscription ?? get().subscription });
   },
 }));

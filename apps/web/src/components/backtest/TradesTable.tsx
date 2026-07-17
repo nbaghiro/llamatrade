@@ -7,8 +7,8 @@
 import { ChevronLeft, ChevronRight, Download, Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 
-import type { BacktestMetrics, BacktestTrade } from '../../generated/proto/backtest_pb';
-import { toDate, toNumber } from '../../store/backtest';
+import type { BacktestMetrics, BacktestTrade } from '@llamatrade/core/proto/backtest_pb';
+import { toDate, toNumber } from '@llamatrade/core/stores/backtest';
 
 interface TradesTableProps {
   trades: BacktestTrade[];

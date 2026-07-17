@@ -11,8 +11,8 @@ import {
   fromDSLString,
   conditionToText,
   validateTree,
-} from '../services/strategy-serializer';
-import { validateStrategy, type ValidationResult, type ValidationIssue } from '../services/validation';
+} from '@llamatrade/core/strategy/serializer';
+import { validateStrategy, type ValidationResult, type ValidationIssue } from '@llamatrade/core/strategy/validator';
 import type {
   BlockId,
   Block,
@@ -25,8 +25,8 @@ import type {
   IfBlock,
   ElseBlock,
   FilterBlock,
-} from '../types/strategy-builder';
-import { hasChildren } from '../types/strategy-builder';
+} from '@llamatrade/core/strategy/types';
+import { hasChildren } from '@llamatrade/core/strategy/types';
 
 import { getTenantContext } from './auth';
 

@@ -1,6 +1,6 @@
 /**
  * LlamaTrade "Monolith" design tokens — the CSS custom-property layer
- * (packages/ui/src/themes/monolith.css) mirrored as plain data so React Native
+ * (apps/web/src/styles/monolith.css) mirrored as plain data so React Native
  * (and any non-CSS consumer) can read the exact same values.
  *
  * Monolith is a deliberate light-only, brutalist system:

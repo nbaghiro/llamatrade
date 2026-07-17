@@ -5,7 +5,7 @@
 
 import { useEffect, useState } from 'react';
 
-import { useFundingStore } from '../../store/funding';
+import { useFundingStore } from '@llamatrade/core/stores/funding';
 
 const PRESETS = [10_000, 25_000, 50_000, 100_000];
 /** Guards against a fat-fingered extra zero; deposits are whole dollars. */

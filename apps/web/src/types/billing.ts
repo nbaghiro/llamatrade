@@ -2,7 +2,7 @@
  * Billing and subscription types
  */
 
-import { InvoiceStatus } from '../generated/proto/billing_pb';
+import { InvoiceStatus } from '@llamatrade/core/proto/billing_pb';
 
 export { InvoiceStatus };
 

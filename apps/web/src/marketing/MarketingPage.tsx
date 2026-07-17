@@ -18,7 +18,7 @@ import './marketing.css';
 
 /**
  * The LlamaTrade marketing landing — a faithful React port of the "Monolith"
- * landing page, consuming the shared @llamatrade/ui design system (Logo,
+ * landing page, consuming the shared Monolith design system (Logo,
  * Marquee, StrategyTree) and the Monolith theme tokens.
  *
  * Folded into apps/web so a single origin serves both marketing and the product.

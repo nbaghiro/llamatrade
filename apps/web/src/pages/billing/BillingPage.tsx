@@ -4,6 +4,9 @@
  * API data; the plan tiers/feature rows come from product config.
  */
 
+import { PLAN_TIER_BY_KEY, resolveCurrentTier } from '@llamatrade/core/billing/planTiers';
+import { BillingInterval, SubscriptionStatus } from '@llamatrade/core/proto/billing_pb';
+import { useBillingStore } from '@llamatrade/core/stores/billing';
 import { ArrowUpRight, Download, Plus, Zap } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -12,10 +15,8 @@ import { formatDate, formatUsd, moneyToNumber } from '../../components/billing/f
 import InkPaymentCard from '../../components/billing/InkPaymentCard';
 import InvoiceTable from '../../components/billing/InvoiceTable';
 import PlanComparison from '../../components/billing/PlanComparison';
-import { PLAN_TIER_BY_KEY, resolveCurrentTier } from '../../data/planTiers';
-import { BillingInterval, SubscriptionStatus } from '../../generated/proto/billing_pb';
 import { useAuthStore } from '../../store/auth';
-import { useBillingStore } from '../../store/billing';
+
 
 function statusMeta(status: SubscriptionStatus, cancelling: boolean): { label: string; dot: string } {
   if (cancelling) return { label: 'Cancelling', dot: 'bg-orange-500' };

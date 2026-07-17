@@ -28,6 +28,7 @@ from llamatrade_proto.generated.agent_pb2 import (
     STREAM_EVENT_TYPE_COMPLETE,
     STREAM_EVENT_TYPE_CONTENT_DELTA,
     STREAM_EVENT_TYPE_ERROR,
+    STREAM_EVENT_TYPE_THINKING_DELTA,
     STREAM_EVENT_TYPE_TOOL_CALL_COMPLETE,
     STREAM_EVENT_TYPE_TOOL_CALL_START,
     STREAM_EVENT_TYPE_TOOL_CONFIRMATION_REQUIRED,
@@ -184,6 +185,7 @@ class AgentServicer:
                             for tc in (m.tool_calls_json or [])
                         ],
                         inline_artifact_ids=m.inline_artifact_ids or [],
+                        thinking=m.thinking or "",
                         created_at=_timestamp_to_proto(m.created_at),
                     )
                     for m in db_messages
@@ -516,6 +518,7 @@ class AgentServicer:
         Shared by ``stream_message`` and ``confirm_tool_call``.
         """
         full_content = ""
+        full_thinking = ""
         inline_artifact_ids: list[str] = []
 
         async for event in events:
@@ -526,6 +529,13 @@ class AgentServicer:
                     event_type=STREAM_EVENT_TYPE_CONTENT_DELTA,
                     session_id=str(session_id),
                     content_delta=event.get("delta", ""),
+                )
+            elif event_type == STREAM_EVENT_TYPE_THINKING_DELTA:
+                full_thinking += event.get("delta", "")
+                yield agent_pb2.AgentStreamEvent(
+                    event_type=STREAM_EVENT_TYPE_THINKING_DELTA,
+                    session_id=str(session_id),
+                    thinking_delta=event.get("delta", ""),
                 )
             elif event_type == STREAM_EVENT_TYPE_TOOL_CALL_START:
                 yield agent_pb2.AgentStreamEvent(
@@ -585,6 +595,7 @@ class AgentServicer:
             role=MESSAGE_ROLE_ASSISTANT,
             content=full_content,
             inline_artifact_ids=inline_artifact_ids or None,
+            thinking=full_thinking.strip() or None,
         )
 
         yield agent_pb2.AgentStreamEvent(

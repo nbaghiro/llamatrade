@@ -97,11 +97,17 @@ export default function StrategyDetailScreen() {
   } = useStrategiesStore();
 
   useEffect(() => {
-    if (id) {
-      void fetchStrategyDetail(id);
-      void fetchStrategyRun(id);
-    }
-  }, [id, fetchStrategyDetail, fetchStrategyRun]);
+    if (!id) return;
+    void fetchStrategyDetail(id);
+    void fetchStrategyRun(id);
+    // Opened from the Portfolio tab? The strategies list + deployment figures may
+    // not be loaded yet — pull them so allocation/realized return render (no-op
+    // when already loaded from the Strategies tab).
+    const store = useStrategiesStore.getState();
+    if (store.strategies.length === 0) void store.fetchStrategies();
+    if (Object.keys(store.deployments).length === 0) void store.fetchDeployments();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id]);
 
   const summary = strategies.find((s) => s.id === id);
   const strategy = (id ? details[id] : undefined) ?? summary;

@@ -1,13 +1,14 @@
-import { useNavigate } from 'react-router-dom';
-
+import { boundsOf, buildPath } from '@llamatrade/core/chart';
 import {
   ExecutionStatus,
   useDashboardStore,
   type DashboardPeriod,
   type DashboardStrategy,
-} from '../../store/dashboard';
+} from '@llamatrade/core/stores/dashboard';
+import { useNavigate } from 'react-router-dom';
 
-import { boundsOf, buildPath } from './chart';
+
+
 import { colorForSign, fmtCurrency, fmtSignedFraction } from './format';
 
 const SPARK_W = 90;
@@ -90,6 +91,9 @@ export default function ActiveStrategies() {
   const navigate = useNavigate();
   const strategies = useDashboardStore((s) => s.strategies);
   const selectedPeriod = useDashboardStore((s) => s.selectedPeriod);
+  // "Active" = running deployments only, matching the "N active" KPI. The full
+  // list stays in the store for the equity-curve / deployed-value aggregates.
+  const activeStrategies = strategies.filter((s) => s.isLive);
 
   return (
     <div className="bg-paper border-2 border-ink shadow-[4px_4px_0_#0d0d0d]">
@@ -104,15 +108,15 @@ export default function ActiveStrategies() {
           All strategies →
         </button>
       </div>
-      {strategies.length > 0 ? (
+      {activeStrategies.length > 0 ? (
         <div>
-          {strategies.map((s) => (
+          {activeStrategies.map((s) => (
             <Row key={s.id} strategy={s} period={selectedPeriod} />
           ))}
         </div>
       ) : (
         <div className="px-4 py-10 text-center font-mono text-[11px] uppercase tracking-[0.08em] text-ink/40">
-          No deployed strategies yet
+          No active strategies
         </div>
       )}
     </div>

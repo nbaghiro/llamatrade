@@ -174,19 +174,16 @@ services:
   web:
     build:
       # Repo-root context (not apps/web) so the workspace-aware Dockerfile can
-      # copy the root lockfile + every workspace manifest and install once,
-      # linking the shared @llamatrade/ui package into node_modules.
+      # copy the root lockfile + the web manifest and install once.
       context: ../..
       dockerfile: apps/web/Dockerfile.dev
     volumes:
-      # Mount the app AND the shared UI package at their in-container workspace
-      # paths (WORKDIR is /app/apps/web). Vite sees index.html, vite.config.ts,
-      # tsconfig* (app root) and packages/ui source for hot-reload. The anonymous
-      # node_modules volumes preserve the image's workspace-linked install
-      # (including node_modules/@llamatrade/ui -> ../packages/ui) instead of the
-      # host's.
+      # Mount the app at its in-container workspace path (WORKDIR is
+      # /app/apps/web). Vite sees index.html, vite.config.ts, tsconfig* and all
+      # of src (incl. the Monolith design system now under src/components) for
+      # hot-reload. The anonymous node_modules volumes preserve the image's
+      # workspace-linked install instead of the host's.
       - ../../apps/web:/app/apps/web:cached
-      - ../../packages/ui:/app/packages/ui:cached
       - /app/node_modules
       - /app/apps/web/node_modules
     # The single origin is the Caddy proxy on host :8800; the web dev server is

@@ -2,7 +2,7 @@ import { ChevronDown, ChevronRight, Code2, Eye, GitBranch, Layers, Pencil } from
 import { useEffect, useRef, useState } from 'react';
 
 import { useStrategyBuilderStoreWithContext, type ViewMode } from '../../../store/strategy-builder';
-import type { RootBlock as RootBlockType } from '../../../types/strategy-builder';
+import type { RootBlock as RootBlockType } from '@llamatrade/core/strategy/types';
 
 interface RootBlockProps {
   block: RootBlockType;

@@ -13,6 +13,7 @@ from llamatrade_proto.generated.agent_pb2 import (
     STREAM_EVENT_TYPE_COMPLETE,
     STREAM_EVENT_TYPE_CONTENT_DELTA,
     STREAM_EVENT_TYPE_ERROR,
+    STREAM_EVENT_TYPE_THINKING_DELTA,
     STREAM_EVENT_TYPE_TOOL_CALL_COMPLETE,
     STREAM_EVENT_TYPE_TOOL_CALL_START,
     STREAM_EVENT_TYPE_TOOL_CONFIRMATION_REQUIRED,
@@ -270,6 +271,38 @@ class TestStreamMessage:
 
         assert len(content_events) > 0
         assert len(complete_events) == 1
+
+    @pytest.mark.asyncio
+    async def test_stream_message_splits_thinking_from_answer(
+        self,
+        agent_service: AgentService,
+        session_id: UUID,
+    ) -> None:
+        """A <thinking> preamble streams as THINKING_DELTA and is kept out of content.
+
+        The mock chunks the response ~50 chars, so the tags straddle chunk
+        boundaries — this also exercises the splitter's partial-tag handling.
+        """
+        from tests.fixtures.mock_llm import MockLLMClient
+
+        mock_client = MockLLMClient()
+        mock_client.add_simple_response(
+            "<thinking>Weighing weekly vs monthly rebalancing for turnover.</thinking>"
+            "Here is a momentum strategy tuned for your goal."
+        )
+        agent_service._llm_client = mock_client
+
+        thinking = ""
+        content = ""
+        async for event in agent_service.stream_message(session_id, "Build me something"):
+            if event.get("type") == STREAM_EVENT_TYPE_THINKING_DELTA:
+                thinking += event.get("delta", "")
+            elif event.get("type") == STREAM_EVENT_TYPE_CONTENT_DELTA:
+                content += event.get("delta", "")
+
+        assert thinking == "Weighing weekly vs monthly rebalancing for turnover."
+        assert content == "Here is a momentum strategy tuned for your goal."
+        assert "<thinking>" not in content and "</thinking>" not in content
 
     @pytest.mark.asyncio
     async def test_stream_message_with_tool_call(

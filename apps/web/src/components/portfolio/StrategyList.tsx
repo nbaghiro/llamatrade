@@ -4,7 +4,7 @@
 
 import { Link } from 'react-router-dom';
 
-import type { StrategyPerformance } from '../../store/portfolio';
+import type { StrategyPerformance } from '@llamatrade/core/stores/portfolio';
 
 import StrategyRow, { STRAT_GRID_COLS } from './StrategyRow';
 

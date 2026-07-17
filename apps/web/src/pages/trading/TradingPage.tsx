@@ -8,7 +8,7 @@ import { AlertTriangle, Loader2 } from 'lucide-react';
 import { useEffect } from 'react';
 import { Link } from 'react-router-dom';
 
-import { ExecutionMode } from '../../generated/proto/common_pb';
+import { ExecutionMode } from '@llamatrade/core/proto/common_pb';
 import {
   OrderSide,
   OrderStatus,
@@ -17,9 +17,9 @@ import {
   type Order,
   type Position,
   type TradingSession,
-} from '../../generated/proto/trading_pb';
-import { toDate, toNumber } from '../../store/backtest';
-import { useTradingStore } from '../../store/trading';
+} from '@llamatrade/core/proto/trading_pb';
+import { toDate, toNumber } from '@llamatrade/core/stores/backtest';
+import { useTradingStore } from '@llamatrade/core/stores/trading';
 
 function money(value: number, digits = 2): string {
   return new Intl.NumberFormat('en-US', {

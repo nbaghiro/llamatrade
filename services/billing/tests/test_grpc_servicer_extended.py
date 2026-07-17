@@ -206,6 +206,9 @@ class _FakeUsageSession:
             return self._counts["strategies_created"]
         raise AssertionError(f"unexpected usage query: {sql}")
 
+    async def execute(self, *args, **kwargs):
+        return None
+
 
 class TestGetUsage:
     """Tests for get_usage method."""
@@ -230,10 +233,8 @@ class TestGetUsage:
         )
         fake_db = _FakeUsageSession(counts, subscription)
 
-        with (
-            patch.object(servicer, "_get_tenant_id", return_value=TEST_TENANT_ID),
-            patch.object(servicer, "_get_db", AsyncMock(return_value=fake_db)),
-        ):
+        servicer._session_maker = lambda: fake_db
+        with patch.object(servicer, "_get_tenant_id", return_value=TEST_TENANT_ID):
             request = billing_pb2.GetUsageRequest(period_id="")
             response = await servicer.get_usage(request, mock_ctx)
 
@@ -264,10 +265,8 @@ class TestGetUsage:
         }
         fake_db = _FakeUsageSession(counts, subscription=None)
 
-        with (
-            patch.object(servicer, "_get_tenant_id", return_value=TEST_TENANT_ID),
-            patch.object(servicer, "_get_db", AsyncMock(return_value=fake_db)),
-        ):
+        servicer._session_maker = lambda: fake_db
+        with patch.object(servicer, "_get_tenant_id", return_value=TEST_TENANT_ID):
             request = billing_pb2.GetUsageRequest(period_id="current")
             response = await servicer.get_usage(request, mock_ctx)
 
@@ -295,10 +294,8 @@ class TestGetUsage:
         )
         fake_db = _FakeUsageSession(counts, subscription=None)
 
-        with (
-            patch.object(servicer, "_get_tenant_id", return_value=TEST_TENANT_ID),
-            patch.object(servicer, "_get_db", AsyncMock(return_value=fake_db)),
-        ):
+        servicer._session_maker = lambda: fake_db
+        with patch.object(servicer, "_get_tenant_id", return_value=TEST_TENANT_ID):
             await servicer.get_usage(billing_pb2.GetUsageRequest(period_id="current"), mock_ctx)
 
         joined = " ".join(fake_db.seen)
@@ -330,7 +327,7 @@ class _EmptyInvoicesSession:
     async def scalar(self, statement):
         return 0
 
-    async def execute(self, statement):
+    async def execute(self, *args, **kwargs):
         result = MagicMock()
         result.scalars.return_value.all.return_value = []
         return result
@@ -344,10 +341,8 @@ class TestListInvoices:
         """Test listing invoices returns an empty page for a tenant with none."""
         from llamatrade_proto.generated import billing_pb2
 
-        with (
-            patch.object(servicer, "_get_tenant_id", return_value=TEST_TENANT_ID),
-            patch.object(servicer, "_get_db", AsyncMock(return_value=_EmptyInvoicesSession())),
-        ):
+        servicer._session_maker = lambda: _EmptyInvoicesSession()
+        with patch.object(servicer, "_get_tenant_id", return_value=TEST_TENANT_ID):
             request = billing_pb2.ListInvoicesRequest()
             response = await servicer.list_invoices(request, mock_ctx)
 
@@ -372,6 +367,9 @@ class _FakeScalarSession:
 
     async def scalar(self, statement):
         return self._value
+
+    async def execute(self, *args, **kwargs):
+        return None
 
 
 def _fake_invoice(invoice_id, tenant_id):
@@ -427,10 +425,8 @@ class TestGetInvoice:
         request = billing_pb2.GetInvoiceRequest(invoice_id=str(uuid4()))
         fake_db = _FakeScalarSession(None)
 
-        with (
-            patch.object(servicer, "_get_tenant_id", return_value=TEST_TENANT_ID),
-            patch.object(servicer, "_get_db", AsyncMock(return_value=fake_db)),
-        ):
+        servicer._session_maker = lambda: fake_db
+        with patch.object(servicer, "_get_tenant_id", return_value=TEST_TENANT_ID):
             with pytest.raises(ConnectError) as exc_info:
                 await servicer.get_invoice(request, mock_ctx)
         assert "Invoice not found" in str(exc_info.value)
@@ -444,10 +440,8 @@ class TestGetInvoice:
         invoice = _fake_invoice(invoice_id, TEST_TENANT_ID)
         fake_db = _FakeScalarSession(invoice)
 
-        with (
-            patch.object(servicer, "_get_tenant_id", return_value=TEST_TENANT_ID),
-            patch.object(servicer, "_get_db", AsyncMock(return_value=fake_db)),
-        ):
+        servicer._session_maker = lambda: fake_db
+        with patch.object(servicer, "_get_tenant_id", return_value=TEST_TENANT_ID):
             request = billing_pb2.GetInvoiceRequest(invoice_id=str(invoice_id))
             response = await servicer.get_invoice(request, mock_ctx)
 

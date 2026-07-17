@@ -9,8 +9,8 @@ import { useEffect, useState } from 'react';
 import {
   BacktestStatus,
   type BacktestRun,
-} from '../../generated/proto/backtest_pb';
-import { useBacktestStore, toDate, toNumber } from '../../store/backtest';
+} from '@llamatrade/core/proto/backtest_pb';
+import { useBacktestStore, toDate, toNumber } from '@llamatrade/core/stores/backtest';
 
 interface BacktestHistoryModalProps {
   isOpen: boolean;

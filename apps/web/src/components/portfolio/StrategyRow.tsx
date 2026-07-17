@@ -3,7 +3,7 @@
  * open positions.
  */
 
-import { ExecutionMode, ExecutionStatus, type StrategyPerformance } from '../../store/portfolio';
+import { ExecutionMode, ExecutionStatus, type StrategyPerformance } from '@llamatrade/core/stores/portfolio';
 
 import StrategyRowExpanded from './StrategyRowExpanded';
 

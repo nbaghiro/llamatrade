@@ -10,7 +10,7 @@ import {
   StrategyStatus,
   TemplateCategory,
   TemplateDifficulty,
-} from '../generated/proto/strategy_pb';
+} from '@llamatrade/core/proto/strategy_pb';
 
 import { strategyClient } from './grpc-client';
 

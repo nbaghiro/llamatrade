@@ -5,14 +5,21 @@
  * remaining tabs are honest placeholders rather than non-functional controls.
  */
 
+import { PLAN_TIER_BY_KEY, resolveCurrentTier } from '@llamatrade/core/billing/planTiers';
+import { SubscriptionStatus } from '@llamatrade/core/proto/billing_pb';
+import { useBillingStore } from '@llamatrade/core/stores/billing';
+import { useBrokerStore } from '@llamatrade/core/stores/broker';
 import {
   ArrowUpRight,
   Bell,
   CreditCard,
   KeyRound,
+  Lock,
   Plus,
   Shield,
   User,
+  Warehouse,
+  X,
   Zap,
   type LucideIcon,
 } from 'lucide-react';
@@ -30,10 +37,8 @@ import {
 import InkPaymentCard from '../../components/billing/InkPaymentCard';
 import InvoiceTable from '../../components/billing/InvoiceTable';
 import UsageMeter from '../../components/billing/UsageMeter';
-import { PLAN_TIER_BY_KEY, resolveCurrentTier } from '../../data/planTiers';
-import { SubscriptionStatus } from '../../generated/proto/billing_pb';
 import { useAuthStore } from '../../store/auth';
-import { useBillingStore } from '../../store/billing';
+
 
 type Tab = 'profile' | 'broker' | 'billing' | 'notifications' | 'security';
 
@@ -100,12 +105,7 @@ export default function SettingsPage() {
 
         {activeTab === 'billing' && <BillingTab user={user} />}
         {activeTab === 'profile' && <ProfileTab user={user} tenantShort={tenantShort} />}
-        {activeTab === 'broker' && (
-          <Placeholder
-            title="Broker Keys"
-            body="Connect your Alpaca account to trade live. Broker key management lives in the Trading workspace today and is moving here soon."
-          />
-        )}
+        {activeTab === 'broker' && <BrokerTab />}
         {activeTab === 'notifications' && (
           <Placeholder
             title="Notifications"
@@ -393,6 +393,228 @@ function BillingTab({ user }: { user: ReturnType<typeof useAuthStore.getState>['
           Change Plan
         </button>
       </div>
+    </div>
+  );
+}
+
+// Broker keys tab
+
+type Env = 'paper' | 'live';
+
+function BrokerTab() {
+  const navigate = useNavigate();
+  const { credentials, connecting, error, fetch, connect, remove, clearError } = useBrokerStore();
+  const subscription = useBillingStore((s) => s.subscription);
+  const fetchSubscription = useBillingStore((s) => s.fetchSubscription);
+  const canLive = (subscription?.plan?.maxLiveSessions ?? 0) > 0;
+
+  const [env, setEnv] = useState<Env>('paper');
+  const [name, setName] = useState('');
+  const [apiKey, setApiKey] = useState('');
+  const [apiSecret, setApiSecret] = useState('');
+  const [localError, setLocalError] = useState('');
+
+  useEffect(() => {
+    fetch();
+    fetchSubscription();
+  }, [fetch, fetchSubscription]);
+
+  useEffect(() => {
+    if (!canLive && env === 'live') setEnv('paper');
+  }, [canLive, env]);
+
+  const submit = async () => {
+    clearError();
+    setLocalError('');
+    if (!apiKey.trim() || !apiSecret.trim()) {
+      setLocalError('Enter both your API key ID and secret key.');
+      return;
+    }
+    const ok = await connect({
+      name,
+      apiKey: apiKey.trim(),
+      apiSecret: apiSecret.trim(),
+      isPaper: env === 'paper',
+    });
+    if (ok) {
+      setName('');
+      setApiKey('');
+      setApiSecret('');
+    }
+  };
+
+  const handleRemove = (id: string, label: string) => {
+    if (window.confirm(`Disconnect “${label}”? Live sessions using it will stop.`)) {
+      void remove(id);
+    }
+  };
+
+  return (
+    <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1.6fr_1fr]">
+      {/* Connect */}
+      <section className="border-2 border-ink bg-paper p-5 shadow-[4px_4px_0_rgb(var(--lt-ink))]">
+        <div className="border-2 border-ink bg-ink p-5">
+          <div className="flex items-center gap-3">
+            <div className="flex h-11 w-11 items-center justify-center border-2 border-orange-500">
+              <Warehouse className="h-5 w-5 text-orange-500" />
+            </div>
+            <div>
+              <h2 className="font-display text-xl uppercase leading-none tracking-tight text-bone">
+                Link Alpaca
+              </h2>
+              <p className="mt-1 font-mono text-[10px] uppercase tracking-wide text-bone/55">
+                Bring your own broker keys
+              </p>
+            </div>
+          </div>
+          <p className="mt-3 font-mono text-[10px] uppercase leading-relaxed tracking-wide text-bone/50">
+            The exact strategy you backtest is what trades. Connect your Alpaca keys to go live.
+          </p>
+        </div>
+
+        {/* Environment */}
+        <div className="mt-5">
+          <span className="label">Environment</span>
+          <div className="flex">
+            {(['paper', 'live'] as Env[]).map((e) => {
+              const active = env === e;
+              const disabled = e === 'live' && !canLive;
+              return (
+                <button
+                  key={e}
+                  type="button"
+                  disabled={disabled}
+                  onClick={() => setEnv(e)}
+                  className={`-ml-[2px] flex-1 border-2 border-ink px-4 py-2 font-mono text-[11px] font-bold uppercase tracking-wide transition-colors first:ml-0 ${
+                    active ? 'bg-ink text-bone' : 'bg-paper text-ink hover:bg-ink/5'
+                  } ${disabled ? 'cursor-not-allowed opacity-40' : ''}`}
+                >
+                  {e}
+                </button>
+              );
+            })}
+          </div>
+          {!canLive && (
+            <button
+              onClick={() => navigate('/billing/subscribe')}
+              className="mt-2 inline-flex items-center gap-1.5 font-mono text-[10px] font-bold uppercase tracking-wide text-ink/45 transition-colors hover:text-orange-600"
+            >
+              <Lock className="h-3 w-3" />
+              Live trading requires a Pro plan · View plans →
+            </button>
+          )}
+        </div>
+
+        {/* Keys */}
+        <div className="mt-4 space-y-4">
+          <div>
+            <label className="label" htmlFor="alp-name">
+              Label (optional)
+            </label>
+            <input
+              id="alp-name"
+              className="input"
+              value={name}
+              onChange={(ev) => setName(ev.target.value)}
+              placeholder="My Alpaca account"
+            />
+          </div>
+          <div>
+            <label className="label" htmlFor="alp-key">
+              API Key ID
+            </label>
+            <input
+              id="alp-key"
+              className="input font-mono"
+              value={apiKey}
+              onChange={(ev) => setApiKey(ev.target.value)}
+              placeholder="PK…"
+              autoComplete="off"
+              autoCorrect="off"
+              spellCheck={false}
+            />
+          </div>
+          <div>
+            <label className="label" htmlFor="alp-secret">
+              Secret Key
+            </label>
+            <input
+              id="alp-secret"
+              type="password"
+              className="input font-mono"
+              value={apiSecret}
+              onChange={(ev) => setApiSecret(ev.target.value)}
+              placeholder="••••••••••••••••"
+              autoComplete="off"
+            />
+          </div>
+        </div>
+
+        {/* Security note */}
+        <div className="mt-4 flex items-start gap-2 border-2 border-green-600 bg-green-100 px-3 py-2.5">
+          <Lock className="mt-0.5 h-3.5 w-3.5 shrink-0 text-green-700" />
+          <p className="font-mono text-[10px] leading-relaxed text-green-700">
+            Keys are validated with Alpaca, encrypted at rest, and sent only over TLS — never stored
+            in plaintext or in the browser.
+          </p>
+        </div>
+
+        {(localError || error) && (
+          <div className="mt-4 border-2 border-red-500 bg-red-50 px-3 py-2">
+            <p className="font-mono text-[10px] text-red-600">{localError || error}</p>
+          </div>
+        )}
+
+        <button
+          onClick={submit}
+          disabled={connecting}
+          className="mt-5 inline-flex w-full items-center justify-center gap-1.5 border-2 border-ink bg-orange-500 py-3 font-mono text-[12px] font-bold uppercase tracking-wide text-ink transition-colors hover:bg-ink hover:text-orange-500 disabled:opacity-60"
+        >
+          {connecting ? 'Verifying…' : 'Connect & Verify →'}
+        </button>
+      </section>
+
+      {/* Connected accounts */}
+      <section className="border-2 border-ink bg-paper p-5 shadow-[4px_4px_0_rgb(var(--lt-ink))]">
+        <h2 className="mb-4 font-mono text-[11px] font-bold uppercase tracking-[0.1em] text-ink/60">
+          Connected Accounts
+        </h2>
+        {credentials.length ? (
+          <div className="space-y-2.5">
+            {credentials.map((c) => (
+              <div
+                key={c.id}
+                className="flex items-center gap-3 border-2 border-ink bg-bone px-3 py-2.5"
+              >
+                <div className="min-w-0 flex-1">
+                  <p className="truncate font-mono text-[12px] font-bold text-ink">
+                    {c.name || 'Alpaca account'}
+                  </p>
+                  <p className="font-mono text-[10px] text-ink/50">{c.apiKeyPrefix}••••</p>
+                </div>
+                <span
+                  className={`border border-ink px-1.5 py-0.5 font-mono text-[9px] font-bold uppercase tracking-wide ${
+                    c.isPaper ? 'bg-bone text-ink' : 'bg-green-600 text-bone'
+                  }`}
+                >
+                  {c.isPaper ? 'Paper' : 'Live'}
+                </span>
+                <button
+                  onClick={() => handleRemove(c.id, c.name || 'Alpaca account')}
+                  className="text-ink/40 transition-colors hover:text-red-600"
+                  aria-label="Remove credentials"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="font-mono text-[11px] uppercase tracking-wide text-ink/40">
+            No broker keys linked yet.
+          </p>
+        )}
+      </section>
     </div>
   );
 }

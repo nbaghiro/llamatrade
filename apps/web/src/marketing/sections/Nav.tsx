@@ -1,4 +1,4 @@
-import { Logo } from '../../components/ui';
+import { Logo } from '../../components/common/Logo';
 
 import { useAuthed } from '../hooks/useAuthed';
 

@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "LlamaTrade shared brain — platform-neutral Connect clients, Zustand stores, generated proto, and design tokens. Ships source (no build step); consumed by apps/web and apps/mobile.",
+  "description": "LlamaTrade shared brain \u2014 platform-neutral Connect clients, Zustand stores, generated proto, and design tokens. Ships source (no build step); consumed by apps/web and apps/mobile.",
   "main": "src/index.ts",
   "exports": {
     ".": "./src/index.ts",
@@ -12,7 +12,12 @@
     "./format": "./src/format.ts",
     "./stores": "./src/stores/index.ts",
     "./stores/*": "./src/stores/*.ts",
-    "./proto/*": "./src/proto/*.ts"
+    "./billing/*": "./src/billing/*.ts",
+    "./proto/*": "./src/proto/*.ts",
+    "./strategy/*": "./src/strategy/*.ts",
+    "./errors": "./src/errors.ts",
+    "./chart": "./src/chart.ts",
+    "./agent/*": "./src/agent/*.ts"
   },
   "files": [
     "src"

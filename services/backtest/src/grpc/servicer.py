@@ -5,8 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
-from collections.abc import AsyncGenerator, AsyncIterator
-from contextlib import asynccontextmanager
+from collections.abc import AsyncIterator
 from datetime import UTC, date, datetime
 from decimal import Decimal
 from uuid import UUID
@@ -16,7 +15,8 @@ from connectrpc.errors import ConnectError
 from connectrpc.request import RequestContext
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from llamatrade_db import get_session_maker
+from llamatrade_common.connect import resolve_identity_connect
+from llamatrade_db import get_session_maker, tenant_session
 from llamatrade_proto.generated import backtest_pb2
 
 from src.models import BacktestMetrics, BacktestResponse, BacktestResultResponse, TradeRecord
@@ -71,31 +71,16 @@ class BacktestServicer:
         """Initialize the servicer."""
         self._session_maker: async_sessionmaker[AsyncSession] | None = None
 
-    @asynccontextmanager
-    async def _get_db(self) -> AsyncGenerator[AsyncSession]:
-        """Get a database session with proper lifecycle management.
+    def _maker(self) -> async_sessionmaker[AsyncSession]:
+        """The session factory (lazily created; tests inject a test-DB factory).
 
-        Usage:
-            async with self._get_db() as db:
-                service = BacktestService(db)
-                # ... use service ...
-            # Session is automatically closed here
-
-        Yields:
-            AsyncSession: Database session that will be properly cleaned up.
+        Request handlers wrap this in ``tenant_session(tenant_id, self._maker())``
+        so every query is RLS-scoped to the caller's verified tenant. BacktestService
+        commits its own writes, so the session context need not auto-commit.
         """
         if self._session_maker is None:
             self._session_maker = get_session_maker()
-        assert self._session_maker is not None
-        session: AsyncSession = self._session_maker()
-        try:
-            yield session
-            await session.commit()
-        except Exception:
-            await session.rollback()
-            raise
-        finally:
-            await session.close()
+        return self._session_maker
 
     async def run_backtest(
         self,
@@ -104,8 +89,7 @@ class BacktestServicer:
     ) -> backtest_pb2.RunBacktestResponse:
         """Start a new backtest run."""
         try:
-            tenant_id = UUID(request.context.tenant_id)
-            user_id = UUID(request.context.user_id)
+            tenant_id, user_id = resolve_identity_connect(request.context)
 
             config = request.config
 
@@ -113,7 +97,7 @@ class BacktestServicer:
             _reject_unsupported_config(config)
 
             # Create the backtest
-            async with self._get_db() as db:
+            async with tenant_session(tenant_id, self._maker()) as db:
                 async with BacktestService(db) as service:
                     backtest = await service.create_backtest(
                         tenant_id=tenant_id,
@@ -186,10 +170,10 @@ class BacktestServicer:
         from llamatrade_proto.generated import backtest_pb2
 
         try:
-            tenant_id = UUID(request.context.tenant_id)
+            tenant_id, _ = resolve_identity_connect(request.context)
             backtest_id = UUID(request.backtest_id)
 
-            async with self._get_db() as db:
+            async with tenant_session(tenant_id, self._maker()) as db:
                 async with BacktestService(db) as service:
                     backtest = await service.get_backtest(
                         backtest_id=backtest_id,
@@ -230,7 +214,7 @@ class BacktestServicer:
         from llamatrade_proto.generated import backtest_pb2, common_pb2
 
         try:
-            tenant_id = UUID(request.context.tenant_id)
+            tenant_id, _ = resolve_identity_connect(request.context)
             strategy_id = UUID(request.strategy_id) if request.strategy_id else None
 
             # Status filter - proto constants are used directly throughout
@@ -242,7 +226,7 @@ class BacktestServicer:
             page = request.pagination.page if request.HasField("pagination") else 1
             page_size = request.pagination.page_size if request.HasField("pagination") else 20
 
-            async with self._get_db() as db:
+            async with tenant_session(tenant_id, self._maker()) as db:
                 async with BacktestService(db) as service:
                     backtests, total = await service.list_backtests(
                         tenant_id=tenant_id,
@@ -267,6 +251,8 @@ class BacktestServicer:
                         ),
                     )
 
+        except ConnectError:
+            raise
         except Exception as e:
             logger.error("ListBacktests error: %s", e, exc_info=True)
             raise ConnectError(Code.INTERNAL, f"Failed to list backtests: {e}") from e
@@ -280,10 +266,10 @@ class BacktestServicer:
         from llamatrade_proto.generated import backtest_pb2
 
         try:
-            tenant_id = UUID(request.context.tenant_id)
+            tenant_id, _ = resolve_identity_connect(request.context)
             backtest_id = UUID(request.backtest_id)
 
-            async with self._get_db() as db:
+            async with tenant_session(tenant_id, self._maker()) as db:
                 async with BacktestService(db) as service:
                     # AUTHORIZATION (4A): the cancel flag is keyed by backtest_id
                     # only. cancel_backtest is tenant-scoped and returns False for
@@ -330,7 +316,7 @@ class BacktestServicer:
 
         from src.progress import ProgressSubscriber
 
-        tenant_id = request.context.tenant_id
+        tenant_id, _ = resolve_identity_connect(request.context)
         backtest_id = request.backtest_id
         logger.info("Starting progress stream for backtest: %s", backtest_id)
 
@@ -348,11 +334,11 @@ class BacktestServicer:
             # backtest_id only and carries no tenant scope of its own. This
             # tenant-scoped ownership lookup is the gate — a caller from another
             # tenant gets NOT_FOUND and never reaches subscriber.tail().
-            async with self._get_db() as db:
+            async with tenant_session(tenant_id, self._maker()) as db:
                 async with BacktestService(db) as service:
                     backtest = await service.get_backtest(
                         backtest_id=UUID(backtest_id),
-                        tenant_id=UUID(tenant_id),
+                        tenant_id=tenant_id,
                     )
 
                     if not backtest:
@@ -405,10 +391,10 @@ class BacktestServicer:
         from llamatrade_proto.generated import backtest_pb2
 
         try:
-            tenant_id = UUID(request.context.tenant_id)
+            tenant_id, _ = resolve_identity_connect(request.context)
             backtest_ids = [UUID(bid) for bid in request.backtest_ids]
 
-            async with self._get_db() as db:
+            async with tenant_session(tenant_id, self._maker()) as db:
                 async with BacktestService(db) as service:
                     backtests: list[BacktestResponse] = []
                     metrics_by_id: dict[str, backtest_pb2.BacktestMetrics] = {}
@@ -436,6 +422,8 @@ class BacktestServicer:
                         metrics_by_id=metrics_by_id,
                     )
 
+        except ConnectError:
+            raise
         except Exception as e:
             logger.error("CompareBacktests error: %s", e, exc_info=True)
             raise ConnectError(Code.INTERNAL, f"Failed to compare backtests: {e}") from e
@@ -449,12 +437,12 @@ class BacktestServicer:
         from llamatrade_proto.generated import backtest_pb2, common_pb2
 
         try:
-            tenant_id = UUID(request.context.tenant_id)
+            tenant_id, _ = resolve_identity_connect(request.context)
             backtest_id = UUID(request.backtest_id)
             page = request.pagination.page if request.HasField("pagination") else 1
             page_size = request.pagination.page_size if request.HasField("pagination") else 50
 
-            async with self._get_db() as db:
+            async with tenant_session(tenant_id, self._maker()) as db:
                 async with BacktestService(db) as service:
                     # Tenant-scoped: get_backtest_trades resolves the backtest by
                     # (id, tenant), so a foreign tenant gets an empty page.

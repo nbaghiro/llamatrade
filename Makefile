@@ -226,7 +226,7 @@ proto:
 	@echo '"""Generated protobuf and gRPC code. Do not edit - regenerate with make proto."""' > libs/proto/llamatrade_proto/generated/__init__.py
 	@echo "Generated:"
 	@echo "  - Python:     libs/proto/llamatrade_proto/generated/"
-	@echo "  - TypeScript: apps/web/src/generated/proto/"
+	@echo "  - TypeScript: apps/core/src/proto/ (@llamatrade/core — shared by web + mobile)"
 
 proto-python:
 	@echo "=== Generating Python proto files ==="
@@ -238,10 +238,10 @@ proto-python:
 		done
 	@echo "Generated: libs/proto/llamatrade_proto/generated/"
 
-proto-web:
-	@echo "=== Generating TypeScript proto files ==="
-	cd libs/proto && buf generate --template buf.gen.web.yaml
-	@echo "Generated: apps/web/src/generated/proto/"
+proto-ts:
+	@echo "=== Generating TypeScript proto files (shared @llamatrade/core) ==="
+	cd libs/proto && buf generate --template buf.gen.core.yaml
+	@echo "Generated: apps/core/src/proto/ (imported by web + mobile)"
 
 proto-lint:
 	cd libs/proto && buf lint

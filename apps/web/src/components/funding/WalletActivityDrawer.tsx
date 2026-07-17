@@ -21,7 +21,7 @@ import {
 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 
-import { type ActivityGroup, type ActivityKind, type ActivityRow, useActivityStore } from '../../store/activity';
+import { type ActivityGroup, type ActivityKind, type ActivityRow, useActivityStore } from '@llamatrade/core/stores/activity';
 
 type Filter = 'all' | ActivityGroup;
 

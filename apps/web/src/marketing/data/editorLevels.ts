@@ -1,4 +1,4 @@
-import type { RawNode } from '../../components/ui';
+import type { RawNode } from '../../components/common/StrategyTree';
 
 import { k, p, s, type CodeLine } from '../components/codeTokens';
 

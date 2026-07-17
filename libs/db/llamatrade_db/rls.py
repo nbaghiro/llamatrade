@@ -45,9 +45,8 @@ LEDGER_RLS_TABLES: tuple[str, ...] = (
 )
 
 # Every tenant-scoped table platform-wide (carries ``tenant_id`` via
-# ``TenantMixin``), EXCLUDING the deprecated agent tables whose ORM models are
-# being dropped (``agent_memory_embeddings``, ``agent_session_summaries``). Keep
-# in sync with the models: ``test_rls_tables_match_metadata`` fails on drift.
+# ``TenantMixin``). Keep in sync with the models:
+# ``test_rls_tables_match_tenant_scoped_metadata`` fails on drift.
 RLS_TABLES: tuple[str, ...] = (
     # agent
     "agent_sessions",

@@ -5,7 +5,7 @@
  * response renders an honest empty state.
  */
 
-import type { Invoice } from '../../generated/proto/billing_pb';
+import type { Invoice } from '@llamatrade/core/proto/billing_pb';
 import { getInvoiceStatusLabel, InvoiceStatus } from '../../types/billing';
 
 import { formatDate, formatUsd, moneyToNumber, tsToDate } from './format';

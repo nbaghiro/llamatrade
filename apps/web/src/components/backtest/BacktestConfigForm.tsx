@@ -8,7 +8,7 @@ import { ChevronDown, Loader2, Play } from 'lucide-react';
 import { useEffect, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 
-import { useBacktestStore } from '../../store/backtest';
+import { useBacktestStore } from '@llamatrade/core/stores/backtest';
 
 interface BacktestConfigFormProps {
   onRun: () => void;

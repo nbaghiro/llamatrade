@@ -10,6 +10,9 @@ import {
 
 import { fonts, palette } from '../theme';
 
+export { Button } from './Button';
+export { SegmentedToggle, type Segment } from './SegmentedToggle';
+
 /* ---------------------------------------------------------------- Text ---- */
 
 interface TextProps {
@@ -73,7 +76,13 @@ export function Card({
 }) {
   return (
     <View style={styles.cardWrap}>
-      {shadow ? <View style={styles.cardShadow} pointerEvents="none" /> : null}
+      {shadow ? (
+        // Dark cards get an orange offset shadow (web parity); light cards keep ink.
+        <View
+          style={[styles.cardShadow, ink ? { backgroundColor: palette.orange[500] } : null]}
+          pointerEvents="none"
+        />
+      ) : null}
       <View
         style={[
           { backgroundColor: ink ? palette.ink : palette.paper, borderWidth: 2, borderColor: palette.ink, padding: 12 },

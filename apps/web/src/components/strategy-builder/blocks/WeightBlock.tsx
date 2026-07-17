@@ -1,8 +1,8 @@
 import { ChevronDown, X } from 'lucide-react';
 
 import { useStrategyBuilderStoreWithContext } from '../../../store/strategy-builder';
-import type { WeightBlock as WeightBlockType } from '../../../types/strategy-builder';
-import { getWeightMethodInfo } from '../../../types/strategy-builder';
+import type { WeightBlock as WeightBlockType } from '@llamatrade/core/strategy/types';
+import { getWeightMethodInfo } from '@llamatrade/core/strategy/types';
 import { useBlockTheme } from '../useTheme';
 
 interface WeightBlockProps {

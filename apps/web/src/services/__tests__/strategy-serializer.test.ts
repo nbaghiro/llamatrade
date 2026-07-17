@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-non-null-assertion */
 import { describe, it, expect } from 'vitest';
 
-import type { Block } from '../../types/strategy-builder';
+import type { Block } from '@llamatrade/core/strategy/types';
 import {
   tokenizeWithPositions,
   toKebabCase,
@@ -12,7 +12,7 @@ import {
   toDSL,
   validateTree,
   type StrategyMetadata,
-} from '../strategy-serializer';
+} from '@llamatrade/core/strategy/serializer';
 
 describe('tokenizeWithPositions', () => {
   it('should tokenize simple S-expression', () => {
@@ -345,6 +345,41 @@ describe('fromDSLString', () => {
     const filter = filterBlocks[0] as { config: { selection: string; count: number } };
     expect(filter.config.selection).toBe('top');
     expect(filter.config.count).toBe(5);
+  });
+
+  it('preserves a filter universe nested in a weight (multi-asset-trend shape)', () => {
+    // Regression: the DSL-text parser used to scrape only DIRECT (asset ...)
+    // children, so a filter wrapping its assets in a (weight ...) parsed to an
+    // EMPTY filter — which the backend rejected ("Select count (2) exceeds
+    // available assets (0)"). The universe must survive as real children.
+    const dsl = `(strategy "Nested Filter"
+  :rebalance weekly
+  (filter :by momentum :select (top 2) :lookback 60
+    (weight :method equal
+      (asset DBC)
+      (asset PDBC)
+      (asset DBA)
+      (asset DBE)
+      (asset DBB))))`;
+
+    const result = fromDSLString(dsl);
+    expect(result).not.toBeNull();
+    const tree = result!.tree;
+
+    const filterBlocks = Object.values(tree.blocks).filter((b) => b.type === 'filter');
+    expect(filterBlocks.length).toBe(1);
+    const filter = filterBlocks[0] as { childIds: string[] };
+    expect(filter.childIds.length).toBeGreaterThan(0); // the nested weight is a real child
+    expect(Object.values(tree.blocks).filter((b) => b.type === 'asset').length).toBe(5);
+
+    // Round-trips to a NON-empty filter (previously it emitted a childless filter).
+    const metadata: StrategyMetadata = {
+      name: result!.metadata.name || 'Nested Filter',
+      timeframe: result!.metadata.timeframe || '1W',
+    };
+    const dsl2 = toDSL(result!.tree, metadata);
+    expect(dsl2).toContain('(asset DBC)');
+    expect(dsl2).toContain('(asset DBB)');
   });
 
   it('should parse description from DSL', () => {

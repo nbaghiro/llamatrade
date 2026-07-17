@@ -348,6 +348,9 @@ class _Session:
     async def __aexit__(self, *exc: object) -> bool:
         return False
 
+    async def execute(self, *args: object, **kwargs: object) -> None:
+        return None
+
 
 async def test_get_strategy_performance_maps_positions() -> None:
     """GetStrategyPerformance carries the sleeve's marked-to-market positions."""
@@ -398,11 +401,11 @@ async def test_get_strategy_performance_maps_positions() -> None:
     reader.get_strategy_performance = AsyncMock(return_value=detail)
 
     servicer = PortfolioServicer()
-    servicer._get_db = AsyncMock(return_value=_Session())
+    servicer._session_factory = lambda: _Session()
     servicer._strategy_perf_reader = MagicMock(return_value=reader)
 
     request = portfolio_pb2.GetStrategyPerformanceRequest(
-        context=common_pb2.TenantContext(tenant_id=str(tenant_id)),
+        context=common_pb2.TenantContext(tenant_id=str(tenant_id), user_id=str(uuid4())),
         execution_id=str(execution_id),
     )
     resp = await servicer.get_strategy_performance(request, MagicMock())

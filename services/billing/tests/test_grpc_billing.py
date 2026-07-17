@@ -175,6 +175,9 @@ class _FakeUsageSession:
         # Subscription lookup returns None; every count/sum returns 0.
         return None if "subscriptions" in str(statement) else 0
 
+    async def execute(self, *args: object, **kwargs: object) -> None:
+        return None
+
 
 class _EmptyInvoicesSession:
     """Async session stub for list_invoices: zero count, no rows."""
@@ -188,7 +191,7 @@ class _EmptyInvoicesSession:
     async def scalar(self, statement: object) -> int:
         return 0
 
-    async def execute(self, statement: object) -> MagicMock:
+    async def execute(self, *args: object, **kwargs: object) -> MagicMock:
         result = MagicMock()
         result.scalars.return_value.all.return_value = []
         return result
@@ -488,8 +491,8 @@ class TestGetUsage:
             period_id="2024-01",
         )
 
-        with patch.object(billing_servicer, "_get_db", AsyncMock(return_value=_FakeUsageSession())):
-            response = await billing_servicer.get_usage(request, context)
+        billing_servicer._session_maker = lambda: _FakeUsageSession()
+        response = await billing_servicer.get_usage(request, context)
 
         assert response.usage.tenant_id == tenant_context.tenant_id
         assert response.usage.period_id == "2024-01"
@@ -516,10 +519,8 @@ class TestListInvoices:
 
         request = billing_pb2.ListInvoicesRequest(context=tenant_context)
 
-        with patch.object(
-            billing_servicer, "_get_db", AsyncMock(return_value=_EmptyInvoicesSession())
-        ):
-            response = await billing_servicer.list_invoices(request, context)
+        billing_servicer._session_maker = lambda: _EmptyInvoicesSession()
+        response = await billing_servicer.list_invoices(request, context)
 
         assert len(response.invoices) == 0
         assert response.pagination.total_items == 0

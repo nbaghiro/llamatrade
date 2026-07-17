@@ -2,12 +2,12 @@
    LlamaTrade Design System — "Monolith"
    Brutalist / Swiss-grid, light-only.
 
-   The shared base/components/utilities layers live in @llamatrade/ui. These
-   @imports MUST come first (CSS spec) so `postcss-import` (see postcss.config.js)
-   inlines them ahead of Tailwind — the shared @layer/@apply then resolve in the
-   same Tailwind pass as the `@tailwind` directives below (which pull in the
-   `@llamatrade/ui/tailwind-preset`; see tailwind.config.js). App-specific CSS,
-   if any, goes at the bottom of this file.
+   The theme token layer + shared @layer live in ./styles (moved here from the
+   former @llamatrade/ui package). These @imports MUST come first (CSS spec) so
+   `postcss-import` (see postcss.config.js) inlines them ahead of Tailwind — the
+   shared @layer/@apply then resolve in the same Tailwind pass as the `@tailwind`
+   directives below (which pull in `./tailwind-preset.cjs`; see
+   tailwind.config.js). App-specific CSS, if any, goes at the bottom of this file.
 
    The theme token layer is imported FIRST so its `:root` custom properties are
    defined before anything (the preset utilities + the shared layer) references

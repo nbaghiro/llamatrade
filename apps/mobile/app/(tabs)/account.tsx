@@ -15,6 +15,7 @@ import { ActivityIndicator, Pressable, RefreshControl, ScrollView, View, type Vi
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useBillingStore } from '../../src/stores/billing';
+import { useBrokerStore } from '@llamatrade/core/stores/broker';
 import { useAuthStore } from '../../src/stores/auth';
 import { fonts, palette } from '../../src/theme';
 import { Badge, Body, Card, Display, Label, Mono } from '../../src/ui';
@@ -187,10 +188,13 @@ export default function AccountScreen() {
   const user = useAuthStore((s) => s.user);
   const logout = useAuthStore((s) => s.logout);
   const { subscription, usage, paymentMethods, invoices, loading, refreshing, loaded, error, fetch } = useBillingStore();
+  const brokerCount = useBrokerStore((s) => s.credentials.length);
+  const fetchBroker = useBrokerStore((s) => s.fetch);
 
   useEffect(() => {
     void fetch();
-  }, [fetch]);
+    void fetchBroker();
+  }, [fetch, fetchBroker]);
 
   const name = user ? `${user.firstName ?? ''} ${user.lastName ?? ''}`.trim() || user.email : '—';
   const initial = (user?.firstName ?? user?.email ?? '?').charAt(0).toUpperCase();
@@ -251,6 +255,7 @@ export default function AccountScreen() {
             ) : null}
 
             {/* Plan */}
+            <Pressable onPress={() => router.push('/account/plans')}>
             <Card shadow>
               <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
                 <Label>Current Plan</Label>
@@ -274,7 +279,13 @@ export default function AccountScreen() {
                   <MeterRow label="Copilot Msgs" used={Number(usage.apiCalls)} limit={-1} />
                 </View>
               ) : null}
+              <View style={{ flexDirection: 'row', justifyContent: 'flex-end', marginTop: 12, paddingTop: 10, borderTopWidth: 1, borderColor: palette.bone2 }}>
+                <Mono size={9} color={palette.orange[600]} style={{ fontWeight: '700', letterSpacing: 0.6 }}>
+                  MANAGE PLAN →
+                </Mono>
+              </View>
             </Card>
+            </Pressable>
 
             {/* Payment method */}
             <View style={{ gap: 7, marginTop: 2 }}>
@@ -301,29 +312,25 @@ export default function AccountScreen() {
           </>
         )}
 
-        {/* Broker connect — not yet built on mobile */}
-        <Card style={{ backgroundColor: palette.bone2 }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-            <Zap color={palette.gray[500]} size={14} strokeWidth={2.5} />
-            <Badge label="Coming soon" variant="gray" />
-          </View>
-          <Body size={13} style={{ fontWeight: '700', marginTop: 8 }}>Connect your broker to trade live</Body>
-          <Label style={{ marginTop: 4 }}>Bring your own Alpaca keys (stored in the device Keychain) — landing soon on mobile.</Label>
-          <View style={{ marginTop: 10, alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: palette.gray[200], borderWidth: 2, borderColor: palette.gray[400], paddingHorizontal: 14, paddingVertical: 8 }}>
-            <Mono size={9} color={palette.gray[600]} style={{ fontWeight: '700' }}>CONNECT ALPACA</Mono>
-            <Mono size={8} color={palette.gray[500]}>· SOON</Mono>
-          </View>
-        </Card>
-
-        {/* Dev-only streaming spike (not shipped in release builds) */}
-        {__DEV__ ? (
-          <Pressable
-            onPress={() => router.push('/spike')}
-            style={{ backgroundColor: palette.ink, borderWidth: 2, borderColor: palette.ink, paddingVertical: 11, alignItems: 'center', marginTop: 2 }}
-          >
-            <Mono size={10} color={palette.orange[500]} style={{ fontWeight: '700' }}>▶  DEV · STREAMING SPIKE</Mono>
-          </Pressable>
-        ) : null}
+        {/* Broker connect */}
+        <Pressable onPress={() => router.push('/account/connect-broker')}>
+          <Card style={{ flexDirection: 'row', alignItems: 'center', gap: 11 }}>
+            <View style={{ width: 38, height: 38, borderWidth: 2, borderColor: palette.ink, backgroundColor: palette.ink, alignItems: 'center', justifyContent: 'center' }}>
+              <Zap color={palette.orange[500]} size={18} strokeWidth={2.5} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Body size={13} style={{ fontWeight: '700' }}>Connect your broker</Body>
+              <Label style={{ marginTop: 2 }}>
+                {brokerCount ? `${brokerCount} account${brokerCount > 1 ? 's' : ''} linked` : 'Bring your own Alpaca keys to trade live'}
+              </Label>
+            </View>
+            {brokerCount ? (
+              <Badge label="Linked" variant="green" />
+            ) : (
+              <Mono size={18} color={palette.gray[400]}>›</Mono>
+            )}
+          </Card>
+        </Pressable>
 
         <Pressable
           onPress={logout}

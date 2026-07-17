@@ -14,6 +14,7 @@ import PortfolioPage from './pages/portfolio/PortfolioPage';
 import SettingsPage from './pages/settings/SettingsPage';
 import StrategiesPage from './pages/strategies/StrategiesPage';
 import StrategyEditorPage from './pages/strategies/StrategyEditorPage';
+import TemplatesPage from './pages/strategies/TemplatesPage';
 import BacktestPage from './pages/trading/BacktestPage';
 import TradingPage from './pages/trading/TradingPage';
 import WalletPage from './pages/wallet/WalletPage';
@@ -71,6 +72,7 @@ export default function App() {
       >
         <Route path="/dashboard" element={<DashboardPage />} />
         <Route path="/strategies" element={<StrategiesPage />} />
+        <Route path="/strategies/templates" element={<TemplatesPage />} />
         <Route path="/strategies/builder" element={<StrategyEditorPage />} />
         <Route path="/strategies/:id" element={<StrategyEditorPage />} />
         <Route path="/backtest" element={<BacktestPage />} />

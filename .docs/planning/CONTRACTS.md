@@ -41,7 +41,7 @@ accounting. (If supplied, the value passes through unchanged.)
 
 ## 2. Proto surface
 
-`trading.proto` (regenerate with `make proto` + TS via the proto-web step):
+`trading.proto` (regenerate with `make proto` — TS lands in @llamatrade/core):
 
 - `Order`: `sleeve_id = 26`, `account_id = 27`
 - `Fill`: `sleeve_id = 9`, `account_id = 10`

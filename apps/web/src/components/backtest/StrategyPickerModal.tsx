@@ -6,7 +6,7 @@
 import { Loader2, Search, X } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 
-import type { Strategy } from '../../generated/proto/strategy_pb';
+import type { Strategy } from '@llamatrade/core/proto/strategy_pb';
 import { strategyClient } from '../../services/grpc-client';
 import { getTenantContext } from '../../store/auth';
 

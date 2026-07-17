@@ -59,6 +59,7 @@ class AuthServiceStub:
     GetAlpacaCredentials: _grpc.UnaryUnaryMultiCallable[_auth_pb2.GetAlpacaCredentialsRequest, _auth_pb2.GetAlpacaCredentialsResponse]
     ListAlpacaCredentials: _grpc.UnaryUnaryMultiCallable[_auth_pb2.ListAlpacaCredentialsRequest, _auth_pb2.ListAlpacaCredentialsResponse]
     DeleteAlpacaCredentials: _grpc.UnaryUnaryMultiCallable[_auth_pb2.DeleteAlpacaCredentialsRequest, _auth_pb2.DeleteAlpacaCredentialsResponse]
+    ValidateAlpacaCredentials: _grpc.UnaryUnaryMultiCallable[_auth_pb2.ValidateAlpacaCredentialsRequest, _auth_pb2.ValidateAlpacaCredentialsResponse]
 
 @_typing.type_check_only
 class AuthServiceAsyncStub(AuthServiceStub):
@@ -91,6 +92,7 @@ class AuthServiceAsyncStub(AuthServiceStub):
     GetAlpacaCredentials: _aio.UnaryUnaryMultiCallable[_auth_pb2.GetAlpacaCredentialsRequest, _auth_pb2.GetAlpacaCredentialsResponse]  # type: ignore[assignment]
     ListAlpacaCredentials: _aio.UnaryUnaryMultiCallable[_auth_pb2.ListAlpacaCredentialsRequest, _auth_pb2.ListAlpacaCredentialsResponse]  # type: ignore[assignment]
     DeleteAlpacaCredentials: _aio.UnaryUnaryMultiCallable[_auth_pb2.DeleteAlpacaCredentialsRequest, _auth_pb2.DeleteAlpacaCredentialsResponse]  # type: ignore[assignment]
+    ValidateAlpacaCredentials: _aio.UnaryUnaryMultiCallable[_auth_pb2.ValidateAlpacaCredentialsRequest, _auth_pb2.ValidateAlpacaCredentialsResponse]  # type: ignore[assignment]
 
 class AuthServiceServicer(metaclass=_abc_1.ABCMeta):
     """=============================================================================
@@ -210,5 +212,12 @@ class AuthServiceServicer(metaclass=_abc_1.ABCMeta):
         request: _auth_pb2.DeleteAlpacaCredentialsRequest,
         context: _ServicerContext,
     ) -> _typing.Union[_auth_pb2.DeleteAlpacaCredentialsResponse, _abc.Awaitable[_auth_pb2.DeleteAlpacaCredentialsResponse]]: ...
+
+    @_abc_1.abstractmethod
+    def ValidateAlpacaCredentials(
+        self,
+        request: _auth_pb2.ValidateAlpacaCredentialsRequest,
+        context: _ServicerContext,
+    ) -> _typing.Union[_auth_pb2.ValidateAlpacaCredentialsResponse, _abc.Awaitable[_auth_pb2.ValidateAlpacaCredentialsResponse]]: ...
 
 def add_AuthServiceServicer_to_server(servicer: AuthServiceServicer, server: _typing.Union[_grpc.Server, _aio.Server]) -> None: ...

@@ -5,7 +5,7 @@
  * action buttons are supplied by each page.
  */
 
-import type { PaymentMethod } from '../../generated/proto/billing_pb';
+import type { PaymentMethod } from '@llamatrade/core/proto/billing_pb';
 
 import { shortYear } from './format';
 

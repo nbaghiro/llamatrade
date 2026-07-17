@@ -3,20 +3,19 @@
    Brutalist / Swiss-grid, light-only.
    bone/ink/orange · Anton · Archivo · Space Mono
 
-   Shared design-system layer for @llamatrade/ui.
-
-   This file intentionally contains NO `@tailwind base/components/utilities`
-   directives — those stay in each consuming app's entry CSS. An app imports
-   this file AFTER its own `@tailwind` directives:
+   The Monolith design-system @layer. Contains NO `@tailwind
+   base/components/utilities` directives — those stay in the entry CSS, which
+   imports this AFTER them:
 
        @tailwind base;
        @tailwind components;
        @tailwind utilities;
-       @import '@llamatrade/ui/styles.css';
+       @import './styles/ui-layer.css';
 
-   Vite inlines this `@import` (via its built-in postcss-import) before Tailwind
-   runs, so every `@apply` / `@layer` below resolves against the consuming app's
-   Tailwind context (which must load the `@llamatrade/ui/tailwind-preset`).
+   (index.css for the app; src/marketing/marketing-base.css for the standalone
+   marketing build.) Vite inlines the `@import` (built-in postcss-import) before
+   Tailwind runs, so every `@apply` / `@layer` below resolves against the app's
+   Tailwind context, which loads the token layer (styles/monolith.css) + preset.
    ============================================ */
 
 @layer base {

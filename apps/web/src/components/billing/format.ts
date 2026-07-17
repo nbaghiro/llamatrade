@@ -4,7 +4,7 @@
  * Monolith-styled figures (short dates, USD, tabular numbers).
  */
 
-import type { Money, Timestamp } from '../../generated/proto/common_pb';
+import type { Money, Timestamp } from '@llamatrade/core/proto/common_pb';
 
 const MS_PER_DAY = 1000 * 60 * 60 * 24;
 

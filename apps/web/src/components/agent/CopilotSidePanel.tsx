@@ -11,11 +11,11 @@
  * Opened by the floating action button (AgentFAB → togglePanel).
  */
 
+import { useAgentStore } from '@llamatrade/core/stores/agent';
 import { Maximize2, Plus, Sparkles, X } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 
-import { useAgentStore } from '../../store/agent';
 
 import { CopilotConversation } from './CopilotConversation';
 

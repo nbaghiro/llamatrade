@@ -867,3 +867,61 @@ class AuthServicer:
                 )
 
             return auth_pb2.DeleteAlpacaCredentialsResponse(success=True)
+
+    async def validate_alpaca_credentials(
+        self,
+        request: auth_pb2.ValidateAlpacaCredentialsRequest,
+        ctx: AnyContext,
+    ) -> auth_pb2.ValidateAlpacaCredentialsResponse:
+        """Validate Alpaca API credentials against the broker without persisting them."""
+        from llamatrade_alpaca import AlpacaCredentials, TradingClient
+        from llamatrade_alpaca.errors import AuthenticationError
+
+        token = self._get_auth_token(ctx)
+        try:
+            jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        except jwt.ExpiredSignatureError:
+            metrics.auth.token_validation_failure(reason="expired")
+            raise ConnectError(Code.UNAUTHENTICATED, "Token expired")
+        except jwt.InvalidTokenError:
+            metrics.auth.token_validation_failure(reason="invalid_sig")
+            raise ConnectError(Code.UNAUTHENTICATED, "Invalid token")
+
+        if not request.api_key or not request.api_secret:
+            return auth_pb2.ValidateAlpacaCredentialsResponse(
+                valid=False, message="API key and secret are required"
+            )
+
+        creds = AlpacaCredentials(api_key=request.api_key, api_secret=request.api_secret)
+        try:
+            async with TradingClient(
+                credentials=creds, paper=request.is_paper, timeout=10.0
+            ) as client:
+                account = await client.get_account()
+            return auth_pb2.ValidateAlpacaCredentialsResponse(
+                valid=True,
+                account_status=account.status,
+                buying_power=str(account.buying_power),
+            )
+        except AuthenticationError:
+            # Rejected on the selected environment; probe the other to flag a paper/live mismatch.
+            other_ok = False
+            try:
+                async with TradingClient(
+                    credentials=creds, paper=not request.is_paper, timeout=10.0
+                ) as alt:
+                    await alt.get_account()
+                other_ok = True
+            except Exception:
+                other_ok = False
+            if other_ok:
+                other = "live" if request.is_paper else "paper"
+                return auth_pb2.ValidateAlpacaCredentialsResponse(
+                    valid=False,
+                    message=f"These look like {other} keys — switch the environment to {other}.",
+                )
+            return auth_pb2.ValidateAlpacaCredentialsResponse(
+                valid=False, message="Invalid API key or secret"
+            )
+        except Exception as exc:
+            raise ConnectError(Code.UNAVAILABLE, f"Could not reach Alpaca: {exc}")

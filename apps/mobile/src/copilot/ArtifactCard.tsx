@@ -3,10 +3,10 @@ import { useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, View } from 'react-native';
 
 import { ArtifactType, type PendingArtifact } from '@llamatrade/core/proto/agent_pb';
-import { useAgentStore } from '../stores/agent';
+import { useAgentStore } from '@llamatrade/core/stores/agent';
 import { palette } from '../theme';
 import { Badge, Body, Mono } from '../ui';
-import { buildMeta, formatDSL, parsePreview } from './artifact';
+import { buildMeta, formatDSL, parsePreview } from '@llamatrade/core/agent/artifact';
 import { DslBlock } from './DslBlock';
 
 /**

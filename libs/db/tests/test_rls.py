@@ -12,12 +12,9 @@ from llamatrade_db.rls import (
     enable_rls_statements,
 )
 
-# Deprecated agent tables whose ORM models are being dropped separately.
-_DEPRECATED = {"agent_memory_embeddings", "agent_session_summaries"}
-
 
 def test_rls_tables_match_tenant_scoped_metadata() -> None:
-    """RLS_TABLES must cover EXACTLY every tenant-scoped table (minus deprecated).
+    """RLS_TABLES must cover EXACTLY every tenant-scoped table.
 
     Fails if a new ``tenant_id`` table is added without RLS coverage (or a table
     is dropped), so the platform-wide RLS migration can never silently miss one.
@@ -35,7 +32,7 @@ def test_rls_tables_match_tenant_scoped_metadata() -> None:
         for mapper in Base.registry.mappers
         if mapper.class_.__module__.startswith("llamatrade_db.models")
         and "tenant_id" in mapper.class_.__table__.columns
-    } - _DEPRECATED
+    }
     assert set(RLS_TABLES) == tenant_tables
     assert len(RLS_TABLES) == len(set(RLS_TABLES))  # no duplicates
     assert set(LEDGER_RLS_TABLES) <= set(RLS_TABLES)

@@ -13,6 +13,18 @@ from src.tools.base import BaseTool, ToolContext, ToolResult
 
 logger = logging.getLogger(__name__)
 
+# Day-spans the Portfolio service buckets back into its period windows; "ytd" is
+# handled separately (year-start → now) and "all" uses a span past its 1Y cutoff.
+_PERIOD_TO_DAYS: dict[str, int] = {
+    "1d": 1,
+    "1w": 7,
+    "1m": 30,
+    "3m": 90,
+    "6m": 180,
+    "1y": 365,
+    "all": 4000,
+}
+
 
 class GetPortfolioSummaryTool(BaseTool):
     """Get user's current portfolio summary."""
@@ -110,8 +122,10 @@ class GetPortfolioPerformanceTool(BaseTool):
     @property
     def description(self) -> str:
         return (
-            "Get portfolio performance metrics including returns, volatility, "
-            "and drawdown over specified time periods."
+            "Get the user's portfolio performance metrics over a time period: "
+            "total/YTD/MTD/WTD return, volatility, Sharpe ratio, max drawdown, "
+            "beta and alpha vs. benchmark, and position count. Operates on the "
+            "user's own portfolio — no portfolio_id needed."
         )
 
     @property
@@ -134,12 +148,64 @@ class GetPortfolioPerformanceTool(BaseTool):
         context: ToolContext,
     ) -> ToolResult:
         """Execute the get_portfolio_performance tool."""
-        # Requires a portfolio_id first; returns a fallback pointing to get_portfolio_summary.
+        from datetime import UTC, datetime, timedelta
+
+        from llamatrade_proto.generated import common_pb2, portfolio_pb2
+        from llamatrade_proto.generated.portfolio_connect import PortfolioServiceClient
+
+        from src.tools.clients import PORTFOLIO_SERVICE_URL, tenant_headers
+
+        def dec(d: common_pb2.Decimal) -> str:
+            return d.value or "0"
+
+        period = str(arguments.get("period") or "1m").lower()
+
+        now = datetime.now(UTC)
+        if period == "ytd":
+            start = datetime(now.year, 1, 1, tzinfo=UTC)
+        else:
+            start = now - timedelta(days=_PERIOD_TO_DAYS.get(period, 30))
+
+        request = portfolio_pb2.GetPerformanceRequest(
+            context=common_pb2.TenantContext(
+                tenant_id=str(context.tenant_id),
+                user_id=str(context.user_id),
+            ),
+            time_range=common_pb2.TimeRange(
+                start=common_pb2.Timestamp(seconds=int(start.timestamp())),
+                end=common_pb2.Timestamp(seconds=int(now.timestamp())),
+            ),
+        )
+
+        try:
+            client = PortfolioServiceClient(PORTFOLIO_SERVICE_URL)
+            response = await client.get_performance(
+                request,
+                headers=tenant_headers(str(context.tenant_id), str(context.user_id)),
+            )
+        except Exception as e:
+            logger.warning("get_portfolio_performance failed: %s", e)
+            return ToolResult(
+                success=False,
+                error=f"Portfolio performance is unavailable right now: {e}",
+            )
+
+        m = response.metrics
         return ToolResult(
             success=True,
             data={
-                "note": "Portfolio performance data requires an active portfolio. "
-                "Use get_portfolio_summary first to identify available portfolios.",
+                "period": period,
+                "total_return": dec(m.total_return),
+                "ytd_return": dec(m.ytd_return),
+                "mtd_return": dec(m.mtd_return),
+                "wtd_return": dec(m.wtd_return),
+                "volatility": dec(m.volatility),
+                "sharpe_ratio": dec(m.sharpe_ratio),
+                "max_drawdown": dec(m.max_drawdown),
+                "beta": dec(m.beta),
+                "benchmark_return": dec(m.benchmark_return),
+                "alpha": dec(m.alpha),
+                "total_positions": m.total_positions,
             },
         )
 

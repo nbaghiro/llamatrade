@@ -1,7 +1,7 @@
 import { PlusCircle } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 
-import type { BlockId } from '../../../types/strategy-builder';
+import type { BlockId } from '@llamatrade/core/strategy/types';
 import { BlockPicker } from '../panels/BlockPicker';
 
 interface AddBlockButtonProps {

@@ -1,9 +1,9 @@
 import { ChevronDown, Pencil, X } from 'lucide-react';
 import { useState, useRef, useEffect } from 'react';
 
-import { conditionToText } from '../../../services/strategy-serializer';
+import { conditionToText } from '@llamatrade/core/strategy/serializer';
 import { useStrategyBuilderStoreWithContext } from '../../../store/strategy-builder';
-import type { IfBlock as IfBlockType, ConditionExpression } from '../../../types/strategy-builder';
+import type { IfBlock as IfBlockType, ConditionExpression } from '@llamatrade/core/strategy/types';
 import { ConditionEditor } from '../panels/ConditionEditor';
 import { useBlockTheme } from '../useTheme';
 

@@ -69,6 +69,8 @@ export default function RootLayout() {
         <Stack.Screen name="register" />
         <Stack.Screen name="(tabs)" />
         <Stack.Screen name="strategy/[id]" />
+        <Stack.Screen name="account/connect-broker" />
+        <Stack.Screen name="account/plans" />
         <Stack.Screen name="spike" options={{ presentation: 'modal' }} />
       </Stack>
     </SafeAreaProvider>

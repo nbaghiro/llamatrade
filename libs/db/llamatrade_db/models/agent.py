@@ -130,6 +130,9 @@ class AgentMessage(Base, UUIDPrimaryKeyMixin, TenantMixin, TimestampMixin):
     # Draft artifact IDs rendered inline with this message; persisted so a reloaded session rebuilds the cards.
     inline_artifact_ids: Mapped[list[str] | None] = mapped_column(JSONB, nullable=True)
 
+    # Curated reasoning shown in a collapsible block; persisted so it re-expands on reload.
+    thinking: Mapped[str | None] = mapped_column(Text, nullable=True)
+
     # Relationships
     session: Mapped[AgentSession] = relationship("AgentSession", back_populates="messages")
 
@@ -263,7 +266,3 @@ class AgentMemoryFact(Base, UUIDPrimaryKeyMixin, TenantMixin, TimestampMixin):
         DateTime(timezone=True), nullable=True
     )
     access_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
-
-
-# Tables agent_memory_embeddings and agent_session_summaries are deprecated; their
-# ORM models were removed and a drop-migration is pending.

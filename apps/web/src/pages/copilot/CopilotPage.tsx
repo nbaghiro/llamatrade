@@ -7,11 +7,11 @@
  * every Copilot surface so behaviour stays identical.
  */
 
+import { AgentSession, AgentSessionStatus, useAgentStore } from '@llamatrade/core/stores/agent';
 import { Plus, Search, Sparkles, Trash2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 
 import { CopilotConversation } from '../../components/agent/CopilotConversation';
-import { AgentSession, AgentSessionStatus, useAgentStore } from '../../store/agent';
 
 const PAGE = 'copilot';
 const DEFAULT_PROMPTS = [

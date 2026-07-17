@@ -2,7 +2,7 @@
  * LlamaTrade "Monolith" Tailwind preset.
  *
  * This preset maps Tailwind's theme keys onto the CSS custom-property TOKEN
- * LAYER defined in `src/themes/monolith.css` — that file is the single source of
+ * LAYER defined in `src/styles/monolith.css` — that file is the single source of
  * truth for every themeable value (palette, type, radius, shadows). Nothing here
  * holds a raw hex/px value that a theme would want to change; each entry is a
  * `var(--lt-*)` reference, so swapping the theme file (or a `[data-theme]` block)
@@ -13,10 +13,10 @@
  * The theme file therefore stores colors as space-separated RGB channels
  * (`255 77 28`), NOT as `#ff4d1c`. See that file's header for the full rationale.
  *
- * Consume from a Vite app's `tailwind.config.js`:
- *   presets: [require('@llamatrade/ui/tailwind-preset')]
- * and import the token layer FIRST in the app's entry CSS:
- *   @import '@llamatrade/ui/themes/monolith.css';
+ * Consumed by `apps/web/tailwind.config.js`:
+ *   presets: [require('./tailwind-preset.cjs')]
+ * and the token layer is imported FIRST in the app's entry CSS:
+ *   @import './styles/monolith.css';
  *
  * Authored as CommonJS (`module.exports`) so it is `require()`-able from an ESM
  * `tailwind.config.js` (Tailwind loads the config in a CJS context).

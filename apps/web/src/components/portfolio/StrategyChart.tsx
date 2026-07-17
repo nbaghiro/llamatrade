@@ -5,7 +5,7 @@
 
 import { useMemo, useState } from 'react';
 
-import type { Benchmark, EquityPoint, Period, StrategyPerformance } from '../../store/portfolio';
+import type { Benchmark, EquityPoint, Period, StrategyPerformance } from '@llamatrade/core/stores/portfolio';
 
 interface StrategyChartProps {
   strategies: StrategyPerformance[];

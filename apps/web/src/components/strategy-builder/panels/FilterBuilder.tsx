@@ -7,12 +7,12 @@ import type {
   FilterUniverse,
   FilterSortBy,
   FilterPeriod,
-} from '../../../types/strategy-builder';
+} from '@llamatrade/core/strategy/types';
 import {
   FILTER_UNIVERSES,
   FILTER_SORT_OPTIONS,
   FILTER_PERIODS,
-} from '../../../types/strategy-builder';
+} from '@llamatrade/core/strategy/types';
 
 interface FilterBuilderProps {
   initialConfig?: FilterConfig;

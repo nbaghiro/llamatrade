@@ -69,7 +69,6 @@ from llamatrade_db.models import (
     AgentMemoryFact,
     AgentMessage,
     AgentSession,
-    AgentSessionSummary,
     AlpacaCredentials,
     Backtest,
     BacktestResult,
@@ -118,7 +117,9 @@ TENANT_NAME = "Sofia Rivera Trading"
 DEMO_TENANT_ID = uuid5(NAMESPACE_URL, f"llamatrade:demo:tenant:{DEMO_SLUG}")
 DEMO_USER_ID = uuid5(NAMESPACE_URL, f"llamatrade:demo:user:{DEMO_EMAIL}")
 FIRST_NAME, LAST_NAME = "Sofia", "Rivera"
-DEMO_AVATAR_URL = "https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=160&h=160&fit=crop&crop=face"
+DEMO_AVATAR_URL = (
+    "https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=160&h=160&fit=crop&crop=face"
+)
 
 # Pre-generated valid bcrypt hash of "demo1234" (self-verifying via checkpw).
 # Fallback for containers without the `bcrypt` module (e.g. portfolio).
@@ -141,10 +142,10 @@ MARKET_DATA_DB_URL = os.getenv(
 )
 BARS_START = date(2026, 1, 2)  # a few sessions before the deposit, for benchmark runway
 
-DATA_DIR = Path(__file__).resolve().parent / "demo_seed_data"
-# When copied into the container next to the script, the data dir sits at /app/demo_seed_data.
-if not DATA_DIR.exists():
-    DATA_DIR = Path("/app/demo_seed_data")
+# Local checkout: sibling of this script. When copied into the container next to
+# the script, the data dir sits at /app/demo_seed_data.
+_local_data_dir = Path(__file__).resolve().parent / "demo_seed_data"
+DATA_DIR = _local_data_dir if _local_data_dir.exists() else Path("/app/demo_seed_data")
 
 ZERO = Decimal("0")
 CENT = Decimal("0.01")
@@ -1807,26 +1808,6 @@ class Seeder:
                     )
                 )
                 self._bump("agent_messages")
-
-            summary = s["summary"]
-            if summary is not None:
-                short, detailed, topics, strategies_discussed, decisions = summary  # type: ignore[misc]
-                self.db.add(
-                    AgentSessionSummary(
-                        id=uuid4(),
-                        tenant_id=self.tenant_id,
-                        user_id=self.user_id,
-                        session_id=session.id,
-                        summary_short=short,
-                        summary_detailed=detailed,
-                        topics=topics,
-                        strategies_discussed=strategies_discussed,
-                        decisions=decisions,
-                        message_count_at_summary=len(msgs),  # type: ignore[arg-type]
-                        created_at=dt(s["day"], 16, 5),  # type: ignore[arg-type]
-                    )
-                )
-                self._bump("agent_session_summaries")
 
         # Backing pending artifact for the Momentum Sectors turn (the side effect
         # of the validate_dsl call above). artifact_json matches ArtifactService.

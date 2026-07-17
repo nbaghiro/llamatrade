@@ -16,7 +16,7 @@ import {
   StrategyList,
 } from '../../components/portfolio';
 import { useAuthStore } from '../../store/auth';
-import { usePortfolioStore } from '../../store/portfolio';
+import { usePortfolioStore } from '@llamatrade/core/stores/portfolio';
 
 // Prefer the real name; fall back to the email local-part ("alex.rivera" → "Alex Rivera").
 function holderFrom(

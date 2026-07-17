@@ -9,7 +9,7 @@ import {
   AssetClass,
   TemplateCategory,
   TemplateDifficulty,
-} from '../generated/proto/strategy_pb';
+} from '@llamatrade/core/proto/strategy_pb';
 
 export { AssetClass, TemplateCategory, TemplateDifficulty };
 

@@ -10,8 +10,8 @@ import type {
   IndicatorName,
   Comparator,
   PriceField,
-} from '../../../types/strategy-builder';
-import { INDICATORS, COMPARATORS, getIndicatorInfo } from '../../../types/strategy-builder';
+} from '@llamatrade/core/strategy/types';
+import { INDICATORS, COMPARATORS, getIndicatorInfo } from '@llamatrade/core/strategy/types';
 
 interface ConditionBuilderProps {
   initialCondition?: ConditionExpression;

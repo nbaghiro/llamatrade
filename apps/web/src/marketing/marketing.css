@@ -3,8 +3,8 @@
 
    This file was folded in from the retired standalone marketing app
    (apps/marketing/src/index.css). It carries ONLY the marketing-only rules —
-   the shared theme tokens (@llamatrade/ui/themes/monolith.css), the shared
-   @layer file (@llamatrade/ui/styles.css) and the `@tailwind` directives are
+   the shared theme tokens (src/styles/monolith.css), the shared
+   @layer file (src/styles/ui-layer.css) and the `@tailwind` directives are
    already loaded once by apps/web/src/index.css, so they are NOT repeated here.
 
    To coexist with the product app in a single origin, every rule that would
@@ -237,7 +237,7 @@ html.marketing-active {
   }
 }
 
-/* ---------- Shared @llamatrade/ui Marquee: match the marketing look ---------- */
+/* ---------- Shared Marquee: match the marketing look ---------- */
 /* The feature + bottom tickers use the shared <Marquee>. These wrappers give it
    the marketing bars (ink/orange grounds, 14px mono) around the shared track. */
 .mkt-marquee {

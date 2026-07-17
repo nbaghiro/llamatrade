@@ -1,14 +1,14 @@
 import { useEffect } from 'react';
 
 import ActiveStrategies from '../../components/dashboard/ActiveStrategies';
+import ChartHero from '../../components/dashboard/ChartHero';
 import CopilotHero from '../../components/dashboard/CopilotHero';
-import EquityHero from '../../components/dashboard/EquityHero';
 import KpiRail from '../../components/dashboard/KpiRail';
 import MarketStatusPill from '../../components/dashboard/MarketStatusPill';
 import QuickActions from '../../components/dashboard/QuickActions';
 import RecentActivity from '../../components/dashboard/RecentActivity';
 import { useAuthStore } from '../../store/auth';
-import { useDashboardStore } from '../../store/dashboard';
+import { useDashboardStore } from '@llamatrade/core/stores/dashboard';
 
 function greetingWord(hour: number): string {
   if (hour < 12) return 'Good morning';
@@ -64,18 +64,20 @@ export default function DashboardPage() {
           </div>
         )}
 
+        <div className="mb-4">
+          <QuickActions />
+        </div>
+
         <div className="grid grid-cols-1 lg:grid-cols-[0.72fr_2fr_1.1fr] gap-4 mb-4">
           <KpiRail />
-          <EquityHero />
+          <ChartHero />
           <CopilotHero />
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-[1.55fr_1fr] gap-4 mb-4">
+        <div className="grid grid-cols-1 lg:grid-cols-[1.55fr_1fr] gap-4">
           <ActiveStrategies />
           <RecentActivity />
         </div>
-
-        <QuickActions />
       </div>
     </div>
   );

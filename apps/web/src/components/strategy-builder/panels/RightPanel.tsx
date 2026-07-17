@@ -2,8 +2,8 @@ import { ChevronDown, LineChart, Play } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 
-import type { BacktestRun } from '../../../generated/proto/backtest_pb';
-import { toNumber, useBacktestStore } from '../../../store/backtest';
+import type { BacktestRun } from '@llamatrade/core/proto/backtest_pb';
+import { toNumber, useBacktestStore } from '@llamatrade/core/stores/backtest';
 import { useStrategyBuilderStoreWithContext } from '../../../store/strategy-builder';
 import { EquityMiniChart } from '../../strategies/EquityMiniChart';
 

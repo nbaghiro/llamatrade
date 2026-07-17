@@ -296,6 +296,7 @@ npm run lint:fix            # Frontend
 - **Do NOT commit immediately after making changes** — wait for explicit commit instructions
 - Multiple unrelated changes may be in progress on the same branch; keep them separate
 - Run `./scripts/ci-local.sh` before committing to verify all checks pass
+- **Do NOT create new git worktrees** (including isolated agent/subagent worktrees) unless explicitly asked — work in the main checkout. The tree often has large in-progress WIP; parallel worktrees fragment that work and make reconciliation/merges painful.
 
 ---
 

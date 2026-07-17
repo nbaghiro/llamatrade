@@ -1,6 +1,6 @@
 import { useStrategyBuilderStoreWithContext } from '../../store/strategy-builder';
-import type { BlockId } from '../../types/strategy-builder';
-import { hasChildren } from '../../types/strategy-builder';
+import type { BlockId } from '@llamatrade/core/strategy/types';
+import { hasChildren } from '@llamatrade/core/strategy/types';
 
 import { AddBlockButton } from './blocks/AddBlockButton';
 import { AssetBlock } from './blocks/AssetBlock';

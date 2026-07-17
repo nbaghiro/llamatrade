@@ -2,7 +2,7 @@ import { ChevronDown, ChevronRight, Layers } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 
 import { useStrategyBuilderStoreWithContext } from '../../../store/strategy-builder';
-import type { GroupBlock as GroupBlockType } from '../../../types/strategy-builder';
+import type { GroupBlock as GroupBlockType } from '@llamatrade/core/strategy/types';
 import { useBlockTheme } from '../useTheme';
 
 interface GroupBlockProps {

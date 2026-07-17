@@ -1,9 +1,11 @@
-import { useEffect } from 'react';
+import { router } from 'expo-router';
+import { ChevronRight } from 'lucide-react-native';
+import { useEffect, useMemo } from 'react';
 import { ActivityIndicator, Pressable, RefreshControl, ScrollView, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ExecutionMode, ExecutionStatus } from '@llamatrade/core/proto/common_pb';
-import { isUp, money, num, pct, signedMoney } from '@llamatrade/core/format';
+import { isUp, money, num, pct, qty, signedMoney } from '@llamatrade/core/format';
 import { LineChart } from '../../src/charts/LineChart';
 import { useAuthStore } from '../../src/stores/auth';
 import { usePortfolioStore } from '../../src/stores/portfolio';
@@ -20,15 +22,33 @@ const STATUS_LABEL: Record<number, string> = {
 
 export default function PortfolioScreen() {
   const user = useAuthStore((s) => s.user);
-  const { portfolio, strategies, equityCurve, benchmarkCurve, loading, refreshing, loaded, error, fetch } =
+  const { portfolio, strategies, positions, equityCurve, benchmarkCurve, loading, refreshing, loaded, error, fetch } =
     usePortfolioStore();
 
   useEffect(() => {
     void fetch();
   }, [fetch]);
 
-  const openPositions = strategies.reduce((n, s) => n + s.positionsCount, 0);
   const holder = user ? `${user.firstName ?? ''} ${user.lastName ?? ''}`.trim() || user.email : '—';
+
+  // Account holdings: real open positions aggregated per symbol, largest first.
+  const holdings = useMemo(() => {
+    const bySymbol = new Map<string, { symbol: string; value: number; pnl: number; shares: number }>();
+    for (const p of positions) {
+      const value = num(p.marketValue) || num(p.quantity) * num(p.currentPrice);
+      if (value <= 0) continue;
+      const row = bySymbol.get(p.symbol) ?? { symbol: p.symbol, value: 0, pnl: 0, shares: 0 };
+      row.value += value;
+      row.pnl += num(p.unrealizedPnl);
+      row.shares += num(p.quantity);
+      bySymbol.set(p.symbol, row);
+    }
+    const rows = [...bySymbol.values()].sort((a, b) => b.value - a.value);
+    const total = rows.reduce((sum, r) => sum + r.value, 0);
+    return rows.map((r) => ({ ...r, weight: total > 0 ? (r.value / total) * 100 : 0 }));
+  }, [positions]);
+
+  const openPositions = holdings.length || strategies.reduce((n, s) => n + s.positionsCount, 0);
 
   return (
     <SafeAreaView edges={['top']} style={{ flex: 1, backgroundColor: palette.bone }}>
@@ -143,6 +163,58 @@ export default function PortfolioScreen() {
                 <KpiTile value={money(portfolio.positionsValue)} label="Deployed" />
               </View>
 
+              {/* Holdings — per-symbol book, the ledger this screen is named for */}
+              {holdings.length > 0 ? (
+                <>
+                  <Label style={{ marginTop: 2 }}>Holdings · {holdings.length}</Label>
+                  <View style={{ flexDirection: 'row', height: 12, borderWidth: 2, borderColor: palette.ink }}>
+                    {holdings.map((h, i) => (
+                      <View
+                        key={h.symbol}
+                        style={{ flex: h.weight, backgroundColor: strategyColors[i % strategyColors.length] }}
+                      />
+                    ))}
+                  </View>
+                  <Card>
+                    {holdings.map((h, i) => {
+                      const up = h.pnl >= 0;
+                      const last = i === holdings.length - 1;
+                      return (
+                        <View
+                          key={h.symbol}
+                          style={{
+                            flexDirection: 'row',
+                            alignItems: 'center',
+                            gap: 9,
+                            paddingVertical: 8,
+                            borderBottomWidth: last ? 0 : 1,
+                            borderColor: 'rgba(13,13,13,0.12)',
+                          }}
+                        >
+                          <View style={{ width: 9, height: 26, backgroundColor: strategyColors[i % strategyColors.length] }} />
+                          <View style={{ flex: 1 }}>
+                            <Body size={13} style={{ fontWeight: '700' }}>
+                              {h.symbol}
+                            </Body>
+                            <Mono size={9} color={palette.gray[500]}>
+                              {h.weight.toFixed(1)}% · {qty(h.shares)} sh
+                            </Mono>
+                          </View>
+                          <View style={{ alignItems: 'flex-end' }}>
+                            <Mono size={11} style={{ fontWeight: '700' }}>
+                              {money(h.value)}
+                            </Mono>
+                            <Mono size={9} color={up ? palette.green[600] : palette.red[600]}>
+                              {signedMoney(h.pnl)}
+                            </Mono>
+                          </View>
+                        </View>
+                      );
+                    })}
+                  </Card>
+                </>
+              ) : null}
+
               <Label style={{ marginTop: 2 }}>Strategies · {strategies.length}</Label>
               {strategies.length === 0 ? (
                 <Card>
@@ -154,7 +226,8 @@ export default function PortfolioScreen() {
                   const up = isUp(ret);
                   const pnl = num(s.currentValue) - num(s.allocatedCapital);
                   return (
-                    <Card key={s.executionId}>
+                    <Pressable key={s.executionId} onPress={() => router.push(`/strategy/${s.strategyId}`)}>
+                    <Card>
                       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 9 }}>
                         <View
                           style={{
@@ -164,7 +237,7 @@ export default function PortfolioScreen() {
                           }}
                         />
                         <View style={{ flex: 1 }}>
-                          <Body size={13} style={{ fontWeight: '700' }}>
+                          <Body size={13} style={{ fontWeight: '700' }} numberOfLines={1}>
                             {s.strategyName}
                           </Body>
                           <Label style={{ marginTop: 2 }}>
@@ -180,6 +253,7 @@ export default function PortfolioScreen() {
                             {signedMoney(pnl)}
                           </Mono>
                         </View>
+                        <ChevronRight color={palette.gray[400]} size={15} strokeWidth={2} />
                       </View>
                       <View
                         style={{
@@ -197,6 +271,7 @@ export default function PortfolioScreen() {
                         <Mono size={10}>{money(s.currentValue)}</Mono>
                       </View>
                     </Card>
+                    </Pressable>
                   );
                 })
               )}

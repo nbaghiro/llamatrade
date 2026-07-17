@@ -14,10 +14,13 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { MessageRole, useAgentStore, type AgentMessage } from '@llamatrade/core/stores/agent';
+import type { Timestamp } from '@llamatrade/core/proto/common_pb';
+
 import { ArtifactCard } from '../../src/copilot/ArtifactCard';
 import { HistorySheet } from '../../src/copilot/HistorySheet';
 import { Markdown } from '../../src/copilot/Markdown';
-import { type ChatMessage, useAgentStore } from '../../src/stores/agent';
+import { ThinkingBlock } from '../../src/copilot/ThinkingBlock';
 import { useAuthStore } from '../../src/stores/auth';
 import { fonts, palette } from '../../src/theme';
 import { Badge, Body, Mono } from '../../src/ui';
@@ -36,6 +39,17 @@ function hardShadow(color: string): ViewStyle {
 function fmtTime(ms: number): string {
   const d = new Date(ms);
   return `${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
+
+function tsToMs(ts?: Timestamp): number {
+  const s = ts?.seconds;
+  return s ? Number(s) * 1000 : Date.now();
+}
+
+/** Human labels for confirmation-gated tools; falls back to the de-underscored name. */
+const TOOL_LABELS: Record<string, string> = { run_backtest: 'Run a backtest' };
+function humanizeTool(name: string): string {
+  return TOOL_LABELS[name] ?? name.replace(/_/g, ' ');
 }
 
 /** Drop the raw strategy-DSL fence from prose — the rich artifact card is the canonical preview. */
@@ -202,14 +216,17 @@ export default function CopilotScreen() {
     pendingArtifacts,
     isStreaming,
     streamingContent,
+    thinkingContent,
     currentToolCall,
-    artifactIdsForCurrent,
+    pendingArtifactIdsForCurrentMessage,
+    pendingConfirmation,
     suggestedPrompts,
     error,
     serviceUnavailable,
     startNewChat,
     loadSessions,
     sendMessage,
+    confirmToolCall,
     getSuggestedPrompts,
     clearError,
   } = useAgentStore();
@@ -219,7 +236,7 @@ export default function CopilotScreen() {
   const scrollRef = useRef<ScrollView>(null);
 
   useEffect(() => {
-    void getSuggestedPrompts('copilot');
+    void getSuggestedPrompts({ page: 'copilot' });
     void loadSessions();
   }, [getSuggestedPrompts, loadSessions]);
 
@@ -230,7 +247,7 @@ export default function CopilotScreen() {
     const t = text.trim();
     if (!t || isStreaming) return;
     setDraft('');
-    void sendMessage(t, 'copilot');
+    void sendMessage(t, undefined, undefined, 'copilot');
   };
 
   const empty = messages.length === 0 && !isStreaming;
@@ -297,13 +314,13 @@ export default function CopilotScreen() {
 
           {empty ? (
             <View style={{ gap: 11, marginTop: 8 }}>
-              <View style={[{ borderWidth: 2, borderColor: palette.ink, backgroundColor: palette.paper, padding: 16 }, hardShadow(palette.ink)]}>
+              <View style={[{ borderWidth: 2, borderColor: palette.ink, backgroundColor: palette.ink, padding: 16 }, hardShadow(palette.orange[500])]}>
                 <Sparkles color={palette.orange[500]} size={24} strokeWidth={2} />
-                <Body size={20} style={{ fontFamily: fonts.display, textTransform: 'uppercase', marginTop: 10 }}>
+                <Body size={20} color={palette.bone} style={{ fontFamily: fonts.display, textTransform: 'uppercase', marginTop: 10 }}>
                   LlamaTrade Copilot
                 </Body>
                 <Markdown
-                  tone="ink"
+                  tone="bone"
                   size={13}
                   content={'Describe, build, edit or explain a strategy. I write **real DSL** and run it on your paper account.'}
                 />
@@ -325,25 +342,33 @@ export default function CopilotScreen() {
             </View>
           ) : (
             <>
-              {messages.map((m: ChatMessage) => (
-                <View key={m.id} style={{ gap: 12 }}>
-                  <Bubble tone={m.role === 'user' ? 'bone' : 'ink'} label={`${m.role === 'user' ? 'YOU' : 'COPILOT'} · ${fmtTime(m.timeMs)}`}>
-                    <Markdown content={m.artifactIds.length ? stripStrategyFences(m.content) : m.content} tone={m.role === 'user' ? 'bone' : 'ink'} />
-                  </Bubble>
-                  {m.artifactIds.map((id) => {
-                    const a = artifactFor(id);
-                    return a ? (
-                      <Indented key={id}>
-                        <ArtifactCard artifact={a} />
+              {messages.map((m: AgentMessage) => {
+                const isUser = m.role === MessageRole.USER;
+                return (
+                  <View key={m.id} style={{ gap: 12 }}>
+                    {!isUser && m.thinking ? (
+                      <Indented>
+                        <ThinkingBlock content={m.thinking} autoExpanded={false} />
                       </Indented>
-                    ) : null;
-                  })}
-                </View>
-              ))}
+                    ) : null}
+                    <Bubble tone={isUser ? 'bone' : 'ink'} label={`${isUser ? 'YOU' : 'COPILOT'} · ${fmtTime(tsToMs(m.createdAt))}`}>
+                      <Markdown content={m.inlineArtifactIds.length ? stripStrategyFences(m.content) : m.content} tone={isUser ? 'bone' : 'ink'} />
+                    </Bubble>
+                    {m.inlineArtifactIds.map((id) => {
+                      const a = artifactFor(id);
+                      return a ? (
+                        <Indented key={id}>
+                          <ArtifactCard artifact={a} />
+                        </Indented>
+                      ) : null;
+                    })}
+                  </View>
+                );
+              })}
 
               {currentToolCall ? <ToolRow name={currentToolCall.name} status={currentToolCall.status} /> : null}
 
-              {artifactIdsForCurrent.map((id) => {
+              {pendingArtifactIdsForCurrentMessage.map((id) => {
                 const a = artifactFor(id);
                 return a ? (
                   <Indented key={`live-${id}`}>
@@ -351,6 +376,43 @@ export default function CopilotScreen() {
                   </Indented>
                 ) : null;
               })}
+
+              {!isStreaming && pendingConfirmation ? (
+                <Indented>
+                  <View style={[{ borderWidth: 2, borderColor: palette.orange[500], backgroundColor: palette.paper, padding: 11, gap: 9 }, hardShadow(palette.ink)]}>
+                    <Mono size={9} color={palette.gray[500]} style={{ fontWeight: '700', letterSpacing: 1 }}>
+                      APPROVE ACTION
+                    </Mono>
+                    <Body size={13} style={{ fontWeight: '700' }}>
+                      {humanizeTool(pendingConfirmation.toolName)}
+                    </Body>
+                    <View style={{ flexDirection: 'row', gap: 8 }}>
+                      <Pressable
+                        onPress={() => void confirmToolCall(true)}
+                        style={{ flex: 1, backgroundColor: palette.orange[500], borderWidth: 2, borderColor: palette.ink, paddingVertical: 10, alignItems: 'center' }}
+                      >
+                        <Mono size={11} style={{ fontWeight: '700' }}>APPROVE & RUN</Mono>
+                      </Pressable>
+                      <Pressable
+                        onPress={() => void confirmToolCall(false)}
+                        style={{ flex: 1, backgroundColor: palette.paper, borderWidth: 2, borderColor: palette.ink, paddingVertical: 10, alignItems: 'center' }}
+                      >
+                        <Mono size={11} style={{ fontWeight: '700' }}>DECLINE</Mono>
+                      </Pressable>
+                    </View>
+                  </View>
+                </Indented>
+              ) : null}
+
+              {isStreaming && thinkingContent ? (
+                <Indented>
+                  <ThinkingBlock
+                    content={thinkingContent}
+                    autoExpanded={streamingContent.length === 0}
+                    streaming
+                  />
+                </Indented>
+              ) : null}
 
               {isStreaming ? (
                 streamingContent ? (

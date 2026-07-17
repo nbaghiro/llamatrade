@@ -17,12 +17,14 @@ from llamatrade_proto.generated.agent_pb2 import (
     STREAM_EVENT_TYPE_COMPLETE,
     STREAM_EVENT_TYPE_CONTENT_DELTA,
     STREAM_EVENT_TYPE_ERROR,
+    STREAM_EVENT_TYPE_THINKING_DELTA,
     STREAM_EVENT_TYPE_TOOL_CALL_COMPLETE,
     STREAM_EVENT_TYPE_TOOL_CALL_START,
     STREAM_EVENT_TYPE_TOOL_CONFIRMATION_REQUIRED,
 )
 
 from src.llm import LLMClient, LLMConfig, Message, StreamEventType, ToolCall, create_llm_client
+from src.llm.thinking import THINKING, ThinkingSplitter
 from src.prompts.few_shot import get_few_shot_messages
 from src.prompts.system import ContextData, MemorySummary, build_memory_hint, build_system_prompt
 from src.tools.executor import get_executor
@@ -31,6 +33,23 @@ logger = logging.getLogger(__name__)
 
 # Maximum iterations for tool execution loop
 MAX_TOOL_ITERATIONS = 10
+
+
+def _route_text_segments(
+    segments: list[tuple[str, str]],
+) -> list[tuple[dict[str, Any], str]]:
+    """Map splitter (channel, text) segments to (stream-event, answer-text) pairs.
+
+    The second element is the text to fold into the persisted answer — empty for
+    thinking segments so reasoning never leaks into the assistant message content.
+    """
+    routed: list[tuple[dict[str, Any], str]] = []
+    for channel, text in segments:
+        if channel == THINKING:
+            routed.append(({"type": STREAM_EVENT_TYPE_THINKING_DELTA, "delta": text}, ""))
+        else:
+            routed.append(({"type": STREAM_EVENT_TYPE_CONTENT_DELTA, "delta": text}, text))
+    return routed
 
 
 class AgentService:
@@ -156,6 +175,7 @@ class AgentService:
             while iteration < MAX_TOOL_ITERATIONS:
                 iteration += 1
                 current_content = ""
+                splitter = ThinkingSplitter()
                 tool_calls_in_response: list[dict[str, Any]] = []
 
                 # Stream LLM response
@@ -165,11 +185,11 @@ class AgentService:
                     system_prompt=self._current_system_prompt,
                 ):
                     if event.type == StreamEventType.CONTENT_DELTA:
-                        current_content += event.content or ""
-                        yield {
-                            "type": STREAM_EVENT_TYPE_CONTENT_DELTA,
-                            "delta": event.content,
-                        }
+                        for stream_event, answer_text in _route_text_segments(
+                            splitter.feed(event.content or "")
+                        ):
+                            current_content += answer_text
+                            yield stream_event
 
                     elif event.type == StreamEventType.TOOL_USE_START:
                         if event.tool_call:
@@ -194,6 +214,11 @@ class AgentService:
                             "error": event.error,
                         }
                         return
+
+                # Emit any text held back for a partial tag at stream end.
+                for stream_event, answer_text in _route_text_segments(splitter.flush()):
+                    current_content += answer_text
+                    yield stream_event
 
                 full_response += current_content
 
@@ -378,19 +403,21 @@ class AgentService:
             )
             messages = self._build_llm_messages(resume_prompt, history or [], context_data)
 
+            splitter = ThinkingSplitter()
             async for event in self.llm_client.stream(
                 messages=messages,
                 tools=None,
                 system_prompt=self._current_system_prompt,
             ):
                 if event.type == StreamEventType.CONTENT_DELTA:
-                    yield {
-                        "type": STREAM_EVENT_TYPE_CONTENT_DELTA,
-                        "delta": event.content,
-                    }
+                    for stream_event, _ in _route_text_segments(splitter.feed(event.content or "")):
+                        yield stream_event
                 elif event.type == StreamEventType.ERROR:
                     yield {"type": STREAM_EVENT_TYPE_ERROR, "error": event.error}
                     return
+
+            for stream_event, _ in _route_text_segments(splitter.flush()):
+                yield stream_event
 
             yield {"type": STREAM_EVENT_TYPE_COMPLETE, "session_id": str(session_id)}
 

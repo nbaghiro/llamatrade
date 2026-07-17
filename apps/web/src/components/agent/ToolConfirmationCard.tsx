@@ -1,9 +1,9 @@
 /** Inline approval card for a write action the agent has proposed (draft + confirm). */
 
+import { useAgentStore } from '@llamatrade/core/stores/agent';
 import { Check, Play, X } from 'lucide-react';
 import { useMemo } from 'react';
 
-import { useAgentStore } from '../../store/agent';
 
 /** Human labels for confirmation-gated tools; falls back to the de-underscored name. */
 const TOOL_LABELS: Record<string, string> = {

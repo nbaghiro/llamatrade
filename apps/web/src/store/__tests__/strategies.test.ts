@@ -1,3 +1,4 @@
+/* eslint-disable import/order -- vi.mock must be hoisted above the mocked-module imports */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { getStrategy, listStrategies, listStrategyPerformance } = vi.hoisted(() => ({

@@ -49,6 +49,7 @@ markers = [
     "workflow: multi-service tests",
     "gateway: Kong gateway configuration tests",
     "billing: billing and subscription tests",
+    "e2e: runs against a live mesh (needs the running stack + backtest worker + seeded demo; auto-skips when unreachable)",
 ]
 filterwarnings = [
     "ignore::DeprecationWarning:testcontainers.*:",
@@ -137,6 +138,7 @@ include = [
     "libs/events",
     "libs/proto",
     "libs/telemetry",
+    "scripts",
 ]
 # Exclude generated code, tests, and proto client/server wrappers (gRPC types)
 exclude = [

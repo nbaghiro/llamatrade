@@ -4,4 +4,5 @@ export { CopilotConversation } from './CopilotConversation';
 export { ChatMessage } from './ChatMessage';
 export { PendingArtifactCard } from './PendingArtifactCard';
 export { StreamingIndicator } from './StreamingIndicator';
+export { ThinkingBlock } from './ThinkingBlock';
 export { ToolCallIndicator } from './ToolCallIndicator';

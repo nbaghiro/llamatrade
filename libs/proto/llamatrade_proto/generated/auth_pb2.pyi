@@ -830,3 +830,52 @@ class DeleteAlpacaCredentialsResponse(message.Message):
     ) -> None: ...
     _ClearFieldArgType: _TypeAlias = typing.Literal["success", b"success"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+
+@typing.final
+class ValidateAlpacaCredentialsRequest(message.Message):
+    """Validate Alpaca credentials against the broker (no persistence)"""
+
+    DESCRIPTOR: descriptor.Descriptor
+
+    API_KEY_FIELD_NUMBER: builtins.int
+    API_SECRET_FIELD_NUMBER: builtins.int
+    IS_PAPER_FIELD_NUMBER: builtins.int
+    api_key: builtins.str
+    api_secret: builtins.str
+    is_paper: builtins.bool
+    """tenant_id extracted from auth token"""
+    def __init__(
+        self,
+        *,
+        api_key: builtins.str = ...,
+        api_secret: builtins.str = ...,
+        is_paper: builtins.bool = ...,
+    ) -> None: ...
+    _ClearFieldArgType: _TypeAlias = typing.Literal["api_key", b"api_key", "api_secret", b"api_secret", "is_paper", b"is_paper"]  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+
+@typing.final
+class ValidateAlpacaCredentialsResponse(message.Message):
+    DESCRIPTOR: descriptor.Descriptor
+
+    VALID_FIELD_NUMBER: builtins.int
+    ACCOUNT_STATUS_FIELD_NUMBER: builtins.int
+    BUYING_POWER_FIELD_NUMBER: builtins.int
+    MESSAGE_FIELD_NUMBER: builtins.int
+    valid: builtins.bool
+    account_status: builtins.str
+    """e.g. "ACTIVE" when valid"""
+    buying_power: builtins.str
+    """decimal string, informational"""
+    message: builtins.str
+    """reason when not valid"""
+    def __init__(
+        self,
+        *,
+        valid: builtins.bool = ...,
+        account_status: builtins.str = ...,
+        buying_power: builtins.str = ...,
+        message: builtins.str = ...,
+    ) -> None: ...
+    _ClearFieldArgType: _TypeAlias = typing.Literal["account_status", b"account_status", "buying_power", b"buying_power", "message", b"message", "valid", b"valid"]  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...

@@ -1,12 +1,13 @@
 /** Copilot chat turn: ink user bubble / paper assistant bubble, tool rows, inline artifacts. */
 
+import { AgentMessage, MessageRole, type PendingArtifact } from '@llamatrade/core/stores/agent';
 import { Sparkles } from 'lucide-react';
 import { useMemo } from 'react';
 
-import { AgentMessage, MessageRole, type PendingArtifact } from '../../store/agent';
 import { useAuthStore } from '../../store/auth';
 
 import { PendingArtifactCard } from './PendingArtifactCard';
+import { ThinkingBlock } from './ThinkingBlock';
 import { ToolCallIndicator } from './ToolCallIndicator';
 
 interface ChatMessageProps {
@@ -56,6 +57,10 @@ export function ChatMessage({ message, artifacts }: ChatMessageProps) {
 
       <div className={`flex min-w-0 max-w-[80%] flex-col gap-2.5 ${isUser ? 'items-end' : 'items-start'}`}>
         <span className="font-mono text-[9.5px] font-bold uppercase tracking-[0.1em] text-ink/45">{label}</span>
+
+        {!isUser && message.thinking && (
+          <ThinkingBlock content={message.thinking} autoExpanded={false} />
+        )}
 
         <div
           className={`min-w-0 max-w-full border-2 px-4 py-3 text-sm leading-relaxed ${

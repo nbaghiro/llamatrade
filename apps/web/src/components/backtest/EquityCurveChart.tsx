@@ -6,8 +6,8 @@
 
 import { useMemo, useState } from 'react';
 
-import type { BacktestMetrics, EquityPoint } from '../../generated/proto/backtest_pb';
-import { toNumber } from '../../store/backtest';
+import type { BacktestMetrics, EquityPoint } from '@llamatrade/core/proto/backtest_pb';
+import { toNumber } from '@llamatrade/core/stores/backtest';
 
 interface EquityCurveChartProps {
   data: EquityPoint[];

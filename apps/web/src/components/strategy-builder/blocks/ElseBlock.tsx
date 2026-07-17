@@ -1,7 +1,7 @@
 import { ChevronDown, X } from 'lucide-react';
 
 import { useStrategyBuilderStoreWithContext } from '../../../store/strategy-builder';
-import type { ElseBlock as ElseBlockType } from '../../../types/strategy-builder';
+import type { ElseBlock as ElseBlockType } from '@llamatrade/core/strategy/types';
 import { useBlockTheme } from '../useTheme';
 
 interface ElseBlockProps {

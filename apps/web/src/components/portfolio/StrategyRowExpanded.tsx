@@ -2,7 +2,7 @@
  * Open-positions detail shown when a strategy row is expanded.
  */
 
-import type { Position } from '../../store/portfolio';
+import type { Position } from '@llamatrade/core/stores/portfolio';
 
 import { STRAT_GRID_COLS } from './StrategyRow';
 

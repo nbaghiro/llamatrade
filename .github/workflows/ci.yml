@@ -5,6 +5,7 @@ on:
     branches: [main, develop]
   pull_request:
     branches: [main]
+  workflow_dispatch: {}
 
 env:
   PYTHON_VERSION: "3.14"
@@ -38,10 +39,10 @@ jobs:
       - name: Run ruff (lint)
         # --ignore-noqa: a stray # noqa must NOT suppress the underlying error in
         # CI. Fix the root cause instead. Matches Makefile / pre-commit / ci-local.
-        run: ruff check --config=pyproject.toml --ignore-noqa services/ libs/ tests/
+        run: ruff check --config=pyproject.toml --ignore-noqa services/ libs/ tests/ scripts/
 
       - name: Run ruff (format check)
-        run: ruff format --check --config=pyproject.toml services/ libs/ tests/
+        run: ruff format --check --config=pyproject.toml services/ libs/ tests/ scripts/
 
       - name: Install dependencies for type checking
         run: |
@@ -174,6 +175,158 @@ jobs:
           pip install -e libs/alpaca
           pip install -e services/trading[dev]
           cd services/trading && pytest tests -v --cov=src --cov-report=term-missing --cov-fail-under=80
+
+  test-e2e:
+    name: E2E (live mesh, simulated)
+    runs-on: ubuntu-latest
+    needs: lint-python
+    # Opt-in gate: push-to-main + manual dispatch only, NOT every PR. A live-mesh
+    # job is heavier and more exposed to seed/timing flake than the unit suites,
+    # so we prove it's reliably green before it can block a PR. To promote later:
+    # add `pull_request` coverage (drop the `if`) and/or add `test-e2e` to the
+    # `build` job's `needs:` so images don't ship on a red e2e.
+    if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: llamatrade
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      timescale:
+        # Same tag the project's compose uses; ships the timescaledb extension the
+        # market-data init SQL enables (CREATE EXTENSION IF NOT EXISTS timescaledb).
+        image: timescale/timescaledb:2.17.2-pg16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: market_data
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      # Standard container ports (the local split stack uses 5442/6389/5443; CI
+      # uses defaults). The harness freezes REDIS_URL at import and the honcho
+      # mesh inherits this whole block, so seed + services + harness all agree.
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/llamatrade
+      REDIS_URL: redis://localhost:6379
+      MARKET_DATA_DB_URL: postgresql+asyncpg://postgres:postgres@localhost:5433/market_data
+      JWT_SECRET: e2e-ci-secret
+      # Must be identical for seed (encrypts the demo paper credential) and the
+      # trading service (decrypts it). Plain string — not a Fernet key.
+      ENCRYPTION_KEY: dev-encryption-key-change-me
+      # Simulated e2e never calls Alpaca (fills are injected), so placeholders
+      # suffice; --live-alpaca is intentionally not run in CI.
+      ALPACA_API_KEY: e2e-placeholder-key
+      ALPACA_API_SECRET: e2e-placeholder-secret
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install libs + services into .venv
+        # Mirrors the lint-python install (dependency order matters: local
+        # packages aren't on PyPI). Only the services the two legs touch are
+        # installed — agent/notification/billing are not exercised. honcho runs
+        # the mesh; the Procfile hardcodes .venv/bin/uvicorn, so a .venv is
+        # required. Committed Python protos come from the checkout (no proto gen).
+        run: |
+          python -m venv .venv
+          .venv/bin/pip install --upgrade pip
+          .venv/bin/pip install -e libs/telemetry
+          .venv/bin/pip install -e libs/proto
+          .venv/bin/pip install -e libs/dsl
+          .venv/bin/pip install -e libs/common
+          .venv/bin/pip install -e libs/db
+          .venv/bin/pip install -e libs/compiler
+          .venv/bin/pip install -e libs/alpaca
+          .venv/bin/pip install -e libs/events
+          .venv/bin/pip install -e services/auth
+          .venv/bin/pip install -e services/strategy
+          .venv/bin/pip install -e services/backtest[dev]
+          .venv/bin/pip install -e services/market-data
+          .venv/bin/pip install -e services/portfolio
+          .venv/bin/pip install -e services/trading
+          .venv/bin/pip install honcho pytest pytest-asyncio pytest-cov
+
+      - name: Migrate Postgres (ledger + service tables)
+        # alembic env.py reads DATABASE_URL from the environment (job env above).
+        run: |
+          cd libs/db/llamatrade_db/alembic
+          ../../../../.venv/bin/alembic upgrade head
+
+      - name: Migrate Timescale (market-data bars_daily hypertable)
+        # run_migrations() builds its engine from MARKET_DATA_DB_URL via the store
+        # config; the seed writes bars into this table, so it must exist first.
+        run: |
+          cd services/market-data
+          ../../.venv/bin/python -m src.store.migrate
+
+      - name: Seed demo account (direct-DB, no mesh required)
+        # The seed writes through LedgerWriter over its own async engine — it does
+        # NOT go through the Connect mesh. It imports services/portfolio/src.
+        run: |
+          PYTHONPATH=services/portfolio .venv/bin/python scripts/seed_demo_account.py
+
+      - name: Boot mesh + worker and run the e2e suite
+        # One step: backgrounded processes die when a step ends, so boot + gate +
+        # test must share a step. The health gate FAILS (not skips) if the mesh
+        # never comes up, so a boot failure can't masquerade as a green run.
+        run: |
+          set -e
+          .venv/bin/honcho start -f Procfile.dev \
+            auth strategy backtest trading portfolio market-data \
+            > /tmp/mesh.log 2>&1 &
+          ( cd services/backtest && PYTHONPATH="$PWD" ../../.venv/bin/celery \
+              -A src.celery_app:celery_app worker --queues backtest \
+              --loglevel warning --concurrency 2 > /tmp/worker.log 2>&1 & )
+
+          echo "Waiting for the mesh to become healthy…"
+          up=""
+          for _ in $(seq 1 60); do
+            ok=1
+            for p in 8810 8820 8830 8840 8850 8860; do
+              curl -sf "http://localhost:$p/health" >/dev/null 2>&1 || ok=0
+            done
+            if [ "$ok" = 1 ]; then up=1; break; fi
+            sleep 2
+          done
+          if [ -z "$up" ]; then
+            echo "::error::mesh did not become healthy within 120s"
+            tail -80 /tmp/mesh.log || true
+            exit 1
+          fi
+          echo "Mesh healthy — running tests/e2e"
+          .venv/bin/pytest tests/e2e -o addopts="" -p no:cacheprovider -v
+
+      - name: Dump service logs on failure
+        if: failure()
+        run: |
+          echo "===== mesh.log ====="; tail -150 /tmp/mesh.log 2>/dev/null || true
+          echo "===== worker.log ====="; tail -150 /tmp/worker.log 2>/dev/null || true
 
   lint-frontend:
     name: Lint & Type Check Frontend

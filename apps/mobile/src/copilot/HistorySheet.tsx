@@ -3,7 +3,7 @@ import { Plus, X } from 'lucide-react-native';
 import { Modal, Pressable, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { AgentSessionStatus, type AgentSession, useAgentStore } from '../stores/agent';
+import { AgentSessionStatus, type AgentSession, useAgentStore } from '@llamatrade/core/stores/agent';
 import { fonts, palette } from '../theme';
 import { Body, Display, Label, Mono } from '../ui';
 

@@ -24,7 +24,7 @@ export default function QuickActions() {
       primary: true,
     },
     { title: 'Run Backtest', detail: 'Test against history', icon: Play, onClick: () => navigate('/backtest') },
-    { title: 'Templates', detail: 'Proven starting points', icon: LayoutGrid, onClick: openNewStrategyDialog },
+    { title: 'Templates', detail: 'Proven starting points', icon: LayoutGrid, onClick: () => navigate('/strategies/templates') },
   ];
 
   return (

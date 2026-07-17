@@ -6,13 +6,13 @@ import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom';
 import NewStrategyDialog from '../../components/strategies/NewStrategyDialog';
 import StrategyPreviewDialog from '../../components/strategies/StrategyPreviewDialog';
 import { useAuthStore } from '../../store/auth';
-import { useBillingStore } from '../../store/billing';
+import { useBillingStore } from '@llamatrade/core/stores/billing';
 import { useUIStore } from '../../store/ui';
 import { AgentFAB } from '../agent/AgentFAB';
 import { CopilotSidePanel } from '../agent/CopilotSidePanel';
 
 import { Avatar } from './Avatar';
-import Logo from './Logo';
+import { Logo } from './Logo';
 
 const navItems = [
   { to: '/portfolio', icon: PieChart, label: 'Portfolio' },

@@ -4,9 +4,9 @@
 
 import { Check } from 'lucide-react';
 
-import type { Plan } from '../../generated/proto/billing_pb';
-import { PlanTier } from '../../generated/proto/billing_pb';
-import type { Money } from '../../generated/proto/common_pb';
+import type { Plan } from '@llamatrade/core/proto/billing_pb';
+import { PlanTier } from '@llamatrade/core/proto/billing_pb';
+import type { Money } from '@llamatrade/core/proto/common_pb';
 
 type BillingCycle = 'monthly' | 'yearly';
 

@@ -21,10 +21,10 @@ repos:
       # pre-commit passes explicit filenames — no per-hook exclude needed.
       - id: ruff
         args: [--fix, --ignore-noqa, --config=pyproject.toml]
-        files: ^(services|libs|tests)/
+        files: ^(services|libs|tests|scripts)/
       - id: ruff-format
         args: [--config=pyproject.toml]
-        files: ^(services|libs|tests)/
+        files: ^(services|libs|tests|scripts)/
 
   # Python type checking with Pyright (uses config from pyproject.toml)
   - repo: local
@@ -33,7 +33,7 @@ repos:
         name: pyright
         entry: npx pyright
         language: system
-        files: ^(services|libs)/.*\.py$
+        files: ^(services|libs|scripts)/.*\.py$
         pass_filenames: false
 
   # Strategy service: run its test suite, which enforces the >=80% coverage gate

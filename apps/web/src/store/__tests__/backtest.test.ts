@@ -1,23 +1,19 @@
+/* eslint-disable import/order -- vi.mock must be hoisted above the mocked-module imports */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-
-// eslint-disable-next-line import/order -- resolver misclassifies the gitignored generated/ path
-import { BacktestStatus } from '../../generated/proto/backtest_pb';
 
 const { listBacktests, getBacktest } = vi.hoisted(() => ({
   listBacktests: vi.fn(),
   getBacktest: vi.fn(),
 }));
 
-vi.mock('../../services/grpc-client', () => ({
+vi.mock('@llamatrade/core/net', () => ({
   backtestClient: { listBacktests, getBacktest },
   strategyClient: {},
-}));
-
-vi.mock('../auth', () => ({
   getTenantContext: () => ({ tenantId: 't1', userId: 'u1' }),
 }));
 
-import { useBacktestStore } from '../backtest';
+import { BacktestStatus } from '@llamatrade/core/proto/backtest_pb';
+import { useBacktestStore } from '@llamatrade/core/stores/backtest';
 
 type Run = NonNullable<ReturnType<typeof useBacktestStore.getState>['currentBacktest']>;
 

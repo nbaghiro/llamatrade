@@ -42,10 +42,16 @@ def rpc_context() -> MockRequestContext:
 
 @pytest.fixture
 def backtest_servicer():
-    """Create a backtest servicer instance."""
+    """Create a backtest servicer instance.
+
+    ``_session_maker`` is stubbed so ``_maker()`` returns it without building a
+    real engine; the DB session itself comes from the patched ``tenant_session``.
+    """
     from src.grpc.servicer import BacktestServicer
 
-    return BacktestServicer()
+    servicer = BacktestServicer()
+    servicer._session_maker = MagicMock()
+    return servicer
 
 
 def make_mock_backtest(
@@ -142,7 +148,7 @@ class TestRunBacktest:
 
         mock_db = MagicMock()
 
-        with patch.object(backtest_servicer, "_get_db", new=create_mock_get_db(mock_db)):
+        with patch("src.grpc.servicer.tenant_session", create_mock_get_db(mock_db)):
             with patch(
                 "src.grpc.servicer.BacktestService",
                 new=create_mock_service_class(mock_service),
@@ -183,7 +189,7 @@ class TestRunBacktest:
 
         mock_db = MagicMock()
 
-        with patch.object(backtest_servicer, "_get_db", new=create_mock_get_db(mock_db)):
+        with patch("src.grpc.servicer.tenant_session", create_mock_get_db(mock_db)):
             with patch(
                 "src.grpc.servicer.BacktestService",
                 new=create_mock_service_class(mock_service),
@@ -259,7 +265,7 @@ class TestRunBacktest:
         mock_service = MagicMock()
         mock_service.create_backtest = AsyncMock(side_effect=ValueError("Invalid strategy"))
 
-        with patch.object(backtest_servicer, "_get_db", new=create_mock_get_db(mock_db)):
+        with patch("src.grpc.servicer.tenant_session", create_mock_get_db(mock_db)):
             with patch(
                 "src.grpc.servicer.BacktestService",
                 new=create_mock_service_class(mock_service),
@@ -297,7 +303,7 @@ class TestGetBacktest:
 
         mock_db = MagicMock()
 
-        with patch.object(backtest_servicer, "_get_db", new=create_mock_get_db(mock_db)):
+        with patch("src.grpc.servicer.tenant_session", create_mock_get_db(mock_db)):
             with patch(
                 "src.grpc.servicer.BacktestService",
                 new=create_mock_service_class(mock_service),
@@ -324,7 +330,7 @@ class TestGetBacktest:
 
         mock_db = MagicMock()
 
-        with patch.object(backtest_servicer, "_get_db", new=create_mock_get_db(mock_db)):
+        with patch("src.grpc.servicer.tenant_session", create_mock_get_db(mock_db)):
             with patch(
                 "src.grpc.servicer.BacktestService",
                 new=create_mock_service_class(mock_service),
@@ -355,7 +361,7 @@ class TestListBacktests:
 
         mock_db = MagicMock()
 
-        with patch.object(backtest_servicer, "_get_db", new=create_mock_get_db(mock_db)):
+        with patch("src.grpc.servicer.tenant_session", create_mock_get_db(mock_db)):
             with patch(
                 "src.grpc.servicer.BacktestService",
                 new=create_mock_service_class(mock_service),
@@ -386,7 +392,7 @@ class TestListBacktests:
 
         mock_db = MagicMock()
 
-        with patch.object(backtest_servicer, "_get_db", new=create_mock_get_db(mock_db)):
+        with patch("src.grpc.servicer.tenant_session", create_mock_get_db(mock_db)):
             with patch(
                 "src.grpc.servicer.BacktestService",
                 new=create_mock_service_class(mock_service),
@@ -414,7 +420,7 @@ class TestListBacktests:
 
         mock_db = MagicMock()
 
-        with patch.object(backtest_servicer, "_get_db", new=create_mock_get_db(mock_db)):
+        with patch("src.grpc.servicer.tenant_session", create_mock_get_db(mock_db)):
             with patch(
                 "src.grpc.servicer.BacktestService",
                 new=create_mock_service_class(mock_service),
@@ -444,7 +450,7 @@ class TestListBacktests:
 
         mock_db = MagicMock()
 
-        with patch.object(backtest_servicer, "_get_db", new=create_mock_get_db(mock_db)):
+        with patch("src.grpc.servicer.tenant_session", create_mock_get_db(mock_db)):
             with patch(
                 "src.grpc.servicer.BacktestService",
                 new=create_mock_service_class(mock_service),
@@ -478,7 +484,7 @@ class TestCancelBacktest:
 
         mock_db = MagicMock()
 
-        with patch.object(backtest_servicer, "_get_db", new=create_mock_get_db(mock_db)):
+        with patch("src.grpc.servicer.tenant_session", create_mock_get_db(mock_db)):
             with patch(
                 "src.grpc.servicer.BacktestService",
                 new=create_mock_service_class(mock_service),
@@ -505,7 +511,7 @@ class TestCancelBacktest:
 
         mock_db = MagicMock()
 
-        with patch.object(backtest_servicer, "_get_db", new=create_mock_get_db(mock_db)):
+        with patch("src.grpc.servicer.tenant_session", create_mock_get_db(mock_db)):
             with patch(
                 "src.grpc.servicer.BacktestService",
                 new=create_mock_service_class(mock_service),
@@ -544,7 +550,7 @@ class TestCompareBacktests:
 
         mock_db = MagicMock()
 
-        with patch.object(backtest_servicer, "_get_db", new=create_mock_get_db(mock_db)):
+        with patch("src.grpc.servicer.tenant_session", create_mock_get_db(mock_db)):
             with patch(
                 "src.grpc.servicer.BacktestService",
                 new=create_mock_service_class(mock_service),
@@ -576,7 +582,7 @@ class TestCompareBacktests:
 
         mock_db = MagicMock()
 
-        with patch.object(backtest_servicer, "_get_db", new=create_mock_get_db(mock_db)):
+        with patch("src.grpc.servicer.tenant_session", create_mock_get_db(mock_db)):
             with patch(
                 "src.grpc.servicer.BacktestService",
                 new=create_mock_service_class(mock_service),
@@ -607,7 +613,7 @@ class TestStreamBacktestProgress:
 
         mock_db = MagicMock()
 
-        with patch.object(backtest_servicer, "_get_db", new=create_mock_get_db(mock_db)):
+        with patch("src.grpc.servicer.tenant_session", create_mock_get_db(mock_db)):
             with patch(
                 "src.grpc.servicer.BacktestService",
                 new=create_mock_service_class(mock_service),
@@ -637,7 +643,7 @@ class TestStreamBacktestProgress:
 
         mock_db = MagicMock()
 
-        with patch.object(backtest_servicer, "_get_db", new=create_mock_get_db(mock_db)):
+        with patch("src.grpc.servicer.tenant_session", create_mock_get_db(mock_db)):
             with patch(
                 "src.grpc.servicer.BacktestService",
                 new=create_mock_service_class(mock_service),
@@ -687,7 +693,7 @@ class TestGetBacktestTrades:
         mock_service.get_backtest_trades = AsyncMock(return_value=([trade], 25))
         mock_db = MagicMock()
 
-        with patch.object(backtest_servicer, "_get_db", new=create_mock_get_db(mock_db)):
+        with patch("src.grpc.servicer.tenant_session", create_mock_get_db(mock_db)):
             with patch(
                 "src.grpc.servicer.BacktestService",
                 new=create_mock_service_class(mock_service),

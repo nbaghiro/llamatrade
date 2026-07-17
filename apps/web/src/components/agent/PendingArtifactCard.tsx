@@ -1,69 +1,17 @@
 /** Inline strategy artifact card: dark-terminal DSL + open/backtest/save actions. */
 
+import { buildMeta, formatDSL, parsePreview } from '@llamatrade/core/agent/artifact';
+import { ArtifactType, PendingArtifact, useAgentStore } from '@llamatrade/core/stores/agent';
 import { AlertTriangle, Check, FlaskConical, LayoutGrid, Loader2, Play, Sparkles } from 'lucide-react';
 import { lazy, Suspense, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
-import { ArtifactType, PendingArtifact, useAgentStore } from '../../store/agent';
 
 // Lazy so the shared viewer stays in one chunk (the drawer lazy-loads it too).
 const DslCodeBlock = lazy(() => import('../strategies/DslCodeBlock'));
 
-interface StrategyPreview {
-  name?: string;
-  description?: string;
-  dsl_code?: string;
-  symbols?: string[];
-  timeframe?: string;
-}
-
 interface PendingArtifactCardProps {
   artifact: PendingArtifact;
-}
-
-/**
- * Pretty-print DSL from scratch, since the agent stores the LLM's raw (often
- * inconsistently indented) text. Each nested list starts on its own line at its
- * paren depth; the list head and its inline atoms/`:params` stay on that line.
- * Depth tracks every paren (open + close), so indentation can't drift.
- */
-function formatDSL(code: string): string {
-  const tokens = code.match(/"(?:[^"\\]|\\.)*"|;[^\n]*|[()]|[^\s()]+/g);
-  if (!tokens) return code.trim();
-
-  let out = '';
-  let depth = 0;
-  let prevWasOpen = false;
-
-  for (const tok of tokens) {
-    if (tok === '(') {
-      if (out !== '') out += '\n' + '  '.repeat(depth);
-      out += '(';
-      depth++;
-      prevWasOpen = true;
-    } else if (tok === ')') {
-      depth = Math.max(0, depth - 1);
-      out += ')';
-      prevWasOpen = false;
-    } else {
-      out += prevWasOpen ? tok : ` ${tok}`;
-      prevWasOpen = false;
-    }
-  }
-  return out.trim();
-}
-
-/** Build the "REBALANCE MONTHLY · BENCHMARK SPY · N ASSETS" meta line from real data. */
-function buildMeta(dsl: string, preview: StrategyPreview | null): string {
-  const parts: string[] = [];
-  const rebalance = dsl.match(/:rebalance\s+([A-Za-z-]+)/)?.[1];
-  const benchmark = dsl.match(/:benchmark\s+([A-Za-z0-9]+)/)?.[1];
-  if (rebalance) parts.push(`rebalance ${rebalance}`);
-  if (benchmark) parts.push(`benchmark ${benchmark}`);
-  const assetCount = (dsl.match(/\(asset\b/g) || []).length || preview?.symbols?.length || 0;
-  if (assetCount > 0) parts.push(`${assetCount} assets`);
-  if (parts.length === 0 && preview?.timeframe) parts.push(preview.timeframe);
-  return parts.join(' · ');
 }
 
 export function PendingArtifactCard({ artifact }: PendingArtifactCardProps) {
@@ -73,13 +21,7 @@ export function PendingArtifactCard({ artifact }: PendingArtifactCardProps) {
   const [saving, setSaving] = useState(false);
   const [failed, setFailed] = useState(false);
 
-  const preview = useMemo<StrategyPreview | null>(() => {
-    try {
-      return JSON.parse(artifact.previewJson) as StrategyPreview;
-    } catch {
-      return null;
-    }
-  }, [artifact.previewJson]);
+  const preview = useMemo(() => parsePreview(artifact), [artifact.previewJson]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const formattedDSL = useMemo(() => (preview?.dsl_code ? formatDSL(preview.dsl_code) : ''), [preview?.dsl_code]);
   const meta = useMemo(() => buildMeta(formattedDSL, preview), [formattedDSL, preview]);

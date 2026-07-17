@@ -18,3 +18,6 @@ export const serviceUrls: ServiceUrls = {
   strategy: e.EXPO_PUBLIC_STRATEGY_URL ?? LOCAL_SERVICE_URLS.strategy,
   trading: e.EXPO_PUBLIC_TRADING_URL ?? LOCAL_SERVICE_URLS.trading,
 };
+
+/** Web app origin — paid plan changes / checkout are handled there (App Store IAP rules). */
+export const webAppUrl = e.EXPO_PUBLIC_WEB_URL ?? 'https://app.llamatrade.ai';

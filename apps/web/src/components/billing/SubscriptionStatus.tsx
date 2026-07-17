@@ -4,9 +4,9 @@
 
 import { AlertTriangle, Calendar, Clock, RefreshCw } from 'lucide-react';
 
-import type { Subscription } from '../../generated/proto/billing_pb';
-import { BillingInterval, SubscriptionStatus as SubStatus } from '../../generated/proto/billing_pb';
-import type { Timestamp } from '../../generated/proto/common_pb';
+import type { Subscription } from '@llamatrade/core/proto/billing_pb';
+import { BillingInterval, SubscriptionStatus as SubStatus } from '@llamatrade/core/proto/billing_pb';
+import type { Timestamp } from '@llamatrade/core/proto/common_pb';
 
 interface SubscriptionStatusProps {
   subscription: Subscription;

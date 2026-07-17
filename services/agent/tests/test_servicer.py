@@ -20,6 +20,7 @@ from llamatrade_proto.generated.agent_pb2 import (
     STREAM_EVENT_TYPE_COMPLETE,
     STREAM_EVENT_TYPE_CONTENT_DELTA,
     STREAM_EVENT_TYPE_ERROR,
+    STREAM_EVENT_TYPE_THINKING_DELTA,
 )
 
 from src.grpc.servicer import (
@@ -397,6 +398,66 @@ class TestStreamMessage:
         # The stream surfaced the artifact and completed.
         assert any(e.event_type == STREAM_EVENT_TYPE_ARTIFACT_CREATED for e in events)
         assert any(e.event_type == STREAM_EVENT_TYPE_COMPLETE for e in events)
+
+    @pytest.mark.asyncio
+    async def test_stream_message_relays_and_persists_thinking(
+        self,
+        mock_request_context: MagicMock,
+        tenant_id: UUID,
+        user_id: UUID,
+    ) -> None:
+        """Thinking deltas relay as THINKING_DELTA events and persist on the message,
+        while the assistant content stays free of the reasoning text."""
+        servicer = AgentServicer()
+        session_uuid = uuid4()
+
+        mock_conv = MagicMock()
+        mock_conv.get_session = AsyncMock(return_value=make_mock_session(session_id=session_uuid))
+        mock_conv.get_recent_messages = AsyncMock(return_value=[])
+        mock_conv.add_message = AsyncMock(return_value=make_mock_message())
+
+        async def fake_stream(**kwargs: object):
+            yield {"type": STREAM_EVENT_TYPE_THINKING_DELTA, "delta": "Checking the "}
+            yield {"type": STREAM_EVENT_TYPE_THINKING_DELTA, "delta": "drawdown tradeoff."}
+            yield {"type": STREAM_EVENT_TYPE_CONTENT_DELTA, "delta": "Here is the answer."}
+            yield {"type": STREAM_EVENT_TYPE_COMPLETE, "session_id": str(session_uuid)}
+
+        mock_agent = MagicMock()
+        mock_agent.stream_message = fake_stream
+
+        request = agent_pb2.SendMessageRequest(
+            context=common_pb2.TenantContext(
+                tenant_id=str(tenant_id),
+                user_id=str(user_id),
+            ),
+            session_id=str(session_uuid),
+            content="Should I rebalance weekly?",
+        )
+
+        with (
+            patch.object(servicer, "_maker", return_value=MagicMock()),
+            patch("src.grpc.servicer.tenant_session", return_value=make_mock_db_session()),
+            patch(
+                "src.services.conversation_service.ConversationService",
+                return_value=mock_conv,
+            ),
+            patch("src.services.agent_service.AgentService", return_value=mock_agent),
+        ):
+            events = [e async for e in servicer.stream_message(request, mock_request_context)]
+
+        # A THINKING_DELTA proto event carrying the reasoning text was surfaced.
+        thinking_events = [
+            e for e in events if e.event_type == STREAM_EVENT_TYPE_THINKING_DELTA
+        ]
+        assert thinking_events
+        assert "".join(e.thinking_delta for e in thinking_events) == (
+            "Checking the drawdown tradeoff."
+        )
+
+        # The assistant message persists the thinking, and content excludes it.
+        assistant_call = mock_conv.add_message.await_args_list[1].kwargs
+        assert assistant_call["thinking"] == "Checking the drawdown tradeoff."
+        assert assistant_call["content"] == "Here is the answer."
 
     @pytest.mark.asyncio
     async def test_stream_message_degrades_when_history_load_fails(

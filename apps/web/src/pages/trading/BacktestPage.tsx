@@ -16,8 +16,8 @@ import MetricsPanel from '../../components/backtest/MetricsPanel';
 import MonthlyReturnsGrid from '../../components/backtest/MonthlyReturnsGrid';
 import RecentRunsPanel from '../../components/backtest/RecentRunsPanel';
 import TradesTable from '../../components/backtest/TradesTable';
-import { BacktestStatus, type BacktestRun } from '../../generated/proto/backtest_pb';
-import { toDate, toNumber, useBacktestStore, type BacktestConfig } from '../../store/backtest';
+import { BacktestStatus, type BacktestRun } from '@llamatrade/core/proto/backtest_pb';
+import { toDate, toNumber, useBacktestStore, type BacktestConfig } from '@llamatrade/core/stores/backtest';
 
 function isoDate(run: BacktestRun, field: 'startDate' | 'endDate'): string {
   const ts = run.config?.[field];

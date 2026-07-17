@@ -13,9 +13,9 @@ import {
 } from '../../components/strategies/strategyRow';
 import { StrategyTable } from '../../components/strategies/StrategyTable';
 import { StrategyTreePreview } from '../../components/strategies/StrategyTreePreview';
-import type { BacktestRun } from '../../generated/proto/backtest_pb';
-import { StrategyStatus } from '../../generated/proto/strategy_pb';
-import { toDate, toNumber, useBacktestStore } from '../../store/backtest';
+import type { BacktestRun } from '@llamatrade/core/proto/backtest_pb';
+import { StrategyStatus } from '@llamatrade/core/proto/strategy_pb';
+import { toDate, toNumber, useBacktestStore } from '@llamatrade/core/stores/backtest';
 import { type SortColumn, useStrategiesStore } from '@llamatrade/core/stores/strategies';
 import { useUIStore } from '../../store/ui';
 

@@ -1,4 +1,4 @@
-import { useDashboardStore } from '../../store/dashboard';
+import { useDashboardStore } from '@llamatrade/core/stores/dashboard';
 
 import { colorForSign, fmtCurrency, fmtSignedCurrency, fmtSignedPercent } from './format';
 

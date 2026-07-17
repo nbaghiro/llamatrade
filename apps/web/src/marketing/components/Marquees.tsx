@@ -1,4 +1,4 @@
-import { Marquee } from '../../components/ui';
+import { Marquee } from '../../components/common/Marquee';
 import { Fragment } from 'react';
 
 /**

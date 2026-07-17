@@ -6,20 +6,16 @@ FROM node:20-alpine AS builder
 
 WORKDIR /app
 
-# Copy package files for workspace setup. The web app depends on the shared
-# @llamatrade/ui workspace package, so its manifest must be present for a
-# workspace-aware `npm ci` to link it.
+# Copy package files for a workspace-aware install (root lockfile + web manifest).
 COPY package.json package-lock.json ./
 COPY apps/web/package.json ./apps/web/
-COPY packages/ui/package.json ./packages/ui/
 
 # Install all dependencies (workspaces)
 RUN npm ci
 
-# Copy web app source (includes pre-generated proto files) + the shared UI
-# package source (@llamatrade/ui ships source, no build step).
+# Copy web app source (includes pre-generated proto files + the Monolith design
+# system, now under src/components/src/styles).
 COPY apps/web ./apps/web
-COPY packages/ui ./packages/ui
 
 # Build the app
 RUN npm run build --workspace=apps/web

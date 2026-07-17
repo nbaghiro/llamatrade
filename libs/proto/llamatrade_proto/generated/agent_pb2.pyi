@@ -84,6 +84,8 @@ class _StreamEventTypeEnumTypeWrapper(enum_type_wrapper._EnumTypeWrapper[_Stream
     """Stream finished"""
     STREAM_EVENT_TYPE_TOOL_CONFIRMATION_REQUIRED: _StreamEventType.ValueType  # 7
     """Agent proposes a write action awaiting user approval"""
+    STREAM_EVENT_TYPE_THINKING_DELTA: _StreamEventType.ValueType  # 8
+    """Incremental curated reasoning shown in a collapsible block"""
 
 class StreamEventType(_StreamEventType, metaclass=_StreamEventTypeEnumTypeWrapper):
     """Stream event type for real-time updates"""
@@ -103,6 +105,8 @@ STREAM_EVENT_TYPE_COMPLETE: StreamEventType.ValueType  # 6
 """Stream finished"""
 STREAM_EVENT_TYPE_TOOL_CONFIRMATION_REQUIRED: StreamEventType.ValueType  # 7
 """Agent proposes a write action awaiting user approval"""
+STREAM_EVENT_TYPE_THINKING_DELTA: StreamEventType.ValueType  # 8
+"""Incremental curated reasoning shown in a collapsible block"""
 
 class _ArtifactType:
     ValueType = typing.NewType("ValueType", builtins.int)
@@ -178,10 +182,13 @@ class AgentMessage(message.Message):
     TOOL_CALLS_FIELD_NUMBER: builtins.int
     CREATED_AT_FIELD_NUMBER: builtins.int
     INLINE_ARTIFACT_IDS_FIELD_NUMBER: builtins.int
+    THINKING_FIELD_NUMBER: builtins.int
     id: builtins.str
     session_id: builtins.str
     role: MessageRole.ValueType
     content: builtins.str
+    thinking: builtins.str
+    """Curated reasoning shown in a collapsible block"""
     @builtins.property
     def tool_calls(self) -> containers.RepeatedCompositeFieldContainer[ToolCall]: ...
     @builtins.property
@@ -200,10 +207,11 @@ class AgentMessage(message.Message):
         tool_calls: abc.Iterable[ToolCall] | None = ...,
         created_at: common_pb2.Timestamp | None = ...,
         inline_artifact_ids: abc.Iterable[builtins.str] | None = ...,
+        thinking: builtins.str = ...,
     ) -> None: ...
     _HasFieldArgType: _TypeAlias = typing.Literal["created_at", b"created_at"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal["content", b"content", "created_at", b"created_at", "id", b"id", "inline_artifact_ids", b"inline_artifact_ids", "role", b"role", "session_id", b"session_id", "tool_calls", b"tool_calls"]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["content", b"content", "created_at", b"created_at", "id", b"id", "inline_artifact_ids", b"inline_artifact_ids", "role", b"role", "session_id", b"session_id", "thinking", b"thinking", "tool_calls", b"tool_calls"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -299,6 +307,7 @@ class AgentStreamEvent(message.Message):
     MESSAGE_ID_FIELD_NUMBER: builtins.int
     TOOL_ARGUMENTS_JSON_FIELD_NUMBER: builtins.int
     CONFIRMATION_ID_FIELD_NUMBER: builtins.int
+    THINKING_DELTA_FIELD_NUMBER: builtins.int
     event_type: StreamEventType.ValueType
     session_id: builtins.str
     content_delta: builtins.str
@@ -317,6 +326,8 @@ class AgentStreamEvent(message.Message):
     """
     confirmation_id: builtins.str
     """Opaque id echoed back to ConfirmToolCall"""
+    thinking_delta: builtins.str
+    """Reasoning delta (for THINKING_DELTA events)"""
     @builtins.property
     def artifact(self) -> PendingArtifact:
         """Artifact info (for ARTIFACT_CREATED events)"""
@@ -335,10 +346,11 @@ class AgentStreamEvent(message.Message):
         message_id: builtins.str = ...,
         tool_arguments_json: builtins.str = ...,
         confirmation_id: builtins.str = ...,
+        thinking_delta: builtins.str = ...,
     ) -> None: ...
     _HasFieldArgType: _TypeAlias = typing.Literal["artifact", b"artifact"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal["artifact", b"artifact", "confirmation_id", b"confirmation_id", "content_delta", b"content_delta", "error_message", b"error_message", "event_type", b"event_type", "message_id", b"message_id", "session_id", b"session_id", "tool_arguments_json", b"tool_arguments_json", "tool_name", b"tool_name", "tool_result_preview", b"tool_result_preview", "tool_status", b"tool_status"]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["artifact", b"artifact", "confirmation_id", b"confirmation_id", "content_delta", b"content_delta", "error_message", b"error_message", "event_type", b"event_type", "message_id", b"message_id", "session_id", b"session_id", "thinking_delta", b"thinking_delta", "tool_arguments_json", b"tool_arguments_json", "tool_name", b"tool_name", "tool_result_preview", b"tool_result_preview", "tool_status", b"tool_status"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final

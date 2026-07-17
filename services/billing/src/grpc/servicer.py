@@ -245,7 +245,7 @@ class BillingServicer:
 
         tenant_id = self._get_tenant_id(ctx)
 
-        async with await self._get_db() as db:
+        async with tenant_session(tenant_id, self._maker()) as db:
             strategies_created = (
                 await db.scalar(
                     select(func.count())
@@ -353,7 +353,7 @@ class BillingServicer:
         page = request.pagination.page or 1
         page_size = request.pagination.page_size or 20
 
-        async with await self._get_db() as db:
+        async with tenant_session(tenant_id, self._maker()) as db:
             total = (
                 await db.scalar(
                     select(func.count()).select_from(Invoice).where(Invoice.tenant_id == tenant_id)
@@ -399,7 +399,7 @@ class BillingServicer:
         except ValueError, AttributeError:
             raise ConnectError(Code.NOT_FOUND, f"Invoice not found: {request.invoice_id}")
 
-        async with await self._get_db() as db:
+        async with tenant_session(tenant_id, self._maker()) as db:
             invoice = await db.scalar(
                 select(Invoice).where(
                     Invoice.id == invoice_id,

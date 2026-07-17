@@ -12,11 +12,11 @@ import {
   TemplateCategory,
   TemplateDifficulty,
 } from '../../data/strategy-templates';
-import { fromDSLString } from '../../services/strategy-serializer';
+import { fromDSLString } from '@llamatrade/core/strategy/serializer';
 import { useStrategyBuilderStore } from '../../store/strategy-builder';
 import { useUIStore } from '../../store/ui';
-import type { BlockId } from '../../types/strategy-builder';
-import { hasChildren } from '../../types/strategy-builder';
+import type { BlockId } from '@llamatrade/core/strategy/types';
+import { hasChildren } from '@llamatrade/core/strategy/types';
 import { StrategyBuilder } from '../strategy-builder/StrategyBuilder';
 
 const DIFFICULTY_COLORS: Record<TemplateDifficulty, string> = {

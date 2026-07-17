@@ -224,16 +224,18 @@ def quiet_progress(monkeypatch):
 
 @pytest.fixture
 def servicer(store, monkeypatch):
-    """Servicer whose DB sessions come from the fake store."""
+    """Servicer whose (tenant-scoped) DB sessions come from the fake store."""
+    from src.grpc import servicer as servicer_mod
     from src.grpc.servicer import BacktestServicer
 
     servicer = BacktestServicer()
+    servicer._session_maker = MagicMock()
 
     @asynccontextmanager
-    async def fake_get_db(tenant_id):
+    async def fake_tenant_session(tenant_id, session_maker=None):
         yield store.make_session()
 
-    monkeypatch.setattr(servicer, "_get_db", fake_get_db)
+    monkeypatch.setattr(servicer_mod, "tenant_session", fake_tenant_session)
     return servicer
 
 
@@ -337,16 +339,18 @@ class TestE2ELifecycle:
         self, eager_celery, quiet_progress, monkeypatch
     ):
         """3A: a cancel that lands during finalize keeps CANCELLED and drops the result."""
+        from src.grpc import servicer as servicer_mod
         from src.grpc.servicer import BacktestServicer
 
         store = FakeStore(cancel_on_finalize=True)
         servicer = BacktestServicer()
+        servicer._session_maker = MagicMock()
 
         @asynccontextmanager
-        async def fake_get_db(tenant_id):
+        async def fake_tenant_session(tenant_id, session_maker=None):
             yield store.make_session()
 
-        monkeypatch.setattr(servicer, "_get_db", fake_get_db)
+        monkeypatch.setattr(servicer_mod, "tenant_session", fake_tenant_session)
         patch_worker_dependencies(monkeypatch, store, make_fake_market_client())
 
         await servicer.run_backtest(make_run_request(), MockServicerContext())

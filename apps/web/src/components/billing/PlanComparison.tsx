@@ -1,11 +1,9 @@
 /**
  * PlanComparison — the three-tier comparison grid (V1). Tiers + feature rows are
- * product config (data/planTiers.ts); the CURRENT plan marker is driven by the
+ * product config (@llamatrade/core/billing/planTiers); the CURRENT plan marker is driven by the
  * real subscription. The highlighted Pro column is an emphasis card, so it takes
  * the ORANGE offset shadow; the paper Free/Enterprise columns take the ink one.
  */
-
-import { ArrowUpRight, Check } from 'lucide-react';
 
 import {
   PLAN_TIERS,
@@ -13,7 +11,9 @@ import {
   tierPriceTotal,
   type PlanTierConfig,
   type TierKey,
-} from '../../data/planTiers';
+} from '@llamatrade/core/billing/planTiers';
+import { ArrowUpRight, Check } from 'lucide-react';
+
 
 import { formatUsdWhole } from './format';
 

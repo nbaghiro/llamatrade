@@ -25,9 +25,10 @@ plugins:
   - local: protoc-gen-mypy_grpc
     out: llamatrade_proto/generated
 
-  # TypeScript for Connect-Web (frontend)
-  # In Connect-ES v2, protoc-gen-es generates both messages AND services
+  # TypeScript (Connect-ES v2 — messages AND services) into the shared
+  # @llamatrade/core package. Single source of truth: apps/web and apps/mobile
+  # both import these from @llamatrade/core/proto (no per-app copies).
   - remote: buf.build/bufbuild/es:v2.2.3
-    out: ../../apps/web/src/generated/proto
+    out: ../../apps/core/src/proto
     opt:
       - target=ts

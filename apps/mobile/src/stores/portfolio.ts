@@ -10,6 +10,7 @@ import { create } from 'zustand';
 import { num } from '@llamatrade/core/format';
 import { MarketStatus } from '@llamatrade/core/proto/market_data_pb';
 import type { Portfolio, StrategyPerformanceSummary, Transaction } from '@llamatrade/core/proto/portfolio_pb';
+import type { Position } from '@llamatrade/core/proto/trading_pb';
 import { marketDataClient, portfolioClient } from '../net/clients';
 import { tenantContext } from './auth';
 
@@ -21,6 +22,7 @@ export function errorMessage(e: unknown): string {
 interface PortfolioState {
   portfolio: Portfolio | null;
   strategies: StrategyPerformanceSummary[];
+  positions: Position[];
   equityCurve: number[];
   benchmarkCurve: number[];
   transactions: Transaction[];
@@ -35,6 +37,7 @@ interface PortfolioState {
 export const usePortfolioStore = create<PortfolioState>((set) => ({
   portfolio: null,
   strategies: [],
+  positions: [],
   equityCurve: [],
   benchmarkCurve: [],
   transactions: [],
@@ -66,9 +69,10 @@ export const usePortfolioStore = create<PortfolioState>((set) => ({
       let equityCurve: number[] = [];
       let benchmarkCurve: number[] = [];
       let transactions: Transaction[] = [];
+      let positions: Position[] = [];
       if (portfolio) {
         const deployed = s.strategies.filter((x) => num(x.allocatedCapital) > 0);
-        const [curves, txns] = await Promise.all([
+        const [curves, txns, pos] = await Promise.all([
           Promise.all(
             deployed.map((x) =>
               portfolioClient
@@ -80,7 +84,12 @@ export const usePortfolioStore = create<PortfolioState>((set) => ({
             .listTransactions({ context, portfolioId: portfolio.id, pagination: { page: 1, pageSize: 15 } })
             .then((r) => r.transactions)
             .catch(() => []),
+          portfolioClient
+            .getPositions({ context, portfolioId: portfolio.id })
+            .then((r) => r.positions)
+            .catch(() => []),
         ]);
+        positions = pos;
 
         const agg = new Map<number, number>();
         let bench: { ts: number; v: number }[] = [];
@@ -106,6 +115,7 @@ export const usePortfolioStore = create<PortfolioState>((set) => ({
       set({
         portfolio,
         strategies: s.strategies,
+        positions,
         equityCurve,
         benchmarkCurve,
         transactions,

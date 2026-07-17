@@ -1,24 +1,17 @@
+import { router } from 'expo-router';
+import { Sparkles, TrendingUp, Zap } from 'lucide-react-native';
 import { isUp, money, num, pct, signedMoney, toMs } from '@llamatrade/core/format';
-import { ExecutionMode } from '@llamatrade/core/proto/common_pb';
 import { MarketStatus } from '@llamatrade/core/proto/market_data_pb';
-import { TransactionType, type StrategyPerformanceSummary, type Transaction } from '@llamatrade/core/proto/portfolio_pb';
-import { useEffect, useState } from 'react';
+import { TransactionType, type Transaction } from '@llamatrade/core/proto/portfolio_pb';
+import { useEffect } from 'react';
 import { ActivityIndicator, Pressable, RefreshControl, ScrollView, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { LineChart } from '../../src/charts/LineChart';
 import { useAuthStore } from '../../src/stores/auth';
 import { usePortfolioStore } from '../../src/stores/portfolio';
-import { palette, strategyColors } from '../../src/theme';
-import { Badge, Body, Card, Display, KpiTile, Label, Mono } from '../../src/ui';
-
-const RANGES: { key: string; points: number }[] = [
-  { key: '1W', points: 5 },
-  { key: '1M', points: 21 },
-  { key: '3M', points: 63 },
-  { key: '1Y', points: 252 },
-  { key: 'ALL', points: Infinity },
-];
+import { palette } from '../../src/theme';
+import { Badge, Body, Card, Display, Label, Mono } from '../../src/ui';
 
 function greeting(): string {
   const h = new Date().getHours();
@@ -84,9 +77,8 @@ function txnRow(t: Transaction): { tag: string; color: string; title: string; su
 
 export default function HomeScreen() {
   const user = useAuthStore((s) => s.user);
-  const { portfolio, strategies, equityCurve, benchmarkCurve, transactions, marketStatus, loading, refreshing, loaded, error, fetch } =
+  const { portfolio, equityCurve, benchmarkCurve, transactions, marketStatus, loading, refreshing, loaded, error, fetch } =
     usePortfolioStore();
-  const [range, setRange] = useState('1M');
 
   useEffect(() => {
     void fetch();
@@ -95,15 +87,8 @@ export default function HomeScreen() {
   const firstName = user?.firstName || (user?.email ?? '').split('@')[0] || 'there';
   const market = marketBadge(marketStatus);
 
-  const n = RANGES.find((r) => r.key === range)?.points ?? Infinity;
-  const slice = (arr: number[]) => (n === Infinity || arr.length <= n ? arr : arr.slice(-n));
-  const equity = slice(equityCurve);
-  const bench = benchmarkCurve.length > 1 ? slice(benchmarkCurve) : undefined;
-
-  const deployed = [...strategies]
-    .sort((a, b) => num(b.allocatedCapital) - num(a.allocatedCapital))
-    .filter((s) => num(s.allocatedCapital) > 0);
-  const openPositions = strategies.reduce((sum, s) => sum + s.positionsCount, 0);
+  const equity = equityCurve;
+  const bench = benchmarkCurve.length > 1 ? benchmarkCurve : undefined;
 
   return (
     <SafeAreaView edges={['top']} style={{ flex: 1, backgroundColor: palette.bone }}>
@@ -151,73 +136,49 @@ export default function HomeScreen() {
 
           {portfolio ? (
             <>
-              {/* Equity hero */}
+              {/* Today hero — the day's move is the headline (Book owns total equity) */}
               <Card ink shadow>
-                <Label color="#b7b0a2">Total Equity · Paper</Label>
+                <Label color="#b7b0a2">Today · Paper</Label>
                 <Display size={30} color={palette.bone} style={{ marginTop: 4 }}>
-                  {money(portfolio.totalValue)}
+                  {signedMoney(portfolio.dayReturn)}
                 </Display>
                 <View style={{ flexDirection: 'row', gap: 6, marginTop: 8, flexWrap: 'wrap' }}>
-                  <Badge label={`${pct(portfolio.totalReturnPercent)} ALL-TIME`} variant={isUp(portfolio.totalReturnPercent) ? 'green' : 'red'} />
-                  <Badge label={`${signedMoney(portfolio.dayReturn)} TODAY`} variant="orange" />
+                  <Badge label={`${pct(portfolio.dayReturnPercent)} TODAY`} variant={isUp(portfolio.dayReturn) ? 'green' : 'red'} />
+                  <Badge label={`EQUITY ${money(portfolio.totalValue)}`} variant="orange" />
                 </View>
                 {equity.length > 1 ? (
                   <View style={{ marginTop: 10 }}>
-                    <LineChart values={equity} benchmark={bench} height={58} fill="rgba(255,77,28,0.28)" />
+                    <LineChart values={equity} benchmark={bench} height={44} fill="rgba(255,77,28,0.22)" />
                   </View>
                 ) : null}
-                <View style={{ flexDirection: 'row', gap: 5, marginTop: 8 }}>
-                  {RANGES.map((r) => {
-                    const on = r.key === range;
-                    return (
-                      <Pressable
-                        key={r.key}
-                        onPress={() => setRange(r.key)}
-                        style={{ borderWidth: 1.5, borderColor: on ? palette.bone : '#b7b0a2', backgroundColor: on ? palette.bone : 'transparent', paddingHorizontal: 7, paddingVertical: 3 }}
-                      >
-                        <Mono size={9} color={on ? palette.ink : '#e9e4d6'}>{r.key}</Mono>
-                      </Pressable>
-                    );
-                  })}
-                </View>
               </Card>
 
-              {/* KPI grid */}
+              {/* Quick actions — Home is the daily jump-off point */}
               <View style={{ flexDirection: 'row', gap: 8 }}>
-                <KpiTile value={signedMoney(portfolio.dayReturn)} label={`Day P&L · ${pct(portfolio.dayReturnPercent)}`} tone={isUp(portfolio.dayReturn) ? 'up' : 'down'} />
-                <KpiTile value={pct(portfolio.totalReturnPercent)} label="Total Return" tone={isUp(portfolio.totalReturnPercent) ? 'up' : 'down'} />
-              </View>
-              <View style={{ flexDirection: 'row', gap: 8 }}>
-                <KpiTile value={money(portfolio.cashBalance)} label="Free Cash" />
-                <KpiTile value={String(deployed.length)} label={`Active · ${openPositions} pos`} />
+                <Pressable
+                  onPress={() => router.push('/copilot')}
+                  style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, borderWidth: 2, borderColor: palette.ink, backgroundColor: palette.orange[500], paddingVertical: 12 }}
+                >
+                  <Sparkles color={palette.ink} size={13} strokeWidth={2.5} />
+                  <Mono size={10.5} style={{ fontWeight: '700' }}>COPILOT</Mono>
+                </Pressable>
+                <Pressable
+                  onPress={() => router.push('/strategies')}
+                  style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, borderWidth: 2, borderColor: palette.ink, backgroundColor: palette.paper, paddingVertical: 12 }}
+                >
+                  <TrendingUp color={palette.ink} size={13} strokeWidth={2.5} />
+                  <Mono size={10.5} style={{ fontWeight: '700' }}>STRATS</Mono>
+                </Pressable>
+                <Pressable
+                  onPress={() => router.push('/account/connect-broker')}
+                  style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, borderWidth: 2, borderColor: palette.ink, backgroundColor: palette.paper, paddingVertical: 12 }}
+                >
+                  <Zap color={palette.ink} size={13} strokeWidth={2.5} />
+                  <Mono size={10.5} style={{ fontWeight: '700' }}>GO LIVE</Mono>
+                </Pressable>
               </View>
 
-              {/* Active strategies */}
-              {deployed.length ? (
-                <>
-                  <Label style={{ marginTop: 2 }}>Active Strategies</Label>
-                  {deployed.slice(0, 2).map((s: StrategyPerformanceSummary, i) => {
-                    const ret = s.returns?.returnAll;
-                    const up = isUp(ret);
-                    return (
-                      <Card key={s.executionId}>
-                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 9 }}>
-                          <View style={{ width: 9, height: 32, backgroundColor: s.color || strategyColors[i % strategyColors.length] }} />
-                          <View style={{ flex: 1 }}>
-                            <Body size={13} style={{ fontWeight: '700' }} numberOfLines={1}>{s.strategyName}</Body>
-                            <Label style={{ marginTop: 2 }}>
-                              {s.mode === ExecutionMode.LIVE ? 'live' : 'paper'} · {money(s.allocatedCapital)} · {s.positionsCount} pos
-                            </Label>
-                          </View>
-                          <Display size={15} color={up ? palette.green[500] : palette.red[500]}>{pct(ret)}</Display>
-                        </View>
-                      </Card>
-                    );
-                  })}
-                </>
-              ) : null}
-
-              {/* Recent activity */}
+              {/* Recent activity — Home owns "what just happened" */}
               {transactions.length ? (
                 <>
                   <Label style={{ marginTop: 2 }}>Recent Activity</Label>

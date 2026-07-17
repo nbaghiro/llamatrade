@@ -4,8 +4,8 @@
  * Volatility, Win Rate.
  */
 
-import type { BacktestMetrics } from '../../generated/proto/backtest_pb';
-import { toNumber } from '../../store/backtest';
+import type { BacktestMetrics } from '@llamatrade/core/proto/backtest_pb';
+import { toNumber } from '@llamatrade/core/stores/backtest';
 
 interface MetricsPanelProps {
   metrics: BacktestMetrics;

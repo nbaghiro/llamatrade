@@ -1,48 +1,31 @@
+/* eslint-disable import/order -- vi.mock must be hoisted above the mocked-module imports */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-// The agent store uses zustand `persist`; provide an in-memory localStorage
-// (node test env has none) before the store module is imported.
-vi.hoisted(() => {
-  const mem = new Map<string, string>();
-  const storage: Storage = {
-    getItem: (key) => mem.get(key) ?? null,
-    setItem: (key, value) => {
-      mem.set(key, value);
-    },
-    removeItem: (key) => {
-      mem.delete(key);
-    },
-    clear: () => {
-      mem.clear();
-    },
-    key: (index) => Array.from(mem.keys())[index] ?? null,
-    get length() {
-      return mem.size;
-    },
-  };
-  globalThis.localStorage = storage;
-});
-
+// The shared agent store (in @llamatrade/core) reads agentClient + getTenantContext
+// from @llamatrade/core/net; mock that one module for both.
 const { commitArtifact, deleteSession, confirmToolCall } = vi.hoisted(() => ({
   commitArtifact: vi.fn(),
   deleteSession: vi.fn(),
   confirmToolCall: vi.fn(),
 }));
 
-vi.mock('../../services/grpc-client', () => ({
+vi.mock('@llamatrade/core/net', () => ({
   agentClient: { commitArtifact, deleteSession, confirmToolCall },
-}));
-
-vi.mock('../auth', () => ({
   getTenantContext: () => ({ tenantId: 't1', userId: 'u1' }),
 }));
 
-// eslint-disable-next-line import/order -- resolver misclassifies the gitignored generated/ path
-import { StreamEventType } from '../../generated/proto/agent_pb';
-import { useAgentStore } from '../agent';
+import { StreamEventType } from '@llamatrade/core/proto/agent_pb';
+import { useAgentStore } from '@llamatrade/core/stores/agent';
 
 async function* completeStream() {
   yield { eventType: StreamEventType.COMPLETE, messageId: 'm1', contentDelta: '' } as never;
+}
+
+async function* thinkingStream() {
+  yield { eventType: StreamEventType.THINKING_DELTA, thinkingDelta: 'Weighing ' } as never;
+  yield { eventType: StreamEventType.THINKING_DELTA, thinkingDelta: 'the tradeoff.' } as never;
+  yield { eventType: StreamEventType.CONTENT_DELTA, contentDelta: 'Here is the plan.' } as never;
+  yield { eventType: StreamEventType.COMPLETE, messageId: 'm2', contentDelta: '' } as never;
 }
 
 type Artifact = ReturnType<typeof useAgentStore.getState>['pendingArtifacts'][number];
@@ -164,5 +147,19 @@ describe('confirmToolCall', () => {
     await useAgentStore.getState().confirmToolCall(true);
 
     expect(confirmToolCall).not.toHaveBeenCalled();
+  });
+
+  it('accumulates thinking deltas onto the message and clears the live thinking', async () => {
+    confirmToolCall.mockReturnValue(thinkingStream());
+    useAgentStore.setState({ thinkingContent: '', streamingContent: '' });
+
+    await useAgentStore.getState().confirmToolCall(true);
+
+    const msgs = useAgentStore.getState().messages;
+    const last = msgs[msgs.length - 1];
+    expect(last.thinking).toBe('Weighing the tradeoff.');
+    expect(last.content).toBe('Here is the plan.');
+    // Live thinking buffer is reset once the turn completes.
+    expect(useAgentStore.getState().thinkingContent).toBe('');
   });
 });

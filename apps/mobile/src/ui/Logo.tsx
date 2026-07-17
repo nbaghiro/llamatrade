@@ -6,7 +6,7 @@ import { Display } from './index';
 
 /**
  * Brand mark — ink box, orange frame, LT monogram.
- * Geometry mirrors packages/ui/src/components/Logo.tsx exactly (viewBox 0 0 120 120).
+ * Geometry mirrors apps/web/src/components/common/Logo.tsx exactly (viewBox 0 0 120 120).
  */
 export function Logo({ size = 32, showText = false }: { size?: number; showText?: boolean }) {
   const glyph = Math.round(size * 0.72);

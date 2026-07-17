@@ -1,7 +1,10 @@
-import { Logo, Marquee, StrategyTree, prepareTree, type RawNode } from '../ui';
 import { useEffect, useState } from 'react';
 
 import { MARKETING_URL } from '../../config/marketing';
+import { Logo } from '../common/Logo';
+import { Marquee } from '../common/Marquee';
+import { StrategyTree, prepareTree, type RawNode } from '../common/StrategyTree';
+
 
 /**
  * AuthShowcase — the animated left panel of the split-screen auth experience.
@@ -14,7 +17,7 @@ import { MARKETING_URL } from '../../config/marketing';
  * INDICATORS, METRICS, weight :method values, rebalance frequencies).
  *
  * The block-tree renderer + ticker are the shared Monolith design-system pieces
- * (`StrategyTree`, `Marquee`) from `@llamatrade/ui`; this file keeps only the
+ * (`StrategyTree`, `Marquee`) from `../common`; this file keeps only the
  * auth-specific strategy data, cycling logic, and split-panel chrome.
  *
  * Reduced-motion aware: renders the first strategy fully composed and never loops.
@@ -308,8 +311,22 @@ export function AuthShowcase() {
               <span>Tree View</span>
             </div>
 
-            <div className="overflow-hidden px-4 py-4 text-bone" style={{ minHeight: 434 }}>
-              <StrategyTree node={current.tree} visibleCount={visibleCount} />
+            {/* All strategies share one grid cell so the panel height stays fixed to the
+                tallest DSL; only the active one is visible, the rest reserve layout. */}
+            <div className="grid overflow-hidden px-4 py-4 text-bone" style={{ minHeight: 434 }}>
+              {STRATEGIES.map((strategy, i) => (
+                <div
+                  key={i}
+                  aria-hidden={i !== index}
+                  className="col-start-1 row-start-1"
+                  style={{ visibility: i === index ? 'visible' : 'hidden' }}
+                >
+                  <StrategyTree
+                    node={strategy.tree}
+                    visibleCount={i === index ? visibleCount : 0}
+                  />
+                </div>
+              ))}
             </div>
 
             <div className="flex items-center justify-between border-t-2 border-bone/15 px-3 py-2 font-mono text-[10px] font-bold uppercase tracking-wider">

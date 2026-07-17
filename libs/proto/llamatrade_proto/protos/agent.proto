@@ -37,6 +37,7 @@ enum StreamEventType {
   STREAM_EVENT_TYPE_ERROR = 5;              // Error occurred
   STREAM_EVENT_TYPE_COMPLETE = 6;           // Stream finished
   STREAM_EVENT_TYPE_TOOL_CONFIRMATION_REQUIRED = 7; // Agent proposes a write action awaiting user approval
+  STREAM_EVENT_TYPE_THINKING_DELTA = 8;     // Incremental curated reasoning shown in a collapsible block
 }
 
 // Pending artifact type
@@ -70,6 +71,7 @@ message AgentMessage {
   repeated ToolCall tool_calls = 5;
   Timestamp created_at = 6;
   repeated string inline_artifact_ids = 7;  // Artifact IDs to render inline with this message
+  string thinking = 8;                       // Curated reasoning shown in a collapsible block
 }
 
 // Tool call made by the assistant
@@ -120,6 +122,9 @@ message AgentStreamEvent {
   // Tool confirmation info (for TOOL_CONFIRMATION_REQUIRED events)
   string tool_arguments_json = 10;  // Proposed tool-call arguments (JSON)
   string confirmation_id = 11;      // Opaque id echoed back to ConfirmToolCall
+
+  // Reasoning delta (for THINKING_DELTA events)
+  string thinking_delta = 12;
 }
 
 // Context data passed to agent for contextual prompts

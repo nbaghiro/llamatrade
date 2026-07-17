@@ -184,6 +184,7 @@ class ConversationService:
         content: str,
         tool_calls: list[dict[str, Any]] | None = None,
         inline_artifact_ids: list[str] | None = None,
+        thinking: str | None = None,
     ) -> AgentMessage:
         """Add a message to a session.
 
@@ -194,6 +195,7 @@ class ConversationService:
             content: Message content
             tool_calls: Optional list of tool calls
             inline_artifact_ids: Draft artifact IDs produced during this turn
+            thinking: Curated reasoning shown in a collapsible block
 
         Returns:
             Created AgentMessage
@@ -205,6 +207,7 @@ class ConversationService:
             content=content,
             tool_calls_json=tool_calls,
             inline_artifact_ids=inline_artifact_ids,
+            thinking=thinking,
         )
         self.db.add(message)
 

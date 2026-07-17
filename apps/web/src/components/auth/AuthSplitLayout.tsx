@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 
 import { MARKETING_URL } from '../../config/marketing';
-import Logo from '../common/Logo';
+import { Logo } from '../common/Logo';
 
 import { AuthShowcase } from './AuthShowcase';
 

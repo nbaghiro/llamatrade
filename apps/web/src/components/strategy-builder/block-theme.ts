@@ -52,7 +52,7 @@ export type ThemeColors = {
 const theme: ThemeColors = {
   name: 'Monolith',
   description: 'Brutalist — green weights, orange conditionals & filters, blue assets',
-  // Palette matches the shared @llamatrade/ui StrategyTree; each block carries a hard 2px ink border.
+  // Palette matches the shared StrategyTree; each block carries a hard 2px ink border.
   weight: {
     bg: 'bg-green-600 text-bone border-2 border-ink',
     hover: 'hover:bg-green-700',

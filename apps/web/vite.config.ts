@@ -14,7 +14,7 @@ export default defineConfig({
     hmr: {
       clientPort: 8800,
     },
-    // Poll: bind-mounted @llamatrade/ui (macOS→Linux Docker) emits no native fs events.
+    // Poll: the bind-mounted app source (macOS→Linux Docker) emits no native fs events.
     watch: {
       usePolling: true,
       interval: 120,

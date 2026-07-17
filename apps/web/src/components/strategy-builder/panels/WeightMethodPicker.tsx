@@ -1,8 +1,8 @@
 import { Scale } from 'lucide-react';
 
 import { useStrategyBuilderStore } from '../../../store/strategy-builder';
-import type { BlockId, WeightMethod } from '../../../types/strategy-builder';
-import { WEIGHT_METHODS } from '../../../types/strategy-builder';
+import type { BlockId, WeightMethod } from '@llamatrade/core/strategy/types';
+import { WEIGHT_METHODS } from '@llamatrade/core/strategy/types';
 
 interface WeightMethodPickerProps {
   parentId: BlockId;

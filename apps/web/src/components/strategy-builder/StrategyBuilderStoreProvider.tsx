@@ -11,7 +11,7 @@ import {
   createStrategyBuilderStore,
   StrategyBuilderStoreContext,
 } from '../../store/strategy-builder';
-import type { StrategyTree } from '../../types/strategy-builder';
+import type { StrategyTree } from '@llamatrade/core/strategy/types';
 
 interface StrategyBuilderStoreProviderProps {
   /** The strategy tree to initialize the store with */

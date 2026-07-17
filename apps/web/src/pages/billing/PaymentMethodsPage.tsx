@@ -11,7 +11,7 @@ import { Link } from 'react-router-dom';
 import CardForm from '../../components/billing/CardForm';
 import PaymentMethodCard from '../../components/billing/PaymentMethodCard';
 import { billingClient } from '../../services/grpc-client';
-import { useBillingStore } from '../../store/billing';
+import { useBillingStore } from '@llamatrade/core/stores/billing';
 
 const stripePromise = loadStripe(import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY || '');
 

@@ -61,6 +61,9 @@ class AuthService(Protocol):
     async def delete_alpaca_credentials(self, request: auth__pb2.DeleteAlpacaCredentialsRequest, ctx: RequestContext) -> auth__pb2.DeleteAlpacaCredentialsResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
+    async def validate_alpaca_credentials(self, request: auth__pb2.ValidateAlpacaCredentialsRequest, ctx: RequestContext) -> auth__pb2.ValidateAlpacaCredentialsResponse:
+        raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
+
 
 class AuthServiceASGIApplication(ConnectASGIApplication[AuthService]):
     def __init__(self, service: AuthService | AsyncGenerator[AuthService], *, interceptors: Iterable[Interceptor]=(), read_max_bytes: int | None = None) -> None:
@@ -216,6 +219,16 @@ class AuthServiceASGIApplication(ConnectASGIApplication[AuthService]):
                         idempotency_level=IdempotencyLevel.UNKNOWN,
                     ),
                     function=svc.delete_alpaca_credentials,
+                ),
+                "/llamatrade.AuthService/ValidateAlpacaCredentials": Endpoint.unary(
+                    method=MethodInfo(
+                        name="ValidateAlpacaCredentials",
+                        service_name="llamatrade.AuthService",
+                        input=auth__pb2.ValidateAlpacaCredentialsRequest,
+                        output=auth__pb2.ValidateAlpacaCredentialsResponse,
+                        idempotency_level=IdempotencyLevel.UNKNOWN,
+                    ),
+                    function=svc.validate_alpaca_credentials,
                 ),
             },
             interceptors=interceptors,
@@ -529,6 +542,26 @@ class AuthServiceClient(ConnectClient):
             timeout_ms=timeout_ms,
         )
 
+    async def validate_alpaca_credentials(
+        self,
+        request: auth__pb2.ValidateAlpacaCredentialsRequest,
+        *,
+        headers: Headers | Mapping[str, str] | None = None,
+        timeout_ms: int | None = None,
+    ) -> auth__pb2.ValidateAlpacaCredentialsResponse:
+        return await self.execute_unary(
+            request=request,
+            method=MethodInfo(
+                name="ValidateAlpacaCredentials",
+                service_name="llamatrade.AuthService",
+                input=auth__pb2.ValidateAlpacaCredentialsRequest,
+                output=auth__pb2.ValidateAlpacaCredentialsResponse,
+                idempotency_level=IdempotencyLevel.UNKNOWN,
+            ),
+            headers=headers,
+            timeout_ms=timeout_ms,
+        )
+
 
 class AuthServiceSync(Protocol):
     def login(self, request: auth__pb2.LoginRequest, ctx: RequestContext) -> auth__pb2.LoginResponse:
@@ -560,6 +593,8 @@ class AuthServiceSync(Protocol):
     def list_alpaca_credentials(self, request: auth__pb2.ListAlpacaCredentialsRequest, ctx: RequestContext) -> auth__pb2.ListAlpacaCredentialsResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
     def delete_alpaca_credentials(self, request: auth__pb2.DeleteAlpacaCredentialsRequest, ctx: RequestContext) -> auth__pb2.DeleteAlpacaCredentialsResponse:
+        raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
+    def validate_alpaca_credentials(self, request: auth__pb2.ValidateAlpacaCredentialsRequest, ctx: RequestContext) -> auth__pb2.ValidateAlpacaCredentialsResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
 
@@ -716,6 +751,16 @@ class AuthServiceWSGIApplication(ConnectWSGIApplication):
                         idempotency_level=IdempotencyLevel.UNKNOWN,
                     ),
                     function=service.delete_alpaca_credentials,
+                ),
+                "/llamatrade.AuthService/ValidateAlpacaCredentials": EndpointSync.unary(
+                    method=MethodInfo(
+                        name="ValidateAlpacaCredentials",
+                        service_name="llamatrade.AuthService",
+                        input=auth__pb2.ValidateAlpacaCredentialsRequest,
+                        output=auth__pb2.ValidateAlpacaCredentialsResponse,
+                        idempotency_level=IdempotencyLevel.UNKNOWN,
+                    ),
+                    function=service.validate_alpaca_credentials,
                 ),
             },
             interceptors=interceptors,
@@ -1023,6 +1068,26 @@ class AuthServiceClientSync(ConnectClientSync):
                 service_name="llamatrade.AuthService",
                 input=auth__pb2.DeleteAlpacaCredentialsRequest,
                 output=auth__pb2.DeleteAlpacaCredentialsResponse,
+                idempotency_level=IdempotencyLevel.UNKNOWN,
+            ),
+            headers=headers,
+            timeout_ms=timeout_ms,
+        )
+
+    def validate_alpaca_credentials(
+        self,
+        request: auth__pb2.ValidateAlpacaCredentialsRequest,
+        *,
+        headers: Headers | Mapping[str, str] | None = None,
+        timeout_ms: int | None = None,
+    ) -> auth__pb2.ValidateAlpacaCredentialsResponse:
+        return self.execute_unary(
+            request=request,
+            method=MethodInfo(
+                name="ValidateAlpacaCredentials",
+                service_name="llamatrade.AuthService",
+                input=auth__pb2.ValidateAlpacaCredentialsRequest,
+                output=auth__pb2.ValidateAlpacaCredentialsResponse,
                 idempotency_level=IdempotencyLevel.UNKNOWN,
             ),
             headers=headers,

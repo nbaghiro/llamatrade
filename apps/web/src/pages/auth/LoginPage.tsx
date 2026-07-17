@@ -9,7 +9,7 @@ import { useAuthStore } from '../../store/auth';
 
 export default function LoginPage() {
   const navigate = useNavigate();
-  const login = useAuthStore((state) => state.login);
+  const setSession = useAuthStore((state) => state.setSession);
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -34,7 +34,7 @@ export default function LoginPage() {
         tenantId: response.user?.tenantId ?? '',
       };
 
-      login(user, response.accessToken, response.refreshToken);
+      setSession(user, response.accessToken, response.refreshToken);
       navigate('/dashboard');
     } catch (err: unknown) {
       if (err instanceof ConnectError) {

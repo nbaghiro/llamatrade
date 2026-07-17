@@ -1,4 +1,4 @@
-import { prepareTree, StrategyTree } from '../../components/ui';
+import { prepareTree, StrategyTree } from '../../components/common/StrategyTree';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { CodeBlock, MiniCode } from '../components/CodeBlock';

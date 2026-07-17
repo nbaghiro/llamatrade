@@ -86,13 +86,22 @@ Merge `apps/marketing` → `apps/web` (marketing page lives in web).
 7. **Gate:** web `tsc` + tests, `npm run build` (app) and `npm run build:landing` (landing)
    both succeed, visual pass on logged-out `/` (landing) and the app.
 
-## Phase C — eliminate `@llamatrade/ui` (absorb into web)  [NOT STARTED]
+## Phase C — eliminate `@llamatrade/ui` (absorb into web)  [DONE 2026-07-16, uncommitted]
 
+Executed: components → **`apps/web/src/components/common/`** (flat, named exports, no barrel —
+matches the existing common/ files); `themes/monolith.css` → `src/styles/monolith.css`;
+`styles.css` → `src/styles/ui-layer.css`; `tailwind-preset.cjs` → `apps/web/tailwind-preset.cjs`.
+Deleted the `common/Logo.tsx` wrapper; repointed every `@llamatrade/ui` import to `../common/<Name>`
+(and CSS `@import`s to `./styles/...`). Removed the dep from web package.json + both Dockerfiles +
+the compose `packages/ui` mount; tailwind `presets:[require('./tailwind-preset.cjs')]`, dropped the
+packages/ui content glob. **Deleted `packages/`; `workspaces:["apps/*"]`.** Gotcha: `Layout.tsx`
+imported `Logo` as a DEFAULT — the moved ui primitives are all NAMED exports (fixed to `{ Logo }`).
+Gate green: core+mobile+web tsc, web app + `build:marketing` builds, 94 vitest. **`/apps/{core,mobile,web}`, no `/packages`.**
+
+### Phase C — original plan (for reference)
 After B, web is the only consumer.
-1. `packages/ui/src/components/*` → **`apps/web/src/components/`** (the existing components
-   folder — user directive, NOT a new `src/ui/`). Repoint `@llamatrade/ui` imports (web +
-   the moved marketing page) to local relative paths. NOTE the name collision: web already
-   has `src/components/common/Logo.tsx` (which wraps the ui `Logo`) — reconcile on absorb.
+1. `packages/ui/src/components/*` → `apps/web/src/components/common/`. Repoint `@llamatrade/ui`
+   imports (web + the moved marketing page) to local relative paths.
 2. `tailwind-preset.cjs` → inline its tokens into `apps/web/tailwind.config.js`; drop the
    `packages/ui/src` content-scan glob (add `src/marketing`/`src/ui` globs).
 3. `styles.css` + `themes/monolith.css` → `apps/web/src/`, imported by `index.css`.

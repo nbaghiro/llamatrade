@@ -397,9 +397,11 @@ class MemoryService:
         Returns:
             List of StrategyMemory objects
         """
-        # Query tenant's strategies (Strategy is tenant-scoped, not user-scoped)
+        # Only the acting user's own strategies — Strategy is tenant-scoped, so
+        # created_by is what keeps one user's history out of another's memory.
         stmt = select(Strategy).where(
             Strategy.tenant_id == self.tenant_id,
+            Strategy.created_by == self.user_id,
         )
 
         if not include_drafts:
@@ -512,11 +514,12 @@ class MemoryService:
         goal_result = await self.db.execute(goal_stmt)
         goal_summary = goal_result.scalar_one_or_none()
 
-        # Get recent strategies (just names) - Strategy is tenant-scoped
+        # Recent strategies this user authored (names only, for the prompt hint).
         strategy_stmt = (
             select(Strategy.name)
             .where(
                 Strategy.tenant_id == self.tenant_id,
+                Strategy.created_by == self.user_id,
             )
             .order_by(Strategy.updated_at.desc())
             .limit(3)

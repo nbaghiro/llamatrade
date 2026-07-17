@@ -6,7 +6,7 @@ Tests the AuthServicer directly without HTTP layer.
 import os
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 from uuid import UUID, uuid4
 
 import bcrypt
@@ -963,3 +963,147 @@ class TestValidateAPIKey:
 
         response = await auth_servicer.validate_a_p_i_key(request, context)
         assert response.valid is False
+
+
+# ===================
+# Alpaca credential validation
+# ===================
+
+
+class _FakeAccount:
+    """Minimal stand-in for llamatrade_alpaca Account."""
+
+    def __init__(self, status: str = "ACTIVE", buying_power: float = 100000.0) -> None:
+        self.status = status
+        self.buying_power = buying_power
+
+
+class _FakeClientCtx:
+    """Async-context-manager stand-in for llamatrade_alpaca.TradingClient."""
+
+    def __init__(self, action: object) -> None:
+        self._action = action
+
+    async def __aenter__(self) -> _FakeClientCtx:
+        return self
+
+    async def __aexit__(self, *exc: object) -> bool:
+        return False
+
+    async def get_account(self) -> object:
+        return self._action()  # type: ignore[operator]
+
+
+def _raiser(exc: Exception):
+    def _run() -> object:
+        raise exc
+
+    return _run
+
+
+def _fake_trading_client(behavior: dict[bool, object]):
+    """TradingClient replacement whose get_account behavior keys off the `paper` flag."""
+
+    def factory(*, credentials: object, paper: bool, timeout: float) -> _FakeClientCtx:
+        return _FakeClientCtx(behavior[paper])
+
+    return factory
+
+
+class TestValidateAlpacaCredentials:
+    """Tests for AuthServicer.validate_alpaca_credentials."""
+
+    async def test_valid_credentials(
+        self, auth_servicer: AuthServicer, auth_context: MockRequestContext
+    ) -> None:
+        from llamatrade_proto.generated import auth_pb2
+
+        request = auth_pb2.ValidateAlpacaCredentialsRequest(
+            api_key="PKTEST", api_secret="sk_test", is_paper=True
+        )
+        factory = _fake_trading_client({True: lambda: _FakeAccount("ACTIVE", 12345.0)})
+        with patch("llamatrade_alpaca.TradingClient", factory):
+            resp = await auth_servicer.validate_alpaca_credentials(request, auth_context)
+
+        assert resp.valid is True
+        assert resp.account_status == "ACTIVE"
+        assert resp.buying_power == "12345.0"
+
+    async def test_invalid_credentials(
+        self, auth_servicer: AuthServicer, auth_context: MockRequestContext
+    ) -> None:
+        from llamatrade_alpaca.errors import AuthenticationError
+        from llamatrade_proto.generated import auth_pb2
+
+        request = auth_pb2.ValidateAlpacaCredentialsRequest(
+            api_key="bad", api_secret="bad", is_paper=True
+        )
+        err = AuthenticationError("Invalid API credentials")
+        factory = _fake_trading_client({True: _raiser(err), False: _raiser(err)})
+        with patch("llamatrade_alpaca.TradingClient", factory):
+            resp = await auth_servicer.validate_alpaca_credentials(request, auth_context)
+
+        assert resp.valid is False
+        assert "Invalid API key" in resp.message
+
+    async def test_paper_live_mismatch(
+        self, auth_servicer: AuthServicer, auth_context: MockRequestContext
+    ) -> None:
+        from llamatrade_alpaca.errors import AuthenticationError
+        from llamatrade_proto.generated import auth_pb2
+
+        # is_paper=True but the keys only authenticate on the live environment.
+        request = auth_pb2.ValidateAlpacaCredentialsRequest(
+            api_key="PKlive", api_secret="sk_live", is_paper=True
+        )
+        factory = _fake_trading_client(
+            {True: _raiser(AuthenticationError("nope")), False: lambda: _FakeAccount()}
+        )
+        with patch("llamatrade_alpaca.TradingClient", factory):
+            resp = await auth_servicer.validate_alpaca_credentials(request, auth_context)
+
+        assert resp.valid is False
+        assert "live" in resp.message
+
+    async def test_missing_fields_short_circuit(
+        self, auth_servicer: AuthServicer, auth_context: MockRequestContext
+    ) -> None:
+        from llamatrade_proto.generated import auth_pb2
+
+        request = auth_pb2.ValidateAlpacaCredentialsRequest(
+            api_key="", api_secret="", is_paper=True
+        )
+        # No TradingClient patch: the method must short-circuit before reaching Alpaca.
+        resp = await auth_servicer.validate_alpaca_credentials(request, auth_context)
+        assert resp.valid is False
+        assert "required" in resp.message.lower()
+
+    async def test_network_error_raises_unavailable(
+        self, auth_servicer: AuthServicer, auth_context: MockRequestContext
+    ) -> None:
+        from connectrpc.code import Code
+
+        from llamatrade_proto.generated import auth_pb2
+
+        request = auth_pb2.ValidateAlpacaCredentialsRequest(
+            api_key="PK", api_secret="sk", is_paper=True
+        )
+        factory = _fake_trading_client({True: _raiser(RuntimeError("connection refused"))})
+        with patch("llamatrade_alpaca.TradingClient", factory):
+            with pytest.raises(ConnectError) as exc_info:
+                await auth_servicer.validate_alpaca_credentials(request, auth_context)
+        assert exc_info.value.code == Code.UNAVAILABLE
+
+    async def test_unauthenticated_without_token(
+        self, auth_servicer: AuthServicer, context: MockRequestContext
+    ) -> None:
+        from connectrpc.code import Code
+
+        from llamatrade_proto.generated import auth_pb2
+
+        request = auth_pb2.ValidateAlpacaCredentialsRequest(
+            api_key="PK", api_secret="sk", is_paper=True
+        )
+        with pytest.raises(ConnectError) as exc_info:
+            await auth_servicer.validate_alpaca_credentials(request, context)
+        assert exc_info.value.code == Code.UNAUTHENTICATED

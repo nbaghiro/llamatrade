@@ -6,14 +6,15 @@
  * resize, header) around this.
  */
 
+import { useAgentStore } from '@llamatrade/core/stores/agent';
 import { useEffect, useMemo, useRef, type ReactNode } from 'react';
 
-import { useAgentStore } from '../../store/agent';
 
 import { ChatInput } from './ChatInput';
 import { ChatMessage } from './ChatMessage';
 import { PendingArtifactCard } from './PendingArtifactCard';
 import { StreamingIndicator } from './StreamingIndicator';
+import { ThinkingBlock } from './ThinkingBlock';
 import { ToolCallIndicator } from './ToolCallIndicator';
 import { ToolConfirmationCard } from './ToolConfirmationCard';
 
@@ -88,6 +89,7 @@ export function CopilotConversation({
     pendingArtifactIdsForCurrentMessage,
     isStreaming,
     streamingContent,
+    thinkingContent,
     currentToolCall,
     pendingConfirmation,
     suggestedPrompts,
@@ -124,7 +126,14 @@ export function CopilotConversation({
   // Auto-scroll to the latest turn as tokens / tools / artifacts arrive.
   useEffect(() => {
     threadEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, streamingContent, currentToolCall, pendingArtifacts.length, pendingConfirmation]);
+  }, [
+    messages,
+    streamingContent,
+    thinkingContent,
+    currentToolCall,
+    pendingArtifacts.length,
+    pendingConfirmation,
+  ]);
 
   const artifactMap = useMemo(() => {
     const map = new Map<string, (typeof pendingArtifacts)[number]>();
@@ -171,6 +180,15 @@ export function CopilotConversation({
 
               {isStreaming && (
                 <div className="space-y-2.5">
+                  {thinkingContent && (
+                    <div className="pl-[50px]">
+                      <ThinkingBlock
+                        content={thinkingContent}
+                        autoExpanded={streamingContent.length === 0}
+                        streaming
+                      />
+                    </div>
+                  )}
                   <StreamingIndicator content={streamingContent} />
                   {currentToolCall && (
                     <div className="pl-[50px]">

@@ -2,7 +2,7 @@
  * Portfolio page title, account identity subtitle, and live market-status pill.
  */
 
-import { ExecutionMode, MarketStatus } from '../../store/portfolio';
+import { ExecutionMode, MarketStatus } from '@llamatrade/core/stores/portfolio';
 
 interface PortfolioHeaderProps {
   mode: ExecutionMode;

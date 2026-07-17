@@ -3,7 +3,7 @@
  * share of total book.
  */
 
-import type { StrategyPerformance } from '../../store/portfolio';
+import type { StrategyPerformance } from '@llamatrade/core/stores/portfolio';
 
 interface AllocationPanelProps {
   strategies: StrategyPerformance[];

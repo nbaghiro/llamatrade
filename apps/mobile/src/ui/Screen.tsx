@@ -1,12 +1,23 @@
+import { ChevronLeft } from 'lucide-react-native';
 import type { ReactNode } from 'react';
-import { ScrollView, View } from 'react-native';
+import { Pressable, ScrollView, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { palette } from '../theme';
 import { Display } from './index';
 
-/** Standard tab screen: bone canvas, ink-bordered app bar, scrolling body. */
-export function Screen({ title, right, children }: { title: string; right?: ReactNode; children: ReactNode }) {
+/** Standard screen: bone canvas, ink-bordered app bar (optional back), scrolling body. */
+export function Screen({
+  title,
+  right,
+  onBack,
+  children,
+}: {
+  title: string;
+  right?: ReactNode;
+  onBack?: () => void;
+  children: ReactNode;
+}) {
   return (
     <SafeAreaView edges={['top']} style={{ flex: 1, backgroundColor: palette.bone }}>
       <View
@@ -21,7 +32,14 @@ export function Screen({ title, right, children }: { title: string; right?: Reac
           paddingHorizontal: 14,
         }}
       >
-        <Display size={16}>{title}</Display>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 }}>
+          {onBack ? (
+            <Pressable onPress={onBack} hitSlop={10}>
+              <ChevronLeft color={palette.ink} size={22} strokeWidth={2.5} />
+            </Pressable>
+          ) : null}
+          <Display size={16}>{title}</Display>
+        </View>
         {right ?? null}
       </View>
       <ScrollView contentContainerStyle={{ padding: 12, gap: 11 }} showsVerticalScrollIndicator={false}>

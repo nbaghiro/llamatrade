@@ -1,13 +1,13 @@
 /** @type {import('tailwindcss').Config} */
 export default {
-  // Scan app source + shared @llamatrade/ui source so design-system component classes are generated here.
+  // Scan app source (the Monolith design-system components now live in src/components).
   content: [
     './index.html',
+    './marketing.html',
     './src/**/*.{js,ts,jsx,tsx}',
-    '../../packages/ui/src/**/*.{ts,tsx}',
   ],
-  // Monolith design tokens live in the shared preset (single source of truth); darkMode is inherited too.
-  presets: [require('@llamatrade/ui/tailwind-preset')],
+  // Monolith design tokens (maps Tailwind keys onto the --lt-* token layer in src/styles/monolith.css).
+  presets: [require('./tailwind-preset.cjs')],
   // Safelist runtime-composed strategy-builder block classes (block-theme.ts) the content scanner can't see.
   safelist: [
     'bg-orange-500', 'bg-green-600', 'bg-blue-600', 'bg-ink', 'bg-bone', 'bg-paper',
