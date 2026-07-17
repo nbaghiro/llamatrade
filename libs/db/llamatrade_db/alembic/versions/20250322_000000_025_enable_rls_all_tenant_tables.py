@@ -24,6 +24,8 @@ from collections.abc import Sequence
 
 from alembic import op
 
+from llamatrade_db.models.audit import AuditLog, DailyPnL, RiskConfig
+from llamatrade_db.models.strategy import StrategyExecution
 from llamatrade_db.rls import RLS_TABLES, disable_rls_statements, enable_rls_statements
 
 # revision identifiers, used by Alembic.
@@ -32,8 +34,19 @@ down_revision: str | None = "024_add_user_avatar_url"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
+# Tenant tables created by the ORM (init_db/create_all on service boot) rather
+# than by an earlier migration. A from-scratch `alembic upgrade head` reaches
+# this revision without them, so the RLS DDL below would fail. They are created
+# here (checkfirst → a no-op wherever create_all already ran) so the migration
+# chain stands up a complete schema on its own.
+_ORM_ONLY_TABLES = (AuditLog, DailyPnL, RiskConfig, StrategyExecution)
+
 
 def upgrade() -> None:
+    bind = op.get_bind()
+    for model in _ORM_ONLY_TABLES:
+        model.__table__.create(bind=bind, checkfirst=True)
+
     for table in RLS_TABLES:
         for statement in enable_rls_statements(table):
             op.execute(statement)
