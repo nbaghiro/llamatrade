@@ -4,6 +4,8 @@
  * equity/benchmark curves, monthly returns) and the paged trade log.
  */
 
+import { BacktestStatus, type BacktestRun } from '@llamatrade/core/proto/backtest_pb';
+import { toDate, toNumber, useBacktestStore, type BacktestConfig } from '@llamatrade/core/stores/backtest';
 import { AlertTriangle } from 'lucide-react';
 import { useEffect, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
@@ -16,8 +18,6 @@ import MetricsPanel from '../../components/backtest/MetricsPanel';
 import MonthlyReturnsGrid from '../../components/backtest/MonthlyReturnsGrid';
 import RecentRunsPanel from '../../components/backtest/RecentRunsPanel';
 import TradesTable from '../../components/backtest/TradesTable';
-import { BacktestStatus, type BacktestRun } from '@llamatrade/core/proto/backtest_pb';
-import { toDate, toNumber, useBacktestStore, type BacktestConfig } from '@llamatrade/core/stores/backtest';
 
 function isoDate(run: BacktestRun, field: 'startDate' | 'endDate'): string {
   const ts = run.config?.[field];

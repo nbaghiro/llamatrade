@@ -221,7 +221,9 @@ class MarketDataClient:
             timeframe=_timeframe_to_proto(timeframe),
             limit=limit,
         )
-        async for bar in self._get_client().stream_historical_bars(request, headers=self._headers()):
+        async for bar in self._get_client().stream_historical_bars(
+            request, headers=self._headers()
+        ):
             yield self._proto_to_bar(bar)
 
     async def stream_bars(

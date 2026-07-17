@@ -2,9 +2,9 @@
  * Flat blotter of every open position across strategies, colored by sleeve.
  */
 
+import type { StrategyPerformance } from '@llamatrade/core/stores/portfolio';
 import { Link } from 'react-router-dom';
 
-import type { StrategyPerformance } from '@llamatrade/core/stores/portfolio';
 
 interface PositionsBlotterProps {
   strategies: StrategyPerformance[];

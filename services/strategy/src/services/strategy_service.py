@@ -57,6 +57,7 @@ def _naive_utc_now() -> datetime:
     TIMESTAMP WITHOUT TIME ZONE, and asyncpg rejects aware values for those."""
     return datetime.now(UTC).replace(tzinfo=None)
 
+
 # Valid status transitions: (from_status, to_status) using proto int values
 # Rules: DRAFT→ACTIVE, ACTIVE↔PAUSED, any→ARCHIVED
 _VALID_STATUS_TRANSITIONS: set[tuple[int, int]] = {

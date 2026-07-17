@@ -2,7 +2,6 @@
 
 import { linter, type Diagnostic } from '@codemirror/lint';
 import type { EditorView } from '@codemirror/view';
-
 import { tokenizeWithPositions, type TokenWithPosition } from '@llamatrade/core/strategy/serializer';
 
 const VALID_WEIGHT_METHODS = new Set([

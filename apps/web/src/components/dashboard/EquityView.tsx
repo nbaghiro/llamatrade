@@ -1,13 +1,14 @@
-import { useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
-
+import { boundsOf, buildPath, sliceByPeriod } from '@llamatrade/core/chart';
 import {
   DASHBOARD_PERIODS,
   useDashboardStore,
   type DashboardPeriod,
 } from '@llamatrade/core/stores/dashboard';
+import { useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 
-import { boundsOf, buildPath, sliceByPeriod } from '@llamatrade/core/chart';
+
+
 import { colorForSign, fmtCurrency, fmtSignedCurrency, fmtSignedPercent, UP } from './format';
 
 const CHART_W = 860;

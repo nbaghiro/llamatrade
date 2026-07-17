@@ -5,6 +5,7 @@
  * perspective (see the store).
  */
 
+import { type ActivityGroup, type ActivityKind, type ActivityRow, useActivityStore } from '@llamatrade/core/stores/activity';
 import {
   ArrowDownLeft,
   ArrowUpRight,
@@ -21,7 +22,6 @@ import {
 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 
-import { type ActivityGroup, type ActivityKind, type ActivityRow, useActivityStore } from '@llamatrade/core/stores/activity';
 
 type Filter = 'all' | ActivityGroup;
 

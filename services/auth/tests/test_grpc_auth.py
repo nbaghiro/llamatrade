@@ -4,6 +4,7 @@ Tests the AuthServicer directly without HTTP layer.
 """
 
 import os
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
 from unittest.mock import MagicMock, patch
@@ -981,7 +982,7 @@ class _FakeAccount:
 class _FakeClientCtx:
     """Async-context-manager stand-in for llamatrade_alpaca.TradingClient."""
 
-    def __init__(self, action: object) -> None:
+    def __init__(self, action: Callable[[], object]) -> None:
         self._action = action
 
     async def __aenter__(self) -> _FakeClientCtx:
@@ -991,7 +992,7 @@ class _FakeClientCtx:
         return False
 
     async def get_account(self) -> object:
-        return self._action()  # type: ignore[operator]
+        return self._action()
 
 
 def _raiser(exc: Exception):
@@ -1001,7 +1002,7 @@ def _raiser(exc: Exception):
     return _run
 
 
-def _fake_trading_client(behavior: dict[bool, object]):
+def _fake_trading_client(behavior: dict[bool, Callable[[], object]]):
     """TradingClient replacement whose get_account behavior keys off the `paper` flag."""
 
     def factory(*, credentials: object, paper: bool, timeout: float) -> _FakeClientCtx:

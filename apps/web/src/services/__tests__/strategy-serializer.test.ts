@@ -1,7 +1,4 @@
 /* eslint-disable @typescript-eslint/no-non-null-assertion */
-import { describe, it, expect } from 'vitest';
-
-import type { Block } from '@llamatrade/core/strategy/types';
 import {
   tokenizeWithPositions,
   toKebabCase,
@@ -13,6 +10,9 @@ import {
   validateTree,
   type StrategyMetadata,
 } from '@llamatrade/core/strategy/serializer';
+import type { Block } from '@llamatrade/core/strategy/types';
+import { describe, it, expect } from 'vitest';
+
 
 describe('tokenizeWithPositions', () => {
   it('should tokenize simple S-expression', () => {

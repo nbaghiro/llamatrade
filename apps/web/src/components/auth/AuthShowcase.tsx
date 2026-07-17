@@ -3,7 +3,8 @@ import { useEffect, useState } from 'react';
 import { MARKETING_URL } from '../../config/marketing';
 import { Logo } from '../common/Logo';
 import { Marquee } from '../common/Marquee';
-import { StrategyTree, prepareTree, type RawNode } from '../common/StrategyTree';
+import { StrategyTree, type RawNode } from '../common/StrategyTree';
+import { prepareTree } from '../common/strategyTreeModel';
 
 
 /**

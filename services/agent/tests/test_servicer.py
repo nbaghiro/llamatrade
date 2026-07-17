@@ -446,9 +446,7 @@ class TestStreamMessage:
             events = [e async for e in servicer.stream_message(request, mock_request_context)]
 
         # A THINKING_DELTA proto event carrying the reasoning text was surfaced.
-        thinking_events = [
-            e for e in events if e.event_type == STREAM_EVENT_TYPE_THINKING_DELTA
-        ]
+        thinking_events = [e for e in events if e.event_type == STREAM_EVENT_TYPE_THINKING_DELTA]
         assert thinking_events
         assert "".join(e.thinking_delta for e in thinking_events) == (
             "Checking the drawdown tradeoff."

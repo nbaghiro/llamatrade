@@ -1,5 +1,6 @@
-import { useStrategyBuilderStoreWithContext } from '../../store/strategy-builder';
 import { hasChildren } from '@llamatrade/core/strategy/types';
+
+import { useStrategyBuilderStoreWithContext } from '../../store/strategy-builder';
 
 import { AddBlockButton } from './blocks/AddBlockButton';
 import { TreeNode } from './TreeNode';

@@ -3,9 +3,9 @@
  * Shows real-time progress of a running backtest.
  */
 
+import { BacktestStatus, type BacktestRun } from '@llamatrade/core/proto/backtest_pb';
 import { Ban, CheckCircle, Loader2, XCircle } from 'lucide-react';
 
-import { BacktestStatus, type BacktestRun } from '@llamatrade/core/proto/backtest_pb';
 
 interface BacktestProgressProps {
   backtest: BacktestRun;

@@ -1,6 +1,6 @@
+import { tokenizeWithPositions } from '@llamatrade/core/strategy/serializer';
 import { describe, expect, it } from 'vitest';
 
-import { tokenizeWithPositions } from '@llamatrade/core/strategy/serializer';
 import { checkWeightSums } from '../linting';
 
 /** Run the specified-weight sum check over a DSL string. */

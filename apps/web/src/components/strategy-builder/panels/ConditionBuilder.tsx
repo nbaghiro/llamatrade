@@ -1,6 +1,3 @@
-import { X } from 'lucide-react';
-import { useState, useCallback } from 'react';
-
 import type {
   ConditionExpression,
   ConditionOperand,
@@ -12,6 +9,9 @@ import type {
   PriceField,
 } from '@llamatrade/core/strategy/types';
 import { INDICATORS, COMPARATORS, getIndicatorInfo } from '@llamatrade/core/strategy/types';
+import { X } from 'lucide-react';
+import { useState, useCallback } from 'react';
+
 
 interface ConditionBuilderProps {
   initialCondition?: ConditionExpression;

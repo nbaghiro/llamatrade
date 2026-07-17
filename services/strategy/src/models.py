@@ -255,8 +255,6 @@ class StrategyDetailResponse(StrategyResponse):
 
     config_sexpr: str
     config_json: StrategyConfigJSON
-    symbols: list[str]
-    timeframe: str
     parameters: dict[str, str] = Field(default_factory=dict)
 
 

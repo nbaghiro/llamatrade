@@ -2,11 +2,11 @@
  * PlanCard component - displays plan details with pricing
  */
 
-import { Check } from 'lucide-react';
 
 import type { Plan } from '@llamatrade/core/proto/billing_pb';
 import { PlanTier } from '@llamatrade/core/proto/billing_pb';
 import type { Money } from '@llamatrade/core/proto/common_pb';
+import { Check } from 'lucide-react';
 
 type BillingCycle = 'monthly' | 'yearly';
 

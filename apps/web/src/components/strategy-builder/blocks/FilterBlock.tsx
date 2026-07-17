@@ -1,8 +1,8 @@
+import type { FilterBlock as FilterBlockType } from '@llamatrade/core/strategy/types';
+import { FILTER_UNIVERSES } from '@llamatrade/core/strategy/types';
 import { ChevronDown, X } from 'lucide-react';
 
 import { useStrategyBuilderStoreWithContext } from '../../../store/strategy-builder';
-import type { FilterBlock as FilterBlockType } from '@llamatrade/core/strategy/types';
-import { FILTER_UNIVERSES } from '@llamatrade/core/strategy/types';
 import { useBlockTheme } from '../useTheme';
 
 interface FilterBlockProps {

@@ -4,9 +4,6 @@
  * any open positions. Honest empty state when nothing has traded yet.
  */
 
-import { AlertTriangle, Loader2 } from 'lucide-react';
-import { useEffect } from 'react';
-import { Link } from 'react-router-dom';
 
 import { ExecutionMode } from '@llamatrade/core/proto/common_pb';
 import {
@@ -20,6 +17,9 @@ import {
 } from '@llamatrade/core/proto/trading_pb';
 import { toDate, toNumber } from '@llamatrade/core/stores/backtest';
 import { useTradingStore } from '@llamatrade/core/stores/trading';
+import { AlertTriangle, Loader2 } from 'lucide-react';
+import { useEffect } from 'react';
+import { Link } from 'react-router-dom';
 
 function money(value: number, digits = 2): string {
   return new Intl.NumberFormat('en-US', {

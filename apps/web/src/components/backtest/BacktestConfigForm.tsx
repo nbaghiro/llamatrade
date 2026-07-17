@@ -4,11 +4,11 @@
  * run trigger — the left-rail control surface of the backtest workspace.
  */
 
+import { useBacktestStore } from '@llamatrade/core/stores/backtest';
 import { ChevronDown, Loader2, Play } from 'lucide-react';
 import { useEffect, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 
-import { useBacktestStore } from '@llamatrade/core/stores/backtest';
 
 interface BacktestConfigFormProps {
   onRun: () => void;

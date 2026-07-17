@@ -1,3 +1,7 @@
+import type { BacktestRun } from '@llamatrade/core/proto/backtest_pb';
+import { StrategyStatus } from '@llamatrade/core/proto/strategy_pb';
+import { toDate, toNumber, useBacktestStore } from '@llamatrade/core/stores/backtest';
+import { type SortColumn, useStrategiesStore } from '@llamatrade/core/stores/strategies';
 import { AlertTriangle, ArrowDown, ArrowUp, Plus, RefreshCw, Search } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
@@ -13,10 +17,6 @@ import {
 } from '../../components/strategies/strategyRow';
 import { StrategyTable } from '../../components/strategies/StrategyTable';
 import { StrategyTreePreview } from '../../components/strategies/StrategyTreePreview';
-import type { BacktestRun } from '@llamatrade/core/proto/backtest_pb';
-import { StrategyStatus } from '@llamatrade/core/proto/strategy_pb';
-import { toDate, toNumber, useBacktestStore } from '@llamatrade/core/stores/backtest';
-import { type SortColumn, useStrategiesStore } from '@llamatrade/core/stores/strategies';
 import { useUIStore } from '../../store/ui';
 
 const STATUS_SEGMENTS: { label: string; value: string }[] = [

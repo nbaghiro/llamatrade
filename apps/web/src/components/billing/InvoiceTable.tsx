@@ -6,6 +6,7 @@
  */
 
 import type { Invoice } from '@llamatrade/core/proto/billing_pb';
+
 import { getInvoiceStatusLabel, InvoiceStatus } from '../../types/billing';
 
 import { formatDate, formatUsd, moneyToNumber, tsToDate } from './format';

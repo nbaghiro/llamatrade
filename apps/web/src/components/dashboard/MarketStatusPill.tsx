@@ -1,6 +1,6 @@
+import { MarketStatus, useDashboardStore } from '@llamatrade/core/stores/dashboard';
 import { useEffect, useState } from 'react';
 
-import { MarketStatus, useDashboardStore } from '@llamatrade/core/stores/dashboard';
 
 const GREEN = '#0f7a34';
 const ORANGE = '#ff4d1c';

@@ -2,6 +2,7 @@
  * PaymentMethodsPage - Manage saved payment methods
  */
 
+import { useBillingStore } from '@llamatrade/core/stores/billing';
 import { Elements } from '@stripe/react-stripe-js';
 import { loadStripe } from '@stripe/stripe-js';
 import { ArrowLeft, Loader2, Plus } from 'lucide-react';
@@ -11,7 +12,6 @@ import { Link } from 'react-router-dom';
 import CardForm from '../../components/billing/CardForm';
 import PaymentMethodCard from '../../components/billing/PaymentMethodCard';
 import { billingClient } from '../../services/grpc-client';
-import { useBillingStore } from '@llamatrade/core/stores/billing';
 
 const stripePromise = loadStripe(import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY || '');
 

@@ -3,9 +3,9 @@
  * benchmark reference, with an inline-return legend and CSV export.
  */
 
+import type { Benchmark, EquityPoint, Period, StrategyPerformance } from '@llamatrade/core/stores/portfolio';
 import { useMemo, useState } from 'react';
 
-import type { Benchmark, EquityPoint, Period, StrategyPerformance } from '@llamatrade/core/stores/portfolio';
 
 interface StrategyChartProps {
   strategies: StrategyPerformance[];

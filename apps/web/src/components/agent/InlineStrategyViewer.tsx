@@ -1,11 +1,12 @@
 /** Renders a strategy visualization inline within chat messages, parsing DSL from the artifact preview. */
 
 import type { PendingArtifact } from '@llamatrade/core/stores/agent';
+import { fromDSLString } from '@llamatrade/core/strategy/serializer';
+import type { StrategyTree } from '@llamatrade/core/strategy/types';
 import { AlertCircle, ChevronDown, ChevronRight, GitBranch, RefreshCw } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 
-import { fromDSLString } from '@llamatrade/core/strategy/serializer';
-import type { StrategyTree } from '@llamatrade/core/strategy/types';
+
 import { StrategyBuilder } from '../strategy-builder/StrategyBuilder';
 import { StrategyBuilderStoreProvider } from '../strategy-builder/StrategyBuilderStoreProvider';
 

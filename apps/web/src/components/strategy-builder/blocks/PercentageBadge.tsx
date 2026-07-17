@@ -1,7 +1,7 @@
+import type { BlockId } from '@llamatrade/core/strategy/types';
 import { useState, useRef, useEffect } from 'react';
 
 import { useStrategyBuilderStoreWithContext } from '../../../store/strategy-builder';
-import type { BlockId } from '@llamatrade/core/strategy/types';
 
 interface PercentageBadgeProps {
   weightBlockId: BlockId;

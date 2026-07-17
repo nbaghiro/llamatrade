@@ -485,7 +485,7 @@ class MarketDataServicer:
         if AlpacaCredentials.from_env().is_valid():
             try:
                 return await self._alpaca_market_status()
-            except Exception as e:  # noqa: BLE001 - degrade to calendar on any Alpaca failure
+            except Exception as e:  # any Alpaca failure degrades to the calendar fallback
                 logger.warning("Alpaca clock unavailable; using market calendar fallback: %s", e)
 
         return self._calendar_market_status()

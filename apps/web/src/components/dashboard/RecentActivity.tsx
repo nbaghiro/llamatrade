@@ -1,6 +1,6 @@
+import { useDashboardStore, type ActivityKind, type DashboardActivity } from '@llamatrade/core/stores/dashboard';
 import { useNavigate } from 'react-router-dom';
 
-import { useDashboardStore, type ActivityKind, type DashboardActivity } from '@llamatrade/core/stores/dashboard';
 
 import { timeAgo } from './format';
 

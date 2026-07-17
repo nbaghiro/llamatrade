@@ -1,6 +1,7 @@
-import { prepareTree, StrategyTree } from '../../components/common/StrategyTree';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
+import { StrategyTree } from '../../components/common/StrategyTree';
+import { prepareTree } from '../../components/common/strategyTreeModel';
 import { CodeBlock, MiniCode } from '../components/CodeBlock';
 import { k, nb, p, s, type CodeLine } from '../components/codeTokens';
 import { DSL_EXAMPLE, EDITOR_LEVELS } from '../data/editorLevels';

@@ -2,11 +2,11 @@
  * SubscriptionStatus component - displays current subscription details
  */
 
-import { AlertTriangle, Calendar, Clock, RefreshCw } from 'lucide-react';
 
 import type { Subscription } from '@llamatrade/core/proto/billing_pb';
 import { BillingInterval, SubscriptionStatus as SubStatus } from '@llamatrade/core/proto/billing_pb';
 import type { Timestamp } from '@llamatrade/core/proto/common_pb';
+import { AlertTriangle, Calendar, Clock, RefreshCw } from 'lucide-react';
 
 interface SubscriptionStatusProps {
   subscription: Subscription;

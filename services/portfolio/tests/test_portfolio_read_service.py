@@ -162,7 +162,11 @@ async def test_list_transactions_labels_allocation_with_strategy() -> None:
         SimpleNamespace(
             event_id=str(uuid4()),
             event_type=LedgerEventType.CAPITAL_ALLOCATED,
-            data={"from_sleeve_id": unallocated, "to_sleeve_id": strategy_sleeve, "amount": "15000"},
+            data={
+                "from_sleeve_id": unallocated,
+                "to_sleeve_id": strategy_sleeve,
+                "amount": "15000",
+            },
             occurred_at=datetime(2026, 1, 4, tzinfo=UTC),
         ),
     ]

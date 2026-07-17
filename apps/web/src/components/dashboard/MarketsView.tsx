@@ -1,11 +1,11 @@
-import { useEffect } from 'react';
-
 import {
   MARKET_PERIODS,
   useMarketsStore,
   type ChartType,
   type MarketPeriod,
 } from '@llamatrade/core/stores/markets';
+import { useEffect } from 'react';
+
 
 import { colorForSign, fmtCompact, fmtCurrency, fmtSignedCurrency, fmtSignedPercent } from './format';
 import PriceChart from './PriceChart';

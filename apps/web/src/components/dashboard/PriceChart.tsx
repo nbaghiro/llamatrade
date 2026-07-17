@@ -1,3 +1,4 @@
+import type { Candle, ChartType } from '@llamatrade/core/stores/markets';
 import {
   ColorType,
   createChart,
@@ -7,7 +8,6 @@ import {
 } from 'lightweight-charts';
 import { useEffect, useRef } from 'react';
 
-import type { Candle, ChartType } from '@llamatrade/core/stores/markets';
 
 import { DOWN, UP } from './format';
 

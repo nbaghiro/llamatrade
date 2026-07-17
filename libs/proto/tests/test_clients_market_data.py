@@ -150,7 +150,7 @@ def _connect_client(client: MarketDataClient) -> MagicMock:
     """Attach a mock Connect client + no-op auth headers; return the mock."""
     conn = MagicMock()
     client._client = conn
-    client._headers = lambda: {}  # type: ignore[method-assign]
+    setattr(client, "_headers", lambda: {})
     return conn
 
 

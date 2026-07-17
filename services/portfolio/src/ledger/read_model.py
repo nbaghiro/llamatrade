@@ -67,7 +67,9 @@ class TransactionView:
     amount: float
     fees: float
     occurred_at: object  # datetime | None
-    sleeve_id: str | None = None  # target sleeve for allocations/transfers (name resolved by caller)
+    sleeve_id: str | None = (
+        None  # target sleeve for allocations/transfers (name resolved by caller)
+    )
 
 
 def _price(prices: dict[str, Decimal], symbol: str, fallback: Decimal) -> Decimal:

@@ -3,6 +3,7 @@
 from unittest.mock import AsyncMock
 
 import pytest
+
 from llamatrade_alpaca import Asset
 
 from src.cache import MarketDataCache

@@ -1,6 +1,3 @@
-import { X } from 'lucide-react';
-import { useState, useCallback } from 'react';
-
 import type {
   FilterConfig,
   FilterSelection,
@@ -13,6 +10,9 @@ import {
   FILTER_SORT_OPTIONS,
   FILTER_PERIODS,
 } from '@llamatrade/core/strategy/types';
+import { X } from 'lucide-react';
+import { useState, useCallback } from 'react';
+
 
 interface FilterBuilderProps {
   initialConfig?: FilterConfig;

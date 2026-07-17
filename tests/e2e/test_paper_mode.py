@@ -28,3 +28,10 @@ def test_trading_leg(session: harness.JSON) -> None:
     harness.reset()
     harness.leg_trading(session)
     assert not harness.failures(), f"e2e checks failed: {harness.failures()}"
+
+
+def test_strategy_funding_leg(session: harness.JSON) -> None:
+    """Create/compile/activate a strategy, then deposit → wallet activity → withdraw."""
+    harness.reset()
+    harness.leg_strategy_funding(session)
+    assert not harness.failures(), f"e2e checks failed: {harness.failures()}"

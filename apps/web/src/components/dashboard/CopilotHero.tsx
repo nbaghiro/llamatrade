@@ -1,8 +1,8 @@
 import { useAgentStore } from '@llamatrade/core/stores/agent';
+import { useDashboardStore } from '@llamatrade/core/stores/dashboard';
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
-import { useDashboardStore } from '@llamatrade/core/stores/dashboard';
 
 const DEFAULT_PROMPTS = [
   'Build a momentum rotation',

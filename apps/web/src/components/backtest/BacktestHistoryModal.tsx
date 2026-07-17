@@ -3,14 +3,14 @@
  * Shows list of past backtests with ability to view details.
  */
 
-import { ChevronDown, Clock, Loader2, X } from 'lucide-react';
-import { useEffect, useState } from 'react';
-
 import {
   BacktestStatus,
   type BacktestRun,
 } from '@llamatrade/core/proto/backtest_pb';
 import { useBacktestStore, toDate, toNumber } from '@llamatrade/core/stores/backtest';
+import { ChevronDown, Clock, Loader2, X } from 'lucide-react';
+import { useEffect, useState } from 'react';
+
 
 interface BacktestHistoryModalProps {
   isOpen: boolean;

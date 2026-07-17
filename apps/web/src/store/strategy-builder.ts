@@ -1,10 +1,3 @@
-import { enableMapSet } from 'immer';
-import { createContext, useContext } from 'react';
-import { v4 as uuidv4 } from 'uuid';
-import { create, createStore, useStore } from 'zustand';
-import { immer } from 'zustand/middleware/immer';
-
-import { agentClient, strategyClient } from '../services/grpc-client';
 import {
   toDSL,
   fromDSL,
@@ -12,7 +5,6 @@ import {
   conditionToText,
   validateTree,
 } from '@llamatrade/core/strategy/serializer';
-import { validateStrategy, type ValidationResult, type ValidationIssue } from '@llamatrade/core/strategy/validator';
 import type {
   BlockId,
   Block,
@@ -27,6 +19,14 @@ import type {
   FilterBlock,
 } from '@llamatrade/core/strategy/types';
 import { hasChildren } from '@llamatrade/core/strategy/types';
+import { validateStrategy, type ValidationResult, type ValidationIssue } from '@llamatrade/core/strategy/validator';
+import { enableMapSet } from 'immer';
+import { createContext, useContext } from 'react';
+import { v4 as uuidv4 } from 'uuid';
+import { create, createStore, useStore } from 'zustand';
+import { immer } from 'zustand/middleware/immer';
+
+import { agentClient, strategyClient } from '../services/grpc-client';
 
 import { getTenantContext } from './auth';
 

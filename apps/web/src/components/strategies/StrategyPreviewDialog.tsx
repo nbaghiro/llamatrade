@@ -2,6 +2,9 @@
  * Shows a preview of a strategy template before opening in the full editor.
  */
 
+import { fromDSLString } from '@llamatrade/core/strategy/serializer';
+import type { BlockId } from '@llamatrade/core/strategy/types';
+import { hasChildren } from '@llamatrade/core/strategy/types';
 import { ArrowLeft, ArrowRight, X } from 'lucide-react';
 import { useCallback, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -12,11 +15,8 @@ import {
   TemplateCategory,
   TemplateDifficulty,
 } from '../../data/strategy-templates';
-import { fromDSLString } from '@llamatrade/core/strategy/serializer';
 import { useStrategyBuilderStore } from '../../store/strategy-builder';
 import { useUIStore } from '../../store/ui';
-import type { BlockId } from '@llamatrade/core/strategy/types';
-import { hasChildren } from '@llamatrade/core/strategy/types';
 import { StrategyBuilder } from '../strategy-builder/StrategyBuilder';
 
 const DIFFICULTY_COLORS: Record<TemplateDifficulty, string> = {

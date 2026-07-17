@@ -1,6 +1,6 @@
+import type { WatchItem } from '@llamatrade/core/stores/markets';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
-import type { WatchItem } from '@llamatrade/core/stores/markets';
 
 interface SymbolPickerProps {
   value: string;

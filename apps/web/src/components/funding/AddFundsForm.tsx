@@ -3,9 +3,9 @@
  * the pool every strategy allocates from. Shared by the modal and the Wallet page.
  */
 
+import { useFundingStore } from '@llamatrade/core/stores/funding';
 import { useEffect, useState } from 'react';
 
-import { useFundingStore } from '@llamatrade/core/stores/funding';
 
 const PRESETS = [10_000, 25_000, 50_000, 100_000];
 /** Guards against a fat-fingered extra zero; deposits are whole dollars. */

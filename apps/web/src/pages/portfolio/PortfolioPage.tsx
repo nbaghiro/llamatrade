@@ -3,6 +3,7 @@
  * strategies allocation & performance table.
  */
 
+import { usePortfolioStore } from '@llamatrade/core/stores/portfolio';
 import { Loader2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 
@@ -16,7 +17,6 @@ import {
   StrategyList,
 } from '../../components/portfolio';
 import { useAuthStore } from '../../store/auth';
-import { usePortfolioStore } from '@llamatrade/core/stores/portfolio';
 
 // Prefer the real name; fall back to the email local-part ("alex.rivera" → "Alex Rivera").
 function holderFrom(

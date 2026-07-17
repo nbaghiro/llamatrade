@@ -1,8 +1,8 @@
+import type { BlockId, ConditionExpression, FilterConfig } from '@llamatrade/core/strategy/types';
 import { TrendingUp, Folder, Scale, ArrowLeft, GitBranch, Filter } from 'lucide-react';
 import { useState } from 'react';
 
 import { useStrategyBuilderStore } from '../../../store/strategy-builder';
-import type { BlockId, ConditionExpression, FilterConfig } from '@llamatrade/core/strategy/types';
 import { useBlockTheme } from '../useTheme';
 
 import { AssetPicker } from './AssetPicker';

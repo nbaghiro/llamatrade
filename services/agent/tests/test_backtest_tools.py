@@ -32,7 +32,9 @@ async def test_submits_complete_config(ctx: ToolContext) -> None:
     """A saved strategy submits a job with a fully-populated window + capital —
     the empty Decimal the old tool sent crashed the service."""
     run = AsyncMock(return_value=MagicMock(backtest=MagicMock(id="bt-1")))
-    with patch("llamatrade_proto.generated.backtest_connect.BacktestServiceClient", _client_class(run)):
+    with patch(
+        "llamatrade_proto.generated.backtest_connect.BacktestServiceClient", _client_class(run)
+    ):
         result = await RunBacktestTool().execute(
             {"strategy_id": "s1", "initial_capital": 50000}, ctx
         )
@@ -52,7 +54,9 @@ async def test_submits_complete_config(ctx: ToolContext) -> None:
 async def test_defaults_window_and_capital(ctx: ToolContext) -> None:
     """Unspecified dates/capital fall back to last ~3y and $100k."""
     run = AsyncMock(return_value=MagicMock(backtest=MagicMock(id="bt-2")))
-    with patch("llamatrade_proto.generated.backtest_connect.BacktestServiceClient", _client_class(run)):
+    with patch(
+        "llamatrade_proto.generated.backtest_connect.BacktestServiceClient", _client_class(run)
+    ):
         result = await RunBacktestTool().execute({"strategy_id": "s1"}, ctx)
 
     assert result.success is True
@@ -82,7 +86,9 @@ async def test_missing_strategy_id(ctx: ToolContext) -> None:
 async def test_reports_failure_honestly(ctx: ToolContext) -> None:
     """A backend failure returns success=False — NOT masked as success."""
     run = AsyncMock(side_effect=RuntimeError("service down"))
-    with patch("llamatrade_proto.generated.backtest_connect.BacktestServiceClient", _client_class(run)):
+    with patch(
+        "llamatrade_proto.generated.backtest_connect.BacktestServiceClient", _client_class(run)
+    ):
         result = await RunBacktestTool().execute({"strategy_id": "s1"}, ctx)
 
     assert result.success is False

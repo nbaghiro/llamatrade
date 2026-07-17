@@ -1,13 +1,13 @@
-import { MoreHorizontal, Play, Pause, Copy, Trash2, Edit2 } from 'lucide-react';
-import { useState, useRef, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
-
 import type { Timestamp } from '@llamatrade/core/proto/common_pb';
 import {
   StrategyStatus,
   type Strategy,
 } from '@llamatrade/core/proto/strategy_pb';
 import { useStrategiesStore } from '@llamatrade/core/stores/strategies';
+import { MoreHorizontal, Play, Pause, Copy, Trash2, Edit2 } from 'lucide-react';
+import { useState, useRef, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
+
 
 interface StrategyCardProps {
   strategy: Strategy;

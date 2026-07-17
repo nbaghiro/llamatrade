@@ -1,5 +1,6 @@
-import { useStrategyBuilderStoreWithContext } from '../../../store/strategy-builder';
 import type { AssetBlock as AssetBlockType } from '@llamatrade/core/strategy/types';
+
+import { useStrategyBuilderStoreWithContext } from '../../../store/strategy-builder';
 import { useBlockTheme } from '../useTheme';
 
 interface AssetBlockProps {

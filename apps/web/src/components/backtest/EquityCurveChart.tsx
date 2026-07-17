@@ -4,10 +4,10 @@
  * toggle ($ / % / log). Pure SVG, zero chart dependencies.
  */
 
-import { useMemo, useState } from 'react';
 
 import type { BacktestMetrics, EquityPoint } from '@llamatrade/core/proto/backtest_pb';
 import { toNumber } from '@llamatrade/core/stores/backtest';
+import { useMemo, useState } from 'react';
 
 interface EquityCurveChartProps {
   data: EquityPoint[];

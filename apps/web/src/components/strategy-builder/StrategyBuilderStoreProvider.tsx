@@ -5,13 +5,13 @@
  * useful for inline previews in chat messages or modals.
  */
 
+import type { StrategyTree } from '@llamatrade/core/strategy/types';
 import { useMemo } from 'react';
 
 import {
   createStrategyBuilderStore,
   StrategyBuilderStoreContext,
 } from '../../store/strategy-builder';
-import type { StrategyTree } from '@llamatrade/core/strategy/types';
 
 interface StrategyBuilderStoreProviderProps {
   /** The strategy tree to initialize the store with */

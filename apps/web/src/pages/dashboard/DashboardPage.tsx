@@ -1,3 +1,4 @@
+import { useDashboardStore } from '@llamatrade/core/stores/dashboard';
 import { useEffect } from 'react';
 
 import ActiveStrategies from '../../components/dashboard/ActiveStrategies';
@@ -8,7 +9,6 @@ import MarketStatusPill from '../../components/dashboard/MarketStatusPill';
 import QuickActions from '../../components/dashboard/QuickActions';
 import RecentActivity from '../../components/dashboard/RecentActivity';
 import { useAuthStore } from '../../store/auth';
-import { useDashboardStore } from '@llamatrade/core/stores/dashboard';
 
 function greetingWord(hour: number): string {
   if (hour < 12) return 'Good morning';

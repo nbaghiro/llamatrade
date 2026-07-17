@@ -2,7 +2,7 @@
 """LlamaTrade paper-mode E2E harness.
 
 Fires REAL runs against the live service mesh as the demo tenant and asserts the
-full cross-service flow end-to-end. Two legs:
+full cross-service flow end-to-end. Three legs:
 
   1. Backtest  — RunBacktest -> the Celery worker executes the real engine over
      the seeded market bars -> GetBacktest -> assert metrics / equity curve /
@@ -12,6 +12,11 @@ full cross-service flow end-to-end. Two legs:
   2. Trading / ledger — funded strategy execution -> sleeve allocation -> a fill
      lands -> assert ledger events, position projection, and portfolio
      reconciliation. Exercises: strategy/trading -> ledger -> portfolio.
+
+  3. Strategy lifecycle + funding/wallet — create -> compile -> activate a
+     strategy, then deposit -> assert wallet activity -> withdraw (balance-
+     neutral). Exercises: strategy CRUD/compiler and the ledger funding path +
+     portfolio transaction read model.
 
 The default (simulated) run is deterministic and needs no external services, so
 it can run any time and in CI. `--live-alpaca` swaps in real Alpaca paper
@@ -43,6 +48,7 @@ import sys
 import time
 import urllib.error
 import urllib.request
+from collections.abc import Coroutine
 from datetime import UTC, datetime
 from typing import Any
 
@@ -143,6 +149,15 @@ def status_is(value: object, name: str, number: int) -> bool:
     return value == name or value == number or value == str(number)
 
 
+def _decimal(d: object) -> float:
+    """Parse a proto Decimal ({'value': '...'}) — or a plain number — to float."""
+    if isinstance(d, dict):
+        return float(d.get("value", 0) or 0)
+    if isinstance(d, int | float | str):
+        return float(d or 0)
+    return 0.0
+
+
 def pick_strategy(strategies: list[JSON]) -> JSON | None:
     """First ACTIVE/PAUSED strategy with symbols (backtestable; drafts are rejected)."""
     for s in strategies:
@@ -154,18 +169,18 @@ def pick_strategy(strategies: list[JSON]) -> JSON | None:
     return None
 
 
-def run_async(coro: object) -> object:
+def run_async(coro: Coroutine[Any, Any, object]) -> object:
     """Run a coroutine even when a loop is already running (e.g. pytest-asyncio)."""
     import asyncio
 
     try:
         asyncio.get_running_loop()
     except RuntimeError:
-        return asyncio.run(coro)  # type: ignore[arg-type]
+        return asyncio.run(coro)
     import concurrent.futures
 
     with concurrent.futures.ThreadPoolExecutor(1) as ex:
-        return ex.submit(asyncio.run, coro).result()  # type: ignore[arg-type]
+        return ex.submit(asyncio.run, coro).result()
 
 
 # --- Login -------------------------------------------------------------------
@@ -300,8 +315,7 @@ def _position_qty(session: JSON, symbol: str) -> float:
     resp = call("portfolio", "GetPositions", {"context": session["ctx"]}, session["token"])
     for p in resp.get("positions", []):
         if p.get("symbol") == symbol:
-            q = p.get("quantity")  # proto Decimal: {"value": "10.0"}
-            return float(q.get("value", 0)) if isinstance(q, dict) else float(q or 0)
+            return _decimal(p.get("quantity"))  # proto Decimal: {"value": "10.0"}
     return 0.0
 
 
@@ -315,18 +329,66 @@ def _wait_position(session: JSON, symbol: str, target: float, *, timeout: int = 
     return q
 
 
+def _paper_creds_id(session: JSON) -> str:
+    """The demo's active paper Alpaca credential id (raises if none)."""
+    creds = call("auth", "ListAlpacaCredentials", {}, session["token"])
+    paper = next(
+        (c for c in creds.get("credentials", []) if c.get("isPaper") and c.get("isActive")), None
+    )
+    if not paper:
+        raise E2EError("no active paper Alpaca credential on the demo")
+    return paper["id"]
+
+
+def _unallocated_free(session: JSON, account_id: str) -> float:
+    """Free cash in the account's Unallocated sleeve (SLEEVE_TYPE_UNALLOCATED)."""
+    resp = call(
+        "ledger",
+        "ListSleeves",
+        {"context": session["ctx"], "accountId": account_id},
+        session["token"],
+    )
+    for s in resp.get("sleeves", []):
+        if status_is(s.get("type"), "SLEEVE_TYPE_UNALLOCATED", 4):
+            return _decimal(s.get("cash", {}).get("balance"))
+    return 0.0
+
+
+def _wait_newest_txn(
+    session: JSON, type_name: str, type_num: int, amount: str, *, timeout: int = 10
+) -> bool:
+    """Poll until the newest wallet-activity row matches (type, amount).
+
+    The just-made deposit/withdrawal is the most recent ledger event, so the
+    newest ``ListTransactions`` row is *ours* — this proves the funding op
+    surfaced in the read model, not merely that some row of that amount exists.
+    """
+    target = float(amount)
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        resp = call(
+            "portfolio",
+            "ListTransactions",
+            {"context": session["ctx"], "pagination": {"page": 1, "pageSize": 5}},
+            session["token"],
+        )
+        rows = resp.get("transactions", [])
+        if rows:
+            top = rows[0]
+            if status_is(top.get("type"), type_name, type_num) and (
+                abs(_decimal(top.get("amount")) - target) < 1e-6
+            ):
+                return True
+        time.sleep(0.5)
+    return False
+
+
 def leg_trading(session: JSON, *, live_alpaca: bool = False) -> None:
     section("Leg 2 — trading → ledger → portfolio" + (" (LIVE alpaca)" if live_alpaca else ""))
     token, ctx = session["token"], session["ctx"]
 
-    creds = call("auth", "ListAlpacaCredentials", {}, token)
-    paper = next(
-        (c for c in creds.get("credentials", []) if c.get("isPaper") and c.get("isActive")), None
-    )
-    check(bool(paper), "paper credentials resolved")
-    if not paper:
-        raise E2EError("no active paper Alpaca credential on the demo")
-    creds_id = paper["id"]
+    creds_id = _paper_creds_id(session)
+    check(bool(creds_id), "paper credentials resolved")
 
     strat = call(
         "strategy",
@@ -460,6 +522,139 @@ def _leg_trading_live(
     )
 
 
+# --- Leg 3: strategy lifecycle + funding/wallet ------------------------------
+def leg_strategy_funding(session: JSON) -> None:
+    section("Leg 3 — strategy lifecycle + funding/wallet")
+    token, ctx = session["token"], session["ctx"]
+
+    # Part A — create -> compile -> activate a strategy. Source a real DSL from a
+    # seeded strategy (drift-proof: the seed keeps its DSL valid/current).
+    listing = call(
+        "strategy",
+        "ListStrategies",
+        {"context": ctx, "pagination": {"page": 1, "pageSize": 50}},
+        token,
+    )
+    source = pick_strategy(listing.get("strategies", []))
+    if source is None:
+        raise E2EError("no seeded strategy to source a valid DSL from")
+    got = call("strategy", "GetStrategy", {"context": ctx, "strategyId": source["id"]}, token)
+    dsl = got.get("strategy", {}).get("dslCode", "")
+    symbols = got.get("strategy", {}).get("symbols", [])
+    check(bool(dsl), "sourced a valid DSL from a seeded strategy", source.get("name"))
+    if not dsl:
+        raise E2EError(f"seeded strategy {source['id']} exposes no dslCode")
+
+    result = call(
+        "strategy",
+        "CompileStrategy",
+        {"context": ctx, "dslCode": dsl, "validateOnly": True},
+        token,
+    ).get("result", {})
+    check(
+        bool(result.get("success")),
+        "DSL compiles via the real compiler",
+        f"{len(result.get('errors', []))} errors",
+    )
+
+    created = call(
+        "strategy",
+        "CreateStrategy",
+        {
+            "context": ctx,
+            "name": "E2E Leg 3 strategy",
+            "description": "created by the e2e harness",
+            "dslCode": dsl,
+            "symbols": symbols,
+            "timeframe": "1D",
+        },
+        token,
+    )
+    new_id = created.get("strategy", {}).get("id")
+    check(bool(new_id), "strategy created (DRAFT)", f"id={str(new_id)[:8]}…")
+    if not new_id:
+        raise E2EError(f"CreateStrategy returned no id: {created}")
+
+    call(
+        "strategy",
+        "UpdateStrategyStatus",
+        {"context": ctx, "strategyId": new_id, "status": "STRATEGY_STATUS_ACTIVE"},
+        token,
+    )
+    activated = call("strategy", "GetStrategy", {"context": ctx, "strategyId": new_id}, token)
+    st = activated.get("strategy", {}).get("status")
+    check(status_is(st, "STRATEGY_STATUS_ACTIVE", 2), "strategy activated", f"status={st}")
+
+    # Cleanup — remove the throwaway strategy so the demo stays clean/repeatable.
+    try:
+        call("strategy", "DeleteStrategy", {"context": ctx, "strategyId": new_id}, token)
+        cleaned = "deleted"
+    except E2EError:
+        call(
+            "strategy",
+            "UpdateStrategyStatus",
+            {"context": ctx, "strategyId": new_id, "status": "STRATEGY_STATUS_ARCHIVED"},
+            token,
+        )
+        cleaned = "archived"
+    check(True, "strategy cleaned up", cleaned)
+
+    # Part B — deposit -> wallet activity -> withdraw. Balance-neutral, so the
+    # leg is repeatable and leaves the demo's free cash unchanged.
+    account_id = (
+        call(
+            "ledger",
+            "GetOrCreateAccount",
+            {"context": ctx, "credentialsId": _paper_creds_id(session)},
+            token,
+        )
+        .get("account", {})
+        .get("id")
+    )
+    check(bool(account_id), "ledger account resolved", f"id={str(account_id)[:8]}…")
+    if not account_id:
+        raise E2EError("GetOrCreateAccount returned no account id")
+
+    amount = "5000"
+    free_before = _unallocated_free(session, account_id)
+
+    dep = call(
+        "ledger",
+        "DepositFunds",
+        {"context": ctx, "accountId": account_id, "amount": {"value": amount}},
+        token,
+    )
+    free_after = _decimal(dep.get("unallocated", {}).get("cash", {}).get("balance"))
+    check(
+        abs(free_after - (free_before + 5000)) < 1e-6,
+        "deposit credited free cash",
+        f"${free_before:,.0f} → ${free_after:,.0f}",
+    )
+    check(
+        _wait_newest_txn(session, "TRANSACTION_TYPE_DEPOSIT", 1, amount),
+        "deposit is the newest wallet-activity row",
+        f"+${amount}",
+    )
+
+    wd = call(
+        "ledger",
+        "WithdrawFunds",
+        {"context": ctx, "accountId": account_id, "amount": {"value": amount}},
+        token,
+    )
+    free_final = _decimal(wd.get("unallocated", {}).get("cash", {}).get("balance"))
+    check(
+        abs(free_final - free_before) < 1e-6,
+        "withdrawal restored balance (leg is neutral)",
+        f"${free_after:,.0f} → ${free_final:,.0f}",
+    )
+    check(
+        _wait_newest_txn(session, "TRANSACTION_TYPE_WITHDRAWAL", 2, amount),
+        "withdrawal is the newest wallet-activity row",
+        f"-${amount}",
+    )
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="LlamaTrade paper-mode E2E harness")
     ap.add_argument(
@@ -467,7 +662,7 @@ def main() -> int:
         action="store_true",
         help="use real Alpaca paper credentials for the trading leg",
     )
-    ap.add_argument("--only", choices=["backtest", "trading"], help="run a single leg")
+    ap.add_argument("--only", choices=["backtest", "trading", "strategy"], help="run a single leg")
     args = ap.parse_args()
 
     print(
@@ -481,6 +676,8 @@ def main() -> int:
             leg_backtest(session)
         if args.only in (None, "trading"):
             leg_trading(session, live_alpaca=args.live_alpaca)
+        if args.only in (None, "strategy"):
+            leg_strategy_funding(session)
     except E2EError as e:
         print(f"\n{RED}✗ {e}{RST}")
         _checks.append((False, str(e)))

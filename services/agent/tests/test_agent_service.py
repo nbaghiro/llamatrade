@@ -134,9 +134,7 @@ class TestBuildLLMMessages:
         assert hasattr(agent_service, "_current_system_prompt")
         assert "Test Strategy" in agent_service._current_system_prompt
 
-    def test_build_messages_coalesces_consecutive_roles(
-        self, agent_service: AgentService
-    ) -> None:
+    def test_build_messages_coalesces_consecutive_roles(self, agent_service: AgentService) -> None:
         """Consecutive same-role turns are merged so alternation stays strict.
 
         A history window may begin mid-conversation (on an assistant turn) or
@@ -764,9 +762,7 @@ class TestToolConfirmation:
             ]
 
         execute.assert_awaited_once()
-        tool_complete = [
-            e for e in events if e.get("type") == STREAM_EVENT_TYPE_TOOL_CALL_COMPLETE
-        ]
+        tool_complete = [e for e in events if e.get("type") == STREAM_EVENT_TYPE_TOOL_CALL_COMPLETE]
         content = [e for e in events if e.get("type") == STREAM_EVENT_TYPE_CONTENT_DELTA]
         complete = [e for e in events if e.get("type") == STREAM_EVENT_TYPE_COMPLETE]
         assert len(tool_complete) == 1

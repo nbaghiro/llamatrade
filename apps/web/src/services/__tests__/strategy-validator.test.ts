@@ -1,4 +1,3 @@
-import { describe, it, expect } from 'vitest';
 
 import type { StrategyTree } from '@llamatrade/core/strategy/types';
 import {
@@ -8,6 +7,7 @@ import {
   blockHasWarning,
   getBlockIssues,
 } from '@llamatrade/core/strategy/validator';
+import { describe, it, expect } from 'vitest';
 
 // Helper to create a minimal valid tree
 function createBaseTree(): StrategyTree {

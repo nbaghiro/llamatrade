@@ -4,10 +4,10 @@
  * with the deepest drawdown and recovery duration.
  */
 
-import { useMemo } from 'react';
 
 import type { BacktestMetrics, EquityPoint } from '@llamatrade/core/proto/backtest_pb';
 import { toDate, toNumber } from '@llamatrade/core/stores/backtest';
+import { useMemo } from 'react';
 
 interface DrawdownChartProps {
   data: EquityPoint[];

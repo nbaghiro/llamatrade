@@ -3,14 +3,14 @@
  * deployed sleeves and free cash, and where paper capital is added.
  */
 
+import { useActivityStore } from '@llamatrade/core/stores/activity';
+import { useFundingStore } from '@llamatrade/core/stores/funding';
+import { usePortfolioStore } from '@llamatrade/core/stores/portfolio';
 import { Loader2, Receipt } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
 import { AddFundsForm } from '../../components/funding/AddFundsForm';
 import { WalletActivityDrawer } from '../../components/funding/WalletActivityDrawer';
-import { useActivityStore } from '@llamatrade/core/stores/activity';
-import { useFundingStore } from '@llamatrade/core/stores/funding';
-import { usePortfolioStore } from '@llamatrade/core/stores/portfolio';
 
 function formatCurrency(value: number): string {
   return new Intl.NumberFormat('en-US', {

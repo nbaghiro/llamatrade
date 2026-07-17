@@ -1,7 +1,7 @@
+import type { SortColumn, SortDirection } from '@llamatrade/core/stores/strategies';
 import { ArrowDown, ArrowUp, ChevronsUpDown, Pencil, Play } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
-import type { SortColumn, SortDirection } from '@llamatrade/core/stores/strategies';
 
 import { MiniChart } from './MiniChart';
 import {

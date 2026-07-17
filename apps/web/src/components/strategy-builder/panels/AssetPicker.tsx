@@ -1,8 +1,8 @@
+import type { BlockId } from '@llamatrade/core/strategy/types';
 import { Search, TrendingUp } from 'lucide-react';
 import { useState, useMemo } from 'react';
 
 import { useStrategyBuilderStore } from '../../../store/strategy-builder';
-import type { BlockId } from '@llamatrade/core/strategy/types';
 
 // Stubbed asset data - in production this would come from an API
 const STUB_ASSETS = [

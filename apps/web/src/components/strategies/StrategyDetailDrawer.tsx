@@ -1,8 +1,8 @@
+import { StrategyStatus } from '@llamatrade/core/proto/strategy_pb';
 import { MoreHorizontal, Pause, Pencil, Play, Trash2, X } from 'lucide-react';
 import { lazy, Suspense, useState } from 'react';
 import { Link } from 'react-router-dom';
 
-import { StrategyStatus } from '@llamatrade/core/proto/strategy_pb';
 
 import { EquityMiniChart } from './EquityMiniChart';
 import {

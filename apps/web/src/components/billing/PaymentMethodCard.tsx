@@ -2,10 +2,10 @@
  * PaymentMethodCard component - displays a saved payment method
  */
 
+import type { PaymentMethod } from '@llamatrade/core/proto/billing_pb';
 import { CreditCard, MoreVertical, Star, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 
-import type { PaymentMethod } from '@llamatrade/core/proto/billing_pb';
 
 interface PaymentMethodCardProps {
   paymentMethod: PaymentMethod;

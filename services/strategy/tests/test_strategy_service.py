@@ -392,9 +392,7 @@ class TestListStrategies:
 
         # Mock list returns (strategy, symbols, timeframe) rows from the version join
         mock_list_result = MagicMock()
-        mock_list_result.all.return_value = [
-            (s, ["SPY", "TLT"], "1D") for s in mock_strategies
-        ]
+        mock_list_result.all.return_value = [(s, ["SPY", "TLT"], "1D") for s in mock_strategies]
 
         mock_db.execute.side_effect = [mock_count_result, mock_list_result]
 
@@ -1441,7 +1439,9 @@ class TestExecutionFunding:
         execution = self._pending_execution()
         strategy = make_mock_strategy(id=execution.strategy_id)
         ledger = self._ledger_mock(uuid4(), uuid4())
-        ledger.allocate_capital.side_effect = ConnectError(Code.INVALID_ARGUMENT, "insufficient free cash")
+        ledger.allocate_capital.side_effect = ConnectError(
+            Code.INVALID_ARGUMENT, "insufficient free cash"
+        )
 
         with (
             patch.object(service, "_get_execution_by_id", return_value=execution),
@@ -1534,7 +1534,9 @@ class TestExecutionStopRelease:
         service = StrategyService(mock_db)
         execution = self._running_execution()
         ledger = AsyncMock()
-        ledger.close_sleeve.side_effect = ConnectError(Code.FAILED_PRECONDITION, "sleeve has reserved cash for in-flight orders")
+        ledger.close_sleeve.side_effect = ConnectError(
+            Code.FAILED_PRECONDITION, "sleeve has reserved cash for in-flight orders"
+        )
 
         with patch.object(service, "_get_execution_by_id", return_value=execution):
             result = await service.stop_execution(execution.tenant_id, execution.id, ledger=ledger)

@@ -1,3 +1,4 @@
+import { useBillingStore } from '@llamatrade/core/stores/billing';
 import { CreditCard, LineChart, FlaskConical, ChevronDown, LogOut, PieChart, Sparkles, User, Wallet } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom';
@@ -6,7 +7,6 @@ import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom';
 import NewStrategyDialog from '../../components/strategies/NewStrategyDialog';
 import StrategyPreviewDialog from '../../components/strategies/StrategyPreviewDialog';
 import { useAuthStore } from '../../store/auth';
-import { useBillingStore } from '@llamatrade/core/stores/billing';
 import { useUIStore } from '../../store/ui';
 import { AgentFAB } from '../agent/AgentFAB';
 import { CopilotSidePanel } from '../agent/CopilotSidePanel';

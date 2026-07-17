@@ -1,5 +1,6 @@
-import { Marquee } from '../../components/common/Marquee';
 import { Fragment } from 'react';
+
+import { Marquee } from '../../components/common/Marquee';
 
 /**
  * The three ticker rows.
