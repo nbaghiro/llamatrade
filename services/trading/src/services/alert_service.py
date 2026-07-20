@@ -13,7 +13,7 @@ from uuid import UUID
 import httpx
 from fastapi import Depends
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from tenacity import (
     retry,
     retry_if_exception_type,
@@ -80,26 +80,36 @@ class Alert:
 class AlertService:
     """Sends notifications for important trading events."""
 
-    def __init__(self, db: AsyncSession | None = None):
+    def __init__(
+        self,
+        db: AsyncSession | None = None,
+        session_maker: async_sessionmaker[AsyncSession] | None = None,
+    ):
         self.db = db
+        # Long-lived callers (the live runner) pass a session_maker so each send
+        # opens its own short session instead of sharing one across the runner's
+        # concurrent loops; request-scoped callers/tests pass ``db`` directly.
+        self._session_maker = session_maker
         self._http_client: httpx.AsyncClient | None = None
 
     async def send(self, alert: Alert) -> bool:
         """Send alert via configured channels."""
+        if self._session_maker is not None:
+            async with self._session_maker() as db:
+                return await self._deliver(alert, db)
+        return await self._deliver(alert, self.db)
+
+    async def _deliver(self, alert: Alert, db: AsyncSession | None) -> bool:
         success = True
-
-        webhooks = await self._get_webhooks(alert.tenant_id)
-
+        webhooks = await self._get_webhooks(alert.tenant_id, db)
         for webhook in webhooks:
             if not self._should_send(alert, webhook):
                 continue
-
             try:
-                await self._send_webhook(webhook, alert)
+                await self._send_webhook(webhook, alert, db)
             except Exception as e:
                 logger.error(f"Failed to send webhook alert: {e}")
                 success = False
-
         return success
 
     async def on_order_filled(
@@ -634,15 +644,16 @@ class AlertService:
             )
         )
 
-    async def _get_webhooks(self, tenant_id: UUID) -> list[Webhook]:
+    async def _get_webhooks(self, tenant_id: UUID, db: AsyncSession | None = None) -> list[Webhook]:
         """Get active webhooks for tenant."""
-        if not self.db:
+        db = db if db is not None else self.db
+        if not db:
             return []
 
         stmt = (
             select(Webhook).where(Webhook.tenant_id == tenant_id).where(Webhook.is_active.is_(True))
         )
-        result = await self.db.execute(stmt)
+        result = await db.execute(stmt)
         return list(result.scalars().all())
 
     def _should_send(self, alert: Alert, webhook: Webhook) -> bool:
@@ -655,8 +666,11 @@ class AlertService:
 
         return True
 
-    async def _send_webhook(self, webhook: Webhook, alert: Alert) -> None:
+    async def _send_webhook(
+        self, webhook: Webhook, alert: Alert, db: AsyncSession | None = None
+    ) -> None:
         """Send alert to webhook URL with retry logic and delivery tracking."""
+        db = db if db is not None else self.db
         if not self._http_client:
             self._http_client = httpx.AsyncClient(timeout=10.0)
 
@@ -676,8 +690,8 @@ class AlertService:
             "metadata": metadata_payload,
         }
 
-        # Serialize payload for HMAC and request
-        payload_bytes = json.dumps(payload, sort_keys=True).encode("utf-8")
+        # Serialize payload for HMAC and request (default=str renders any Decimal exactly)
+        payload_bytes = json.dumps(payload, sort_keys=True, default=str).encode("utf-8")
 
         headers = {"Content-Type": "application/json"}
 
@@ -705,6 +719,7 @@ class AlertService:
                 webhook=webhook,
                 status_code=status_code,
                 success=True,
+                db=db,
             )
             logger.info(f"Sent webhook alert to {webhook.url}: {alert.alert_type.value}")
 
@@ -715,6 +730,7 @@ class AlertService:
                 webhook=webhook,
                 status_code=status_code,
                 success=False,
+                db=db,
             )
             logger.error(f"Webhook delivery failed after retries to {webhook.url}: {e}")
             raise
@@ -725,6 +741,7 @@ class AlertService:
                 webhook=webhook,
                 status_code=status_code,
                 success=False,
+                db=db,
             )
             logger.error(f"Webhook delivery failed after retries to {webhook.url}: {e}")
             raise
@@ -735,6 +752,7 @@ class AlertService:
                 webhook=webhook,
                 status_code=status_code,
                 success=False,
+                db=db,
             )
             logger.error(f"Webhook delivery error to {webhook.url}: {e}")
             raise
@@ -780,6 +798,7 @@ class AlertService:
         webhook: Webhook,
         status_code: int | None,
         success: bool,
+        db: AsyncSession | None = None,
     ) -> None:
         """Update webhook delivery tracking fields.
 
@@ -788,7 +807,8 @@ class AlertService:
             status_code: HTTP status code from delivery attempt.
             success: Whether delivery was successful.
         """
-        if not self.db:
+        db = db if db is not None else self.db
+        if not db:
             return
 
         try:
@@ -800,10 +820,10 @@ class AlertService:
             else:
                 webhook.failure_count = webhook.failure_count + 1
 
-            await self.db.commit()
+            await db.commit()
         except Exception as e:
             logger.error(f"Failed to update webhook delivery status: {e}")
-            await self.db.rollback()
+            await db.rollback()
 
     async def close(self) -> None:
         """Close HTTP client."""

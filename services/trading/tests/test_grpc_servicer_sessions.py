@@ -8,6 +8,7 @@ which exercises the service layer directly.
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from decimal import Decimal
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import UUID, uuid4
 
@@ -74,7 +75,7 @@ def _session(*, stopped: bool = False) -> SessionResponse:
         status=EXECUTION_STATUS_STOPPED if stopped else EXECUTION_STATUS_RUNNING,
         started_at=datetime.now(UTC),
         stopped_at=datetime.now(UTC) if stopped else None,
-        pnl=12.5,
+        pnl=Decimal("12.5"),
         trades_count=3,
         name="Test Session",
         sleeve_id=uuid4(),

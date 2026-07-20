@@ -6,6 +6,7 @@ buying-power risk checks, and cash-reservation lifecycle publishing.
 
 from datetime import UTC, datetime
 from decimal import Decimal
+from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock
 from uuid import UUID, uuid4
 
@@ -87,7 +88,11 @@ def _lot(symbol: str = "SPY", qty: str = "50", avg_price: str = "480") -> LotInf
 
 def _position(qty: float, entry: float = 480.0) -> Position:
     return Position(
-        symbol="SPY", side="long", quantity=qty, entry_price=entry, entry_date=datetime.now(UTC)
+        symbol="SPY",
+        side="long",
+        quantity=Decimal(str(qty)),
+        entry_price=Decimal(str(entry)),
+        entry_date=datetime.now(UTC),
     )
 
 
@@ -142,7 +147,7 @@ class TestSleeveEquitySync:
         client.get_sleeve.side_effect = ConnectionError("portfolio down")
         runner = _runner(portfolio_client=client)
         runner.alpaca_client = AsyncMock()
-        runner._equity = 40000.0
+        runner._equity = Decimal("40000")
 
         await runner._sync_equity()
 
@@ -171,36 +176,42 @@ class TestFreeCashFit:
     @pytest.mark.asyncio
     async def test_buy_scaled_down_to_free_cash(self) -> None:
         runner = _runner()
-        runner._free_cash = 4800.0
+        runner._free_cash = Decimal("4800")
         runner.risk_manager.check_order = AsyncMock(
             return_value=RiskCheckResult(passed=True, violations=[])
         )
 
-        await runner._process_signal(Signal(type="buy", symbol="SPY", quantity=100, price=480.0))
+        await runner._process_signal(
+            Signal(type="buy", symbol="SPY", quantity=Decimal("100"), price=Decimal("480.0"))
+        )
 
-        submitted = runner.order_executor.submit_order.await_args.kwargs["order"]
+        submitted = cast(Any, runner.order_executor.submit_order).await_args.kwargs["order"]
         assert submitted.qty == pytest.approx(10.0)  # 4800 / 480
 
     @pytest.mark.asyncio
     async def test_buy_skipped_when_free_cash_exhausted(self) -> None:
         runner = _runner()
-        runner._free_cash = 0.0
+        runner._free_cash = Decimal("0")
 
-        await runner._process_signal(Signal(type="buy", symbol="SPY", quantity=10, price=480.0))
+        await runner._process_signal(
+            Signal(type="buy", symbol="SPY", quantity=Decimal("10"), price=Decimal("480.0"))
+        )
 
-        runner.order_executor.submit_order.assert_not_awaited()
+        cast(Any, runner.order_executor.submit_order).assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_sells_never_clamped(self) -> None:
         runner = _runner()
-        runner._free_cash = 0.0
+        runner._free_cash = Decimal("0")
         runner.risk_manager.check_order = AsyncMock(
             return_value=RiskCheckResult(passed=True, violations=[])
         )
 
-        await runner._process_signal(Signal(type="sell", symbol="SPY", quantity=10, price=480.0))
+        await runner._process_signal(
+            Signal(type="sell", symbol="SPY", quantity=Decimal("10"), price=Decimal("480.0"))
+        )
 
-        submitted = runner.order_executor.submit_order.await_args.kwargs["order"]
+        submitted = cast(Any, runner.order_executor.submit_order).await_args.kwargs["order"]
         assert submitted.qty == pytest.approx(10.0)
 
 
@@ -218,20 +229,20 @@ class TestSleeveBuyingPower:
     @pytest.mark.asyncio
     async def test_buy_within_free_cash_passes(self) -> None:
         risk = self._risk(_sleeve_detail(balance="40000"))
-        violation = await risk._check_sleeve(TENANT_ID, SLEEVE_ID, "buy", 24000.0)
+        violation = await risk._check_sleeve(TENANT_ID, SLEEVE_ID, "buy", Decimal("24000"))
         assert violation is None
 
     @pytest.mark.asyncio
     async def test_buy_exceeding_free_cash_violates(self) -> None:
         risk = self._risk(_sleeve_detail(balance="40000", reserved="20000"))
-        violation = await risk._check_sleeve(TENANT_ID, SLEEVE_ID, "buy", 24000.0)
+        violation = await risk._check_sleeve(TENANT_ID, SLEEVE_ID, "buy", Decimal("24000"))
         assert violation is not None
         assert "free cash" in violation
 
     @pytest.mark.asyncio
     async def test_fetch_failure_fails_safe(self) -> None:
         risk = self._risk(ConnectionError("portfolio down"))
-        violation = await risk._check_sleeve(TENANT_ID, SLEEVE_ID, "buy", 100.0)
+        violation = await risk._check_sleeve(TENANT_ID, SLEEVE_ID, "buy", Decimal("100"))
         assert violation is not None
 
     @pytest.mark.asyncio
@@ -239,7 +250,7 @@ class TestSleeveBuyingPower:
         from llamatrade_proto.generated.ledger_pb2 import SLEEVE_STATUS_FROZEN
 
         risk = self._risk(_sleeve_detail(balance="40000", status=SLEEVE_STATUS_FROZEN))
-        violation = await risk._check_sleeve(TENANT_ID, SLEEVE_ID, "buy", 1.0)
+        violation = await risk._check_sleeve(TENANT_ID, SLEEVE_ID, "buy", Decimal("1"))
         assert violation is not None
         assert "frozen" in violation
 
@@ -248,14 +259,14 @@ class TestSleeveBuyingPower:
         from llamatrade_proto.generated.ledger_pb2 import SLEEVE_STATUS_FROZEN
 
         risk = self._risk(_sleeve_detail(status=SLEEVE_STATUS_FROZEN))
-        violation = await risk._check_sleeve(TENANT_ID, SLEEVE_ID, "sell", 1.0)
+        violation = await risk._check_sleeve(TENANT_ID, SLEEVE_ID, "sell", Decimal("1"))
         assert violation is not None
         assert "frozen" in violation
 
     @pytest.mark.asyncio
     async def test_active_sleeve_sell_passes_without_cash_check(self) -> None:
         risk = self._risk(_sleeve_detail(balance="0"))
-        violation = await risk._check_sleeve(TENANT_ID, SLEEVE_ID, "sell", 1e9)
+        violation = await risk._check_sleeve(TENANT_ID, SLEEVE_ID, "sell", Decimal("1e9"))
         assert violation is None
 
     @pytest.mark.asyncio
@@ -263,7 +274,7 @@ class TestSleeveBuyingPower:
         from llamatrade_proto.generated.ledger_pb2 import SLEEVE_STATUS_CLOSED
 
         risk = self._risk(_sleeve_detail(balance="40000", status=SLEEVE_STATUS_CLOSED))
-        violation = await risk._check_sleeve(TENANT_ID, SLEEVE_ID, "buy", 1.0)
+        violation = await risk._check_sleeve(TENANT_ID, SLEEVE_ID, "buy", Decimal("1"))
         assert violation is not None
         assert "closed" in violation
 
@@ -272,7 +283,7 @@ class TestSleeveBuyingPower:
         from llamatrade_proto.generated.ledger_pb2 import SLEEVE_STATUS_CLOSED
 
         risk = self._risk(_sleeve_detail(status=SLEEVE_STATUS_CLOSED))
-        violation = await risk._check_sleeve(TENANT_ID, SLEEVE_ID, "sell", 1.0)
+        violation = await risk._check_sleeve(TENANT_ID, SLEEVE_ID, "sell", Decimal("1"))
         assert violation is not None
         assert "closed" in violation
 
@@ -310,23 +321,25 @@ class TestReservationPublishing:
         order = OrderCreate(
             symbol="SPY",
             side=ORDER_SIDE_BUY,
-            qty=50,
+            qty=Decimal("50"),
             order_type=ORDER_TYPE_LIMIT,
-            limit_price=480.0,
+            limit_price=Decimal("480.0"),
         )
         assert OrderExecutor._reservation_amount(order) == Decimal("24000.0")
 
     def test_market_buy_reserves_nothing(self) -> None:
-        order = OrderCreate(symbol="SPY", side=ORDER_SIDE_BUY, qty=50, order_type=ORDER_TYPE_MARKET)
+        order = OrderCreate(
+            symbol="SPY", side=ORDER_SIDE_BUY, qty=Decimal("50"), order_type=ORDER_TYPE_MARKET
+        )
         assert OrderExecutor._reservation_amount(order) is None
 
     def test_sell_reserves_nothing(self) -> None:
         order = OrderCreate(
             symbol="SPY",
             side=ORDER_SIDE_SELL,
-            qty=50,
+            qty=Decimal("50"),
             order_type=ORDER_TYPE_LIMIT,
-            limit_price=480.0,
+            limit_price=Decimal("480.0"),
         )
         assert OrderExecutor._reservation_amount(order) is None
 
@@ -523,7 +536,9 @@ class TestSessionPnlFromLedger:
         client.get_sleeve.return_value = detail
 
         with (
-            patch.object(service, "get_session_pnl", AsyncMock(return_value=(100.0, 50.0))),
+            patch.object(
+                service, "get_session_pnl", AsyncMock(return_value=(Decimal("100"), Decimal("50")))
+            ),
             patch.object(service, "get_trades_count", AsyncMock(return_value=7)),
             patch(
                 "src.clients.portfolio_client.get_portfolio_ledger_client",
@@ -533,7 +548,7 @@ class TestSessionPnlFromLedger:
             response = await service._to_response_with_pnl(self._session())
 
         # ledger realized (1234.56) + local unrealized (50), NOT local realized
-        assert response.pnl == pytest.approx(1284.56)
+        assert float(response.pnl) == pytest.approx(1284.56)
 
     @pytest.mark.asyncio
     async def test_flag_off_uses_local_pnl(self) -> None:
@@ -544,7 +559,9 @@ class TestSessionPnlFromLedger:
         service = SessionService(AsyncMock())
 
         with (
-            patch.object(service, "get_session_pnl", AsyncMock(return_value=(100.0, 50.0))),
+            patch.object(
+                service, "get_session_pnl", AsyncMock(return_value=(Decimal("100"), Decimal("50")))
+            ),
             patch.object(service, "get_trades_count", AsyncMock(return_value=7)),
         ):
             response = await service._to_response_with_pnl(self._session())
@@ -562,7 +579,9 @@ class TestSessionPnlFromLedger:
         client.get_sleeve.side_effect = ConnectionError("portfolio down")
 
         with (
-            patch.object(service, "get_session_pnl", AsyncMock(return_value=(100.0, 50.0))),
+            patch.object(
+                service, "get_session_pnl", AsyncMock(return_value=(Decimal("100"), Decimal("50")))
+            ),
             patch.object(service, "get_trades_count", AsyncMock(return_value=7)),
             patch(
                 "src.clients.portfolio_client.get_portfolio_ledger_client",
@@ -683,15 +702,17 @@ class TestMarketBuyReservation:
         order = OrderCreate(
             symbol="SPY",
             side=ORDER_SIDE_BUY,
-            qty=50,
+            qty=Decimal("50"),
             order_type=ORDER_TYPE_MARKET,
-            est_price=480.0,
+            est_price=Decimal("480.0"),
         )
         assert OrderExecutor._reservation_amount(order) == Decimal("24000.0")
 
     def test_runner_threads_signal_price_as_est_price(self) -> None:
         runner = _runner()
-        order = runner._signal_to_order(Signal(type="buy", symbol="SPY", quantity=50, price=480.0))
+        order = runner._signal_to_order(
+            Signal(type="buy", symbol="SPY", quantity=Decimal("50"), price=Decimal("480.0"))
+        )
         assert order.est_price == pytest.approx(480.0)
         assert order.sleeve_id == SLEEVE_ID
 
@@ -802,9 +823,11 @@ class TestShortsRejection:
     async def test_short_signal_rejected_under_ledger_execution(self) -> None:
         runner = _runner()
 
-        await runner._process_signal(Signal(type="short", symbol="SPY", quantity=10, price=480.0))
+        await runner._process_signal(
+            Signal(type="short", symbol="SPY", quantity=Decimal("10"), price=Decimal("480.0"))
+        )
 
-        runner.order_executor.submit_order.assert_not_awaited()
+        cast(Any, runner.order_executor.submit_order).assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_short_signal_allowed_for_legacy_sessions(self) -> None:
@@ -814,6 +837,8 @@ class TestShortsRejection:
             return_value=RiskCheckResult(passed=True, violations=[])
         )
 
-        await runner._process_signal(Signal(type="short", symbol="SPY", quantity=10, price=480.0))
+        await runner._process_signal(
+            Signal(type="short", symbol="SPY", quantity=Decimal("10"), price=Decimal("480.0"))
+        )
 
-        runner.order_executor.submit_order.assert_awaited_once()
+        cast(Any, runner.order_executor.submit_order).assert_awaited_once()

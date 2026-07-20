@@ -1,6 +1,7 @@
 """Test audit service."""
 
 from datetime import UTC, datetime
+from decimal import Decimal
 
 import pytest
 
@@ -27,8 +28,8 @@ def sample_signal():
     return Signal(
         type="buy",
         symbol="AAPL",
-        quantity=10.0,
-        price=150.0,
+        quantity=Decimal("10.0"),
+        price=Decimal("150.0"),
         timestamp=datetime.now(UTC),
     )
 
@@ -41,11 +42,11 @@ def sample_order_response(order_id):
         alpaca_order_id="alpaca-123",
         symbol="AAPL",
         side=ORDER_SIDE_BUY,
-        qty=10.0,
+        qty=Decimal("10.0"),
         order_type=ORDER_TYPE_MARKET,
         status=ORDER_STATUS_FILLED,
-        filled_qty=10.0,
-        filled_avg_price=150.50,
+        filled_qty=Decimal("10.0"),
+        filled_avg_price=Decimal("150.50"),
         submitted_at=datetime.now(UTC),
         filled_at=datetime.now(UTC),
     )
@@ -361,3 +362,28 @@ class TestAuditServiceErrors:
         log_entry = mock_db.add.call_args[0][0]
         assert log_entry.event_type == "connection_restored"
         assert log_entry.data["service"] == "Alpaca"
+
+
+async def test_log_uses_session_maker_when_provided(sample_order_response, tenant_id, session_id):
+    """With a session_maker (long-lived callers like the runner), each audit
+    write opens its own short session and commits (GAP 14)."""
+    from unittest.mock import AsyncMock, MagicMock
+
+    from llamatrade_db.models.audit import AuditLog
+
+    added: list = []
+    session = MagicMock()
+    session.add = MagicMock(side_effect=added.append)
+    session.commit = AsyncMock()
+    cm = MagicMock()
+    cm.__aenter__ = AsyncMock(return_value=session)
+    cm.__aexit__ = AsyncMock(return_value=False)
+    maker = MagicMock(return_value=cm)
+
+    audit = AuditService(session_maker=maker)
+    await audit.log_order_submitted(
+        tenant_id=tenant_id, session_id=session_id, order=sample_order_response
+    )
+
+    assert any(isinstance(o, AuditLog) for o in added)
+    session.commit.assert_awaited_once()

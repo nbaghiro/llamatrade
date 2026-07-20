@@ -1,24 +1,35 @@
 """Audit service - records all trading events for compliance and debugging."""
 
+from __future__ import annotations
+
 from datetime import UTC, datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
 from fastapi import Depends
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from llamatrade_db import get_db
 from llamatrade_db.models.audit import AuditEventType, AuditLog
 
 from src.models import OrderResponse, RiskCheckResult
-from src.runner.runner import Signal
+
+if TYPE_CHECKING:
+    from src.runner.runner import Signal
 
 
 class AuditService:
     """Records all trading events for compliance and debugging."""
 
-    def __init__(self, db: AsyncSession):
+    def __init__(
+        self,
+        db: AsyncSession | None = None,
+        session_maker: async_sessionmaker[AsyncSession] | None = None,
+    ):
         self.db = db
+        # Long-lived callers pass a session_maker so each audit write opens its
+        # own short session; request-scoped callers/tests pass ``db``.
+        self._session_maker = session_maker
 
     async def log_signal(
         self,
@@ -429,6 +440,13 @@ class AuditService:
             summary=summary,
             source=source,
         )
+        if self._session_maker is not None:
+            async with self._session_maker() as db:
+                db.add(log)
+                await db.commit()
+            return
+        if self.db is None:
+            return
         self.db.add(log)
         await self.db.commit()
 

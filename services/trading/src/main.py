@@ -4,6 +4,8 @@ This service handles live order execution and trading sessions.
 It exposes endpoints via Connect protocol for direct browser access.
 """
 
+import asyncio
+import contextlib
 import logging
 import os
 from collections.abc import AsyncGenerator
@@ -45,9 +47,33 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     except ImportError as e:
         logger.warning("Connect dependencies not available: %s", e)
 
+    # Re-attach runners to sessions left RUNNING/PAUSED by a crashed pod, and
+    # keep reclaiming on an interval. Ownership is arbitrated by a per-session
+    # advisory lock so scaled replicas never double-run a session. Must never
+    # block startup.
+    stop_event = asyncio.Event()
+    rehydration_task: asyncio.Task[None] | None = None
+    try:
+        from src.recovery import rehydration_loop
+        from src.runner.runner import get_runner_manager
+
+        rehydration_task = asyncio.create_task(rehydration_loop(get_runner_manager(), stop_event))
+        logger.info("Started live-session rehydration loop")
+    except Exception:
+        logger.exception("Failed to start rehydration loop")
+
     yield
 
-    # Shutdown - dispose the DB connection pool
+    # Shutdown - stop rehydration, release ownership leases, dispose the pool.
+    stop_event.set()
+    if rehydration_task is not None:
+        rehydration_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await rehydration_task
+    with contextlib.suppress(Exception):
+        from src.recovery import release_all_leases
+
+        await release_all_leases()
     await close_db()
 
 

@@ -95,6 +95,9 @@ async def test_matching_tenant_submit_proceeds(servicer):
 
     mock_executor = MagicMock()
     mock_executor.submit_order = AsyncMock(return_value=mock_order)
+    # Attribution reads executor.db; no session → unattributed (None, None).
+    mock_executor.db = MagicMock()
+    mock_executor.db.scalar = AsyncMock(return_value=None)
 
     token = set_context(TenantContext(tenant_id=TENANT_A, user_id=USER))
     try:
@@ -148,6 +151,9 @@ async def test_service_principal_trusts_wire_tenant(servicer):
 
     mock_executor = MagicMock()
     mock_executor.submit_order = AsyncMock(return_value=mock_order)
+    # Attribution reads executor.db; no session → unattributed (None, None).
+    mock_executor.db = MagicMock()
+    mock_executor.db.scalar = AsyncMock(return_value=None)
 
     token = set_context(TenantContext(tenant_id=UUID(int=0), user_id=UUID(int=0), is_service=True))
     try:

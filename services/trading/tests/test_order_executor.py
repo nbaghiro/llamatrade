@@ -1,6 +1,7 @@
 """Test order executor."""
 
 from datetime import UTC, datetime
+from decimal import Decimal
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -79,7 +80,7 @@ class TestSubmitOrder:
         order = OrderCreate(
             symbol="AAPL",
             side=ORDER_SIDE_BUY,
-            qty=10.0,
+            qty=Decimal("10.0"),
             order_type=ORDER_TYPE_MARKET,
         )
 
@@ -117,9 +118,9 @@ class TestSubmitOrder:
         order = OrderCreate(
             symbol="GOOGL",
             side=ORDER_SIDE_SELL,
-            qty=5.0,
+            qty=Decimal("5.0"),
             order_type=ORDER_TYPE_LIMIT,
-            limit_price=150.0,
+            limit_price=Decimal("150.0"),
         )
 
         async def mock_refresh(obj):
@@ -156,7 +157,7 @@ class TestSubmitOrder:
         order = OrderCreate(
             symbol="AAPL",
             side=ORDER_SIDE_BUY,
-            qty=1000.0,
+            qty=Decimal("1000.0"),
             order_type=ORDER_TYPE_MARKET,
         )
 
@@ -188,7 +189,7 @@ class TestSubmitOrder:
         order = OrderCreate(
             symbol="AAPL",
             side=ORDER_SIDE_BUY,
-            qty=10.0,
+            qty=Decimal("10.0"),
             order_type=ORDER_TYPE_MARKET,
         )
 
@@ -638,13 +639,13 @@ class TestSyncAllPendingOrders:
         mock_alpaca_order = AlpacaOrder(
             id="alpaca-order-123",
             symbol="AAPL",
-            qty=10.0,
+            qty=Decimal("10.0"),
             side=AlpacaOrderSide.BUY,
             order_type=AlpacaOrderType.MARKET,
             status=AlpacaOrderStatus.FILLED,
             time_in_force=AlpacaTimeInForce.DAY,
-            filled_qty=10.0,
-            filled_avg_price=150.0,
+            filled_qty=Decimal("10.0"),
+            filled_avg_price=Decimal("150.0"),
             created_at=datetime.now(UTC),
         )
         mock_alpaca_client.get_order.return_value = mock_alpaca_order
@@ -676,12 +677,12 @@ class TestSyncAllPendingOrders:
         mock_alpaca_order = AlpacaOrder(
             id="alpaca-order-123",
             symbol="AAPL",
-            qty=10.0,
+            qty=Decimal("10.0"),
             side=AlpacaOrderSide.BUY,
             order_type=AlpacaOrderType.MARKET,
             status=AlpacaOrderStatus.NEW,  # Maps to "submitted"
             time_in_force=AlpacaTimeInForce.DAY,
-            filled_qty=0,
+            filled_qty=Decimal("0"),
             filled_avg_price=None,
             created_at=datetime.now(UTC),
         )
@@ -715,7 +716,7 @@ class TestAlertWiring:
         order = OrderCreate(
             symbol="AAPL",
             side=ORDER_SIDE_BUY,
-            qty=1000.0,
+            qty=Decimal("1000.0"),
             order_type=ORDER_TYPE_MARKET,
         )
 
@@ -755,7 +756,7 @@ class TestAlertWiring:
         order = OrderCreate(
             symbol="GOOGL",
             side=ORDER_SIDE_SELL,
-            qty=5.0,
+            qty=Decimal("5.0"),
             order_type=ORDER_TYPE_MARKET,
         )
 

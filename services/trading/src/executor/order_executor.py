@@ -56,6 +56,7 @@ from src.models import (
 )
 from src.risk.risk_manager import RiskManager, get_risk_manager
 from src.services.alert_service import AlertService, get_alert_service
+from src.services.audit_service import AuditService
 from src.streaming import TradingEventPublisher, get_trading_event_publisher
 
 logger = logging.getLogger(__name__)
@@ -92,11 +93,13 @@ class OrderExecutor(OrderSubmissionMixin):
         alert_service: AlertService | None = None,
         event_publisher: TradingEventPublisher | None = None,
         owns_alpaca: bool = False,
+        audit_service: AuditService | None = None,
     ):
         self.db = db
         self.alpaca = alpaca_client
         self.risk = risk_manager
         self.alerts = alert_service
+        self.audit = audit_service
         self.publisher = event_publisher
         # True when this executor built a session-specific Alpaca client it owns
         # (manual order path); the shared singleton must never be closed.
@@ -247,6 +250,13 @@ class OrderExecutor(OrderSubmissionMixin):
                 db_order, "order_submitted", reserved=self._reservation_amount(order)
             )
 
+            if self.audit:
+                await self.audit.log_order_submitted(
+                    tenant_id=tenant_id,
+                    session_id=session_id,
+                    order=self._to_response(db_order),
+                )
+
         except Exception as e:
             await self._handle_alpaca_rejection(
                 tenant_id=tenant_id,
@@ -374,6 +384,15 @@ class OrderExecutor(OrderSubmissionMixin):
 
         return self._to_response(order, bracket_info)
 
+    async def get_order_session_id(self, order_id: UUID, tenant_id: UUID) -> UUID | None:
+        """Return the owning session id of a tenant's order, or None if not found.
+
+        Lets the cancel path resolve the session's per-tenant Alpaca credentials
+        without leaking a raw model query into the servicer (GAP 10).
+        """
+        order = await self._get_order_by_id(tenant_id, order_id)
+        return order.session_id if order else None
+
     async def list_orders(
         self,
         tenant_id: UUID,
@@ -449,6 +468,13 @@ class OrderExecutor(OrderSubmissionMixin):
         # Release the ledger cash reservation (idempotent at the ledger —
         # the runner publishes the same release for stream-observed cancels)
         await self._publish_ledger_lifecycle(order, "order_cancelled")
+
+        if self.audit:
+            await self.audit.log_order_cancelled(
+                tenant_id=tenant_id,
+                session_id=order.session_id,
+                order=self._to_response(order),
+            )
 
         return True
 
@@ -637,10 +663,10 @@ class OrderExecutor(OrderSubmissionMixin):
                     alpaca_order_id=order.alpaca_order_id,
                     symbol=order.symbol,
                     side=order_side_to_str(order.side),
-                    qty=float(order.qty),
+                    qty=order.qty,
                     order_type=order_type_to_str(order.order_type),
-                    filled_qty=float(order.filled_qty),
-                    filled_avg_price=filled_price,
+                    filled_qty=order.filled_qty,
+                    filled_avg_price=order.filled_avg_price or Decimal("0"),
                 )
 
             if order.parent_order_id:
@@ -650,6 +676,12 @@ class OrderExecutor(OrderSubmissionMixin):
                 # Parent order filled - send alert and submit bracket orders
                 if self.alerts:
                     await self.alerts.on_order_filled(
+                        tenant_id=order.tenant_id,
+                        session_id=order.session_id,
+                        order=self._to_response(order),
+                    )
+                if self.audit:
+                    await self.audit.log_order_filled(
                         tenant_id=order.tenant_id,
                         session_id=order.session_id,
                         order=self._to_response(order),
@@ -921,6 +953,11 @@ class OrderExecutor(OrderSubmissionMixin):
             filled_qty=Decimal("0"),
             parent_order_id=parent_order.id,
             bracket_type=bracket_type,  # BracketType is IntEnum, no conversion needed
+            # Inherit the parent's ledger identity so a stop-loss/take-profit fill
+            # observed only via REST sync or crash recovery is still re-emitted —
+            # those emitters skip orders with no sleeve_id/account_id.
+            sleeve_id=parent_order.sleeve_id,
+            account_id=parent_order.account_id,
         )
         self.db.add(db_order)
         await self.db.flush()
@@ -943,12 +980,12 @@ class OrderExecutor(OrderSubmissionMixin):
 
         alpaca_order = await self.alpaca.submit_order(
             symbol=order.symbol,
-            qty=float(order.qty),
+            qty=order.qty,
             side=order_side_to_str(order.side),
             order_type=order_type_to_str(order.order_type),
             time_in_force=time_in_force_to_str(order.time_in_force),
-            limit_price=float(order.limit_price) if order.limit_price else None,
-            stop_price=float(order.stop_price) if order.stop_price else None,
+            limit_price=order.limit_price,
+            stop_price=order.stop_price,
         )
 
         order.alpaca_order_id = alpaca_order.id
@@ -1259,24 +1296,26 @@ class OrderExecutor(OrderSubmissionMixin):
         """Convert order to response."""
         return OrderResponse(
             id=o.id,
+            tenant_id=o.tenant_id,
+            session_id=o.session_id,
             client_order_id=o.client_order_id,
             alpaca_order_id=o.alpaca_order_id,
             symbol=o.symbol,
             side=o.side,  # Already int (proto enum value)
-            qty=float(o.qty),
+            qty=o.qty,
             order_type=o.order_type,  # Already int (proto enum value)
-            limit_price=float(o.limit_price) if o.limit_price else None,
-            stop_price=float(o.stop_price) if o.stop_price else None,
+            limit_price=o.limit_price,
+            stop_price=o.stop_price,
             status=o.status,  # Already int (proto enum value)
-            filled_qty=float(o.filled_qty),
-            filled_avg_price=float(o.filled_avg_price) if o.filled_avg_price else None,
+            filled_qty=o.filled_qty,
+            filled_avg_price=o.filled_avg_price,
             submitted_at=o.submitted_at or o.created_at,
             filled_at=o.filled_at,
             # Bracket order fields
             parent_order_id=o.parent_order_id,
             bracket_type=BracketType(o.bracket_type) if o.bracket_type else None,
-            stop_loss_price=float(o.stop_loss_price) if o.stop_loss_price else None,
-            take_profit_price=float(o.take_profit_price) if o.take_profit_price else None,
+            stop_loss_price=o.stop_loss_price,
+            take_profit_price=o.take_profit_price,
             bracket_orders=bracket_info,
         )
 
@@ -1312,10 +1351,11 @@ async def create_order_executor(
     never the platform/env default (trading-hardening 2A). Raises ``ValueError``
     if those credentials can't be resolved.
     """
-    from llamatrade_alpaca import TradingClient, get_trading_client
+    from llamatrade_alpaca import get_trading_client
     from llamatrade_db import get_session_maker, set_tenant_guc
 
     from src.credentials import resolve_session_credentials
+    from src.providers import build_trading_client
     from src.risk.risk_manager import get_risk_manager
 
     db = get_session_maker()()
@@ -1329,11 +1369,7 @@ async def create_order_executor(
             raise ValueError(
                 "No active Alpaca credentials for this session; cannot place the order"
             )
-        alpaca: TradingClient = TradingClient(
-            api_key=creds.api_key,
-            api_secret=creds.api_secret,
-            paper=creds.is_paper,
-        )
+        alpaca = build_trading_client(creds)
         owns_alpaca = True
     else:
         alpaca = get_trading_client()
@@ -1342,8 +1378,13 @@ async def create_order_executor(
         db=db,
         alpaca_client=alpaca,
         risk_manager=get_risk_manager(),
-        alert_service=None,  # Alert service requires async init, optional for gRPC
+        # Own short sessions per alert (webhook fetch/delivery) so a long-lived
+        # runner never shares its DB session across concurrent alerts (GAP 14).
+        alert_service=AlertService(session_maker=get_session_maker()),
         event_publisher=get_trading_event_publisher(),
         owns_alpaca=owns_alpaca,
+        # Money-path audit trail: order submit/fill/cancel are recorded to the
+        # audit log (GAP 14). Own short sessions, like the alert service.
+        audit_service=AuditService(session_maker=get_session_maker()),
     )
     return executor

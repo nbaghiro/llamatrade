@@ -138,13 +138,18 @@ def create_mock_executor(
     cancel_order_return=True,
     get_order_return=None,
     list_orders_return=None,
+    get_order_session_id_return=TEST_SESSION_ID,
 ):
     """Create a mock executor with configured return values."""
     mock_executor = MagicMock()
     mock_executor.submit_order = AsyncMock(return_value=submit_order_return)
     mock_executor.cancel_order = AsyncMock(return_value=cancel_order_return)
     mock_executor.get_order = AsyncMock(return_value=get_order_return)
+    mock_executor.get_order_session_id = AsyncMock(return_value=get_order_session_id_return)
     mock_executor.list_orders = AsyncMock(return_value=list_orders_return or ([], 0))
+    # Attribution reads the executor's db; no session → unattributed (None, None).
+    mock_executor.db = MagicMock()
+    mock_executor.db.scalar = AsyncMock(return_value=None)
     return mock_executor
 
 
@@ -225,6 +230,8 @@ class TestSubmitOrder:
 
         mock_executor = MagicMock()
         mock_executor.submit_order = AsyncMock(side_effect=ValueError("Invalid quantity"))
+        mock_executor.db = MagicMock()
+        mock_executor.db.scalar = AsyncMock(return_value=None)
 
         with patch(
             "src.grpc.servicer.create_order_executor", new=AsyncMock(return_value=mock_executor)
@@ -245,6 +252,42 @@ class TestSubmitOrder:
                 await trading_servicer.SubmitOrder(request, grpc_context)
 
             assert exc_info.value.code() == grpc.StatusCode.INVALID_ARGUMENT
+
+    async def test_submit_order_attribution_failure_is_fail_loud(
+        self, trading_servicer, grpc_context
+    ):
+        """A ledger outage during attribution must fail the order, not silently
+        book it as an unattributed manual trade (GAP 16 / 7A)."""
+        from llamatrade_proto.generated import common_pb2, trading_pb2
+
+        mock_executor = create_mock_executor(submit_order_return=make_mock_order())
+
+        with (
+            patch(
+                "src.grpc.servicer.create_order_executor",
+                new=AsyncMock(return_value=mock_executor),
+            ),
+            patch.object(
+                trading_servicer,
+                "_resolve_order_attribution",
+                new=AsyncMock(side_effect=RuntimeError("ledger down")),
+            ),
+        ):
+            request = trading_pb2.SubmitOrderRequest(
+                context=common_pb2.TenantContext(
+                    tenant_id=str(TEST_TENANT_ID), user_id=str(TEST_USER_ID)
+                ),
+                session_id=str(TEST_SESSION_ID),
+                symbol="AAPL",
+                side=trading_pb2.ORDER_SIDE_BUY,
+                type=trading_pb2.ORDER_TYPE_MARKET,
+                quantity=common_pb2.Decimal(value="10"),
+            )
+            with pytest.raises(grpc.aio.AioRpcError) as exc_info:
+                await trading_servicer.SubmitOrder(request, grpc_context)
+
+        assert exc_info.value.code() == grpc.StatusCode.INTERNAL
+        mock_executor.submit_order.assert_not_called()  # order never placed unattributed
 
 
 class TestCancelOrder:
@@ -297,6 +340,41 @@ class TestCancelOrder:
                 await trading_servicer.CancelOrder(request, grpc_context)
 
             assert exc_info.value.code() == grpc.StatusCode.FAILED_PRECONDITION
+
+    async def test_cancel_order_uses_session_credentials(self, trading_servicer, grpc_context):
+        """CancelOrder must build the executor for the order's OWN session so the
+        cancel is placed on the tenant's Alpaca account, not the platform/env
+        account (GAP 10)."""
+        from llamatrade_proto.generated import common_pb2, trading_pb2
+
+        mock_order = make_mock_order(status="CANCELLED")
+        mock_executor = create_mock_executor(
+            cancel_order_return=True,
+            get_order_return=mock_order,
+            get_order_session_id_return=TEST_SESSION_ID,
+        )
+        create = AsyncMock(return_value=mock_executor)
+
+        with patch("src.grpc.servicer.create_order_executor", new=create):
+            request = trading_pb2.CancelOrderRequest(
+                context=common_pb2.TenantContext(
+                    tenant_id=str(TEST_TENANT_ID),
+                    user_id=str(TEST_USER_ID),
+                ),
+                order_id=str(TEST_ORDER_ID),
+            )
+
+            await trading_servicer.CancelOrder(request, grpc_context)
+
+        # The cancelling executor must be created bound to the order's session
+        # (per-tenant creds) — never with tenant_id alone, which falls back to
+        # env/platform credentials.
+        cred_calls = [
+            c for c in create.call_args_list if c.kwargs.get("session_id") == TEST_SESSION_ID
+        ]
+        assert cred_calls, (
+            f"expected create_order_executor(session_id=...); got {create.call_args_list}"
+        )
 
 
 class TestGetOrder:

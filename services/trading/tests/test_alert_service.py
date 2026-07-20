@@ -4,6 +4,7 @@ import hashlib
 import hmac
 import json
 from datetime import UTC, datetime
+from decimal import Decimal
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
@@ -44,11 +45,11 @@ def sample_order_response(order_id):
         alpaca_order_id="alpaca-123",
         symbol="AAPL",
         side=ORDER_SIDE_BUY,
-        qty=10.0,
+        qty=Decimal("10.0"),
         order_type=ORDER_TYPE_MARKET,
         status=ORDER_STATUS_FILLED,
-        filled_qty=10.0,
-        filled_avg_price=150.50,
+        filled_qty=Decimal("10.0"),
+        filled_avg_price=Decimal("150.50"),
         submitted_at=datetime.now(UTC),
         filled_at=datetime.now(UTC),
     )

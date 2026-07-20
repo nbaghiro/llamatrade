@@ -112,45 +112,41 @@ class TradingServicer:
 
         Resolution order (CONTRACTS.md §5): explicit request sleeve → the
         session's strategy sleeve → the account's Manual sleeve (an
-        unattributed order is a manual trade). Resolution failures log and fall
-        back to unattributed — reconciliation will classify the effects as
-        external rather than blocking the order.
+        unattributed order is a manual trade). Resolution failures **raise** (the
+        SubmitOrder RPC then fails) rather than silently booking the order as an
+        unattributed manual trade: a mis-attributed order with no ledger events
+        is worse than a rejected one (hardening 7A).
         """
         from sqlalchemy import select
 
         from llamatrade_db.models.trading import TradingSession
         from llamatrade_proto.generated.ledger_pb2 import SLEEVE_TYPE_MANUAL
 
-        try:
-            session = await db.scalar(
-                select(TradingSession).where(
-                    TradingSession.tenant_id == tenant_id,
-                    TradingSession.id == session_id,
-                )
+        session = await db.scalar(
+            select(TradingSession).where(
+                TradingSession.tenant_id == tenant_id,
+                TradingSession.id == session_id,
             )
-            if requested_sleeve_id:
-                sleeve_id = UUID(requested_sleeve_id)
-                if session is not None and session.account_id is not None:
-                    return sleeve_id, session.account_id
-                detail = await self._get_ledger().get_sleeve(
-                    str(tenant_id), user_id, requested_sleeve_id
-                )
-                return sleeve_id, UUID(detail.sleeve.account_id)
+        )
+        if requested_sleeve_id:
+            sleeve_id = UUID(requested_sleeve_id)
+            if session is not None and session.account_id is not None:
+                return sleeve_id, session.account_id
+            detail = await self._get_ledger().get_sleeve(
+                str(tenant_id), user_id, requested_sleeve_id
+            )
+            return sleeve_id, UUID(detail.sleeve.account_id)
 
-            if session is not None and session.sleeve_id is not None:
-                return session.sleeve_id, session.account_id
+        if session is not None and session.sleeve_id is not None:
+            return session.sleeve_id, session.account_id
 
-            if session is not None:
-                bootstrap = await self._get_ledger().get_or_create_account(
-                    str(tenant_id), user_id, str(session.credentials_id)
-                )
-                manual = next(
-                    (s for s in bootstrap.base_sleeves if s.type == SLEEVE_TYPE_MANUAL), None
-                )
-                if manual is not None:
-                    return UUID(manual.id), UUID(bootstrap.account.id)
-        except Exception as e:
-            logger.warning("Order attribution resolution failed (session=%s): %s", session_id, e)
+        if session is not None:
+            bootstrap = await self._get_ledger().get_or_create_account(
+                str(tenant_id), user_id, str(session.credentials_id)
+            )
+            manual = next((s for s in bootstrap.base_sleeves if s.type == SLEEVE_TYPE_MANUAL), None)
+            if manual is not None:
+                return UUID(manual.id), UUID(bootstrap.account.id)
         return None, None
 
     async def StartSession(
@@ -398,11 +394,13 @@ class TradingServicer:
                 side=request.side or ORDER_SIDE_BUY,
                 order_type=request.type or ORDER_TYPE_MARKET,
                 time_in_force=request.time_in_force or TIME_IN_FORCE_DAY,
-                qty=float(request.quantity.value) if request.HasField("quantity") else 0.0,
-                limit_price=float(request.limit_price.value)
+                qty=Decimal(request.quantity.value)
+                if request.HasField("quantity")
+                else Decimal("0"),
+                limit_price=Decimal(request.limit_price.value)
                 if request.HasField("limit_price")
                 else None,
-                stop_price=float(request.stop_price.value)
+                stop_price=Decimal(request.stop_price.value)
                 if request.HasField("stop_price")
                 else None,
                 sleeve_id=sleeve_id,
@@ -440,7 +438,19 @@ class TradingServicer:
             tenant_id, _user_id = _identity(request.context)
             order_id = UUID(request.order_id)
 
-            executor = await create_order_executor(tenant_id=tenant_id)
+            # Resolve the order's owning session first so the cancel is placed on
+            # the tenant's OWN Alpaca account via that session's per-tenant
+            # credentials — never the platform/env account (GAP 10). The lookup
+            # needs no broker client, so a tenant-only executor is fine for it.
+            probe = await create_order_executor(tenant_id=tenant_id)
+            try:
+                session_id = await probe.get_order_session_id(order_id, tenant_id)
+            finally:
+                await _aclose(probe)
+            if session_id is None:
+                await context.abort(grpc.StatusCode.NOT_FOUND, f"Order not found: {order_id}")
+
+            executor = await create_order_executor(session_id=session_id, tenant_id=tenant_id)
             success = await executor.cancel_order(order_id=order_id, tenant_id=tenant_id)
             if not success:
                 await context.abort(grpc.StatusCode.FAILED_PRECONDITION, "Cannot cancel order")
@@ -639,7 +649,7 @@ class TradingServicer:
             quantity = (
                 Decimal(request.quantity.value)
                 if request.HasField("quantity") and Decimal(request.quantity.value) > 0
-                else Decimal(str(position.qty))
+                else position.qty
             )
             side = ORDER_SIDE_SELL if position.side == "long" else ORDER_SIDE_BUY
 
@@ -648,7 +658,7 @@ class TradingServicer:
                 side=side,
                 order_type=ORDER_TYPE_MARKET,
                 time_in_force=TIME_IN_FORCE_DAY,
-                qty=float(quantity),
+                qty=quantity,
             )
 
             # Closing order hits the session's own brokerage account (2A).
@@ -773,8 +783,8 @@ class TradingServicer:
             id=str(order.id),
             # The deterministic client_order_id (idempotency key), NOT the broker id.
             client_order_id=order.client_order_id or "",
-            tenant_id="",  # Not stored in OrderResponse
-            session_id="",  # Not stored in OrderResponse
+            tenant_id=str(order.tenant_id) if order.tenant_id else "",
+            session_id=str(order.session_id) if order.session_id else "",
             symbol=order.symbol,
             side=order.side,
             type=order.order_type,

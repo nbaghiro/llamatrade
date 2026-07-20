@@ -42,7 +42,7 @@ def make_alpaca_order(order_id: str, status: str = "accepted") -> AlpacaOrder:
     return AlpacaOrder(
         id=order_id,
         symbol="AAPL",
-        qty=10.0,
+        qty=Decimal("10.0"),
         side=AlpacaOrderSide.SELL,
         order_type=AlpacaOrderType.STOP_LIMIT,
         status=status_map.get(status, AlpacaOrderStatus.ACCEPTED),
@@ -103,10 +103,10 @@ class TestSubmitOrderWithBrackets:
         order = OrderCreate(
             symbol="AAPL",
             side=ORDER_SIDE_BUY,
-            qty=10.0,
+            qty=Decimal("10.0"),
             order_type=ORDER_TYPE_MARKET,
-            stop_loss_price=145.0,
-            take_profit_price=165.0,
+            stop_loss_price=Decimal("145.0"),
+            take_profit_price=Decimal("165.0"),
             bracket_time_in_force=TIME_IN_FORCE_GTC,
         )
 
@@ -147,9 +147,9 @@ class TestSubmitOrderWithBrackets:
         order = OrderCreate(
             symbol="AAPL",
             side=ORDER_SIDE_BUY,
-            qty=10.0,
+            qty=Decimal("10.0"),
             order_type=ORDER_TYPE_MARKET,
-            stop_loss_price=145.0,
+            stop_loss_price=Decimal("145.0"),
         )
 
         captured_order = None
@@ -556,13 +556,13 @@ class TestSyncWithBracketFills:
         filled_order = AlpacaOrder(
             id="alpaca-parent-123",
             symbol="AAPL",
-            qty=10.0,
+            qty=Decimal("10.0"),
             side=AlpacaOrderSide.BUY,
             order_type=AlpacaOrderType.MARKET,
             status=AlpacaOrderStatus.FILLED,
             time_in_force=AlpacaTimeInForce.DAY,
-            filled_qty=10.0,
-            filled_avg_price=150.50,
+            filled_qty=Decimal("10.0"),
+            filled_avg_price=Decimal("150.50"),
             created_at=datetime.now(UTC),
         )
         mock_alpaca_client.get_order = AsyncMock(return_value=filled_order)
@@ -611,6 +611,7 @@ class TestGetOrderWithBracketInfo:
         parent_order = MagicMock(spec=Order)
         parent_order.id = order_id
         parent_order.tenant_id = tenant_id
+        parent_order.session_id = uuid4()
         parent_order.alpaca_order_id = "alpaca-123"
         parent_order.client_order_id = "client-123"
         parent_order.symbol = "AAPL"
@@ -700,6 +701,52 @@ class TestBracketOrderValidation:
         for order in orders_created:
             assert order.symbol == mock_parent_order.symbol
             assert order.qty == mock_parent_order.qty
+
+    async def test_bracket_order_inherits_ledger_identity(
+        self,
+        bracket_order_executor,
+        mock_db,
+        mock_alpaca_client,
+        mock_parent_order,
+        tenant_id,
+        session_id,
+    ):
+        """Bracket children inherit the parent's sleeve/account so their exit fills
+        are still re-emitted to the ledger by REST-sync/recovery, which skip any
+        order with no sleeve_id/account_id."""
+        sleeve = uuid4()
+        account = uuid4()
+        mock_parent_order.sleeve_id = sleeve
+        mock_parent_order.account_id = account
+
+        orders_created = []
+
+        def capture_add(obj):
+            if isinstance(obj, Order):
+                orders_created.append(obj)
+
+        mock_db.add = MagicMock(side_effect=capture_add)
+
+        async def mock_refresh(obj):
+            if not hasattr(obj, "id") or obj.id is None:
+                obj.id = uuid4()
+
+        mock_db.refresh = AsyncMock(side_effect=mock_refresh)
+        mock_alpaca_client.submit_order = AsyncMock(
+            return_value=make_alpaca_order("alpaca-123", "accepted")
+        )
+
+        await bracket_order_executor._submit_bracket_orders(
+            tenant_id=tenant_id,
+            session_id=session_id,
+            parent_order=mock_parent_order,
+            filled_price=150.0,
+        )
+
+        assert orders_created  # both stop-loss and take-profit children created
+        for order in orders_created:
+            assert order.sleeve_id == sleeve
+            assert order.account_id == account
 
     async def test_stop_loss_uses_stop_limit_order(
         self,
@@ -914,13 +961,13 @@ class TestOCORaceConditionHandling:
         mock_alpaca_client.get_order.return_value = AlpacaOrder(
             id="alpaca-tp-123",
             symbol="AAPL",
-            qty=10.0,
+            qty=Decimal("10.0"),
             side=AlpacaOrderSide.SELL,
             order_type=AlpacaOrderType.LIMIT,
             status=AlpacaOrderStatus.FILLED,
             time_in_force=AlpacaTimeInForce.GTC,
-            filled_qty=10.0,
-            filled_avg_price=165.0,
+            filled_qty=Decimal("10.0"),
+            filled_avg_price=Decimal("165.0"),
             created_at=datetime.now(UTC),
         )
 

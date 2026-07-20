@@ -1,6 +1,7 @@
 """Tests for LiveSessionService class."""
 
 from datetime import UTC, datetime
+from decimal import Decimal
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
@@ -310,6 +311,57 @@ class TestLiveSessionServicePauseResume:
         await live_session_service.resume_session(session_id, tenant_id)
 
 
+class TestLiveSessionServiceTenantIsolation:
+    """Runner-control RPCs verify tenant ownership BEFORE touching the runner
+    registry, which is keyed by session_id alone (cross-tenant DoS guard)."""
+
+    async def test_stop_foreign_tenant_does_not_touch_runner(
+        self, live_session_service, mock_runner_manager, session_id, tenant_id
+    ):
+        live_session_service._get_session_by_id = AsyncMock(return_value=None)
+
+        result = await live_session_service.stop_session(session_id, tenant_id)
+
+        assert result is None
+        mock_runner_manager.stop_runner.assert_not_called()
+
+    async def test_pause_foreign_tenant_does_not_touch_runner(
+        self, live_session_service, mock_runner_manager, session_id, tenant_id
+    ):
+        live_session_service._get_session_by_id = AsyncMock(return_value=None)
+
+        result = await live_session_service.pause_session(session_id, tenant_id)
+
+        assert result is None
+        mock_runner_manager.get_runner.assert_not_called()
+
+    async def test_resume_foreign_tenant_does_not_touch_runner(
+        self, live_session_service, mock_runner_manager, session_id, tenant_id
+    ):
+        live_session_service._get_session_by_id = AsyncMock(return_value=None)
+
+        result = await live_session_service.resume_session(session_id, tenant_id)
+
+        assert result is None
+        mock_runner_manager.get_runner.assert_not_called()
+
+    async def test_stop_owned_session_stops_runner(
+        self, live_session_service, session_id, tenant_id, session_response
+    ):
+        from src.services.session_service import SessionService
+
+        live_session_service._get_session_by_id = AsyncMock(return_value=MagicMock())
+        live_session_service._stop_runner = AsyncMock()
+
+        with patch.object(
+            SessionService, "stop_session", new=AsyncMock(return_value=session_response)
+        ):
+            result = await live_session_service.stop_session(session_id, tenant_id)
+
+        assert result is session_response
+        live_session_service._stop_runner.assert_awaited_once_with(session_id)
+
+
 class TestLiveSessionServiceStartRunner:
     """Tests for _start_runner method."""
 
@@ -443,8 +495,8 @@ class TestLiveSessionServiceStartRunner:
             mock_session.min_bars = 5
             mock_session_cls.return_value = mock_session
 
-            with patch("src.services.live_session_service.BarStreamClient"):
-                with patch("src.services.live_session_service.TradingClient") as mock_tc:
+            with patch("src.providers.BarStreamClient"):
+                with patch("src.providers.TradingClient") as mock_tc:
                     mock_tc.return_value.get_asset = AsyncMock(
                         return_value=Asset(id="1", symbol="AAPL", status="active", tradable=True)
                     )
@@ -485,8 +537,8 @@ class TestLiveSessionServiceStartRunner:
             mock_session.min_bars = 10
             mock_session_cls.return_value = mock_session
 
-            with patch("src.services.live_session_service.BarStreamClient"):
-                with patch("src.services.live_session_service.TradingClient") as mock_tc:
+            with patch("src.providers.BarStreamClient"):
+                with patch("src.providers.TradingClient") as mock_tc:
                     mock_tc.return_value.get_asset = AsyncMock(
                         return_value=Asset(id="1", symbol="GOOGL", status="active", tradable=True)
                     )
@@ -933,7 +985,7 @@ class TestLiveSessionServiceCheckAlpacaAccount:
         mock_credentials,
     ):
         """Test check fails when Alpaca connection fails."""
-        with patch("src.services.live_session_service.TradingClient") as mock_client_cls:
+        with patch("src.providers.TradingClient") as mock_client_cls:
             mock_client = MagicMock()
             mock_client.get_account = AsyncMock(side_effect=Exception("Connection refused"))
             mock_client.close = AsyncMock()
@@ -950,17 +1002,17 @@ class TestLiveSessionServiceCheckAlpacaAccount:
         mock_credentials,
     ):
         """Test check fails when Alpaca account is not active."""
-        with patch("src.services.live_session_service.TradingClient") as mock_client_cls:
+        with patch("src.providers.TradingClient") as mock_client_cls:
             mock_client = MagicMock()
             mock_client.get_account = AsyncMock(
                 return_value=Account(
                     id="test-acc",
                     account_number="123",
                     status="ACCOUNT_UPDATED",
-                    cash=10000.0,
-                    portfolio_value=10000.0,
-                    buying_power=10000.0,
-                    equity=10000.0,
+                    cash=Decimal("10000.0"),
+                    portfolio_value=Decimal("10000.0"),
+                    buying_power=Decimal("10000.0"),
+                    equity=Decimal("10000.0"),
                 )
             )
             mock_client.close = AsyncMock()
@@ -985,17 +1037,17 @@ class TestLiveSessionServiceCheckAlpacaAccount:
             is_paper=False,
         )
 
-        with patch("src.services.live_session_service.TradingClient") as mock_client_cls:
+        with patch("src.providers.TradingClient") as mock_client_cls:
             mock_client = MagicMock()
             mock_client.get_account = AsyncMock(
                 return_value=Account(
                     id="test-acc",
                     account_number="123",
                     status="ACTIVE",
-                    cash=100.0,
-                    portfolio_value=100.0,
-                    buying_power=100.0,  # Below $500 minimum for live
-                    equity=100.0,
+                    cash=Decimal("100.0"),
+                    portfolio_value=Decimal("100.0"),
+                    buying_power=Decimal("100.0"),  # Below $500 minimum for live
+                    equity=Decimal("100.0"),
                 )
             )
             mock_client.close = AsyncMock()
@@ -1010,17 +1062,17 @@ class TestLiveSessionServiceCheckAlpacaAccount:
         mock_credentials,
     ):
         """Test paper trading allows zero buying power."""
-        with patch("src.services.live_session_service.TradingClient") as mock_client_cls:
+        with patch("src.providers.TradingClient") as mock_client_cls:
             mock_client = MagicMock()
             mock_client.get_account = AsyncMock(
                 return_value=Account(
                     id="test-acc",
                     account_number="123",
                     status="ACTIVE",
-                    cash=0.0,
-                    portfolio_value=0.0,
-                    buying_power=0.0,
-                    equity=0.0,
+                    cash=Decimal("0.0"),
+                    portfolio_value=Decimal("0.0"),
+                    buying_power=Decimal("0.0"),
+                    equity=Decimal("0.0"),
                 )
             )
             mock_client.close = AsyncMock()
@@ -1042,17 +1094,17 @@ class TestLiveSessionServiceCheckAlpacaAccount:
             is_paper=False,
         )
 
-        with patch("src.services.live_session_service.TradingClient") as mock_client_cls:
+        with patch("src.providers.TradingClient") as mock_client_cls:
             mock_client = MagicMock()
             mock_client.get_account = AsyncMock(
                 return_value=Account(
                     id="test-acc",
                     account_number="123",
                     status="ACTIVE",
-                    cash=10000.0,
-                    portfolio_value=10000.0,
-                    buying_power=10000.0,
-                    equity=10000.0,
+                    cash=Decimal("10000.0"),
+                    portfolio_value=Decimal("10000.0"),
+                    buying_power=Decimal("10000.0"),
+                    equity=Decimal("10000.0"),
                 )
             )
             mock_client.close = AsyncMock()

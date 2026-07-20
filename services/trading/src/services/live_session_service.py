@@ -19,13 +19,11 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from llamatrade_alpaca import (
-    BarStreamClient,
     TradingClient,
-    TradingStreamClient,
     get_trading_client,
 )
 from llamatrade_compiler import SizingMode, StrategySession
-from llamatrade_db import get_db
+from llamatrade_db import get_db, get_session_maker
 from llamatrade_db.models.billing import Plan, Subscription
 from llamatrade_db.models.strategy import StrategyExecution, StrategyVersion
 from llamatrade_proto.generated.billing_pb2 import PLAN_TIER_FREE
@@ -43,8 +41,10 @@ from src.metrics import (
     set_trade_stream_connected,
 )
 from src.models import SessionResponse
+from src.providers import build_bar_stream, build_trade_stream, build_trading_client
 from src.risk.risk_manager import RiskManager, get_risk_manager
 from src.runner.runner import RunnerConfig, RunnerManager, get_runner_manager
+from src.services.alert_service import AlertService
 from src.services.session_service import SessionService
 from src.streaming.publisher import get_trading_event_publisher
 
@@ -179,10 +179,13 @@ class LiveSessionService(SessionService):
         tenant_id: UUID,
     ) -> SessionResponse | None:
         """Stop a trading session and its runner."""
-        # Stop runner first
-        await self._stop_runner(session_id)
+        # Verify tenant ownership BEFORE touching the in-process runner registry:
+        # it is keyed by session_id alone, so acting first would let a caller halt
+        # another tenant's runner by supplying its session id (cross-tenant DoS).
+        if await self._get_session_by_id(tenant_id, session_id) is None:
+            return None
 
-        # Then update database
+        await self._stop_runner(session_id)
         return await super().stop_session(session_id, tenant_id)
 
     async def pause_session(
@@ -191,12 +194,12 @@ class LiveSessionService(SessionService):
         tenant_id: UUID,
     ) -> SessionResponse | None:
         """Pause a trading session and its runner."""
-        # Pause the runner
+        if await self._get_session_by_id(tenant_id, session_id) is None:
+            return None
+
         runner = self.runner_manager.get_runner(session_id)
         if runner:
             runner.pause()
-
-        # Update database
         return await super().pause_session(session_id, tenant_id)
 
     async def resume_session(
@@ -205,12 +208,12 @@ class LiveSessionService(SessionService):
         tenant_id: UUID,
     ) -> SessionResponse | None:
         """Resume a paused session and its runner."""
-        # Resume the runner
+        if await self._get_session_by_id(tenant_id, session_id) is None:
+            return None
+
         runner = self.runner_manager.get_runner(session_id)
         if runner:
             runner.resume()
-
-        # Update database
         return await super().resume_session(session_id, tenant_id)
 
     async def _resolve_ledger_identity(
@@ -352,30 +355,19 @@ class LiveSessionService(SessionService):
             sizing_mode=SizingMode.DRIFT if sleeve_aware else SizingMode.BINARY,
         )
 
-        # Bar stream on session credentials; metrics via lifecycle hooks (lib is service-agnostic).
-        bar_stream = BarStreamClient(
-            api_key=credentials.api_key,
-            api_secret=credentials.api_secret,
-            paper=credentials.is_paper,
+        # Execution primitives from the provider seam (BYO today); metrics via
+        # lifecycle hooks (lib is service-agnostic).
+        bar_stream = build_bar_stream(
+            credentials,
             on_reconnect=record_bar_stream_reconnect,
             on_connection_change=set_bar_stream_connected,
         )
-
-        # Trade stream on same credentials; metrics via lifecycle hooks (lib is service-agnostic).
-        trade_stream = TradingStreamClient(
-            api_key=credentials.api_key,
-            api_secret=credentials.api_secret,
-            paper=credentials.is_paper,
+        trade_stream = build_trade_stream(
+            credentials,
             on_reconnect=record_trade_stream_reconnect,
             on_connection_change=set_trade_stream_connected,
         )
-
-        # Create Alpaca client with session-specific credentials
-        session_alpaca_client = TradingClient(
-            api_key=credentials.api_key,
-            api_secret=credentials.api_secret,
-            paper=credentials.is_paper,
-        )
+        session_alpaca_client = build_trading_client(credentials)
 
         # Fail fast if any strategy symbol isn't tradable — else every order for it is rejected.
         try:
@@ -415,6 +407,9 @@ class LiveSessionService(SessionService):
             alpaca_client=session_alpaca_client,
             ledger_publisher=ledger_publisher,
             portfolio_client=portfolio_client,
+            # Fill/rejection/connection/circuit-breaker alerts → tenant webhooks
+            # (GAP 14). Own short sessions so the runner's loops don't share one.
+            alert_service=AlertService(session_maker=get_session_maker()),
         )
         # The runner now owns the order executor (and its DB session) for the
         # session's lifetime — don't close it when this RPC returns.
@@ -423,10 +418,58 @@ class LiveSessionService(SessionService):
         logger.info(f"Started runner for session {session_id} (credentials: {credentials.name})")
 
     async def _stop_runner(self, session_id: UUID) -> None:
-        """Stop the runner for a session."""
+        """Stop the runner for a session and release any rehydration lease."""
         if session_id in self.runner_manager.active_runners:
             await self.runner_manager.stop_runner(session_id)
             logger.info(f"Stopped runner for session {session_id}")
+
+        # Free the per-session advisory lock if this pod rehydrated it (no-op
+        # otherwise), so a stopped session never keeps holding its ownership lease.
+        from src.recovery import release_session_lease
+
+        await release_session_lease(session_id)
+
+    async def rehydrate_runner(
+        self,
+        session_id: UUID,
+        tenant_id: UUID,
+        strategy_id: UUID,
+        strategy_version: int,
+        credentials_id: UUID,
+        mode: int,
+        symbols: list[str] | None,
+        sleeve_id: UUID | None,
+        account_id: UUID | None,
+        paused: bool,
+    ) -> None:
+        """Re-attach a runner to an already-persisted RUNNING/PAUSED session.
+
+        Used by boot-time / periodic recovery after a crash: the session row
+        survived but its in-process runner did not. Resolves the session's stored
+        credentials and rebuilds the runner via the normal start path (which fires
+        the stranded-order and ledger-republish recovery sweeps). A PAUSED session
+        is rehydrated then immediately paused so it can still be resumed.
+        """
+        creds = await resolve_credentials(self.db, credentials_id, tenant_id)
+        if creds is None:
+            raise ValueError(
+                f"No active credentials {credentials_id} for session {session_id}; cannot rehydrate"
+            )
+        await self._start_runner(
+            session_id=session_id,
+            tenant_id=tenant_id,
+            strategy_id=strategy_id,
+            version=strategy_version,
+            symbols=symbols,
+            mode=mode,
+            credentials=creds,
+            sleeve_id=sleeve_id,
+            account_id=account_id,
+        )
+        if paused:
+            runner = self.runner_manager.get_runner(session_id)
+            if runner:
+                runner.pause()
 
     async def _preflight_checks(
         self,
@@ -522,12 +565,8 @@ class LiveSessionService(SessionService):
         Raises:
             ValueError: If account check fails
         """
-        # Create temporary client with these credentials
-        client = TradingClient(
-            api_key=creds.api_key,
-            api_secret=creds.api_secret,
-            paper=creds.is_paper,
-        )
+        # Temporary client with these credentials.
+        client = build_trading_client(creds)
 
         try:
             account = await client.get_account()
