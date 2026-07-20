@@ -18,7 +18,7 @@ import { useBillingStore } from '../../src/stores/billing';
 import { useBrokerStore } from '@llamatrade/core/stores/broker';
 import { useAuthStore } from '../../src/stores/auth';
 import { fonts, palette } from '../../src/theme';
-import { Badge, Body, Card, Display, Label, Mono } from '../../src/ui';
+import { Badge, Body, Card, Display, GridBackground, Label, Mono } from '../../src/ui';
 
 /* --------------------------------------------------------------- helpers ---- */
 function hardShadow(color: string): ViewStyle {
@@ -206,6 +206,7 @@ export default function AccountScreen() {
 
   return (
     <SafeAreaView edges={['top']} style={{ flex: 1, backgroundColor: palette.bone }}>
+      <GridBackground />
       <View
         style={{
           height: 46,

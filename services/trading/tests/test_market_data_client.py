@@ -2,6 +2,7 @@
 
 from datetime import datetime
 from decimal import Decimal
+from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -17,8 +18,8 @@ class TestMarketDataClientMethods:
         """Create a fully mocked MarketDataClient."""
         with patch.object(MarketDataClient, "__init__", lambda self, *args, **kwargs: None):
             client = MarketDataClient()
-            client._channel = MagicMock()
-            client._stub = MagicMock()
+            cast(Any, client)._channel = MagicMock()
+            cast(Any, client)._stub = MagicMock()
             # Mock the actual methods to avoid protobuf imports
             client.get_historical_bars = AsyncMock()
             client.stream_bars = MagicMock()

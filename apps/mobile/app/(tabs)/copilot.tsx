@@ -23,7 +23,7 @@ import { Markdown } from '../../src/copilot/Markdown';
 import { ThinkingBlock } from '../../src/copilot/ThinkingBlock';
 import { useAuthStore } from '../../src/stores/auth';
 import { fonts, palette } from '../../src/theme';
-import { Badge, Body, Mono } from '../../src/ui';
+import { Badge, Body, GridBackground, Mono } from '../../src/ui';
 
 const DEFAULT_PROMPTS = [
   'Build a momentum rotation across the 11 sector ETFs, monthly',
@@ -254,6 +254,7 @@ export default function CopilotScreen() {
 
   return (
     <SafeAreaView edges={['top']} style={{ flex: 1, backgroundColor: palette.bone }}>
+      <GridBackground />
       {/* App bar */}
       <View
         style={{

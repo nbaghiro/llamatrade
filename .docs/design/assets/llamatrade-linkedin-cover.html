@@ -1,0 +1,59 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  html, body { margin: 0; padding: 0; }
+  * { box-sizing: border-box; }
+  /* LinkedIn company cover — "Ink split panel". Canvas 1200x200 (6:1),
+     rendered at 3.5x -> 4200x700 (LinkedIn recommended upload). */
+  .cover {
+    width: 1200px; height: 200px; overflow: hidden; position: relative;
+    background: #fbf8f1;
+    font-family: 'Archivo', system-ui, -apple-system, sans-serif;
+    /* faint 12-col hairline grid on the bone side */
+    background-image: repeating-linear-gradient(90deg, rgba(13,13,13,.05) 0 1px, transparent 1px 100px);
+  }
+  /* ink hero panel on the right; logo sits on the clean bone left */
+  .panel { position: absolute; top: 0; bottom: 0; right: 0; width: 64%; background: #0d0d0d; }
+  /* orange divider straddling the bone/ink seam */
+  .seam { position: absolute; top: 0; bottom: 0; left: 36%; width: 8px; transform: translateX(-4px); background: #ff4d1c; z-index: 2; }
+  .top-rule { position: absolute; top: 0; left: 0; right: 0; height: 6px; background: #ff4d1c; z-index: 5; }
+
+  .content {
+    position: absolute; inset: 0; z-index: 3;
+    padding: 30px 60px 30px 484px;   /* text lands inside the ink panel */
+    display: flex; flex-direction: column; justify-content: center;
+  }
+  .eyebrow {
+    font-family: 'Space Mono', ui-monospace, Menlo, monospace;
+    font-size: 11px; letter-spacing: .2em; text-transform: uppercase; color: #8f897c;
+    display: flex; align-items: center; gap: 9px; margin-bottom: 11px;
+  }
+  .eyebrow .dot { width: 8px; height: 8px; background: #ff4d1c; display: inline-block; }
+  .headline {
+    font-family: 'Anton', Impact, 'Haettenschweiler', 'Arial Narrow', sans-serif;
+    font-weight: 400; text-transform: uppercase; letter-spacing: .02em; line-height: .92;
+    font-size: 45px; color: #fbf8f1;
+  }
+  .headline .o { color: #ff4d1c; }
+  .url {
+    position: absolute; right: 40px; bottom: 20px; z-index: 4;
+    font-family: 'Space Mono', ui-monospace, Menlo, monospace;
+    font-size: 12px; letter-spacing: .1em; text-transform: uppercase; color: #ff4d1c;
+  }
+</style>
+</head>
+<body>
+  <div class="cover">
+    <div class="panel"></div>
+    <div class="seam"></div>
+    <div class="top-rule"></div>
+    <div class="content">
+      <div class="eyebrow"><span class="dot"></span> Algorithmic trading for individual traders</div>
+      <div class="headline">Build the machine.<br>Trade your <span class="o">own account.</span></div>
+    </div>
+    <div class="url">llamatrade.ai</div>
+  </div>
+</body>
+</html>

@@ -1,6 +1,7 @@
 """Tests for async TTL cache utilities."""
 
 import asyncio
+from typing import Any, cast
 from uuid import uuid4
 
 import pytest
@@ -267,7 +268,7 @@ class TestAsyncTTLCacheDecorator:
         assert call_count == 1
 
         # Clear cache
-        cached_func.cache_clear()
+        cast(Any, cached_func).cache_clear()
 
         # Should call function again
         await cached_func(5)
@@ -287,7 +288,7 @@ class TestAsyncTTLCacheDecorator:
         assert call_count == 1
 
         # Invalidate specific entry
-        result = await cached_func.cache_invalidate(5)
+        result = await cast(Any, cached_func).cache_invalidate(5)
         assert result is True
 
         # Should call function again

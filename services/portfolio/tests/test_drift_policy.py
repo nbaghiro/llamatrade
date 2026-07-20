@@ -6,7 +6,7 @@ Unmanaged, contradicted sleeves frozen; shadow mode stays observe-only.
 
 from decimal import Decimal
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, cast
 from uuid import uuid4
 
 import pytest
@@ -117,7 +117,7 @@ async def test_missing_in_ledger_adopted_into_unmanaged(account: Account) -> Non
     broker = FakeBroker([BrokerHolding(symbol="SPY", qty=D("10"), avg_price=D("480"))])
 
     action = await apply_drift_action(
-        repo=repo,
+        repo=cast(Any, repo),
         store=store,
         broker=broker,
         account=account,
@@ -162,7 +162,7 @@ async def test_adoption_retries_broker_snapshot_then_succeeds(
     )
 
     action = await apply_drift_action(
-        repo=repo,
+        repo=cast(Any, repo),
         store=store,
         broker=broker,
         account=account,
@@ -182,7 +182,7 @@ async def test_adoption_skips_when_broker_unavailable(
     broker = _FlakyBroker([], failures=99)  # never recovers
 
     action = await apply_drift_action(
-        repo=repo,
+        repo=cast(Any, repo),
         store=store,
         broker=broker,
         account=account,
@@ -199,8 +199,12 @@ async def test_adoption_is_idempotent(account: Account) -> None:
     broker = FakeBroker([BrokerHolding(symbol="SPY", qty=D("10"), avg_price=D("480"))])
     drift = _drift(DriftKind.MISSING_IN_LEDGER)
 
-    await apply_drift_action(repo=repo, store=store, broker=broker, account=account, drift=drift)
-    await apply_drift_action(repo=repo, store=store, broker=broker, account=account, drift=drift)
+    await apply_drift_action(
+        repo=cast(Any, repo), store=store, broker=broker, account=account, drift=drift
+    )
+    await apply_drift_action(
+        repo=cast(Any, repo), store=store, broker=broker, account=account, drift=drift
+    )
 
     assert len(store.appended) == 1  # deterministic event_id dedups the re-detection
 
@@ -210,7 +214,7 @@ async def test_vanished_holding_skipped(account: Account) -> None:
     store = FakeStore()
 
     action = await apply_drift_action(
-        repo=repo,
+        repo=cast(Any, repo),
         store=store,
         broker=FakeBroker([]),
         account=account,
@@ -243,7 +247,7 @@ async def test_qty_mismatch_freezes_holding_sleeves(account: Account) -> None:
     )
 
     action = await apply_drift_action(
-        repo=repo,
+        repo=cast(Any, repo),
         store=store,
         broker=FakeBroker([]),
         account=account,
@@ -279,7 +283,7 @@ async def test_already_frozen_sleeve_not_refrozen(account: Account) -> None:
     )
 
     action = await apply_drift_action(
-        repo=repo,
+        repo=cast(Any, repo),
         store=store,
         broker=FakeBroker([]),
         account=account,

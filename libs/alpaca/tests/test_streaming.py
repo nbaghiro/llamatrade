@@ -3,6 +3,7 @@
 import json
 from collections import deque
 from decimal import Decimal
+from typing import Any, cast
 
 import pytest
 
@@ -163,7 +164,7 @@ async def test_dispatch_invokes_callbacks(creds: AlpacaCredentials) -> None:
     async def on_bar(symbol: str, data: dict[str, object]) -> None:
         received.append((symbol, data))
 
-    c.set_callbacks(on_bar=on_bar)
+    c.set_callbacks(on_bar=cast(Any, on_bar))
     await c._dispatch_message(
         {"T": MessageType.BAR, "S": "AAPL", "o": 1, "h": 2, "l": 1, "c": 2, "v": 5, "t": "ts"}
     )

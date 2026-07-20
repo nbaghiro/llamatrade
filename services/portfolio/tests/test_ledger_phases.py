@@ -6,6 +6,7 @@ rebalancing, block-and-allocate netting, and per-sleeve P&L.
 """
 
 from decimal import Decimal
+from typing import Any, cast
 from uuid import uuid4
 
 import pytest
@@ -222,7 +223,7 @@ class TestPerformance:
             data={"sleeve_id": "s1", "amount": "500"},
         )
         seen: list[str | None] = []
-        acc = fold([good1, poison, good2], on_error=lambda eid, _exc: seen.append(eid))
+        acc = fold(cast(Any, [good1, poison, good2]), on_error=lambda eid, _exc: seen.append(eid))
 
         assert acc.sleeve("s1").cash == D("1500")  # both good deposits applied
         assert seen == ["bad"]  # poison surfaced to the handler exactly once
@@ -239,7 +240,7 @@ class TestPerformance:
             event_type=LedgerEventType.CAPITAL_ALLOCATED,
             data={"from_sleeve_id": "a", "amount": "100"},
         )
-        acc = fold([bad])
+        acc = fold([cast(Any, bad)])
         assert acc.total_cash() == D("0")
 
     def test_sleeve_pnl_values_unpriced_positions_at_cost(self) -> None:

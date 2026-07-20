@@ -4,6 +4,7 @@ import { Pressable, ScrollView, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { palette } from '../theme';
+import { GridBackground } from './GridBackground';
 import { Display } from './index';
 
 /** Standard screen: bone canvas, ink-bordered app bar (optional back), scrolling body. */
@@ -20,6 +21,7 @@ export function Screen({
 }) {
   return (
     <SafeAreaView edges={['top']} style={{ flex: 1, backgroundColor: palette.bone }}>
+      <GridBackground />
       <View
         style={{
           height: 46,

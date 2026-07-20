@@ -11,7 +11,7 @@ import { LineChart } from '../../src/charts/LineChart';
 import { useAuthStore } from '../../src/stores/auth';
 import { usePortfolioStore } from '../../src/stores/portfolio';
 import { palette } from '../../src/theme';
-import { Badge, Body, Card, Display, Label, Mono } from '../../src/ui';
+import { Badge, Body, Card, Display, GridBackground, Label, Mono } from '../../src/ui';
 
 function greeting(): string {
   const h = new Date().getHours();
@@ -92,6 +92,7 @@ export default function HomeScreen() {
 
   return (
     <SafeAreaView edges={['top']} style={{ flex: 1, backgroundColor: palette.bone }}>
+      <GridBackground />
       <View
         style={{
           height: 46,

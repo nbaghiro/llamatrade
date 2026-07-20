@@ -18,6 +18,7 @@ resources:
   - ../../base/notification/deployment.yaml
   - ../../base/billing/deployment.yaml
   - ../../base/frontend/deployment.yaml
+  - pdb.yaml
 
 commonLabels:
   environment: production

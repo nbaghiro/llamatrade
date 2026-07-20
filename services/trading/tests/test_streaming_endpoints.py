@@ -6,6 +6,7 @@ The subscriber now yields proto ``trading_pb2.OrderUpdate`` /
 """
 
 from collections.abc import AsyncIterator
+from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
@@ -70,7 +71,7 @@ class TestStreamOrderUpdates:
 
         with patch("src.grpc.servicer.get_trading_event_subscriber", return_value=mock_subscriber):
             responses = []
-            async for response in servicer.StreamOrderUpdates(mock_request, context):
+            async for response in servicer.StreamOrderUpdates(mock_request, cast(Any, context)):
                 responses.append(response)
                 context.cancel()
 
@@ -116,7 +117,7 @@ class TestStreamOrderUpdates:
 
         with patch("src.grpc.servicer.get_trading_event_subscriber", return_value=mock_subscriber):
             responses = []
-            async for response in servicer.StreamOrderUpdates(mock_request, context):
+            async for response in servicer.StreamOrderUpdates(mock_request, cast(Any, context)):
                 responses.append(response)
 
             assert len(responses) <= 1
@@ -150,7 +151,7 @@ class TestStreamOrderUpdates:
 
         with patch("src.grpc.servicer.get_trading_event_subscriber", return_value=mock_subscriber):
             with pytest.raises(RuntimeError, match="Redis connection failed"):
-                async for _ in servicer.StreamOrderUpdates(mock_request, context):
+                async for _ in servicer.StreamOrderUpdates(mock_request, cast(Any, context)):
                     pass
 
             mock_subscriber.close.assert_called_once()
@@ -197,7 +198,7 @@ class TestStreamPositionUpdates:
 
         with patch("src.grpc.servicer.get_trading_event_subscriber", return_value=mock_subscriber):
             responses = []
-            async for response in servicer.StreamPositionUpdates(mock_request, context):
+            async for response in servicer.StreamPositionUpdates(mock_request, cast(Any, context)):
                 responses.append(response)
                 context.cancel()
 
@@ -246,7 +247,7 @@ class TestStreamPositionUpdates:
 
         with patch("src.grpc.servicer.get_trading_event_subscriber", return_value=mock_subscriber):
             responses = []
-            async for response in servicer.StreamPositionUpdates(mock_request, context):
+            async for response in servicer.StreamPositionUpdates(mock_request, cast(Any, context)):
                 responses.append(response)
 
             assert len(responses) <= 1

@@ -16,6 +16,19 @@ Documentation for the LlamaTrade algorithmic trading platform.
 
 ---
 
+## Design & Brand
+
+Brand, social, and marketing source-of-truth. See [Design & Brand](design/README.md).
+
+| Document | Description |
+|----------|-------------|
+| [Brand Guidelines](design/brand-guidelines.md) | The "Monolith" design system: logo, color, type, voice, compliance |
+| [Social Accounts](design/social-accounts.md) | Copy-paste account set-up for every platform |
+| [Launch Campaign](design/social-campaign.md) | Closed-beta content library + cadence |
+| [Ad Creative](design/ad-creative.md) | Ad directions, placement matrix, compliance |
+
+---
+
 ## Services
 
 Service-level architecture documentation.

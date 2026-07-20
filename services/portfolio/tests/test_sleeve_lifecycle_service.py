@@ -8,7 +8,7 @@ invariants (idempotency, reserved-cash guard, re-home targets).
 
 from decimal import Decimal
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, cast
 from uuid import UUID, uuid4
 
 import pytest
@@ -100,7 +100,7 @@ def _setup() -> tuple[SleeveLifecycleService, FakeRepo, FakeLedger, Sleeve, Slee
     unmanaged = _sleeve(SleeveType.UNMANAGED)
     strat = _sleeve(SleeveType.STRATEGY, strategy_execution_id=uuid4())
     repo.sleeves = [unalloc, unmanaged, strat]
-    return SleeveLifecycleService(repo, ledger), repo, ledger, unalloc, unmanaged, strat
+    return SleeveLifecycleService(cast(Any, repo), ledger), repo, ledger, unalloc, unmanaged, strat
 
 
 async def _deposit(ledger: FakeLedger, sleeve_id: UUID, amount: str) -> None:
@@ -276,7 +276,7 @@ async def test_close_requires_base_sleeves() -> None:
     ledger = FakeLedger()
     strat = _sleeve(SleeveType.STRATEGY, strategy_execution_id=uuid4())
     repo.sleeves = [strat]  # no unmanaged/unallocated
-    svc = SleeveLifecycleService(repo, ledger)
+    svc = SleeveLifecycleService(cast(Any, repo), ledger)
     with pytest.raises(SleeveCloseError, match="missing base sleeves"):
         await svc.close_sleeve(tenant_id=TENANT, account_id=ACCOUNT, sleeve_id=strat.id)
 

@@ -6,7 +6,7 @@ HTTP calls are the thin IO shell, exercised by the integration suite.
 
 from decimal import Decimal
 from types import SimpleNamespace
-from typing import cast
+from typing import Any, cast
 from uuid import uuid4
 
 import pytest
@@ -23,7 +23,9 @@ def _pos(symbol: str, qty: str, avg: str = "100") -> SimpleNamespace:
 
 
 def test_qty_map_signs_and_aggregates() -> None:
-    qty_map = positions_to_qty_map([_pos("AAPL", "10"), _pos("TSLA", "-3"), _pos("AAPL", "5")])
+    qty_map = positions_to_qty_map(
+        cast(Any, [_pos("AAPL", "10"), _pos("TSLA", "-3"), _pos("AAPL", "5")])
+    )
     assert qty_map == {"AAPL": Decimal("15"), "TSLA": Decimal("-3")}
 
 
@@ -32,7 +34,7 @@ def test_qty_map_empty() -> None:
 
 
 def test_holdings_translate_fields() -> None:
-    holdings = positions_to_holdings([_pos("AAPL", "10", "150.25")])
+    holdings = positions_to_holdings([cast(Any, _pos("AAPL", "10", "150.25"))])
     assert len(holdings) == 1
     assert holdings[0].symbol == "AAPL"
     assert holdings[0].qty == Decimal("10")
@@ -40,21 +42,23 @@ def test_holdings_translate_fields() -> None:
 
 
 def test_holdings_skip_zero_qty() -> None:
-    holdings = positions_to_holdings([_pos("AAPL", "0"), _pos("TSLA", "2")])
+    holdings = positions_to_holdings(cast(Any, [_pos("AAPL", "0"), _pos("TSLA", "2")]))
     assert [h.symbol for h in holdings] == ["TSLA"]
 
 
 def test_qty_map_skips_unparseable_qty() -> None:
     """A malformed broker qty is skipped (logged), not fatal."""
     qty_map = positions_to_qty_map(
-        [_pos("AAPL", "10"), _pos("BAD", "not-a-number"), _pos("AAPL", "5")]
+        cast(Any, [_pos("AAPL", "10"), _pos("BAD", "not-a-number"), _pos("AAPL", "5")])
     )
     assert qty_map == {"AAPL": Decimal("15")}  # BAD dropped, AAPL aggregated
 
 
 def test_holdings_skip_malformed_position() -> None:
     """A position with an unparseable qty or avg price is skipped, not fatal."""
-    holdings = positions_to_holdings([_pos("AAPL", "10", "150.25"), _pos("BAD", "x", "y")])
+    holdings = positions_to_holdings(
+        cast(Any, [_pos("AAPL", "10", "150.25"), _pos("BAD", "x", "y")])
+    )
     assert [h.symbol for h in holdings] == ["AAPL"]
 
 

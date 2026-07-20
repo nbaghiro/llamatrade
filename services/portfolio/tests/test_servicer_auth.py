@@ -10,6 +10,7 @@ the real-Postgres suite (``tests/integration/test_rls.py``).
 
 from __future__ import annotations
 
+from typing import Any, cast
 from uuid import uuid4
 
 import pytest
@@ -38,7 +39,7 @@ async def test_portfolio_read_rejects_forged_tenant() -> None:
     try:
         with pytest.raises(ConnectError) as exc:
             await servicer.get_portfolio(
-                portfolio_pb2.GetPortfolioRequest(context=_wire(TENANT_B)), None
+                portfolio_pb2.GetPortfolioRequest(context=_wire(TENANT_B)), cast(Any, None)
             )
         assert exc.value.code == Code.PERMISSION_DENIED
     finally:
@@ -57,7 +58,7 @@ async def test_ledger_mutation_rejects_forged_tenant() -> None:
                     account_id=str(uuid4()),
                     amount=common_pb2.Decimal(value="100"),
                 ),
-                None,
+                cast(Any, None),
             )
         assert exc.value.code == Code.PERMISSION_DENIED
     finally:
@@ -69,6 +70,6 @@ async def test_missing_wire_identity_is_unauthenticated() -> None:
     servicer = PortfolioServicer()
     with pytest.raises(ConnectError) as exc:
         await servicer.get_portfolio(
-            portfolio_pb2.GetPortfolioRequest(context=common_pb2.TenantContext()), None
+            portfolio_pb2.GetPortfolioRequest(context=common_pb2.TenantContext()), cast(Any, None)
         )
     assert exc.value.code == Code.UNAUTHENTICATED

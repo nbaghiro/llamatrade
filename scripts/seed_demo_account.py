@@ -637,8 +637,6 @@ class Seeder:
             return
         logger.info("existing demo tenant %s found — purging tenant-scoped rows", tenant_id)
         statements = [
-            "DELETE FROM agent_memory_embeddings WHERE tenant_id = :t",
-            "DELETE FROM agent_session_summaries WHERE tenant_id = :t",
             "DELETE FROM tool_call_logs WHERE tenant_id = :t",
             "DELETE FROM pending_artifacts WHERE tenant_id = :t",
             "DELETE FROM agent_memory_facts WHERE tenant_id = :t",
@@ -709,8 +707,8 @@ class Seeder:
             id=uuid4(),
             tenant_id=self.tenant_id,
             name="Alpaca Paper (Demo)",
-            api_key_encrypted=encrypt_value("PKDEMOALEXRIVERA0001"),
-            api_secret_encrypted=encrypt_value("demoSecretAlexRivera00000000000000000001"),
+            api_key_encrypted=encrypt_value("PKDEMOSOFIARIVERA0001"),
+            api_secret_encrypted=encrypt_value("demoSecretSofiaRivera00000000000000000001"),
             is_paper=True,
             is_active=True,
             created_at=dt(DEPOSIT_DAY, 9, 30),
@@ -758,10 +756,10 @@ class Seeder:
             plan_id=pro.id,
             status=billing_pb2.SUBSCRIPTION_STATUS_ACTIVE,
             billing_cycle=billing_pb2.BILLING_INTERVAL_MONTHLY,
-            stripe_subscription_id="sub_demo_alexrivera",
-            stripe_customer_id="cus_demo_alexrivera",
-            current_period_start=dt(date(2026, 7, 1), 0, 0),
-            current_period_end=dt(date(2026, 8, 1), 0, 0),
+            stripe_subscription_id="sub_demo_sofiarivera",
+            stripe_customer_id="cus_demo_sofiarivera",
+            current_period_start=dt(date(2026, 6, 20), 0, 0),
+            current_period_end=dt(date(2026, 7, 20), 0, 0),
             cancel_at_period_end=False,
             trial_start=dt(DEPOSIT_DAY, 0, 0),
             trial_end=dt(DEPOSIT_DAY + timedelta(days=14), 0, 0),
@@ -776,8 +774,8 @@ class Seeder:
             PaymentMethod(
                 id=uuid4(),
                 tenant_id=self.tenant_id,
-                stripe_payment_method_id="pm_demo_alexrivera_visa",
-                stripe_customer_id="cus_demo_alexrivera",
+                stripe_payment_method_id="pm_demo_sofiarivera_visa",
+                stripe_customer_id="cus_demo_sofiarivera",
                 type="card",
                 card_brand="visa",
                 card_last4="4242",
@@ -789,14 +787,16 @@ class Seeder:
         )
         self._bump("payment_methods")
 
-        # Paid monthly invoices Feb-Jul; Feb is the prorated Free->Pro upgrade.
+        # Paid monthly invoices Jan-Jun, billed on the 20th (the trial-end anchor,
+        # so the subscription period, invoices, and trial all line up). The first
+        # is the initial Pro charge when the 14-day trial converts on Jan 20.
         monthly_invoices: list[tuple[int, str, Decimal]] = [
-            (2, "Free → Pro upgrade (prorated)", Decimal("31.60")),
+            (1, "Pro plan — first month", Decimal("49.00")),
+            (2, "Pro plan (monthly)", Decimal("49.00")),
             (3, "Pro plan (monthly)", Decimal("49.00")),
             (4, "Pro plan (monthly)", Decimal("49.00")),
             (5, "Pro plan (monthly)", Decimal("49.00")),
             (6, "Pro plan (monthly)", Decimal("49.00")),
-            (7, "Pro plan (monthly)", Decimal("49.00")),
         ]
         for i, (month, desc, amount) in enumerate(monthly_invoices):
             self.db.add(
@@ -804,17 +804,17 @@ class Seeder:
                     id=uuid4(),
                     tenant_id=self.tenant_id,
                     subscription_id=sub.id,
-                    stripe_invoice_id=f"in_demo_alexrivera_2026{month:02d}",
+                    stripe_invoice_id=f"in_demo_sofiarivera_2026{month:02d}",
                     invoice_number=f"LT-2026-{100 + i}",
                     status=billing_pb2.INVOICE_STATUS_PAID,
                     amount_due=amount,
                     amount_paid=amount,
                     currency="usd",
-                    period_start=dt(date(2026, month, 14), 0, 0),
-                    period_end=dt(date(2026, month + 1, 14), 0, 0),
-                    paid_at=dt(date(2026, month, 14), 6, 5),
+                    period_start=dt(date(2026, month, 20), 0, 0),
+                    period_end=dt(date(2026, month + 1, 20), 0, 0),
+                    paid_at=dt(date(2026, month, 20), 6, 5),
                     line_items=[{"description": desc, "amount": str(amount)}],
-                    created_at=dt(date(2026, month, 14), 6, 0),
+                    created_at=dt(date(2026, month, 20), 6, 0),
                 )
             )
             self._bump("invoices")

@@ -13,7 +13,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LineChart } from '../../src/charts/LineChart';
 import { DslBlock } from '../../src/copilot/DslBlock';
 import { fonts, palette, strategyColors } from '../../src/theme';
-import { Body, Display, Label, Mono } from '../../src/ui';
+import { Body, Display, GridBackground, Label, Mono } from '../../src/ui';
 
 type PillVariant = 'gray' | 'orange' | 'ink' | 'green';
 function statusPill(status: StrategyStatus, dep: StrategyDeployment | undefined): { label: string; variant: PillVariant } {
@@ -155,6 +155,7 @@ export default function StrategyDetailScreen() {
 
   return (
     <View style={{ flex: 1, backgroundColor: palette.bone }}>
+      <GridBackground />
       <StatusBar style="light" />
       {/* Ink header */}
       <View style={{ backgroundColor: palette.ink, paddingTop: insets.top + 10, paddingHorizontal: 14, paddingBottom: 14 }}>

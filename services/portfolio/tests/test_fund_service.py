@@ -6,7 +6,7 @@ kernel, so these assert true cash conservation and the funds invariants.
 
 from decimal import Decimal
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, cast
 from uuid import UUID, uuid4
 
 import pytest
@@ -93,7 +93,7 @@ def _setup() -> tuple[FundService, FakeRepo, FakeLedger, Sleeve, Sleeve]:
     unalloc = _sleeve(SleeveType.UNALLOCATED)
     strat = _sleeve(SleeveType.STRATEGY, strategy_execution_id=uuid4())
     repo.sleeves = [unalloc, strat]
-    return FundService(repo, ledger), repo, ledger, unalloc, strat
+    return FundService(cast(Any, repo), ledger), repo, ledger, unalloc, strat
 
 
 async def test_deposit_credits_unallocated() -> None:
@@ -204,7 +204,7 @@ async def test_allocate_cannot_spend_reserved_cash() -> None:
 
 async def test_deposit_without_unallocated_raises() -> None:
     repo = FakeRepo()  # no sleeves
-    svc = FundService(repo, FakeLedger())
+    svc = FundService(cast(Any, repo), FakeLedger())
     with pytest.raises(FundError, match="no Unallocated sleeve"):
         await svc.deposit(tenant_id=TENANT, account_id=ACCOUNT, amount=Decimal("100"))
 

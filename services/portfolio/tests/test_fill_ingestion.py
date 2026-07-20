@@ -6,6 +6,7 @@ message → append, with ack/drop/retry verdicts. The DB persistence
 integration suite.
 """
 
+from typing import Any, cast
 from uuid import UUID, uuid4
 
 from llamatrade_db.models.ledger import LedgerEventType
@@ -156,7 +157,7 @@ class _FakeBus:
 async def test_dead_letter_parks_unrecordable_entry() -> None:
     """An unrecordable raw entry is parked on the DLQ stream (recoverable)."""
     bus = _FakeBus()
-    await _dead_letter(bus, b"corrupt-bytes")
+    await _dead_letter(cast(Any, bus), b"corrupt-bytes")
     assert bus.published[0][0] == LEDGER_FILLS_DLQ_STREAM
     assert bus.published[0][1] == b"corrupt-bytes"
 
@@ -168,7 +169,7 @@ async def test_dead_letter_swallows_publish_failure() -> None:
         async def publish_raw(self, *args: object, **kwargs: object) -> str:
             raise RuntimeError("redis down")
 
-    await _dead_letter(_BadBus(), b"x")  # must not raise
+    await _dead_letter(cast(Any, _BadBus()), b"x")  # must not raise
 
 
 async def test_routes_lifecycle_events() -> None:

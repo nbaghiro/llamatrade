@@ -8,7 +8,7 @@ import { AuthBrand, Field, SocialAuth } from '../src/auth/ui';
 import { authClient } from '../src/net/clients';
 import { useAuthStore } from '../src/stores/auth';
 import { palette } from '../src/theme';
-import { Body, Display, Label, Mono } from '../src/ui';
+import { Body, Display, GridBackground, Label, Mono } from '../src/ui';
 
 const PREFILL_EMAIL = 'demo@llamatrade.ai';
 const PREFILL_PASSWORD = 'demo1234';
@@ -52,6 +52,7 @@ export default function LoginScreen() {
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: palette.bone }}>
+      <GridBackground />
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <ScrollView contentContainerStyle={{ flexGrow: 1, justifyContent: 'center', padding: 22, gap: 14 }} keyboardShouldPersistTaps="handled">
           <AuthBrand />

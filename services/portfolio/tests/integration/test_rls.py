@@ -12,6 +12,7 @@ mirroring the production role model.
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
+from typing import Any, cast
 from uuid import UUID, uuid4
 
 import pytest
@@ -149,13 +150,14 @@ async def test_servicer_service_token_happy_path_under_rls(
     try:
         created = await servicer.get_or_create_account(
             ledger_pb2.GetOrCreateAccountRequest(context=wire, credentials_id=str(uuid4())),
-            None,
+            cast(Any, None),
         )
         assert created.account.tenant_id == str(tenant)
         assert len(created.base_sleeves) == 3
 
         listed = await servicer.list_sleeves(
-            ledger_pb2.ListSleevesRequest(context=wire, account_id=created.account.id), None
+            ledger_pb2.ListSleevesRequest(context=wire, account_id=created.account.id),
+            cast(Any, None),
         )
         assert len(listed.sleeves) == 3  # RLS-visible under the resolved tenant
     finally:

@@ -44,20 +44,27 @@ jobs:
         run: |
           REGISTRY_PATH="${REGISTRY}/${PROJECT_ID}/llamatrade"
 
-          # Build and push each service
+          # Build from the repo root — the Dockerfiles COPY shared libs from
+          # there, so a service-dir build context fails.
           for service in auth strategy backtest market-data trading portfolio notification billing; do
-            docker build -t ${REGISTRY_PATH}/${service}:${{ github.sha }} services/${service}
+            docker build -f services/${service}/Dockerfile -t ${REGISTRY_PATH}/${service}:${{ github.sha }} .
             docker push ${REGISTRY_PATH}/${service}:${{ github.sha }}
           done
 
           # Build and push frontend
-          docker build -t ${REGISTRY_PATH}/web:${{ github.sha }} apps/web
+          docker build -f apps/web/Dockerfile -t ${REGISTRY_PATH}/web:${{ github.sha }} .
           docker push ${REGISTRY_PATH}/web:${{ github.sha }}
 
       - name: Deploy to GKE
         run: |
+          REGISTRY_PATH="${REGISTRY}/${PROJECT_ID}/llamatrade"
+          # The staging overlay applies namespace llamatrade-staging + a staging-
+          # name prefix, so target those (the old llamatrade/auth names never
+          # existed). Roll every service, not just auth + frontend.
           kubectl apply -k infrastructure/k8s/overlays/staging
-          kubectl set image deployment/auth auth=${REGISTRY}/${PROJECT_ID}/llamatrade/auth:${{ github.sha }} -n llamatrade
-          kubectl set image deployment/frontend frontend=${REGISTRY}/${PROJECT_ID}/llamatrade/web:${{ github.sha }} -n llamatrade
-          kubectl rollout status deployment/auth -n llamatrade
-          kubectl rollout status deployment/frontend -n llamatrade
+          for service in auth strategy backtest market-data trading portfolio notification billing; do
+            kubectl set image deployment/staging-${service} ${service}=${REGISTRY_PATH}/${service}:${{ github.sha }} -n llamatrade-staging
+          done
+          kubectl set image deployment/staging-frontend frontend=${REGISTRY_PATH}/web:${{ github.sha }} -n llamatrade-staging
+          kubectl rollout status deployment/staging-auth -n llamatrade-staging
+          kubectl rollout status deployment/staging-frontend -n llamatrade-staging

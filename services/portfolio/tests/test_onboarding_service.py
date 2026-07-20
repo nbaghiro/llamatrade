@@ -7,7 +7,7 @@ and positions → Unmanaged, conserving cash, and is idempotent on re-run.
 
 from decimal import Decimal
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, cast
 from uuid import UUID, uuid4
 
 from llamatrade_db.models.ledger import Account, LedgerEventType, Sleeve, SleeveType
@@ -121,7 +121,7 @@ def _service(
     repo = FakeSleeveRepo()
     store = FakeStore()
     svc = AccountOnboardingService(
-        SleeveService(repo),
+        SleeveService(cast(Any, repo)),
         store,
         FakeBroker(snapshot),
     )

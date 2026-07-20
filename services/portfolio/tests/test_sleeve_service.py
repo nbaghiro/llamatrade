@@ -1,6 +1,7 @@
 """SleeveService tests with an in-memory fake repository — no DB, no network."""
 
 from decimal import Decimal
+from typing import Any, cast
 from uuid import UUID, uuid4
 
 from llamatrade_db.models.ledger import Account, Sleeve, SleeveStatus, SleeveType
@@ -81,7 +82,7 @@ class FakeSleeveRepository:
 
 async def test_get_or_create_account_is_idempotent() -> None:
     repo = FakeSleeveRepository()
-    svc = SleeveService(repo)
+    svc = SleeveService(cast(Any, repo))
     a1 = await svc.get_or_create_account(TENANT, CREDS)
     a2 = await svc.get_or_create_account(TENANT, CREDS)
     assert a1.id == a2.id
@@ -91,7 +92,7 @@ async def test_get_or_create_account_is_idempotent() -> None:
 
 async def test_separate_credentials_get_separate_accounts() -> None:
     repo = FakeSleeveRepository()
-    svc = SleeveService(repo)
+    svc = SleeveService(cast(Any, repo))
     a1 = await svc.get_or_create_account(TENANT, CREDS)
     a2 = await svc.get_or_create_account(TENANT, uuid4())
     assert a1.id != a2.id
@@ -100,7 +101,7 @@ async def test_separate_credentials_get_separate_accounts() -> None:
 
 async def test_ensure_base_sleeves_creates_three_singletons() -> None:
     repo = FakeSleeveRepository()
-    svc = SleeveService(repo)
+    svc = SleeveService(cast(Any, repo))
     acct = await svc.get_or_create_account(TENANT, CREDS)
 
     first = await svc.ensure_base_sleeves(acct)
@@ -115,7 +116,7 @@ async def test_ensure_base_sleeves_creates_three_singletons() -> None:
 
 async def test_base_sleeves_are_active() -> None:
     repo = FakeSleeveRepository()
-    svc = SleeveService(repo)
+    svc = SleeveService(cast(Any, repo))
     acct = await svc.get_or_create_account(TENANT, CREDS)
     u = (await svc.ensure_base_sleeves(acct))[SleeveType.UNALLOCATED]
     assert u.status == SleeveStatus.ACTIVE.value
@@ -124,7 +125,7 @@ async def test_base_sleeves_are_active() -> None:
 
 
 async def test_unallocated_sleeve_helper() -> None:
-    svc = SleeveService(FakeSleeveRepository())
+    svc = SleeveService(cast(Any, FakeSleeveRepository()))
     acct = await svc.get_or_create_account(TENANT, CREDS)
     u = await svc.unallocated_sleeve(acct)
     assert u.type == SleeveType.UNALLOCATED.value
@@ -132,7 +133,7 @@ async def test_unallocated_sleeve_helper() -> None:
 
 async def test_strategy_sleeve_one_per_execution() -> None:
     repo = FakeSleeveRepository()
-    svc = SleeveService(repo)
+    svc = SleeveService(cast(Any, repo))
     acct = await svc.get_or_create_account(TENANT, CREDS)
     exec_id = uuid4()
 

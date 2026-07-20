@@ -10,7 +10,7 @@ import {
 } from '../src/spike/streamingSpike';
 import { useAuthStore } from '../src/stores/auth';
 import { fonts, palette } from '../src/theme';
-import { Badge, Body, Display, Label, Mono } from '../src/ui';
+import { Badge, Body, Display, GridBackground, Label, Mono } from '../src/ui';
 
 function Btn({ label, tone, onPress }: { label: string; tone: 'primary' | 'ink' | 'danger'; onPress: () => void }) {
   const bg = tone === 'primary' ? palette.orange[500] : tone === 'danger' ? palette.red[500] : palette.ink;
@@ -49,6 +49,7 @@ export default function SpikeScreen() {
 
   return (
     <SafeAreaView edges={['top']} style={{ flex: 1, backgroundColor: palette.bone }}>
+      <GridBackground />
       <View
         style={{
           height: 46,

@@ -9,7 +9,7 @@ import { ActivityIndicator, Pressable, RefreshControl, ScrollView, View } from '
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { palette, strategyColors } from '../../src/theme';
-import { Badge, Body, Card, Display, Label, Mono } from '../../src/ui';
+import { Badge, Body, Card, Display, GridBackground, Label, Mono } from '../../src/ui';
 
 type Pill = { label: string; variant: 'gray' | 'orange' | 'ink' | 'green' };
 
@@ -147,6 +147,7 @@ export default function StrategiesScreen() {
 
   return (
     <SafeAreaView edges={['top']} style={{ flex: 1, backgroundColor: palette.bone }}>
+      <GridBackground />
       <View
         style={{
           height: 46,

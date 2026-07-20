@@ -6,6 +6,7 @@ assert share/cash conservation and per-sleeve provenance.
 
 from decimal import Decimal
 from types import SimpleNamespace
+from typing import Any, cast
 from uuid import uuid4
 
 import pytest
@@ -67,7 +68,7 @@ def test_plan_split_forward_doubles_qty_preserves_cost() -> None:
     assert len(split) == 1
     events.append(_ev(split[0].event_type, split[0].data))
 
-    pos = fold(events).sleeve(str(sleeve)).positions["AAPL"]
+    pos = fold(cast(Any, events)).sleeve(str(sleeve)).positions["AAPL"]
     assert pos.qty == Decimal("200")  # doubled
     assert pos.cost_basis == Decimal("5000")  # unchanged → avg price halved
 
@@ -82,7 +83,7 @@ def test_plan_split_reverse_halves_qty() -> None:
     ]
     split = plan_split(symbol="X", ratio=Decimal("0.5"), holders={sleeve: Decimal("100")})
     events.append(_ev(split[0].event_type, split[0].data))
-    pos = fold(events).sleeve(str(sleeve)).positions["X"]
+    pos = fold(cast(Any, events)).sleeve(str(sleeve)).positions["X"]
     assert pos.qty == Decimal("50")
     assert pos.cost_basis == Decimal("1000")
 
@@ -110,7 +111,7 @@ def test_plan_symbol_change_moves_lot() -> None:
         holders={sleeve: (Decimal("10"), Decimal("2000"))},
     )
     events.append(_ev(rename[0].event_type, rename[0].data))
-    proj = fold(events).sleeve(str(sleeve))
+    proj = fold(cast(Any, events)).sleeve(str(sleeve))
     assert proj.positions["FB"].qty == ZERO
     assert proj.positions["META"].qty == Decimal("10")
     assert proj.positions["META"].cost_basis == Decimal("2000")

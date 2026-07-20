@@ -10,7 +10,7 @@ import { LineChart } from '../../src/charts/LineChart';
 import { useAuthStore } from '../../src/stores/auth';
 import { usePortfolioStore } from '../../src/stores/portfolio';
 import { palette, strategyColors } from '../../src/theme';
-import { Badge, Body, Card, Display, KpiTile, Label, Mono } from '../../src/ui';
+import { Badge, Body, Card, Display, GridBackground, KpiTile, Label, Mono } from '../../src/ui';
 
 const STATUS_LABEL: Record<number, string> = {
   [ExecutionStatus.PENDING]: 'Pending',
@@ -52,6 +52,7 @@ export default function PortfolioScreen() {
 
   return (
     <SafeAreaView edges={['top']} style={{ flex: 1, backgroundColor: palette.bone }}>
+      <GridBackground />
       <View
         style={{
           height: 46,

@@ -11,6 +11,7 @@ import {
 import { fonts, palette } from '../theme';
 
 export { Button } from './Button';
+export { GridBackground } from './GridBackground';
 export { SegmentedToggle, type Segment } from './SegmentedToggle';
 
 /* ---------------------------------------------------------------- Text ---- */
