@@ -2,6 +2,7 @@
 
 from decimal import Decimal
 from types import SimpleNamespace
+from typing import Any, cast
 from uuid import uuid4
 
 from llamatrade_db.models.ledger import LedgerEventType
@@ -57,7 +58,7 @@ def test_aggregate_positions_missing_price_falls_back_to_avg_entry() -> None:
 def test_portfolio_summary_aggregates_and_day_pnl() -> None:
     proj = _proj_with("1000", "AAPL", "10", "1500")
     proj.sleeve("s1").realized_pnl = Decimal("250")
-    view = portfolio_summary([proj], {"AAPL": Decimal("200")}, prior_equity=2800.0)
+    view = portfolio_summary([proj], {"AAPL": Decimal("200")}, prior_equity=Decimal("2800"))
     # equity = cash 1000 + mkt 2000 = 3000
     assert view.total_equity == 3000.0
     assert view.cash == 1000.0
@@ -66,7 +67,7 @@ def test_portfolio_summary_aggregates_and_day_pnl() -> None:
     assert view.total_realized_pnl == 250.0
     assert view.positions_count == 1
     assert view.day_pnl == 200.0  # 3000 - 2800
-    assert round(view.day_pnl_percent, 4) == round(200 / 2800 * 100, 4)
+    assert round(float(view.day_pnl_percent), 4) == round(200 / 2800 * 100, 4)
 
 
 def test_portfolio_summary_no_prior_equity_zero_day_pnl() -> None:
@@ -105,7 +106,7 @@ def test_transactions_view_from_events() -> None:
             occurred_at=None,
         ),
     ]
-    views = transactions_view(events)
+    views = transactions_view(cast(Any, events))
     assert len(views) == 2  # deposit + fill, submit skipped
     # newest-first: fill is last appended → first out
     assert views[0].type == "buy"
@@ -131,11 +132,32 @@ def test_transactions_view_allocation_carries_target_sleeve() -> None:
             occurred_at=None,
         ),
     ]
-    views = transactions_view(events)
+    views = transactions_view(cast(Any, events))
     assert len(views) == 1
     assert views[0].type == "transfer_in"
     assert views[0].amount == 15000.0
     assert views[0].sleeve_id == strategy_sleeve  # so the caller can name the strategy
+
+
+def test_transactions_view_transfer_renders_both_legs() -> None:
+    """A sleeve→sleeve transfer renders transfer_out (source) AND transfer_in
+    (destination), not just the inflow."""
+    src = str(uuid4())
+    dst = str(uuid4())
+    events = [
+        SimpleNamespace(
+            event_id=str(uuid4()),
+            event_type=LedgerEventType.CAPITAL_TRANSFERRED,
+            data={"from_sleeve_id": src, "to_sleeve_id": dst, "amount": "500"},
+            occurred_at=None,
+        ),
+    ]
+    by_type = {v.type: v for v in transactions_view(cast(Any, events))}
+    assert set(by_type) == {"transfer_out", "transfer_in"}
+    assert by_type["transfer_out"].sleeve_id == src
+    assert by_type["transfer_in"].sleeve_id == dst
+    assert by_type["transfer_out"].amount == 500.0
+    assert by_type["transfer_in"].amount == 500.0
 
 
 def test_sleeve_trade_stats_wins_losses() -> None:
@@ -164,7 +186,7 @@ def test_sleeve_trade_stats_wins_losses() -> None:
             },
         ),
     ]
-    stats = sleeve_trade_stats(events, sleeve)
+    stats = sleeve_trade_stats(cast(Any, events), sleeve)
     assert stats.total_trades == 3
     assert stats.winning_trades == 2
     assert stats.losing_trades == 1

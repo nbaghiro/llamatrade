@@ -1,6 +1,7 @@
 """Portfolio Service - Pydantic schemas (read-side response shapes)."""
 
 from datetime import datetime
+from decimal import Decimal
 from uuid import UUID
 
 from pydantic import BaseModel
@@ -8,25 +9,25 @@ from pydantic import BaseModel
 
 class PositionResponse(BaseModel):
     symbol: str
-    qty: float
+    qty: Decimal
     side: str
-    cost_basis: float
-    market_value: float
-    unrealized_pnl: float
-    unrealized_pnl_percent: float
-    current_price: float
-    avg_entry_price: float
+    cost_basis: Decimal
+    market_value: Decimal
+    unrealized_pnl: Decimal
+    unrealized_pnl_percent: Decimal
+    current_price: Decimal
+    avg_entry_price: Decimal
 
 
 class PortfolioSummary(BaseModel):
-    total_equity: float
-    cash: float
-    market_value: float
-    total_unrealized_pnl: float
-    total_realized_pnl: float
-    day_pnl: float
-    day_pnl_percent: float
-    total_pnl_percent: float
+    total_equity: Decimal
+    cash: Decimal
+    market_value: Decimal
+    total_unrealized_pnl: Decimal
+    total_realized_pnl: Decimal
+    day_pnl: Decimal
+    day_pnl_percent: Decimal
+    total_pnl_percent: Decimal
     positions_count: int
     updated_at: datetime
 
@@ -57,9 +58,9 @@ class PerformanceMetrics(BaseModel):
 
 class EquityPoint(BaseModel):
     timestamp: datetime
-    equity: float
-    cash: float
-    market_value: float
+    equity: Decimal
+    cash: Decimal
+    market_value: Decimal
 
 
 class TransactionResponse(BaseModel):
@@ -67,10 +68,10 @@ class TransactionResponse(BaseModel):
     tenant_id: UUID
     type: int  # TransactionType proto value
     symbol: str | None = None
-    quantity: float | None = None
-    price: float | None = None
-    amount: float
-    fees: float = 0
+    quantity: Decimal | None = None
+    price: Decimal | None = None
+    amount: Decimal
+    fees: Decimal = Decimal("0")
     description: str | None = None
     reference_id: str | None = None
     created_at: datetime

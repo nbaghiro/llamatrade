@@ -7,6 +7,7 @@ them unchanged.
 """
 
 from collections.abc import AsyncIterator
+from decimal import Decimal
 from typing import cast
 from uuid import uuid4
 
@@ -119,7 +120,7 @@ class TestTradingEventPublisher:
             alpaca_order_id="alpaca-123",
             symbol="AAPL",
             side="buy",
-            qty=10.0,
+            qty=Decimal("10.0"),
             order_type="market",
         )
         assert len(orders.published) == 1
@@ -131,7 +132,7 @@ class TestTradingEventPublisher:
         assert update.order.side == trading_pb2.ORDER_SIDE_BUY
         assert update.order.type == trading_pb2.ORDER_TYPE_MARKET
         assert update.order.status == trading_pb2.ORDER_STATUS_SUBMITTED
-        assert update.order.quantity.value == "10.0"
+        assert Decimal(update.order.quantity.value) == Decimal("10.0")
         assert update.timestamp.seconds > 0
 
     async def test_publish_order_filled(self) -> None:
@@ -142,18 +143,18 @@ class TestTradingEventPublisher:
             alpaca_order_id="alpaca-123",
             symbol="AAPL",
             side="sell",
-            qty=10.0,
+            qty=Decimal("10.0"),
             order_type="limit",
-            filled_qty=10.0,
-            filled_avg_price=150.50,
+            filled_qty=Decimal("10.0"),
+            filled_avg_price=Decimal("150.50"),
         )
         _, update = orders.published[0]
         assert update.event_type == "filled"
         assert update.order.side == trading_pb2.ORDER_SIDE_SELL
         assert update.order.type == trading_pb2.ORDER_TYPE_LIMIT
         assert update.order.status == trading_pb2.ORDER_STATUS_FILLED
-        assert update.order.filled_quantity.value == "10.0"
-        assert update.order.average_fill_price.value == "150.5"
+        assert Decimal(update.order.filled_quantity.value) == Decimal("10.0")
+        assert Decimal(update.order.average_fill_price.value) == Decimal("150.5")
 
     async def test_publish_order_cancelled(self) -> None:
         publisher, orders, _ = _publisher()
@@ -163,34 +164,34 @@ class TestTradingEventPublisher:
             alpaca_order_id=None,
             symbol="AAPL",
             side="buy",
-            qty=10.0,
+            qty=Decimal("10.0"),
             order_type="market",
-            filled_qty=3.0,
+            filled_qty=Decimal("3.0"),
         )
         _, update = orders.published[0]
         assert update.event_type == "cancelled"
         assert update.order.client_order_id == ""
         assert update.order.status == trading_pb2.ORDER_STATUS_CANCELLED
-        assert update.order.filled_quantity.value == "3.0"
+        assert Decimal(update.order.filled_quantity.value) == Decimal("3.0")
 
     async def test_publish_position_opened(self) -> None:
         publisher, _, positions = _publisher()
         await publisher.publish_position_opened(
             session_id=uuid4(),
             symbol="AAPL",
-            qty=100.0,
+            qty=Decimal("100.0"),
             side="long",
-            entry_price=150.0,
+            entry_price=Decimal("150.0"),
         )
         _, update = positions.published[0]
         assert update.event_type == "opened"
         assert update.position.symbol == "AAPL"
         assert update.position.side == trading_pb2.POSITION_SIDE_LONG
-        assert update.position.quantity.value == "100.0"
+        assert Decimal(update.position.quantity.value) == Decimal("100.0")
         # cost_basis = qty * entry_price; average_entry_price = cost_basis / qty
-        assert update.position.cost_basis.value == "15000.0"
-        assert update.position.average_entry_price.value == "150.0"
-        assert update.position.current_price.value == "150.0"
+        assert Decimal(update.position.cost_basis.value) == Decimal("15000.0")
+        assert Decimal(update.position.average_entry_price.value) == Decimal("150.0")
+        assert Decimal(update.position.current_price.value) == Decimal("150.0")
         assert update.timestamp.seconds > 0
 
     async def test_publish_position_closed(self) -> None:
@@ -199,14 +200,14 @@ class TestTradingEventPublisher:
             session_id=uuid4(),
             symbol="AAPL",
             side="short",
-            exit_price=144.0,
-            realized_pnl=300.0,
+            exit_price=Decimal("144.0"),
+            realized_pnl=Decimal("300.0"),
         )
         _, update = positions.published[0]
         assert update.event_type == "closed"
         assert update.position.side == trading_pb2.POSITION_SIDE_SHORT
-        assert update.position.quantity.value == "0.0"
-        assert update.position.current_price.value == "144.0"
+        assert Decimal(update.position.quantity.value) == Decimal("0")
+        assert Decimal(update.position.current_price.value) == Decimal("144.0")
 
     async def test_close_closes_channels(self) -> None:
         publisher, orders, positions = _publisher()

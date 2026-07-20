@@ -1,6 +1,7 @@
 """Trading Service - Pydantic schemas."""
 
 from datetime import datetime
+from decimal import Decimal
 from enum import IntEnum
 from typing import Any, Literal
 from uuid import UUID
@@ -118,16 +119,16 @@ def bracket_type_to_str(value: BracketType | int) -> Literal["stop_loss", "take_
 class OrderCreate(BaseModel):
     symbol: str
     side: OrderSide.ValueType
-    qty: float = Field(..., gt=0)
+    qty: Decimal = Field(..., gt=0)
     order_type: OrderType.ValueType = ORDER_TYPE_MARKET
-    limit_price: float | None = None
-    stop_price: float | None = None
-    trail_percent: float | None = None
+    limit_price: Decimal | None = None
+    stop_price: Decimal | None = None
+    trail_percent: Decimal | None = None
     time_in_force: TimeInForce.ValueType = TIME_IN_FORCE_DAY
     extended_hours: bool = False
     # Bracket order fields (stop-loss/take-profit)
-    stop_loss_price: float | None = None
-    take_profit_price: float | None = None
+    stop_loss_price: Decimal | None = None
+    take_profit_price: Decimal | None = None
     bracket_time_in_force: TimeInForce.ValueType = TIME_IN_FORCE_GTC
     # Ledger attribution, fixed at origination (CONTRACTS.md §5).
     # None → resolved from the session (strategy sleeve) or Manual sleeve.
@@ -135,7 +136,7 @@ class OrderCreate(BaseModel):
     account_id: UUID | None = None
     # Reference price for market orders (signal price), used to size the
     # §4 cash reservation. Never sent to the broker.
-    est_price: float | None = None
+    est_price: Decimal | None = None
 
     @model_validator(mode="after")
     def _validate_price_for_type(self) -> OrderCreate:
@@ -169,24 +170,26 @@ class BracketOrderInfo(BaseModel):
 
 class OrderResponse(BaseModel):
     id: UUID
+    tenant_id: UUID | None = None
+    session_id: UUID | None = None
     client_order_id: str | None = None
     alpaca_order_id: str | None = None
     symbol: str
     side: OrderSide.ValueType
-    qty: float
+    qty: Decimal
     order_type: OrderType.ValueType
-    limit_price: float | None = None
-    stop_price: float | None = None
+    limit_price: Decimal | None = None
+    stop_price: Decimal | None = None
     status: OrderStatus.ValueType
-    filled_qty: float = 0
-    filled_avg_price: float | None = None
+    filled_qty: Decimal = Decimal("0")
+    filled_avg_price: Decimal | None = None
     submitted_at: datetime
     filled_at: datetime | None = None
     # Bracket order fields
     parent_order_id: UUID | None = None
     bracket_type: BracketType | None = None
-    stop_loss_price: float | None = None
-    take_profit_price: float | None = None
+    stop_loss_price: Decimal | None = None
+    take_profit_price: Decimal | None = None
     bracket_orders: BracketOrderInfo | None = None
 
 
@@ -208,7 +211,7 @@ class SessionResponse(BaseModel):
     status: ExecutionStatus.ValueType
     started_at: datetime
     stopped_at: datetime | None = None
-    pnl: float = 0
+    pnl: Decimal = Decimal("0")
     trades_count: int = 0
     name: str = ""
     # Ledger identity (None for legacy/unfunded sessions)
@@ -218,19 +221,19 @@ class SessionResponse(BaseModel):
 
 class PositionResponse(BaseModel):
     symbol: str
-    qty: float
+    qty: Decimal
     side: str
-    cost_basis: float
-    market_value: float
-    unrealized_pnl: float
-    unrealized_pnl_percent: float
-    current_price: float
+    cost_basis: Decimal
+    market_value: Decimal
+    unrealized_pnl: Decimal
+    unrealized_pnl_percent: Decimal
+    current_price: Decimal
 
 
 class RiskLimits(BaseModel):
-    max_position_size: float | None = None
-    max_daily_loss: float | None = None
-    max_order_value: float | None = None
+    max_position_size: Decimal | None = None
+    max_daily_loss: Decimal | None = None
+    max_order_value: Decimal | None = None
     allowed_symbols: list[str] | None = None
     # Safety flags
     allow_outside_market_hours: bool = False  # For paper trading/testing only

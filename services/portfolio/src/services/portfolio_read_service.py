@@ -216,6 +216,7 @@ class PortfolioReadService:
                 benchmark_metrics, dates, equities, bench_closes
             )
 
+        ytd, mtd, wtd = await self._period_returns(tenant_id)
         return PerformanceMetrics(
             period=period,
             total_return=m.total_return,
@@ -233,7 +234,33 @@ class PortfolioReadService:
             beta=beta,
             alpha=alpha,
             benchmark_return=benchmark_return,
+            ytd_return=ytd,
+            mtd_return=mtd,
+            wtd_return=wtd,
         )
+
+    async def _period_returns(self, tenant_id: UUID) -> tuple[float, float, float]:
+        """YTD / MTD / WTD account returns (%) from the daily equity series.
+
+        Each baseline is the first equity point on or after the period boundary;
+        return = (latest - baseline) / baseline * 100.
+        """
+        today = datetime.now(UTC).date()
+        year_start = today.replace(month=1, day=1)
+        month_start = today.replace(day=1)
+        week_start = today - timedelta(days=today.weekday())
+        series = await self._daily_equity_series(tenant_id, year_start, today)
+        if len(series) < 2:
+            return 0.0, 0.0, 0.0
+        latest = series[-1][1]
+
+        def _ret(boundary: date) -> float:
+            base = next((eq for d, eq in series if d >= boundary), None)
+            if not base:
+                return 0.0
+            return float((latest - base) / base * 100)  # feeds the numpy analytics model
+
+        return _ret(year_start), _ret(month_start), _ret(week_start)
 
     async def _accounts(self, tenant_id: UUID) -> list[Account]:
         result = await self.db.scalars(select(Account).where(Account.tenant_id == tenant_id))
@@ -255,7 +282,7 @@ class PortfolioReadService:
 
     async def _daily_equity_series(
         self, tenant_id: UUID, start_date: date, end_date: date
-    ) -> list[tuple[date, float]]:
+    ) -> list[tuple[date, Decimal]]:
         """Daily account equity from sleeve snapshots, summed across sleeves.
 
         For each day, take each sleeve's latest snapshot and sum them — yields
@@ -279,11 +306,11 @@ class PortfolioReadService:
             if prev is None or created >= prev[0]:
                 day[snap.sleeve_id] = (created, snap.equity)
         return [
-            (d, float(sum((eq for _, eq in sleeves.values()), Decimal("0"))))
+            (d, sum((eq for _, eq in sleeves.values()), Decimal("0")))
             for d, sleeves in sorted(by_day.items())
         ]
 
-    async def _prior_equity(self, tenant_id: UUID) -> float | None:
+    async def _prior_equity(self, tenant_id: UUID) -> Decimal | None:
         """Yesterday-or-earlier account equity, for the day-P&L baseline."""
         today = datetime.now(UTC).date()
         series = await self._daily_equity_series(tenant_id, today - timedelta(days=7), today)

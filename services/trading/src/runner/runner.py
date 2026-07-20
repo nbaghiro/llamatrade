@@ -7,6 +7,7 @@ from collections import deque
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 from typing import Any, Literal, Protocol
 from uuid import UUID
 
@@ -67,8 +68,8 @@ class Signal:
 
     type: str  # "buy", "sell", "short", "cover"
     symbol: str
-    quantity: float
-    price: float
+    quantity: Decimal
+    price: Decimal
     timestamp: datetime = field(default_factory=lambda: datetime.now(UTC))
 
 
@@ -78,9 +79,16 @@ class Position:
 
     symbol: str
     side: str  # "long", "short", "flat"
-    quantity: float
-    entry_price: float
+    quantity: Decimal
+    entry_price: Decimal
     entry_date: datetime
+
+
+def _realized_pnl(
+    *, entry_price: Decimal, exit_price: Decimal, qty: Decimal, is_long: bool
+) -> Decimal:
+    """Realized P&L for a closed position (exact Decimal)."""
+    return (exit_price - entry_price if is_long else entry_price - exit_price) * qty
 
 
 @dataclass
@@ -187,8 +195,8 @@ class StrategyRunner:
             s: deque(maxlen=max_history_size) for s in config.symbols
         }
         self._positions: dict[str, Position] = {}
-        self._equity = 100000.0  # Default, will be synced from Alpaca/sleeve
-        self._free_cash: float | None = None  # Sleeve free cash (book of record)
+        self._equity = Decimal("100000")  # Default, will be synced from Alpaca/sleeve
+        self._free_cash: Decimal | None = None  # Sleeve free cash (book of record)
         self._equity_sync_task: asyncio.Task[None] | None = None
         self._position_sync_task: asyncio.Task[None] | None = None
         self._trade_stream_task: asyncio.Task[None] | None = None
@@ -545,7 +553,7 @@ class StrategyRunner:
                 symbol=symbol,
                 bars=self._bar_history[symbol],
                 position=position,
-                equity=self._equity,
+                equity=float(self._equity),  # strategy engine is float-native
             )
 
             if signal:
@@ -604,12 +612,14 @@ class StrategyRunner:
         if not self._circuit_breaker.can_trade():
             return
 
-        holdings = {s: Holding(s, p.quantity) for s, p in self._positions.items() if p.quantity > 0}
+        holdings = {
+            s: Holding(s, float(p.quantity)) for s, p in self._positions.items() if p.quantity > 0
+        }
         # Offload the strategy/indicator math (NumPy, releases the GIL) to a worker
         # thread so it never blocks the event loop driving the fill/equity loops (15A).
         # Safe: this session is owned solely by this runner and evaluated serially.
         orders = await asyncio.to_thread(
-            self._session.evaluate, self._latest_bars, holdings, self._equity
+            self._session.evaluate, self._latest_bars, holdings, float(self._equity)
         )
 
         # Surface conditions that couldn't be evaluated (NaN/missing data) as a
@@ -623,8 +633,8 @@ class StrategyRunner:
             signal = Signal(
                 type=order.side,
                 symbol=order.symbol,
-                quantity=order.quantity,
-                price=order.price,
+                quantity=Decimal(str(order.quantity)),  # compiler is float-native
+                price=Decimal(str(order.price)),
                 timestamp=ts,
             )
             self._signals_generated += 1
@@ -690,7 +700,7 @@ class StrategyRunner:
                         details={
                             "symbol": signal.symbol,
                             "signal_type": signal.type,
-                            "quantity": signal.quantity,
+                            "quantity": float(signal.quantity),
                             "violations": risk_result.violations,
                         },
                     )
@@ -759,8 +769,8 @@ class StrategyRunner:
                     session_id=self.config.execution_id,
                     symbol=symbol,
                     side="long",
-                    qty=signal.quantity,
-                    price=signal.price,
+                    qty=float(signal.quantity),
+                    price=float(signal.price),
                 )
 
         elif signal.type == "sell":
@@ -769,15 +779,20 @@ class StrategyRunner:
                 del self._positions[symbol]
             # Send position closed alert and record trade in circuit breaker
             if old_position:
-                pnl = (signal.price - old_position.entry_price) * old_position.quantity
+                pnl = _realized_pnl(
+                    entry_price=old_position.entry_price,
+                    exit_price=signal.price,
+                    qty=old_position.quantity,
+                    is_long=True,
+                )
                 await self._circuit_breaker.record_trade(is_win=pnl >= 0, pnl=pnl)
                 if self.alerts:
                     await self.alerts.on_position_closed(
                         tenant_id=self.config.tenant_id,
                         session_id=self.config.execution_id,
                         symbol=symbol,
-                        qty=old_position.quantity,
-                        pnl=pnl,
+                        qty=float(old_position.quantity),
+                        pnl=float(pnl),
                     )
 
         elif signal.type == "short":
@@ -795,8 +810,8 @@ class StrategyRunner:
                     session_id=self.config.execution_id,
                     symbol=symbol,
                     side="short",
-                    qty=signal.quantity,
-                    price=signal.price,
+                    qty=float(signal.quantity),
+                    price=float(signal.price),
                 )
 
         elif signal.type == "cover":
@@ -806,18 +821,23 @@ class StrategyRunner:
             # Send position closed alert and record trade in circuit breaker
             if old_position:
                 # For short: profit when price goes down
-                pnl = (old_position.entry_price - signal.price) * old_position.quantity
+                pnl = _realized_pnl(
+                    entry_price=old_position.entry_price,
+                    exit_price=signal.price,
+                    qty=old_position.quantity,
+                    is_long=False,
+                )
                 await self._circuit_breaker.record_trade(is_win=pnl >= 0, pnl=pnl)
                 if self.alerts:
                     await self.alerts.on_position_closed(
                         tenant_id=self.config.tenant_id,
                         session_id=self.config.execution_id,
                         symbol=symbol,
-                        qty=old_position.quantity,
-                        pnl=pnl,
+                        qty=float(old_position.quantity),
+                        pnl=float(pnl),
                     )
 
-    def set_equity(self, equity: float) -> None:
+    def set_equity(self, equity: Decimal) -> None:
         """Update equity value (called by external sync)."""
         self._equity = equity
 
@@ -896,12 +916,12 @@ class StrategyRunner:
             self._running = False
             return True
 
-        free_cash = float(detail.sleeve.cash.free)
+        free_cash = Decimal(str(detail.sleeve.cash.free))
         equity = free_cash
         for lot in detail.lots:
             bars = self._bar_history.get(lot.symbol)
-            price = float(bars[-1].close) if bars else float(lot.avg_price)
-            equity += float(lot.qty) * price
+            price = Decimal(str(bars[-1].close)) if bars else Decimal(str(lot.avg_price))
+            equity += Decimal(str(lot.qty)) * price
 
         self._free_cash = free_cash
         self._equity = equity
@@ -1059,8 +1079,8 @@ class StrategyRunner:
         fill = event.fill
         symbol = fill.symbol
         side = fill.side
-        fill_qty = float(fill.fill_qty)
-        fill_price = float(fill.fill_price)
+        fill_qty = fill.fill_qty
+        fill_price = fill.fill_price
 
         logger.info(f"Processing fill: {side} {fill_qty} {symbol} @ ${fill_price:.2f}")
 
@@ -1093,7 +1113,12 @@ class StrategyRunner:
                 remaining = old_position.quantity - fill_qty
                 if remaining <= 0:
                     # Fully closed
-                    pnl = (old_position.entry_price - fill_price) * old_position.quantity
+                    pnl = _realized_pnl(
+                        entry_price=old_position.entry_price,
+                        exit_price=fill_price,
+                        qty=old_position.quantity,
+                        is_long=False,
+                    )
                     del self._positions[symbol]
                     await self._circuit_breaker.record_trade(is_win=pnl >= 0, pnl=pnl)
                     if self.alerts:
@@ -1101,8 +1126,8 @@ class StrategyRunner:
                             tenant_id=self.config.tenant_id,
                             session_id=self.config.execution_id,
                             symbol=symbol,
-                            qty=old_position.quantity,
-                            pnl=pnl,
+                            qty=float(old_position.quantity),
+                            pnl=float(pnl),
                         )
                 else:
                     # Partially closed
@@ -1128,8 +1153,8 @@ class StrategyRunner:
                         session_id=self.config.execution_id,
                         symbol=symbol,
                         side="long",
-                        qty=fill_qty,
-                        price=fill_price,
+                        qty=float(fill_qty),
+                        price=float(fill_price),
                     )
 
         else:  # sell
@@ -1139,7 +1164,12 @@ class StrategyRunner:
                 remaining = old_position.quantity - fill_qty
                 if remaining <= 0:
                     # Fully closed
-                    pnl = (fill_price - old_position.entry_price) * old_position.quantity
+                    pnl = _realized_pnl(
+                        entry_price=old_position.entry_price,
+                        exit_price=fill_price,
+                        qty=old_position.quantity,
+                        is_long=True,
+                    )
                     del self._positions[symbol]
                     await self._circuit_breaker.record_trade(is_win=pnl >= 0, pnl=pnl)
                     if self.alerts:
@@ -1147,8 +1177,8 @@ class StrategyRunner:
                             tenant_id=self.config.tenant_id,
                             session_id=self.config.execution_id,
                             symbol=symbol,
-                            qty=old_position.quantity,
-                            pnl=pnl,
+                            qty=float(old_position.quantity),
+                            pnl=float(pnl),
                         )
                 else:
                     # Partially closed
@@ -1187,8 +1217,8 @@ class StrategyRunner:
                         session_id=self.config.execution_id,
                         symbol=symbol,
                         side="short",
-                        qty=fill_qty,
-                        price=fill_price,
+                        qty=float(fill_qty),
+                        price=float(fill_price),
                     )
 
         # Record metrics
@@ -1200,7 +1230,9 @@ class StrategyRunner:
         # estimate (its market price at signal time). Only when we still have
         # the originating signal and it carried a usable reference price.
         if pending_signal is not None:
-            record_slippage(side=side, fill_price=fill_price, est_price=pending_signal.price)
+            record_slippage(
+                side=side, fill_price=float(fill_price), est_price=float(pending_signal.price)
+            )
 
         logger.info(f"Fill processed: {symbol} now {self._positions.get(symbol, 'flat')}")
 
@@ -1315,7 +1347,7 @@ class StrategyRunner:
                         session_id=self.config.execution_id,
                         symbol=symbol,
                         drift_type="missing_broker",
-                        local_qty=local_pos.quantity,
+                        local_qty=float(local_pos.quantity),
                         broker_qty=0.0,
                         action="alerted",
                     )
@@ -1351,18 +1383,21 @@ class StrategyRunner:
                             symbol=symbol,
                             drift_type="missing_local",
                             local_qty=0.0,
-                            broker_qty=broker_pos.qty,
+                            broker_qty=float(broker_pos.qty),
                             action="alerted",
                         )
                     all_ok = False
                     continue
 
                 # Auto-add missing position (broker is source of truth)
+                broker_qty = broker_pos.qty
                 self._positions[symbol] = Position(
                     symbol=symbol,
                     side=broker_pos.side,
-                    quantity=broker_pos.qty,
-                    entry_price=broker_pos.cost_basis / broker_pos.qty if broker_pos.qty > 0 else 0,
+                    quantity=broker_qty,
+                    entry_price=(
+                        broker_pos.cost_basis / broker_qty if broker_qty > 0 else Decimal("0")
+                    ),
                     entry_date=datetime.now(UTC),  # Approximate
                 )
 
@@ -1383,7 +1418,7 @@ class StrategyRunner:
                         symbol=symbol,
                         drift_type="missing_local",
                         local_qty=0.0,
-                        broker_qty=broker_pos.qty,
+                        broker_qty=float(broker_pos.qty),
                         action="corrected",
                     )
 
@@ -1415,8 +1450,8 @@ class StrategyRunner:
                             session_id=self.config.execution_id,
                             symbol=symbol,
                             drift_type="side_mismatch",
-                            local_qty=local_pos.quantity,
-                            broker_qty=broker_pos.qty,
+                            local_qty=float(local_pos.quantity),
+                            broker_qty=float(broker_pos.qty),
                             action="alerted",
                         )
 
@@ -1424,10 +1459,11 @@ class StrategyRunner:
                     continue
 
                 # Check quantity mismatch
-                if local_pos.quantity != broker_pos.qty:
+                broker_qty = broker_pos.qty
+                if local_pos.quantity != broker_qty:
                     drift_pct = (
-                        abs(local_pos.quantity - broker_pos.qty)
-                        / max(local_pos.quantity, broker_pos.qty, 0.001)
+                        abs(local_pos.quantity - broker_qty)
+                        / max(local_pos.quantity, broker_qty, Decimal("0.001"))
                         * 100
                     )
 
@@ -1441,7 +1477,7 @@ class StrategyRunner:
                             result="drift_alerted",
                             duration=duration,
                             drift_type="quantity_mismatch",
-                            drift_percent=drift_pct,
+                            drift_percent=float(drift_pct),
                         )
                         logger.warning(
                             f"Position drift (ledger-owned): {symbol} "
@@ -1454,22 +1490,22 @@ class StrategyRunner:
                                 session_id=self.config.execution_id,
                                 symbol=symbol,
                                 drift_type="quantity_mismatch",
-                                local_qty=local_pos.quantity,
-                                broker_qty=broker_pos.qty,
+                                local_qty=float(local_pos.quantity),
+                                broker_qty=float(broker_pos.qty),
                                 action="alerted",
                             )
                         all_ok = False
                     elif drift_pct < auto_correct_threshold:
                         # Auto-correct small drift
                         old_qty = local_pos.quantity
-                        local_pos.quantity = broker_pos.qty
+                        local_pos.quantity = broker_qty
 
                         duration = time.perf_counter() - start_time
                         record_position_reconciliation(
                             result="drift_corrected",
                             duration=duration,
                             drift_type="quantity_mismatch",
-                            drift_percent=drift_pct,
+                            drift_percent=float(drift_pct),
                         )
 
                         logger.info(
@@ -1483,8 +1519,8 @@ class StrategyRunner:
                                 session_id=self.config.execution_id,
                                 symbol=symbol,
                                 drift_type="quantity_mismatch",
-                                local_qty=old_qty,
-                                broker_qty=broker_pos.qty,
+                                local_qty=float(old_qty),
+                                broker_qty=float(broker_pos.qty),
                                 action="corrected",
                             )
 
@@ -1495,7 +1531,7 @@ class StrategyRunner:
                             result="drift_alerted",
                             duration=duration,
                             drift_type="quantity_mismatch",
-                            drift_percent=drift_pct,
+                            drift_percent=float(drift_pct),
                         )
 
                         logger.warning(
@@ -1510,8 +1546,8 @@ class StrategyRunner:
                                 session_id=self.config.execution_id,
                                 symbol=symbol,
                                 drift_type="quantity_mismatch",
-                                local_qty=local_pos.quantity,
-                                broker_qty=broker_pos.qty,
+                                local_qty=float(local_pos.quantity),
+                                broker_qty=float(broker_pos.qty),
                                 action="alerted",
                             )
 

@@ -42,8 +42,8 @@ class PositionService:
         session_id: UUID,
         symbol: str,
         side: str,
-        qty: float,
-        entry_price: float,
+        qty: Decimal,
+        entry_price: Decimal,
     ) -> PositionResponse:
         """Open a new position.
 
@@ -66,11 +66,11 @@ class PositionService:
             session_id=session_id,
             symbol=symbol,
             side=side,
-            qty=Decimal(str(qty)),
-            avg_entry_price=Decimal(str(entry_price)),
-            current_price=Decimal(str(entry_price)),
-            market_value=Decimal(str(cost_basis)),
-            cost_basis=Decimal(str(cost_basis)),
+            qty=qty,
+            avg_entry_price=entry_price,
+            current_price=entry_price,
+            market_value=cost_basis,
+            cost_basis=cost_basis,
             unrealized_pl=Decimal("0"),
             unrealized_plpc=Decimal("0"),
             realized_pl=Decimal("0"),
@@ -88,7 +88,7 @@ class PositionService:
         tenant_id: UUID,
         session_id: UUID,
         symbol: str,
-        exit_price: float,
+        exit_price: Decimal,
     ) -> PositionResponse | None:
         """Close an existing position.
 
@@ -105,19 +105,16 @@ class PositionService:
         if not position:
             return None
 
-        # Calculate realized P&L
-        qty = float(position.qty)
-        entry_price = float(position.avg_entry_price)
-
+        # Calculate realized P&L (exact Decimal)
         if position.side == POSITION_SIDE_LONG:
-            realized_pl = (exit_price - entry_price) * qty
+            realized_pl = (exit_price - position.avg_entry_price) * position.qty
         else:
-            realized_pl = (entry_price - exit_price) * qty
+            realized_pl = (position.avg_entry_price - exit_price) * position.qty
 
         position.is_open = False
-        position.realized_pl = Decimal(str(realized_pl))
-        position.current_price = Decimal(str(exit_price))
-        position.market_value = Decimal(str(qty * exit_price))
+        position.realized_pl = realized_pl
+        position.current_price = exit_price
+        position.market_value = position.qty * exit_price
         position.unrealized_pl = Decimal("0")
         position.unrealized_plpc = Decimal("0")
         position.closed_at = datetime.now(UTC)
@@ -237,23 +234,20 @@ class PositionService:
             if pos.symbol not in prices:
                 continue
 
-            price = prices[pos.symbol]
-            qty = float(pos.qty)
-            entry_price = float(pos.avg_entry_price)
+            price = Decimal(str(prices[pos.symbol]))  # market-data feed is float
 
-            pos.current_price = Decimal(str(price))
-            pos.market_value = Decimal(str(qty * price))
+            pos.current_price = price
+            pos.market_value = pos.qty * price
 
             if pos.side == POSITION_SIDE_LONG:
-                unrealized_pl = (price - entry_price) * qty
+                unrealized_pl = (price - pos.avg_entry_price) * pos.qty
             else:
-                unrealized_pl = (entry_price - price) * qty
+                unrealized_pl = (pos.avg_entry_price - price) * pos.qty
 
-            pos.unrealized_pl = Decimal(str(unrealized_pl))
+            pos.unrealized_pl = unrealized_pl
 
-            cost_basis = float(pos.cost_basis)
-            if cost_basis != 0:
-                pos.unrealized_plpc = Decimal(str(unrealized_pl / cost_basis))
+            if pos.cost_basis != 0:
+                pos.unrealized_plpc = unrealized_pl / pos.cost_basis
             else:
                 pos.unrealized_plpc = Decimal("0")
 
@@ -357,13 +351,15 @@ class PositionService:
         """Convert Position ORM object to response."""
         return PositionResponse(
             symbol=p.symbol,
-            qty=float(p.qty),
+            qty=Decimal(str(p.qty)),
             side=position_side_to_str(p.side),
-            cost_basis=float(p.cost_basis),
-            market_value=float(p.market_value) if p.market_value else 0.0,
-            unrealized_pnl=float(p.unrealized_pl) if p.unrealized_pl else 0.0,
-            unrealized_pnl_percent=float(p.unrealized_plpc) * 100 if p.unrealized_plpc else 0.0,
-            current_price=float(p.current_price) if p.current_price else 0.0,
+            cost_basis=Decimal(str(p.cost_basis)),
+            market_value=Decimal(str(p.market_value)) if p.market_value else Decimal("0"),
+            unrealized_pnl=Decimal(str(p.unrealized_pl)) if p.unrealized_pl else Decimal("0"),
+            unrealized_pnl_percent=(
+                Decimal(str(p.unrealized_plpc)) * 100 if p.unrealized_plpc else Decimal("0")
+            ),
+            current_price=Decimal(str(p.current_price)) if p.current_price else Decimal("0"),
         )
 
 

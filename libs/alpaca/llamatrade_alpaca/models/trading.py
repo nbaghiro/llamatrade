@@ -1,6 +1,7 @@
 """Trading models for Alpaca API."""
 
 from datetime import datetime
+from decimal import Decimal
 from enum import StrEnum
 from typing import Any
 
@@ -72,14 +73,14 @@ class Order(BaseModel):
     client_order_id: str | None = Field(default=None, description="Client-provided order ID")
     symbol: str
     side: OrderSide
-    qty: float
-    filled_qty: float = 0
+    qty: Decimal
+    filled_qty: Decimal = Decimal("0")
     order_type: OrderType
     status: OrderStatus
     time_in_force: TimeInForce
-    limit_price: float | None = None
-    stop_price: float | None = None
-    filled_avg_price: float | None = None
+    limit_price: Decimal | None = None
+    stop_price: Decimal | None = None
+    filled_avg_price: Decimal | None = None
     created_at: datetime
     submitted_at: datetime | None = None
     filled_at: datetime | None = None
@@ -92,16 +93,16 @@ class Position(BaseModel):
     """Position model."""
 
     symbol: str
-    qty: float = Field(description="Number of shares (positive for long, negative for short)")
+    qty: Decimal = Field(description="Number of shares (positive for long, negative for short)")
     side: PositionSide
-    avg_entry_price: float = Field(description="Average entry price")
-    market_value: float = Field(description="Current market value")
-    cost_basis: float = Field(description="Total cost basis")
-    unrealized_pl: float = Field(description="Unrealized profit/loss")
-    unrealized_plpc: float = Field(description="Unrealized P/L percentage")
-    current_price: float = Field(description="Current price")
-    lastday_price: float | None = Field(default=None, description="Previous day's close price")
-    change_today: float | None = Field(default=None, description="Percent change from last day")
+    avg_entry_price: Decimal = Field(description="Average entry price")
+    market_value: Decimal = Field(description="Current market value")
+    cost_basis: Decimal = Field(description="Total cost basis")
+    unrealized_pl: Decimal = Field(description="Unrealized profit/loss")
+    unrealized_plpc: Decimal = Field(description="Unrealized P/L percentage")
+    current_price: Decimal = Field(description="Current price")
+    lastday_price: Decimal | None = Field(default=None, description="Previous day's close price")
+    change_today: Decimal | None = Field(default=None, description="Percent change from last day")
 
 
 class Account(BaseModel):
@@ -111,15 +112,15 @@ class Account(BaseModel):
     account_number: str
     status: str
     currency: str = "USD"
-    cash: float
-    portfolio_value: float
-    buying_power: float
-    equity: float
-    last_equity: float | None = None
-    long_market_value: float = 0
-    short_market_value: float = 0
-    initial_margin: float = 0
-    maintenance_margin: float = 0
+    cash: Decimal
+    portfolio_value: Decimal
+    buying_power: Decimal
+    equity: Decimal
+    last_equity: Decimal | None = None
+    long_market_value: Decimal = Decimal("0")
+    short_market_value: Decimal = Decimal("0")
+    initial_margin: Decimal = Decimal("0")
+    maintenance_margin: Decimal = Decimal("0")
     daytrade_count: int = 0
     pattern_day_trader: bool = False
     trading_blocked: bool = False
@@ -153,14 +154,16 @@ def parse_order(data: dict[str, Any]) -> Order:
         client_order_id=data.get("client_order_id"),
         symbol=data["symbol"],
         side=OrderSide(data["side"]),
-        qty=float(data.get("qty") or data.get("notional") or 0),
-        filled_qty=float(data.get("filled_qty", 0)),
+        qty=Decimal(str(data.get("qty") or data.get("notional") or 0)),
+        filled_qty=Decimal(str(data.get("filled_qty", 0))),
         order_type=OrderType(data["type"]),
         status=OrderStatus(data["status"]),
         time_in_force=TimeInForce(data["time_in_force"]),
-        limit_price=float(data["limit_price"]) if data.get("limit_price") else None,
-        stop_price=float(data["stop_price"]) if data.get("stop_price") else None,
-        filled_avg_price=float(data["filled_avg_price"]) if data.get("filled_avg_price") else None,
+        limit_price=Decimal(str(data["limit_price"])) if data.get("limit_price") else None,
+        stop_price=Decimal(str(data["stop_price"])) if data.get("stop_price") else None,
+        filled_avg_price=Decimal(str(data["filled_avg_price"]))
+        if data.get("filled_avg_price")
+        else None,
         created_at=parse_timestamp(data["created_at"]),
         submitted_at=parse_timestamp(data["submitted_at"]) if data.get("submitted_at") else None,
         filled_at=parse_timestamp(data["filled_at"]) if data.get("filled_at") else None,
@@ -181,16 +184,16 @@ def parse_position(data: dict[str, Any]) -> Position:
     """
     return Position(
         symbol=data["symbol"],
-        qty=float(data["qty"]),
+        qty=Decimal(str(data["qty"])),
         side=PositionSide(data["side"]),
-        avg_entry_price=float(data["avg_entry_price"]),
-        market_value=float(data["market_value"]),
-        cost_basis=float(data["cost_basis"]),
-        unrealized_pl=float(data["unrealized_pl"]),
-        unrealized_plpc=float(data["unrealized_plpc"]),
-        current_price=float(data["current_price"]),
-        lastday_price=float(data["lastday_price"]) if data.get("lastday_price") else None,
-        change_today=float(data["change_today"]) if data.get("change_today") else None,
+        avg_entry_price=Decimal(str(data["avg_entry_price"])),
+        market_value=Decimal(str(data["market_value"])),
+        cost_basis=Decimal(str(data["cost_basis"])),
+        unrealized_pl=Decimal(str(data["unrealized_pl"])),
+        unrealized_plpc=Decimal(str(data["unrealized_plpc"])),
+        current_price=Decimal(str(data["current_price"])),
+        lastday_price=Decimal(str(data["lastday_price"])) if data.get("lastday_price") else None,
+        change_today=Decimal(str(data["change_today"])) if data.get("change_today") else None,
     )
 
 
@@ -208,15 +211,15 @@ def parse_account(data: dict[str, Any]) -> Account:
         account_number=data["account_number"],
         status=data["status"],
         currency=data.get("currency", "USD"),
-        cash=float(data["cash"]),
-        portfolio_value=float(data["portfolio_value"]),
-        buying_power=float(data["buying_power"]),
-        equity=float(data["equity"]),
-        last_equity=float(data["last_equity"]) if data.get("last_equity") else None,
-        long_market_value=float(data.get("long_market_value", 0)),
-        short_market_value=float(data.get("short_market_value", 0)),
-        initial_margin=float(data.get("initial_margin", 0)),
-        maintenance_margin=float(data.get("maintenance_margin", 0)),
+        cash=Decimal(str(data["cash"])),
+        portfolio_value=Decimal(str(data["portfolio_value"])),
+        buying_power=Decimal(str(data["buying_power"])),
+        equity=Decimal(str(data["equity"])),
+        last_equity=Decimal(str(data["last_equity"])) if data.get("last_equity") else None,
+        long_market_value=Decimal(str(data.get("long_market_value", 0))),
+        short_market_value=Decimal(str(data.get("short_market_value", 0))),
+        initial_margin=Decimal(str(data.get("initial_margin", 0))),
+        maintenance_margin=Decimal(str(data.get("maintenance_margin", 0))),
         daytrade_count=int(data.get("daytrade_count", 0)),
         pattern_day_trader=data.get("pattern_day_trader", False),
         trading_blocked=data.get("trading_blocked", False),

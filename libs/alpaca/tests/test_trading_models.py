@@ -1,6 +1,7 @@
 """Tests for trading models."""
 
 from datetime import UTC, datetime
+from decimal import Decimal
 
 from llamatrade_alpaca import (
     Account,
@@ -228,7 +229,7 @@ class TestModels:
             id="test-123",
             symbol="AAPL",
             side=OrderSide.BUY,
-            qty=10.0,
+            qty=Decimal("10.0"),
             order_type=OrderType.MARKET,
             status=OrderStatus.NEW,
             time_in_force=TimeInForce.DAY,
@@ -241,14 +242,14 @@ class TestModels:
         """Test Position model creation."""
         position = Position(
             symbol="AAPL",
-            qty=100.0,
+            qty=Decimal("100.0"),
             side=PositionSide.LONG,
-            avg_entry_price=150.0,
-            market_value=15500.0,
-            cost_basis=15000.0,
-            unrealized_pl=500.0,
-            unrealized_plpc=0.0333,
-            current_price=155.0,
+            avg_entry_price=Decimal("150.0"),
+            market_value=Decimal("15500.0"),
+            cost_basis=Decimal("15000.0"),
+            unrealized_pl=Decimal("500.0"),
+            unrealized_plpc=Decimal("0.0333"),
+            current_price=Decimal("155.0"),
         )
         assert position.symbol == "AAPL"
 
@@ -258,10 +259,10 @@ class TestModels:
             id="acc-123",
             account_number="ABC123",
             status="ACTIVE",
-            cash=10000.0,
-            portfolio_value=50000.0,
-            buying_power=20000.0,
-            equity=45000.0,
+            cash=Decimal("10000.0"),
+            portfolio_value=Decimal("50000.0"),
+            buying_power=Decimal("20000.0"),
+            equity=Decimal("45000.0"),
         )
         assert account.status == "ACTIVE"
 

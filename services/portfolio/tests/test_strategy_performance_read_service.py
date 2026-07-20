@@ -7,6 +7,7 @@ DB-touching helpers are overridden on the instance so these run with no DB.
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from types import SimpleNamespace
+from typing import Any, cast
 from unittest.mock import AsyncMock
 from uuid import uuid4
 
@@ -75,14 +76,16 @@ def test_period_returns_from_series() -> None:
         (now - timedelta(days=20), 1000.0),
         (now, 1200.0),
     ]
-    pr = svc._period_returns(series)
+    pr = svc._period_returns(cast(Any, series))
     assert pr.return_1m == Decimal("20.0")  # (1200-1000)/1000
     assert pr.return_all == Decimal("20.0")
 
 
 def test_period_returns_too_short_is_empty() -> None:
     svc = _svc()
-    assert svc._period_returns([(datetime(2026, 1, 1, tzinfo=UTC), 1.0)]).return_1m is None
+    assert (
+        svc._period_returns([(datetime(2026, 1, 1, tzinfo=UTC), cast(Any, 1.0))]).return_1m is None
+    )
 
 
 async def test_get_strategy_performance_assembles_detail() -> None:
@@ -110,9 +113,12 @@ async def test_get_strategy_performance_assembles_detail() -> None:
             "symbol": "AAPL",
         },
     )
-    svc._projector = SimpleNamespace(
-        project_account=AsyncMock(),
-        read_events=AsyncMock(return_value=[sell]),
+    svc._projector = cast(
+        Any,
+        SimpleNamespace(
+            project_account=AsyncMock(),
+            read_events=AsyncMock(return_value=[sell]),
+        ),
     )
 
     detail = await svc.get_strategy_performance(TENANT, execution.id)
@@ -147,3 +153,19 @@ async def test_get_strategy_equity_curve_builds_points() -> None:
     assert result is not None
     assert len(result.equity_curve) == 2
     assert result.equity_curve[-1].equity == Decimal("10500")
+
+
+def test_to_daily_collapses_intraday_to_last_per_day() -> None:
+    """~Hourly snapshots collapse to one point per day (last per day) so daily
+    annualization is correct (GAP 15d)."""
+    from src.services.strategy_performance_read_service import _to_daily
+
+    day1 = datetime(2026, 1, 5, 10, tzinfo=UTC)
+    series = [
+        (day1, Decimal("100")),
+        (day1.replace(hour=15), Decimal("110")),  # same day, later → wins
+        (day1.replace(day=6, hour=9), Decimal("120")),
+    ]
+    daily = _to_daily(series)
+    assert [eq for _, eq in daily] == [Decimal("110"), Decimal("120")]
+    assert [d.day for d, _ in daily] == [5, 6]

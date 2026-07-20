@@ -30,28 +30,28 @@ class PositionView:
     """Aggregate holding in one symbol across all sleeves/accounts."""
 
     symbol: str
-    qty: float
+    qty: Decimal
     side: str
-    cost_basis: float
-    market_value: float
-    unrealized_pnl: float
-    unrealized_pnl_percent: float
-    current_price: float
-    avg_entry_price: float
+    cost_basis: Decimal
+    market_value: Decimal
+    unrealized_pnl: Decimal
+    unrealized_pnl_percent: Decimal
+    current_price: Decimal
+    avg_entry_price: Decimal
 
 
 @dataclass(frozen=True)
 class SummaryView:
     """Account-wide portfolio summary."""
 
-    total_equity: float
-    cash: float
-    market_value: float
-    total_unrealized_pnl: float
-    total_realized_pnl: float
-    day_pnl: float
-    day_pnl_percent: float
-    total_pnl_percent: float
+    total_equity: Decimal
+    cash: Decimal
+    market_value: Decimal
+    total_unrealized_pnl: Decimal
+    total_realized_pnl: Decimal
+    day_pnl: Decimal
+    day_pnl_percent: Decimal
+    total_pnl_percent: Decimal
     positions_count: int
 
 
@@ -62,10 +62,10 @@ class TransactionView:
     event_id: str
     type: str  # buy/sell/deposit/withdrawal/dividend/fee/transfer_in/transfer_out
     symbol: str | None
-    qty: float | None
-    price: float | None
-    amount: float
-    fees: float
+    qty: Decimal | None
+    price: Decimal | None
+    amount: Decimal
+    fees: Decimal
     occurred_at: object  # datetime | None
     sleeve_id: str | None = (
         None  # target sleeve for allocations/transfers (name resolved by caller)
@@ -103,18 +103,18 @@ def aggregate_positions(
         magnitude = abs(qty)
         current = _price(prices, symbol, avg_entry)
         mkt_value = magnitude * current
-        upnl = analytics.unrealized_pnl(side, float(magnitude), float(avg_entry), float(current))
+        upnl = analytics.unrealized_pnl(side, magnitude, avg_entry, current)
         views.append(
             PositionView(
                 symbol=symbol,
-                qty=float(magnitude),
+                qty=magnitude,
                 side=side,
-                cost_basis=float(abs(cost_basis)),
-                market_value=float(mkt_value),
+                cost_basis=abs(cost_basis),
+                market_value=mkt_value,
                 unrealized_pnl=upnl,
-                unrealized_pnl_percent=analytics.pnl_percent(upnl, float(abs(cost_basis))),
-                current_price=float(current),
-                avg_entry_price=float(abs(avg_entry)),
+                unrealized_pnl_percent=analytics.pnl_percent(upnl, abs(cost_basis)),
+                current_price=current,
+                avg_entry_price=abs(avg_entry),
             )
         )
     return views
@@ -124,7 +124,7 @@ def portfolio_summary(
     projections: Iterable[AccountProjection],
     prices: dict[str, Decimal],
     *,
-    prior_equity: float | None = None,
+    prior_equity: Decimal | None = None,
 ) -> SummaryView:
     """Aggregate cash + marked positions + realized P&L into a summary view."""
     projections = list(projections)
@@ -136,25 +136,25 @@ def portfolio_summary(
         for sleeve in proj.sleeves.values():
             realized += sleeve.realized_pnl
 
-    market_value = sum(p.market_value for p in positions)
-    unrealized = sum(p.unrealized_pnl for p in positions)
-    total_equity = float(cash) + market_value
+    market_value = sum((p.market_value for p in positions), ZERO)
+    unrealized = sum((p.unrealized_pnl for p in positions), ZERO)
+    total_equity = cash + market_value
 
-    cost_total = sum(p.cost_basis for p in positions)
-    total_pnl_percent = ((unrealized + float(realized)) / cost_total * 100) if cost_total else 0.0
+    cost_total = sum((p.cost_basis for p in positions), ZERO)
+    total_pnl_percent = ((unrealized + realized) / cost_total * 100) if cost_total else ZERO
 
-    day_pnl = 0.0
-    day_pnl_percent = 0.0
+    day_pnl = ZERO
+    day_pnl_percent = ZERO
     if prior_equity:
         day_pnl = total_equity - prior_equity
-        day_pnl_percent = (day_pnl / prior_equity * 100) if prior_equity else 0.0
+        day_pnl_percent = (day_pnl / prior_equity * 100) if prior_equity else ZERO
 
     return SummaryView(
         total_equity=total_equity,
-        cash=float(cash),
+        cash=cash,
         market_value=market_value,
         total_unrealized_pnl=unrealized,
-        total_realized_pnl=float(realized),
+        total_realized_pnl=realized,
         day_pnl=day_pnl,
         day_pnl_percent=day_pnl_percent,
         total_pnl_percent=total_pnl_percent,
@@ -174,9 +174,9 @@ _TXN_TYPE: dict[LedgerEventType, str] = {
 }
 
 
-def _f(data: dict[str, object], key: str) -> float | None:
+def _f(data: dict[str, object], key: str) -> Decimal | None:
     val = data.get(key)
-    return float(str(val)) if val is not None else None
+    return Decimal(str(val)) if val is not None else None
 
 
 def transactions_view(events: Iterable[LedgerEventLike]) -> list[TransactionView]:
@@ -204,7 +204,7 @@ def transactions_view(events: Iterable[LedgerEventLike]) -> list[TransactionView
             side = str(data.get("side", "")).lower()
             qty = _f(data, "qty")
             price = _f(data, "price")
-            amount = abs((qty or 0.0) * (price or 0.0))
+            amount = abs((qty or ZERO) * (price or ZERO))
             out.append(
                 TransactionView(
                     event_id=event_id,
@@ -213,7 +213,7 @@ def transactions_view(events: Iterable[LedgerEventLike]) -> list[TransactionView
                     qty=qty,
                     price=price,
                     amount=amount,
-                    fees=_f(data, "fees") or 0.0,
+                    fees=_f(data, "fees") or ZERO,
                     occurred_at=occurred,
                 )
             )
@@ -222,20 +222,37 @@ def transactions_view(events: Iterable[LedgerEventLike]) -> list[TransactionView
         label = _TXN_TYPE.get(etype)
         if label is None:
             continue
-        amount = _f(data, "amount") or abs(
-            float(
-                sum((p.amount for p in postings if p.bucket is Bucket.CASH and p.amount < 0), ZERO)
-            )
+        amount = abs(
+            _f(data, "amount")
+            or sum((p.amount for p in postings if p.bucket is Bucket.CASH and p.amount < 0), ZERO)
         )
+        symbol = str(data.get("symbol")) if data.get("symbol") else None
+
+        # A sleeve→sleeve transfer has two legs: render the source outflow as
+        # transfer_out (previously invisible) plus the destination inflow.
+        if etype is LedgerEventType.CAPITAL_TRANSFERRED and data.get("from_sleeve_id"):
+            out.append(
+                TransactionView(
+                    event_id=event_id,
+                    type="transfer_out",
+                    symbol=symbol,
+                    qty=None,
+                    price=None,
+                    amount=amount,
+                    fees=ZERO,
+                    occurred_at=occurred,
+                    sleeve_id=str(data["from_sleeve_id"]),
+                )
+            )
         out.append(
             TransactionView(
                 event_id=event_id,
                 type=label,
-                symbol=str(data.get("symbol")) if data.get("symbol") else None,
+                symbol=symbol,
                 qty=None,
                 price=None,
-                amount=abs(amount),
-                fees=0.0,
+                amount=amount,
+                fees=ZERO,
                 occurred_at=occurred,
                 sleeve_id=str(data["to_sleeve_id"]) if data.get("to_sleeve_id") else None,
             )

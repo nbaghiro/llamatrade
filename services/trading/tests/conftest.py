@@ -85,10 +85,10 @@ def mock_alpaca_client():
             id="test-account",
             account_number="123456789",
             status="ACTIVE",
-            cash=100000.00,
-            portfolio_value=100000.00,
-            buying_power=200000.00,
-            equity=100000.00,
+            cash=Decimal("100000.00"),
+            portfolio_value=Decimal("100000.00"),
+            buying_power=Decimal("200000.00"),
+            equity=Decimal("100000.00"),
         )
     )
     client.submit_order = AsyncMock(
@@ -96,12 +96,12 @@ def mock_alpaca_client():
             id="alpaca-order-123",
             client_order_id="test-client-order",
             symbol="AAPL",
-            qty=10.0,
+            qty=Decimal("10.0"),
             side=AlpacaOrderSide.BUY,
             order_type=AlpacaOrderType.MARKET,
             status=AlpacaOrderStatus.ACCEPTED,
             time_in_force=AlpacaTimeInForce.DAY,
-            filled_qty=0,
+            filled_qty=Decimal("0"),
             filled_avg_price=None,
             created_at=datetime(2024, 1, 15, 10, 0, 0, tzinfo=UTC),
         )
@@ -110,13 +110,13 @@ def mock_alpaca_client():
         return_value=Order(
             id="alpaca-order-123",
             symbol="AAPL",
-            qty=10.0,
+            qty=Decimal("10.0"),
             side=AlpacaOrderSide.BUY,
             order_type=AlpacaOrderType.MARKET,
             status=AlpacaOrderStatus.FILLED,
             time_in_force=AlpacaTimeInForce.DAY,
-            filled_qty=10.0,
-            filled_avg_price=150.50,
+            filled_qty=Decimal("10.0"),
+            filled_avg_price=Decimal("150.50"),
             created_at=datetime(2024, 1, 15, 10, 0, 0, tzinfo=UTC),
         )
     )
@@ -126,7 +126,7 @@ def mock_alpaca_client():
         return_value=Order(
             id="close-order-123",
             symbol="AAPL",
-            qty=10.0,
+            qty=Decimal("10.0"),
             side=AlpacaOrderSide.SELL,
             order_type=AlpacaOrderType.MARKET,
             status=AlpacaOrderStatus.NEW,

@@ -2,6 +2,7 @@
 
 import logging
 from datetime import UTC, datetime
+from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
@@ -231,7 +232,7 @@ class SessionService:
         self,
         tenant_id: UUID,
         session_id: UUID,
-    ) -> tuple[float, float]:
+    ) -> tuple[Decimal, Decimal]:
         """Calculate realized and unrealized P&L for a session.
 
         Args:
@@ -248,7 +249,7 @@ class SessionService:
             .where(Position.session_id == session_id)
         )
         realized_result = await self.db.execute(realized_stmt)
-        realized_pnl = realized_result.scalar() or 0
+        realized_pnl = realized_result.scalar() or Decimal("0")
 
         # Sum unrealized P&L from open positions
         unrealized_stmt = (
@@ -258,9 +259,9 @@ class SessionService:
             .where(Position.is_open.is_(True))
         )
         unrealized_result = await self.db.execute(unrealized_stmt)
-        unrealized_pnl = unrealized_result.scalar() or 0
+        unrealized_pnl = unrealized_result.scalar() or Decimal("0")
 
-        return float(realized_pnl), float(unrealized_pnl)
+        return realized_pnl, unrealized_pnl
 
     async def get_trades_count(
         self,
@@ -318,7 +319,7 @@ class SessionService:
         result = await self.db.execute(stmt)
         return result.scalar_one_or_none()
 
-    async def _ledger_realized_pnl(self, s: TradingSession) -> float | None:
+    async def _ledger_realized_pnl(self, s: TradingSession) -> Decimal | None:
         """Realized P&L from the sleeve projection (the book of record).
 
         Returns None (caller uses the local Position table) when the session has
@@ -334,7 +335,7 @@ class SessionService:
         except Exception as e:
             logger.warning("Falling back to local P&L for session %s: %s", s.id, e)
             return None
-        return float(detail.sleeve.realized_pnl)
+        return detail.sleeve.realized_pnl
 
     async def _to_response_with_pnl(self, s: TradingSession) -> SessionResponse:
         """Convert session to response with P&L calculation.
@@ -377,7 +378,7 @@ class SessionService:
             status=s.status,  # Already an int (proto enum value)
             started_at=s.started_at or s.created_at,
             stopped_at=s.stopped_at,
-            pnl=0,  # Use _to_response_with_pnl for actual P&L
+            pnl=Decimal("0"),  # Use _to_response_with_pnl for actual P&L
             trades_count=0,
             name=s.name,
             sleeve_id=s.sleeve_id,

@@ -6,6 +6,7 @@ Includes market hours enforcement as first-line defense against out-of-hours tra
 import logging
 import time
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 from uuid import UUID
 
 from fastapi import Depends
@@ -44,12 +45,12 @@ class RiskManager:
         self.portfolio_client = portfolio_client
         # Default risk limits (used when no DB or no config found)
         self._default_limits = RiskLimits(
-            max_position_size=10000,
-            max_daily_loss=1000,
-            max_order_value=5000,
+            max_position_size=Decimal("10000"),
+            max_daily_loss=Decimal("1000"),
+            max_order_value=Decimal("5000"),
         )
         # Price cache for fallback (symbol -> last known price)
-        self._price_cache: dict[str, float] = {}
+        self._price_cache: dict[str, Decimal] = {}
         # Trading hours checker for market hours enforcement
         self._trading_hours = TradingHoursChecker(trading_hours_config or TradingHoursConfig())
 
@@ -80,9 +81,9 @@ class RiskManager:
         tenant_id: UUID,
         symbol: str,
         side: str,
-        qty: float,
+        qty: Decimal,
         order_type: str,
-        limit_price: float | None = None,
+        limit_price: Decimal | None = None,
         session_id: UUID | None = None,
         sleeve_id: UUID | None = None,
     ) -> RiskCheckResult:
@@ -119,7 +120,8 @@ class RiskManager:
                 record_risk_check(passed=False, violations=violations, duration=duration)
                 return RiskCheckResult(passed=False, violations=violations)
 
-        # Estimate order value
+        # Estimate order value in Decimal so risk gating never turns on float
+        # rounding at a limit / buying-power boundary.
         if limit_price:
             estimated_price = limit_price
         else:
@@ -184,7 +186,7 @@ class RiskManager:
         tenant_id: UUID,
         sleeve_id: UUID,
         side: str,
-        order_value: float,
+        order_value: Decimal,
     ) -> str | None:
         """Violation string for sleeve-level rejections, else None.
 
@@ -214,7 +216,7 @@ class RiskManager:
             return f"Sleeve {sleeve_id} is closed; orders are blocked"
 
         if side.lower() in ("buy", "cover"):
-            free_cash = float(detail.sleeve.cash.free)
+            free_cash = Decimal(str(detail.sleeve.cash.free))
             if order_value > free_cash:
                 return f"Order value ${order_value:.2f} exceeds sleeve free cash ${free_cash:.2f}"
         return None
@@ -279,10 +281,10 @@ class RiskManager:
         self,
         tenant_id: UUID,
         session_id: UUID,
-    ) -> float:
+    ) -> Decimal:
         """Get current drawdown percentage for a session."""
         if not self.db:
-            return 0.0
+            return Decimal("0")
 
         today = datetime.now(UTC).date()
         stmt = (
@@ -295,17 +297,17 @@ class RiskManager:
         daily = result.scalar_one_or_none()
 
         if not daily:
-            return 0.0
+            return Decimal("0")
 
-        return float(daily.max_drawdown_pct)
+        return daily.max_drawdown_pct
 
     async def update_daily_pnl(
         self,
         tenant_id: UUID,
         session_id: UUID,
-        realized_pnl: float,
-        unrealized_pnl: float,
-        equity: float,
+        realized_pnl: Decimal,
+        unrealized_pnl: Decimal,
+        equity: Decimal,
     ) -> None:
         """Update daily P&L tracking."""
         if not self.db:
@@ -355,7 +357,7 @@ class RiskManager:
                 equity_high=equity,
                 equity_low=equity,
                 equity_end=equity,
-                max_drawdown_pct=0.0,
+                max_drawdown_pct=Decimal("0"),
             )
             self.db.add(daily)
 
@@ -446,7 +448,7 @@ class RiskManager:
             allowed_symbols=allowed_symbols,
         )
 
-    async def _get_current_price(self, symbol: str) -> float | None:
+    async def _get_current_price(self, symbol: str) -> Decimal | None:
         """Get current price for a symbol from market data service.
 
         Returns None if price is unavailable from all sources. This triggers
@@ -458,8 +460,9 @@ class RiskManager:
         # Try to fetch from market data service
         if self.market_data:
             try:
-                price = await self.market_data.get_latest_price(symbol)
-                if price is not None and price > 0:
+                raw = await self.market_data.get_latest_price(symbol)
+                if raw is not None and raw > 0:
+                    price = Decimal(str(raw))
                     self._price_cache[symbol] = price
                     return price
             except Exception as e:
@@ -483,7 +486,7 @@ class RiskManager:
                 result = await self.db.execute(stmt)
                 cached_price = result.scalar_one_or_none()
                 if cached_price:
-                    price = float(cached_price)
+                    price = Decimal(str(cached_price))
                     self._price_cache[symbol] = price
                     logger.debug(f"Using DB price for {symbol}: {price}")
                     return price
@@ -499,9 +502,9 @@ class RiskManager:
         tenant_id: UUID,
         session_id: UUID,
         symbol: str,
-        qty: float,
+        qty: Decimal,
         side: str,
-        max_size: float,
+        max_size: Decimal,
     ) -> bool:
         """Check if order would exceed position size limit."""
         if not self.db:
@@ -518,11 +521,11 @@ class RiskManager:
         result = await self.db.execute(stmt)
         position = result.scalar_one_or_none()
 
-        current_qty = float(position.qty) if position else 0.0
+        current_qty = Decimal(str(position.qty)) if position else Decimal("0")
 
         # Get price from position or fetch it
         if position and position.current_price:
-            current_price = float(position.current_price)
+            current_price = Decimal(str(position.current_price))
         else:
             # Fetch price from market data
             fetched_price = await self._get_current_price(symbol)
@@ -532,7 +535,7 @@ class RiskManager:
                 return False
             current_price = fetched_price
 
-        # Calculate new position size
+        # Calculate new position size (Decimal so the boundary compare is exact)
         if side in ("buy", "cover"):
             new_qty = current_qty + qty
         else:
@@ -545,7 +548,7 @@ class RiskManager:
         self,
         tenant_id: UUID,
         session_id: UUID,
-        max_loss: float,
+        max_loss: Decimal,
     ) -> bool:
         """Check if daily loss limit has been exceeded."""
         daily_pnl = await self._get_daily_pnl(tenant_id, session_id)
@@ -555,10 +558,10 @@ class RiskManager:
         self,
         tenant_id: UUID,
         session_id: UUID,
-    ) -> float:
+    ) -> Decimal:
         """Get today's P&L for a session."""
         if not self.db:
-            return 0.0
+            return Decimal("0")
 
         today = datetime.now(UTC).date()
         stmt = (
@@ -570,7 +573,7 @@ class RiskManager:
         result = await self.db.execute(stmt)
         daily = result.scalar_one_or_none()
 
-        return daily.total_pnl if daily else 0.0
+        return daily.total_pnl if daily else Decimal("0")
 
     async def _check_rate_limit(
         self,

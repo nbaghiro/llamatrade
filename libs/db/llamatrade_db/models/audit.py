@@ -1,11 +1,12 @@
 """Audit and compliance models for trading event logging."""
 
 from datetime import datetime
+from decimal import Decimal
 from enum import StrEnum
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import DateTime, Index, String, Text
+from sqlalchemy import DateTime, Index, Numeric, String, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column
@@ -99,17 +100,17 @@ class RiskConfig(Base, UUIDPrimaryKeyMixin, TenantMixin):
     session_id: Mapped[UUID | None] = mapped_column(PG_UUID(as_uuid=True), nullable=True)
 
     # Position limits
-    max_position_size_pct: Mapped[float | None] = mapped_column(nullable=True)
-    max_position_value: Mapped[float | None] = mapped_column(nullable=True)
+    max_position_size_pct: Mapped[Decimal | None] = mapped_column(Numeric(18, 8), nullable=True)
+    max_position_value: Mapped[Decimal | None] = mapped_column(Numeric(18, 8), nullable=True)
     max_positions: Mapped[int | None] = mapped_column(nullable=True)
 
     # Loss limits
-    max_daily_loss_pct: Mapped[float | None] = mapped_column(nullable=True)
-    max_daily_loss_value: Mapped[float | None] = mapped_column(nullable=True)
-    max_drawdown_pct: Mapped[float | None] = mapped_column(nullable=True)
+    max_daily_loss_pct: Mapped[Decimal | None] = mapped_column(Numeric(18, 8), nullable=True)
+    max_daily_loss_value: Mapped[Decimal | None] = mapped_column(Numeric(18, 8), nullable=True)
+    max_drawdown_pct: Mapped[Decimal | None] = mapped_column(Numeric(18, 8), nullable=True)
 
     # Order limits
-    max_order_value: Mapped[float | None] = mapped_column(nullable=True)
+    max_order_value: Mapped[Decimal | None] = mapped_column(Numeric(18, 8), nullable=True)
     max_orders_per_minute: Mapped[int | None] = mapped_column(nullable=True)
     max_orders_per_day: Mapped[int | None] = mapped_column(nullable=True)
 
@@ -137,18 +138,24 @@ class DailyPnL(Base, UUIDPrimaryKeyMixin, TenantMixin):
     date: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
     # P&L components
-    realized_pnl: Mapped[float] = mapped_column(default=0.0, nullable=False)
-    unrealized_pnl: Mapped[float] = mapped_column(default=0.0, nullable=False)
-    total_pnl: Mapped[float] = mapped_column(default=0.0, nullable=False)
+    realized_pnl: Mapped[Decimal] = mapped_column(
+        Numeric(18, 8), default=Decimal("0"), nullable=False
+    )
+    unrealized_pnl: Mapped[Decimal] = mapped_column(
+        Numeric(18, 8), default=Decimal("0"), nullable=False
+    )
+    total_pnl: Mapped[Decimal] = mapped_column(Numeric(18, 8), default=Decimal("0"), nullable=False)
 
     # High water mark tracking
-    equity_start: Mapped[float] = mapped_column(nullable=False)
-    equity_high: Mapped[float] = mapped_column(nullable=False)
-    equity_low: Mapped[float] = mapped_column(nullable=False)
-    equity_end: Mapped[float | None] = mapped_column(nullable=True)
+    equity_start: Mapped[Decimal] = mapped_column(Numeric(18, 8), nullable=False)
+    equity_high: Mapped[Decimal] = mapped_column(Numeric(18, 8), nullable=False)
+    equity_low: Mapped[Decimal] = mapped_column(Numeric(18, 8), nullable=False)
+    equity_end: Mapped[Decimal | None] = mapped_column(Numeric(18, 8), nullable=True)
 
     # Drawdown
-    max_drawdown_pct: Mapped[float] = mapped_column(default=0.0, nullable=False)
+    max_drawdown_pct: Mapped[Decimal] = mapped_column(
+        Numeric(18, 8), default=Decimal("0"), nullable=False
+    )
 
     # Trade stats
     trades_count: Mapped[int] = mapped_column(default=0, nullable=False)

@@ -9,6 +9,7 @@ These tests verify thread-safety and race condition handling:
 
 import asyncio
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 from unittest.mock import AsyncMock, MagicMock
 from uuid import UUID, uuid4
 
@@ -136,7 +137,7 @@ class TestConcurrentOrderSubmission:
             OrderCreate(
                 symbol="AAPL",
                 side=ORDER_SIDE_BUY,
-                qty=10,
+                qty=Decimal("10"),
                 order_type=ORDER_TYPE_MARKET,
                 time_in_force=TIME_IN_FORCE_DAY,
             )
@@ -188,7 +189,7 @@ class TestConcurrentOrderSubmission:
             OrderCreate(
                 symbol=symbol,
                 side=ORDER_SIDE_BUY,
-                qty=10,
+                qty=Decimal("10"),
                 order_type=ORDER_TYPE_MARKET,
                 time_in_force=TIME_IN_FORCE_DAY,
             )
@@ -474,7 +475,7 @@ class TestPositionReconciliationConcurrency:
                 order=OrderCreate(
                     symbol="AAPL",
                     side=ORDER_SIDE_BUY,
-                    qty=10,
+                    qty=Decimal("10"),
                     order_type=ORDER_TYPE_MARKET,
                     time_in_force=TIME_IN_FORCE_DAY,
                 ),

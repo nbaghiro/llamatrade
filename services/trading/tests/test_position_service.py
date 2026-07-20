@@ -75,8 +75,8 @@ class TestPositionService:
             session_id=TEST_SESSION_ID,
             symbol="AAPL",
             side="long",
-            qty=100.0,
-            entry_price=150.0,
+            qty=Decimal("100"),
+            entry_price=Decimal("150"),
         )
 
         # Verify db.add was called
@@ -93,8 +93,8 @@ class TestPositionService:
             session_id=TEST_SESSION_ID,
             symbol="aapl",  # lowercase
             side="long",
-            qty=100.0,
-            entry_price=150.0,
+            qty=Decimal("100"),
+            entry_price=Decimal("150"),
         )
 
         # Check that the added position has uppercase symbol
@@ -114,7 +114,7 @@ class TestPositionService:
             tenant_id=TEST_TENANT_ID,
             session_id=TEST_SESSION_ID,
             symbol="AAPL",
-            exit_price=160.0,  # Profit: (160 - 150) * 100 = 1000
+            exit_price=Decimal("160"),  # Profit: (160 - 150) * 100 = 1000
         )
 
         assert mock_position.is_open is False
@@ -141,7 +141,7 @@ class TestPositionService:
             tenant_id=TEST_TENANT_ID,
             session_id=TEST_SESSION_ID,
             symbol="AAPL",
-            exit_price=140.0,  # Profit: (150 - 140) * 100 = 1000 (short)
+            exit_price=Decimal("140"),  # Profit: (150 - 140) * 100 = 1000 (short)
         )
 
         assert float(mock_position.realized_pl) == 1000.0  # (150 - 140) * 100
@@ -158,7 +158,7 @@ class TestPositionService:
             tenant_id=TEST_TENANT_ID,
             session_id=TEST_SESSION_ID,
             symbol="AAPL",
-            exit_price=160.0,
+            exit_price=Decimal("160"),
         )
 
         assert response is None
@@ -308,4 +308,4 @@ class TestPositionService:
         assert response.market_value == 15500.0
         assert response.unrealized_pnl == 500.0
         # unrealized_plpc is multiplied by 100 in response
-        assert response.unrealized_pnl_percent == pytest.approx(3.33, rel=0.01)
+        assert float(response.unrealized_pnl_percent) == pytest.approx(3.33, rel=0.01)

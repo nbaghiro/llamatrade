@@ -8,6 +8,7 @@ covered in ``test_read_model``.
 from datetime import UTC, date, datetime
 from decimal import Decimal
 from types import SimpleNamespace
+from typing import Any, cast
 from unittest.mock import AsyncMock
 from uuid import uuid4
 
@@ -51,7 +52,7 @@ def _svc(prices: dict[str, Decimal] | None = None) -> PortfolioReadService:
 async def test_get_summary_maps_view_to_schema() -> None:
     svc = _svc({"AAPL": Decimal("200")})
     svc._projections = AsyncMock(return_value=[_proj("1000", "AAPL", "10", "1500")])
-    svc._prior_equity = AsyncMock(return_value=2800.0)
+    svc._prior_equity = AsyncMock(return_value=Decimal("2800"))
     summary = await svc.get_summary(TENANT)
     assert summary.total_equity == 3000.0
     assert summary.cash == 1000.0
@@ -72,13 +73,13 @@ async def test_list_positions_maps_to_schema() -> None:
 async def test_get_position_filters_by_symbol() -> None:
     svc = _svc({"AAPL": Decimal("200")})
     svc._projections = AsyncMock(return_value=[_proj("0", "AAPL", "10", "1500")])
-    assert (await svc.get_position(TENANT, "aapl")).symbol == "AAPL"
+    assert cast(Any, await svc.get_position(TENANT, "aapl")).symbol == "AAPL"
     assert await svc.get_position(TENANT, "MSFT") is None
 
 
 async def test_get_metrics_insufficient_history_returns_zeros() -> None:
     svc = _svc()
-    svc._daily_equity_series = AsyncMock(return_value=[(date(2026, 1, 1), 1000.0)])
+    svc._daily_equity_series = AsyncMock(return_value=[(date(2026, 1, 1), Decimal("1000"))])
     m = await svc.get_metrics(TENANT, "1M")
     assert m.period == "1M"
     assert m.total_return == 0.0
@@ -87,7 +88,7 @@ async def test_get_metrics_insufficient_history_returns_zeros() -> None:
 
 async def test_get_metrics_computes_over_series() -> None:
     svc = _svc()
-    series = [(date(2026, 1, i + 1), 1000.0 + 10 * i) for i in range(10)]
+    series = [(date(2026, 1, i + 1), Decimal("1000") + 10 * i) for i in range(10)]
     svc._daily_equity_series = AsyncMock(return_value=series)
     m = await svc.get_metrics(TENANT, "1M")
     assert m.total_return == 90.0  # 1090 - 1000
@@ -116,7 +117,7 @@ async def test_list_transactions_paginates_newest_first() -> None:
             datetime(2026, 1, 2, tzinfo=UTC),
         ),
     ]
-    svc._projector = SimpleNamespace(read_events=AsyncMock(return_value=events))
+    svc._projector = cast(Any, SimpleNamespace(read_events=AsyncMock(return_value=events)))
 
     txns, total = await svc.list_transactions(TENANT, type=None, symbol=None, page=1, page_size=1)
     assert total == 2
@@ -144,7 +145,7 @@ async def test_list_transactions_symbol_filter() -> None:
             occurred_at=datetime(2026, 1, 3, tzinfo=UTC),
         ),
     ]
-    svc._projector = SimpleNamespace(read_events=AsyncMock(return_value=events))
+    svc._projector = cast(Any, SimpleNamespace(read_events=AsyncMock(return_value=events)))
     txns, total = await svc.list_transactions(
         TENANT, type=None, symbol="aapl", page=1, page_size=10
     )
@@ -170,7 +171,7 @@ async def test_list_transactions_labels_allocation_with_strategy() -> None:
             occurred_at=datetime(2026, 1, 4, tzinfo=UTC),
         ),
     ]
-    svc._projector = SimpleNamespace(read_events=AsyncMock(return_value=events))
+    svc._projector = cast(Any, SimpleNamespace(read_events=AsyncMock(return_value=events)))
     svc._sleeve_names = AsyncMock(return_value={strategy_sleeve: "Momentum Rotation"})
 
     txns, total = await svc.list_transactions(TENANT, type=None, symbol=None, page=1, page_size=10)

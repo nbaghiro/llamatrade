@@ -16,6 +16,7 @@ import logging
 import time
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from decimal import Decimal
 from enum import StrEnum
 from typing import Any, Protocol
 from uuid import UUID
@@ -60,8 +61,8 @@ class CircuitBreakerConfig:
     """
 
     max_consecutive_losses: int = 5
-    max_daily_loss_percent: float = 5.0
-    max_drawdown_percent: float = 10.0
+    max_daily_loss_percent: Decimal = Decimal("5.0")
+    max_drawdown_percent: Decimal = Decimal("10.0")
     max_order_errors: int = 5
     max_api_errors: int = 10
     error_window_seconds: int = 300  # 5 minutes
@@ -151,7 +152,7 @@ class CircuitBreaker:
         tenant_id: UUID,
         session_id: UUID,
         callback: CircuitBreakerCallback | None = None,
-        starting_equity: float = 100000.0,
+        starting_equity: Decimal = Decimal("100000"),
     ):
         self.config = config
         self.tenant_id = tenant_id
@@ -167,7 +168,7 @@ class CircuitBreaker:
 
         # Tracking
         self._consecutive_losses = 0
-        self._daily_pnl = 0.0
+        self._daily_pnl = Decimal("0")
         self._current_equity = starting_equity
         self._peak_equity = starting_equity
         self._order_errors = ErrorTracker(window_seconds=config.error_window_seconds)
@@ -209,7 +210,7 @@ class CircuitBreaker:
             can_resume=cooldown_remaining == 0 if cooldown_remaining is not None else True,
         )
 
-    async def record_trade(self, is_win: bool, pnl: float = 0.0) -> None:
+    async def record_trade(self, is_win: bool, pnl: Decimal = Decimal("0")) -> None:
         """Record a completed trade.
 
         Args:
@@ -244,9 +245,9 @@ class CircuitBreaker:
             await self._trigger(
                 CircuitBreakerReason.DAILY_LOSS_LIMIT,
                 {
-                    "daily_loss": self._daily_pnl,
-                    "daily_loss_percent": daily_loss_percent,
-                    "threshold_percent": self.config.max_daily_loss_percent,
+                    "daily_loss": str(self._daily_pnl),
+                    "daily_loss_percent": str(daily_loss_percent),
+                    "threshold_percent": str(self.config.max_daily_loss_percent),
                 },
             )
             return
@@ -258,10 +259,10 @@ class CircuitBreaker:
                 await self._trigger(
                     CircuitBreakerReason.DRAWDOWN_LIMIT,
                     {
-                        "current_equity": self._current_equity,
-                        "peak_equity": self._peak_equity,
-                        "drawdown_percent": drawdown_percent,
-                        "threshold_percent": self.config.max_drawdown_percent,
+                        "current_equity": str(self._current_equity),
+                        "peak_equity": str(self._peak_equity),
+                        "drawdown_percent": str(drawdown_percent),
+                        "threshold_percent": str(self.config.max_drawdown_percent),
                     },
                 )
 
@@ -305,7 +306,7 @@ class CircuitBreaker:
                 },
             )
 
-    def update_equity(self, equity: float, daily_pnl: float | None = None) -> None:
+    def update_equity(self, equity: Decimal, daily_pnl: Decimal | None = None) -> None:
         """Update current equity and optionally daily P&L.
 
         Called during equity sync to keep drawdown tracking accurate.
@@ -332,10 +333,10 @@ class CircuitBreaker:
                 await self._trigger(
                     CircuitBreakerReason.DRAWDOWN_LIMIT,
                     {
-                        "current_equity": self._current_equity,
-                        "peak_equity": self._peak_equity,
-                        "drawdown_percent": drawdown_percent,
-                        "threshold_percent": self.config.max_drawdown_percent,
+                        "current_equity": str(self._current_equity),
+                        "peak_equity": str(self._peak_equity),
+                        "drawdown_percent": str(drawdown_percent),
+                        "threshold_percent": str(self.config.max_drawdown_percent),
                     },
                 )
                 return True
@@ -347,9 +348,9 @@ class CircuitBreaker:
                 await self._trigger(
                     CircuitBreakerReason.DAILY_LOSS_LIMIT,
                     {
-                        "daily_loss": self._daily_pnl,
-                        "daily_loss_percent": daily_loss_percent,
-                        "threshold_percent": self.config.max_daily_loss_percent,
+                        "daily_loss": str(self._daily_pnl),
+                        "daily_loss_percent": str(daily_loss_percent),
+                        "threshold_percent": str(self.config.max_daily_loss_percent),
                     },
                 )
                 return True
@@ -422,14 +423,14 @@ class CircuitBreaker:
 
         return True
 
-    def reset_daily_tracking(self, new_starting_equity: float | None = None) -> None:
+    def reset_daily_tracking(self, new_starting_equity: Decimal | None = None) -> None:
         """Reset daily tracking at start of new trading day.
 
         Call this at market open to reset daily loss tracking.
         """
         if new_starting_equity:
             self.starting_equity = new_starting_equity
-        self._daily_pnl = 0.0
+        self._daily_pnl = Decimal("0")
         self._consecutive_losses = 0
         self._peak_equity = self._current_equity
 
@@ -497,7 +498,7 @@ def create_circuit_breaker(
     tenant_id: UUID,
     session_id: UUID,
     callback: CircuitBreakerCallback | None = None,
-    starting_equity: float = 100000.0,
+    starting_equity: Decimal = Decimal("100000"),
     config: CircuitBreakerConfig | None = None,
 ) -> CircuitBreaker:
     """Factory function to create a circuit breaker with default config.

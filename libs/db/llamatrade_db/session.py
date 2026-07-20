@@ -1,11 +1,13 @@
 """Database connection and session management."""
 
+import json
 import os
 import re
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from time import perf_counter
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy import event, text
@@ -90,6 +92,15 @@ def _install_query_timing(engine: AsyncEngine) -> None:
     event.listen(sync_engine, "after_cursor_execute", _after)
 
 
+def _json_serializer(obj: Any) -> str:
+    """JSONB serializer that renders Decimal (and other non-JSON types) as strings.
+
+    The platform stores money as Decimal; JSONB columns (audit data, ledger event
+    data) must serialize it exactly rather than raise or lose precision.
+    """
+    return json.dumps(obj, default=str)
+
+
 def get_engine() -> AsyncEngine:
     """Get or create the async database engine."""
     global _engine
@@ -100,6 +111,7 @@ def get_engine() -> AsyncEngine:
             pool_pre_ping=True,
             pool_size=int(os.getenv("DB_POOL_SIZE", "10")),
             max_overflow=int(os.getenv("DB_MAX_OVERFLOW", "20")),
+            json_serializer=_json_serializer,
         )
         _install_query_timing(_engine)
     return _engine

@@ -1,5 +1,6 @@
 """Test session service."""
 
+from decimal import Decimal
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -139,6 +140,7 @@ class TestGetSession:
         """Test getting an existing session."""
         mock_result = MagicMock()
         mock_result.scalar_one_or_none.return_value = mock_trading_session
+        mock_result.scalar.return_value = Decimal("0")  # P&L sum queries
         mock_db.execute.return_value = mock_result
 
         result = await session_service.get_session(

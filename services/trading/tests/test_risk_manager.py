@@ -1,6 +1,7 @@
 """Test risk manager."""
 
 from datetime import datetime
+from decimal import Decimal
 from unittest.mock import AsyncMock, MagicMock, patch
 from zoneinfo import ZoneInfo
 
@@ -20,9 +21,9 @@ def risk_manager():
     manager = RiskManager()
     # Allow trading outside market hours for non-market-hours tests
     manager._default_limits = RiskLimits(
-        max_position_size=10000,
-        max_daily_loss=1000,
-        max_order_value=5000,
+        max_position_size=Decimal("10000"),
+        max_daily_loss=Decimal("1000"),
+        max_order_value=Decimal("5000"),
         allow_outside_market_hours=True,
     )
     return manager
@@ -132,7 +133,7 @@ class TestRiskManager:
         """Test order with symbol restrictions."""
         # Override default limits with symbol restrictions
         risk_manager._default_limits = RiskLimits(
-            max_order_value=10000,
+            max_order_value=Decimal("10000"),
             allowed_symbols=["AAPL", "GOOGL"],
             allow_outside_market_hours=True,  # Focus on symbol restriction, not market hours
         )
@@ -153,7 +154,7 @@ class TestRiskManager:
     async def test_check_order_allowed_symbol(self, risk_manager, tenant_id):
         """Test order with allowed symbol."""
         risk_manager._default_limits = RiskLimits(
-            max_order_value=10000,
+            max_order_value=Decimal("10000"),
             allowed_symbols=["AAPL", "GOOGL"],
             allow_outside_market_hours=True,  # Focus on symbol restriction, not market hours
         )
@@ -179,9 +180,9 @@ class TestRiskManager:
     async def test_update_limits_without_db(self, risk_manager, tenant_id):
         """Test updating limits without DB."""
         new_limits = RiskLimits(
-            max_position_size=20000,
-            max_daily_loss=2000,
-            max_order_value=10000,
+            max_position_size=Decimal("20000"),
+            max_daily_loss=Decimal("2000"),
+            max_order_value=Decimal("10000"),
         )
 
         result = await risk_manager.update_limits(tenant_id, new_limits)
@@ -297,9 +298,9 @@ class TestRiskManagerUpdateLimitsWithDB:
         mock_db.execute.return_value = mock_result
 
         limits = RiskLimits(
-            max_position_size=20000,
-            max_daily_loss=2000,
-            max_order_value=10000,
+            max_position_size=Decimal("20000"),
+            max_daily_loss=Decimal("2000"),
+            max_order_value=Decimal("10000"),
         )
 
         result = await risk_manager_with_db.update_limits(tenant_id, limits)
@@ -316,9 +317,9 @@ class TestRiskManagerUpdateLimitsWithDB:
         mock_db.execute.return_value = mock_result
 
         limits = RiskLimits(
-            max_position_size=30000,
-            max_daily_loss=3000,
-            max_order_value=15000,
+            max_position_size=Decimal("30000"),
+            max_daily_loss=Decimal("3000"),
+            max_order_value=Decimal("15000"),
         )
 
         result = await risk_manager_with_db.update_limits(tenant_id, limits)
@@ -760,7 +761,7 @@ class TestRiskManagerMarketHours:
         """Test order passes when allow_outside_market_hours flag is set."""
         # Override default limits to allow outside hours
         risk_manager_market_hours._default_limits = RiskLimits(
-            max_order_value=10000,
+            max_order_value=Decimal("10000"),
             allow_outside_market_hours=True,
         )
 

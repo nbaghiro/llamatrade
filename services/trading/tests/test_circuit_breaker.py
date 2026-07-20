@@ -1,6 +1,7 @@
 """Tests for emergency circuit breaker."""
 
 import asyncio
+from decimal import Decimal
 from unittest.mock import AsyncMock
 from uuid import uuid4
 
@@ -72,8 +73,8 @@ class TestCircuitBreakerConfig:
         """Test custom configuration values."""
         config = CircuitBreakerConfig(
             max_consecutive_losses=3,
-            max_daily_loss_percent=2.0,
-            max_drawdown_percent=5.0,
+            max_daily_loss_percent=Decimal("2.0"),
+            max_drawdown_percent=Decimal("5.0"),
             cooldown_seconds=600,
             auto_reset=True,
         )
@@ -93,8 +94,8 @@ class TestCircuitBreakerBasics:
         """Create test config."""
         return CircuitBreakerConfig(
             max_consecutive_losses=3,
-            max_daily_loss_percent=5.0,
-            max_drawdown_percent=10.0,
+            max_daily_loss_percent=Decimal("5.0"),
+            max_drawdown_percent=Decimal("10.0"),
             max_order_errors=3,
             max_api_errors=5,
             error_window_seconds=60,
@@ -108,7 +109,7 @@ class TestCircuitBreakerBasics:
             config=config,
             tenant_id=uuid4(),
             session_id=uuid4(),
-            starting_equity=100000.0,
+            starting_equity=Decimal("100000"),
         )
 
     def test_initial_state(self, circuit_breaker):
@@ -139,25 +140,25 @@ class TestConsecutiveLosses:
             config=config,
             tenant_id=uuid4(),
             session_id=uuid4(),
-            starting_equity=100000.0,
+            starting_equity=Decimal("100000"),
         )
 
     @pytest.mark.asyncio
     async def test_triggers_on_consecutive_losses(self, circuit_breaker):
         """Test circuit breaker triggers after consecutive losses."""
         # Record winning trade - should reset counter
-        await circuit_breaker.record_trade(is_win=True, pnl=100)
+        await circuit_breaker.record_trade(is_win=True, pnl=Decimal("100"))
         assert circuit_breaker.can_trade() is True
 
         # Record losing trades
-        await circuit_breaker.record_trade(is_win=False, pnl=-50)
+        await circuit_breaker.record_trade(is_win=False, pnl=Decimal("-50"))
         assert circuit_breaker.can_trade() is True
 
-        await circuit_breaker.record_trade(is_win=False, pnl=-50)
+        await circuit_breaker.record_trade(is_win=False, pnl=Decimal("-50"))
         assert circuit_breaker.can_trade() is True
 
         # Third loss should trigger
-        await circuit_breaker.record_trade(is_win=False, pnl=-50)
+        await circuit_breaker.record_trade(is_win=False, pnl=Decimal("-50"))
         assert circuit_breaker.can_trade() is False
         assert circuit_breaker.state == CircuitBreakerState.OPEN
 
@@ -167,16 +168,16 @@ class TestConsecutiveLosses:
     @pytest.mark.asyncio
     async def test_win_resets_consecutive_loss_counter(self, circuit_breaker):
         """Test winning trade resets consecutive loss counter."""
-        await circuit_breaker.record_trade(is_win=False, pnl=-50)
-        await circuit_breaker.record_trade(is_win=False, pnl=-50)
+        await circuit_breaker.record_trade(is_win=False, pnl=Decimal("-50"))
+        await circuit_breaker.record_trade(is_win=False, pnl=Decimal("-50"))
         # Two losses, one more would trigger
 
         # Win resets counter
-        await circuit_breaker.record_trade(is_win=True, pnl=100)
+        await circuit_breaker.record_trade(is_win=True, pnl=Decimal("100"))
 
         # Start fresh
-        await circuit_breaker.record_trade(is_win=False, pnl=-50)
-        await circuit_breaker.record_trade(is_win=False, pnl=-50)
+        await circuit_breaker.record_trade(is_win=False, pnl=Decimal("-50"))
+        await circuit_breaker.record_trade(is_win=False, pnl=Decimal("-50"))
 
         # Should not trigger yet
         assert circuit_breaker.can_trade() is True
@@ -189,28 +190,28 @@ class TestDailyLossLimit:
     def circuit_breaker(self):
         """Create circuit breaker with daily loss limit."""
         config = CircuitBreakerConfig(
-            max_daily_loss_percent=5.0,
+            max_daily_loss_percent=Decimal("5.0"),
             max_consecutive_losses=100,  # Disable consecutive loss trigger
         )
         return CircuitBreaker(
             config=config,
             tenant_id=uuid4(),
             session_id=uuid4(),
-            starting_equity=100000.0,
+            starting_equity=Decimal("100000"),
         )
 
     @pytest.mark.asyncio
     async def test_triggers_on_daily_loss_limit(self, circuit_breaker):
         """Test circuit breaker triggers when daily loss exceeds limit."""
         # 5% of 100000 = 5000
-        await circuit_breaker.record_trade(is_win=False, pnl=-2000)
+        await circuit_breaker.record_trade(is_win=False, pnl=Decimal("-2000"))
         assert circuit_breaker.can_trade() is True
 
-        await circuit_breaker.record_trade(is_win=False, pnl=-2000)
+        await circuit_breaker.record_trade(is_win=False, pnl=Decimal("-2000"))
         assert circuit_breaker.can_trade() is True
 
         # This should push us over 5%
-        await circuit_breaker.record_trade(is_win=False, pnl=-1500)
+        await circuit_breaker.record_trade(is_win=False, pnl=Decimal("-1500"))
         assert circuit_breaker.can_trade() is False
 
         status = circuit_breaker.get_status()
@@ -224,30 +225,30 @@ class TestDrawdownLimit:
     def circuit_breaker(self):
         """Create circuit breaker with drawdown limit."""
         config = CircuitBreakerConfig(
-            max_drawdown_percent=10.0,
-            max_daily_loss_percent=100.0,  # Disable daily loss trigger
+            max_drawdown_percent=Decimal("10.0"),
+            max_daily_loss_percent=Decimal("100.0"),  # Disable daily loss trigger
             max_consecutive_losses=100,  # Disable consecutive loss trigger
         )
         return CircuitBreaker(
             config=config,
             tenant_id=uuid4(),
             session_id=uuid4(),
-            starting_equity=100000.0,
+            starting_equity=Decimal("100000"),
         )
 
     @pytest.mark.asyncio
     async def test_triggers_on_drawdown_limit(self, circuit_breaker):
         """Test circuit breaker triggers when drawdown exceeds limit."""
         # First, increase equity to create a peak
-        await circuit_breaker.record_trade(is_win=True, pnl=5000)
+        await circuit_breaker.record_trade(is_win=True, pnl=Decimal("5000"))
         # Equity now 105000, peak at 105000
 
         # Now lose money to create drawdown
-        await circuit_breaker.record_trade(is_win=False, pnl=-5000)
+        await circuit_breaker.record_trade(is_win=False, pnl=Decimal("-5000"))
         # Equity 100000, drawdown = 5/105 = 4.76%
         assert circuit_breaker.can_trade() is True
 
-        await circuit_breaker.record_trade(is_win=False, pnl=-6000)
+        await circuit_breaker.record_trade(is_win=False, pnl=Decimal("-6000"))
         # Equity 94000, drawdown = 11/105 = 10.5%
         assert circuit_breaker.can_trade() is False
 
@@ -391,7 +392,7 @@ class TestCallbacks:
             callback=callback,
         )
 
-        await cb.record_trade(is_win=False, pnl=-100)
+        await cb.record_trade(is_win=False, pnl=Decimal("-100"))
 
         callback.on_circuit_breaker_triggered.assert_called_once()
         call_args = callback.on_circuit_breaker_triggered.call_args
@@ -429,19 +430,19 @@ class TestCheckThresholds:
     async def test_check_thresholds_triggers_on_drawdown(self):
         """Test check_thresholds can trigger circuit breaker."""
         config = CircuitBreakerConfig(
-            max_drawdown_percent=5.0,
+            max_drawdown_percent=Decimal("5.0"),
             max_consecutive_losses=100,
         )
         cb = CircuitBreaker(
             config=config,
             tenant_id=uuid4(),
             session_id=uuid4(),
-            starting_equity=100000.0,
+            starting_equity=Decimal("100000"),
         )
 
         # Set up drawdown scenario
-        cb.update_equity(105000.0)  # Create peak
-        cb.update_equity(98000.0)  # Drawdown = 7/105 = 6.7%
+        cb.update_equity(Decimal("105000"))  # Create peak
+        cb.update_equity(Decimal("98000"))  # Drawdown = 7/105 = 6.7%
 
         triggered = await cb.check_thresholds()
 
@@ -459,17 +460,17 @@ class TestDailyTracking:
             config=config,
             tenant_id=uuid4(),
             session_id=uuid4(),
-            starting_equity=100000.0,
+            starting_equity=Decimal("100000"),
         )
 
         # Simulate some trading
-        cb._daily_pnl = -2000.0
+        cb._daily_pnl = Decimal("-2000")
         cb._consecutive_losses = 3
-        cb._current_equity = 98000.0
-        cb._peak_equity = 105000.0
+        cb._current_equity = Decimal("98000")
+        cb._peak_equity = Decimal("105000")
 
         # Reset for new day
-        cb.reset_daily_tracking(new_starting_equity=98000.0)
+        cb.reset_daily_tracking(new_starting_equity=Decimal("98000"))
 
         assert cb.starting_equity == 98000.0
         assert cb._daily_pnl == 0.0
@@ -511,17 +512,17 @@ class TestUpdateEquity:
         cb = create_circuit_breaker(
             tenant_id=uuid4(),
             session_id=uuid4(),
-            starting_equity=100000.0,
+            starting_equity=Decimal("100000"),
         )
 
-        cb.update_equity(105000.0)
+        cb.update_equity(Decimal("105000"))
         assert cb._peak_equity == 105000.0
 
-        cb.update_equity(103000.0)
+        cb.update_equity(Decimal("103000"))
         # Peak should stay at 105000
         assert cb._peak_equity == 105000.0
 
-        cb.update_equity(110000.0)
+        cb.update_equity(Decimal("110000"))
         assert cb._peak_equity == 110000.0
 
     def test_update_equity_with_daily_pnl(self):
@@ -529,10 +530,10 @@ class TestUpdateEquity:
         cb = create_circuit_breaker(
             tenant_id=uuid4(),
             session_id=uuid4(),
-            starting_equity=100000.0,
+            starting_equity=Decimal("100000"),
         )
 
-        cb.update_equity(102000.0, daily_pnl=2000.0)
+        cb.update_equity(Decimal("102000"), daily_pnl=Decimal("2000"))
 
         assert cb._current_equity == 102000.0
         assert cb._daily_pnl == 2000.0

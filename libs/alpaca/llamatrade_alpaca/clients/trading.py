@@ -12,6 +12,7 @@ Example:
 """
 
 import logging
+from decimal import Decimal
 from typing import Any, Literal, cast
 
 from ..client_base import AlpacaClientBase
@@ -104,12 +105,12 @@ class TradingClient(AlpacaClientBase):
     async def submit_order(
         self,
         symbol: str,
-        qty: float,
+        qty: Decimal,
         side: OrderSide | Literal["buy", "sell"],
         order_type: OrderType | Literal["market", "limit", "stop", "stop_limit"] = "market",
         time_in_force: TimeInForce | Literal["day", "gtc", "ioc", "fok"] = "day",
-        limit_price: float | None = None,
-        stop_price: float | None = None,
+        limit_price: Decimal | None = None,
+        stop_price: Decimal | None = None,
         client_order_id: str | None = None,
         extended_hours: bool = False,
     ) -> Order:
@@ -311,7 +312,7 @@ class TradingClient(AlpacaClientBase):
                     return None
                 raise
 
-    async def close_position(self, symbol: str, qty: float | None = None) -> Order:
+    async def close_position(self, symbol: str, qty: Decimal | None = None) -> Order:
         """Close a position (fully or partially).
 
         Args:

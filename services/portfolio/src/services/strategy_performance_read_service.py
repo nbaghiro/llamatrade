@@ -63,6 +63,23 @@ _PERIOD_DAYS: dict[str, int] = {
 }
 
 
+def _to_daily(series: list[tuple[datetime, Decimal]]) -> list[tuple[date, Decimal]]:
+    """Collapse an intraday equity series to one point per day (last per day).
+
+    Snapshots are taken ~hourly, but the annualized metrics use daily math
+    (sqrt(252)); feeding the raw intraday series over-annualizes volatility and
+    Sharpe. Collapsing to a daily grid (as the account read path does) makes the
+    annualization correct.
+    """
+    by_day: dict[date, tuple[datetime, Decimal]] = {}
+    for ts, eq in series:
+        d = ts.date()
+        prev = by_day.get(d)
+        if prev is None or ts >= prev[0]:
+            by_day[d] = (ts, eq)
+    return [(d, by_day[d][1]) for d in sorted(by_day)]
+
+
 class StrategyPerformanceReadService:
     """Per-strategy performance derived from the ledger sleeve + snapshots."""
 
@@ -159,7 +176,7 @@ class StrategyPerformanceReadService:
             equity_curve=equity_curve,
             benchmark_symbol=benchmark_symbol or None,
             benchmark=benchmark,
-            period_returns=self._period_returns([(t, float(e)) for t, e in series]),
+            period_returns=self._period_returns([(t, e) for t, e in series]),
         )
 
     async def _benchmark(
@@ -268,7 +285,7 @@ class StrategyPerformanceReadService:
             positions_count = 0
 
         series = await self._sleeve_series(tenant_id, execution.sleeve_id, None, None)
-        returns = self._period_returns([(t, float(e)) for t, e in series])
+        returns = self._period_returns([(t, e) for t, e in series])
 
         return StrategyPerformanceSummary(
             execution_id=execution.id,
@@ -292,7 +309,9 @@ class StrategyPerformanceReadService:
         sleeve: SleeveProjection | None,
     ) -> LiveMetrics:
         series = await self._sleeve_series(tenant_id, execution.sleeve_id, None, None)
-        equities = np.array([float(e) for _, e in series], dtype=np.float64)
+        # Collapse to a daily grid so sqrt(252) annualization is correct on the
+        # ~hourly snapshot cadence (matches the account read path).
+        equities = np.array([float(e) for _, e in _to_daily(series)], dtype=np.float64)
         # Numpy is CPU-bound — run it off the event loop (see portfolio_read_service).
         m = (
             await asyncio.to_thread(analytics.equity_metrics, equities)
@@ -367,7 +386,7 @@ class StrategyPerformanceReadService:
             out.append((ts, snap.equity))
         return out
 
-    def _period_returns(self, series: list[tuple[datetime, float]]) -> PeriodReturns:
+    def _period_returns(self, series: list[tuple[datetime, Decimal]]) -> PeriodReturns:
         """Compute standard period returns from an equity series (latest vs window start)."""
         if len(series) < 2:
             return PeriodReturns()
@@ -376,21 +395,21 @@ class StrategyPerformanceReadService:
         # Day-return baseline: last snapshot on a PRIOR calendar day, not a rolling 24h window (else weekend gaps read as 0).
         prior_day = next((eq for ts, eq in reversed(series) if ts.date() < latest_ts.date()), None)
         if prior_day is not None and prior_day != 0:
-            kwargs["return_1d"] = Decimal(str((latest_eq - prior_day) / prior_day * 100))
+            kwargs["return_1d"] = (latest_eq - prior_day) / prior_day * 100
         for key, days in _PERIOD_DAYS.items():
             if key == "return_1d":
                 continue
             cutoff = latest_ts - timedelta(days=days)
             base = next((eq for ts, eq in series if ts >= cutoff), None)
             if base is not None and base != 0:
-                kwargs[key] = Decimal(str((latest_eq - base) / base * 100))
+                kwargs[key] = (latest_eq - base) / base * 100
         # YTD
         ytd_cutoff = datetime(latest_ts.year, 1, 1, tzinfo=latest_ts.tzinfo)
         ytd_base = next((eq for ts, eq in series if ts >= ytd_cutoff), None)
         if ytd_base:
-            kwargs["return_ytd"] = Decimal(str((latest_eq - ytd_base) / ytd_base * 100))
+            kwargs["return_ytd"] = (latest_eq - ytd_base) / ytd_base * 100
         # ALL
         first_eq = series[0][1]
         if first_eq:
-            kwargs["return_all"] = Decimal(str((latest_eq - first_eq) / first_eq * 100))
+            kwargs["return_all"] = (latest_eq - first_eq) / first_eq * 100
         return PeriodReturns(**kwargs)

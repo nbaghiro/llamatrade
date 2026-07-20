@@ -12,22 +12,25 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date
+from decimal import Decimal
 
 import numpy as np
 from numpy.typing import NDArray
 
 
-def unrealized_pnl(side: str, qty: float, entry_price: float, current_price: float) -> float:
+def unrealized_pnl(
+    side: str, qty: Decimal, entry_price: Decimal, current_price: Decimal
+) -> Decimal:
     """Unrealized P&L for a position (long: (cur−entry)·qty; short: (entry−cur)·qty)."""
     if side == "short":
         return (entry_price - current_price) * qty
     return (current_price - entry_price) * qty
 
 
-def pnl_percent(pnl: float, cost_basis: float) -> float:
+def pnl_percent(pnl: Decimal, cost_basis: Decimal) -> Decimal:
     """P&L as a percent of cost basis (0 when cost basis is 0)."""
     if cost_basis == 0:
-        return 0.0
+        return Decimal("0")
     return (pnl / cost_basis) * 100
 
 

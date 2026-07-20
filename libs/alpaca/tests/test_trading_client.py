@@ -1,5 +1,7 @@
 """Tests for TradingClient."""
 
+from decimal import Decimal
+
 import pytest
 import respx
 from httpx import Response
@@ -173,7 +175,7 @@ class TestSubmitOrder:
 
         order = await trading_client.submit_order(
             symbol="AAPL",
-            qty=10,
+            qty=Decimal("10"),
             side="buy",
             order_type="market",
         )
@@ -209,11 +211,11 @@ class TestSubmitOrder:
 
         order = await trading_client.submit_order(
             symbol="MSFT",
-            qty=5,
+            qty=Decimal("5"),
             side=OrderSide.SELL,
             order_type=OrderType.LIMIT,
             time_in_force=TimeInForce.GTC,
-            limit_price=350.00,
+            limit_price=Decimal("350.00"),
         )
 
         assert order.order_type == OrderType.LIMIT

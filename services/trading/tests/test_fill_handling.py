@@ -184,8 +184,8 @@ class TestFillEventHandling:
         runner._positions["AAPL"] = Position(
             symbol="AAPL",
             side="long",
-            quantity=10.0,
-            entry_price=145.0,
+            quantity=Decimal("10.0"),
+            entry_price=Decimal("145.0"),
             entry_date=now,
         )
 
@@ -233,8 +233,8 @@ class TestFillEventHandling:
         runner._positions["AAPL"] = Position(
             symbol="AAPL",
             side="long",
-            quantity=10.0,
-            entry_price=140.0,
+            quantity=Decimal("10.0"),
+            entry_price=Decimal("140.0"),
             entry_date=now,
         )
 
@@ -330,8 +330,8 @@ class TestFillEventHandling:
         runner._positions["AAPL"] = Position(
             symbol="AAPL",
             side="short",
-            quantity=10.0,
-            entry_price=155.0,
+            quantity=Decimal("10.0"),
+            entry_price=Decimal("155.0"),
             entry_date=now,
         )
 
@@ -423,8 +423,8 @@ class TestPendingOrderTracking:
         signal = Signal(
             type="buy",
             symbol="AAPL",
-            quantity=10.0,
-            price=150.0,
+            quantity=Decimal("10.0"),
+            price=Decimal("150.0"),
         )
         runner._pending_orders["client-456"] = signal
 
@@ -474,8 +474,8 @@ class TestOrderCancellation:
         signal = Signal(
             type="buy",
             symbol="AAPL",
-            quantity=10.0,
-            price=150.0,
+            quantity=Decimal("10.0"),
+            price=Decimal("150.0"),
         )
         runner._pending_orders["client-456"] = signal
 
@@ -542,8 +542,8 @@ class TestOrderRejection:
         signal = Signal(
             type="buy",
             symbol="AAPL",
-            quantity=10.0,
-            price=150.0,
+            quantity=Decimal("10.0"),
+            price=Decimal("150.0"),
         )
         runner._pending_orders["client-456"] = signal
 
@@ -578,8 +578,8 @@ class TestOrderRejection:
         signal = Signal(
             type="buy",
             symbol="AAPL",
-            quantity=10.0,
-            price=150.0,
+            quantity=Decimal("10.0"),
+            price=Decimal("150.0"),
         )
         runner._pending_orders["client-456"] = signal
 

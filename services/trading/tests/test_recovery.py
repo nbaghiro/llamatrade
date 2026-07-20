@@ -76,18 +76,18 @@ def _order_row(*, status=ORDER_STATUS_PENDING, alpaca_order_id=None) -> Order:
     return o
 
 
-def _broker_order(status: AlpacaOrderStatus, *, filled_qty: float = 0.0) -> AlpacaOrder:
+def _broker_order(status: AlpacaOrderStatus, *, filled_qty: Decimal = Decimal("0")) -> AlpacaOrder:
     return AlpacaOrder(
         id="alpaca-xyz",
         client_order_id="lt-deadbeef",
         symbol="AAPL",
-        qty=10.0,
+        qty=Decimal("10.0"),
         side=AlpacaOrderSide.BUY,
         order_type=AlpacaOrderType.MARKET,
         status=status,
         time_in_force=AlpacaTimeInForce.DAY,
         filled_qty=filled_qty,
-        filled_avg_price=150.0 if filled_qty else None,
+        filled_avg_price=Decimal("150.0") if filled_qty else None,
         created_at=datetime.now(UTC),
     )
 
@@ -109,7 +109,7 @@ async def test_replay_returns_existing_when_already_submitted(executor, mock_alp
 async def test_replay_adopts_broker_order_when_stranded(executor, mock_alpaca_client):
     existing = _order_row(status=ORDER_STATUS_PENDING, alpaca_order_id=None)
     mock_alpaca_client.get_order_by_client_id = AsyncMock(
-        return_value=_broker_order(AlpacaOrderStatus.FILLED, filled_qty=10.0)
+        return_value=_broker_order(AlpacaOrderStatus.FILLED, filled_qty=Decimal("10"))
     )
     result = await executor._idempotent_replay(existing, "lt-deadbeef")
     assert result is not None
@@ -138,7 +138,9 @@ async def test_submit_resumes_stranded_row_without_duplicating(
     executor._find_order_by_client_id = AsyncMock(return_value=stranded)
     mock_alpaca_client.get_order_by_client_id = AsyncMock(return_value=None)
 
-    order = OrderCreate(symbol="AAPL", side=ORDER_SIDE_BUY, qty=10.0, order_type=ORDER_TYPE_MARKET)
+    order = OrderCreate(
+        symbol="AAPL", side=ORDER_SIDE_BUY, qty=Decimal("10.0"), order_type=ORDER_TYPE_MARKET
+    )
     result = await executor.submit_order(
         tenant_id=tenant_id,
         session_id=session_id,

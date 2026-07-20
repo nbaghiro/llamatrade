@@ -1,6 +1,7 @@
 """Test strategy runner."""
 
 from datetime import UTC, datetime
+from decimal import Decimal
 from unittest.mock import AsyncMock, MagicMock
 from uuid import UUID
 
@@ -49,10 +50,10 @@ def mock_order_executor():
             alpaca_order_id="alpaca-order-123",
             symbol="AAPL",
             side=ORDER_SIDE_BUY,
-            qty=10.0,
+            qty=Decimal("10.0"),
             order_type=ORDER_TYPE_MARKET,
             status=ORDER_STATUS_SUBMITTED,
-            filled_qty=0,
+            filled_qty=Decimal("0"),
             filled_avg_price=None,
             submitted_at=datetime.now(UTC),
             filled_at=None,
@@ -99,8 +100,8 @@ class TestSignal:
         signal = Signal(
             type="buy",
             symbol="AAPL",
-            quantity=10.0,
-            price=150.0,
+            quantity=Decimal("10.0"),
+            price=Decimal("150.0"),
         )
 
         assert signal.type == "buy"
@@ -119,8 +120,8 @@ class TestPosition:
         position = Position(
             symbol="AAPL",
             side="long",
-            quantity=10.0,
-            entry_price=150.0,
+            quantity=Decimal("10.0"),
+            entry_price=Decimal("150.0"),
             entry_date=now,
         )
 
@@ -184,16 +185,16 @@ class TestStrategyRunner:
 
     def test_set_equity(self, strategy_runner):
         """Test setting equity value."""
-        strategy_runner.set_equity(200000.0)
-        assert strategy_runner._equity == 200000.0
+        strategy_runner.set_equity(Decimal("200000"))
+        assert strategy_runner._equity == Decimal("200000")
 
     def test_sync_position_add(self, strategy_runner):
         """Test syncing a new position."""
         position = Position(
             symbol="AAPL",
             side="long",
-            quantity=10.0,
-            entry_price=150.0,
+            quantity=Decimal("10.0"),
+            entry_price=Decimal("150.0"),
             entry_date=datetime.now(UTC),
         )
 
@@ -207,8 +208,8 @@ class TestStrategyRunner:
         position = Position(
             symbol="AAPL",
             side="long",
-            quantity=10.0,
-            entry_price=150.0,
+            quantity=Decimal("10.0"),
+            entry_price=Decimal("150.0"),
             entry_date=datetime.now(UTC),
         )
         strategy_runner.sync_position("AAPL", position)
@@ -222,8 +223,8 @@ class TestStrategyRunner:
         signal = Signal(
             type="buy",
             symbol="AAPL",
-            quantity=10.0,
-            price=150.0,
+            quantity=Decimal("10.0"),
+            price=Decimal("150.0"),
         )
 
         order = strategy_runner._signal_to_order(signal)
@@ -237,8 +238,8 @@ class TestStrategyRunner:
         signal = Signal(
             type="sell",
             symbol="AAPL",
-            quantity=10.0,
-            price=155.0,
+            quantity=Decimal("10.0"),
+            price=Decimal("155.0"),
         )
 
         order = strategy_runner._signal_to_order(signal)
@@ -252,8 +253,8 @@ class TestStrategyRunner:
         signal = Signal(
             type="cover",
             symbol="AAPL",
-            quantity=10.0,
-            price=145.0,
+            quantity=Decimal("10.0"),
+            price=Decimal("145.0"),
         )
 
         order = strategy_runner._signal_to_order(signal)
@@ -265,8 +266,8 @@ class TestStrategyRunner:
         signal = Signal(
             type="short",
             symbol="AAPL",
-            quantity=10.0,
-            price=155.0,
+            quantity=Decimal("10.0"),
+            price=Decimal("155.0"),
         )
 
         order = strategy_runner._signal_to_order(signal)
@@ -278,8 +279,8 @@ class TestStrategyRunner:
         signal = Signal(
             type="buy",
             symbol="AAPL",
-            quantity=10.0,
-            price=150.0,
+            quantity=Decimal("10.0"),
+            price=Decimal("150.0"),
         )
 
         await strategy_runner._update_position(signal)
@@ -291,11 +292,15 @@ class TestStrategyRunner:
     async def test_update_position_sell(self, strategy_runner):
         """Test position update on sell signal (close long)."""
         # First create a position
-        buy_signal = Signal(type="buy", symbol="AAPL", quantity=10.0, price=150.0)
+        buy_signal = Signal(
+            type="buy", symbol="AAPL", quantity=Decimal("10.0"), price=Decimal("150.0")
+        )
         await strategy_runner._update_position(buy_signal)
 
         # Then sell it
-        sell_signal = Signal(type="sell", symbol="AAPL", quantity=10.0, price=155.0)
+        sell_signal = Signal(
+            type="sell", symbol="AAPL", quantity=Decimal("10.0"), price=Decimal("155.0")
+        )
         await strategy_runner._update_position(sell_signal)
 
         assert "AAPL" not in strategy_runner._positions
@@ -305,8 +310,8 @@ class TestStrategyRunner:
         signal = Signal(
             type="short",
             symbol="AAPL",
-            quantity=10.0,
-            price=155.0,
+            quantity=Decimal("10.0"),
+            price=Decimal("155.0"),
         )
 
         await strategy_runner._update_position(signal)
@@ -317,11 +322,15 @@ class TestStrategyRunner:
     async def test_update_position_cover(self, strategy_runner):
         """Test position update on cover signal (close short)."""
         # First create a short position
-        short_signal = Signal(type="short", symbol="AAPL", quantity=10.0, price=155.0)
+        short_signal = Signal(
+            type="short", symbol="AAPL", quantity=Decimal("10.0"), price=Decimal("155.0")
+        )
         await strategy_runner._update_position(short_signal)
 
         # Then cover it
-        cover_signal = Signal(type="cover", symbol="AAPL", quantity=10.0, price=150.0)
+        cover_signal = Signal(
+            type="cover", symbol="AAPL", quantity=Decimal("10.0"), price=Decimal("150.0")
+        )
         await strategy_runner._update_position(cover_signal)
 
         assert "AAPL" not in strategy_runner._positions
@@ -502,7 +511,7 @@ class TestStrategyRunnerAdvanced:
         mock_risk_manager.check_order.return_value.passed = False
         mock_risk_manager.check_order.return_value.violations = ["Position too large"]
 
-        signal = Signal(type="buy", symbol="AAPL", quantity=10.0, price=150.0)
+        signal = Signal(type="buy", symbol="AAPL", quantity=Decimal("10.0"), price=Decimal("150.0"))
         await runner._process_signal(signal)
 
         # Order should not be submitted
@@ -612,21 +621,21 @@ class TestPositionReconciliation:
         reconciliation_runner._positions["AAPL"] = Position(
             symbol="AAPL",
             side="long",
-            quantity=10.0,
-            entry_price=150.0,
+            quantity=Decimal("10.0"),
+            entry_price=Decimal("150.0"),
             entry_date=datetime.now(UTC),
         )
 
         mock_alpaca_client.get_positions.return_value = [
             PositionResponse(
                 symbol="AAPL",
-                qty=10.0,
+                qty=Decimal("10.0"),
                 side="long",
-                cost_basis=1500.0,
-                market_value=1550.0,
-                unrealized_pnl=50.0,
-                unrealized_pnl_percent=3.33,
-                current_price=155.0,
+                cost_basis=Decimal("1500.0"),
+                market_value=Decimal("1550.0"),
+                unrealized_pnl=Decimal("50.0"),
+                unrealized_pnl_percent=Decimal("3.33"),
+                current_price=Decimal("155.0"),
             )
         ]
         reconciliation_runner.alpaca_client = mock_alpaca_client
@@ -648,8 +657,8 @@ class TestPositionReconciliation:
         reconciliation_runner._positions["AAPL"] = Position(
             symbol="AAPL",
             side="long",
-            quantity=10.0,
-            entry_price=150.0,
+            quantity=Decimal("10.0"),
+            entry_price=Decimal("150.0"),
             entry_date=datetime.now(UTC),
         )
 
@@ -680,13 +689,13 @@ class TestPositionReconciliation:
         mock_alpaca_client.get_positions.return_value = [
             PositionResponse(
                 symbol="AAPL",
-                qty=10.0,
+                qty=Decimal("10.0"),
                 side="long",
-                cost_basis=1500.0,
-                market_value=1550.0,
-                unrealized_pnl=50.0,
-                unrealized_pnl_percent=3.33,
-                current_price=155.0,
+                cost_basis=Decimal("1500.0"),
+                market_value=Decimal("1550.0"),
+                unrealized_pnl=Decimal("50.0"),
+                unrealized_pnl_percent=Decimal("3.33"),
+                current_price=Decimal("155.0"),
             )
         ]
         reconciliation_runner.alpaca_client = mock_alpaca_client
@@ -716,8 +725,8 @@ class TestPositionReconciliation:
         reconciliation_runner._positions["AAPL"] = Position(
             symbol="AAPL",
             side="long",
-            quantity=10.0,
-            entry_price=150.0,
+            quantity=Decimal("10.0"),
+            entry_price=Decimal("150.0"),
             entry_date=datetime.now(UTC),
         )
 
@@ -725,13 +734,13 @@ class TestPositionReconciliation:
         mock_alpaca_client.get_positions.return_value = [
             PositionResponse(
                 symbol="AAPL",
-                qty=10.4,
+                qty=Decimal("10.4"),
                 side="long",
-                cost_basis=1560.0,
-                market_value=1612.0,
-                unrealized_pnl=52.0,
-                unrealized_pnl_percent=3.33,
-                current_price=155.0,
+                cost_basis=Decimal("1560.0"),
+                market_value=Decimal("1612.0"),
+                unrealized_pnl=Decimal("52.0"),
+                unrealized_pnl_percent=Decimal("3.33"),
+                current_price=Decimal("155.0"),
             )
         ]
         reconciliation_runner.alpaca_client = mock_alpaca_client
@@ -739,7 +748,7 @@ class TestPositionReconciliation:
         await reconciliation_runner._sync_positions()
 
         # Position should be auto-corrected to broker value
-        assert reconciliation_runner._positions["AAPL"].quantity == 10.4
+        assert reconciliation_runner._positions["AAPL"].quantity == Decimal("10.4")
 
         # Alert should be sent with action="corrected"
         reconciliation_runner.alerts.on_position_drift.assert_called_once()
@@ -759,8 +768,8 @@ class TestPositionReconciliation:
         reconciliation_runner._positions["AAPL"] = Position(
             symbol="AAPL",
             side="long",
-            quantity=10.0,
-            entry_price=150.0,
+            quantity=Decimal("10.0"),
+            entry_price=Decimal("150.0"),
             entry_date=datetime.now(UTC),
         )
 
@@ -768,13 +777,13 @@ class TestPositionReconciliation:
         mock_alpaca_client.get_positions.return_value = [
             PositionResponse(
                 symbol="AAPL",
-                qty=12.0,
+                qty=Decimal("12.0"),
                 side="long",
-                cost_basis=1800.0,
-                market_value=1860.0,
-                unrealized_pnl=60.0,
-                unrealized_pnl_percent=3.33,
-                current_price=155.0,
+                cost_basis=Decimal("1800.0"),
+                market_value=Decimal("1860.0"),
+                unrealized_pnl=Decimal("60.0"),
+                unrealized_pnl_percent=Decimal("3.33"),
+                current_price=Decimal("155.0"),
             )
         ]
         reconciliation_runner.alpaca_client = mock_alpaca_client
@@ -802,8 +811,8 @@ class TestPositionReconciliation:
         reconciliation_runner._positions["AAPL"] = Position(
             symbol="AAPL",
             side="long",
-            quantity=10.0,
-            entry_price=150.0,
+            quantity=Decimal("10.0"),
+            entry_price=Decimal("150.0"),
             entry_date=datetime.now(UTC),
         )
 
@@ -811,13 +820,13 @@ class TestPositionReconciliation:
         mock_alpaca_client.get_positions.return_value = [
             PositionResponse(
                 symbol="AAPL",
-                qty=10.0,
+                qty=Decimal("10.0"),
                 side="short",
-                cost_basis=1500.0,
-                market_value=1550.0,
-                unrealized_pnl=50.0,
-                unrealized_pnl_percent=3.33,
-                current_price=155.0,
+                cost_basis=Decimal("1500.0"),
+                market_value=Decimal("1550.0"),
+                unrealized_pnl=Decimal("50.0"),
+                unrealized_pnl_percent=Decimal("3.33"),
+                current_price=Decimal("155.0"),
             )
         ]
         reconciliation_runner.alpaca_client = mock_alpaca_client
@@ -842,13 +851,13 @@ class TestPositionReconciliation:
         mock_alpaca_client.get_positions.return_value = [
             PositionResponse(
                 symbol="GOOGL",  # Not in strategy symbols
-                qty=5.0,
+                qty=Decimal("5.0"),
                 side="long",
-                cost_basis=5000.0,
-                market_value=5100.0,
-                unrealized_pnl=100.0,
-                unrealized_pnl_percent=2.0,
-                current_price=1020.0,
+                cost_basis=Decimal("5000.0"),
+                market_value=Decimal("5100.0"),
+                unrealized_pnl=Decimal("100.0"),
+                unrealized_pnl_percent=Decimal("2.0"),
+                current_price=Decimal("1020.0"),
             )
         ]
         reconciliation_runner.alpaca_client = mock_alpaca_client
@@ -911,8 +920,8 @@ class TestPositionReconciliation:
         reconciliation_runner._positions["AAPL"] = Position(
             symbol="AAPL",
             side="long",
-            quantity=10.0,
-            entry_price=150.0,
+            quantity=Decimal("10.0"),
+            entry_price=Decimal("150.0"),
             entry_date=datetime.now(UTC),
         )
 
@@ -920,13 +929,13 @@ class TestPositionReconciliation:
         mock_alpaca_client.get_positions.return_value = [
             PositionResponse(
                 symbol="AAPL",
-                qty=10.7,
+                qty=Decimal("10.7"),
                 side="long",
-                cost_basis=1605.0,
-                market_value=1658.5,
-                unrealized_pnl=53.5,
-                unrealized_pnl_percent=3.33,
-                current_price=155.0,
+                cost_basis=Decimal("1605.0"),
+                market_value=Decimal("1658.5"),
+                unrealized_pnl=Decimal("53.5"),
+                unrealized_pnl_percent=Decimal("3.33"),
+                current_price=Decimal("155.0"),
             )
         ]
         reconciliation_runner.alpaca_client = mock_alpaca_client

@@ -1,6 +1,7 @@
 """Tests for base executor mixin."""
 
 from datetime import UTC, datetime
+from decimal import Decimal
 from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
@@ -59,7 +60,7 @@ def mock_alpaca() -> MagicMock:
             id="alpaca-order-123",
             client_order_id="test-client-123",
             symbol="AAPL",
-            qty=10.0,
+            qty=Decimal("10.0"),
             side=AlpacaOrderSide.BUY,
             order_type=AlpacaOrderType.MARKET,
             status=AlpacaOrderStatus.NEW,
@@ -93,7 +94,7 @@ def sample_order() -> OrderCreate:
     return OrderCreate(
         symbol="AAPL",
         side=ORDER_SIDE_BUY,
-        qty=10.0,
+        qty=Decimal("10.0"),
         order_type=ORDER_TYPE_MARKET,
         time_in_force=TIME_IN_FORCE_DAY,
     )
@@ -172,9 +173,9 @@ class TestRunRiskCheck:
         order = OrderCreate(
             symbol="AAPL",
             side=ORDER_SIDE_BUY,
-            qty=10.0,
+            qty=Decimal("10.0"),
             order_type=ORDER_TYPE_LIMIT,
-            limit_price=150.50,
+            limit_price=Decimal("150.50"),
             time_in_force=TIME_IN_FORCE_DAY,
         )
 
@@ -277,9 +278,9 @@ class TestSubmitToAlpaca:
         order = OrderCreate(
             symbol="MSFT",
             side=ORDER_SIDE_SELL,
-            qty=5.0,
+            qty=Decimal("5.0"),
             order_type=ORDER_TYPE_LIMIT,
-            limit_price=400.50,
+            limit_price=Decimal("400.50"),
             time_in_force=TIME_IN_FORCE_GTC,
         )
 
@@ -305,10 +306,10 @@ class TestSubmitToAlpaca:
         order = OrderCreate(
             symbol="GOOGL",
             side=ORDER_SIDE_SELL,
-            qty=2.0,
+            qty=Decimal("2.0"),
             order_type=ORDER_TYPE_STOP_LIMIT,
-            limit_price=180.00,
-            stop_price=185.00,
+            limit_price=Decimal("180.00"),
+            stop_price=Decimal("185.00"),
             time_in_force=TIME_IN_FORCE_DAY,
         )
 

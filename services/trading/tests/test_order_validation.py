@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from decimal import Decimal
+from typing import Any
+
 import pytest
 from pydantic import ValidationError
 
@@ -17,8 +20,8 @@ from llamatrade_proto.generated.trading_pb2 import (
 from src.models import OrderCreate
 
 
-def _base(**overrides):
-    kwargs = dict(symbol="AAPL", side=ORDER_SIDE_BUY, qty=10.0)
+def _base(**overrides: Any) -> dict[str, Any]:
+    kwargs: dict[str, Any] = dict(symbol="AAPL", side=ORDER_SIDE_BUY, qty=Decimal("10.0"))
     kwargs.update(overrides)
     return kwargs
 

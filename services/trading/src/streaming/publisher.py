@@ -13,6 +13,7 @@ wrapped in an event envelope by ``OrderEvents`` / ``PositionEvents``.
 import logging
 import os
 from datetime import UTC, datetime
+from decimal import Decimal
 from uuid import UUID
 
 from llamatrade_events import EventBus as EventsBus
@@ -70,12 +71,12 @@ def _build_order_update(
     alpaca_order_id: str | None,
     symbol: str,
     side: str,
-    qty: float,
+    qty: Decimal,
     order_type: str,
     status: str,
     event_type: str,
-    filled_qty: float = 0.0,
-    filled_avg_price: float | None = None,
+    filled_qty: Decimal = Decimal("0"),
+    filled_avg_price: Decimal | None = None,
 ) -> trading_pb2.OrderUpdate:
     """Build a proto ``OrderUpdate`` (embedded Order + event_type + timestamp).
 
@@ -109,13 +110,13 @@ def _build_position_update(
     *,
     session_id: str,
     symbol: str,
-    qty: float,
+    qty: Decimal,
     side: str,
-    cost_basis: float,
-    market_value: float,
-    unrealized_pnl: float,
-    unrealized_pnl_percent: float,
-    current_price: float,
+    cost_basis: Decimal,
+    market_value: Decimal,
+    unrealized_pnl: Decimal,
+    unrealized_pnl_percent: Decimal,
+    current_price: Decimal,
     event_type: str,
 ) -> trading_pb2.PositionUpdate:
     """Build a proto ``PositionUpdate`` (embedded Position + event_type + timestamp).
@@ -263,7 +264,7 @@ class TradingEventPublisher:
         alpaca_order_id: str | None,
         symbol: str,
         side: str,
-        qty: float,
+        qty: Decimal,
         order_type: str,
     ) -> str:
         """Convenience method for publishing order submitted event."""
@@ -287,10 +288,10 @@ class TradingEventPublisher:
         alpaca_order_id: str | None,
         symbol: str,
         side: str,
-        qty: float,
+        qty: Decimal,
         order_type: str,
-        filled_qty: float,
-        filled_avg_price: float,
+        filled_qty: Decimal,
+        filled_avg_price: Decimal,
     ) -> str:
         """Convenience method for publishing order filled event."""
         update = _build_order_update(
@@ -315,9 +316,9 @@ class TradingEventPublisher:
         alpaca_order_id: str | None,
         symbol: str,
         side: str,
-        qty: float,
+        qty: Decimal,
         order_type: str,
-        filled_qty: float = 0.0,
+        filled_qty: Decimal = Decimal("0"),
     ) -> str:
         """Convenience method for publishing order cancelled event."""
         update = _build_order_update(
@@ -338,9 +339,9 @@ class TradingEventPublisher:
         self,
         session_id: UUID | str,
         symbol: str,
-        qty: float,
+        qty: Decimal,
         side: str,
-        entry_price: float,
+        entry_price: Decimal,
     ) -> str:
         """Convenience method for publishing position opened event."""
         cost_basis = qty * entry_price
@@ -351,8 +352,8 @@ class TradingEventPublisher:
             side=side,
             cost_basis=cost_basis,
             market_value=cost_basis,  # Initially same as cost
-            unrealized_pnl=0.0,
-            unrealized_pnl_percent=0.0,
+            unrealized_pnl=Decimal("0"),
+            unrealized_pnl_percent=Decimal("0"),
             current_price=entry_price,
             event_type="opened",
         )
@@ -363,19 +364,19 @@ class TradingEventPublisher:
         session_id: UUID | str,
         symbol: str,
         side: str,
-        exit_price: float,
-        realized_pnl: float,
+        exit_price: Decimal,
+        realized_pnl: Decimal,
     ) -> str:
         """Convenience method for publishing position closed event."""
         update = _build_position_update(
             session_id=str(session_id),
             symbol=symbol,
-            qty=0.0,
+            qty=Decimal("0"),
             side=side,
-            cost_basis=0.0,
-            market_value=0.0,
-            unrealized_pnl=0.0,
-            unrealized_pnl_percent=0.0,
+            cost_basis=Decimal("0"),
+            market_value=Decimal("0"),
+            unrealized_pnl=Decimal("0"),
+            unrealized_pnl_percent=Decimal("0"),
             current_price=exit_price,
             event_type="closed",
         )

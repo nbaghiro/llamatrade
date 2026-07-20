@@ -178,7 +178,7 @@ class OrderSubmissionMixin:
                 session_id=session_id,
                 symbol=order.symbol,
                 side=order_side_to_str(order.side),
-                qty=order.qty,
+                qty=float(order.qty),
                 reason=", ".join(violations),
             )
 
@@ -259,7 +259,7 @@ class OrderSubmissionMixin:
                 session_id=session_id,
                 symbol=order.symbol,
                 side=order_side_to_str(order.side),
-                qty=order.qty,
+                qty=float(order.qty),
                 reason=f"Alpaca API error: {error}",
             )
 
