@@ -154,7 +154,7 @@ def verify_credential(
             email=str(payload.get("email", "") or ""),
             roles=list(payload.get("roles", []) or []),
         )
-    except ValueError, TypeError:
+    except (ValueError, TypeError):
         return None
 
 

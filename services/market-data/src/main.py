@@ -41,15 +41,13 @@ logger = logging.getLogger(__name__)
 
 
 def _bars_from_bus() -> bool:
-    """Bus mode (consolidated) vs legacy direct-Alpaca, from env.
-
-    Explicit ``MARKET_DATA_BARS_FROM_BUS`` wins; otherwise default to bus mode
-    whenever Redis is configured (the deployed topology).
+    """Bus mode (serving reads live bars off the internal bus fed by the ingest
+    role) vs legacy direct-Alpaca. Requires the explicit
+    ``MARKET_DATA_BARS_FROM_BUS`` opt-in — inferring it from ``REDIS_URL`` (also
+    the cache URL) silently put serving into bus mode with no publisher, so live
+    ``stream_bars`` emitted nothing. Set it only where the ingestor runs.
     """
-    flag = os.getenv("MARKET_DATA_BARS_FROM_BUS")
-    if flag is not None:
-        return flag.strip().lower() in {"1", "true", "yes", "on"}
-    return os.getenv("REDIS_URL") is not None
+    return os.getenv("MARKET_DATA_BARS_FROM_BUS", "").strip().lower() in {"1", "true", "yes", "on"}
 
 
 SERVICE_NAME = "market-data"
@@ -173,9 +171,13 @@ async def health_check() -> dict[str, Any]:
     if cache:
         cache_healthy = await cache.health_check()
 
-    # Check Alpaca stream status
-    alpaca_stream = get_alpaca_stream()
-    stream_healthy = alpaca_stream.connected if alpaca_stream else False
+    # In bus mode the serving process holds no Alpaca connection, so report the
+    # bus-bridge state rather than the (never-initialized) Alpaca stream.
+    if _bars_from_bus():
+        stream_healthy = _stream_connected
+    else:
+        alpaca_stream = get_alpaca_stream()
+        stream_healthy = alpaca_stream.connected if alpaca_stream else False
 
     return {
         "status": "healthy",
@@ -186,7 +188,7 @@ async def health_check() -> dict[str, Any]:
                 "status": "healthy" if cache_healthy else "unavailable",
                 "critical": False,
             },
-            "alpaca_stream": {
+            "live_bars": {
                 "status": "healthy" if stream_healthy else "unavailable",
                 "critical": False,
             },

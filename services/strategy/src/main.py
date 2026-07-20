@@ -4,6 +4,8 @@ This service manages trading strategies for LlamaTrade.
 It exposes endpoints via Connect protocol for direct browser access.
 """
 
+import asyncio
+import contextlib
 import logging
 import os
 from collections.abc import AsyncGenerator
@@ -45,9 +47,26 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     except ImportError as e:
         logger.warning("Connect dependencies not available: %s", e)
 
+    # Periodically release sleeves stranded by a failed ledger close (must never
+    # block startup; a single pod runs the sweep via an advisory lock).
+    stop_event = asyncio.Event()
+    sweep_task: asyncio.Task[None] | None = None
+    try:
+        from src.tasks import stranded_sleeve_loop
+
+        sweep_task = asyncio.create_task(stranded_sleeve_loop(stop_event))
+        logger.info("Started stranded-sleeve sweep loop")
+    except Exception:
+        logger.exception("Failed to start stranded-sleeve sweep loop")
+
     yield
 
-    # Shutdown - dispose the DB connection pool
+    # Shutdown - stop the sweep, dispose the DB connection pool.
+    stop_event.set()
+    if sweep_task is not None:
+        sweep_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await sweep_task
     await close_db()
 
 

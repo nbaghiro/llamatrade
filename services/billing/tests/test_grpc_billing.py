@@ -5,7 +5,8 @@ Tests the BillingServicer directly without HTTP layer.
 
 import os
 from datetime import UTC, datetime, timedelta
-from typing import TYPE_CHECKING, Any
+from decimal import Decimal
+from typing import TYPE_CHECKING, Any, cast
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import UUID, uuid4
 
@@ -319,8 +320,8 @@ class MockBillingService:
             id="plan_starter",
             name="Starter",
             tier=billing_pb2.PLAN_TIER_STARTER,
-            price_monthly=29.0,
-            price_yearly=290.0,
+            price_monthly=Decimal("29.0"),
+            price_yearly=Decimal("290.0"),
             features={"backtests": True},
             limits={"backtests_per_month": 50},
             trial_days=14,
@@ -424,7 +425,7 @@ def billing_servicer() -> BillingServicer:
     session = AsyncMock()
     session.__aenter__ = AsyncMock(return_value=session)
     session.__aexit__ = AsyncMock(return_value=None)
-    servicer._session_maker = lambda: session
+    servicer._session_maker = cast(Any, lambda: session)
     return servicer
 
 
@@ -452,8 +453,8 @@ class TestListPlans:
             id="plan_starter",
             name="Starter",
             tier=billing_pb2.PLAN_TIER_STARTER,
-            price_monthly=29.0,
-            price_yearly=290.0,
+            price_monthly=Decimal("29.0"),
+            price_yearly=Decimal("290.0"),
             features={"backtests": True, "api_access": True},
             limits={"backtests_per_month": 50, "live_strategies": 5},
             trial_days=14,
@@ -491,8 +492,8 @@ class TestGetUsage:
             period_id="2024-01",
         )
 
-        billing_servicer._session_maker = lambda: _FakeUsageSession()
-        response = await billing_servicer.get_usage(request, context)
+        billing_servicer._session_maker = cast(Any, lambda: _FakeUsageSession())
+        response = await billing_servicer.get_usage(request, cast(Any, context))
 
         assert response.usage.tenant_id == tenant_context.tenant_id
         assert response.usage.period_id == "2024-01"
@@ -519,8 +520,8 @@ class TestListInvoices:
 
         request = billing_pb2.ListInvoicesRequest(context=tenant_context)
 
-        billing_servicer._session_maker = lambda: _EmptyInvoicesSession()
-        response = await billing_servicer.list_invoices(request, context)
+        billing_servicer._session_maker = cast(Any, lambda: _EmptyInvoicesSession())
+        response = await billing_servicer.list_invoices(request, cast(Any, context))
 
         assert len(response.invoices) == 0
         assert response.pagination.total_items == 0
@@ -552,7 +553,7 @@ class TestCreateCheckoutSession:
         )
 
         with patch("src.grpc.servicer.get_stripe_client", return_value=MockStripeClient()):
-            response = await billing_servicer.create_checkout_session(request, context)
+            response = await billing_servicer.create_checkout_session(request, cast(Any, context))
 
             assert response.checkout_url
             assert (
@@ -584,7 +585,7 @@ class TestCreatePortalSession:
             return_url="https://example.com/billing",
         )
 
-        response = await billing_servicer.create_portal_session(request, context)
+        response = await billing_servicer.create_portal_session(request, cast(Any, context))
 
         assert response.portal_url
         assert (
@@ -615,7 +616,7 @@ class TestGetInvoice:
         )
 
         with pytest.raises(ConnectError) as exc_info:
-            await billing_servicer.get_invoice(request, context)
+            await billing_servicer.get_invoice(request, cast(Any, context))
 
         assert "NOT_FOUND" in str(exc_info.value.code)
 

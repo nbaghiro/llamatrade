@@ -9,9 +9,8 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
-from stripe import Invoice, PaymentMethod, Subscription
-
 from llamatrade_proto.generated import billing_pb2
+from stripe import Invoice, PaymentMethod, Subscription
 
 from src.routers.webhooks import (
     _handle_invoice_paid,
@@ -265,3 +264,20 @@ class TestHandlePaymentMethodDetached:
         # Should have executed delete query
         mock_db.execute.assert_called()
         mock_db.commit.assert_called()
+
+
+async def test_webhook_path_is_public_to_auth_middleware() -> None:
+    """Stripe posts no bearer token; the webhook path must not be 401'd by the
+    fail-closed AuthMiddleware — its Stripe-signature check is its auth."""
+    from httpx import ASGITransport, AsyncClient
+
+    from src.main import app
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        resp = await ac.post(
+            "/webhooks/stripe",
+            content=b"{}",
+            headers={"stripe-signature": "t=1,v1=deadbeef"},
+        )
+
+    assert resp.status_code != 401

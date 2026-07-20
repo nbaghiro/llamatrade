@@ -10,8 +10,8 @@ class TestAlpacaUrls:
     """Tests for AlpacaUrls."""
 
     def test_data_url_paper(self) -> None:
-        """Test paper data URL."""
-        assert AlpacaUrls.data_url(paper=True) == "https://data.sandbox.alpaca.markets/v2"
+        """Paper data URL is the same host as live (market data is env-agnostic)."""
+        assert AlpacaUrls.data_url(paper=True) == "https://data.alpaca.markets/v2"
 
     def test_data_url_live(self) -> None:
         """Test live data URL."""
@@ -26,10 +26,8 @@ class TestAlpacaUrls:
         assert AlpacaUrls.trading_url(paper=False) == "https://api.alpaca.markets/v2"
 
     def test_stream_url_paper(self) -> None:
-        """Test paper stream URL."""
-        assert (
-            AlpacaUrls.stream_url(paper=True) == "wss://stream.data.sandbox.alpaca.markets/v2/iex"
-        )
+        """Paper stream URL is the same host as live (market data is env-agnostic)."""
+        assert AlpacaUrls.stream_url(paper=True) == "wss://stream.data.alpaca.markets/v2/iex"
 
     def test_stream_url_live(self) -> None:
         """Test live stream URL."""

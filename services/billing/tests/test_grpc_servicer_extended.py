@@ -1,6 +1,8 @@
 """Extended tests for BillingServicer to improve coverage."""
 
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal
+from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
@@ -44,7 +46,7 @@ def servicer():
     session = AsyncMock()
     session.__aenter__ = AsyncMock(return_value=session)
     session.__aexit__ = AsyncMock(return_value=None)
-    servicer._session_maker = lambda: session
+    servicer._session_maker = cast(Any, lambda: session)
     return servicer
 
 
@@ -81,8 +83,8 @@ def sample_plan():
         id="starter",
         name="Starter",
         tier=billing_pb2.PLAN_TIER_STARTER,
-        price_monthly=29,
-        price_yearly=290,
+        price_monthly=Decimal("29"),
+        price_yearly=Decimal("290"),
         features={"backtests": True, "live_trading": False},
         limits={"backtests_per_month": 50, "live_strategies": 1},
         trial_days=14,
@@ -233,7 +235,7 @@ class TestGetUsage:
         )
         fake_db = _FakeUsageSession(counts, subscription)
 
-        servicer._session_maker = lambda: fake_db
+        servicer._session_maker = cast(Any, lambda: fake_db)
         with patch.object(servicer, "_get_tenant_id", return_value=TEST_TENANT_ID):
             request = billing_pb2.GetUsageRequest(period_id="")
             response = await servicer.get_usage(request, mock_ctx)
@@ -265,7 +267,7 @@ class TestGetUsage:
         }
         fake_db = _FakeUsageSession(counts, subscription=None)
 
-        servicer._session_maker = lambda: fake_db
+        servicer._session_maker = cast(Any, lambda: fake_db)
         with patch.object(servicer, "_get_tenant_id", return_value=TEST_TENANT_ID):
             request = billing_pb2.GetUsageRequest(period_id="current")
             response = await servicer.get_usage(request, mock_ctx)
@@ -294,7 +296,7 @@ class TestGetUsage:
         )
         fake_db = _FakeUsageSession(counts, subscription=None)
 
-        servicer._session_maker = lambda: fake_db
+        servicer._session_maker = cast(Any, lambda: fake_db)
         with patch.object(servicer, "_get_tenant_id", return_value=TEST_TENANT_ID):
             await servicer.get_usage(billing_pb2.GetUsageRequest(period_id="current"), mock_ctx)
 
@@ -341,7 +343,7 @@ class TestListInvoices:
         """Test listing invoices returns an empty page for a tenant with none."""
         from llamatrade_proto.generated import billing_pb2
 
-        servicer._session_maker = lambda: _EmptyInvoicesSession()
+        servicer._session_maker = cast(Any, lambda: _EmptyInvoicesSession())
         with patch.object(servicer, "_get_tenant_id", return_value=TEST_TENANT_ID):
             request = billing_pb2.ListInvoicesRequest()
             response = await servicer.list_invoices(request, mock_ctx)
@@ -425,7 +427,7 @@ class TestGetInvoice:
         request = billing_pb2.GetInvoiceRequest(invoice_id=str(uuid4()))
         fake_db = _FakeScalarSession(None)
 
-        servicer._session_maker = lambda: fake_db
+        servicer._session_maker = cast(Any, lambda: fake_db)
         with patch.object(servicer, "_get_tenant_id", return_value=TEST_TENANT_ID):
             with pytest.raises(ConnectError) as exc_info:
                 await servicer.get_invoice(request, mock_ctx)
@@ -440,7 +442,7 @@ class TestGetInvoice:
         invoice = _fake_invoice(invoice_id, TEST_TENANT_ID)
         fake_db = _FakeScalarSession(invoice)
 
-        servicer._session_maker = lambda: fake_db
+        servicer._session_maker = cast(Any, lambda: fake_db)
         with patch.object(servicer, "_get_tenant_id", return_value=TEST_TENANT_ID):
             request = billing_pb2.GetInvoiceRequest(invoice_id=str(invoice_id))
             response = await servicer.get_invoice(request, mock_ctx)

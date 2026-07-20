@@ -12,8 +12,8 @@ from llamatrade_alpaca import (
     Timeframe,
 )
 
-# Paper mode uses sandbox URL
-BASE_URL = "https://data.sandbox.alpaca.markets/v2"
+# Market data host is environment-agnostic (paper and live share it).
+BASE_URL = "https://data.alpaca.markets/v2"
 
 
 @pytest.fixture

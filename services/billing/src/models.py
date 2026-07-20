@@ -1,6 +1,7 @@
 """Billing Service - Pydantic schemas."""
 
 from datetime import datetime
+from decimal import Decimal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -23,8 +24,8 @@ class PlanResponse(BaseModel):
     id: str
     name: str
     tier: PlanTier.ValueType
-    price_monthly: float
-    price_yearly: float
+    price_monthly: Decimal
+    price_yearly: Decimal
     features: dict[str, bool]
     limits: dict[str, int | None]
     trial_days: int = 0

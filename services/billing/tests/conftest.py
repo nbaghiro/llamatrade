@@ -2,7 +2,8 @@
 
 from collections.abc import AsyncGenerator
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from decimal import Decimal
+from typing import Any, cast
 from unittest.mock import MagicMock
 from uuid import UUID, uuid4
 
@@ -259,8 +260,8 @@ class MockPlan:
         name: str = "starter",
         display_name: str = "Starter",
         tier: int = billing_pb2.PLAN_TIER_STARTER,
-        price_monthly: float = 29.0,
-        price_yearly: float = 290.0,
+        price_monthly: Decimal = Decimal("29"),
+        price_yearly: Decimal = Decimal("290"),
         features: dict[str, Any] | None = None,
         limits: dict[str, Any] | None = None,
         trial_days: int = 14,
@@ -564,15 +565,15 @@ def make_plan(
     id: str = "test_plan",
     name: str = "Test Plan",
     tier: int = billing_pb2.PLAN_TIER_STARTER,
-    price_monthly: float = 29.0,
-    price_yearly: float = 290.0,
+    price_monthly: Decimal = Decimal("29"),
+    price_yearly: Decimal = Decimal("290"),
     trial_days: int = 14,
 ) -> PlanResponse:
     """Create a test plan."""
     return PlanResponse(
         id=id,
         name=name,
-        tier=tier,
+        tier=cast(Any, tier),
         price_monthly=price_monthly,
         price_yearly=price_yearly,
         features={

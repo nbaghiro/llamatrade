@@ -18,14 +18,14 @@ import logging
 import os
 from datetime import UTC, datetime
 
-import stripe
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from stripe import Event, Invoice, PaymentMethod, StripeObject, Subscription
 
+import stripe
 from llamatrade_db import get_db
 from llamatrade_proto.generated import billing_pb2
 from llamatrade_telemetry import metrics
+from stripe import Event, Invoice, PaymentMethod, StripeObject, Subscription
 
 from src.services.billing_service import stripe_status_to_proto
 from src.stripe.client import StripeError, get_stripe_client
@@ -286,7 +286,7 @@ async def _handle_invoice_paid(db: AsyncSession, invoice: Invoice) -> None:
         metrics.billing.webhook_duplicate()
         # Update status
         existing.status = INVOICE_STATUS_PAID
-        existing.amount_paid = Decimal(str(invoice.amount_paid / 100))
+        existing.amount_paid = Decimal(invoice.amount_paid) / 100
         existing.paid_at = datetime.now(UTC)
     else:
         # Create new invoice record
@@ -296,8 +296,8 @@ async def _handle_invoice_paid(db: AsyncSession, invoice: Invoice) -> None:
             stripe_invoice_id=invoice.id,
             invoice_number=invoice.number,
             status=INVOICE_STATUS_PAID,
-            amount_due=Decimal(str(invoice.amount_due / 100)),
-            amount_paid=Decimal(str(invoice.amount_paid / 100)),
+            amount_due=Decimal(invoice.amount_due) / 100,
+            amount_paid=Decimal(invoice.amount_paid) / 100,
             currency=invoice.currency,
             period_start=_ts(invoice.period_start) or datetime.now(UTC),
             period_end=_ts(invoice.period_end) or datetime.now(UTC),

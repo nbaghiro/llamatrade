@@ -83,7 +83,7 @@ class GeminiClient(LLMClient):
         """Wrap a tool result string in the dict Gemini requires for a response."""
         try:
             parsed: Any = json.loads(content)
-        except json.JSONDecodeError, TypeError:
+        except (json.JSONDecodeError, TypeError):
             parsed = content
         return {"result": parsed}
 

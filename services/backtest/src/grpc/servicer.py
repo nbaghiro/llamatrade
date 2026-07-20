@@ -49,7 +49,7 @@ def _reject_unsupported_config(config: backtest_pb2.BacktestConfig) -> None:
         raw = config.max_position_size.value
         try:
             capped = Decimal(raw) if raw else Decimal(0)
-        except ArithmeticError, ValueError:
+        except (ArithmeticError, ValueError):
             capped = Decimal(0)
         if capped > 0:
             unsupported.append("max_position_size (per-position cap not yet enforced)")

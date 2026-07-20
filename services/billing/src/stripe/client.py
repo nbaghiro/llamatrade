@@ -7,9 +7,8 @@ from datetime import UTC, datetime
 from typing import Any, Literal
 
 import stripe
-from stripe import Customer, Event, Invoice, PaymentMethod, SetupIntent, Subscription
-
 from llamatrade_telemetry.instrumentation.dependency import time_dependency
+from stripe import Customer, Event, Invoice, PaymentMethod, SetupIntent, Subscription
 
 logger = logging.getLogger(__name__)
 

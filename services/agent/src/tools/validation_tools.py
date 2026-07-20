@@ -161,11 +161,9 @@ class ValidateDSLTool(BaseTool):
         except Exception as e:
             logger.warning("DSL validation failed: %s", e)
             return ToolResult(
-                success=True,
-                data={
-                    "valid": False,
-                    "errors": [{"type": "error", "message": str(e)}],
-                },
+                success=False,
+                error=f"DSL validation could not be completed: {e}",
+                data={"valid": False, "errors": [{"type": "error", "message": str(e)}]},
             )
 
     def _basic_validation(self, dsl_code: str) -> ToolResult:
@@ -324,7 +322,9 @@ class GetAssetInfoTool(BaseTool):
 
         except Exception as e:
             logger.warning("Market data service unavailable: %s", e)
-            # Fall back to basic symbol validation
+            # Degraded but useful: known-ETF recognition with an explicit
+            # "unavailable" note (distinct from the misleading empty-as-success
+            # the backtest read tools used to return).
             return self._basic_symbol_check(symbols, str(e))
 
     def _basic_symbol_check(self, symbols: list[str], error: str) -> ToolResult:

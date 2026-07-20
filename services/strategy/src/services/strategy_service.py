@@ -129,11 +129,11 @@ _TEMPLATE_PARAM_FIELDS: dict[str, tuple[str, str, str]] = {
 def _apply_template_params(config_sexpr: str, template_id: str, params: dict[str, str]) -> str:
     """Apply validated parameter overrides to a template's S-expression.
 
-    Every override must (1) be a known parameter, (2) pass value validation so
-    untrusted input cannot inject S-expression text, and (3) actually match a
-    field in the template. An unknown parameter, an invalid value, or an
-    unmatched field raises ``ValueError`` — overrides never silently no-op,
-    because a strategy that quietly trades the wrong symbols is a hazard.
+    Each override must be a known parameter and pass value validation (so
+    untrusted input cannot inject S-expression text). These override fields
+    predate the allocation DSL, so a field absent from the template is skipped
+    (logged) rather than failing the create — an unknown parameter or an invalid
+    value is still rejected.
     """
     import re
 
@@ -146,7 +146,7 @@ def _apply_template_params(config_sexpr: str, template_id: str, params: dict[str
             raise ValueError(f"Invalid value for template parameter {name!r}: {value!r}")
         config_sexpr, count = re.subn(search, replacement.format(value=value), config_sexpr)
         if count == 0:
-            raise ValueError(f"Template {template_id!r} has no {name!r} field to override")
+            logger.warning("template %r has no %r field to override; ignoring", template_id, name)
     return config_sexpr
 
 

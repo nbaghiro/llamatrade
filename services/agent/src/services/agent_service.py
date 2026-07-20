@@ -171,12 +171,14 @@ class AgentService:
             # Tool execution loop
             iteration = 0
             full_response = ""
+            tool_calls_in_response: list[dict[str, Any]] = []
+            awaiting_confirmation = False
 
             while iteration < MAX_TOOL_ITERATIONS:
                 iteration += 1
                 current_content = ""
                 splitter = ThinkingSplitter()
-                tool_calls_in_response: list[dict[str, Any]] = []
+                tool_calls_in_response = []
 
                 # Stream LLM response
                 async for event in self.llm_client.stream(
@@ -307,6 +309,31 @@ class AgentService:
                         tool_results=tool_results,
                     )
                 )
+
+            # Loop exhausted with tools still pending: make one final tool-free
+            # turn so the user gets a closing answer over the last tool results,
+            # not trailing tool executions with no summary.
+            if (
+                iteration >= MAX_TOOL_ITERATIONS
+                and tool_calls_in_response
+                and not awaiting_confirmation
+            ):
+                splitter = ThinkingSplitter()
+                async for event in self.llm_client.stream(
+                    messages=messages, tools=None, system_prompt=self._current_system_prompt
+                ):
+                    if event.type == StreamEventType.CONTENT_DELTA:
+                        for stream_event, answer_text in _route_text_segments(
+                            splitter.feed(event.content or "")
+                        ):
+                            full_response += answer_text
+                            yield stream_event
+                    elif event.type == StreamEventType.ERROR:
+                        yield {"type": STREAM_EVENT_TYPE_ERROR, "error": event.error}
+                        return
+                for stream_event, answer_text in _route_text_segments(splitter.flush()):
+                    full_response += answer_text
+                    yield stream_event
 
             # The caller persists the assistant message (with turn artifact links).
 

@@ -64,10 +64,10 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# Authentication (fail-closed); added before CORS so CORS stays outermost.
-# Stripe webhooks use a separate /webhooks HTTP router (not Connect) and are
-# signature-verified there, so they are not subject to this middleware.
-app.add_middleware(AuthMiddleware)
+# Authentication (fail-closed); added before CORS so CORS stays outermost. The
+# Stripe webhook carries a Stripe signature, not a bearer token, so its path is
+# public to this middleware — signature verification in the router is its auth.
+app.add_middleware(AuthMiddleware, public_suffixes=["/webhooks/stripe"])
 
 # CORS middleware
 app.add_middleware(

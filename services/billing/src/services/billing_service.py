@@ -1,6 +1,7 @@
 """Billing service - subscription and plan management."""
 
 import logging
+from decimal import Decimal
 from typing import cast
 from uuid import UUID
 
@@ -47,8 +48,8 @@ DEFAULT_PLANS = [
         id="free",
         name="Free",
         tier=billing_pb2.PLAN_TIER_FREE,
-        price_monthly=0,
-        price_yearly=0,
+        price_monthly=Decimal("0"),
+        price_yearly=Decimal("0"),
         features={
             "backtests": True,
             "paper_trading": True,
@@ -69,8 +70,8 @@ DEFAULT_PLANS = [
         id="starter",
         name="Starter",
         tier=billing_pb2.PLAN_TIER_STARTER,
-        price_monthly=29,
-        price_yearly=290,
+        price_monthly=Decimal("29"),
+        price_yearly=Decimal("290"),
         features={
             "backtests": True,
             "paper_trading": True,
@@ -91,8 +92,8 @@ DEFAULT_PLANS = [
         id="pro",
         name="Pro",
         tier=billing_pb2.PLAN_TIER_PRO,
-        price_monthly=99,
-        price_yearly=990,
+        price_monthly=Decimal("99"),
+        price_yearly=Decimal("990"),
         features={
             "backtests": True,
             "paper_trading": True,
@@ -172,8 +173,8 @@ class BillingService:
             id=plan.name,
             name=plan.display_name,
             tier=plan.tier,
-            price_monthly=float(plan.price_monthly),
-            price_yearly=float(plan.price_yearly or plan.price_monthly * 10),
+            price_monthly=plan.price_monthly,
+            price_yearly=plan.price_yearly or plan.price_monthly * 10,
             features=features,
             limits=limits,
             trial_days=plan.trial_days,
@@ -293,8 +294,8 @@ class BillingService:
                 name="free",
                 display_name="Free",
                 tier="free",
-                price_monthly=0,
-                price_yearly=0,
+                price_monthly=Decimal("0"),
+                price_yearly=Decimal("0"),
                 features=plan.features,
                 limits=plan.limits,
                 trial_days=0,

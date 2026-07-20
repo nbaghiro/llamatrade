@@ -771,7 +771,7 @@ class TestEdgeCases:
         try:
             result = evaluate_condition(condition, state)
             assert isinstance(result, bool)
-        except IndexError, EvaluationError:
+        except (IndexError, EvaluationError):
             pass  # Acceptable to raise for insufficient data
 
     def test_empty_logical_and(self, basic_state: EvaluationState) -> None:

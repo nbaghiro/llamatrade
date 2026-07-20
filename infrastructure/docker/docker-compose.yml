@@ -202,6 +202,8 @@ services:
       ALPACA_API_SECRET: ${ALPACA_API_SECRET:-}
       REDIS_URL: redis://redis:6379
       GRPC_PORT: "8840"
+      # This stack runs the ingestor, so serve live bars off the internal bus.
+      MARKET_DATA_BARS_FROM_BUS: "true"
       MARKET_DATA_DB_URL: postgresql+asyncpg://postgres:postgres@timescaledb:5432/market_data
       MARKET_DATA_DB_POOL_SIZE: "5"
       MARKET_DATA_DB_MAX_OVERFLOW: "5"

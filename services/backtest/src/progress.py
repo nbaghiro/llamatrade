@@ -174,7 +174,7 @@ class ProgressSubscriber:
             while True:
                 try:
                     _, update = await asyncio.wait_for(anext(entries), timeout=idle_timeout)
-                except TimeoutError, StopAsyncIteration:
+                except (TimeoutError, StopAsyncIteration):
                     break
                 yield update
                 if update.progress_percent >= 100:

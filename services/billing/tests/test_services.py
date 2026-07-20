@@ -1,7 +1,7 @@
 """Unit tests for billing services."""
 
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
@@ -131,7 +131,7 @@ class TestBillingServicePlans:
         mock_db = AsyncMock()
         mock_db.execute.return_value = MagicMock(scalars=lambda: MagicMock(all=lambda: []))
 
-        service = BillingService(mock_db, MockStripeClient())
+        service = BillingService(mock_db, cast(Any, MockStripeClient()))
         plans = await service.list_plans()
 
         assert len(plans) == 3
@@ -145,7 +145,7 @@ class TestBillingServicePlans:
         mock_db = AsyncMock()
         mock_db.execute.return_value = MagicMock(scalars=lambda: MagicMock(all=lambda: [mock_plan]))
 
-        service = BillingService(mock_db, MockStripeClient())
+        service = BillingService(mock_db, cast(Any, MockStripeClient()))
         plans = await service.list_plans()
 
         assert len(plans) == 1
@@ -156,7 +156,7 @@ class TestBillingServicePlans:
         mock_db = AsyncMock()
         mock_db.execute.return_value = MagicMock(scalar_one_or_none=lambda: None)
 
-        service = BillingService(mock_db, MockStripeClient())
+        service = BillingService(mock_db, cast(Any, MockStripeClient()))
         plan = await service.get_plan("starter")
 
         assert plan is not None
@@ -167,19 +167,19 @@ class TestBillingServicePlans:
         mock_db = AsyncMock()
         mock_db.execute.return_value = MagicMock(scalar_one_or_none=lambda: None)
 
-        service = BillingService(mock_db, MockStripeClient())
+        service = BillingService(mock_db, cast(Any, MockStripeClient()))
         plan = await service.get_plan("nonexistent")
 
         assert plan is None
 
     async def test_is_uuid_with_valid_uuid(self) -> None:
         """Test _is_uuid with valid UUID."""
-        service = BillingService(AsyncMock(), MockStripeClient())
+        service = BillingService(AsyncMock(), cast(Any, MockStripeClient()))
         assert service._is_uuid(str(uuid4())) is True
 
     async def test_is_uuid_with_invalid_uuid(self) -> None:
         """Test _is_uuid with invalid UUID."""
-        service = BillingService(AsyncMock(), MockStripeClient())
+        service = BillingService(AsyncMock(), cast(Any, MockStripeClient()))
         assert service._is_uuid("not-a-uuid") is False
 
 
@@ -191,7 +191,7 @@ class TestBillingServiceSubscriptions:
         mock_db = AsyncMock()
         mock_db.execute.return_value = MagicMock(scalar_one_or_none=lambda: None)
 
-        service = BillingService(mock_db, MockStripeClient())
+        service = BillingService(mock_db, cast(Any, MockStripeClient()))
         subscription = await service.get_subscription(uuid4())
 
         assert subscription is None
@@ -202,7 +202,7 @@ class TestBillingServiceSubscriptions:
         mock_db = AsyncMock()
         mock_db.execute.return_value = MagicMock(scalar_one_or_none=lambda: mock_sub)
 
-        service = BillingService(mock_db, MockStripeClient())
+        service = BillingService(mock_db, cast(Any, MockStripeClient()))
         subscription = await service.get_subscription(mock_sub.tenant_id)
 
         assert subscription is not None
@@ -213,7 +213,7 @@ class TestBillingServiceSubscriptions:
         mock_db = AsyncMock()
         mock_db.execute.return_value = MagicMock(scalar_one_or_none=lambda: None)
 
-        service = BillingService(mock_db, MockStripeClient())
+        service = BillingService(mock_db, cast(Any, MockStripeClient()))
 
         with pytest.raises(ValueError, match="No active subscription found"):
             await service.cancel_subscription(uuid4())
@@ -224,7 +224,7 @@ class TestBillingServiceSubscriptions:
         mock_db = AsyncMock()
         mock_db.execute.return_value = MagicMock(scalar_one_or_none=lambda: mock_sub)
 
-        service = BillingService(mock_db, MockStripeClient())
+        service = BillingService(mock_db, cast(Any, MockStripeClient()))
         result = await service.cancel_subscription(mock_sub.tenant_id, at_period_end=True)
 
         assert result.cancel_at_period_end is True
@@ -235,7 +235,7 @@ class TestBillingServiceSubscriptions:
         mock_db = AsyncMock()
         mock_db.execute.return_value = MagicMock(scalar_one_or_none=lambda: mock_sub)
 
-        service = BillingService(mock_db, MockStripeClient())
+        service = BillingService(mock_db, cast(Any, MockStripeClient()))
         await service.cancel_subscription(mock_sub.tenant_id, at_period_end=False)
 
         assert mock_sub.status == billing_pb2.SUBSCRIPTION_STATUS_CANCELED
@@ -245,7 +245,7 @@ class TestBillingServiceSubscriptions:
         mock_db = AsyncMock()
         mock_db.execute.return_value = MagicMock(scalar_one_or_none=lambda: None)
 
-        service = BillingService(mock_db, MockStripeClient())
+        service = BillingService(mock_db, cast(Any, MockStripeClient()))
 
         with pytest.raises(ValueError, match="No subscription pending cancellation found"):
             await service.reactivate_subscription(uuid4())
@@ -256,7 +256,7 @@ class TestBillingServiceSubscriptions:
         mock_db = AsyncMock()
         mock_db.execute.return_value = MagicMock(scalar_one_or_none=lambda: mock_sub)
 
-        service = BillingService(mock_db, MockStripeClient())
+        service = BillingService(mock_db, cast(Any, MockStripeClient()))
         result = await service.reactivate_subscription(mock_sub.tenant_id)
 
         assert result.cancel_at_period_end is False
@@ -266,7 +266,7 @@ class TestBillingServiceSubscriptions:
         mock_db = AsyncMock()
         stripe_client = MockStripeClient()
 
-        service = BillingService(mock_db, stripe_client)
+        service = BillingService(mock_db, cast(Any, stripe_client))
         customer_id = await service.ensure_stripe_customer(uuid4(), "test@example.com")
 
         assert customer_id.startswith("cus_test_")
@@ -296,9 +296,9 @@ class TestPaymentMethodService:
         """Test creating setup intent."""
         mock_db = AsyncMock()
         stripe_client = MockStripeClient()
-        billing_service = BillingService(mock_db, stripe_client)
+        billing_service = BillingService(mock_db, cast(Any, stripe_client))
 
-        service = PaymentMethodService(mock_db, stripe_client, billing_service)
+        service = PaymentMethodService(mock_db, cast(Any, stripe_client), billing_service)
         result = await service.create_setup_intent(uuid4(), "test@example.com")
 
         assert result.client_secret.startswith("seti_secret_")
@@ -308,9 +308,9 @@ class TestPaymentMethodService:
         mock_db = AsyncMock()
         mock_db.execute.return_value = MagicMock(scalars=lambda: MagicMock(all=lambda: []))
         stripe_client = MockStripeClient()
-        billing_service = BillingService(mock_db, stripe_client)
+        billing_service = BillingService(mock_db, cast(Any, stripe_client))
 
-        service = PaymentMethodService(mock_db, stripe_client, billing_service)
+        service = PaymentMethodService(mock_db, cast(Any, stripe_client), billing_service)
         methods = await service.list_payment_methods(uuid4())
 
         assert methods == []
@@ -321,9 +321,9 @@ class TestPaymentMethodService:
         mock_db = AsyncMock()
         mock_db.execute.return_value = MagicMock(scalars=lambda: MagicMock(all=lambda: [mock_pm]))
         stripe_client = MockStripeClient()
-        billing_service = BillingService(mock_db, stripe_client)
+        billing_service = BillingService(mock_db, cast(Any, stripe_client))
 
-        service = PaymentMethodService(mock_db, stripe_client, billing_service)
+        service = PaymentMethodService(mock_db, cast(Any, stripe_client), billing_service)
         methods = await service.list_payment_methods(mock_pm.tenant_id)
 
         assert len(methods) == 1
@@ -335,9 +335,9 @@ class TestPaymentMethodService:
         mock_db = AsyncMock()
         mock_db.execute.return_value = MagicMock(scalar_one_or_none=lambda: mock_pm)
         stripe_client = MockStripeClient()
-        billing_service = BillingService(mock_db, stripe_client)
+        billing_service = BillingService(mock_db, cast(Any, stripe_client))
 
-        service = PaymentMethodService(mock_db, stripe_client, billing_service)
+        service = PaymentMethodService(mock_db, cast(Any, stripe_client), billing_service)
         result = await service.get_payment_method(mock_pm.tenant_id, mock_pm.id)
 
         assert result is not None
@@ -348,9 +348,9 @@ class TestPaymentMethodService:
         mock_db = AsyncMock()
         mock_db.execute.return_value = MagicMock(scalar_one_or_none=lambda: None)
         stripe_client = MockStripeClient()
-        billing_service = BillingService(mock_db, stripe_client)
+        billing_service = BillingService(mock_db, cast(Any, stripe_client))
 
-        service = PaymentMethodService(mock_db, stripe_client, billing_service)
+        service = PaymentMethodService(mock_db, cast(Any, stripe_client), billing_service)
         result = await service.get_payment_method(uuid4(), uuid4())
 
         assert result is None
@@ -360,9 +360,9 @@ class TestPaymentMethodService:
         mock_db = AsyncMock()
         mock_db.execute.return_value = MagicMock(scalar_one_or_none=lambda: None)
         stripe_client = MockStripeClient()
-        billing_service = BillingService(mock_db, stripe_client)
+        billing_service = BillingService(mock_db, cast(Any, stripe_client))
 
-        service = PaymentMethodService(mock_db, stripe_client, billing_service)
+        service = PaymentMethodService(mock_db, cast(Any, stripe_client), billing_service)
         result = await service.delete_payment_method(uuid4(), uuid4())
 
         assert result is False
@@ -372,9 +372,9 @@ class TestPaymentMethodService:
         mock_db = AsyncMock()
         mock_db.execute.return_value = MagicMock(scalar_one_or_none=lambda: None)
         stripe_client = MockStripeClient()
-        billing_service = BillingService(mock_db, stripe_client)
+        billing_service = BillingService(mock_db, cast(Any, stripe_client))
 
-        service = PaymentMethodService(mock_db, stripe_client, billing_service)
+        service = PaymentMethodService(mock_db, cast(Any, stripe_client), billing_service)
 
         with pytest.raises(ValueError, match="Payment method not found"):
             await service.set_default_payment_method(uuid4(), uuid4())
@@ -388,7 +388,7 @@ class TestBillingServiceUpdate:
         mock_db = AsyncMock()
         mock_db.execute.return_value = MagicMock(scalar_one_or_none=lambda: None)
 
-        service = BillingService(mock_db, MockStripeClient())
+        service = BillingService(mock_db, cast(Any, MockStripeClient()))
 
         with pytest.raises(ValueError, match="No active subscription found"):
             await service.update_subscription(uuid4(), "pro")
@@ -410,7 +410,7 @@ class TestBillingServiceUpdate:
         mock_db = AsyncMock()
         mock_db.execute.return_value = MagicMock(scalar_one_or_none=mock_scalar)
 
-        service = BillingService(mock_db, MockStripeClient())
+        service = BillingService(mock_db, cast(Any, MockStripeClient()))
 
         with pytest.raises(ValueError, match="not found"):
             await service.update_subscription(mock_sub.tenant_id, "nonexistent")
@@ -438,9 +438,9 @@ class TestPaymentMethodServiceDelete:
             scalar_one_or_none=mock_scalar, scalars=lambda: MagicMock(all=lambda: [])
         )
         stripe_client = MockStripeClient()
-        billing_service = BillingService(mock_db, stripe_client)
+        billing_service = BillingService(mock_db, cast(Any, stripe_client))
 
-        service = PaymentMethodService(mock_db, stripe_client, billing_service)
+        service = PaymentMethodService(mock_db, cast(Any, stripe_client), billing_service)
         result = await service.delete_payment_method(mock_pm.tenant_id, mock_pm.id)
 
         assert result is True
@@ -456,7 +456,7 @@ class TestBillingServiceCreateSubscription:
             scalar_one_or_none=lambda: None, scalars=lambda: MagicMock(all=lambda: [])
         )
 
-        service = BillingService(mock_db, MockStripeClient())
+        service = BillingService(mock_db, cast(Any, MockStripeClient()))
 
         with pytest.raises(ValueError, match="not found"):
             await service.create_subscription(
@@ -472,7 +472,7 @@ class TestBillingServiceCreateSubscription:
     async def test_plan_to_response(self) -> None:
         """Test converting Plan model to PlanResponse."""
         mock_db = AsyncMock()
-        service = BillingService(mock_db, MockStripeClient())
+        service = BillingService(mock_db, cast(Any, MockStripeClient()))
 
         plan = MockPlan(
             name="test",
@@ -485,7 +485,7 @@ class TestBillingServiceCreateSubscription:
             trial_days=14,
         )
 
-        response = service._plan_to_response(plan)
+        response = service._plan_to_response(cast(Any, plan))
 
         assert response.id == "test"
         assert response.name == "Test Plan"
@@ -495,10 +495,10 @@ class TestBillingServiceCreateSubscription:
     async def test_subscription_to_response(self) -> None:
         """Test converting Subscription model to SubscriptionResponse."""
         mock_db = AsyncMock()
-        service = BillingService(mock_db, MockStripeClient())
+        service = BillingService(mock_db, cast(Any, MockStripeClient()))
 
         subscription = MockSubscription()
-        response = service._subscription_to_response(subscription)
+        response = service._subscription_to_response(cast(Any, subscription))
 
         assert response.status == billing_pb2.SUBSCRIPTION_STATUS_ACTIVE
         assert response.billing_cycle == billing_pb2.BILLING_INTERVAL_MONTHLY
@@ -511,12 +511,12 @@ class TestPaymentMethodServiceAttach:
         """Test converting PaymentMethod model to response."""
         mock_db = AsyncMock()
         stripe_client = MockStripeClient()
-        billing_service = BillingService(mock_db, stripe_client)
+        billing_service = BillingService(mock_db, cast(Any, stripe_client))
 
-        service = PaymentMethodService(mock_db, stripe_client, billing_service)
+        service = PaymentMethodService(mock_db, cast(Any, stripe_client), billing_service)
         pm = MockPaymentMethod()
 
-        response = service._to_response(pm)
+        response = service._to_response(cast(Any, pm))
 
         assert response.card_brand == "visa"
         assert response.card_last4 == "4242"
@@ -590,7 +590,7 @@ class TestCreateFreeSubscription:
         mock_result.scalar_one_or_none.return_value = None
         mock_db.execute.return_value = mock_result
 
-        service = BillingService(mock_db, MockStripeClient())
+        service = BillingService(mock_db, cast(Any, MockStripeClient()))
 
         # Get the free plan from defaults
         plan = await service.get_plan("free")
@@ -609,9 +609,9 @@ class TestPaymentMethodSetDefault:
         mock_db = AsyncMock()
         mock_db.execute.return_value = MagicMock(scalar_one_or_none=lambda: mock_pm)
         stripe_client = MockStripeClient()
-        billing_service = BillingService(mock_db, stripe_client)
+        billing_service = BillingService(mock_db, cast(Any, stripe_client))
 
-        service = PaymentMethodService(mock_db, stripe_client, billing_service)
+        service = PaymentMethodService(mock_db, cast(Any, stripe_client), billing_service)
         result = await service.set_default_payment_method(mock_pm.tenant_id, mock_pm.id)
 
         # Verify result
@@ -632,7 +632,7 @@ class TestListPlansFromDB:
         mock_db = AsyncMock()
         mock_db.execute.return_value = MagicMock(scalars=lambda: MagicMock(all=lambda: mock_plans))
 
-        service = BillingService(mock_db, MockStripeClient())
+        service = BillingService(mock_db, cast(Any, MockStripeClient()))
         plans = await service.list_plans()
 
         assert len(plans) == 2
@@ -649,7 +649,7 @@ class TestGetPlanDB:
         mock_db = AsyncMock()
         mock_db.execute.return_value = MagicMock(scalar_one_or_none=lambda: mock_plan)
 
-        service = BillingService(mock_db, MockStripeClient())
+        service = BillingService(mock_db, cast(Any, MockStripeClient()))
         plan = await service.get_plan_db("starter")
 
         assert plan is not None
@@ -660,7 +660,7 @@ class TestGetPlanDB:
         mock_db = AsyncMock()
         mock_db.execute.return_value = MagicMock(scalar_one_or_none=lambda: None)
 
-        service = BillingService(mock_db, MockStripeClient())
+        service = BillingService(mock_db, cast(Any, MockStripeClient()))
         plan = await service.get_plan_db("nonexistent")
 
         assert plan is None
@@ -673,21 +673,21 @@ class TestIsUuid:
         """Test with valid UUID string."""
         from src.services.billing_service import BillingService
 
-        service = BillingService(AsyncMock(), MockStripeClient())
+        service = BillingService(AsyncMock(), cast(Any, MockStripeClient()))
         assert service._is_uuid("12345678-1234-5678-1234-567812345678") is True
 
     def test_is_uuid_invalid(self) -> None:
         """Test with invalid UUID string."""
         from src.services.billing_service import BillingService
 
-        service = BillingService(AsyncMock(), MockStripeClient())
+        service = BillingService(AsyncMock(), cast(Any, MockStripeClient()))
         assert service._is_uuid("not-a-uuid") is False
 
     def test_is_uuid_empty(self) -> None:
         """Test with empty string."""
         from src.services.billing_service import BillingService
 
-        service = BillingService(AsyncMock(), MockStripeClient())
+        service = BillingService(AsyncMock(), cast(Any, MockStripeClient()))
         assert service._is_uuid("") is False
 
 
@@ -701,7 +701,7 @@ class TestGetPlanByName:
             scalar_one_or_none=lambda: None, scalars=lambda: MagicMock(all=lambda: [])
         )
 
-        service = BillingService(mock_db, MockStripeClient())
+        service = BillingService(mock_db, cast(Any, MockStripeClient()))
 
         # Get starter plan with different case
         plan = await service.get_plan("Starter")
@@ -715,7 +715,7 @@ class TestGetPlanByName:
             scalar_one_or_none=lambda: None, scalars=lambda: MagicMock(all=lambda: [])
         )
 
-        service = BillingService(mock_db, MockStripeClient())
+        service = BillingService(mock_db, cast(Any, MockStripeClient()))
 
         # Get pro plan
         plan = await service.get_plan("pro")
@@ -730,24 +730,24 @@ class TestModelConversions:
     def test_plan_to_response_with_null_yearly(self) -> None:
         """Test plan conversion when yearly price is None."""
         mock_db = AsyncMock()
-        service = BillingService(mock_db, MockStripeClient())
+        service = BillingService(mock_db, cast(Any, MockStripeClient()))
 
         plan = MockPlan(
             price_monthly=29,
             price_yearly=None,  # Should default to 10x monthly
         )
 
-        response = service._plan_to_response(plan)
+        response = service._plan_to_response(cast(Any, plan))
         assert response.price_yearly == 290  # 10x monthly
 
     def test_plan_to_response_with_empty_features(self) -> None:
         """Test plan conversion with empty features."""
         mock_db = AsyncMock()
-        service = BillingService(mock_db, MockStripeClient())
+        service = BillingService(mock_db, cast(Any, MockStripeClient()))
 
         plan = MockPlan(features=None, limits=None)
 
-        response = service._plan_to_response(plan)
+        response = service._plan_to_response(cast(Any, plan))
         # Should handle None gracefully
         assert response.features == {} or response.features is None
 
@@ -759,8 +759,8 @@ class TestPaymentMethodResponse:
         """Test converting payment method with all fields."""
         mock_db = AsyncMock()
         stripe_client = MockStripeClient()
-        billing_service = BillingService(mock_db, stripe_client)
-        service = PaymentMethodService(mock_db, stripe_client, billing_service)
+        billing_service = BillingService(mock_db, cast(Any, stripe_client))
+        service = PaymentMethodService(mock_db, cast(Any, stripe_client), billing_service)
 
         pm = MockPaymentMethod(
             id=uuid4(),
@@ -771,7 +771,7 @@ class TestPaymentMethodResponse:
             is_default=True,
         )
 
-        response = service._to_response(pm)
+        response = service._to_response(cast(Any, pm))
 
         assert response.card_brand == "mastercard"
         assert response.card_last4 == "5555"
@@ -786,7 +786,7 @@ class TestBillingServiceModelConversions:
     async def test_subscription_to_response_with_trial(self) -> None:
         """Test subscription response with trial period."""
         mock_db = AsyncMock()
-        service = BillingService(mock_db, MockStripeClient())
+        service = BillingService(mock_db, cast(Any, MockStripeClient()))
 
         now = datetime.now(UTC)
         subscription = MockSubscription(
@@ -795,7 +795,7 @@ class TestBillingServiceModelConversions:
             trial_end=now + timedelta(days=14),
         )
 
-        response = service._subscription_to_response(subscription)
+        response = service._subscription_to_response(cast(Any, subscription))
         assert response.status == billing_pb2.SUBSCRIPTION_STATUS_TRIALING
         assert response.trial_start is not None
         assert response.trial_end is not None
@@ -803,7 +803,7 @@ class TestBillingServiceModelConversions:
     async def test_plan_response_has_all_fields(self) -> None:
         """Test that plan response includes all expected fields."""
         mock_db = AsyncMock()
-        service = BillingService(mock_db, MockStripeClient())
+        service = BillingService(mock_db, cast(Any, MockStripeClient()))
 
         plan = MockPlan(
             name="test",
@@ -816,7 +816,7 @@ class TestBillingServiceModelConversions:
             trial_days=7,
         )
 
-        response = service._plan_to_response(plan)
+        response = service._plan_to_response(cast(Any, plan))
 
         assert response.id == "test"
         assert response.name == "Test Plan"
@@ -876,9 +876,9 @@ class TestPaymentMethodListBranches:
             scalars=lambda: MagicMock(all=lambda: [mock_pm2, mock_pm1])
         )
         stripe_client = MockStripeClient()
-        billing_service = BillingService(mock_db, stripe_client)
+        billing_service = BillingService(mock_db, cast(Any, stripe_client))
 
-        service = PaymentMethodService(mock_db, stripe_client, billing_service)
+        service = PaymentMethodService(mock_db, cast(Any, stripe_client), billing_service)
         methods = await service.list_payment_methods(uuid4())
 
         assert len(methods) == 2
@@ -897,7 +897,7 @@ class TestBillingServiceGetSubscription:
         mock_db = AsyncMock()
         mock_db.execute.return_value = MagicMock(scalar_one_or_none=lambda: mock_sub)
 
-        service = BillingService(mock_db, MockStripeClient())
+        service = BillingService(mock_db, cast(Any, MockStripeClient()))
         result = await service.get_subscription(mock_sub.tenant_id)
 
         assert result is not None
@@ -912,8 +912,8 @@ class TestPaymentMethodToResponse:
         """Test response when card fields are null."""
         mock_db = AsyncMock()
         stripe_client = MockStripeClient()
-        billing_service = BillingService(mock_db, stripe_client)
-        service = PaymentMethodService(mock_db, stripe_client, billing_service)
+        billing_service = BillingService(mock_db, cast(Any, stripe_client))
+        service = PaymentMethodService(mock_db, cast(Any, stripe_client), billing_service)
 
         pm = MockPaymentMethod(
             card_brand=None,
@@ -922,7 +922,7 @@ class TestPaymentMethodToResponse:
             card_exp_year=None,
         )
 
-        response = service._to_response(pm)
+        response = service._to_response(cast(Any, pm))
 
         assert response.card_brand is None
         assert response.card_last4 is None
@@ -936,8 +936,8 @@ class TestSubscriptionStatusConversions:
         mock_sub = MockSubscription(status=billing_pb2.SUBSCRIPTION_STATUS_TRIALING)
         mock_db = AsyncMock()
 
-        service = BillingService(mock_db, MockStripeClient())
-        response = service._subscription_to_response(mock_sub)
+        service = BillingService(mock_db, cast(Any, MockStripeClient()))
+        response = service._subscription_to_response(cast(Any, mock_sub))
 
         assert response.status == billing_pb2.SUBSCRIPTION_STATUS_TRIALING
 
@@ -946,8 +946,8 @@ class TestSubscriptionStatusConversions:
         mock_sub = MockSubscription(status=billing_pb2.SUBSCRIPTION_STATUS_PAST_DUE)
         mock_db = AsyncMock()
 
-        service = BillingService(mock_db, MockStripeClient())
-        response = service._subscription_to_response(mock_sub)
+        service = BillingService(mock_db, cast(Any, MockStripeClient()))
+        response = service._subscription_to_response(cast(Any, mock_sub))
 
         assert response.status == billing_pb2.SUBSCRIPTION_STATUS_PAST_DUE
 
@@ -956,8 +956,8 @@ class TestSubscriptionStatusConversions:
         mock_sub = MockSubscription(status=billing_pb2.SUBSCRIPTION_STATUS_CANCELED)
         mock_db = AsyncMock()
 
-        service = BillingService(mock_db, MockStripeClient())
-        response = service._subscription_to_response(mock_sub)
+        service = BillingService(mock_db, cast(Any, MockStripeClient()))
+        response = service._subscription_to_response(cast(Any, mock_sub))
 
         assert response.status == billing_pb2.SUBSCRIPTION_STATUS_CANCELED
 
@@ -970,7 +970,7 @@ class TestBillingServiceEnsureCustomer:
         mock_db = AsyncMock()
         stripe_client = MockStripeClient()
 
-        service = BillingService(mock_db, stripe_client)
+        service = BillingService(mock_db, cast(Any, stripe_client))
         tenant_id = uuid4()
         email = "new@example.com"
 
@@ -983,7 +983,7 @@ class TestBillingServiceEnsureCustomer:
         mock_db = AsyncMock()
         stripe_client = MockStripeClient()
 
-        service = BillingService(mock_db, stripe_client)
+        service = BillingService(mock_db, cast(Any, stripe_client))
         tenant_id = uuid4()
         email = "existing@example.com"
 
@@ -1001,14 +1001,14 @@ class TestBillingCycleYearly:
     async def test_plan_response_yearly_pricing(self) -> None:
         """Test that plan response includes yearly pricing."""
         mock_db = AsyncMock()
-        service = BillingService(mock_db, MockStripeClient())
+        service = BillingService(mock_db, cast(Any, MockStripeClient()))
 
         plan = MockPlan(
             price_monthly=99,
             price_yearly=990,  # 2 months free
         )
 
-        response = service._plan_to_response(plan)
+        response = service._plan_to_response(cast(Any, plan))
 
         assert response.price_monthly == 99
         assert response.price_yearly == 990
@@ -1024,8 +1024,8 @@ class TestSubscriptionBillingCycle:
         mock_sub = MockSubscription(billing_cycle=billing_pb2.BILLING_INTERVAL_MONTHLY)
         mock_db = AsyncMock()
 
-        service = BillingService(mock_db, MockStripeClient())
-        response = service._subscription_to_response(mock_sub)
+        service = BillingService(mock_db, cast(Any, MockStripeClient()))
+        response = service._subscription_to_response(cast(Any, mock_sub))
 
         assert response.billing_cycle == billing_pb2.BILLING_INTERVAL_MONTHLY
 
@@ -1034,7 +1034,7 @@ class TestSubscriptionBillingCycle:
         mock_sub = MockSubscription(billing_cycle=billing_pb2.BILLING_INTERVAL_YEARLY)
         mock_db = AsyncMock()
 
-        service = BillingService(mock_db, MockStripeClient())
-        response = service._subscription_to_response(mock_sub)
+        service = BillingService(mock_db, cast(Any, MockStripeClient()))
+        response = service._subscription_to_response(cast(Any, mock_sub))
 
         assert response.billing_cycle == billing_pb2.BILLING_INTERVAL_YEARLY

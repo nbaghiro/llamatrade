@@ -170,11 +170,9 @@ class GetBacktestResultsTool(BaseTool):
         except Exception as e:
             logger.warning("Backtest service unavailable: %s", e)
             return ToolResult(
-                success=True,
-                data={
-                    "note": "Backtest service is currently unavailable.",
-                    "strategy_id": strategy_id,
-                },
+                success=False,
+                error="Backtest service is currently unavailable; results could not be fetched.",
+                data={"strategy_id": strategy_id},
             )
 
 
@@ -279,12 +277,8 @@ class ListBacktestsTool(BaseTool):
         except Exception as e:
             logger.warning("Backtest service unavailable: %s", e)
             return ToolResult(
-                success=True,
-                data={
-                    "note": "Backtest service is currently unavailable.",
-                    "backtests": [],
-                    "count": 0,
-                },
+                success=False,
+                error="Backtest service is currently unavailable; could not list backtests.",
             )
 
 

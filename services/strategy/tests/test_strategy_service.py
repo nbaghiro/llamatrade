@@ -1243,19 +1243,16 @@ class TestCreateFromTemplate:
                 template_params={"symbols": '"AAPL") (evil'},
             )
 
-    async def test_create_from_template_rejects_unmatched_param(
-        self, mock_db: AsyncMock, tenant_id: UUID, user_id: UUID
-    ) -> None:
-        """A valid override matching no field raises rather than silently no-op."""
-        service = StrategyService(mock_db)
+    async def test_apply_template_params_skips_unmatched_field(self) -> None:
+        """A known override matching no field in the (allocation-DSL) template is
+        skipped rather than failing the create — the override vocabulary predates
+        the current DSL."""
+        from src.services.strategy_service import _apply_template_params
 
-        with pytest.raises(ValueError, match="no 'symbols' field"):
-            await service.create_from_template(
-                tenant_id=tenant_id,
-                user_id=user_id,
-                template_id="ma-crossover",
-                template_params={"symbols": '["AAPL" "MSFT"]'},
-            )
+        sexpr = "(strategy foo :rebalance monthly (weight :equal (asset AAPL)))"
+        assert (
+            _apply_template_params(sexpr, "ma-crossover", {"symbols": '["AAPL" "MSFT"]'}) == sexpr
+        )
 
 
 # ===================
