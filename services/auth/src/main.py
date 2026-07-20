@@ -18,6 +18,8 @@ from llamatrade_common import AuthMiddleware
 from llamatrade_db import close_db, get_pool_stats, init_db
 from llamatrade_telemetry import init_telemetry
 
+from src.routers.oauth import router as oauth_router
+
 logger = logging.getLogger(__name__)
 
 CORS_ORIGINS = os.getenv(
@@ -58,11 +60,24 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# Authentication (fail-closed); Login/Register/RefreshToken stay public.
+# Authentication (fail-closed); Login/Register/RefreshToken stay public. The
+# OAuth callback is a browser redirect from Alpaca with no bearer token, so it is
+# public too (its trust comes from the signed ``state``); /oauth/alpaca/start
+# stays protected so the initiating tenant/user is known.
 # Added before CORS so CORS remains outermost (preflight + headers on 401s).
 app.add_middleware(
     AuthMiddleware,
-    public_suffixes=["/Login", "/Register", "/RefreshToken"],
+    public_suffixes=[
+        "/Login",
+        "/Register",
+        "/RefreshToken",
+        # Alpaca OAuth entry/return for users with no session yet; /oauth/alpaca/start
+        # stays protected so the linking tenant/user is known.
+        "/oauth/alpaca/authorize",
+        "/oauth/alpaca/callback",
+        "/oauth/alpaca/exchange",
+        "/oauth/alpaca/complete-signup",
+    ],
 )
 
 # CORS middleware - must allow Connect protocol headers
@@ -77,6 +92,9 @@ app.add_middleware(
 
 # Export DB connection-pool stats on /metrics
 init_telemetry(app, service="auth", pool_stats_provider=get_pool_stats)
+
+# Alpaca OAuth browser-redirect routes (mounted before the Connect catch-all).
+app.include_router(oauth_router)
 
 
 @app.get("/health")

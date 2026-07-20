@@ -38,14 +38,32 @@ function MicrosoftMark() {
   );
 }
 
+function AlpacaMark() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 20 20" aria-hidden="true" className="flex-none">
+      <rect width="20" height="20" rx="4" fill="#FCD535" />
+      <path
+        fill="#0B0B0F"
+        d="M6.2 14.5 9 5.5h2l2.8 9h-1.9l-.6-2.1H8.7l-.6 2.1H6.2Zm2.9-3.6h1.8L10 7.7l-.9 3.2Z"
+      />
+    </svg>
+  );
+}
+
 interface SocialAuthButtonsProps {
   /** Optional real handlers; default no-op keeps the buttons presentational. */
   onGoogle?: () => void;
   onMicrosoft?: () => void;
+  onAlpaca?: () => void;
   disabled?: boolean;
 }
 
-export function SocialAuthButtons({ onGoogle, onMicrosoft, disabled }: SocialAuthButtonsProps) {
+export function SocialAuthButtons({
+  onGoogle,
+  onMicrosoft,
+  onAlpaca,
+  disabled,
+}: SocialAuthButtonsProps) {
   return (
     <div className="mt-5">
       <div className="flex items-center gap-3" aria-hidden="true">
@@ -75,6 +93,17 @@ export function SocialAuthButtons({ onGoogle, onMicrosoft, disabled }: SocialAut
           <MicrosoftMark />
           Continue with Microsoft
         </button>
+        {onAlpaca && (
+          <button
+            type="button"
+            className="btn btn-secondary btn-lg w-full"
+            onClick={onAlpaca}
+            disabled={disabled}
+          >
+            <AlpacaMark />
+            Continue with Alpaca
+          </button>
+        )}
       </div>
     </div>
   );

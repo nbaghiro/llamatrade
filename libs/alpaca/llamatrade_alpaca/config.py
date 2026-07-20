@@ -15,17 +15,19 @@ class AlpacaEnvironment(StrEnum):
 class AlpacaUrls:
     """URL configuration for Alpaca APIs."""
 
-    # Market Data API
+    # Market Data API — host is environment-agnostic (paper and live share it;
+    # only the trading API is paper/live split). IEX feed is free for paper.
     DATA_LIVE = "https://data.alpaca.markets/v2"
-    DATA_PAPER = "https://data.sandbox.alpaca.markets/v2"
+    DATA_PAPER = "https://data.alpaca.markets/v2"
 
     # Trading API
     TRADING_LIVE = "https://api.alpaca.markets/v2"
     TRADING_PAPER = "https://paper-api.alpaca.markets/v2"
 
-    # Market Data Streaming WebSocket (real-time trades/quotes/bars, IEX feed)
+    # Market Data Streaming WebSocket (real-time trades/quotes/bars, IEX feed) —
+    # single host for paper and live (see DATA_* above).
     STREAM_LIVE = "wss://stream.data.alpaca.markets/v2/iex"
-    STREAM_PAPER = "wss://stream.data.sandbox.alpaca.markets/v2/iex"
+    STREAM_PAPER = "wss://stream.data.alpaca.markets/v2/iex"
 
     # Trading (account) Streaming WebSocket (order/trade_updates events)
     TRADE_STREAM_LIVE = "wss://api.alpaca.markets/stream"
@@ -54,10 +56,16 @@ class AlpacaUrls:
 
 @dataclass
 class AlpacaCredentials:
-    """Alpaca API credentials."""
+    """Alpaca API credentials.
 
-    api_key: str
-    api_secret: str
+    Either an API key + secret (BYO / env), or an OAuth bearer ``access_token``
+    obtained via the authorization-code flow. When a token is present it takes
+    precedence and drives ``Authorization: Bearer`` auth.
+    """
+
+    api_key: str = ""
+    api_secret: str = ""
+    access_token: str | None = None
 
     @classmethod
     def from_env(
@@ -83,8 +91,11 @@ class AlpacaCredentials:
         """Convert credentials to Alpaca auth headers.
 
         Returns:
-            Dict with APCA-API-KEY-ID and APCA-API-SECRET-KEY headers
+            ``Authorization: Bearer`` when an OAuth token is set, else the
+            ``APCA-API-KEY-ID`` / ``APCA-API-SECRET-KEY`` header pair.
         """
+        if self.access_token:
+            return {"Authorization": f"Bearer {self.access_token}"}
         headers: dict[str, str] = {}
         if self.api_key:
             headers["APCA-API-KEY-ID"] = self.api_key
@@ -93,5 +104,5 @@ class AlpacaCredentials:
         return headers
 
     def is_valid(self) -> bool:
-        """Check if credentials are present (non-empty)."""
-        return bool(self.api_key and self.api_secret)
+        """Present if an OAuth token, or both API key and secret, are set."""
+        return bool(self.access_token or (self.api_key and self.api_secret))

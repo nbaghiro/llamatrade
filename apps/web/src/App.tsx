@@ -3,6 +3,8 @@ import { Routes, Route, Navigate } from 'react-router-dom';
 
 import Layout from './components/common/Layout';
 import MarketingPage from './marketing/MarketingPage';
+import AlpacaCallbackPage from './pages/auth/AlpacaCallbackPage';
+import CompleteSignupPage from './pages/auth/CompleteSignupPage';
 import LoginPage from './pages/auth/LoginPage';
 import RegisterPage from './pages/auth/RegisterPage';
 import BillingPage from './pages/billing/BillingPage';
@@ -59,6 +61,9 @@ export default function App() {
       <Route path="/home" element={<MarketingPage />} />
       <Route path="/login" element={<LoginPage />} />
       <Route path="/register" element={<RegisterPage />} />
+      {/* Alpaca OAuth returns (public): login handoff + sign-up completion. */}
+      <Route path="/oauth/alpaca/callback" element={<AlpacaCallbackPage />} />
+      <Route path="/signup/complete" element={<CompleteSignupPage />} />
 
       {/* Protected app pages — pathless parent renders the app shell (Layout),
           children use absolute paths. `/` requires auth (unauthenticated users

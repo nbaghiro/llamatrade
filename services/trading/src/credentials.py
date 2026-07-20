@@ -20,12 +20,17 @@ from llamatrade_db.models.trading import TradingSession
 
 
 class DecryptedCredentials(BaseModel):
-    """Decrypted Alpaca credentials for internal use."""
+    """Decrypted Alpaca credentials for internal use.
+
+    Either an API key + secret (``auth_type="api_key"``) or an OAuth bearer
+    ``access_token`` (``auth_type="oauth"``) is populated.
+    """
 
     id: UUID
     name: str
-    api_key: str
-    api_secret: str
+    api_key: str = ""
+    api_secret: str = ""
+    access_token: str | None = None
     is_paper: bool
 
 
@@ -42,11 +47,18 @@ async def resolve_credentials(
     creds = (await db.execute(stmt)).scalar_one_or_none()
     if not creds:
         return None
+    if creds.auth_type == "oauth":
+        return DecryptedCredentials(
+            id=creds.id,
+            name=creds.name,
+            access_token=decrypt_value(creds.access_token_encrypted or ""),
+            is_paper=creds.is_paper,
+        )
     return DecryptedCredentials(
         id=creds.id,
         name=creds.name,
-        api_key=decrypt_value(creds.api_key_encrypted),
-        api_secret=decrypt_value(creds.api_secret_encrypted),
+        api_key=decrypt_value(creds.api_key_encrypted or ""),
+        api_secret=decrypt_value(creds.api_secret_encrypted or ""),
         is_paper=creds.is_paper,
     )
 

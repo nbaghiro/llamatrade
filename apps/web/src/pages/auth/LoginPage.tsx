@@ -4,6 +4,7 @@ import { Link, useNavigate } from 'react-router-dom';
 
 import { AuthSplitLayout } from '../../components/auth/AuthSplitLayout';
 import { SocialAuthButtons } from '../../components/auth/SocialAuthButtons';
+import { startAuthWithAlpaca } from '../../services/alpacaOAuth';
 import { authClient } from '../../services/grpc-client';
 import { useAuthStore } from '../../store/auth';
 
@@ -96,7 +97,7 @@ export default function LoginPage() {
         </button>
       </form>
 
-      <SocialAuthButtons disabled={loading} />
+      <SocialAuthButtons disabled={loading} onAlpaca={startAuthWithAlpaca} />
 
       <p className="mt-6 font-mono text-[11px] uppercase tracking-wide text-ink/60">
         No account?{' '}

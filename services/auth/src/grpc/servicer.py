@@ -21,6 +21,8 @@ from llamatrade_db import get_session_maker, set_rls_bypass
 from llamatrade_proto.generated import auth_pb2, common_pb2
 from llamatrade_telemetry import metrics
 
+from src.session import mint_access_refresh
+
 if TYPE_CHECKING:
     from llamatrade_db.models import User
 
@@ -30,6 +32,11 @@ JWT_SECRET = os.getenv("JWT_SECRET", "dev-secret-change-in-production")
 JWT_ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "30"))
 REFRESH_TOKEN_EXPIRE_DAYS = int(os.getenv("REFRESH_TOKEN_EXPIRE_DAYS", "7"))
+
+
+def _mask_key(api_key: str) -> str:
+    """Masked key prefix for display; the full key and the secret are never returned."""
+    return f"{api_key[:8]}…" if api_key else ""
 
 
 def _user_to_proto(user: User) -> auth_pb2.User:
@@ -452,41 +459,19 @@ class AuthServicer:
             user.last_login = datetime.now(UTC)
             await db.commit()
 
-            now = datetime.now(UTC)
-            access_expire = now + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-            refresh_expire = now + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
-
-            access_payload = {
-                "sub": str(user.id),
-                "tenant_id": str(user.tenant_id),
-                "email": user.email,
-                "roles": [user.role],
-                "type": "access",
-                "iat": now,
-                "exp": access_expire,
-            }
-            access_token = jwt.encode(access_payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
+            tokens = mint_access_refresh(user)
             metrics.auth.token_issued(type="access")
-
-            refresh_payload = {
-                "sub": str(user.id),
-                "tenant_id": str(user.tenant_id),
-                "type": "refresh",
-                "iat": now,
-                "exp": refresh_expire,
-            }
-            refresh_token = jwt.encode(refresh_payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
             metrics.auth.token_issued(type="refresh")
 
             metrics.auth.login()
             return auth_pb2.LoginResponse(
-                access_token=access_token,
-                refresh_token=refresh_token,
+                access_token=tokens.access_token,
+                refresh_token=tokens.refresh_token,
                 access_token_expires_at=common_pb2.Timestamp(
-                    seconds=int(access_expire.timestamp())
+                    seconds=int(tokens.access_expires_at.timestamp())
                 ),
                 refresh_token_expires_at=common_pb2.Timestamp(
-                    seconds=int(refresh_expire.timestamp())
+                    seconds=int(tokens.refresh_expires_at.timestamp())
                 ),
                 user=_user_to_proto(user),
             )
@@ -723,12 +708,14 @@ class AuthServicer:
                 ),
             )
 
+            # Write-only: never return the secret, and only a masked key prefix —
+            # credentials are set once and never read back (broker-setup B1).
             return auth_pb2.CreateAlpacaCredentialsResponse(
                 credentials=auth_pb2.AlpacaCredentials(
                     id=str(creds.id),
                     name=creds.name,
-                    api_key=creds.api_key,
-                    api_secret=creds.api_secret,
+                    api_key=_mask_key(creds.api_key),
+                    api_secret="",
                     is_paper=creds.is_paper,
                     is_active=creds.is_active,
                     created_at=common_pb2.Timestamp(seconds=int(creds.created_at.timestamp())),
@@ -773,12 +760,13 @@ class AuthServicer:
                     f"Credentials not found: {request.credentials_id}",
                 )
 
+            # Write-only: never return the secret, only a masked key prefix.
             return auth_pb2.GetAlpacaCredentialsResponse(
                 credentials=auth_pb2.AlpacaCredentials(
                     id=str(creds.id),
                     name=creds.name,
-                    api_key=creds.api_key,
-                    api_secret=creds.api_secret,
+                    api_key=_mask_key(creds.api_key),
+                    api_secret="",
                     is_paper=creds.is_paper,
                     is_active=creds.is_active,
                     created_at=common_pb2.Timestamp(seconds=int(creds.created_at.timestamp())),

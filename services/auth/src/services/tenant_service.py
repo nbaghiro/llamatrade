@@ -33,7 +33,7 @@ class TenantService:
         """
         try:
             return decrypt_value(encrypted_value)
-        except InvalidToken, binascii.Error:
+        except (InvalidToken, binascii.Error):
             metrics.auth.credential_decryption_failure()
             raise
 
@@ -64,8 +64,8 @@ class TenantService:
         return AlpacaCredentialsResponse(
             id=creds.id,
             name=creds.name,
-            api_key=self._decrypt_credential(creds.api_key_encrypted),
-            api_secret=self._decrypt_credential(creds.api_secret_encrypted),
+            api_key=self._decrypt_credential(creds.api_key_encrypted or ""),
+            api_secret=self._decrypt_credential(creds.api_secret_encrypted or ""),
             is_paper=creds.is_paper,
             is_active=creds.is_active,
             created_at=creds.created_at,
@@ -126,7 +126,7 @@ class TenantService:
         items: list[AlpacaCredentialsListItem] = []
         for creds in creds_list:
             # Decrypt just to get prefix, then mask
-            api_key = self._decrypt_credential(creds.api_key_encrypted)
+            api_key = self._decrypt_credential(creds.api_key_encrypted or "")
             items.append(
                 AlpacaCredentialsListItem(
                     id=creds.id,

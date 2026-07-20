@@ -57,6 +57,7 @@ RLS_TABLES: tuple[str, ...] = (
     # auth / identity
     "users",
     "alpaca_credentials",
+    "oauth_identities",
     "api_keys",
     # audit / risk
     "audit_logs",

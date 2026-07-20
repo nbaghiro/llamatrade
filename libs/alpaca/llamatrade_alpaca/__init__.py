@@ -80,6 +80,12 @@ from .models import (
     parse_timestamp,
     parse_trade,
 )
+from .oauth import (
+    OAuthToken,
+    build_authorize_url,
+    exchange_code,
+    refresh_access_token,
+)
 from .resilience import (
     CircuitBreaker,
     CircuitState,
@@ -109,6 +115,11 @@ __all__ = [
     "AlpacaCredentials",
     "AlpacaEnvironment",
     "AlpacaUrls",
+    # OAuth
+    "OAuthToken",
+    "build_authorize_url",
+    "exchange_code",
+    "refresh_access_token",
     # Errors
     "AlpacaError",
     "AlpacaRateLimitError",

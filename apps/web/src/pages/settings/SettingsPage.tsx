@@ -37,8 +37,8 @@ import {
 import InkPaymentCard from '../../components/billing/InkPaymentCard';
 import InvoiceTable from '../../components/billing/InvoiceTable';
 import UsageMeter from '../../components/billing/UsageMeter';
+import { startAlpacaLink } from '../../services/alpacaOAuth';
 import { useAuthStore } from '../../store/auth';
-
 
 type Tab = 'profile' | 'broker' | 'billing' | 'notifications' | 'security';
 
@@ -50,7 +50,9 @@ const TABS: { key: Tab; label: string; icon: LucideIcon }[] = [
   { key: 'security', label: 'Security', icon: Shield },
 ];
 
-function holderNameOf(user: { firstName?: string; lastName?: string; email?: string } | null): string {
+function holderNameOf(
+  user: { firstName?: string; lastName?: string; email?: string } | null
+): string {
   if (!user) return '';
   const full = `${user.firstName ?? ''} ${user.lastName ?? ''}`.trim();
   if (full) return full;
@@ -161,20 +163,23 @@ function BillingTab({ user }: { user: ReturnType<typeof useAuthStore.getState>['
 
   const defaultPm = useMemo(
     () => paymentMethods.find((pm) => pm.isDefault) ?? paymentMethods[0] ?? null,
-    [paymentMethods],
+    [paymentMethods]
   );
   const holderName = holderNameOf(user);
   const pmSummary = defaultPm
     ? `${(defaultPm.cardBrand || 'Card').replace(/^\w/, (c) => c.toUpperCase())} •••• ${defaultPm.cardLast4}`
     : 'No card on file';
 
-  const cycle = billingCycleProgress(subscription?.currentPeriodStart, subscription?.currentPeriodEnd);
+  const cycle = billingCycleProgress(
+    subscription?.currentPeriodStart,
+    subscription?.currentPeriodEnd
+  );
   const usage = usageCounts ?? { strategies: 0, backtests: 0, liveSessions: 0, copilotMessages: 0 };
 
   const handleCancel = async () => {
     if (
       window.confirm(
-        'Cancel your subscription? You keep access until the end of the current billing period.',
+        'Cancel your subscription? You keep access until the end of the current billing period.'
       )
     ) {
       try {
@@ -197,7 +202,9 @@ function BillingTab({ user }: { user: ReturnType<typeof useAuthStore.getState>['
     return (
       <div className="border-2 border-ink bg-paper p-8 shadow-[4px_4px_0_rgb(var(--lt-ink))]">
         <h2 className="font-display text-xl uppercase tracking-tight">No active subscription</h2>
-        <p className="mt-1.5 text-sm text-ink/55">Choose a plan to unlock live trading and Copilot.</p>
+        <p className="mt-1.5 text-sm text-ink/55">
+          Choose a plan to unlock live trading and Copilot.
+        </p>
         <button
           onClick={() => navigate('/billing/subscribe')}
           className="mt-4 border-2 border-ink bg-orange-500 px-4 py-2 font-mono text-[11px] font-bold uppercase tracking-wide text-ink transition-colors hover:bg-ink hover:text-orange-500"
@@ -212,7 +219,9 @@ function BillingTab({ user }: { user: ReturnType<typeof useAuthStore.getState>['
     <div className="space-y-6">
       {error && (
         <div className="flex items-center justify-between border-2 border-ink bg-orange-500 px-4 py-2">
-          <p className="font-mono text-[11px] font-bold uppercase tracking-wide text-ink">{error}</p>
+          <p className="font-mono text-[11px] font-bold uppercase tracking-wide text-ink">
+            {error}
+          </p>
           <button
             onClick={clearError}
             className="font-mono text-[11px] font-bold uppercase tracking-wide text-ink/70 hover:text-ink"
@@ -260,7 +269,9 @@ function BillingTab({ user }: { user: ReturnType<typeof useAuthStore.getState>['
             </div>
             <div className="text-right">
               <p className="font-display text-3xl leading-none">{formatUsd(monthlyAmount)}</p>
-              <p className="mt-1 font-mono text-[10px] uppercase tracking-wide text-ink/50">per month</p>
+              <p className="mt-1 font-mono text-[10px] uppercase tracking-wide text-ink/50">
+                per month
+              </p>
             </div>
           </div>
 
@@ -364,8 +375,16 @@ function BillingTab({ user }: { user: ReturnType<typeof useAuthStore.getState>['
       {/* Usage meters */}
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <UsageMeter label="Strategies" used={usage.strategies} limit={tier.limits.strategies} />
-        <UsageMeter label="Backtests" used={usage.backtests} limit={tier.limits.backtestsPerMonth} />
-        <UsageMeter label="Live Sessions" used={usage.liveSessions} limit={tier.limits.liveSessions} />
+        <UsageMeter
+          label="Backtests"
+          used={usage.backtests}
+          limit={tier.limits.backtestsPerMonth}
+        />
+        <UsageMeter
+          label="Live Sessions"
+          used={usage.liveSessions}
+          limit={tier.limits.liveSessions}
+        />
         <UsageMeter
           label="Copilot Msgs"
           used={usage.copilotMessages}
@@ -440,6 +459,21 @@ function BrokerTab() {
       setName('');
       setApiKey('');
       setApiSecret('');
+    }
+  };
+
+  const oauthLink = async () => {
+    clearError();
+    setLocalError('');
+    const token = useAuthStore.getState().accessToken;
+    if (!token) {
+      setLocalError('Please sign in again.');
+      return;
+    }
+    try {
+      await startAlpacaLink(token);
+    } catch (e) {
+      setLocalError(e instanceof Error ? e.message : 'Could not start the Alpaca connection.');
     }
   };
 
@@ -572,6 +606,21 @@ function BrokerTab() {
         >
           {connecting ? 'Verifying…' : 'Connect & Verify →'}
         </button>
+
+        <div className="mt-3 flex items-center gap-3" aria-hidden="true">
+          <span className="h-px flex-1 bg-ink/15" />
+          <span className="font-mono text-[10px] font-bold uppercase tracking-[0.2em] text-ink/40">
+            or
+          </span>
+          <span className="h-px flex-1 bg-ink/15" />
+        </div>
+        <button
+          type="button"
+          onClick={oauthLink}
+          className="mt-3 inline-flex w-full items-center justify-center gap-1.5 border-2 border-ink bg-paper py-3 font-mono text-[12px] font-bold uppercase tracking-wide text-ink transition-colors hover:bg-ink hover:text-paper"
+        >
+          Connect with Alpaca →
+        </button>
       </section>
 
       {/* Connected accounts */}
@@ -656,9 +705,19 @@ function Placeholder({ title, body }: { title: string; body: string }) {
 
 // Small shared pieces
 
-function SubCell({ label, value, border = false }: { label: string; value: string; border?: boolean }) {
+function SubCell({
+  label,
+  value,
+  border = false,
+}: {
+  label: string;
+  value: string;
+  border?: boolean;
+}) {
   return (
-    <div className={`px-4 py-3 ${border ? 'border-b-2 border-ink sm:border-b-0 sm:border-r-2' : ''}`}>
+    <div
+      className={`px-4 py-3 ${border ? 'border-b-2 border-ink sm:border-b-0 sm:border-r-2' : ''}`}
+    >
       <p className="font-mono text-[9px] uppercase tracking-[0.1em] text-ink/45">{label}</p>
       <p className="mt-1 font-mono text-[13px] font-bold text-ink tabular-nums">{value}</p>
     </div>

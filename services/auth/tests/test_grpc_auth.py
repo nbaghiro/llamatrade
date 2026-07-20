@@ -1108,3 +1108,11 @@ class TestValidateAlpacaCredentials:
         with pytest.raises(ConnectError) as exc_info:
             await auth_servicer.validate_alpaca_credentials(request, context)
         assert exc_info.value.code == Code.UNAUTHENTICATED
+
+
+def test_mask_key_returns_only_a_prefix() -> None:
+    """Broker-credential responses are write-only: masked key prefix, never the secret."""
+    from src.grpc.servicer import _mask_key
+
+    assert _mask_key("PKABCDEFGH123456") == "PKABCDEF…"
+    assert _mask_key("") == ""

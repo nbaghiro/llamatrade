@@ -17,6 +17,8 @@ from llamatrade_db.models.audit import (
 from llamatrade_db.models.auth import (
     AlpacaCredentials,
     APIKey,
+    OAuthIdentity,
+    OAuthPendingSignup,
     Tenant,
     User,
 )
@@ -81,6 +83,8 @@ __all__ = [
     "Tenant",
     "User",
     "AlpacaCredentials",
+    "OAuthIdentity",
+    "OAuthPendingSignup",
     "APIKey",
     # Strategy
     "Strategy",
