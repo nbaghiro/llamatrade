@@ -295,6 +295,28 @@ message GetHoldingHistoryResponse {
 // SERVICE  (stubs; implemented in Phases 2/6)
 // =============================================================================
 
+enum CorporateActionKind {
+  CORPORATE_ACTION_KIND_UNSPECIFIED = 0;
+  CORPORATE_ACTION_KIND_SPLIT = 1;
+  CORPORATE_ACTION_KIND_SYMBOL_CHANGE = 2;
+  CORPORATE_ACTION_KIND_DIVIDEND = 3;
+}
+
+message ApplyCorporateActionRequest {
+  TenantContext context = 1;
+  string account_id = 2;
+  CorporateActionKind kind = 3;
+  string symbol = 4;       // affected symbol (the OLD symbol for a rename)
+  Decimal ratio = 5;       // new-shares-per-old for SPLIT (2 = 2-for-1 forward)
+  string new_symbol = 6;   // destination ticker for SYMBOL_CHANGE
+  Decimal amount = 7;      // total cash for DIVIDEND
+  string external_id = 8;  // provenance / idempotency (e.g. broker action id)
+}
+
+message ApplyCorporateActionResponse {
+  int32 events_appended = 1;  // one ledger event per affected sleeve
+}
+
 service LedgerService {
   // Identity bootstrap (credentials_id → Account + base sleeves)
   rpc GetOrCreateAccount(GetOrCreateAccountRequest) returns (GetOrCreateAccountResponse);
@@ -307,6 +329,11 @@ service LedgerService {
 
   // Sleeve lifecycle
   rpc CloseSleeve(CloseSleeveRequest) returns (CloseSleeveResponse);
+
+  // Corporate actions (operator/feed-triggered): fan a split/rename/dividend
+  // out to every sleeve holding the symbol so per-sleeve provenance stays
+  // correct. Idempotent on the planner dedup keys.
+  rpc ApplyCorporateAction(ApplyCorporateActionRequest) returns (ApplyCorporateActionResponse);
 
   // Queries
   rpc ListSleeves(ListSleevesRequest) returns (ListSleevesResponse);

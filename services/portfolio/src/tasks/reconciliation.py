@@ -60,7 +60,11 @@ class ReconcilingProjector(Protocol):
     """The slice of ``LedgerProjector`` the pass needs."""
 
     async def reconcile_account(
-        self, tenant_id: UUID, account_id: UUID, broker_positions: dict[str, Decimal]
+        self,
+        tenant_id: UUID,
+        account_id: UUID,
+        broker_positions: dict[str, Decimal],
+        broker_cash: Decimal | None = None,
     ) -> list[Drift]: ...
 
 
@@ -104,8 +108,9 @@ async def run_reconciliation_pass(
                 broker_positions = await asyncio.wait_for(
                     broker.positions(account.tenant_id, account), per_account_timeout
                 )
+                broker_cash = await _read_broker_cash(broker, account, per_account_timeout)
                 drifts = await projector.reconcile_account(
-                    account.tenant_id, account.id, broker_positions
+                    account.tenant_id, account.id, broker_positions, broker_cash
                 )
                 await _surface_drifts(account, drifts, on_material_drift)
                 return AccountReconResult(account_id=account.id, drifts=drifts)
@@ -122,6 +127,18 @@ async def run_reconciliation_pass(
                 return AccountReconResult(account_id=account.id, drifts=[], error=str(e))
 
     return list(await asyncio.gather(*(_reconcile_one(a) for a in accounts)))
+
+
+async def _read_broker_cash(
+    broker: BrokerPositions, account: Account, timeout: float
+) -> Decimal | None:
+    """Best-effort broker cash; None (skip cash reconciliation) on any failure — a
+    cash-read hiccup must not drop the account's position reconciliation."""
+    try:
+        return await asyncio.wait_for(broker.cash(account.tenant_id, account), timeout)
+    except Exception:
+        logger.debug("broker cash read failed for account %s; skipping cash check", account.id)
+        return None
 
 
 async def _surface_drifts(
@@ -181,11 +198,15 @@ class _SessionPerCallProjector:
         self._sf = session_factory
 
     async def reconcile_account(
-        self, tenant_id: UUID, account_id: UUID, broker_positions: dict[str, Decimal]
+        self,
+        tenant_id: UUID,
+        account_id: UUID,
+        broker_positions: dict[str, Decimal],
+        broker_cash: Decimal | None = None,
     ) -> list[Drift]:
         async with tenant_session(tenant_id, self._sf) as db:
             return await LedgerProjector(db).reconcile_account(
-                tenant_id, account_id, broker_positions
+                tenant_id, account_id, broker_positions, broker_cash
             )
 
 
@@ -198,6 +219,32 @@ class _SessionPerCallBroker:
     async def positions(self, tenant_id: UUID, account: Account) -> dict[str, Decimal]:
         async with tenant_session(tenant_id, self._sf) as db:
             return await AlpacaBrokerPositions(db).positions(tenant_id, account)
+
+    async def cash(self, tenant_id: UUID, account: Account) -> Decimal:
+        async with tenant_session(tenant_id, self._sf) as db:
+            return await AlpacaBrokerPositions(db).cash(tenant_id, account)
+
+
+async def reconcile_accounts_once(
+    session_factory: async_sessionmaker[AsyncSession],
+    accounts: list[Account],
+    *,
+    concurrency: int = DEFAULT_CONCURRENCY,
+) -> list[AccountReconResult]:
+    """Run one reconciliation pass over ``accounts`` (on-demand sync).
+
+    Same session-per-account adapters and drift policy the background loop uses;
+    safe to run concurrently with it (drift events are idempotent).
+    """
+    from src.tasks.drift_policy import make_drift_handler
+
+    return await run_reconciliation_pass(
+        projector=_SessionPerCallProjector(session_factory),
+        broker=_SessionPerCallBroker(session_factory),
+        accounts=accounts,
+        on_material_drift=make_drift_handler(session_factory),
+        concurrency=concurrency,
+    )
 
 
 async def reconciliation_loop(

@@ -11,7 +11,8 @@ from uuid import uuid4
 
 from llamatrade_db.models.ledger import Account
 
-from src.ledger.reconciliation import Drift, DriftKind
+from src.ledger.projection import AccountProjection, PositionState
+from src.ledger.reconciliation import Drift, DriftKind, cash_drift, ledger_cash
 from src.ports import BrokerUnavailableError
 from src.tasks.reconciliation import run_reconciliation_pass
 
@@ -28,9 +29,15 @@ class FakeBroker:
     """``ports.BrokerPositions`` returning a preset qty map (or raising)."""
 
     def __init__(
-        self, positions: dict[str, Decimal], *, fail: bool = False, unavailable: bool = False
+        self,
+        positions: dict[str, Decimal],
+        *,
+        cash: Decimal = Decimal("0"),
+        fail: bool = False,
+        unavailable: bool = False,
     ) -> None:
         self._positions = positions
+        self._cash = cash
         self._fail = fail
         self._unavailable = unavailable
         self.calls: list = []
@@ -43,16 +50,23 @@ class FakeBroker:
             raise RuntimeError("broker unreachable")
         return self._positions
 
+    async def cash(self, tenant_id, account) -> Decimal:
+        return self._cash
+
 
 class FakeProjector:
-    """Returns a preset drift list per call, recording the broker positions seen."""
+    """Returns a preset drift list per call, recording the broker positions/cash seen."""
 
     def __init__(self, drifts: list[Drift]) -> None:
         self._drifts = drifts
         self.seen: list = []
+        self.cash_seen: list = []
 
-    async def reconcile_account(self, tenant_id, account_id, broker_positions) -> list[Drift]:
+    async def reconcile_account(
+        self, tenant_id, account_id, broker_positions, broker_cash=None
+    ) -> list[Drift]:
         self.seen.append((account_id, broker_positions))
+        self.cash_seen.append(broker_cash)
         return self._drifts
 
 
@@ -94,6 +108,24 @@ async def test_pass_passes_broker_positions_to_projector() -> None:
     await run_reconciliation_pass(projector=projector, broker=broker, accounts=[acct])
     assert projector.seen == [(acct.id, {"MSFT": Decimal("5")})]
     assert broker.calls == [(TENANT, acct.id)]
+
+
+async def test_pass_passes_broker_cash_to_projector() -> None:
+    acct = _account()
+    projector = FakeProjector([])
+    broker = FakeBroker({}, cash=Decimal("500"))
+    await run_reconciliation_pass(projector=projector, broker=broker, accounts=[acct])
+    assert projector.cash_seen == [Decimal("500")]
+
+
+def test_cash_drift_is_broker_minus_ledger() -> None:
+    proj = AccountProjection()
+    proj.sleeve("s1").cash = Decimal("1000")
+    proj.sleeve("s2").cash = Decimal("200")
+    proj.sleeve("s2").positions["AAPL"] = PositionState(qty=Decimal("1"))
+    assert ledger_cash(proj) == Decimal("1200")
+    assert cash_drift(proj, Decimal("1300")) == Decimal("100")
+    assert cash_drift(proj, Decimal("1200")) == Decimal("0")
 
 
 async def test_pass_isolates_per_account_failure() -> None:
@@ -139,6 +171,10 @@ class _SlowBroker:
     async def positions(self, tenant_id, account) -> dict[str, Decimal]:
         await asyncio.sleep(1.0)
         return {}
+
+    async def cash(self, tenant_id, account) -> Decimal:
+        await asyncio.sleep(1.0)
+        return Decimal("0")
 
 
 async def test_slow_broker_times_out_and_is_isolated() -> None:

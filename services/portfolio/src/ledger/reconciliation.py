@@ -80,3 +80,17 @@ def reconcile(
 
         drifts.append(Drift(symbol=symbol, ledger_qty=ledger_qty, broker_qty=broker_qty, kind=kind))
     return drifts
+
+
+def ledger_cash(projection: AccountProjection) -> Decimal:
+    """Total settled cash across all sleeves — the ledger's account cash position."""
+    return sum((s.cash for s in projection.sleeves.values()), ZERO)
+
+
+def cash_drift(projection: AccountProjection, broker_cash: Decimal) -> Decimal:
+    """``broker_cash − ledger_cash`` (positive means the broker holds more cash).
+
+    The documented invariant is ``Σ sleeve_cash == broker_cash``; dividends, fees,
+    interest, or external cash moves that lack a ledger event show up here.
+    """
+    return broker_cash - ledger_cash(projection)

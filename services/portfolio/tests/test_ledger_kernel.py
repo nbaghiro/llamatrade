@@ -7,7 +7,7 @@ shadow reconciliation drift classification.
 
 from dataclasses import dataclass
 from decimal import Decimal
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
@@ -124,7 +124,7 @@ class TestPostingsConservation:
             (LedgerEventType.DIVIDEND_RECEIVED, {"sleeve_id": A, "amount": "12"}),
             (LedgerEventType.FEE_CHARGED, {"sleeve_id": A, "amount": "3"}),
         ):
-            assert_balanced(build_postings(*ev))
+            assert_balanced(build_postings(*cast(Any, ev)))
 
     def test_unknown_side_raises(self) -> None:
         with pytest.raises(ValueError):
@@ -428,7 +428,7 @@ class TestSellEnrichment:
         cost to notional (which would fabricate zero realized P&L)."""
         data = {"sleeve_id": A, "symbol": "SPY", "side": "sell", "qty": "50", "price": "500"}
         with pytest.raises(ValueError, match="cost_basis"):
-            build_postings(LedgerEventType.ORDER_FILLED, data)
+            build_postings(LedgerEventType.ORDER_FILLED, cast(Any, data))
 
 
 class TestReservationProjection:
@@ -622,6 +622,10 @@ def test_fold_split_invariance() -> None:
         ),
     ]
     full = fold(events)
+    # The projection reports its own incompleteness (read-path signal): the
+    # ORDER_FILLED with no side/qty/price was skipped as poison.
+    assert full.poison_events == 1
+    assert not full.is_complete
     for k in range(len(events) + 1):
         base = AccountProjection()
         pending: dict[str, tuple[str, Decimal]] = {}

@@ -1,6 +1,7 @@
 """Equity-snapshot pure-core tests."""
 
 from decimal import Decimal
+from typing import Any, cast
 
 from src.ledger.projection import AccountProjection, PositionState, SleeveProjection
 from src.tasks.equity_snapshot import compute_snapshot_values, projection_symbols
@@ -38,10 +39,10 @@ def test_compute_marks_to_market_and_skips_empty() -> None:
     assert v.lots == [{"symbol": "AAPL", "qty": "10", "cost_basis": "1500"}]
 
 
-def test_compute_values_positions_without_price_use_cost() -> None:
-    values = compute_snapshot_values(_proj(), {}, sequence=1)  # no prices
-    # equity = cash 1000 + cost_basis 1500 = 2500 (valued at cost)
-    assert values[0].equity == Decimal("2500")
+def test_compute_skips_sleeve_when_held_symbol_unpriced() -> None:
+    # A market-data gap (held symbol has no price) must skip the sleeve, not
+    # persist a cost-valued point that would distort the immutable curve.
+    assert compute_snapshot_values(_proj(), {}, sequence=1) == []
 
 
 async def test_snapshot_account_persists_rows() -> None:
@@ -68,7 +69,7 @@ async def test_snapshot_account_persists_rows() -> None:
     db.scalar = AsyncMock(return_value=7)  # latest sequence
     account = SimpleNamespace(id=account_id, tenant_id=tenant)
 
-    n = await snapshot_account(db, projector, prices, account)
+    n = await snapshot_account(db, cast(Any, projector), cast(Any, prices), cast(Any, account))
     assert n == 1
     added = db.add.call_args[0][0]
     assert isinstance(added, SleeveSnapshot)

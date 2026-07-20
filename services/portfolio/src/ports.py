@@ -115,6 +115,10 @@ class BrokerPositions(Protocol):
         """Aggregate signed quantity per symbol held at the broker."""
         ...
 
+    async def cash(self, tenant_id: UUID, account: Account) -> Decimal:
+        """Settled cash balance at the broker (for the ``Σ sleeve_cash`` invariant)."""
+        ...
+
 
 @dataclass(frozen=True)
 class BrokerHolding:

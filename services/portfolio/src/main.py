@@ -121,15 +121,45 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
                     )
                 )
             )
-            logger.info("acquired fill-consumer lock; this pod ingests fills")
+            # The ledger writers (reconciliation drift events, equity snapshots)
+            # run ONLY on the lock-holding pod: scaled replicas would otherwise
+            # double-write drift events and duplicate equity-curve points.
+            ledger_tasks.append(
+                asyncio.create_task(
+                    supervise(
+                        lambda: reconciliation_loop(
+                            session_factory,
+                            interval_seconds=RECONCILIATION_INTERVAL_SECONDS,
+                            stop_event=stop_event,
+                        ),
+                        name="reconciliation",
+                        stop_event=stop_event,
+                    )
+                )
+            )
+            ledger_tasks.append(
+                asyncio.create_task(
+                    supervise(
+                        lambda: snapshot_loop(
+                            session_factory,
+                            get_market_data_client(),
+                            stop_event=stop_event,
+                            interval_seconds=SNAPSHOT_INTERVAL_SECONDS,
+                        ),
+                        name="snapshot",
+                        stop_event=stop_event,
+                    )
+                )
+            )
+            logger.info(
+                "acquired fill-consumer lock; this pod ingests fills + writes recon/snapshots"
+            )
         else:
             metrics.ledger.fill_consumer_active.set(0.0)
-            logger.warning(
-                "fill-consumer lock held by another pod; standby (no fill ingestion here)"
-            )
+            logger.warning("fill-consumer lock held by another pod; standby (read-only)")
 
-        # Each loop is supervised: a crash restarts it with backoff (a bare task
-        # would die silently and halt the runtime until the pod is recycled).
+        # The lag monitor is read-only; every pod runs it. Supervised: a crash
+        # restarts it with backoff rather than silently halting the runtime.
         ledger_tasks.append(
             asyncio.create_task(
                 supervise(
@@ -141,37 +171,12 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
                 )
             )
         )
-        ledger_tasks.append(
-            asyncio.create_task(
-                supervise(
-                    lambda: reconciliation_loop(
-                        session_factory,
-                        interval_seconds=RECONCILIATION_INTERVAL_SECONDS,
-                        stop_event=stop_event,
-                    ),
-                    name="reconciliation",
-                    stop_event=stop_event,
-                )
-            )
-        )
-        ledger_tasks.append(
-            asyncio.create_task(
-                supervise(
-                    lambda: snapshot_loop(
-                        session_factory,
-                        get_market_data_client(),
-                        stop_event=stop_event,
-                        interval_seconds=SNAPSHOT_INTERVAL_SECONDS,
-                    ),
-                    name="snapshot",
-                    stop_event=stop_event,
-                )
-            )
-        )
 
         app.state.ledger_tasks = ledger_tasks
         app.state.ledger_runtime_started = True
-        logger.info("Ledger runtime started: fill stream consumer + reconciliation + snapshots")
+        logger.info(
+            "Ledger runtime started: fill consumer + reconciliation + snapshots (writers gated)"
+        )
     except Exception as e:  # the ledger runtime must never block startup
         logger.warning("Failed to start ledger runtime: %s", e)
 

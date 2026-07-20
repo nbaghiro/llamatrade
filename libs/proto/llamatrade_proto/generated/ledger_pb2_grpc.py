@@ -6,11 +6,7 @@ from . import ledger_pb2 as ledger__pb2
 
 
 class LedgerServiceStub(object):
-    """=============================================================================
-    SERVICE  (stubs; implemented in Phases 2/6)
-    =============================================================================
-
-    """
+    """Missing associated documentation comment in .proto file."""
 
     def __init__(self, channel):
         """Constructor.
@@ -48,6 +44,11 @@ class LedgerServiceStub(object):
                 request_serializer=ledger__pb2.CloseSleeveRequest.SerializeToString,
                 response_deserializer=ledger__pb2.CloseSleeveResponse.FromString,
                 _registered_method=True)
+        self.ApplyCorporateAction = channel.unary_unary(
+                '/llamatrade.LedgerService/ApplyCorporateAction',
+                request_serializer=ledger__pb2.ApplyCorporateActionRequest.SerializeToString,
+                response_deserializer=ledger__pb2.ApplyCorporateActionResponse.FromString,
+                _registered_method=True)
         self.ListSleeves = channel.unary_unary(
                 '/llamatrade.LedgerService/ListSleeves',
                 request_serializer=ledger__pb2.ListSleevesRequest.SerializeToString,
@@ -66,11 +67,7 @@ class LedgerServiceStub(object):
 
 
 class LedgerServiceServicer(object):
-    """=============================================================================
-    SERVICE  (stubs; implemented in Phases 2/6)
-    =============================================================================
-
-    """
+    """Missing associated documentation comment in .proto file."""
 
     def GetOrCreateAccount(self, request, context):
         """Identity bootstrap (credentials_id → Account + base sleeves)
@@ -106,6 +103,15 @@ class LedgerServiceServicer(object):
 
     def CloseSleeve(self, request, context):
         """Sleeve lifecycle
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def ApplyCorporateAction(self, request, context):
+        """Corporate actions (operator/feed-triggered): fan a split/rename/dividend
+        out to every sleeve holding the symbol so per-sleeve provenance stays
+        correct. Idempotent on the planner dedup keys.
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -163,6 +169,11 @@ def add_LedgerServiceServicer_to_server(servicer, server):
                     request_deserializer=ledger__pb2.CloseSleeveRequest.FromString,
                     response_serializer=ledger__pb2.CloseSleeveResponse.SerializeToString,
             ),
+            'ApplyCorporateAction': grpc.unary_unary_rpc_method_handler(
+                    servicer.ApplyCorporateAction,
+                    request_deserializer=ledger__pb2.ApplyCorporateActionRequest.FromString,
+                    response_serializer=ledger__pb2.ApplyCorporateActionResponse.SerializeToString,
+            ),
             'ListSleeves': grpc.unary_unary_rpc_method_handler(
                     servicer.ListSleeves,
                     request_deserializer=ledger__pb2.ListSleevesRequest.FromString,
@@ -187,11 +198,7 @@ def add_LedgerServiceServicer_to_server(servicer, server):
 
  # This class is part of an EXPERIMENTAL API.
 class LedgerService(object):
-    """=============================================================================
-    SERVICE  (stubs; implemented in Phases 2/6)
-    =============================================================================
-
-    """
+    """Missing associated documentation comment in .proto file."""
 
     @staticmethod
     def GetOrCreateAccount(request,
@@ -345,6 +352,33 @@ class LedgerService(object):
             '/llamatrade.LedgerService/CloseSleeve',
             ledger__pb2.CloseSleeveRequest.SerializeToString,
             ledger__pb2.CloseSleeveResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def ApplyCorporateAction(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/llamatrade.LedgerService/ApplyCorporateAction',
+            ledger__pb2.ApplyCorporateActionRequest.SerializeToString,
+            ledger__pb2.ApplyCorporateActionResponse.FromString,
             options,
             channel_credentials,
             insecure,

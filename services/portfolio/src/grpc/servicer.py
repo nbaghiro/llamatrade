@@ -226,36 +226,50 @@ class PortfolioServicer:
             async with tenant_session(tenant_id, self._maker()) as db:
                 service = self._reader(db)
                 positions = await service.list_positions(tenant_id)
+                summary = await service.get_summary(tenant_id)
 
-                # Calculate allocation by grouping
-                # For simplicity, treat all as "Stocks" category
-                total_value = sum(p.market_value for p in positions)
+                positions_value = sum(p.market_value for p in positions)
+                cash = summary.cash
+                total = positions_value + cash
 
                 allocations: list[portfolio_pb2.AssetAllocation] = []
-                if total_value > 0:
-                    items: list[portfolio_pb2.AllocationItem] = []
-                    for pos in positions:
-                        pct = (pos.market_value / total_value) * 100 if total_value > 0 else 0
-                        items.append(
-                            portfolio_pb2.AllocationItem(
-                                symbol=pos.symbol,
-                                name=pos.symbol,  # Would need company name lookup
-                                value=common_pb2.Decimal(value=str(pos.market_value)),
-                                percentage=common_pb2.Decimal(value=str(pct)),
-                                return_percent=common_pb2.Decimal(
-                                    value=str(pos.unrealized_pnl_percent)
+                if total > 0:
+                    # Per-symbol weights are over the WHOLE portfolio (incl. cash),
+                    # so the symbol weights and the cash weight sum to 100%.
+                    items = [
+                        portfolio_pb2.AllocationItem(
+                            symbol=pos.symbol,
+                            name=pos.symbol,  # company-name lookup is a follow-up
+                            value=common_pb2.Decimal(value=str(pos.market_value)),
+                            percentage=common_pb2.Decimal(
+                                value=str(pos.market_value / total * 100)
+                            ),
+                            return_percent=common_pb2.Decimal(
+                                value=str(pos.unrealized_pnl_percent)
+                            ),
+                        )
+                        for pos in positions
+                    ]
+                    if items:
+                        allocations.append(
+                            portfolio_pb2.AssetAllocation(
+                                category="Stocks",
+                                value=common_pb2.Decimal(value=str(positions_value)),
+                                percentage=common_pb2.Decimal(
+                                    value=str(positions_value / total * 100)
                                 ),
+                                items=items,
                             )
                         )
-
-                    allocations.append(
-                        portfolio_pb2.AssetAllocation(
-                            category="Stocks",
-                            value=common_pb2.Decimal(value=str(total_value)),
-                            percentage=common_pb2.Decimal(value="100.0"),
-                            items=items,
+                    if cash > 0:
+                        allocations.append(
+                            portfolio_pb2.AssetAllocation(
+                                category="Cash",
+                                value=common_pb2.Decimal(value=str(cash)),
+                                percentage=common_pb2.Decimal(value=str(cash / total * 100)),
+                                items=[],
+                            )
                         )
-                    )
 
                 return portfolio_pb2.GetAssetAllocationResponse(allocations=allocations)
 
@@ -347,15 +361,35 @@ class PortfolioServicer:
         request: portfolio_pb2.SyncPortfolioRequest,
         ctx: AnyContext,
     ) -> portfolio_pb2.SyncPortfolioResponse:
-        """Sync portfolio with trading session."""
+        """Reconcile the tenant's accounts against broker truth, then return the
+        freshly reconciled portfolio.
+
+        For an event-sourced ledger the "sync" IS a reconciliation pass: it reads
+        broker positions, adopts external trades into Unmanaged, and flags
+        material drift (the same path the background loop runs, idempotent).
+        ``transactions_recorded`` is the number of drifts the pass surfaced.
+        """
+        from sqlalchemy import select
+
+        from llamatrade_db.models.ledger import Account
         from llamatrade_proto.generated import portfolio_pb2
+
+        from src.tasks.reconciliation import reconcile_accounts_once
 
         try:
             tenant_id, _ = resolve_identity_connect(request.context)
+            maker = self._maker()
 
-            # This would call the trading service to get current positions
-            # and sync them to the portfolio
-            async with tenant_session(tenant_id, self._maker()) as db:
+            async with tenant_session(tenant_id, maker) as db:
+                accounts = list(
+                    await db.scalars(select(Account).where(Account.tenant_id == tenant_id))
+                )
+            transactions_recorded = 0
+            if accounts:
+                results = await reconcile_accounts_once(maker, accounts)
+                transactions_recorded = sum(len(r.drifts) for r in results)
+
+            async with tenant_session(tenant_id, maker) as db:
                 service = self._reader(db)
                 summary = await service.get_summary(tenant_id)
                 positions = await service.list_positions(tenant_id)
@@ -364,7 +398,7 @@ class PortfolioServicer:
                 return portfolio_pb2.SyncPortfolioResponse(
                     portfolio=self._to_proto_portfolio(summary, tenant_id, book),
                     positions_synced=len(positions),
-                    transactions_recorded=0,
+                    transactions_recorded=transactions_recorded,
                 )
 
         except ConnectError:

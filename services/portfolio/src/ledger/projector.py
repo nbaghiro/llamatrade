@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import copy
 import logging
+from collections import OrderedDict
 from dataclasses import dataclass
 from decimal import Decimal
 from typing import cast
@@ -27,7 +28,7 @@ from src.ledger.projection import (
     fold_into,
     holding_history,
 )
-from src.ledger.reconciliation import Drift, reconcile
+from src.ledger.reconciliation import Drift, cash_drift, ledger_cash, reconcile
 from src.ledger.writer import LedgerWriter
 
 logger = logging.getLogger(__name__)
@@ -51,7 +52,14 @@ class _Checkpoint:
 # split-invariance property test). In-transaction writers must NOT use the
 # incremental path — a mid-transaction (uncommitted) read would seed a checkpoint
 # with events that may roll back. Keyed by (tenant_id, account_id).
-_INCREMENTAL_CACHE: dict[tuple[str, str], _Checkpoint] = {}
+# Bounded LRU so a long-lived process can't retain a checkpoint per account
+# forever; the least-recently-projected accounts fall out and simply re-fold.
+_MAX_CACHED_ACCOUNTS = 2048
+_INCREMENTAL_CACHE: OrderedDict[tuple[str, str], _Checkpoint] = OrderedDict()
+
+# Cash reconciliation alerts above this |broker_cash − ledger_cash| ($). Small
+# drifts are expected (rounding); material drift means a missing ledger event.
+_CASH_DRIFT_ALERT_DOLLARS = Decimal("1")
 
 
 def _mismatch_dollars(projection: AccountProjection, drifts: list[Drift]) -> Decimal:
@@ -146,6 +154,9 @@ class LedgerProjector:
         current = _INCREMENTAL_CACHE.get(key)
         if current is None or new_seq >= current.as_of_sequence:
             _INCREMENTAL_CACHE[key] = _Checkpoint(new_seq, projection, pending)
+            _INCREMENTAL_CACHE.move_to_end(key)
+            while len(_INCREMENTAL_CACHE) > _MAX_CACHED_ACCOUNTS:
+                _INCREMENTAL_CACHE.popitem(last=False)
         return copy.deepcopy(projection)
 
     async def holding_history(self, tenant_id: UUID, account_id: UUID, symbol: str) -> list[object]:
@@ -168,12 +179,16 @@ class LedgerProjector:
         tenant_id: UUID,
         account_id: UUID,
         broker_positions: dict[str, Decimal],
+        broker_cash: Decimal | None = None,
     ) -> list[Drift]:
         """Shadow-compare the ledger aggregate against broker truth.
 
-        Returns the (possibly empty) list of drifts. The drift policy then adopts
-        external trades into Unmanaged and freezes sleeves the broker
-        contradicts (see ``tasks/drift_policy.py``).
+        Returns the (possibly empty) list of position drifts. The drift policy
+        then adopts external trades into Unmanaged and freezes sleeves the broker
+        contradicts (see ``tasks/drift_policy.py``). When ``broker_cash`` is
+        supplied, the ``Σ sleeve_cash == broker_cash`` invariant is also recorded
+        (gauge + warning) — cash drift is surfaced, not auto-frozen (dividends,
+        fees, and interest legitimately move broker cash without a ledger event).
 
         Uses the incremental projection — reconciliation runs on a fresh
         per-account session (committed reads), so the checkpoint is sound, and
@@ -182,6 +197,17 @@ class LedgerProjector:
         projection = await self.project_account_incremental(tenant_id, account_id)
         drifts = reconcile(projection, broker_positions)
         metrics.ledger.vs_broker_mismatch_dollars.set(float(_mismatch_dollars(projection, drifts)))
+        if broker_cash is not None:
+            drift = cash_drift(projection, broker_cash)
+            metrics.ledger.vs_broker_cash_mismatch_dollars.set(float(abs(drift)))
+            if abs(drift) > _CASH_DRIFT_ALERT_DOLLARS:
+                logger.warning(
+                    "ledger cash reconciliation drift on account %s: broker=%s ledger=%s drift=%s",
+                    account_id,
+                    broker_cash,
+                    ledger_cash(projection),
+                    drift,
+                )
         if drifts:
             logger.warning(
                 "ledger reconciliation drift on account %s: %s",

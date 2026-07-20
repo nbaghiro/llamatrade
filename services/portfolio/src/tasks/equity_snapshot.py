@@ -60,13 +60,17 @@ def compute_snapshot_values(
 ) -> list[SnapshotValue]:
     """Mark each sleeve to market into a persistence-ready snapshot list.
 
-    Positions without a price are valued at cost (see ``sleeve_pnl``). Empty
-    sleeves (no cash, no positions) are skipped — nothing to chart.
+    Empty sleeves (no cash, no positions) are skipped. A sleeve holding a symbol
+    with no price is also skipped: persisting a cost-valued point during a
+    market-data gap permanently distorts the immutable equity curve.
     """
     out: list[SnapshotValue] = []
     for pnl in account_pnl(projection, prices):
         sleeve = projection.sleeves[pnl.sleeve_id]
         if pnl.equity == Decimal("0") and not sleeve.positions:
+            continue
+        held = {sym for sym, pos in sleeve.positions.items() if pos.qty != Decimal("0")}
+        if held - prices.keys():
             continue
         lots = [
             {"symbol": sym, "qty": str(pos.qty), "cost_basis": str(pos.cost_basis)}
@@ -124,7 +128,10 @@ async def snapshot_account(
     symbols = projection_symbols(projection)
     prices: dict[str, Decimal] = {}
     if symbols:
-        prices = await prices_provider.get_prices(symbols)
+        try:
+            prices = await prices_provider.get_prices(symbols)
+        except Exception:
+            logger.exception("equity snapshot price fetch failed for account %s", account.id)
     sequence = await _latest_sequence(db, account.id)
     values = compute_snapshot_values(projection, prices, sequence)
     _add_snapshot_rows(db, account.tenant_id, values)
@@ -157,7 +164,11 @@ async def run_snapshot_pass(
             plans.append((account, projection, sequence))
             symbols.update(projection_symbols(projection))
 
-    prices = await prices_provider.get_prices(sorted(symbols)) if symbols else {}
+    try:
+        prices = await prices_provider.get_prices(sorted(symbols)) if symbols else {}
+    except Exception:
+        logger.exception("equity snapshot price fetch failed; skipping priced sleeves this pass")
+        prices = {}
 
     total = 0
     for account, projection, sequence in plans:

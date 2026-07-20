@@ -2,6 +2,7 @@
 
 from datetime import UTC, datetime
 from decimal import Decimal
+from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock
 from uuid import UUID, uuid4
 
@@ -385,14 +386,14 @@ async def test_get_strategy_performance_maps_positions() -> None:
         positions=[
             PositionResponse(
                 symbol="AAPL",
-                qty=10.0,
+                qty=Decimal("10.0"),
                 side="long",
-                cost_basis=4000.0,
-                market_value=5000.0,
-                unrealized_pnl=1000.0,
-                unrealized_pnl_percent=25.0,
-                current_price=500.0,
-                avg_entry_price=400.0,
+                cost_basis=Decimal("4000.0"),
+                market_value=Decimal("5000.0"),
+                unrealized_pnl=Decimal("1000.0"),
+                unrealized_pnl_percent=Decimal("25.0"),
+                current_price=Decimal("500.0"),
+                avg_entry_price=Decimal("400.0"),
             )
         ],
     )
@@ -401,7 +402,7 @@ async def test_get_strategy_performance_maps_positions() -> None:
     reader.get_strategy_performance = AsyncMock(return_value=detail)
 
     servicer = PortfolioServicer()
-    servicer._session_factory = lambda: _Session()
+    servicer._session_factory = cast(Any, lambda: _Session())
     servicer._strategy_perf_reader = MagicMock(return_value=reader)
 
     request = portfolio_pb2.GetStrategyPerformanceRequest(
@@ -418,3 +419,106 @@ async def test_get_strategy_performance_maps_positions() -> None:
     assert Decimal(pos.current_price.value) == Decimal("500")
     assert Decimal(pos.market_value.value) == Decimal("5000")
     assert Decimal(pos.unrealized_pnl.value) == Decimal("1000")
+
+
+class _AcctSession:
+    """Fake session: GUC execute + scalars() returning preset accounts."""
+
+    def __init__(self, accounts: list) -> None:
+        self._accounts = accounts
+
+    async def __aenter__(self) -> _AcctSession:
+        return self
+
+    async def __aexit__(self, *exc: object) -> bool:
+        return False
+
+    async def execute(self, *a: object, **k: object) -> None:
+        return None
+
+    async def scalars(self, *a: object, **k: object):
+        return iter(self._accounts)
+
+
+async def test_asset_allocation_includes_cash_and_weights_over_total() -> None:
+    """Per-symbol weights are over the whole portfolio (incl. cash) + a Cash slice."""
+    from llamatrade_proto.generated import common_pb2, portfolio_pb2
+
+    from src.grpc.servicer import PortfolioServicer
+    from src.models import PositionResponse
+
+    tenant_id = uuid4()
+    positions = [
+        PositionResponse(
+            symbol="AAPL",
+            qty=Decimal("10.0"),
+            side="long",
+            cost_basis=Decimal("4000.0"),
+            market_value=Decimal("6000.0"),
+            unrealized_pnl=Decimal("2000.0"),
+            unrealized_pnl_percent=Decimal("50.0"),
+            current_price=Decimal("600.0"),
+            avg_entry_price=Decimal("400.0"),
+        )
+    ]
+    summary = MagicMock()
+    summary.cash = Decimal("4000")
+    reader = MagicMock()
+    reader.list_positions = AsyncMock(return_value=positions)
+    reader.get_summary = AsyncMock(return_value=summary)
+
+    servicer = PortfolioServicer()
+    servicer._session_factory = cast(Any, lambda: _Session())
+    servicer._reader = MagicMock(return_value=reader)
+
+    resp = await servicer.get_asset_allocation(
+        portfolio_pb2.GetAssetAllocationRequest(
+            context=common_pb2.TenantContext(tenant_id=str(tenant_id), user_id=str(uuid4())),
+        ),
+        MagicMock(),
+    )
+
+    cats = {a.category: a for a in resp.allocations}
+    assert set(cats) == {"Stocks", "Cash"}
+    # total = 6000 + 4000 = 10000 → Stocks 60%, Cash 40%.
+    assert cats["Stocks"].percentage.value == "60.0"
+    assert cats["Cash"].percentage.value == "40.0"
+    # Per-symbol weight is over the WHOLE portfolio.
+    assert cats["Stocks"].items[0].symbol == "AAPL"
+    assert cats["Stocks"].items[0].percentage.value == "60.0"
+
+
+async def test_sync_portfolio_triggers_reconciliation(monkeypatch) -> None:
+    """SyncPortfolio reconciles the tenant's accounts and reports the drift count."""
+    from llamatrade_proto.generated import common_pb2, portfolio_pb2
+
+    import src.tasks.reconciliation as recon
+    from src.grpc.servicer import PortfolioServicer
+
+    tenant_id = uuid4()
+    result = MagicMock()
+    result.drifts = [MagicMock(), MagicMock()]  # 2 drifts surfaced
+    recon_mock = AsyncMock(return_value=[result])
+    monkeypatch.setattr(recon, "reconcile_accounts_once", recon_mock)
+
+    reader = MagicMock()
+    reader.get_summary = AsyncMock(return_value=MagicMock())
+    reader.list_positions = AsyncMock(return_value=[])
+    perf_reader = MagicMock()
+    perf_reader.book_totals = AsyncMock(return_value=MagicMock())
+
+    servicer = PortfolioServicer()
+    servicer._session_factory = cast(Any, lambda: _AcctSession([MagicMock()]))
+    servicer._reader = MagicMock(return_value=reader)
+    servicer._strategy_perf_reader = MagicMock(return_value=perf_reader)
+    servicer._to_proto_portfolio = MagicMock(return_value=portfolio_pb2.Portfolio())
+
+    resp = await servicer.sync_portfolio(
+        portfolio_pb2.SyncPortfolioRequest(
+            context=common_pb2.TenantContext(tenant_id=str(tenant_id), user_id=str(uuid4())),
+        ),
+        MagicMock(),
+    )
+
+    recon_mock.assert_awaited_once()
+    assert resp.transactions_recorded == 2

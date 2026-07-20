@@ -190,6 +190,11 @@ class LedgerMetrics:
         self.vs_broker_mismatch_dollars = registry.gauge(
             "llamatrade_ledger_vs_broker_mismatch_dollars", (), "Ledger vs broker mismatch ($)"
         )
+        self.vs_broker_cash_mismatch_dollars = registry.gauge(
+            "llamatrade_ledger_vs_broker_cash_mismatch_dollars",
+            (),
+            "Ledger sleeve cash vs broker cash mismatch ($)",
+        )
         self.capital_allocated_dollars = registry.gauge(
             "llamatrade_ledger_capital_allocated_dollars", (), "Allocated capital ($)"
         )

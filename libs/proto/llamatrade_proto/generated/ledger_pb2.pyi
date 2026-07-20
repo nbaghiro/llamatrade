@@ -175,6 +175,28 @@ LEDGER_EVENT_TYPE_SLEEVE_CLOSED: LedgerEventType.ValueType  # 61
 LEDGER_EVENT_TYPE_SLEEVE_FROZEN: LedgerEventType.ValueType  # 62
 LEDGER_EVENT_TYPE_SLEEVE_RESUMED: LedgerEventType.ValueType  # 63
 
+class _CorporateActionKind:
+    ValueType = typing.NewType("ValueType", builtins.int)
+    V: _TypeAlias = ValueType  # noqa: Y015
+
+class _CorporateActionKindEnumTypeWrapper(enum_type_wrapper._EnumTypeWrapper[_CorporateActionKind.ValueType], builtins.type):
+    DESCRIPTOR: descriptor.EnumDescriptor
+    CORPORATE_ACTION_KIND_UNSPECIFIED: _CorporateActionKind.ValueType  # 0
+    CORPORATE_ACTION_KIND_SPLIT: _CorporateActionKind.ValueType  # 1
+    CORPORATE_ACTION_KIND_SYMBOL_CHANGE: _CorporateActionKind.ValueType  # 2
+    CORPORATE_ACTION_KIND_DIVIDEND: _CorporateActionKind.ValueType  # 3
+
+class CorporateActionKind(_CorporateActionKind, metaclass=_CorporateActionKindEnumTypeWrapper):
+    """=============================================================================
+    SERVICE  (stubs; implemented in Phases 2/6)
+    =============================================================================
+    """
+
+CORPORATE_ACTION_KIND_UNSPECIFIED: CorporateActionKind.ValueType  # 0
+CORPORATE_ACTION_KIND_SPLIT: CorporateActionKind.ValueType  # 1
+CORPORATE_ACTION_KIND_SYMBOL_CHANGE: CorporateActionKind.ValueType  # 2
+CORPORATE_ACTION_KIND_DIVIDEND: CorporateActionKind.ValueType  # 3
+
 @typing.final
 class LedgerAccount(message.Message):
     """=============================================================================
@@ -914,4 +936,66 @@ class GetHoldingHistoryResponse(message.Message):
         entries: abc.Iterable[HoldingHistoryEntry] | None = ...,
     ) -> None: ...
     _ClearFieldArgType: _TypeAlias = typing.Literal["entries", b"entries"]  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+
+@typing.final
+class ApplyCorporateActionRequest(message.Message):
+    DESCRIPTOR: descriptor.Descriptor
+
+    CONTEXT_FIELD_NUMBER: builtins.int
+    ACCOUNT_ID_FIELD_NUMBER: builtins.int
+    KIND_FIELD_NUMBER: builtins.int
+    SYMBOL_FIELD_NUMBER: builtins.int
+    RATIO_FIELD_NUMBER: builtins.int
+    NEW_SYMBOL_FIELD_NUMBER: builtins.int
+    AMOUNT_FIELD_NUMBER: builtins.int
+    EXTERNAL_ID_FIELD_NUMBER: builtins.int
+    account_id: builtins.str
+    kind: CorporateActionKind.ValueType
+    symbol: builtins.str
+    """affected symbol (the OLD symbol for a rename)"""
+    new_symbol: builtins.str
+    """destination ticker for SYMBOL_CHANGE"""
+    external_id: builtins.str
+    """provenance / idempotency (e.g. broker action id)"""
+    @builtins.property
+    def context(self) -> common_pb2.TenantContext: ...
+    @builtins.property
+    def ratio(self) -> common_pb2.Decimal:
+        """new-shares-per-old for SPLIT (2 = 2-for-1 forward)"""
+
+    @builtins.property
+    def amount(self) -> common_pb2.Decimal:
+        """total cash for DIVIDEND"""
+
+    def __init__(
+        self,
+        *,
+        context: common_pb2.TenantContext | None = ...,
+        account_id: builtins.str = ...,
+        kind: CorporateActionKind.ValueType = ...,
+        symbol: builtins.str = ...,
+        ratio: common_pb2.Decimal | None = ...,
+        new_symbol: builtins.str = ...,
+        amount: common_pb2.Decimal | None = ...,
+        external_id: builtins.str = ...,
+    ) -> None: ...
+    _HasFieldArgType: _TypeAlias = typing.Literal["amount", b"amount", "context", b"context", "ratio", b"ratio"]  # noqa: Y015
+    def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
+    _ClearFieldArgType: _TypeAlias = typing.Literal["account_id", b"account_id", "amount", b"amount", "context", b"context", "external_id", b"external_id", "kind", b"kind", "new_symbol", b"new_symbol", "ratio", b"ratio", "symbol", b"symbol"]  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+
+@typing.final
+class ApplyCorporateActionResponse(message.Message):
+    DESCRIPTOR: descriptor.Descriptor
+
+    EVENTS_APPENDED_FIELD_NUMBER: builtins.int
+    events_appended: builtins.int
+    """one ledger event per affected sleeve"""
+    def __init__(
+        self,
+        *,
+        events_appended: builtins.int = ...,
+    ) -> None: ...
+    _ClearFieldArgType: _TypeAlias = typing.Literal["events_appended", b"events_appended"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...

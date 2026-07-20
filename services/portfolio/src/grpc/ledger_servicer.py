@@ -26,6 +26,7 @@ from src.ledger.lifecycle import SleeveCloseError
 from src.ledger.projection import HoldingHistoryEntry
 from src.ledger.projector import LedgerProjector
 from src.repositories import SqlLedgerStore, SqlSleeveRepository
+from src.services.corporate_action_service import CorporateActionService
 from src.services.fund_service import FundService, SleeveView
 from src.services.sleeve_lifecycle_service import SleeveLifecycleService
 from src.services.sleeve_service import SleeveService
@@ -334,6 +335,54 @@ class LedgerServicer:
         except Exception as e:
             logger.error("close_sleeve error: %s", e, exc_info=True)
             raise ConnectError(Code.INTERNAL, f"close sleeve failed: {e}") from e
+
+    async def apply_corporate_action(
+        self, request: ledger_pb2.ApplyCorporateActionRequest, ctx: AnyContext
+    ) -> ledger_pb2.ApplyCorporateActionResponse:
+        """Fan a split/rename/dividend across every sleeve holding the symbol.
+
+        Operator/feed-triggered. Idempotent (deterministic event ids), so a
+        re-submitted action is a no-op.
+        """
+        tenant_id, _ = resolve_identity_connect(request.context)
+        account_id = UUID(request.account_id)
+        try:
+            async with tenant_session(tenant_id, self._maker()) as db:
+                svc = CorporateActionService(SqlLedgerStore(db))
+                kind = request.kind
+                if kind == ledger_pb2.CORPORATE_ACTION_KIND_SPLIT:
+                    n = await svc.apply_split(
+                        tenant_id=tenant_id,
+                        account_id=account_id,
+                        symbol=request.symbol,
+                        ratio=_amount(request.ratio),
+                    )
+                elif kind == ledger_pb2.CORPORATE_ACTION_KIND_SYMBOL_CHANGE:
+                    n = await svc.apply_symbol_change(
+                        tenant_id=tenant_id,
+                        account_id=account_id,
+                        old_symbol=request.symbol,
+                        new_symbol=request.new_symbol,
+                    )
+                elif kind == ledger_pb2.CORPORATE_ACTION_KIND_DIVIDEND:
+                    n = await svc.apply_dividend(
+                        tenant_id=tenant_id,
+                        account_id=account_id,
+                        symbol=request.symbol,
+                        total_amount=_amount(request.amount),
+                        pay_id=request.external_id or request.symbol,
+                    )
+                else:
+                    raise ConnectError(Code.INVALID_ARGUMENT, "unspecified corporate action kind")
+                await db.commit()
+                return ledger_pb2.ApplyCorporateActionResponse(events_appended=n)
+        except ValueError as e:
+            raise ConnectError(Code.INVALID_ARGUMENT, str(e)) from e
+        except ConnectError:
+            raise
+        except Exception as e:
+            logger.error("apply_corporate_action error: %s", e, exc_info=True)
+            raise ConnectError(Code.INTERNAL, f"apply corporate action failed: {e}") from e
 
     async def list_sleeves(
         self, request: ledger_pb2.ListSleevesRequest, ctx: AnyContext

@@ -107,6 +107,16 @@ class AlpacaBrokerPositions:
             await client.close()
         return positions_to_qty_map(broker_positions)
 
+    async def cash(self, tenant_id: UUID, account: Account) -> Decimal:
+        client = await self._client_for(tenant_id, account)
+        if client is None:
+            raise BrokerUnavailableError(f"no active Alpaca credentials for account {account.id}")
+        try:
+            broker_account = await client.get_account()
+        finally:
+            await client.close()
+        return Decimal(str(broker_account.cash))
+
     async def snapshot(self, tenant_id: UUID, account: Account) -> BrokerSnapshot:
         client = await self._client_for(tenant_id, account)
         if client is None:
@@ -132,8 +142,8 @@ class AlpacaBrokerPositions:
             )
             return None
         return TradingClient(
-            api_key=decrypt_value(creds.api_key_encrypted),
-            api_secret=decrypt_value(creds.api_secret_encrypted),
+            api_key=decrypt_value(creds.api_key_encrypted or ""),
+            api_secret=decrypt_value(creds.api_secret_encrypted or ""),
             paper=creds.is_paper,
         )
 

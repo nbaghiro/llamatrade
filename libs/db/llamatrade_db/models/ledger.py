@@ -159,7 +159,12 @@ class Sleeve(Base, UUIDPrimaryKeyMixin, TenantMixin, TimestampMixin):
 
 
 class Lot(Base, UUIDPrimaryKeyMixin, TenantMixin, TimestampMixin):
-    """A provenance-bearing unit of a holding owned by exactly one sleeve."""
+    """A provenance-bearing unit of a holding owned by exactly one sleeve.
+
+    Reserved read-optimization: holdings are projected from ``ledger_events`` into
+    in-memory lots and materialized into ``LedgerSleeveSnapshot.lots``, so this
+    table is intentionally not yet written or read (see .docs/portfolio-ledger.md).
+    """
 
     __tablename__ = "ledger_lots"
     __table_args__ = (

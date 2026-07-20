@@ -27,11 +27,6 @@ GRPC_GENERATED_VERSION: str
 GRPC_VERSION: str
 
 class LedgerServiceStub:
-    """=============================================================================
-    SERVICE  (stubs; implemented in Phases 2/6)
-    =============================================================================
-    """
-
     @_typing.overload
     def __new__(cls, channel: _grpc.Channel) -> _Self: ...
     @_typing.overload
@@ -45,6 +40,11 @@ class LedgerServiceStub:
     WithdrawFunds: _grpc.UnaryUnaryMultiCallable[_ledger_pb2.WithdrawFundsRequest, _ledger_pb2.WithdrawFundsResponse]
     CloseSleeve: _grpc.UnaryUnaryMultiCallable[_ledger_pb2.CloseSleeveRequest, _ledger_pb2.CloseSleeveResponse]
     """Sleeve lifecycle"""
+    ApplyCorporateAction: _grpc.UnaryUnaryMultiCallable[_ledger_pb2.ApplyCorporateActionRequest, _ledger_pb2.ApplyCorporateActionResponse]
+    """Corporate actions (operator/feed-triggered): fan a split/rename/dividend
+    out to every sleeve holding the symbol so per-sleeve provenance stays
+    correct. Idempotent on the planner dedup keys.
+    """
     ListSleeves: _grpc.UnaryUnaryMultiCallable[_ledger_pb2.ListSleevesRequest, _ledger_pb2.ListSleevesResponse]
     """Queries"""
     GetSleeve: _grpc.UnaryUnaryMultiCallable[_ledger_pb2.GetSleeveRequest, _ledger_pb2.GetSleeveResponse]
@@ -52,11 +52,6 @@ class LedgerServiceStub:
 
 @_typing.type_check_only
 class LedgerServiceAsyncStub(LedgerServiceStub):
-    """=============================================================================
-    SERVICE  (stubs; implemented in Phases 2/6)
-    =============================================================================
-    """
-
     def __init__(self, channel: _aio.Channel) -> None: ...
     GetOrCreateAccount: _aio.UnaryUnaryMultiCallable[_ledger_pb2.GetOrCreateAccountRequest, _ledger_pb2.GetOrCreateAccountResponse]  # type: ignore[assignment]
     """Identity bootstrap (credentials_id → Account + base sleeves)"""
@@ -67,17 +62,17 @@ class LedgerServiceAsyncStub(LedgerServiceStub):
     WithdrawFunds: _aio.UnaryUnaryMultiCallable[_ledger_pb2.WithdrawFundsRequest, _ledger_pb2.WithdrawFundsResponse]  # type: ignore[assignment]
     CloseSleeve: _aio.UnaryUnaryMultiCallable[_ledger_pb2.CloseSleeveRequest, _ledger_pb2.CloseSleeveResponse]  # type: ignore[assignment]
     """Sleeve lifecycle"""
+    ApplyCorporateAction: _aio.UnaryUnaryMultiCallable[_ledger_pb2.ApplyCorporateActionRequest, _ledger_pb2.ApplyCorporateActionResponse]  # type: ignore[assignment]
+    """Corporate actions (operator/feed-triggered): fan a split/rename/dividend
+    out to every sleeve holding the symbol so per-sleeve provenance stays
+    correct. Idempotent on the planner dedup keys.
+    """
     ListSleeves: _aio.UnaryUnaryMultiCallable[_ledger_pb2.ListSleevesRequest, _ledger_pb2.ListSleevesResponse]  # type: ignore[assignment]
     """Queries"""
     GetSleeve: _aio.UnaryUnaryMultiCallable[_ledger_pb2.GetSleeveRequest, _ledger_pb2.GetSleeveResponse]  # type: ignore[assignment]
     GetHoldingHistory: _aio.UnaryUnaryMultiCallable[_ledger_pb2.GetHoldingHistoryRequest, _ledger_pb2.GetHoldingHistoryResponse]  # type: ignore[assignment]
 
 class LedgerServiceServicer(metaclass=_abc_1.ABCMeta):
-    """=============================================================================
-    SERVICE  (stubs; implemented in Phases 2/6)
-    =============================================================================
-    """
-
     @_abc_1.abstractmethod
     def GetOrCreateAccount(
         self,
@@ -122,6 +117,17 @@ class LedgerServiceServicer(metaclass=_abc_1.ABCMeta):
         context: _ServicerContext,
     ) -> _typing.Union[_ledger_pb2.CloseSleeveResponse, _abc.Awaitable[_ledger_pb2.CloseSleeveResponse]]:
         """Sleeve lifecycle"""
+
+    @_abc_1.abstractmethod
+    def ApplyCorporateAction(
+        self,
+        request: _ledger_pb2.ApplyCorporateActionRequest,
+        context: _ServicerContext,
+    ) -> _typing.Union[_ledger_pb2.ApplyCorporateActionResponse, _abc.Awaitable[_ledger_pb2.ApplyCorporateActionResponse]]:
+        """Corporate actions (operator/feed-triggered): fan a split/rename/dividend
+        out to every sleeve holding the symbol so per-sleeve provenance stays
+        correct. Idempotent on the planner dedup keys.
+        """
 
     @_abc_1.abstractmethod
     def ListSleeves(

@@ -69,6 +69,15 @@ class AccountProjection:
     """Derived state of an account (all its sleeves)."""
 
     sleeves: dict[str, SleeveProjection] = field(default_factory=dict)
+    # Count of poison events skipped while folding this projection. > 0 means the
+    # balances are INCOMPLETE — read paths surface it (metric + warning) so a
+    # degraded projection is never served as if it were whole.
+    poison_events: int = 0
+
+    @property
+    def is_complete(self) -> bool:
+        """False when any poison event was skipped (balances are incomplete)."""
+        return self.poison_events == 0
 
     def sleeve(self, sleeve_id: str) -> SleeveProjection:
         return self.sleeves.setdefault(sleeve_id, SleeveProjection())
@@ -154,6 +163,7 @@ def fold_into(
                     if p.qty is not None:
                         pos.qty += p.qty
         except (KeyError, TypeError, ValueError, ArithmeticError) as exc:
+            acc.poison_events += 1
             event_id = getattr(ev, "event_id", None)
             eid = str(event_id) if event_id is not None else None
             logger.warning("skipping poison ledger event %s during fold: %s", eid, exc)
