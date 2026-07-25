@@ -149,6 +149,43 @@ class TestGetAsset:
         assert await trading_client.get_asset("NOPE") is None
         await trading_client.close()
 
+    @pytest.mark.asyncio
+    @respx.mock
+    async def test_list_assets_returns_all(self, trading_client: TradingClient) -> None:
+        respx.get("https://paper-api.alpaca.markets/v2/assets").mock(
+            return_value=Response(
+                200,
+                json=[
+                    {
+                        "id": "a1",
+                        "class": "us_equity",
+                        "exchange": "ARCA",
+                        "symbol": "SPY",
+                        "name": "SPDR S&P 500",
+                        "status": "active",
+                        "tradable": True,
+                        "fractionable": True,
+                    },
+                    {
+                        "id": "a2",
+                        "class": "us_equity",
+                        "exchange": "NASDAQ",
+                        "symbol": "QQQ",
+                        "name": "Invesco QQQ",
+                        "status": "active",
+                        "tradable": True,
+                        "fractionable": True,
+                    },
+                ],
+            )
+        )
+
+        assets = await trading_client.list_assets()
+
+        assert {a.symbol for a in assets} == {"SPY", "QQQ"}
+        assert all(a.tradable for a in assets)
+        await trading_client.close()
+
 
 class TestSubmitOrder:
     """Tests for submit_order method."""

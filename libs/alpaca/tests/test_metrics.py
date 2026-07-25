@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import pytest
-from llamatrade_telemetry.registry import get_metrics
 
 from llamatrade_alpaca.metrics import record_api_call, time_alpaca_call
+from llamatrade_telemetry.registry import get_metrics
 
 
 def _scrape() -> str:

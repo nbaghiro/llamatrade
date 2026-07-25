@@ -312,6 +312,30 @@ class TradingClient(AlpacaClientBase):
                     return None
                 raise
 
+    async def list_assets(
+        self,
+        *,
+        status: str = "active",
+        asset_class: str = "us_equity",
+    ) -> list[Asset]:
+        """List tradable assets from Alpaca's ``/v2/assets`` endpoint.
+
+        Args:
+            status: 'active' or 'inactive' (default 'active').
+            asset_class: e.g. 'us_equity' (default).
+
+        Returns:
+            Asset metadata for every matching asset (``/v2/assets`` returns the full list).
+
+        Raises:
+            AlpacaError: On API errors.
+        """
+        async with time_alpaca_call("list_assets"):
+            response = await self._get(
+                "/assets", params={"status": status, "asset_class": asset_class}
+            )
+            return [parse_asset(item) for item in response.json()]
+
     async def close_position(self, symbol: str, qty: Decimal | None = None) -> Order:
         """Close a position (fully or partially).
 
