@@ -4,14 +4,16 @@ from httpx import AsyncClient
 
 
 async def test_health_check(client: AsyncClient):
-    """Test health endpoint returns healthy status."""
+    """Test health endpoint returns the service identity and an overall status."""
     response = await client.get("/health")
     assert response.status_code == 200
 
     data = response.json()
-    assert data["status"] == "healthy"
     assert data["service"] == "portfolio"
     assert data["version"] == "0.1.0"
+    # Database + ledger-runtime are non-critical, so an infra-less unit run may
+    # report healthy or degraded — never unhealthy.
+    assert data["status"] in {"healthy", "degraded"}
 
 
 async def test_health_check_no_auth_required(client: AsyncClient):
@@ -22,9 +24,11 @@ async def test_health_check_no_auth_required(client: AsyncClient):
 
 
 async def test_health_reports_ledger_runtime(client: AsyncClient):
-    """Health exposes the background ledger-runtime liveness."""
+    """Health exposes the background ledger-runtime liveness as a dependency check."""
     response = await client.get("/health")
-    assert response.json()["ledger_runtime"] in {"ok", "degraded", "down"}
+    checks = response.json()["checks"]
+    assert "ledger_runtime" in checks
+    assert checks["ledger_runtime"]["critical"] is False
 
 
 class _FakeTask:

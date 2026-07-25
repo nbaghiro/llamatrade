@@ -9,13 +9,13 @@ import logging
 import os
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from typing import TypedDict, cast
+from typing import cast
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.types import ASGIApp
 
-from llamatrade_common import AuthMiddleware
+from llamatrade_common import AuthMiddleware, HealthChecker
 from llamatrade_db import close_db, get_pool_stats, init_db
 from llamatrade_telemetry import init_telemetry
 
@@ -86,15 +86,4 @@ init_telemetry(app, service="billing", pool_stats_provider=get_pool_stats)
 app.include_router(webhooks.router, prefix="/webhooks", tags=["Webhooks"])
 
 
-class HealthResponse(TypedDict):
-    """Health check response."""
-
-    status: str
-    service: str
-    version: str
-
-
-@app.get("/health")
-async def health_check() -> HealthResponse:
-    """Health check endpoint."""
-    return {"status": "healthy", "service": "billing", "version": "0.1.0"}
+app.include_router(HealthChecker("billing", "0.1.0").create_router())

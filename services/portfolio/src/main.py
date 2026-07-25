@@ -9,15 +9,21 @@ import logging
 import os
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from typing import TypedDict, cast
+from typing import cast
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.types import ASGIApp
 
-from llamatrade_common import AuthMiddleware
-from llamatrade_db import close_db, get_pool_stats, get_session_maker, init_db
+from llamatrade_common import AuthMiddleware, HealthChecker, check_postgres
+from llamatrade_db import (
+    close_db,
+    get_database_url,
+    get_pool_stats,
+    get_session_maker,
+    init_db,
+)
 from llamatrade_telemetry import init_telemetry, metrics
 
 logger = logging.getLogger(__name__)
@@ -31,13 +37,6 @@ RECONCILIATION_INTERVAL_SECONDS = float(os.getenv("LEDGER_RECONCILE_INTERVAL_SEC
 SNAPSHOT_INTERVAL_SECONDS = float(os.getenv("LEDGER_SNAPSHOT_INTERVAL_SECONDS", "3600"))
 # Grace period for shadow tasks to drain on shutdown before force-cancel.
 SHUTDOWN_GRACE_SECONDS = 5.0
-
-
-class HealthResponse(TypedDict):
-    status: str
-    service: str
-    version: str
-    ledger_runtime: str  # "ok" | "degraded" | "down"
 
 
 @asynccontextmanager
@@ -100,7 +99,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
         # Durable fill ingestion via the Redis Streams consumer group: a dead
         # pod's pending entries are reclaimed via XAUTOCLAIM; the writer's
         # event_id dedupe makes redelivery a no-op. Trading publishes proto
-        # LedgerFill/LedgerReservation onto lt:ledger:fills (CONTRACTS.md §1/§4).
+        # LedgerFill/LedgerReservation onto lt:ledger:fills (portfolio-ledger.md).
         fills = FillEvents(bus=EventBus(RedisStreamsTransport(REDIS_URL)))
 
         # Per-account FIFO requires a single active consumer: only the pod that
@@ -247,12 +246,15 @@ def _ledger_runtime_status() -> str:
     return "ok"
 
 
-@app.get("/health")
-async def health_check() -> HealthResponse:
-    """Health check endpoint."""
-    return {
-        "status": "healthy",
-        "service": "portfolio",
-        "version": "0.1.0",
-        "ledger_runtime": _ledger_runtime_status(),
-    }
+async def _check_ledger_runtime() -> bool:
+    """Background ledger-runtime liveness; the tri-state surfaces as the check message."""
+    status = _ledger_runtime_status()
+    if status != "ok":
+        raise RuntimeError(status)
+    return True
+
+
+_health = HealthChecker("portfolio", "0.1.0")
+_health.add_check("database", lambda: check_postgres(get_database_url()), critical=False)
+_health.add_check("ledger_runtime", _check_ledger_runtime, critical=False)
+app.include_router(_health.create_router())

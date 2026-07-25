@@ -9,7 +9,7 @@ import logging
 import os
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from typing import Any, cast
+from typing import cast
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -25,13 +25,13 @@ from llamatrade_alpaca import (
 from llamatrade_alpaca import (
     init_market_data_stream as init_alpaca_stream,
 )
-from llamatrade_common import AuthMiddleware
+from llamatrade_common import AuthMiddleware, HealthChecker, check_redis
 from llamatrade_db import close_db, get_pool_stats
 from llamatrade_events import EventBus, RedisStreamsTransport
 from llamatrade_telemetry import init_telemetry
 from llamatrade_telemetry.config import TelemetrySettings
 
-from src.cache import close_cache, get_cache, init_cache
+from src.cache import close_cache, init_cache
 from src.error_handlers import register_error_handlers
 from src.streaming.bridge import close_stream_bridge, init_stream_bridge
 from src.streaming.bus_bridge import BusBridge
@@ -162,35 +162,15 @@ app.add_middleware(
 )
 
 
-@app.get("/health")
-async def health_check() -> dict[str, Any]:
-    """Health check endpoint."""
-    cache = get_cache()
-    cache_healthy = False
-
-    if cache:
-        cache_healthy = await cache.health_check()
-
-    # In bus mode the serving process holds no Alpaca connection, so report the
-    # bus-bridge state rather than the (never-initialized) Alpaca stream.
+async def _check_live_bars() -> bool:
+    """Live-bar fan-out health: bus-bridge state in bus mode, else the Alpaca stream."""
     if _bars_from_bus():
-        stream_healthy = _stream_connected
-    else:
-        alpaca_stream = get_alpaca_stream()
-        stream_healthy = alpaca_stream.connected if alpaca_stream else False
+        return _stream_connected
+    alpaca_stream = get_alpaca_stream()
+    return alpaca_stream.connected if alpaca_stream else False
 
-    return {
-        "status": "healthy",
-        "service": SERVICE_NAME,
-        "version": SERVICE_VERSION,
-        "dependencies": {
-            "redis": {
-                "status": "healthy" if cache_healthy else "unavailable",
-                "critical": False,
-            },
-            "live_bars": {
-                "status": "healthy" if stream_healthy else "unavailable",
-                "critical": False,
-            },
-        },
-    }
+
+_health = HealthChecker(SERVICE_NAME, SERVICE_VERSION)
+_health.add_check("redis", lambda: check_redis(os.getenv("REDIS_URL", "")), critical=False)
+_health.add_check("live_bars", _check_live_bars, critical=False)
+app.include_router(_health.create_router())

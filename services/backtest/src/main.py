@@ -14,7 +14,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.types import ASGIApp
 
-from llamatrade_common import AuthMiddleware
+from llamatrade_common import AuthMiddleware, HealthChecker
 from llamatrade_db import close_db, get_pool_stats
 from llamatrade_telemetry import init_telemetry
 
@@ -77,7 +77,4 @@ app.add_middleware(
 init_telemetry(app, service="backtest", pool_stats_provider=get_pool_stats)
 
 
-@app.get("/health")
-async def health_check() -> dict[str, str]:
-    """Health check endpoint."""
-    return {"status": "healthy", "service": "backtest", "version": "0.1.0"}
+app.include_router(HealthChecker("backtest", "0.1.0").create_router())
