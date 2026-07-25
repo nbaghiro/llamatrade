@@ -95,6 +95,14 @@ class EventTransport(Protocol):
         """Bound the stream length (where supported)."""
         ...
 
+    async def length(self, stream: str) -> int:
+        """Number of entries currently in ``stream`` (Redis ``XLEN``)."""
+        ...
+
+    async def purge(self, stream: str) -> None:
+        """Remove all entries from ``stream`` (Redis ``DEL``)."""
+        ...
+
     async def close(self) -> None:
         """Release transport resources."""
         ...

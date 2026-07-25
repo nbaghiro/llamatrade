@@ -13,15 +13,14 @@ import hashlib
 from typing import Protocol
 
 
-def derive_event_id(*parts: str, length: int = 16) -> str:
-    """Deterministic event id from stable parts (the dedup key).
+def derive_event_id(*parts: str) -> str:
+    """Deterministic event id (full sha256 hex) from stable parts — the dedup key.
 
     The same inputs always yield the same id, so at-least-once delivery +
-    consumer dedupe = effective-once. ``length`` is the hex prefix length
-    (16 matches the ledger's ``event_id`` convention).
+    consumer dedupe = effective-once. The full 256-bit digest is used so the
+    money-path dedup key is collision-free at any fill volume.
     """
-    digest = hashlib.sha256(":".join(parts).encode()).hexdigest()
-    return digest[:length]
+    return hashlib.sha256(":".join(parts).encode()).hexdigest()
 
 
 class DedupStore(Protocol):

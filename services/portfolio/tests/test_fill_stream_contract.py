@@ -71,3 +71,30 @@ async def test_ledger_fill_contract_roundtrips_through_stream() -> None:
     assert a.data["side"] == "buy"
     assert a.data["qty"] == "10"
     assert a.data["price"] == "150.25"
+
+
+async def test_replay_dlq_redrives_and_clears() -> None:
+    from src.tasks.dlq_replay import replay_dlq
+    from src.tasks.fill_ingestion import LEDGER_FILLS_DLQ_STREAM
+
+    bus = EventBus(RedisStreamsTransport(redis_client=aioredis.FakeRedis()))
+
+    # Two parked entries (opaque bytes, as _dead_letter parks them).
+    await bus.publish_raw(LEDGER_FILLS_DLQ_STREAM, b"entry-1", maxlen=10_000)
+    await bus.publish_raw(LEDGER_FILLS_DLQ_STREAM, b"entry-2", maxlen=10_000)
+    assert await bus.length(LEDGER_FILLS_DLQ_STREAM) == 2
+
+    replayed = await replay_dlq(bus)
+
+    assert replayed == 2
+    assert await bus.length(LEDGER_FILLS_STREAM) == 2  # re-driven onto the main stream
+    assert await bus.length(LEDGER_FILLS_DLQ_STREAM) == 0  # cleared on full drain
+    await bus.close()
+
+
+async def test_replay_dlq_empty_is_noop() -> None:
+    from src.tasks.dlq_replay import replay_dlq
+
+    bus = EventBus(RedisStreamsTransport(redis_client=aioredis.FakeRedis()))
+    assert await replay_dlq(bus) == 0
+    await bus.close()

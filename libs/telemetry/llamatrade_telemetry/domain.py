@@ -178,6 +178,11 @@ class LedgerMetrics:
             (),
             "1 on the pod holding the fill-consumer lock, else 0 (sum across pods should be 1)",
         )
+        self.dlq_depth = registry.gauge(
+            "llamatrade_ledger_fill_dlq_depth",
+            (),
+            "Entries parked on the ledger fill DLQ (un-booked fills awaiting replay)",
+        )
         self._capital_insufficient = registry.counter(
             "llamatrade_ledger_capital_insufficient_total", (), "Under-capitalized allocations"
         )

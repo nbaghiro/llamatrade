@@ -41,6 +41,12 @@ class FakeTransport:
     def entries(self, stream: str) -> list[tuple[str, bytes]]:
         return list(self._streams.get(stream, []))
 
+    async def length(self, stream: str) -> int:
+        return len(self._streams.get(stream, []))
+
+    async def purge(self, stream: str) -> None:
+        self._streams.pop(stream, None)
+
     # -- EventTransport --
 
     async def publish(

@@ -116,7 +116,7 @@ async def persist_append(db: AsyncSession, append: LedgerAppend) -> None:
     re-homed to the account's Unmanaged sleeve so it can't resurrect a retired
     sleeve. Sells without a publisher-resolved ``cost_basis`` are then enriched
     here via FIFO against the (possibly re-homed) sleeve's open lots, so the
-    persisted event is self-contained (CONTRACTS.md §1, amendment 3A).
+    persisted event is self-contained (portfolio-ledger.md, amendment 3A).
     """
     append = await _reroute_if_sleeve_closed(db, append)
     writer = LedgerWriter(db)
@@ -403,8 +403,11 @@ async def monitor_stream_lag(
     drop unacked entries. The optional ``tracker`` lets the health probe see a
     sustained backlog and fail liveness for a hung active consumer.
     """
+    from llamatrade_telemetry import metrics
+
     from src.metrics import LEDGER_STREAM_PENDING
 
+    last_dlq_depth = 0
     while not stop_event.is_set():
         try:
             pending = await bus.pending(LEDGER_FILLS_STREAM, PORTFOLIO_LEDGER_GROUP)
@@ -413,4 +416,17 @@ async def monitor_stream_lag(
                 tracker.record(pending)
         except Exception:  # sampling is best-effort
             logger.debug("stream lag sample failed", exc_info=True)
+        try:
+            dlq_depth = await bus.length(LEDGER_FILLS_DLQ_STREAM)
+            metrics.ledger.dlq_depth.set(float(dlq_depth))
+            if dlq_depth > last_dlq_depth:
+                logger.warning(
+                    "%d fill(s) parked on the ledger DLQ (%s) — un-booked; replay after "
+                    "fixing the cause (python -m src.tasks.dlq_replay)",
+                    dlq_depth,
+                    LEDGER_FILLS_DLQ_STREAM,
+                )
+            last_dlq_depth = dlq_depth
+        except Exception:  # sampling is best-effort
+            logger.debug("dlq depth sample failed", exc_info=True)
         await _interruptible_sleep(stop_event, interval_seconds)

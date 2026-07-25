@@ -1,7 +1,7 @@
 """Ledger fill + reservation events — trading → portfolio (durable consumer group).
 
 One global stream (``ledger:fills``); per-account FIFO is preserved by global
-order, and payloads carry ``account_id`` (CONTRACTS.md §1). Two payload types ride
+order, and payloads carry ``account_id`` (portfolio-ledger.md). Two payload types ride
 the same stream, discriminated by ``EventType``:
 
 - ``LedgerFill`` — a terminal fill (idempotency seed: ``client_order_id``).

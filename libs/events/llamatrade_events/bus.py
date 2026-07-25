@@ -95,5 +95,13 @@ class EventBus:
     async def pending(self, stream: str, group: str) -> int:
         return await self._transport.pending(stream, group)
 
+    async def length(self, stream: str) -> int:
+        """Number of entries currently in ``stream``."""
+        return await self._transport.length(stream)
+
+    async def purge(self, stream: str) -> None:
+        """Remove all entries from ``stream``."""
+        await self._transport.purge(stream)
+
     async def close(self) -> None:
         await self._transport.close()

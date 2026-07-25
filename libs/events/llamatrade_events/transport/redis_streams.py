@@ -220,6 +220,14 @@ class RedisStreamsTransport:
         redis = await self._client()
         await redis.xtrim(self.key(stream), maxlen=maxlen, approximate=True)
 
+    async def length(self, stream: str) -> int:
+        redis = await self._client()
+        return int(await redis.xlen(self.key(stream)))
+
+    async def purge(self, stream: str) -> None:
+        redis = await self._client()
+        await redis.delete(self.key(stream))
+
     async def close(self) -> None:
         if self._redis is not None:
             await self._redis.aclose()

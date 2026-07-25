@@ -15,9 +15,9 @@ def test_derive_event_id_distinguishes_parts() -> None:
     assert derive_event_id("a", "b") != derive_event_id("b", "a")
 
 
-def test_derive_event_id_length() -> None:
-    assert len(derive_event_id("x")) == 16
-    assert len(derive_event_id("x", length=32)) == 32
+def test_derive_event_id_is_full_digest() -> None:
+    # Full sha256 hex digest — no truncation on the money-path dedup key.
+    assert len(derive_event_id("x")) == 64
 
 
 async def test_in_memory_dedup_store() -> None:
