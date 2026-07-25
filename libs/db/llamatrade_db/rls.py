@@ -23,8 +23,21 @@ tests) must connect as a non-superuser role for enforcement to take effect.
 
 from __future__ import annotations
 
+import logging
+import os
+from typing import TYPE_CHECKING
+
+from sqlalchemy import text
+
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncConnection
+
+logger = logging.getLogger(__name__)
+
 TENANT_GUC = "app.current_tenant"
 BYPASS_GUC = "app.rls_bypass"
+
+_PROD_ENVIRONMENTS = {"production", "staging"}
 
 # A row is visible when a trusted system bypass is active, or the row's tenant
 # matches the transaction-local tenant GUC. ``NULLIF(..., '')`` maps an unset or
@@ -90,6 +103,32 @@ RLS_TABLES: tuple[str, ...] = (
     "orders",
     "positions",
 )
+
+
+async def assert_rls_capable(conn: AsyncConnection) -> None:
+    """Fail (prod) / warn (dev) if the connecting DB role bypasses RLS.
+
+    A superuser or ``BYPASSRLS`` role silently ignores every tenant policy, so RLS
+    provides no isolation. Services must connect as a ``NOSUPERUSER NOBYPASSRLS``
+    app role (see ``infrastructure/db/create_app_role.sql``).
+    """
+    row = (
+        await conn.execute(
+            text(
+                "SELECT current_user AS role, (rolsuper OR rolbypassrls) AS bypasses "
+                "FROM pg_roles WHERE rolname = current_user"
+            )
+        )
+    ).first()
+    if row is None or not row.bypasses:
+        return
+    message = (
+        f"DB role '{row.role}' bypasses RLS (superuser/BYPASSRLS); tenant row-level "
+        "security is INERT. Connect as a NOSUPERUSER NOBYPASSRLS app role."
+    )
+    if os.getenv("ENVIRONMENT", "development").lower() in _PROD_ENVIRONMENTS:
+        raise RuntimeError(message)
+    logger.warning(message)
 
 
 def _policy_name(table: str) -> str:

@@ -20,7 +20,7 @@ from sqlalchemy.ext.asyncio import (
 )
 
 from llamatrade_db.base import Base
-from llamatrade_db.rls import BYPASS_GUC, TENANT_GUC
+from llamatrade_db.rls import BYPASS_GUC, TENANT_GUC, assert_rls_capable
 from llamatrade_telemetry.instrumentation.db import DB_QUERY_DURATION
 
 # Module-level engine and session maker (initialized lazily)
@@ -185,6 +185,7 @@ async def init_db() -> None:
     """
     engine = get_engine()
     async with engine.begin() as conn:
+        await assert_rls_capable(conn)
         await conn.run_sync(Base.metadata.create_all)
 
 
