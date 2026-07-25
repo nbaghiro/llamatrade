@@ -14,6 +14,14 @@ from dataclasses import dataclass
 # continuous aggregates — never ingested directly.
 BACKFILL_TIMEFRAMES: tuple[str, ...] = ("1Day", "1Min")
 
+# Daily bars are the split-adjusted base; intraday stays raw (no adjusted intraday).
+DAILY_ADJUSTMENT = "split"
+
+
+def adjustment_for(timeframe: str) -> str:
+    """Alpaca price adjustment for a timeframe (split-adjusted daily, raw intraday)."""
+    return DAILY_ADJUSTMENT if timeframe == "1Day" else "raw"
+
 
 @dataclass(frozen=True)
 class IngestConfig:

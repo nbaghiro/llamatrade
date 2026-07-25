@@ -47,7 +47,6 @@ class ArtifactService:
         name: str,
         dsl_code: str,
         description: str | None = None,
-        config_json: dict[str, Any] | None = None,
         symbols: list[str] | None = None,
         timeframe: str = "1D",
     ) -> PendingArtifact:
@@ -56,9 +55,8 @@ class ArtifactService:
         Args:
             session_id: Agent session UUID
             name: Strategy name
-            dsl_code: Strategy DSL code
+            dsl_code: Strategy DSL code (the artifact's single source of truth)
             description: Optional description
-            config_json: Parsed JSON representation
             symbols: Extracted symbols
             timeframe: Strategy timeframe
 
@@ -69,7 +67,6 @@ class ArtifactService:
             "name": name,
             "description": description,
             "dsl_code": dsl_code,
-            "config_json": config_json,
             "symbols": symbols or [],
             "timeframe": timeframe,
         }

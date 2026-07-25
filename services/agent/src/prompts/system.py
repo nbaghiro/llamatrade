@@ -7,7 +7,10 @@ behave as a trading strategy assistant, including the DSL reference.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from src.services.memory_service import MemoryHint
 
 COPILOT_SYSTEM_PROMPT = """You are LlamaTrade Copilot, an expert AI assistant for creating and optimizing allocation-based trading strategies. You help users build portfolios using the LlamaTrade DSL (Domain-Specific Language).
 
@@ -253,27 +256,16 @@ class ContextData:
     memory_hint: str | None = None
 
 
-@dataclass
-class MemorySummary:
-    """Lightweight memory summary for system prompt hint."""
-
-    is_new_user: bool = True
-    session_count: int = 0
-    risk_tolerance: str | None = None
-    goal_summary: str | None = None
-    recent_strategies: list[str] | None = None
-
-
-def build_memory_hint(memory_summary: MemorySummary | None) -> str:
+def build_memory_hint(memory_hint: MemoryHint | None) -> str:
     """Build minimal memory hint for system prompt (~50 tokens).
 
     Args:
-        memory_summary: Lightweight memory data
+        memory_hint: Lightweight memory data
 
     Returns:
         Formatted memory hint string
     """
-    if not memory_summary or memory_summary.is_new_user:
+    if not memory_hint or memory_hint.is_new_user:
         return """
 ## User Context
 New user with no conversation history. Build relationship by asking about their goals and risk tolerance.
@@ -283,11 +275,11 @@ New user with no conversation history. Build relationship by asking about their 
 
     # Profile summary
     profile_parts = []
-    if memory_summary.risk_tolerance:
-        profile_parts.append(f"{memory_summary.risk_tolerance} risk")
-    if memory_summary.goal_summary:
+    if memory_hint.risk_tolerance:
+        profile_parts.append(f"{memory_hint.risk_tolerance} risk")
+    if memory_hint.goal_summary:
         # Truncate goal to first sentence/50 chars
-        goal = memory_summary.goal_summary
+        goal = memory_hint.goal_summary
         if len(goal) > 50:
             goal = goal[:47] + "..."
         profile_parts.append(goal)
@@ -296,13 +288,13 @@ New user with no conversation history. Build relationship by asking about their 
         sections.append(f"- Profile: {', '.join(profile_parts)}")
 
     # Recent strategies
-    if memory_summary.recent_strategies:
-        strats = ", ".join(memory_summary.recent_strategies[:3])
+    if memory_hint.recent_strategies:
+        strats = ", ".join(memory_hint.recent_strategies[:3])
         sections.append(f"- Recent strategies: {strats}")
 
     # Session count
-    if memory_summary.session_count > 0:
-        sections.append(f"- Past conversations: {memory_summary.session_count} sessions")
+    if memory_hint.session_count > 0:
+        sections.append(f"- Past conversations: {memory_hint.session_count} sessions")
 
     sections.append("")
     sections.append("Use `get_user_profile` or `recall_memory` tools for detailed information.")

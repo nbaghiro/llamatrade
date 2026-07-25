@@ -34,6 +34,7 @@ class FakeMarketDataClient:
 
     calls: list[tuple[str, datetime, datetime]] = field(default_factory=list)
     multi_calls: list[tuple[tuple[str, ...], datetime, datetime]] = field(default_factory=list)
+    adjustments: list[str] = field(default_factory=list)
 
     async def get_bars(
         self,
@@ -42,8 +43,10 @@ class FakeMarketDataClient:
         start: datetime,
         end: datetime | None = None,
         limit: int = 1000,
+        adjustment: str = "raw",
     ) -> list[Bar]:
         self.calls.append((symbol, start, end or start))
+        self.adjustments.append(adjustment)
         return self._generate(timeframe, start, end, limit)
 
     async def get_multi_bars(

@@ -3,7 +3,7 @@
 from datetime import UTC, datetime, timedelta
 
 from src.ingest.backfill import backfill_window
-from src.ingest.config import IngestConfig, get_universe
+from src.ingest.config import IngestConfig, adjustment_for, get_universe
 
 
 class TestBackfillWindow:
@@ -18,6 +18,15 @@ class TestGetUniverse:
     def test_parses_uppercases_and_dedupes(self, monkeypatch) -> None:
         monkeypatch.setenv("MARKET_DATA_UNIVERSE", "aapl, MSFT ,aapl,, tsla")
         assert get_universe() == ["AAPL", "MSFT", "TSLA"]
+
+
+class TestAdjustmentFor:
+    def test_daily_is_split_adjusted(self) -> None:
+        assert adjustment_for("1Day") == "split"
+
+    def test_intraday_is_raw(self) -> None:
+        assert adjustment_for("1Min") == "raw"
+        assert adjustment_for("1Hour") == "raw"
 
     def test_empty_when_unset(self, monkeypatch) -> None:
         monkeypatch.delenv("MARKET_DATA_UNIVERSE", raising=False)

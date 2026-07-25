@@ -26,7 +26,7 @@ from llamatrade_proto.generated.agent_pb2 import (
 from src.llm import LLMClient, LLMConfig, Message, StreamEventType, ToolCall, create_llm_client
 from src.llm.thinking import THINKING, ThinkingSplitter
 from src.prompts.few_shot import get_few_shot_messages
-from src.prompts.system import ContextData, MemorySummary, build_memory_hint, build_system_prompt
+from src.prompts.system import ContextData, build_memory_hint, build_system_prompt
 from src.tools.executor import get_executor
 
 logger = logging.getLogger(__name__)
@@ -615,15 +615,7 @@ class AgentService:
 
             hint_data = await memory_service.get_memory_hint()
 
-            memory_summary = MemorySummary(
-                is_new_user=hint_data.is_new_user,
-                session_count=hint_data.session_count,
-                risk_tolerance=hint_data.risk_tolerance,
-                goal_summary=hint_data.goal_summary,
-                recent_strategies=hint_data.recent_strategies,
-            )
-
-            return build_memory_hint(memory_summary)
+            return build_memory_hint(hint_data)
 
         except Exception as e:
             logger.warning("Failed to load memory hint: %s", e)

@@ -1,4 +1,4 @@
-"""Stream manager for real-time data distribution via gRPC."""
+"""Stream manager for real-time data fan-out to subscribers."""
 
 import asyncio
 import logging

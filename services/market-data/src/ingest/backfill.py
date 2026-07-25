@@ -10,27 +10,15 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import Awaitable
 from datetime import datetime, timedelta
-from typing import Protocol
 
-from src.models import Bar, Timeframe
+from src.ingest._types import AlpacaBars
+from src.ingest.config import adjustment_for
+from src.models import Timeframe
 from src.store.models import bar_row_from_alpaca
 from src.store.repository import BarStore
 
 logger = logging.getLogger(__name__)
-
-
-class _AlpacaBars(Protocol):
-    def get_bars(
-        self,
-        symbol: str,
-        timeframe: Timeframe,
-        start: datetime,
-        end: datetime | None = ...,
-        limit: int = ...,
-        adjustment: str = ...,
-    ) -> Awaitable[list[Bar]]: ...
 
 
 def backfill_window(now: datetime, lookback_days: float) -> tuple[datetime, datetime]:
@@ -44,7 +32,7 @@ class BackfillController:
     def __init__(
         self,
         store: BarStore,
-        alpaca: _AlpacaBars,
+        alpaca: AlpacaBars,
         *,
         timeframes: tuple[str, ...],
         lookback_for: dict[str, float],
@@ -64,7 +52,7 @@ class BackfillController:
         return self._store
 
     @property
-    def alpaca(self) -> _AlpacaBars:
+    def alpaca(self) -> AlpacaBars:
         """The Alpaca bars source this controller fetches from."""
         return self._alpaca
 
@@ -80,6 +68,7 @@ class BackfillController:
                 start=gap_start,
                 end=gap_end,
                 limit=self._fetch_limit,
+                adjustment=adjustment_for(timeframe),
             )
             if bars:
                 rows = [bar_row_from_alpaca(symbol, b) for b in bars]

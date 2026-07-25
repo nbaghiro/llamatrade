@@ -13,6 +13,7 @@ import logging
 from datetime import datetime, timedelta
 
 from src.ingest.backfill import BackfillController, backfill_window
+from src.ingest.config import adjustment_for
 from src.models import Timeframe
 from src.store.intervals import Interval
 from src.store.models import bar_row_from_alpaca
@@ -66,7 +67,11 @@ class GapRepairer:
             edges = await store.missing_ranges(symbol, timeframe, start, end)
             for gap_start, gap_end in [*edges, *interior]:
                 bars = await alpaca.get_bars(
-                    symbol=symbol, timeframe=Timeframe(timeframe), start=gap_start, end=gap_end
+                    symbol=symbol,
+                    timeframe=Timeframe(timeframe),
+                    start=gap_start,
+                    end=gap_end,
+                    adjustment=adjustment_for(timeframe),
                 )
                 if bars:
                     written += await store.upsert_bars(

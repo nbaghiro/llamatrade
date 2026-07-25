@@ -149,7 +149,6 @@ class TestCreateStrategyArtifact:
             name="Structured Strategy",
             dsl_code='(strategy "Test")',
             description="Test description",
-            config_json={"risk_level": "moderate"},
             symbols=["SPY", "QQQ"],
             timeframe="4H",
         )
@@ -159,7 +158,6 @@ class TestCreateStrategyArtifact:
         assert json_data["name"] == "Structured Strategy"
         assert json_data["description"] == "Test description"
         assert json_data["dsl_code"] == '(strategy "Test")'
-        assert json_data["config_json"] == {"risk_level": "moderate"}
         assert json_data["symbols"] == ["SPY", "QQQ"]
         assert json_data["timeframe"] == "4H"
 
