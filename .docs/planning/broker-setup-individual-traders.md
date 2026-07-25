@@ -1,10 +1,15 @@
 # Broker Setup (Individual Traders / BYO Keys) — Design & Gap Doc
 
-> **STATUS: DRAFT for review (2026-06-16).** Scopes the work to release "connect
-> your own Alpaca account" for individual self-directed traders. The backend is
-> already built end-to-end; the work is a frontend surface plus security hardening.
-> Firm-trades-customer-money (Alpaca Broker API) is explicitly **out of scope** here
-> — see §5.
+> Status: Backend implemented (BYO keys, credential validation, and Alpaca OAuth); the frontend surface (§2.A) may be incomplete. See `.docs/services/auth.md`.
+
+> Scopes the work to release "connect your own Alpaca account" for individual
+> self-directed traders. Firm-trades-customer-money (Alpaca Broker API) is explicitly
+> **out of scope** here — see §5.
+
+> *Some file references in this doc are inaccurate:* `services/auth/src/services/auth_service.py`
+> (§1) does not exist — token minting lives in `services/auth/src/session.py`
+> (`mint_access_refresh`); `services/auth/src/models.py` holds only the 3 Alpaca schemas, so the
+> `models.py:208` references to `AlpacaCredentialsResponse.api_secret` do not resolve.
 
 ## 0. Scope & model
 
@@ -58,17 +63,18 @@ The BYO credential path is built and wired; the only true product gap is the UI.
 - **A4.** No guidance on obtaining Alpaca keys / paper-vs-live explanation.
 
 ### B. Security & hardening (release blockers — real money + secrets)
-- **B1. Secrets are read back in plaintext.** Create/Get return the decrypted
-  `api_secret` to the client (`services/auth/src/models.py:208`,
-  `AlpacaCredentialsResponse.api_secret`). Credentials should be **write-only** from
-  the UI's perspective — never returned after creation. This is the single biggest
-  smell to fix before launch.
+- **B1. Credential read-back — addressed.** The `CreateAlpacaCredentials` /
+  `GetAlpacaCredentials` RPCs are write-only: they return a masked 8-char key prefix and an
+  empty secret (`servicer.py` `_mask_key`, `api_secret=""`). Decryption to the full key/secret
+  happens only service-side for S2S callers (trading, market-data).
 - **B2. Dev-grade encryption.** One global `ENCRYPTION_KEY` + a **static salt**
   (`utils.py:46`) protects every tenant's live keys. Compromise of one env var = all
   customers' brokerage keys. Needs a managed KMS / secrets manager with envelope
   encryption + rotation for real money.
-- **B3. No credential validation.** Keys are stored/used without ever calling Alpaca
-  to confirm they're valid and match the declared paper/live environment.
+- **B3. Credential validation — addressed.** The `ValidateAlpacaCredentials` RPC
+  (`servicer.py::validate_alpaca_credentials`) calls Alpaca `get_account()` against the declared
+  environment, surfaces account status/buying-power, and detects a paper/live mismatch by probing
+  the other environment.
 
 ### C. Multi-user authorization (firm-own-account)
 - **C1.** Credentials are tenant-scoped with **no `user_id`/`created_by`** and no ACL
@@ -142,10 +148,9 @@ Each phase is independently shippable; B (security) gates any production launch.
 - **B2 — secrets at rest:** managed KMS/secrets-manager envelope encryption (heavier,
   correct for real money) vs. hardened app-layer encryption (per-value salt + rotation)?
   *Recommend KMS if launch includes live trading.*
-- **Connect UX:** manual API-key paste vs. **Alpaca OAuth** (scoped connect, no raw
-  secret stored). OAuth is cleaner and is also the natural bridge to advisor-on-client-
-  account later — but it's a bigger Phase 1. *Recommend manual keys for v1, OAuth as a
-  fast-follow.*
+- **Connect UX — resolved (both).** Manual API-key paste (`CreateAlpacaCredentials`) *and*
+  Alpaca OAuth (scoped connect, encrypted bearer token, no raw secret stored) are both
+  implemented (`routers/oauth.py`; see the Alpaca OAuth plan doc).
 - **C1 — authorization model:** tenant-shared credentials with `created_by` + audit
   (simplest, fits firm-own-account) vs. per-user credential ownership/ACL (needed if
   one tenant ever maps to many independent traders). *Recommend shared + audit for v1.*

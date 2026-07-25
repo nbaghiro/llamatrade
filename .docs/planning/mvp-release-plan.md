@@ -10,6 +10,29 @@
 
 ---
 
+## Current status
+
+> The DRAFT header above is preserved as the original framing; the M1–M6 structure
+> still governs. This section states present reality. The single living status
+> tracker is
+> [`platform-remediation-plan-2026-07-18.md`](./platform-remediation-plan-2026-07-18.md).
+
+- **M1 surfaces are real** — the Trading page and Dashboard are built (see §2), and
+  the portfolio silent-demo fallback is gone.
+- **Broker connect UI exists** — via **Alpaca OAuth** (the §7 open decision): a web
+  link/callback flow plus a mobile connect-broker screen (see §2).
+- **The ledger is always-on** — no `LEDGER_*` flags remain, so M2's "cut portfolio
+  reads onto the ledger" is already true; no soak is needed.
+- **M2 backend money-path is hardened** — per-tenant cancel, cash reconciliation,
+  corporate-action driver, stranded-sleeve scheduler, and alert/audit wiring are in
+  place (see the remediation tracker).
+- **M3 copilot works** — the system prompt is built and sent (provider is
+  config-driven).
+- **Still live:** M4 hardening (RLS app-role, TLS/secrets, migration Job, agent
+  K8s), M5 self-serve billing, M6 real money.
+
+---
+
 ## 1. Locked scope decisions
 
 These were decided with the product owner and shape everything below:
@@ -37,17 +60,17 @@ hardening + onboarding polish** — not core trading logic.
 | Capability | State | Notes |
 |---|---|---|
 | Sign up / login / multi-tenant | 🟡 60% | JWT + bcrypt + tenant isolation work. No email verify / password reset / token revoke. |
-| Connect Alpaca (BYO keys) | 🟡 85% backend, 🔴 0% UI | Encrypted creds + per-session clients fully built; **no UI exists** to enter/manage keys. |
+| Connect Alpaca (BYO keys) | 🟡 backend ✅, UI 🟡 | Encrypted creds + per-session clients built. UI now exists: web **Alpaca OAuth** link flow (`AlpacaCallbackPage.tsx`, `SettingsPage.tsx`) + mobile `connect-broker.tsx`. |
 | Build strategy (visual + code) | ✅ ~80% | Block builder + S-expression DSL + validation + save/load. Engine supports 16+ indicators, multi-symbol, live=backtest parity. |
 | Backtest end-to-end | ✅ ~80% | Celery exec, metrics (Sharpe/Sortino/drawdown/etc.), benchmark, live progress streaming, cancel. |
 | Market data | ✅ 95% | TimescaleDB store + Alpaca + streaming + resilient client. |
 | Live/paper execution (backend) | ✅ ~85% | Sessions, all order types, fills, deterministic crash-safe order IDs, risk checks. **No UI.** |
-| Portfolio ledger | ✅ ~80% | Double-entry, sleeves, FIFO, reconciliation. Read-side cutover behind `LEDGER_READS`, pending soak. |
+| Portfolio ledger | ✅ | Double-entry, sleeves, FIFO, reconciliation. Read-side fully on the ledger — no `LEDGER_*` flags remain (soak moot). |
 | Portfolio UI | 🟡 70% | Equity curves + positions + P&L. Silently falls back to demo data on API error (must fix). |
 | AI copilot (Agent) | 🟡 45% | LLM chat + DSL/backtest tools. Not wired into the builder UI. |
 | Billing (Stripe) | 🟡 55% | Subs/payments/webhooks work; usage limits not enforced; no UI plan-gating. *(Not on MVP critical path.)* |
-| Trading page (UI) | 🔴 10% | Placeholder only. Biggest single product gap. |
-| Dashboard (UI) | 🔴 10% | Empty placeholder. |
+| Trading page (UI) | 🟡 | Real page — `TradingPage.tsx` wired to `@llamatrade/core/stores/trading` (sessions/orders/positions blotter). |
+| Dashboard (UI) | 🟡 | Real page — `DashboardPage.tsx` (portfolio snapshot + recent activity). |
 | Notifications / alerts | 🔴 ~20% | CRUD only; no channel sends. *(Deferred.)* |
 | Infra / security | 🟡 50% | Docker/K8s/Terraform/CI/migrations solid. Gaps: TLS cert, inter-service auth, secrets-in-git, deploy automation, trace/log shipping. |
 
@@ -115,8 +138,8 @@ ledger → portfolio) with **no real money**. This is the heart of the beta.
   live order/position/fill stream, sleeve funding flow. (L)
 - Wire the frontend to `StartSession` + **Redis-Streams subscriptions** for live
   order/position updates. (M)
-- Complete the **`LEDGER_READS` soak** and cut portfolio reads fully onto the ledger
-  ([completion plan](./portfolio-ledger-completion-plan.md) stages H→I). (M)
+- Portfolio reads are served fully from the ledger read model (sleeve/lot/event state);
+  no legacy dual-read path or feature flag remains. (M)
 - Onboarding nudge + disclosures: "history begins at onboarding; performance metrics
   need ~30 days of data." (S)
 
@@ -281,13 +304,7 @@ Rough relative weight to the MVP gate: **M2 (L) > M4 (M–L) ≈ M3 (M) > M1 (M)
 
 - [`broker-setup-individual-traders.md`](./broker-setup-individual-traders.md) — BYO-keys
   design, security gaps, phased plan (feeds M2 + M4 + M6).
-- [`CONTRACTS.md`](./CONTRACTS.md) — locked trading↔ledger fill/reservation contract.
-- [`trading-ledger-implementation-plan.md`](./trading-ledger-implementation-plan.md) —
-  6-phase ledger write-side (implemented).
-- [`portfolio-ledger-completion-plan.md`](./portfolio-ledger-completion-plan.md) —
-  ledger read-side cutover + soak (feeds M2).
-- [`redis-streams-migration.md`](./redis-streams-migration.md) — durable event transport
-  (powers live UI streams in M2).
+- [`portfolio-ledger.md`](../portfolio-ledger.md#integration-contract-trading--portfolio--strategy) — the trading↔ledger fill/reservation integration contract.
+- [`../services/trading.md`](../services/trading.md) · [`../services/portfolio.md`](../services/portfolio.md) —
+  ledger write-side + read-side as built.
 - [`telemetry.md`](../telemetry.md) — observability lib (feeds M4).
-- [`individual-asset-trading.md`](./individual-asset-trading.md) — manual trading
-  (deferred, post-MVP).

@@ -35,6 +35,7 @@ Where to go for depth on each area:
 | Strategy CRUD, versioning, templates | [services/strategy.md](services/strategy.md) |
 | Strategy DSL (the strategy language) | [strategy-dsl.md](strategy-dsl.md) |
 | How strategies execute (target weights → orders) | [portfolio-ledger.md](portfolio-ledger.md) |
+| Strategy execution runtime (backtest + live) | [execution-runtime.md](execution-runtime.md) |
 | Backtesting engine & metrics | [services/backtesting.md](services/backtesting.md) |
 | Market data (historical + real-time) | [services/market-data.md](services/market-data.md) |
 | Live trading & order execution | [services/trading.md](services/trading.md) |
@@ -130,7 +131,7 @@ LlamaTrade is a set of focused microservices. The browser talks **directly** to 
 
 | Service | Port | Responsibility |
 | --- | --- | --- |
-| **Frontend (Web)** | 8800 | React SPA (visual builder, dashboards), served via nginx/CDN |
+| **Frontend (Web)** | 8800 | React SPA (visual builder, dashboards), served behind a Caddy proxy / CDN |
 | **Auth** | 8810 | Users, tenants, roles, API keys, JWT, encrypted Alpaca credentials |
 | **Strategy** | 8820 | Strategy CRUD, versioning, compilation, templates |
 | **Backtest** | 8830 | Historical simulation, metrics, benchmark comparison |
@@ -173,7 +174,7 @@ Because the user is Alpaca's direct customer, **Alpaca is the broker-dealer of r
 
 ### 4.2 Strategy lifecycle
 
-A user builds a strategy in the **visual builder** (or starts from a template, or describes it to the AI copilot). The builder state compiles to a **DSL** — an S-expression representation that is portable and executable. Saving a strategy creates an **immutable `StrategyVersion`** (the visual `config` JSON plus the compiled `sexpr`); editing always produces a new version, so backtests and live sessions are always pinned to an exact, reproducible definition.
+A user builds a strategy in the **visual builder** (or starts from a template, or describes it to the AI copilot). The builder state compiles to a **DSL** — an S-expression representation that is portable and executable. Saving a strategy creates an **immutable `StrategyVersion`** storing that **DSL string** as the single source of truth (the JSON IR and visual tree are derived from it on demand, never stored); editing always produces a new version, so backtests and live sessions are always pinned to an exact, reproducible definition.
 
 ```
 ╭────────────────╮ compile ╭────────────────────╮  save  ╔════════════════════════╗
@@ -250,10 +251,10 @@ The **Market Data service** is the single gateway to Alpaca's data and the syste
 
 A backtest replays a strategy over a historical window and reports how it would have performed.
 
-- The Backtest service fetches the required bars from **Market Data** (the TimescaleDB-backed store) over gRPC, then runs the compiled strategy through a **vectorized engine** that simulates orders and positions bar-by-bar.
+- The Backtest service fetches the required bars from **Market Data** (the TimescaleDB-backed store) over gRPC, then drives the compiled strategy through the shared `llamatrade_runtime` (the same `StrategySession` core that runs live), simulating orders and positions bar-by-bar.
 - It computes performance metrics: total return, Sharpe, Sortino, max drawdown, win rate, profit factor, total trades, and an equity curve.
 - **Benchmarking:** results are compared against a benchmark — **S&P 500 (`SPY`) by default**, or a symbol configured on the backtest request (`benchmark_symbol`). The engine computes buy-and-hold of the benchmark and derives alpha, beta, and information ratio. A strategy may also declare its own benchmark in the DSL.
-- Backtests run as **Celery jobs**; progress streams to the UI via Redis pub/sub with an ETA.
+- Backtests run as **Celery jobs**; progress streams to the UI over **Redis Streams** (`llamatrade_events`) — bounded and replayable — with an ETA.
 
 → Deep dive: [backtesting.md](services/backtesting.md)
 
@@ -365,16 +366,20 @@ Key relationships: a `Tenant` owns Users, API Keys, Alpaca Credentials, a Subscr
 Every operation is tenant-scoped with complete isolation:
 
 1. The **JWT** carries a `tenant_id` claim.
-2. Auth middleware resolves a `TenantContext` (`ctx = Depends(require_auth)`).
-3. **Every database query** filters by `ctx.tenant_id`.
+2. The fail-closed `AuthMiddleware` verifies the token; handlers resolve the verified identity via `resolve_identity` / `resolve_identity_connect` (`llamatrade_common`) — never trusting the wire `TenantContext`.
+3. **Every database query** filters by the resolved `tenant_id`.
 4. Service-to-service calls propagate tenant via the `X-Tenant-ID` header.
 
-Defense in depth at the database layer uses **Row-Level Security**:
+Defense in depth at the database layer uses **Row-Level Security** (`libs/db/llamatrade_db/rls.py`, enabled across tenant tables by migration `025_enable_rls_all_tenant_tables`). The session GUC `app.current_tenant` is set from the verified identity; `app.rls_bypass = 'on'` lets trusted system paths through:
 
 ```sql
 ALTER TABLE strategies ENABLE ROW LEVEL SECURITY;
-CREATE POLICY tenant_isolation ON strategies
-    FOR ALL USING (tenant_id = current_setting('app.tenant_id')::uuid);
+ALTER TABLE strategies FORCE ROW LEVEL SECURITY;
+CREATE POLICY strategies_tenant_isolation ON strategies
+    FOR ALL USING (
+        current_setting('app.rls_bypass', true) = 'on'
+        OR tenant_id = NULLIF(current_setting('app.current_tenant', true), '')::uuid
+    );
 ```
 
 **Never allow cross-tenant access. When in doubt, add tenant filtering.** Tenant-isolation tests assert that one tenant cannot read another's data (and that missing rows return `NOT_FOUND`, never leaking existence).
@@ -450,7 +455,7 @@ client_order_id = "lt-" + hashlib.sha256(data.encode()).hexdigest()[:16]
 
 **Crash recovery.** On restart the runner re-syncs equity, reconciles positions against the broker (the source of truth), and re-warms indicators from market data. Because the deterministic `client_order_id` is sent to Alpaca, an order recorded but not persisted before a crash is rejected as a duplicate at the broker instead of double-filling.
 
-> The trading service previously carried a separate session-level event-sourcing subsystem (`trading_events`, `EventSourcedOrderExecutor`, `SessionState` replay). It was never wired into the live path and has been **retired** in favour of the model above; the portfolio ledger is the event-sourced book of record.
+> The trading service holds no session-level event-sourcing subsystem: the portfolio ledger is the sole event-sourced book of record, and the order executor keeps only a thin durable intent record keyed by `client_order_id`.
 
 → Deep dive: [trading.md](services/trading.md), [portfolio-ledger.md](portfolio-ledger.md)
 
@@ -491,7 +496,7 @@ API keys for programmatic access use the format `lt_<prefix>_<random>`, with onl
 
 **Frontend:** React 18 + Vite, TypeScript, Tailwind CSS, Zustand, the Connect client (`@connectrpc/connect`), and a custom canvas-based strategy builder.
 
-**Shared libraries (`libs/`):** `alpaca` (Alpaca REST + WebSocket clients), `proto` (contracts + generated code), `db` (SQLAlchemy models + migrations), `dsl` (strategy language), `compiler` (strategy compiler), `common` (middleware, observability, utilities).
+**Shared libraries (`libs/`):** `alpaca` (Alpaca REST + WebSocket clients), `proto` (contracts + generated code), `db` (SQLAlchemy models + migrations + RLS), `dsl` (strategy language: parser, validator, serializer, and static AST analysis/compilation), `runtime` (strategy execution core for backtest + live: the `StrategySession` evaluation engine — indicators, conditions, sizing — plus the `StrategyRuntime` loop and adapters), `common` (middleware, auth, utilities), `events` (Redis Streams event bus), `telemetry` (OpenTelemetry + Prometheus).
 
 **Infrastructure:** GCP — GKE Autopilot, Cloud SQL (PostgreSQL), Memorystore (Redis), Cloud Storage, Cloud CDN, L7 Load Balancer, Secret Manager, Cloud Monitoring/Logging; CI/CD via GitHub Actions + Cloud Build.
 
@@ -522,10 +527,10 @@ Required environment variables include `DATABASE_URL`, `REDIS_URL`, `JWT_SECRET`
 
 ```
 llamatrade/
-├── apps/web/            # React frontend
+├── apps/               # core (@llamatrade/core shared logic), mobile (Expo), web (React SPA)
 ├── services/           # auth, strategy, backtest, market-data, trading,
 │                       #   portfolio, notification, billing, agent
-├── libs/               # alpaca, proto, db, dsl, compiler, common
+├── libs/               # alpaca, common, db, dsl, events, proto, runtime, telemetry
 ├── infrastructure/     # docker, k8s, terraform
 └── tests/integration/  # cross-service integration tests
 ```

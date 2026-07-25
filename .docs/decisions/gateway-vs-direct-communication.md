@@ -190,7 +190,7 @@ Option B — Direct Communication   ·  ★ CHOSEN — no proxy hop · services 
 
 5. **Production routing** — GCP L7 Load Balancer provides path-based routing and SSL termination without requiring an application-level gateway.
 
-6. **Service count** — With 8 backend services, the complexity of managing multiple endpoints is manageable.
+6. **Service count** — With 9 backend services, the complexity of managing multiple endpoints is manageable.
 
 ---
 

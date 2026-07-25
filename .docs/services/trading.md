@@ -1,6 +1,8 @@
 # Trading Service Architecture
 
-The trading service is the execution engine that connects user-defined strategies to real markets via Alpaca Markets. It handles order execution, position tracking, risk management, and real-time streaming of order and position updates.
+The trading service is the execution engine that connects user-defined strategies to real markets via Alpaca Markets. It handles order execution, position tracking, risk management, and real-time streaming of order and position updates. It is the **execution arm** of the portfolio ledger: it emits terminal fills and reservation events and defers all accounting to the [Portfolio Ledger](../portfolio-ledger.md).
+
+All Alpaca access (REST + WebSocket) goes through the shared `llamatrade_alpaca` library — the trading service never talks to Alpaca directly.
 
 ---
 
@@ -13,7 +15,7 @@ The trading service is responsible for:
 - **Risk Controls**: Enforcing position limits, daily loss limits, and order validation
 - **Real-Time Streaming**: Streaming order and position updates to clients
 - **Session Management**: Linking orders and positions to trading sessions
-- **Alpaca Integration**: Direct connection to Alpaca Trading API (paper and live)
+- **Alpaca Integration**: Paper and live trading via the shared `llamatrade_alpaca` library
 
 ---
 
@@ -22,9 +24,9 @@ The trading service is responsible for:
 ### System Architecture
 
 ```
-╔════════════════════════════════════════════════════════════════════════════════════════════╗
-║                                 TRADING SERVICE  ·  :8850                                  ║
-╚════════════════════════════════════════════════════════════════════════════════════════════╝
+╔════════════════════════════════════════════════════════════════════════════════════════╗
+║                                 TRADING SERVICE  ·  :8850                              ║
+╚════════════════════════════════════════════════════════════════════════════════════════╝
                                              │
 ╭────────────────────────────────────────────────────────────────────────────────────────╮
 │                                 FastAPI + Connect ASGI                                 │
@@ -35,7 +37,7 @@ The trading service is responsible for:
 ╭────────────────────────────────────────────────────────────────────────────────────────╮
 │                                     gRPC Servicer                                      │
 ├────────────────────────────────────────────────────────────────────────────────────────┤
-│ SubmitOrder ───────────► submit order after 5-layer risk checks                        │
+│ SubmitOrder ───────────► submit order after 6-layer risk checks                        │
 │ CancelOrder ───────────► cancel a pending / submitted order                            │
 │ GetOrder ──────────────► get order by id                                               │
 │ ListOrders ────────────► list orders with status filter                                │
@@ -52,8 +54,8 @@ The trading service is responsible for:
 │ LiveSessionService ────► runs the 4-loop strategy runner per session                   │
 │ OrderExecutor ─────────► deterministic client_order_id · exactly-once                  │
 │ PositionService ───────► local position cache (fills = source of truth)                │
-│ RiskManager ───────────► 5-layer validation + circuit breaker                          │
-│ CompilerAdapter ───────► strategy DSL → signals → target weights                       │
+│ RiskManager ───────────► 6-layer validation + circuit breaker                          │
+│ StrategySession ───────► strategy DSL → weights → target weights                       │
 ╰────────────────────────────────────────────────────────────────────────────────────────╯
                                              │
 ╭────────────────────────────────────────────────────────────────────────────────────────╮
@@ -82,14 +84,16 @@ The trading service is responsible for:
               │ ═ REST + WS ═ │          │ prices      │          │ portfolio  │
               ╰───────────────╯          ╰─────────────╯          ╰────────────╯
 
-                      terminal fills ═══════════════════════════════════════════════►
+                      terminal fills ═════════════════════════►
                       ╔════════════════════════════════════════════════╗
-                      ║           ledger:fills:{account_id}            ║
+                      ║   ledger:fills  (global; key lt:ledger:fills)  ║
                       ╠════════════════════════════════════════════════╣
                       ║ portfolio LEDGER  ·  :8860                     ║
                       ║ the book of record (append-only, double-entry) ║
                       ╚════════════════════════════════════════════════╝
 ```
+
+> **Execution runtime.** The runner drives the shared `StrategySession` (evaluation + sizing) through its production `_evaluate_session` loop, priming indicators from historical bars at session start so it can trade from the first live bar; the shared `StrategyRuntime.stream()` loop is opt-in. Full model and the backtest↔live parity differences: [execution-runtime.md](../execution-runtime.md).
 
 ### Order Execution Flow
 
@@ -107,7 +111,7 @@ The trading service is responsible for:
                                               │ per order
                                               ▼
                  ╭──────────────────────────────────────────────────────────╮
-                 │      RiskManager.check_order()  —  5-layer pipeline      │
+                 │      RiskManager.check_order()  —  6-layer pipeline      │
                  ├──────────────────────────────────────────────────────────┤
                  │ max order value ($5,000)   ·   allowed-symbols whitelist │
                  │ max position size ($10,000) ·  daily-loss limit ($1,000) │
@@ -149,10 +153,31 @@ The trading service is responsible for:
             ╔═══════════════════════════════════════════════════════════════════╗
             ║                    fills in  →  book of record                    ║
             ╠═══════════════════════════════════════════════════════════════════╣
-            ║ fills update local positions; TERMINAL fills publish to           ║
-            ║ ledger:fills:{account_id} → the portfolio LEDGER (per-sleeve P&L) ║
+            ║ fills update local positions; TERMINAL fills publish one proto    ║
+            ║ LedgerFill to the global ledger:fills stream (lt:ledger:fills) →  ║
+            ║ the portfolio LEDGER (per-sleeve P&L). See portfolio-ledger.md.   ║
             ╚═══════════════════════════════════════════════════════════════════╝
 ```
+
+### Ledger Emission
+
+Terminal fills publish one proto `LedgerFill` to the global `ledger:fills` stream
+(`ledger_events.py`); each buy also publishes a `LedgerReservation` on submit so
+sleeve free cash reflects in-flight orders (released on cancel/reject/expiry,
+consumed by the fill). The reserved notional
+(`executor/order_executor.py::_reservation_amount`) is exact for a **limit** buy
+(`qty × limit_price`) but adds a buffer for **market** and **stop** buys
+(`qty × reference_price × (1 + _MARKET_BUY_RESERVE_BUFFER)`, default 2%, env
+`TRADING_MARKET_BUY_RESERVE_BUFFER`) because the fill can gap above the reference
+price.
+
+Emission is idempotent on `client_order_id` from two paths — the live trade stream
+and the REST-sync recovery path — so a fill booked twice is a no-op. Beyond the
+runner's startup re-publish of terminal orders, a periodic drain
+(`_ledger_republish_loop`, default 120s over a 15-minute window, sleeve-attributed
+sessions only) proactively re-emits recently-terminal orders' ledger events,
+closing the "crash before publish" window. See the
+[ledger integration contract](../portfolio-ledger.md#integration-contract-trading--portfolio--strategy).
 
 ---
 
@@ -161,19 +186,35 @@ The trading service is responsible for:
 ```
 services/trading/
 ├── src/
-│   ├── main.py                    # FastAPI app, lifespan, health check
-│   ├── models.py                  # Pydantic schemas
-│   ├── alpaca_client.py           # Alpaca REST API client
+│   ├── main.py                    # FastAPI app, lifespan, health check, rehydration loop
+│   ├── models.py                  # Pydantic schemas + enum conversion helpers
+│   ├── credentials.py             # Per-tenant/session Alpaca credential resolution
+│   ├── recovery.py                # Boot + periodic runner rehydration (advisory locks)
+│   ├── ledger_events.py           # LedgerFill / LedgerReservation message builders
+│   ├── providers.py              # DI factory for executor/services/publisher singletons
+│   ├── circuit_breaker.py         # Broker-failure circuit breaker
 │   ├── grpc/
-│   │   └── servicer.py            # gRPC/Connect service implementation
+│   │   └── servicer.py            # gRPC/Connect service implementation (resolve_identity)
 │   ├── executor/
-│   │   └── order_executor.py      # Order submission, risk checks, Alpaca sync
-│   ├── services/
-│   │   └── position_service.py    # Local position tracking, P&L
+│   │   ├── base.py               # Shared Alpaca submit/sync mixin (via llamatrade_alpaca)
+│   │   └── order_executor.py      # Order submission, deterministic ids, ledger emission
 │   ├── risk/
-│   │   └── risk_manager.py        # Risk checks, limits, daily P&L tracking
+│   │   └── risk_manager.py        # 6-layer risk checks + sleeve-aware ledger gate
+│   ├── runner/
+│   │   ├── runner.py             # Per-session live strategy runner (concurrent loops)
+│   │   └── runtime_adapters.py    # Shared llamatrade_runtime adapter (opt-in loop)
+│   ├── services/
+│   │   ├── live_session_service.py # Start/stop/rehydrate runners
+│   │   ├── position_service.py    # Local position cache, P&L
+│   │   ├── session_service.py     # TradingSession CRUD
+│   │   ├── audit_service.py       # Money-path audit log
+│   │   └── alert_service.py       # Reconciliation / halt alerts
+│   ├── streaming/
+│   │   ├── publisher.py          # Redis Streams publisher (orders, positions, ledger)
+│   │   └── subscriber.py          # UI stream tail-reader
 │   └── clients/
-│       └── market_data.py         # HTTP client for market-data service
+│       ├── market_data.py         # HTTP client for market-data service
+│       └── portfolio_client.py    # LedgerClient wrapper (sleeve state / free cash)
 └── tests/
     └── test_*.py                  # Test suite
 ```
@@ -184,16 +225,30 @@ services/trading/
 
 | Component               | File                           | Responsibility                                          |
 | ----------------------- | ------------------------------ | ------------------------------------------------------- |
-| **TradingServicer**     | `grpc/servicer.py`             | gRPC endpoint implementations                           |
-| **OrderExecutor**       | `executor/order_executor.py`   | Submit orders, sync with Alpaca, manage order lifecycle |
+| **TradingServicer**     | `grpc/servicer.py`             | gRPC endpoint implementations; `resolve_identity` guard |
+| **LiveSessionService**  | `services/live_session_service.py` | Start/stop/rehydrate per-session strategy runners   |
+| **OrderExecutor**       | `executor/order_executor.py`   | Submit orders, sync with Alpaca, deterministic ids, ledger emission |
 | **PositionService**     | `services/position_service.py` | Local position tracking, P&L calculation                |
-| **RiskManager**         | `risk/risk_manager.py`         | Validate orders, enforce limits, track daily P&L        |
-| **AlpacaTradingClient** | `alpaca_client.py`             | REST client for Alpaca Trading API                      |
+| **RiskManager**         | `risk/risk_manager.py`         | 6-layer validation + sleeve-aware ledger gate + daily P&L |
+| **`llamatrade_alpaca`** | `libs/alpaca`                  | Shared Alpaca REST + WebSocket clients (the only Alpaca entry point) |
 | **MarketDataClient**    | `clients/market_data.py`       | HTTP client for market-data service                     |
 
 ---
 
 ## RPC Endpoints
+
+15 RPCs total, grouped below.
+
+### Session Management
+
+| RPC             | Request                | Response                | Description                        |
+| --------------- | ---------------------- | ----------------------- | ---------------------------------- |
+| `StartSession`  | `StartSessionRequest`  | `StartSessionResponse`  | Start a live/paper strategy runner |
+| `StopSession`   | `StopSessionRequest`   | `StopSessionResponse`   | Stop a running session             |
+| `PauseSession`  | `PauseSessionRequest`  | `PauseSessionResponse`  | Pause a running session            |
+| `ResumeSession` | `ResumeSessionRequest` | `ResumeSessionResponse` | Resume a paused session            |
+| `GetSession`    | `GetSessionRequest`    | `GetSessionResponse`    | Get a session by ID                |
+| `ListSessions`  | `ListSessionsRequest`  | `ListSessionsResponse`  | List sessions for the tenant       |
 
 ### Order Management
 
@@ -225,17 +280,24 @@ services/trading/
 
 ### Risk Check Pipeline
 
-`RiskManager.check_order()` validates against 5 checks:
+`RiskManager.check_order()` validates against 6 layers (`risk/risk_manager.py`):
 
 | #   | Check                 | Rule                            | Default   |
 | --- | --------------------- | ------------------------------- | --------- |
 | 1   | **Max Order Value**   | qty × price ≤ limit             | $5,000    |
-| 2   | **Allowed Symbols**   | symbol in whitelist             | All       |
-| 3   | **Max Position Size** | (current + new) × price ≤ limit | $10,000   |
-| 4   | **Daily Loss Limit**  | daily_pnl > -limit              | $1,000    |
-| 5   | **Order Rate Limit**  | orders in last 60s < limit      | 10/minute |
+| 2   | **Sleeve gate** *(when `sleeve_id` present)* | sleeve status must be `ACTIVE` (a `FROZEN` or `CLOSED` sleeve rejects **all** orders); buys must fit the sleeve's **free cash** (read from the portfolio ledger via `LedgerClient`) | — |
+| 3   | **Allowed Symbols**   | symbol in whitelist             | All       |
+| 4   | **Max Position Size** | (current + new) × price ≤ limit | $10,000   |
+| 5   | **Daily Loss Limit**  | daily_pnl > -limit              | $1,000    |
+| 6   | **Order Rate Limit**  | orders in last 60s < limit      | 10/minute |
 
-Returns: `RiskCheckResult(passed: bool, violations: list[str])`
+Returns: `RiskCheckResult(passed: bool, violations: list[str])`. A broker-failure
+**circuit breaker** can additionally halt submission independently of these checks.
+
+**Sleeve gate (layer 2)** is the ledger integration point and is **fail-safe**: if
+the sleeve's state can't be fetched, the order is rejected rather than allowed
+through. Unattributed/manual orders (no `sleeve_id`) skip this layer and degrade to
+account-level behavior.
 
 ### Risk Limits Configuration
 
@@ -259,14 +321,18 @@ The RiskManager tracks daily metrics via `DailyPnL` table:
 - `trades_count`, `winning_trades`, `losing_trades`
 - `max_drawdown_pct`: (equity_high - current) / equity_high
 
-### Price Fetching Fallback
+### Price Fetching for Risk Checks
 
-Multi-layer fallback for price estimation:
+The max-order-value and position-size checks need a reference price. The
+`RiskManager` tries, in order:
 
 1. **Market Data Service**: HTTP call to `/quotes/{symbol}/latest`
-2. **Local Cache**: Price from recent successful fetch
-3. **Database Position**: Last known price from position tracking
-4. **Default**: Return 100.0 (last resort)
+2. **Local Cache**: Price from a recent successful fetch
+
+If no price can be resolved, the order is **rejected** — a fail-safe risk-check
+failure (`"Unable to verify order value for {symbol} - price unavailable"`), not a
+guessed price. There is **no** hardcoded fallback price; the money path never sizes
+against a fabricated value.
 
 ---
 
@@ -489,6 +555,10 @@ class TradingSession(Base):
 
 ### Alpaca Trading API
 
+Reached exclusively through the `llamatrade_alpaca` `TradingClient` (rate limiter,
+circuit breaker, retry/backoff, and crash-recovery `get_order_by_client_id`); the
+service supplies per-tenant credentials and never issues raw HTTP to Alpaca.
+
 **Base URLs:**
 
 - Paper: `https://paper-api.alpaca.markets/v2`
@@ -623,7 +693,8 @@ LOG_LEVEL=INFO
 })`
 
 2. **gRPC Servicer** receives `SubmitOrderRequest`
-   - Extracts `tenant_id` from context
+   - Resolves identity via `resolve_identity` (the token identity; a mismatched
+     wire `tenant_id` is rejected — cross-tenant guard)
    - Maps proto enums to internal enums
 
 3. **OrderExecutor.submit_order()** is called
@@ -634,7 +705,7 @@ LOG_LEVEL=INFO
    - Creates `Order` record in database (status=pending)
    - Generates a `client_order_id` — **deterministic** (`lt-<sha256(session:symbol:side:signal_ts)>`) for live-runner orders so a retry after a crash is idempotent; the id is sent to Alpaca, which enforces uniqueness. An already-recorded order short-circuits and is returned as-is.
 
-5. **AlpacaTradingClient.submit_order()** is called
+5. **`llamatrade_alpaca` `TradingClient.submit_order()`** is called (with the deterministic `client_order_id`)
    - POSTs to `https://paper-api.alpaca.markets/v2/orders`
    - Receives Alpaca order ID and status
 
@@ -672,14 +743,15 @@ LOG_LEVEL=INFO
 The trading service provides a production-ready order execution engine with:
 
 1. **Order Execution**: Full order lifecycle from submission to fill
-2. **Risk Controls**: 5-layer validation pipeline before every order
+2. **Risk Controls**: 6-layer validation pipeline before every order
 3. **Position Tracking**: Local database tracking with real-time P&L
-4. **Alpaca Integration**: Direct connection to paper and live trading
+4. **Alpaca Integration**: Paper and live trading via `llamatrade_alpaca`
 5. **Real-Time Streaming**: gRPC streaming for order and position updates
-6. **Multi-Tenancy**: Complete tenant isolation via session scoping
-7. **Clean API**: gRPC/Connect protocol for type-safe communication
+6. **Multi-Tenancy**: Every RPC resolves identity via `resolve_identity` (cross-tenant guard); Alpaca credentials are per-tenant/session
+7. **Crash Recovery**: Boot + periodic runner rehydration, arbitrated by per-session advisory locks
+8. **Clean API**: gRPC/Connect protocol for type-safe communication
 
-Architecture separates concerns: Servicer (gRPC) → OrderExecutor (business logic) → RiskManager (validation) → AlpacaClient (broker) → Database (persistence).
+Architecture separates concerns: Servicer (gRPC) → OrderExecutor (business logic) → RiskManager (validation) → `llamatrade_alpaca` (broker) → Database (persistence) → ledger fill emission (portfolio).
 
 ---
 
@@ -730,6 +802,26 @@ Alpaca errors are mapped to appropriate responses:
 
 ---
 
+## Multi-Tenancy & Crash Recovery
+
+**Tenant isolation.** The fail-closed `AuthMiddleware` populates a request-scoped
+identity at the Connect boundary. Every RPC in the servicer resolves it via
+`resolve_identity`: it returns the token identity and rejects a request whose wire
+`tenant_id` differs (cross-tenant guard). All DB queries and ledger emissions are
+`tenant_id`-scoped. Alpaca credentials are resolved per tenant/session
+(`credentials.py`) — never from process-wide env defaults for user orders.
+
+**Crash recovery (`recovery.py`).** A `StrategyRunner` lives in-process. When the
+pod owning a session dies, the `trading_sessions` row stays RUNNING/PAUSED with no
+runner. A boot-time and periodic (`TRADING_REHYDRATION_INTERVAL_SECONDS`, default
+30s) rehydration pass re-attaches a runner to every such session. Ownership is
+arbitrated by a **per-session Postgres advisory lock** held on a dedicated
+connection for the runner's lifetime, so a horizontally scaled deployment never
+double-runs a session; the lock frees automatically on pod death. Order-level
+recovery is separate: a deterministic `client_order_id` plus `get_order_by_client_id`
+lets a recorded-but-unsubmitted order resume and an already-submitted one
+short-circuit (idempotent replay).
+
 ## Startup/Shutdown Sequence
 
 ### Startup
@@ -742,7 +834,8 @@ Alpaca errors are mapped to appropriate responses:
    a. Import Connect ASGI application from proto
    b. Create TradingServicer instance
    c. Mount Connect app at root path
-5. Add CORS middleware
+   d. Start the runner rehydration loop (reclaim orphaned sessions)
+5. Add CORS middleware (after AuthMiddleware, which fails closed at the edge)
 6. Register health check endpoint (/health)
 7. Register metrics endpoint (/metrics)
 8. Start accepting requests
@@ -752,8 +845,8 @@ Alpaca errors are mapped to appropriate responses:
 
 ```
 1. Stop accepting new requests
-2. Wait for active order submissions to complete
-3. Close Alpaca client connections
+2. Cancel the rehydration loop; release session advisory-lock leases
+3. Wait for active order submissions to complete
 4. Close market-data client connections
 5. Close database connections
 6. Flush Prometheus metrics
@@ -767,32 +860,37 @@ Alpaca errors are mapped to appropriate responses:
 
 ```
 tests/
-├── conftest.py                    # Shared fixtures (~7600 lines)
-├── test_alert_service.py          # Alert service tests
+├── conftest.py                    # Shared fixtures
+├── test_alert_service.py          # Reconciliation / halt alert tests
 ├── test_audit_service.py          # Audit logging tests
-├── test_bar_stream.py             # Bar data streaming tests
-├── test_base_executor.py          # Base executor tests
+├── test_auth_isolation.py         # Per-RPC tenant-isolation tests
+├── test_base_executor.py          # Base Alpaca submit/sync mixin tests
 ├── test_bracket_orders.py         # Bracket order tests
 ├── test_cache.py                  # Cache layer tests
 ├── test_circuit_breaker.py        # Circuit breaker tests
-├── test_compiler_adapter.py       # Strategy compilation tests
 ├── test_concurrency.py            # Concurrent execution tests
-├── test_event_sourced_executor.py # Event sourcing tests
-├── test_events.py                 # Event handling tests
 ├── test_fill_handling.py          # Order fill tests
 ├── test_grpc_servicer.py          # gRPC endpoint tests
+├── test_grpc_servicer_sessions.py # Session-lifecycle RPC tests
 ├── test_health.py                 # Health check tests
+├── test_ledger_emission.py        # LedgerFill / reservation emission tests
 ├── test_live_session_service.py   # Live session tests
 ├── test_market_data_client.py     # Market data client tests
 ├── test_metrics.py                # Prometheus metrics tests
 ├── test_order_executor.py         # Order executor tests
+├── test_order_validation.py       # OrderCreate type↔price validation tests
 ├── test_position_service.py       # Position service tests
-├── test_risk_manager.py           # Risk manager tests (~30k lines)
+├── test_providers.py              # DI factory / singleton tests
+├── test_recovery.py               # Crash-recovery / rehydration tests
+├── test_rehydration.py            # Runner rehydration tests
+├── test_risk_manager.py           # Risk manager tests
 ├── test_runner.py                 # Strategy runner tests
+├── test_runner_session.py         # Runner-session integration tests
+├── test_runtime_adapters.py       # Shared runtime adapter tests
 ├── test_session_service.py        # Session service tests
-├── test_streaming_endpoints.py    # Streaming endpoint tests
+├── test_sleeve_execution.py       # Sleeve-attributed execution tests
 ├── test_streaming.py              # Streaming tests
-├── test_trade_stream.py           # Trade streaming tests
+├── test_streaming_endpoints.py    # Streaming endpoint tests
 └── test_trading_hours.py          # Market hours tests
 ```
 
@@ -828,7 +926,7 @@ pytest tests/test_order_executor.py::test_submit_order_success
 
 - **gRPC/Connect Endpoints**: SubmitOrder, CancelOrder, GetOrder, ListOrders, GetPosition, ListPositions, ClosePosition
 - **Order Executor**: Order submission pipeline with Alpaca integration
-- **Risk Manager**: 5-layer validation pipeline
+- **Risk Manager**: 6-layer validation pipeline
 - **Position Service**: Local position tracking with P&L
 - **Alpaca Client**: REST client for paper/live trading
 - **Market Data Client**: HTTP client for price fetching

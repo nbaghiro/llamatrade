@@ -1,8 +1,21 @@
 # Portfolio Service Architecture
 
-The portfolio service is the central hub for tracking portfolio state, positions, transactions, and performance analytics. It aggregates data from trading sessions, syncs with the trading service, and provides real-time valuation by integrating with the market-data service.
+The portfolio service is the **book of record** for LlamaTrade. It owns the
+event-sourced, double-entry **[Portfolio Ledger](../portfolio-ledger.md)** — the
+single source of truth that lets multiple strategies and manual trading share one
+brokerage account while preserving exact, per-holding provenance. The trading
+service executes orders and emits fills; the portfolio service consumes those
+fills and owns sleeves, lots, cash sub-ledgers, fund allocation, corporate
+actions, and reconciliation against broker truth.
 
-It is also the **book of record** for the multi-strategy **[Portfolio Ledger](../portfolio-ledger.md)** — the event-sourced, double-entry ledger that lets multiple strategies and manual trading share a single brokerage account while preserving per-holding provenance. The trading service executes orders and emits fills; the portfolio service owns the ledger, sleeves, lots, cash sub-ledgers, fund allocation, and reconciliation.
+The service exposes two Connect servicers from a single process (`:8860`):
+
+- **`PortfolioService`** — the read model: portfolio summary, positions,
+  performance analytics, transactions, and per-strategy performance. Every read
+  derives from the ledger projection.
+- **`LedgerService`** — the write/administration surface: account bootstrap, fund
+  disbursement (allocate / transfer / deposit / withdraw), sleeve lifecycle
+  (close), corporate actions, and sleeve/holding queries.
 
 ---
 
@@ -10,13 +23,21 @@ It is also the **book of record** for the multi-strategy **[Portfolio Ledger](..
 
 The portfolio service is responsible for:
 
-- **Portfolio Summary**: Aggregated view of total equity, cash, market value, and P&L
-- **Position Tracking**: Current positions with real-time price enrichment
-- **Transaction History**: Complete audit trail of all portfolio transactions
-- **Performance Analytics**: Risk metrics (Sharpe, Sortino, Max Drawdown), returns, and volatility
-- **Asset Allocation**: Breakdown of portfolio composition by category
-- **Trading Sync**: Sync portfolio state with active trading sessions
-- **Portfolio Ledger**: Event-sourced book of record — sleeves, lot-level provenance, per-strategy fund allocation, and reconciliation against broker truth. See [Portfolio Ledger](../portfolio-ledger.md)
+- **The Ledger**: An append-only, double-entry event log (`ledger_events`) —
+  every value-moving fact recorded exactly once as a balanced, sleeve-tagged event.
+- **Projections**: Per-sleeve positions/lots, cash (`free = balance − reserved`),
+  and realized/unrealized P&L, all derived as deterministic folds of the log.
+- **Fund Disbursement**: Allocate capital to strategy sleeves, transfer between
+  sleeves, deposit/withdraw — virtual moves over per-sleeve cash sub-ledgers.
+- **Fill Ingestion**: Consume trading's `LedgerFill` / `LedgerReservation` events
+  and append balanced ledger events (FIFO cost basis resolved at ingestion).
+- **Reconciliation**: Assert `Σ sleeve_qty(symbol) == broker_qty(symbol)`,
+  classify drift, and resolve it (adopt externals into Unmanaged, freeze on
+  material drift).
+- **Corporate Actions**: Splits, symbol changes, and dividends applied lot-by-lot
+  with provenance preserved.
+- **Read-Side Analytics**: Portfolio summary, valuation, and risk metrics
+  (Sharpe, Sortino, max drawdown) over the ledger-derived equity series.
 
 ---
 
@@ -32,46 +53,43 @@ The portfolio service is responsible for:
 ╭────────────────────────────────────────────────────────────────────────────────────────╮
 │                                 FastAPI + Connect ASGI                                 │
 ├────────────────────────────────────────────────────────────────────────────────────────┤
-│ /health                  PortfolioServiceASGIApplication                               │
+│ /health                  PortfolioServiceASGIApplication + LedgerServiceASGIApplication │
+╰────────────────────────────────────────────────────────────────────────────────────────╯
+                                             │
+╭─────────────────────────────────────────┬──────────────────────────────────────────────╮
+│           PortfolioServicer (reads)      │            LedgerServicer (writes)           │
+├─────────────────────────────────────────┼──────────────────────────────────────────────┤
+│ GetPortfolio · GetPositions             │ GetOrCreateAccount                           │
+│ GetPerformance · GetAssetAllocation     │ AllocateCapital · TransferCapital            │
+│ ListTransactions · SyncPortfolio        │ DepositFunds · WithdrawFunds                 │
+│ ListStrategyPerformance                 │ CloseSleeve · ApplyCorporateAction           │
+│ GetStrategyPerformance · EquityCurve    │ ListSleeves · GetSleeve · GetHoldingHistory  │
+╰─────────────────────────────────────────┴──────────────────────────────────────────────╯
+                                             │
+╭────────────────────────────────────────────────────────────────────────────────────────╮
+│                                  Ledger Core (src/ledger/)                             │
+├────────────────────────────────────────────────────────────────────────────────────────┤
+│ writer ─────► append-only, balance-checked, idempotent (ON CONFLICT event_id)          │
+│ projector/projection ─► fold events → AccountProjection (sleeve cash / lots / P&L)     │
+│ ingestion ──► LedgerFill/LedgerReservation → balanced append (+ FIFO sizing)           │
+│ reconciliation · corporate · funds · lifecycle · invariants · postings · netting       │
 ╰────────────────────────────────────────────────────────────────────────────────────────╯
                                              │
 ╭────────────────────────────────────────────────────────────────────────────────────────╮
-│                                     gRPC Servicer                                      │
+│                            Background Ledger Runtime (src/tasks/)                       │
 ├────────────────────────────────────────────────────────────────────────────────────────┤
-│ GetPortfolio ──────────► portfolio summary + positions                                 │
-│ ListPortfolios ────────► list all portfolios for tenant                                │
-│ GetPerformance ────────► risk metrics + time series                                    │
-│ GetAssetAllocation ────► category breakdown                                            │
-│ GetPositions ──────────► all current positions                                         │
-│ ListTransactions ──────► paginated transaction history                                 │
-│ RecordTransaction ─────► create a new transaction                                      │
-│ SyncPortfolio ─────────► sync with a trading session                                   │
-╰────────────────────────────────────────────────────────────────────────────────────────╯
-                                             │
-╭────────────────────────────────────────────────────────────────────────────────────────╮
-│                                     Service Layer                                      │
-├────────────────────────────────────────────────────────────────────────────────────────┤
-│ PortfolioService ──────► summary, positions, sync operations                           │
-│ PerformanceService ────► analytics, metrics, equity curves                             │
-│ TransactionService ────► transaction CRUD, P&L calculations                            │
-│ MarketDataClient ──────► HTTP client for price enrichment                              │
-╰────────────────────────────────────────────────────────────────────────────────────────╯
-                                             │
-╭────────────────────────────────────────────────────────────────────────────────────────╮
-│                                     Database Layer                                     │
-├────────────────────────────────────────────────────────────────────────────────────────┤
-│ PortfolioSummary ──────► aggregated state (JSONB positions)                            │
-│ Transaction ───────────► individual transaction records                                │
-│ PortfolioHistory ──────► daily snapshots for analytics                                 │
-│ PerformanceMetrics ────► cached metric calculations                                    │
+│ fill_ingestion ─► single active consumer (advisory lock) on lt:ledger:fills            │
+│ reconciliation ─► periodic ledger⟷broker drift → correction events                     │
+│ equity_snapshot ► materialize read-side equity curve                                   │
+│ supervisor ─────► restart crashed loops; lag monitor fails liveness on stall           │
 ╰────────────────────────────────────────────────────────────────────────────────────────╯
                                              │
                   ┌───────────────────────┬──┴─────────────────────────┐
                   ▼                       ▼                            ▼
            ┌────────────┐          ╭─────────────╮          ╭────────────────────╮
-           │ PostgreSQL │          │ market-data │          │ consumers          │
-           │ ledger +   │          │ :8840       │          │ frontend ·         │
-           │ snapshots  │          │ valuation   │          │ trading · backtest │
+           │ PostgreSQL │          │ market-data │          │ producers/consumers│
+           │ ledger_*   │          │ :8840       │          │ trading (fills) ·  │
+           │ tables     │          │ valuation   │          │ strategy · web     │
            └────────────┘          ╰─────────────╯          ╰────────────────────╯
 ```
 
@@ -79,43 +97,38 @@ The portfolio service is responsible for:
 
 ```
 ╔════════════════════════════════════════════════════════════════════════════════════════════╗
-║           PORTFOLIO DATA FLOW  ·  sources → transactions → valuation → analytics           ║
+║        PORTFOLIO DATA FLOW  ·  fills/fund-ops → append → projection → reads/analytics       ║
 ╚════════════════════════════════════════════════════════════════════════════════════════════╝
 
-                     ┌───────────────────────────────────────────────────┐
-                     │                  external sources                 │
-                     ├───────────────────────────────────────────────────┤
-                     │ trading service ──► order fills, position updates │
-                     │ market-data ──────► current prices for valuation  │
-                     │ user actions ─────► deposits · withdrawals        │
-                     └───────────────────────────────────────────────────┘
-                                               │
-                                               ▼
-                ╭─────────────────────────────────────────────────────────────╮
-                │                      TransactionService                     │
-                ├─────────────────────────────────────────────────────────────┤
-                │ records buy / sell from fills · deposits · dividends · fees │
-                │ calculates net amounts after fees                           │
-                │ provides realized-P&L calculations                          │
-                ╰─────────────────────────────────────────────────────────────╯
-                                               │
-                                               ▼
-               ╭──────────────────────────────────────────────────────────────╮
-               │                       PortfolioService                       │
-               ├──────────────────────────────────────────────────────────────┤
-               │ aggregates positions from PortfolioSummary JSONB             │
-               │ enriches with current prices (via MarketDataClient)          │
-               │ computes unrealized P&L · total equity · cash · market value │
-               ╰──────────────────────────────────────────────────────────────╯
-                                               │
-                                               ▼
-               ╭──────────────────────────────────────────────────────────────╮
-               │                      PerformanceService                      │
-               ├──────────────────────────────────────────────────────────────┤
-               │ fetches PortfolioHistory for the period                      │
-               │ daily returns from the equity series                         │
-               │ risk metrics: Sharpe · Sortino · Max Drawdown · equity curve │
-               ╰──────────────────────────────────────────────────────────────╯
+           trading fills (lt:ledger:fills)        strategy/web fund ops (LedgerService)
+                        │                                        │
+                        ▼                                        ▼
+        ╭───────────────────────────────╮        ╭───────────────────────────────╮
+        │ FILL INGESTION (single FIFO   │        │ FUND DISBURSEMENT             │
+        │ consumer)                     │        │ allocate / transfer / dep/wd  │
+        │ • re-home stray CLOSED-sleeve │        │ • solvency check on free cash │
+        │ • FIFO cost basis on sells    │        │ • virtual, balanced moves     │
+        │ • freeze on invariant breach  │        │                               │
+        ╰───────────────────────────────╯        ╰───────────────────────────────╯
+                        └───────────────────┬────────────────────┘
+                                            ▼
+                        ╔════════════════════════════════════════════╗
+                        ║ LedgerWriter.append  (SINGLE SOURCE)       ║
+                        ║ balanced double-entry · idempotent on       ║
+                        ║ event_id · conservation asserted at write   ║
+                        ╚════════════════════════════════════════════╝
+                                            │  fold
+                                            ▼
+                        ╭────────────────────────────────────────────╮
+                        │ AccountProjection  (per sleeve)            │
+                        │ cash(free/reserved) · lots · realized/     │
+                        │ unrealized P&L · account aggregate         │
+                        ╰────────────────────────────────────────────╯
+                                            │
+                        ┌───────────────────┴────────────────────┐
+                        ▼                                         ▼
+                reads (PortfolioService)                reconciliation (ledger⟷broker)
+                enriched via market-data                append correction events
 ```
 
 ---
@@ -125,357 +138,247 @@ The portfolio service is responsible for:
 ```
 services/portfolio/
 ├── src/
-│   ├── main.py                     # FastAPI app, lifespan, health check
-│   ├── models.py                   # Pydantic schemas
+│   ├── main.py                              # FastAPI app, lifespan, ledger runtime, health
+│   ├── repositories.py                      # SQLAlchemy repositories (accounts, sleeves, events)
+│   ├── ports.py                             # Protocols the services depend on
+│   ├── proto_mappers.py                     # projection views ↔ proto messages
+│   ├── metrics.py                           # Prometheus metrics
+│   ├── grpc/
+│   │   ├── servicer.py                     # PortfolioServicer (read model)
+│   │   └── ledger_servicer.py              # LedgerServicer (fund ops, sleeve lifecycle)
+│   ├── ledger/
+│   │   ├── writer.py                       # Append-only, balance-checked, idempotent writer
+│   │   ├── postings.py                     # event → balanced double-entry legs
+│   │   ├── projector.py / projection.py    # fold events → AccountProjection
+│   │   ├── read_model.py                   # summary / position / transaction views
+│   │   ├── ingestion.py                    # LedgerFill/LedgerReservation → append (+ FIFO)
+│   │   ├── sizing.py                       # FIFO lot selection
+│   │   ├── reconciliation.py               # drift classification (pure)
+│   │   ├── corporate.py                    # splits / symbol changes / dividends (pure)
+│   │   ├── funds.py                        # allocate / transfer / deposit / withdraw planners
+│   │   ├── lifecycle.py                    # sleeve close / re-home planning (pure)
+│   │   ├── desired_state.py                # target vs actual → intended orders
+│   │   ├── netting.py                      # block-and-allocate netting (Planned / Not implemented)
+│   │   ├── invariants.py                   # sleeve invariant checks
+│   │   ├── analytics.py / performance.py   # NumPy risk metrics over equity series
+│   │   └── backfill.py                     # seed the ledger from broker state at bootstrap
+│   ├── tasks/
+│   │   ├── fill_ingestion.py               # durable consumer group + advisory-lock election
+│   │   ├── reconciliation.py               # periodic ledger⟷broker reconcile loop
+│   │   ├── equity_snapshot.py              # read-side equity-curve materialization
+│   │   ├── drift_policy.py                 # how each drift kind is resolved
+│   │   └── supervisor.py                   # supervise/restart the runtime loops
 │   ├── services/
-│   │   ├── portfolio_service.py    # Summary, positions, sync
-│   │   ├── performance_service.py  # Analytics, metrics, equity curves
-│   │   └── transaction_service.py  # Transaction CRUD, P&L
-│   ├── clients/
-│   │   └── market_data.py          # HTTP client for price enrichment
-│   └── grpc/
-│       └── servicer.py             # gRPC/Connect service implementation
+│   │   ├── portfolio_read_service.py       # summary / positions / transactions / metrics
+│   │   ├── strategy_performance_service.py # per-strategy P&L (write side)
+│   │   ├── strategy_performance_read_service.py # per-strategy reads + equity curve
+│   │   ├── sleeve_service.py               # sleeve reads / equity / free cash
+│   │   ├── sleeve_lifecycle_service.py     # close-sleeve orchestration
+│   │   ├── fund_service.py                 # fund disbursement orchestration
+│   │   ├── corporate_action_service.py     # corporate-action application
+│   │   └── onboarding_service.py           # account + base-sleeve bootstrap
+│   └── clients/
+│       ├── market_data.py                  # HTTP client for price enrichment
+│       └── alpaca.py                       # broker positions/cash for reconciliation
 └── tests/
-    ├── conftest.py                 # Fixtures
-    ├── test_portfolio_service.py   # Portfolio service tests
-    └── test_performance_service.py # Performance service tests
+    ├── conftest.py
+    ├── test_ledger_*.py / test_fill_ingestion.py / test_reconciliation_task.py
+    ├── test_sleeve_*.py / test_fund_service.py / test_corporate*.py
+    ├── test_portfolio_read_service.py / test_strategy_performance_read_service.py
+    ├── test_grpc_servicer.py / test_ledger_servicer.py / test_servicer_auth.py
+    └── integration/  (test_writer_integration, test_servicer_integration, test_rls)
 ```
 
 ---
 
 ## Core Components
 
-| Component              | File                              | Responsibility                       |
-| ---------------------- | --------------------------------- | ------------------------------------ |
-| **PortfolioServicer**  | `grpc/servicer.py`                | gRPC endpoint implementations        |
-| **PortfolioService**   | `services/portfolio_service.py`   | Summary, positions, price enrichment |
-| **PerformanceService** | `services/performance_service.py` | Risk metrics, equity curves, returns |
-| **TransactionService** | `services/transaction_service.py` | Transaction CRUD, realized P&L       |
-| **MarketDataClient**   | `clients/market_data.py`          | HTTP client for current prices       |
+| Component                        | File                                          | Responsibility                                             |
+| -------------------------------- | --------------------------------------------- | ---------------------------------------------------------- |
+| **PortfolioServicer**            | `grpc/servicer.py`                            | Read-model RPCs; `resolve_identity_connect` on every call  |
+| **LedgerServicer**               | `grpc/ledger_servicer.py`                     | Fund ops, sleeve lifecycle, corporate actions, sleeve reads|
+| **LedgerWriter**                 | `ledger/writer.py`                            | The single mutating entry point — balanced + idempotent    |
+| **LedgerProjector**              | `ledger/projector.py`                         | Fold events → `AccountProjection`                          |
+| **PortfolioReadService**         | `services/portfolio_read_service.py`          | Summary, positions, transactions, performance metrics      |
+| **StrategyPerformanceReadService** | `services/strategy_performance_read_service.py` | Per-strategy performance + equity curve               |
+| **FundService**                  | `services/fund_service.py`                     | Allocate / transfer / deposit / withdraw                   |
+| **SleeveLifecycleService**       | `services/sleeve_lifecycle_service.py`         | Close a sleeve, re-home holdings to Unmanaged/Unallocated  |
+| **CorporateActionService**       | `services/corporate_action_service.py`         | Apply splits / symbol changes / dividends                  |
+| **Fill ingestion**               | `tasks/fill_ingestion.py`                      | Single-active-consumer FIFO ingestion + lag monitor        |
+| **MarketDataClient**             | `clients/market_data.py`                       | HTTP client for current prices (valuation)                 |
 
 ---
 
 ## RPC Endpoints
 
-### Portfolio Management
+### PortfolioService (read model)
 
-| RPC              | Request                 | Response                 | Description                          |
-| ---------------- | ----------------------- | ------------------------ | ------------------------------------ |
-| `GetPortfolio`   | `GetPortfolioRequest`   | `GetPortfolioResponse`   | Portfolio summary with all positions |
-| `ListPortfolios` | `ListPortfoliosRequest` | `ListPortfoliosResponse` | List portfolios (one per tenant)     |
-| `SyncPortfolio`  | `SyncPortfolioRequest`  | `SyncPortfolioResponse`  | Sync with trading session            |
+| RPC                      | Description                                                     |
+| ------------------------ | -------------------------------------------------------------- |
+| `GetPortfolio`           | Portfolio summary + positions (projected from the ledger)      |
+| `ListPortfolios`         | Accounts for the tenant                                        |
+| `GetPerformance`         | Risk metrics + time series over the ledger equity curve        |
+| `GetAssetAllocation`     | Composition breakdown by holding                               |
+| `GetPositions`           | All current positions (aggregated across sleeves)              |
+| `ListTransactions`       | Paginated transaction history derived from ledger events       |
+| `SyncPortfolio`          | Reconcile-on-demand against broker truth                       |
+| `ListStrategyPerformance`| Per-strategy P&L rows                                          |
+| `GetStrategyPerformance` | One strategy's performance detail                              |
+| `GetStrategyEquityCurve` | One strategy's equity time series                             |
 
-### Performance Analytics
+### LedgerService (writes + administration)
 
-| RPC                  | Request                     | Response                     | Description                     |
-| -------------------- | --------------------------- | ---------------------------- | ------------------------------- |
-| `GetPerformance`     | `GetPerformanceRequest`     | `GetPerformanceResponse`     | Risk metrics + time series      |
-| `GetAssetAllocation` | `GetAssetAllocationRequest` | `GetAssetAllocationResponse` | Portfolio composition breakdown |
+Served by the same portfolio process (`:8860`). See
+[the ledger integration contract](../portfolio-ledger.md#integration-contract-trading--portfolio--strategy) for the locked surface.
 
-### Position & Transaction
+| RPC                    | Description                                                             |
+| ---------------------- | ---------------------------------------------------------------------- |
+| `GetOrCreateAccount`   | Lazy, idempotent `credentials_id → account` bootstrap + base sleeves   |
+| `DepositFunds`         | Cash in → Unallocated                                                  |
+| `WithdrawFunds`        | Cash out (from free cash; raises cash if needed)                       |
+| `AllocateCapital`      | Unallocated → strategy sleeve (open-and-fund by `strategy_execution_id`)|
+| `TransferCapital`      | Sleeve → sleeve virtual transfer                                       |
+| `CloseSleeve`          | Retire a sleeve; re-home holdings → Unmanaged, cash → Unallocated       |
+| `ApplyCorporateAction` | Split / symbol change / dividend applied lot-by-lot                    |
+| `ListSleeves`          | Sleeves for an account                                                 |
+| `GetSleeve`            | Sleeve + open lots + projected cash (`free = balance − reserved`)      |
+| `GetHoldingHistory`    | Ordered lot open/close timeline for a symbol (provenance view)         |
 
-| RPC                 | Request                    | Response                    | Description                   |
-| ------------------- | -------------------------- | --------------------------- | ----------------------------- |
-| `GetPositions`      | `GetPositionsRequest`      | `GetPositionsResponse`      | All current positions         |
-| `ListTransactions`  | `ListTransactionsRequest`  | `ListTransactionsResponse`  | Paginated transaction history |
-| `RecordTransaction` | `RecordTransactionRequest` | `RecordTransactionResponse` | Create new transaction        |
+---
+
+## The Ledger Model
+
+The single source of truth is the append-only `ledger_events` table. Everything
+else is a projection. Live sleeve balances, positions, and reserved cash are
+**never** stored as mutable columns — they are folds of the log.
+
+| Table                     | Model           | Notes                                                            |
+| ------------------------- | --------------- | ---------------------------------------------------------------- |
+| `ledger_accounts`         | `Account`       | One per `credentials_id` (unique); reconciliation anchor         |
+| `ledger_sleeves`          | `Sleeve`        | `type`, `status`, `strategy_execution_id`, `allocated_capital`   |
+| `ledger_events`           | `LedgerEvent`   | Immutable; `sequence` (order), `event_id` (idempotency), `data`  |
+| `ledger_sleeve_snapshots` | `SleeveSnapshot`| Materialized `cash_balance`/`reserved_cash`/`equity`/`lots` at a sequence — a replay optimization |
+| `ledger_lots`             | `Lot`           | Reserved read-optimization: holdings are projected into snapshot `lots`; this table is not on the hot path |
+
+**Enums** (`SleeveType`: strategy/manual/unmanaged/unallocated; `SleeveStatus`:
+active/frozen/closed; `LedgerEventType`: capital, trading, position, cash,
+corporate, reconciliation, and sleeve-lifecycle families).
+
+**Append semantics** (`LedgerWriter.append`):
+
+- **Idempotent** — `INSERT … ON CONFLICT (event_id) DO NOTHING`; a re-delivered
+  fill or a replay is a no-op (effective-once).
+- **Balance-checked** — `assert_balanced(build_postings(event_type, data))`;
+  economic events must expand to double-entry legs that net to zero, or the append
+  is rejected. Conservation is enforced at write time, not hoped for.
+
+---
+
+## Fill Ingestion & Background Runtime
+
+Started in `main.py`'s lifespan and supervised:
+
+- **Fill consumer** — a durable Redis Streams consumer group (`portfolio-ledger`)
+  on the global `lt:ledger:fills` stream. Trading publishes proto `LedgerFill` /
+  `LedgerReservation` messages there ([the ledger integration contract](../portfolio-ledger.md#integration-contract-trading--portfolio--strategy)).
+  Exactly **one active consumer** is elected via a Postgres advisory lock, because
+  per-account FIFO (buy-before-sell for FIFO cost basis) requires serialized
+  processing; a dead pod's pending entries are reclaimed via XAUTOCLAIM.
+- **FIFO cost basis** — a sell without a publisher-supplied `cost_basis` is
+  enriched at ingestion (`enrich_sell_fill` → `sizing.select_lots_fifo`) against
+  the account projection. A sell whose open lots can't cover it is **quarantined**
+  (dropped to `ledger:fills:dlq` for review), never recorded with a fabricated
+  basis. An operator replay tool (`python -m src.tasks.dlq_replay`,
+  `tasks/dlq_replay.py::replay_dlq`) re-drives DLQ'd fills back onto `ledger:fills`
+  idempotently once the root cause is fixed, clearing the DLQ on a full drain.
+- **Stray fills** — a fill for a CLOSED sleeve is re-homed to Unmanaged so it can't
+  resurrect a retired sleeve; a fill that drives a sleeve into an impossible state
+  freezes it (`SLEEVE_FROZEN` + alert).
+- **Reconciliation loop** — periodically pulls broker positions/cash and asserts
+  `Σ sleeve_qty == broker_qty`. Drift is classified (`OK` / `DUST` /
+  `MISSING_AT_BROKER` / `MISSING_IN_LEDGER` / `QTY_MISMATCH`) and resolved by the
+  drift policy: unknown broker holdings → Unmanaged (`EXTERNAL_TRADE_DETECTED`);
+  material mismatch → freeze the affected sleeves.
+- **Equity snapshots** — materialize the read-side equity curve for analytics.
+- **Supervisor + lag monitor** — restart crashed loops; a sustained ingestion
+  backlog fails the liveness probe so a hung active consumer is recycled (releasing
+  the lock to a standby). The lag monitor also samples the DLQ-depth gauge
+  `llamatrade_ledger_fill_dlq_depth` and warns when new fills land on
+  `ledger:fills:dlq`. The ledger-writer loops (reconciliation, snapshots) run
+  **only** on the lock-holding pod to avoid double-writes.
 
 ---
 
 ## Performance Metrics
 
-The `PerformanceService` calculates comprehensive risk-adjusted metrics using NumPy.
+`PortfolioReadService.get_metrics` computes risk-adjusted metrics with NumPy over
+the ledger-derived daily equity series (`ledger/analytics.py`):
 
-### Metrics Calculated
+| Metric                | Formula                                       | Description                              |
+| --------------------- | --------------------------------------------- | ---------------------------------------- |
+| **Annualized Return** | `((1 + total)^(252/days) - 1) * 100`          | Return projected to annual rate          |
+| **Volatility**        | `std(daily_returns) * sqrt(252) * 100`        | Annualized standard deviation            |
+| **Sharpe Ratio**      | `sqrt(252) * mean(excess) / std`              | Risk-adjusted return (vs 2% risk-free)   |
+| **Sortino Ratio**     | `sqrt(252) * mean(excess) / downside_std`     | Like Sharpe but only downside volatility |
+| **Max Drawdown**      | `max((peak - current) / peak) * 100`          | Maximum peak-to-trough decline           |
 
-| Metric                | Formula                                     | Description                              |
-| --------------------- | ------------------------------------------- | ---------------------------------------- |
-| **Total Return**      | `(final - initial) / initial * 100`         | Total percentage return                  |
-| **Annualized Return** | `((1 + total_return)^(252/days) - 1) * 100` | Return projected to annual rate          |
-| **Volatility**        | `std(daily_returns) * sqrt(252) * 100`      | Annualized standard deviation            |
-| **Sharpe Ratio**      | `sqrt(252) * mean(excess_returns) / std`    | Risk-adjusted return (vs 2% risk-free)   |
-| **Sortino Ratio**     | `sqrt(252) * mean(excess) / downside_std`   | Like Sharpe but only downside volatility |
-| **Max Drawdown**      | `max((peak - current) / peak) * 100`        | Maximum peak-to-trough decline           |
-| **Win Rate**          | `winning_days / total_days * 100`           | Percentage of profitable days            |
-| **Profit Factor**     | `sum(gains) / sum(losses)`                  | Ratio of total gains to total losses     |
-| **Best/Worst Day**    | `max/min(daily_returns) * 100`              | Best and worst single-day returns        |
-
-### Period Options
-
-```python
-PERIODS = ["1D", "1W", "1M", "3M", "6M", "1Y", "YTD", "ALL"]
-```
-
-### Calculation Flow
-
-```python
-# 1. Fetch portfolio history
-history = await _get_portfolio_history(tenant_id, start_date, end_date)
-
-# 2. Extract equity values
-equities = np.array([float(h.equity) for h in history])
-
-# 3. Calculate daily returns
-daily_returns = np.diff(equities) / equities[:-1]
-
-# 4. Compute metrics
-sharpe = np.sqrt(252) * np.mean(excess_returns) / np.std(daily_returns)
-sortino = np.sqrt(252) * np.mean(excess_returns) / np.std(negative_returns)
-max_drawdown = np.max((np.maximum.accumulate(equities) - equities) / peak)
-```
+Benchmark alpha/beta vs SPY is available via `analytics.benchmark_metrics`. With
+fewer than two equity points the metrics degrade to zeros.
 
 ---
 
-## Data Models
+## Multi-Tenancy
 
-### Pydantic Schemas (`models.py`)
-
-```python
-class PositionResponse(BaseModel):
-    symbol: str
-    qty: float
-    side: str                    # "long" | "short"
-    cost_basis: float
-    market_value: float
-    unrealized_pnl: float
-    unrealized_pnl_percent: float
-    current_price: float
-    avg_entry_price: float
-
-class PortfolioSummary(BaseModel):
-    total_equity: float
-    cash: float
-    market_value: float
-    total_unrealized_pnl: float
-    total_realized_pnl: float
-    day_pnl: float
-    day_pnl_percent: float
-    total_pnl_percent: float
-    positions_count: int
-    updated_at: datetime
-
-class PerformanceMetrics(BaseModel):
-    period: str                  # 1D, 1W, 1M, 3M, 6M, 1Y, YTD, ALL
-    total_return: float
-    total_return_percent: float
-    annualized_return: float
-    volatility: float
-    sharpe_ratio: float
-    sortino_ratio: float
-    max_drawdown: float
-    win_rate: float
-    profit_factor: float
-    best_day: float
-    worst_day: float
-    avg_daily_return: float
-
-class TransactionType(StrEnum):
-    BUY = "buy"
-    SELL = "sell"
-    DIVIDEND = "dividend"
-    DEPOSIT = "deposit"
-    WITHDRAWAL = "withdrawal"
-    FEE = "fee"
-
-class TransactionResponse(BaseModel):
-    id: UUID
-    type: TransactionType
-    symbol: str | None = None
-    qty: float | None = None
-    price: float | None = None
-    amount: float
-    commission: float = 0
-    description: str | None = None
-    executed_at: datetime
-```
-
-### Database Models (`libs/db`)
-
-```python
-class PortfolioSummary(Base):
-    """Aggregated portfolio state for a tenant."""
-    tenant_id: UUID
-    equity: Decimal              # Total account value
-    cash: Decimal                # Available cash
-    buying_power: Decimal        # Available buying power
-    portfolio_value: Decimal     # Total portfolio value
-    daily_pl: Decimal            # Day's P&L
-    daily_pl_percent: Decimal    # Day's P&L percentage
-    total_pl: Decimal            # Total P&L
-    total_pl_percent: Decimal    # Total P&L percentage
-    positions: JSONB             # Array of position dicts
-    position_count: int          # Number of positions
-    last_synced_at: datetime     # Last sync with trading
-
-class Transaction(Base):
-    """Individual transaction record."""
-    tenant_id: UUID
-    session_id: UUID | None      # Trading session reference
-    order_id: UUID | None        # Order reference
-    transaction_type: str        # buy, sell, dividend, etc.
-    symbol: str | None           # Stock symbol
-    side: str | None             # buy, sell
-    qty: Decimal | None          # Quantity
-    price: Decimal | None        # Price per share
-    amount: Decimal              # Total amount
-    fees: Decimal                # Transaction fees
-    net_amount: Decimal          # Amount after fees
-    description: str | None      # Description
-    transaction_date: datetime   # When executed
-    settlement_date: datetime    # When settled
-
-class PortfolioHistory(Base):
-    """Daily portfolio snapshots for analytics."""
-    tenant_id: UUID
-    snapshot_date: date          # Date of snapshot
-    equity: Decimal              # Total equity
-    cash: Decimal                # Cash balance
-    portfolio_value: Decimal     # Portfolio value
-    daily_return: Decimal        # Day's return percentage
-    cumulative_return: Decimal   # Cumulative return
-    positions_snapshot: JSONB    # Positions at snapshot time
-```
+- **Identity** — every RPC in both servicers resolves the caller via
+  `resolve_identity_connect`; the wire `TenantContext` is never trusted directly.
+- **Scoped sessions** — reads and writes run inside a `tenant_session`, and the
+  integration suite (`tests/integration/test_rls.py`) asserts row-level isolation
+  so one tenant can never read another's ledger.
+- **Per-account partitioning** — each account owns an independent event stream
+  (one `credentials_id`), so accounts scale horizontally with no cross-account
+  contention.
 
 ---
 
 ## External Integrations
 
-### Market-Data Service (Price Enrichment)
+| Service         | Use Case                                   | Method                             |
+| --------------- | ------------------------------------------ | ---------------------------------- |
+| **Market-Data** | Current prices for valuation/analytics     | HTTP `GET /quotes/{symbol}/latest` |
+| **Alpaca**      | Broker positions/cash for reconciliation   | `llamatrade_alpaca` (via `clients/alpaca.py`) |
 
-The portfolio service calls the market-data service via HTTP to get current prices for position valuation.
-
-**Client Configuration:**
-
-```python
-class MarketDataClient:
-    base_url = os.getenv("MARKET_DATA_URL", "http://localhost:8840")
-    timeout = 10.0  # seconds
-
-    async def get_latest_price(self, symbol: str) -> float:
-        """Get latest price for a single symbol."""
-        response = await client.get(f"/quotes/{symbol}/latest")
-        return float(response.json().get("price", 0.0))
-
-    async def get_prices(self, symbols: list[str]) -> dict[str, float]:
-        """Get prices for multiple symbols."""
-        prices = {}
-        for symbol in symbols:
-            prices[symbol] = await self.get_latest_price(symbol)
-        return prices
-```
-
-**Usage in PortfolioService:**
-
-```python
-async def _enrich_positions_with_prices(self, positions: list[dict]) -> list[PositionResponse]:
-    # Get symbols and fetch current prices
-    symbols = [p.get("symbol") for p in positions]
-    current_prices = await self.market_data.get_prices(symbols)
-
-    for pos in positions:
-        current_price = current_prices.get(pos["symbol"], pos["current_price"])
-        market_value = qty * current_price
-        unrealized_pnl = (current_price - entry_price) * qty
-        # ... build PositionResponse
-```
-
----
-
-## Internal Service Connections
-
-### Services That Call Portfolio
-
-| Service      | Use Case                    | Method                               |
-| ------------ | --------------------------- | ------------------------------------ |
-| **Frontend** | Dashboard, portfolio view   | `GetPortfolio`, `GetPerformance`     |
-| **Trading**  | Portfolio sync after trades | `SyncPortfolio`, `RecordTransaction` |
-| **Backtest** | Performance comparison      | `GetPerformance` (similar metrics)   |
-
-### Services That Portfolio Calls
-
-| Service         | Use Case                     | Method                             |
-| --------------- | ---------------------------- | ---------------------------------- |
-| **Market-Data** | Current prices for valuation | HTTP `GET /quotes/{symbol}/latest` |
-
----
-
-## Position P&L Calculation
-
-The service handles both long and short positions:
-
-```python
-def _calculate_unrealized_pnl(
-    self,
-    side: str,
-    qty: float,
-    entry_price: float,
-    current_price: float,
-) -> float:
-    """Calculate unrealized P&L based on position side."""
-    if side == "long":
-        # Long: profit when price goes up
-        return (current_price - entry_price) * qty
-    else:
-        # Short: profit when price goes down
-        return (entry_price - current_price) * qty
-```
-
----
-
-## Asset Allocation
-
-The `GetAssetAllocation` RPC breaks down portfolio composition:
-
-```python
-async def GetAssetAllocation(self, request, context):
-    positions = await service.list_positions(tenant_id)
-    total_value = sum(p.market_value for p in positions)
-
-    # Group positions by category
-    items = []
-    for pos in positions:
-        percentage = (pos.market_value / total_value) * 100
-        items.append(AllocationItem(
-            symbol=pos.symbol,
-            value=pos.market_value,
-            percentage=percentage,
-            return_percent=pos.unrealized_pnl_percent,
-        ))
-
-    return GetAssetAllocationResponse(allocations=[
-        AssetAllocation(
-            category="Stocks",
-            value=total_value,
-            percentage=100.0,
-            items=items,
-        )
-    ])
-```
+Consumed by: **web** (dashboard/portfolio views), **strategy** (funds a strategy
+execution via `AllocateCapital`, closes its sleeve via `CloseSleeve`), **trading**
+(reads sleeve equity / free cash via `GetSleeve` for sleeve-aware sizing and risk).
 
 ---
 
 ## Configuration
 
-### Environment Variables
-
 ```bash
 # Database (required)
 DATABASE_URL=postgresql+asyncpg://user:pass@localhost:5432/llamatrade
 
+# Redis (ledger fill stream transport)
+REDIS_URL=redis://localhost:6379
+
 # Market-Data service for price enrichment
 MARKET_DATA_URL=http://localhost:8840
 
-# CORS configuration
-CORS_ORIGINS=http://localhost:8800,http://localhost:3000
+# Ledger runtime tuning
+LEDGER_RECONCILE_INTERVAL_SECONDS=...
+LEDGER_SNAPSHOT_INTERVAL_SECONDS=...
 
-# Logging
+# CORS / Logging
+CORS_ORIGINS=http://localhost:8800,http://localhost:3000
 LOG_LEVEL=INFO
 ```
 
 ### Service Port
 
 - **Port**: 8860
-- **Health Check**: `GET http://localhost:8860/health`
+- **Health Check**: `GET http://localhost:8860/health` — also reports the ledger
+  runtime's liveness (fill consumer / reconciliation / snapshots).
 
 ---
 
@@ -493,219 +396,40 @@ LOG_LEVEL=INFO
 
 ---
 
-## Transaction Types
+## Startup / Shutdown
 
-| Type         | When Used                           | Fields Required            |
-| ------------ | ----------------------------------- | -------------------------- |
-| `buy`        | Order fill (buy side)               | symbol, qty, price, amount |
-| `sell`       | Order fill (sell side)              | symbol, qty, price, amount |
-| `dividend`   | Dividend payment received           | symbol, amount             |
-| `deposit`    | Cash deposited into account         | amount                     |
-| `withdrawal` | Cash withdrawn from account         | amount                     |
-| `fee`        | Platform fee, commission adjustment | amount, description        |
+**Startup:** init DB → create `PortfolioServicer` + `LedgerServicer` → mount both
+Connect ASGI apps → start the ledger runtime (elect the single fill consumer via
+advisory lock; on the lock holder also start reconciliation + equity snapshots;
+start the supervisor + lag monitor).
 
----
-
-## Startup Sequence
-
-1. **Initialize Database** → `init_db()` (connection pool)
-2. **Create Servicer** → `PortfolioServicer()`
-3. **Mount Connect ASGI** → `PortfolioServiceASGIApplication(servicer)`
-
-## Shutdown Sequence
-
-1. **Close Database** → `close_db()`
-
----
-
-## Complete Data Flow Example
-
-**Scenario: Frontend requests portfolio summary**
-
-1. **Frontend** calls `portfolioClient.getPortfolio({ context: { tenant_id } })`
-
-2. **gRPC Servicer** receives `GetPortfolioRequest`
-   - Extracts `tenant_id` from request context
-   - Opens database session
-
-3. **PortfolioService.get_summary()** is called
-   - Queries `PortfolioSummary` table by tenant_id
-   - Gets positions from JSONB column
-   - Calls `_enrich_positions_with_prices(positions)`
-
-4. **MarketDataClient.get_prices()** is called
-   - For each symbol, calls `GET /quotes/{symbol}/latest`
-   - Returns map of symbol → current price
-
-5. **PortfolioService** calculates P&L
-   - For each position:
-     - `market_value = qty * current_price`
-     - `unrealized_pnl = (current_price - entry_price) * qty`
-   - Aggregates totals
-
-6. **Servicer** converts to protobuf
-   - `PortfolioSummary` → `Portfolio` proto message
-   - `PositionResponse[]` → `Position[]` proto messages
-
-7. **Response** returned to frontend
-   ```json
-   {
-     "portfolio": {
-       "total_value": "125000.00",
-       "cash_balance": "25000.00",
-       "positions_value": "100000.00",
-       "total_return": "5000.00",
-       "total_return_percent": "4.17"
-     },
-     "positions": [
-       {
-         "symbol": "AAPL",
-         "quantity": "100",
-         "market_value": "18500.00",
-         "unrealized_pnl": "500.00"
-       }
-     ]
-   }
-   ```
-
----
-
-## Summary
-
-The portfolio service provides a comprehensive portfolio management layer with:
-
-1. **Real-Time Valuation**: Position prices enriched via market-data service
-2. **Performance Analytics**: Risk metrics using NumPy (Sharpe, Sortino, Max Drawdown)
-3. **Transaction History**: Complete audit trail with filtering and pagination
-4. **Asset Allocation**: Portfolio composition breakdown
-5. **Multi-Tenancy**: All operations scoped by tenant_id
-6. **Clean API**: gRPC/Connect protocol for type-safe communication
-7. **Database Persistence**: SQLAlchemy async with PostgreSQL
-
-Architecture separates concerns: Servicer (gRPC) → Services (business logic) → MarketDataClient (price enrichment) → Database (persistence).
-
----
-
-## Error Handling
-
-### gRPC Status Codes
-
-| Status Code | When Raised | Example |
-|-------------|-------------|---------|
-| `NOT_FOUND` | Portfolio or transaction not found | Get non-existent portfolio |
-| `INVALID_ARGUMENT` | Invalid request parameters | Invalid transaction type |
-| `INTERNAL` | Unexpected server error | Database connection failure |
-
-### P&L Calculation Edge Cases
-
-```python
-# Handle division by zero in percentage calculations
-def _calculate_pnl_percent(unrealized_pnl: float, cost_basis: float) -> float:
-    if cost_basis == 0:
-        return 0.0
-    return (unrealized_pnl / cost_basis) * 100
-
-# Handle empty history for performance metrics
-if len(history) < 2:
-    return PerformanceMetrics(
-        sharpe_ratio=0.0,
-        sortino_ratio=0.0,
-        max_drawdown=0.0,
-        ...
-    )
-```
-
-### Market Data Failures
-
-Price enrichment failures are handled gracefully:
-
-```python
-async def get_prices(symbols: list[str]) -> dict[str, float]:
-    prices = {}
-    for symbol in symbols:
-        try:
-            prices[symbol] = await self.get_latest_price(symbol)
-        except Exception:
-            # Use last known price from position data
-            prices[symbol] = 0.0
-    return prices
-```
-
-### Error Response Format
-
-```json
-{
-  "code": "NOT_FOUND",
-  "message": "Portfolio not found for tenant",
-  "details": []
-}
-```
+**Shutdown:** signal the runtime `stop_event`, cancel and await the ledger tasks,
+release the fill-consumer advisory lock, close the DB pool.
 
 ---
 
 ## Testing
 
-### Test Structure
-
-```
-tests/
-├── conftest.py                    # Shared fixtures (~5200 lines)
-├── test_grpc_servicer.py          # gRPC endpoint tests
-├── test_health.py                 # Health check tests
-├── test_performance_service.py    # Performance metrics tests
-├── test_portfolio_service.py      # Portfolio service tests
-└── test_transaction_service.py    # Transaction CRUD tests (~20k lines)
-```
-
-### Running Tests
-
 ```bash
-# Run all tests
 cd services/portfolio && pytest
-
-# Run with coverage
 pytest --cov=src --cov-report=term-missing
-
-# Run specific test file
-pytest tests/test_performance_service.py
-
-# Run specific test
-pytest tests/test_performance_service.py::test_calculate_sharpe_ratio
 ```
 
-### Key Test Scenarios
-
-- **Portfolio summary**: Position aggregation, P&L calculation
-- **Price enrichment**: Market data integration, fallback handling
-- **Performance metrics**: Sharpe, Sortino, drawdown calculations
-- **Transaction recording**: Buy/sell, deposits, withdrawals
-- **Asset allocation**: Category breakdown, percentage calculation
-- **Edge cases**: Empty portfolio, zero cost basis, no history
+Key scenarios: writer idempotency + balance enforcement (`test_ledger_writer`,
+`test_ledger_kernel`), fill ingestion FIFO / quarantine / stray re-home
+(`test_fill_ingestion`, `test_fill_stream_contract`), reconciliation drift
+classification (`test_reconciliation_task`, `test_drift_policy`), sleeve lifecycle
++ close re-home (`test_sleeve_lifecycle_service`), corporate actions
+(`test_corporate*`), fund ops (`test_fund_service`), read model + strategy
+performance (`test_portfolio_read_service`, `test_strategy_performance_read_service`),
+invariants (`test_invariants`), servicer auth/isolation (`test_servicer_auth`,
+`integration/test_rls`).
 
 ---
 
-## Capabilities
+## Related Documentation
 
-### Core
-
-- **gRPC/Connect Endpoints**: GetPortfolio, ListPortfolios, GetPerformance, GetAssetAllocation, GetPositions, ListTransactions, RecordTransaction, SyncPortfolio
-- **Portfolio Service**: Summary, position aggregation, price enrichment
-- **Performance Service**: Sharpe, Sortino, max drawdown, volatility
-- **Transaction Service**: CRUD operations, P&L calculation
-- **Market Data Client**: HTTP client for price fetching
-- **Health Check**: Standard `/health` endpoint
-
-### Analytics & Ledger
-
-- **Real-Time Streaming**: Streaming endpoint for portfolio updates
-- **Trading Sync**: `SyncPortfolio` syncs portfolio state with active trading sessions
-- **Historical Snapshots**: Automated daily snapshot generation
-- **Benchmark Comparison**: SPY comparison in portfolio performance
-- **Tax Lot Tracking**: FIFO/LIFO cost basis (part of the [Portfolio Ledger](../portfolio-ledger.md) lot model)
-- **Portfolio Ledger**: Event-sourced double-entry ledger, sleeves, fund allocation, and shadow reconciliation. See [Portfolio Ledger](../portfolio-ledger.md)
-- **Multi-Currency**: Forex support across currencies
-
-### Operational Notes
-
-- **Prices**: Position valuation uses the market-data service
-- **Asset Classes**: Stocks, bonds, options, and crypto
+- [Portfolio Ledger](../portfolio-ledger.md) — the full sleeve/lot/ledger design
+  and the trading⟷portfolio integration contract (payloads, stream, idempotency,
+  identity threading).
+- [Trading Service](trading.md) — the execution arm that emits fills.

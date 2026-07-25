@@ -1,22 +1,23 @@
 # LlamaTrade Backtesting System
 
-This document describes the backtesting subsystem—how users interact with it, what it calculates, and how it integrates with the broader LlamaTrade platform.
+This document describes the backtesting subsystem—how users interact with it, how a run executes, what it calculates, and how it integrates with the broader LlamaTrade platform.
 
 ---
 
 ## Overview
 
-Backtesting enables users to evaluate trading strategies against historical market data before risking real capital. The system simulates trade execution, tracks portfolio performance, and produces comprehensive metrics to assess strategy viability.
+Backtesting lets users evaluate trading strategies against historical market data before risking real capital. A run replays a strategy over a date range one trading date at a time, simulating fills, tracking a portfolio, and producing industry-standard performance metrics.
 
-**Key Capabilities:**
+**Key capabilities:**
 
-- Simulate any strategy (config-based or code-based) over historical periods
-- Support arbitrarily long time ranges (1980 to present, 45+ years)
-- Sub-minute execution even for large universes (100+ symbols)
-- Calculate industry-standard performance metrics (Sharpe, Sortino, drawdown, etc.)
-- Produce equity curves and trade-by-trade breakdowns
-- Run asynchronously with real-time progress streaming
-- Multi-level caching for instant repeated runs
+- Simulate any DSL strategy over a historical period and timeframe
+- Run asynchronously on Celery workers with real-time progress streaming and cooperative cancel
+- Compute performance metrics (Sharpe, Sortino, drawdown, win rate, profit factor, etc.)
+- Produce an equity curve and a trade-by-trade breakdown
+- Compare against an SPY buy-and-hold benchmark (alpha / beta / information ratio)
+- Reuse warm, shared, content-addressed datasets so overlapping runs pay for data once
+
+The backtest engine is the **shared strategy runtime** (`llamatrade_runtime`) — the *same* evaluate → size → execute loop that drives live trading. A backtest is that runtime wired to a historical bar feed and a simulated fill adapter.
 
 ---
 
@@ -25,77 +26,67 @@ Backtesting enables users to evaluate trading strategies against historical mark
 ### System Architecture
 
 ```
-╭───────────────╮        ╭───────────────────────────────╮        ╭────────────────────╮
-│    Frontend   │  ──►   │         Backtest :8830        │  ──►   │ Celery Workers (N) │
-├───────────────┤        ├───────────────────────────────┤        ├────────────────────┤
-│ progress bar  │ Connect│ RPCs: RunBacktest ·           │ Celery │ run vectorized sim │
-│ cancel button │        │ GetBacktest · ListBacktests · │        │ compute metrics    │
-╰───────────────╯        │ CancelBacktest ·              │        │ cache + persist    │
-                         │ CompareBacktests ·            │        ╰────────────────────╯
-                         │ StreamBacktestProgress        │
-                         │ └ BacktestService: validate · │
-                         │   enqueue · fetch result      │
-                         ╰───────────────────────────────╯
-        ▲                                                                    │
-        ┌─ progress · Redis pub/sub (Connect stream) ────────────────────────┘
-
-┌─────────────────────────────────────────────────────────────────────┐
-│                          DATA DEPENDENCIES                          │
-├─────────────────────────────────────────────────────────────────────┤
-│ Strategy svc  ──gRPC──►  strategy config · indicators · conditions  │
-│ Market Data   ──gRPC──►  historical OHLCV bars (TimescaleDB-backed) │
-│ PostgreSQL    ────────►  backtest records · results storage         │
-│ Redis         ────────►  job queue · bar/indicator cache · progress │
-└─────────────────────────────────────────────────────────────────────┘
+┌───────────────┐   Connect   ┌──────────────────────────────┐  Celery   ┌──────────────────────┐
+│    Frontend   │  ────────►  │        Backtest :8830        │  ──────►  │   Celery worker(s)   │
+│ progress bar  │             │  BacktestServicer (7 RPCs)   │  (Redis   │ run StrategyRuntime  │
+│ cancel button │  ◄────────  │  BacktestService: validate · │  broker)  │ metrics · benchmarks │
+└───────────────┘  progress   │  create row · enqueue        │           │ persist result       │
+                   (stream)    └──────────────────────────────┘           └──────────────────────┘
+                                       │                                          │
+                                       ▼ beat schedule                            ▼
+                               reap_stale_backtests_task                  prepare_dataset (Parquet
+                               (backtest_maintenance queue)               snapshot, Redis single-flight)
+                                                                                  │
+┌─────────────────────────────────────────────────────────────────────────────┐ │
+│                              DATA DEPENDENCIES                                │ ▼
+├──────────────────────────────────────────────────────────────────────────────┤
+│ Strategy DB   ───────►  strategy version (S-expression config) via shared DB │
+│ Market Data   ──gRPC──►  historical OHLCV bars (StreamHistoricalBars)         │
+│ PostgreSQL    ────────►  backtest + result rows (tenant-scoped, RLS)          │
+│ Redis         ────────►  Celery broker · progress pub/sub · dataset lock      │
+│ Object store  ────────►  content-addressed Parquet bar snapshots (dataset/)   │
+└──────────────────────────────────────────────────────────────────────────────┘
 ```
 
-### Performance Architecture
+### Execution substrate
 
-A core product requirement is **speed at scale**. The system achieves sub-minute execution through:
+The **Celery worker is the only execution path**. `RunBacktest` validates the request, creates a `PENDING` backtest row, and enqueues `run_backtest_task`; nothing runs in the API process. The worker loads the strategy version, materializes the dataset, drives the runtime, computes metrics/benchmarks, and persists the result.
 
-Two levers feed the engine: a **vectorized** core (NumPy over the whole series, not row-by-row — ~100–500×; 45 yr × 100 symbols runs in ~30 s vs. ~4 h) and **parallel processing** (split by symbol or time chunk, auto-selected by job shape). Both sit over a **multi-level cache** that falls through tier by tier on a miss:
+A Celery **beat schedule** runs a periodic reaper (`reap_stale_backtests_task`) on a dedicated `backtest_maintenance` queue so it is never starved behind long runs. The reaper recovers orphaned rows:
 
-| Tier | Store | Latency | Holds |
-| --- | --- | --- | --- |
-| L1 | in-process LRU (~100 MB/worker) | <1 ms | hot data, current run |
-| L2 | Redis (shared) | ~5 ms | indicators, recent runs |
-| L3 | TimescaleDB (5 yr hot) | ~50 ms | compressed hypertables |
-| L4 | GCS + DuckDB (Parquet, 1980–2019) | ~200 ms | cold storage |
+- **Stale `RUNNING`** (worker lost after the hard time limit + grace) → `FAILED`.
+- **Stale `PENDING`** in the requeue window (lost enqueue) → re-driven.
+- **Stale `PENDING`** past the fail threshold (never picked up) → `FAILED`.
 
-Resulting cache-hit profile: same backtest twice → <100 ms (results cached); same strategy, new dates → <1 s (indicators cached); first run on recent data → <10 s (TimescaleDB); first run on cold data → <30 s (Parquet fetch).
+### The simulation loop
 
-### Execution Flow
+A run is `StrategyRuntime.run(feed)` (`libs/runtime/llamatrade_runtime/runtime.py`) — an **async, per-trading-date** loop over the shared `StrategySession`:
 
 ```
-┌───────────────────────────────────────────────────────────────────────────────────┐
-│          REQUEST LIFECYCLE  (user ⇄ system, cooperative cancel any time)          │
-├───────────────────────────────────────────────────────────────────────────────────┤
-│ 1. Click "Run Backtest"  → validate · create DB record · queue Celery · return id │
-│ 2. Watch progress        ← RUNNING · 10% config · 30% data · 40% indicators ·     │
-│                             50-90% simulate · 95% metrics  (Redis pub/sub)        │
-│ 3. View results          ← COMPLETED · metrics · equity curve · trades            │
-└───────────────────────────────────────────────────────────────────────────────────┘
-
-┌───────────────────────────────────────────────────────────────────────────┐
-│ SIMULATION LOOP  ·  per bar (loops until window end · cooperative cancel) │
-├───────────────────────────────────────────────────────────────────────────┤
-│ load OHLCV ─► compute indicators ─► evaluate conditions ─► generate       │
-│                                                               signal      │
-│       └─► apply slippage / commission ─► execute trade ─► update          │
-│                                                          portfolio  ──┐   │
-│       ▲                                                               │   │
-│       └─────────────────────  next bar  ──────────────────────────────┘   │
-└───────────────────────────────────────────────────────────────────────────┘
+for (date, bars, warm_up) in feed:            # bars = one bar per symbol for the date
+    portfolio.update_prices(bars)             # mark to market
+    if warm_up: session.evaluate(warm_up=True); continue   # prime indicators, no trading
+    if should_abort(): raise RuntimeCancelled              # cooperative cancel (Redis flag)
+    orders = session.evaluate(bars, holdings, equity)      # evaluate → size
+    for order in orders:
+        outcome = execution.execute(order, bar, portfolio, date)   # fill at close ± slippage
+        observer.on_fill / on_trade / on_reject
+    equity_curve.append((date, portfolio.equity()))
+# liquidate open positions at last known prices, then assemble RunResult
 ```
 
-### Performance Targets
+The loop is neither vectorized nor parallelized — it is a straight per-date replay through the **same `StrategySession` the live runner uses**, so a backtest reproduces live's evaluation and sizing *decisions* by construction. For the exact parity guarantees and the known backtest-vs-live differences (loop driver, symbol alignment, sizing mode, fill model, price basis), see [execution-runtime.md](../execution-runtime.md). Warm-up ticks (fetched via start-date padding) prime indicators without trading or advancing the rebalance clock.
 
-| Scenario       | Symbols | Time Range          | Target Execution |
-| -------------- | ------- | ------------------- | ---------------- |
-| Quick test     | 1       | 1 year              | < 100ms          |
-| Typical use    | 10      | 5 years             | < 2 seconds      |
-| Large universe | 100     | 10 years            | < 15 seconds     |
-| Maximum scale  | 100     | 45 years (1980-now) | < 45 seconds     |
+### Dataset materialization
+
+Before the loop runs, `prepare_dataset` (`services/backtest/src/dataset/`) guarantees complete, gap-free bar coverage and writes an **immutable, content-addressed Parquet snapshot**:
+
+- `DatasetSpec.create(symbols, timeframe, start, end)` → a stable `dataset_hash` (order/case/dupe-invariant SHA-256).
+- Warm hit → read the snapshot; otherwise fetch from the market-data service (`StreamHistoricalBars`), fill interior gaps the read path misses, and write the snapshot.
+- A **Redis single-flight lock** keyed by `dataset_hash` coalesces concurrent identical prepares: one fetch, others await (with a dead-producer fallback). Redis is optional — absent, it degrades to no coalescing.
+- `LocalDatasetStore` writes on-disk Parquet under `BACKTEST_DATASET_DIR`; the default is an in-memory store.
+
+The sim then reads pure warm data — **the backtest never calls Alpaca directly**; all historical data comes through the market-data service.
 
 ---
 
@@ -104,933 +95,242 @@ Resulting cache-hit profile: same backtest twice → <100 ms (results cached); s
 ```
 services/backtest/
 ├── src/
-│   ├── main.py                    # FastAPI app with Connect protocol mount
-│   ├── models.py                  # Pydantic schemas (BacktestResponse, Metrics)
-│   ├── progress.py                # Progress tracking and Redis pub/sub
-│   ├── celery_app.py              # Celery configuration and task routing
-│   │
+│   ├── main.py                     # FastAPI app, Connect mount, AuthMiddleware, /health
+│   ├── models.py                   # request schemas + VALID_TIMEFRAMES
+│   ├── convert.py                  # numeric coercion helpers (safe_float)
+│   ├── progress.py                 # BacktestProgressReporter / ProgressSubscriber (Redis pub/sub)
+│   ├── proto_mappers.py            # DB rows ↔ proto messages
+│   ├── celery_app.py               # Celery config, task routes, beat schedule
 │   ├── grpc/
-│   │   ├── __init__.py
-│   │   └── servicer.py            # Connect/gRPC servicer (420 lines)
-│   │
+│   │   └── servicer.py             # BacktestServicer — 7 RPCs
 │   ├── services/
-│   │   └── backtest_service.py    # Business logic (987 lines)
-│   │
+│   │   └── backtest_service.py     # business logic: create · run · cancel · retry · reap
 │   ├── engine/
-│   │   ├── __init__.py
-│   │   ├── backtester.py          # Core backtest engine (vectorized)
-│   │   ├── benchmarks.py          # Benchmark calculations (SPY, alpha/beta)
-│   │   ├── metrics.py             # Performance metric calculations
-│   │   ├── strategy_adapter.py    # S-expression strategy compilation
-│   │   ├── strategy_compiler.py   # DSL to executable function
-│   │   ├── validation.py          # Input validation
-│   │   └── vectorized_engine.py   # NumPy-based fast simulation
-│   │
-│   ├── workers/
-│   │   ├── __init__.py
-│   │   ├── tasks.py               # Task definitions
-│   │   └── celery_tasks.py        # Celery async tasks
-│   │
-│   ├── cache/
-│   │   └── indicator_cache.py     # Redis-based indicator caching
-│   │
-│   └── clients/
-│       └── __init__.py            # Service clients (market-data)
-│
+│   │   ├── bars.py                 # BarData typed dict
+│   │   ├── benchmarks.py           # SPY buy & hold, alpha/beta/information ratio
+│   │   └── validation.py           # OHLCV validation before simulating
+│   ├── dataset/
+│   │   ├── spec.py                 # DatasetSpec + dataset_hash
+│   │   ├── store.py                # DatasetStore / Local / InMemory
+│   │   └── prepare.py              # prepare_dataset (fetch · gap-fill · snapshot · single-flight)
+│   └── workers/
+│       └── celery_tasks.py         # run_backtest_task, reap_stale_backtests_task
 └── tests/
-    ├── conftest.py                # Shared fixtures
-    ├── test_backtest_service.py   # Service layer tests
-    ├── test_backtester.py         # Engine tests
-    ├── test_benchmarks.py         # Benchmark calculation tests
-    ├── test_celery_tasks.py       # Async task tests
-    ├── test_grpc_servicer.py      # gRPC endpoint tests
-    ├── test_grpc_streaming.py     # Progress streaming tests
-    ├── test_health.py             # Health check tests
-    ├── test_indicator_cache.py    # Cache tests
-    ├── test_market_data.py        # Market data client tests
-    ├── test_models.py             # Schema validation tests
-    ├── test_progress.py           # Progress tracking tests
-    ├── test_strategy_adapter.py   # Strategy compilation tests
-    └── test_validation.py         # Input validation tests
 ```
+
+The strategy execution core (runtime loop, portfolio, simulated execution, bar feed, metrics) lives in the shared **`llamatrade_runtime`** library, not in this service.
 
 ---
 
 ## Core Components
 
-| Component | File | Responsibility |
-|-----------|------|----------------|
-| **BacktestServicer** | `grpc/servicer.py` | Connect/gRPC endpoint handler for all RPC methods |
-| **BacktestService** | `services/backtest_service.py` | Business logic: create, run, cancel, retry backtests |
-| **BacktestEngine** | `engine/backtester.py` | Core simulation engine with vectorized processing |
-| **VectorizedEngine** | `engine/vectorized_engine.py` | NumPy-based fast simulation for large datasets |
+| Component | Location | Responsibility |
+|-----------|----------|----------------|
+| **BacktestServicer** | `grpc/servicer.py` | Connect RPC handlers for all 7 RPCs |
+| **BacktestService** | `services/backtest_service.py` | create, run, cancel, retry, reap; dataset + benchmark orchestration |
+| **StrategyRuntime** | `llamatrade_runtime/runtime.py` | per-trading-date evaluate → execute loop |
+| **Portfolio / SimulatedExecution** | `llamatrade_runtime/{portfolio,execution}.py` | book of holdings/equity; fill at close ± slippage + flat commission |
+| **HistoricalBarFeed** | `llamatrade_runtime/feed.py` | replays materialized bars per date, with warm-up |
+| **metrics** | `llamatrade_runtime/metrics.py` | Sharpe, Sortino, drawdown, returns, trade stats |
 | **BenchmarkCalculator** | `engine/benchmarks.py` | SPY buy & hold, alpha, beta, information ratio |
-| **MetricsCalculator** | `engine/metrics.py` | Sharpe, Sortino, drawdown, win rate calculations |
-| **StrategyAdapter** | `engine/strategy_adapter.py` | Compiles S-expression DSL to executable function |
-| **ProgressPublisher** | `progress.py` | Publishes progress to Redis pub/sub |
-| **ProgressSubscriber** | `progress.py` | Subscribes to progress updates for streaming |
-| **GRPCMarketDataClient** | `services/backtest_service.py` | Fetches historical bars from market-data service |
-| **Celery Tasks** | `workers/celery_tasks.py` | Async backtest execution via Celery workers |
+| **prepare_dataset** | `dataset/prepare.py` | warm/materialize content-addressed bar snapshot |
+| **BacktestProgressReporter / ProgressSubscriber** | `progress.py` | publish/tail progress over Redis pub/sub |
+| **Celery tasks** | `workers/celery_tasks.py` | `run_backtest_task`, `reap_stale_backtests_task` |
 
 ---
 
-## Historical Data Sources
+## Historical Data
 
-Alpaca provides data from ~2016 onwards. For backtests starting in 1980, additional sources are required:
+All historical bars come from the **market-data service** over gRPC (Alpaca-backed, TimescaleDB store-first). The backtest service does not talk to Alpaca or any other data vendor directly.
 
-| Time Period    | Primary Source | Coverage    | Cost            |
-| -------------- | -------------- | ----------- | --------------- |
-| 2016 - Present | Alpaca Markets | US equities | Free (included) |
-| 2003 - 2015    | Polygon.io     | US equities | $199/mo         |
-| 1998 - 2002    | Tiingo         | US equities | $30/mo          |
-| 1980 - 1997    | EOD Historical | US equities | $20/mo          |
+Supported timeframes (`VALID_TIMEFRAMES`): `1Min`, `5Min`, `15Min`, `30Min`, `1H`, `4H`, `1D`, `1W`.
 
-**Data Quality Pipeline:**
-
-1. Fetch raw data from source
-2. Apply corporate actions (stock splits, dividends)
-3. Validate OHLC relationships (high ≥ open, close ≥ low)
-4. Fill gaps (holidays: skip, errors: interpolate)
-5. Store both adjusted and unadjusted prices
-6. Pre-compute standard indicators (SMA 20/50/200, EMA 12/26, RSI 14, ATR 14)
-7. Compress and partition by year
-
-**Storage Requirements (100 symbols, 45 years):** ~200 MB compressed with indicators.
-
-### Data Adjustments
-
-| Event             | Example                | Adjustment                                    |
-| ----------------- | ---------------------- | --------------------------------------------- |
-| **Stock Split**   | AAPL 4:1 split in 2020 | Divide pre-split prices by 4                  |
-| **Reverse Split** | Stock 1:10 reverse     | Multiply pre-split prices by 10               |
-| **Dividend**      | $2 dividend paid       | Reduce pre-dividend prices by dividend amount |
-
-Use **adjusted prices** for backtesting (true returns) and **unadjusted** for display.
+The fetch window is extended before the requested start (`warmup_padding_days`) so indicators are warm on the first trading date. Strategy-referenced symbols (e.g. an indicator on `SPY` while trading `TLT`) and the benchmark symbol are fetched in the same batch. OHLCV data is validated before simulating (`engine/validation.py`): structural errors abort the run; gaps and suspected splits are logged as warnings.
 
 ---
 
 ## User Experience
 
-### Initiating a Backtest
+### Initiating a backtest
 
-From the Strategy Builder or Strategy Detail page, users configure:
+From the Strategy Builder or Strategy Detail page, users configure: strategy + version, date range, initial capital, timeframe, and optional commission / slippage / symbol overrides.
 
-- **Strategy**: Select strategy and version
-- **Date Range**: Start and end dates
-- **Initial Capital**: Starting portfolio value (e.g., $100,000)
-- **Advanced Settings** (optional): Commission per trade, slippage %, symbol overrides
+### Progress tracking
 
-### Progress Tracking
+The run executes asynchronously; the UI subscribes to `StreamBacktestProgress` and sees a percentage, a phase message (e.g. "Running simulation"), and a cancel button. Phases: 10% loading strategy, 20% compiled, 30% fetching data, 40–85% simulating, 85–95% metrics/benchmark, 100% completed.
 
-After submission, the backtest runs asynchronously. Users see:
+### Results dashboard
 
-- Progress bar with percentage complete
-- Current step description (e.g., "Simulating trades for Q3 2023...")
-- Start time and estimated remaining time
-- Cancel button
-
-### Results Dashboard
-
-Upon completion, users see:
-
-**Equity Curve**: Line chart showing portfolio value over time
-
-**Performance Metrics Panel:**
-
-- Total Return, Annual Return
-- Sharpe Ratio, Sortino Ratio
-- Max Drawdown, Drawdown Days
-- Volatility, Beta (vs SPY)
-
-**Trade Statistics Panel:**
-
-- Total Trades, Winning/Losing Trades
-- Win Rate, Profit Factor
-- Average Win/Loss percentages
-- Largest Win/Loss, Average Hold Time
-
-**Monthly Returns Heatmap**: Color-coded grid of monthly performance
-
-**Trade List**: Sortable table with entry/exit dates, symbol, side, P&L
-
-**Actions**: Export CSV, Compare with other backtests, Deploy Strategy
+On completion the UI shows the equity curve, a performance-metrics panel, trade statistics, a monthly-returns view, the trade list (paged via `GetBacktestTrades`), and the SPY benchmark comparison.
 
 ---
 
 ## Performance Metrics
 
-### Return Metrics
+Metric math lives in `llamatrade_runtime/metrics.py` and is computed on a **daily-resampled** equity curve (`resample_daily`) so annualized figures are not inflated by intraday bar counts.
 
-| Metric              | Formula                                            | Interpretation                              |
-| ------------------- | -------------------------------------------------- | ------------------------------------------- |
-| **Total Return**    | `(final_equity - initial_equity) / initial_equity` | Overall percentage gain/loss                |
-| **Annual Return**   | `((1 + total_return) ^ (252 / trading_days)) - 1`  | Annualized return assuming 252 trading days |
-| **Monthly Returns** | Return for each calendar month                     | Identifies seasonal patterns                |
+### Return metrics
 
-### Risk-Adjusted Metrics
+| Metric | Formula | Notes |
+| --- | --- | --- |
+| **Total Return** | `(final_equity - initial) / initial` | overall gain/loss |
+| **Annual Return** | `((1 + total_return) ^ (252 / trading_days)) - 1` | clamped to −100% if the book is wiped out |
+| **Monthly Returns** | month-over-month equity change | keyed `YYYY-MM` |
 
-| Metric            | Formula                                             | Interpretation                                      |
-| ----------------- | --------------------------------------------------- | --------------------------------------------------- |
-| **Sharpe Ratio**  | `sqrt(252) × mean(excess_returns) / std(returns)`   | Risk-adjusted return vs. risk-free rate             |
-| **Sortino Ratio** | `sqrt(252) × mean(returns) / std(downside_returns)` | Like Sharpe, but only penalizes downside volatility |
-| **Calmar Ratio**  | `annual_return / max_drawdown`                      | Return relative to worst loss                       |
+### Risk-adjusted metrics
 
-**Benchmarks:** Sharpe > 1.0 is good, > 2.0 is excellent, > 3.0 is exceptional (verify for overfitting).
+| Metric | Formula |
+| --- | --- |
+| **Sharpe Ratio** | `sqrt(252) × mean(returns − daily_rf) / std(returns)` |
+| **Sortino Ratio** | `sqrt(252) × mean(returns) / std(downside_returns)` |
 
-### Drawdown Metrics
+Risk-free rate defaults to 2% annual. Both return `0.0` when standard deviation is zero or there are no returns.
 
-| Metric                | Formula                       | Interpretation               |
-| --------------------- | ----------------------------- | ---------------------------- |
-| **Max Drawdown**      | `max((peak - equity) / peak)` | Worst peak-to-trough decline |
-| **Drawdown Duration** | Days from peak until new high | How long recovery takes      |
-| **Average Drawdown**  | Mean of all drawdown periods  | Typical underwater period    |
+### Drawdown metrics
 
-### Trade Statistics
+| Metric | Formula |
+| --- | --- |
+| **Max Drawdown** | `max((peak − equity) / peak)`, guarded against non-positive peaks |
+| **Max Drawdown Duration** | longest run of consecutive underwater bars |
 
-| Metric            | Formula                                              | Interpretation                  |
-| ----------------- | ---------------------------------------------------- | ------------------------------- |
-| **Win Rate**      | `winning_trades / total_trades`                      | Percentage of profitable trades |
-| **Profit Factor** | `sum(wins) / abs(sum(losses))`                       | Gross profit vs. gross loss     |
-| **Average Win**   | `mean(winning_trades.pnl_percent)`                   | Typical gain per winning trade  |
-| **Average Loss**  | `mean(losing_trades.pnl_percent)`                    | Typical loss per losing trade   |
-| **Expectancy**    | `(win_rate × avg_win) - ((1 - win_rate) × avg_loss)` | Expected return per trade       |
+### Trade statistics
+
+| Metric | Formula |
+| --- | --- |
+| **Win Rate** | `winning_trades / total_trades` |
+| **Profit Factor** | `sum(wins) / abs(sum(losses))` — `None` when there are no losing trades |
+| **Avg Trade Return** | mean `pnl_percent` across trades |
+| **Exposure Time** | percentage of trading days with an open position |
 
 ---
 
 ## Execution Model
 
-### How Signals Become Trades
+For each trading date the runtime marks the portfolio to market, evaluates the session against current holdings and equity, and executes the resulting orders.
 
-For each trading day, the backtester:
+**Fills** (`SimulatedExecution`): orders fill at the bar **close**, adjusted for slippage —
 
-1. **Load Bar Data**: Get OHLCV for all symbols
-2. **Compute Indicators**: Calculate RSI, SMA, MACD, etc. (first N bars may have NaN for warmup)
-3. **Evaluate Conditions**: Check entry/exit conditions against current bar
-4. **Generate Signals**: If entry conditions met and no position → BUY; if exit conditions met and has position → SELL
-5. **Simulate Execution**: Apply slippage and commission, check capital availability
-6. **Update Portfolio**: Adjust cash, positions, record equity point
+- BUY: `price = close × (1 + slippage_rate)` (pay more)
+- SELL: `price = close × (1 − slippage_rate)` (receive less)
 
-### Slippage and Commission Modeling
+A flat `commission_rate` is charged per fill. The engine is **long-only**: buy opens/adds, sell closes; any other side is recorded as a rejected signal. Open positions are liquidated at the last known price at the end of the run (no slippage on liquidation).
 
-**Slippage** (price movement between signal and execution):
+### Rejected configuration
 
-- BUY: `execution_price = close × (1 + slippage_rate)` — pay more
-- SELL: `execution_price = close × (1 - slippage_rate)` — receive less
+To avoid silently misleading results, `RunBacktest` rejects config the engine does not honor (`_reject_unsupported_config`): `allow_shorting`, `max_position_size`, and strategy `parameters`. These are surfaced as `INVALID_ARGUMENT` rather than accepted and ignored. `use_adjusted_prices` is honored — the daily bar series is split-adjusted at the source (market-data ingests Alpaca split-adjusted daily bars), so daily backtests are adjusted.
 
-**Commission**: Flat fee per trade, deducted from P&L.
+### Plan quota
 
-**Example:** Buy 100 shares AAPL at $150 with 0.05% slippage and $1 commission:
-
-- Execution at $150.075, sell later at $164.9175
-- Gross P&L: $1,484.25, Net P&L: $1,482.25 (after $2 total commission)
-
----
-
-## Strategy Interpretation
-
-### Config-Based Strategies
-
-Strategies from the visual builder are stored as JSON with:
-
-- `symbols`: List of tickers to trade
-- `timeframe`: Bar interval (e.g., "1D")
-- `indicators`: List of indicator definitions with parameters
-- `entry_conditions`: Conditions that trigger buy signals
-- `exit_conditions`: Conditions that trigger sell signals
-- `entry_action` / `exit_action`: How much to buy/sell
-- `risk`: Stop loss, take profit, position sizing limits
-
-The **Strategy Interpreter** parses this config, computes indicators on historical bars, evaluates conditions for each bar, and generates signals fed to the BacktestEngine.
-
-### Supported Indicators
-
-| Category       | Indicators                            | Parameters                  |
-| -------------- | ------------------------------------- | --------------------------- |
-| **Trend**      | SMA, EMA, MACD, ADX                   | period, fast/slow periods   |
-| **Momentum**   | RSI, Stochastic, CCI, Williams %R     | period, overbought/oversold |
-| **Volatility** | Bollinger Bands, ATR, Keltner Channel | period, multiplier          |
-| **Volume**     | OBV, MFI, VWAP                        | period                      |
-| **Channel**    | Donchian Channel                      | period                      |
-
-### Supported Condition Operators
-
-| Operator      | Meaning                     | Example                        |
-| ------------- | --------------------------- | ------------------------------ |
-| `gt`          | Greater than                | `RSI > 70`                     |
-| `lt`          | Less than                   | `RSI < 30`                     |
-| `gte`         | Greater or equal            | `price >= SMA`                 |
-| `lte`         | Less or equal               | `price <= lower_band`          |
-| `eq`          | Equal                       | `signal == 1`                  |
-| `cross_above` | Crosses from below to above | `MACD cross_above signal_line` |
-| `cross_below` | Crosses from above to below | `price cross_below SMA`        |
-
-### Risk Management
-
-The interpreter enforces risk rules on each bar while a position is open:
-
-- **Stop Loss**: Exit if `current_pnl_percent <= -stop_loss_percent`
-- **Take Profit**: Exit if `current_pnl_percent >= take_profit_percent`
-- **Trailing Stop**: Update stop level based on highest price, exit if breached
-
----
-
-## Database Schema
-
-### Backtest Table
-
-```sql
-CREATE TABLE backtests (
-    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    tenant_id       UUID NOT NULL REFERENCES tenants(id),
-    strategy_id     UUID NOT NULL REFERENCES strategies(id),
-    strategy_version INT NOT NULL DEFAULT 1,
-
-    -- Configuration
-    name            VARCHAR(255),
-    config          JSONB NOT NULL,        -- {commission, slippage, etc.}
-    symbols         JSONB,                  -- ["AAPL", "MSFT"] or null for default
-    start_date      DATE NOT NULL,
-    end_date        DATE NOT NULL,
-    initial_capital NUMERIC(18,2) NOT NULL,
-
-    -- Execution state
-    status          VARCHAR(20) NOT NULL DEFAULT 'pending',
-                    -- pending, running, completed, failed, cancelled
-    error_message   TEXT,
-    started_at      TIMESTAMPTZ,
-    completed_at    TIMESTAMPTZ,
-
-    -- Audit
-    created_by      UUID NOT NULL REFERENCES users(id),
-    created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
-
-    CONSTRAINT valid_status CHECK (status IN ('pending','running','completed','failed','cancelled')),
-    CONSTRAINT valid_date_range CHECK (end_date > start_date)
-);
-
-CREATE INDEX idx_backtests_tenant_status ON backtests(tenant_id, status);
-CREATE INDEX idx_backtests_strategy ON backtests(strategy_id);
-```
-
-### Backtest Results Table
-
-```sql
-CREATE TABLE backtest_results (
-    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    backtest_id     UUID UNIQUE NOT NULL REFERENCES backtests(id) ON DELETE CASCADE,
-
-    -- Performance metrics
-    total_return    NUMERIC(10,6),
-    annual_return   NUMERIC(10,6),
-    sharpe_ratio    NUMERIC(10,6),
-    sortino_ratio   NUMERIC(10,6),
-    max_drawdown    NUMERIC(10,6),
-    calmar_ratio    NUMERIC(10,6),
-    volatility      NUMERIC(10,6),
-
-    -- Trade statistics
-    total_trades    INT,
-    winning_trades  INT,
-    losing_trades   INT,
-    win_rate        NUMERIC(10,6),
-    profit_factor   NUMERIC(10,6),
-    avg_trade_return NUMERIC(10,6),
-    final_equity    NUMERIC(18,2),
-
-    -- Detailed data (JSONB for flexibility)
-    equity_curve    JSONB,   -- [{date, equity, drawdown}, ...]
-    trades          JSONB,   -- [{entry_date, exit_date, symbol, pnl, ...}, ...]
-    daily_returns   JSONB,   -- [0.02, -0.01, 0.03, ...]
-    monthly_returns JSONB,   -- {"2023-01": 0.05, "2023-02": 0.03, ...}
-
-    created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-```
-
----
-
-## Caching Strategy
-
-Historical market data rarely changes. The system caches at multiple levels:
-
-**Cache Key Format:** `bars:{symbol}:{timeframe}:{start_date}:{end_date}`
-
-**Lookup Flow:**
-
-1. Check Redis for cached bars
-2. On hit: Return immediately (~5ms)
-3. On miss: Call Market Data Service (~500ms-2s), then cache with 24h TTL
-
-**Pre-computed Indicators:** Common indicators (SMA 20/50/200, EMA 12/26, RSI 14, ATR 14) are computed at data ingestion time. Custom indicators are computed on-demand and cached in Redis.
-
----
-
-## Error Handling
-
-### Failure Scenarios
-
-| Scenario                | Detection                       | Handling    | User Message                                                        |
-| ----------------------- | ------------------------------- | ----------- | ------------------------------------------------------------------- |
-| Strategy not found      | HTTP 404 from strategy service  | Mark FAILED | "Strategy not found. It may have been deleted."                     |
-| No market data          | Empty response from market-data | Mark FAILED | "No market data available for {symbol} in the selected date range." |
-| Insufficient capital    | During simulation               | Skip trade  | Visible in trade log: "Skipped: insufficient capital"               |
-| Task timeout            | Celery soft time limit          | Mark FAILED | "Backtest timed out. Try a shorter date range."                     |
-| Invalid strategy config | Interpreter validation          | Mark FAILED | "Invalid strategy configuration: {details}"                         |
-| Service unavailable     | HTTP timeout/error              | Retry (3x)  | "Service temporarily unavailable. Retrying..."                      |
-
-### Retry Logic
-
-Task retries: 3 attempts with exponential backoff (immediate → 60s → 120s). After 3 failures: Mark FAILED with error message.
-
----
-
-## Capabilities and Limitations
-
-### What the Backtester Supports
-
-| Capability         | Range               | Notes                                     |
-| ------------------ | ------------------- | ----------------------------------------- |
-| **Time range**     | 1980 - present      | 45+ years via multi-source data           |
-| **Universe size**  | Up to 500 symbols   | Parallel processing scales linearly       |
-| **Execution time** | < 1 minute typical  | For 100 symbols over 10 years             |
-| **Timeframes**     | Daily and intraday  | Multi-timeframe bar support               |
-| **Markets**        | US equities         | Via Alpaca + historical sources           |
-| **Indicators**     | 15+ built-in        | RSI, SMA, EMA, MACD, Bollinger, ATR, etc. |
-| **Strategy types** | Config-based + code | Visual builder or Python classes          |
-
-### Execution Assumptions
-
-| Assumption             | Reality                   | Impact                         |
-| ---------------------- | ------------------------- | ------------------------------ |
-| Execute at close price | Real fills vary           | Slippage parameter compensates |
-| Unlimited liquidity    | Large orders move markets | Suitable for < $10M portfolios |
-| No partial fills       | Orders may partially fill | Not modeled                    |
-| Instant execution      | Real latency exists       | Acceptable for daily timeframe |
-
-### Data Limitations
-
-| Limitation        | Description                     | Mitigation                             |
-| ----------------- | ------------------------------- | -------------------------------------- |
-| Daily bars only   | No tick or minute data          | Suitable for swing/position strategies |
-| No extended hours | Pre/after-market excluded       | Most volume is regular hours           |
-| US equities only  | No international, crypto, forex | Focus on most liquid market            |
-| Survivorship bias | Delisted symbols missing        | Use caution with pre-2000 data         |
-| Pre-1980 sparse   | Limited data availability       | Start dates < 1980 not recommended     |
-
-### What Backtesting Cannot Tell You
-
-- **Future performance** — Past results don't guarantee future returns
-- **Execution quality** — Real fills depend on market conditions at the moment
-- **Emotional factors** — Backtests don't simulate fear, greed, or fatigue
-- **Regime changes** — Markets evolve; a strategy that worked in 1990 may fail today
-- **Black swan events** — Rare events may not appear in historical data
-
-### When to Trust Results
-
-**High confidence:**
-
-- Strategy tested over 10+ years including multiple market cycles
-- Multiple symbols show consistent performance
-- Sharpe ratio between 1.0-2.5 (very high ratios often indicate overfitting)
-- Drawdowns align with what you could emotionally tolerate
-
-**Exercise caution:**
-
-- Testing only on recent bull market (post-2009)
-- Sharpe ratio > 3.0 (likely overfitted)
-- Strategy optimized to specific date ranges
-- Few trades (< 100) — insufficient statistical significance
-
----
-
-## Benchmark Comparisons
-
-Every backtest automatically compares strategy performance against standard benchmarks.
-
-### Built-in Benchmarks
-
-| Benchmark           | Description                             | Use Case                           |
-| ------------------- | --------------------------------------- | ---------------------------------- |
-| **SPY Buy & Hold**  | S&P 500 ETF held for entire period      | "Did my strategy beat the market?" |
-| **Risk-Free Rate**  | 3-month Treasury bill yield             | "Did I beat risk-free returns?"    |
-| **60/40 Portfolio** | 60% SPY + 40% BND, rebalanced quarterly | "Did I beat a passive portfolio?"  |
-
-### Benchmark Metrics Computed
-
-For each benchmark: Total return, annual return, Sharpe ratio, max drawdown, volatility.
-
-For strategy vs SPY specifically:
-
-- **Beta** = `cov(strategy, spy) / var(spy)` — market sensitivity (1.0 = moves with market, <1.0 = defensive, >1.0 = aggressive)
-- **Alpha** = `strategy_return - (rf + beta × (market_return - rf))` — excess return beyond market exposure
-- **Correlation** and **Information Ratio**
-
-### Custom Benchmarks
-
-Users can add custom benchmarks:
-
-- Single asset buy & hold (e.g., QQQ)
-- Equal-weight portfolio with rebalancing (e.g., sector ETFs)
-
-### Benchmark Data Availability
-
-| Benchmark | Inception | Pre-Inception Handling                       |
-| --------- | --------- | -------------------------------------------- |
-| SPY       | 1993      | Use S&P 500 index data (^GSPC) for 1980-1993 |
-| QQQ       | 1999      | Use Nasdaq 100 index data for earlier        |
-| BND       | 2007      | Use aggregate bond index proxy               |
-| Risk-Free | 1980+     | 3-month T-bill yields available              |
-
----
-
-## Walk-Forward Optimization
-
-Walk-forward analysis prevents overfitting by simulating real-world strategy development.
-
-### The Overfitting Problem
-
-Traditional backtesting optimizes parameters on historical data, then tests on the same data. This leads to curve-fitted parameters that won't work in the future.
-
-### Walk-Forward Solution
-
-Walk-forward repeatedly optimizes on past data and tests on unseen future data:
-
-1. **Window 1**: Optimize on 2000-2004, test on 2005-2006 → record results
-2. **Window 2**: Optimize on 2002-2006, test on 2007-2008 → record results
-3. **Continue rolling forward...**
-4. **Final Performance** = Average of all out-of-sample windows
-
-### Configuration Options
-
-- **In-Sample Period**: How much history to optimize on (e.g., 5 years)
-- **Out-of-Sample Period**: How far to test forward (e.g., 1 year)
-- **Step Size**: How often to re-optimize (e.g., 1 year)
-- **Parameters to Optimize**: Select which strategy parameters to vary with ranges
-- **Optimization Target**: Metric to maximize (e.g., Sharpe Ratio)
-
-### Walk-Forward Efficiency
-
-**Efficiency Ratio** = Out-of-Sample Performance / In-Sample Performance
-
-| Efficiency | Interpretation                 |
-| ---------- | ------------------------------ |
-| > 80%      | Excellent — strategy is robust |
-| 60-80%     | Good — acceptable degradation  |
-| 40-60%     | Moderate — some overfitting    |
-| < 40%      | Poor — significant overfitting |
-
----
-
-## Monte Carlo Simulation
-
-Monte Carlo simulation assesses strategy robustness by testing performance under randomized conditions.
-
-### Why Monte Carlo?
-
-A single backtest shows what _did_ happen. Monte Carlo shows the range of what _could_ happen:
-
-- What if trades occurred in a different order?
-- What if we started on a different date?
-- What's the worst-case scenario at 95% confidence?
-
-### Simulation Methods
-
-1. **Trade Shuffling**: Randomize the order of trades to test if success depends on lucky sequencing
-2. **Random Start Dates**: Vary entry timing to test if success depends on lucky start timing
-3. **Bootstrapped Returns**: Resample daily returns with replacement to estimate confidence intervals
-
-### Configuration Options
-
-- **Number of Simulations**: Typically 1,000
-- **Methods to Run**: Select which randomization methods
-- **Confidence Intervals**: e.g., 95%
-
-### Interpreting Results
-
-**Strategy is ROBUST if:**
-
-- 90%+ of simulations are profitable
-- Median metrics close to original backtest
-- 5th percentile Sharpe still > 0.5
-- Narrow distribution (low variance across simulations)
-
-**Strategy may be FRAGILE if:**
-
-- < 80% of simulations profitable
-- Median significantly worse than original
-- 5th percentile shows losses
-- Wide distribution (high variance)
-
-### Combined Analysis
-
-For maximum confidence, run both walk-forward and Monte Carlo:
-
-1. Walk-forward confirms strategy works out-of-sample (not curve-fitted)
-2. Monte Carlo on out-of-sample results confirms results aren't dependent on lucky timing/ordering
-
----
-
-## Comparison Feature
-
-Users can compare multiple backtests side-by-side with:
-
-- **Equity Curves Overlay**: Multiple strategies on same chart
-- **Metrics Comparison Table**: Side-by-side metrics for each strategy
-- **Requirement**: Backtests must share the same date range to be comparable
+`RunBacktest` enforces a per-tenant monthly quota (`backtests_per_month` from the tenant's plan; free-tier default 10) via `llamatrade_db.plan_limits.enforce_plan_limit`, returning `RESOURCE_EXHAUSTED` when the quota is exceeded.
 
 ---
 
 ## API Reference
 
-### Create Backtest
+The service is **Connect/gRPC only** — there is no REST/JSON API and no WebSocket endpoint. Progress is delivered by the `StreamBacktestProgress` server-stream (backed by Redis pub/sub), not a WebSocket.
 
-```http
-POST /api/backtests
-Authorization: Bearer {jwt_token}
-Content-Type: application/json
+| RPC | Description |
+| --- | --- |
+| `RunBacktest` | validate config, create a `PENDING` row, enqueue the Celery task, return the run |
+| `GetBacktest` | fetch a run; when `COMPLETED`, attaches results + a bounded trades preview |
+| `ListBacktests` | list a tenant's runs (filter by strategy / status, paginated) |
+| `CancelBacktest` | set status `CANCELLED` and raise the cooperative cancel flag |
+| `StreamBacktestProgress` | server-stream progress updates; replays buffered updates on connect |
+| `CompareBacktests` | return several runs' metrics side by side |
+| `GetBacktestTrades` | paged trade log for a completed run |
 
-{
-  "strategy_id": "uuid",
-  "strategy_version": 3,           // optional, defaults to latest
-  "start_date": "2023-01-01",
-  "end_date": "2024-01-01",
-  "initial_capital": 100000,
-  "symbols": ["AAPL", "MSFT"],     // optional, overrides strategy symbols
-  "commission": 1.0,               // optional, default 0
-  "slippage": 0.0005               // optional, default 0
-}
+Identity is resolved from the JWT via `resolve_identity_connect`; every handler opens a `tenant_session` (Postgres row-level security), so runs, results, progress, and cancel are all tenant-scoped.
 
-Response: 202 Accepted
-{
-  "id": "uuid",
-  "status": "pending",
-  "created_at": "2024-01-15T10:30:00Z"
-}
-```
+### Result storage
 
-### Get Backtest Status
-
-```http
-GET /api/backtests/{id}
-Authorization: Bearer {jwt_token}
-
-Response: 200 OK
-{
-  "id": "uuid",
-  "strategy_id": "uuid",
-  "status": "running",
-  "progress": 45,
-  "started_at": "2024-01-15T10:30:05Z",
-  "completed_at": null
-}
-```
-
-### Get Backtest Results
-
-```http
-GET /api/backtests/{id}/results
-Authorization: Bearer {jwt_token}
-
-Response: 200 OK
-{
-  "id": "uuid",
-  "backtest_id": "uuid",
-  "metrics": {
-    "total_return": 0.285,
-    "annual_return": 0.285,
-    "sharpe_ratio": 1.82,
-    "sortino_ratio": 2.41,
-    "max_drawdown": 0.083,
-    "win_rate": 0.617,
-    "profit_factor": 1.64,
-    "total_trades": 47,
-    "alpha": 0.085,
-    "beta": 0.72
-  },
-  "benchmarks": {
-    "spy_buy_hold": { "total_return": 0.385, "sharpe_ratio": 1.05, "max_drawdown": -0.34 },
-    "portfolio_60_40": { "total_return": 0.245, "sharpe_ratio": 0.95, "max_drawdown": -0.22 },
-    "risk_free": { "total_return": 0.082 }
-  },
-  "equity_curve": [
-    {"date": "2023-01-01", "equity": 100000, "drawdown": 0},
-    {"date": "2023-01-02", "equity": 100500, "drawdown": 0}
-  ],
-  "trades": [
-    {
-      "entry_date": "2023-01-15",
-      "exit_date": "2023-01-19",
-      "symbol": "AAPL",
-      "side": "long",
-      "entry_price": 150.25,
-      "exit_price": 155.80,
-      "quantity": 100,
-      "pnl": 555.00,
-      "pnl_percent": 3.69
-    }
-  ],
-  "monthly_returns": { "2023-01": 0.021, "2023-02": 0.034 }
-}
-```
-
-### Cancel Backtest
-
-```http
-DELETE /api/backtests/{id}
-Authorization: Bearer {jwt_token}
-
-Response: 200 OK
-{ "id": "uuid", "status": "cancelled" }
-```
-
-### List Backtests
-
-```http
-GET /api/backtests?strategy_id={id}&status=completed&page=1&page_size=20
-Authorization: Bearer {jwt_token}
-
-Response: 200 OK
-{
-  "items": [...],
-  "total": 47,
-  "page": 1,
-  "page_size": 20
-}
-```
+A completed run writes one `BacktestResult` row: scalar metrics (returns, Sharpe/Sortino, drawdown + duration, win rate, profit factor, exposure time, final equity), benchmark fields (return, alpha, beta, information ratio, benchmark equity curve), and inline JSONB detail (`equity_curve`, `trades`, `daily_returns`, `monthly_returns`). The stored equity curve is daily-resampled and capped at 5000 points; the trade list is paged on read via `GetBacktestTrades`.
 
 ---
 
-## WebSocket Progress
+## Benchmark Comparison
 
-Real-time progress updates via WebSocket:
+Every run compares the strategy against **SPY buy & hold** (`engine/benchmarks.py`): the benchmark's total return and equity curve, plus, on date-joined daily returns, **alpha**, **beta**, and **information ratio**.
 
-```javascript
-const ws = new WebSocket(
-  "wss://api.llamatrade.com/ws/backtests/bt-456/progress",
-);
+- **Beta** = `cov(strategy, spy) / var(spy)`
+- **Alpha** = `strategy_return − (rf + beta × (market_return − rf))`
 
-ws.onmessage = (event) => {
-  const data = JSON.parse(event.data);
-  // { "backtest_id": "bt-456", "progress": 65, "message": "Simulating Q3 2023...", "status": "running" }
-  updateProgressBar(data.progress);
-  updateStatusMessage(data.message);
-};
-```
+Benchmark bars are taken from the combined fetch (no extra data call) and restricted to the backtest window so warm-up padding does not distort the comparison. If benchmark data is unavailable the run completes without it (benchmark fields are `NULL`).
 
 ---
 
 ## Configuration
 
-### Environment Variables
+### Environment variables
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `DATABASE_URL` | Required | PostgreSQL connection string |
-| `REDIS_URL` | `redis://localhost:6379/0` | Redis for caching and pub/sub |
-| `CORS_ORIGINS` | `http://localhost:8800,...` | Allowed CORS origins |
-| `MARKET_DATA_GRPC_TARGET` | `market-data:8840` | Market data service address |
-| `BACKTEST_USE_CELERY` | `false` | Enable async Celery execution |
+| `DATABASE_URL` | required | PostgreSQL connection string |
+| `REDIS_URL` | `redis://localhost:6379/0` | Celery broker/backend, progress pub/sub, dataset lock |
+| `MARKET_DATA_GRPC_TARGET` | `market-data:8840` | market-data service address |
+| `BACKTEST_DATASET_DIR` | — | on-disk Parquet snapshot dir (in-memory store when unset) |
+| `BACKTEST_MAX_BARS_PER_SYMBOL` | `100000` | per-symbol bar cap for the fetch |
+| `BACKTEST_TASK_SOFT_TIME_LIMIT` | `1800` | Celery soft time limit (s) |
+| `BACKTEST_TASK_TIME_LIMIT` | `3600` | Celery hard time limit (s) |
+| `BACKTEST_REAPER_INTERVAL` | `300` | reaper beat interval (s) |
+| `BACKTEST_TRADES_PREVIEW` | `500` | max trades inlined by `GetBacktest` |
+| `BACKTEST_MAX_TRADES_PAGE_SIZE` | `200` | max page size for `GetBacktestTrades` |
+| `CORS_ORIGINS` | localhost set | allowed CORS origins |
 
-### Celery Configuration
+### Celery configuration
 
 ```python
 celery_app.conf.update(
-    task_soft_time_limit=300,        # 5 minutes soft limit
-    task_time_limit=600,             # 10 minutes hard limit
-    task_acks_late=True,             # Acknowledge after completion
-    task_reject_on_worker_lost=True, # Reject if worker dies
-    task_default_retry_delay=60,     # Wait 60s before retry
-    task_max_retries=3,              # Max 3 retries
-    result_expires=86400,            # Results expire after 24h
-    worker_prefetch_multiplier=1,    # Fair scheduling
-    worker_concurrency=4,            # 4 concurrent workers
+    task_soft_time_limit=1800,       # BACKTEST_TASK_SOFT_TIME_LIMIT
+    task_time_limit=3600,            # BACKTEST_TASK_TIME_LIMIT
+    task_acks_late=True,             # ack after completion
+    task_reject_on_worker_lost=True, # reject if the worker dies
+    task_default_retry_delay=60,
+    task_max_retries=3,
+    result_expires=86400,
+    worker_prefetch_multiplier=1,    # fair scheduling
+    worker_concurrency=4,
 )
+# routes: run_backtest_task → "backtest"; reap_stale_backtests_task → "backtest_maintenance"
+# beat:   reap-stale-backtests every BACKTEST_REAPER_INTERVAL seconds
 ```
 
-### Port
+Transient market-data errors are retried (up to 3×, resetting the row to `PENDING` between attempts); other failures are terminal and leave the row `FAILED` with its error message.
 
-| Service | Port |
-|---------|------|
-| Backtest Service | 8830 |
+### Port & health
+
+| Service | Port | Health |
+|---------|------|--------|
+| Backtest | 8830 | `GET /health` → `{"status":"healthy","service":"backtest","version":"0.1.0"}` |
 
 ---
 
-## Health Check
+## Planned / Not Implemented
 
-### Endpoint
+The following are documented for direction but are **not** in the current engine:
 
-```http
-GET /health
-```
-
-### Response
-
-```json
-{
-  "status": "healthy",
-  "service": "backtest",
-  "version": "0.1.0"
-}
-```
-
----
-
-## Startup/Shutdown Sequence
-
-### Startup
-
-```
-1. Load environment configuration
-2. Initialize logging
-3. Create FastAPI application with lifespan handler
-4. In lifespan:
-   a. Import Connect ASGI application from proto
-   b. Create BacktestServicer instance
-   c. Mount Connect app at root path
-5. Add CORS middleware
-6. Register health check endpoint
-7. Start accepting requests
-```
-
-### Celery Worker Startup
-
-```
-1. Load celery_app configuration
-2. Connect to Redis broker
-3. Register task routes (backtest queue)
-4. Start worker pool (default 4 concurrent)
-5. Begin consuming tasks from queue
-```
-
-### Shutdown
-
-```
-1. Stop accepting new requests
-2. Wait for active backtests to complete (soft timeout)
-3. Cancel running Celery tasks if needed
-4. Close Redis connections (publisher, subscriber)
-5. Close market data gRPC client
-6. Close database connections
-```
-
----
-
-## Testing
-
-### Test Structure
-
-```
-tests/
-├── conftest.py                    # Fixtures: mock DB, clients, sample data
-├── test_backtest_service.py       # Service layer unit tests
-├── test_backtest_service_extended.py # Extended service tests
-├── test_backtester.py             # Engine unit tests
-├── test_benchmarks.py             # Benchmark calculation tests
-├── test_celery_tasks.py           # Async task tests
-├── test_grpc_servicer.py          # gRPC endpoint tests
-├── test_grpc_streaming.py         # Progress streaming tests
-├── test_health.py                 # Health check tests
-├── test_indicator_cache.py        # Redis cache tests
-├── test_market_data.py            # Market data client tests
-├── test_models.py                 # Pydantic schema tests
-├── test_progress.py               # Progress tracking tests
-├── test_progress_extended.py      # Extended progress tests
-├── test_strategy_adapter.py       # Strategy compilation tests
-└── test_validation.py             # Input validation tests
-```
-
-### Running Tests
-
-```bash
-# Run all tests
-cd services/backtest && pytest
-
-# Run with coverage
-pytest --cov=src --cov-report=term-missing
-
-# Run specific test file
-pytest tests/test_backtester.py
-
-# Run specific test
-pytest tests/test_backtester.py::test_engine_run_simple
-```
-
-### Key Test Fixtures
-
-```python
-@pytest.fixture
-def mock_db():
-    """Mock async database session."""
-    db = AsyncMock()
-    db.commit = AsyncMock()
-    db.refresh = AsyncMock()
-    db.execute = AsyncMock()
-    return db
-
-@pytest.fixture
-def mock_market_data_client():
-    """Mock market data client."""
-    client = AsyncMock()
-    client.fetch_bars = AsyncMock(return_value={})
-    return client
-
-@pytest.fixture
-def sample_bars():
-    """30 days of OHLCV data for AAPL."""
-    # Returns {"AAPL": [{timestamp, open, high, low, close, volume}, ...]}
-```
-
-### Key Test Scenarios
-
-- **Happy path**: Create backtest, run simulation, verify metrics
-- **Strategy compilation**: S-expression DSL to executable function
-- **Benchmark comparison**: SPY buy & hold, alpha/beta calculation
-- **Progress streaming**: Redis pub/sub updates during execution
-- **Error handling**: Invalid symbols, missing data, timeout
-- **Cancellation**: Cancel running backtest, verify status update
-- **Celery tasks**: Async execution, retry on failure
-
----
-
-## Capabilities Summary
-
-### Engine and Execution
-
-- **Core Engine**: Vectorized backtest engine with NumPy
-- **Strategy Adapter**: S-expression DSL compilation
-- **Metrics Calculation**: Sharpe, Sortino, drawdown, win rate
-- **Benchmark Comparison**: SPY buy & hold, alpha, beta, information ratio
-- **Progress Streaming**: Redis pub/sub with ETA calculation
-- **gRPC/Connect Endpoints**: RunBacktest, GetBacktest, ListBacktests, CancelBacktest, StreamBacktestProgress, CompareBacktests
-- **Database Persistence**: Backtest and BacktestResult models
-- **Market Data Integration**: gRPC client to market-data service
-- **Celery Integration**: Async task queue
-- **Health Check**: Standard `/health` endpoint
-
-### Analysis and Scale
-
-- **Walk-Forward Optimization**: Rolling in-sample/out-of-sample optimization with efficiency ratio
-- **Monte Carlo Simulation**: Trade shuffling, random start dates, and bootstrapped returns
-- **Parallel Symbol Processing**: Symbols and time chunks split across workers
-- **Multi-Level Cache (L3/L4)**: TimescaleDB hot data and GCS/Parquet cold storage
-- **Historical Data Sources**: Alpaca plus Polygon.io, Tiingo, and EOD Historical for 1980-present coverage
-- **WebSocket Progress**: Real-time progress over WebSocket and Connect streaming
-- **Custom Benchmarks**: SPY buy & hold, 60/40 portfolio, risk-free rate, and user-defined benchmarks
-- **Multi-Timeframe**: Daily and intraday bars
+- **Vectorized / parallel engine** — the runtime is a straight per-date replay; there is no whole-series NumPy engine and no symbol/time-chunk parallelism.
+- **Multi-tier / cold storage cache** — no in-process LRU tier and no GCS + DuckDB Parquet cold store. Warm data is the market-data store plus the per-run Parquet dataset snapshot.
+- **Multi-source deep history** — history is Alpaca-only via market-data; there is no Polygon.io / Tiingo / EOD Historical ingestion and no pre-2016 coverage.
+- **Dividend-adjusted & adjusted intraday prices** — daily bars are split-adjusted at the source, so `use_adjusted_prices` is honored for daily backtests; dividend adjustment and adjusted intraday bars are not implemented.
+- **Position sizing caps & parameter overrides** — `max_position_size` and strategy `parameters` are rejected rather than enforced.
+- **Additional benchmarks** — only SPY buy & hold (+ alpha/beta/information ratio); no 60/40 portfolio, risk-free-rate, or user-defined custom benchmarks.
+- **Walk-forward optimization** and **Monte Carlo simulation** — not implemented.
+- **Scale-to-zero worker autoscaling & externalized results** — the Celery worker/beat and broker are deployed (`infrastructure/k8s/base/backtest/`), but KEDA queue-depth autoscaling and moving large result payloads (trades/curves) out of inline Postgres JSONB into object storage remain future work.
 
 ---
 
 ## Glossary
 
-| Term              | Definition                                             |
-| ----------------- | ------------------------------------------------------ |
-| **Backtest**      | Simulation of a strategy over historical data          |
-| **Equity Curve**  | Time series of portfolio value                         |
-| **Drawdown**      | Decline from peak equity to current value              |
-| **Sharpe Ratio**  | Risk-adjusted return measure                           |
-| **Sortino Ratio** | Like Sharpe but only penalizes downside                |
-| **Win Rate**      | Percentage of trades that were profitable              |
-| **Profit Factor** | Gross profits divided by gross losses                  |
-| **Slippage**      | Difference between expected and actual execution price |
-| **Signal**        | Trading instruction (buy, sell, etc.)                  |
-| **Bar**           | OHLCV data for a single time period                    |
+| Term | Definition |
+| --- | --- |
+| **Backtest** | simulation of a strategy over historical data |
+| **Equity Curve** | time series of portfolio value |
+| **Drawdown** | decline from peak equity to current value |
+| **Sharpe Ratio** | risk-adjusted return measure |
+| **Sortino Ratio** | like Sharpe but only penalizes downside |
+| **Win Rate** | percentage of trades that were profitable |
+| **Profit Factor** | gross profits divided by gross losses |
+| **Slippage** | difference between the close and the simulated fill price |
+| **Dataset snapshot** | content-addressed Parquet bar set shared across identical runs |
+| **Sleeve** | ledger capital envelope for a live execution (see the strategy service) |
+| **Bar** | OHLCV data for a single time period |

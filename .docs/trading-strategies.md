@@ -1,5 +1,7 @@
 # Algorithmic Trading Strategies Reference
 
+> **Platform scope.** LlamaTrade trades **only US equities & ETFs** via Alpaca. Strategies below that assume options, futures, forex, crypto, or CFDs are **educational reference**, not supported by the platform.
+
 Reference covering trading strategies, mechanics, primitives, and implementation.
 
 ---

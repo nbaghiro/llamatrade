@@ -1,5 +1,7 @@
 # Asset Classes Reference
 
+> **Platform scope.** LlamaTrade trades **only US equities & ETFs** via Alpaca. The options, futures, forex, crypto, CFDs, bonds, and commodities described below are **educational reference**, not supported by the platform.
+
 Comprehensive guide to tradeable asset classes: what they are, how they're traded, and which strategies work best for each.
 
 ---
@@ -1866,4 +1868,4 @@ Hedge currency exposure with:
 
 ---
 
-_See [Trading Strategies](../trading-strategies.md) for detailed strategy implementations._
+_See [Trading Strategies](trading-strategies.md) for detailed strategy implementations._

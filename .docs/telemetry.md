@@ -4,8 +4,9 @@
 > `llamatrade_telemetry` library emits it. Every service, lib, and the web app
 > conform to this document. If you add a metric/span/log, add it here first.
 
-Status: **design locked, migration in progress.** See the task list / commit
-history for what has shipped.
+> **Not yet:** trading, market-data, and portfolio still keep a per-service
+> `metrics.py`; those collapse into the domain namespaces (§5). Scrape infra
+> (Prometheus/Grafana/Collector/Alertmanager) is still to stand up (§9–§10).
 
 ---
 
@@ -36,19 +37,19 @@ history for what has shipped.
 
 ---
 
-## 2. Current state (what this replaces)
+## 2. What the library provides
 
-| Area | Today | After |
-|---|---|---|
-| Setup | 3 patterns; only `market-data` runs full `setup_observability` | one `init_telemetry()` everywhere |
-| Metrics defs | `libs/common/metrics.py` (22 std) + `trading/metrics.py` (573 lines) + `market-data/metrics.py` (161) + `portfolio/metrics.py` (49) + `libs/alpaca/metrics.py` | `llamatrade_telemetry` core + typed domain namespaces |
-| Alpaca metrics | defined 3× under 3 names | 1 set in `libs/alpaca` |
-| Logging | full JSON formatter exists, only `market-data` configures it | configured everywhere, with `trace_id`/`span_id` |
-| Tracing | none (only an `X-Request-ID` header) | OTel spans + W3C propagation across services |
-| Events (`llamatrade_events`) | n/a (predecessor `eventbus_*` shim removed) | `llamatrade_events_published_total`, `llamatrade_events_consumed_total{outcome}`, `llamatrade_events_reconnects_total`, `llamatrade_events_consumer_lag` (via the telemetry registry; W3C trace propagated through the envelope) |
-| Scraping | every service exposes `/metrics`; **nothing scrapes them** | Prometheus + Grafana + OTel Collector + Alertmanager (compose + k8s) |
-| Frontend | `console.error` only | `@llamatrade/telemetry`: web-vitals, RPC latency, JS errors, trace propagation |
-| Workers | Celery backtests have **zero** task/queue metrics | full Celery instrumentation |
+| Area | Approach |
+|---|---|
+| Setup | one `init_telemetry()` call per service/worker |
+| Metrics | `llamatrade_telemetry` core + typed `metrics.<domain>.*` namespaces |
+| Alpaca metrics | one set, owned by `libs/alpaca` |
+| Logging | JSON everywhere, with `trace_id` / `span_id` |
+| Tracing | OTel spans + W3C propagation across services (no-op without a collector) |
+| Events | `llamatrade_events_*` counters/gauges via the telemetry registry; W3C trace propagated through the envelope |
+| Scraping | each service exposes `/metrics`; Prometheus / Grafana / OTel Collector / Alertmanager are still to stand up (§9–§10) |
+| Frontend | `apps/web/src/telemetry/`: web-vitals, RPC latency, JS errors, trace propagation |
+| Workers | Celery task / queue instrumentation |
 
 ---
 
@@ -138,31 +139,31 @@ counters/histograms.
 
 ```
 libs/telemetry/llamatrade_telemetry/
-├── __init__.py        # init_telemetry, get_logger, get_tracer, metrics, shutdown
+├── __init__.py        # init_telemetry, get_logger, metrics, span, counter/gauge/…, shutdown
 ├── config.py          # TelemetrySettings (pydantic-settings): exporters, sampling, env, log fmt
-├── conventions.py     # name/label constants + validator (rejects ad-hoc names/labels)
-├── registry.py        # MeterProvider + PrometheusMetricReader → CollectorRegistry; instrument cache
-├── setup.py           # init_telemetry(app, service, version): wires everything; idempotent
-├── exporters.py       # /metrics exposition (generate_latest) + OTLP trace exporter wiring
-├── metrics/
-│   ├── http.py        # ASGI RED middleware (replaces ObservabilityMiddleware)
-│   ├── grpc.py        # gRPC/Connect server + client interceptors
-│   ├── db.py          # SQLAlchemy query timing + pool observer (keeps PoolStatsLike)
-│   ├── cache.py       # redis/cache op timing + hit/miss
-│   ├── eventbus.py    # publish/consume/lag/reconnect/ack/dlq recorders
-│   ├── runtime.py     # event-loop lag + process collectors
-│   ├── celery.py      # task/queue/lag signals
-│   └── domain.py      # typed namespaces: metrics.trading.*, metrics.ledger.*, …
-├── logging/
-│   ├── config.py      # JSON formatter (moved from common) + stdlib config
-│   └── context.py     # contextvars: request_id, tenant_id, user_id (+ trace_id/span_id from span)
-└── tracing/
-    ├── provider.py    # TracerProvider + OTLP exporter (graceful no-op without collector)
-    ├── propagation.py # W3C traceparent inject/extract; bridges X-Request-ID
-    └── instrument.py  # @traced decorator, span() context manager, exemplar helper
+├── conventions.py     # name/label allow-lists + histogram buckets + validators
+├── registry.py        # MeterProvider + PrometheusMetricReader; counter/gauge/histogram/… + get_metrics
+├── setup.py           # init_telemetry(app, service, version): wires everything; /metrics; idempotent
+├── domain.py          # typed namespaces: metrics.trading.*, metrics.ledger.*, …
+├── runtime.py         # event-loop lag + process collectors
+├── logging.py         # JSON formatter + stdlib config + request-context contextvars
+├── tracing.py         # TracerProvider + OTLP export (no-op w/o collector); span(); W3C inject/extract
+└── instrumentation/
+    ├── http.py        # ASGI RED middleware: TelemetryMiddleware
+    ├── grpc.py        # gRPC/Connect record_grpc_request helpers
+    ├── db.py          # SQLAlchemy query timing + pool observer (PoolStatsLike)
+    ├── cache.py       # redis/cache op timing + hit/miss
+    ├── celery.py      # task/queue/lag signals
+    └── dependency.py  # outbound dependency (db/redis/peer/external) timing
 ```
 
-Companion web package: `apps/web/src/telemetry/` (`@llamatrade/telemetry`).
+`/metrics` exposition lives in `setup.py` via `registry.get_metrics()`; there is
+no `metrics/`, `logging/`, or `tracing/` subpackage and no `exporters.py`. Event
+metrics live in `llamatrade_events/observability.py` (surfaced as
+`llamatrade_events_*`), not here.
+
+Companion web package: `apps/web/src/telemetry/` (web-vitals, RPC interceptor,
+error sink, trace propagation).
 
 ### 5.2 Public API
 
@@ -203,26 +204,30 @@ init_telemetry(service="backtest-worker", version=__version__)  # no app → no 
 | `OTEL_TRACES_SAMPLER` / `_ARG` | `parentbased_traceidratio` / `0.1` | sampling |
 | `LOG_LEVEL` | `INFO` | |
 | `LOG_FORMAT` | `json` (`text` for local dev) | |
-| `TELEMETRY_METRICS_ENABLED` | `true` | kill-switch |
-| `SERVICE_VERSION` / git sha | from build | `service_info` / resource |
+| `TELEMETRY_METRICS_ENABLED` | `true` | metrics kill-switch |
+| `TELEMETRY_TRACING_ENABLED` | `true` | tracing kill-switch (export also needs an OTLP endpoint) |
+| `TELEMETRY_STRICT_LABELS` | _(unset → strict in dev/test, lenient in prod/staging)_ | fail fast on a bad label |
+| `SERVICE_VERSION` / `GIT_SHA` | from build | `service.version` / `service.git_sha` resource attrs |
 
 ### 5.4 Integration seams (where the lib plugs in)
 
-1. `libs/common/middleware.py` — RED middleware + trace context start; propagate
-   `traceparent` + `X-Tenant-ID`/`X-User-ID` to downstream `ServiceClient` calls.
-2. `libs/db` session/pool — query span + timing; `get_pool_stats` → pool gauges.
-3. `libs/common/eventbus.py` — publish/consume recorders + span links; inject
-   `traceparent` into stream entry metadata so a trace follows a fill into the ledger.
+1. `instrumentation/http.py::TelemetryMiddleware` — ASGI RED middleware + trace
+   context start; propagates `traceparent` / tenant headers to downstream calls.
+2. `libs/db` session/pool — query span + timing (`instrumentation/db.py`);
+   `get_pool_stats` → pool gauges.
+3. `libs/events` (`bus.py` + `consumer.py`) — the bus injects `traceparent` into
+   the envelope `metadata`; `StreamConsumer` extracts it so a trace follows a fill
+   into the ledger. Event metrics live in `llamatrade_events/observability.py`.
 4. `libs/alpaca` — the single Alpaca call metric + a client span per request.
 5. Celery app (`services/backtest`) — task lifecycle + queue depth.
 6. `apps/web` Connect client — interceptor: client RPC latency, errors, trace inject.
 
-### 5.5 Back-compat during migration
+### 5.5 No back-compat shims
 
-`llamatrade_common.{metrics,observability,logging}` keep working as **thin
-re-export shims** pointing at `llamatrade_telemetry` so the workspace stays green
-while services migrate one by one. Shims are deleted in the final cleanup once no
-service imports them.
+Services call `init_telemetry` directly. There are no
+`llamatrade_common.{metrics,observability,logging}` re-export shims; metrics,
+logs, and traces come from `llamatrade_telemetry`, and the event system from
+`llamatrade_events`.
 
 ---
 
@@ -254,15 +259,19 @@ service imports them.
 - `llamatrade_cache_operations_total{cache,op,result}` (folds hits/misses)
 - `llamatrade_cache_op_duration_seconds{cache,op}`
 
-**Events (`llamatrade_events`, Redis Streams):** the lib's `observability.py`
-metrics (plain `prometheus_client`, bridged into the telemetry export), labelled by
-the stream's logical prefix only (bounded cardinality):
-- `events_published_total{stream}`
-- `events_consumed_total{stream,group,outcome}` (outcome: `ok`/`deduped`/`dlq`/`error`)
-- `events_reconnects_total{stream,mode}` (tail/consume reconnects)
-- `events_consumer_lag{stream,group}` (gauge — delivered-but-unacked pending count;
-  the single event-lag metric, supersedes both `llamatrade_eventbus_*` and
-  `portfolio_ledger_stream_pending`)
+**Events (`llamatrade_events`, Redis Streams):** defined in the lib's
+`observability.py` through `llamatrade_telemetry` (`counter`/`gauge`), so they
+share the naming + label validation. Labelled by the stream's logical prefix only
+(`stream_label`, bounded cardinality):
+- `llamatrade_events_published_total{stream}`
+- `llamatrade_events_consumed_total{stream,group,outcome}` (outcome:
+  `ok`/`deduped`/`error`/`dlq`/`poison`)
+- `llamatrade_events_reconnects_total{stream,mode}` (mode: `tail`/`consume`)
+- `llamatrade_events_consumer_lag{stream,group}` (gauge — delivered-but-unacked
+  PEL depth; the single event-lag metric)
+- `llamatrade_events_fanout_dropped_total{fanout}` ·
+  `llamatrade_events_fanout_clients{fanout}` (gauge) — gRPC fan-out backpressure
+  drops / connected clients
 
 **Async runtime** (async-first → critical):
 - `llamatrade_runtime_event_loop_lag_seconds` · `llamatrade_runtime_asyncio_tasks`
@@ -298,6 +307,7 @@ the stream's logical prefix only (bounded cardinality):
 - `projection_fold_duration_seconds`
 - `reconciliation_drift_total{kind}` + `drift_actions_total{action}` (existing)
 - `ledger_vs_broker_mismatch_dollars` (gauge, should be ~0) · `sleeves_frozen_total`
+- `fill_dlq_depth` (gauge, `llamatrade_ledger_fill_dlq_depth` — un-booked fills parked on `ledger:fills:dlq`, sampled by the lag monitor)
 - `capital_allocated_dollars` / `capital_unallocated_dollars` (gauge),
   `capital_insufficient_events_total`
 - per-strategy realized/unrealized P&L + Sharpe/Sortino/maxDD → **ledger/Postgres**,
@@ -423,21 +433,13 @@ trace_id, span_id, location, exception, extra`.
 
 ---
 
-## 10. Migration plan (the "one pass")
+## 10. Remaining work
 
-Ordered because services import the lib:
-
-1. **Lib foundation** — `libs/telemetry` core (config, conventions, metrics
-   bridge, logging, runtime) + tests. *(this lands first; everything imports it)*
-2. **Instrumentation + tracing + domain namespaces + `init_telemetry`** + tests.
-3. **Back-compat shims** in `llamatrade_common` → green workspace.
-4. **Libs migrate**: `alpaca` (collapse 3 Alpaca metrics → 1), `eventbus`
-   (add lag/ack/dlq, keep names), `db` (query/pool via telemetry).
-5. **Services migrate** (parallelizable, one per agent): swap setup → `init_telemetry`,
-   delete per-service `metrics.py`, wire domain metrics + tracing + JSON logs.
-6. **Frontend** `@llamatrade/telemetry`.
-7. **Infra** compose + k8s + dashboards + alerts.
-8. **Cleanup**: delete shims once unused; `./scripts/ci-local.sh` green; lib ≥80% cov.
+- Collapse the per-service `metrics.py` in trading / market-data / portfolio into
+  the `metrics.<domain>.*` namespaces (§5), then delete them.
+- Stand up the scrape infra (§9): Prometheus / Grafana / OTel Collector /
+  Alertmanager (compose + k8s) and the dashboards-as-code.
+- Keep `libs/telemetry` at ≥80% coverage as domains are added.
 
 ---
 

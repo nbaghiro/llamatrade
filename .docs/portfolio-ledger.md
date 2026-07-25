@@ -4,7 +4,9 @@ How LlamaTrade shares a **single brokerage account** across **multiple strategie
 
 > **Ownership:** The portfolio ledger is owned by the **Portfolio Service** (`:8860`) — it is the **book of record**. The **Trading Service** (`:8850`) is the **execution arm**: it submits orders to the broker, handles fills, and emits fill events that the portfolio ledger consumes. See [Service Ownership & Boundaries](#service-ownership--boundaries).
 
-> **Architecture:** This specification builds on the portfolio service's `Transaction` / `PortfolioSummary` / `PortfolioHistory` models (the seed of the ledger), the trading service's deterministic `client_order_id`, and `StrategyExecution.allocated_capital`. This ledger is the **single event-sourced book of record** for trading; the trading service keeps only a thin durable order-intent record and defers accounting here (see [Service Ownership & Boundaries](#service-ownership--boundaries)). See [Mapping to Code](#mapping-to-code).
+> **Architecture:** The ledger has its own schema — `Account`, `Sleeve`, `Lot`, `LedgerEvent`, and `SleeveSnapshot` (`libs/db/.../ledger.py`) — keyed off the trading service's deterministic `client_order_id` and `StrategyExecution.allocated_capital`. It is the **single event-sourced book of record** for trading; the trading service keeps only a thin durable order-intent record and defers accounting here (see [Service Ownership & Boundaries](#service-ownership--boundaries)). See [Mapping to Code](#mapping-to-code).
+
+> **Single source of truth for money movement:** this document is the definitive reference for how money moves — both the conceptual model above **and** the concrete [Integration Contract](#integration-contract-trading--portfolio--strategy) between trading, portfolio, and strategy (streams, proto surface, `LedgerService` RPCs, idempotency, identity threading, sleeve close).
 
 ---
 
@@ -24,9 +26,10 @@ How LlamaTrade shares a **single brokerage account** across **multiple strategie
 12. [Sufficient-Allocation Checks](#sufficient-allocation-checks)
 13. [Multi-Tenancy & Scale](#multi-tenancy--scale)
 14. [Worked Example](#worked-example)
-15. [Mapping to Code](#mapping-to-code)
-16. [Open Decisions](#open-decisions)
-17. [References](#references)
+15. [Integration Contract](#integration-contract-trading--portfolio--strategy)
+16. [Mapping to Code](#mapping-to-code)
+17. [Design Decisions](#design-decisions)
+18. [References](#references)
 
 ---
 
@@ -116,7 +119,7 @@ This dissolves the sync problem:
 
 - **One writer, one truth.** Projections are pure folds of the log; they *cannot* diverge from each other because none is independently mutable. Rebuilding any projection is just a replay.
 - **Conservation is a checksum.** Double-entry means every movement of shares or cash has matched legs that sum to zero. Invariants (1) and (2) become *continuously assertable*, not hoped-for. Drift is detectable, never silent.
-- **Crash recovery is free.** Replay the log (the event-sourced executor + deterministic `client_order_id` already provide this).
+- **Crash recovery is free.** Rebuild any projection by replaying the log; the deterministic `client_order_id` plus the writer's idempotent append make redelivered fills a no-op.
 - **It scales by partitioning.** Each account owns its own event stream; accounts are independent → horizontal scale. Volume means more cheap appends, not a heavier sync burden.
 
 Conceptually this is the **Unified Managed Account (UMA) / overlay-manager** pattern from wealth management — one custodian account, independent "sleeves," a coordinating overlay — implemented on an event-sourced book. See [References](#references).
@@ -180,7 +183,7 @@ There are exactly **two sync surfaces**, both one-directional and self-healing:
 | Concern | Owner | Notes |
 |---------|-------|-------|
 | Accounts, **sleeves**, **lots**, cash sub-ledgers | **Portfolio (:8860)** | The book of record |
-| Append-only **double-entry ledger** + projections | **Portfolio** | Single source of truth; built on existing `Transaction`/`PortfolioSummary`/`PortfolioHistory` |
+| Append-only **double-entry ledger** + projections | **Portfolio** | Single source of truth; `LedgerEvent` log + projected sleeve/lot/cash state |
 | **Fund disbursement** (allocate / transfer / withdraw) | **Portfolio** | Operates on virtual cash sub-ledgers |
 | **Desired-state reconciliation** (target vs actual → intended orders) | **Portfolio** | Reads ledger projections + strategy sleeve targets |
 | Per-sleeve / per-strategy **P&L, provenance, holding history** | **Portfolio** | Lot-level attribution |
@@ -221,7 +224,7 @@ The ledger is an append-only, ordered log of immutable events. It is the only th
 | Reconciliation | `ExternalTradeDetected`, `DriftCorrected`, `ReconciliationAdjusted` |
 | Sleeve lifecycle | `SleeveOpened`, `SleeveClosed`, `SleeveFrozen`, `SleeveResumed` |
 
-These have close analogues in `services/trading/src/events/trading_events.py`, alongside the capital, lot-attribution, and reconciliation families.
+These are the `LedgerEventType` members (`libs/db/.../ledger.py`, mirrored in `ledger.proto`), spanning the capital, trading, position, cash, corporate-action, reconciliation, and sleeve-lifecycle families.
 
 ### Snapshots
 
@@ -289,6 +292,8 @@ A single rebalance therefore yields **one intended order per symbol whose holdin
 ---
 
 ## Block-and-Allocate Execution
+
+> **Planned / Not implemented.** Execution today is **gross**: each sleeve's order is submitted separately, so attribution is trivially one order ↔ one sleeve. The netting / internal-cross design below is the intended graduation, not current behavior.
 
 When multiple sleeves want to trade the same symbol in the same cycle, the coordinator does **not** fire competing orders. Following the institutional **block-and-allocate** pattern:
 
@@ -377,23 +382,123 @@ Each row is one ledger entry, stamped with source, order id, qty, price, and tim
 
 ---
 
+## Integration Contract (Trading ↔ Portfolio ↔ Strategy)
+
+The concrete wire and RPC contract between the services: trading is the execution arm, portfolio is the book of record, strategy owns sleeve lifecycle (funding and close).
+
+### Fill events (Trading → Portfolio)
+
+**Stream.** One **global** Redis Stream `ledger:fills` (logical name `llamatrade_events.channels.LEDGER_FILLS`; physical key `lt:ledger:fills`, the transport's `lt:` prefix). The stream is account-agnostic — per-account FIFO is preserved by global stream order plus a single active consumer. Consumed by portfolio's `src/tasks/fill_ingestion.py`.
+
+**Cardinality.** Exactly **one event per order, at terminal state** — never per partial fill (the ledger dedups on the derived event id, so per-partial publishing would drop all but the first):
+
+- `fill` → the cumulative `filled_qty` / `filled_avg_price`.
+- `canceled` / `expired` with `filled_qty > 0` → the filled portion.
+- `canceled` / `rejected` / `expired` with nothing filled → publish nothing (the reservation-release event covers the cash side).
+
+**Payload.** A proto `LedgerFill` message (`events.proto`), **envelope-encoded** onto the stream (not JSON) and discriminated by `EVENT_TYPE_LEDGER_FILL`. Built by `trading/src/ledger_events.py`, translated by `ingestion.fill_to_append` (which takes the parsed `LedgerFill`, not a JSON dict):
+
+```protobuf
+message LedgerFill {
+  string tenant_id; string account_id; string sleeve_id;
+  string client_order_id; string order_id;   // order_id optional
+  string symbol; string side;                 // "buy" | "sell"
+  string qty; string price;
+  string fees;          // optional
+  string cost_basis;    // optional, sells only
+  string realized_pnl;  // optional, sells only
+  string filled_at;     // ISO-8601
+}
+```
+
+Proto3 can't distinguish unset from empty, so an empty scalar means "absent" (`fill_to_append` copies only non-empty optionals).
+
+**Cost basis.** Optional on sells. When absent, the portfolio fill consumer computes it at ingestion via FIFO lot selection (`sizing.select_lots_fifo` via `ingestion.enrich_sell_fill`) against the account projection, inside the writer's serialized append path. A sell whose lots can't cover the qty is **quarantined** (`FillQuarantineError`), never recorded with a fabricated basis — trading reports broker facts only and never does accounting. A supplied value passes through unchanged.
+
+**Idempotency.** Re-delivered payloads are no-ops at `LedgerWriter.append` (dedup on `event_id`). Attribution (`sleeve_id`) is fixed at order origination.
+
+### Cash reservation events (Trading → Portfolio)
+
+So sleeve free cash stays correct with in-flight orders, trading also publishes a proto `LedgerReservation` (`EVENT_TYPE_LEDGER_RESERVATION`, translated by `ingestion.reservation_to_append`) to the **same** global `ledger:fills` stream, carrying the same envelope keys (`tenant_id`, `account_id`, `sleeve_id`, `client_order_id`):
+
+- **submit** (buys): `event_type: "order_submitted"`, `reserved: "<notional est.>"` → the ledger earmarks cash (`reserved_cash += amount`).
+- **cancel / reject / expiry**: `event_type: "order_cancelled" | "order_rejected"` → the ledger releases the reservation.
+- the terminal **fill** consumes the reservation (release + cash debit in one balanced event).
+
+Reservation event ids derive from `sha256(client_order_id + ":" + event_type)`, so each lifecycle stage is idempotent independently. Reservation events carry no value postings of their own (they only earmark cash, tracked as the projection's derived `reserved` total); the terminal fill moves the value. A limit buy reserves exactly at its limit price; a market or stop buy reserves at the reference price plus a small buffer, since a gap-up fill can exceed it.
+
+### Transport (Redis Streams)
+
+Every fill/reservation payload is envelope-encoded and XADDed to the global stream `lt:ledger:fills` (`MAXLEN ~10k`), consumed durably by the portfolio's `portfolio-ledger` consumer group — a **single active consumer** (elected by a Postgres advisory lock), with XAUTOCLAIM failover and per-account FIFO preserved by global stream order. Unrecordable entries (poison / quarantine) are parked on `ledger:fills:dlq`; an operator drains them back onto the main stream idempotently with `python -m src.tasks.dlq_replay`, and a `llamatrade_ledger_fill_dlq_depth` gauge warns on new DLQ entries. Each entry's envelope id is the **full sha256 hex digest** of the payload's stable parts (`derive_event_id`), so at-least-once redelivery is a no-op on the second arrival. (This is distinct from the ledger's own 128-bit `LedgerEvent.event_id` UUID, derived as `UUID(sha256(client_order_id)[:16 bytes])`.)
+
+### Emission paths & drift policy
+
+Trading publishes from **two idempotent paths** (same `client_order_id` → same ledger `event_id`, so racing or double-firing never double-counts): the live trade stream (`runner.py` → `ledger_events.build_ledger_fill_payload`) and the REST-sync recovery path (`sync_order_status` / `sync_all_pending_orders` → `build_ledger_fill_payload_from_order`) that catches terminal states the stream may miss. A periodic runner loop re-publishes recently-terminal orders as a proactive drain of the crash-before-publish window.
+
+Portfolio's drift policy (always active — the ledger is authoritative): `missing_in_ledger` → adopt into Unmanaged via `EXTERNAL_TRADE_DETECTED` at broker avg price; `missing_at_broker` / `qty_mismatch` → freeze every sleeve holding the symbol (+ `SLEEVE_FROZEN` audit event), and trading's risk check rejects all orders on a frozen sleeve. `GetOrCreateAccount` seeds the ledger from broker state (best-effort backfill).
+
+### Proto surface & LedgerService
+
+`trading.proto` (regenerate with `make proto`):
+
+- `Order`: `sleeve_id = 26`, `account_id = 27`
+- `Fill`: `sleeve_id = 9`, `account_id = 10`
+- `TradingSession`: `account_id = 14`, `sleeve_id = 15`
+- `SubmitOrderRequest`: `sleeve_id = 15` — empty ⇒ the order is attributed to the account's **Manual** sleeve (resolved server-side by trading via `LedgerService`).
+
+`ledger.proto` — `LedgerService` is served by the **portfolio process** (`:8860`, no separate service). RPCs:
+
+- `GetOrCreateAccount(credentials_id)` → `LedgerAccount` + base sleeves — the lazy `credentials_id → account_id` bootstrap that both strategy (funding) and trading (manual attribution) need; idempotent, and ensures the singleton Unallocated/Manual/Unmanaged sleeves.
+- `AllocateCapital`, `TransferCapital`, `DepositFunds`, `WithdrawFunds` — with an empty `to_sleeve_id` and a `strategy_execution_id`, `AllocateCapital` opens (or reuses) the strategy sleeve linked to that execution and funds it atomically (open-and-fund).
+- `ListSleeves`, `GetSleeve` (sleeve + open lots), `GetHoldingHistory`.
+- `CloseSleeve` — retire a sleeve, re-homing its holdings (see below); the response carries the CLOSED sleeve + `already_closed` + a re-home summary (`rehomed_cash`, `RehomedPosition{symbol, qty, cost_basis}`).
+- `ApplyCorporateAction` — an operator/feed-triggered split / ticker-rename / dividend fanned across every sleeve holding the symbol, idempotently.
+
+`Sleeve.realized_pnl` is projected from the event log, and `SleeveCash.reserved` is the **projected** reservation total, not a row column.
+
+**LedgerClient** (`libs/proto/llamatrade_proto/clients/ledger.py`) is the async wrapper over the generated stubs (exported from `llamatrade_proto.clients`), returning typed dataclasses with `Decimal` amounts (`SleeveCashInfo.free = balance − reserved`). RPC errors propagate (`grpc.aio.AioRpcError`) — fund ops are mutations, so callers handle failures explicitly. Consumers: strategy (`get_or_create_account` + `allocate_capital` on execution funding), trading (`get_sleeve` for sleeve equity / free cash, `list_sleeves` / `get_or_create_account` for Manual-sleeve resolution).
+
+### Identity threading
+
+- **account_id** — portfolio derives/creates one `Account` per `credentials_id` (`GetOrCreateAccount`, lazy + idempotent).
+- **sleeve_id** — created when a strategy execution is funded: strategy calls `AllocateCapital`, stores the returned `sleeve_id` + `account_id` on the execution row; trading reads them when starting the runner and threads them into orders, fills, sizing, and risk. Manual orders resolve the Manual sleeve.
+- **client_order_id** — deterministic (`order_executor.generate_deterministic_order_id`), reused as the attribution/idempotency key end-to-end.
+
+### Sleeve close — re-home on stop/archive
+
+A strategy sleeve is **retired** when its execution stops or its strategy is archived. The strategy service owns sleeve lifecycle (funds via `AllocateCapital`, closes via `CloseSleeve`). Closing is **idempotent** and **conservation-preserving** — it moves value between sleeves, never destroys it:
+
+- open positions → the account's **Unmanaged** sleeve (carrying qty + cost basis; a re-home is not a sale, so no realized P&L);
+- free cash → the **Unallocated** sleeve (immediately reusable);
+- a `SLEEVE_CLOSED` event is appended and the sleeve's status becomes `CLOSED`.
+
+The close event id is `sha256(sleeve_id + ":close")`, so a re-close is a writer no-op, and the close **refuses while the sleeve has reserved cash** (an in-flight order). The `SLEEVE_CLOSED` payload names `to_position_sleeve_id` (Unmanaged), `to_cash_sleeve_id` (Unallocated), the `positions` (`[{symbol, qty, cost_basis}]`), `cash`, and an optional `reason`; each position becomes two balanced POSITION legs (close on source, open on Unmanaged) and cash becomes two balanced CASH legs, netting to zero.
+
+**Orchestration is decoupled and race-free** (no strategy→trading call): the strategy closes the sleeve; trading's risk check blocks orders on any non-ACTIVE sleeve (FROZEN or CLOSED); the runner self-stops on its next equity sync when its sleeve is CLOSED; and a stray/late fill for a CLOSED sleeve is re-homed to Unmanaged at ingestion (`_reroute_if_sleeve_closed`) so it can't resurrect a retired sleeve. Triggers: execution **STOPPED** closes its sleeve; strategy **ARCHIVED** cascade-stops every non-terminal execution and closes each sleeve. The close is best-effort — a stop/archive succeeds even if the ledger is unreachable (re-homed on a later close).
+
+### Ledger authority
+
+The ledger is the single source of truth and is **always on** — no rollout flags, no legacy fallback. Sleeve-aware behavior (sizing, risk, reservations, reconciliation handoff, fill emission) is keyed off whether an order/session carries a `sleeve_id`; unattributed/manual orders degrade gracefully to account-level behavior. The only ledger env knobs are tuning intervals (`LEDGER_RECONCILE_INTERVAL_SECONDS`, `LEDGER_SNAPSHOT_INTERVAL_SECONDS`).
+
+---
+
 ## Mapping to Code
 
 | Concern | Owner | Implementation |
 |---------|-------|--------|
-| Portfolio ledger / book of record | **Portfolio** | The append-only **double-entry event ledger** built on `Transaction` + `PortfolioSummary` + `PortfolioHistory`, with the full event taxonomy (capital, lot, reconciliation families) |
-| Accounts, **sleeves**, **lots** | **Portfolio** | `Account` + **Sleeve** (`type`, nullable `strategy_id`, cash) + **Lot** projection; Manual/Unmanaged/Unallocated sleeves |
-| Capital budget | **Portfolio** | `StrategyExecution.allocated_capital` is enforced; sizing uses **sleeve equity**, not account equity (`runner.py:838`) |
-| Cash accounting | **Portfolio** | Per-sleeve cash sub-ledger (free/reserved/settled) |
-| Fund disbursement (allocate/transfer/withdraw) | **Portfolio** | Virtual cash transfers + raise-cash orchestration |
-| Desired-state reconciliation | **Portfolio** | Diff sleeve targets vs ledger → intended orders |
-| Shadow reconciliation vs broker | **Portfolio** | **Invariant-based** reconciliation; external deltas → Unmanaged (`runner.py:1193`) |
-| P&L / provenance / holding history | **Portfolio** | Lot-level attribution + realized P&L per sleeve, including tax-lot tracking |
+| Portfolio ledger / book of record | **Portfolio** | The append-only **double-entry event ledger** (`LedgerEvent` log, `ledger/writer.py` + `postings.py`), with the full event taxonomy (capital, trading, position, cash, corporate, reconciliation, sleeve-lifecycle families) |
+| Accounts, **sleeves**, **lots** | **Portfolio** | `Account` + `Sleeve` (`type`, `strategy_execution_id`, `allocated_capital`) DB rows; open **lots** are a projection materialized into `SleeveSnapshot.lots`; Manual/Unmanaged/Unallocated base sleeves |
+| Capital budget | **Portfolio** | `StrategyExecution.allocated_capital` is enforced; sizing uses **sleeve equity**, not account equity (trading `runner.py`, sleeve-aware sizing path) |
+| Cash accounting | **Portfolio** | Per-sleeve cash sub-ledger projected from the log (`free = balance − reserved`) |
+| Fund disbursement (allocate/transfer/withdraw) | **Portfolio** | `LedgerService` + `ledger/funds.py`; virtual cash transfers + raise-cash orchestration |
+| Desired-state reconciliation | **Portfolio** | `ledger/desired_state.py`: diff sleeve targets vs ledger → intended orders |
+| Shadow reconciliation vs broker | **Portfolio** | Invariant-based `ledger/reconciliation.py` + `tasks/reconciliation.py`; external deltas → Unmanaged (`EXTERNAL_TRADE_DETECTED`) |
+| P&L / provenance / holding history | **Portfolio** | Lot-level attribution + realized P&L per sleeve (`GetHoldingHistory`), including FIFO tax-lot tracking |
 | Trading session (execution) | **Trading** | `TradingSession` (one per strategy; `strategy_id` NOT NULL) is the execution session, **linked to a portfolio sleeve** |
-| Order-intent record | **Trading** | Durable `Order` rows (`executor/order_executor.py`); the event-sourced book of record lives **here** in the portfolio ledger, fed by fills |
+| Order-intent record | **Trading** | Durable `Order` rows (`executor/order_executor.py`); the book of record lives **here** in the portfolio ledger, fed by fills |
 | Deterministic order ids | **Trading** | `order_executor.generate_deterministic_order_id` (`lt-<hash>`) gives exactly-once submission and is the `client_order_id → sleeve` attribution key on fills |
-| Order-time risk checks | **Trading** | `risk/risk_manager.py` is **sleeve-aware**, reading sleeve free-cash/budget from the portfolio ledger |
-| Order netting | **Trading** | **Block-and-allocate**, bunching intents into net block orders |
+| Order-time risk checks | **Trading** | `risk/risk_manager.py` is **sleeve-aware**, reading sleeve free-cash/status from the portfolio ledger via `LedgerClient` |
+| Order netting | **Planned / Not implemented** | Execution is **gross** today — one order (and one fill event) per symbol per sleeve. Block-and-allocate bunching is designed but not built; the only `netting.py` is a pure helper in portfolio's `src/ledger/`, not wired into execution |
 
 ---
 
@@ -423,5 +528,6 @@ Industry patterns this design follows:
 ## Related Documentation
 
 - [Strategy DSL Reference](strategy-dsl.md) — the language strategies are written in; target-weight semantics, compilation, and evaluation.
-- [Trading Service](services/trading.md) — live execution, sessions, order management, event store.
+- [Execution Runtime](execution-runtime.md) — the shared backtest+live runtime that produces the target weights this ledger turns into attributed trades.
+- [Trading Service](services/trading.md) — live execution, sessions, order management, fill emission.
 - [Portfolio Service](services/portfolio.md) — performance reporting.

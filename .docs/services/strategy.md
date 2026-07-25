@@ -1,6 +1,6 @@
 # Strategy Service Architecture
 
-The strategy service is the core engine for defining, validating, compiling, and evaluating algorithmic trading strategies. It manages the complete strategy lifecycle—from DSL parsing through runtime signal generation—and provides versioning, deployment tracking, and a library of pre-built templates.
+The strategy service is the core engine for defining, validating, and compiling algorithmic trading strategies, and for managing their paper/live executions. It owns the strategy lifecycle—from DSL parsing through versioning and cloning—plus a large template library and the execution lifecycle that funds and releases a ledger sleeve per running strategy.
 
 ---
 
@@ -8,13 +8,14 @@ The strategy service is the core engine for defining, validating, compiling, and
 
 The strategy service is responsible for:
 
-- **Strategy Management**: CRUD operations for strategies with full version history
-- **DSL Parsing & Validation**: Parse S-expression DSL into AST, validate semantics
-- **Compilation**: Extract indicators, compute lookback requirements, prepare for execution
-- **Runtime Evaluation**: Evaluate entry/exit conditions against live market data
-- **Indicator Library**: 20+ technical indicators with NumPy-based computation
-- **Templates**: Pre-built strategy templates for common trading patterns
-- **Deployment Tracking**: Track which strategy versions are deployed to paper/live
+- **Strategy Management**: CRUD, versioning, and cloning of strategies with full version history
+- **DSL Parsing & Validation**: parse/validate the S-expression DSL (via the shared `llamatrade_dsl` lib)
+- **Compilation**: extract indicators and compute lookback requirements (via `llamatrade_dsl` static AST analysis)
+- **Templates**: a large library of pre-built strategy templates
+- **Execution lifecycle**: create/start/pause/stop paper & live executions, funding and releasing a ledger *sleeve* per execution via the portfolio service
+- **Sleeve reconciliation**: a background sweep that retries deferred sleeve releases so capital is never trapped
+
+The strategy language — parser, validator, and the **static AST analysis** that extracts indicators and computes lookbacks — lives in `llamatrade_dsl`. The 17-indicator library and the `StrategySession` evaluation engine live in `llamatrade_runtime`, driven by the backtest and trading services at run time. This service parses, validates, and analyzes strategies but does not run them against market data itself.
 
 ---
 
@@ -23,62 +24,26 @@ The strategy service is responsible for:
 ### System Architecture
 
 ```
-╔════════════════════════════════════════════════════════════════════════════════════════════╗
-║                                 STRATEGY SERVICE  ·  :8820                                 ║
-╚════════════════════════════════════════════════════════════════════════════════════════════╝
-                                             │
-╭────────────────────────────────────────────────────────────────────────────────────────╮
-│                                 FastAPI + Connect ASGI                                 │
-├────────────────────────────────────────────────────────────────────────────────────────┤
-│ /health                  StrategyServiceASGIApplication                                │
-╰────────────────────────────────────────────────────────────────────────────────────────╯
-                                             │
-╭────────────────────────────────────────────────────────────────────────────────────────╮
-│                                     gRPC Servicer                                      │
-├────────────────────────────────────────────────────────────────────────────────────────┤
-│ CreateStrategy ────────► parse DSL, validate, create strategy + v1                     │
-│ GetStrategy ───────────► fetch strategy ± a specific version                           │
-│ ListStrategies ────────► list with status / type filters + paging                      │
-│ UpdateStrategy ────────► update metadata or mint a new version                         │
-│ DeleteStrategy ────────► soft delete (archive)                                         │
-│ CompileStrategy ───────► validate + parse DSL without saving                           │
-│ ValidateStrategy ──────► validate an existing strategy config                          │
-│ ListStrategyVersions ──► list versions with pagination                                 │
-│ UpdateStrategyStatus ──► change status (ACTIVE / PAUSED / ARCHIVED)                    │
-╰────────────────────────────────────────────────────────────────────────────────────────╯
-                                             │
-╭────────────────────────────────────────────────────────────────────────────────────────╮
-│                                     Service Layer                                      │
-├────────────────────────────────────────────────────────────────────────────────────────┤
-│ StrategyService ───────► CRUD, versioning, deployment management                       │
-│ IndicatorService ──────► indicator metadata (params, outputs)                          │
-│ TemplateService ───────► 10 pre-built strategy templates                               │
-╰────────────────────────────────────────────────────────────────────────────────────────╯
-                                             │
-╭────────────────────────────────────────────────────────────────────────────────────────╮
-│                                   Compiler Pipeline                                    │
-├────────────────────────────────────────────────────────────────────────────────────────┤
-│ Extractor ─────────────► extract indicator specs from the AST                          │
-│ Pipeline ──────────────► compute indicators (vectorized NumPy)                         │
-│ Evaluator ─────────────► evaluate conditions against state                             │
-│ CompiledStrategy ──────► runtime execution engine                                      │
-╰────────────────────────────────────────────────────────────────────────────────────────╯
-                                             │
-╭────────────────────────────────────────────────────────────────────────────────────────╮
-│                                     Database Layer                                     │
-├────────────────────────────────────────────────────────────────────────────────────────┤
-│ Strategy ──────────────► metadata (name, type, status)                                 │
-│ StrategyVersion ───────► immutable config snapshots (vN)                               │
-│ StrategyDeployment ────► deployment records (paper / live)                             │
-╰────────────────────────────────────────────────────────────────────────────────────────╯
-                                             │
-                 ┌──────────────────────────┬┴────────────────────────────┐
-                 ▼                          ▼                             ▼
-         ┌──────────────┐          ╭────────────────╮          ╭────────────────────╮
-         │ PostgreSQL   │          │ shared libs    │          │ consumers          │
-         │ strategies + │          │ llamatrade_dsl │          │ backtest ·         │
-         │ versions     │          │ · compiler     │          │ trading · frontend │
-         └──────────────┘          ╰────────────────╯          ╰────────────────────╯
+STRATEGY SERVICE · :8820 · FastAPI + Connect ASGI (StrategyServiceASGIApplication, /health, AuthMiddleware)
+│
+├─ StrategyServicer — 18 RPCs
+│    Strategy CRUD  · CreateStrategy · GetStrategy · ListStrategies · UpdateStrategy
+│                   · DeleteStrategy · CloneStrategy · UpdateStrategyStatus
+│    Validation     · CompileStrategy · ValidateStrategy · ListStrategyVersions
+│    Templates      · ListTemplates · GetTemplate
+│    Executions     · CreateExecution · GetExecution · ListExecutions
+│                   · StartExecution · PauseExecution · StopExecution
+│
+├─ Service layer
+│    StrategyService  — CRUD, versioning, execution lifecycle, ledger-sleeve funding/release
+│    TemplateService  — pre-built strategy templates
+│    tasks.py         — stranded-sleeve reconcile sweep (Postgres advisory lock)
+│
+└─ Depends on
+     PostgreSQL          — strategies · strategy_versions · strategy_executions (RLS-scoped)
+     llamatrade_dsl      — parse / validate / (de)serialize + static AST analysis (extract indicators, lookbacks)
+     LedgerClient        — portfolio service, sleeve open / fund / close
+     consumers           — backtest · trading · frontend
 ```
 
 ### Strategy Lifecycle Flow
@@ -93,7 +58,7 @@ The strategy service is responsible for:
                  ├───────────────────────────────────────────────────────────┤
                  │ S-expression DSL ──► parse_strategy() ──► AST             │
                  │ validate_strategy() ──► ValidationResult                  │
-                 │ to_json() ──► JSON · INSERT Strategy + StrategyVersion vN │
+                 │ INSERT Strategy + StrategyVersion vN (stores DSL text)   │
                  ╰───────────────────────────────────────────────────────────╯
                                                │
                                                ▼
@@ -129,96 +94,101 @@ The strategy service is responsible for:
 ```
 services/strategy/
 ├── src/
-│   ├── main.py                           # FastAPI app, Connect mount, health check
-│   ├── models.py                         # Pydantic schemas (request/response)
-│   ├── compiler/                         # Strategy compilation & evaluation
-│   │   ├── __init__.py                   # Re-exports from shared llamatrade_compiler
-│   │   ├── pipeline.py                   # Indicator computation (SMA, EMA, RSI, etc.)
-│   │   ├── extractor.py                  # Extract indicator specs from strategy AST
-│   │   ├── evaluator.py                  # Evaluate entry/exit conditions
-│   │   ├── compiled.py                   # CompiledStrategy class
-│   │   └── state.py                      # EvaluationState (runtime context)
+│   ├── main.py                # FastAPI app, Connect mount, AuthMiddleware, /health
+│   ├── models.py              # Pydantic request/response + ConfigOverride/ExecutionCreate
+│   ├── proto_mappers.py       # DB rows ↔ proto messages
+│   ├── tasks.py               # stranded-sleeve reconcile sweep (advisory-locked)
 │   ├── grpc/
-│   │   ├── servicer.py                   # Connect RPC handler (main API entry point)
-│   │   └── __init__.py
-│   ├── indicators/                       # Technical indicator implementations
-│   │   ├── __init__.py                   # Exports: SMA, EMA, MACD, ADX, RSI, etc.
-│   │   ├── trend.py                      # SMA, EMA, MACD, ADX
-│   │   ├── momentum.py                   # RSI, Stochastic, CCI, WilliamsR
-│   │   ├── volatility.py                 # ATR, BollingerBands, KeltnerChannel
-│   │   └── volume.py                     # OBV, MFI, VWAP
-│   ├── services/                         # Business logic layer
-│   │   ├── database.py                   # DB session management
-│   │   ├── strategy_service.py           # CRUD + versioning + deployment
-│   │   ├── indicator_service.py          # Indicator metadata service
-│   │   └── template_service.py           # Pre-built strategy templates
-│   ├── strategies/                       # Strategy implementation framework
-│   │   ├── base.py                       # BaseStrategy abstract class
-│   │   ├── mean_reversion/               # Mean reversion strategies
-│   │   ├── momentum/                     # Momentum strategies
-│   │   └── trend_following/              # Trend-following strategies
-│   └── routers/                          # FastAPI routers
-├── tests/                                # Test suite
-│   ├── test_health.py
-│   ├── test_grpc_servicer.py
-│   ├── test_strategy_service.py
-│   ├── test_indicator_service.py
-│   ├── test_indicators.py
-│   └── compiler/
-│       ├── test_pipeline.py
-│       ├── test_evaluator.py
-│       ├── test_extractor.py
-│       ├── test_compiled.py
-│       └── test_dsl_strategies.py
-├── Dockerfile
-├── Dockerfile.dev
-├── pyproject.toml
-└── README.md
+│   │   ├── servicer.py        # StrategyServicer — all 18 RPCs (main API entry point)
+│   │   └── error_handler.py   # @handle_service_errors, parse_uuid
+│   └── services/
+│       ├── strategy_service.py   # CRUD, versioning, execution lifecycle, ledger sleeves
+│       └── template_service.py   # pre-built template library
+└── tests/
 ```
+
+The DSL language + analysis, the indicator library, and the runtime evaluation loop live in shared libs, **not** in this service:
+
+| Concern | Lib | Key modules |
+|---|---|---|
+| DSL parse/validate | `llamatrade_dsl` | `parse_strategy`, `validate_strategy`, `to_json`/`from_json` |
+| Static AST analysis (compilation) | `llamatrade_dsl` | `analysis.py` (extract indicators, required symbols, lookbacks), `window.py` (history window) |
+| Indicators & evaluation | `llamatrade_runtime` | `evaluation/` (conditions, compiled, state), `indicators/library.py` (17 indicators), `session.py` (`StrategySession`) |
+| Runtime signal loop | `llamatrade_runtime` | `StrategyRuntime` — driven by the backtest & trading services, not by this service |
 
 ---
 
 ## Core Components
 
-| Component | File | Responsibility |
-|-----------|------|----------------|
-| **StrategyServicer** | `grpc/servicer.py` | gRPC endpoint implementations |
-| **StrategyService** | `services/strategy_service.py` | CRUD, versioning, deployment |
-| **IndicatorService** | `services/indicator_service.py` | Indicator metadata |
-| **TemplateService** | `services/template_service.py` | Pre-built templates |
-| **CompiledStrategy** | `compiler/compiled.py` | Runtime execution engine |
-| **Extractor** | `compiler/extractor.py` | Extract indicators from AST |
-| **Pipeline** | `compiler/pipeline.py` | NumPy indicator computation |
-| **Evaluator** | `compiler/evaluator.py` | Condition evaluation |
-| **EvaluationState** | `compiler/state.py` | Runtime context |
+| Component | Location | Responsibility |
+|-----------|----------|----------------|
+| **StrategyServicer** | `grpc/servicer.py` | Connect RPC handlers (18 RPCs) |
+| **StrategyService** | `services/strategy_service.py` | CRUD, versioning, execution lifecycle, ledger sleeves |
+| **TemplateService** | `services/template_service.py` | pre-built template library |
+| **reconcile sweep** | `tasks.py` | retries deferred sleeve releases (advisory-locked) |
+| **StrategySession** | `llamatrade_runtime/session.py` | shared evaluation engine |
+| **indicator library** | `llamatrade_runtime/indicators/library.py` | 17 NumPy indicators |
+| **DSL** | `llamatrade_dsl` | parse / validate / (de)serialize |
 
 ---
 
 ## RPC Endpoints
 
+The service exposes **18 RPCs** across five groups.
+
 ### Strategy Management
 
-| RPC | Request | Response | Description |
-|-----|---------|----------|-------------|
-| `CreateStrategy` | `CreateStrategyRequest` | `CreateStrategyResponse` | Parse DSL, validate, create strategy + v1 |
-| `GetStrategy` | `GetStrategyRequest` | `GetStrategyResponse` | Fetch strategy with optional version |
-| `ListStrategies` | `ListStrategiesRequest` | `ListStrategiesResponse` | List with status/type filters + pagination |
-| `UpdateStrategy` | `UpdateStrategyRequest` | `UpdateStrategyResponse` | Update metadata or create new version |
-| `DeleteStrategy` | `DeleteStrategyRequest` | `DeleteStrategyResponse` | Soft delete (archive) |
-| `UpdateStrategyStatus` | `UpdateStrategyStatusRequest` | `UpdateStrategyStatusResponse` | Change status |
+| RPC | Description |
+|-----|-------------|
+| `CreateStrategy` | Parse DSL (or instantiate a template), validate, create strategy + v1 |
+| `GetStrategy` | Fetch strategy with an optional pinned version |
+| `ListStrategies` | List with status filter, search, sort, and pagination |
+| `UpdateStrategy` | Update metadata or mint a new version |
+| `CloneStrategy` | Copy a strategy (optionally from a specific version) under a new name |
+| `DeleteStrategy` | Soft delete (archive); refused while an execution is running |
+| `UpdateStrategyStatus` | DRAFT→ACTIVE, ACTIVE↔PAUSED, any→ARCHIVED |
 
-### Validation & Compilation
+### Validation & Versions
 
-| RPC | Request | Response | Description |
-|-----|---------|----------|-------------|
-| `CompileStrategy` | `CompileStrategyRequest` | `CompileStrategyResponse` | Validate + parse DSL without saving |
-| `ValidateStrategy` | `ValidateStrategyRequest` | `ValidateStrategyResponse` | Validate existing strategy config |
+| RPC | Description |
+|-----|-------------|
+| `CompileStrategy` | Validate + compile DSL to JSON without saving (no tenant scope) |
+| `ValidateStrategy` | Validate an existing strategy's current config |
+| `ListStrategyVersions` | List versions with pagination |
 
-### Version Management
+### Templates (public — no auth)
 
-| RPC | Request | Response | Description |
-|-----|---------|----------|-------------|
-| `ListStrategyVersions` | `ListStrategyVersionsRequest` | `ListStrategyVersionsResponse` | List versions with pagination |
+| RPC | Description |
+|-----|-------------|
+| `ListTemplates` | List templates filtered by category / asset class / difficulty |
+| `GetTemplate` | Fetch a single template by id |
+
+### Execution Lifecycle
+
+| RPC | Description |
+|-----|-------------|
+| `CreateExecution` | Create a paper/live execution for a strategy version |
+| `GetExecution` | Fetch an execution |
+| `ListExecutions` | List executions (filter by strategy / status / mode) |
+| `StartExecution` | PENDING→RUNNING; funds a ledger sleeve when funding intent is set |
+| `PauseExecution` | RUNNING→PAUSED |
+| `StopExecution` | RUNNING/PAUSED→STOPPED; releases the ledger sleeve |
+
+---
+
+## Execution Lifecycle & Ledger Sleeves
+
+Beyond authoring strategies, the service owns the lifecycle of **executions** — a strategy version put into paper or live trading — and coordinates capital with the portfolio service's double-entry ledger.
+
+An execution is a `StrategyExecution` row (`strategy_executions`): strategy id + version, `mode` (paper/live), `status` (PENDING → RUNNING → PAUSED/STOPPED/ERROR), `allocated_capital`, and ledger identity (`credentials_id`, `sleeve_id`, `account_id`). Live value and position count are projected from the ledger sleeve rather than stored on the row.
+
+- **Funding** (`start_execution` → `_fund_sleeve`): when an execution carries funding intent (allocated capital + credentials), starting it opens and funds a dedicated ledger *sleeve* via `LedgerClient` (portfolio service, `PORTFOLIO_GRPC_TARGET`). Trading threads the returned `sleeve_id`/`account_id` through orders and fills (see `ledger.proto` and the [integration contract](../portfolio-ledger.md#integration-contract-trading--portfolio--strategy)).
+- **Release** (`stop_execution` → `_close_sleeve`): stopping closes the sleeve, re-homing open positions to the Unmanaged sleeve and free cash to Unallocated, so a stopped strategy never traps capital. The close is best-effort: the stop succeeds even if the ledger is unreachable, leaving `sleeve_id` set as a "needs release" marker.
+- **Reconciliation** (`reconcile_stranded_sleeves`, `tasks.py`): a background sweep retries sleeve release for terminal (STOPPED/ERROR) executions whose close was deferred (ledger outage, or an in-flight order holding reserved cash). Each pass is gated by a per-cycle Postgres advisory lock so scaled replicas don't duplicate ledger calls; a dead pod is transparently taken over on the next tick.
+
+`StartExecution` enforces a per-tenant live-strategy limit (`live_strategies` from the tenant's plan; free-tier default 1) via `llamatrade_db.plan_limits.enforce_plan_limit` — it counts RUNNING `StrategyExecution` rows and returns `RESOURCE_EXHAUSTED` when the limit is reached.
+
+Archiving a strategy is refused (`FAILED_PRECONDITION`) while it has a running execution — the operator must stop it first.
 
 ---
 
@@ -287,7 +257,7 @@ The strategy service uses a Lisp-style S-expression DSL to define trading strate
 
 ### Technical Indicators
 
-20+ indicators organized by category:
+17 indicators (from `llamatrade_runtime/indicators/library.py`) organized by category:
 
 #### Trend Indicators
 
@@ -849,20 +819,20 @@ def _vwap(high: np.ndarray, low: np.ndarray, close: np.ndarray,
 
 ## Strategy Templates
 
-The template service provides 10 pre-built strategies:
+`TemplateService` ships ~80 pre-built strategy definitions (public, no auth). Each has a hyphenated `id`, a category, an asset class, and a difficulty, and `ListTemplates` filters on those three fields. Representative examples:
 
-| Template | Type | Difficulty | Description |
-|----------|------|------------|-------------|
-| `ma_crossover` | Trend Following | Beginner | EMA 12/26 crossover |
-| `rsi_mean_reversion` | Mean Reversion | Intermediate | RSI < 30 buy / > 70 sell |
-| `macd_strategy` | Momentum | Intermediate | MACD line crosses signal |
-| `bollinger_bounce` | Mean Reversion | Intermediate | Price bounces off bands |
-| `atr_breakout` | Breakout | Intermediate | Volatility-based breakout |
-| `triple_ema` | Trend Following | Advanced | Three EMA alignment |
-| `donchian_breakout` | Breakout | Advanced | Turtle Trading style |
-| `dual_momentum` | Momentum | Advanced | Relative + absolute momentum |
-| `mean_reversion_zscore` | Mean Reversion | Advanced | Statistical mean reversion |
-| `adx_trend` | Trend Following | Intermediate | ADX strength filter |
+| Template id | Category | Description |
+|-------------|----------|-------------|
+| `ma-crossover` | Trend Following | EMA fast/slow crossover |
+| `rsi-mean-reversion` | Mean Reversion | RSI oversold buy / overbought sell |
+| `macd-strategy` | Momentum | MACD line crosses signal |
+| `bollinger-bounce` | Mean Reversion | Price bounces off bands |
+| `donchian-breakout` | Breakout | Turtle-style channel breakout |
+| `dual-momentum` | Momentum | Relative + absolute momentum |
+| `momentum-sectors` | Momentum | Sector rotation |
+| `adx-trend-confirmation` | Trend Following | ADX strength filter |
+
+The full set lives in `services/strategy/src/services/template_service.py`.
 
 ---
 
@@ -886,16 +856,10 @@ class StrategyStatus(StrEnum):
     PAUSED = "paused"
     ARCHIVED = "archived"
 
-class DeploymentStatus(StrEnum):
-    PENDING = "pending"
-    RUNNING = "running"
-    PAUSED = "paused"
-    STOPPED = "stopped"
-    ERROR = "error"
-
-class DeploymentEnvironment(StrEnum):
-    PAPER = "paper"
-    LIVE = "live"
+# Execution status/mode are proto-defined (common_pb2.ExecutionStatus / ExecutionMode),
+# stored as integers via TypeDecorators:
+#   ExecutionStatus: PENDING · RUNNING · PAUSED · STOPPED · ERROR
+#   ExecutionMode:   PAPER · LIVE
 ```
 
 #### Request Schemas
@@ -913,11 +877,12 @@ class StrategyUpdate(BaseModel):
     status: StrategyStatus | None = None
     config_sexpr: str | None = None  # Creates new version if changed
 
-class DeploymentCreate(BaseModel):
-    strategy_id: UUID
-    version: int
-    environment: DeploymentEnvironment
-    config_overrides: dict | None = None
+class ExecutionCreate(BaseModel):
+    version: int | None = None            # defaults to the strategy's current version
+    mode: int = EXECUTION_MODE_PAPER      # proto ExecutionMode
+    config_override: ConfigOverride | None = None
+    allocated_capital: Decimal | None = None
+    credentials_id: UUID | None = None
 ```
 
 #### Response Schemas
@@ -984,44 +949,43 @@ class StrategyVersion(Base):
     created_at: datetime
     created_by: UUID | None
 
-class StrategyDeployment(Base):
-    """Deployment of strategy version to paper/live."""
-    __tablename__ = "strategy_deployments"
+class StrategyExecution(Base):
+    """A strategy version put into paper/live trading."""
+    __tablename__ = "strategy_executions"
 
     id: UUID
     tenant_id: UUID
     strategy_id: UUID
-    strategy_version: int
-    environment: str               # paper, live
-    status: str                    # pending, running, paused, stopped, error
-    config_overrides: dict | None  # JSONB
+    version: int
+    mode: int                      # proto ExecutionMode (paper/live)
+    status: int                    # proto ExecutionStatus (pending/running/paused/stopped/error)
+    allocated_capital: Decimal | None
+    config_override: dict | None   # JSONB
+    error_message: str | None
+    # Ledger identity (set when the execution is funded)
+    credentials_id: UUID | None
+    sleeve_id: UUID | None
+    account_id: UUID | None
     started_at: datetime | None
     stopped_at: datetime | None
-    error_message: str | None
 ```
 
 ---
 
 ## Multi-Tenancy
 
-All operations are tenant-scoped:
+Identity is resolved at the Connect boundary from the authenticated principal (JWT via the fail-closed `AuthMiddleware`), **not** from the wire `TenantContext`:
 
-1. **JWT Token**: Contains `tenant_id` in payload
-2. **Context Propagation**: All gRPC calls include `TenantContext`
-3. **Database Queries**: Every query filters by `tenant_id`
-4. **Validation**: `_validate_tenant_context()` rejects nil UUIDs
-
-Example:
+1. `AuthMiddleware` verifies the JWT and populates the request identity.
+2. `_validate_tenant_context()` → `resolve_identity_connect(request.context)` returns the verified `(tenant_id, user_id)`, rejecting a request whose wire tenant does not match the token.
+3. Handlers open `tenant_session(tenant_id, ...)`, which applies Postgres **row-level security** so every query is scoped to the tenant.
+4. Stateless compilation runs in `system_session` (touches no tenant rows).
 
 ```python
-async def _get_strategy_by_id(self, tenant_id: UUID, strategy_id: UUID) -> Strategy | None:
-    stmt = (
-        select(Strategy)
-        .where(Strategy.id == strategy_id)
-        .where(Strategy.tenant_id == tenant_id)  # Tenant isolation
-    )
-    result = await self.db.execute(stmt)
-    return result.scalar_one_or_none()
+tenant_id, user_id = resolve_identity_connect(request.context)
+async with tenant_session(tenant_id, self._maker()) as db:
+    service = StrategyService(db)
+    ...  # RLS scopes every query to tenant_id
 ```
 
 ---
@@ -1032,16 +996,17 @@ async def _get_strategy_by_id(self, tenant_id: UUID, strategy_id: UUID) -> Strat
 
 | Service | Use Case | Method |
 |---------|----------|--------|
-| **Frontend** | Strategy builder, management | All RPCs |
+| **Frontend** | Strategy builder, management, executions | All RPCs |
 | **Backtest** | Load strategy for simulation | `GetStrategy`, `CompileStrategy` |
 | **Trading** | Load strategy for live execution | `GetStrategy` |
+
+Strategy **calls out** to the portfolio service (`LedgerClient`, `PORTFOLIO_GRPC_TARGET`) to open, fund, and close an execution's ledger sleeve.
 
 ### Shared Libraries Used
 
 | Library | Import | Purpose |
 |---------|--------|---------|
-| `llamatrade_dsl` | `from llamatrade_dsl import parse_strategy, validate_strategy` | DSL parsing & validation |
-| `llamatrade_compiler` | `from llamatrade_compiler import CompiledStrategy` | Runtime execution |
+| `llamatrade_dsl` | `from llamatrade_dsl import parse_strategy, validate_strategy, extract_indicators, get_required_symbols` | DSL parsing, validation & static analysis |
 | `llamatrade_db` | `from llamatrade_db import Strategy, StrategyVersion` | Database models |
 | `llamatrade_proto` | `from llamatrade_proto.generated import strategy_pb2` | Proto definitions |
 
@@ -1183,12 +1148,13 @@ The strategy service provides a complete strategy management system with:
 1. **DSL-Driven Strategies**: Readable S-expression syntax for non-programmers
 2. **Comprehensive Validation**: Parse-time and semantic validation with clear errors
 3. **Version Control**: Full version history for audit and rollback
-4. **20+ Technical Indicators**: NumPy-based computation for performance
-5. **Runtime Evaluation**: Bar-by-bar signal generation with crossover detection
-6. **Risk Management**: Stop loss, take profit, trailing stops
-7. **Multi-Tenancy**: Complete tenant isolation via context propagation
-8. **Template Library**: 10 pre-built strategies for quick start
-9. **Clean API**: gRPC/Connect protocol for type-safe communication
+4. **17 Technical Indicators**: NumPy-based computation in the shared `llamatrade_runtime`
+5. **Runtime Evaluation**: bar-by-bar signal generation with crossover detection (shared `StrategySession`, run by backtest/trading)
+6. **Risk Management**: stop loss, take profit, trailing stops
+7. **Multi-Tenancy**: JWT-derived identity + Postgres row-level security
+8. **Template Library**: ~80 pre-built strategies for quick start
+9. **Execution Lifecycle**: paper/live executions with ledger-sleeve funding, release, and reconciliation
+10. **Clean API**: gRPC/Connect protocol for type-safe communication
 
 Architecture separates concerns: Servicer (gRPC) → Service (business logic) → DSL (parsing/validation) → Compiler (execution) → Database (persistence).
 
@@ -1322,14 +1288,12 @@ pytest tests/test_strategy_service.py::test_create_strategy_success
 
 ### Capabilities
 
-- **gRPC/Connect Endpoints**: CreateStrategy, GetStrategy, ListStrategies, UpdateStrategy, DeleteStrategy, CompileStrategy, ValidateStrategy, ListStrategyVersions, UpdateStrategyStatus
-- **Strategy Service**: Full CRUD with version management
-- **DSL Parser**: Complete S-expression parsing (`llamatrade_dsl`)
-- **DSL Validator**: Semantic validation with error messages
-- **Indicator Library**: 20+ indicators (SMA, EMA, RSI, MACD, etc.)
-- **Template Service**: 10 pre-built strategy templates
-- **Indicator Service**: Indicator metadata (params, outputs)
-- **Compiler Pipeline**: Indicator extraction, lookback calculation
-- **Health Check**: Standard `/health` endpoint
-- **Deployment Management**: Create and track deployments to paper/live
-- **Strategy Performance Tracking**: Historical execution metrics
+- **gRPC/Connect Endpoints**: 18 RPCs across strategy management, validation/versions, templates, and execution lifecycle (see [RPC Endpoints](#rpc-endpoints))
+- **Strategy Service**: full CRUD with version management, cloning, and execution lifecycle
+- **DSL Parser**: complete S-expression parsing (`llamatrade_dsl`)
+- **DSL Validator**: semantic validation with error messages
+- **Indicator Library**: 17 indicators (SMA, EMA, RSI, MACD, etc.) in `llamatrade_runtime`
+- **Template Service**: ~80 pre-built strategy templates
+- **Compiler Pipeline**: indicator extraction, lookback calculation (`llamatrade_dsl` static analysis)
+- **Health Check**: standard `/health` endpoint
+- **Execution Lifecycle**: create/start/pause/stop executions with ledger-sleeve funding, release, and reconciliation

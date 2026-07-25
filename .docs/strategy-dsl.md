@@ -2,7 +2,7 @@
 
 Complete, implementation-accurate reference for the S-expression Domain-Specific Language (DSL) used in LlamaTrade to define trading strategies.
 
-> **Scope note.** This document describes the DSL as implemented in `libs/dsl` and `libs/compiler`. The canonical source of truth for the grammar is `libs/dsl/llamatrade_dsl/ast.py`.
+> **Scope note.** This document describes the DSL as implemented in `libs/dsl` and `libs/runtime`. The canonical source of truth for the grammar is `libs/dsl/llamatrade_dsl/ast.py`.
 
 ---
 
@@ -107,23 +107,29 @@ This says: *every trading day, if SPY's 50-day average is above its 200-day aver
 ┌──────────────────┐          ┌────────────────────────────────────────┐
 │ ValidationResult │          │ Stored in PostgreSQL · StrategyVersion │
 ├──────────────────┤          ├────────────────────────────────────────┤
-│ pass / fail      │          │ config_sexpr  (source)                 │
-└──────────────────┘          │ config_json   (compiled IR)            │
+│ pass / fail      │          │ config_sexpr — the DSL string (truth)  │
+└──────────────────┘          │ symbols · timeframe  (derived)         │
                               └────────────────────────────────────────┘
                                                    │
-                                     ┌─────────────┴─────────────┐
-                                     ▼                           ▼
-                          ╭─────────────────────╮      ╭───────────────────╮
-                          │ COMPILER (backtest) │      │  COMPILER (live)  │
-                          ├─────────────────────┤      ├───────────────────┤
-                          │ vectorized engine / │      │ bar-by-bar engine │
-                          │ bar-by-bar          │      │ (libs/compiler)   │
-                          │ (libs/compiler)     │      ╰───────────────────╯
-                          ╰─────────────────────╯
+                       ╭───────────────────────────────────────────────╮
+                       │           COMPILER  ·  libs/runtime          │
+                       ├───────────────────────────────────────────────┤
+                       │ compile_strategy() → CompiledStrategy         │
+                       │ ONE bar-by-bar engine, wrapped by             │
+                       │ StrategySession (evaluation + sizing)         │
+                       ╰───────────────────────────────────────────────╯
+                                                   │
+                       ╭───────────────────────────────────────────────╮
+                       │    RUNTIME  ·  libs/runtime · StrategyRuntime  │
+                       ├───────────────────────────────────────────────┤
+                       │ drives one StrategySession over a BarFeed;     │
+                       │ backtest and live are two wirings of this loop │
+                       ╰───────────────────────────────────────────────╯
                                      │                           │
+                            StrategyRuntime.run()      StrategyRuntime.stream()
                                      ▼                           ▼
                          ┌───────────────────────┐  ┌─────────────────────────────┐
-                         │    Backtest results   │  │     Live target weights     │
+                         │  Backtest (bounded)   │  │      Live (unbounded)       │
                          ├───────────────────────┤  ├─────────────────────────────┤
                          │ equity curve, metrics │  │ → Portfolio Ledger → orders │
                          └───────────────────────┘  └─────────────────────────────┘
@@ -133,7 +139,7 @@ This says: *every trading day, if SPY's 50-day average is above its 200-day aver
 
 **Validator** (`libs/dsl/validator.py`) — checks semantic correctness (valid methods/indicators, weight sums, positive parameters, etc.).
 
-**Compiler** (`libs/compiler`) — extracts the required indicators, computes them with NumPy, and evaluates the tree into target weights. There are two execution engines that consume the **same AST**: a **bar-by-bar** engine (live trading) and a **vectorized** engine (backtesting). See [Execution Pipeline](#execution-pipeline).
+**Compiler** (`libs/runtime`) — extracts the required indicators, computes them with NumPy, and evaluates the tree into target weights. There is a **single** bar-by-bar engine (`CompiledStrategy`), wrapped by `StrategySession`. Backtest and live evaluate that same engine, so a backtest predicts live's decisions by construction; the loop that drives it and the exact parity differences are in [execution-runtime.md](execution-runtime.md). See [Execution Pipeline](#execution-pipeline).
 
 ---
 
@@ -156,6 +162,8 @@ Everything is either an atom (number, string, symbol) or a parenthesized list. T
 | String | double-quoted | `"My Strategy"`, `"US Equities"` | Used for `strategy`/`group` names |
 | Symbol (ticker) | starts with a letter | `SPY`, `AAPL`, `BRK-B`, `BTC-USD` | May contain letters, digits, `_`, `-` |
 | Keyword | colon-prefixed | `:rebalance`, `:method`, `:weight`, `:high` | Named parameters and options |
+
+> **Symbol scope.** Any letter-led ticker *parses* — including crypto/forex-style symbols like `BTC-USD`. But the platform currently trades **only US equities & ETFs** (Alpaca `/stocks/*` endpoints); non-equity symbols have **no market-data or execution path** and will not resolve at run time.
 
 ### Comments
 
@@ -295,7 +303,7 @@ Selects a subset of its candidate assets by a ranking metric *before* weighting 
 
 | Parameter | Required | Description |
 |-----------|----------|-------------|
-| `:by` | Yes | Ranking metric: `momentum`, `volatility`, or `volume` |
+| `:by` | Yes | Ranking metric over `:lookback`: `momentum` (trailing return), `volatility` (return std), or `volume` (average dollar volume) |
 | `:select` | Yes | `(top N)` or `(bottom N)` — keep the N highest/lowest ranked |
 | `:lookback` | No | Window for computing the ranking metric. Must be > 0 |
 
@@ -312,32 +320,33 @@ Selects a subset of its candidate assets by a ranking metric *before* weighting 
 
 ## Weight Methods
 
-Valid values for `:method` (source: `WEIGHT_METHODS` in `ast.py`):
+Valid values for `:method` (source: `WEIGHT_METHODS` in `ast.py`). Six are usable; `market-cap` parses but is **rejected by the validator** (see below). `:lookback` is always **optional** — the dynamic methods apply a default when it is omitted (momentum 90 bars, the vol-based methods 60).
 
-| Method | Description | Requires |
-|--------|-------------|----------|
-| `specified` | Manual percentages set via `:weight` on each child; must sum to ~100% | `:weight` on each child |
-| `equal` | Split evenly: `100/N` per child | — |
-| `momentum` | Weight proportional to recent return (winners get more) | `:lookback` |
-| `inverse-volatility` | Weight inversely to volatility (calmer assets get more) | `:lookback` |
-| `min-variance` | Solve for the minimum-variance weight vector (covariance matrix) | `:lookback` |
-| `market-cap` | Weight by market capitalization (index-like) | market-cap data |
-| `risk-parity` | Equal *risk* contribution per asset (accounts for correlation) | `:lookback` |
+| Method | Description | `:lookback` |
+|--------|-------------|-------------|
+| `specified` | Manual percentages set via `:weight` on each child; must sum to ~100% | n/a |
+| `equal` | Split evenly: `100/N` per child | n/a |
+| `momentum` | Rank children by trailing return, keep `:top N`, then weight each survivor **proportional to that return** | optional (default 90) |
+| `inverse-volatility` | Weight inversely to volatility (calmer assets get more) | optional (default 60) |
+| `min-variance` | Long-only minimum-variance weights from the return covariance matrix | optional (default 60) |
+| `risk-parity` | Equal *risk* contribution per asset (ERC; accounts for correlation) | optional (default 60) |
+| `market-cap` | ❌ **Rejected** — needs shares-outstanding data the engine doesn't have | — |
 
 Method names are **kebab-case** in the DSL (`inverse-volatility`, `min-variance`, `risk-parity`). The visual builder stores them internally as snake_case and converts at the DSL boundary.
 
+> The behavioral source of truth for allocation math (per-method implementation status + edge cases) is [signals-and-weights.md](signals-and-weights.md).
+
 ### How the dynamic methods compute weights
 
-Given the child candidates and a `:lookback` window of daily returns:
+Given the child candidates and a `:lookback` window of daily returns (source: `CompiledStrategy` in `libs/runtime/llamatrade_runtime/evaluation/compiled.py`):
 
 - **`equal`** — `wᵢ = 100 / N`.
-- **`momentum`** — score each child by trailing return `rᵢ = priceₜ / priceₜ₋ₗₒₒₖᵦₐᶜᵏ − 1`; if `:top N` is set, keep the N highest-scoring; weight the survivors (equally, or proportional to score).
-- **`inverse-volatility`** — `wᵢ ∝ 1 / σᵢ`, where `σᵢ` is the standard deviation of returns over `:lookback`; normalize to 100%. Calmer assets get more.
-- **`risk-parity`** — target equal *risk contribution* per asset (accounts for correlations). Currently approximated by inverse-volatility.
-- **`min-variance`** — choose the weight vector minimizing portfolio variance `wᵀΣw` over the `:lookback` covariance matrix `Σ`.
-- **`market-cap`** — `wᵢ ∝ marketCapᵢ` (index-like).
+- **`momentum`** — score each child by trailing return `rᵢ = priceₜ / priceₜ₋ₗₒₒₖᵦₐᶜᵏ − 1`; if `:top N` is set, keep the N highest-scoring; then weight each survivor **proportional to its return** (`wᵢ ∝ max(rᵢ, 0)`, normalized to 100%). A non-positive return gets 0 weight; if every survivor is ≤ 0, fall back to equal weight.
+- **`inverse-volatility`** — `wᵢ ∝ 1 / σᵢ`, where `σᵢ` is the standard deviation of returns over `:lookback`; normalize to 100%. Calmer assets get more. A symbol with too little history or zero variance is **excluded** (0 weight) and the rest renormalize; if none qualify, falls back to equal weight.
+- **`risk-parity`** — real equal-risk-contribution (ERC): fixed-point iteration `wᵢ ∝ 1/(Σw)ᵢ` on the return covariance matrix, long-only, normalized. Reduces to inverse-volatility only when assets are uncorrelated; falls back to inverse-volatility on insufficient history.
+- **`min-variance`** — long-only minimum-variance: the unconstrained closed form `w ∝ Σ⁻¹·1` via pseudo-inverse (robust to a singular `Σ`), negatives clipped, renormalized. Falls back to inverse-volatility on insufficient history.
 
-All methods normalize to sum to 100% of the block's share; NaN / all-zero edge cases fall back to equal weight.
+`risk-parity` and `min-variance` share covariance scaffolding that aligns a daily-returns matrix across the candidates and falls back to inverse-volatility when fewer than two symbols have enough history. All methods normalize to 100% of the block's share; NaN / all-zero edge cases fall back to equal weight.
 
 ---
 
@@ -374,7 +383,7 @@ So the frequency gates the minute-ticks down to actual rebalances — **at most 
 
 **Evaluated** (ticked, history updated, gates checked) happens every bar; **rebalanced** (recompute target → diff vs current → trade the delta) happens only when the gate opens. A strategy is therefore a periodic loop, not a continuous one — and a single rebalance can emit **multiple orders at once** (one per symbol whose holding must change).
 
-> **No sub-daily rebalancing (current limitation).** The finest grain is `daily` — once per day. The platform *ingests* minute bars but only *acts* daily-or-coarser; there is no "every 5 minutes" / hourly cadence yet (intraday / event-driven rebalancing is roadmap). Related caveat: a `daily` strategy referencing e.g. `(sma SPY 200)` computes that indicator over whatever bars have accumulated in the live window — the timeframe-vs-bar-resolution behavior is an open item to verify when execution is built out.
+> **No sub-daily rebalancing (current limitation).** The finest grain is `daily` — once per day. The platform *ingests* minute bars but only *acts* daily-or-coarser; there is no "every 5 minutes" / hourly cadence yet (intraday / event-driven rebalancing is roadmap). Related caveat: a live session computes indicators over the **live stream's bar resolution** (1-minute), so a `daily`-timeframe strategy's `(sma SPY 200)` warms over 200 *minutes* live but 200 *days* in backtest — the timeframe-vs-resolution divergence is tracked in [execution-runtime.md](execution-runtime.md#parity-guarantees-and-known-differences). (A fresh live session no longer waits to accumulate history — it preloads from the market-data store, and `min_bars` now covers weight/filter/metric lookbacks so it never trades before its window fills.)
 
 ---
 
@@ -403,7 +412,7 @@ Compare two [value expressions](#value-expressions):
 (crosses-below fast slow)   ; fast was ≥ slow, now fast < slow (bearish)
 ```
 
-Crossovers detect a **transition**, not a persistent state, and therefore require **two bars of history** (today and the prior bar). The compiler enforces a minimum lookback of 2 for any strategy using a crossover.
+Crossovers detect a **transition**, not a persistent state, and therefore require **two bars of history** (today and the prior bar). The compiler floors the minimum history at 2 bars for **every** strategy (`CompiledStrategy.compile`), so crossovers always have a prior bar to compare against.
 
 ```lisp
 (crosses-above (sma SPY 50) (sma SPY 200))   ; golden cross
@@ -462,7 +471,7 @@ A [technical indicator](#technical-indicators) call. General form:
 (<name> <symbol> <params...> [:<output>])
 ```
 
-Multi-output indicators (MACD, Bollinger Bands, ADX, Stochastic) take an `:output` keyword to select which line is wanted; the default is the indicator's primary line.
+Multi-output indicators (MACD, Bollinger Bands, ADX, Stochastic, Keltner, Donchian) take an `:output` keyword to select which line is wanted; the default is the indicator's primary line.
 
 ### Metric
 
@@ -478,7 +487,7 @@ A derived statistic — see [Metrics](#metrics):
 
 ## Technical Indicators
 
-The supported indicators (source: `INDICATORS` in `ast.py`; computations in `libs/compiler/pipeline.py`). General form `(<name> <symbol> <params...> [:<output>])`.
+The supported indicators (source: `INDICATORS` in `ast.py`; computations in `libs/runtime/llamatrade_runtime/indicators/library.py`). General form `(<name> <symbol> <params...> [:<output>])`.
 
 ### Trend / Moving Averages
 
@@ -528,7 +537,7 @@ These cover the four classic families — trend, momentum, volatility, and volum
 
 ### Default parameters
 
-Parameters are optional; if omitted, these defaults apply (source: `compute_indicator` in `libs/compiler/pipeline.py`):
+Parameters are optional; if omitted, these defaults apply (source: `compute_indicator` in `libs/runtime/llamatrade_runtime/indicators/library.py`):
 
 | Indicator | Default params | | Indicator | Default params |
 |-----------|----------------|---|-----------|----------------|
@@ -594,7 +603,7 @@ metric        = "(" METRIC SYMBOL NUMBER? ")"
 
 FREQUENCY     = "daily" | "weekly" | "monthly" | "quarterly" | "annually"
 METHOD        = "specified" | "equal" | "momentum" | "inverse-volatility"
-              | "min-variance" | "market-cap" | "risk-parity"
+              | "min-variance" | "market-cap" | "risk-parity"   ; "market-cap" parses but is rejected by the validator
 CRITERIA      = "momentum" | "volatility" | "volume"
 DIRECTION     = "top" | "bottom"
 COMPARATOR    = ">" | "<" | ">=" | "<=" | "=" | "!="
@@ -697,12 +706,13 @@ ast2 = from_json(data)            # dict -> Strategy
 
 ## Serialization & Storage
 
-A strategy is persisted on `StrategyVersion` (see `libs/db`) in **both** forms:
+A strategy is persisted on `StrategyVersion` (see `libs/db`) as a **single DSL string** — `config_sexpr`, the S-expression text — which is the source of truth. Every other representation is derived on demand, never stored:
 
-- **`config_sexpr`** — the original S-expression text (the canonical, human-editable source of truth used by downstream services).
-- **`config_json`** — the compiled JSON IR produced by `to_json()`.
+- the **JSON IR** via `to_json(parse(config_sexpr))` (the `CompileStrategy` RPC, when a caller needs it);
+- the **visual block tree** client-side via `fromDSLString(dsl_code)`;
+- the **AST** via `parse()` at execution time.
 
-Plus extracted metadata: `symbols`, `timeframe` (derived from `:rebalance`), and `parameters` (which may carry the visual builder's `ui_state`).
+The only other stored columns are `symbols` (GIN-indexed) and `timeframe` — indexed projections recomputed from the DSL on every write for querying, never edited independently.
 
 ### JSON IR structure
 
@@ -744,7 +754,7 @@ Note the exact key names that downstream code depends on:
 1. **Strategy** has a non-empty name and ≥ 1 child block.
 2. **Weight `:method specified`** — every direct `asset`/`group` child must have a `:weight`, and they must sum to ~100% (tolerance 0.01).
 3. **Weight non-`specified`** — children must **not** have `:weight` (the method computes it).
-4. **Weight method** is one of the seven valid methods; `:lookback`/`:top`, if present, must be > 0; `:top` must not exceed the child count.
+4. **Weight method** is one of the seven parseable methods, but `market-cap` is then **rejected** (needs fundamental data) — leaving six usable; `:lookback`/`:top`, if present, must be > 0; `:top` must not exceed the child count.
 5. **Asset** has a non-empty symbol starting with a letter; `:weight`, if present, > 0.
 6. **Filter** — `:by` is valid, `:select_count` > 0 and ≤ available assets, `:lookback` (if present) > 0, ≥ 1 child.
 7. **Logical ops** — `not` takes exactly 1 operand; `and`/`or` take ≥ 2.
@@ -761,19 +771,25 @@ How a stored strategy becomes results (backtest) or live trades.
 
 ### Compilation
 
-`config_sexpr` → `parse()` → `validate()` → `compile_strategy()` (`libs/compiler`). Compilation:
+The **static analysis** lives in `libs/dsl` (`analysis.py`, `window.py`); the **evaluation engine** in `libs/runtime`. `config_sexpr` → `parse()` → `validate()` → `compile_strategy()`. Compilation:
 1. **Extracts indicators** from all conditions (`extract_indicators`) into deduplicated specs.
-2. Computes the **minimum bars** of history needed (max indicator lookback, floor of 2 for crossovers).
-3. Produces an executable form. Two engines consume the same AST:
-   - **Bar-by-bar** (`CompiledStrategy`) — stateful, processes one bar at a time. Used for **live trading**.
-   - **Vectorized** (`VectorizedCompiledStrategy`) — array-based, evaluates the whole history at once via NumPy. Used for **backtesting** performance on large datasets.
+2. Computes the **minimum bars** of history needed — the largest lookback across **indicators *and* weight-method / filter / metric blocks** (`max_lookback`), floored at 2 so crossovers always have a prior bar. Folding in the block lookbacks is what stops a momentum/vol strategy from trading a degenerate (equal-weight) allocation before its allocation window fills.
+3. Produces a single executable form — `CompiledStrategy`, a **stateful bar-by-bar** engine that processes one bar at a time. It is wrapped by `StrategySession` (`libs/runtime`), which owns the merged multi-symbol history, the portfolio-level rebalance gate, and order sizing.
+
+A single evaluation core serves both modes: the same `StrategySession` computes weights and sizes orders in backtest and live alike, so a backtest reproduces live's decisions by construction. The backtest engine drives it through `StrategyRuntime` (`libs/runtime`) — `StrategyRuntime.run()` replays a bounded historical `BarFeed` to a `RunResult`; the live runner evaluates the same session on each live bar (the shared `StrategyRuntime.stream()` loop is available behind an opt-in flag). See [execution-runtime.md](execution-runtime.md) for the full two-layer model and the known backtest-vs-live differences.
+
+### How indicators are evaluated
+
+Indicators are consumed by **conditions only** (comparisons and crossovers inside `if` blocks). At compile time they're extracted from the conditions into deduplicated specs; at run time the engine recomputes **every indicator as a full NumPy array over the retained bar history on each evaluated bar**, and a condition reads the **latest value** (`[-1]`, plus `[-2]` for crossovers). Leading `NaN`s during warm-up make a condition evaluate to **False** (fail-safe), surfaced as a `degraded_eval_count` metric.
+
+`weight :method momentum/inverse-volatility/…`, `filter :by …`, and the `drawdown`/`return`/`volatility` metrics are a **separate statistics path** — they read the same bar history directly (via `evaluation/statistics.py`), *not* the indicator library. So the `momentum` **indicator** (absolute price change) and the `momentum` **weight/filter** (percent return) are distinct computations despite the shared name — see [signals-and-weights.md](signals-and-weights.md).
 
 ### From target weights to action
 
 On each evaluation the compiled strategy returns an **allocation**: `{symbol: weight%}`, normalized to 100%, plus a `rebalance_needed` flag and metadata.
 
-- **Backtest** (`services/backtest`) — feeds historical bars, gets allocations, simulates the resulting trades, and accumulates an equity curve. Metrics (total/annualized return, Sharpe, Sortino, max drawdown via running peak, win rate, profit factor, and — if a `:benchmark` is set — alpha/beta) are computed from the equity curve and persisted to `BacktestResult`.
-- **Live** (`services/trading`) — the runner consumes a live 1-minute bar stream, maintains a rolling per-symbol window, and on each bar (after a warmup of `min_bars + buffer`) evaluates the strategy. The strategy's `:rebalance` frequency gates *when* a new target is computed; the resulting target weights are handed to the **Portfolio Ledger**, which turns them into orders.
+- **Backtest** (`services/backtest`) — `StrategyRuntime.run()` replays historical bars through the session, simulates the resulting trades via a `SimulatedExecution` adapter, and accumulates an equity curve. Metrics (total/annualized return, Sharpe, Sortino, max drawdown via running peak, win rate, profit factor, and — if a `:benchmark` is set — alpha/beta) are computed (`libs/runtime` `metrics`/`result`) and persisted to `BacktestResult`.
+- **Live** (`services/trading`) — the live runner evaluates the same `StrategySession` on each live bar, after priming its indicators from historical bars at session start so it can trade from the first bar. The strategy's `:rebalance` frequency gates *when* a new target is computed; the resulting target weights are handed to the **Portfolio Ledger**, which turns them into orders. (The shared `StrategyRuntime.stream()` loop is opt-in — see [execution-runtime.md](execution-runtime.md).)
 
 ### Evaluation timing & gating
 
@@ -929,8 +945,21 @@ This design follows the established **Unified Managed Account (UMA) / overlay-ma
 
 ---
 
+## Planned / Not implemented
+
+The following are **not** implemented:
+
+- **`market-cap` weighting** — parses, but the validator rejects it (needs shares-outstanding / fundamental data the engine doesn't ingest). Use `specified` or `equal`.
+- **Sub-daily / intraday rebalancing** — the finest cadence is `daily`; there is no hourly / every-N-minutes gate.
+- **Non-equity asset classes** — options, futures, forex, crypto, and CFDs are out of scope; only US equities & ETFs trade through Alpaca.
+
+For per-method implementation status and research candidates, see [signals-and-weights.md](signals-and-weights.md).
+
+---
+
 ## Related Documentation
 
+- [Execution Runtime](execution-runtime.md) — the shared backtest + live execution loop, the adapter seams, and the backtest↔live parity guarantees.
 - [Portfolio Ledger & Multi-Strategy Fund Allocation](portfolio-ledger.md) — how target weights become trades across a shared account: sizing, sleeves, the event-sourced ledger, fund allocation, and reconciliation.
 - [Strategy Service](services/strategy.md) — strategy CRUD, versioning, compile/validate endpoints.
 - [Trading Service](services/trading.md) — live execution, sessions, order management.

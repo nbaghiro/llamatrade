@@ -31,10 +31,10 @@ The Billing Service manages subscriptions, payment methods, and plan enforcement
                                               │
                                               ▼
 ╭──────────────────────────────────────────────────────────────────────────────────────────╮
-│                               BillingServicer  ·  14 RPCs                                │
+│                               BillingServicer  ·  15 RPCs                                │
 ├──────────────────────────────────────────────────────────────────────────────────────────┤
 │ Subscriptions · Get · Create · Update · Cancel · Resume                                  │
-│ Payment methods · List · Add · Remove                                                    │
+│ Payment methods · List · SetupIntent · Add · Remove                                      │
 │ Plans · ListPlans   ·   Usage · GetUsage                                                 │
 │ Invoices · List · Get   ·   Portal · CreateCheckout · CreatePortal                       │
 ╰──────────────────────────────────────────────────────────────────────────────────────────╯
@@ -110,15 +110,15 @@ The Billing Service manages subscriptions, payment methods, and plan enforcement
 services/billing/
 ├── src/
 │   ├── main.py                     # FastAPI app, health check
-│   ├── models.py                   # Pydantic schemas (236 lines)
+│   ├── models.py                   # Pydantic request schemas
+│   ├── proto_mappers.py            # DB model → proto converters
 │   ├── grpc/
-│   │   └── servicer.py             # BillingServicer (469 lines)
+│   │   └── servicer.py             # BillingServicer (15 RPCs)
 │   ├── services/
-│   │   ├── database.py             # Async SQLAlchemy sessions
-│   │   ├── billing_service.py      # Subscription/plan logic (502 lines)
+│   │   ├── billing_service.py      # Subscription/plan logic
 │   │   └── payment_method_service.py # Payment method CRUD
 │   ├── stripe/
-│   │   └── client.py               # Stripe API wrapper (387 lines)
+│   │   └── client.py               # Stripe API wrapper
 │   └── routers/
 │       └── webhooks.py             # Stripe webhook endpoint
 ├── tests/
@@ -141,7 +141,7 @@ services/billing/
 
 | Component                | File                                 | Purpose                                   |
 | ------------------------ | ------------------------------------ | ----------------------------------------- |
-| **BillingServicer**      | `grpc/servicer.py`                   | Connect protocol servicer, 14 RPC methods |
+| **BillingServicer**      | `grpc/servicer.py`                   | Connect protocol servicer, 15 RPC methods |
 | **BillingService**       | `services/billing_service.py`        | Subscription and plan management          |
 | **PaymentMethodService** | `services/payment_method_service.py` | Payment method CRUD                       |
 | **StripeClient**         | `stripe/client.py`                   | Stripe API wrapper with typed results     |
@@ -162,11 +162,12 @@ services/billing/
 
 ### Payment Methods
 
-| Method                | Request                      | Response                      | Description               |
-| --------------------- | ---------------------------- | ----------------------------- | ------------------------- |
-| `ListPaymentMethods`  | `ListPaymentMethodsRequest`  | `ListPaymentMethodsResponse`  | List all cards on file    |
-| `AddPaymentMethod`    | `AddPaymentMethodRequest`    | `AddPaymentMethodResponse`    | Attach new payment method |
-| `RemovePaymentMethod` | `RemovePaymentMethodRequest` | `RemovePaymentMethodResponse` | Detach payment method     |
+| Method                | Request                      | Response                      | Description                                        |
+| --------------------- | ---------------------------- | ----------------------------- | -------------------------------------------------- |
+| `ListPaymentMethods`  | `ListPaymentMethodsRequest`  | `ListPaymentMethodsResponse`  | List all cards on file                             |
+| `CreateSetupIntent`   | `CreateSetupIntentRequest`   | `CreateSetupIntentResponse`   | Return a `client_secret` for Stripe.js card collection |
+| `AddPaymentMethod`    | `AddPaymentMethodRequest`    | `AddPaymentMethodResponse`    | Attach new payment method                          |
+| `RemovePaymentMethod` | `RemovePaymentMethodRequest` | `RemovePaymentMethodResponse` | Detach payment method                              |
 
 ### Plans
 
@@ -180,6 +181,11 @@ services/billing/
 | ---------- | ----------------- | ------------------ | -------------------------------- |
 | `GetUsage` | `GetUsageRequest` | `GetUsageResponse` | Get current period usage metrics |
 
+`GetUsage` is real: counts are computed live from the shared DB — non-archived strategies,
+RUNNING strategy executions, backtests, RUNNING live trading sessions, and summed Copilot
+message counts. Fields not tracked in the DB (`backtest_compute_minutes`,
+`market_data_requests`, `storage_bytes`, `orders_placed`) are returned as 0.
+
 ### Invoices
 
 | Method         | Request               | Response               | Description          |
@@ -187,12 +193,20 @@ services/billing/
 | `ListInvoices` | `ListInvoicesRequest` | `ListInvoicesResponse` | List past invoices   |
 | `GetInvoice`   | `GetInvoiceRequest`   | `GetInvoiceResponse`   | Get specific invoice |
 
-### Portal Sessions
+### Checkout & Portal Sessions
 
-| Method                  | Request                        | Response                        | Description                    |
-| ----------------------- | ------------------------------ | ------------------------------- | ------------------------------ |
-| `CreateCheckoutSession` | `CreateCheckoutSessionRequest` | `CreateCheckoutSessionResponse` | Create Stripe Checkout session |
-| `CreatePortalSession`   | `CreatePortalSessionRequest`   | `CreatePortalSessionResponse`   | Create customer portal session |
+| Method                  | Request                        | Response                        | Description                                    |
+| ----------------------- | ------------------------------ | ------------------------------- | ---------------------------------------------- |
+| `CreateCheckoutSession` | `CreateCheckoutSessionRequest` | `CreateCheckoutSessionResponse` | Stripe-hosted subscription Checkout Session    |
+| `CreatePortalSession`   | `CreatePortalSessionRequest`   | `CreatePortalSessionResponse`   | Stripe Customer Portal session for self-service |
+
+`CreateCheckoutSession` builds a `mode=subscription` Stripe Checkout Session: it resolves the
+plan's Stripe price from `get_plan_db(plan_id)` and the request `interval`
+(`stripe_price_id_monthly` / `stripe_price_id_yearly`), calls `get_or_create_customer`, and
+passes the request `success_url` / `cancel_url` plus the plan's `trial_days`. It deliberately
+does **not** set `payment_method_types` — Stripe selects dynamic payment methods per its
+current best practice. `CreatePortalSession` opens a Stripe Customer Portal session (against the
+tenant's customer and `return_url`) for self-service subscription and card management.
 
 ---
 
@@ -214,96 +228,28 @@ services/billing/
 └─────────────┴─────────────────┴───────────────────┘
 ```
 
-### Pydantic Schemas
+### Wire shape
 
-```python
-# Plan Response
-class PlanResponse(BaseModel):
-    id: str                     # "free", "starter", "pro"
-    name: str                   # "Free", "Starter", "Pro"
-    tier: int                   # Proto enum: PLAN_TIER_FREE, etc.
-    price_monthly: float        # 0, 29, 99
-    price_yearly: float         # 0, 290, 990
-    features: dict[str, bool]   # {"backtests": True, "live_trading": False, ...}
-    limits: dict[str, int | None]  # {"backtests_per_month": 5, ...}
-    trial_days: int             # 0 (free), 14 (paid plans)
-
-# Subscription Response
-class SubscriptionResponse(BaseModel):
-    id: UUID
-    tenant_id: UUID
-    plan: PlanResponse
-    status: int                 # SUBSCRIPTION_STATUS_ACTIVE, etc.
-    billing_cycle: int          # BILLING_INTERVAL_MONTHLY/YEARLY
-    current_period_start: datetime
-    current_period_end: datetime
-    cancel_at_period_end: bool
-    trial_start: datetime | None
-    trial_end: datetime | None
-    stripe_subscription_id: str | None
-    created_at: datetime
-
-# Payment Method Response
-class PaymentMethodResponse(BaseModel):
-    id: UUID
-    type: str                   # "card"
-    card_brand: str | None      # "visa", "mastercard"
-    card_last4: str | None      # "4242"
-    card_exp_month: int | None  # 12
-    card_exp_year: int | None   # 2025
-    is_default: bool
-```
+Billing does not define `…Response` Pydantic schemas. Responses are built by mapping
+SQLAlchemy ORM rows (`Plan`, `Subscription`, `PaymentMethod`, `Invoice`) directly to their
+proto messages in `proto_mappers.py` (`plan_to_proto`, `subscription_to_proto`,
+`payment_method_to_proto`, `invoice_to_proto`). Request bodies use small Pydantic schemas in
+`models.py` (e.g. `SubscriptionCreateRequest`). Subscription `status` and `billing_cycle` are
+stored as proto integer enums.
 
 ### Default Plans
 
-When no plans exist in the database, these defaults are used:
+When no plans exist in the database, `list_plans` falls back to `DEFAULT_PLANS` — transient
+SQLAlchemy `Plan` rows defined in `billing_service.py` (not Pydantic):
 
-```python
-DEFAULT_PLANS = [
-    PlanResponse(
-        id="free",
-        name="Free",
-        tier=PLAN_TIER_FREE,
-        price_monthly=0,
-        price_yearly=0,
-        features={
-            "backtests": True,
-            "paper_trading": True,
-            "live_trading": False,
-            "basic_indicators": True,
-            "all_indicators": False,
-            "email_alerts": False,
-            "priority_support": False,
-        },
-        limits={
-            "backtests_per_month": 5,
-            "live_strategies": 0,
-            "api_calls_per_day": 1000,
-        },
-        trial_days=0,
-    ),
-    PlanResponse(
-        id="starter",
-        name="Starter",
-        tier=PLAN_TIER_STARTER,
-        price_monthly=29,
-        price_yearly=290,
-        features={...},
-        limits={"backtests_per_month": 50, "live_strategies": 1, ...},
-        trial_days=14,
-    ),
-    PlanResponse(
-        id="pro",
-        name="Pro",
-        tier=PLAN_TIER_PRO,
-        price_monthly=99,
-        price_yearly=990,
-        features={..., "priority_support": True},
-        limits={"backtests_per_month": None, "live_strategies": 5, ...},
-        trial_days=14,
-    ),
-]
-```
+| Plan    | Tier             | Monthly | Yearly | Backtests/mo | Live strategies | Trial |
+| ------- | ---------------- | ------- | ------ | ------------ | --------------- | ----- |
+| Free    | `PLAN_TIER_FREE` | 0       | 0      | 5            | 0               | 0     |
+| Starter | `PLAN_TIER_STARTER` | 29   | 290    | 50           | 1               | 14    |
+| Pro     | `PLAN_TIER_PRO`  | 99      | 990    | unlimited    | 5               | 14    |
+
+`features`/`limits` are JSON columns on the `Plan` model (e.g. `live_trading`,
+`all_indicators`, `email_alerts`, `priority_support`; `api_calls_per_day`).
 
 ---
 
@@ -315,6 +261,8 @@ DEFAULT_PLANS = [
 | --------------------------------------------------------------- | ------------------------------------------------- |
 | `get_or_create_customer(tenant_id, email)`                      | Find or create Stripe customer by tenant metadata |
 | `create_setup_intent(customer_id)`                              | Create SetupIntent for card collection            |
+| `create_checkout_session(customer_id, price_id, urls, trial_days)` | Stripe-hosted subscription Checkout Session    |
+| `create_portal_session(customer_id, return_url)`                | Customer Portal session for self-service          |
 | `attach_payment_method(customer_id, pm_id)`                     | Link payment method to customer                   |
 | `detach_payment_method(pm_id)`                                  | Remove payment method from customer               |
 | `list_payment_methods(customer_id)`                             | List customer's payment methods                   |
@@ -402,8 +350,12 @@ GET /health
 | **Web Frontend** | `GetSubscription`, `ListPlans`             | Display subscription status                  |
 | **Web Frontend** | `CreateSubscription`, `CancelSubscription` | Manage subscription                          |
 | **Web Frontend** | `ListPaymentMethods`, `AddPaymentMethod`   | Manage payment methods                       |
-| **Strategy**     | `GetSubscription`                          | Check plan limits before creating strategies |
-| **Backtest**     | `GetSubscription`                          | Enforce backtest quotas                      |
+| **Strategy**     | (shared DB) `plan_limits`                  | Gate live executions on `live_strategies`    |
+| **Backtest**     | (shared DB) `plan_limits`                  | Gate runs on `backtests_per_month`           |
+
+Strategy and Backtest do not call a billing RPC for enforcement; they read the tenant's
+`Plan.limits` directly from the shared DB via `llamatrade_db.plan_limits` (see "Plan limits &
+enforcement").
 
 ### What Billing Service Calls
 
@@ -411,7 +363,12 @@ GET /health
 | ---------------- | ------------------------------------------- |
 | **PostgreSQL**   | Plan, subscription, payment method storage  |
 | **Stripe API**   | Payment processing, subscription management |
-| **Auth Service** | JWT token validation                        |
+
+Billing does **not** call the auth service. It verifies the bearer JWT itself with the shared
+`JWT_SECRET` (`_get_tenant_id`), reads `tenant_id` from the token, and scopes every query with
+`tenant_session(tenant_id)` (Postgres RLS). Because it re-decodes the token rather than using
+the shared `resolve_identity`, it would reject an S2S service token (which carries no
+`tenant_id`); today only user tokens call it.
 
 ---
 
@@ -422,11 +379,9 @@ GET /health
 ```
 1. User clicks "Upgrade to Starter" on billing page
 
-2. Frontend calls CreateSetupIntent (if no payment method exists)
+2. Frontend calls CreateSetupIntent
    └─> BillingServicer.create_setup_intent()
-   └─> StripeClient.get_or_create_customer(tenant_id, email)
-   └─> StripeClient.create_setup_intent(customer_id)
-   └─> Returns client_secret
+   └─> StripeClient.get_or_create_customer + create_setup_intent → returns client_secret
 
 3. Frontend uses Stripe.js to collect card
    └─> stripe.confirmCardSetup(client_secret, {payment_method: {card}})
@@ -445,13 +400,13 @@ GET /health
        └─> Get Stripe price_id for plan
        └─> StripeClient.create_subscription(customer_id, price_id, pm_id, trial_days=14)
        └─> Insert into subscriptions table
-   └─> Return SubscriptionResponse with status=trialing
+   └─> Return the subscription proto (status = trialing)
 
 6. Stripe sends webhook: customer.subscription.created
    └─> POST /webhooks/stripe
    └─> Verify signature
-   └─> BillingService.sync_subscription_from_stripe()
-   └─> Confirm local record matches Stripe
+   └─> _handle_subscription_created(db, subscription)  (routers/webhooks.py)
+   └─> Sync status / billing period / trial onto the local subscription row
 
 7. After 14 days, Stripe charges the card
    └─> Webhook: invoice.paid
@@ -473,14 +428,14 @@ GET /health
    └─> Stripe sets cancel_at_period_end=True
    └─> Update local: subscription.cancel_at_period_end = True
 
-4. Return SubscriptionResponse
+4. Return the subscription proto
    └─> status: "active"
    └─> cancel_at_period_end: true
    └─> current_period_end: "2024-04-15T..."
 
 5. At period end, Stripe automatically cancels
    └─> Webhook: customer.subscription.deleted
-   └─> BillingService.sync_subscription_from_stripe(status="canceled")
+   └─> _handle_subscription_deleted(db, subscription) sets status = CANCELED
 ```
 
 ---
@@ -558,27 +513,36 @@ cd services/billing && pytest tests/test_stripe_client.py -v
 
 ## Capabilities
 
-- Stripe customer creation/lookup by tenant_id
-- SetupIntent creation for card collection
-- Payment method attach/detach/list
-- Set default payment method
-- Subscription create (with Stripe integration)
-- Subscription update (plan change with proration)
-- Subscription cancel (immediate or at period end)
-- Subscription resume (reactivate pending cancellation)
-- Plan listing (DB + DEFAULT_PLANS fallback)
-- Free subscription creation (no Stripe)
-- Webhook signature verification
-- Subscription status sync from webhooks
-- Usage tracking
-- Invoice listing
-- Invoice retrieval
-- Checkout session creation
-- Portal session creation
-- Plan enforcement in other services
-- Proration previews
-- Coupon/discount support
-- Webhook idempotency
+- Stripe customer creation/lookup by tenant_id (email from the verified token)
+- SetupIntent creation for card collection (`CreateSetupIntent` RPC → `client_secret`)
+- Payment method attach / detach / list, set default
+- Subscription create (Stripe), free-plan subscription create (no Stripe)
+- Subscription update (plan change), cancel (immediate or at period end), resume
+- Stripe-hosted Checkout Session (`CreateCheckoutSession`) and Customer Portal session (`CreatePortalSession`)
+- Plan listing (DB + `DEFAULT_PLANS` fallback)
+- Plan limits published on `Plan.limits` for cross-service enforcement
+- Usage metering (`GetUsage`, live DB counts)
+- Invoice listing and retrieval
+- Webhook signature verification, status/period sync, and idempotent replay
+
+## Plan limits & enforcement
+
+Per-plan limits live on the billing `Plan.limits` JSON column (e.g. `live_strategies`,
+`backtests_per_month`). Billing owns the catalog; enforcement happens in the consuming services
+via the shared `llamatrade_db.plan_limits` helper (`get_plan_limit` / `enforce_plan_limit`),
+which reads the tenant's active (`ACTIVE`/`TRIALING`) `Subscription → Plan.limits` and falls
+back to the free tier (`{live_strategies: 1, backtests_per_month: 10}`) when there is no active
+subscription:
+
+- **Strategy** gates live executions on `live_strategies` (counts RUNNING executions).
+- **Backtest** gates runs on `backtests_per_month` (counts the current month's backtests).
+
+At the limit both raise `PlanLimitExceededError`, surfaced to the client as
+`RESOURCE_EXHAUSTED`. `GetUsage` still reports the counts.
+
+## Planned / Not implemented
+
+- **Proration previews** and **coupon / discount support**.
 
 ---
 

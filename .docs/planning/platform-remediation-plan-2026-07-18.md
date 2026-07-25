@@ -1,8 +1,9 @@
 # Platform Remediation Plan — 2026-07-18
 
-> **STATUS: Refreshed full-repo backend deep-dive + remediation plan.** Supersedes the
-> point-in-time [platform-gap-review-2026-07.md](./platform-gap-review-2026-07.md)
-> (2026-07-13) where code has since moved. Every gap below was re-verified against
+> **Status:** Living tracker (updated 2026-07-23) — the single active status doc for platform remediation. §2 is the canonical GAP → status table.
+
+> **STATUS: Refreshed full-repo backend deep-dive + remediation plan.** Supersedes an
+> earlier point-in-time review (2026-07-13) where code has since moved. Every gap below was re-verified against
 > current working-tree code (HEAD `d21f09a`, Python 3.14.3) by a per-service trace.
 > This doc corrects the review in both directions and sequences the fixes against the
 > [MVP milestones](./mvp-release-plan.md) (M1–M6).
@@ -11,24 +12,22 @@
 
 ## 0. What changed since the 2026-07-13 review (the headline corrections)
 
-Three of the four "TL;DR" blockers in the prior review have had major work land after it
-was written (commits `52afd69`, `97e8664`, `0cbd2ae`, `98560cc`, migrations 025–027, agent rework):
+Three of the four "TL;DR" blockers in the prior review have since had major work land:
 
 | Prior "top blocker" | 2026-07-13 verdict | **Verified 2026-07-18** |
 |---|---|---|
 | **GAP 1 — forged-tenant hole (6 of 9 services)** | Highest severity; only trading adopted `resolve_identity` | **RESOLVED across the board.** All 8 gRPC servicers now bind wire tenant to the verified JWT principal (`resolve_identity`/`current_context`) and reject a mismatch. Billing is the lone off-pattern holdout — *not* vulnerable (reads the signed token) but bypasses the shared path and rejects service tokens. |
 | **GAP 3 — no RLS anywhere** | Zero policies; docs describe RLS that doesn't exist | **STAGED-BUT-INERT.** Migration 025 now `ENABLE`+`FORCE`s fail-closed RLS on 33 tenant tables, GUC set per-request from verified identity. But **every environment connects as superuser `postgres`, which bypasses RLS** — so it's schema-real yet ineffective anywhere runnable. Remaining work is operational (a NOSUPERUSER app role), not schema. |
 | **GAP 7 — copilot runs with empty system prompt** | Silent, severe | **FIXED.** Prompt is built, passed (`agent_service.py:185,410`) and consumed by the provider (now **Gemini 2.5 Flash**, not Claude). Outbound tool calls now mint a service token. Residual: 4 *read* tools still swallow failures as success. |
-| **GAP 17 — deploy can't ship the stack** | Rolls 2 of 9, no migrations | **Confirmed and worse** — the staging build would *fail outright* (wrong build context) and target the wrong namespace/names. Unchanged as the M4 long pole. |
+| **GAP 17 — deploy can't ship the stack** | Rolls 2 of 9, no migrations | **Largely fixed** — build context corrected (repo root), staging namespace/name prefix fixed, rolls every backend service + frontend. Still open: no Alembic migration Job; agent absent from K8s and the deploy loop. |
 
 Net: the **security posture is dramatically better than the doc reads**, the **copilot works**, and the remaining backend risk has concentrated into (a) a handful of genuine money-path / durability bugs in trading & portfolio, (b) finishing RLS operationally, (c) the M2 broker-credential security gate, and (d) the delivery pipeline.
 
 ---
 
-## 0.5 Implementation status — 2026-07-18 remediation session
+## 0.5 Implementation status
 
-**Landed this session (implemented + tested; 1,823 tests green across the 8 touched
-services/libs, ruff + pyright clean). Nothing committed.**
+**Implemented + tested (ruff + pyright clean across the touched services/libs).**
 
 | Area | Item | What shipped |
 |---|---|---|
@@ -50,7 +49,7 @@ services/libs, ruff + pyright clean). Nothing committed.**
 | infra | **GAP 20** | auth `tier: backend` label; production PDB referenced in kustomization. |
 | infra | **GAP 17** | deploy build context fixed (root, not `services/<svc>`); staging namespace/names corrected; rolls all 9. |
 
-**Also landed (money-path refactors, follow-up pass):**
+**Also implemented (money-path refactors):**
 - **GAP 11** cash reconciliation — `cash_drift`/`ledger_cash` kernel helpers, a `vs_broker_cash_mismatch_dollars` gauge, broker `cash()` port+adapter, threaded through the reconciliation pass (surfaced, not auto-frozen). Tests added.
 - **GAP 16** `_to_proto_order` — `OrderResponse` now carries `tenant_id`/`session_id`; the proto order no longer emits empty strings. Test updated.
 - **GAP 16 / 5A** risk-manager money math — order value, sleeve buying-power, and position-size checks are now computed in `Decimal` (float inputs converted at the boundary), so order gating never turns on float rounding at a limit/buying-power boundary. 52 risk tests green.
@@ -65,7 +64,7 @@ services/libs, ruff + pyright clean). Nothing committed.**
 - **Portfolio poison-read** — `AccountProjection.poison_events`/`is_complete` make an incomplete (poison-skipped) projection inspectable; folds increment it. Test added.
 - **GAP 15d annualization** — the strategy read path now collapses the ~hourly snapshot series to a daily grid before `sqrt(252)` annualization (matches the account path). Test added.
 
-**Also landed (money-path, final pass):**
+**Also implemented (money-path):**
 - **GAP 12 corporate-action driver** — new operator/feed-triggered `ApplyCorporateAction` RPC on `LedgerService` (proto regenerated) + a `CorporateActionService` that fans a split / ticker-rename / dividend across **every sleeve holding the symbol** via the pure planners, **idempotently** (deterministic event ids). Splits no longer freeze sleeves once applied. Tests added.
 - **GAP 16 fakeredis contract test (12A)** — a proto `LedgerFill` now round-trips through the **real** Redis Streams transport (fakeredis-backed) — publish → XADD → consumer-group XREADGROUP → decode → translate — into the portfolio ingestion, exercising the transport + codec + translation together (not mocks). `fakeredis` added to portfolio dev deps.
 
@@ -95,7 +94,7 @@ services/libs, ruff + pyright clean). Nothing committed.**
 | Service | Role & shape | Verified state |
 |---|---|---|
 | **auth** (`:8810`) | Connect servicer; JWT(HS256)+bcrypt, tenant/user, refresh; Alpaca cred CRUD (Fernet-encrypted); RBAC; `ValidateAlpacaCredentials` live probe. Runs **RLS-bypass on every query**. | Login/register/refresh real. Cred security & token hygiene are the open items (GAP 2, 4). |
-| **strategy** (`:8820`) | CRUD + immutable versioning + status state-machine; deploy → ledger sleeve fund/release (single-authority lifecycle, archive guard, durable release marker); 80 allocation templates; compiles/validates via shared `libs/dsl`+`libs/compiler`. Does **not** run the engine itself. | Real, 80% gate. Open: no scheduler (GAP 13), template/exec overrides use a dead DSL vocabulary (GAP 23). |
+| **strategy** (`:8820`) | CRUD + immutable versioning + status state-machine; deploy → ledger sleeve fund/release (single-authority lifecycle, archive guard, durable release marker); 80 allocation templates; compiles/validates via shared `libs/dsl`. Does **not** run the engine itself. | Real, 80% gate. Open: no scheduler (GAP 13), template/exec overrides use a dead DSL vocabulary (GAP 23). |
 | **backtest** (`:8830`) | Celery engine + beat reaper; shared `StrategySession` adapter (live=backtest parity); streamed bar fetch; Redis-Streams progress; cooperative cancel; commission reconciliation; guarded terminal writes. | **Cleanest service.** All 2026-06-19 hardening present + tested, 80% gate, 327 tests. GAP 1 fixed. |
 | **market-data** (`:8840`) | TimescaleDB store (2 hypertables + 7 continuous aggregates + compression/retention); backfill/gap-repair/corp-action ingest; store-first serving; bus-mode streaming. | Store/serve real. Open: quotes/trades streaming dead in deployed bus topology (GAP 23); universe env-only; **paper data host `data.sandbox.alpaca.markets` may not exist — needs a live probe.** |
 | **trading** (`:8850`) | 4-loop runner (bar/equity/position/trade-stream); deterministic idempotent `client_order_id`; brackets/OCO; circuit breaker; crash-recovery sweeps; per-tenant creds; publishes terminal fills to the **global `ledger:fills`** stream. | ~90% hardened. Open: GAP 10/14/16 + **three new money-path/isolation bugs** (see §3). |
@@ -104,7 +103,7 @@ services/libs, ruff + pyright clean). Nothing committed.**
 | **billing** (`:8880`) | Real Stripe subs/payment-methods/webhook handlers (idempotent). `get_usage`/invoices now real+tenant-scoped. | Open: checkout/portal are placeholder URLs; webhook 401'd by middleware; fabricated emails; no plan enforcement (GAP 21); off-pattern auth (GAP 1). |
 | **notification** (`:8870`) | In-memory dict stub; real Twilio/Slack/webhook channel classes **orphaned**; email `return True`. | **No Send/Dispatch RPC exists** — alerts created can never fire. Deferred per MVP, compounds GAP 14. |
 
-**Shared libs:** `libs/common` (`resolve_identity`, fail-closed `AuthMiddleware`, Fernet creds), `libs/db` (30+ models, linear 001→027 Alembic, RLS DDL + GUC session helpers), `libs/events` (proto Redis Streams: groups/ack/XAUTOCLAIM/DLQ/lag; only `InMemoryDedupStore` ships), `libs/alpaca` (single Alpaca entry point), `libs/compiler`+`libs/dsl` (shared `StrategySession`, golden-tested indicators), `libs/telemetry` (OTel+Prometheus; **exports nothing by default**), `libs/proto`.
+**Shared libs:** `libs/common` (`resolve_identity`, fail-closed `AuthMiddleware`, Fernet creds), `libs/db` (30+ models, linear 001→027 Alembic, RLS DDL + GUC session helpers), `libs/events` (proto Redis Streams: groups/ack/XAUTOCLAIM/DLQ/lag; only `InMemoryDedupStore` ships), `libs/alpaca` (single Alpaca entry point), `libs/dsl`+`libs/runtime` (static analysis in dsl; shared `StrategySession` + golden-tested indicators in runtime), `libs/telemetry` (OTel+Prometheus; **exports nothing by default**), `libs/proto`.
 
 ---
 
@@ -115,26 +114,26 @@ Status legend: ✅ FIXED · 🟡 PARTIAL/CHANGED · 🔴 OPEN. Milestone = MVP-p
 | # | Gap | Area | Status | Milestone | Notes |
 |---|---|---|---|---|---|
 | 1 | Forged-tenant authorization | all services | ✅ | M4 | Closed everywhere; billing off-pattern only. |
-| 2 | Broker-cred security (write-only, KMS/salt, validate-on-create) | auth/common | 🔴 | **M2 gate** | `ValidateAlpacaCredentials` exists but not called on create. |
+| 2 | Broker-cred security (write-only, KMS/salt, validate-on-create) | auth/common | 🟡 | **M2 gate** | Write-only creds done (2a, `_mask_key`, secret never returned). Open: inline validate-on-create, per-value salt, KMS (M6). |
 | 3 | Database RLS | libs/db + infra | 🟡 | M4 | Schema+app done; **needs NOSUPERUSER app role** to be effective. |
 | 4 | Token/key hygiene (API-key CRUD+hash, logout, refresh rotation) | auth | 🔴 | M5 | Prefix-only key check; refresh valid 7d on leak. |
 | 5 | Committed secrets + no TLS cert/IP | infra | 🔴 | M4 | Placeholder Secrets; no ManagedCertificate; no SM→K8s bridge. |
-| 6 | Live-trading UI (Trading page, Dashboard, broker UI) | frontend | 🔴 | M2 | Backend ready; largest single build item (out of this backend scope). |
-| 7 | Copilot system prompt | agent | ✅ | M3 | Fixed; residual read-tool swallow (see #16-adjacent). |
-| 8 | Portfolio page demo fallback / half-unimpl | frontend | 🔴 | M1 | Backend `GetPerformance` YTD/MTD/WTD still 0.0 (see #15e). |
+| 6 | Live-trading UI (Trading page, Dashboard, broker UI) | frontend | 🟡 | M2 | Trading page + Dashboard now real; web Alpaca OAuth link flow landed. Open: broker key-management UI polish. |
+| 7 | Copilot system prompt | agent | ✅ | M3 | Fixed — prompt built and sent; provider = Gemini (config-driven). Residual read-tool swallow (see #16-adjacent). |
+| 8 | Portfolio page demo fallback / half-unimpl | frontend | 🟡 | M1 | Silent demo fallback removed; `GetPerformance` YTD/MTD/WTD now computed (15e). |
 | 9 | No frontend token refresh | frontend | 🔴 | M2 | Sessions die at 30-min expiry. |
-| 10 | `CancelOrder` cancels the **platform** Alpaca account | trading | 🔴 | **M2** | Env-cred fallback; every other order RPC resolves per-tenant. Money-path. |
-| 11 | Cash never reconciled vs broker | portfolio | 🔴 | **M2** | Reconcile diffs positions only; `Σ sleeve_cash == broker_cash` unenforced. |
-| 12 | Corporate actions freeze sleeves instead of applying | portfolio | 🔴 | M6 (beta risk) | `corporate.py`/`desired_state.py`/`netting.py` dormant, no driver. |
-| 13 | Stranded-sleeve reconciler never scheduled | strategy | 🔴 | **M2** | No scheduler at all in the service. |
-| 14 | AlertService/AuditService dead code | trading | 🔴 | M2/M6 | No alerts fire; **no audit trail on money path.** |
+| 10 | `CancelOrder` cancels the **platform** Alpaca account | trading | ✅ | **M2** | Fixed — resolves the order's session → per-tenant creds (`get_order_session_id`). |
+| 11 | Cash never reconciled vs broker | portfolio | ✅ | **M2** | Fixed — broker-cash term + `cash_drift` in the reconcile loop; drift gauge surfaced. |
+| 12 | Corporate actions freeze sleeves instead of applying | portfolio | ✅ | M6 (beta risk) | Fixed — `ApplyCorporateAction` RPC fans split/rename/dividend across holding sleeves idempotently. |
+| 13 | Stranded-sleeve reconciler never scheduled | strategy | ✅ | **M2** | Fixed — advisory-lock-gated periodic sweep (`src/tasks.py`). |
+| 14 | AlertService/AuditService dead code | trading | ✅ | M2/M6 | Fixed — both wired into runner+executor; money-path audit trail on submit/fill/cancel. |
 | 15 | Portfolio performance distortions | portfolio | 🟡 | **M2** | Replica dup snapshots; ~5× mis-annualized strategy Sharpe; YTD/MTD/WTD 0.0. |
 | 16 | Silent failure modes (attribution, poison, Decimal, contract test) | trading/portfolio | 🟡 | M6 | Telemetry added; behavior unchanged; 5A/12A not started. |
-| 17 | Deploy pipeline can't ship stack | infra | 🔴 | **M4** | Build fails (context); wrong ns/names; no migration job; agent no manifests. |
+| 17 | Deploy pipeline can't ship stack | infra | 🟡 | **M4** | Fixed — root build context, correct staging ns/names, rolls all backend services + frontend. Open: Alembic migration Job; agent K8s manifests + deploy loop. |
 | 18 | CI coverage holes | infra | 🔴 | M4 | integration suite unrun; billing/notif/market-data tests unrun; no buf gate. |
 | 19 | Observability exports nothing | infra/telemetry | 🔴 | M4 | No OTLP endpoint; collector only `debug`; metrics pull-only. |
 | 20 | K8s config landmines | infra | 🔴 | M4 | auth missing `tier:backend`; PDBs unreferenced; no timescale; staging no NetworkPolicy. |
-| 21 | Stripe webhook 401 + billing stubs | billing | 🔴 | M5 | Webhook not allowlisted; checkout/portal placeholders; no enforcement. (`get_usage`/invoices now real.) |
+| 21 | Stripe webhook 401 + billing stubs | billing | 🟡 | M5 | Webhook allowlisted (`/webhooks/stripe`). Open: checkout/portal placeholders, no plan enforcement (M5). |
 | 22 | Docs describe a different product | .docs | 🔴 | M4 | strategy doc = retired service; auth crypto mislabeled AES-256-GCM. |
 | 23 | Template overrides raise for all 80 + quotes/trades streaming dead | strategy/market-data | 🔴 | M1/M3 | Override vocabulary matches neither templates nor the shipped DSL. |
 

@@ -1,7 +1,7 @@
 # Broker API — Regulatory & Legal Checklist (for securities counsel)
 
 **Status:** Phase-0 (WS-B). Decision input, not implementation.
-**Related:** [`broker-provider-seam.md`](./broker-provider-seam.md) (WS-A, execution architecture), [`broker-setup-individual-traders.md`](./broker-setup-individual-traders.md) (the non-custodial BYO product that ships first).
+**Related:** [`broker-setup-individual-traders.md`](./broker-setup-individual-traders.md) — the non-custodial BYO product that ships first.
 
 > ⚠️ **This is not legal advice.** It is an engineering/product-side map of the regulatory surface for moving from BYO (non-custodial) to **embedded brokerage via Alpaca's Broker API** (Alpaca custodies; LlamaTrade opens & orchestrates customer sub-accounts). It exists to be **handed to securities counsel** and to a named compliance officer. Every item marked **[COUNSEL]** is a question for them, not a decision engineering can make. The go/no-go is a business + legal decision.
 

@@ -1,5 +1,7 @@
 # Tiingo vs Alpaca Market Data API Comparison
 
+> **Status:** Decision record — Alpaca is the **sole** market-data provider. Tiingo is not integrated, and there is no provider-agnostic data-router seam (the "DATA ROUTER" diagram below is illustrative only).
+
 > Exploration document comparing two market data providers for LlamaTrade integration.
 
 ## Overview

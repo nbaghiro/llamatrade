@@ -2,9 +2,9 @@
 
 A team reference for the signals and allocation methods behind LlamaTrade strategies: what exists in the DSL today, what the rest of the industry treats as table-stakes, how each piece is actually used inside strategies, and where this fits in the overall system.
 
-> **Sourcing note.** Platform-coverage and academic claims in this doc were verified against primary sources in June 2026 (TA-Lib function list, TradingView built-in indicator docs, QuantConnect/LEAN supported-indicators docs, and the original papers for 1/N, ERC, and HRP — links in [Sources](#sources)). Indicator default parameters and classic signal rules are standard textbook conventions (Wilder, Bollinger, et al.) as shipped by those same platforms.
+> **Sourcing note.** Platform-coverage and academic claims in this doc are grounded in primary sources (TA-Lib function list, TradingView built-in indicator docs, QuantConnect/LEAN supported-indicators docs, and the original papers for 1/N, ERC, and HRP — links in [Sources](#sources)). Indicator default parameters and classic signal rules are standard textbook conventions (Wilder, Bollinger, et al.) as shipped by those same platforms.
 
-> **Implementation status (updated June 2026).** Every indicator below is now **numerically validated against TA-Lib** by a golden-value test suite (`libs/compiler/tests/test_indicators_golden.py`). That suite caught and fixed real bugs: ADX, Stochastic, and the MACD signal/histogram were silently returning all-NaN (so conditions using them were always false), and ATR/ADX used SMA instead of Wilder's smoothing — all corrected. On the allocation side, `risk-parity` and `min-variance` are now **real covariance-based optimizers** (previously inverse-volatility stubs), and `market-cap` is now **rejected by the validator** rather than silently falling back to equal weight. Status markers throughout reflect this current state.
+> **Implementation status.** Every indicator below is **numerically validated against TA-Lib** by a golden-value test suite (`libs/runtime/tests/test_indicators_golden.py`; requires the `golden` extra — the native TA-Lib C library). ADX/ATR use Wilder's smoothing (not SMA), and ADX/Stochastic/MACD signal+histogram produce real values across their warm-up. On the allocation side, `risk-parity` and `min-variance` are **real covariance-based optimizers**, and `market-cap` is **rejected by the validator** rather than silently falling back to equal weight.
 
 ---
 
@@ -17,8 +17,9 @@ A team reference for the signals and allocation methods behind LlamaTrade strate
 5. [Weight Methods (Allocation)](#weight-methods-allocation)
 6. [Famous Strategy Families — the Recipes](#famous-strategy-families--the-recipes)
 7. [Platform Benchmark — How Our Coverage Compares](#platform-benchmark--how-our-coverage-compares)
-8. [Suggested Research Priorities](#suggested-research-priorities)
-9. [Sources](#sources)
+8. [Implementation Status Summary](#implementation-status-summary)
+9. [Suggested Research Priorities](#suggested-research-priorities)
+10. [Sources](#sources)
 
 ---
 
@@ -53,7 +54,7 @@ End-to-end flow:
 1-min bars (live) / historical bars (backtest)
         │
         ▼
- Indicator computation (NumPy, libs/compiler/indicators/library.py)
+ Indicator computation (NumPy, libs/runtime/llamatrade_runtime/indicators/library.py)
         │
         ▼
  Condition evaluation (comparisons, crossovers, and/or/not)
@@ -76,7 +77,7 @@ Two system facts that shape how signals behave in practice:
 
 ## Indicator Catalog by Family
 
-Legend: ✅ implemented in `libs/compiler` · 🔍 candidate to research/add. "Classic rule" = the signal convention traders actually use, as documented across TradingView/StockCharts/platform docs.
+Legend: ✅ implemented in `libs/runtime` · 🔍 candidate to research/add. "Classic rule" = the signal convention traders actually use, as documented across TradingView/StockCharts/platform docs.
 
 ### 1. Trend / Moving Averages
 
@@ -113,13 +114,15 @@ Legend: ✅ implemented in `libs/compiler` · 🔍 candidate to research/add. "C
 | **CCI** — Commodity Channel Index | ✅ | Deviation of price from its statistical mean | 20 | > +100 / < −100 breakout or reversion zones | Both breakout and reversion styles |
 | **Williams %R** | ✅ | Inverse stochastic, −100 to 0 | 14 | > −20 overbought, < −80 oversold | Short-term reversion |
 | **MFI** — Money Flow Index | ✅ | Volume-weighted RSI | 14 | > 80 / < 20; divergence | Volume-confirmed reversion |
-| **Momentum** (raw) | ✅ | Price change over N periods | 10 | sign and magnitude; ranking assets | Cross-sectional momentum, our `momentum` weight method |
+| **Momentum** (raw) | ✅ | **Absolute price change** over N periods (dollars) | 10 | sign and magnitude in a condition | Conditions comparing raw price movement |
 | **ROC** — Rate of Change | 🔍 | Same as momentum but as a % — comparable across assets | 12 | zero-line cross; ranking | Dual momentum, relative-strength rotation |
 | **Ultimate Oscillator** | 🔍 | Momentum blended across 3 timeframes | 7 / 14 / 28 | 70/30 zones, divergence | Divergence trading |
 | **TRIX** | 🔍 | Rate of change of a triple-smoothed EMA | 15 | zero-line / signal cross | Filtered momentum |
 | **TSI** — True Strength Index | 🔍 | Double-smoothed momentum | 25 / 13 | zero/signal cross | Momentum confirmation |
 
-**How they're used in strategies:** two opposite styles. *Mean reversion* buys oversold (`RSI < 30`) expecting a snap-back — works best on short horizons and indices. *Momentum/trend confirmation* requires the oscillator to agree with the trend signal (`and (> sma50 sma200) (< rsi 70)` — "uptrend but not overheated", exactly our Confirmed Trend example). For *rotation* strategies, ROC/momentum are computed per asset and used to **rank** (our `filter :by momentum`), not to threshold.
+**How they're used in strategies:** two opposite styles. *Mean reversion* buys oversold (`RSI < 30`) expecting a snap-back — works best on short horizons and indices. *Momentum/trend confirmation* requires the oscillator to agree with the trend signal (`and (> sma50 sma200) (< rsi 70)` — "uptrend but not overheated", exactly our Confirmed Trend example). For *rotation* strategies, momentum is computed per asset and used to **rank** (our `filter :by momentum` and `weight :method momentum`).
+
+> **Naming caution — same word, different math.** The `momentum` *indicator* returns an **absolute dollar change** (`price − price[N ago]`), while the `momentum` *weight method* and `filter :by momentum` rank by **percent return** (`(price − price[N]) / price[N]`) — the same formula as the `return` metric. Likewise the `stddev` *indicator* is dispersion of **price**, whereas every "volatility" (the metric, `inverse-volatility`, `filter :by volatility`) is dispersion of **returns**. The return/volatility math has a single implementation in `libs/runtime/llamatrade_runtime/evaluation/statistics.py`, shared by the metric, weight-method, and filter callers; the indicator library is a separate path used only by conditions.
 
 ### 3. Volatility
 
@@ -152,7 +155,7 @@ Legend: ✅ implemented in `libs/compiler` · 🔍 candidate to research/add. "C
 | **RVOL / Volume SMA** | 🔍 | Today's volume vs its average | 20–50 | RVOL > 2 = unusual activity | Breakout confirmation ("breakout on volume") |
 | **Ease of Movement** | 🔍 | How far price moves per unit of volume | 14 | zero cross | Confirmation |
 
-**How they're used in strategies:** almost always as *confirmation* — a breakout or divergence "counts" only if volume agrees. Classic pattern: `and (price breaks Donchian high) (volume > 1.5 × avg volume)`. Volume is also a liquidity *filter* for universe selection (our `filter :by volume` — though note it currently reads only the last bar, not an average).
+**How they're used in strategies:** almost always as *confirmation* — a breakout or divergence "counts" only if volume agrees. Classic pattern: `and (price breaks Donchian high) (volume > 1.5 × avg volume)`. Volume is also a liquidity *filter* for universe selection (our `filter :by volume`, which ranks by average **dollar** volume over `:lookback`).
 
 ### 5. Channels / Breakout
 
@@ -197,17 +200,17 @@ Derived statistics (implemented in our DSL as the third value-expression family 
 
 The second half of every strategy. The DSL's `weight :method` block answers "given these N assets, how much of each?"
 
-### Implemented today (status — see `libs/compiler/llamatrade_compiler/evaluation/compiled.py`)
+### Implemented today (status — see `libs/runtime/llamatrade_runtime/evaluation/compiled.py`)
 
 | Method | Status | What it does | Notes / gaps |
 |---|---|---|---|
 | `specified` | ✅ full | Manual percentages (must sum to ~100) | The 60/40 classic |
 | `equal` | ✅ full | 100/N each | See research note below — this is a *strong* baseline, not a naive placeholder |
-| `inverse-volatility` | ✅ full | wᵢ ∝ 1/σᵢ of daily returns over `:lookback` | Edge case: assets with missing history get a floor σ=0.0001 → they *dominate* the block instead of degrading gracefully |
+| `inverse-volatility` | ✅ full | wᵢ ∝ 1/σᵢ of daily returns over `:lookback` | A symbol with too little history or zero variance is **excluded** (0 weight) and the rest renormalize; if none qualify, falls back to equal weight |
 | `risk-parity` | ✅ full | Equal-risk-contribution (ERC): fixed-point iteration `wᵢ ∝ 1/(Σw)ᵢ` on the return covariance matrix, long-only, normalized | Accounts for correlations (reduces to inverse-vol only when assets are uncorrelated). Falls back to inverse-vol on insufficient history |
 | `min-variance` | ✅ full | Long-only minimum-variance: `w ∝ Σ⁻¹·1` via pseudo-inverse (robust to singular Σ), negatives clipped, renormalized | Estimation-error sensitive on short windows (see research note 1); falls back to inverse-vol when history is too short |
-| `momentum` | ⚠️ partial | Ranks by trailing return over `:lookback`, keeps `:top N`… then **equal-weights the survivors** | Score-*proportional* weighting (winners get more) is documented but not implemented |
-| `market-cap` | ❌ rejected | The validator blocks it — no fundamental-data (shares-outstanding) source | Was a silent equal-weight fallback; now a hard validation error so strategies don't get surprised |
+| `momentum` | ✅ full | Ranks by trailing return over `:lookback`, keeps `:top N`, then weights **proportional to trailing return** (winners get more) | Negative returns clip to 0 (a down asset carries no long momentum); if every survivor is ≤ 0, falls back to equal weight |
+| `market-cap` | ❌ rejected | The validator blocks it — no fundamental-data (shares-outstanding) source | A hard validation error rather than a silent equal-weight fallback |
 
 Both `risk-parity` and `min-variance` share covariance scaffolding that builds an aligned daily-returns matrix across the candidate symbols and falls back to `inverse-volatility` when fewer than two symbols have enough history.
 
@@ -217,17 +220,16 @@ Three results every team member researching allocation should know:
 
 1. **Equal weight is genuinely hard to beat.** DeMiguel, Garlappi & Uppal (*Review of Financial Studies*, 2009) evaluated 14 sample-based mean-variance models across 7 datasets and found **none consistently beats 1/N** on Sharpe ratio, certainty-equivalent return, or turnover. The killer is *estimation error*: out of sample, the gains from "optimal" diversification are more than offset by errors in estimating expected returns and covariances. Their simulations suggest mean-variance needs on the order of **3,000 months of data for 25 assets** (≈250 years) to reliably win. *Takeaway: `equal` is a first-class method, and any optimizer we add must document its data appetite. (Later literature — Kirby & Ostdiek 2012, Tu & Zhou 2011 — shows some refinements do beat 1/N, so it's a high bar, not a no-go.)*
 
-2. **Inverse-volatility is formally a special case of risk parity.** Maillard, Roncalli & Teïletche (*Journal of Portfolio Management*, 2010) proved the equal-risk-contribution (ERC) portfolio's volatility sits **between minimum-variance and equal weight** (σ_MV ≤ σ_ERC ≤ σ_1/N), and that under constant correlation ERC has the closed form wᵢ = σᵢ⁻¹ / Σσⱼ⁻¹ — *exactly* our inverse-volatility method. *Takeaway: this is why our three vol-based methods form a ladder — `inverse-volatility` (ignores correlation) → `risk-parity` (full ERC, accounts for correlation) → `min-variance` (lowest total vol). All three are now implemented; ERC and min-variance only diverge from inverse-vol when correlations differ meaningfully across the basket, and they cost a covariance estimate + a solver.*
+2. **Inverse-volatility is formally a special case of risk parity.** Maillard, Roncalli & Teïletche (*Journal of Portfolio Management*, 2010) proved the equal-risk-contribution (ERC) portfolio's volatility sits **between minimum-variance and equal weight** (σ_MV ≤ σ_ERC ≤ σ_1/N), and that under constant correlation ERC has the closed form wᵢ = σᵢ⁻¹ / Σσⱼ⁻¹ — *exactly* our inverse-volatility method. *Takeaway: this is why our three vol-based methods form a ladder — `inverse-volatility` (ignores correlation) → `risk-parity` (full ERC, accounts for correlation) → `min-variance` (lowest total vol). All three are implemented; ERC and min-variance only diverge from inverse-vol when correlations differ meaningfully across the basket, and they cost a covariance estimate + a solver.*
 
 3. **HRP is the modern covariance-only alternative.** López de Prado (*Journal of Portfolio Management*, 2016) introduced Hierarchical Risk Parity to fix three documented failures of quadratic optimizers — instability, concentration, underperformance. It clusters assets by correlation, then allocates top-down by recursive bisection. Crucially it **never inverts the covariance matrix**, so it works even when the matrix is ill-conditioned (more assets than observations — "Markowitz's curse") and needs **no expected-return estimates**. In the paper's Monte Carlo tests HRP beat CLA min-variance out of sample on variance itself, though independent replications since are mixed — treat HRP as a robust, well-motivated option, not a guaranteed winner.
 
 ### Candidate methods to research
 
-> Already implemented (no longer candidates): **ERC risk-parity** and **minimum-variance** — see the Weight Methods table above.
+> Implemented (not research candidates): **ERC risk-parity** and **minimum-variance** — see the Weight Methods table above.
 
 | Method | What it does | Why / when | Data needs | Pitfalls |
 |---|---|---|---|---|
-| **Score-proportional momentum** | wᵢ ∝ trailing return | Lets winners compound; our docs already promise it | prices | Concentration; negative scores need handling |
 | **Max Sharpe / mean-variance** | Markowitz tangency portfolio | The textbook optimum | returns **and** covariance | Worst estimation-error sensitivity (see DeMiguel) |
 | **HRP** | Cluster + recursive bisection | Robust when many assets / short history | covariance only | Linkage-method sensitivity; mixed replication |
 | **Volatility targeting** | Scale total exposure to hit target portfolio vol; rest to cash | Smooths returns; "vol-managed portfolios" literature | portfolio vol estimate | Whipsaw in vol spikes; leverage if target > realized |
@@ -259,7 +261,7 @@ How indicators + weight methods combine into the named strategies a researcher w
 
 ## Platform Benchmark — How Our Coverage Compares
 
-Verified June 2026 against official docs. The cross-platform **table-stakes set** — indicators shipped as built-ins by *all* of TA-Lib, TradingView, and QuantConnect/LEAN — is:
+Grounded in the official docs. The cross-platform **table-stakes set** — indicators shipped as built-ins by *all* of TA-Lib, TradingView, and QuantConnect/LEAN — is:
 
 > SMA, EMA (+ WMA/Hull/KAMA variants), RSI, MACD, Stochastic, Stochastic RSI, CCI, Williams %R, Aroon, ROC, Ultimate Oscillator, ADX, Bollinger Bands, ATR, OBV, MFI, Chaikin A/D & CMF, VWAP, Parabolic SAR, Donchian, Keltner, Ichimoku, pivot points.
 
@@ -276,6 +278,21 @@ On the **allocation** side, Composer (the closest product analog — also a decl
 
 ---
 
+## Implementation Status Summary
+
+**Supported today** (cross-checked against the code — `INDICATORS`/`WEIGHT_METHODS`/`METRICS` in `libs/dsl/.../ast.py`, computations in `libs/runtime`): **17 indicators**, **6 usable weight methods** (`market-cap` parses but the validator rejects it), **3 metrics** (`drawdown`/`return`/`volatility`), **3 filter criteria** (`momentum`/`volatility`/`volume`).
+
+**Not yet supported** — research candidates. Fine for now; listed so the scope is explicit:
+
+- **Indicators** — *trend*: WMA, Hull/HMA, DEMA/TEMA, KAMA, Parabolic SAR, SuperTrend, Ichimoku, Aroon, Vortex · *momentum*: Stochastic RSI, ROC, Ultimate Oscillator, TRIX, TSI · *volatility*: %B/Bandwidth, Chandelier Exit, HV-percentile · *volume*: A/D Line, CMF, Chaikin Oscillator, Force Index, RVOL/Volume-SMA, Ease of Movement · *breakout*: 52-week-high distance, Pivot Points, Gap detection · *cross-asset*: rolling correlation/beta, relative-strength ratio, Z-score-vs-MA.
+- **Metrics** — windowed Sharpe/Sortino, windowed max-drawdown, downside deviation.
+- **Weight methods** — max-Sharpe/mean-variance, HRP, volatility targeting, dual momentum, Kelly / fractional Kelly, Black-Litterman.
+- **Filter criteria** — Sharpe ratio, distance-from-52-week-high, average dollar volume, correlation-to-benchmark.
+
+**Known correctness gaps.** None currently open — the three previously-tracked issues (the `inverse-volatility` missing-data floor, `filter :by volume` reading a single bar, and score-blind `momentum` weighting) are all resolved; the corrected behavior is what the tables above describe.
+
+---
+
 ## Suggested Research Priorities
 
 Ranked by (strategy families unlocked) ÷ (implementation effort), given the gaps above:
@@ -288,20 +305,16 @@ Ranked by (strategy families unlocked) ÷ (implementation effort), given the gap
 5. **Ichimoku** — bigger lift (5 lines), large retail mindshare.
 6. **CMF / A-D line + RVOL** — completes the volume-confirmation family.
 
-**Weight methods** (ERC risk-parity and min-variance are now done — see above)
-1. **Score-proportional momentum** — already documented, just not implemented.
-2. **Volatility targeting** — unlocks the whole vol-managed family; needs only realized vol we already compute.
-3. **Dual momentum** — mostly composition of existing blocks + `return`-vs-cash-proxy comparison; huge name recognition (Antonacci GEM).
-4. **HRP** — strong robustness story (no matrix inversion, no return estimates); medium effort, and a natural next step now that the covariance scaffolding exists.
-5. Fix the **inverse-vol missing-data floor** (σ=0.0001 makes data-less assets dominate — should fall back to equal or exclude). Note `risk-parity`/`min-variance` inherit this via their inverse-vol fallback.
-
-**Also worth fixing while in the area:** `filter :by volume` should average over `:lookback` instead of reading one bar. (`min-variance` is now implemented and `market-cap` now hard-fails validation, so the old "silent fallback" trap is resolved.)
+**Weight methods** (ERC risk-parity and min-variance are implemented — see above)
+1. **Volatility targeting** — unlocks the whole vol-managed family; needs only realized vol we already compute.
+2. **Dual momentum** — mostly composition of existing blocks + `return`-vs-cash-proxy comparison; huge name recognition (Antonacci GEM).
+3. **HRP** — strong robustness story (no matrix inversion, no return estimates); medium effort, and a natural next step given the covariance scaffolding.
 
 ---
 
 ## Sources
 
-**Platform docs (primary, fetched June 2026)**
+**Platform docs (primary)**
 - TA-Lib function list — https://ta-lib.org/functions/ and https://ta-lib.github.io/ta-lib-python/funcs.html
 - TradingView built-in indicators — https://www.tradingview.com/support/folders/43000587405-built-in-indicators/
 - QuantConnect supported indicators — https://www.quantconnect.com/docs/v2/writing-algorithms/indicators/supported-indicators
