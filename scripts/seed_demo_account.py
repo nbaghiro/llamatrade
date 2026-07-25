@@ -894,10 +894,8 @@ class Seeder:
                     strategy_id=strat.id,
                     version=1,
                     config_sexpr=str(data["config_sexpr"]),
-                    config_json=data["config_json"],  # type: ignore[arg-type]
                     symbols=data["symbols"],  # type: ignore[arg-type]
                     timeframe=str(data["timeframe"]),
-                    parameters={},
                     changelog="Initial version",
                     created_by=self.user_id,
                     created_at=created,
@@ -1826,7 +1824,6 @@ class Seeder:
                         "name": "Momentum Sectors",
                         "description": mom_description,
                         "dsl_code": mom_dsl,
-                        "config_json": mom["config_json"],
                         "symbols": mom_symbols,
                         "timeframe": str(mom["timeframe"]),
                     },

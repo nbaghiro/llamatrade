@@ -3,7 +3,6 @@
 from llamatrade_db.models.strategy import (
     Strategy,
     StrategyExecution,
-    StrategyTemplate,
     StrategyType,
     StrategyVersion,
 )
@@ -128,11 +127,12 @@ class TestStrategyVersion:
         assert "strategy_id" in columns
         assert "version" in columns
         assert "config_sexpr" in columns
-        assert "config_json" in columns
         assert "symbols" in columns
         assert "timeframe" in columns
-        assert "parameters" in columns
         assert "changelog" in columns
+        # Derived representations are not stored — the DSL string is the source of truth.
+        assert "config_json" not in columns
+        assert "parameters" not in columns
         assert "created_by" in columns
 
     def test_config_sexpr_not_nullable(self) -> None:
@@ -140,10 +140,11 @@ class TestStrategyVersion:
         col = StrategyVersion.__table__.columns["config_sexpr"]
         assert col.nullable is False
 
-    def test_config_json_not_nullable(self) -> None:
-        """Test config_json is not nullable."""
-        col = StrategyVersion.__table__.columns["config_json"]
-        assert col.nullable is False
+    def test_config_sexpr_is_the_stored_representation(self) -> None:
+        """The DSL string is stored and required; derived forms are not stored."""
+        assert StrategyVersion.__table__.columns["config_sexpr"].nullable is False
+        assert "config_json" not in StrategyVersion.__table__.columns
+        assert "parameters" not in StrategyVersion.__table__.columns
 
     def test_has_strategy_relationship(self) -> None:
         """Test StrategyVersion has strategy relationship."""
@@ -174,45 +175,3 @@ class TestStrategyExecution:
     def test_has_strategy_relationship(self) -> None:
         """Test StrategyExecution has strategy relationship."""
         assert hasattr(StrategyExecution, "strategy")
-
-
-class TestStrategyTemplate:
-    """Tests for StrategyTemplate model."""
-
-    def test_strategy_template_tablename(self) -> None:
-        """Test StrategyTemplate has correct tablename."""
-        assert StrategyTemplate.__tablename__ == "strategy_templates"
-
-    def test_strategy_template_has_required_columns(self) -> None:
-        """Test StrategyTemplate has all required columns."""
-        columns = StrategyTemplate.__table__.columns
-        assert "id" in columns
-        assert "name" in columns
-        assert "description" in columns
-        assert "category" in columns
-        assert "config_sexpr" in columns
-        assert "config_json" in columns
-        assert "tags" in columns
-        assert "difficulty" in columns
-        assert "is_active" in columns
-        assert "usage_count" in columns
-
-    def test_name_is_unique(self) -> None:
-        """Test name column is unique."""
-        col = StrategyTemplate.__table__.columns["name"]
-        assert col.unique is True
-
-    def test_config_sexpr_not_nullable(self) -> None:
-        """Test config_sexpr is not nullable."""
-        col = StrategyTemplate.__table__.columns["config_sexpr"]
-        assert col.nullable is False
-
-    def test_is_active_has_default(self) -> None:
-        """Test is_active has default."""
-        col = StrategyTemplate.__table__.columns["is_active"]
-        assert col.default is not None
-
-    def test_usage_count_has_default(self) -> None:
-        """Test usage_count defaults to 0."""
-        col = StrategyTemplate.__table__.columns["usage_count"]
-        assert col.default is not None

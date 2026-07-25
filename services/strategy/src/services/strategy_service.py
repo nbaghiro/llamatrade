@@ -2,7 +2,7 @@
 
 import logging
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
 from fastapi import Depends
@@ -12,14 +12,20 @@ from sqlalchemy.ext.asyncio import AsyncSession
 if TYPE_CHECKING:
     from llamatrade_proto.clients.ledger import LedgerClient
 
-from llamatrade_compiler import extract_indicators, get_required_symbols
 from llamatrade_db import get_db
 from llamatrade_db.models.strategy import (
     Strategy,
     StrategyExecution,
     StrategyVersion,
 )
-from llamatrade_dsl import ParseError, parse_strategy, to_json, validate_strategy
+from llamatrade_dsl import (
+    ParseError,
+    extract_indicators,
+    get_required_symbols,
+    parse_strategy,
+    validate_strategy,
+)
+from llamatrade_proto.generated import strategy_pb2
 from llamatrade_proto.generated.common_pb2 import (
     EXECUTION_STATUS_ERROR,
     EXECUTION_STATUS_PAUSED,
@@ -36,18 +42,12 @@ from llamatrade_proto.generated.strategy_pb2 import (
 from llamatrade_telemetry import metrics
 
 from src.models import (
-    ConfigOverride,
     ExecutionCreate,
-    ExecutionResponse,
-    StrategyConfigJSON,
     StrategyCreate,
-    StrategyDetailResponse,
-    StrategyResponse,
     StrategyUpdate,
-    StrategyVersionResponse,
-    ValidationResult,
     execution_status_to_str,
 )
+from src.proto_mappers import validation_to_proto
 
 logger = logging.getLogger(__name__)
 
@@ -210,7 +210,7 @@ class StrategyService:
         tenant_id: UUID,
         user_id: UUID,
         data: StrategyCreate,
-    ) -> StrategyDetailResponse:
+    ) -> tuple[Strategy, StrategyVersion]:
         """
         Create a new strategy with S-expression configuration.
 
@@ -234,10 +234,8 @@ class StrategyService:
             error_messages = [str(e) for e in validation.errors]
             raise ValueError(f"Invalid strategy: {'; '.join(error_messages)}")
 
-        # Extract symbols from the allocation strategy
+        # Projections derived from the DSL (the source of truth) for querying.
         symbols = list(get_required_symbols(ast))
-
-        # Map rebalance frequency to a timeframe for DB storage
         timeframe = _rebalance_to_timeframe(ast.rebalance)
 
         # Generate unique name (adds suffix if name already exists)
@@ -257,17 +255,14 @@ class StrategyService:
             self.db.add(strategy)
             await self.db.flush()  # Get ID before creating version
 
-            # Create version 1
-            config_json = to_json(ast)
+            # Create version 1 — only the DSL string is stored (+ derived projections).
             version = StrategyVersion(
                 tenant_id=tenant_id,  # Defense-in-depth tenant isolation
                 strategy_id=strategy.id,
                 version=1,
                 config_sexpr=data.config_sexpr,
-                config_json=config_json,
                 symbols=symbols,
                 timeframe=timeframe,
-                parameters=data.parameters or {},
                 created_by=user_id,
             )
             self.db.add(version)
@@ -277,13 +272,13 @@ class StrategyService:
 
         metrics.strategy.version_minted()
 
-        return self._to_detail_response(strategy, version)
+        return strategy, version
 
     async def get_strategy(
         self,
         tenant_id: UUID,
         strategy_id: UUID,
-    ) -> StrategyDetailResponse | None:
+    ) -> tuple[Strategy, StrategyVersion] | None:
         """Get a strategy with its current version configuration."""
         strategy = await self._get_strategy_by_id(tenant_id, strategy_id)
         if not strategy:
@@ -293,7 +288,7 @@ class StrategyService:
         if not version:
             return None
 
-        return self._to_detail_response(strategy, version)
+        return strategy, version
 
     async def list_strategies(
         self,
@@ -304,8 +299,12 @@ class StrategyService:
         sort_direction: str | None = None,
         page: int = 1,
         page_size: int = 20,
-    ) -> tuple[list[StrategyResponse], int]:
+    ) -> tuple[list[tuple[Strategy, list[str], str]], int]:
         """List strategies for a tenant with optional filtering, search, and sort.
+
+        Each row is ``(strategy, symbols, timeframe)`` — symbols/timeframe are
+        joined from the current version so the list can render them without loading
+        the DSL blob.
 
         Args:
             tenant_id: Tenant UUID
@@ -361,7 +360,7 @@ class StrategyService:
         result = await self.db.execute(stmt)
         rows = result.all()
 
-        return [self._to_response(s, symbols, timeframe) for s, symbols, timeframe in rows], total
+        return [(s, symbols or [], timeframe or "") for s, symbols, timeframe in rows], total
 
     def _get_sort_column(self, field: str | None) -> Any:
         """Get SQLAlchemy column for sorting."""
@@ -379,7 +378,7 @@ class StrategyService:
         user_id: UUID,
         strategy_id: UUID,
         data: StrategyUpdate,
-    ) -> StrategyDetailResponse | None:
+    ) -> tuple[Strategy, StrategyVersion] | None:
         """
         Update a strategy.
 
@@ -433,9 +432,8 @@ class StrategyService:
             # If config changed, create new version
             if ast is not None:
                 new_version_num = strategy.current_version + 1
-                config_json = to_json(ast)
 
-                # Extract symbols and timeframe from allocation strategy
+                # Projections derived from the DSL (the source of truth) for querying.
                 symbols = list(get_required_symbols(ast))
                 timeframe = _rebalance_to_timeframe(ast.rebalance)
 
@@ -444,10 +442,8 @@ class StrategyService:
                     strategy_id=strategy.id,
                     version=new_version_num,
                     config_sexpr=data.config_sexpr,
-                    config_json=config_json,
                     symbols=symbols,
                     timeframe=timeframe,
-                    parameters=data.parameters or {},
                     changelog=data.changelog,
                     created_by=user_id,
                 )
@@ -463,7 +459,7 @@ class StrategyService:
         current_version = await self._get_version(tenant_id, strategy.id, strategy.current_version)
         if current_version is None:
             raise ValueError("Strategy version not found after update")
-        return self._to_detail_response(strategy, current_version)
+        return strategy, current_version
 
     async def delete_strategy(
         self,
@@ -534,7 +530,7 @@ class StrategyService:
         self,
         tenant_id: UUID,
         strategy_id: UUID,
-    ) -> StrategyResponse | None:
+    ) -> Strategy | None:
         """Set strategy status to ACTIVE.
 
         Raises:
@@ -551,13 +547,13 @@ class StrategyService:
         strategy.status = STRATEGY_STATUS_ACTIVE
         await self.db.commit()
         await self.db.refresh(strategy)
-        return self._to_response(strategy)
+        return strategy
 
     async def pause_strategy(
         self,
         tenant_id: UUID,
         strategy_id: UUID,
-    ) -> StrategyResponse | None:
+    ) -> Strategy | None:
         """Set strategy status to PAUSED.
 
         Raises:
@@ -574,13 +570,13 @@ class StrategyService:
         strategy.status = STRATEGY_STATUS_PAUSED
         await self.db.commit()
         await self.db.refresh(strategy)
-        return self._to_response(strategy)
+        return strategy
 
     async def list_versions(
         self,
         tenant_id: UUID,
         strategy_id: UUID,
-    ) -> list[StrategyVersionResponse]:
+    ) -> list[StrategyVersion]:
         """List all versions of a strategy."""
         strategy = await self._get_strategy_by_id(tenant_id, strategy_id)
         if not strategy:
@@ -593,23 +589,20 @@ class StrategyService:
             .order_by(StrategyVersion.version.desc())
         )
         result = await self.db.execute(stmt)
-        versions = result.scalars().all()
-
-        return [self._to_version_response(v) for v in versions]
+        return list(result.scalars().all())
 
     async def get_version(
         self,
         tenant_id: UUID,
         strategy_id: UUID,
         version: int,
-    ) -> StrategyVersionResponse | None:
+    ) -> StrategyVersion | None:
         """Get a specific version of a strategy."""
         strategy = await self._get_strategy_by_id(tenant_id, strategy_id)
         if not strategy:
             return None
 
-        v = await self._get_version(tenant_id, strategy_id, version)
-        return self._to_version_response(v) if v else None
+        return await self._get_version(tenant_id, strategy_id, version)
 
     async def clone_strategy(
         self,
@@ -617,19 +610,20 @@ class StrategyService:
         user_id: UUID,
         strategy_id: UUID,
         new_name: str,
-    ) -> StrategyDetailResponse | None:
+    ) -> tuple[Strategy, StrategyVersion] | None:
         """Clone a strategy with a new name."""
         original = await self.get_strategy(tenant_id, strategy_id)
         if not original:
             return None
 
+        strategy, version = original
         return await self.create_strategy(
             tenant_id=tenant_id,
             user_id=user_id,
             data=StrategyCreate(
                 name=new_name,
-                description=f"Cloned from: {original.name}",
-                config_sexpr=original.config_sexpr,
+                description=f"Cloned from: {strategy.name}",
+                config_sexpr=version.config_sexpr,
             ),
         )
 
@@ -641,7 +635,7 @@ class StrategyService:
         name: str | None = None,
         description: str | None = None,
         template_params: dict[str, str] | None = None,
-    ) -> StrategyDetailResponse:
+    ) -> tuple[Strategy, StrategyVersion]:
         """Create a strategy from a template.
 
         Args:
@@ -686,7 +680,7 @@ class StrategyService:
     async def validate_config(
         self,
         config_sexpr: str,
-    ) -> ValidationResult:
+    ) -> strategy_pb2.ValidationResult:
         """Validate a strategy configuration without saving.
 
         Returns validation result including detected symbols and indicators.
@@ -727,7 +721,7 @@ class StrategyService:
                     # Don't fail validation if indicator extraction fails
                     pass
 
-            return ValidationResult(
+            return validation_to_proto(
                 valid=validation.valid,
                 errors=errors,
                 warnings=warnings,
@@ -736,7 +730,7 @@ class StrategyService:
             )
         except Exception as e:
             metrics.strategy.parse_error(kind="parse")
-            return ValidationResult(
+            return validation_to_proto(
                 valid=False,
                 errors=[str(e)],
                 warnings=[],
@@ -751,7 +745,7 @@ class StrategyService:
         tenant_id: UUID,
         strategy_id: UUID,
         data: ExecutionCreate,
-    ) -> ExecutionResponse | None:
+    ) -> StrategyExecution | None:
         """Create a new execution for a strategy.
 
         Uses a nested transaction (savepoint) to ensure atomicity.
@@ -783,7 +777,7 @@ class StrategyService:
         await self.db.commit()
         await self.db.refresh(execution)
 
-        return self._to_execution_response(execution)
+        return execution
 
     async def list_executions(
         self,
@@ -793,7 +787,7 @@ class StrategyService:
         mode: int | None = None,
         page: int = 1,
         page_size: int = 20,
-    ) -> tuple[list[ExecutionResponse], int]:
+    ) -> tuple[list[StrategyExecution], int]:
         """List executions for a tenant with pagination."""
         stmt = select(StrategyExecution).where(StrategyExecution.tenant_id == tenant_id)
 
@@ -814,18 +808,15 @@ class StrategyService:
         result = await self.db.execute(stmt)
         executions = result.scalars().all()
 
-        return [self._to_execution_response(e) for e in executions], total
+        return list(executions), total
 
     async def get_execution(
         self,
         tenant_id: UUID,
         execution_id: UUID,
-    ) -> ExecutionResponse | None:
+    ) -> StrategyExecution | None:
         """Get an execution by ID."""
-        execution = await self._get_execution_by_id(tenant_id, execution_id)
-        if not execution:
-            return None
-        return self._to_execution_response(execution)
+        return await self._get_execution_by_id(tenant_id, execution_id)
 
     async def start_execution(
         self,
@@ -834,7 +825,7 @@ class StrategyService:
         *,
         ledger: LedgerClient | None = None,
         user_id: UUID | None = None,
-    ) -> ExecutionResponse | None:
+    ) -> StrategyExecution | None:
         """Start a pending execution.
 
         Transitions status from PENDING to RUNNING and sets started_at.
@@ -861,7 +852,7 @@ class StrategyService:
         await self.db.commit()
         await self.db.refresh(execution)
 
-        return self._to_execution_response(execution)
+        return execution
 
     async def _fund_sleeve(
         self,
@@ -912,7 +903,7 @@ class StrategyService:
         self,
         tenant_id: UUID,
         execution_id: UUID,
-    ) -> ExecutionResponse | None:
+    ) -> StrategyExecution | None:
         """Pause a running execution.
 
         Transitions status from RUNNING to PAUSED.
@@ -933,13 +924,13 @@ class StrategyService:
         await self.db.commit()
         await self.db.refresh(execution)
 
-        return self._to_execution_response(execution)
+        return execution
 
     async def resume_execution(
         self,
         tenant_id: UUID,
         execution_id: UUID,
-    ) -> ExecutionResponse | None:
+    ) -> StrategyExecution | None:
         """Resume a paused execution.
 
         Transitions status from PAUSED to RUNNING.
@@ -960,7 +951,7 @@ class StrategyService:
         await self.db.commit()
         await self.db.refresh(execution)
 
-        return self._to_execution_response(execution)
+        return execution
 
     async def stop_execution(
         self,
@@ -970,7 +961,7 @@ class StrategyService:
         *,
         ledger: LedgerClient | None = None,
         user_id: UUID | None = None,
-    ) -> ExecutionResponse | None:
+    ) -> StrategyExecution | None:
         """Stop an execution and release its ledger sleeve.
 
         Can stop from RUNNING or PAUSED status. Sets stopped_at, then closes the
@@ -1005,7 +996,7 @@ class StrategyService:
             tenant_id, execution, ledger=ledger, user_id=user_id, reason=reason
         )
 
-        return self._to_execution_response(execution)
+        return execution
 
     async def _close_sleeve(
         self,
@@ -1145,75 +1136,6 @@ class StrategyService:
         )
         result = await self.db.execute(stmt)
         return result.scalar_one_or_none()
-
-    def _to_response(
-        self, s: Strategy, symbols: list[str] | None = None, timeframe: str = ""
-    ) -> StrategyResponse:
-        """Convert DB model to response schema.
-
-        symbols/timeframe come from the current version (supplied by
-        list_strategies); status-only callers omit them.
-        """
-        return StrategyResponse(
-            id=s.id,
-            name=s.name,
-            description=s.description,
-            status=s.status,
-            current_version=s.current_version,
-            created_at=s.created_at,
-            updated_at=s.updated_at,
-            symbols=symbols or [],
-            timeframe=timeframe,
-        )
-
-    def _to_detail_response(self, s: Strategy, v: StrategyVersion) -> StrategyDetailResponse:
-        """Convert DB models to detailed response schema."""
-        return StrategyDetailResponse(
-            id=s.id,
-            name=s.name,
-            description=s.description,
-            status=s.status,
-            current_version=s.current_version,
-            created_at=s.created_at,
-            updated_at=s.updated_at,
-            config_sexpr=v.config_sexpr,
-            config_json=cast(StrategyConfigJSON, v.config_json),
-            symbols=v.symbols,
-            timeframe=v.timeframe,
-            parameters=v.parameters or {},
-        )
-
-    def _to_version_response(self, v: StrategyVersion) -> StrategyVersionResponse:
-        """Convert version model to response schema."""
-        return StrategyVersionResponse(
-            version=v.version,
-            config_sexpr=v.config_sexpr,
-            config_json=cast(StrategyConfigJSON, v.config_json),
-            symbols=v.symbols,
-            timeframe=v.timeframe,
-            changelog=v.changelog,
-            created_at=v.created_at,
-            parameters=v.parameters or {},
-        )
-
-    def _to_execution_response(self, e: StrategyExecution) -> ExecutionResponse:
-        """Convert execution model to response schema."""
-        return ExecutionResponse(
-            id=e.id,
-            strategy_id=e.strategy_id,
-            version=e.version,
-            mode=e.mode,
-            status=e.status,
-            started_at=e.started_at,
-            stopped_at=e.stopped_at,
-            config_override=cast(ConfigOverride, e.config_override) if e.config_override else None,
-            error_message=e.error_message,
-            created_at=e.created_at,
-            allocated_capital=e.allocated_capital,
-            credentials_id=e.credentials_id,
-            sleeve_id=e.sleeve_id,
-            account_id=e.account_id,
-        )
 
 
 async def get_strategy_service(

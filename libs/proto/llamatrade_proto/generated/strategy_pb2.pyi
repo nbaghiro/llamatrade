@@ -188,23 +188,6 @@ class Strategy(message.Message):
         _ClearFieldArgType: _TypeAlias = typing.Literal["key", b"key", "value", b"value"]  # noqa: Y015
         def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
-    @typing.final
-    class ParametersEntry(message.Message):
-        DESCRIPTOR: descriptor.Descriptor
-
-        KEY_FIELD_NUMBER: builtins.int
-        VALUE_FIELD_NUMBER: builtins.int
-        key: builtins.str
-        value: builtins.str
-        def __init__(
-            self,
-            *,
-            key: builtins.str = ...,
-            value: builtins.str = ...,
-        ) -> None: ...
-        _ClearFieldArgType: _TypeAlias = typing.Literal["key", b"key", "value", b"value"]  # noqa: Y015
-        def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
-
     ID_FIELD_NUMBER: builtins.int
     TENANT_ID_FIELD_NUMBER: builtins.int
     NAME_FIELD_NUMBER: builtins.int
@@ -212,12 +195,10 @@ class Strategy(message.Message):
     STATUS_FIELD_NUMBER: builtins.int
     VERSION_FIELD_NUMBER: builtins.int
     DSL_CODE_FIELD_NUMBER: builtins.int
-    COMPILED_JSON_FIELD_NUMBER: builtins.int
     TEMPLATE_ID_FIELD_NUMBER: builtins.int
     TEMPLATE_PARAMS_FIELD_NUMBER: builtins.int
     SYMBOLS_FIELD_NUMBER: builtins.int
     TIMEFRAME_FIELD_NUMBER: builtins.int
-    PARAMETERS_FIELD_NUMBER: builtins.int
     CREATED_BY_FIELD_NUMBER: builtins.int
     CREATED_AT_FIELD_NUMBER: builtins.int
     UPDATED_AT_FIELD_NUMBER: builtins.int
@@ -231,8 +212,6 @@ class Strategy(message.Message):
     version: builtins.int
     dsl_code: builtins.str
     """DSL definition"""
-    compiled_json: builtins.str
-    """Compiled strategy (JSON representation)"""
     template_id: builtins.str
     """Template info (for template-based creation)"""
     timeframe: builtins.str
@@ -244,8 +223,6 @@ class Strategy(message.Message):
     def symbols(self) -> containers.RepeatedScalarFieldContainer[builtins.str]:
         """Configuration"""
 
-    @builtins.property
-    def parameters(self) -> containers.ScalarMap[builtins.str, builtins.str]: ...
     @builtins.property
     def created_at(self) -> common_pb2.Timestamp: ...
     @builtins.property
@@ -266,12 +243,10 @@ class Strategy(message.Message):
         status: StrategyStatus.ValueType = ...,
         version: builtins.int = ...,
         dsl_code: builtins.str = ...,
-        compiled_json: builtins.str = ...,
         template_id: builtins.str = ...,
         template_params: abc.Mapping[builtins.str, builtins.str] | None = ...,
         symbols: abc.Iterable[builtins.str] | None = ...,
         timeframe: builtins.str = ...,
-        parameters: abc.Mapping[builtins.str, builtins.str] | None = ...,
         created_by: builtins.str = ...,
         created_at: common_pb2.Timestamp | None = ...,
         updated_at: common_pb2.Timestamp | None = ...,
@@ -280,7 +255,7 @@ class Strategy(message.Message):
     ) -> None: ...
     _HasFieldArgType: _TypeAlias = typing.Literal["best_return", b"best_return", "best_sharpe", b"best_sharpe", "created_at", b"created_at", "updated_at", b"updated_at"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal["best_return", b"best_return", "best_sharpe", b"best_sharpe", "compiled_json", b"compiled_json", "created_at", b"created_at", "created_by", b"created_by", "description", b"description", "dsl_code", b"dsl_code", "id", b"id", "name", b"name", "parameters", b"parameters", "status", b"status", "symbols", b"symbols", "template_id", b"template_id", "template_params", b"template_params", "tenant_id", b"tenant_id", "timeframe", b"timeframe", "updated_at", b"updated_at", "version", b"version"]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["best_return", b"best_return", "best_sharpe", b"best_sharpe", "created_at", b"created_at", "created_by", b"created_by", "description", b"description", "dsl_code", b"dsl_code", "id", b"id", "name", b"name", "status", b"status", "symbols", b"symbols", "template_id", b"template_id", "template_params", b"template_params", "tenant_id", b"tenant_id", "timeframe", b"timeframe", "updated_at", b"updated_at", "version", b"version"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -289,39 +264,17 @@ class StrategyVersion(message.Message):
 
     DESCRIPTOR: descriptor.Descriptor
 
-    @typing.final
-    class ParametersEntry(message.Message):
-        DESCRIPTOR: descriptor.Descriptor
-
-        KEY_FIELD_NUMBER: builtins.int
-        VALUE_FIELD_NUMBER: builtins.int
-        key: builtins.str
-        value: builtins.str
-        def __init__(
-            self,
-            *,
-            key: builtins.str = ...,
-            value: builtins.str = ...,
-        ) -> None: ...
-        _ClearFieldArgType: _TypeAlias = typing.Literal["key", b"key", "value", b"value"]  # noqa: Y015
-        def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
-
     STRATEGY_ID_FIELD_NUMBER: builtins.int
     VERSION_FIELD_NUMBER: builtins.int
     DSL_CODE_FIELD_NUMBER: builtins.int
-    COMPILED_JSON_FIELD_NUMBER: builtins.int
-    PARAMETERS_FIELD_NUMBER: builtins.int
     CHANGE_SUMMARY_FIELD_NUMBER: builtins.int
     CREATED_BY_FIELD_NUMBER: builtins.int
     CREATED_AT_FIELD_NUMBER: builtins.int
     strategy_id: builtins.str
     version: builtins.int
     dsl_code: builtins.str
-    compiled_json: builtins.str
     change_summary: builtins.str
     created_by: builtins.str
-    @builtins.property
-    def parameters(self) -> containers.ScalarMap[builtins.str, builtins.str]: ...
     @builtins.property
     def created_at(self) -> common_pb2.Timestamp: ...
     def __init__(
@@ -330,15 +283,13 @@ class StrategyVersion(message.Message):
         strategy_id: builtins.str = ...,
         version: builtins.int = ...,
         dsl_code: builtins.str = ...,
-        compiled_json: builtins.str = ...,
-        parameters: abc.Mapping[builtins.str, builtins.str] | None = ...,
         change_summary: builtins.str = ...,
         created_by: builtins.str = ...,
         created_at: common_pb2.Timestamp | None = ...,
     ) -> None: ...
     _HasFieldArgType: _TypeAlias = typing.Literal["created_at", b"created_at"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal["change_summary", b"change_summary", "compiled_json", b"compiled_json", "created_at", b"created_at", "created_by", b"created_by", "dsl_code", b"dsl_code", "parameters", b"parameters", "strategy_id", b"strategy_id", "version", b"version"]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["change_summary", b"change_summary", "created_at", b"created_at", "created_by", b"created_by", "dsl_code", b"dsl_code", "strategy_id", b"strategy_id", "version", b"version"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -714,23 +665,6 @@ class CreateStrategyRequest(message.Message):
         _ClearFieldArgType: _TypeAlias = typing.Literal["key", b"key", "value", b"value"]  # noqa: Y015
         def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
-    @typing.final
-    class ParametersEntry(message.Message):
-        DESCRIPTOR: descriptor.Descriptor
-
-        KEY_FIELD_NUMBER: builtins.int
-        VALUE_FIELD_NUMBER: builtins.int
-        key: builtins.str
-        value: builtins.str
-        def __init__(
-            self,
-            *,
-            key: builtins.str = ...,
-            value: builtins.str = ...,
-        ) -> None: ...
-        _ClearFieldArgType: _TypeAlias = typing.Literal["key", b"key", "value", b"value"]  # noqa: Y015
-        def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
-
     CONTEXT_FIELD_NUMBER: builtins.int
     NAME_FIELD_NUMBER: builtins.int
     DESCRIPTION_FIELD_NUMBER: builtins.int
@@ -739,7 +673,6 @@ class CreateStrategyRequest(message.Message):
     TEMPLATE_PARAMS_FIELD_NUMBER: builtins.int
     SYMBOLS_FIELD_NUMBER: builtins.int
     TIMEFRAME_FIELD_NUMBER: builtins.int
-    PARAMETERS_FIELD_NUMBER: builtins.int
     name: builtins.str
     description: builtins.str
     dsl_code: builtins.str
@@ -752,8 +685,6 @@ class CreateStrategyRequest(message.Message):
     def template_params(self) -> containers.ScalarMap[builtins.str, builtins.str]: ...
     @builtins.property
     def symbols(self) -> containers.RepeatedScalarFieldContainer[builtins.str]: ...
-    @builtins.property
-    def parameters(self) -> containers.ScalarMap[builtins.str, builtins.str]: ...
     def __init__(
         self,
         *,
@@ -765,11 +696,10 @@ class CreateStrategyRequest(message.Message):
         template_params: abc.Mapping[builtins.str, builtins.str] | None = ...,
         symbols: abc.Iterable[builtins.str] | None = ...,
         timeframe: builtins.str = ...,
-        parameters: abc.Mapping[builtins.str, builtins.str] | None = ...,
     ) -> None: ...
     _HasFieldArgType: _TypeAlias = typing.Literal["context", b"context"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal["context", b"context", "description", b"description", "dsl_code", b"dsl_code", "name", b"name", "parameters", b"parameters", "symbols", b"symbols", "template_id", b"template_id", "template_params", b"template_params", "timeframe", b"timeframe"]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["context", b"context", "description", b"description", "dsl_code", b"dsl_code", "name", b"name", "symbols", b"symbols", "template_id", b"template_id", "template_params", b"template_params", "timeframe", b"timeframe"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -795,23 +725,6 @@ class UpdateStrategyRequest(message.Message):
 
     DESCRIPTOR: descriptor.Descriptor
 
-    @typing.final
-    class ParametersEntry(message.Message):
-        DESCRIPTOR: descriptor.Descriptor
-
-        KEY_FIELD_NUMBER: builtins.int
-        VALUE_FIELD_NUMBER: builtins.int
-        key: builtins.str
-        value: builtins.str
-        def __init__(
-            self,
-            *,
-            key: builtins.str = ...,
-            value: builtins.str = ...,
-        ) -> None: ...
-        _ClearFieldArgType: _TypeAlias = typing.Literal["key", b"key", "value", b"value"]  # noqa: Y015
-        def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
-
     CONTEXT_FIELD_NUMBER: builtins.int
     STRATEGY_ID_FIELD_NUMBER: builtins.int
     NAME_FIELD_NUMBER: builtins.int
@@ -819,7 +732,6 @@ class UpdateStrategyRequest(message.Message):
     DSL_CODE_FIELD_NUMBER: builtins.int
     SYMBOLS_FIELD_NUMBER: builtins.int
     TIMEFRAME_FIELD_NUMBER: builtins.int
-    PARAMETERS_FIELD_NUMBER: builtins.int
     CHANGE_SUMMARY_FIELD_NUMBER: builtins.int
     strategy_id: builtins.str
     name: builtins.str
@@ -832,8 +744,6 @@ class UpdateStrategyRequest(message.Message):
     def context(self) -> common_pb2.TenantContext: ...
     @builtins.property
     def symbols(self) -> containers.RepeatedScalarFieldContainer[builtins.str]: ...
-    @builtins.property
-    def parameters(self) -> containers.ScalarMap[builtins.str, builtins.str]: ...
     def __init__(
         self,
         *,
@@ -844,12 +754,11 @@ class UpdateStrategyRequest(message.Message):
         dsl_code: builtins.str = ...,
         symbols: abc.Iterable[builtins.str] | None = ...,
         timeframe: builtins.str = ...,
-        parameters: abc.Mapping[builtins.str, builtins.str] | None = ...,
         change_summary: builtins.str = ...,
     ) -> None: ...
     _HasFieldArgType: _TypeAlias = typing.Literal["context", b"context"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal["change_summary", b"change_summary", "context", b"context", "description", b"description", "dsl_code", b"dsl_code", "name", b"name", "parameters", b"parameters", "strategy_id", b"strategy_id", "symbols", b"symbols", "timeframe", b"timeframe"]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["change_summary", b"change_summary", "context", b"context", "description", b"description", "dsl_code", b"dsl_code", "name", b"name", "strategy_id", b"strategy_id", "symbols", b"symbols", "timeframe", b"timeframe"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final

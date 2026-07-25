@@ -121,7 +121,7 @@ class TestListTemplates:
 
         assert len(mean_reversion) > 0
         for template in mean_reversion:
-            assert template.category == TEMPLATE_CATEGORY_MEAN_REVERSION
+            assert template["category"] == TEMPLATE_CATEGORY_MEAN_REVERSION
 
     async def test_list_templates_by_difficulty_beginner(
         self, template_service: TemplateService
@@ -131,7 +131,7 @@ class TestListTemplates:
 
         assert len(beginner) > 0
         for template in beginner:
-            assert template.difficulty == TEMPLATE_DIFFICULTY_BEGINNER
+            assert template["difficulty"] == TEMPLATE_DIFFICULTY_BEGINNER
 
     async def test_list_templates_by_difficulty_advanced(
         self, template_service: TemplateService
@@ -141,7 +141,7 @@ class TestListTemplates:
 
         assert len(advanced) > 0
         for template in advanced:
-            assert template.difficulty == TEMPLATE_DIFFICULTY_ADVANCED
+            assert template["difficulty"] == TEMPLATE_DIFFICULTY_ADVANCED
 
     async def test_list_templates_combined_filters(self, template_service: TemplateService) -> None:
         """Test filtering by both category and difficulty."""
@@ -151,8 +151,8 @@ class TestListTemplates:
         )
 
         for template in result:
-            assert template.category == TEMPLATE_CATEGORY_BUY_AND_HOLD
-            assert template.difficulty == TEMPLATE_DIFFICULTY_BEGINNER
+            assert template["category"] == TEMPLATE_CATEGORY_BUY_AND_HOLD
+            assert template["difficulty"] == TEMPLATE_DIFFICULTY_BEGINNER
 
     async def test_list_templates_no_matches(self, template_service: TemplateService) -> None:
         """Test filtering with category that has no templates returns empty."""
@@ -166,13 +166,13 @@ class TestListTemplates:
         templates = await template_service.list_templates()
 
         for template in templates:
-            assert template.id is not None
-            assert template.name is not None
-            assert template.description is not None
-            assert template.category is not None
-            assert template.config_sexpr is not None
-            assert template.tags is not None
-            assert template.difficulty is not None
+            assert template["id"] is not None
+            assert template["name"] is not None
+            assert template["description"] is not None
+            assert template["category"] is not None
+            assert template["config_sexpr"] is not None
+            assert template["tags"] is not None
+            assert template["difficulty"] is not None
 
 
 # === TemplateService.get_template Tests ===
@@ -186,9 +186,9 @@ class TestGetTemplate:
         template = await template_service.get_template("ma-crossover")
 
         assert template is not None
-        assert template.id == "ma-crossover"
-        assert template.name == "Moving Average Crossover"
-        assert template.category == TEMPLATE_CATEGORY_TREND
+        assert template["id"] == "ma-crossover"
+        assert template["name"] == "Moving Average Crossover"
+        assert template["category"] == TEMPLATE_CATEGORY_TREND
 
     async def test_get_template_not_found(self, template_service: TemplateService) -> None:
         """Test getting a non-existent template."""
@@ -201,23 +201,16 @@ class TestGetTemplate:
         template = await template_service.get_template("rsi-mean-reversion")
 
         assert template is not None
-        assert "RSI" in template.name
-        assert "rsi" in template.tags
+        assert "RSI" in template["name"]
+        assert "rsi" in template["tags"]
 
     async def test_get_template_pairs_trading(self, template_service: TemplateService) -> None:
         """Test getting pairs trading template."""
         template = await template_service.get_template("pairs-trading")
 
         assert template is not None
-        assert "KO" in template.config_sexpr
-        assert "PEP" in template.config_sexpr
-
-    async def test_get_template_has_config_json(self, template_service: TemplateService) -> None:
-        """Test that returned template has config_json field (empty dict)."""
-        template = await template_service.get_template("ma-crossover")
-
-        assert template is not None
-        assert template.config_json == {}
+        assert "KO" in template["config_sexpr"]
+        assert "PEP" in template["config_sexpr"]
 
 
 # === TemplateService.get_template_config Tests ===

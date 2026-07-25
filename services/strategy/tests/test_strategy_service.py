@@ -244,8 +244,7 @@ class TestCreateStrategy:
         self, mock_db: AsyncMock, tenant_id: UUID, user_id: UUID
     ) -> None:
         """Test that symbols are extracted from S-expression."""
-        from llamatrade_compiler import get_required_symbols
-        from llamatrade_dsl import parse_strategy
+        from llamatrade_dsl import get_required_symbols, parse_strategy
 
         ast = parse_strategy(VALID_RSI_STRATEGY)
         symbols = get_required_symbols(ast)
@@ -288,7 +287,8 @@ class TestGetStrategy:
             )
 
         assert result is not None
-        assert result.id == strategy_id
+        strategy, _ = result
+        assert strategy.id == strategy_id
 
     async def test_get_strategy_not_found(self, mock_db: AsyncMock, tenant_id: UUID) -> None:
         """Test getting a non-existent strategy returns None."""
@@ -404,9 +404,10 @@ class TestListStrategies:
 
         assert len(strategies) == 3
         assert total == 3
-        # Summaries now carry the current version's symbols + timeframe
-        assert strategies[0].symbols == ["SPY", "TLT"]
-        assert strategies[0].timeframe == "1D"
+        # Rows carry the current version's symbols + timeframe: (strategy, symbols, timeframe)
+        _, symbols, timeframe = strategies[0]
+        assert symbols == ["SPY", "TLT"]
+        assert timeframe == "1D"
 
     async def test_list_strategies_filter_by_status(
         self, mock_db: AsyncMock, tenant_id: UUID
@@ -853,12 +854,12 @@ class TestCloneStrategy:
         """Test cloning a strategy."""
         service = StrategyService(mock_db)
 
-        make_mock_strategy(
+        original_strategy = make_mock_strategy(
             id=strategy_id,
             tenant_id=tenant_id,
             name="Original",
         )
-        make_mock_version(
+        original_version = make_mock_version(
             strategy_id=strategy_id,
             config_sexpr=VALID_RSI_STRATEGY,
         )
@@ -867,15 +868,13 @@ class TestCloneStrategy:
             patch.object(service, "get_strategy") as mock_get,
             patch.object(service, "create_strategy") as mock_create,
         ):
-            # Setup get_strategy to return original
-            mock_get.return_value = MagicMock(
-                name="Original",
-                config_sexpr=VALID_RSI_STRATEGY,
-            )
+            # get_strategy now returns the (strategy, current version) row pair.
+            mock_get.return_value = (original_strategy, original_version)
 
-            # Setup create_strategy to return cloned
-            mock_create.return_value = MagicMock(
-                name="Cloned Strategy",
+            # Setup create_strategy to return the cloned (strategy, version) pair.
+            mock_create.return_value = (
+                make_mock_strategy(name="Cloned Strategy"),
+                original_version,
             )
 
             await service.clone_strategy(

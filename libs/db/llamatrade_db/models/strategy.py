@@ -34,12 +34,9 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from llamatrade_db.base import Base, TenantMixin, TimestampMixin, UUIDPrimaryKeyMixin
 from llamatrade_db.models._enum_types import (
-    AssetClassType,
     ExecutionModeType,
     ExecutionStatusType,
     StrategyStatusType,
-    TemplateCategoryType,
-    TemplateDifficultyType,
 )
 from llamatrade_proto.generated import common_pb2, strategy_pb2
 
@@ -93,15 +90,11 @@ class Strategy(Base, UUIDPrimaryKeyMixin, TenantMixin, TimestampMixin):
 
 
 class StrategyVersion(Base, UUIDPrimaryKeyMixin, TenantMixin, TimestampMixin):
-    """
-    Immutable version snapshot of a strategy configuration.
+    """Immutable version snapshot of a strategy.
 
-    Each time a strategy's configuration changes, a new version is created.
-    The config_sexpr field stores the canonical S-expression format, while
-    config_json stores a parsed JSON representation for querying.
-
-    tenant_id is included for defense-in-depth tenant isolation, even though
-    versions are already associated with tenant-scoped strategies via strategy_id.
+    ``config_sexpr`` (the DSL string) is the single source of truth; the JSON IR and visual tree
+    are derived from it on demand. ``symbols``/``timeframe`` are indexed projections recomputed
+    from it on write. tenant_id is defense-in-depth isolation (already scoped via strategy_id).
     """
 
     __tablename__ = "strategy_versions"
@@ -118,20 +111,12 @@ class StrategyVersion(Base, UUIDPrimaryKeyMixin, TenantMixin, TimestampMixin):
     )
     version: Mapped[int] = mapped_column(Integer, nullable=False)
 
-    # S-expression source (canonical format)
+    # The DSL string — the single stored representation of the strategy.
     config_sexpr: Mapped[str] = mapped_column(Text, nullable=False)
 
-    # Parsed JSON for querying (denormalized from config_sexpr)
-    config_json: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
-
-    # Denormalized fields for efficient filtering
+    # Projections derived from the DSL on write, for efficient filtering (symbols is GIN-indexed).
     symbols: Mapped[list[str]] = mapped_column(JSONB, nullable=False)
     timeframe: Mapped[str] = mapped_column(String(10), nullable=False)
-
-    # Additional parameters (e.g., ui_state for visual builder)
-    parameters: Mapped[dict[str, str]] = mapped_column(
-        JSONB, nullable=False, default=dict, server_default="{}"
-    )
 
     changelog: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_by: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
@@ -181,45 +166,10 @@ class StrategyExecution(Base, UUIDPrimaryKeyMixin, TenantMixin, TimestampMixin):
     color: Mapped[str | None] = mapped_column(String(20), nullable=True)  # UI color for charts
 
     # Ledger identity (set when the execution is funded; trading threads these
-    # into orders/fills — see ledger.proto and CONTRACTS.md)
+    # into orders/fills — see ledger.proto and portfolio-ledger.md)
     credentials_id: Mapped[UUID | None] = mapped_column(PG_UUID(as_uuid=True), nullable=True)
     sleeve_id: Mapped[UUID | None] = mapped_column(PG_UUID(as_uuid=True), nullable=True)
     account_id: Mapped[UUID | None] = mapped_column(PG_UUID(as_uuid=True), nullable=True)
 
     # Relationships
     strategy: Mapped[Strategy] = relationship("Strategy", back_populates="executions")
-
-
-class StrategyTemplate(Base, UUIDPrimaryKeyMixin, TimestampMixin):
-    """
-    Pre-built strategy templates (not tenant-scoped).
-
-    Templates provide starting points for users to create their own strategies.
-    They include a complete S-expression configuration that can be customized.
-    """
-
-    __tablename__ = "strategy_templates"
-    __table_args__ = (Index("ix_strategy_templates_category", "category"),)
-
-    name: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
-    description: Mapped[str | None] = mapped_column(Text, nullable=True)
-    category: Mapped[strategy_pb2.TemplateCategory.ValueType] = mapped_column(
-        TemplateCategoryType(), nullable=False
-    )
-    asset_class: Mapped[strategy_pb2.AssetClass.ValueType] = mapped_column(
-        AssetClassType(), nullable=False
-    )
-
-    # S-expression template
-    config_sexpr: Mapped[str] = mapped_column(Text, nullable=False)
-
-    # Parsed JSON for display
-    config_json: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
-
-    # Metadata
-    tags: Mapped[list[str] | None] = mapped_column(JSONB, nullable=True)
-    difficulty: Mapped[strategy_pb2.TemplateDifficulty.ValueType] = mapped_column(
-        TemplateDifficultyType(), nullable=False, default=1
-    )  # BEGINNER=1
-    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
-    usage_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)

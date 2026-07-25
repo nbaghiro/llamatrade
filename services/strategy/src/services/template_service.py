@@ -28,8 +28,6 @@ from llamatrade_proto.generated.strategy_pb2 import (
     TemplateDifficulty,
 )
 
-from src.models import TemplateResponse
-
 
 class TemplateData(TypedDict):
     """Template data structure for internal storage."""
@@ -4999,7 +4997,7 @@ class TemplateService:
         category: TemplateCategory.ValueType | None = None,
         asset_class: AssetClass.ValueType | None = None,
         difficulty: TemplateDifficulty.ValueType | None = None,
-    ) -> list[TemplateResponse]:
+    ) -> list[TemplateData]:
         """List available strategy templates.
 
         Args:
@@ -5008,7 +5006,7 @@ class TemplateService:
             difficulty: Filter by difficulty level (proto enum value)
 
         Returns:
-            List of TemplateResponse objects
+            List of TemplateData entries (mapped to proto by the servicer)
         """
         templates = list(TEMPLATES.values())
 
@@ -5021,44 +5019,18 @@ class TemplateService:
         if difficulty:
             templates = [t for t in templates if t["difficulty"] == difficulty]
 
-        return [
-            TemplateResponse(
-                id=t["id"],
-                name=t["name"],
-                description=t["description"],
-                category=t["category"],
-                asset_class=t["asset_class"],
-                config_sexpr=t["config_sexpr"],
-                config_json={},  # Parsed on demand
-                tags=t["tags"],
-                difficulty=t["difficulty"],
-            )
-            for t in templates
-        ]
+        return templates
 
-    async def get_template(self, template_id: str) -> TemplateResponse | None:
+    async def get_template(self, template_id: str) -> TemplateData | None:
         """Get a specific template by ID.
 
         Args:
             template_id: The template identifier
 
         Returns:
-            TemplateResponse or None if not found
+            TemplateData or None if not found
         """
-        t = TEMPLATES.get(template_id)
-        if not t:
-            return None
-        return TemplateResponse(
-            id=t["id"],
-            name=t["name"],
-            description=t["description"],
-            category=t["category"],
-            asset_class=t["asset_class"],
-            config_sexpr=t["config_sexpr"],
-            config_json={},  # Parsed on demand
-            tags=t["tags"],
-            difficulty=t["difficulty"],
-        )
+        return TEMPLATES.get(template_id)
 
     async def get_template_config(self, template_id: str) -> str | None:
         """Get just the S-expression config for a template.

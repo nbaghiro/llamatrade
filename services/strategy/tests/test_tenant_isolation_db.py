@@ -84,12 +84,13 @@ async def db(schema: str):
     await engine.dispose()
 
 
-async def _create(db: AsyncSession, tenant_id, name: str):
-    return await StrategyService(db).create_strategy(
+async def _create(db: AsyncSession, tenant_id, name: str) -> Strategy:
+    strategy, _ = await StrategyService(db).create_strategy(
         tenant_id=tenant_id,
         user_id=uuid4(),
         data=StrategyCreate(name=name, config_sexpr=_SEXPR),
     )
+    return strategy
 
 
 class TestTenantIsolationDB:
@@ -111,11 +112,11 @@ class TestTenantIsolationDB:
 
         a_list, _ = await svc.list_strategies(a)
         b_list, _ = await svc.list_strategies(b)
-        a_names = {s.name for s in a_list}
+        a_names = {s.name for s, _symbols, _tf in a_list}
 
         assert "A1" in a_names
         assert "B1" not in a_names  # would fail if list_strategies dropped its tenant filter
-        assert all(s.name != "A1" for s in b_list)
+        assert all(s.name != "A1" for s, _symbols, _tf in b_list)
 
     async def test_list_versions_blocks_cross_tenant(self, db: AsyncSession) -> None:
         """Regression for 7A: a version query must not leak across tenants."""
