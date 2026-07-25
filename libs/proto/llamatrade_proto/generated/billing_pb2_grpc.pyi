@@ -51,6 +51,7 @@ class BillingServiceStub:
     """Plans"""
     ListPaymentMethods: _grpc.UnaryUnaryMultiCallable[_billing_pb2.ListPaymentMethodsRequest, _billing_pb2.ListPaymentMethodsResponse]
     """Payment methods"""
+    CreateSetupIntent: _grpc.UnaryUnaryMultiCallable[_billing_pb2.CreateSetupIntentRequest, _billing_pb2.CreateSetupIntentResponse]
     AddPaymentMethod: _grpc.UnaryUnaryMultiCallable[_billing_pb2.AddPaymentMethodRequest, _billing_pb2.AddPaymentMethodResponse]
     RemovePaymentMethod: _grpc.UnaryUnaryMultiCallable[_billing_pb2.RemovePaymentMethodRequest, _billing_pb2.RemovePaymentMethodResponse]
     CreateCheckoutSession: _grpc.UnaryUnaryMultiCallable[_billing_pb2.CreateCheckoutSessionRequest, _billing_pb2.CreateCheckoutSessionResponse]
@@ -80,6 +81,7 @@ class BillingServiceAsyncStub(BillingServiceStub):
     """Plans"""
     ListPaymentMethods: _aio.UnaryUnaryMultiCallable[_billing_pb2.ListPaymentMethodsRequest, _billing_pb2.ListPaymentMethodsResponse]  # type: ignore[assignment]
     """Payment methods"""
+    CreateSetupIntent: _aio.UnaryUnaryMultiCallable[_billing_pb2.CreateSetupIntentRequest, _billing_pb2.CreateSetupIntentResponse]  # type: ignore[assignment]
     AddPaymentMethod: _aio.UnaryUnaryMultiCallable[_billing_pb2.AddPaymentMethodRequest, _billing_pb2.AddPaymentMethodResponse]  # type: ignore[assignment]
     RemovePaymentMethod: _aio.UnaryUnaryMultiCallable[_billing_pb2.RemovePaymentMethodRequest, _billing_pb2.RemovePaymentMethodResponse]  # type: ignore[assignment]
     CreateCheckoutSession: _aio.UnaryUnaryMultiCallable[_billing_pb2.CreateCheckoutSessionRequest, _billing_pb2.CreateCheckoutSessionResponse]  # type: ignore[assignment]
@@ -166,6 +168,13 @@ class BillingServiceServicer(metaclass=_abc_1.ABCMeta):
         context: _ServicerContext,
     ) -> _typing.Union[_billing_pb2.ListPaymentMethodsResponse, _abc.Awaitable[_billing_pb2.ListPaymentMethodsResponse]]:
         """Payment methods"""
+
+    @_abc_1.abstractmethod
+    def CreateSetupIntent(
+        self,
+        request: _billing_pb2.CreateSetupIntentRequest,
+        context: _ServicerContext,
+    ) -> _typing.Union[_billing_pb2.CreateSetupIntentResponse, _abc.Awaitable[_billing_pb2.CreateSetupIntentResponse]]: ...
 
     @_abc_1.abstractmethod
     def AddPaymentMethod(

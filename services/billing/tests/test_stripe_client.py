@@ -443,6 +443,44 @@ class TestStripeClientMethods:
         assert result.id == "sub_123"
 
 
+class TestCheckoutAndPortal:
+    """Tests for Checkout and Customer Portal sessions."""
+
+    @patch("src.stripe.client.stripe")
+    async def test_create_checkout_session(self, mock_stripe: MagicMock) -> None:
+        mock_stripe.StripeError = Exception
+        mock_stripe.checkout.Session.create.return_value = MagicMock(
+            url="https://checkout.stripe.com/c/cs_123", id="cs_123"
+        )
+        client = StripeClient()
+
+        result = await client.create_checkout_session(
+            customer_id="cus_1",
+            price_id="price_1",
+            success_url="https://x/s",
+            cancel_url="https://x/c",
+        )
+
+        assert result.url == "https://checkout.stripe.com/c/cs_123"
+        assert result.session_id == "cs_123"
+        _, kwargs = mock_stripe.checkout.Session.create.call_args
+        assert kwargs["mode"] == "subscription"
+        # Dynamic payment methods: never hardcode payment_method_types.
+        assert "payment_method_types" not in kwargs
+
+    @patch("src.stripe.client.stripe")
+    async def test_create_portal_session(self, mock_stripe: MagicMock) -> None:
+        mock_stripe.StripeError = Exception
+        mock_stripe.billing_portal.Session.create.return_value = MagicMock(
+            url="https://billing.stripe.com/p/1"
+        )
+        client = StripeClient()
+
+        url = await client.create_portal_session("cus_1", "https://x/return")
+
+        assert url == "https://billing.stripe.com/p/1"
+
+
 class TestGetStripeClient:
     """Tests for get_stripe_client function."""
 

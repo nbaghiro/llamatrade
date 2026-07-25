@@ -8,12 +8,13 @@ TTL bounds replay; the authorization ``code`` itself is single-use at Alpaca.
 
 from __future__ import annotations
 
-import os
 import secrets
 import time
 from dataclasses import dataclass
 
 import jwt
+
+from llamatrade_common.utils import require_secret
 
 _ALGORITHM = "HS256"
 _DEFAULT_SECRET = "dev-secret-change-in-production"
@@ -40,7 +41,7 @@ def mint_state(
     ttl_seconds: int = STATE_TTL_SECONDS,
 ) -> str:
     """Mint a signed state token for the authorize redirect."""
-    secret = secret or os.getenv("JWT_SECRET", _DEFAULT_SECRET)
+    secret = secret or require_secret("JWT_SECRET", _DEFAULT_SECRET)
     now = int(time.time())
     payload = {
         "purpose": _PURPOSE,
@@ -58,7 +59,7 @@ def mint_state(
 
 def verify_state(token: str, *, secret: str | None = None) -> OAuthState | None:
     """Verify a state token's signature/expiry, or return None if invalid."""
-    secret = secret or os.getenv("JWT_SECRET", _DEFAULT_SECRET)
+    secret = secret or require_secret("JWT_SECRET", _DEFAULT_SECRET)
     try:
         payload = jwt.decode(token, secret, algorithms=[_ALGORITHM])
     except jwt.InvalidTokenError:

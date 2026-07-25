@@ -15,7 +15,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from decimal import Decimal
 
-from src.ledger.sizing import IntendedOrder
+from src.ledger.sizing import SleeveOrder
 
 ZERO = Decimal("0")
 
@@ -45,7 +45,7 @@ class NettingResult:
     allocations: list[SleeveAllocation]
 
 
-def net_orders(orders: list[IntendedOrder]) -> NettingResult:
+def net_orders(orders: list[SleeveOrder]) -> NettingResult:
     """Bunch same-symbol intents into net broker orders + per-sleeve allocations.
 
     A symbol whose buys and sells fully offset produces **no** broker order (it

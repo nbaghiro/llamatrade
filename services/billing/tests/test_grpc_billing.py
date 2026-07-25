@@ -5,12 +5,10 @@ Tests the BillingServicer directly without HTTP layer.
 
 import os
 from datetime import UTC, datetime, timedelta
-from decimal import Decimal
 from typing import TYPE_CHECKING, Any, cast
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import UUID, uuid4
 
-import jwt
 import pytest
 from connectrpc.errors import ConnectError
 
@@ -21,33 +19,12 @@ from src.grpc.servicer import BillingServicer
 if TYPE_CHECKING:
     from llamatrade_proto.generated import common_pb2
 
-    from src.models import PaymentMethodResponse, SubscriptionResponse
     from src.stripe.client import PaymentMethodResult, SubscriptionResult
 
 # Set test environment before imports
 os.environ.setdefault("DATABASE_URL", "postgresql+asyncpg://test:test@localhost/test")
 os.environ.setdefault("STRIPE_API_KEY", "sk_test_fake")
 os.environ.setdefault("STRIPE_WEBHOOK_SECRET", "whsec_test_fake")
-os.environ.setdefault("JWT_SECRET", "dev-secret-change-in-production")
-os.environ.setdefault("JWT_ALGORITHM", "HS256")
-
-JWT_SECRET = "dev-secret-change-in-production"
-JWT_ALGORITHM = "HS256"
-
-
-def create_test_token(tenant_id: str, user_id: str) -> str:
-    """Create a test JWT token."""
-    now = datetime.now(UTC)
-    payload = {
-        "sub": user_id,
-        "tenant_id": tenant_id,
-        "email": "test@example.com",
-        "roles": ["admin"],
-        "type": "access",
-        "iat": now,
-        "exp": now + timedelta(hours=1),
-    }
-    return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
 
 
 # ===================
@@ -71,10 +48,12 @@ class MockPlan:
         trial_days: int = 14,
         stripe_price_id_monthly: str = "price_monthly_test",
         stripe_price_id_yearly: str = "price_yearly_test",
+        description: str | None = None,
     ) -> None:
         self.id = id or uuid4()
         self.name = name
         self.display_name = display_name
+        self.description = description
         self.tier = tier
         self.price_monthly = price_monthly
         self.price_yearly = price_yearly
@@ -152,17 +131,6 @@ class MockPaymentMethod:
         self.created_at = datetime.now(UTC)
 
 
-class MockServicerContext:
-    """Mock ConnectRPC servicer context."""
-
-    def __init__(self, headers: dict[str, str] | None = None) -> None:
-        self.headers = headers or {}
-
-    def request_headers(self) -> dict[str, str]:
-        """Return the request headers."""
-        return self.headers
-
-
 class _FakeUsageSession:
     """Async session stub for get_usage: zero counts, no subscription."""
 
@@ -212,6 +180,29 @@ class MockStripeClient:
         customer_id = f"cus_test_{tenant_id}"
         self.customers[customer_id] = {"id": customer_id, "email": email}
         return customer_id
+
+    async def create_checkout_session(
+        self,
+        *,
+        customer_id: str,
+        price_id: str,
+        success_url: str,
+        cancel_url: str,
+        trial_days: int = 0,
+    ):
+        from src.stripe.client import CheckoutSessionResult
+
+        return CheckoutSessionResult(
+            url=f"https://checkout.stripe.com/c/{customer_id}", session_id="cs_test_1"
+        )
+
+    async def create_portal_session(self, customer_id: str, return_url: str) -> str:
+        return f"https://billing.stripe.com/p/{customer_id}"
+
+    async def create_setup_intent(self, customer_id: str):
+        from src.stripe.client import SetupIntentResult
+
+        return SetupIntentResult(client_secret="seti_secret_test", customer_id=customer_id)
 
     async def create_subscription(
         self, customer_id: str, price_id: str, payment_method_id: str, trial_days: int = 0
@@ -289,105 +280,6 @@ class MockStripeClient:
         return True
 
 
-class MockBillingService:
-    """Mock billing service."""
-
-    def __init__(
-        self,
-        subscription: MockSubscription | None = None,
-        plans: list[MockPlan] | None = None,
-    ) -> None:
-        self._subscription = subscription
-        self._plans = plans or []
-
-    async def get_subscription(self, tenant_id: UUID) -> MockSubscription | None:
-        return self._subscription
-
-    async def list_plans(self) -> list[MockPlan]:
-        return self._plans
-
-    async def create_subscription(
-        self, tenant_id: UUID, email: str, request: object
-    ) -> SubscriptionResponse:
-        from llamatrade_proto.generated import billing_pb2
-
-        from src.models import (
-            PlanResponse,
-            SubscriptionResponse,
-        )
-
-        plan = PlanResponse(
-            id="plan_starter",
-            name="Starter",
-            tier=billing_pb2.PLAN_TIER_STARTER,
-            price_monthly=Decimal("29.0"),
-            price_yearly=Decimal("290.0"),
-            features={"backtests": True},
-            limits={"backtests_per_month": 50},
-            trial_days=14,
-        )
-        return SubscriptionResponse(
-            id=uuid4(),
-            tenant_id=tenant_id,
-            plan=plan,
-            status=billing_pb2.SUBSCRIPTION_STATUS_ACTIVE,
-            billing_cycle=billing_pb2.BILLING_INTERVAL_MONTHLY,
-            current_period_start=datetime.now(UTC),
-            current_period_end=datetime.now(UTC) + timedelta(days=30),
-            cancel_at_period_end=False,
-            stripe_subscription_id="sub_test_123",
-            created_at=datetime.now(UTC),
-        )
-
-    async def cancel_subscription(
-        self, tenant_id: UUID, at_period_end: bool = True
-    ) -> MockSubscription:
-        if not self._subscription:
-            raise ValueError("No active subscription")
-        return self._subscription
-
-    async def update_subscription(self, tenant_id: UUID, plan_id: str) -> MockSubscription:
-        if not self._subscription:
-            raise ValueError("No active subscription")
-        return self._subscription
-
-    async def reactivate_subscription(self, tenant_id: UUID) -> MockSubscription:
-        if not self._subscription:
-            raise ValueError("No cancelled subscription")
-        return self._subscription
-
-    async def get_customer_id(self, tenant_id: UUID) -> str:
-        return f"cus_test_{tenant_id}"
-
-
-class MockPaymentMethodService:
-    """Mock payment method service."""
-
-    def __init__(self, payment_methods: list[MockPaymentMethod] | None = None) -> None:
-        self._payment_methods = payment_methods or []
-
-    async def list_payment_methods(self, tenant_id: UUID) -> list[MockPaymentMethod]:
-        return self._payment_methods
-
-    async def attach_payment_method(
-        self, tenant_id: UUID, email: str, payment_method_id: str
-    ) -> PaymentMethodResponse:
-        from src.models import PaymentMethodResponse
-
-        return PaymentMethodResponse(
-            id=uuid4(),
-            type="card",
-            card_brand="visa",
-            card_last4="4242",
-            card_exp_month=12,
-            card_exp_year=2030,
-            is_default=True,
-        )
-
-    async def delete_payment_method(self, tenant_id: UUID, payment_method_id: str) -> bool:
-        return True
-
-
 # ===================
 # Fixtures
 # ===================
@@ -403,13 +295,6 @@ def tenant_context() -> common_pb2.TenantContext:
         user_id=str(uuid4()),
         roles=["admin"],
     )
-
-
-@pytest.fixture
-def context(tenant_context: common_pb2.TenantContext) -> MockServicerContext:
-    """Create mock servicer context with auth token."""
-    token = create_test_token(tenant_context.tenant_id, tenant_context.user_id)
-    return MockServicerContext(headers={"authorization": f"Bearer {token}"})
 
 
 @pytest.fixture
@@ -437,30 +322,21 @@ def billing_servicer() -> BillingServicer:
 class TestListPlans:
     """Tests for ListPlans RPC."""
 
-    async def test_list_plans_returns_plans(
-        self, context: MockServicerContext, tenant_context: common_pb2.TenantContext
-    ) -> None:
-        """Test listing available plans by testing helper method directly."""
+    async def test_list_plans_returns_plans(self) -> None:
+        """plan_to_proto maps a DB plan row (slug→id, display_name→name) to a proto Plan."""
         from llamatrade_proto.generated import billing_pb2
 
-        from src.grpc.servicer import BillingServicer
-        from src.models import PlanResponse
+        from src.proto_mappers import plan_to_proto
 
-        servicer = BillingServicer()
-
-        # Test _to_proto_plan helper with different plan types
-        plan = PlanResponse(
-            id="plan_starter",
-            name="Starter",
+        plan = MockPlan(
+            name="plan_starter",
+            display_name="Starter",
             tier=billing_pb2.PLAN_TIER_STARTER,
-            price_monthly=Decimal("29.0"),
-            price_yearly=Decimal("290.0"),
             features={"backtests": True, "api_access": True},
             limits={"backtests_per_month": 50, "live_strategies": 5},
-            trial_days=14,
         )
 
-        proto_plan = servicer._to_proto_plan(plan)
+        proto_plan = plan_to_proto(cast(Any, plan))
 
         assert proto_plan.id == "plan_starter"
         assert proto_plan.name == "Starter"
@@ -481,7 +357,6 @@ class TestGetUsage:
     async def test_get_usage_returns_metrics(
         self,
         billing_servicer: BillingServicer,
-        context: MockServicerContext,
         tenant_context: common_pb2.TenantContext,
     ) -> None:
         """Test getting usage metrics (counts sourced from the DB session)."""
@@ -493,7 +368,7 @@ class TestGetUsage:
         )
 
         billing_servicer._session_maker = cast(Any, lambda: _FakeUsageSession())
-        response = await billing_servicer.get_usage(request, cast(Any, context))
+        response = await billing_servicer.get_usage(request, MagicMock())
 
         assert response.usage.tenant_id == tenant_context.tenant_id
         assert response.usage.period_id == "2024-01"
@@ -512,7 +387,6 @@ class TestListInvoices:
     async def test_list_invoices_returns_empty(
         self,
         billing_servicer: BillingServicer,
-        context: MockServicerContext,
         tenant_context: common_pb2.TenantContext,
     ) -> None:
         """Test listing invoices returns an empty page when the tenant has none."""
@@ -521,7 +395,7 @@ class TestListInvoices:
         request = billing_pb2.ListInvoicesRequest(context=tenant_context)
 
         billing_servicer._session_maker = cast(Any, lambda: _EmptyInvoicesSession())
-        response = await billing_servicer.list_invoices(request, cast(Any, context))
+        response = await billing_servicer.list_invoices(request, MagicMock())
 
         assert len(response.invoices) == 0
         assert response.pagination.total_items == 0
@@ -532,13 +406,32 @@ class TestListInvoices:
 # ===================
 
 
+class TestCreateSetupIntent:
+    """Tests for CreateSetupIntent RPC."""
+
+    async def test_create_setup_intent(
+        self,
+        billing_servicer: BillingServicer,
+        tenant_context: common_pb2.TenantContext,
+    ) -> None:
+        """Test creating a SetupIntent returns a client secret."""
+        from llamatrade_proto.generated import billing_pb2
+
+        request = billing_pb2.CreateSetupIntentRequest(context=tenant_context)
+
+        with patch("src.grpc.servicer.get_stripe_client", return_value=MockStripeClient()):
+            response = await billing_servicer.create_setup_intent(request, MagicMock())
+
+        assert response.client_secret == "seti_secret_test"
+        assert response.customer_id
+
+
 class TestCreateCheckoutSession:
     """Tests for CreateCheckoutSession RPC."""
 
     async def test_create_checkout_session(
         self,
         billing_servicer: BillingServicer,
-        context: MockServicerContext,
         tenant_context: common_pb2.TenantContext,
     ) -> None:
         """Test creating a checkout session."""
@@ -552,14 +445,16 @@ class TestCreateCheckoutSession:
             cancel_url="https://example.com/cancel",
         )
 
-        with patch("src.grpc.servicer.get_stripe_client", return_value=MockStripeClient()):
-            response = await billing_servicer.create_checkout_session(request, cast(Any, context))
+        with (
+            patch("src.grpc.servicer.get_stripe_client", return_value=MockStripeClient()),
+            patch(
+                "src.services.billing_service.BillingService.get_plan_db",
+                AsyncMock(return_value=MockPlan(name="plan_starter")),
+            ),
+        ):
+            response = await billing_servicer.create_checkout_session(request, MagicMock())
 
-            assert response.checkout_url
-            assert (
-                "checkout" in response.checkout_url.lower()
-                or "placeholder" in response.checkout_url.lower()
-            )
+            assert "checkout.stripe.com" in response.checkout_url
             assert response.session_id
 
 
@@ -574,7 +469,6 @@ class TestCreatePortalSession:
     async def test_create_portal_session(
         self,
         billing_servicer: BillingServicer,
-        context: MockServicerContext,
         tenant_context: common_pb2.TenantContext,
     ) -> None:
         """Test creating a customer portal session."""
@@ -585,12 +479,10 @@ class TestCreatePortalSession:
             return_url="https://example.com/billing",
         )
 
-        response = await billing_servicer.create_portal_session(request, cast(Any, context))
+        with patch("src.grpc.servicer.get_stripe_client", return_value=MockStripeClient()):
+            response = await billing_servicer.create_portal_session(request, MagicMock())
 
-        assert response.portal_url
-        assert (
-            "billing" in response.portal_url.lower() or "placeholder" in response.portal_url.lower()
-        )
+        assert "billing.stripe.com" in response.portal_url
 
 
 # ===================
@@ -604,7 +496,6 @@ class TestGetInvoice:
     async def test_get_invoice_not_found(
         self,
         billing_servicer: BillingServicer,
-        context: MockServicerContext,
         tenant_context: common_pb2.TenantContext,
     ) -> None:
         """Test getting non-existent invoice returns NOT_FOUND."""
@@ -616,82 +507,6 @@ class TestGetInvoice:
         )
 
         with pytest.raises(ConnectError) as exc_info:
-            await billing_servicer.get_invoice(request, cast(Any, context))
+            await billing_servicer.get_invoice(request, MagicMock())
 
         assert "NOT_FOUND" in str(exc_info.value.code)
-
-
-# ===================
-# Helper Method Tests
-# ===================
-
-
-class TestHelperMethods:
-    """Tests for servicer helper methods.
-
-    Note: These methods now pass through proto int values directly,
-    so the tests verify identity transformation.
-    """
-
-    def test_to_proto_tier(self, billing_servicer: BillingServicer) -> None:
-        """Test tier pass-through (already proto int)."""
-        from llamatrade_proto.generated import billing_pb2
-
-        assert (
-            billing_servicer._to_proto_tier(billing_pb2.PLAN_TIER_FREE)
-            == billing_pb2.PLAN_TIER_FREE
-        )
-        assert (
-            billing_servicer._to_proto_tier(billing_pb2.PLAN_TIER_STARTER)
-            == billing_pb2.PLAN_TIER_STARTER
-        )
-        assert (
-            billing_servicer._to_proto_tier(billing_pb2.PLAN_TIER_PRO) == billing_pb2.PLAN_TIER_PRO
-        )
-
-    def test_to_proto_interval(self, billing_servicer: BillingServicer) -> None:
-        """Test interval pass-through (already proto int)."""
-        from llamatrade_proto.generated import billing_pb2
-
-        assert (
-            billing_servicer._to_proto_interval(billing_pb2.BILLING_INTERVAL_MONTHLY)
-            == billing_pb2.BILLING_INTERVAL_MONTHLY
-        )
-        assert (
-            billing_servicer._to_proto_interval(billing_pb2.BILLING_INTERVAL_YEARLY)
-            == billing_pb2.BILLING_INTERVAL_YEARLY
-        )
-
-    def test_from_proto_interval(self, billing_servicer: BillingServicer) -> None:
-        """Test proto interval pass-through (already proto int)."""
-        from llamatrade_proto.generated import billing_pb2
-
-        assert (
-            billing_servicer._from_proto_interval(billing_pb2.BILLING_INTERVAL_MONTHLY)
-            == billing_pb2.BILLING_INTERVAL_MONTHLY
-        )
-        assert (
-            billing_servicer._from_proto_interval(billing_pb2.BILLING_INTERVAL_YEARLY)
-            == billing_pb2.BILLING_INTERVAL_YEARLY
-        )
-        assert (
-            billing_servicer._from_proto_interval(billing_pb2.BILLING_INTERVAL_UNSPECIFIED)
-            == billing_pb2.BILLING_INTERVAL_UNSPECIFIED
-        )
-
-    def test_to_proto_status(self, billing_servicer: BillingServicer) -> None:
-        """Test status pass-through (already proto int)."""
-        from llamatrade_proto.generated import billing_pb2
-
-        assert (
-            billing_servicer._to_proto_status(billing_pb2.SUBSCRIPTION_STATUS_ACTIVE)
-            == billing_pb2.SUBSCRIPTION_STATUS_ACTIVE
-        )
-        assert (
-            billing_servicer._to_proto_status(billing_pb2.SUBSCRIPTION_STATUS_TRIALING)
-            == billing_pb2.SUBSCRIPTION_STATUS_TRIALING
-        )
-        assert (
-            billing_servicer._to_proto_status(billing_pb2.SUBSCRIPTION_STATUS_CANCELED)
-            == billing_pb2.SUBSCRIPTION_STATUS_CANCELED
-        )

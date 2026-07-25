@@ -6,7 +6,7 @@ account anchor, sleeve_id + account_id from AllocateCapital). The trading
 service reads them when starting the runner and threads them into orders,
 fills, sizing, and risk. All nullable: unfunded/legacy executions are valid.
 
-See .docs/planning/CONTRACTS.md §5 (identity threading).
+See .docs/portfolio-ledger.md (identity threading).
 
 Revision ID: 016_add_exec_ledger_identity
 Revises: 015_add_portfolio_ledger_tables

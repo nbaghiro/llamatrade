@@ -220,7 +220,7 @@ class LedgerServicer:
 
         With an empty ``to_sleeve_id`` and a ``strategy_execution_id``, the
         strategy sleeve linked to that execution is opened (or reused) and
-        funded in the same transaction (CONTRACTS.md §5).
+        funded in the same transaction (portfolio-ledger.md).
         """
         tenant_id, _ = resolve_identity_connect(request.context)
         account_id = UUID(request.account_id)

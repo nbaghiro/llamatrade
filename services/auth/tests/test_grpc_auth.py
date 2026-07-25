@@ -79,6 +79,15 @@ class MockTenant:
         self.settings: dict[str, str] = {}
 
 
+_STANDARD_TEST_API_KEY = "testkey_secretpart123"
+
+
+def _default_key_hash() -> str:
+    import hashlib
+
+    return hashlib.sha256(_STANDARD_TEST_API_KEY.encode()).hexdigest()
+
+
 class MockAPIKey:
     """Mock APIKey database model."""
 
@@ -89,6 +98,7 @@ class MockAPIKey:
         user_id: UUID | None = None,
         name: str = "Test Key",
         key_prefix: str = "testkey_",
+        key_hash: str | None = None,
         scopes: list[str] | None = None,
         is_active: bool = True,
         expires_at: datetime | None = None,
@@ -98,6 +108,7 @@ class MockAPIKey:
         self.user_id = user_id
         self.name = name
         self.key_prefix = key_prefix
+        self.key_hash = key_hash or _default_key_hash()
         self.scopes = scopes or ["read", "write"]
         self.is_active = is_active
         self.expires_at = expires_at
@@ -138,6 +149,8 @@ class MockAsyncSession:
     async def execute(self, query: object) -> MagicMock:
         result = MagicMock()
         result.scalar_one_or_none.return_value = self._query_result
+        rows = [self._query_result] if self._query_result is not None else []
+        result.scalars.return_value.all.return_value = rows
         return result
 
     async def flush(self) -> None:
@@ -287,6 +300,30 @@ class TestRegister:
             await auth_servicer.register(request, context)
 
         assert "ALREADY_EXISTS" in str(exc_info.value.code)
+
+    async def test_register_weak_password(
+        self,
+        auth_servicer: AuthServicer,
+        mock_db: MockAsyncSession,
+        context: MockRequestContext,
+    ) -> None:
+        """Test registration rejects a weak password."""
+        from llamatrade_proto.generated import auth_pb2
+
+        mock_db._query_result = None
+
+        request = auth_pb2.RegisterRequest(
+            tenant_name="Test Company",
+            email="weakpass@example.com",
+            password="short",
+            first_name="New",
+            last_name="User",
+        )
+
+        with pytest.raises(ConnectError) as exc_info:
+            await auth_servicer.register(request, context)
+
+        assert "INVALID_ARGUMENT" in str(exc_info.value.code)
 
 
 # ===================
@@ -961,6 +998,24 @@ class TestValidateAPIKey:
         mock_db._query_result = None  # Inactive keys won't be found
 
         request = auth_pb2.ValidateAPIKeyRequest(api_key="inactive_key123")
+
+        response = await auth_servicer.validate_a_p_i_key(request, context)
+        assert response.valid is False
+
+    async def test_validate_api_key_wrong_secret(
+        self,
+        auth_servicer: AuthServicer,
+        mock_db: MockAsyncSession,
+        context: MockRequestContext,
+    ) -> None:
+        """A key sharing the prefix but not the full-key hash is rejected."""
+        from llamatrade_proto.generated import auth_pb2
+
+        # Stored key hashes the standard secret; the request presents a different one.
+        api_key = MockAPIKey(key_prefix="testkey_")
+        mock_db._query_result = api_key
+
+        request = auth_pb2.ValidateAPIKeyRequest(api_key="testkey_wrongsecret999")
 
         response = await auth_servicer.validate_a_p_i_key(request, context)
         assert response.valid is False

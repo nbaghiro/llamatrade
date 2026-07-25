@@ -912,6 +912,42 @@ class AddPaymentMethodResponse(message.Message):
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
+class CreateSetupIntentRequest(message.Message):
+    """Create a SetupIntent to collect a card (client_secret drives Stripe.js)"""
+
+    DESCRIPTOR: descriptor.Descriptor
+
+    CONTEXT_FIELD_NUMBER: builtins.int
+    @builtins.property
+    def context(self) -> common_pb2.TenantContext: ...
+    def __init__(
+        self,
+        *,
+        context: common_pb2.TenantContext | None = ...,
+    ) -> None: ...
+    _HasFieldArgType: _TypeAlias = typing.Literal["context", b"context"]  # noqa: Y015
+    def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
+    _ClearFieldArgType: _TypeAlias = typing.Literal["context", b"context"]  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+
+@typing.final
+class CreateSetupIntentResponse(message.Message):
+    DESCRIPTOR: descriptor.Descriptor
+
+    CLIENT_SECRET_FIELD_NUMBER: builtins.int
+    CUSTOMER_ID_FIELD_NUMBER: builtins.int
+    client_secret: builtins.str
+    customer_id: builtins.str
+    def __init__(
+        self,
+        *,
+        client_secret: builtins.str = ...,
+        customer_id: builtins.str = ...,
+    ) -> None: ...
+    _ClearFieldArgType: _TypeAlias = typing.Literal["client_secret", b"client_secret", "customer_id", b"customer_id"]  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+
+@typing.final
 class RemovePaymentMethodRequest(message.Message):
     """Remove payment method"""
 

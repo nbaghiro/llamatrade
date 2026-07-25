@@ -15,11 +15,7 @@ from llamatrade_db.models import Plan, Subscription
 from llamatrade_proto.generated import billing_pb2
 from llamatrade_proto.generated.billing_pb2 import SubscriptionStatus
 
-from src.models import (
-    PlanResponse,
-    SubscriptionCreateRequest,
-    SubscriptionResponse,
-)
+from src.models import SubscriptionCreateRequest
 from src.stripe.client import StripeClient, StripeError, get_stripe_client
 
 logger = logging.getLogger(__name__)
@@ -42,11 +38,11 @@ def stripe_status_to_proto(status: str) -> SubscriptionStatus.ValueType:
     return cast(SubscriptionStatus.ValueType, result)
 
 
-# Default plans - used when database plans are not available
+# Default plans (transient rows) - used when database plans are not available.
 DEFAULT_PLANS = [
-    PlanResponse(
-        id="free",
-        name="Free",
+    Plan(
+        name="free",
+        display_name="Free",
         tier=billing_pb2.PLAN_TIER_FREE,
         price_monthly=Decimal("0"),
         price_yearly=Decimal("0"),
@@ -65,10 +61,12 @@ DEFAULT_PLANS = [
             "api_calls_per_day": 1000,
         },
         trial_days=0,
+        is_active=True,
+        sort_order=0,
     ),
-    PlanResponse(
-        id="starter",
-        name="Starter",
+    Plan(
+        name="starter",
+        display_name="Starter",
         tier=billing_pb2.PLAN_TIER_STARTER,
         price_monthly=Decimal("29"),
         price_yearly=Decimal("290"),
@@ -87,10 +85,12 @@ DEFAULT_PLANS = [
             "api_calls_per_day": 10000,
         },
         trial_days=14,
+        is_active=True,
+        sort_order=1,
     ),
-    PlanResponse(
-        id="pro",
-        name="Pro",
+    Plan(
+        name="pro",
+        display_name="Pro",
         tier=billing_pb2.PLAN_TIER_PRO,
         price_monthly=Decimal("99"),
         price_yearly=Decimal("990"),
@@ -109,6 +109,8 @@ DEFAULT_PLANS = [
             "api_calls_per_day": 100000,
         },
         trial_days=14,
+        is_active=True,
+        sort_order=2,
     ),
 ]
 
@@ -122,22 +124,20 @@ class BillingService:
 
     # Plans
 
-    async def list_plans(self) -> list[PlanResponse]:
-        """List all available plans."""
+    async def list_plans(self) -> list[Plan]:
+        """List all available plans (DB rows, or the default catalog when empty)."""
         result = await self.db.execute(
             select(Plan).where(Plan.is_active.is_(True)).order_by(Plan.sort_order)
         )
         plans = result.scalars().all()
 
         if not plans:
-            # Return default plans if none in database
             return DEFAULT_PLANS
 
-        return [self._plan_to_response(p) for p in plans]
+        return list(plans)
 
-    async def get_plan(self, plan_id: str) -> PlanResponse | None:
-        """Get a specific plan by ID or name."""
-        # First try to find in database
+    async def get_plan(self, plan_id: str) -> Plan | None:
+        """Get a specific plan by slug/UUID (DB row, else the matching default catalog row)."""
         result = await self.db.execute(
             select(Plan).where(
                 (Plan.name == plan_id) | (Plan.id == plan_id if self._is_uuid(plan_id) else False)
@@ -146,11 +146,11 @@ class BillingService:
         plan = result.scalar_one_or_none()
 
         if plan:
-            return self._plan_to_response(plan)
+            return plan
 
-        # Fall back to default plans
+        # Fall back to default plans (matched by slug).
         for p in DEFAULT_PLANS:
-            if p.id == plan_id or p.name.lower() == plan_id.lower():
+            if p.name == plan_id or p.name.lower() == plan_id.lower():
                 return p
 
         return None
@@ -164,22 +164,6 @@ class BillingService:
         )
         return result.scalar_one_or_none()
 
-    def _plan_to_response(self, plan: Plan) -> PlanResponse:
-        """Convert Plan model to PlanResponse."""
-        # Explicitly cast the dict types from the database model
-        features: dict[str, bool] = plan.features if plan.features else {}
-        limits: dict[str, int | None] = plan.limits if plan.limits else {}
-        return PlanResponse(
-            id=plan.name,
-            name=plan.display_name,
-            tier=plan.tier,
-            price_monthly=plan.price_monthly,
-            price_yearly=plan.price_yearly or plan.price_monthly * 10,
-            features=features,
-            limits=limits,
-            trial_days=plan.trial_days,
-        )
-
     def _is_uuid(self, value: str) -> bool:
         """Check if string is a valid UUID."""
         try:
@@ -190,8 +174,8 @@ class BillingService:
 
     # Subscriptions
 
-    async def get_subscription(self, tenant_id: UUID) -> SubscriptionResponse | None:
-        """Get the current subscription for a tenant."""
+    async def get_subscription(self, tenant_id: UUID) -> Subscription | None:
+        """Get the current subscription (with plan loaded) for a tenant."""
         result = await self.db.execute(
             select(Subscription)
             .options(selectinload(Subscription.plan))
@@ -204,14 +188,14 @@ class BillingService:
         if not subscription:
             return None
 
-        return self._subscription_to_response(subscription)
+        return subscription
 
     async def create_subscription(
         self,
         tenant_id: UUID,
         email: str,
         request: SubscriptionCreateRequest,
-    ) -> SubscriptionResponse:
+    ) -> Subscription:
         """Create a new subscription for a tenant."""
         # Get the plan
         plan = await self.get_plan(request.plan_id)
@@ -256,11 +240,11 @@ class BillingService:
             logger.error(f"Failed to create Stripe subscription: {e}")
             raise ValueError(f"Payment failed: {e.message}")
 
-        # Create subscription record in database
+        # Create subscription record in database (status stored as proto int).
         subscription = Subscription(
             tenant_id=tenant_id,
             plan_id=plan_db.id,
-            status=stripe_sub.status,
+            status=stripe_status_to_proto(stripe_sub.status),
             billing_cycle=request.billing_cycle,
             stripe_subscription_id=stripe_sub.id,
             stripe_customer_id=customer_id,
@@ -275,11 +259,9 @@ class BillingService:
         await self.db.commit()
         await self.db.refresh(subscription, ["plan"])
 
-        return self._subscription_to_response(subscription)
+        return subscription
 
-    async def _create_free_subscription(
-        self, tenant_id: UUID, plan: PlanResponse
-    ) -> SubscriptionResponse:
+    async def _create_free_subscription(self, tenant_id: UUID, plan: Plan) -> Subscription:
         """Create a free subscription (no Stripe involvement)."""
         from datetime import UTC, datetime, timedelta
 
@@ -293,7 +275,7 @@ class BillingService:
             plan_db = Plan(
                 name="free",
                 display_name="Free",
-                tier="free",
+                tier=billing_pb2.PLAN_TIER_FREE,
                 price_monthly=Decimal("0"),
                 price_yearly=Decimal("0"),
                 features=plan.features,
@@ -319,13 +301,13 @@ class BillingService:
         await self.db.commit()
         await self.db.refresh(subscription, ["plan"])
 
-        return self._subscription_to_response(subscription)
+        return subscription
 
     async def update_subscription(
         self,
         tenant_id: UUID,
         plan_id: str,
-    ) -> SubscriptionResponse:
+    ) -> Subscription:
         """Update subscription to a new plan."""
         # Get current subscription
         result = await self.db.execute(
@@ -348,10 +330,10 @@ class BillingService:
         if not new_plan_db:
             raise ValueError(f"Plan {plan_id} not found in database")
 
-        # Get the price ID
+        # Get the price ID (billing_cycle is a proto int, not the string "monthly").
         price_id = (
             new_plan_db.stripe_price_id_monthly
-            if subscription.billing_cycle == "monthly"
+            if subscription.billing_cycle == billing_pb2.BILLING_INTERVAL_MONTHLY
             else new_plan_db.stripe_price_id_yearly
         )
 
@@ -380,13 +362,13 @@ class BillingService:
         await self.db.commit()
         await self.db.refresh(subscription, ["plan"])
 
-        return self._subscription_to_response(subscription)
+        return subscription
 
     async def cancel_subscription(
         self,
         tenant_id: UUID,
         at_period_end: bool = True,
-    ) -> SubscriptionResponse:
+    ) -> Subscription:
         """Cancel a subscription."""
         result = await self.db.execute(
             select(Subscription)
@@ -420,9 +402,9 @@ class BillingService:
         await self.db.commit()
         await self.db.refresh(subscription, ["plan"])
 
-        return self._subscription_to_response(subscription)
+        return subscription
 
-    async def reactivate_subscription(self, tenant_id: UUID) -> SubscriptionResponse:
+    async def reactivate_subscription(self, tenant_id: UUID) -> Subscription:
         """Reactivate a subscription that was set to cancel at period end."""
         result = await self.db.execute(
             select(Subscription)
@@ -449,32 +431,13 @@ class BillingService:
         await self.db.commit()
         await self.db.refresh(subscription, ["plan"])
 
-        return self._subscription_to_response(subscription)
+        return subscription
 
     async def ensure_stripe_customer(self, tenant_id: UUID, email: str) -> str:
         """Ensure a Stripe customer exists for the tenant."""
         return await self.stripe.get_or_create_customer(
             tenant_id=str(tenant_id),
             email=email,
-        )
-
-    def _subscription_to_response(self, subscription: Subscription) -> SubscriptionResponse:
-        """Convert Subscription model to SubscriptionResponse."""
-        plan_response = self._plan_to_response(subscription.plan)
-
-        return SubscriptionResponse(
-            id=subscription.id,
-            tenant_id=subscription.tenant_id,
-            plan=plan_response,
-            status=subscription.status,
-            billing_cycle=subscription.billing_cycle,
-            current_period_start=subscription.current_period_start,
-            current_period_end=subscription.current_period_end,
-            cancel_at_period_end=subscription.cancel_at_period_end,
-            trial_start=subscription.trial_start,
-            trial_end=subscription.trial_end,
-            stripe_subscription_id=subscription.stripe_subscription_id,
-            created_at=subscription.created_at,
         )
 
 

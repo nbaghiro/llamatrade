@@ -77,15 +77,14 @@ def test_period_returns_from_series() -> None:
         (now, 1200.0),
     ]
     pr = svc._period_returns(cast(Any, series))
-    assert pr.return_1m == Decimal("20.0")  # (1200-1000)/1000
-    assert pr.return_all == Decimal("20.0")
+    assert Decimal(pr.return_1m.value) == Decimal("20.0")  # (1200-1000)/1000
+    assert Decimal(pr.return_all.value) == Decimal("20.0")
 
 
 def test_period_returns_too_short_is_empty() -> None:
     svc = _svc()
-    assert (
-        svc._period_returns([(datetime(2026, 1, 1, tzinfo=UTC), cast(Any, 1.0))]).return_1m is None
-    )
+    pr = svc._period_returns([(datetime(2026, 1, 1, tzinfo=UTC), cast(Any, 1.0))])
+    assert pr.return_1m.value == "0"  # missing period collapses to zero on the proto
 
 
 async def test_get_strategy_performance_assembles_detail() -> None:
@@ -124,12 +123,12 @@ async def test_get_strategy_performance_assembles_detail() -> None:
     detail = await svc.get_strategy_performance(TENANT, execution.id)
     assert detail is not None
     assert detail.summary.strategy_name == "Trend"
-    assert detail.summary.mode == "paper"
-    assert detail.summary.current_value == Decimal("10000")  # 5000 cash + 5000 mkt
+    assert detail.summary.mode == EXECUTION_MODE_PAPER  # proto enum int, no string round-trip
+    assert Decimal(detail.summary.current_value.value) == Decimal("10000")  # 5000 cash + 5000 mkt
     assert detail.summary.positions_count == 1
     assert detail.metrics.total_trades == 1
     assert detail.metrics.winning_trades == 1
-    assert detail.metrics.total_pnl == Decimal("250")
+    assert Decimal(detail.metrics.total_pnl.value) == Decimal("250")
     assert len(detail.positions) == 1
 
 
@@ -152,7 +151,7 @@ async def test_get_strategy_equity_curve_builds_points() -> None:
     result = await svc.get_strategy_equity_curve(TENANT, execution.id)
     assert result is not None
     assert len(result.equity_curve) == 2
-    assert result.equity_curve[-1].equity == Decimal("10500")
+    assert Decimal(result.equity_curve[-1].equity.value) == Decimal("10500")
 
 
 def test_to_daily_collapses_intraday_to_last_per_day() -> None:

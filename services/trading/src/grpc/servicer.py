@@ -20,8 +20,9 @@ from llamatrade_proto.generated.trading_pb2 import (
     TIME_IN_FORCE_DAY,
 )
 
+from src import proto_mappers
 from src.executor.order_executor import create_order_executor
-from src.models import OrderCreate, OrderResponse, PositionResponse, SessionResponse
+from src.models import OrderCreate, SessionResponse
 from src.streaming import get_trading_event_subscriber
 
 if TYPE_CHECKING:
@@ -110,7 +111,7 @@ class TradingServicer:
     ) -> tuple[UUID | None, UUID | None]:
         """(sleeve_id, account_id) for an order, fixed at origination.
 
-        Resolution order (CONTRACTS.md §5): explicit request sleeve → the
+        Resolution order (portfolio-ledger.md): explicit request sleeve → the
         session's strategy sleeve → the account's Manual sleeve (an
         unattributed order is a manual trade). Resolution failures **raise** (the
         SubmitOrder RPC then fails) rather than silently booking the order as an
@@ -380,7 +381,7 @@ class TradingServicer:
             # per-tenant credentials, never the platform default (2A).
             executor = await create_order_executor(session_id=session_id, tenant_id=tenant_id)
 
-            # Ledger attribution, fixed at origination (CONTRACTS.md §5)
+            # Ledger attribution, fixed at origination (portfolio-ledger.md)
             sleeve_id, account_id = await self._resolve_order_attribution(
                 db=executor.db,
                 tenant_id=tenant_id,
@@ -412,7 +413,7 @@ class TradingServicer:
                 session_id=session_id,
                 order=order_create,
             )
-            return trading_pb2.SubmitOrderResponse(order=self._to_proto_order(order))
+            return trading_pb2.SubmitOrderResponse(order=proto_mappers.order_to_proto(order))
         except grpc.aio.AioRpcError:
             raise
         except AuthError as e:
@@ -459,7 +460,7 @@ class TradingServicer:
             if not order:
                 await context.abort(grpc.StatusCode.NOT_FOUND, f"Order not found: {order_id}")
 
-            return trading_pb2.CancelOrderResponse(order=self._to_proto_order(order))
+            return trading_pb2.CancelOrderResponse(order=proto_mappers.order_to_proto(order))
         except grpc.aio.AioRpcError:
             raise
         except AuthError as e:
@@ -488,7 +489,7 @@ class TradingServicer:
             if not order:
                 await context.abort(grpc.StatusCode.NOT_FOUND, f"Order not found: {order_id}")
 
-            return trading_pb2.GetOrderResponse(order=self._to_proto_order(order))
+            return trading_pb2.GetOrderResponse(order=proto_mappers.order_to_proto(order))
         except grpc.aio.AioRpcError:
             raise
         except AuthError as e:
@@ -525,7 +526,7 @@ class TradingServicer:
                 page_size=page_size,
             )
 
-            proto_orders = [self._to_proto_order(o) for o in orders]
+            proto_orders = [proto_mappers.order_to_proto(o) for o in orders]
             total_pages = (total + page_size - 1) // page_size
 
             return trading_pb2.ListOrdersResponse(
@@ -576,7 +577,9 @@ class TradingServicer:
                     grpc.StatusCode.NOT_FOUND, f"Position not found for symbol: {symbol}"
                 )
 
-            return trading_pb2.GetPositionResponse(position=self._to_proto_position(position))
+            return trading_pb2.GetPositionResponse(
+                position=proto_mappers.position_to_proto(position)
+            )
         except grpc.aio.AioRpcError:
             raise
         except AuthError as e:
@@ -608,7 +611,7 @@ class TradingServicer:
                 session_id=session_id,
             )
 
-            proto_positions = [self._to_proto_position(p) for p in positions]
+            proto_positions = [proto_mappers.position_to_proto(p) for p in positions]
             return trading_pb2.ListPositionsResponse(positions=proto_positions)
         except grpc.aio.AioRpcError:
             raise
@@ -651,7 +654,12 @@ class TradingServicer:
                 if request.HasField("quantity") and Decimal(request.quantity.value) > 0
                 else position.qty
             )
-            side = ORDER_SIDE_SELL if position.side == "long" else ORDER_SIDE_BUY
+            # position.side is the proto PositionSide int (DB row), not a string.
+            side = (
+                ORDER_SIDE_SELL
+                if position.side == trading_pb2.POSITION_SIDE_LONG
+                else ORDER_SIDE_BUY
+            )
 
             order_create = OrderCreate(
                 symbol=symbol,
@@ -669,7 +677,7 @@ class TradingServicer:
                 order=order_create,
             )
 
-            return trading_pb2.ClosePositionResponse(order=self._to_proto_order(order))
+            return trading_pb2.ClosePositionResponse(order=proto_mappers.order_to_proto(order))
         except grpc.aio.AioRpcError:
             raise
         except AuthError as e:
@@ -771,78 +779,3 @@ class TradingServicer:
                 common_pb2.Timestamp(seconds=int(session.stopped_at.timestamp()))
             )
         return proto
-
-    def _to_proto_order(self, order: OrderResponse) -> trading_pb2.Order:
-        """Convert internal order to proto Order.
-
-        OrderResponse now uses proto ValueType directly, so no casting needed.
-        """
-        from llamatrade_proto.generated import common_pb2, trading_pb2
-
-        proto_order = trading_pb2.Order(
-            id=str(order.id),
-            # The deterministic client_order_id (idempotency key), NOT the broker id.
-            client_order_id=order.client_order_id or "",
-            tenant_id=str(order.tenant_id) if order.tenant_id else "",
-            session_id=str(order.session_id) if order.session_id else "",
-            symbol=order.symbol,
-            side=order.side,
-            type=order.order_type,
-            status=order.status,
-            quantity=common_pb2.Decimal(value=str(order.qty)),
-        )
-
-        if order.filled_qty:
-            proto_order.filled_quantity.CopyFrom(common_pb2.Decimal(value=str(order.filled_qty)))
-        if order.limit_price:
-            proto_order.limit_price.CopyFrom(common_pb2.Decimal(value=str(order.limit_price)))
-        if order.stop_price:
-            proto_order.stop_price.CopyFrom(common_pb2.Decimal(value=str(order.stop_price)))
-        if order.filled_avg_price:
-            proto_order.average_fill_price.CopyFrom(
-                common_pb2.Decimal(value=str(order.filled_avg_price))
-            )
-        if order.submitted_at:
-            proto_order.created_at.CopyFrom(
-                common_pb2.Timestamp(seconds=int(order.submitted_at.timestamp()))
-            )
-
-        return proto_order
-
-    def _to_proto_position(self, position: PositionResponse) -> trading_pb2.Position:
-        """Convert internal position to proto Position."""
-        from llamatrade_proto.generated import common_pb2, trading_pb2
-
-        side = (
-            trading_pb2.POSITION_SIDE_LONG
-            if position.side == "long"
-            else trading_pb2.POSITION_SIDE_SHORT
-        )
-
-        proto_position = trading_pb2.Position(
-            id="",  # PositionResponse doesn't have id
-            symbol=position.symbol,
-            side=side,
-            quantity=common_pb2.Decimal(value=str(position.qty)),
-        )
-
-        if position.cost_basis:
-            proto_position.cost_basis.CopyFrom(common_pb2.Decimal(value=str(position.cost_basis)))
-        # PositionResponse doesn't have average_entry_price, use cost_basis / qty
-        if position.qty > 0:
-            avg_entry = position.cost_basis / position.qty
-            proto_position.average_entry_price.CopyFrom(common_pb2.Decimal(value=str(avg_entry)))
-        if position.current_price:
-            proto_position.current_price.CopyFrom(
-                common_pb2.Decimal(value=str(position.current_price))
-            )
-        if position.market_value:
-            proto_position.market_value.CopyFrom(
-                common_pb2.Decimal(value=str(position.market_value))
-            )
-        if position.unrealized_pnl:
-            proto_position.unrealized_pnl.CopyFrom(
-                common_pb2.Decimal(value=str(position.unrealized_pnl))
-            )
-
-        return proto_position

@@ -114,15 +114,15 @@ class TestAlpacaCredentials:
         assert "is_paper" in columns
         assert "is_active" in columns
 
-    def test_api_key_encrypted_not_nullable(self) -> None:
-        """Test api_key_encrypted column is not nullable."""
+    def test_api_key_encrypted_nullable_for_oauth(self) -> None:
+        """api_key_encrypted is nullable: OAuth rows omit the key/secret pair (migration 029)."""
         col = AlpacaCredentials.__table__.columns["api_key_encrypted"]
-        assert col.nullable is False
+        assert col.nullable is True
 
-    def test_api_secret_encrypted_not_nullable(self) -> None:
-        """Test api_secret_encrypted column is not nullable."""
+    def test_api_secret_encrypted_nullable_for_oauth(self) -> None:
+        """api_secret_encrypted is nullable: OAuth rows omit the key/secret pair (migration 029)."""
         col = AlpacaCredentials.__table__.columns["api_secret_encrypted"]
-        assert col.nullable is False
+        assert col.nullable is True
 
     def test_is_paper_has_default(self) -> None:
         """Test is_paper defaults to True."""

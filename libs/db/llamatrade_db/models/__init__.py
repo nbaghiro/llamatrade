@@ -1,10 +1,10 @@
 """ORM models for LlamaTrade database."""
 
+from llamatrade_db.models._enum_types import MemoryFactCategory
 from llamatrade_db.models.agent import (
     AgentMemoryFact,
     AgentMessage,
     AgentSession,
-    MemoryFactCategory,
     PendingArtifact,
     ToolCallLog,
 )
@@ -57,7 +57,6 @@ from llamatrade_db.models.notification import (
 from llamatrade_db.models.strategy import (
     Strategy,
     StrategyExecution,
-    StrategyTemplate,
     StrategyVersion,
 )
 from llamatrade_db.models.trading import (
@@ -89,7 +88,6 @@ __all__ = [
     # Strategy
     "Strategy",
     "StrategyVersion",
-    "StrategyTemplate",
     "StrategyExecution",
     # Backtest
     "Backtest",

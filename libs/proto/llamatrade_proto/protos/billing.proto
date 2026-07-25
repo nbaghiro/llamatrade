@@ -299,6 +299,16 @@ message AddPaymentMethodResponse {
   PaymentMethod payment_method = 1;
 }
 
+// Create a SetupIntent to collect a card (client_secret drives Stripe.js)
+message CreateSetupIntentRequest {
+  TenantContext context = 1;
+}
+
+message CreateSetupIntentResponse {
+  string client_secret = 1;
+  string customer_id = 2;
+}
+
 // Remove payment method
 message RemovePaymentMethodRequest {
   TenantContext context = 1;
@@ -357,6 +367,7 @@ service BillingService {
 
   // Payment methods
   rpc ListPaymentMethods(ListPaymentMethodsRequest) returns (ListPaymentMethodsResponse);
+  rpc CreateSetupIntent(CreateSetupIntentRequest) returns (CreateSetupIntentResponse);
   rpc AddPaymentMethod(AddPaymentMethodRequest) returns (AddPaymentMethodResponse);
   rpc RemovePaymentMethod(RemovePaymentMethodRequest) returns (RemovePaymentMethodResponse);
 

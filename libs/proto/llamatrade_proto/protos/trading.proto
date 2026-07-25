@@ -28,7 +28,8 @@ enum OrderType {
   ORDER_TYPE_TRAILING_STOP = 5;
 }
 
-// Order status (matches Alpaca API)
+// Normalized 8-state order status. Alpaca's 16 raw states are collapsed onto
+// these by the trading executor (_map_alpaca_status).
 enum OrderStatus {
   ORDER_STATUS_UNSPECIFIED = 0;
   ORDER_STATUS_PENDING = 1;
@@ -292,7 +293,7 @@ message StartTradingSessionRequest {
   repeated string symbols = 7;  // empty = from strategy definition
 
   // The funded strategy execution this session trades for. Threads the exact
-  // sleeve identity (CONTRACTS.md §5); empty falls back to the most recently
+  // sleeve identity (portfolio-ledger.md); empty falls back to the most recently
   // funded execution of the strategy.
   string execution_id = 8;
 }

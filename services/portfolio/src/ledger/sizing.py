@@ -24,7 +24,7 @@ _QTY = Decimal("0.00000001")
 
 
 @dataclass(frozen=True)
-class IntendedOrder:
+class SleeveOrder:
     """A desired trade for one sleeve (pre-netting, pre-submission)."""
 
     sleeve_id: str
@@ -54,14 +54,14 @@ def target_orders(
     current_positions: dict[str, Decimal],
     prices: dict[str, Decimal],
     drift_tolerance: Decimal = DEFAULT_DRIFT_TOLERANCE,
-) -> list[IntendedOrder]:
+) -> list[SleeveOrder]:
     """Compute the delta orders to move a sleeve toward its target weights.
 
     ``target_weights`` are percentages of *sleeve equity*. Symbols held but not
     in the target get a full exit. Trades within ``drift_tolerance`` of target
     are skipped to avoid churn.
     """
-    orders: list[IntendedOrder] = []
+    orders: list[SleeveOrder] = []
     symbols = set(target_weights) | set(current_positions)
 
     for symbol in sorted(symbols):
@@ -74,7 +74,7 @@ def target_orders(
         # Full exit: no longer targeted but still held.
         if weight <= ZERO:
             if cur_qty > ZERO:
-                orders.append(IntendedOrder(sleeve_id, symbol, "sell", cur_qty, price))
+                orders.append(SleeveOrder(sleeve_id, symbol, "sell", cur_qty, price))
             continue
 
         target_value = equity * weight / Decimal("100")
@@ -90,11 +90,11 @@ def target_orders(
                 continue
 
         side = "buy" if delta_qty > ZERO else "sell"
-        orders.append(IntendedOrder(sleeve_id, symbol, side, abs(delta_qty).quantize(_QTY), price))
+        orders.append(SleeveOrder(sleeve_id, symbol, side, abs(delta_qty).quantize(_QTY), price))
     return orders
 
 
-def fit_to_free_cash(order: IntendedOrder, free_cash: Decimal) -> IntendedOrder | None:
+def fit_to_free_cash(order: SleeveOrder, free_cash: Decimal) -> SleeveOrder | None:
     """Scale a buy down to the sleeve's free cash; sells pass through.
 
     Returns the (possibly scaled) order, or ``None`` if the sleeve can't afford
@@ -110,7 +110,7 @@ def fit_to_free_cash(order: IntendedOrder, free_cash: Decimal) -> IntendedOrder 
     affordable_qty = (free_cash / order.est_price).quantize(_QTY)
     if affordable_qty <= ZERO:
         return None
-    return IntendedOrder(order.sleeve_id, order.symbol, "buy", affordable_qty, order.est_price)
+    return SleeveOrder(order.sleeve_id, order.symbol, "buy", affordable_qty, order.est_price)
 
 
 @dataclass(frozen=True)

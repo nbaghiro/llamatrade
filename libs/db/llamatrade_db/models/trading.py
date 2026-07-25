@@ -60,7 +60,7 @@ class TradingSession(Base, UUIDPrimaryKeyMixin, TenantMixin, TimestampMixin):
     created_by: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
 
     # Ledger identity (threaded from the funded strategy execution; nullable
-    # for legacy/unfunded sessions — see CONTRACTS.md §5)
+    # for legacy/unfunded sessions — see portfolio-ledger.md)
     sleeve_id: Mapped[UUID | None] = mapped_column(PG_UUID(as_uuid=True), nullable=True)
     account_id: Mapped[UUID | None] = mapped_column(PG_UUID(as_uuid=True), nullable=True)
 
@@ -117,7 +117,7 @@ class Order(Base, UUIDPrimaryKeyMixin, TenantMixin, TimestampMixin):
     signal_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     metadata_: Mapped[dict[str, Any] | None] = mapped_column("metadata", JSONB, nullable=True)
 
-    # Ledger attribution, fixed at order origination (CONTRACTS.md §5)
+    # Ledger attribution, fixed at order origination (portfolio-ledger.md)
     sleeve_id: Mapped[UUID | None] = mapped_column(PG_UUID(as_uuid=True), nullable=True)
     account_id: Mapped[UUID | None] = mapped_column(PG_UUID(as_uuid=True), nullable=True)
 

@@ -82,7 +82,9 @@ class _OrderStatusEnumTypeWrapper(enum_type_wrapper._EnumTypeWrapper[_OrderStatu
     ORDER_STATUS_EXPIRED: _OrderStatus.ValueType  # 8
 
 class OrderStatus(_OrderStatus, metaclass=_OrderStatusEnumTypeWrapper):
-    """Order status (matches Alpaca API)"""
+    """Normalized 8-state order status. Alpaca's 16 raw states are collapsed onto
+    these by the trading executor (_map_alpaca_status).
+    """
 
 ORDER_STATUS_UNSPECIFIED: OrderStatus.ValueType  # 0
 ORDER_STATUS_PENDING: OrderStatus.ValueType  # 1
@@ -883,7 +885,7 @@ class StartTradingSessionRequest(message.Message):
     credentials_id: builtins.str
     execution_id: builtins.str
     """The funded strategy execution this session trades for. Threads the exact
-    sleeve identity (CONTRACTS.md §5); empty falls back to the most recently
+    sleeve identity (portfolio-ledger.md); empty falls back to the most recently
     funded execution of the strategy.
     """
     @builtins.property

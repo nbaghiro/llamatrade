@@ -13,13 +13,16 @@ from uuid import UUID
 from connectrpc.code import Code
 from connectrpc.errors import ConnectError
 from connectrpc.request import RequestContext
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from llamatrade_common.connect import resolve_identity_connect
 from llamatrade_db import get_session_maker, tenant_session
+from llamatrade_db.models.backtest import Backtest
+from llamatrade_db.plan_limits import PlanLimitExceededError, enforce_plan_limit
 from llamatrade_proto.generated import backtest_pb2
 
-from src.models import BacktestMetrics, BacktestResponse, BacktestResultResponse, TradeRecord
+from src import proto_mappers
 from src.services.backtest_service import BacktestService
 
 logger = logging.getLogger(__name__)
@@ -33,14 +36,11 @@ _GET_BACKTEST_TRADES_PREVIEW = int(os.getenv("BACKTEST_TRADES_PREVIEW", "500"))
 
 
 def _reject_unsupported_config(config: backtest_pb2.BacktestConfig) -> None:
-    """Reject config fields the engine cannot honor (5A).
+    """Reject config fields the engine cannot honor (5A) — fail loud, never mislead.
 
-    These proto fields were previously accepted and silently ignored, which
-    silently produces misleading results (e.g. unadjusted prices across a split,
-    or an unenforced position cap). Until they are honored — enforcing
-    ``max_position_size`` and applying split/dividend adjustment for
-    ``use_adjusted_prices`` are tracked as fast-follow work — we fail loudly so
-    a caller is never misled.
+    Daily bars are split-adjusted, so ``use_adjusted_prices`` is honored;
+    ``allow_shorting``, ``max_position_size``, and strategy ``parameters``
+    remain unsupported.
     """
     unsupported: list[str] = []
     if config.allow_shorting:
@@ -49,16 +49,35 @@ def _reject_unsupported_config(config: backtest_pb2.BacktestConfig) -> None:
         raw = config.max_position_size.value
         try:
             capped = Decimal(raw) if raw else Decimal(0)
-        except (ArithmeticError, ValueError):
+        except ArithmeticError, ValueError:
             capped = Decimal(0)
         if capped > 0:
             unsupported.append("max_position_size (per-position cap not yet enforced)")
-    if config.use_adjusted_prices:
-        unsupported.append("use_adjusted_prices (split/dividend adjustment not yet applied)")
     if len(config.parameters) > 0:
         unsupported.append("parameters (strategy parameter override not supported)")
     if unsupported:
         raise ValueError("Unsupported backtest config field(s) set: " + "; ".join(unsupported))
+
+
+async def _enforce_backtest_quota(db: AsyncSession, tenant_id: UUID) -> None:
+    """Reject when the tenant has used its plan's monthly backtest quota."""
+    now = datetime.now(UTC)
+    month_start = datetime(now.year, now.month, 1, tzinfo=UTC)
+    used = (
+        await db.scalar(
+            select(func.count())
+            .select_from(Backtest)
+            .where(Backtest.tenant_id == tenant_id, Backtest.created_at >= month_start)
+        )
+        or 0
+    )
+    try:
+        await enforce_plan_limit(db, tenant_id, "backtests_per_month", used)
+    except PlanLimitExceededError as e:
+        raise ConnectError(
+            Code.RESOURCE_EXHAUSTED,
+            f"Plan limit reached: {e.limit} backtests this month; upgrade to run more.",
+        ) from e
 
 
 class BacktestServicer:
@@ -98,6 +117,7 @@ class BacktestServicer:
 
             # Create the backtest
             async with tenant_session(tenant_id, self._maker()) as db:
+                await _enforce_backtest_quota(db, tenant_id)
                 async with BacktestService(db) as service:
                     backtest = await service.create_backtest(
                         tenant_id=tenant_id,
@@ -150,7 +170,7 @@ class BacktestServicer:
                         raise
 
                     return backtest_pb2.RunBacktestResponse(
-                        backtest=self._to_proto_backtest(backtest),
+                        backtest=proto_mappers.backtest_run_to_proto(backtest),
                     )
 
         except ValueError as e:
@@ -185,17 +205,21 @@ class BacktestServicer:
                             Code.NOT_FOUND, f"Backtest not found: {request.backtest_id}"
                         )
 
-                    proto_backtest = self._to_proto_backtest(backtest)
+                    proto_backtest = proto_mappers.backtest_run_to_proto(backtest)
 
                     # Attach full results on single-get only — list responses
                     # must stay slim
                     if backtest.status == backtest_pb2.BACKTEST_STATUS_COMPLETED:
-                        results = await service.get_results(
+                        rows = await service.get_result_rows(
                             backtest_id=backtest_id,
                             tenant_id=tenant_id,
                         )
-                        if results:
-                            proto_backtest.results.CopyFrom(self._to_proto_results(results))
+                        if rows:
+                            proto_backtest.results.CopyFrom(
+                                proto_mappers.backtest_results_to_proto(
+                                    rows[0], rows[1], trades_preview=_GET_BACKTEST_TRADES_PREVIEW
+                                )
+                            )
 
                     return backtest_pb2.GetBacktestResponse(backtest=proto_backtest)
 
@@ -236,7 +260,7 @@ class BacktestServicer:
                         page_size=page_size,
                     )
 
-                    proto_backtests = [self._to_proto_backtest(b) for b in backtests]
+                    proto_backtests = [proto_mappers.backtest_run_to_proto(b) for b in backtests]
                     total_pages = (total + page_size - 1) // page_size
 
                     return backtest_pb2.ListBacktestsResponse(
@@ -292,7 +316,7 @@ class BacktestServicer:
                         raise ConnectError(Code.NOT_FOUND, f"Backtest not found: {backtest_id}")
 
                     return backtest_pb2.CancelBacktestResponse(
-                        backtest=self._to_proto_backtest(backtest),
+                        backtest=proto_mappers.backtest_run_to_proto(backtest),
                     )
 
         except ConnectError:
@@ -396,7 +420,7 @@ class BacktestServicer:
 
             async with tenant_session(tenant_id, self._maker()) as db:
                 async with BacktestService(db) as service:
-                    backtests: list[BacktestResponse] = []
+                    backtests: list[Backtest] = []
                     metrics_by_id: dict[str, backtest_pb2.BacktestMetrics] = {}
                     for bid in backtest_ids:
                         backtest = await service.get_backtest(
@@ -408,14 +432,16 @@ class BacktestServicer:
                         backtests.append(backtest)
 
                         if backtest.status == backtest_pb2.BACKTEST_STATUS_COMPLETED:
-                            results = await service.get_results(
+                            rows = await service.get_result_rows(
                                 backtest_id=bid,
                                 tenant_id=tenant_id,
                             )
-                            if results:
-                                metrics_by_id[str(bid)] = self._to_proto_metrics(results.metrics)
+                            if rows:
+                                metrics_by_id[str(bid)] = proto_mappers.backtest_results_to_proto(
+                                    rows[0], rows[1], trades_preview=0
+                                ).metrics
 
-                    proto_backtests = [self._to_proto_backtest(b) for b in backtests]
+                    proto_backtests = [proto_mappers.backtest_run_to_proto(b) for b in backtests]
 
                     return backtest_pb2.CompareBacktestsResponse(
                         backtests=proto_backtests,
@@ -457,7 +483,7 @@ class BacktestServicer:
             effective_size = max(1, page_size)
             total_pages = (total + effective_size - 1) // effective_size if total else 0
             return backtest_pb2.GetBacktestTradesResponse(
-                trades=[self._to_proto_trade(t) for t in trades],
+                trades=[proto_mappers.backtest_trade_to_proto(t) for t in trades],
                 pagination=common_pb2.PaginationResponse(
                     total_items=total,
                     total_pages=total_pages,
@@ -475,157 +501,3 @@ class BacktestServicer:
         except Exception as e:
             logger.error("GetBacktestTrades error: %s", e, exc_info=True)
             raise ConnectError(Code.INTERNAL, f"Failed to fetch trades: {e}") from e
-
-    def _to_proto_metrics(self, m: BacktestMetrics) -> backtest_pb2.BacktestMetrics:
-        """Convert internal metrics to proto BacktestMetrics."""
-        from llamatrade_proto.generated import backtest_pb2, common_pb2
-
-        def dec(value: float) -> common_pb2.Decimal:
-            return common_pb2.Decimal(value=str(value))
-
-        metrics = backtest_pb2.BacktestMetrics(
-            total_return=dec(m.total_return),
-            annualized_return=dec(m.annual_return),
-            sharpe_ratio=dec(m.sharpe_ratio),
-            sortino_ratio=dec(m.sortino_ratio),
-            max_drawdown=dec(m.max_drawdown),
-            max_drawdown_duration_days=dec(m.max_drawdown_duration),
-            total_trades=m.total_trades,
-            winning_trades=m.winning_trades,
-            losing_trades=m.losing_trades,
-            win_rate=dec(m.win_rate),
-            average_win=dec(m.avg_win),
-            average_loss=dec(m.avg_loss),
-            average_holding_period_days=dec(m.avg_holding_period),
-        )
-
-        # Profit factor is None when undefined (no trades or no losses):
-        # leave the proto field unset rather than writing a fake 0
-        if m.profit_factor is not None:
-            metrics.profit_factor.CopyFrom(dec(m.profit_factor))
-
-        # Benchmark metrics only when the comparison was actually computed
-        if m.benchmark_data_available:
-            metrics.benchmark_return.CopyFrom(dec(m.benchmark_return))
-            metrics.alpha.CopyFrom(dec(m.alpha))
-            metrics.beta.CopyFrom(dec(m.beta))
-            metrics.information_ratio.CopyFrom(dec(m.information_ratio))
-            metrics.excess_return.CopyFrom(dec(m.excess_return))
-            metrics.benchmark_symbol = m.benchmark_symbol
-
-        return metrics
-
-    @staticmethod
-    def _to_proto_trade(trade: TradeRecord) -> backtest_pb2.BacktestTrade:
-        """Convert one internal trade record to a proto BacktestTrade."""
-        from llamatrade_proto.generated import backtest_pb2, common_pb2
-        from llamatrade_proto.generated.trading_pb2 import ORDER_SIDE_BUY
-
-        def dec(value: float) -> common_pb2.Decimal:
-            return common_pb2.Decimal(value=str(value))
-
-        def ts(value: datetime) -> common_pb2.Timestamp:
-            return common_pb2.Timestamp(seconds=int(value.timestamp()))
-
-        return backtest_pb2.BacktestTrade(
-            symbol=trade.symbol,
-            side=ORDER_SIDE_BUY,  # engine is long-only
-            quantity=dec(trade.quantity),
-            entry_price=dec(trade.entry_price),
-            exit_price=dec(trade.exit_price)
-            if trade.exit_price is not None
-            else common_pb2.Decimal(value="0"),
-            entry_time=ts(trade.entry_date),
-            exit_time=ts(trade.exit_date) if trade.exit_date else None,
-            pnl=dec(trade.pnl),
-            pnl_percent=dec(trade.pnl_percent),
-            commission=dec(trade.commission),
-        )
-
-    def _to_proto_results(
-        self,
-        results: BacktestResultResponse,
-    ) -> backtest_pb2.BacktestResults:
-        """Convert internal result response to proto BacktestResults.
-
-        Trades are capped at a preview size; the full log is paged via
-        GetBacktestTrades (14B).
-        """
-        from llamatrade_proto.generated import backtest_pb2, common_pb2
-
-        def dec(value: float) -> common_pb2.Decimal:
-            return common_pb2.Decimal(value=str(value))
-
-        def ts(value: datetime) -> common_pb2.Timestamp:
-            return common_pb2.Timestamp(seconds=int(value.timestamp()))
-
-        proto = backtest_pb2.BacktestResults(
-            metrics=self._to_proto_metrics(results.metrics),
-            equity_curve=[
-                backtest_pb2.EquityPoint(
-                    timestamp=ts(point.date),
-                    equity=dec(point.equity),
-                    drawdown=dec(point.drawdown_percent),
-                )
-                for point in results.equity_curve
-            ],
-            trades=[
-                self._to_proto_trade(trade)
-                for trade in results.trades[:_GET_BACKTEST_TRADES_PREVIEW]
-            ],
-            benchmark_equity_curve=[
-                backtest_pb2.EquityPoint(
-                    timestamp=ts(point.date),
-                    equity=dec(point.equity),
-                )
-                for point in results.benchmark_equity_curve
-            ],
-            benchmark_symbol=results.metrics.benchmark_symbol
-            if results.metrics.benchmark_data_available
-            else "",
-        )
-        proto.monthly_returns.update(results.monthly_returns)
-        return proto
-
-    def _to_proto_backtest(
-        self,
-        backtest: BacktestResponse,
-    ) -> backtest_pb2.BacktestRun:
-        """Convert internal backtest to proto BacktestRun."""
-        from llamatrade_proto.generated import backtest_pb2, common_pb2
-
-        # backtest.status is already proto ValueType
-        proto = backtest_pb2.BacktestRun(
-            id=str(backtest.id),
-            tenant_id=str(backtest.tenant_id),
-            strategy_id=str(backtest.strategy_id),
-            strategy_version=backtest.strategy_version,
-            status=backtest.status,
-            status_message=backtest.error_message or "",
-            progress_percent=100
-            if backtest.status == backtest_pb2.BACKTEST_STATUS_COMPLETED
-            else 0,
-            created_at=common_pb2.Timestamp(seconds=int(backtest.created_at.timestamp())),
-        )
-
-        # Set config
-        proto.config.CopyFrom(
-            backtest_pb2.BacktestConfig(
-                strategy_id=str(backtest.strategy_id),
-                strategy_version=backtest.strategy_version,
-                start_date=common_pb2.Timestamp(seconds=int(backtest.start_date.timestamp())),
-                end_date=common_pb2.Timestamp(seconds=int(backtest.end_date.timestamp())),
-                initial_capital=common_pb2.Decimal(value=str(backtest.initial_capital)),
-            )
-        )
-
-        if backtest.started_at:
-            proto.started_at.CopyFrom(
-                common_pb2.Timestamp(seconds=int(backtest.started_at.timestamp()))
-            )
-        if backtest.completed_at:
-            proto.completed_at.CopyFrom(
-                common_pb2.Timestamp(seconds=int(backtest.completed_at.timestamp()))
-            )
-
-        return proto

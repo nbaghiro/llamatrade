@@ -7,8 +7,9 @@ from datetime import UTC, datetime
 from typing import Any, Literal
 
 import stripe
-from llamatrade_telemetry.instrumentation.dependency import time_dependency
 from stripe import Customer, Event, Invoice, PaymentMethod, SetupIntent, Subscription
+
+from llamatrade_telemetry.instrumentation.dependency import time_dependency
 
 logger = logging.getLogger(__name__)
 
@@ -19,6 +20,14 @@ class SetupIntentResult:
 
     client_secret: str
     customer_id: str
+
+
+@dataclass
+class CheckoutSessionResult:
+    """Result from creating a Checkout Session."""
+
+    url: str
+    session_id: str
 
 
 @dataclass
@@ -141,6 +150,47 @@ class StripeClient:
             )
         except stripe.StripeError as e:
             logger.error(f"Stripe error creating setup intent: {e}")
+            raise StripeError(str(e), getattr(e, "code", None))
+
+    # Checkout & Portal
+
+    async def create_checkout_session(
+        self,
+        *,
+        customer_id: str,
+        price_id: str,
+        success_url: str,
+        cancel_url: str,
+        trial_days: int = 0,
+    ) -> CheckoutSessionResult:
+        """Create a Stripe-hosted subscription Checkout Session (collect card + subscribe)."""
+        params: dict[str, Any] = {
+            "mode": "subscription",
+            "customer": customer_id,
+            "line_items": [{"price": price_id, "quantity": 1}],
+            "success_url": success_url,
+            "cancel_url": cancel_url,
+        }
+        if trial_days > 0:
+            params["subscription_data"] = {"trial_period_days": trial_days}
+        try:
+            with time_dependency("stripe", "checkout_session_create"):
+                session = stripe.checkout.Session.create(**params)
+            return CheckoutSessionResult(url=session.url or "", session_id=str(session.id))
+        except stripe.StripeError as e:
+            logger.error(f"Stripe error creating checkout session: {e}")
+            raise StripeError(str(e), getattr(e, "code", None))
+
+    async def create_portal_session(self, customer_id: str, return_url: str) -> str:
+        """Create a Customer Portal session for self-service subscription/card management."""
+        try:
+            with time_dependency("stripe", "portal_session_create"):
+                session = stripe.billing_portal.Session.create(
+                    customer=customer_id, return_url=return_url
+                )
+            return str(session.url)
+        except stripe.StripeError as e:
+            logger.error(f"Stripe error creating portal session: {e}")
             raise StripeError(str(e), getattr(e, "code", None))
 
     async def attach_payment_method(

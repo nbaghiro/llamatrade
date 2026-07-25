@@ -1,126 +1,21 @@
-"""Strategy performance schemas + proto enum helpers.
+"""Strategy performance request/result shapes.
 
-The response DTOs (summaries, metrics, equity points, filters) and the
-mode/status string mappings shared by the ledger-backed
-``StrategyPerformanceReadService`` and the Connect servicer. Reads derive from
-the ledger projection — there is no table-backed service here.
+The read path derives per-strategy performance from the ledger projection and
+maps it straight to the proto wire messages (see ``src.proto_mappers``); there is
+no table-backed service here. What remains are the read filters and the
+result-aggregate containers the ledger reader returns — the containers hold proto
+messages (proto is the canonical read shape, 1A) plus the numeric roll-ups the
+servicer needs.
 """
 
-from datetime import datetime
+from dataclasses import dataclass
 from decimal import Decimal
-from uuid import UUID
 
 from pydantic import BaseModel
 
-from llamatrade_proto.generated.common_pb2 import (
-    EXECUTION_MODE_LIVE,
-    EXECUTION_MODE_PAPER,
-    EXECUTION_STATUS_ERROR,
-    EXECUTION_STATUS_PAUSED,
-    EXECUTION_STATUS_PENDING,
-    EXECUTION_STATUS_RUNNING,
-    EXECUTION_STATUS_STOPPED,
-)
+from llamatrade_proto.generated import portfolio_pb2
 
-from src.models import PositionResponse
-
-_EXECUTION_MODE_TO_STR: dict[int, str] = {
-    EXECUTION_MODE_PAPER: "paper",
-    EXECUTION_MODE_LIVE: "live",
-}
-
-_EXECUTION_STATUS_TO_STR: dict[int, str] = {
-    EXECUTION_STATUS_PENDING: "pending",
-    EXECUTION_STATUS_RUNNING: "running",
-    EXECUTION_STATUS_PAUSED: "paused",
-    EXECUTION_STATUS_STOPPED: "stopped",
-    EXECUTION_STATUS_ERROR: "error",
-}
-
-
-def execution_mode_to_str(value: int) -> str:
-    """Convert ExecutionMode proto value to string."""
-    return _EXECUTION_MODE_TO_STR.get(value, "paper")
-
-
-def execution_status_to_str(value: int) -> str:
-    """Convert ExecutionStatus proto value to string."""
-    return _EXECUTION_STATUS_TO_STR.get(value, "pending")
-
-
-class PeriodReturns(BaseModel):
-    """Returns for various time periods."""
-
-    return_1d: Decimal | None = None
-    return_1w: Decimal | None = None
-    return_1m: Decimal | None = None
-    return_3m: Decimal | None = None
-    return_6m: Decimal | None = None
-    return_1y: Decimal | None = None
-    return_ytd: Decimal | None = None
-    return_all: Decimal | None = None
-
-
-class StrategyPerformanceSummary(BaseModel):
-    """Summary of a strategy's performance."""
-
-    execution_id: UUID
-    strategy_id: UUID
-    strategy_name: str
-    mode: str
-    status: str
-    color: str | None
-    allocated_capital: Decimal | None
-    current_value: Decimal | None
-    positions_count: int
-    returns: PeriodReturns
-    started_at: datetime | None
-    updated_at: datetime
-
-
-class LiveMetrics(BaseModel):
-    """Detailed live metrics for a strategy."""
-
-    sharpe_ratio: Decimal | None = None
-    sortino_ratio: Decimal | None = None
-    calmar_ratio: Decimal | None = None
-    max_drawdown: Decimal | None = None
-    current_drawdown: Decimal | None = None
-    volatility: Decimal | None = None
-    total_trades: int = 0
-    winning_trades: int = 0
-    losing_trades: int = 0
-    win_rate: Decimal | None = None
-    profit_factor: Decimal | None = None
-    average_win: Decimal | None = None
-    average_loss: Decimal | None = None
-    starting_capital: Decimal | None = None
-    current_equity: Decimal | None = None
-    peak_equity: Decimal | None = None
-    total_pnl: Decimal | None = None
-    benchmark_symbol: str | None = None
-    alpha: Decimal | None = None
-    beta: Decimal | None = None
-    correlation: Decimal | None = None
-    calculated_at: datetime | None = None
-
-
-class EquityPoint(BaseModel):
-    """Point in equity curve time series."""
-
-    timestamp: datetime
-    equity: Decimal
-    return_percent: Decimal | None = None
-    drawdown: Decimal | None = None
-    benchmark_value: Decimal | None = None
-
-
-class StrategyPerformanceDetail(BaseModel):
-    """Detailed performance for a single strategy."""
-
-    summary: StrategyPerformanceSummary
-    metrics: LiveMetrics
-    positions: list[PositionResponse]
+from src.ledger.read_model import PositionView
 
 
 class ListPerformanceFilters(BaseModel):
@@ -130,36 +25,33 @@ class ListPerformanceFilters(BaseModel):
     status: int | None = None  # ExecutionStatus proto value
 
 
-class ListPerformanceResult(BaseModel):
+@dataclass(frozen=True)
+class ListPerformanceResult:
     """Result of listing strategy performance."""
 
-    strategies: list[StrategyPerformanceSummary]
+    strategies: list[portfolio_pb2.StrategyPerformanceSummary]
     total_allocated: Decimal
     total_current_value: Decimal
     combined_return: Decimal | None
     total: int
 
 
-class BenchmarkSeries(BaseModel):
-    """A benchmark (e.g. SPY) equity series aligned to a strategy's curve.
+@dataclass(frozen=True)
+class StrategyPerformanceDetail:
+    """Detailed performance for a single strategy."""
 
-    Rebased to the strategy's starting equity so a "vs SPY" line is directly
-    comparable to the strategy line on the same axis.
-    """
-
-    symbol: str
-    points: list[EquityPoint]
-    total_return: Decimal | None = None
+    summary: portfolio_pb2.StrategyPerformanceSummary
+    metrics: portfolio_pb2.StrategyLiveMetrics
+    positions: list[PositionView]
 
 
-class EquityCurveResult(BaseModel):
+@dataclass(frozen=True)
+class EquityCurveResult:
     """Equity curve data for a strategy."""
 
-    equity_curve: list[EquityPoint]
-    benchmark_symbol: str | None = None
-    benchmark_return: Decimal | None = None
-    benchmark: BenchmarkSeries | None = None
-    period_returns: PeriodReturns
+    equity_curve: list[portfolio_pb2.StrategyEquityPoint]
+    benchmark: portfolio_pb2.BenchmarkData | None
+    period_returns: portfolio_pb2.StrategyPeriodReturns
 
 
 class BookTotals(BaseModel):

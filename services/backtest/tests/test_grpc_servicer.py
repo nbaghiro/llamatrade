@@ -1,6 +1,7 @@
 """Tests for backtest gRPC servicer methods."""
 
 from datetime import UTC, datetime
+from decimal import Decimal
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import UUID, uuid4
 
@@ -8,13 +9,12 @@ import pytest
 from connectrpc.code import Code
 from connectrpc.errors import ConnectError
 
+from llamatrade_db.models.backtest import Backtest
 from llamatrade_proto.generated.backtest_pb2 import (
     BACKTEST_STATUS_CANCELLED,
     BACKTEST_STATUS_COMPLETED,
     BACKTEST_STATUS_PENDING,
 )
-
-from src.models import BacktestResponse
 
 # Test UUIDs
 TEST_TENANT_ID = UUID("11111111-1111-1111-1111-111111111111")
@@ -68,19 +68,19 @@ def make_mock_backtest(
     created_at: datetime | None = None,
     started_at: datetime | None = None,
     completed_at: datetime | None = None,
-) -> BacktestResponse:
-    """Create a mock backtest response object."""
-    return BacktestResponse(
+) -> Backtest:
+    """Create an in-memory Backtest row (servicer maps it to proto via proto_mappers)."""
+    return Backtest(
         id=id,
         tenant_id=tenant_id,
         strategy_id=strategy_id,
         strategy_version=strategy_version,
+        name="Test Backtest",
         status=status,
-        progress=progress,
-        initial_capital=initial_capital,
+        initial_capital=Decimal(str(initial_capital)),
         error_message=error_message,
-        start_date=start_date or datetime(2024, 1, 1, tzinfo=UTC),
-        end_date=end_date or datetime(2024, 6, 30, tzinfo=UTC),
+        start_date=(start_date or datetime(2024, 1, 1, tzinfo=UTC)).date(),
+        end_date=(end_date or datetime(2024, 6, 30, tzinfo=UTC)).date(),
         created_at=created_at or datetime.now(UTC),
         started_at=started_at,
         completed_at=completed_at,
@@ -147,6 +147,7 @@ class TestRunBacktest:
         mock_service.queue_backtest = AsyncMock(return_value="task-id")
 
         mock_db = MagicMock()
+        mock_db.scalar = AsyncMock(return_value=0)  # plan-quota count: under limit
 
         with patch("src.grpc.servicer.tenant_session", create_mock_get_db(mock_db)):
             with patch(
@@ -176,6 +177,45 @@ class TestRunBacktest:
                 assert response.backtest.id == str(TEST_BACKTEST_ID)
                 assert response.backtest.status == backtest_pb2.BACKTEST_STATUS_PENDING
 
+    async def test_run_backtest_over_plan_limit(self, backtest_servicer, rpc_context):
+        """Reject with RESOURCE_EXHAUSTED when the monthly backtest quota is used up."""
+        from llamatrade_proto.generated import backtest_pb2, common_pb2
+
+        mock_service = MagicMock()
+        mock_service.create_backtest = AsyncMock()
+
+        mock_db = MagicMock()
+        # count == free-tier limit (10) -> at quota -> rejected before create.
+        mock_db.scalar = AsyncMock(return_value=10)
+
+        with patch("src.grpc.servicer.tenant_session", create_mock_get_db(mock_db)):
+            with patch(
+                "src.grpc.servicer.BacktestService",
+                new=create_mock_service_class(mock_service),
+            ):
+                request = backtest_pb2.RunBacktestRequest(
+                    context=common_pb2.TenantContext(
+                        tenant_id=str(TEST_TENANT_ID),
+                        user_id=str(TEST_USER_ID),
+                    ),
+                    config=backtest_pb2.BacktestConfig(
+                        strategy_id=str(TEST_STRATEGY_ID),
+                        start_date=common_pb2.Timestamp(
+                            seconds=int(datetime(2024, 1, 1).timestamp())
+                        ),
+                        end_date=common_pb2.Timestamp(
+                            seconds=int(datetime(2024, 6, 30).timestamp())
+                        ),
+                        initial_capital=common_pb2.Decimal(value="100000"),
+                    ),
+                )
+
+                with pytest.raises(ConnectError) as exc_info:
+                    await backtest_servicer.run_backtest(request, rpc_context)
+
+                assert exc_info.value.code == Code.RESOURCE_EXHAUSTED
+                mock_service.create_backtest.assert_not_awaited()
+
     async def test_run_backtest_enqueue_failure_marks_failed(self, backtest_servicer, rpc_context):
         """2A: if enqueue raises, the committed PENDING row is failed, RPC aborts."""
         from llamatrade_proto.generated import backtest_pb2, common_pb2
@@ -188,6 +228,7 @@ class TestRunBacktest:
         mock_service.fail_backtest = AsyncMock(return_value=True)
 
         mock_db = MagicMock()
+        mock_db.scalar = AsyncMock(return_value=0)  # plan-quota count: under limit
 
         with patch("src.grpc.servicer.tenant_session", create_mock_get_db(mock_db)):
             with patch(
@@ -221,7 +262,6 @@ class TestRunBacktest:
         "field_setter",
         [
             lambda cfg: setattr(cfg, "allow_shorting", True),
-            lambda cfg: setattr(cfg, "use_adjusted_prices", True),
             lambda cfg: cfg.max_position_size.MergeFrom(
                 __import__("llamatrade_proto.generated.common_pb2", fromlist=["Decimal"]).Decimal(
                     value="25"
@@ -256,11 +296,26 @@ class TestRunBacktest:
 
         assert exc_info.value.code == Code.INVALID_ARGUMENT
 
+    def test_reject_config_allows_use_adjusted_prices(self):
+        """Daily bars are split-adjusted, so use_adjusted_prices is honored."""
+        from llamatrade_proto.generated import backtest_pb2
+
+        from src.grpc.servicer import _reject_unsupported_config
+
+        config = backtest_pb2.BacktestConfig(strategy_id=str(TEST_STRATEGY_ID))
+        config.use_adjusted_prices = True
+        _reject_unsupported_config(config)  # does not raise
+
+        config.allow_shorting = True
+        with pytest.raises(ValueError, match="allow_shorting"):
+            _reject_unsupported_config(config)
+
     async def test_run_backtest_invalid_argument(self, backtest_servicer, rpc_context):
         """Test running backtest with invalid arguments."""
         from llamatrade_proto.generated import backtest_pb2, common_pb2
 
         mock_db = MagicMock()
+        mock_db.scalar = AsyncMock(return_value=0)
 
         mock_service = MagicMock()
         mock_service.create_backtest = AsyncMock(side_effect=ValueError("Invalid strategy"))
@@ -302,6 +357,7 @@ class TestGetBacktest:
         mock_service.get_backtest = AsyncMock(return_value=mock_backtest)
 
         mock_db = MagicMock()
+        mock_db.scalar = AsyncMock(return_value=0)  # plan-quota count: under limit
 
         with patch("src.grpc.servicer.tenant_session", create_mock_get_db(mock_db)):
             with patch(
@@ -329,6 +385,7 @@ class TestGetBacktest:
         mock_service.get_backtest = AsyncMock(return_value=None)
 
         mock_db = MagicMock()
+        mock_db.scalar = AsyncMock(return_value=0)  # plan-quota count: under limit
 
         with patch("src.grpc.servicer.tenant_session", create_mock_get_db(mock_db)):
             with patch(
@@ -360,6 +417,7 @@ class TestListBacktests:
         mock_service.list_backtests = AsyncMock(return_value=([], 0))
 
         mock_db = MagicMock()
+        mock_db.scalar = AsyncMock(return_value=0)  # plan-quota count: under limit
 
         with patch("src.grpc.servicer.tenant_session", create_mock_get_db(mock_db)):
             with patch(
@@ -391,6 +449,7 @@ class TestListBacktests:
         mock_service.list_backtests = AsyncMock(return_value=(mock_backtests, 2))
 
         mock_db = MagicMock()
+        mock_db.scalar = AsyncMock(return_value=0)  # plan-quota count: under limit
 
         with patch("src.grpc.servicer.tenant_session", create_mock_get_db(mock_db)):
             with patch(
@@ -419,6 +478,7 @@ class TestListBacktests:
         mock_service.list_backtests = AsyncMock(return_value=(mock_backtests, 1))
 
         mock_db = MagicMock()
+        mock_db.scalar = AsyncMock(return_value=0)  # plan-quota count: under limit
 
         with patch("src.grpc.servicer.tenant_session", create_mock_get_db(mock_db)):
             with patch(
@@ -449,6 +509,7 @@ class TestListBacktests:
         mock_service.list_backtests = AsyncMock(return_value=(mock_backtests, 1))
 
         mock_db = MagicMock()
+        mock_db.scalar = AsyncMock(return_value=0)  # plan-quota count: under limit
 
         with patch("src.grpc.servicer.tenant_session", create_mock_get_db(mock_db)):
             with patch(
@@ -483,6 +544,7 @@ class TestCancelBacktest:
         mock_service.get_backtest = AsyncMock(return_value=mock_backtest)
 
         mock_db = MagicMock()
+        mock_db.scalar = AsyncMock(return_value=0)  # plan-quota count: under limit
 
         with patch("src.grpc.servicer.tenant_session", create_mock_get_db(mock_db)):
             with patch(
@@ -510,6 +572,7 @@ class TestCancelBacktest:
         mock_service.cancel_backtest = AsyncMock(return_value=False)
 
         mock_db = MagicMock()
+        mock_db.scalar = AsyncMock(return_value=0)  # plan-quota count: under limit
 
         with patch("src.grpc.servicer.tenant_session", create_mock_get_db(mock_db)):
             with patch(
@@ -546,9 +609,10 @@ class TestCompareBacktests:
 
         mock_service = MagicMock()
         mock_service.get_backtest = AsyncMock(side_effect=mock_backtests)
-        mock_service.get_results = AsyncMock(return_value=None)
+        mock_service.get_result_rows = AsyncMock(return_value=None)
 
         mock_db = MagicMock()
+        mock_db.scalar = AsyncMock(return_value=0)  # plan-quota count: under limit
 
         with patch("src.grpc.servicer.tenant_session", create_mock_get_db(mock_db)):
             with patch(
@@ -578,9 +642,10 @@ class TestCompareBacktests:
         mock_service = MagicMock()
         # First call returns backtest, second returns None
         mock_service.get_backtest = AsyncMock(side_effect=[mock_backtest, None])
-        mock_service.get_results = AsyncMock(return_value=None)
+        mock_service.get_result_rows = AsyncMock(return_value=None)
 
         mock_db = MagicMock()
+        mock_db.scalar = AsyncMock(return_value=0)  # plan-quota count: under limit
 
         with patch("src.grpc.servicer.tenant_session", create_mock_get_db(mock_db)):
             with patch(
@@ -612,6 +677,7 @@ class TestStreamBacktestProgress:
         mock_service.get_backtest = AsyncMock(return_value=None)
 
         mock_db = MagicMock()
+        mock_db.scalar = AsyncMock(return_value=0)  # plan-quota count: under limit
 
         with patch("src.grpc.servicer.tenant_session", create_mock_get_db(mock_db)):
             with patch(
@@ -642,6 +708,7 @@ class TestStreamBacktestProgress:
         mock_service.get_backtest = AsyncMock(return_value=mock_backtest)
 
         mock_db = MagicMock()
+        mock_db.scalar = AsyncMock(return_value=0)  # plan-quota count: under limit
 
         with patch("src.grpc.servicer.tenant_session", create_mock_get_db(mock_db)):
             with patch(
@@ -674,24 +741,24 @@ class TestGetBacktestTrades:
         """Returns a page of trades with correct pagination metadata."""
         from llamatrade_proto.generated import backtest_pb2, common_pb2
 
-        from src.models import TradeRecord
-
-        trade = TradeRecord(
-            entry_date=datetime(2024, 1, 2, tzinfo=UTC),
-            exit_date=datetime(2024, 1, 3, tzinfo=UTC),
-            symbol="AAPL",
-            side="long",
-            entry_price=100.0,
-            exit_price=110.0,
-            quantity=10.0,
-            pnl=100.0,
-            pnl_percent=10.0,
-            commission=2.0,
-        )
+        # get_backtest_trades returns raw JSONB trade dicts; the servicer maps them.
+        trade = {
+            "entry_date": "2024-01-02T00:00:00+00:00",
+            "exit_date": "2024-01-03T00:00:00+00:00",
+            "symbol": "AAPL",
+            "side": "long",
+            "entry_price": 100.0,
+            "exit_price": 110.0,
+            "quantity": 10.0,
+            "pnl": 100.0,
+            "pnl_percent": 10.0,
+            "commission": 2.0,
+        }
 
         mock_service = MagicMock()
         mock_service.get_backtest_trades = AsyncMock(return_value=([trade], 25))
         mock_db = MagicMock()
+        mock_db.scalar = AsyncMock(return_value=0)  # plan-quota count: under limit
 
         with patch("src.grpc.servicer.tenant_session", create_mock_get_db(mock_db)):
             with patch(

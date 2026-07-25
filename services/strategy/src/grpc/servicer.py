@@ -14,10 +14,13 @@ if TYPE_CHECKING:
 from connectrpc.code import Code
 from connectrpc.errors import ConnectError
 from connectrpc.request import RequestContext
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from llamatrade_common.connect import resolve_identity_connect
 from llamatrade_db import get_session_maker, system_session, tenant_session
+from llamatrade_db.models import StrategyExecution
+from llamatrade_db.plan_limits import PlanLimitExceededError, enforce_plan_limit
 from llamatrade_proto.generated import common_pb2, strategy_pb2
 from llamatrade_proto.generated.common_pb2 import EXECUTION_MODE_PAPER
 from llamatrade_proto.generated.strategy_pb2 import (
@@ -27,12 +30,13 @@ from llamatrade_proto.generated.strategy_pb2 import (
 )
 
 from src.grpc.error_handler import handle_service_errors, parse_uuid
-from src.models import (
-    ConfigOverride,
-    ExecutionResponse,
-    StrategyDetailResponse,
-    StrategyResponse,
-    StrategyVersionResponse,
+from src.models import ConfigOverride
+from src.proto_mappers import (
+    execution_to_proto,
+    strategy_summary_to_proto,
+    strategy_to_proto,
+    strategy_version_to_proto,
+    template_to_proto,
 )
 
 logger = logging.getLogger(__name__)
@@ -99,18 +103,16 @@ class StrategyServicer:
                         Code.NOT_FOUND,
                         f"Strategy version {request.version} not found",
                     )
-                strategy = await service.get_strategy(tenant_id, strategy_id)
-            else:
-                strategy = await service.get_strategy(tenant_id, strategy_id)
 
-            if not strategy:
+            result = await service.get_strategy(tenant_id, strategy_id)
+            if not result:
                 raise ConnectError(
                     Code.NOT_FOUND,
                     f"Strategy not found: {request.strategy_id}",
                 )
 
             return strategy_pb2.GetStrategyResponse(
-                strategy=self._to_proto_strategy(strategy),
+                strategy=strategy_to_proto(*result),
             )
 
     @handle_service_errors
@@ -158,7 +160,10 @@ class StrategyServicer:
             total_pages = (total + page_size - 1) // page_size if total > 0 else 1
 
             return strategy_pb2.ListStrategiesResponse(
-                strategies=[self._to_proto_strategy_summary(s) for s in strategies],
+                strategies=[
+                    strategy_summary_to_proto(s, symbols, timeframe)
+                    for s, symbols, timeframe in strategies
+                ],
                 pagination=common_pb2.PaginationResponse(
                     total_items=total,
                     total_pages=total_pages,
@@ -205,12 +210,10 @@ class StrategyServicer:
                     )
                 else:
                     # Create from DSL code
-                    parameters = dict(request.parameters) if request.parameters else None
                     create_data = StrategyCreate(
                         name=request.name,
                         description=request.description or None,
                         config_sexpr=request.dsl_code,
-                        parameters=parameters,
                     )
                     strategy = await service.create_strategy(
                         tenant_id=tenant_id,
@@ -219,7 +222,7 @@ class StrategyServicer:
                     )
 
                 return strategy_pb2.CreateStrategyResponse(
-                    strategy=self._to_proto_strategy(strategy),
+                    strategy=strategy_to_proto(*strategy),
                 )
         except ValueError as e:
             # Validation errors are invalid arguments
@@ -238,13 +241,10 @@ class StrategyServicer:
         tenant_id, user_id = _validate_tenant_context(request.context)
         strategy_id = parse_uuid(request.strategy_id, "strategy_id")
 
-        # Convert proto map to dict
-        parameters = dict(request.parameters) if request.parameters else None
         update_data = StrategyUpdate(
             name=request.name if request.name else None,
             description=request.description if request.description else None,
             config_sexpr=request.dsl_code if request.dsl_code else None,
-            parameters=parameters,
             changelog=request.change_summary if request.change_summary else None,
         )
 
@@ -265,7 +265,7 @@ class StrategyServicer:
                     )
 
                 return strategy_pb2.UpdateStrategyResponse(
-                    strategy=self._to_proto_strategy(strategy),
+                    strategy=strategy_to_proto(*strategy),
                 )
         except ValueError as e:
             # Validation errors are invalid arguments
@@ -331,7 +331,7 @@ class StrategyServicer:
                     compile_error = f"compilation failed: {e}"
 
             result = strategy_pb2.CompilationResult(
-                success=bool(validation.valid) and compile_error is None,
+                success=validation.valid and compile_error is None,
                 compiled_json=compiled_json_str,
             )
 
@@ -345,25 +345,9 @@ class StrategyServicer:
                     )
                 )
 
-            for e in validation.errors:
-                result.errors.append(
-                    strategy_pb2.CompilationError(
-                        line=0,
-                        column=0,
-                        message=str(e),
-                        code="VALIDATION_ERROR",
-                    )
-                )
-
-            for w in validation.warnings:
-                result.warnings.append(
-                    strategy_pb2.CompilationWarning(
-                        line=0,
-                        column=0,
-                        message=str(w),
-                        code="WARNING",
-                    )
-                )
+            # validation already carries structured errors/warnings (proto).
+            result.errors.extend(validation.errors)
+            result.warnings.extend(validation.warnings)
 
             return strategy_pb2.CompileStrategyResponse(result=result)
 
@@ -381,46 +365,20 @@ class StrategyServicer:
 
         async with tenant_session(tenant_id, self._maker()) as db:
             service = StrategyService(db)
-            strategy = await service.get_strategy(tenant_id, strategy_id)
+            result = await service.get_strategy(tenant_id, strategy_id)
 
-            if not strategy:
+            if not result:
                 raise ConnectError(
                     Code.NOT_FOUND,
                     f"Strategy not found: {request.strategy_id}",
                 )
 
-            # Validate the strategy's config
-            validation = await service.validate_config(strategy.config_sexpr)
+            _, version = result
+            # Validate the current version's config; the service returns the
+            # structured proto ValidationResult directly.
+            validation = await service.validate_config(version.config_sexpr)
 
-            errors = [
-                strategy_pb2.CompilationError(
-                    line=0,
-                    column=0,
-                    message=e,
-                    code="VALIDATION_ERROR",
-                )
-                for e in validation.errors
-            ]
-
-            warnings = [
-                strategy_pb2.CompilationWarning(
-                    line=0,
-                    column=0,
-                    message=w,
-                    code="WARNING",
-                )
-                for w in validation.warnings
-            ]
-
-            return strategy_pb2.ValidateStrategyResponse(
-                result=strategy_pb2.ValidationResult(
-                    valid=validation.valid,
-                    errors=errors,
-                    warnings=warnings,
-                    detected_symbols=validation.detected_symbols,
-                    detected_indicators=validation.detected_indicators,
-                ),
-            )
+            return strategy_pb2.ValidateStrategyResponse(result=validation)
 
     @handle_service_errors
     async def list_strategy_versions(
@@ -450,7 +408,7 @@ class StrategyServicer:
             total_pages = (total + page_size - 1) // page_size if total > 0 else 1
 
             return strategy_pb2.ListStrategyVersionsResponse(
-                versions=[self._to_proto_version(v, strategy_id) for v in paginated],
+                versions=[strategy_version_to_proto(v) for v in paginated],
                 pagination=common_pb2.PaginationResponse(
                     total_items=total,
                     total_pages=total_pages,
@@ -515,7 +473,7 @@ class StrategyServicer:
                 full_strategy = await service.get_strategy(tenant_id, strategy_id)
 
                 return strategy_pb2.UpdateStrategyStatusResponse(
-                    strategy=self._to_proto_strategy(full_strategy) if full_strategy else None,
+                    strategy=strategy_to_proto(*full_strategy) if full_strategy else None,
                 )
         except ValueError as e:
             # Status transition validation errors
@@ -550,33 +508,32 @@ class StrategyServicer:
                 # Create from the specific version's config
                 from src.models import StrategyCreate
 
-                strategy = await service.create_strategy(
+                result = await service.create_strategy(
                     tenant_id=tenant_id,
                     user_id=user_id,
                     data=StrategyCreate(
                         name=request.new_name,
                         description=f"Cloned from version {request.version}",
                         config_sexpr=version.config_sexpr,
-                        parameters=version.parameters,
                     ),
                 )
             else:
                 # Clone current version
-                strategy = await service.clone_strategy(
+                result = await service.clone_strategy(
                     tenant_id=tenant_id,
                     user_id=user_id,
                     strategy_id=strategy_id,
                     new_name=request.new_name,
                 )
 
-            if not strategy:
+            if not result:
                 raise ConnectError(
                     Code.NOT_FOUND,
                     f"Strategy not found: {request.strategy_id}",
                 )
 
             return strategy_pb2.CloneStrategyResponse(
-                strategy=self._to_proto_strategy(strategy),
+                strategy=strategy_to_proto(*result),
             )
 
     @handle_service_errors
@@ -632,7 +589,7 @@ class StrategyServicer:
                 )
 
             return strategy_pb2.CreateExecutionResponse(
-                execution=self._to_proto_execution(execution),
+                execution=execution_to_proto(execution),
             )
 
     @handle_service_errors
@@ -658,7 +615,7 @@ class StrategyServicer:
                 )
 
             return strategy_pb2.GetExecutionResponse(
-                execution=self._to_proto_execution(execution),
+                execution=execution_to_proto(execution),
             )
 
     @handle_service_errors
@@ -696,7 +653,7 @@ class StrategyServicer:
             total_pages = (total + page_size - 1) // page_size if total > 0 else 1
 
             return strategy_pb2.ListExecutionsResponse(
-                executions=[self._to_proto_execution(e) for e in executions],
+                executions=[execution_to_proto(e) for e in executions],
                 pagination=common_pb2.PaginationResponse(
                     total_items=total,
                     total_pages=total_pages,
@@ -708,6 +665,27 @@ class StrategyServicer:
             )
 
     @handle_service_errors
+    async def _enforce_live_strategy_quota(self, db: AsyncSession, tenant_id: UUID) -> None:
+        """Reject when the tenant is at its plan's live-strategy limit."""
+        running = (
+            await db.scalar(
+                select(func.count())
+                .select_from(StrategyExecution)
+                .where(
+                    StrategyExecution.tenant_id == tenant_id,
+                    StrategyExecution.status == common_pb2.EXECUTION_STATUS_RUNNING,
+                )
+            )
+            or 0
+        )
+        try:
+            await enforce_plan_limit(db, tenant_id, "live_strategies", running)
+        except PlanLimitExceededError as e:
+            raise ConnectError(
+                Code.RESOURCE_EXHAUSTED,
+                f"Plan limit reached: {e.limit} live strateg(ies); upgrade to run more.",
+            ) from e
+
     async def start_execution(
         self,
         request: strategy_pb2.StartExecutionRequest,
@@ -721,6 +699,7 @@ class StrategyServicer:
 
         try:
             async with tenant_session(tenant_id, self._maker()) as db:
+                await self._enforce_live_strategy_quota(db, tenant_id)
                 service = StrategyService(db)
                 execution = await service.start_execution(
                     tenant_id,
@@ -736,7 +715,7 @@ class StrategyServicer:
                     )
 
                 return strategy_pb2.StartExecutionResponse(
-                    execution=self._to_proto_execution(execution),
+                    execution=execution_to_proto(execution),
                 )
         except ValueError as e:
             # State transition / funding errors are precondition failures
@@ -766,7 +745,7 @@ class StrategyServicer:
                     )
 
                 return strategy_pb2.PauseExecutionResponse(
-                    execution=self._to_proto_execution(execution),
+                    execution=execution_to_proto(execution),
                 )
         except ValueError as e:
             # State transition errors are precondition failures
@@ -804,7 +783,7 @@ class StrategyServicer:
                     )
 
                 return strategy_pb2.StopExecutionResponse(
-                    execution=self._to_proto_execution(execution),
+                    execution=execution_to_proto(execution),
                 )
         except ValueError as e:
             # State transition errors are precondition failures
@@ -837,19 +816,7 @@ class StrategyServicer:
         )
 
         return strategy_pb2.ListTemplatesResponse(
-            templates=[
-                strategy_pb2.StrategyTemplate(
-                    id=t.id,
-                    name=t.name,
-                    description=t.description or "",
-                    category=t.category,
-                    asset_class=t.asset_class,
-                    config_sexpr=t.config_sexpr,
-                    tags=t.tags,
-                    difficulty=t.difficulty,
-                )
-                for t in templates
-            ],
+            templates=[template_to_proto(t) for t in templates],
         )
 
     @handle_service_errors
@@ -874,111 +841,5 @@ class StrategyServicer:
             )
 
         return strategy_pb2.GetTemplateResponse(
-            template=strategy_pb2.StrategyTemplate(
-                id=template.id,
-                name=template.name,
-                description=template.description or "",
-                category=template.category,
-                asset_class=template.asset_class,
-                config_sexpr=template.config_sexpr,
-                tags=template.tags,
-                difficulty=template.difficulty,
-            ),
-        )
-
-    # Helper methods
-
-    def _to_proto_strategy(self, strategy: StrategyDetailResponse) -> strategy_pb2.Strategy:
-        """Convert internal strategy to proto Strategy."""
-        config_json_str = ""
-        if strategy.config_json:
-            config_json_str = json.dumps(strategy.config_json)
-
-        return strategy_pb2.Strategy(
-            id=str(strategy.id),
-            tenant_id="",  # Not included in response
-            name=strategy.name,
-            description=strategy.description or "",
-            status=strategy.status,
-            version=strategy.current_version,
-            dsl_code=strategy.config_sexpr,
-            compiled_json=config_json_str,
-            symbols=strategy.symbols,
-            timeframe=strategy.timeframe,
-            parameters=strategy.parameters,
-            created_at=common_pb2.Timestamp(seconds=int(strategy.created_at.timestamp())),
-            updated_at=common_pb2.Timestamp(seconds=int(strategy.updated_at.timestamp())),
-        )
-
-    def _to_proto_strategy_summary(self, strategy: StrategyResponse) -> strategy_pb2.Strategy:
-        """Convert internal strategy summary to proto Strategy.
-
-        Carries the current version's symbols + timeframe so the list can render
-        them; the DSL/compiled config is omitted (fetch via GetStrategy).
-        """
-        return strategy_pb2.Strategy(
-            id=str(strategy.id),
-            tenant_id="",
-            name=strategy.name,
-            description=strategy.description or "",
-            status=strategy.status,
-            version=strategy.current_version,
-            symbols=strategy.symbols,
-            timeframe=strategy.timeframe,
-            created_at=common_pb2.Timestamp(seconds=int(strategy.created_at.timestamp())),
-            updated_at=common_pb2.Timestamp(seconds=int(strategy.updated_at.timestamp())),
-        )
-
-    def _to_proto_version(
-        self, version: StrategyVersionResponse, strategy_id: UUID
-    ) -> strategy_pb2.StrategyVersion:
-        """Convert internal version to proto StrategyVersion."""
-        config_json_str = ""
-        if version.config_json:
-            config_json_str = json.dumps(version.config_json)
-
-        return strategy_pb2.StrategyVersion(
-            strategy_id=str(strategy_id),
-            version=version.version,
-            dsl_code=version.config_sexpr,
-            compiled_json=config_json_str,
-            parameters=version.parameters,
-            change_summary=version.changelog or "",
-            created_at=common_pb2.Timestamp(seconds=int(version.created_at.timestamp())),
-        )
-
-    def _to_proto_execution(self, execution: ExecutionResponse) -> strategy_pb2.StrategyExecution:
-        """Convert internal execution response to proto StrategyExecution."""
-        config_override_map: dict[str, str] = {}
-        if execution.config_override:
-            # Convert ConfigOverride to string map
-            for key, value in execution.config_override.items():
-                if value is not None:
-                    if isinstance(value, list):
-                        config_override_map[key] = json.dumps(value)
-                    else:
-                        config_override_map[key] = str(value)
-
-        return strategy_pb2.StrategyExecution(
-            id=str(execution.id),
-            strategy_id=str(execution.strategy_id),
-            tenant_id="",  # Not included in response
-            version=execution.version,
-            mode=execution.mode,
-            status=execution.status,
-            config_override=config_override_map,
-            started_at=common_pb2.Timestamp(seconds=int(execution.started_at.timestamp()))
-            if execution.started_at
-            else common_pb2.Timestamp(),
-            stopped_at=common_pb2.Timestamp(seconds=int(execution.stopped_at.timestamp()))
-            if execution.stopped_at
-            else common_pb2.Timestamp(),
-            error_message=execution.error_message or "",
-            created_at=common_pb2.Timestamp(seconds=int(execution.created_at.timestamp())),
-            allocated_capital=common_pb2.Decimal(
-                value=str(execution.allocated_capital) if execution.allocated_capital else ""
-            ),
-            credentials_id=str(execution.credentials_id) if execution.credentials_id else "",
-            sleeve_id=str(execution.sleeve_id) if execution.sleeve_id else "",
-            account_id=str(execution.account_id) if execution.account_id else "",
+            template=template_to_proto(template),
         )

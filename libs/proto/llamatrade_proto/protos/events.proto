@@ -61,7 +61,7 @@ enum EventType {
   // auth/user 70+, strategy 80+).
 }
 
-// Ledger fill — trading → portfolio (durable). Proto form of CONTRACTS.md §1.
+// Ledger fill — trading → portfolio (durable). Proto form of portfolio-ledger.md.
 // Decimal amounts are strings (broker-faithful, no precision loss), matching the
 // locked flat contract this replaces.
 message LedgerFill {
@@ -80,7 +80,7 @@ message LedgerFill {
   string filled_at = 13;  // ISO-8601
 }
 
-// Cash reservation lifecycle — trading → portfolio. CONTRACTS.md §4.
+// Cash reservation lifecycle — trading → portfolio. portfolio-ledger.md.
 message LedgerReservation {
   string tenant_id = 1;
   string account_id = 2;

@@ -64,8 +64,8 @@ from src.ledger.reconciliation import (
 from src.ledger.sizing import (
     DEFAULT_DRIFT_TOLERANCE,
     FifoResult,
-    IntendedOrder,
     Lot,
+    SleeveOrder,
     fit_to_free_cash,
     select_lots_fifo,
     sleeve_equity,
@@ -119,7 +119,7 @@ __all__ = [
     "plan_transfer",
     "plan_withdraw",
     # sizing
-    "IntendedOrder",
+    "SleeveOrder",
     "Lot",
     "FifoResult",
     "DEFAULT_DRIFT_TOLERANCE",

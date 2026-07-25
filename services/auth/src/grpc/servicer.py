@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 type AnyContext = RequestContext[object, object]
 
 from llamatrade_common import current_context
+from llamatrade_common.utils import require_secret, verify_api_key
 from llamatrade_db import get_session_maker, set_rls_bypass
 from llamatrade_proto.generated import auth_pb2, common_pb2
 from llamatrade_telemetry import metrics
@@ -28,7 +29,25 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-JWT_SECRET = os.getenv("JWT_SECRET", "dev-secret-change-in-production")
+JWT_SECRET = require_secret("JWT_SECRET", "dev-secret-change-in-production")
+
+_MIN_PASSWORD_LENGTH = 8
+
+
+def _validate_password_strength(password: str) -> None:
+    """Reject weak passwords; raises ConnectError(INVALID_ARGUMENT) on failure."""
+    if len(password) < _MIN_PASSWORD_LENGTH:
+        raise ConnectError(
+            Code.INVALID_ARGUMENT,
+            f"password must be at least {_MIN_PASSWORD_LENGTH} characters",
+        )
+    if not (any(c.isalpha() for c in password) and any(c.isdigit() for c in password)):
+        raise ConnectError(
+            Code.INVALID_ARGUMENT,
+            "password must contain at least one letter and one digit",
+        )
+
+
 JWT_ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "30"))
 REFRESH_TOKEN_EXPIRE_DAYS = int(os.getenv("REFRESH_TOKEN_EXPIRE_DAYS", "7"))
@@ -164,13 +183,15 @@ class AuthServicer:
                         APIKey.is_active.is_(True),
                     )
                 )
-                db_key = result.scalar_one_or_none()
+                db_key = next(
+                    (k for k in result.scalars().all() if verify_api_key(api_key, k.key_hash)),
+                    None,
+                )
 
                 if not db_key:
                     metrics.auth.api_key_validation_failure(reason="not_found")
                     return auth_pb2.ValidateAPIKeyResponse(valid=False)
 
-                # Full API key is not hash-verified here; only active status + expiry are checked
                 if db_key.expires_at and db_key.expires_at < datetime.now(UTC):
                     metrics.auth.api_key_validation_failure(reason="expired")
                     return auth_pb2.ValidateAPIKeyResponse(valid=False)
@@ -384,6 +405,8 @@ class AuthServicer:
             if existing_user:
                 raise ConnectError(Code.ALREADY_EXISTS, "Email already registered")
 
+            _validate_password_strength(request.password)
+
             # Generate a unique slug from tenant name
             base_slug = re.sub(r"[^a-z0-9]+", "-", request.tenant_name.lower()).strip("-")
             slug = f"{base_slug}-{secrets.token_hex(4)}"
@@ -520,6 +543,8 @@ class AuthServicer:
                 user.password_hash.encode(),
             ):
                 raise ConnectError(Code.INVALID_ARGUMENT, "Current password is incorrect")
+
+            _validate_password_strength(request.new_password)
 
             with metrics.auth.bcrypt_hash_duration.time():
                 user.password_hash = bcrypt.hashpw(

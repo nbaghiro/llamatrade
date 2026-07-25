@@ -9,7 +9,7 @@ from uuid import UUID, uuid4
 
 import grpc.aio
 
-from llamatrade_common import AuthError, resolve_identity
+from llamatrade_common import AuthError, paginate, resolve_identity
 
 if TYPE_CHECKING:
     from llamatrade_proto.generated import notification_pb2
@@ -80,22 +80,17 @@ class NotificationServicer:
             # Paginate
             page = request.pagination.page if request.HasField("pagination") else 1
             page_size = request.pagination.page_size if request.HasField("pagination") else 20
-            start = (page - 1) * page_size
-            end = start + page_size
-            paginated = notifications[start:end]
-
-            total = len(notifications)
-            total_pages = (total + page_size - 1) // page_size if total > 0 else 1
+            result = paginate(notifications, page=page, page_size=page_size)
 
             return notification_pb2.ListNotificationsResponse(
-                notifications=[self._to_proto_notification(n) for n in paginated],
+                notifications=[self._to_proto_notification(n) for n in result["items"]],
                 pagination=common_pb2.PaginationResponse(
-                    total_items=total,
-                    total_pages=total_pages,
-                    current_page=page,
-                    page_size=page_size,
-                    has_next=page < total_pages,
-                    has_previous=page > 1,
+                    total_items=result["total"],
+                    total_pages=result["total_pages"],
+                    current_page=result["page"],
+                    page_size=result["page_size"],
+                    has_next=result["page"] < result["total_pages"],
+                    has_previous=result["page"] > 1,
                 ),
                 unread_count=unread_count,
             )

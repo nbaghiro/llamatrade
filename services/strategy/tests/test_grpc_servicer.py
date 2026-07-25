@@ -9,6 +9,14 @@ import pytest
 from connectrpc.errors import ConnectError
 from connectrpc.request import RequestContext
 
+from llamatrade_db.models.strategy import Strategy, StrategyExecution, StrategyVersion
+from llamatrade_proto.generated.common_pb2 import (
+    EXECUTION_MODE_PAPER,
+    EXECUTION_STATUS_PAUSED,
+    EXECUTION_STATUS_PENDING,
+    EXECUTION_STATUS_RUNNING,
+    EXECUTION_STATUS_STOPPED,
+)
 from llamatrade_proto.generated.strategy_pb2 import (
     STRATEGY_STATUS_ACTIVE,
     STRATEGY_STATUS_DRAFT,
@@ -16,11 +24,7 @@ from llamatrade_proto.generated.strategy_pb2 import (
 )
 
 from src.grpc.servicer import StrategyServicer
-from src.models import (
-    StrategyConfigJSON,
-    StrategyDetailResponse,
-    StrategyResponse,
-)
+from src.proto_mappers import validation_to_proto
 
 pytestmark = pytest.mark.asyncio
 
@@ -72,8 +76,30 @@ def strategy_servicer() -> MockStrategyServicer:
     mock_session = AsyncMock()
     mock_session.__aenter__ = AsyncMock(return_value=mock_session)
     mock_session.__aexit__ = AsyncMock(return_value=None)
+    mock_session.scalar = AsyncMock(return_value=0)  # plan-quota count: under limit
 
     return MockStrategyServicer(mock_session)
+
+
+def _make_strategy_row(
+    id: UUID,
+    name: str,
+    description: str,
+    status: int,
+    current_version: int,
+) -> Strategy:
+    now = datetime.now(UTC)
+    return Strategy(
+        id=id,
+        tenant_id=TEST_TENANT_ID,
+        name=name,
+        description=description,
+        status=int(status),
+        current_version=current_version,
+        created_by=TEST_USER_ID,
+        created_at=now,
+        updated_at=now,
+    )
 
 
 def make_strategy_response(
@@ -83,24 +109,22 @@ def make_strategy_response(
     status: int = STRATEGY_STATUS_DRAFT,
     current_version: int = 1,
     config_sexpr: str = VALID_STRATEGY_SEXPR,
-    config_json: StrategyConfigJSON | None = None,
     symbols: list[str] | None = None,
     timeframe: str = "1D",
-) -> StrategyDetailResponse:
-    """Create a mock strategy detail response."""
-    return StrategyDetailResponse(
-        id=id,
-        name=name,
-        description=description,
-        status=int(status),
-        current_version=current_version,
+) -> tuple[Strategy, StrategyVersion]:
+    """Build the (Strategy, current StrategyVersion) row pair the service returns."""
+    strategy = _make_strategy_row(id, name, description, status, current_version)
+    version = StrategyVersion(
+        strategy_id=id,
+        tenant_id=TEST_TENANT_ID,
+        version=current_version,
         config_sexpr=config_sexpr,
-        config_json=config_json if config_json is not None else {},
         symbols=symbols or ["AAPL", "GOOGL"],
         timeframe=timeframe,
-        created_at=datetime.now(UTC),
-        updated_at=datetime.now(UTC),
+        created_by=TEST_USER_ID,
+        created_at=strategy.created_at,
     )
+    return strategy, version
 
 
 def make_strategy_summary(
@@ -109,16 +133,37 @@ def make_strategy_summary(
     description: str = "A test strategy",
     status: int = STRATEGY_STATUS_DRAFT,
     current_version: int = 1,
-) -> StrategyResponse:
-    """Create a mock strategy summary response."""
-    return StrategyResponse(
+    symbols: list[str] | None = None,
+    timeframe: str = "1D",
+) -> tuple[Strategy, list[str], str]:
+    """Build the (Strategy, symbols, timeframe) list row that list_strategies returns."""
+    strategy = _make_strategy_row(id, name, description, status, current_version)
+    return strategy, symbols or ["AAPL", "GOOGL"], timeframe
+
+
+def make_execution(
+    id: UUID,
+    status: int,
+    mode: int = EXECUTION_MODE_PAPER,
+    started_at: datetime | None = None,
+    stopped_at: datetime | None = None,
+    error_message: str | None = None,
+) -> StrategyExecution:
+    """Build a StrategyExecution row as the execution service methods now return."""
+    now = datetime.now(UTC)
+    return StrategyExecution(
         id=id,
-        name=name,
-        description=description,
-        status=int(status),
-        current_version=current_version,
-        created_at=datetime.now(UTC),
-        updated_at=datetime.now(UTC),
+        tenant_id=TEST_TENANT_ID,
+        strategy_id=TEST_STRATEGY_ID,
+        version=1,
+        mode=mode,
+        status=status,
+        config_override=None,
+        error_message=error_message,
+        started_at=started_at,
+        stopped_at=stopped_at,
+        created_at=now,
+        updated_at=now,
     )
 
 
@@ -539,9 +584,9 @@ class TestCompileStrategy:
         """Test compiling a valid strategy."""
         from llamatrade_proto.generated import common_pb2, strategy_pb2
 
-        from src.models import ValidationResult
-
-        mock_validation = ValidationResult(valid=True, errors=[], warnings=[])
+        mock_validation = validation_to_proto(
+            valid=True, errors=[], warnings=[], detected_symbols=[], detected_indicators=[]
+        )
         # A genuinely parseable allocation strategy: compile_strategy mocks the
         # validation layer but runs the real parser/serializer, so this must be
         # valid current-DSL (the legacy VALID_STRATEGY_SEXPR no longer parses).
@@ -571,12 +616,12 @@ class TestCompileStrategy:
         """Test compiling an invalid strategy."""
         from llamatrade_proto.generated import common_pb2, strategy_pb2
 
-        from src.models import ValidationResult
-
-        mock_validation = ValidationResult(
+        mock_validation = validation_to_proto(
             valid=False,
             errors=["Missing entry condition"],
             warnings=[],
+            detected_symbols=[],
+            detected_indicators=[],
         )
 
         with patch("src.services.strategy_service.StrategyService") as mock_service_cls:
@@ -602,9 +647,9 @@ class TestCompileStrategy:
         """Valid DSL that fails to compile reports an error, not silent success."""
         from llamatrade_proto.generated import common_pb2, strategy_pb2
 
-        from src.models import ValidationResult
-
-        mock_validation = ValidationResult(valid=True, errors=[], warnings=[])
+        mock_validation = validation_to_proto(
+            valid=True, errors=[], warnings=[], detected_symbols=[], detected_indicators=[]
+        )
 
         with (
             patch("src.services.strategy_service.StrategyService") as mock_service_cls,
@@ -695,26 +740,29 @@ class TestListStrategyVersions:
         """Test listing strategy versions."""
         from llamatrade_proto.generated import common_pb2, strategy_pb2
 
-        from src.models import StrategyVersionResponse
-
+        now = datetime.now(UTC)
         mock_versions = [
-            StrategyVersionResponse(
+            StrategyVersion(
+                strategy_id=TEST_STRATEGY_ID,
+                tenant_id=TEST_TENANT_ID,
                 version=1,
                 config_sexpr=VALID_STRATEGY_SEXPR,
-                config_json={},
                 symbols=["AAPL"],
                 timeframe="1D",
                 changelog="Initial version",
-                created_at=datetime.now(UTC),
+                created_by=TEST_USER_ID,
+                created_at=now,
             ),
-            StrategyVersionResponse(
+            StrategyVersion(
+                strategy_id=TEST_STRATEGY_ID,
+                tenant_id=TEST_TENANT_ID,
                 version=2,
                 config_sexpr=VALID_STRATEGY_SEXPR,
-                config_json={},
                 symbols=["AAPL"],
                 timeframe="1D",
                 changelog="Updated entry condition",
-                created_at=datetime.now(UTC),
+                created_by=TEST_USER_ID,
+                created_at=now,
             ),
         ]
 
@@ -819,25 +867,8 @@ class TestExecutionManagement:
     ) -> None:
         """Test creating an execution successfully."""
         from llamatrade_proto.generated import common_pb2, strategy_pb2
-        from llamatrade_proto.generated.common_pb2 import (
-            EXECUTION_MODE_PAPER,
-            EXECUTION_STATUS_PENDING,
-        )
 
-        from src.models import ExecutionResponse
-
-        mock_execution = ExecutionResponse(
-            id=uuid4(),
-            strategy_id=TEST_STRATEGY_ID,
-            version=1,
-            mode=EXECUTION_MODE_PAPER,
-            status=EXECUTION_STATUS_PENDING,
-            started_at=None,
-            stopped_at=None,
-            config_override=None,
-            error_message=None,
-            created_at=datetime.now(UTC),
-        )
+        mock_execution = make_execution(uuid4(), EXECUTION_STATUS_PENDING)
 
         with patch("src.services.strategy_service.StrategyService") as mock_service_cls:
             mock_service = mock_service_cls.return_value
@@ -863,25 +894,10 @@ class TestExecutionManagement:
     ) -> None:
         """Test getting an execution by ID."""
         from llamatrade_proto.generated import common_pb2, strategy_pb2
-        from llamatrade_proto.generated.common_pb2 import (
-            EXECUTION_MODE_PAPER,
-            EXECUTION_STATUS_RUNNING,
-        )
-
-        from src.models import ExecutionResponse
 
         execution_id = uuid4()
-        mock_execution = ExecutionResponse(
-            id=execution_id,
-            strategy_id=TEST_STRATEGY_ID,
-            version=1,
-            mode=EXECUTION_MODE_PAPER,
-            status=EXECUTION_STATUS_RUNNING,
-            started_at=datetime.now(UTC),
-            stopped_at=None,
-            config_override=None,
-            error_message=None,
-            created_at=datetime.now(UTC),
+        mock_execution = make_execution(
+            execution_id, EXECUTION_STATUS_RUNNING, started_at=datetime.now(UTC)
         )
 
         with patch("src.services.strategy_service.StrategyService") as mock_service_cls:
@@ -929,26 +945,9 @@ class TestExecutionManagement:
     ) -> None:
         """Test listing executions."""
         from llamatrade_proto.generated import common_pb2, strategy_pb2
-        from llamatrade_proto.generated.common_pb2 import (
-            EXECUTION_MODE_PAPER,
-            EXECUTION_STATUS_RUNNING,
-        )
-
-        from src.models import ExecutionResponse
 
         mock_executions = [
-            ExecutionResponse(
-                id=uuid4(),
-                strategy_id=TEST_STRATEGY_ID,
-                version=1,
-                mode=EXECUTION_MODE_PAPER,
-                status=EXECUTION_STATUS_RUNNING,
-                started_at=datetime.now(UTC),
-                stopped_at=None,
-                config_override=None,
-                error_message=None,
-                created_at=datetime.now(UTC),
-            ),
+            make_execution(uuid4(), EXECUTION_STATUS_RUNNING, started_at=datetime.now(UTC)),
         ]
 
         with patch("src.services.strategy_service.StrategyService") as mock_service_cls:
@@ -973,25 +972,10 @@ class TestExecutionManagement:
     ) -> None:
         """Test starting a pending execution."""
         from llamatrade_proto.generated import common_pb2, strategy_pb2
-        from llamatrade_proto.generated.common_pb2 import (
-            EXECUTION_MODE_PAPER,
-            EXECUTION_STATUS_RUNNING,
-        )
-
-        from src.models import ExecutionResponse
 
         execution_id = uuid4()
-        mock_execution = ExecutionResponse(
-            id=execution_id,
-            strategy_id=TEST_STRATEGY_ID,
-            version=1,
-            mode=EXECUTION_MODE_PAPER,
-            status=EXECUTION_STATUS_RUNNING,
-            started_at=datetime.now(UTC),
-            stopped_at=None,
-            config_override=None,
-            error_message=None,
-            created_at=datetime.now(UTC),
+        mock_execution = make_execution(
+            execution_id, EXECUTION_STATUS_RUNNING, started_at=datetime.now(UTC)
         )
 
         with patch("src.services.strategy_service.StrategyService") as mock_service_cls:
@@ -1010,6 +994,33 @@ class TestExecutionManagement:
 
             assert response.execution.status == common_pb2.EXECUTION_STATUS_RUNNING
             assert response.execution.started_at.seconds > 0
+
+    async def test_start_execution_over_plan_limit(
+        self, strategy_servicer: MockStrategyServicer, grpc_context: RequestContext
+    ) -> None:
+        """Reject with RESOURCE_EXHAUSTED when the live-strategy limit is reached."""
+        from llamatrade_proto.generated import common_pb2, strategy_pb2
+
+        # Running count == free-tier limit (1) -> at quota -> rejected before start.
+        strategy_servicer.mock_session.scalar = AsyncMock(return_value=1)
+
+        with patch("src.services.strategy_service.StrategyService") as mock_service_cls:
+            mock_service = mock_service_cls.return_value
+            mock_service.start_execution = AsyncMock()
+
+            request = strategy_pb2.StartExecutionRequest(
+                context=common_pb2.TenantContext(
+                    tenant_id=str(TEST_TENANT_ID),
+                    user_id=str(TEST_USER_ID),
+                ),
+                execution_id=str(uuid4()),
+            )
+
+            with pytest.raises(ConnectError) as exc_info:
+                await strategy_servicer.start_execution(request, grpc_context)
+
+            assert "RESOURCE_EXHAUSTED" in str(exc_info.value.code)
+            mock_service.start_execution.assert_not_awaited()
 
     async def test_start_execution_invalid_state(
         self, strategy_servicer: MockStrategyServicer, grpc_context: RequestContext
@@ -1041,25 +1052,10 @@ class TestExecutionManagement:
     ) -> None:
         """Test pausing a running execution."""
         from llamatrade_proto.generated import common_pb2, strategy_pb2
-        from llamatrade_proto.generated.common_pb2 import (
-            EXECUTION_MODE_PAPER,
-            EXECUTION_STATUS_PAUSED,
-        )
-
-        from src.models import ExecutionResponse
 
         execution_id = uuid4()
-        mock_execution = ExecutionResponse(
-            id=execution_id,
-            strategy_id=TEST_STRATEGY_ID,
-            version=1,
-            mode=EXECUTION_MODE_PAPER,
-            status=EXECUTION_STATUS_PAUSED,
-            started_at=datetime.now(UTC),
-            stopped_at=None,
-            config_override=None,
-            error_message=None,
-            created_at=datetime.now(UTC),
+        mock_execution = make_execution(
+            execution_id, EXECUTION_STATUS_PAUSED, started_at=datetime.now(UTC)
         )
 
         with patch("src.services.strategy_service.StrategyService") as mock_service_cls:
@@ -1083,25 +1079,14 @@ class TestExecutionManagement:
     ) -> None:
         """Test stopping an execution."""
         from llamatrade_proto.generated import common_pb2, strategy_pb2
-        from llamatrade_proto.generated.common_pb2 import (
-            EXECUTION_MODE_PAPER,
-            EXECUTION_STATUS_STOPPED,
-        )
-
-        from src.models import ExecutionResponse
 
         execution_id = uuid4()
-        mock_execution = ExecutionResponse(
-            id=execution_id,
-            strategy_id=TEST_STRATEGY_ID,
-            version=1,
-            mode=EXECUTION_MODE_PAPER,
-            status=EXECUTION_STATUS_STOPPED,
+        mock_execution = make_execution(
+            execution_id,
+            EXECUTION_STATUS_STOPPED,
             started_at=datetime.now(UTC),
             stopped_at=datetime.now(UTC),
-            config_override=None,
             error_message="Stopped: User requested stop",
-            created_at=datetime.now(UTC),
         )
 
         with patch("src.services.strategy_service.StrategyService") as mock_service_cls:

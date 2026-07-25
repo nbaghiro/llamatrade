@@ -19,9 +19,10 @@ import jwt
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from llamatrade_common.utils import require_secret
 from llamatrade_db.models.auth import Tenant, User
 
-JWT_SECRET = os.getenv("JWT_SECRET", "dev-secret-change-in-production")
+JWT_SECRET = require_secret("JWT_SECRET", "dev-secret-change-in-production")
 JWT_ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "30"))
 REFRESH_TOKEN_EXPIRE_DAYS = int(os.getenv("REFRESH_TOKEN_EXPIRE_DAYS", "7"))
@@ -128,7 +129,12 @@ def mint_handoff(user_id: str) -> str:
     """Mint a short-TTL one-time handoff token (login success → frontend exchange)."""
     now = int(time.time())
     return jwt.encode(
-        {"purpose": _HANDOFF_PURPOSE, "sub": user_id, "iat": now, "exp": now + _HANDOFF_TTL_SECONDS},
+        {
+            "purpose": _HANDOFF_PURPOSE,
+            "sub": user_id,
+            "iat": now,
+            "exp": now + _HANDOFF_TTL_SECONDS,
+        },
         JWT_SECRET,
         algorithm=JWT_ALGORITHM,
     )

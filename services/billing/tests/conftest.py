@@ -3,7 +3,7 @@
 from collections.abc import AsyncGenerator
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
-from typing import Any, cast
+from typing import Any
 from unittest.mock import MagicMock
 from uuid import UUID, uuid4
 
@@ -14,7 +14,6 @@ from llamatrade_db import get_db
 from llamatrade_proto.generated import billing_pb2
 
 from src.main import app
-from src.models import PlanResponse
 from src.stripe.client import (
     InvoiceResult,
     PaymentMethodResult,
@@ -554,63 +553,3 @@ async def client_with_payment_method(
         yield client
 
     app.dependency_overrides.clear()
-
-
-# ===================
-# Test Data Factories
-# ===================
-
-
-def make_plan(
-    id: str = "test_plan",
-    name: str = "Test Plan",
-    tier: int = billing_pb2.PLAN_TIER_STARTER,
-    price_monthly: Decimal = Decimal("29"),
-    price_yearly: Decimal = Decimal("290"),
-    trial_days: int = 14,
-) -> PlanResponse:
-    """Create a test plan."""
-    return PlanResponse(
-        id=id,
-        name=name,
-        tier=cast(Any, tier),
-        price_monthly=price_monthly,
-        price_yearly=price_yearly,
-        features={
-            "backtests": True,
-            "paper_trading": True,
-            "live_trading": tier == billing_pb2.PLAN_TIER_PRO,
-        },
-        limits={
-            "backtests_per_month": 50 if tier != billing_pb2.PLAN_TIER_PRO else None,
-            "live_strategies": 1 if tier == billing_pb2.PLAN_TIER_STARTER else 5,
-        },
-        trial_days=trial_days,
-    )
-
-
-def make_tenant_id() -> str:
-    """Generate a test tenant ID."""
-    return str(uuid4())
-
-
-def make_auth_header(
-    tenant_id: str | None = None, email: str = "test@example.com"
-) -> dict[str, str]:
-    """Create auth headers with a test JWT token."""
-    import jwt
-
-    if tenant_id is None:
-        tenant_id = make_tenant_id()
-
-    payload = {
-        "sub": str(uuid4()),
-        "tenant_id": tenant_id,
-        "email": email,
-        "roles": ["admin"],
-        "type": "access",
-        "exp": datetime.now(UTC) + timedelta(hours=1),
-    }
-    # Use the default dev secret
-    token = jwt.encode(payload, "dev-secret-change-in-production", algorithm="HS256")
-    return {"Authorization": f"Bearer {token}"}

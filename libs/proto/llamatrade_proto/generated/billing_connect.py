@@ -46,6 +46,9 @@ class BillingService(Protocol):
     async def list_payment_methods(self, request: billing__pb2.ListPaymentMethodsRequest, ctx: RequestContext) -> billing__pb2.ListPaymentMethodsResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
+    async def create_setup_intent(self, request: billing__pb2.CreateSetupIntentRequest, ctx: RequestContext) -> billing__pb2.CreateSetupIntentResponse:
+        raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
+
     async def add_payment_method(self, request: billing__pb2.AddPaymentMethodRequest, ctx: RequestContext) -> billing__pb2.AddPaymentMethodResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
@@ -163,6 +166,16 @@ class BillingServiceASGIApplication(ConnectASGIApplication[BillingService]):
                         idempotency_level=IdempotencyLevel.UNKNOWN,
                     ),
                     function=svc.list_payment_methods,
+                ),
+                "/llamatrade.BillingService/CreateSetupIntent": Endpoint.unary(
+                    method=MethodInfo(
+                        name="CreateSetupIntent",
+                        service_name="llamatrade.BillingService",
+                        input=billing__pb2.CreateSetupIntentRequest,
+                        output=billing__pb2.CreateSetupIntentResponse,
+                        idempotency_level=IdempotencyLevel.UNKNOWN,
+                    ),
+                    function=svc.create_setup_intent,
                 ),
                 "/llamatrade.BillingService/AddPaymentMethod": Endpoint.unary(
                     method=MethodInfo(
@@ -416,6 +429,26 @@ class BillingServiceClient(ConnectClient):
             timeout_ms=timeout_ms,
         )
 
+    async def create_setup_intent(
+        self,
+        request: billing__pb2.CreateSetupIntentRequest,
+        *,
+        headers: Headers | Mapping[str, str] | None = None,
+        timeout_ms: int | None = None,
+    ) -> billing__pb2.CreateSetupIntentResponse:
+        return await self.execute_unary(
+            request=request,
+            method=MethodInfo(
+                name="CreateSetupIntent",
+                service_name="llamatrade.BillingService",
+                input=billing__pb2.CreateSetupIntentRequest,
+                output=billing__pb2.CreateSetupIntentResponse,
+                idempotency_level=IdempotencyLevel.UNKNOWN,
+            ),
+            headers=headers,
+            timeout_ms=timeout_ms,
+        )
+
     async def add_payment_method(
         self,
         request: billing__pb2.AddPaymentMethodRequest,
@@ -517,6 +550,8 @@ class BillingServiceSync(Protocol):
     def list_plans(self, request: billing__pb2.ListPlansRequest, ctx: RequestContext) -> billing__pb2.ListPlansResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
     def list_payment_methods(self, request: billing__pb2.ListPaymentMethodsRequest, ctx: RequestContext) -> billing__pb2.ListPaymentMethodsResponse:
+        raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
+    def create_setup_intent(self, request: billing__pb2.CreateSetupIntentRequest, ctx: RequestContext) -> billing__pb2.CreateSetupIntentResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
     def add_payment_method(self, request: billing__pb2.AddPaymentMethodRequest, ctx: RequestContext) -> billing__pb2.AddPaymentMethodResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
@@ -631,6 +666,16 @@ class BillingServiceWSGIApplication(ConnectWSGIApplication):
                         idempotency_level=IdempotencyLevel.UNKNOWN,
                     ),
                     function=service.list_payment_methods,
+                ),
+                "/llamatrade.BillingService/CreateSetupIntent": EndpointSync.unary(
+                    method=MethodInfo(
+                        name="CreateSetupIntent",
+                        service_name="llamatrade.BillingService",
+                        input=billing__pb2.CreateSetupIntentRequest,
+                        output=billing__pb2.CreateSetupIntentResponse,
+                        idempotency_level=IdempotencyLevel.UNKNOWN,
+                    ),
+                    function=service.create_setup_intent,
                 ),
                 "/llamatrade.BillingService/AddPaymentMethod": EndpointSync.unary(
                     method=MethodInfo(
@@ -878,6 +923,26 @@ class BillingServiceClientSync(ConnectClientSync):
                 service_name="llamatrade.BillingService",
                 input=billing__pb2.ListPaymentMethodsRequest,
                 output=billing__pb2.ListPaymentMethodsResponse,
+                idempotency_level=IdempotencyLevel.UNKNOWN,
+            ),
+            headers=headers,
+            timeout_ms=timeout_ms,
+        )
+
+    def create_setup_intent(
+        self,
+        request: billing__pb2.CreateSetupIntentRequest,
+        *,
+        headers: Headers | Mapping[str, str] | None = None,
+        timeout_ms: int | None = None,
+    ) -> billing__pb2.CreateSetupIntentResponse:
+        return self.execute_unary(
+            request=request,
+            method=MethodInfo(
+                name="CreateSetupIntent",
+                service_name="llamatrade.BillingService",
+                input=billing__pb2.CreateSetupIntentRequest,
+                output=billing__pb2.CreateSetupIntentResponse,
                 idempotency_level=IdempotencyLevel.UNKNOWN,
             ),
             headers=headers,

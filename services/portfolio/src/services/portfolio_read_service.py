@@ -1,12 +1,11 @@
 """Ledger-backed portfolio reads.
 
-Drop-in replacement for the legacy ``PortfolioService`` + ``PerformanceService``
-+ ``TransactionService`` read methods, returning the SAME response schemas
-(``src.models``) so the Connect servicer's proto mappers are unchanged.
-
-A tenant may own several accounts (one per broker credential set); every read
-aggregates across all of them. Balances/positions derive from folding the event
-log; the performance curve derives from ``SleeveSnapshot`` rows.
+Reads derive from folding the event log (a tenant may own several accounts, one
+per broker credential set; every read aggregates across all of them) and map the
+read-model views straight to proto (``src.proto_mappers``) — proto is the
+canonical read shape (1A) and money stays ``Decimal`` end-to-end (5A). Balances/
+positions come from the projection; the performance curve from ``SleeveSnapshot``
+rows.
 """
 
 from __future__ import annotations
@@ -21,57 +20,46 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from llamatrade_db.models.ledger import Account, Sleeve, SleeveSnapshot
-from llamatrade_proto.generated.portfolio_pb2 import (
-    TRANSACTION_TYPE_BUY,
-    TRANSACTION_TYPE_DEPOSIT,
-    TRANSACTION_TYPE_DIVIDEND,
-    TRANSACTION_TYPE_FEE,
-    TRANSACTION_TYPE_INTEREST,
-    TRANSACTION_TYPE_SELL,
-    TRANSACTION_TYPE_TRANSFER_IN,
-    TRANSACTION_TYPE_TRANSFER_OUT,
-    TRANSACTION_TYPE_WITHDRAWAL,
-)
+from llamatrade_proto.generated import common_pb2, portfolio_pb2
 
 from src.ledger import read_model
 from src.ledger.analytics import benchmark_metrics, equity_metrics
 from src.ledger.projection import AccountProjection
 from src.ledger.projector import LedgerProjector
-from src.models import (
-    PerformanceMetrics,
-    PortfolioSummary,
-    PositionResponse,
-    TransactionResponse,
-)
 from src.ports import PriceProvider
+from src.proto_mappers import TXN_TYPE_TO_PROTO, transaction_view_to_proto
 
 
-def to_position_response(view: read_model.PositionView) -> PositionResponse:
-    """Map a marked-to-market ``PositionView`` onto the read-API response shape."""
-    return PositionResponse(
-        symbol=view.symbol,
-        qty=view.qty,
-        side=view.side,
-        cost_basis=view.cost_basis,
-        market_value=view.market_value,
-        unrealized_pnl=view.unrealized_pnl,
-        unrealized_pnl_percent=view.unrealized_pnl_percent,
-        current_price=view.current_price,
-        avg_entry_price=view.avg_entry_price,
+def _dec(value: Decimal | float | int) -> common_pb2.Decimal:
+    return common_pb2.Decimal(value=str(value))
+
+
+def _performance_metrics_proto(
+    *,
+    total_return: float = 0.0,
+    ytd: float = 0.0,
+    mtd: float = 0.0,
+    wtd: float = 0.0,
+    volatility: float = 0.0,
+    sharpe: float = 0.0,
+    max_drawdown: float = 0.0,
+    beta: float = 0.0,
+    benchmark_return: float = 0.0,
+    alpha: float = 0.0,
+) -> portfolio_pb2.PerformanceMetrics:
+    """Assemble the proto metrics; ``total_positions`` is filled by the servicer."""
+    return portfolio_pb2.PerformanceMetrics(
+        total_return=_dec(total_return),
+        ytd_return=_dec(ytd),
+        mtd_return=_dec(mtd),
+        wtd_return=_dec(wtd),
+        volatility=_dec(volatility),
+        sharpe_ratio=_dec(sharpe),
+        max_drawdown=_dec(max_drawdown),
+        beta=_dec(beta),
+        benchmark_return=_dec(benchmark_return),
+        alpha=_dec(alpha),
     )
-
-
-_TXN_TYPE_TO_PROTO: dict[str, int] = {
-    "buy": TRANSACTION_TYPE_BUY,
-    "sell": TRANSACTION_TYPE_SELL,
-    "deposit": TRANSACTION_TYPE_DEPOSIT,
-    "withdrawal": TRANSACTION_TYPE_WITHDRAWAL,
-    "dividend": TRANSACTION_TYPE_DIVIDEND,
-    "interest": TRANSACTION_TYPE_INTEREST,
-    "fee": TRANSACTION_TYPE_FEE,
-    "transfer_in": TRANSACTION_TYPE_TRANSFER_IN,
-    "transfer_out": TRANSACTION_TYPE_TRANSFER_OUT,
-}
 
 
 class PortfolioReadService:
@@ -88,32 +76,18 @@ class PortfolioReadService:
         self._benchmark_symbol = benchmark_symbol
         self._projector = LedgerProjector(db)
 
-    async def get_summary(self, tenant_id: UUID) -> PortfolioSummary:
+    async def get_summary(self, tenant_id: UUID) -> read_model.SummaryView:
         projections = await self._projections(tenant_id)
         prices = await self._prices(projections)
         prior = await self._prior_equity(tenant_id)
-        view = read_model.portfolio_summary(projections, prices, prior_equity=prior)
-        return PortfolioSummary(
-            total_equity=view.total_equity,
-            cash=view.cash,
-            market_value=view.market_value,
-            total_unrealized_pnl=view.total_unrealized_pnl,
-            total_realized_pnl=view.total_realized_pnl,
-            day_pnl=view.day_pnl,
-            day_pnl_percent=view.day_pnl_percent,
-            total_pnl_percent=view.total_pnl_percent,
-            positions_count=view.positions_count,
-            updated_at=datetime.now(UTC),
-        )
+        return read_model.portfolio_summary(projections, prices, prior_equity=prior)
 
-    async def list_positions(self, tenant_id: UUID) -> list[PositionResponse]:
+    async def list_positions(self, tenant_id: UUID) -> list[read_model.PositionView]:
         projections = await self._projections(tenant_id)
         prices = await self._prices(projections)
-        return [
-            to_position_response(p) for p in read_model.aggregate_positions(projections, prices)
-        ]
+        return read_model.aggregate_positions(projections, prices)
 
-    async def get_position(self, tenant_id: UUID, symbol: str) -> PositionResponse | None:
+    async def get_position(self, tenant_id: UUID, symbol: str) -> read_model.PositionView | None:
         symbol_upper = symbol.upper()
         for pos in await self.list_positions(tenant_id):
             if pos.symbol == symbol_upper:
@@ -127,7 +101,7 @@ class PortfolioReadService:
         symbol: str | None,
         page: int,
         page_size: int,
-    ) -> tuple[list[TransactionResponse], int]:
+    ) -> tuple[list[portfolio_pb2.Transaction], int]:
         accounts = await self._accounts(tenant_id)
         views: list[read_model.TransactionView] = []
         for account in accounts:
@@ -140,13 +114,21 @@ class PortfolioReadService:
             su = symbol.upper()
             views = [v for v in views if (v.symbol or "").upper() == su]
         if type:
-            views = [v for v in views if _TXN_TYPE_TO_PROTO.get(v.type) == type]
+            views = [v for v in views if TXN_TYPE_TO_PROTO.get(v.type) == type]
 
         total = len(views)
         start = (page - 1) * page_size
         page_views = views[start : start + page_size]
         sleeve_names = await self._sleeve_names({v.sleeve_id for v in page_views if v.sleeve_id})
-        return [self._to_txn_response(tenant_id, v, sleeve_names) for v in page_views], total
+        transactions = [
+            transaction_view_to_proto(
+                v,
+                tenant_id=tenant_id,
+                description=sleeve_names.get(v.sleeve_id, "") if v.sleeve_id else "",
+            )
+            for v in page_views
+        ]
+        return transactions, total
 
     async def _sleeve_names(self, sleeve_ids: set[str]) -> dict[str, str]:
         """Map sleeve id -> human name, so allocation rows can name their strategy."""
@@ -157,47 +139,11 @@ class PortfolioReadService:
         )
         return {str(sid): name for sid, name in rows.all()}
 
-    def _to_txn_response(
-        self, tenant_id: UUID, v: read_model.TransactionView, sleeve_names: dict[str, str]
-    ) -> TransactionResponse:
-        created = v.occurred_at if isinstance(v.occurred_at, datetime) else datetime.now(UTC)
-        try:
-            txn_id = UUID(v.event_id)
-        except ValueError:
-            txn_id = UUID(int=0)
-        return TransactionResponse(
-            id=txn_id,
-            tenant_id=tenant_id,
-            type=_TXN_TYPE_TO_PROTO.get(v.type, TRANSACTION_TYPE_BUY),
-            symbol=v.symbol,
-            quantity=v.qty,
-            price=v.price,
-            amount=v.amount,
-            fees=v.fees,
-            description=sleeve_names.get(v.sleeve_id) if v.sleeve_id else None,
-            reference_id=None,
-            created_at=created,
-        )
-
-    async def get_metrics(self, tenant_id: UUID, period: str) -> PerformanceMetrics:
+    async def get_metrics(self, tenant_id: UUID, period: str) -> portfolio_pb2.PerformanceMetrics:
         start_date, end_date = _period_dates(period)
         series = await self._daily_equity_series(tenant_id, start_date, end_date)
         if len(series) < 2:
-            return PerformanceMetrics(
-                period=period,
-                total_return=0.0,
-                total_return_percent=0.0,
-                annualized_return=0.0,
-                volatility=0.0,
-                sharpe_ratio=0.0,
-                sortino_ratio=0.0,
-                max_drawdown=0.0,
-                win_rate=0.0,
-                profit_factor=0.0,
-                best_day=0.0,
-                worst_day=0.0,
-                avg_daily_return=0.0,
-            )
+            return _performance_metrics_proto()
 
         dates = [d for d, _ in series]
         equities = np.array([e for _, e in series], dtype=np.float64)
@@ -217,26 +163,17 @@ class PortfolioReadService:
             )
 
         ytd, mtd, wtd = await self._period_returns(tenant_id)
-        return PerformanceMetrics(
-            period=period,
+        return _performance_metrics_proto(
             total_return=m.total_return,
-            total_return_percent=m.total_return_percent,
-            annualized_return=m.annualized_return,
+            ytd=ytd,
+            mtd=mtd,
+            wtd=wtd,
             volatility=m.volatility,
-            sharpe_ratio=m.sharpe_ratio,
-            sortino_ratio=m.sortino_ratio,
+            sharpe=m.sharpe_ratio,
             max_drawdown=m.max_drawdown,
-            win_rate=m.win_rate,
-            profit_factor=m.profit_factor,
-            best_day=m.best_day,
-            worst_day=m.worst_day,
-            avg_daily_return=m.avg_daily_return,
             beta=beta,
-            alpha=alpha,
             benchmark_return=benchmark_return,
-            ytd_return=ytd,
-            mtd_return=mtd,
-            wtd_return=wtd,
+            alpha=alpha,
         )
 
     async def _period_returns(self, tenant_id: UUID) -> tuple[float, float, float]:

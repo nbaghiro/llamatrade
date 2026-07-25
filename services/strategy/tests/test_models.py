@@ -6,29 +6,13 @@ from decimal import Decimal
 import pytest
 from pydantic import ValidationError
 
-from llamatrade_proto.generated.common_pb2 import ExecutionMode, ExecutionStatus
-from llamatrade_proto.generated.strategy_pb2 import (
-    AssetClass,
-    IndicatorType,
-    StrategyStatus,
-    TemplateCategory,
-    TemplateDifficulty,
-)
+from llamatrade_proto.generated.common_pb2 import ExecutionStatus
 
 from src.models import (
     ExecutionCreate,
     StrategyCreate,
     StrategyUpdate,
-    asset_class_to_str,
-    execution_mode_to_str,
     execution_status_to_str,
-    indicator_type_to_str,
-    str_to_asset_class,
-    str_to_template_category,
-    str_to_template_difficulty,
-    strategy_status_to_str,
-    template_category_to_str,
-    template_difficulty_to_str,
 )
 
 _VALID_SEXPR = "(strategy (asset SPY))"
@@ -101,33 +85,4 @@ class TestEnumConversionHelpers:
     """Proto enum <-> string conversion helpers used by API responses/filters."""
 
     def test_to_str_helpers_cover_all_values(self) -> None:
-        assert all(strategy_status_to_str(v) for v in StrategyStatus.values())
         assert all(execution_status_to_str(v) for v in ExecutionStatus.values())
-        assert all(execution_mode_to_str(v) for v in ExecutionMode.values())
-        assert all(indicator_type_to_str(v) for v in IndicatorType.values())
-
-    def test_template_category_round_trip(self) -> None:
-        for value in TemplateCategory.values():
-            if TemplateCategory.Name(value).endswith("UNSPECIFIED"):
-                continue
-            assert str_to_template_category(template_category_to_str(value)) == value
-
-    def test_asset_class_round_trip(self) -> None:
-        for value in AssetClass.values():
-            if AssetClass.Name(value).endswith("UNSPECIFIED"):
-                continue
-            assert str_to_asset_class(asset_class_to_str(value)) == value
-
-    def test_template_difficulty_round_trip(self) -> None:
-        for value in TemplateDifficulty.values():
-            if TemplateDifficulty.Name(value).endswith("UNSPECIFIED"):
-                continue
-            assert str_to_template_difficulty(template_difficulty_to_str(value)) == value
-
-    def test_str_to_helpers_reject_unknown_and_empty(self) -> None:
-        assert str_to_template_category("") is None
-        assert str_to_template_category("not-a-category") is None
-        assert str_to_asset_class("") is None
-        assert str_to_asset_class("not-an-asset-class") is None
-        assert str_to_template_difficulty("") is None
-        assert str_to_template_difficulty("not-a-difficulty") is None

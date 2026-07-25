@@ -20,9 +20,7 @@ Usage:
 # Re-export clients for convenience
 from llamatrade_proto.clients import (
     AuthClient,
-    BacktestClient,
     MarketDataClient,
-    TradingClient,
 )
 
 # Re-export interceptors
@@ -37,9 +35,7 @@ from llamatrade_proto.server import GRPCServer
 __all__ = [
     # Clients
     "AuthClient",
-    "BacktestClient",
     "MarketDataClient",
-    "TradingClient",
     # Interceptors
     "AuthInterceptor",
     "LoggingInterceptor",

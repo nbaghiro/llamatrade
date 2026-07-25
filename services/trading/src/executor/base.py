@@ -8,7 +8,6 @@ import logging
 import time
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Protocol
 from uuid import UUID
 
 from llamatrade_alpaca import Order as AlpacaOrder
@@ -38,42 +37,26 @@ from src.services.alert_service import AlertService
 
 logger = logging.getLogger(__name__)
 
-
-class RiskCheckable(Protocol):
-    """Protocol for objects that can have risk checks performed."""
-
-    async def check_order(
-        self,
-        tenant_id: UUID,
-        symbol: str,
-        side: str,
-        qty: float,
-        order_type: str,
-        limit_price: float | None = None,
-        session_id: UUID | None = None,
-    ) -> RiskCheckResult: ...
-
-
-class AlertNotifier(Protocol):
-    """Protocol for objects that can send alerts."""
-
-    async def on_order_rejected(
-        self,
-        tenant_id: UUID,
-        session_id: UUID,
-        symbol: str,
-        side: str,
-        qty: float,
-        reason: str,
-    ) -> None: ...
-
-
-@dataclass
-class RiskRejection:
-    """Result of a risk check rejection."""
-
-    violations: list[str]
-    duration: float
+# Alpaca's 16 raw order statuses collapsed to our normalized 8-state OrderStatus.
+# Kept exhaustive vs llamatrade_alpaca.OrderStatus by test_base_executor.
+_ALPACA_STATUS_MAP: dict[str, OrderStatus.ValueType] = {
+    "new": ORDER_STATUS_SUBMITTED,
+    "accepted": ORDER_STATUS_ACCEPTED,
+    "pending_new": ORDER_STATUS_PENDING,
+    "accepted_for_bidding": ORDER_STATUS_ACCEPTED,
+    "stopped": ORDER_STATUS_CANCELLED,
+    "rejected": ORDER_STATUS_REJECTED,
+    "suspended": ORDER_STATUS_PENDING,
+    "calculated": ORDER_STATUS_PENDING,
+    "partially_filled": ORDER_STATUS_PARTIAL,
+    "filled": ORDER_STATUS_FILLED,
+    "done_for_day": ORDER_STATUS_EXPIRED,
+    "canceled": ORDER_STATUS_CANCELLED,
+    "expired": ORDER_STATUS_EXPIRED,
+    "replaced": ORDER_STATUS_CANCELLED,
+    "pending_cancel": ORDER_STATUS_PENDING,
+    "pending_replace": ORDER_STATUS_PENDING,
+}
 
 
 @dataclass
@@ -296,33 +279,17 @@ class OrderSubmissionMixin:
 
     @staticmethod
     def _map_alpaca_status(alpaca_status: str) -> OrderStatus.ValueType:
-        """Map Alpaca order status to OrderStatus proto value.
+        """Map an Alpaca order status string to the normalized OrderStatus proto value.
 
-        Args:
-            alpaca_status: Status string from Alpaca API.
-
-        Returns:
-            OrderStatus proto value.
+        Alpaca exposes 16 raw states; we collapse them to our 8-state vocabulary.
+        The full set is covered by ``_ALPACA_STATUS_MAP`` (asserted exhaustive in
+        tests); an unrecognized status is logged and treated as PENDING.
         """
-        mapping: dict[str, OrderStatus.ValueType] = {
-            "new": ORDER_STATUS_SUBMITTED,
-            "accepted": ORDER_STATUS_ACCEPTED,
-            "pending_new": ORDER_STATUS_PENDING,
-            "accepted_for_bidding": ORDER_STATUS_ACCEPTED,
-            "stopped": ORDER_STATUS_CANCELLED,
-            "rejected": ORDER_STATUS_REJECTED,
-            "suspended": ORDER_STATUS_PENDING,
-            "calculated": ORDER_STATUS_PENDING,
-            "partially_filled": ORDER_STATUS_PARTIAL,
-            "filled": ORDER_STATUS_FILLED,
-            "done_for_day": ORDER_STATUS_EXPIRED,
-            "canceled": ORDER_STATUS_CANCELLED,
-            "expired": ORDER_STATUS_EXPIRED,
-            "replaced": ORDER_STATUS_CANCELLED,
-            "pending_cancel": ORDER_STATUS_PENDING,
-            "pending_replace": ORDER_STATUS_PENDING,
-        }
-        return mapping.get(alpaca_status.lower()) or ORDER_STATUS_PENDING
+        mapped = _ALPACA_STATUS_MAP.get(alpaca_status.lower())
+        if mapped is None:
+            logger.warning("Unknown Alpaca order status %r; defaulting to PENDING", alpaca_status)
+            return ORDER_STATUS_PENDING
+        return mapped
 
     def _get_current_utc_time(self) -> datetime:
         """Get current UTC time.

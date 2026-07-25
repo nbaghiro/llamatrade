@@ -4,6 +4,7 @@ from llamatrade_db.base import Base, TenantMixin, TimestampMixin, UUIDPrimaryKey
 from llamatrade_db.session import (
     PoolStats,
     close_db,
+    get_database_url,
     get_db,
     get_engine,
     get_pool_stats,
@@ -22,6 +23,7 @@ __all__ = [
     "TenantMixin",
     "TimestampMixin",
     # Session utilities
+    "get_database_url",
     "get_engine",
     "get_session_maker",
     "get_db",

@@ -3,6 +3,7 @@
 import asyncio
 import hashlib
 import logging
+import os
 import time
 from datetime import UTC, datetime
 from decimal import Decimal
@@ -46,10 +47,8 @@ from src.metrics import (
     record_idempotent_replay,
 )
 from src.models import (
-    BracketOrderInfo,
     BracketType,
     OrderCreate,
-    OrderResponse,
     order_side_to_str,
     order_type_to_str,
     time_in_force_to_str,
@@ -60,6 +59,9 @@ from src.services.audit_service import AuditService
 from src.streaming import TradingEventPublisher, get_trading_event_publisher
 
 logger = logging.getLogger(__name__)
+
+# Buffer on the reserved notional for market/stop buys (fill can gap above ref price).
+_MARKET_BUY_RESERVE_BUFFER = Decimal(os.getenv("TRADING_MARKET_BUY_RESERVE_BUFFER", "0.02"))
 
 
 def generate_deterministic_order_id(
@@ -124,7 +126,7 @@ class OrderExecutor(OrderSubmissionMixin):
         session_id: UUID,
         order: OrderCreate,
         signal_timestamp: datetime | None = None,
-    ) -> OrderResponse:
+    ) -> Order:
         """Submit an order after risk checks.
 
         When ``signal_timestamp`` is supplied (live strategy runner), the
@@ -207,7 +209,7 @@ class OrderExecutor(OrderSubmissionMixin):
                 take_profit_price=(
                     Decimal(str(order.take_profit_price)) if order.take_profit_price else None
                 ),
-                # Ledger attribution, fixed at origination (CONTRACTS.md §5)
+                # Ledger attribution, fixed at origination (portfolio-ledger.md)
                 sleeve_id=order.sleeve_id,
                 account_id=order.account_id,
             )
@@ -244,7 +246,7 @@ class OrderExecutor(OrderSubmissionMixin):
                     order_type=order_type_to_str(order.order_type),
                 )
 
-            # Ledger cash reservation (CONTRACTS.md §4): earmark the estimated
+            # Ledger cash reservation (portfolio-ledger.md): earmark the estimated
             # notional of resting buys so sleeve free cash stays honest.
             await self._publish_ledger_lifecycle(
                 db_order, "order_submitted", reserved=self._reservation_amount(order)
@@ -254,7 +256,7 @@ class OrderExecutor(OrderSubmissionMixin):
                 await self.audit.log_order_submitted(
                     tenant_id=tenant_id,
                     session_id=session_id,
-                    order=self._to_response(db_order),
+                    order=db_order,
                 )
 
         except Exception as e:
@@ -273,11 +275,9 @@ class OrderExecutor(OrderSubmissionMixin):
             await self.db.commit()
             raise ValueError(f"Failed to submit order to Alpaca: {e}")
 
-        return self._to_response(db_order)
+        return db_order
 
-    async def _idempotent_replay(
-        self, existing: Order, client_order_id: str
-    ) -> OrderResponse | None:
+    async def _idempotent_replay(self, existing: Order, client_order_id: str) -> Order | None:
         """Resolve a re-submitted deterministic order (3A).
 
         Returns the existing order's response when it was already dispatched
@@ -292,7 +292,7 @@ class OrderExecutor(OrderSubmissionMixin):
                 "Order already submitted for client_order_id=%s; returning existing",
                 client_order_id,
             )
-            return self._to_response(existing)
+            return existing
 
         # Recorded PENDING with no broker id: did it reach the broker before we crashed?
         broker_order = await self.alpaca.get_order_by_client_id(client_order_id)
@@ -306,7 +306,7 @@ class OrderExecutor(OrderSubmissionMixin):
         await self.db.refresh(existing)
         record_idempotent_replay()
         logger.info("Adopted broker order for stranded client_order_id=%s", client_order_id)
-        return self._to_response(existing)
+        return existing
 
     async def recover_stranded_orders(self, tenant_id: UUID, session_id: UUID) -> int:
         """Reconcile orders left PENDING with no broker id by a submit-window crash (3A).
@@ -367,22 +367,9 @@ class OrderExecutor(OrderSubmissionMixin):
         self,
         order_id: UUID,
         tenant_id: UUID,
-        include_bracket_info: bool = False,
-    ) -> OrderResponse | None:
+    ) -> Order | None:
         """Get order by ID."""
-        order = await self._get_order_by_id(tenant_id, order_id)
-        if not order:
-            return None
-
-        bracket_info = None
-        if include_bracket_info and (order.stop_loss_price or order.take_profit_price):
-            sl_order, tp_order = await self._get_bracket_orders(order.id)
-            bracket_info = BracketOrderInfo(
-                stop_loss_order_id=sl_order.id if sl_order else None,
-                take_profit_order_id=tp_order.id if tp_order else None,
-            )
-
-        return self._to_response(order, bracket_info)
+        return await self._get_order_by_id(tenant_id, order_id)
 
     async def get_order_session_id(self, order_id: UUID, tenant_id: UUID) -> UUID | None:
         """Return the owning session id of a tenant's order, or None if not found.
@@ -400,7 +387,7 @@ class OrderExecutor(OrderSubmissionMixin):
         status: int | None = None,
         page: int = 1,
         page_size: int = 20,
-    ) -> tuple[list[OrderResponse], int]:
+    ) -> tuple[list[Order], int]:
         """List orders for tenant.
 
         Args:
@@ -425,7 +412,7 @@ class OrderExecutor(OrderSubmissionMixin):
         result = await self.db.execute(stmt)
         orders = result.scalars().all()
 
-        return [self._to_response(o) for o in orders], total
+        return list(orders), total
 
     async def cancel_order(
         self,
@@ -473,7 +460,7 @@ class OrderExecutor(OrderSubmissionMixin):
             await self.audit.log_order_cancelled(
                 tenant_id=tenant_id,
                 session_id=order.session_id,
-                order=self._to_response(order),
+                order=order,
             )
 
         return True
@@ -567,17 +554,19 @@ class OrderExecutor(OrderSubmissionMixin):
     def _reservation_amount(order: OrderCreate) -> Decimal | None:
         """Estimated notional to earmark for a buy, or None.
 
-        Reference price: limit/stop for resting orders, else the signal's
-        ``est_price`` for market buys (set by the runner). A market buy with
-        no reference price at all (rare: manual market order) doesn't reserve
-        — its fill lands within seconds, so the overdraft window is negligible.
+        Limit buys reserve exactly at their cap; market/stop buys add a buffer
+        since the fill can gap above the reference price. No reference price
+        (rare manual market order) reserves nothing.
         """
         if order.side != ORDER_SIDE_BUY:
             return None
-        reference_price = order.limit_price or order.stop_price or order.est_price
+        qty = Decimal(str(order.qty))
+        if order.limit_price is not None:
+            return qty * Decimal(str(order.limit_price))
+        reference_price = order.stop_price or order.est_price
         if reference_price is None:
             return None
-        return Decimal(str(order.qty)) * Decimal(str(reference_price))
+        return qty * Decimal(str(reference_price)) * (Decimal(1) + _MARKET_BUY_RESERVE_BUFFER)
 
     async def _publish_ledger_lifecycle(
         self,
@@ -612,7 +601,7 @@ class OrderExecutor(OrderSubmissionMixin):
         self,
         order_id: UUID,
         tenant_id: UUID,
-    ) -> OrderResponse | None:
+    ) -> Order | None:
         """Sync order status with Alpaca."""
         start_time = time.perf_counter()
 
@@ -626,7 +615,7 @@ class OrderExecutor(OrderSubmissionMixin):
             duration = time.perf_counter() - start_time
             ORDER_SYNC_DURATION.observe(duration)
             ORDERS_SYNCED_TOTAL.labels(status_change="no_change").inc()
-            return self._to_response(order)
+            return order
 
         old_status = order.status
 
@@ -636,7 +625,7 @@ class OrderExecutor(OrderSubmissionMixin):
         await self.db.refresh(order)
 
         # Ledger emission for terminal transitions the trade stream may have
-        # missed (idempotent with the stream path — CONTRACTS.md §1)
+        # missed (idempotent with the stream path — portfolio-ledger.md)
         await self._publish_ledger_events_for_sync(order, old_status)
 
         # Record sync metric
@@ -678,17 +667,17 @@ class OrderExecutor(OrderSubmissionMixin):
                     await self.alerts.on_order_filled(
                         tenant_id=order.tenant_id,
                         session_id=order.session_id,
-                        order=self._to_response(order),
+                        order=order,
                     )
                 if self.audit:
                     await self.audit.log_order_filled(
                         tenant_id=order.tenant_id,
                         session_id=order.session_id,
-                        order=self._to_response(order),
+                        order=order,
                     )
                 await self._handle_order_fill(order, filled_price)
 
-        return self._to_response(order)
+        return order
 
     async def sync_all_pending_orders(
         self,
@@ -771,7 +760,7 @@ class OrderExecutor(OrderSubmissionMixin):
         await self.db.commit()
 
         # Ledger emission for terminal transitions discovered via sync
-        # (idempotent with the stream path — CONTRACTS.md §1)
+        # (idempotent with the stream path — portfolio-ledger.md)
         for order, old_status in status_transitions:
             await self._publish_ledger_events_for_sync(order, old_status)
 
@@ -781,7 +770,7 @@ class OrderExecutor(OrderSubmissionMixin):
                 await self.alerts.on_order_filled(
                     tenant_id=order.tenant_id,
                     session_id=order.session_id,
-                    order=self._to_response(order),
+                    order=order,
                 )
             await self._handle_order_fill(order, filled_price)
 
@@ -1291,33 +1280,6 @@ class OrderExecutor(OrderSubmissionMixin):
 
         # Return True if order just became filled
         return old_status != ORDER_STATUS_FILLED and order.status == ORDER_STATUS_FILLED
-
-    def _to_response(self, o: Order, bracket_info: BracketOrderInfo | None = None) -> OrderResponse:
-        """Convert order to response."""
-        return OrderResponse(
-            id=o.id,
-            tenant_id=o.tenant_id,
-            session_id=o.session_id,
-            client_order_id=o.client_order_id,
-            alpaca_order_id=o.alpaca_order_id,
-            symbol=o.symbol,
-            side=o.side,  # Already int (proto enum value)
-            qty=o.qty,
-            order_type=o.order_type,  # Already int (proto enum value)
-            limit_price=o.limit_price,
-            stop_price=o.stop_price,
-            status=o.status,  # Already int (proto enum value)
-            filled_qty=o.filled_qty,
-            filled_avg_price=o.filled_avg_price,
-            submitted_at=o.submitted_at or o.created_at,
-            filled_at=o.filled_at,
-            # Bracket order fields
-            parent_order_id=o.parent_order_id,
-            bracket_type=BracketType(o.bracket_type) if o.bracket_type else None,
-            stop_loss_price=o.stop_loss_price,
-            take_profit_price=o.take_profit_price,
-            bracket_orders=bracket_info,
-        )
 
 
 async def get_order_executor(

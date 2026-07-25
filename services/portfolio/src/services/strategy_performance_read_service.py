@@ -1,21 +1,21 @@
 """Ledger-backed strategy performance.
 
-Drop-in replacement for ``StrategyPerformanceService``'s read methods, deriving
-per-strategy performance from the strategy **sleeve** projection (current value,
-positions, realized P&L) and its ``SleeveSnapshot`` equity series (returns,
-risk metrics) — instead of the unpopulated ``StrategyPerformance{Metrics,
-Snapshot}`` tables. Returns the same response schemas so the servicer's proto
-mappers are unchanged.
+Derives per-strategy performance from the strategy **sleeve** projection (current
+value, positions, realized P&L) and its ``SleeveSnapshot`` equity series (returns,
+risk metrics), mapping the results straight to proto (``src.proto_mappers``) —
+proto is the canonical read shape (1A) and money stays ``Decimal`` (5A).
 
-Strategy identity (name/mode/status/started_at) still comes from
-``StrategyExecution``; ``execution.sleeve_id``/``account_id`` (set when the
-sleeve is funded) link the execution to its ledger sleeve.
+Strategy identity (name/mode/status/started_at) comes from ``StrategyExecution``;
+``execution.mode``/``status`` are already proto-int (TypeDecorator) so they flow
+to the proto enum fields with no string round-trip. ``execution.sleeve_id``/
+``account_id`` (set when the sleeve is funded) link the execution to its ledger
+sleeve.
 """
 
 from __future__ import annotations
 
 import asyncio
-from datetime import UTC, date, datetime, timedelta
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from uuid import UUID
 
@@ -26,26 +26,25 @@ from sqlalchemy.orm import joinedload
 
 from llamatrade_db.models.ledger import SleeveSnapshot
 from llamatrade_db.models.strategy import StrategyExecution
+from llamatrade_proto.generated import portfolio_pb2
 
 from src.ledger import analytics, read_model
 from src.ledger.projection import AccountProjection, SleeveProjection
 from src.ledger.projector import LedgerProjector
-from src.models import PositionResponse
 from src.ports import PriceProvider
-from src.services.portfolio_read_service import to_position_response
+from src.proto_mappers import (
+    benchmark_series_to_proto,
+    equity_point_to_proto,
+    live_metrics_to_proto,
+    period_returns_to_proto,
+    strategy_summary_to_proto,
+)
 from src.services.strategy_performance_service import (
-    BenchmarkSeries,
     BookTotals,
     EquityCurveResult,
-    EquityPoint,
     ListPerformanceFilters,
     ListPerformanceResult,
-    LiveMetrics,
-    PeriodReturns,
     StrategyPerformanceDetail,
-    StrategyPerformanceSummary,
-    execution_mode_to_str,
-    execution_status_to_str,
 )
 
 HUNDRED = Decimal("100")
@@ -119,12 +118,12 @@ class StrategyPerformanceReadService:
 
         total_allocated = ZERO
         total_current = ZERO
-        summaries: list[StrategyPerformanceSummary] = []
+        summaries: list[portfolio_pb2.StrategyPerformanceSummary] = []
         for execution in executions:
             summary = await self._summary(tenant_id, execution)
             summaries.append(summary)
-            total_allocated += summary.allocated_capital or ZERO
-            total_current += summary.current_value or ZERO
+            total_allocated += Decimal(summary.allocated_capital.value)
+            total_current += Decimal(summary.current_value.value)
 
         combined = (
             (total_current - total_allocated) / total_allocated if total_allocated > 0 else None
@@ -165,23 +164,19 @@ class StrategyPerformanceReadService:
         if execution is None:
             return None
         series = await self._sleeve_series(tenant_id, execution.sleeve_id, start_time, end_time)
-        equity_curve = [
-            EquityPoint(timestamp=ts, equity=eq, return_percent=None, drawdown=None)
-            for ts, eq in series
-        ]
+        equity_curve = [equity_point_to_proto(timestamp=ts, equity=eq) for ts, eq in series]
         benchmark = None
         if benchmark_symbol and self.market_data is not None and series:
             benchmark = await self._benchmark(benchmark_symbol, series)
         return EquityCurveResult(
             equity_curve=equity_curve,
-            benchmark_symbol=benchmark_symbol or None,
             benchmark=benchmark,
             period_returns=self._period_returns([(t, e) for t, e in series]),
         )
 
     async def _benchmark(
         self, symbol: str, series: list[tuple[datetime, Decimal]]
-    ) -> BenchmarkSeries | None:
+    ) -> portfolio_pb2.BenchmarkData | None:
         """Benchmark equity series aligned to the sleeve curve, rebased to its start.
 
         Marks each curve point with the benchmark's close as-of that date (last
@@ -210,13 +205,14 @@ class StrategyPerformanceReadService:
             return None
         base_equity = float(series[0][1])
         points = [
-            EquityPoint(
-                timestamp=ts, equity=Decimal(str(base_equity * as_of(ts.date()) / base_close))
+            equity_point_to_proto(
+                timestamp=ts,
+                equity=Decimal(str(base_equity * as_of(ts.date()) / base_close)),
             )
             for ts, _ in series
         ]
         total_return = Decimal(str((as_of(end.date()) / base_close - 1) * 100))
-        return BenchmarkSeries(symbol=symbol, points=points, total_return=total_return)
+        return benchmark_series_to_proto(symbol=symbol, points=points, total_return=total_return)
 
     async def book_totals(self, tenant_id: UUID) -> BookTotals:
         """Aggregate day/total return across the tenant's strategy sleeves.
@@ -230,8 +226,7 @@ class StrategyPerformanceReadService:
         result = await self.list_strategy_performance(tenant_id, page=1, page_size=1000)
         day_pnl = ZERO
         for s in result.strategies:
-            if s.current_value is not None and s.returns.return_1d is not None:
-                day_pnl += s.current_value * s.returns.return_1d / HUNDRED
+            day_pnl += Decimal(s.current_value.value) * Decimal(s.returns.return_1d.value) / HUNDRED
         total_return = result.total_current_value - result.total_allocated
         prior = result.total_current_value - day_pnl
         return BookTotals(
@@ -270,7 +265,7 @@ class StrategyPerformanceReadService:
 
     async def _summary(
         self, tenant_id: UUID, execution: StrategyExecution
-    ) -> StrategyPerformanceSummary:
+    ) -> portfolio_pb2.StrategyPerformanceSummary:
         sleeve, prices = await self._sleeve_state(tenant_id, execution)
         if sleeve is not None:
             from src.ledger.performance import sleeve_pnl
@@ -287,12 +282,12 @@ class StrategyPerformanceReadService:
         series = await self._sleeve_series(tenant_id, execution.sleeve_id, None, None)
         returns = self._period_returns([(t, e) for t, e in series])
 
-        return StrategyPerformanceSummary(
+        return strategy_summary_to_proto(
             execution_id=execution.id,
             strategy_id=execution.strategy_id,
             strategy_name=execution.strategy.name if execution.strategy else "Unknown",
-            mode=execution_mode_to_str(execution.mode),
-            status=execution_status_to_str(execution.status),
+            mode=execution.mode,
+            status=execution.status,
             color=execution.color,
             allocated_capital=execution.allocated_capital,
             current_value=current_value,
@@ -307,7 +302,7 @@ class StrategyPerformanceReadService:
         tenant_id: UUID,
         execution: StrategyExecution,
         sleeve: SleeveProjection | None,
-    ) -> LiveMetrics:
+    ) -> portfolio_pb2.StrategyLiveMetrics:
         series = await self._sleeve_series(tenant_id, execution.sleeve_id, None, None)
         # Collapse to a daily grid so sqrt(252) annualization is correct on the
         # ~hourly snapshot cadence (matches the account read path).
@@ -332,32 +327,21 @@ class StrategyPerformanceReadService:
             peak = float(np.max(equities))
             current_dd = Decimal(str((peak - float(equities[-1])) / peak * 100)) if peak else None
 
-        return LiveMetrics(
-            sharpe_ratio=Decimal(str(m.sharpe_ratio)) if m else None,
-            sortino_ratio=Decimal(str(m.sortino_ratio)) if m else None,
-            max_drawdown=Decimal(str(m.max_drawdown)) if m else None,
-            current_drawdown=current_dd,
-            volatility=Decimal(str(m.volatility)) if m else None,
-            total_trades=stats.total_trades,
-            winning_trades=stats.winning_trades,
-            losing_trades=stats.losing_trades,
-            win_rate=Decimal(str(stats.win_rate)),
-            profit_factor=Decimal(str(stats.profit_factor)),
-            average_win=Decimal(str(stats.average_win)),
-            average_loss=Decimal(str(stats.average_loss)),
+        return live_metrics_to_proto(
+            m,
+            stats,
             starting_capital=execution.allocated_capital,
             current_equity=current_equity,
             peak_equity=peak_equity,
-            total_pnl=Decimal(str(stats.realized_pnl)),
-            calculated_at=datetime.now(UTC),
+            current_drawdown=current_dd,
         )
 
     def _positions(
         self, sleeve: SleeveProjection, prices: dict[str, Decimal]
-    ) -> list[PositionResponse]:
+    ) -> list[read_model.PositionView]:
         """The sleeve's open positions, marked via the shared portfolio read path."""
         account = AccountProjection(sleeves={"sleeve": sleeve})
-        return [to_position_response(p) for p in read_model.aggregate_positions([account], prices)]
+        return read_model.aggregate_positions([account], prices)
 
     async def _sleeve_series(
         self,
@@ -386,10 +370,12 @@ class StrategyPerformanceReadService:
             out.append((ts, snap.equity))
         return out
 
-    def _period_returns(self, series: list[tuple[datetime, Decimal]]) -> PeriodReturns:
+    def _period_returns(
+        self, series: list[tuple[datetime, Decimal]]
+    ) -> portfolio_pb2.StrategyPeriodReturns:
         """Compute standard period returns from an equity series (latest vs window start)."""
         if len(series) < 2:
-            return PeriodReturns()
+            return period_returns_to_proto({})
         latest_ts, latest_eq = series[-1]
         kwargs: dict[str, Decimal] = {}
         # Day-return baseline: last snapshot on a PRIOR calendar day, not a rolling 24h window (else weekend gaps read as 0).
@@ -412,4 +398,4 @@ class StrategyPerformanceReadService:
         first_eq = series[0][1]
         if first_eq:
             kwargs["return_all"] = (latest_eq - first_eq) / first_eq * 100
-        return PeriodReturns(**kwargs)
+        return period_returns_to_proto(kwargs)

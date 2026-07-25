@@ -138,7 +138,7 @@ class EventEnvelope(message.Message):
 
 @typing.final
 class LedgerFill(message.Message):
-    """Ledger fill — trading → portfolio (durable). Proto form of CONTRACTS.md §1.
+    """Ledger fill — trading → portfolio (durable). Proto form of portfolio-ledger.md.
     Decimal amounts are strings (broker-faithful, no precision loss), matching the
     locked flat contract this replaces.
     """
@@ -198,7 +198,7 @@ class LedgerFill(message.Message):
 
 @typing.final
 class LedgerReservation(message.Message):
-    """Cash reservation lifecycle — trading → portfolio. CONTRACTS.md §4."""
+    """Cash reservation lifecycle — trading → portfolio. portfolio-ledger.md."""
 
     DESCRIPTOR: descriptor.Descriptor
 

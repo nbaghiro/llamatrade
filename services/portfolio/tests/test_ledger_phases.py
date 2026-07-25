@@ -25,8 +25,8 @@ from src.ledger.netting import net_orders
 from src.ledger.performance import account_pnl, sleeve_pnl
 from src.ledger.projection import AccountProjection, PositionState, SleeveProjection, fold
 from src.ledger.sizing import (
-    IntendedOrder,
     Lot,
+    SleeveOrder,
     fit_to_free_cash,
     select_lots_fifo,
     sleeve_equity,
@@ -131,7 +131,7 @@ class TestSizing:
         assert orders == []
 
     def test_fit_to_free_cash_scales_buy(self) -> None:
-        o = IntendedOrder("A", "SPY", "buy", D("100"), D("480"))  # needs 48,000
+        o = SleeveOrder("A", "SPY", "buy", D("100"), D("480"))  # needs 48,000
         fitted = fit_to_free_cash(o, D("24000"))
         assert fitted is not None and fitted.qty == D("50")
         assert fit_to_free_cash(o, D("0")) is None
@@ -167,8 +167,8 @@ class TestDesiredState:
 class TestNetting:
     def test_offsetting_orders_cross_internally(self) -> None:
         orders = [
-            IntendedOrder("A", "SPY", "buy", D("5"), D("480")),
-            IntendedOrder("B", "SPY", "sell", D("50"), D("480")),
+            SleeveOrder("A", "SPY", "buy", D("5"), D("480")),
+            SleeveOrder("B", "SPY", "sell", D("50"), D("480")),
         ]
         res = net_orders(orders)
         # net = +5 - 50 = -45 → one SELL 45 to the broker
@@ -179,8 +179,8 @@ class TestNetting:
 
     def test_full_cross_no_broker_order(self) -> None:
         orders = [
-            IntendedOrder("A", "SPY", "buy", D("10"), D("480")),
-            IntendedOrder("B", "SPY", "sell", D("10"), D("480")),
+            SleeveOrder("A", "SPY", "buy", D("10"), D("480")),
+            SleeveOrder("B", "SPY", "sell", D("10"), D("480")),
         ]
         res = net_orders(orders)
         assert res.broker_orders == []  # fully internalized

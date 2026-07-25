@@ -135,9 +135,9 @@ class TestBillingServicePlans:
         plans = await service.list_plans()
 
         assert len(plans) == 3
-        assert plans[0].id == "free"
-        assert plans[1].id == "starter"
-        assert plans[2].id == "pro"
+        assert plans[0].name == "free"
+        assert plans[1].name == "starter"
+        assert plans[2].name == "pro"
 
     async def test_list_plans_returns_db_plans_when_available(self) -> None:
         """Test listing plans returns database plans when available."""
@@ -149,7 +149,7 @@ class TestBillingServicePlans:
         plans = await service.list_plans()
 
         assert len(plans) == 1
-        assert plans[0].name == "Custom Plan"
+        assert plans[0].display_name == "Custom Plan"
 
     async def test_get_plan_from_defaults(self) -> None:
         """Test getting plan from defaults."""
@@ -160,7 +160,7 @@ class TestBillingServicePlans:
         plan = await service.get_plan("starter")
 
         assert plan is not None
-        assert plan.id == "starter"
+        assert plan.name == "starter"
 
     async def test_get_plan_not_found(self) -> None:
         """Test getting non-existent plan."""
@@ -469,59 +469,6 @@ class TestBillingServiceCreateSubscription:
                 ),
             )
 
-    async def test_plan_to_response(self) -> None:
-        """Test converting Plan model to PlanResponse."""
-        mock_db = AsyncMock()
-        service = BillingService(mock_db, cast(Any, MockStripeClient()))
-
-        plan = MockPlan(
-            name="test",
-            display_name="Test Plan",
-            tier=billing_pb2.PLAN_TIER_STARTER,
-            price_monthly=29,
-            price_yearly=290,
-            features={"feature1": True},
-            limits={"limit1": 10},
-            trial_days=14,
-        )
-
-        response = service._plan_to_response(cast(Any, plan))
-
-        assert response.id == "test"
-        assert response.name == "Test Plan"
-        assert response.price_monthly == 29
-        assert response.trial_days == 14
-
-    async def test_subscription_to_response(self) -> None:
-        """Test converting Subscription model to SubscriptionResponse."""
-        mock_db = AsyncMock()
-        service = BillingService(mock_db, cast(Any, MockStripeClient()))
-
-        subscription = MockSubscription()
-        response = service._subscription_to_response(cast(Any, subscription))
-
-        assert response.status == billing_pb2.SUBSCRIPTION_STATUS_ACTIVE
-        assert response.billing_cycle == billing_pb2.BILLING_INTERVAL_MONTHLY
-
-
-class TestPaymentMethodServiceAttach:
-    """Tests for PaymentMethodService attach operations."""
-
-    async def test_to_response(self) -> None:
-        """Test converting PaymentMethod model to response."""
-        mock_db = AsyncMock()
-        stripe_client = MockStripeClient()
-        billing_service = BillingService(mock_db, cast(Any, stripe_client))
-
-        service = PaymentMethodService(mock_db, cast(Any, stripe_client), billing_service)
-        pm = MockPaymentMethod()
-
-        response = service._to_response(cast(Any, pm))
-
-        assert response.card_brand == "visa"
-        assert response.card_last4 == "4242"
-        assert response.is_default is False
-
 
 class TestDefaultPlans:
     """Tests for default plan configurations."""
@@ -569,7 +516,7 @@ class TestDefaultPlans:
             billing_pb2.PLAN_TIER_PRO: "pro",
         }
         for plan in DEFAULT_PLANS:
-            assert plan.id == tier_to_id[plan.tier]
+            assert plan.name == tier_to_id[plan.tier]
 
     def test_yearly_price_has_discount(self) -> None:
         """Test that yearly prices have discount."""
@@ -595,7 +542,7 @@ class TestCreateFreeSubscription:
         # Get the free plan from defaults
         plan = await service.get_plan("free")
         assert plan is not None
-        assert plan.id == "free"
+        assert plan.name == "free"
         assert plan.tier == billing_pb2.PLAN_TIER_FREE
         assert plan.price_monthly == 0
 
@@ -636,8 +583,8 @@ class TestListPlansFromDB:
         plans = await service.list_plans()
 
         assert len(plans) == 2
-        assert plans[0].id == "db_free"
-        assert plans[1].id == "db_pro"
+        assert plans[0].name == "db_free"
+        assert plans[1].name == "db_pro"
 
 
 class TestGetPlanDB:
@@ -724,110 +671,6 @@ class TestGetPlanByName:
         assert plan.price_monthly == 99
 
 
-class TestModelConversions:
-    """Tests for model conversion methods."""
-
-    def test_plan_to_response_with_null_yearly(self) -> None:
-        """Test plan conversion when yearly price is None."""
-        mock_db = AsyncMock()
-        service = BillingService(mock_db, cast(Any, MockStripeClient()))
-
-        plan = MockPlan(
-            price_monthly=29,
-            price_yearly=None,  # Should default to 10x monthly
-        )
-
-        response = service._plan_to_response(cast(Any, plan))
-        assert response.price_yearly == 290  # 10x monthly
-
-    def test_plan_to_response_with_empty_features(self) -> None:
-        """Test plan conversion with empty features."""
-        mock_db = AsyncMock()
-        service = BillingService(mock_db, cast(Any, MockStripeClient()))
-
-        plan = MockPlan(features=None, limits=None)
-
-        response = service._plan_to_response(cast(Any, plan))
-        # Should handle None gracefully
-        assert response.features == {} or response.features is None
-
-
-class TestPaymentMethodResponse:
-    """Tests for payment method response conversion."""
-
-    async def test_to_response_all_fields(self) -> None:
-        """Test converting payment method with all fields."""
-        mock_db = AsyncMock()
-        stripe_client = MockStripeClient()
-        billing_service = BillingService(mock_db, cast(Any, stripe_client))
-        service = PaymentMethodService(mock_db, cast(Any, stripe_client), billing_service)
-
-        pm = MockPaymentMethod(
-            id=uuid4(),
-            card_brand="mastercard",
-            card_last4="5555",
-            card_exp_month=6,
-            card_exp_year=2025,
-            is_default=True,
-        )
-
-        response = service._to_response(cast(Any, pm))
-
-        assert response.card_brand == "mastercard"
-        assert response.card_last4 == "5555"
-        assert response.card_exp_month == 6
-        assert response.card_exp_year == 2025
-        assert response.is_default is True
-
-
-class TestBillingServiceModelConversions:
-    """Additional tests for model conversions."""
-
-    async def test_subscription_to_response_with_trial(self) -> None:
-        """Test subscription response with trial period."""
-        mock_db = AsyncMock()
-        service = BillingService(mock_db, cast(Any, MockStripeClient()))
-
-        now = datetime.now(UTC)
-        subscription = MockSubscription(
-            status=billing_pb2.SUBSCRIPTION_STATUS_TRIALING,
-            trial_start=now,
-            trial_end=now + timedelta(days=14),
-        )
-
-        response = service._subscription_to_response(cast(Any, subscription))
-        assert response.status == billing_pb2.SUBSCRIPTION_STATUS_TRIALING
-        assert response.trial_start is not None
-        assert response.trial_end is not None
-
-    async def test_plan_response_has_all_fields(self) -> None:
-        """Test that plan response includes all expected fields."""
-        mock_db = AsyncMock()
-        service = BillingService(mock_db, cast(Any, MockStripeClient()))
-
-        plan = MockPlan(
-            name="test",
-            display_name="Test Plan",
-            tier=billing_pb2.PLAN_TIER_STARTER,
-            price_monthly=49,
-            price_yearly=490,
-            features={"feature1": True, "feature2": False},
-            limits={"limit1": 100},
-            trial_days=7,
-        )
-
-        response = service._plan_to_response(cast(Any, plan))
-
-        assert response.id == "test"
-        assert response.name == "Test Plan"
-        assert response.tier == billing_pb2.PLAN_TIER_STARTER
-        assert response.price_monthly == 49
-        assert response.price_yearly == 490
-        assert response.features["feature1"] is True
-        assert response.limits["limit1"] == 100
-        assert response.trial_days == 7
-
-
 class TestDefaultPlanFeatures:
     """Tests for default plan feature configurations."""
 
@@ -901,65 +744,8 @@ class TestBillingServiceGetSubscription:
         result = await service.get_subscription(mock_sub.tenant_id)
 
         assert result is not None
-        assert result.plan.name == "Pro Plan"
+        assert result.plan.display_name == "Pro Plan"
         assert result.plan.tier == billing_pb2.PLAN_TIER_PRO
-
-
-class TestPaymentMethodToResponse:
-    """Tests for payment method response conversion edge cases."""
-
-    async def test_response_with_null_card_fields(self) -> None:
-        """Test response when card fields are null."""
-        mock_db = AsyncMock()
-        stripe_client = MockStripeClient()
-        billing_service = BillingService(mock_db, cast(Any, stripe_client))
-        service = PaymentMethodService(mock_db, cast(Any, stripe_client), billing_service)
-
-        pm = MockPaymentMethod(
-            card_brand=None,
-            card_last4=None,
-            card_exp_month=None,
-            card_exp_year=None,
-        )
-
-        response = service._to_response(cast(Any, pm))
-
-        assert response.card_brand is None
-        assert response.card_last4 is None
-
-
-class TestSubscriptionStatusConversions:
-    """Tests for subscription status handling."""
-
-    async def test_subscription_trialing_status(self) -> None:
-        """Test subscription with trialing status."""
-        mock_sub = MockSubscription(status=billing_pb2.SUBSCRIPTION_STATUS_TRIALING)
-        mock_db = AsyncMock()
-
-        service = BillingService(mock_db, cast(Any, MockStripeClient()))
-        response = service._subscription_to_response(cast(Any, mock_sub))
-
-        assert response.status == billing_pb2.SUBSCRIPTION_STATUS_TRIALING
-
-    async def test_subscription_past_due_status(self) -> None:
-        """Test subscription with past_due status."""
-        mock_sub = MockSubscription(status=billing_pb2.SUBSCRIPTION_STATUS_PAST_DUE)
-        mock_db = AsyncMock()
-
-        service = BillingService(mock_db, cast(Any, MockStripeClient()))
-        response = service._subscription_to_response(cast(Any, mock_sub))
-
-        assert response.status == billing_pb2.SUBSCRIPTION_STATUS_PAST_DUE
-
-    async def test_subscription_cancelled_status(self) -> None:
-        """Test subscription with cancelled status."""
-        mock_sub = MockSubscription(status=billing_pb2.SUBSCRIPTION_STATUS_CANCELED)
-        mock_db = AsyncMock()
-
-        service = BillingService(mock_db, cast(Any, MockStripeClient()))
-        response = service._subscription_to_response(cast(Any, mock_sub))
-
-        assert response.status == billing_pb2.SUBSCRIPTION_STATUS_CANCELED
 
 
 class TestBillingServiceEnsureCustomer:
@@ -995,46 +781,29 @@ class TestBillingServiceEnsureCustomer:
         assert customer_id1 == customer_id2
 
 
-class TestBillingCycleYearly:
-    """Tests for yearly billing cycle."""
-
-    async def test_plan_response_yearly_pricing(self) -> None:
-        """Test that plan response includes yearly pricing."""
-        mock_db = AsyncMock()
-        service = BillingService(mock_db, cast(Any, MockStripeClient()))
-
-        plan = MockPlan(
-            price_monthly=99,
-            price_yearly=990,  # 2 months free
-        )
-
-        response = service._plan_to_response(cast(Any, plan))
-
-        assert response.price_monthly == 99
-        assert response.price_yearly == 990
-        # Yearly is 10x monthly (2 months free)
-        assert response.price_yearly == response.price_monthly * 10
-
-
 class TestSubscriptionBillingCycle:
-    """Tests for subscription billing cycle."""
+    """Tests for subscription billing cycle carried through as a proto int."""
 
     async def test_subscription_monthly_cycle(self) -> None:
-        """Test subscription with monthly billing cycle."""
+        """The returned row keeps the proto-int monthly interval."""
         mock_sub = MockSubscription(billing_cycle=billing_pb2.BILLING_INTERVAL_MONTHLY)
         mock_db = AsyncMock()
+        mock_db.execute.return_value = MagicMock(scalar_one_or_none=lambda: mock_sub)
 
         service = BillingService(mock_db, cast(Any, MockStripeClient()))
-        response = service._subscription_to_response(cast(Any, mock_sub))
+        result = await service.get_subscription(mock_sub.tenant_id)
 
-        assert response.billing_cycle == billing_pb2.BILLING_INTERVAL_MONTHLY
+        assert result is not None
+        assert result.billing_cycle == billing_pb2.BILLING_INTERVAL_MONTHLY
 
     async def test_subscription_yearly_cycle(self) -> None:
-        """Test subscription with yearly billing cycle."""
+        """The returned row keeps the proto-int yearly interval."""
         mock_sub = MockSubscription(billing_cycle=billing_pb2.BILLING_INTERVAL_YEARLY)
         mock_db = AsyncMock()
+        mock_db.execute.return_value = MagicMock(scalar_one_or_none=lambda: mock_sub)
 
         service = BillingService(mock_db, cast(Any, MockStripeClient()))
-        response = service._subscription_to_response(cast(Any, mock_sub))
+        result = await service.get_subscription(mock_sub.tenant_id)
 
-        assert response.billing_cycle == billing_pb2.BILLING_INTERVAL_YEARLY
+        assert result is not None
+        assert result.billing_cycle == billing_pb2.BILLING_INTERVAL_YEARLY

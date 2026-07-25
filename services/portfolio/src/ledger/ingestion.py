@@ -42,7 +42,7 @@ from src.ledger.sizing import Lot, select_lots_fifo
 logger = logging.getLogger(__name__)
 
 # Non-fill order lifecycle stages trading publishes on the same stream
-# (reservation addendum, CONTRACTS.md §4). Recorded for the reservation
+# (reservation addendum, portfolio-ledger.md). Recorded for the reservation
 # lifecycle; they carry no economic postings of their own.
 LIFECYCLE_EVENT_TYPES: dict[str, LedgerEventType] = {
     "order_submitted": LedgerEventType.ORDER_SUBMITTED,

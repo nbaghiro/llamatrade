@@ -82,29 +82,29 @@ def mock_transaction(test_tenant_id: UUID) -> MagicMock:
 class TestTransactionTypeConversion:
     """Tests for transaction type conversion helpers."""
 
-    def test_to_proto_transaction_type_mapping(self) -> None:
-        """Every real TransactionType value round-trips through the servicer mapper.
+    def test_txn_type_map_distinguishes_transfers(self) -> None:
+        """The read-model label -> proto TransactionType map is exhaustive.
 
         Regression: TRANSFER_IN/OUT (strategy allocations) must NOT collapse to
         DEPOSIT — that would make allocations indistinguishable from deposits.
         """
         from llamatrade_proto.generated import portfolio_pb2
 
-        from src.grpc.servicer import PortfolioServicer
+        from src.proto_mappers import TXN_TYPE_TO_PROTO
 
-        servicer = PortfolioServicer()
-        for value in (
-            portfolio_pb2.TRANSACTION_TYPE_DEPOSIT,
-            portfolio_pb2.TRANSACTION_TYPE_WITHDRAWAL,
-            portfolio_pb2.TRANSACTION_TYPE_BUY,
-            portfolio_pb2.TRANSACTION_TYPE_SELL,
-            portfolio_pb2.TRANSACTION_TYPE_DIVIDEND,
-            portfolio_pb2.TRANSACTION_TYPE_INTEREST,
-            portfolio_pb2.TRANSACTION_TYPE_FEE,
-            portfolio_pb2.TRANSACTION_TYPE_TRANSFER_IN,
-            portfolio_pb2.TRANSACTION_TYPE_TRANSFER_OUT,
-        ):
-            assert servicer._to_proto_transaction_type(value) == value
+        expected = {
+            "deposit": portfolio_pb2.TRANSACTION_TYPE_DEPOSIT,
+            "withdrawal": portfolio_pb2.TRANSACTION_TYPE_WITHDRAWAL,
+            "buy": portfolio_pb2.TRANSACTION_TYPE_BUY,
+            "sell": portfolio_pb2.TRANSACTION_TYPE_SELL,
+            "dividend": portfolio_pb2.TRANSACTION_TYPE_DIVIDEND,
+            "interest": portfolio_pb2.TRANSACTION_TYPE_INTEREST,
+            "fee": portfolio_pb2.TRANSACTION_TYPE_FEE,
+            "transfer_in": portfolio_pb2.TRANSACTION_TYPE_TRANSFER_IN,
+            "transfer_out": portfolio_pb2.TRANSACTION_TYPE_TRANSFER_OUT,
+        }
+        assert TXN_TYPE_TO_PROTO == expected
+        assert TXN_TYPE_TO_PROTO["transfer_in"] != TXN_TYPE_TO_PROTO["deposit"]
 
     def test_from_proto_transaction_type_mapping(self) -> None:
         """Test reverse transaction type mapping."""
@@ -358,33 +358,29 @@ async def test_get_strategy_performance_maps_positions() -> None:
     from llamatrade_proto.generated import common_pb2, portfolio_pb2
 
     from src.grpc.servicer import PortfolioServicer
-    from src.models import PositionResponse
-    from src.services.strategy_performance_service import (
-        LiveMetrics,
-        PeriodReturns,
-        StrategyPerformanceDetail,
-        StrategyPerformanceSummary,
-    )
+    from src.ledger.read_model import PositionView
+    from src.proto_mappers import period_returns_to_proto, strategy_summary_to_proto
+    from src.services.strategy_performance_service import StrategyPerformanceDetail
 
     execution_id, tenant_id = uuid4(), uuid4()
     detail = StrategyPerformanceDetail(
-        summary=StrategyPerformanceSummary(
+        summary=strategy_summary_to_proto(
             execution_id=execution_id,
             strategy_id=uuid4(),
             strategy_name="Trend",
-            mode="paper",
-            status="running",
+            mode=common_pb2.EXECUTION_MODE_PAPER,
+            status=common_pb2.EXECUTION_STATUS_RUNNING,
             color="#fff",
             allocated_capital=Decimal("10000"),
             current_value=Decimal("10500"),
             positions_count=1,
-            returns=PeriodReturns(),
+            returns=period_returns_to_proto({}),
             started_at=datetime.now(UTC),
             updated_at=datetime.now(UTC),
         ),
-        metrics=LiveMetrics(),
+        metrics=portfolio_pb2.StrategyLiveMetrics(),
         positions=[
-            PositionResponse(
+            PositionView(
                 symbol="AAPL",
                 qty=Decimal("10.0"),
                 side="long",
@@ -445,11 +441,11 @@ async def test_asset_allocation_includes_cash_and_weights_over_total() -> None:
     from llamatrade_proto.generated import common_pb2, portfolio_pb2
 
     from src.grpc.servicer import PortfolioServicer
-    from src.models import PositionResponse
+    from src.ledger.read_model import PositionView
 
     tenant_id = uuid4()
     positions = [
-        PositionResponse(
+        PositionView(
             symbol="AAPL",
             qty=Decimal("10.0"),
             side="long",
@@ -511,7 +507,6 @@ async def test_sync_portfolio_triggers_reconciliation(monkeypatch) -> None:
     servicer._session_factory = cast(Any, lambda: _AcctSession([MagicMock()]))
     servicer._reader = MagicMock(return_value=reader)
     servicer._strategy_perf_reader = MagicMock(return_value=perf_reader)
-    servicer._to_proto_portfolio = MagicMock(return_value=portfolio_pb2.Portfolio())
 
     resp = await servicer.sync_portfolio(
         portfolio_pb2.SyncPortfolioRequest(

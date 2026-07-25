@@ -68,6 +68,11 @@ class BillingServiceStub(object):
                 request_serializer=billing__pb2.ListPaymentMethodsRequest.SerializeToString,
                 response_deserializer=billing__pb2.ListPaymentMethodsResponse.FromString,
                 _registered_method=True)
+        self.CreateSetupIntent = channel.unary_unary(
+                '/llamatrade.BillingService/CreateSetupIntent',
+                request_serializer=billing__pb2.CreateSetupIntentRequest.SerializeToString,
+                response_deserializer=billing__pb2.CreateSetupIntentResponse.FromString,
+                _registered_method=True)
         self.AddPaymentMethod = channel.unary_unary(
                 '/llamatrade.BillingService/AddPaymentMethod',
                 request_serializer=billing__pb2.AddPaymentMethodRequest.SerializeToString,
@@ -162,6 +167,12 @@ class BillingServiceServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def CreateSetupIntent(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
     def AddPaymentMethod(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
@@ -239,6 +250,11 @@ def add_BillingServiceServicer_to_server(servicer, server):
                     servicer.ListPaymentMethods,
                     request_deserializer=billing__pb2.ListPaymentMethodsRequest.FromString,
                     response_serializer=billing__pb2.ListPaymentMethodsResponse.SerializeToString,
+            ),
+            'CreateSetupIntent': grpc.unary_unary_rpc_method_handler(
+                    servicer.CreateSetupIntent,
+                    request_deserializer=billing__pb2.CreateSetupIntentRequest.FromString,
+                    response_serializer=billing__pb2.CreateSetupIntentResponse.SerializeToString,
             ),
             'AddPaymentMethod': grpc.unary_unary_rpc_method_handler(
                     servicer.AddPaymentMethod,
@@ -535,6 +551,33 @@ class BillingService(object):
             '/llamatrade.BillingService/ListPaymentMethods',
             billing__pb2.ListPaymentMethodsRequest.SerializeToString,
             billing__pb2.ListPaymentMethodsResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def CreateSetupIntent(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/llamatrade.BillingService/CreateSetupIntent',
+            billing__pb2.CreateSetupIntentRequest.SerializeToString,
+            billing__pb2.CreateSetupIntentResponse.FromString,
             options,
             channel_credentials,
             insecure,

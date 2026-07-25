@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from llamatrade_db import get_db
 from llamatrade_db.models import PaymentMethod
 
-from src.models import PaymentMethodResponse, SetupIntentResponse
+from src.models import SetupIntentResponse
 from src.services.billing_service import BillingService, get_billing_service
 from src.stripe.client import StripeClient, StripeError, get_stripe_client
 
@@ -51,7 +51,7 @@ class PaymentMethodService:
         tenant_id: UUID,
         email: str,
         payment_method_id: str,
-    ) -> PaymentMethodResponse:
+    ) -> PaymentMethod:
         """Attach a payment method to the tenant's Stripe customer."""
         # Ensure customer exists
         customer_id = await self.billing.ensure_stripe_customer(tenant_id, email)
@@ -90,9 +90,9 @@ class PaymentMethodService:
         await self.db.commit()
         await self.db.refresh(payment_method)
 
-        return self._to_response(payment_method)
+        return payment_method
 
-    async def list_payment_methods(self, tenant_id: UUID) -> list[PaymentMethodResponse]:
+    async def list_payment_methods(self, tenant_id: UUID) -> list[PaymentMethod]:
         """List all payment methods for a tenant."""
         result = await self.db.execute(
             select(PaymentMethod)
@@ -101,11 +101,11 @@ class PaymentMethodService:
         )
         methods = result.scalars().all()
 
-        return [self._to_response(pm) for pm in methods]
+        return list(methods)
 
     async def get_payment_method(
         self, tenant_id: UUID, payment_method_id: UUID
-    ) -> PaymentMethodResponse | None:
+    ) -> PaymentMethod | None:
         """Get a specific payment method."""
         result = await self.db.execute(
             select(PaymentMethod).where(
@@ -118,7 +118,7 @@ class PaymentMethodService:
         if not payment_method:
             return None
 
-        return self._to_response(payment_method)
+        return payment_method
 
     async def delete_payment_method(self, tenant_id: UUID, payment_method_id: UUID) -> bool:
         """Delete a payment method."""
@@ -199,7 +199,7 @@ class PaymentMethodService:
 
     async def set_default_payment_method(
         self, tenant_id: UUID, payment_method_id: UUID
-    ) -> PaymentMethodResponse:
+    ) -> PaymentMethod:
         """Set a payment method as the default."""
         # Get the payment method
         result = await self.db.execute(
@@ -235,19 +235,7 @@ class PaymentMethodService:
         await self.db.commit()
         await self.db.refresh(payment_method)
 
-        return self._to_response(payment_method)
-
-    def _to_response(self, pm: PaymentMethod) -> PaymentMethodResponse:
-        """Convert PaymentMethod model to response."""
-        return PaymentMethodResponse(
-            id=pm.id,
-            type=pm.type,
-            card_brand=pm.card_brand,
-            card_last4=pm.card_last4,
-            card_exp_month=pm.card_exp_month,
-            card_exp_year=pm.card_exp_year,
-            is_default=pm.is_default,
-        )
+        return payment_method
 
 
 async def get_payment_method_service(

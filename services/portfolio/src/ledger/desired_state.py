@@ -13,7 +13,7 @@ from decimal import Decimal
 
 from src.ledger.sizing import (
     DEFAULT_DRIFT_TOLERANCE,
-    IntendedOrder,
+    SleeveOrder,
     fit_to_free_cash,
     target_orders,
 )
@@ -36,14 +36,14 @@ def plan_rebalance(
     prices: dict[str, Decimal],
     *,
     drift_tolerance: Decimal = DEFAULT_DRIFT_TOLERANCE,
-) -> dict[str, list[IntendedOrder]]:
+) -> dict[str, list[SleeveOrder]]:
     """Produce intended orders per sleeve to converge each toward its target.
 
     Buys are fit to the sleeve's free cash (sells, which raise cash, pass
     through). Sells are ordered before buys per sleeve so freed cash can fund
     buys downstream at execution time.
     """
-    plan: dict[str, list[IntendedOrder]] = {}
+    plan: dict[str, list[SleeveOrder]] = {}
     for d in desired:
         orders = target_orders(
             sleeve_id=d.sleeve_id,
@@ -54,7 +54,7 @@ def plan_rebalance(
             drift_tolerance=drift_tolerance,
         )
         sells = [o for o in orders if o.side == "sell"]
-        buys: list[IntendedOrder] = []
+        buys: list[SleeveOrder] = []
         for o in orders:
             if o.side != "buy":
                 continue

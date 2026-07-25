@@ -169,6 +169,8 @@ class _AlertConditionType(StrEnum):
     RSI_BELOW = "rsi_below"
     ORDER_FILLED = "order_filled"
     STRATEGY_SIGNAL = "strategy_signal"
+    RECONCILIATION_DRIFT = "reconciliation_drift"
+    SLEEVE_FROZEN = "sleeve_frozen"
 
 
 class _AlertStatus(StrEnum):
@@ -182,31 +184,6 @@ class _NotificationStatus(StrEnum):
     SENT = "sent"
     FAILED = "failed"
     READ = "read"
-
-
-class _TemplateCategory(StrEnum):
-    BUY_AND_HOLD = "buy-and-hold"
-    TACTICAL = "tactical"
-    FACTOR = "factor"
-    INCOME = "income"
-    TREND = "trend"
-    MEAN_REVERSION = "mean-reversion"
-    ALTERNATIVES = "alternatives"
-
-
-class _AssetClass(StrEnum):
-    EQUITY = "equity"
-    FIXED_INCOME = "fixed-income"
-    MULTI_ASSET = "multi-asset"
-    CRYPTO = "crypto"
-    COMMODITY = "commodity"
-    OPTIONS = "options"
-
-
-class _TemplateDifficulty(StrEnum):
-    BEGINNER = "beginner"
-    INTERMEDIATE = "intermediate"
-    ADVANCED = "advanced"
 
 
 # TypeDecorator Infrastructure
@@ -573,6 +550,8 @@ class AlertConditionTypeType(_ProtoEnumType[notification_pb2.AlertConditionType.
         notification_pb2.ALERT_CONDITION_TYPE_RSI_BELOW: _AlertConditionType.RSI_BELOW,
         notification_pb2.ALERT_CONDITION_TYPE_ORDER_FILLED: _AlertConditionType.ORDER_FILLED,
         notification_pb2.ALERT_CONDITION_TYPE_STRATEGY_SIGNAL: _AlertConditionType.STRATEGY_SIGNAL,
+        notification_pb2.ALERT_CONDITION_TYPE_RECONCILIATION_DRIFT: _AlertConditionType.RECONCILIATION_DRIFT,
+        notification_pb2.ALERT_CONDITION_TYPE_SLEEVE_FROZEN: _AlertConditionType.SLEEVE_FROZEN,
     }
     _str_to_int = {v: k for k, v in _int_to_str.items()}
 
@@ -606,61 +585,6 @@ class NotificationStatusType(_ProtoEnumType[notification_pb2.NotificationStatus.
         notification_pb2.NOTIFICATION_STATUS_SENT: _NotificationStatus.SENT,
         notification_pb2.NOTIFICATION_STATUS_FAILED: _NotificationStatus.FAILED,
         notification_pb2.NOTIFICATION_STATUS_READ: _NotificationStatus.READ,
-    }
-    _str_to_int = {v: k for k, v in _int_to_str.items()}
-
-
-class TemplateCategoryType(_ProtoEnumType[strategy_pb2.TemplateCategory.ValueType]):
-    impl = Enum(
-        _TemplateCategory,
-        name="template_category",
-        create_type=False,
-        values_callable=_enum_values,
-    )
-    _str_enum = _TemplateCategory
-    _int_to_str = {
-        strategy_pb2.TEMPLATE_CATEGORY_BUY_AND_HOLD: _TemplateCategory.BUY_AND_HOLD,
-        strategy_pb2.TEMPLATE_CATEGORY_TACTICAL: _TemplateCategory.TACTICAL,
-        strategy_pb2.TEMPLATE_CATEGORY_FACTOR: _TemplateCategory.FACTOR,
-        strategy_pb2.TEMPLATE_CATEGORY_INCOME: _TemplateCategory.INCOME,
-        strategy_pb2.TEMPLATE_CATEGORY_TREND: _TemplateCategory.TREND,
-        strategy_pb2.TEMPLATE_CATEGORY_MEAN_REVERSION: _TemplateCategory.MEAN_REVERSION,
-        strategy_pb2.TEMPLATE_CATEGORY_ALTERNATIVES: _TemplateCategory.ALTERNATIVES,
-    }
-    _str_to_int = {v: k for k, v in _int_to_str.items()}
-
-
-class AssetClassType(_ProtoEnumType[strategy_pb2.AssetClass.ValueType]):
-    impl = Enum(
-        _AssetClass,
-        name="asset_class",
-        create_type=False,
-        values_callable=_enum_values,
-    )
-    _str_enum = _AssetClass
-    _int_to_str = {
-        strategy_pb2.ASSET_CLASS_EQUITY: _AssetClass.EQUITY,
-        strategy_pb2.ASSET_CLASS_FIXED_INCOME: _AssetClass.FIXED_INCOME,
-        strategy_pb2.ASSET_CLASS_MULTI_ASSET: _AssetClass.MULTI_ASSET,
-        strategy_pb2.ASSET_CLASS_CRYPTO: _AssetClass.CRYPTO,
-        strategy_pb2.ASSET_CLASS_COMMODITY: _AssetClass.COMMODITY,
-        strategy_pb2.ASSET_CLASS_OPTIONS: _AssetClass.OPTIONS,
-    }
-    _str_to_int = {v: k for k, v in _int_to_str.items()}
-
-
-class TemplateDifficultyType(_ProtoEnumType[strategy_pb2.TemplateDifficulty.ValueType]):
-    impl = Enum(
-        _TemplateDifficulty,
-        name="template_difficulty",
-        create_type=False,
-        values_callable=_enum_values,
-    )
-    _str_enum = _TemplateDifficulty
-    _int_to_str = {
-        strategy_pb2.TEMPLATE_DIFFICULTY_BEGINNER: _TemplateDifficulty.BEGINNER,
-        strategy_pb2.TEMPLATE_DIFFICULTY_INTERMEDIATE: _TemplateDifficulty.INTERMEDIATE,
-        strategy_pb2.TEMPLATE_DIFFICULTY_ADVANCED: _TemplateDifficulty.ADVANCED,
     }
     _str_to_int = {v: k for k, v in _int_to_str.items()}
 
@@ -733,16 +657,16 @@ class ArtifactTypeType(_ProtoEnumType[agent_pb2.ArtifactType.ValueType]):
 # Memory Enums (not proto-backed, used directly as StrEnum)
 
 
-class _MemoryFactCategory(StrEnum):
-    """Internal StrEnum for memory fact categories."""
+class MemoryFactCategory(StrEnum):
+    """Categories for extracted memory facts (not proto-backed; stored as PG ENUM)."""
 
-    USER_PREFERENCE = "user_preference"
-    RISK_TOLERANCE = "risk_tolerance"
-    INVESTMENT_GOAL = "investment_goal"
-    ASSET_PREFERENCE = "asset_preference"
-    STRATEGY_DECISION = "strategy_decision"
-    TRADING_BEHAVIOR = "trading_behavior"
-    FEEDBACK = "feedback"
+    USER_PREFERENCE = "user_preference"  # "prefers momentum strategies"
+    RISK_TOLERANCE = "risk_tolerance"  # "moderate risk, max 15% drawdown"
+    INVESTMENT_GOAL = "investment_goal"  # "retirement in 10 years"
+    ASSET_PREFERENCE = "asset_preference"  # "likes tech, avoids energy"
+    STRATEGY_DECISION = "strategy_decision"  # "chose 60/40 allocation"
+    TRADING_BEHAVIOR = "trading_behavior"  # "rebalances monthly"
+    FEEDBACK = "feedback"  # "liked the momentum suggestion"
 
 
 class MemoryFactCategoryType(TypeDecorator[str]):
@@ -752,7 +676,7 @@ class MemoryFactCategoryType(TypeDecorator[str]):
     """
 
     impl = Enum(
-        _MemoryFactCategory,
+        MemoryFactCategory,
         name="memory_fact_category",
         create_type=False,
         values_callable=_enum_values,
@@ -760,12 +684,12 @@ class MemoryFactCategoryType(TypeDecorator[str]):
     cache_ok = True
 
     def process_bind_param(
-        self, value: str | _MemoryFactCategory | None, dialect: Dialect
+        self, value: str | MemoryFactCategory | None, dialect: Dialect
     ) -> str | None:
         """Convert to DB value."""
         if value is None:
             return None
-        if isinstance(value, _MemoryFactCategory):
+        if isinstance(value, MemoryFactCategory):
             return value.value
         return value.lower()
 
@@ -773,4 +697,4 @@ class MemoryFactCategoryType(TypeDecorator[str]):
         """Return string value from DB."""
         if value is None:
             return None
-        return value.value if isinstance(value, _MemoryFactCategory) else value
+        return value.value if isinstance(value, MemoryFactCategory) else value

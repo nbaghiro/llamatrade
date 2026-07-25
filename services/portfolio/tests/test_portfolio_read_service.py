@@ -12,8 +12,6 @@ from typing import Any, cast
 from unittest.mock import AsyncMock
 from uuid import uuid4
 
-import pytest
-
 from llamatrade_db.models.ledger import LedgerEventType
 from llamatrade_proto.generated.portfolio_pb2 import (
     TRANSACTION_TYPE_BUY,
@@ -49,7 +47,8 @@ def _svc(prices: dict[str, Decimal] | None = None) -> PortfolioReadService:
     return PortfolioReadService(db=AsyncMock(), market_data=FakeMarketData(prices))
 
 
-async def test_get_summary_maps_view_to_schema() -> None:
+async def test_get_summary_returns_view() -> None:
+    """get_summary returns the ledger SummaryView directly (mapped to proto by the servicer)."""
     svc = _svc({"AAPL": Decimal("200")})
     svc._projections = AsyncMock(return_value=[_proj("1000", "AAPL", "10", "1500")])
     svc._prior_equity = AsyncMock(return_value=Decimal("2800"))
@@ -58,7 +57,6 @@ async def test_get_summary_maps_view_to_schema() -> None:
     assert summary.cash == 1000.0
     assert summary.positions_count == 1
     assert summary.day_pnl == 200.0
-    assert summary.updated_at.tzinfo is not None
 
 
 async def test_list_positions_maps_to_schema() -> None:
@@ -81,9 +79,8 @@ async def test_get_metrics_insufficient_history_returns_zeros() -> None:
     svc = _svc()
     svc._daily_equity_series = AsyncMock(return_value=[(date(2026, 1, 1), Decimal("1000"))])
     m = await svc.get_metrics(TENANT, "1M")
-    assert m.period == "1M"
-    assert m.total_return == 0.0
-    assert m.sharpe_ratio == 0.0
+    assert Decimal(m.total_return.value) == Decimal("0")
+    assert Decimal(m.sharpe_ratio.value) == Decimal("0")
 
 
 async def test_get_metrics_computes_over_series() -> None:
@@ -91,9 +88,8 @@ async def test_get_metrics_computes_over_series() -> None:
     series = [(date(2026, 1, i + 1), Decimal("1000") + 10 * i) for i in range(10)]
     svc._daily_equity_series = AsyncMock(return_value=series)
     m = await svc.get_metrics(TENANT, "1M")
-    assert m.total_return == 90.0  # 1090 - 1000
-    assert m.total_return_percent == pytest.approx(9.0)
-    assert m.max_drawdown == 0.0  # monotonic up
+    assert Decimal(m.total_return.value) == Decimal("90")  # 1090 - 1000 (money as Decimal)
+    assert Decimal(m.max_drawdown.value) == Decimal("0")  # monotonic up
 
 
 async def test_list_transactions_paginates_newest_first() -> None:
@@ -178,6 +174,6 @@ async def test_list_transactions_labels_allocation_with_strategy() -> None:
 
     assert total == 1
     assert txns[0].type == TRANSACTION_TYPE_TRANSFER_IN
-    assert txns[0].amount == 15000.0
+    assert Decimal(txns[0].amount.value) == Decimal("15000")
     assert txns[0].description == "Momentum Rotation"
     svc._sleeve_names.assert_awaited_once_with({strategy_sleeve})

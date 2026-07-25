@@ -6,7 +6,7 @@ origination so fills can be posted to the right sleeve. Nullable: legacy and
 unattributed rows are valid (reconciliation routes their effects to the
 Unmanaged sleeve).
 
-See .docs/planning/CONTRACTS.md §5 (identity threading).
+See .docs/portfolio-ledger.md (identity threading).
 
 Revision ID: 017_add_trading_ledger_identity
 Revises: 016_add_exec_ledger_identity

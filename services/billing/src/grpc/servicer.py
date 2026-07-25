@@ -3,13 +3,9 @@
 from __future__ import annotations
 
 import logging
-import os
 from datetime import UTC, datetime
-from decimal import Decimal
-from typing import cast
 from uuid import UUID
 
-import jwt
 from connectrpc.code import Code
 from connectrpc.errors import ConnectError
 from connectrpc.request import RequestContext
@@ -19,22 +15,29 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 # Type alias for generic request context (accepts any request/response types)
 type AnyContext = RequestContext[object, object]
 
+from llamatrade_common import current_context
+from llamatrade_common.connect import resolve_identity_connect
 from llamatrade_db import get_session_maker, system_session, tenant_session
 from llamatrade_db.models import Invoice
 from llamatrade_proto.generated import billing_pb2, common_pb2
 
-from src.models import (
-    PaymentMethodResponse,
-    PlanResponse,
-    SubscriptionResponse,
+from src.proto_mappers import (
+    invoice_to_proto,
+    payment_method_to_proto,
+    plan_to_proto,
+    subscription_to_proto,
 )
-from src.stripe.client import get_stripe_client
+from src.stripe.client import StripeError, get_stripe_client
 
 logger = logging.getLogger(__name__)
 
-# JWT configuration
-JWT_SECRET = os.getenv("JWT_SECRET", "dev-secret-change-in-production")
-JWT_ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
+
+def _customer_email(tenant_id: UUID) -> str:
+    """Real user email from the verified token, else a tenant placeholder."""
+    ctx = current_context()
+    if ctx is not None and ctx.email:
+        return ctx.email
+    return f"user-{tenant_id}@llamatrade.example"
 
 
 class BillingServicer:
@@ -53,29 +56,6 @@ class BillingServicer:
             self._session_maker = get_session_maker()
         return self._session_maker
 
-    def _get_tenant_id(self, ctx: AnyContext) -> UUID:
-        """Extract tenant_id from JWT token in Authorization header."""
-        auth_header: str = ctx.request_headers().get("authorization", "")
-        if not auth_header.startswith("Bearer "):
-            raise ConnectError(
-                Code.UNAUTHENTICATED,
-                "Missing or invalid authorization header",
-            )
-        token = auth_header[7:]  # Remove "Bearer " prefix
-
-        try:
-            payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
-        except jwt.ExpiredSignatureError:
-            raise ConnectError(Code.UNAUTHENTICATED, "Token expired")
-        except jwt.InvalidTokenError:
-            raise ConnectError(Code.UNAUTHENTICATED, "Invalid token")
-
-        tenant_id = payload.get("tenant_id")
-        if not tenant_id:
-            raise ConnectError(Code.UNAUTHENTICATED, "Token missing tenant_id")
-
-        return UUID(tenant_id)
-
     async def get_subscription(
         self,
         request: billing_pb2.GetSubscriptionRequest,
@@ -84,7 +64,7 @@ class BillingServicer:
         """Get the current subscription for a tenant."""
         from src.services.billing_service import BillingService
 
-        tenant_id = self._get_tenant_id(ctx)
+        tenant_id, _ = resolve_identity_connect(request.context)
 
         async with tenant_session(tenant_id, self._maker()) as db:
             stripe_client = get_stripe_client()
@@ -95,7 +75,7 @@ class BillingServicer:
                 raise ConnectError(Code.NOT_FOUND, "No active subscription found")
 
             return billing_pb2.GetSubscriptionResponse(
-                subscription=self._to_proto_subscription(subscription),
+                subscription=subscription_to_proto(subscription),
             )
 
     async def create_subscription(
@@ -107,10 +87,10 @@ class BillingServicer:
         from src.models import SubscriptionCreateRequest
         from src.services.billing_service import BillingService
 
-        tenant_id = self._get_tenant_id(ctx)
+        tenant_id, _ = resolve_identity_connect(request.context)
 
         # Map proto billing interval to internal
-        interval = self._from_proto_interval(request.interval)
+        interval = request.interval
 
         create_request = SubscriptionCreateRequest(
             plan_id=request.plan_id,
@@ -123,8 +103,7 @@ class BillingServicer:
                 stripe_client = get_stripe_client()
                 service = BillingService(db, stripe_client)
 
-                # We need email for Stripe - would need to fetch from auth service
-                email = f"user-{tenant_id}@llamatrade.example"
+                email = _customer_email(tenant_id)
 
                 subscription = await service.create_subscription(
                     tenant_id=tenant_id,
@@ -133,7 +112,7 @@ class BillingServicer:
                 )
 
                 return billing_pb2.CreateSubscriptionResponse(
-                    subscription=self._to_proto_subscription(subscription),
+                    subscription=subscription_to_proto(subscription),
                 )
         except ValueError as e:
             raise ConnectError(Code.INVALID_ARGUMENT, str(e))
@@ -146,7 +125,7 @@ class BillingServicer:
         """Update subscription (change plan)."""
         from src.services.billing_service import BillingService
 
-        tenant_id = self._get_tenant_id(ctx)
+        tenant_id, _ = resolve_identity_connect(request.context)
 
         try:
             async with tenant_session(tenant_id, self._maker()) as db:
@@ -158,7 +137,7 @@ class BillingServicer:
                 )
 
                 return billing_pb2.UpdateSubscriptionResponse(
-                    subscription=self._to_proto_subscription(subscription),
+                    subscription=subscription_to_proto(subscription),
                 )
         except ValueError as e:
             raise ConnectError(Code.INVALID_ARGUMENT, str(e))
@@ -171,7 +150,7 @@ class BillingServicer:
         """Cancel subscription."""
         from src.services.billing_service import BillingService
 
-        tenant_id = self._get_tenant_id(ctx)
+        tenant_id, _ = resolve_identity_connect(request.context)
 
         try:
             async with tenant_session(tenant_id, self._maker()) as db:
@@ -183,7 +162,7 @@ class BillingServicer:
                 )
 
                 return billing_pb2.CancelSubscriptionResponse(
-                    subscription=self._to_proto_subscription(subscription),
+                    subscription=subscription_to_proto(subscription),
                 )
         except ValueError as e:
             raise ConnectError(Code.INVALID_ARGUMENT, str(e))
@@ -196,7 +175,7 @@ class BillingServicer:
         """Resume a cancelled subscription."""
         from src.services.billing_service import BillingService
 
-        tenant_id = self._get_tenant_id(ctx)
+        tenant_id, _ = resolve_identity_connect(request.context)
 
         try:
             async with tenant_session(tenant_id, self._maker()) as db:
@@ -205,7 +184,7 @@ class BillingServicer:
                 subscription = await service.reactivate_subscription(tenant_id)
 
                 return billing_pb2.ResumeSubscriptionResponse(
-                    subscription=self._to_proto_subscription(subscription),
+                    subscription=subscription_to_proto(subscription),
                 )
         except ValueError as e:
             raise ConnectError(Code.INVALID_ARGUMENT, str(e))
@@ -243,7 +222,7 @@ class BillingServicer:
         from llamatrade_proto.generated.common_pb2 import EXECUTION_STATUS_RUNNING
         from llamatrade_proto.generated.strategy_pb2 import STRATEGY_STATUS_ARCHIVED
 
-        tenant_id = self._get_tenant_id(ctx)
+        tenant_id, _ = resolve_identity_connect(request.context)
 
         async with tenant_session(tenant_id, self._maker()) as db:
             strategies_created = (
@@ -349,7 +328,7 @@ class BillingServicer:
         ctx: AnyContext,
     ) -> billing_pb2.ListInvoicesResponse:
         """List a tenant's invoices, newest first."""
-        tenant_id = self._get_tenant_id(ctx)
+        tenant_id, _ = resolve_identity_connect(request.context)
         page = request.pagination.page or 1
         page_size = request.pagination.page_size or 20
 
@@ -375,7 +354,7 @@ class BillingServicer:
 
         total_pages = (total + page_size - 1) // page_size if total else 1
         return billing_pb2.ListInvoicesResponse(
-            invoices=[self._to_proto_invoice(inv) for inv in rows],
+            invoices=[invoice_to_proto(inv) for inv in rows],
             pagination=common_pb2.PaginationResponse(
                 total_items=total,
                 total_pages=total_pages,
@@ -392,7 +371,7 @@ class BillingServicer:
         ctx: AnyContext,
     ) -> billing_pb2.GetInvoiceResponse:
         """Get a specific invoice, tenant-scoped."""
-        tenant_id = self._get_tenant_id(ctx)
+        tenant_id, _ = resolve_identity_connect(request.context)
 
         try:
             invoice_id = UUID(request.invoice_id)
@@ -410,7 +389,7 @@ class BillingServicer:
         if invoice is None:
             raise ConnectError(Code.NOT_FOUND, f"Invoice not found: {request.invoice_id}")
 
-        return billing_pb2.GetInvoiceResponse(invoice=self._to_proto_invoice(invoice))
+        return billing_pb2.GetInvoiceResponse(invoice=invoice_to_proto(invoice))
 
     async def list_plans(
         self,
@@ -426,7 +405,7 @@ class BillingServicer:
             plans = await service.list_plans()
 
             return billing_pb2.ListPlansResponse(
-                plans=[self._to_proto_plan(p) for p in plans],
+                plans=[plan_to_proto(p) for p in plans],
             )
 
     async def list_payment_methods(
@@ -438,7 +417,7 @@ class BillingServicer:
         from src.services.billing_service import BillingService
         from src.services.payment_method_service import PaymentMethodService
 
-        tenant_id = self._get_tenant_id(ctx)
+        tenant_id, _ = resolve_identity_connect(request.context)
 
         async with tenant_session(tenant_id, self._maker()) as db:
             stripe_client = get_stripe_client()
@@ -447,8 +426,30 @@ class BillingServicer:
             methods = await service.list_payment_methods(tenant_id)
 
             return billing_pb2.ListPaymentMethodsResponse(
-                payment_methods=[self._to_proto_payment_method(pm) for pm in methods],
+                payment_methods=[payment_method_to_proto(pm) for pm in methods],
             )
+
+    async def create_setup_intent(
+        self,
+        request: billing_pb2.CreateSetupIntentRequest,
+        ctx: AnyContext,
+    ) -> billing_pb2.CreateSetupIntentResponse:
+        """Create a Stripe SetupIntent (client_secret drives Stripe.js card collection)."""
+        tenant_id, _ = resolve_identity_connect(request.context)
+
+        stripe_client = get_stripe_client()
+        customer_id = await stripe_client.get_or_create_customer(
+            str(tenant_id), _customer_email(tenant_id)
+        )
+        try:
+            result = await stripe_client.create_setup_intent(customer_id)
+        except StripeError as e:
+            raise ConnectError(Code.INTERNAL, f"Stripe setup intent failed: {e.message}")
+
+        return billing_pb2.CreateSetupIntentResponse(
+            client_secret=result.client_secret,
+            customer_id=result.customer_id,
+        )
 
     async def add_payment_method(
         self,
@@ -459,8 +460,8 @@ class BillingServicer:
         from src.services.billing_service import BillingService
         from src.services.payment_method_service import PaymentMethodService
 
-        tenant_id = self._get_tenant_id(ctx)
-        email = f"user-{tenant_id}@llamatrade.example"
+        tenant_id, _ = resolve_identity_connect(request.context)
+        email = _customer_email(tenant_id)
 
         try:
             async with tenant_session(tenant_id, self._maker()) as db:
@@ -474,7 +475,7 @@ class BillingServicer:
                 )
 
                 return billing_pb2.AddPaymentMethodResponse(
-                    payment_method=self._to_proto_payment_method(payment_method),
+                    payment_method=payment_method_to_proto(payment_method),
                 )
         except ValueError as e:
             raise ConnectError(Code.INVALID_ARGUMENT, str(e))
@@ -488,7 +489,7 @@ class BillingServicer:
         from src.services.billing_service import BillingService
         from src.services.payment_method_service import PaymentMethodService
 
-        tenant_id = self._get_tenant_id(ctx)
+        tenant_id, _ = resolve_identity_connect(request.context)
         payment_method_id = UUID(request.payment_method_id)
 
         try:
@@ -510,152 +511,60 @@ class BillingServicer:
         request: billing_pb2.CreateCheckoutSessionRequest,
         ctx: AnyContext,
     ) -> billing_pb2.CreateCheckoutSessionResponse:
-        """Create a Stripe checkout session."""
-        tenant_id = self._get_tenant_id(ctx)
+        """Create a Stripe-hosted subscription Checkout Session."""
+        from src.services.billing_service import BillingService
 
-        # This would integrate with Stripe Checkout
-        return billing_pb2.CreateCheckoutSessionResponse(
-            checkout_url=f"https://checkout.stripe.com/placeholder/{tenant_id}",
-            session_id=f"cs_placeholder_{tenant_id}",
-        )
+        tenant_id, _ = resolve_identity_connect(request.context)
+
+        async with tenant_session(tenant_id, self._maker()) as db:
+            stripe_client = get_stripe_client()
+            plan = await BillingService(db, stripe_client).get_plan_db(request.plan_id)
+            if plan is None:
+                raise ConnectError(Code.NOT_FOUND, f"Plan {request.plan_id} not found")
+            price_id = (
+                plan.stripe_price_id_monthly
+                if request.interval == billing_pb2.BILLING_INTERVAL_MONTHLY
+                else plan.stripe_price_id_yearly
+            )
+            if not price_id:
+                raise ConnectError(
+                    Code.FAILED_PRECONDITION,
+                    "No Stripe price configured for this plan and interval",
+                )
+            customer_id = await stripe_client.get_or_create_customer(
+                str(tenant_id), _customer_email(tenant_id)
+            )
+            try:
+                result = await stripe_client.create_checkout_session(
+                    customer_id=customer_id,
+                    price_id=price_id,
+                    success_url=request.success_url,
+                    cancel_url=request.cancel_url,
+                    trial_days=plan.trial_days,
+                )
+            except StripeError as e:
+                raise ConnectError(Code.INTERNAL, f"Stripe checkout failed: {e.message}")
+
+            return billing_pb2.CreateCheckoutSessionResponse(
+                checkout_url=result.url,
+                session_id=result.session_id,
+            )
 
     async def create_portal_session(
         self,
         request: billing_pb2.CreatePortalSessionRequest,
         ctx: AnyContext,
     ) -> billing_pb2.CreatePortalSessionResponse:
-        """Create a Stripe customer portal session."""
-        tenant_id = self._get_tenant_id(ctx)
+        """Create a Stripe Customer Portal session for self-service management."""
+        tenant_id, _ = resolve_identity_connect(request.context)
 
-        # This would integrate with Stripe Customer Portal
-        return billing_pb2.CreatePortalSessionResponse(
-            portal_url=f"https://billing.stripe.com/placeholder/{tenant_id}",
+        stripe_client = get_stripe_client()
+        customer_id = await stripe_client.get_or_create_customer(
+            str(tenant_id), _customer_email(tenant_id)
         )
+        try:
+            portal_url = await stripe_client.create_portal_session(customer_id, request.return_url)
+        except StripeError as e:
+            raise ConnectError(Code.INTERNAL, f"Stripe portal failed: {e.message}")
 
-    # Helper methods
-
-    def _to_proto_invoice(self, inv: Invoice) -> billing_pb2.Invoice:
-        """Convert a DB invoice to proto."""
-        cur = (inv.currency or "usd").upper()
-
-        def money(amount: Decimal) -> common_pb2.Money:
-            return common_pb2.Money(currency=cur, amount=str(amount))
-
-        def ts(value: datetime | None) -> common_pb2.Timestamp | None:
-            return common_pb2.Timestamp(seconds=int(value.timestamp())) if value else None
-
-        items = [
-            billing_pb2.InvoiceItem(
-                description=str(li.get("description", "")),
-                amount=common_pb2.Money(currency=cur, amount=str(li.get("amount", "0"))),
-            )
-            for li in (inv.line_items or [])
-        ]
-        return billing_pb2.Invoice(
-            id=str(inv.id),
-            tenant_id=str(inv.tenant_id),
-            subscription_id=str(inv.subscription_id) if inv.subscription_id else "",
-            amount=money(inv.amount_due),
-            amount_paid=money(inv.amount_paid),
-            amount_remaining=money(inv.amount_due - inv.amount_paid),
-            status=cast("billing_pb2.InvoiceStatus.ValueType", inv.status),
-            period_start=ts(inv.period_start),
-            period_end=ts(inv.period_end),
-            due_date=ts(inv.due_date),
-            paid_at=ts(inv.paid_at),
-            pdf_url=inv.invoice_pdf or "",
-            stripe_invoice_id=inv.stripe_invoice_id,
-            items=items,
-        )
-
-    def _to_proto_subscription(
-        self, subscription: SubscriptionResponse
-    ) -> billing_pb2.Subscription:
-        """Convert internal subscription to proto Subscription."""
-        return billing_pb2.Subscription(
-            id=str(subscription.id),
-            tenant_id=str(subscription.tenant_id),
-            plan_id=subscription.plan.id,
-            plan=self._to_proto_plan(subscription.plan),
-            status=self._to_proto_status(subscription.status),
-            interval=self._to_proto_interval(subscription.billing_cycle),
-            current_price=common_pb2.Money(
-                currency="USD",
-                amount=str(
-                    subscription.plan.price_monthly
-                    if subscription.billing_cycle == billing_pb2.BILLING_INTERVAL_MONTHLY
-                    else subscription.plan.price_yearly
-                ),
-            ),
-            current_period_start=common_pb2.Timestamp(
-                seconds=int(subscription.current_period_start.timestamp())
-            )
-            if subscription.current_period_start
-            else None,
-            current_period_end=common_pb2.Timestamp(
-                seconds=int(subscription.current_period_end.timestamp())
-            )
-            if subscription.current_period_end
-            else None,
-            is_trial=subscription.trial_end is not None,
-            trial_end=common_pb2.Timestamp(seconds=int(subscription.trial_end.timestamp()))
-            if subscription.trial_end
-            else None,
-            cancel_at_period_end=subscription.cancel_at_period_end,
-            stripe_subscription_id=subscription.stripe_subscription_id or "",
-            created_at=common_pb2.Timestamp(seconds=int(subscription.created_at.timestamp())),
-        )
-
-    def _to_proto_plan(self, plan: PlanResponse) -> billing_pb2.Plan:
-        """Convert internal plan to proto Plan."""
-        return billing_pb2.Plan(
-            id=plan.id,
-            name=plan.name,
-            tier=self._to_proto_tier(plan.tier),
-            description="",
-            monthly_price=common_pb2.Money(currency="USD", amount=str(plan.price_monthly)),
-            yearly_price=common_pb2.Money(currency="USD", amount=str(plan.price_yearly)),
-            max_strategies=plan.limits.get("live_strategies", 0) or 0,
-            max_backtests_per_month=plan.limits.get("backtests_per_month", 0) or 0,
-            max_live_sessions=plan.limits.get("live_strategies", 0) or 0,
-            data_retention_days=90,
-            features=[k for k, v in plan.features.items() if v],
-            api_access=plan.features.get("api_access", False),
-            priority_support=plan.features.get("priority_support", False),
-        )
-
-    def _to_proto_payment_method(self, pm: PaymentMethodResponse) -> billing_pb2.PaymentMethod:
-        """Convert internal payment method to proto PaymentMethod."""
-        return billing_pb2.PaymentMethod(
-            id=str(pm.id),
-            type=pm.type,
-            is_default=pm.is_default,
-            card_brand=pm.card_brand or "",
-            card_last4=pm.card_last4 or "",
-            card_exp_month=pm.card_exp_month or 0,
-            card_exp_year=pm.card_exp_year or 0,
-        )
-
-    def _to_proto_status(
-        self, status: billing_pb2.SubscriptionStatus.ValueType
-    ) -> billing_pb2.SubscriptionStatus.ValueType:
-        """Return proto status value (already proto ValueType)."""
-        return status
-
-    def _to_proto_tier(
-        self, tier: billing_pb2.PlanTier.ValueType
-    ) -> billing_pb2.PlanTier.ValueType:
-        """Return proto tier value (already proto ValueType)."""
-        return tier
-
-    def _to_proto_interval(
-        self, interval: billing_pb2.BillingInterval.ValueType
-    ) -> billing_pb2.BillingInterval.ValueType:
-        """Return proto interval value (already proto ValueType)."""
-        return interval
-
-    def _from_proto_interval(
-        self, interval: billing_pb2.BillingInterval.ValueType
-    ) -> billing_pb2.BillingInterval.ValueType:
-        """Return proto interval value (already proto ValueType)."""
-        return interval
+        return billing_pb2.CreatePortalSessionResponse(portal_url=portal_url)

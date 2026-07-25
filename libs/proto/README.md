@@ -1,6 +1,8 @@
 # LlamaTrade Proto
 
-Protocol Buffers definitions and generated code for LlamaTrade services.
+Protocol Buffers definitions and generated code for LlamaTrade services. This lib
+also owns `events.proto` (the `EventEnvelope` + `EventType` schema consumed by
+`llamatrade_events`).
 
 ## Structure
 
@@ -13,6 +15,7 @@ libs/proto/
 │   │   ├── common.proto
 │   │   ├── auth.proto
 │   │   ├── backtest.proto
+│   │   ├── events.proto         # EventEnvelope + EventType (used by llamatrade_events)
 │   │   └── ...
 │   │
 │   ├── generated/               # Auto-generated code (from buf generate)
@@ -20,15 +23,16 @@ libs/proto/
 │   │   ├── *_pb2_grpc.py        # gRPC service stubs
 │   │   └── *_connect.py         # Connect protocol stubs
 │   │
-│   ├── clients/                 # Hand-written client wrappers
+│   ├── clients/                 # Hand-written client wrappers (over BaseGRPCClient)
+│   │   ├── base.py              # BaseGRPCClient
 │   │   ├── auth.py              # AuthClient
-│   │   ├── backtest.py          # BacktestClient
 │   │   ├── market_data.py       # MarketDataClient
-│   │   └── trading.py           # TradingClient
+│   │   └── ledger.py            # LedgerClient
 │   │
 │   ├── interceptors/            # gRPC interceptors
-│   │   ├── auth.py              # AuthInterceptor
-│   │   └── logging.py           # LoggingInterceptor
+│   │   ├── auth.py              # AuthInterceptor, ClientAuthInterceptor, ServiceAuthClientInterceptor
+│   │   ├── logging.py           # LoggingInterceptor, ClientLoggingInterceptor
+│   │   └── telemetry.py         # TelemetryClientInterceptor, TelemetryServerInterceptor
 │   │
 │   └── server/                  # Server utilities
 │       ├── base.py              # GRPCServer
@@ -57,11 +61,11 @@ from llamatrade_proto.generated.auth_connect import AuthServiceASGIApplication
 ### High-Level Client Wrappers
 
 ```python
-# Import client wrappers (re-exported from package root)
+# AuthClient and MarketDataClient are re-exported from the package root
 from llamatrade_proto import MarketDataClient, AuthClient
 
-# Or import directly from clients module
-from llamatrade_proto.clients import MarketDataClient
+# All wrappers (incl. LedgerClient) are importable from the clients module
+from llamatrade_proto.clients import MarketDataClient, LedgerClient
 
 # Use the client
 async with MarketDataClient("market-data:8840") as client:

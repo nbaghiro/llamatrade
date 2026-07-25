@@ -14,7 +14,6 @@ Tables:
 from __future__ import annotations
 
 from datetime import datetime
-from enum import StrEnum
 from typing import Any
 from uuid import UUID
 
@@ -41,22 +40,7 @@ from llamatrade_db.models._enum_types import (
 )
 from llamatrade_proto.generated import agent_pb2
 
-# Memory Fact Categories (stored as PostgreSQL ENUM)
-
-
-class MemoryFactCategory(StrEnum):
-    """Categories for extracted memory facts."""
-
-    USER_PREFERENCE = "user_preference"  # "prefers momentum strategies"
-    RISK_TOLERANCE = "risk_tolerance"  # "moderate risk, max 15% drawdown"
-    INVESTMENT_GOAL = "investment_goal"  # "retirement in 10 years"
-    ASSET_PREFERENCE = "asset_preference"  # "likes tech, avoids energy"
-    STRATEGY_DECISION = "strategy_decision"  # "chose 60/40 allocation"
-    TRADING_BEHAVIOR = "trading_behavior"  # "rebalances monthly"
-    FEEDBACK = "feedback"  # "liked the momentum suggestion"
-
-
-# Enum type decorators (proto int <-> PostgreSQL ENUM string) live in _enum_types.py
+# MemoryFactCategory (the enum) and its type decorator live in _enum_types.py.
 
 
 class AgentSession(Base, UUIDPrimaryKeyMixin, TenantMixin, TimestampMixin):

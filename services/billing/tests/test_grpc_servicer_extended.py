@@ -6,33 +6,19 @@ from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
-import jwt
 import pytest
+from connectrpc.code import Code
+from connectrpc.errors import ConnectError
 
-from llamatrade_proto.generated import billing_pb2
+from llamatrade_db.models import Plan, Subscription
+from llamatrade_proto.generated import billing_pb2, common_pb2
 
 from src.grpc.servicer import BillingServicer
-from src.models import (
-    PlanResponse,
-    SubscriptionResponse,
-)
 
 # === Test Constants ===
 
-TEST_JWT_SECRET = "test-secret-key-for-testing"
 TEST_TENANT_ID = uuid4()
 TEST_USER_ID = uuid4()
-
-
-def create_test_token(tenant_id=None, expired=False):
-    """Create a test JWT token."""
-    exp = datetime.now(UTC) + timedelta(hours=-1 if expired else 1)
-    payload = {
-        "sub": str(TEST_USER_ID),
-        "tenant_id": str(tenant_id or TEST_TENANT_ID),
-        "exp": exp,
-    }
-    return jwt.encode(payload, TEST_JWT_SECRET, algorithm="HS256")
 
 
 # === Test Fixtures ===
@@ -41,8 +27,7 @@ def create_test_token(tenant_id=None, expired=False):
 @pytest.fixture
 def servicer():
     """BillingServicer with a mock session factory (the RLS set_config is a no-op)."""
-    with patch.dict("os.environ", {"JWT_SECRET": TEST_JWT_SECRET}):
-        servicer = BillingServicer()
+    servicer = BillingServicer()
     session = AsyncMock()
     session.__aenter__ = AsyncMock(return_value=session)
     session.__aexit__ = AsyncMock(return_value=None)
@@ -51,37 +36,17 @@ def servicer():
 
 
 @pytest.fixture
-def mock_ctx():
-    """Create a mock context with auth header."""
-    ctx = MagicMock()
-    token = create_test_token()
-    ctx.request_headers.return_value = {"authorization": f"Bearer {token}"}
-    return ctx
+def auth_context() -> common_pb2.TenantContext:
+    """Wire identity a unit-test request carries (trusted absent AuthMiddleware)."""
+    return common_pb2.TenantContext(tenant_id=str(TEST_TENANT_ID), user_id=str(TEST_USER_ID))
 
 
 @pytest.fixture
-def mock_ctx_no_auth():
-    """Create a mock context without auth."""
-    ctx = MagicMock()
-    ctx.request_headers.return_value = {}
-    return ctx
-
-
-@pytest.fixture
-def mock_ctx_expired():
-    """Create a mock context with expired token."""
-    ctx = MagicMock()
-    token = create_test_token(expired=True)
-    ctx.request_headers.return_value = {"authorization": f"Bearer {token}"}
-    return ctx
-
-
-@pytest.fixture
-def sample_plan():
-    """Create a sample PlanResponse."""
-    return PlanResponse(
-        id="starter",
-        name="Starter",
+def sample_plan() -> Plan:
+    """Create a sample Plan DB row."""
+    return Plan(
+        name="starter",
+        display_name="Starter",
         tier=billing_pb2.PLAN_TIER_STARTER,
         price_monthly=Decimal("29"),
         price_yearly=Decimal("290"),
@@ -92,13 +57,13 @@ def sample_plan():
 
 
 @pytest.fixture
-def sample_subscription(sample_plan):
-    """Create a sample SubscriptionResponse."""
+def sample_subscription(sample_plan: Plan) -> Subscription:
+    """Create a sample Subscription DB row (with its plan attached)."""
     now = datetime.now(UTC)
-    return SubscriptionResponse(
+    sub = Subscription(
         id=uuid4(),
         tenant_id=TEST_TENANT_ID,
-        plan=sample_plan,
+        plan_id=uuid4(),
         status=billing_pb2.SUBSCRIPTION_STATUS_ACTIVE,
         billing_cycle=billing_pb2.BILLING_INTERVAL_MONTHLY,
         current_period_start=now,
@@ -106,46 +71,30 @@ def sample_subscription(sample_plan):
         cancel_at_period_end=False,
         trial_start=None,
         trial_end=None,
+        canceled_at=None,
         stripe_subscription_id="sub_123",
+        stripe_customer_id="cus_123",
         created_at=now,
+        updated_at=now,
     )
+    sub.plan = sample_plan
+    return sub
 
 
-# === _get_tenant_id Tests ===
+# === Auth Tests ===
 
 
-class TestGetTenantId:
-    """Tests for _get_tenant_id method."""
+class TestAuthRequired:
+    """Identity is resolved from the request context via resolve_identity_connect."""
 
-    def test_get_tenant_id_success(self, servicer, mock_ctx):
-        """Test extracting tenant ID from valid token."""
-        # Mock the JWT decode directly to avoid secret key issues
-        with patch("src.grpc.servicer.jwt.decode") as mock_decode:
-            mock_decode.return_value = {
-                "sub": str(TEST_USER_ID),
-                "tenant_id": str(TEST_TENANT_ID),
-            }
-            tenant_id = servicer._get_tenant_id(mock_ctx)
-            assert tenant_id == TEST_TENANT_ID
-
-    def test_get_tenant_id_no_auth(self, servicer, mock_ctx_no_auth):
-        """Test missing authorization header."""
+    @pytest.mark.asyncio
+    async def test_missing_context_is_unauthenticated(self, servicer):
+        """A request with an empty (nil-UUID) context is rejected UNAUTHENTICATED."""
         from connectrpc.errors import ConnectError
 
         with pytest.raises(ConnectError) as exc_info:
-            servicer._get_tenant_id(mock_ctx_no_auth)
-        assert "Missing or invalid authorization" in str(exc_info.value)
-
-    def test_get_tenant_id_invalid_token(self, servicer):
-        """Test invalid token."""
-        from connectrpc.errors import ConnectError
-
-        ctx = MagicMock()
-        ctx.request_headers.return_value = {"authorization": "Bearer invalid-token"}
-
-        with pytest.raises(ConnectError) as exc_info:
-            servicer._get_tenant_id(ctx)
-        assert "Invalid token" in str(exc_info.value)
+            await servicer.get_subscription(billing_pb2.GetSubscriptionRequest(), MagicMock())
+        assert "UNAUTHENTICATED" in str(exc_info.value.code)
 
 
 # === get_subscription Tests ===
@@ -155,23 +104,22 @@ class TestGetSubscription:
     """Tests for get_subscription method."""
 
     @pytest.mark.asyncio
-    async def test_get_subscription_success(self, servicer, mock_ctx, sample_subscription):
+    async def test_get_subscription_success(self, servicer, auth_context, sample_subscription):
         """Test getting subscription successfully."""
         from llamatrade_proto.generated import billing_pb2
 
         mock_service = MagicMock()
         mock_service.get_subscription = AsyncMock(return_value=sample_subscription)
 
-        with patch.object(servicer, "_get_tenant_id", return_value=TEST_TENANT_ID):
-            with patch("src.grpc.servicer.get_stripe_client", return_value=MagicMock()):
-                with patch(
-                    "src.services.billing_service.BillingService",
-                    return_value=mock_service,
-                ):
-                    request = billing_pb2.GetSubscriptionRequest()
-                    response = await servicer.get_subscription(request, mock_ctx)
+        with patch("src.grpc.servicer.get_stripe_client", return_value=MagicMock()):
+            with patch(
+                "src.services.billing_service.BillingService",
+                return_value=mock_service,
+            ):
+                request = billing_pb2.GetSubscriptionRequest(context=auth_context)
+                response = await servicer.get_subscription(request, MagicMock())
 
-                    assert response.subscription is not None
+                assert response.subscription is not None
 
 
 # === get_usage Tests ===
@@ -216,7 +164,7 @@ class TestGetUsage:
     """Tests for get_usage method."""
 
     @pytest.mark.asyncio
-    async def test_get_usage_returns_real_counts(self, servicer, mock_ctx):
+    async def test_get_usage_returns_real_counts(self, servicer, auth_context):
         """Usage maps each server-side count onto the right proto field."""
         from types import SimpleNamespace
 
@@ -236,9 +184,8 @@ class TestGetUsage:
         fake_db = _FakeUsageSession(counts, subscription)
 
         servicer._session_maker = cast(Any, lambda: fake_db)
-        with patch.object(servicer, "_get_tenant_id", return_value=TEST_TENANT_ID):
-            request = billing_pb2.GetUsageRequest(period_id="")
-            response = await servicer.get_usage(request, mock_ctx)
+        request = billing_pb2.GetUsageRequest(context=auth_context, period_id="")
+        response = await servicer.get_usage(request, MagicMock())
 
         usage = response.usage
         assert usage.tenant_id == str(TEST_TENANT_ID)
@@ -253,7 +200,7 @@ class TestGetUsage:
 
     @pytest.mark.asyncio
     async def test_get_usage_defaults_to_calendar_month_without_subscription(
-        self, servicer, mock_ctx
+        self, servicer, auth_context
     ):
         """With no subscription the period falls back to the calendar month."""
         from llamatrade_proto.generated import billing_pb2
@@ -268,9 +215,8 @@ class TestGetUsage:
         fake_db = _FakeUsageSession(counts, subscription=None)
 
         servicer._session_maker = cast(Any, lambda: fake_db)
-        with patch.object(servicer, "_get_tenant_id", return_value=TEST_TENANT_ID):
-            request = billing_pb2.GetUsageRequest(period_id="current")
-            response = await servicer.get_usage(request, mock_ctx)
+        request = billing_pb2.GetUsageRequest(context=auth_context, period_id="current")
+        response = await servicer.get_usage(request, MagicMock())
 
         usage = response.usage
         assert usage.strategies_created == 0
@@ -280,7 +226,7 @@ class TestGetUsage:
         assert len(usage.period_id) == 7 and usage.period_id[4] == "-"
 
     @pytest.mark.asyncio
-    async def test_get_usage_queries_all_source_tables(self, servicer, mock_ctx):
+    async def test_get_usage_queries_all_source_tables(self, servicer, auth_context):
         """Every meter is sourced from its own tenant-scoped table."""
         from llamatrade_proto.generated import billing_pb2
 
@@ -297,8 +243,9 @@ class TestGetUsage:
         fake_db = _FakeUsageSession(counts, subscription=None)
 
         servicer._session_maker = cast(Any, lambda: fake_db)
-        with patch.object(servicer, "_get_tenant_id", return_value=TEST_TENANT_ID):
-            await servicer.get_usage(billing_pb2.GetUsageRequest(period_id="current"), mock_ctx)
+        await servicer.get_usage(
+            billing_pb2.GetUsageRequest(context=auth_context, period_id="current"), MagicMock()
+        )
 
         joined = " ".join(fake_db.seen)
         for table in (
@@ -339,14 +286,13 @@ class TestListInvoices:
     """Tests for list_invoices method."""
 
     @pytest.mark.asyncio
-    async def test_list_invoices_returns_empty(self, servicer, mock_ctx):
+    async def test_list_invoices_returns_empty(self, servicer, auth_context):
         """Test listing invoices returns an empty page for a tenant with none."""
         from llamatrade_proto.generated import billing_pb2
 
         servicer._session_maker = cast(Any, lambda: _EmptyInvoicesSession())
-        with patch.object(servicer, "_get_tenant_id", return_value=TEST_TENANT_ID):
-            request = billing_pb2.ListInvoicesRequest()
-            response = await servicer.list_invoices(request, mock_ctx)
+        request = billing_pb2.ListInvoicesRequest(context=auth_context)
+        response = await servicer.list_invoices(request, MagicMock())
 
         assert len(response.invoices) == 0
         assert response.pagination.total_items == 0
@@ -375,7 +321,7 @@ class _FakeScalarSession:
 
 
 def _fake_invoice(invoice_id, tenant_id):
-    """Build an invoice-like row with all fields _to_proto_invoice reads."""
+    """Build an invoice-like row with all fields invoice_to_proto reads."""
     from decimal import Decimal
     from types import SimpleNamespace
 
@@ -404,37 +350,35 @@ class TestGetInvoice:
     """Tests for get_invoice method."""
 
     @pytest.mark.asyncio
-    async def test_get_invoice_not_found_non_uuid(self, servicer, mock_ctx):
+    async def test_get_invoice_not_found_non_uuid(self, servicer, auth_context):
         """A non-UUID invoice id resolves to NOT_FOUND without touching the DB."""
         from connectrpc.errors import ConnectError
 
         from llamatrade_proto.generated import billing_pb2
 
-        request = billing_pb2.GetInvoiceRequest(invoice_id="inv_123")
+        request = billing_pb2.GetInvoiceRequest(context=auth_context, invoice_id="inv_123")
 
-        with patch.object(servicer, "_get_tenant_id", return_value=TEST_TENANT_ID):
-            with pytest.raises(ConnectError) as exc_info:
-                await servicer.get_invoice(request, mock_ctx)
+        with pytest.raises(ConnectError) as exc_info:
+            await servicer.get_invoice(request, MagicMock())
         assert "Invoice not found" in str(exc_info.value)
 
     @pytest.mark.asyncio
-    async def test_get_invoice_not_found_missing_row(self, servicer, mock_ctx):
+    async def test_get_invoice_not_found_missing_row(self, servicer, auth_context):
         """A valid UUID with no matching row resolves to NOT_FOUND."""
         from connectrpc.errors import ConnectError
 
         from llamatrade_proto.generated import billing_pb2
 
-        request = billing_pb2.GetInvoiceRequest(invoice_id=str(uuid4()))
+        request = billing_pb2.GetInvoiceRequest(context=auth_context, invoice_id=str(uuid4()))
         fake_db = _FakeScalarSession(None)
 
         servicer._session_maker = cast(Any, lambda: fake_db)
-        with patch.object(servicer, "_get_tenant_id", return_value=TEST_TENANT_ID):
-            with pytest.raises(ConnectError) as exc_info:
-                await servicer.get_invoice(request, mock_ctx)
+        with pytest.raises(ConnectError) as exc_info:
+            await servicer.get_invoice(request, MagicMock())
         assert "Invoice not found" in str(exc_info.value)
 
     @pytest.mark.asyncio
-    async def test_get_invoice_returns_row(self, servicer, mock_ctx):
+    async def test_get_invoice_returns_row(self, servicer, auth_context):
         """A matching invoice is mapped to proto and returned."""
         from llamatrade_proto.generated import billing_pb2
 
@@ -443,9 +387,8 @@ class TestGetInvoice:
         fake_db = _FakeScalarSession(invoice)
 
         servicer._session_maker = cast(Any, lambda: fake_db)
-        with patch.object(servicer, "_get_tenant_id", return_value=TEST_TENANT_ID):
-            request = billing_pb2.GetInvoiceRequest(invoice_id=str(invoice_id))
-            response = await servicer.get_invoice(request, mock_ctx)
+        request = billing_pb2.GetInvoiceRequest(context=auth_context, invoice_id=str(invoice_id))
+        response = await servicer.get_invoice(request, MagicMock())
 
         assert response.invoice.id == str(invoice_id)
         assert response.invoice.tenant_id == str(TEST_TENANT_ID)
@@ -461,8 +404,8 @@ class TestListPlans:
     """Tests for list_plans method."""
 
     @pytest.mark.asyncio
-    async def test_list_plans_success(self, servicer, mock_ctx, sample_plan):
-        """Test listing plans successfully."""
+    async def test_list_plans_success(self, servicer, sample_plan):
+        """Test listing plans successfully (global catalog — not tenant-scoped)."""
         from llamatrade_proto.generated import billing_pb2
 
         mock_service = MagicMock()
@@ -474,7 +417,7 @@ class TestListPlans:
                 return_value=mock_service,
             ):
                 request = billing_pb2.ListPlansRequest()
-                response = await servicer.list_plans(request, mock_ctx)
+                response = await servicer.list_plans(request, MagicMock())
 
                 assert len(response.plans) == 1
 
@@ -483,79 +426,47 @@ class TestListPlans:
 
 
 class TestCreateCheckoutSession:
-    """Tests for create_checkout_session method."""
+    """Failure branches for create_checkout_session (happy path: test_grpc_billing.py)."""
 
     @pytest.mark.asyncio
-    async def test_create_checkout_session_returns_placeholder(self, servicer, mock_ctx):
-        """Test creating checkout session returns placeholder URL."""
+    async def test_unknown_plan_raises_not_found(self, servicer, auth_context):
+        """Test an unknown plan_id surfaces NOT_FOUND rather than reaching Stripe."""
         from llamatrade_proto.generated import billing_pb2
 
-        with patch.object(servicer, "_get_tenant_id", return_value=TEST_TENANT_ID):
-            request = billing_pb2.CreateCheckoutSessionRequest(plan_id="pro")
-            response = await servicer.create_checkout_session(request, mock_ctx)
+        request = billing_pb2.CreateCheckoutSessionRequest(context=auth_context, plan_id="nope")
 
-            assert "stripe.com" in response.checkout_url
-            assert "placeholder" in response.session_id
+        with (
+            patch("src.grpc.servicer.get_stripe_client", return_value=MagicMock()),
+            patch(
+                "src.services.billing_service.BillingService.get_plan_db",
+                AsyncMock(return_value=None),
+            ),
+            pytest.raises(ConnectError) as exc,
+        ):
+            await servicer.create_checkout_session(request, MagicMock())
 
-
-# === create_portal_session Tests ===
-
-
-class TestCreatePortalSession:
-    """Tests for create_portal_session method."""
+        assert exc.value.code == Code.NOT_FOUND
 
     @pytest.mark.asyncio
-    async def test_create_portal_session_returns_placeholder(self, servicer, mock_ctx):
-        """Test creating portal session returns placeholder URL."""
+    async def test_plan_without_price_raises_failed_precondition(self, servicer, auth_context):
+        """Test a plan with no Stripe price for the interval fails before calling Stripe."""
         from llamatrade_proto.generated import billing_pb2
 
-        with patch.object(servicer, "_get_tenant_id", return_value=TEST_TENANT_ID):
-            request = billing_pb2.CreatePortalSessionRequest()
-            response = await servicer.create_portal_session(request, mock_ctx)
-
-            assert "stripe.com" in response.portal_url
-
-
-# === Helper method tests ===
-
-
-class TestHelperMethods:
-    """Tests for helper conversion methods (now pass-through)."""
-
-    def test_to_proto_status(self, servicer):
-        """Test status pass-through (already proto int)."""
-        assert (
-            servicer._to_proto_status(billing_pb2.SUBSCRIPTION_STATUS_ACTIVE)
-            == billing_pb2.SUBSCRIPTION_STATUS_ACTIVE
+        request = billing_pb2.CreateCheckoutSessionRequest(
+            context=auth_context,
+            plan_id="pro",
+            interval=billing_pb2.BILLING_INTERVAL_MONTHLY,
         )
-        assert (
-            servicer._to_proto_status(billing_pb2.SUBSCRIPTION_STATUS_TRIALING)
-            == billing_pb2.SUBSCRIPTION_STATUS_TRIALING
-        )
+        plan = MagicMock(stripe_price_id_monthly="", stripe_price_id_yearly="", trial_days=0)
 
-    def test_to_proto_tier(self, servicer):
-        """Test tier pass-through (already proto int)."""
-        assert servicer._to_proto_tier(billing_pb2.PLAN_TIER_FREE) == billing_pb2.PLAN_TIER_FREE
-        assert servicer._to_proto_tier(billing_pb2.PLAN_TIER_PRO) == billing_pb2.PLAN_TIER_PRO
+        with (
+            patch("src.grpc.servicer.get_stripe_client", return_value=MagicMock()),
+            patch(
+                "src.services.billing_service.BillingService.get_plan_db",
+                AsyncMock(return_value=plan),
+            ),
+            pytest.raises(ConnectError) as exc,
+        ):
+            await servicer.create_checkout_session(request, MagicMock())
 
-    def test_to_proto_interval(self, servicer):
-        """Test interval pass-through (already proto int)."""
-        assert (
-            servicer._to_proto_interval(billing_pb2.BILLING_INTERVAL_MONTHLY)
-            == billing_pb2.BILLING_INTERVAL_MONTHLY
-        )
-        assert (
-            servicer._to_proto_interval(billing_pb2.BILLING_INTERVAL_YEARLY)
-            == billing_pb2.BILLING_INTERVAL_YEARLY
-        )
-
-    def test_from_proto_interval(self, servicer):
-        """Test interval pass-through (already proto int)."""
-        assert (
-            servicer._from_proto_interval(billing_pb2.BILLING_INTERVAL_MONTHLY)
-            == billing_pb2.BILLING_INTERVAL_MONTHLY
-        )
-        assert (
-            servicer._from_proto_interval(billing_pb2.BILLING_INTERVAL_YEARLY)
-            == billing_pb2.BILLING_INTERVAL_YEARLY
-        )
+        assert exc.value.code == Code.FAILED_PRECONDITION

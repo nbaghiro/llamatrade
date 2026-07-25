@@ -3,13 +3,12 @@
 from datetime import datetime
 from decimal import Decimal
 from enum import IntEnum
-from typing import Any, Literal
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, Field, model_validator
 
 from llamatrade_proto.generated.common_pb2 import (
-    EXECUTION_MODE_PAPER,
     ExecutionMode,
     ExecutionStatus,
 )
@@ -21,8 +20,6 @@ from llamatrade_proto.generated.trading_pb2 import (
     ORDER_TYPE_STOP,
     ORDER_TYPE_STOP_LIMIT,
     ORDER_TYPE_TRAILING_STOP,
-    POSITION_SIDE_LONG,
-    POSITION_SIDE_SHORT,
     TIME_IN_FORCE_CLS,
     TIME_IN_FORCE_DAY,
     TIME_IN_FORCE_FOK,
@@ -30,9 +27,7 @@ from llamatrade_proto.generated.trading_pb2 import (
     TIME_IN_FORCE_IOC,
     TIME_IN_FORCE_OPG,
     OrderSide,
-    OrderStatus,
     OrderType,
-    PositionSide,
     TimeInForce,
 )
 
@@ -66,16 +61,6 @@ _TIME_IN_FORCE_TO_STR: dict[int, str] = {
     TIME_IN_FORCE_CLS: "cls",
 }
 
-_POSITION_SIDE_TO_STR: dict[int, str] = {
-    POSITION_SIDE_LONG: "long",
-    POSITION_SIDE_SHORT: "short",
-}
-
-_BRACKET_TYPE_TO_STR: dict[int, str] = {
-    BracketType.STOP_LOSS: "stop_loss",
-    BracketType.TAKE_PROFIT: "take_profit",
-}
-
 
 def order_side_to_str(value: OrderSide.ValueType) -> Literal["buy", "sell"]:
     """Convert OrderSide proto value to string for Alpaca API."""
@@ -106,16 +91,6 @@ def time_in_force_to_str(value: TimeInForce.ValueType) -> Literal["day", "gtc", 
     return mapping.get(value, "day")
 
 
-def position_side_to_str(value: PositionSide.ValueType) -> str:
-    """Convert PositionSide proto value to string."""
-    return _POSITION_SIDE_TO_STR.get(value, "long")
-
-
-def bracket_type_to_str(value: BracketType | int) -> Literal["stop_loss", "take_profit"]:
-    """Convert BracketType to string for Alpaca API."""
-    return "take_profit" if int(value) == BracketType.TAKE_PROFIT else "stop_loss"
-
-
 class OrderCreate(BaseModel):
     symbol: str
     side: OrderSide.ValueType
@@ -130,7 +105,7 @@ class OrderCreate(BaseModel):
     stop_loss_price: Decimal | None = None
     take_profit_price: Decimal | None = None
     bracket_time_in_force: TimeInForce.ValueType = TIME_IN_FORCE_GTC
-    # Ledger attribution, fixed at origination (CONTRACTS.md §5).
+    # Ledger attribution, fixed at origination (portfolio-ledger.md).
     # None → resolved from the session (strategy sleeve) or Manual sleeve.
     sleeve_id: UUID | None = None
     account_id: UUID | None = None
@@ -161,48 +136,6 @@ class OrderCreate(BaseModel):
         return self
 
 
-class BracketOrderInfo(BaseModel):
-    """Information about bracket orders (stop-loss/take-profit) attached to a parent order."""
-
-    stop_loss_order_id: UUID | None = None
-    take_profit_order_id: UUID | None = None
-
-
-class OrderResponse(BaseModel):
-    id: UUID
-    tenant_id: UUID | None = None
-    session_id: UUID | None = None
-    client_order_id: str | None = None
-    alpaca_order_id: str | None = None
-    symbol: str
-    side: OrderSide.ValueType
-    qty: Decimal
-    order_type: OrderType.ValueType
-    limit_price: Decimal | None = None
-    stop_price: Decimal | None = None
-    status: OrderStatus.ValueType
-    filled_qty: Decimal = Decimal("0")
-    filled_avg_price: Decimal | None = None
-    submitted_at: datetime
-    filled_at: datetime | None = None
-    # Bracket order fields
-    parent_order_id: UUID | None = None
-    bracket_type: BracketType | None = None
-    stop_loss_price: Decimal | None = None
-    take_profit_price: Decimal | None = None
-    bracket_orders: BracketOrderInfo | None = None
-
-
-class SessionCreate(BaseModel):
-    strategy_id: UUID
-    credentials_id: UUID
-    name: str = Field(..., min_length=1, max_length=100)
-    mode: ExecutionMode.ValueType = EXECUTION_MODE_PAPER
-    strategy_version: int | None = None
-    symbols: list[str] | None = None
-    config: dict[str, Any] | None = None
-
-
 class SessionResponse(BaseModel):
     id: UUID
     tenant_id: UUID
@@ -217,17 +150,6 @@ class SessionResponse(BaseModel):
     # Ledger identity (None for legacy/unfunded sessions)
     sleeve_id: UUID | None = None
     account_id: UUID | None = None
-
-
-class PositionResponse(BaseModel):
-    symbol: str
-    qty: Decimal
-    side: str
-    cost_basis: Decimal
-    market_value: Decimal
-    unrealized_pnl: Decimal
-    unrealized_pnl_percent: Decimal
-    current_price: Decimal
 
 
 class RiskLimits(BaseModel):

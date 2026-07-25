@@ -66,7 +66,7 @@ class TestListPlans:
         plans = await billing_service.list_plans()
 
         assert len(plans) == len(DEFAULT_PLANS)
-        assert plans[0].id == "free"
+        assert plans[0].name == "free"
 
     async def test_list_plans_returns_db_plans(
         self, billing_service: BillingService, mock_db: MagicMock
@@ -89,7 +89,7 @@ class TestListPlans:
         plans = await billing_service.list_plans()
 
         assert len(plans) == 1
-        assert plans[0].name == "Starter"
+        assert plans[0].display_name == "Starter"
 
 
 # === get_plan Tests ===
@@ -109,7 +109,7 @@ class TestGetPlan:
         plan = await billing_service.get_plan("free")
 
         assert plan is not None
-        assert plan.id == "free"
+        assert plan.name == "free"
 
     async def test_get_plan_not_found(
         self, billing_service: BillingService, mock_db: MagicMock
@@ -189,7 +189,7 @@ class TestCreateSubscription:
 
     def test_default_plans_contains_free(self) -> None:
         """Test DEFAULT_PLANS contains free tier."""
-        free_plan = next((p for p in DEFAULT_PLANS if p.id == "free"), None)
+        free_plan = next((p for p in DEFAULT_PLANS if p.name == "free"), None)
 
         assert free_plan is not None
         assert free_plan.tier == billing_pb2.PLAN_TIER_FREE
@@ -197,7 +197,7 @@ class TestCreateSubscription:
 
     def test_default_plans_contains_pro(self) -> None:
         """Test DEFAULT_PLANS contains pro tier."""
-        pro_plan = next((p for p in DEFAULT_PLANS if p.id == "pro"), None)
+        pro_plan = next((p for p in DEFAULT_PLANS if p.name == "pro"), None)
 
         assert pro_plan is not None
         assert pro_plan.tier == billing_pb2.PLAN_TIER_PRO
