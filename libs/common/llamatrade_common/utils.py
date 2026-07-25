@@ -43,60 +43,73 @@ def verify_api_key(api_key: str, api_key_hash: str) -> bool:
     return secrets.compare_digest(computed_hash, api_key_hash)
 
 
-def _get_fernet(encryption_key: str) -> Fernet:
-    """Get Fernet instance from encryption key."""
-    # Derive a proper key from the provided key
+_DEV_ENCRYPTION_KEY = "default-dev-key-change-me"
+_SALT_BYTES = 16
+_PBKDF2_ITERATIONS = 100_000
+_PROD_ENVIRONMENTS = {"production", "staging"}
+
+
+def require_secret(env_var: str, dev_default: str) -> str:
+    """Return a secret from the environment, refusing the dev default in prod.
+
+    In ``production``/``staging`` (per the ``ENVIRONMENT`` var) a missing secret
+    raises rather than silently using a well-known default that would permit
+    forged tokens or trivially decryptable data. Local dev and tests keep the
+    zero-config default.
+    """
+    value = os.environ.get(env_var)
+    if value:
+        return value
+    environment = os.environ.get("ENVIRONMENT", "development").lower()
+    if environment in _PROD_ENVIRONMENTS:
+        raise RuntimeError(
+            f"{env_var} must be set in the {environment} environment; "
+            "refusing to fall back to the insecure development default"
+        )
+    return dev_default
+
+
+def _get_fernet(encryption_key: str, salt: bytes) -> Fernet:
+    """Derive a Fernet instance from the key and a per-value salt."""
     kdf = PBKDF2HMAC(
         algorithm=hashes.SHA256(),
         length=32,
-        salt=b"llamatrade_salt_v1",  # Static salt - in production, use unique per-value
-        iterations=100000,
+        salt=salt,
+        iterations=_PBKDF2_ITERATIONS,
     )
     key = base64.urlsafe_b64encode(kdf.derive(encryption_key.encode()))
     return Fernet(key)
 
 
 def encrypt_value(value: str, encryption_key: str | None = None) -> str:
-    """Encrypt a sensitive value.
+    """Encrypt a sensitive value with a random per-value salt.
 
-    Args:
-        value: The value to encrypt
-        encryption_key: Optional encryption key. If not provided, uses ENCRYPTION_KEY env var.
-
-    Returns:
-        Base64-encoded encrypted value
+    The output is a base64 envelope of ``salt || fernet_token`` so each
+    ciphertext carries its own salt. If no key is given, ``ENCRYPTION_KEY`` is
+    used (required in prod via :func:`require_secret`).
     """
     if not encryption_key:
-        encryption_key = os.environ.get("ENCRYPTION_KEY", "default-dev-key-change-me")
+        encryption_key = require_secret("ENCRYPTION_KEY", _DEV_ENCRYPTION_KEY)
 
-    fernet = _get_fernet(encryption_key)
-    encrypted = fernet.encrypt(value.encode())
-    return base64.urlsafe_b64encode(encrypted).decode()
+    salt = secrets.token_bytes(_SALT_BYTES)
+    token = _get_fernet(encryption_key, salt).encrypt(value.encode())
+    return base64.urlsafe_b64encode(salt + token).decode()
 
 
 def decrypt_value(encrypted_value: str, encryption_key: str | None = None) -> str:
-    """Decrypt a sensitive value.
-
-    Args:
-        encrypted_value: Base64-encoded encrypted value
-        encryption_key: Optional encryption key. If not provided, uses ENCRYPTION_KEY env var.
-
-    Returns:
-        Decrypted value
-    """
+    """Decrypt a value produced by :func:`encrypt_value`."""
     if not encryption_key:
-        encryption_key = os.environ.get("ENCRYPTION_KEY", "default-dev-key-change-me")
+        encryption_key = require_secret("ENCRYPTION_KEY", _DEV_ENCRYPTION_KEY)
 
-    fernet = _get_fernet(encryption_key)
-    encrypted = base64.urlsafe_b64decode(encrypted_value.encode())
-    decrypted: bytes = fernet.decrypt(encrypted)
-    return decrypted.decode()
+    raw = base64.urlsafe_b64decode(encrypted_value.encode())
+    salt, token = raw[:_SALT_BYTES], raw[_SALT_BYTES:]
+    return _get_fernet(encryption_key, salt).decrypt(token).decode()
 
 
-class PaginatedResult(TypedDict):
+class PaginatedResult[T](TypedDict):
     """Result of paginating a list."""
 
-    items: Sequence[object]  # Generic sequence - callers should cast to their type
+    items: Sequence[T]
     total: int
     page: int
     page_size: int
@@ -107,7 +120,7 @@ def paginate[T](
     items: Sequence[T],
     page: int = 1,
     page_size: int = 20,
-) -> PaginatedResult:
+) -> PaginatedResult[T]:
     """Paginate a list of items.
 
     Args:

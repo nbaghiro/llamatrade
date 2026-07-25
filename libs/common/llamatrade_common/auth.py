@@ -27,7 +27,6 @@ tokens carry ``type=service``.
 
 from __future__ import annotations
 
-import os
 import time
 from collections.abc import Awaitable, Callable, MutableMapping
 from contextvars import ContextVar, Token
@@ -36,6 +35,8 @@ from uuid import UUID
 
 import jwt
 from pydantic import BaseModel, ConfigDict, Field
+
+from llamatrade_common.utils import require_secret
 
 _NIL_UUID = UUID("00000000-0000-0000-0000-000000000000")
 _DEFAULT_SECRET = "dev-secret-change-in-production"
@@ -107,7 +108,7 @@ def mint_service_token(
     ttl_seconds: int = 300,
 ) -> str:
     """Mint an internal service JWT (``type=service``) for inter-service calls."""
-    secret = secret or os.getenv("JWT_SECRET", _DEFAULT_SECRET)
+    secret = secret or require_secret("JWT_SECRET", _DEFAULT_SECRET)
     now = int(time.time())
     payload = {
         "sub": _SERVICE_SUBJECT,
@@ -130,7 +131,7 @@ def verify_credential(
     Accepts user access tokens (``type=access``) and internal service tokens
     (``type=service``). Refresh tokens and malformed/expired tokens return None.
     """
-    secret = secret or os.getenv("JWT_SECRET", _DEFAULT_SECRET)
+    secret = secret or require_secret("JWT_SECRET", _DEFAULT_SECRET)
     try:
         payload = jwt.decode(token, secret, algorithms=[algorithm])
     except jwt.InvalidTokenError:
@@ -154,7 +155,7 @@ def verify_credential(
             email=str(payload.get("email", "") or ""),
             roles=list(payload.get("roles", []) or []),
         )
-    except (ValueError, TypeError):
+    except ValueError, TypeError:
         return None
 
 
@@ -222,7 +223,7 @@ class AuthMiddleware:
         public_suffixes: list[str] | None = None,
     ) -> None:
         self.app = app
-        self._secret = jwt_secret or os.getenv("JWT_SECRET", _DEFAULT_SECRET)
+        self._secret = jwt_secret or require_secret("JWT_SECRET", _DEFAULT_SECRET)
         self._algorithm = jwt_algorithm
         self._public_paths = set(public_paths or ["/health", "/metrics", "/docs", "/openapi.json"])
         self._public_suffixes = tuple(public_suffixes or ())
@@ -256,7 +257,7 @@ class AuthMiddleware:
             _context.reset(reset)
 
     def _is_public(self, path: str) -> bool:
-        if path in self._public_paths:
+        if path in self._public_paths or path.startswith("/health/"):
             return True
         return bool(self._public_suffixes) and path.endswith(self._public_suffixes)
 

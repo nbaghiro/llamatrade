@@ -15,6 +15,7 @@ from llamatrade_common.utils import (
     generate_uuid,
     normalize_symbol,
     paginate,
+    require_secret,
     utc_now,
     validate_symbol,
     verify_api_key,
@@ -101,6 +102,42 @@ class TestEncryption:
 
         with pytest.raises(Exception):
             decrypt_value(encrypted, "wrong_key")
+
+    def test_encrypt_same_value_uses_per_value_salt(self):
+        """Encrypting the same value twice yields different ciphertext; both decrypt."""
+        value, key = "secret_value_123", "test_encryption_key"
+
+        first = encrypt_value(value, key)
+        second = encrypt_value(value, key)
+
+        assert first != second
+        assert decrypt_value(first, key) == value
+        assert decrypt_value(second, key) == value
+
+
+class TestRequireSecret:
+    """Tests for require_secret (fail-closed secret resolution)."""
+
+    def test_returns_env_value_when_set(self, monkeypatch):
+        monkeypatch.setenv("MY_SECRET", "from-env")
+        assert require_secret("MY_SECRET", "dev-default") == "from-env"
+
+    def test_returns_dev_default_in_development(self, monkeypatch):
+        monkeypatch.delenv("MY_SECRET", raising=False)
+        monkeypatch.setenv("ENVIRONMENT", "development")
+        assert require_secret("MY_SECRET", "dev-default") == "dev-default"
+
+    def test_returns_dev_default_when_environment_unset(self, monkeypatch):
+        monkeypatch.delenv("MY_SECRET", raising=False)
+        monkeypatch.delenv("ENVIRONMENT", raising=False)
+        assert require_secret("MY_SECRET", "dev-default") == "dev-default"
+
+    @pytest.mark.parametrize("environment", ["production", "staging", "PRODUCTION"])
+    def test_raises_in_prod_when_unset(self, monkeypatch, environment):
+        monkeypatch.delenv("MY_SECRET", raising=False)
+        monkeypatch.setenv("ENVIRONMENT", environment)
+        with pytest.raises(RuntimeError):
+            require_secret("MY_SECRET", "dev-default")
 
 
 class TestPaginate:

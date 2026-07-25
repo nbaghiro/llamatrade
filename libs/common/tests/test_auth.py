@@ -259,3 +259,20 @@ async def test_middleware_public_suffix_passes() -> None:
     result = await _run(mw, _scope("/llamatrade.v1.AuthService/Login"))
     assert app.called is True
     assert result["status"] == 200
+
+
+class TestTenantContextUnified:
+    """3A: llamatrade_common exposes a single canonical TenantContext (from auth.py)."""
+
+    def test_package_reexports_canonical_context(self) -> None:
+        from llamatrade_common import TenantContext as PackageContext
+
+        assert PackageContext is TenantContext
+
+    def test_context_carries_is_service_flag(self) -> None:
+        user_ctx = TenantContext(tenant_id=UUID(int=1), user_id=UUID(int=2), email="u@example.com")
+        assert user_ctx.is_service is False
+        service_ctx = TenantContext(
+            tenant_id=UUID(int=1), user_id=UUID(int=2), email="", is_service=True
+        )
+        assert service_ctx.is_service is True

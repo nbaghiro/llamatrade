@@ -7,7 +7,7 @@ from uuid import UUID
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from llamatrade_common.middleware import TenantContext
+from llamatrade_common import TenantContext
 
 from src.main import app
 from src.models import Bar, Quote, Snapshot, Trade
@@ -46,17 +46,6 @@ def mock_tenant_context() -> TenantContext:
         email="test@example.com",
         roles=["user"],
     )
-
-
-@pytest.fixture
-def auth_override(mock_tenant_context):
-    """Create a dependency override for require_auth."""
-    from llamatrade_common.middleware import require_auth
-
-    # The actual require_auth has different signature, so we use a simple lambda
-    app.dependency_overrides[require_auth] = lambda: mock_tenant_context
-    yield
-    app.dependency_overrides.pop(require_auth, None)
 
 
 # === Redis/Cache Fixtures ===
