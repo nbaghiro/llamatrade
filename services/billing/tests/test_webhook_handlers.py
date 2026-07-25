@@ -9,8 +9,9 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
-from llamatrade_proto.generated import billing_pb2
 from stripe import Invoice, PaymentMethod, Subscription
+
+from llamatrade_proto.generated import billing_pb2
 
 from src.routers.webhooks import (
     _handle_invoice_paid,

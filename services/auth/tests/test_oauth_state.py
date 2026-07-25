@@ -26,12 +26,16 @@ def test_verify_rejects_expired() -> None:
 
 
 def test_verify_rejects_wrong_purpose() -> None:
-    tok = jwt.encode({"purpose": "other", "intent": "link", "exp": 9999999999}, "s", algorithm="HS256")
+    tok = jwt.encode(
+        {"purpose": "other", "intent": "link", "exp": 9999999999}, "s", algorithm="HS256"
+    )
     assert verify_state(tok, secret="s") is None
 
 
 def test_verify_rejects_unknown_intent() -> None:
     tok = jwt.encode(
-        {"purpose": "alpaca_oauth_state", "intent": "bogus", "exp": 9999999999}, "s", algorithm="HS256"
+        {"purpose": "alpaca_oauth_state", "intent": "bogus", "exp": 9999999999},
+        "s",
+        algorithm="HS256",
     )
     assert verify_state(tok, secret="s") is None

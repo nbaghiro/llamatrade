@@ -33,7 +33,7 @@ class TenantService:
         """
         try:
             return decrypt_value(encrypted_value)
-        except (InvalidToken, binascii.Error):
+        except InvalidToken, binascii.Error:
             metrics.auth.credential_decryption_failure()
             raise
 

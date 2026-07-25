@@ -18,14 +18,14 @@ import logging
 import os
 from datetime import UTC, datetime
 
+import stripe
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
+from stripe import Event, Invoice, PaymentMethod, StripeObject, Subscription
 
-import stripe
 from llamatrade_db import get_db
 from llamatrade_proto.generated import billing_pb2
 from llamatrade_telemetry import metrics
-from stripe import Event, Invoice, PaymentMethod, StripeObject, Subscription
 
 from src.services.billing_service import stripe_status_to_proto
 from src.stripe.client import StripeError, get_stripe_client

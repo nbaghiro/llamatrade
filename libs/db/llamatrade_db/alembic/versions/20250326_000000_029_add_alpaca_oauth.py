@@ -48,7 +48,9 @@ def upgrade() -> None:
     op.alter_column("alpaca_credentials", "auth_type", server_default=None)
 
     # OAuth rows carry a token, not a key/secret pair.
-    op.alter_column("alpaca_credentials", "api_key_encrypted", existing_type=sa.Text(), nullable=True)
+    op.alter_column(
+        "alpaca_credentials", "api_key_encrypted", existing_type=sa.Text(), nullable=True
+    )
     op.alter_column(
         "alpaca_credentials", "api_secret_encrypted", existing_type=sa.Text(), nullable=True
     )

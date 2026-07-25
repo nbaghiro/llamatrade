@@ -21,6 +21,6 @@ def safe_float(val: object, default: float = 0.0) -> float:
     if hasattr(val, "__float__"):
         try:
             return float(cast(SupportsFloat, val))
-        except (TypeError, ValueError):
+        except TypeError, ValueError:
             return default
     return default
