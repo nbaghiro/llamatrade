@@ -1,4 +1,4 @@
-"""Ledger event message builders (pure; see .docs/planning/CONTRACTS.md).
+"""Ledger event message builders (pure; see .docs/portfolio-ledger.md).
 
 Trading publishes to the global ``ledger:fills`` stream exactly ONE ``LedgerFill``
 message per order, at terminal state:

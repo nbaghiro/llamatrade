@@ -3,7 +3,7 @@
 Single source of truth for turning a stored ``AlpacaCredentials`` row into a
 decrypted, ready-to-use credential. Shared by the live-session runner and the
 manual order path so neither ever falls back to platform/env credentials
-(CONTRACTS.md / trading-hardening 2A).
+(portfolio-ledger.md / trading-hardening 2A).
 """
 
 from __future__ import annotations

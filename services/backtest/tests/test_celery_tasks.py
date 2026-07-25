@@ -112,15 +112,19 @@ class TestExecuteBacktest:
         async def fake_scope():
             yield fake_session
 
+        fake_redis = AsyncMock()
+
         monkeypatch.setattr(celery_tasks, "_session_scope", fake_scope)
         monkeypatch.setattr(celery_tasks, "_create_market_data_client", lambda: fake_client)
+        monkeypatch.setattr(celery_tasks, "_create_redis", lambda: fake_redis)
 
         captured = {}
 
         class FakeService:
-            def __init__(self, db, market_data_client=None):
+            def __init__(self, db, market_data_client=None, dataset_store=None, redis=None):
                 captured["db"] = db
                 captured["client"] = market_data_client
+                captured["redis"] = redis
 
             async def __aenter__(self):
                 return self
@@ -131,9 +135,10 @@ class TestExecuteBacktest:
             async def run_backtest(self, backtest_id, tenant_id):
                 from unittest.mock import MagicMock
 
+                # run_backtest returns the persisted BacktestResult row (1A).
                 response = MagicMock()
-                response.metrics.total_return = 0.05
-                response.metrics.total_trades = 2
+                response.total_return = 0.05
+                response.total_trades = 2
                 return response
 
         monkeypatch.setattr(celery_tasks, "BacktestService", FakeService)
@@ -142,5 +147,7 @@ class TestExecuteBacktest:
 
         assert captured["db"] is fake_session
         assert captured["client"] is fake_client
+        assert captured["redis"] is fake_redis
+        fake_redis.aclose.assert_awaited_once()
         assert result["status"] == "completed"
         assert result["total_trades"] == 2

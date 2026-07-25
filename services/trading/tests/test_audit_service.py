@@ -5,13 +5,14 @@ from decimal import Decimal
 
 import pytest
 
+from llamatrade_db.models.trading import Order
 from llamatrade_proto.generated.trading_pb2 import (
     ORDER_SIDE_BUY,
     ORDER_STATUS_FILLED,
     ORDER_TYPE_MARKET,
 )
 
-from src.models import OrderResponse, RiskCheckResult
+from src.models import RiskCheckResult
 from src.runner.runner import Signal
 from src.services.audit_service import AuditService
 
@@ -37,7 +38,7 @@ def sample_signal():
 @pytest.fixture
 def sample_order_response(order_id):
     """Create a sample order response."""
-    return OrderResponse(
+    return Order(
         id=order_id,
         alpaca_order_id="alpaca-123",
         symbol="AAPL",

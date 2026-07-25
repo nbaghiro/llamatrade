@@ -5,9 +5,9 @@ from datetime import UTC, datetime, timedelta
 import pytest
 
 from src.engine.validation import (
+    BarValidationResult,
     DataValidator,
     ValidationIssue,
-    ValidationResult,
     ValidationSeverity,
     log_validation_result,
     validate_bars,
@@ -50,11 +50,11 @@ class TestValidationIssue:
 
 
 class TestValidationResult:
-    """Tests for ValidationResult dataclass."""
+    """Tests for BarValidationResult dataclass."""
 
     def test_empty_result(self):
         """Test empty validation result."""
-        result = ValidationResult(valid=True)
+        result = BarValidationResult(valid=True)
 
         assert result.valid is True
         assert result.errors == []
@@ -67,7 +67,7 @@ class TestValidationResult:
             ValidationIssue(ValidationSeverity.WARNING, "AAPL", 1, None, "volume", "warning"),
             ValidationIssue(ValidationSeverity.ERROR, "AAPL", 2, None, "low", "error2"),
         ]
-        result = ValidationResult(valid=False, issues=issues, symbols_checked=1, bars_checked=3)
+        result = BarValidationResult(valid=False, issues=issues, symbols_checked=1, bars_checked=3)
 
         assert len(result.errors) == 2
         assert len(result.warnings) == 1
@@ -78,7 +78,9 @@ class TestValidationResult:
             ValidationIssue(ValidationSeverity.ERROR, "AAPL", 0, None, "high", "error"),
             ValidationIssue(ValidationSeverity.WARNING, "AAPL", 1, None, "volume", "warning"),
         ]
-        result = ValidationResult(valid=False, issues=issues, symbols_checked=2, bars_checked=100)
+        result = BarValidationResult(
+            valid=False, issues=issues, symbols_checked=2, bars_checked=100
+        )
 
         summary = result.summary()
         assert "100 bars" in summary
@@ -421,7 +423,7 @@ class TestLogValidationResult:
 
     def test_log_valid_result(self, caplog):
         """Test logging valid result."""
-        result = ValidationResult(valid=True, symbols_checked=1, bars_checked=10)
+        result = BarValidationResult(valid=True, symbols_checked=1, bars_checked=10)
         log_validation_result(result)
         # Should log info level for valid result
 
@@ -430,6 +432,6 @@ class TestLogValidationResult:
         issues = [
             ValidationIssue(ValidationSeverity.ERROR, "AAPL", 0, None, "high", "error"),
         ]
-        result = ValidationResult(valid=False, issues=issues)
+        result = BarValidationResult(valid=False, issues=issues)
         log_validation_result(result)
         # Should log warning/error level for invalid result

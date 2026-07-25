@@ -15,10 +15,10 @@ dependencies = [
     "redis>=5.0.0",
     "tenacity>=8.2.0",
     "llamatrade-common",
-    "llamatrade-compiler",
     "llamatrade-db",
     "llamatrade-dsl",
     "llamatrade-alpaca",
+    "llamatrade-runtime",
 ]
 
 [project.optional-dependencies]

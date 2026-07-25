@@ -23,8 +23,9 @@ from tenacity import (
 
 from llamatrade_db import get_db
 from llamatrade_db.models.notification import Webhook
+from llamatrade_db.models.trading import Order
 
-from src.models import OrderResponse, order_side_to_str
+from src.models import order_side_to_str
 
 logger = logging.getLogger(__name__)
 
@@ -116,7 +117,7 @@ class AlertService:
         self,
         tenant_id: UUID,
         session_id: UUID,
-        order: OrderResponse,
+        order: Order,
     ) -> None:
         """Send alert for order fill."""
         price_str = f" @ ${order.filled_avg_price:.2f}" if order.filled_avg_price else ""

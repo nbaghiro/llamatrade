@@ -438,6 +438,23 @@ class TestMapAlpacaStatus:
         result = OrderSubmissionMixin._map_alpaca_status("UNKNOWN_STATUS")
         assert result == ORDER_STATUS_PENDING
 
+    def test_every_alpaca_status_is_explicitly_mapped(self) -> None:
+        """All 16 Alpaca statuses must be explicit keys — no reliance on the fallback.
+
+        Fails loudly if Alpaca adds a status we don't handle or a mapping is dropped.
+        """
+        from src.executor.base import _ALPACA_STATUS_MAP
+
+        alpaca_values = {s.value for s in AlpacaOrderStatus}
+        assert alpaca_values <= set(_ALPACA_STATUS_MAP), (
+            f"Unmapped Alpaca statuses: {alpaca_values - set(_ALPACA_STATUS_MAP)}"
+        )
+
+    def test_alpaca_canceled_spelling_maps_to_internal_cancelled(self) -> None:
+        """Regression: Alpaca 'canceled' (one L) maps to internal CANCELLED (two L)."""
+        assert AlpacaOrderStatus.CANCELED.value == "canceled"
+        assert OrderSubmissionMixin._map_alpaca_status("canceled") == ORDER_STATUS_CANCELLED
+
 
 class TestGetCurrentUtcTime:
     """Tests for _get_current_utc_time method."""

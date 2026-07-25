@@ -389,7 +389,7 @@ class TradingEventPublisher:
         """Publish a ledger proto message to the global ``ledger:fills`` stream.
 
         The portfolio service's fill consumer group ingests these into the
-        double-entry ledger (see .docs/planning/CONTRACTS.md §1/§4). Messages are
+        double-entry ledger (see .docs/portfolio-ledger.md). Messages are
         built by ``src.ledger_events`` — ``LedgerFill`` and ``LedgerReservation``
         share this stream, discriminated by their EventType. Idempotency seeds
         (``client_order_id`` / ``client_order_id:event_type``) are set by

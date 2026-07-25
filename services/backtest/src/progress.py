@@ -174,7 +174,7 @@ class ProgressSubscriber:
             while True:
                 try:
                     _, update = await asyncio.wait_for(anext(entries), timeout=idle_timeout)
-                except (TimeoutError, StopAsyncIteration):
+                except TimeoutError, StopAsyncIteration:
                     break
                 yield update
                 if update.progress_percent >= 100:
@@ -192,8 +192,8 @@ class ProgressSubscriber:
 class BacktestProgressReporter:
     """Creates progress callbacks for backtest engine integration.
 
-    This class bridges the synchronous BacktestEngine progress callback
-    with the async ProgressPublisher, handling rate limiting and ETA calculation.
+    This class bridges the synchronous runtime progress callback with the async
+    ProgressPublisher, handling rate limiting and ETA calculation.
 
     Usage:
         reporter = BacktestProgressReporter(backtest_id, total_bars)
@@ -201,13 +201,9 @@ class BacktestProgressReporter:
         # In async context, publish setup phases
         await reporter.publish_phase("Fetching market data", 30)
 
-        # Create callback for engine (sync function that queues updates)
+        # Create a per-bar callback (sync function that queues updates) and drive it
+        # from the runtime observer, then flush any remaining updates
         callback = reporter.create_engine_callback()
-
-        # Pass to engine
-        engine.run(bars, strategy_fn, start, end, progress_callback=callback)
-
-        # After engine completes, publish any remaining updates
         await reporter.flush()
     """
 

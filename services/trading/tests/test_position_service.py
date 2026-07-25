@@ -296,16 +296,17 @@ class TestPositionService:
         assert len(positions) == 1
         assert positions[0].symbol == "AAPL"
 
-    async def test_response_conversion(self, mock_db, mock_position):
-        """Test position to response conversion."""
-        service = PositionService(db=mock_db)
-        response = service._to_response(mock_position)
+    async def test_list_open_positions_returns_orm_rows(self, mock_db, mock_position):
+        """Read methods now return DB Position rows (mapped to proto by the servicer)."""
+        mock_scalars = MagicMock()
+        mock_scalars.all.return_value = [mock_position]
+        mock_result = MagicMock()
+        mock_result.scalars.return_value = mock_scalars
+        mock_db.execute = AsyncMock(return_value=mock_result)
 
-        assert response.symbol == "AAPL"
-        assert response.qty == 100.0
-        assert response.side == "long"
-        assert response.cost_basis == 15000.0
-        assert response.market_value == 15500.0
-        assert response.unrealized_pnl == 500.0
-        # unrealized_plpc is multiplied by 100 in response
-        assert float(response.unrealized_pnl_percent) == pytest.approx(3.33, rel=0.01)
+        service = PositionService(db=mock_db)
+        positions = await service.list_open_positions(
+            tenant_id=TEST_TENANT_ID, session_id=TEST_SESSION_ID
+        )
+
+        assert positions == [mock_position]  # raw ORM row, not a re-typed DTO

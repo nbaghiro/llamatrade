@@ -11,7 +11,6 @@ Safety features:
 
 import logging
 from datetime import UTC, datetime
-from typing import cast
 from uuid import UUID
 
 from fastapi import Depends
@@ -22,7 +21,6 @@ from llamatrade_alpaca import (
     TradingClient,
     get_trading_client,
 )
-from llamatrade_compiler import SizingMode, StrategySession
 from llamatrade_db import get_db, get_session_maker
 from llamatrade_db.models.billing import Plan, Subscription
 from llamatrade_db.models.strategy import StrategyExecution, StrategyVersion
@@ -30,7 +28,9 @@ from llamatrade_proto.generated.billing_pb2 import PLAN_TIER_FREE
 from llamatrade_proto.generated.common_pb2 import (
     EXECUTION_MODE_LIVE,
 )
+from llamatrade_runtime import SizingMode, StrategySession
 
+from src.clients.market_data import get_market_data_client
 from src.clients.portfolio_client import get_portfolio_ledger_client
 from src.credentials import DecryptedCredentials, resolve_credentials
 from src.executor.order_executor import OrderExecutor, get_order_executor
@@ -44,6 +44,7 @@ from src.models import SessionResponse
 from src.providers import build_bar_stream, build_trade_stream, build_trading_client
 from src.risk.risk_manager import RiskManager, get_risk_manager
 from src.runner.runner import RunnerConfig, RunnerManager, get_runner_manager
+from src.runner.warmup import preload_session_history
 from src.services.alert_service import AlertService
 from src.services.session_service import SessionService
 from src.streaming.publisher import get_trading_event_publisher
@@ -222,7 +223,7 @@ class LiveSessionService(SessionService):
         """(sleeve_id, account_id) of the strategy's funded execution, if any.
 
         The strategy service persists them on the execution when it funds a
-        sleeve (CONTRACTS.md §5). An explicit ``execution_id`` resolves that
+        sleeve (portfolio-ledger.md). An explicit ``execution_id`` resolves that
         exact execution (and fails loudly if it doesn't match the strategy). With
         no ``execution_id`` we resolve the strategy's *single* open funded
         execution; if more than one exists the binding is ambiguous and we refuse
@@ -376,13 +377,24 @@ class LiveSessionService(SessionService):
             await session_alpaca_client.close()
             raise
 
+        timeframe = strategy_ver.timeframe or "1Min"
+
+        # Prime the session's indicators from historical bars so it trades from the first live bar
+        # instead of sitting cold until min_bars real-time bars accumulate (G4). Best-effort.
+        try:
+            await preload_session_history(
+                session, actual_symbols, timeframe, get_market_data_client()
+            )
+        except Exception as e:
+            logger.warning("Session warm-up preload failed; starting cold: %s", e)
+
         # Create runner config
         runner_config = RunnerConfig(
             tenant_id=tenant_id,
             execution_id=session_id,
             strategy_id=strategy_id,
             symbols=actual_symbols,
-            timeframe=strategy_ver.timeframe or "1Min",
+            timeframe=timeframe,
             warmup_bars=session.min_bars + 10,  # Extra buffer
             mode=mode,
             sleeve_id=sleeve_id,
@@ -626,21 +638,8 @@ class LiveSessionService(SessionService):
         return await resolve_credentials(self.db, credentials_id, tenant_id)
 
     def _get_strategy_sexpr(self, strategy_ver: StrategyVersion) -> str | None:
-        """Extract S-expression from strategy version.
-
-        The S-expression is stored in config_sexpr field.
-        """
-        # config_sexpr is the canonical storage location
-        if strategy_ver.config_sexpr:
-            return strategy_ver.config_sexpr
-
-        # Fallback: Try config_json with 'sexpr' key (shouldn't happen normally)
-        # config_json is typed as Mapped[dict] in SQLAlchemy model, cast to proper type
-        config_json = cast(dict[str, object], strategy_ver.config_json)
-        if config_json and "sexpr" in config_json:
-            return str(config_json["sexpr"])
-
-        return None
+        """The strategy's DSL string — the single stored representation."""
+        return strategy_ver.config_sexpr or None
 
 
 async def create_live_session_service(tenant_id: UUID | None = None) -> LiveSessionService:

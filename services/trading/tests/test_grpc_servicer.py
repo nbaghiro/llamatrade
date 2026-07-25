@@ -17,6 +17,8 @@ from llamatrade_proto.generated.trading_pb2 import (
     ORDER_STATUS_SUBMITTED,
     ORDER_TYPE_LIMIT,
     ORDER_TYPE_MARKET,
+    POSITION_SIDE_LONG,
+    POSITION_SIDE_SHORT,
 )
 
 # Test UUIDs (matching conftest.py)
@@ -111,25 +113,30 @@ def make_mock_position(
     id: UUID | None = None,
     symbol: str = "AAPL",
     quantity: Decimal = Decimal("100"),
-    side: str = "long",
+    side: int = POSITION_SIDE_LONG,
     cost_basis: Decimal = Decimal("15000"),
     average_entry_price: Decimal = Decimal("150"),
     current_price: Decimal = Decimal("155"),
     market_value: Decimal = Decimal("15500"),
     unrealized_pnl: Decimal = Decimal("500"),
 ) -> MagicMock:
-    """Create a mock position object for servicer tests."""
+    """Create a mock Position ORM row for servicer tests (mapped to proto via proto_mappers)."""
     position = MagicMock()
     position.id = id or uuid4()
+    position.tenant_id = TEST_TENANT_ID
+    position.session_id = TEST_SESSION_ID
     position.symbol = symbol
-    position.qty = quantity  # Servicer expects 'qty' not 'quantity'
-    position.quantity = quantity  # Also add quantity for ClosePosition
-    position.side = side
+    position.qty = quantity
+    position.side = side  # proto PositionSide int, as the DB row exposes it
     position.cost_basis = cost_basis
-    position.average_entry_price = average_entry_price
+    position.avg_entry_price = average_entry_price
     position.current_price = current_price
     position.market_value = market_value
-    position.unrealized_pnl = unrealized_pnl
+    position.unrealized_pl = unrealized_pnl
+    position.unrealized_plpc = Decimal("0.0333")
+    position.realized_pl = Decimal("0")
+    position.opened_at = datetime(2024, 1, 2, tzinfo=UTC)
+    position.updated_at = datetime(2024, 1, 3, tzinfo=UTC)
     return position
 
 
@@ -586,7 +593,7 @@ class TestListPositions:
 
         mock_positions = [
             make_mock_position(symbol="AAPL"),
-            make_mock_position(symbol="GOOGL", side="short"),
+            make_mock_position(symbol="GOOGL", side=POSITION_SIDE_SHORT),
         ]
         mock_service = create_mock_position_service(list_positions_return=mock_positions)
 

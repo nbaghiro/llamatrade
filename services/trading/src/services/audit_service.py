@@ -11,8 +11,9 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from llamatrade_db import get_db
 from llamatrade_db.models.audit import AuditEventType, AuditLog
+from llamatrade_db.models.trading import Order
 
-from src.models import OrderResponse, RiskCheckResult
+from src.models import RiskCheckResult
 
 if TYPE_CHECKING:
     from src.runner.runner import Signal
@@ -80,7 +81,7 @@ class AuditService:
         self,
         tenant_id: UUID,
         session_id: UUID,
-        order: OrderResponse,
+        order: Order,
     ) -> None:
         """Log order submission."""
         await self._log(
@@ -107,7 +108,7 @@ class AuditService:
         self,
         tenant_id: UUID,
         session_id: UUID,
-        order: OrderResponse,
+        order: Order,
     ) -> None:
         """Log order fill."""
         event_type = (
@@ -140,7 +141,7 @@ class AuditService:
         self,
         tenant_id: UUID,
         session_id: UUID,
-        order: OrderResponse,
+        order: Order,
         reason: str | None = None,
     ) -> None:
         """Log order cancellation."""

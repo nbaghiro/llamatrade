@@ -162,6 +162,8 @@ class FakeStore:
             return MagicMock(scalar_one_or_none=MagicMock(return_value=value))
 
         session.execute = AsyncMock(side_effect=handle_execute)
+        # Monthly-quota check (scalar count of used backtests): 0 used → under the plan limit.
+        session.scalar = AsyncMock(return_value=0)
         return session
 
 

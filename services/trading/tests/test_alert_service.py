@@ -10,13 +10,13 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 
+from llamatrade_db.models.trading import Order
 from llamatrade_proto.generated.trading_pb2 import (
     ORDER_SIDE_BUY,
     ORDER_STATUS_FILLED,
     ORDER_TYPE_MARKET,
 )
 
-from src.models import OrderResponse
 from src.services.alert_service import (
     Alert,
     AlertPriority,
@@ -40,7 +40,7 @@ def alert_service_no_db():
 @pytest.fixture
 def sample_order_response(order_id):
     """Create a sample order response."""
-    return OrderResponse(
+    return Order(
         id=order_id,
         alpaca_order_id="alpaca-123",
         symbol="AAPL",

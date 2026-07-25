@@ -24,7 +24,7 @@ select = ["E", "F", "I", "N", "W", "UP"]
 ignore = ["E501", "UP036", "UP046", "UP007"]
 
 [tool.ruff.lint.isort]
-known-first-party = ["llamatrade_common", "llamatrade_db", "llamatrade_proto", "llamatrade_dsl", "llamatrade_compiler", "llamatrade_alpaca", "llamatrade_telemetry", "llamatrade_events"]
+known-first-party = ["llamatrade_common", "llamatrade_db", "llamatrade_proto", "llamatrade_dsl", "llamatrade_alpaca", "llamatrade_telemetry", "llamatrade_events", "llamatrade_runtime"]
 section-order = ["future", "standard-library", "third-party", "first-party", "local-folder"]
 forced-separate = ["src"]
 
@@ -35,8 +35,8 @@ forced-separate = ["src"]
 "libs/proto/llamatrade_proto/generated/*.pyi" = ["N802", "N803", "UP036", "UP046", "E501", "I001", "F401", "E402", "UP009", "UP035", "UP007"]
 # gRPC/Connect servicers: PascalCase methods from proto, inline imports to avoid circular deps
 "services/*/src/grpc/*.py" = ["N802", "E402"]
-# BacktestCancelled is a cooperative-cancellation signal, not an error (deliberate naming)
-"services/backtest/src/engine/backtester.py" = ["N818"]
+# RuntimeCancelled is a cooperative-cancellation signal, not an error (deliberate naming)
+"libs/runtime/llamatrade_runtime/runtime.py" = ["N818"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
@@ -87,11 +87,11 @@ directory = "htmlcov"
 members = [
     "libs/alpaca",
     "libs/common",
-    "libs/compiler",
     "libs/db",
     "libs/dsl",
     "libs/events",
     "libs/proto",
+    "libs/runtime",
     "libs/telemetry",
     "services/agent",
     "services/auth",
@@ -107,11 +107,11 @@ members = [
 [tool.uv.sources]
 llamatrade-alpaca = { workspace = true }
 llamatrade-common = { workspace = true }
-llamatrade-compiler = { workspace = true }
 llamatrade-db = { workspace = true }
 llamatrade-dsl = { workspace = true }
 llamatrade-events = { workspace = true }
 llamatrade-proto = { workspace = true }
+llamatrade-runtime = { workspace = true }
 llamatrade-telemetry = { workspace = true }
 
 [tool.pyright]
@@ -132,11 +132,11 @@ include = [
     "services/trading/src",
     "libs/alpaca",
     "libs/common",
-    "libs/compiler",
     "libs/db",
     "libs/dsl",
     "libs/events",
     "libs/proto",
+    "libs/runtime",
     "libs/telemetry",
     "scripts",
 ]
@@ -165,22 +165,22 @@ reportUnknownParameterType = false
 extraPaths = [
     "libs/alpaca",
     "libs/common",
-    "libs/compiler",
     "libs/db",
     "libs/dsl",
     "libs/events",
     "libs/proto",
+    "libs/runtime",
     "libs/telemetry",
 ]
 # All libs available to all services (alphabetically sorted for consistency)
 executionEnvironments = [
-    { root = "services/agent", extraPaths = ["services/agent", "libs/alpaca", "libs/common", "libs/compiler", "libs/db", "libs/dsl", "libs/events", "libs/proto", "libs/telemetry"] },
-    { root = "services/auth", extraPaths = ["services/auth", "libs/alpaca", "libs/common", "libs/compiler", "libs/db", "libs/dsl", "libs/events", "libs/proto", "libs/telemetry"] },
-    { root = "services/backtest", extraPaths = ["services/backtest", "libs/alpaca", "libs/common", "libs/compiler", "libs/db", "libs/dsl", "libs/events", "libs/proto", "libs/telemetry"] },
-    { root = "services/billing", extraPaths = ["services/billing", "libs/alpaca", "libs/common", "libs/compiler", "libs/db", "libs/dsl", "libs/events", "libs/proto", "libs/telemetry"] },
-    { root = "services/market-data", extraPaths = ["services/market-data", "libs/alpaca", "libs/common", "libs/compiler", "libs/db", "libs/dsl", "libs/events", "libs/proto", "libs/telemetry"] },
-    { root = "services/notification", extraPaths = ["services/notification", "libs/alpaca", "libs/common", "libs/compiler", "libs/db", "libs/dsl", "libs/events", "libs/proto", "libs/telemetry"] },
-    { root = "services/portfolio", extraPaths = ["services/portfolio", "libs/alpaca", "libs/common", "libs/compiler", "libs/db", "libs/dsl", "libs/events", "libs/proto", "libs/telemetry"] },
-    { root = "services/strategy", extraPaths = ["services/strategy", "libs/alpaca", "libs/common", "libs/compiler", "libs/db", "libs/dsl", "libs/events", "libs/proto", "libs/telemetry"] },
-    { root = "services/trading", extraPaths = ["services/trading", "libs/alpaca", "libs/common", "libs/compiler", "libs/db", "libs/dsl", "libs/events", "libs/proto", "libs/telemetry"] },
+    { root = "services/agent", extraPaths = ["services/agent", "libs/alpaca", "libs/common", "libs/db", "libs/dsl", "libs/events", "libs/proto", "libs/telemetry"] },
+    { root = "services/auth", extraPaths = ["services/auth", "libs/alpaca", "libs/common", "libs/db", "libs/dsl", "libs/events", "libs/proto", "libs/telemetry"] },
+    { root = "services/backtest", extraPaths = ["services/backtest", "libs/alpaca", "libs/common", "libs/db", "libs/dsl", "libs/events", "libs/proto", "libs/runtime", "libs/telemetry"] },
+    { root = "services/billing", extraPaths = ["services/billing", "libs/alpaca", "libs/common", "libs/db", "libs/dsl", "libs/events", "libs/proto", "libs/telemetry"] },
+    { root = "services/market-data", extraPaths = ["services/market-data", "libs/alpaca", "libs/common", "libs/db", "libs/dsl", "libs/events", "libs/proto", "libs/telemetry"] },
+    { root = "services/notification", extraPaths = ["services/notification", "libs/alpaca", "libs/common", "libs/db", "libs/dsl", "libs/events", "libs/proto", "libs/telemetry"] },
+    { root = "services/portfolio", extraPaths = ["services/portfolio", "libs/alpaca", "libs/common", "libs/db", "libs/dsl", "libs/events", "libs/proto", "libs/telemetry"] },
+    { root = "services/strategy", extraPaths = ["services/strategy", "libs/alpaca", "libs/common", "libs/db", "libs/dsl", "libs/events", "libs/proto", "libs/telemetry"] },
+    { root = "services/trading", extraPaths = ["services/trading", "libs/alpaca", "libs/common", "libs/db", "libs/dsl", "libs/events", "libs/proto", "libs/runtime", "libs/telemetry"] },
 ]

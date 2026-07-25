@@ -232,40 +232,18 @@ class TestLiveSessionServiceGetStrategySexpr:
     """Tests for _get_strategy_sexpr method."""
 
     def test_get_sexpr_from_config_sexpr(self, live_session_service):
-        """Test getting S-expression from config_sexpr field."""
+        """The DSL string is the single stored representation."""
         mock_version = MagicMock()
         mock_version.config_sexpr = "(strategy test)"
-        mock_version.config_json = {}
 
         result = live_session_service._get_strategy_sexpr(mock_version)
 
         assert result == "(strategy test)"
 
-    def test_get_sexpr_from_config_json(self, live_session_service):
-        """Test getting S-expression from config JSON."""
-        mock_version = MagicMock()
-        mock_version.config_sexpr = None
-        mock_version.config_json = {"sexpr": "(strategy from json)"}
-
-        result = live_session_service._get_strategy_sexpr(mock_version)
-
-        assert result == "(strategy from json)"
-
     def test_get_sexpr_not_found(self, live_session_service):
-        """Test when no S-expression is found."""
+        """An empty DSL string yields None."""
         mock_version = MagicMock()
-        mock_version.config_sexpr = None
-        mock_version.config_json = {}
-
-        result = live_session_service._get_strategy_sexpr(mock_version)
-
-        assert result is None
-
-    def test_get_sexpr_config_json_not_dict(self, live_session_service):
-        """Test when config_json is not a dict."""
-        mock_version = MagicMock()
-        mock_version.config_sexpr = None
-        mock_version.config_json = None
+        mock_version.config_sexpr = ""
 
         result = live_session_service._get_strategy_sexpr(mock_version)
 

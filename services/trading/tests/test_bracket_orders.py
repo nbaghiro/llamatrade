@@ -649,16 +649,14 @@ class TestGetOrderWithBracketInfo:
 
         mock_db.execute = AsyncMock(side_effect=[parent_result, bracket_result])
 
-        result = await bracket_order_executor.get_order(
-            order_id=order_id,
-            tenant_id=tenant_id,
-            include_bracket_info=True,
-        )
+        # get_order returns the parent Order row directly (proto mapping happens in the servicer).
+        result = await bracket_order_executor.get_order(order_id=order_id, tenant_id=tenant_id)
+        assert result is parent_order
 
-        assert result is not None
-        assert result.bracket_orders is not None
-        assert result.bracket_orders.stop_loss_order_id == sl_order_id
-        assert result.bracket_orders.take_profit_order_id == tp_order_id
+        # Bracket children resolve via _get_bracket_orders (used by fill/cancel handling).
+        sl_order_row, tp_order_row = await bracket_order_executor._get_bracket_orders(order_id)
+        assert sl_order_row is not None and sl_order_row.id == sl_order_id
+        assert tp_order_row is not None and tp_order_row.id == tp_order_id
 
 
 class TestBracketOrderValidation:

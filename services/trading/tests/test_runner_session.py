@@ -6,6 +6,7 @@ Verifies the two properties the old per-symbol path lacked:
   2. cross-symbol conditions — a condition on one symbol drives allocation of another.
 """
 
+from collections.abc import AsyncIterator
 from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
@@ -14,7 +15,7 @@ import pytest
 
 from llamatrade_alpaca import MockBarStream, MockTradeStream
 from llamatrade_alpaca import StreamBar as BarData
-from llamatrade_compiler import StrategySession
+from llamatrade_runtime import StrategySession
 
 from src.runner.runner import RunnerConfig, StrategyRunner
 
@@ -122,3 +123,38 @@ async def test_evaluates_once_per_period_not_per_symbol_bar():
     await runner._process_bar(_bar("SPY", last_ts, 139.0))
     await runner._process_bar(_bar("TLT", last_ts, 50.0))
     assert order_executor.submit_order.call_count == calls_before
+
+
+class _FiniteStream:
+    """A finite bar stream for the runtime-loop test — yields preloaded bars, then stops."""
+
+    def __init__(self, bars: list[BarData]) -> None:
+        self._bars = bars
+
+    async def stream(self) -> AsyncIterator[BarData]:
+        for bar in self._bars:
+            yield bar
+
+
+async def test_runtime_loop_drives_the_same_submit_path() -> None:
+    """`_run_via_runtime` (TRADING_USE_RUNTIME_LOOP) drives evaluation + submission through the
+    SAME hardened `_process_signal` path as the hand-rolled loop — a TLT buy still results."""
+    session = StrategySession(SWITCH)
+    runner, order_executor = _runner(session)
+    base = datetime(2024, 1, 1, 14, 30, tzinfo=UTC)
+    bars: list[BarData] = []
+    for i in range(40):
+        ts = base + timedelta(days=i)
+        bars.append(_bar("SPY", ts, 100.0 + i))  # rising SPY -> RSI high -> target TLT
+        bars.append(_bar("TLT", ts, 50.0))
+    runner.bar_stream = _FiniteStream(bars)
+    runner._running = True
+
+    await runner._run_via_runtime()
+
+    assert session.current_weights.get("TLT") == 100.0
+    submitted_symbols = {
+        call.kwargs.get("order", call.args[2] if len(call.args) > 2 else None).symbol
+        for call in order_executor.submit_order.call_args_list
+    }
+    assert "TLT" in submitted_symbols

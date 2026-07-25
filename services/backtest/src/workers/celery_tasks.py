@@ -12,8 +12,10 @@ import logging
 import os
 from collections.abc import AsyncGenerator, Coroutine
 from contextlib import asynccontextmanager
+from typing import cast
 from uuid import UUID
 
+import redis.asyncio as aioredis
 from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
@@ -24,6 +26,7 @@ from llamatrade_proto.generated.backtest_pb2 import (
 )
 
 from src.celery_app import celery_app
+from src.dataset import RedisLike
 from src.services.backtest_service import (
     BacktestService,
     MarketDataError,
@@ -56,10 +59,17 @@ DATABASE_URL = os.getenv(
     "postgresql+asyncpg://llamatrade:llamatrade@localhost:5432/llamatrade",
 )
 
+REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+
 
 def _create_market_data_client() -> MarketDataFetcher:
     """Market data client factory (patchable in tests)."""
     return get_market_data_client()
+
+
+def _create_redis() -> aioredis.Redis:
+    """Redis client for dataset-prepare coalescing (patchable in tests)."""
+    return aioredis.from_url(REDIS_URL)
 
 
 @asynccontextmanager
@@ -77,14 +87,22 @@ async def _session_scope() -> AsyncGenerator[AsyncSession]:
 async def _execute_backtest(backtest_id: str, tenant_id: str) -> dict[str, str | float | int]:
     """Run a backtest through the service layer."""
     async with _session_scope() as db:
-        async with BacktestService(db, market_data_client=_create_market_data_client()) as service:
-            result = await service.run_backtest(UUID(backtest_id), UUID(tenant_id))
-            return {
-                "status": "completed",
-                "backtest_id": backtest_id,
-                "total_return": result.metrics.total_return,
-                "total_trades": result.metrics.total_trades,
-            }
+        redis_client = _create_redis()
+        try:
+            async with BacktestService(
+                db,
+                market_data_client=_create_market_data_client(),
+                redis=cast(RedisLike, redis_client),
+            ) as service:
+                result = await service.run_backtest(UUID(backtest_id), UUID(tenant_id))
+                return {
+                    "status": "completed",
+                    "backtest_id": backtest_id,
+                    "total_return": float(result.total_return),
+                    "total_trades": result.total_trades,
+                }
+        finally:
+            await redis_client.aclose()
 
 
 async def _reap_stale_backtests() -> dict[str, int]:

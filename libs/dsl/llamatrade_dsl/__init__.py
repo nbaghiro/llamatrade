@@ -1,5 +1,12 @@
 """LlamaTrade Strategy DSL - Allocation-based strategy definition language."""
 
+from llamatrade_dsl.analysis import (
+    IndicatorSpec,
+    extract_indicators,
+    get_max_lookback,
+    get_required_sources,
+    get_required_symbols,
+)
 from llamatrade_dsl.ast import (
     # Constants
     COMPARISON_OPS,
@@ -50,6 +57,7 @@ from llamatrade_dsl.validator import (
     validate,
     validate_strategy,
 )
+from llamatrade_dsl.window import compute_window, max_lookback
 
 __all__ = [
     # Block types
@@ -105,4 +113,12 @@ __all__ = [
     # JSON
     "to_json",
     "from_json",
+    # Static AST analysis / compilation
+    "IndicatorSpec",
+    "extract_indicators",
+    "get_max_lookback",
+    "get_required_sources",
+    "get_required_symbols",
+    "compute_window",
+    "max_lookback",
 ]

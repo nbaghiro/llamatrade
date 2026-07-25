@@ -1,35 +1,35 @@
-"""Market data client for fetching current prices from market-data service via gRPC."""
+"""Market data client for fetching current prices from the market-data service (Connect transport)."""
 
 import logging
 import os
 from typing import Any
 
-from llamatrade_proto.clients.market_data import MarketDataClient as GRPCMarketDataClient
+from llamatrade_proto.clients.market_data import MarketDataClient as ProtoMarketDataClient
 from llamatrade_proto.clients.market_data import Snapshot
 
 logger = logging.getLogger(__name__)
 
 
 class MarketDataClient:
-    """gRPC client for fetching real-time market data from the market-data service."""
+    """Client for fetching real-time market data from the market-data service (over Connect)."""
 
     def __init__(self, target: str | None = None):
         """Initialize the market data client.
 
         Args:
-            target: gRPC target address for the market-data service
+            target: market-data service target (bare host:port is normalized to a URL)
         """
         self.target = target or os.getenv("MARKET_DATA_GRPC_TARGET", "market-data:8840")
-        self._client: GRPCMarketDataClient | None = None
+        self._client: ProtoMarketDataClient | None = None
 
-    def _get_client(self) -> GRPCMarketDataClient:
-        """Get or create the gRPC client."""
+    def _get_client(self) -> ProtoMarketDataClient:
+        """Get or create the underlying client."""
         if self._client is None:
-            self._client = GRPCMarketDataClient(target=self.target)
+            self._client = ProtoMarketDataClient(target=self.target)
         return self._client
 
     async def close(self) -> None:
-        """Close the gRPC client."""
+        """Close the underlying client."""
         if self._client is not None:
             await self._client.close()
             self._client = None

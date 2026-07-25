@@ -487,7 +487,7 @@ class TestBacktestServiceRun:
 
 
 class TestBacktestServiceResults:
-    """Tests for get_results method."""
+    """Tests for get_result_rows method."""
 
     @pytest.mark.asyncio
     async def test_get_results_not_found(self, mock_db, mock_backtest):
@@ -498,7 +498,7 @@ class TestBacktestServiceResults:
         ]
 
         service = BacktestService(mock_db)
-        result = await service.get_results(TEST_BACKTEST_ID, TEST_TENANT_ID)
+        result = await service.get_result_rows(TEST_BACKTEST_ID, TEST_TENANT_ID)
 
         assert result is None
 
@@ -508,7 +508,7 @@ class TestBacktestServiceResults:
         mock_db.execute.return_value = MagicMock(scalar_one_or_none=MagicMock(return_value=None))
 
         service = BacktestService(mock_db)
-        result = await service.get_results(TEST_BACKTEST_ID, TEST_TENANT_ID)
+        result = await service.get_result_rows(TEST_BACKTEST_ID, TEST_TENANT_ID)
 
         assert result is None
 
@@ -822,9 +822,9 @@ class TestTimeframeMapping:
     @pytest.mark.asyncio
     async def test_unknown_timeframe_raises(self):
         """Unknown timeframes must raise, not silently map to daily."""
-        from src.services.backtest_service import GRPCMarketDataClient, MarketDataError
+        from src.services.backtest_service import MarketDataError, ProtoMarketDataClient
 
-        client = GRPCMarketDataClient("unused:1")
+        client = ProtoMarketDataClient("unused:1")
 
         with pytest.raises(MarketDataError, match="Unsupported timeframe"):
             await client.fetch_bars(
@@ -1040,9 +1040,9 @@ class TestZeroVsNullSemantics:
         # Flat SPY → benchmark return is exactly 0.0 and must NOT be NULL
         assert stored.benchmark_return is not None
         assert float(stored.benchmark_return) == pytest.approx(0.0)
-        # Availability is derived from is-not-None, so it must be True
-        assert response.metrics.benchmark_data_available is True
-        assert response.metrics.benchmark_return == pytest.approx(0.0)
+        # run_backtest returns the persisted BacktestResult row directly (1A).
+        assert response is stored
+        assert float(response.benchmark_return) == pytest.approx(0.0)
 
     @pytest.mark.asyncio
     async def test_stored_equity_curve_is_daily_within_window(
@@ -1120,7 +1120,7 @@ class TestCancellationFlow:
         self, mock_db, mock_backtest, mock_strategy_version, monkeypatch
     ):
         """A run aborted by the cancel flag must end CANCELLED, not FAILED."""
-        from src.engine.backtester import BacktestCancelled
+        from llamatrade_runtime import RuntimeCancelled
 
         mock_backtest.status = BACKTEST_STATUS_PENDING
         mock_db.execute.side_effect = [
@@ -1140,7 +1140,7 @@ class TestCancellationFlow:
 
         service = BacktestService(mock_db, market_data_client=mock_market_client)
 
-        with pytest.raises(BacktestCancelled):
+        with pytest.raises(RuntimeCancelled):
             await service.run_backtest(TEST_BACKTEST_ID, TEST_TENANT_ID, publish_progress=False)
 
         assert mock_backtest.status == BACKTEST_STATUS_CANCELLED
@@ -1151,7 +1151,7 @@ class TestCancellationFlow:
         self, mock_db, mock_backtest, mock_strategy_version, monkeypatch
     ):
         """If the row turns CANCELLED while finishing, keep CANCELLED."""
-        from src.engine.backtester import BacktestCancelled
+        from llamatrade_runtime import RuntimeCancelled
 
         mock_backtest.status = BACKTEST_STATUS_PENDING
         mock_db.execute.side_effect = [
@@ -1171,7 +1171,7 @@ class TestCancellationFlow:
 
         service = BacktestService(mock_db, market_data_client=mock_market_client)
 
-        with pytest.raises(BacktestCancelled):
+        with pytest.raises(RuntimeCancelled):
             await service.run_backtest(TEST_BACKTEST_ID, TEST_TENANT_ID, publish_progress=False)
 
         assert mock_backtest.status == BACKTEST_STATUS_CANCELLED
@@ -1218,11 +1218,11 @@ def _bar(symbol: str, close: str, ts: datetime):
 
 
 class TestStreamingFetch:
-    """Single streamed StreamHistoricalBars fetch in GRPCMarketDataClient (13B/16B)."""
+    """Single streamed StreamHistoricalBars fetch in ProtoMarketDataClient (13B/16B)."""
 
     @staticmethod
     def _make_client_with_fake_grpc(bars=None, *, raises=None):
-        from src.services.backtest_service import GRPCMarketDataClient
+        from src.services.backtest_service import ProtoMarketDataClient
 
         calls = []
 
@@ -1237,7 +1237,7 @@ class TestStreamingFetch:
 
             return gen()
 
-        client = GRPCMarketDataClient("unused:1")
+        client = ProtoMarketDataClient("unused:1")
         fake_grpc = MagicMock()
         fake_grpc.stream_historical_bars = stream_fn
         client._client = fake_grpc
@@ -1299,47 +1299,54 @@ class TestGetBacktestTradesService:
     """Service-layer pagination for trades (14B)."""
 
     @staticmethod
-    def _trades(n: int):
-        from src.models import TradeRecord
-
+    def _trades(n: int) -> list[dict[str, object]]:
         return [
-            TradeRecord(
-                entry_date=datetime(2024, 1, 2, tzinfo=UTC),
-                exit_date=datetime(2024, 1, 3, tzinfo=UTC),
-                symbol=f"S{i}",
-                side="long",
-                entry_price=1.0,
-                exit_price=1.0,
-                quantity=1.0,
-                pnl=0.0,
-                pnl_percent=0.0,
-                commission=0.0,
-            )
+            {
+                "entry_date": "2024-01-02T00:00:00+00:00",
+                "exit_date": "2024-01-03T00:00:00+00:00",
+                "symbol": f"S{i}",
+                "side": "long",
+                "entry_price": 1.0,
+                "exit_price": 1.0,
+                "quantity": 1.0,
+                "pnl": 0.0,
+                "pnl_percent": 0.0,
+                "commission": 0.0,
+            }
             for i in range(n)
         ]
 
+    @staticmethod
+    def _rows_with_trades(trades: list[dict[str, object]]) -> tuple[MagicMock, MagicMock]:
+        """(backtest, result) pair as get_result_rows returns; result.trades is raw JSONB."""
+        return MagicMock(), MagicMock(trades=trades)
+
     @pytest.mark.asyncio
-    async def test_paginates_slice_and_total(self, mock_db):
+    async def test_paginates_slice_and_total(self, mock_db, monkeypatch):
         service = BacktestService(mock_db, market_data_client=AsyncMock())
-        fake_results = MagicMock()
-        fake_results.trades = self._trades(10)
-        service.get_results = AsyncMock(return_value=fake_results)
+        monkeypatch.setattr(
+            service,
+            "get_result_rows",
+            AsyncMock(return_value=self._rows_with_trades(self._trades(10))),
+        )
 
         page, total = await service.get_backtest_trades(
             TEST_BACKTEST_ID, TEST_TENANT_ID, page=2, page_size=3
         )
 
         assert total == 10
-        assert [t.symbol for t in page] == ["S3", "S4", "S5"]
+        assert [t["symbol"] for t in page] == ["S3", "S4", "S5"]
 
     @pytest.mark.asyncio
-    async def test_page_size_is_clamped(self, mock_db):
+    async def test_page_size_is_clamped(self, mock_db, monkeypatch):
         from src.services.backtest_service import MAX_TRADES_PAGE_SIZE
 
         service = BacktestService(mock_db, market_data_client=AsyncMock())
-        fake_results = MagicMock()
-        fake_results.trades = self._trades(MAX_TRADES_PAGE_SIZE + 50)
-        service.get_results = AsyncMock(return_value=fake_results)
+        monkeypatch.setattr(
+            service,
+            "get_result_rows",
+            AsyncMock(return_value=self._rows_with_trades(self._trades(MAX_TRADES_PAGE_SIZE + 50))),
+        )
 
         page, total = await service.get_backtest_trades(
             TEST_BACKTEST_ID, TEST_TENANT_ID, page=1, page_size=10_000
@@ -1349,11 +1356,30 @@ class TestGetBacktestTradesService:
         assert len(page) == MAX_TRADES_PAGE_SIZE  # clamped
 
     @pytest.mark.asyncio
-    async def test_no_results_returns_empty(self, mock_db):
+    async def test_no_results_returns_empty(self, mock_db, monkeypatch):
         service = BacktestService(mock_db, market_data_client=AsyncMock())
-        service.get_results = AsyncMock(return_value=None)
+        monkeypatch.setattr(service, "get_result_rows", AsyncMock(return_value=None))
 
         page, total = await service.get_backtest_trades(TEST_BACKTEST_ID, TEST_TENANT_ID)
 
         assert page == []
         assert total == 0
+
+    @pytest.mark.asyncio
+    async def test_bounded_query_count_no_per_trade_n_plus_1(self, mock_db, mock_backtest):
+        """15A: paging trades issues exactly two queries (backtest + result), never per-trade."""
+        result_row = MagicMock(trades=self._trades(100))
+        mock_db.execute.side_effect = [
+            MagicMock(scalar_one_or_none=MagicMock(return_value=mock_backtest)),
+            MagicMock(scalar_one_or_none=MagicMock(return_value=result_row)),
+        ]
+
+        service = BacktestService(mock_db)
+        page, total = await service.get_backtest_trades(
+            TEST_BACKTEST_ID, TEST_TENANT_ID, page=1, page_size=10
+        )
+
+        assert total == 100
+        assert len(page) == 10
+        # Backtest lookup + result lookup only; slicing 100 trades adds no queries.
+        assert mock_db.execute.call_count == 2

@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import os
 import time
 from collections import deque
 from collections.abc import Sequence
@@ -23,8 +24,6 @@ from llamatrade_alpaca import (
 from llamatrade_alpaca import (
     StreamBar as BarData,
 )
-from llamatrade_compiler import Bar as CompilerBar
-from llamatrade_compiler import Holding, StrategySession
 from llamatrade_proto.generated.common_pb2 import EXECUTION_MODE_LIVE, EXECUTION_MODE_PAPER
 from llamatrade_proto.generated.trading_pb2 import (
     ORDER_SIDE_BUY,
@@ -32,6 +31,8 @@ from llamatrade_proto.generated.trading_pb2 import (
     ORDER_TYPE_MARKET,
     TIME_IN_FORCE_DAY,
 )
+from llamatrade_runtime import Bar as CompilerBar
+from llamatrade_runtime import Holding, StrategySession
 
 from src.circuit_breaker import (
     CircuitBreaker,
@@ -74,7 +75,7 @@ class Signal:
 
 
 @dataclass
-class Position:
+class RunnerPosition:
     """Current position in a symbol."""
 
     symbol: str
@@ -105,7 +106,7 @@ class RunnerConfig:
     mode: int = EXECUTION_MODE_PAPER  # ExecutionMode proto value: PAPER=1, LIVE=2
 
     # Ledger identity (from the funded strategy execution; None = legacy
-    # unfunded session — no ledger events are emitted). See CONTRACTS.md §5.
+    # unfunded session — no ledger events are emitted). See portfolio-ledger.md.
     sleeve_id: UUID | None = None
     account_id: UUID | None = None
 
@@ -114,6 +115,10 @@ class RunnerConfig:
     position_reconciliation_interval_seconds: int = 300  # 5 minutes
     position_drift_auto_correct_threshold_pct: float = 5.0  # Auto-correct if < 5% drift
     position_drift_alert_threshold_pct: float = 10.0  # Alert if >= 10% drift
+
+    # Proactive ledger re-publish drain (4A) for sleeve sessions; idempotent.
+    ledger_republish_interval_seconds: int = 120
+    ledger_republish_window_seconds: int = 900
 
     # Trading hours settings
     enforce_trading_hours: bool = True  # Skip signals outside market hours
@@ -132,7 +137,7 @@ class StrategyFunction(Protocol):
         self,
         symbol: str,
         bars: Sequence[BarData],
-        position: Position | None,
+        position: RunnerPosition | None,
         equity: float,
     ) -> Signal | None: ...
 
@@ -194,15 +199,24 @@ class StrategyRunner:
         self._bar_history: dict[str, deque[BarData]] = {
             s: deque(maxlen=max_history_size) for s in config.symbols
         }
-        self._positions: dict[str, Position] = {}
+        self._positions: dict[str, RunnerPosition] = {}
         self._equity = Decimal("100000")  # Default, will be synced from Alpaca/sleeve
         self._free_cash: Decimal | None = None  # Sleeve free cash (book of record)
         self._equity_sync_task: asyncio.Task[None] | None = None
         self._position_sync_task: asyncio.Task[None] | None = None
         self._trade_stream_task: asyncio.Task[None] | None = None
+        self._ledger_republish_task: asyncio.Task[None] | None = None
 
         # Pending (submitted, unfilled) orders: client_order_id -> signal, for fill-time updates.
         self._pending_orders: dict[str, Signal] = {}
+
+        # Opt-in: drive the live loop through the shared StrategyRuntime (unifies with backtest).
+        # Off by default — the hand-rolled loop stays the production path until paper-QA validates.
+        self._use_runtime_loop = os.getenv("TRADING_USE_RUNTIME_LOOP", "").lower() in (
+            "1",
+            "true",
+            "yes",
+        )
 
         # Circuit breaker
         self._circuit_breaker = create_circuit_breaker(
@@ -243,7 +257,7 @@ class StrategyRunner:
         return self._paused
 
     @property
-    def positions(self) -> dict[str, Position]:
+    def positions(self) -> dict[str, RunnerPosition]:
         """Get current positions."""
         return self._positions.copy()
 
@@ -391,16 +405,23 @@ class StrategyRunner:
         # Start trade stream processing task (for event-driven position updates)
         self._trade_stream_task = asyncio.create_task(self._trade_stream_loop())
 
+        # Start proactive ledger re-publish drain (sleeve-attributed sessions only)
+        if self.config.sleeve_id is not None:
+            self._ledger_republish_task = asyncio.create_task(self._ledger_republish_loop())
+
         # Main processing loop
         try:
-            async for bar in self.bar_stream.stream():
-                if not self._running:
-                    break
+            if self._use_runtime_loop and self._session is not None:
+                await self._run_via_runtime()
+            else:
+                async for bar in self.bar_stream.stream():
+                    if not self._running:
+                        break
 
-                if self._paused:
-                    continue
+                    if self._paused:
+                        continue
 
-                await self._process_bar(bar)
+                    await self._process_bar(bar)
 
         except asyncio.CancelledError:
             logger.info("Runner cancelled")
@@ -426,6 +447,12 @@ class StrategyRunner:
                 self._position_sync_task.cancel()
                 try:
                     await self._position_sync_task
+                except asyncio.CancelledError:
+                    pass
+            if self._ledger_republish_task:
+                self._ledger_republish_task.cancel()
+                try:
+                    await self._ledger_republish_task
                 except asyncio.CancelledError:
                     pass
             logger.info("Runner stopped")
@@ -488,6 +515,71 @@ class StrategyRunner:
         await self._circuit_breaker.manual_trigger(reason)
         # Also pause the runner
         self.pause()
+
+    async def _run_via_runtime(self) -> None:
+        """Drive the live session through the shared StrategyRuntime (async stream loop).
+
+        Reuses the runner's hardened submit (``_process_signal``), fill-maintained state, and bar
+        stream — only the loop is unified with backtest. Off by default (see ``_use_runtime_loop``).
+        """
+        from llamatrade_runtime import StrategyRuntime
+
+        from src.runner.runtime_adapters import LedgerPortfolio, RunnerExecution, StreamBarFeed
+
+        assert self._session is not None
+        feed = StreamBarFeed(
+            self.bar_stream,
+            self.config.symbols,
+            gate=self._live_gate,
+            on_bar=self._store_live_bar,
+            is_running=lambda: self._running,
+        )
+        portfolio = LedgerPortfolio(self._live_holdings, self._live_equity)
+        execution = RunnerExecution(self._submit_runtime_order)
+        runtime = StrategyRuntime(self._session, portfolio, execution)
+        await runtime.stream(feed, should_stop=lambda: not self._running)
+
+    def _live_gate(self, ts: datetime) -> bool:
+        """Whether the runtime feed may evaluate+trade this period (pause / market-open / breaker).
+
+        Pause skips the period (the feed keeps iterating); only a stop breaks the feed.
+        """
+        if self._paused:
+            return False
+        if self._trading_hours and not self._trading_hours.is_market_open(ts):
+            return False
+        return self._circuit_breaker.can_trade()
+
+    def _store_live_bar(self, bar: BarData) -> None:
+        """Per-bar side effects for the runtime path — mirrors ``_process_bar``'s history + latency."""
+        latency = (datetime.now(UTC) - bar.timestamp).total_seconds()
+        if latency > 0:
+            record_bar_latency(latency)
+        if bar.symbol in self._bar_history:
+            self._bar_history[bar.symbol].append(bar)
+
+    def _live_holdings(self) -> dict[str, Holding]:
+        return {
+            s: Holding(s, float(p.quantity)) for s, p in self._positions.items() if p.quantity > 0
+        }
+
+    def _live_equity(self) -> float:
+        return float(self._equity)
+
+    async def _submit_runtime_order(
+        self, side: str, symbol: str, quantity: float, price: float, ts: datetime
+    ) -> None:
+        """Build a Signal from a runtime order and submit it through the hardened path."""
+        signal = Signal(
+            type=side,
+            symbol=symbol,
+            quantity=Decimal(str(quantity)),
+            price=Decimal(str(price)),
+            timestamp=ts,
+        )
+        self._signals_generated += 1
+        record_signal(signal.type)
+        await self._process_signal(signal)
 
     async def _process_bar(self, bar: BarData) -> None:
         """Process an incoming bar."""
@@ -755,7 +847,7 @@ class StrategyRunner:
         symbol = signal.symbol
 
         if signal.type == "buy":
-            self._positions[symbol] = Position(
+            self._positions[symbol] = RunnerPosition(
                 symbol=symbol,
                 side="long",
                 quantity=signal.quantity,
@@ -796,7 +888,7 @@ class StrategyRunner:
                     )
 
         elif signal.type == "short":
-            self._positions[symbol] = Position(
+            self._positions[symbol] = RunnerPosition(
                 symbol=symbol,
                 side="short",
                 quantity=signal.quantity,
@@ -841,7 +933,7 @@ class StrategyRunner:
         """Update equity value (called by external sync)."""
         self._equity = equity
 
-    def sync_position(self, symbol: str, position: Position | None) -> None:
+    def sync_position(self, symbol: str, position: RunnerPosition | None) -> None:
         """Sync position from external source (e.g., Alpaca)."""
         if position:
             self._positions[symbol] = position
@@ -949,6 +1041,23 @@ class StrategyRunner:
             await asyncio.sleep(interval)
             if self._running:
                 await self._sync_positions()
+
+    async def _ledger_republish_loop(self) -> None:
+        """Proactively re-emit ledger events for recently-terminal orders (4A drain)."""
+        interval = self.config.ledger_republish_interval_seconds
+        window = timedelta(seconds=self.config.ledger_republish_window_seconds)
+        while self._running:
+            await asyncio.sleep(interval)
+            if not self._running:
+                break
+            try:
+                await self.order_executor.republish_ledger_for_terminal_orders(
+                    self.config.tenant_id,
+                    self.config.execution_id,
+                    since=datetime.now(UTC) - window,
+                )
+            except Exception as e:
+                logger.warning("Periodic ledger re-publish failed: %s", e)
 
     async def _trade_stream_loop(self) -> None:
         """Process trade updates from Alpaca for event-driven position management.
@@ -1101,7 +1210,7 @@ class StrategyRunner:
                 new_avg = (
                     (old_position.entry_price * old_position.quantity) + (fill_price * fill_qty)
                 ) / new_qty
-                self._positions[symbol] = Position(
+                self._positions[symbol] = RunnerPosition(
                     symbol=symbol,
                     side="long",
                     quantity=new_qty,
@@ -1131,7 +1240,7 @@ class StrategyRunner:
                         )
                 else:
                     # Partially closed
-                    self._positions[symbol] = Position(
+                    self._positions[symbol] = RunnerPosition(
                         symbol=symbol,
                         side="short",
                         quantity=remaining,
@@ -1140,7 +1249,7 @@ class StrategyRunner:
                     )
             else:
                 # New long position
-                self._positions[symbol] = Position(
+                self._positions[symbol] = RunnerPosition(
                     symbol=symbol,
                     side="long",
                     quantity=fill_qty,
@@ -1182,7 +1291,7 @@ class StrategyRunner:
                         )
                 else:
                     # Partially closed
-                    self._positions[symbol] = Position(
+                    self._positions[symbol] = RunnerPosition(
                         symbol=symbol,
                         side="long",
                         quantity=remaining,
@@ -1195,7 +1304,7 @@ class StrategyRunner:
                 new_avg = (
                     (old_position.entry_price * old_position.quantity) + (fill_price * fill_qty)
                 ) / new_qty
-                self._positions[symbol] = Position(
+                self._positions[symbol] = RunnerPosition(
                     symbol=symbol,
                     side="short",
                     quantity=new_qty,
@@ -1204,7 +1313,7 @@ class StrategyRunner:
                 )
             else:
                 # New short position
-                self._positions[symbol] = Position(
+                self._positions[symbol] = RunnerPosition(
                     symbol=symbol,
                     side="short",
                     quantity=fill_qty,
@@ -1391,7 +1500,7 @@ class StrategyRunner:
 
                 # Auto-add missing position (broker is source of truth)
                 broker_qty = broker_pos.qty
-                self._positions[symbol] = Position(
+                self._positions[symbol] = RunnerPosition(
                     symbol=symbol,
                     side=broker_pos.side,
                     quantity=broker_qty,

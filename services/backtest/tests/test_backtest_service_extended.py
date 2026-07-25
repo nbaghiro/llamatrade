@@ -15,7 +15,7 @@ from llamatrade_proto.generated.backtest_pb2 import (
     BACKTEST_STATUS_RUNNING,
 )
 
-from src.services.backtest_service import BacktestService, GRPCMarketDataClient, MarketDataError
+from src.services.backtest_service import BacktestService, MarketDataError, ProtoMarketDataClient
 
 # === Test Constants ===
 
@@ -410,15 +410,15 @@ class TestRetryBacktest:
         assert result is None
 
 
-# === GRPCMarketDataClient Tests ===
+# === ProtoMarketDataClient Tests ===
 
 
-class TestGRPCMarketDataClient:
-    """Tests for GRPCMarketDataClient."""
+class TestProtoMarketDataClient:
+    """Tests for ProtoMarketDataClient."""
 
     async def test_fetch_bars_success(self):
         """Test fetching bars successfully."""
-        client = GRPCMarketDataClient("localhost:8840")
+        client = ProtoMarketDataClient("localhost:8840")
 
         mock_grpc_client = MagicMock()
         mock_bar = MagicMock()
@@ -448,7 +448,7 @@ class TestGRPCMarketDataClient:
 
     async def test_fetch_bars_error(self):
         """Test fetching bars with error."""
-        client = GRPCMarketDataClient("localhost:8840")
+        client = ProtoMarketDataClient("localhost:8840")
 
         mock_grpc_client = MagicMock()
 
@@ -468,7 +468,7 @@ class TestGRPCMarketDataClient:
 
     async def test_close_client(self):
         """Test closing the client."""
-        client = GRPCMarketDataClient("localhost:8840")
+        client = ProtoMarketDataClient("localhost:8840")
         mock_grpc_client = MagicMock()
         mock_grpc_client.close = AsyncMock()
         client._client = mock_grpc_client

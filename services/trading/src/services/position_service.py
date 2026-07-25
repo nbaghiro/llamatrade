@@ -15,7 +15,6 @@ from llamatrade_proto.generated.trading_pb2 import (
 )
 
 from src.clients.market_data import MarketDataClient, get_market_data_client
-from src.models import PositionResponse, position_side_to_str
 
 
 class PositionService:
@@ -44,7 +43,7 @@ class PositionService:
         side: str,
         qty: Decimal,
         entry_price: Decimal,
-    ) -> PositionResponse:
+    ) -> Position:
         """Open a new position.
 
         Args:
@@ -81,7 +80,7 @@ class PositionService:
         await self.db.commit()
         await self.db.refresh(position)
 
-        return self._to_response(position)
+        return position
 
     async def close_position(
         self,
@@ -89,7 +88,7 @@ class PositionService:
         session_id: UUID,
         symbol: str,
         exit_price: Decimal,
-    ) -> PositionResponse | None:
+    ) -> Position | None:
         """Close an existing position.
 
         Args:
@@ -122,14 +121,14 @@ class PositionService:
         await self.db.commit()
         await self.db.refresh(position)
 
-        return self._to_response(position)
+        return position
 
     async def get_position(
         self,
         tenant_id: UUID,
         session_id: UUID,
         symbol: str,
-    ) -> PositionResponse | None:
+    ) -> Position | None:
         """Get a specific position.
 
         Args:
@@ -141,13 +140,13 @@ class PositionService:
             The position, or None if not found
         """
         position = await self._get_open_position(tenant_id, session_id, symbol.upper())
-        return self._to_response(position) if position else None
+        return position
 
     async def list_open_positions(
         self,
         tenant_id: UUID,
         session_id: UUID,
-    ) -> list[PositionResponse]:
+    ) -> list[Position]:
         """List all open positions for a session.
 
         Args:
@@ -167,14 +166,14 @@ class PositionService:
         result = await self.db.execute(stmt)
         positions = result.scalars().all()
 
-        return [self._to_response(p) for p in positions]
+        return list(positions)
 
     async def list_all_positions(
         self,
         tenant_id: UUID,
         session_id: UUID,
         include_closed: bool = True,
-    ) -> list[PositionResponse]:
+    ) -> list[Position]:
         """List all positions for a session.
 
         Args:
@@ -199,7 +198,7 @@ class PositionService:
         result = await self.db.execute(stmt)
         positions = result.scalars().all()
 
-        return [self._to_response(p) for p in positions]
+        return list(positions)
 
     async def update_prices(
         self,
@@ -346,21 +345,6 @@ class PositionService:
         )
         result = await self.db.execute(stmt)
         return list(result.scalars().all())
-
-    def _to_response(self, p: Position) -> PositionResponse:
-        """Convert Position ORM object to response."""
-        return PositionResponse(
-            symbol=p.symbol,
-            qty=Decimal(str(p.qty)),
-            side=position_side_to_str(p.side),
-            cost_basis=Decimal(str(p.cost_basis)),
-            market_value=Decimal(str(p.market_value)) if p.market_value else Decimal("0"),
-            unrealized_pnl=Decimal(str(p.unrealized_pl)) if p.unrealized_pl else Decimal("0"),
-            unrealized_pnl_percent=(
-                Decimal(str(p.unrealized_plpc)) * 100 if p.unrealized_plpc else Decimal("0")
-            ),
-            current_price=Decimal(str(p.current_price)) if p.current_price else Decimal("0"),
-        )
 
 
 async def get_position_service(

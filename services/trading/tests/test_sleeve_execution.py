@@ -1,4 +1,4 @@
-"""Sleeve-aware execution tests (CONTRACTS.md).
+"""Sleeve-aware execution tests (portfolio-ledger.md).
 
 Covers drift-tolerance sizing, sleeve equity sync, free-cash fit, sleeve
 buying-power risk checks, and cash-reservation lifecycle publishing.
@@ -28,7 +28,7 @@ from src.clients.portfolio_client import PortfolioLedgerClient
 from src.executor.order_executor import OrderExecutor
 from src.models import OrderCreate, RiskCheckResult
 from src.risk.risk_manager import RiskManager
-from src.runner.runner import Position, RunnerConfig, Signal, StrategyRunner
+from src.runner.runner import RunnerConfig, RunnerPosition, Signal, StrategyRunner
 
 from llamatrade_proto.clients.ledger import (  # isort: skip
     LotInfo,
@@ -86,8 +86,8 @@ def _lot(symbol: str = "SPY", qty: str = "50", avg_price: str = "480") -> LotInf
     )
 
 
-def _position(qty: float, entry: float = 480.0) -> Position:
-    return Position(
+def _position(qty: float, entry: float = 480.0) -> RunnerPosition:
+    return RunnerPosition(
         symbol="SPY",
         side="long",
         quantity=Decimal(str(qty)),
@@ -96,8 +96,8 @@ def _position(qty: float, entry: float = 480.0) -> Position:
     )
 
 
-# Note: drift/binary weight->order sizing now lives in llamatrade_compiler.size_orders and
-# is covered by libs/compiler/tests/test_sizing.py (the sizing logic is shared by live and
+# Note: drift/binary weight->order sizing now lives in llamatrade_runtime.size_orders and
+# is covered by libs/runtime/tests/test_sizing.py (the sizing logic is shared by live and
 # backtest). The tests below cover the trading-service integration around it.
 
 
@@ -706,7 +706,8 @@ class TestMarketBuyReservation:
             order_type=ORDER_TYPE_MARKET,
             est_price=Decimal("480.0"),
         )
-        assert OrderExecutor._reservation_amount(order) == Decimal("24000.0")
+        # 50 * 480 * (1 + 2% buffer): padded since a market fill can gap above est_price.
+        assert OrderExecutor._reservation_amount(order) == Decimal("24480.0")
 
     def test_runner_threads_signal_price_as_est_price(self) -> None:
         runner = _runner()

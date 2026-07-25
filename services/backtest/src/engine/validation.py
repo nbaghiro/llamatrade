@@ -7,9 +7,8 @@ import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from enum import StrEnum
-from typing import TypedDict
 
-from src.engine.backtester import BarData
+from src.engine.bars import BarData
 
 logger = logging.getLogger(__name__)
 
@@ -40,7 +39,7 @@ class ValidationIssue:
 
 
 @dataclass
-class ValidationResult:
+class BarValidationResult:
     """Result of data validation."""
 
     valid: bool
@@ -63,17 +62,6 @@ class ValidationResult:
         )
 
 
-class BarDataDict(TypedDict):
-    """Bar data in dictionary format."""
-
-    timestamp: datetime
-    open: float
-    high: float
-    low: float
-    close: float
-    volume: int
-
-
 class DataValidator:
     """Validates OHLCV bar data for backtesting."""
 
@@ -91,15 +79,15 @@ class DataValidator:
 
     def validate(
         self,
-        bars: dict[str, list[BarData | BarDataDict]],
-    ) -> ValidationResult:
+        bars: dict[str, list[BarData]],
+    ) -> BarValidationResult:
         """Validate bar data for all symbols.
 
         Args:
             bars: Dictionary mapping symbol to list of bars
 
         Returns:
-            ValidationResult with issues found
+            BarValidationResult with issues found
         """
         issues: list[ValidationIssue] = []
         bars_checked = 0
@@ -112,7 +100,7 @@ class DataValidator:
         # Determine if data is valid (no errors)
         has_errors = any(i.severity == ValidationSeverity.ERROR for i in issues)
 
-        return ValidationResult(
+        return BarValidationResult(
             valid=not has_errors,
             issues=issues,
             symbols_checked=len(bars),
@@ -122,7 +110,7 @@ class DataValidator:
     def _validate_symbol(
         self,
         symbol: str,
-        bars: list[BarData | BarDataDict],
+        bars: list[BarData],
     ) -> list[ValidationIssue]:
         """Validate bars for a single symbol."""
         issues: list[ValidationIssue] = []
@@ -152,8 +140,8 @@ class DataValidator:
         self,
         symbol: str,
         index: int,
-        bar: BarData | BarDataDict,
-        prev_bar: BarData | BarDataDict | None,
+        bar: BarData,
+        prev_bar: BarData | None,
     ) -> list[ValidationIssue]:
         """Validate a single bar."""
         issues: list[ValidationIssue] = []
@@ -308,9 +296,9 @@ class DataValidator:
 
 
 def validate_bars(
-    bars: dict[str, list[BarData | BarDataDict]],
+    bars: dict[str, list[BarData]],
     strict: bool = False,
-) -> ValidationResult:
+) -> BarValidationResult:
     """Validate bar data with default settings.
 
     Args:
@@ -318,7 +306,7 @@ def validate_bars(
         strict: If True, treat warnings as errors
 
     Returns:
-        ValidationResult
+        BarValidationResult
     """
     validator = DataValidator()
     result = validator.validate(bars)
@@ -332,7 +320,7 @@ def validate_bars(
     return result
 
 
-def log_validation_result(result: ValidationResult) -> None:
+def log_validation_result(result: BarValidationResult) -> None:
     """Log validation result with appropriate log levels."""
     if result.valid:
         logger.info(result.summary())

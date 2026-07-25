@@ -9,6 +9,9 @@ import pytest
 
 from llamatrade_alpaca import MockBarStream, MockTradeStream
 from llamatrade_alpaca import StreamBar as BarData
+from llamatrade_alpaca.models.trading import Position as AlpacaPosition
+from llamatrade_alpaca.models.trading import PositionSide as AlpacaPositionSide
+from llamatrade_db.models.trading import Order
 from llamatrade_proto.generated.trading_pb2 import (
     ORDER_SIDE_BUY,
     ORDER_SIDE_SELL,
@@ -16,15 +19,38 @@ from llamatrade_proto.generated.trading_pb2 import (
     ORDER_TYPE_MARKET,
 )
 
-from src.models import OrderResponse
 from src.runner.runner import (
-    Position,
     RunnerConfig,
     RunnerManager,
+    RunnerPosition,
     Signal,
     StrategyRunner,
     get_runner_manager,
 )
+
+
+def _broker_position(
+    symbol: str,
+    qty: Decimal,
+    side: str,
+    cost_basis: Decimal,
+    market_value: Decimal = Decimal("0"),
+    unrealized_pnl: Decimal = Decimal("0"),
+    unrealized_pnl_percent: Decimal = Decimal("0"),
+    current_price: Decimal = Decimal("0"),
+) -> AlpacaPosition:
+    """A broker position as ``alpaca_client.get_positions()`` returns (Alpaca Position)."""
+    return AlpacaPosition(
+        symbol=symbol,
+        qty=qty,
+        side=AlpacaPositionSide(side),
+        avg_entry_price=cost_basis / qty if qty else Decimal("0"),
+        market_value=market_value,
+        cost_basis=cost_basis,
+        unrealized_pl=unrealized_pnl,
+        unrealized_plpc=unrealized_pnl_percent,
+        current_price=current_price,
+    )
 
 
 @pytest.fixture
@@ -45,7 +71,7 @@ def mock_order_executor():
     """Create a mock order executor."""
     executor = AsyncMock()
     executor.submit_order = AsyncMock(
-        return_value=OrderResponse(
+        return_value=Order(
             id=UUID("77777777-7777-7777-7777-777777777777"),
             alpaca_order_id="alpaca-order-123",
             symbol="AAPL",
@@ -117,7 +143,7 @@ class TestPosition:
     def test_position_creation(self):
         """Test creating a Position instance."""
         now = datetime.now(UTC)
-        position = Position(
+        position = RunnerPosition(
             symbol="AAPL",
             side="long",
             quantity=Decimal("10.0"),
@@ -190,7 +216,7 @@ class TestStrategyRunner:
 
     def test_sync_position_add(self, strategy_runner):
         """Test syncing a new position."""
-        position = Position(
+        position = RunnerPosition(
             symbol="AAPL",
             side="long",
             quantity=Decimal("10.0"),
@@ -205,7 +231,7 @@ class TestStrategyRunner:
 
     def test_sync_position_remove(self, strategy_runner):
         """Test removing a position via sync."""
-        position = Position(
+        position = RunnerPosition(
             symbol="AAPL",
             side="long",
             quantity=Decimal("10.0"),
@@ -615,10 +641,9 @@ class TestPositionReconciliation:
         mock_alpaca_client,
     ):
         """Test reconciliation when all positions match."""
-        from src.models import PositionResponse
 
         # Set up matching positions
-        reconciliation_runner._positions["AAPL"] = Position(
+        reconciliation_runner._positions["AAPL"] = RunnerPosition(
             symbol="AAPL",
             side="long",
             quantity=Decimal("10.0"),
@@ -627,7 +652,7 @@ class TestPositionReconciliation:
         )
 
         mock_alpaca_client.get_positions.return_value = [
-            PositionResponse(
+            _broker_position(
                 symbol="AAPL",
                 qty=Decimal("10.0"),
                 side="long",
@@ -654,7 +679,7 @@ class TestPositionReconciliation:
     ):
         """Test reconciliation when local position is missing at broker."""
         # Local position exists
-        reconciliation_runner._positions["AAPL"] = Position(
+        reconciliation_runner._positions["AAPL"] = RunnerPosition(
             symbol="AAPL",
             side="long",
             quantity=Decimal("10.0"),
@@ -680,14 +705,13 @@ class TestPositionReconciliation:
         mock_alpaca_client,
     ):
         """Test reconciliation when broker has position not tracked locally."""
-        from src.models import PositionResponse
 
         # No local positions
         reconciliation_runner._positions = {}
 
         # Broker has a position
         mock_alpaca_client.get_positions.return_value = [
-            PositionResponse(
+            _broker_position(
                 symbol="AAPL",
                 qty=Decimal("10.0"),
                 side="long",
@@ -719,10 +743,9 @@ class TestPositionReconciliation:
         mock_alpaca_client,
     ):
         """Test that small quantity drift (<5%) is auto-corrected."""
-        from src.models import PositionResponse
 
         # Local position with quantity 10.0
-        reconciliation_runner._positions["AAPL"] = Position(
+        reconciliation_runner._positions["AAPL"] = RunnerPosition(
             symbol="AAPL",
             side="long",
             quantity=Decimal("10.0"),
@@ -732,7 +755,7 @@ class TestPositionReconciliation:
 
         # Broker has 10.4 (4% drift - under 5% threshold)
         mock_alpaca_client.get_positions.return_value = [
-            PositionResponse(
+            _broker_position(
                 symbol="AAPL",
                 qty=Decimal("10.4"),
                 side="long",
@@ -762,10 +785,9 @@ class TestPositionReconciliation:
         mock_alpaca_client,
     ):
         """Test that large quantity drift (>=10%) is alerted but not corrected."""
-        from src.models import PositionResponse
 
         # Local position with quantity 10.0
-        reconciliation_runner._positions["AAPL"] = Position(
+        reconciliation_runner._positions["AAPL"] = RunnerPosition(
             symbol="AAPL",
             side="long",
             quantity=Decimal("10.0"),
@@ -775,7 +797,7 @@ class TestPositionReconciliation:
 
         # Broker has 12.0 (20% drift - over 10% threshold)
         mock_alpaca_client.get_positions.return_value = [
-            PositionResponse(
+            _broker_position(
                 symbol="AAPL",
                 qty=Decimal("12.0"),
                 side="long",
@@ -805,10 +827,9 @@ class TestPositionReconciliation:
         mock_alpaca_client,
     ):
         """Test that side mismatch is alerted."""
-        from src.models import PositionResponse
 
         # Local position is long
-        reconciliation_runner._positions["AAPL"] = Position(
+        reconciliation_runner._positions["AAPL"] = RunnerPosition(
             symbol="AAPL",
             side="long",
             quantity=Decimal("10.0"),
@@ -818,7 +839,7 @@ class TestPositionReconciliation:
 
         # Broker position is short
         mock_alpaca_client.get_positions.return_value = [
-            PositionResponse(
+            _broker_position(
                 symbol="AAPL",
                 qty=Decimal("10.0"),
                 side="short",
@@ -845,11 +866,10 @@ class TestPositionReconciliation:
         mock_alpaca_client,
     ):
         """Test that positions for non-strategy symbols are ignored."""
-        from src.models import PositionResponse
 
         # Config only has AAPL, but broker has GOOGL position
         mock_alpaca_client.get_positions.return_value = [
-            PositionResponse(
+            _broker_position(
                 symbol="GOOGL",  # Not in strategy symbols
                 qty=Decimal("5.0"),
                 side="long",
@@ -914,10 +934,9 @@ class TestPositionReconciliation:
         mock_alpaca_client,
     ):
         """Test that medium drift (5-10%) is logged but not acted on."""
-        from src.models import PositionResponse
 
         # Local position with quantity 10.0
-        reconciliation_runner._positions["AAPL"] = Position(
+        reconciliation_runner._positions["AAPL"] = RunnerPosition(
             symbol="AAPL",
             side="long",
             quantity=Decimal("10.0"),
@@ -927,7 +946,7 @@ class TestPositionReconciliation:
 
         # Broker has 10.7 (7% drift - between 5% and 10%)
         mock_alpaca_client.get_positions.return_value = [
-            PositionResponse(
+            _broker_position(
                 symbol="AAPL",
                 qty=Decimal("10.7"),
                 side="long",

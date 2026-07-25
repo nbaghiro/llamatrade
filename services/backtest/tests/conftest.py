@@ -82,30 +82,6 @@ async def client():
 
 
 @pytest.fixture
-def sample_backtest_response(backtest_id, tenant_id, strategy_id):
-    """Sample backtest response for testing."""
-    from llamatrade_proto.generated.backtest_pb2 import BACKTEST_STATUS_PENDING
-
-    from src.models import BacktestResponse
-
-    return BacktestResponse(
-        id=backtest_id,
-        tenant_id=tenant_id,
-        strategy_id=strategy_id,
-        strategy_version=1,
-        start_date=datetime(2024, 1, 1, tzinfo=UTC),
-        end_date=datetime(2024, 12, 31, tzinfo=UTC),
-        initial_capital=100000.0,
-        status=BACKTEST_STATUS_PENDING,
-        progress=0.0,
-        error_message=None,
-        created_at=datetime.now(UTC),
-        started_at=None,
-        completed_at=None,
-    )
-
-
-@pytest.fixture
 def sample_bar_data():
     """Sample bar data for testing."""
     return {

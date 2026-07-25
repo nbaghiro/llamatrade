@@ -10,7 +10,6 @@ dependencies = [
     "pydantic>=2.5.0",
     "numpy>=1.26.0",
     "llamatrade-common",
-    "llamatrade-compiler",
     "llamatrade-db",
     "llamatrade-dsl",
     "llamatrade-proto",

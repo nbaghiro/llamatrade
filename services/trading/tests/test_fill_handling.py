@@ -16,7 +16,7 @@ from llamatrade_alpaca import (
 )
 
 from src.models import RiskCheckResult
-from src.runner.runner import Position, RunnerConfig, Signal, StrategyRunner
+from src.runner.runner import RunnerConfig, RunnerPosition, Signal, StrategyRunner
 
 
 @pytest.fixture
@@ -181,7 +181,7 @@ class TestFillEventHandling:
         now = datetime.now(UTC)
 
         # Set up existing long position
-        runner._positions["AAPL"] = Position(
+        runner._positions["AAPL"] = RunnerPosition(
             symbol="AAPL",
             side="long",
             quantity=Decimal("10.0"),
@@ -230,7 +230,7 @@ class TestFillEventHandling:
         now = datetime.now(UTC)
 
         # Set up existing long position
-        runner._positions["AAPL"] = Position(
+        runner._positions["AAPL"] = RunnerPosition(
             symbol="AAPL",
             side="long",
             quantity=Decimal("10.0"),
@@ -327,7 +327,7 @@ class TestFillEventHandling:
         now = datetime.now(UTC)
 
         # Set up existing short position
-        runner._positions["AAPL"] = Position(
+        runner._positions["AAPL"] = RunnerPosition(
             symbol="AAPL",
             side="short",
             quantity=Decimal("10.0"),

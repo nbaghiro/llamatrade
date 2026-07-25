@@ -1,4 +1,4 @@
-"""Ledger fill emission tests (CONTRACTS.md §1/§4).
+"""Ledger fill emission tests (portfolio-ledger.md).
 
 Covers the pure payload builders and the runner's terminal-state-only
 publishing: exactly one ledger fill per order — cumulative on ``fill``, the
