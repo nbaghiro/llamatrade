@@ -16,6 +16,15 @@ const PARAM = '#8ea79b'; // :params (sage)
 const NUM = '#6ea8ff'; // numbers (readable blue on ink)
 const boneA = (a: number) => `rgb(var(--lt-bone) / ${a})`;
 
+// Selection — a solid theme-orange band with white text, via native ::selection
+// (which recolours the text too, unlike a drawSelection overlay). Every block
+// reads the same when highlighted; matching occurrences keep their own token
+// colour, marked by a faint orange box.
+const SELECTION_BG = ORANGE;
+const SELECTION_FG = '#ffffff';
+const SELECTION_MATCH_BG = 'rgba(255, 77, 28, 0.16)';
+const SELECTION_MATCH_OUTLINE = 'rgba(255, 77, 28, 0.6)';
+
 const terminalTheme = EditorView.theme(
   {
     '&': {
@@ -24,11 +33,17 @@ const terminalTheme = EditorView.theme(
       fontSize: '14px',
       fontFamily: MONO_FONT,
     },
-    '.cm-scroller': { overflow: 'auto', fontFamily: MONO_FONT },
+    '.cm-scroller': { overflow: 'auto', fontFamily: MONO_FONT, scrollbarWidth: 'none' },
+    '.cm-scroller::-webkit-scrollbar': { display: 'none' },
     '.cm-content': { caretColor: ORANGE, padding: '16px 0' },
     '.cm-cursor, .cm-dropCursor': { borderLeftColor: ORANGE, borderLeftWidth: '2px' },
-    '&.cm-focused .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection': {
-      backgroundColor: 'rgba(255, 77, 28, 0.28)',
+    '.cm-content ::selection, .cm-line ::selection': {
+      backgroundColor: SELECTION_BG,
+      color: SELECTION_FG,
+    },
+    '.cm-selectionMatch': {
+      backgroundColor: SELECTION_MATCH_BG,
+      outline: `1px solid ${SELECTION_MATCH_OUTLINE}`,
     },
     '.cm-activeLine': { backgroundColor: boneA(0.05) },
     '.cm-activeLineGutter': { backgroundColor: boneA(0.07) },
@@ -58,8 +73,8 @@ const terminalTheme = EditorView.theme(
       '& > ul > li[aria-selected]': { backgroundColor: ORANGE, color: INK },
     },
     '.cm-matchingBracket': {
-      backgroundColor: 'rgba(255, 77, 28, 0.22)',
-      outline: `1px solid ${boneA(0.5)}`,
+      backgroundColor: boneA(0.16),
+      outline: `1px solid ${boneA(0.6)}`,
       borderRadius: '0',
     },
     '.cm-nonmatchingBracket': {

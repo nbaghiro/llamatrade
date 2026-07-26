@@ -56,34 +56,28 @@ export function PercentageBadge({ weightBlockId, childBlockId }: PercentageBadge
 
   if (isEditing) {
     return (
-      <div className="absolute -top-2 -right-2 z-10">
-        <input
-          ref={inputRef}
-          type="number"
-          min="0"
-          max="100"
-          step="0.1"
-          value={editValue}
-          onChange={(e) => setEditValue(e.target.value)}
-          onKeyDown={handleKeyDown}
-          onBlur={handleBlur}
-          className="w-14 px-1 py-0.5 text-xs font-mono tabular-nums text-center bg-paper text-ink border-2 border-ink shadow-sm outline-none"
-          onClick={(e) => e.stopPropagation()}
-        />
-      </div>
+      <input
+        ref={inputRef}
+        type="number"
+        min="0"
+        max="100"
+        step="0.1"
+        value={editValue}
+        onChange={(e) => setEditValue(e.target.value)}
+        onKeyDown={handleKeyDown}
+        onBlur={handleBlur}
+        onClick={(e) => e.stopPropagation()}
+        className="w-14 flex-none border-2 border-ink bg-paper px-1 text-center font-mono text-[11px] font-bold tabular-nums text-ink outline-none"
+      />
     );
   }
 
   return (
     <button
       onClick={handleClick}
-      className={`
-        absolute -top-2 -right-2 z-10 px-2 py-0.5 text-xs font-mono font-bold tabular-nums border-2 border-ink
-        shadow-sm cursor-pointer transition-colors
-        ${allocation > 0
-          ? 'bg-ink text-bone hover:bg-ink/80'
-          : 'bg-paper text-ink/60 hover:bg-bone'}
-      `}
+      className={`flex-none cursor-pointer border-2 border-ink px-2 font-mono text-[11px] font-bold leading-[1.5] tabular-nums transition-colors ${
+        allocation > 0 ? 'bg-ink text-bone hover:bg-ink/80' : 'bg-paper text-ink/60 hover:bg-bone'
+      }`}
     >
       {allocation > 0 ? `${allocation}%` : '0%'}
     </button>

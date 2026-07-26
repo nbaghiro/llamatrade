@@ -22,6 +22,9 @@ export function CodeEditor({ readOnly = false }: CodeEditorProps) {
   const themeCompartmentRef = useRef<Compartment | null>(null);
   const readOnlyCompartmentRef = useRef<Compartment | null>(null);
   const isInitializedRef = useRef(false);
+  // True while pushing a store-driven (tree→code) update into the editor, so the
+  // resulting docChanged event isn't mistaken for a user edit (which would loop).
+  const isApplyingExternalRef = useRef(false);
   const { dslCode, dslParseError, updateDSLCode, clearDSLParseError } = useStrategyBuilderStoreWithContext();
 
   const [isDark, setIsDark] = useState(() =>
@@ -42,8 +45,9 @@ export function CodeEditor({ readOnly = false }: CodeEditorProps) {
   }, []);
 
   const handleChange = useCallback((value: string) => {
-    // Skip updates during initialization
+    // Skip updates during initialization and store-driven (tree→code) updates.
     if (!isInitializedRef.current) return;
+    if (isApplyingExternalRef.current) return;
     updateDSLCode(value);
   }, [updateDSLCode]);
 
@@ -121,11 +125,13 @@ export function CodeEditor({ readOnly = false }: CodeEditorProps) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // Only run once on mount
 
-  // Update editor content when dslCode changes externally (e.g., when switching from tree view)
+  // Update editor content when dslCode changes externally (switching views or the
+  // live tree→code bind). Flag it so the docChanged echo isn't re-committed.
   useEffect(() => {
     if (viewRef.current) {
       const currentContent = viewRef.current.state.doc.toString();
       if (currentContent !== dslCode) {
+        isApplyingExternalRef.current = true;
         viewRef.current.dispatch({
           changes: {
             from: 0,
@@ -133,6 +139,7 @@ export function CodeEditor({ readOnly = false }: CodeEditorProps) {
             insert: dslCode,
           },
         });
+        isApplyingExternalRef.current = false;
       }
     }
   }, [dslCode]);

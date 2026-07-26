@@ -1,5 +1,5 @@
 import type { BlockId } from '@llamatrade/core/strategy/types';
-import { PlusCircle } from 'lucide-react';
+import { Plus } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 
 import { BlockPicker } from '../panels/BlockPicker';
@@ -42,19 +42,14 @@ export function AddBlockButton({ parentId }: AddBlockButtonProps) {
     <div ref={containerRef} className="relative">
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className={`
-          w-full flex items-center gap-3 px-4 py-3 border-2 border-dashed
-          transition-colors overflow-hidden
-          ${
-            isOpen
-              ? 'border-orange-500 bg-orange-50 text-orange-700'
-              : 'border-ink/40 text-ink/60 hover:border-ink hover:text-ink hover:bg-bone'
-          }
-        `}
+        title="Add a block — stocks, weights, conditions…"
+        className={`inline-flex items-center gap-1.5 border-2 border-dashed px-2.5 py-1.5 font-mono text-[12px] font-bold uppercase tracking-wide transition-colors ${
+          isOpen
+            ? 'border-orange-500 bg-orange-50 text-orange-700'
+            : 'border-ink/30 text-ink/45 hover:border-ink hover:bg-bone hover:text-ink'
+        }`}
       >
-        <PlusCircle className="w-5 h-5 shrink-0" />
-        <span className="font-mono font-bold uppercase tracking-wide whitespace-nowrap">Add a Block</span>
-        <span className="text-sm opacity-75 truncate">Stocks or Securities, Weights, Conditions...</span>
+        <Plus className="h-3.5 w-3.5" /> Add block
       </button>
 
       {isOpen && <BlockPicker parentId={parentId} onClose={() => setIsOpen(false)} />}

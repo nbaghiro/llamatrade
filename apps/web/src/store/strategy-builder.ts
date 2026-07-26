@@ -1,6 +1,5 @@
 import {
   toDSL,
-  fromDSL,
   fromDSLString,
   conditionToText,
   validateTree,
@@ -17,6 +16,7 @@ import type {
   IfBlock,
   ElseBlock,
   FilterBlock,
+  WeightBlock,
 } from '@llamatrade/core/strategy/types';
 import { hasChildren } from '@llamatrade/core/strategy/types';
 import { validateStrategy, type ValidationResult, type ValidationIssue } from '@llamatrade/core/strategy/validator';
@@ -35,7 +35,7 @@ export type { ValidationResult, ValidationIssue };
 enableMapSet();
 
 // View mode type (defined early for use in persistence helpers)
-export type ViewMode = 'tree' | 'code';
+export type ViewMode = 'tree' | 'code' | 'split';
 
 // Expand/Collapse State Persistence
 const COLLAPSED_STORAGE_KEY = 'strategy-builder-collapsed';
@@ -46,15 +46,15 @@ const VIEW_MODE_STORAGE_KEY = 'strategy-builder-viewmode';
 /**
  * Get stored view mode for a strategy or preview ID.
  */
-function getStoredViewMode(strategyId: string | null): ViewMode {
-  if (!strategyId) return 'tree';
+function getStoredViewMode(strategyId: string | null, fallback: ViewMode = 'tree'): ViewMode {
+  if (!strategyId) return fallback;
   try {
     const stored = localStorage.getItem(VIEW_MODE_STORAGE_KEY);
-    if (!stored) return 'tree';
+    if (!stored) return fallback;
     const map = JSON.parse(stored) as Record<string, ViewMode>;
-    return map[strategyId] ?? 'tree';
+    return map[strategyId] ?? fallback;
   } catch {
-    return 'tree';
+    return fallback;
   }
 }
 
@@ -184,6 +184,64 @@ const DEBOUNCE_SAVE_MS = 2000;
 
 let saveDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 
+// Live code⇄tree sync: debounce for committing typed DSL back into the tree.
+const CODE_COMMIT_MS = 250;
+let codeCommitTimer: ReturnType<typeof setTimeout> | null = null;
+// Guards the tree→code regeneration subscription while a code→tree commit runs,
+// so the user's in-progress code isn't reformatted under their cursor.
+let suppressTreeToCode = false;
+
+/**
+ * Re-key a freshly-parsed tree onto the previous tree's block ids by walking
+ * both in parallel: a block at the same position with the same type keeps its
+ * old id (so selection, expand state, and weight allocations survive), while
+ * genuinely new blocks keep their fresh ids. This is what makes the live code→
+ * tree bind non-destructive instead of churning every id on each keystroke.
+ */
+export function reconcileIds(oldTree: StrategyTree, newTree: StrategyTree): StrategyTree {
+  const outBlocks: Record<BlockId, Block> = {};
+  const newToOut = new Map<BlockId, BlockId>();
+
+  const walk = (oldId: BlockId | undefined, newId: BlockId, outParentId: BlockId | null): BlockId => {
+    const nb = newTree.blocks[newId];
+    const ob = oldId ? oldTree.blocks[oldId] : undefined;
+    const reuse = !!ob && ob.type === nb.type;
+    const outId = reuse ? (oldId as BlockId) : newId;
+    newToOut.set(newId, outId);
+
+    const clone = { ...nb, id: outId, parentId: outParentId } as Block;
+
+    if (hasChildren(nb)) {
+      const oldChildIds = reuse && ob && hasChildren(ob) ? ob.childIds : [];
+      const outChildIds = nb.childIds.map((cNewId, idx) => walk(oldChildIds[idx], cNewId, outId));
+      (clone as ParentBlock).childIds = outChildIds;
+
+      if (nb.type === 'weight') {
+        const remapped: Record<BlockId, number> = {};
+        nb.childIds.forEach((cNewId, idx) => {
+          remapped[outChildIds[idx]] = (nb as WeightBlock).allocations[cNewId] ?? 0;
+        });
+        (clone as WeightBlock).allocations = remapped;
+      }
+    }
+
+    outBlocks[outId] = clone;
+    return outId;
+  };
+
+  const outRootId = walk(oldTree.rootId, newTree.rootId, null);
+
+  // ElseBlock.ifBlockId points at a sibling if-block by id — remap onto out ids.
+  for (const block of Object.values(outBlocks)) {
+    if (block.type === 'else') {
+      const mapped = newToOut.get((block as ElseBlock).ifBlockId);
+      if (mapped) (block as ElseBlock).ifBlockId = mapped;
+    }
+  }
+
+  return { rootId: outRootId, blocks: outBlocks };
+}
+
 // Create empty initial state (just root block, no demo content)
 function createInitialState(): { tree: StrategyTree; expandedBlocks: Set<BlockId> } {
   const rootId = uuidv4();
@@ -302,6 +360,7 @@ interface StrategyBuilderState {
   toggleCompactView: () => void;
   updateDSLCode: (code: string) => void;
   syncTreeFromCode: () => boolean;
+  commitCodeToTree: () => void;  // Live-parse dslCode into the tree (id-preserving)
   getDSLCode: () => string;
   clearDSLParseError: () => void;
 
@@ -405,7 +464,7 @@ export const useStrategyBuilderStore = create<StrategyBuilderState>()(
     },
 
     // View mode state
-    viewMode: 'tree' as ViewMode,
+    viewMode: 'split' as ViewMode,
     compactView: false,
     dslCode: '',
     dslParseError: null,
@@ -693,28 +752,23 @@ export const useStrategyBuilderStore = create<StrategyBuilderState>()(
         const state = get();
         if (mode === state.viewMode) return;
 
-        if (mode === 'code') {
-          // Switching to code view: generate DSL from tree
+        const showsCode = mode === 'code' || mode === 'split';
+        if (showsCode) {
+          // Entering a code-visible mode: refresh the buffer from the tree.
           const dslCode = state.getDSLCode();
           set((s) => {
-            s.viewMode = 'code';
+            s.viewMode = mode;
             s.dslCode = dslCode;
             s.dslParseError = null;
           });
-          // Persist view mode preference
-          saveViewMode(state.strategyId, 'code');
         } else {
-          // Switching to tree view: parse DSL back to tree
-          const success = state.syncTreeFromCode();
-          if (success) {
-            set((s) => {
-              s.viewMode = 'tree';
-            });
-            // Persist view mode preference
-            saveViewMode(state.strategyId, 'tree');
-          }
-          // If parsing failed, stay in code view (error is already set)
+          // Entering tree-only: the live bind already kept the tree current.
+          set((s) => {
+            s.viewMode = mode;
+            s.dslParseError = null;
+          });
         }
+        saveViewMode(state.strategyId, mode);
       },
 
       toggleCompactView: () => {
@@ -730,6 +784,69 @@ export const useStrategyBuilderStore = create<StrategyBuilderState>()(
           // Clear parse error when user edits
           state.dslParseError = null;
         });
+        // Live-commit the typed code back into the tree (debounced).
+        if (codeCommitTimer) clearTimeout(codeCommitTimer);
+        codeCommitTimer = setTimeout(() => {
+          get().commitCodeToTree();
+        }, CODE_COMMIT_MS);
+      },
+
+      commitCodeToTree: () => {
+        const { dslCode, tree: prevTree, viewMode } = get();
+        // Only bind live while a code surface is visible.
+        if (viewMode !== 'code' && viewMode !== 'split') return;
+
+        const parsed = fromDSLString(dslCode);
+        if (!parsed) {
+          set((s) => {
+            s.dslParseError = 'Invalid DSL syntax. Please check your code.';
+          });
+          return;
+        }
+        const validation = validateTree(parsed.tree);
+        if (!validation.valid) {
+          set((s) => {
+            s.dslParseError = validation.errors.map((e) => e.message).join(', ');
+          });
+          return;
+        }
+
+        const reconciled = reconcileIds(prevTree, parsed.tree);
+        const oldIds = new Set(Object.keys(prevTree.blocks));
+        const { metadata } = parsed;
+
+        // Suppress the tree→code subscription so the code isn't reformatted mid-type.
+        suppressTreeToCode = true;
+        set((s) => {
+          const prevExpanded = s.ui.expandedBlocks;
+          s.tree = reconciled;
+
+          if (metadata.name) s.strategyName = metadata.name;
+          if (metadata.description !== undefined) s.strategyDescription = metadata.description;
+          if (metadata.timeframe) s.timeframe = metadata.timeframe;
+          const root = s.tree.blocks[s.tree.rootId];
+          if (root && root.type === 'root' && metadata.name) root.name = metadata.name;
+
+          // Keep expand state for surviving blocks; auto-expand newly added parents.
+          const expanded = new Set<BlockId>();
+          for (const b of Object.values(reconciled.blocks)) {
+            if (!hasChildren(b)) continue;
+            if (!oldIds.has(b.id) || prevExpanded.has(b.id)) expanded.add(b.id);
+          }
+          s.ui.expandedBlocks = expanded;
+
+          if (s.ui.selectedBlockId && !reconciled.blocks[s.ui.selectedBlockId]) {
+            s.ui.selectedBlockId = null;
+          }
+          if (s.ui.editingBlockId && !reconciled.blocks[s.ui.editingBlockId]) {
+            s.ui.editingBlockId = null;
+          }
+
+          s.dslParseError = null;
+          s.isDirty = true;
+          runValidation(s);
+        });
+        suppressTreeToCode = false;
       },
 
       syncTreeFromCode: () => {
@@ -817,7 +934,7 @@ export const useStrategyBuilderStore = create<StrategyBuilderState>()(
             expandedBlocks: newState.expandedBlocks,
             editingBlockId: null,
           };
-          state.viewMode = 'tree';
+          state.viewMode = 'split';
           state.dslCode = '';
           state.dslParseError = null;
           state.past = [];
@@ -901,11 +1018,24 @@ export const useStrategyBuilderStore = create<StrategyBuilderState>()(
             state.lastSavedAt = Date.now();
             state.conflictDetected = false;
 
-            // Convert compiled JSON to block tree
-            const compiledJson = strategy.compiledJson ? JSON.parse(strategy.compiledJson) : {};
-            const uiStateStr = strategy.parameters['ui_state'];
-            const uiState = uiStateStr ? JSON.parse(uiStateStr) : undefined;
-            const tree = fromDSL(compiledJson, uiState);
+            // Derive the block tree from the DSL string — the single source of truth.
+            const parsed = fromDSLString(strategy.dslCode);
+            let tree = parsed?.tree;
+            if (!tree) {
+              const rootId = uuidv4();
+              tree = {
+                rootId,
+                blocks: {
+                  [rootId]: {
+                    id: rootId,
+                    type: 'root',
+                    parentId: null,
+                    name: strategy.name || 'Strategy',
+                    childIds: [],
+                  },
+                },
+              };
+            }
             state.tree = tree;
 
             // Expand all parent blocks by default
@@ -925,10 +1055,10 @@ export const useStrategyBuilderStore = create<StrategyBuilderState>()(
             state.ui.expandedBlocks = expandedBlocks;
 
             // Restore view mode from localStorage
-            const savedViewMode = getStoredViewMode(strategy.id);
+            const savedViewMode = getStoredViewMode(strategy.id, 'split');
             state.viewMode = savedViewMode;
-            // If restoring to code view, generate DSL
-            if (savedViewMode === 'code') {
+            // If restoring to a code-visible view, seed the DSL buffer.
+            if (savedViewMode === 'code' || savedViewMode === 'split') {
               state.dslCode = toDSL(tree, {
                 name: strategy.name,
                 description: strategy.description || '',
@@ -980,6 +1110,7 @@ export const useStrategyBuilderStore = create<StrategyBuilderState>()(
             state.timeframe = metadata.timeframe || '1D';
 
             state.tree = tree;
+            state.viewMode = 'split';
 
             // Update root block name
             const root = tree.blocks[tree.rootId];
@@ -1029,6 +1160,7 @@ export const useStrategyBuilderStore = create<StrategyBuilderState>()(
           state.timeframe = metadata.timeframe || '1D';
 
           state.tree = tree;
+          state.viewMode = 'split';
 
           // Update root block name
           const root = tree.blocks[tree.rootId];
@@ -1107,6 +1239,7 @@ export const useStrategyBuilderStore = create<StrategyBuilderState>()(
             state.timeframe = metadata.timeframe || '1D';
 
             state.tree = tree;
+            state.viewMode = 'split';
 
             // Update root block name
             const root = tree.blocks[tree.rootId];
@@ -1161,17 +1294,9 @@ export const useStrategyBuilderStore = create<StrategyBuilderState>()(
             timeframe: state.timeframe,
           };
 
+          // The DSL string is the single source of truth; the tree is derived from it on load.
           const dslCode = toDSL(state.tree, metadata);
           const context = getTenantContext();
-
-          // Save UI state (block tree) in parameters for round-trip editing
-          const uiState = JSON.stringify({
-            rootId: state.tree.rootId,
-            blocks: state.tree.blocks,
-          });
-          const parameters: Record<string, string> = {
-            ui_state: uiState,
-          };
 
           let savedStrategyId: string;
           let savedName: string = state.strategyName;
@@ -1185,7 +1310,6 @@ export const useStrategyBuilderStore = create<StrategyBuilderState>()(
               description: state.strategyDescription || undefined,
               dslCode,
               timeframe: state.timeframe,
-              parameters,
             });
             savedStrategyId = response.strategy?.id ?? state.strategyId;
             savedName = response.strategy?.name ?? state.strategyName;
@@ -1197,7 +1321,6 @@ export const useStrategyBuilderStore = create<StrategyBuilderState>()(
               description: state.strategyDescription || undefined,
               dslCode,
               timeframe: state.timeframe,
-              parameters,
             });
             if (!response.strategy?.id) {
               throw new Error('Failed to create strategy');
@@ -1387,6 +1510,28 @@ export const useStrategyBuilderStore = create<StrategyBuilderState>()(
     }))
 );
 
+/**
+ * Tree → code live bind. Whenever the tree changes while a code surface is
+ * visible (code or split), regenerate the DSL buffer — unless the change came
+ * from a code→tree commit (guarded by `suppressTreeToCode`), which would
+ * otherwise reformat the user's in-progress code.
+ */
+useStrategyBuilderStore.subscribe((state, prev) => {
+  if (state.tree === prev.tree) return;
+  if (suppressTreeToCode) return;
+  if (state.viewMode !== 'code' && state.viewMode !== 'split') return;
+  const dsl = toDSL(state.tree, {
+    name: state.strategyName,
+    description: state.strategyDescription,
+    timeframe: state.timeframe,
+  });
+  if (dsl !== state.dslCode) {
+    useStrategyBuilderStore.setState((s) => {
+      s.dslCode = dsl;
+    });
+  }
+});
+
 // Scoped Store Pattern for Inline Previews
 
 /**
@@ -1525,11 +1670,11 @@ export function createStrategyBuilderStore(initialTree?: StrategyTree, previewId
         const state = get();
         if (mode === state.viewMode) return;
 
-        if (mode === 'code') {
-          // Switching to code view: generate DSL from tree
+        if (mode === 'code' || mode === 'split') {
+          // Switching to a code-visible view: generate DSL from tree
           const dslCode = state.getDSLCode();
           set((s) => {
-            s.viewMode = 'code';
+            s.viewMode = mode;
             s.dslCode = dslCode;
             s.dslParseError = null;
           });
@@ -1551,6 +1696,7 @@ export function createStrategyBuilderStore(initialTree?: StrategyTree, previewId
       },
       updateDSLCode: () => {},
       syncTreeFromCode: () => false,
+      commitCodeToTree: () => {},
       getDSLCode: () => {
         const { tree, strategyName, strategyDescription, timeframe } = get();
         return toDSL(tree, {
