@@ -21,6 +21,11 @@
 **/htmlcov
 **/*.egg-info
 
+# Generated proto output — images regenerate it with buf so a host copy can
+# never mask a broken codegen step (apps/core/src/proto is gitignored too).
+apps/core/src/proto
+apps/web/src/generated
+
 # VCS / tooling
 .git
 .github

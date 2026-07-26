@@ -6,15 +6,25 @@ FROM node:20-alpine AS builder
 
 WORKDIR /app
 
-# Copy package files for a workspace-aware install (root lockfile + web manifest).
+# Copy package files for a workspace-aware install. apps/web imports
+# @llamatrade/core (apps/core), so its manifest must be present for npm ci to
+# link the workspace.
 COPY package.json package-lock.json ./
 COPY apps/web/package.json ./apps/web/
+COPY apps/core/package.json ./apps/core/
 
 # Install all dependencies (workspaces)
 RUN npm ci
 
-# Copy web app source (includes pre-generated proto files + the Monolith design
-# system, now under src/components/src/styles).
+# Generate the TypeScript protos into @llamatrade/core. They are gitignored and
+# dockerignored, so the image always builds them from the .proto sources rather
+# than inheriting a host copy.
+COPY libs/proto ./libs/proto
+COPY apps/core ./apps/core
+RUN npm run proto --workspace=apps/core
+
+# Copy web app source (includes the Monolith design system under
+# src/components + src/styles).
 COPY apps/web ./apps/web
 
 # Build the app
