@@ -29,7 +29,9 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
 
       - name: Install Python tools
-        run: pip install ruff
+        # Pinned to match ci-local.sh / pre-commit; an unpinned ruff silently
+        # changes the format contract (newer versions format Markdown code blocks).
+        run: pip install ruff==0.15.4
 
       - name: Check for suppression comments
         # Blocks # noqa / # type: ignore / # pyright: in source. This is the
@@ -347,8 +349,15 @@ jobs:
       - name: Install dependencies
         run: cd ../.. && npm ci
 
+      - name: Set up buf
+        uses: bufbuild/buf-setup-action@v1
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Generate proto files
-        run: npm run proto
+        # TS-only template (remote ES plugin) — the full `make proto` also runs
+        # local Python plugins this Node-only job does not install.
+        run: cd ../.. && make proto-ts
 
       - name: Lint (ESLint)
         run: npm run lint
@@ -376,8 +385,15 @@ jobs:
       - name: Install dependencies
         run: cd ../.. && npm ci
 
+      - name: Set up buf
+        uses: bufbuild/buf-setup-action@v1
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Generate proto files
-        run: npm run proto
+        # TS-only template (remote ES plugin) — the full `make proto` also runs
+        # local Python plugins this Node-only job does not install.
+        run: cd ../.. && make proto-ts
 
       - name: Run tests
         run: npm test -- --run --passWithNoTests

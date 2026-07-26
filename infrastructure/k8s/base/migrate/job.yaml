@@ -1,0 +1,37 @@
+# DB migration Job — applied by the deploy workflow BEFORE rolling services (not
+# part of the kustomize base, since a completed Job's spec is immutable). The
+# workflow deletes any prior Job, sets the sha-tagged image, applies, and waits
+# for completion so services never roll against an un-migrated schema.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: db-migrate
+  labels:
+    app: db-migrate
+    tier: backend
+spec:
+  backoffLimit: 3
+  ttlSecondsAfterFinished: 600
+  template:
+    metadata:
+      labels:
+        app: db-migrate
+        tier: backend
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: migrate
+          image: gcr.io/llamatrade/migrate:latest
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: db-credentials
+                  key: url
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"

@@ -1,0 +1,34 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: llamatrade
+
+resources:
+  # Namespace and shared config
+  - namespace.yaml
+  - configmap.yaml
+  - secrets.yaml
+  - network-policy.yaml
+
+  # Infrastructure
+  - redis/deployment.yaml
+  - observability/otel-collector.yaml
+
+  # Backend services
+  - auth/deployment.yaml
+  - strategy/deployment.yaml
+  - backtest/deployment.yaml
+  - backtest/worker.yaml
+  - market-data/deployment.yaml
+  - trading/deployment.yaml
+  - portfolio/deployment.yaml
+  - notification/deployment.yaml
+  - billing/deployment.yaml
+  - agent/deployment.yaml
+
+  # Frontend
+  - frontend/deployment.yaml
+
+commonLabels:
+  app.kubernetes.io/part-of: llamatrade
+  app.kubernetes.io/managed-by: kustomize

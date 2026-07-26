@@ -13,8 +13,13 @@ data:
   PORTFOLIO_GRPC_TARGET: "portfolio:8860"
   NOTIFICATION_GRPC_TARGET: "notification:8870"
   BILLING_GRPC_TARGET: "billing:8880"
+  AGENT_GRPC_TARGET: "agent:8890"
   # Billing also exposes HTTP on 8881 for Stripe webhooks
   BILLING_HTTP_URL: "http://billing:8881"
+  # AI copilot LLM provider (gemini | anthropic)
+  AGENT_LLM_PROVIDER: "gemini"
+  # OpenTelemetry OTLP export target (the in-cluster collector)
+  OTEL_EXPORTER_OTLP_ENDPOINT: "http://otel-collector:4317"
   # Common settings
   LOG_LEVEL: "INFO"
   ENVIRONMENT: "production"

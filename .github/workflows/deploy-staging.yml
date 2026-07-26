@@ -46,25 +46,50 @@ jobs:
 
           # Build from the repo root — the Dockerfiles COPY shared libs from
           # there, so a service-dir build context fails.
-          for service in auth strategy backtest market-data trading portfolio notification billing; do
+          for service in auth strategy backtest market-data trading portfolio notification billing agent; do
             docker build -f services/${service}/Dockerfile -t ${REGISTRY_PATH}/${service}:${{ github.sha }} .
             docker push ${REGISTRY_PATH}/${service}:${{ github.sha }}
           done
+
+          # Migration runner image (Alembic upgrade head).
+          docker build -f infrastructure/docker/Dockerfile.migrate -t ${REGISTRY_PATH}/migrate:${{ github.sha }} .
+          docker push ${REGISTRY_PATH}/migrate:${{ github.sha }}
 
           # Build and push frontend
           docker build -f apps/web/Dockerfile -t ${REGISTRY_PATH}/web:${{ github.sha }} .
           docker push ${REGISTRY_PATH}/web:${{ github.sha }}
 
+      - name: Apply manifests
+        run: |
+          # Namespace, config, secrets, deployments, services, HPAs, ingress.
+          kubectl apply -k infrastructure/k8s/overlays/staging
+
+      - name: Run database migrations
+        run: |
+          REGISTRY_PATH="${REGISTRY}/${PROJECT_ID}/llamatrade"
+          NS=llamatrade-staging
+          # A completed Job's spec is immutable — delete, then apply this build's
+          # image, and block rollout until the schema is migrated. The staging
+          # name prefix maps db-migrate/db-credentials -> staging-*.
+          kubectl delete job staging-db-migrate -n $NS --ignore-not-found
+          sed -e "s|gcr.io/llamatrade/migrate:latest|${REGISTRY_PATH}/migrate:${{ github.sha }}|" \
+              -e "s|name: db-migrate|name: staging-db-migrate|" \
+              -e "s|name: db-credentials|name: staging-db-credentials|" \
+              infrastructure/k8s/base/migrate/job.yaml | kubectl apply -n $NS -f -
+          kubectl wait --for=condition=complete job/staging-db-migrate -n $NS --timeout=300s \
+            || { kubectl logs job/staging-db-migrate -n $NS; exit 1; }
+
       - name: Deploy to GKE
         run: |
           REGISTRY_PATH="${REGISTRY}/${PROJECT_ID}/llamatrade"
-          # The staging overlay applies namespace llamatrade-staging + a staging-
-          # name prefix, so target those (the old llamatrade/auth names never
-          # existed). Roll every service, not just auth + frontend.
-          kubectl apply -k infrastructure/k8s/overlays/staging
-          for service in auth strategy backtest market-data trading portfolio notification billing; do
-            kubectl set image deployment/staging-${service} ${service}=${REGISTRY_PATH}/${service}:${{ github.sha }} -n llamatrade-staging
+          NS=llamatrade-staging
+          for service in auth strategy backtest market-data trading portfolio notification billing agent; do
+            kubectl set image deployment/staging-${service} ${service}=${REGISTRY_PATH}/${service}:${{ github.sha }} -n $NS
           done
-          kubectl set image deployment/staging-frontend frontend=${REGISTRY_PATH}/web:${{ github.sha }} -n llamatrade-staging
-          kubectl rollout status deployment/staging-auth -n llamatrade-staging
-          kubectl rollout status deployment/staging-frontend -n llamatrade-staging
+          # Backtest Celery worker + beat run the same image as the backtest API.
+          kubectl set image deployment/staging-backtest-worker worker=${REGISTRY_PATH}/backtest:${{ github.sha }} -n $NS
+          kubectl set image deployment/staging-backtest-beat beat=${REGISTRY_PATH}/backtest:${{ github.sha }} -n $NS
+          kubectl set image deployment/staging-frontend frontend=${REGISTRY_PATH}/web:${{ github.sha }} -n $NS
+          kubectl rollout status deployment/staging-auth -n $NS
+          kubectl rollout status deployment/staging-agent -n $NS
+          kubectl rollout status deployment/staging-frontend -n $NS

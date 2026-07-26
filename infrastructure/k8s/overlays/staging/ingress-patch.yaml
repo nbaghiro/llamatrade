@@ -1,78 +1,11 @@
-apiVersion: networking.k8s.io/v1
-kind: Ingress
-metadata:
-  name: frontend
-  namespace: llamatrade-staging
-  annotations:
-    kubernetes.io/ingress.global-static-ip-name: llamatrade-staging-ip
-    networking.gke.io/managed-certificates: llamatrade-staging-cert
-spec:
-  rules:
-    - host: staging.llamatrade.com
-      http:
-        paths:
-          # Frontend SPA
-          - path: /
-            pathType: Prefix
-            backend:
-              service:
-                name: staging-frontend
-                port:
-                  number: 80
-          # Connect protocol routes directly to services
-          - path: /llamatrade.v1.AuthService
-            pathType: Prefix
-            backend:
-              service:
-                name: staging-auth
-                port:
-                  number: 8810
-          - path: /llamatrade.v1.StrategyService
-            pathType: Prefix
-            backend:
-              service:
-                name: staging-strategy
-                port:
-                  number: 8820
-          - path: /llamatrade.v1.BacktestService
-            pathType: Prefix
-            backend:
-              service:
-                name: staging-backtest
-                port:
-                  number: 8830
-          - path: /llamatrade.v1.MarketDataService
-            pathType: Prefix
-            backend:
-              service:
-                name: staging-market-data
-                port:
-                  number: 8840
-          - path: /llamatrade.v1.TradingService
-            pathType: Prefix
-            backend:
-              service:
-                name: staging-trading
-                port:
-                  number: 8850
-          - path: /llamatrade.v1.PortfolioService
-            pathType: Prefix
-            backend:
-              service:
-                name: staging-portfolio
-                port:
-                  number: 8860
-          - path: /llamatrade.v1.NotificationService
-            pathType: Prefix
-            backend:
-              service:
-                name: staging-notification
-                port:
-                  number: 8870
-          - path: /llamatrade.v1.BillingService
-            pathType: Prefix
-            backend:
-              service:
-                name: staging-billing
-                port:
-                  number: 8880
+# Staging overrides for the base frontend Ingress: host, static IP, and TLS cert.
+# The base rules (all service routes, incl. agent) carry through unchanged.
+- op: replace
+  path: /spec/rules/0/host
+  value: staging.llamatrade.com
+- op: replace
+  path: /metadata/annotations/kubernetes.io~1ingress.global-static-ip-name
+  value: llamatrade-staging-ip
+- op: replace
+  path: /metadata/annotations/networking.gke.io~1managed-certificates
+  value: staging-web-cert

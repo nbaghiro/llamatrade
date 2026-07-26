@@ -4,21 +4,9 @@ kind: Kustomization
 namespace: llamatrade
 
 resources:
-  - ../../base/namespace.yaml
-  - ../../base/configmap.yaml
-  - ../../base/secrets.yaml
-  - ../../base/network-policy.yaml
-  - ../../base/redis/deployment.yaml
-  - ../../base/auth/deployment.yaml
-  - ../../base/strategy/deployment.yaml
-  - ../../base/backtest/deployment.yaml
-  - ../../base/market-data/deployment.yaml
-  - ../../base/trading/deployment.yaml
-  - ../../base/portfolio/deployment.yaml
-  - ../../base/notification/deployment.yaml
-  - ../../base/billing/deployment.yaml
-  - ../../base/frontend/deployment.yaml
+  - ../../base
   - pdb.yaml
+  - managed-cert.yaml
 
 commonLabels:
   environment: production
@@ -77,13 +65,4 @@ patches:
       kind: Deployment
       name: backtest
 
-configMapGenerator:
-  - name: llamatrade-config
-    behavior: merge
-    literals:
-      - ENVIRONMENT=production
-      - LOG_LEVEL=INFO
-
-# Pod Disruption Budgets for high availability
-generatorOptions:
-  disableNameSuffixHash: true
+# ENVIRONMENT=production / LOG_LEVEL=INFO come from the base ConfigMap defaults.

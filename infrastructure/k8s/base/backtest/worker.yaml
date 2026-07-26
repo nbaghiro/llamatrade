@@ -1,0 +1,111 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backtest-worker
+  namespace: llamatrade
+  labels:
+    app: backtest-worker
+    tier: backend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: backtest-worker
+  template:
+    metadata:
+      labels:
+        app: backtest-worker
+        tier: backend
+    spec:
+      containers:
+        - name: worker
+          image: gcr.io/llamatrade/backtest:latest
+          command:
+            - celery
+            - -A
+            - src.celery_app:celery_app
+            - worker
+            - --queues
+            - backtest
+            - --loglevel
+            - info
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: db-credentials
+                  key: url
+            - name: REDIS_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: redis-config
+                  key: REDIS_URL
+          envFrom:
+            - configMapRef:
+                name: llamatrade-config
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "512Mi"
+            limits:
+              cpu: "2000m"
+              memory: "2Gi"
+---
+# Single replica: the -B flag embeds beat, and beat must never run twice.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backtest-beat
+  namespace: llamatrade
+  labels:
+    app: backtest-beat
+    tier: backend
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: backtest-beat
+  template:
+    metadata:
+      labels:
+        app: backtest-beat
+        tier: backend
+    spec:
+      containers:
+        - name: beat
+          image: gcr.io/llamatrade/backtest:latest
+          command:
+            - celery
+            - -A
+            - src.celery_app:celery_app
+            - worker
+            - -B
+            - --queues
+            - backtest_maintenance
+            - --concurrency
+            - "1"
+            - --loglevel
+            - info
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: db-credentials
+                  key: url
+            - name: REDIS_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: redis-config
+                  key: REDIS_URL
+          envFrom:
+            - configMapRef:
+                name: llamatrade-config
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "256Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"

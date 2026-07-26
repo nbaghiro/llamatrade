@@ -45,19 +45,29 @@ jobs:
         run: |
           REGISTRY_PATH="${REGISTRY}/${PROJECT_ID}/llamatrade"
           VERSION="${{ github.event.inputs.version }}"
+          NS=llamatrade
 
           kubectl apply -k infrastructure/k8s/overlays/production
 
-          # Update all deployments
-          for service in auth strategy backtest market-data trading portfolio notification billing; do
-            kubectl set image deployment/${service} ${service}=${REGISTRY_PATH}/${service}:${VERSION} -n llamatrade
-          done
+          # Migrate the schema before rolling (a completed Job's spec is immutable).
+          kubectl delete job db-migrate -n $NS --ignore-not-found
+          sed "s|gcr.io/llamatrade/migrate:latest|${REGISTRY_PATH}/migrate:${VERSION}|" \
+            infrastructure/k8s/base/migrate/job.yaml | kubectl apply -n $NS -f -
+          kubectl wait --for=condition=complete job/db-migrate -n $NS --timeout=300s \
+            || { kubectl logs job/db-migrate -n $NS; exit 1; }
 
-          kubectl set image deployment/frontend frontend=${REGISTRY_PATH}/web:${VERSION} -n llamatrade
+          # Update all deployments
+          for service in auth strategy backtest market-data trading portfolio notification billing agent; do
+            kubectl set image deployment/${service} ${service}=${REGISTRY_PATH}/${service}:${VERSION} -n $NS
+          done
+          kubectl set image deployment/backtest-worker worker=${REGISTRY_PATH}/backtest:${VERSION} -n $NS
+          kubectl set image deployment/backtest-beat beat=${REGISTRY_PATH}/backtest:${VERSION} -n $NS
+          kubectl set image deployment/frontend frontend=${REGISTRY_PATH}/web:${VERSION} -n $NS
 
           # Wait for rollouts
-          kubectl rollout status deployment/auth -n llamatrade --timeout=300s
-          kubectl rollout status deployment/frontend -n llamatrade --timeout=300s
+          kubectl rollout status deployment/auth -n $NS --timeout=300s
+          kubectl rollout status deployment/agent -n $NS --timeout=300s
+          kubectl rollout status deployment/frontend -n $NS --timeout=300s
 
       - name: Notify deployment
         if: success()

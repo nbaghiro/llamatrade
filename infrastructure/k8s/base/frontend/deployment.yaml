@@ -125,3 +125,10 @@ spec:
                 name: billing
                 port:
                   number: 8880
+          - path: /llamatrade.v1.AgentService
+            pathType: Prefix
+            backend:
+              service:
+                name: agent
+                port:
+                  number: 8890

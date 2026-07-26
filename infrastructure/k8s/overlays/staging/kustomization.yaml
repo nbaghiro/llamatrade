@@ -4,19 +4,8 @@ kind: Kustomization
 namespace: llamatrade-staging
 
 resources:
-  - ../../base/namespace.yaml
-  - ../../base/configmap.yaml
-  - ../../base/secrets.yaml
-  - ../../base/redis/deployment.yaml
-  - ../../base/auth/deployment.yaml
-  - ../../base/strategy/deployment.yaml
-  - ../../base/backtest/deployment.yaml
-  - ../../base/market-data/deployment.yaml
-  - ../../base/trading/deployment.yaml
-  - ../../base/portfolio/deployment.yaml
-  - ../../base/notification/deployment.yaml
-  - ../../base/billing/deployment.yaml
-  - ../../base/frontend/deployment.yaml
+  - ../../base
+  - managed-cert.yaml
 
 namePrefix: staging-
 
@@ -119,13 +108,28 @@ patches:
       kind: Deployment
       name: frontend
 
-configMapGenerator:
-  - name: llamatrade-config
-    behavior: merge
-    literals:
-      - ENVIRONMENT=staging
-      - LOG_LEVEL=DEBUG
+  - patch: |-
+      - op: replace
+        path: /spec/template/spec/containers/0/image
+        value: gcr.io/llamatrade/agent:staging
+    target:
+      kind: Deployment
+      name: agent
 
-# Staging ingress with different hostname
-patchesStrategicMerge:
-  - ingress-patch.yaml
+  # Staging config values on the shared ConfigMap.
+  - patch: |-
+      - op: replace
+        path: /data/ENVIRONMENT
+        value: staging
+      - op: replace
+        path: /data/LOG_LEVEL
+        value: DEBUG
+    target:
+      kind: ConfigMap
+      name: llamatrade-config
+
+  # Staging host + TLS cert on the frontend Ingress (base rules carry through).
+  - path: ingress-patch.yaml
+    target:
+      kind: Ingress
+      name: frontend

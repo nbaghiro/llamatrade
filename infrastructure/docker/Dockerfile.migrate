@@ -1,0 +1,19 @@
+# Self-contained Alembic migration runner. Built from the repo root AFTER
+# `make proto` (libs/proto must contain generated code). Runs `alembic upgrade
+# head` against DATABASE_URL, then exits — used by the pre-rollout migration Job.
+FROM python:3.14-slim
+
+WORKDIR /app
+
+COPY libs/common /app/libs/common
+COPY libs/proto /app/libs/proto
+COPY libs/db /app/libs/db
+
+RUN pip install --no-cache-dir \
+    /app/libs/common \
+    /app/libs/proto \
+    /app/libs/db
+
+WORKDIR /app/libs/db/llamatrade_db/alembic
+
+CMD ["alembic", "upgrade", "head"]

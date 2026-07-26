@@ -31,6 +31,7 @@ from llamatrade_alpaca import (
     RetryConfig,
 )
 
+
 class AlpacaDataClient(AlpacaClientBase):
     BASE_URL_LIVE = AlpacaUrls.DATA_LIVE
     BASE_URL_PAPER = AlpacaUrls.DATA_PAPER

@@ -1,31 +1,6 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
-namespace: llamatrade
-
+# The full base (namespace, config, all services). Overlays reference base/.
 resources:
-  # Namespace and shared config
-  - base/namespace.yaml
-  - base/configmap.yaml
-  - base/secrets.yaml
-  - base/network-policy.yaml
-
-  # Infrastructure
-  - base/redis/deployment.yaml
-
-  # Backend Services
-  - base/auth/deployment.yaml
-  - base/strategy/deployment.yaml
-  - base/backtest/deployment.yaml
-  - base/market-data/deployment.yaml
-  - base/trading/deployment.yaml
-  - base/portfolio/deployment.yaml
-  - base/notification/deployment.yaml
-  - base/billing/deployment.yaml
-
-  # Frontend
-  - base/frontend/deployment.yaml
-
-commonLabels:
-  app.kubernetes.io/part-of: llamatrade
-  app.kubernetes.io/managed-by: kustomize
+  - base

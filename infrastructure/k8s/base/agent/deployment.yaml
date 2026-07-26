@@ -1,0 +1,110 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: agent
+  namespace: llamatrade
+  labels:
+    app: agent
+    tier: backend
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: agent
+  template:
+    metadata:
+      labels:
+        app: agent
+        tier: backend
+    spec:
+      containers:
+        - name: agent
+          image: gcr.io/llamatrade/agent:latest
+          ports:
+            - containerPort: 8890
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: db-credentials
+                  key: url
+            - name: REDIS_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: redis-config
+                  key: REDIS_URL
+            - name: LOG_LEVEL
+              valueFrom:
+                configMapKeyRef:
+                  name: llamatrade-config
+                  key: LOG_LEVEL
+            - name: AGENT_LLM_PROVIDER
+              valueFrom:
+                configMapKeyRef:
+                  name: llamatrade-config
+                  key: AGENT_LLM_PROVIDER
+            - name: GOOGLE_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: agent-credentials
+                  key: google_api_key
+            - name: ANTHROPIC_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: agent-credentials
+                  key: anthropic_api_key
+          envFrom:
+            - configMapRef:
+                name: llamatrade-config
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "256Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8890
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8890
+            initialDelaySeconds: 5
+            periodSeconds: 5
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: agent
+  namespace: llamatrade
+spec:
+  selector:
+    app: agent
+  ports:
+    - port: 8890
+      targetPort: 8890
+  type: ClusterIP
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: agent-hpa
+  namespace: llamatrade
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: agent
+  minReplicas: 2
+  maxReplicas: 5
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70

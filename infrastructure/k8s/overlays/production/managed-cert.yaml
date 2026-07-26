@@ -1,0 +1,7 @@
+apiVersion: networking.gke.io/v1
+kind: ManagedCertificate
+metadata:
+  name: llamatrade-cert
+spec:
+  domains:
+    - llamatrade.com

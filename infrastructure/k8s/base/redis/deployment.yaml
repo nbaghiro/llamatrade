@@ -27,9 +27,11 @@ spec:
             - --appendonly
             - "yes"
             - --maxmemory
-            - "256mb"
+            - "512mb"
+            # noeviction: this Redis is the Celery broker + ledger/event streams —
+            # never silently drop queued tasks or money-path events under pressure.
             - --maxmemory-policy
-            - "allkeys-lru"
+            - "noeviction"
           resources:
             requests:
               cpu: "100m"
