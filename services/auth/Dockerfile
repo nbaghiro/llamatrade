@@ -16,9 +16,10 @@ COPY libs/telemetry /app/libs/telemetry
 COPY libs/common /app/libs/common
 COPY libs/db /app/libs/db
 COPY libs/proto /app/libs/proto
+COPY libs/alpaca /app/libs/alpaca
 
 # Install shared libraries (telemetry first — common/db depend on it)
-RUN pip install --no-cache-dir /app/libs/telemetry /app/libs/common /app/libs/db /app/libs/proto
+RUN pip install --no-cache-dir /app/libs/telemetry /app/libs/common /app/libs/db /app/libs/proto /app/libs/alpaca
 
 # Copy service files and install
 COPY services/auth/pyproject.toml services/auth/README.md /app/

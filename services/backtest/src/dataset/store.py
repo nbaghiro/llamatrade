@@ -8,8 +8,9 @@ single-node; a bucket-backed store sits behind the same `DatasetStore` seam.
 
 import os
 import tempfile
+from collections.abc import Mapping
 from pathlib import Path
-from typing import Protocol
+from typing import Protocol, cast
 
 import pyarrow as pa
 import pyarrow.parquet as pq
@@ -33,15 +34,28 @@ _NUMERIC_FIELDS = ("open", "high", "low", "close")
 
 
 def _bars_to_table(bars: dict[str, list[BarData]]) -> pa.Table:
-    """Flatten multi-symbol bars into one columnar table, symbol- then time-ordered."""
+    """Flatten multi-symbol bars into one columnar table, symbol- then time-ordered.
+
+    ``BarData`` is a TypedDict, so its non-optional fields are a static claim, not a
+    runtime guarantee — market-data serves nullable columns. A missing price is
+    corrupt input and fails loudly; a missing volume is sparsity and reads as zero.
+    """
     cols: dict[str, list[object]] = {name: [] for name in _SCHEMA.names}
     for symbol in sorted(bars):
         for b in bars[symbol]:
+            raw = cast(Mapping[str, object], b)
             cols["symbol"].append(symbol)
             cols["timestamp"].append(b["timestamp"])
             for field in _NUMERIC_FIELDS:
-                cols[field].append(float(b[field]))
-            cols["volume"].append(int(b["volume"]))
+                price = raw.get(field)
+                if price is None:
+                    raise ValueError(
+                        f"{symbol} bar at {b['timestamp']} has no {field}; "
+                        "refusing to build a backtest dataset from incomplete prices"
+                    )
+                cols[field].append(float(cast(float, price)))
+            volume = raw.get("volume")
+            cols["volume"].append(int(cast(float, volume)) if volume is not None else 0)
     return pa.table(cols, schema=_SCHEMA)
 
 

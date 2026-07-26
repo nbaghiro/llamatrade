@@ -2,6 +2,7 @@
 
 from collections.abc import Iterator
 from datetime import UTC, date, datetime, timedelta
+from typing import cast
 
 import pytest
 
@@ -13,6 +14,12 @@ from src.engine.bars import BarData
 
 def _bar(ts: datetime, close: float = 100.0) -> BarData:
     return BarData(timestamp=ts, open=close, high=close, low=close, close=close, volume=1000)
+
+
+def _nulled(bar: BarData, field: str) -> BarData:
+    """Null one field, mimicking a nullable market-data column the TypedDict claims is set."""
+    cast(dict[str, object], bar)[field] = None
+    return bar
 
 
 def _series(days: int, start: datetime | None = None) -> list[BarData]:
@@ -62,6 +69,26 @@ class TestLocalDatasetStore:
         assert set(back) == {"SPY", "QQQ"}
         assert back["SPY"] == bars["SPY"]
         assert isinstance(back["SPY"][0]["volume"], int)
+
+    def test_null_volume_is_stored_as_zero(self, tmp_path: object) -> None:
+        """A nullable volume column is sparsity, not corruption — it must not fail the run."""
+        store = LocalDatasetStore(str(tmp_path))
+        spec = DatasetSpec.create(["SPY"], "1D", date(2024, 1, 1), date(2024, 1, 2))
+        bar = _nulled(_bar(datetime(2024, 1, 1, tzinfo=UTC)), "volume")
+
+        store.write(spec, {"SPY": [bar]})
+
+        assert store.read(spec)["SPY"][0]["volume"] == 0
+
+    @pytest.mark.parametrize("field", ["open", "high", "low", "close"])
+    def test_null_price_fails_loudly(self, tmp_path: object, field: str) -> None:
+        """A missing price must raise, not silently become 0.0 and skew every metric."""
+        store = LocalDatasetStore(str(tmp_path))
+        spec = DatasetSpec.create(["SPY"], "1D", date(2024, 1, 1), date(2024, 1, 2))
+        bar = _nulled(_bar(datetime(2024, 1, 1, tzinfo=UTC)), field)
+
+        with pytest.raises(ValueError, match=f"has no {field}"):
+            store.write(spec, {"SPY": [bar]})
 
 
 class TestGapDetection:
