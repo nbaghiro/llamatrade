@@ -122,22 +122,29 @@ make dev-local SERVICE=strategy
 ```
 llamatrade/
 ├── apps/
-│   └── web/                 # React frontend
+│   ├── core/                # @llamatrade/core — shared stores, net, proto, format
+│   ├── mobile/              # Expo React Native app
+│   └── web/                 # React frontend (+ marketing landing)
 ├── services/
 │   ├── auth/                # Authentication & users
 │   ├── strategy/            # Strategy management
 │   ├── backtest/            # Backtesting engine
 │   ├── market-data/         # Real-time & historical data
 │   ├── trading/             # Order execution
-│   ├── portfolio/           # Positions & P&L
+│   ├── portfolio/           # Positions, P&L, ledger
 │   ├── notification/        # Alerts & webhooks
-│   └── billing/             # Subscriptions (Stripe)
+│   ├── billing/             # Subscriptions (Stripe)
+│   └── agent/               # AI copilot (NL → DSL)
 ├── libs/
-│   ├── common/              # Shared models & utilities
-│   ├── db/                  # SQLAlchemy models & migrations
-│   ├── dsl/                 # Strategy DSL parser
+│   ├── alpaca/              # Alpaca REST + WebSocket clients
+│   ├── common/              # Middleware, auth, shared models
 │   ├── compiler/            # Strategy compiler
-│   └── proto/               # Protocol Buffers + generated Connect code
+│   ├── db/                  # SQLAlchemy models, migrations, RLS
+│   ├── dsl/                 # Strategy DSL parser
+│   ├── events/              # Redis Streams event bus
+│   ├── proto/               # Protocol Buffers + generated Connect code
+│   ├── runtime/             # Shared strategy runtime (backtest + live)
+│   └── telemetry/           # OpenTelemetry + Prometheus
 ├── infrastructure/
 │   ├── docker/              # Docker Compose configs
 │   ├── k8s/                 # Kubernetes manifests
@@ -189,10 +196,44 @@ make tf-apply
 
 ## Documentation
 
-- [Architecture Guide](.docs/architecture.md)
-- [gRPC/Connect Protocol Guide](.docs/specs/grpc-guide.md)
-- [Alpaca API Reference](.docs/alpaca-api-guide.md)
-- [Trading Strategies Guide](.docs/algorithmic-trading-strategies.md)
+Full documentation lives in [`.docs/`](.docs/). New here? Start with the [Architecture Guide](.docs/architecture.md).
+
+### Core references
+
+| Document | Covers |
+| -------- | ------ |
+| [Architecture](.docs/architecture.md) | System design, service topology, Connect/gRPC communication, deployment, multi-tenancy & RLS |
+| [Strategy DSL](.docs/strategy-dsl.md) | The S-expression strategy language — syntax, compilation, evaluation semantics |
+| [Signals & Weights](.docs/signals-and-weights.md) | Technical-indicator and portfolio-allocation reference: what the DSL supports and how each is used |
+| [Portfolio Ledger](.docs/portfolio-ledger.md) | How target weights become trades: sizing, sleeves, lots, the event-sourced double-entry ledger, reconciliation, and the **money-movement integration contract** (single source of truth) |
+| [Execution Runtime](.docs/execution-runtime.md) | The shared backtest + live execution loop: `StrategySession`, the runtime adapters, and backtest↔live parity |
+| [Trading Strategies](.docs/trading-strategies.md) | Algorithmic trading concepts and strategy approaches |
+| [Asset Classes](.docs/asset-classes.md) | Tradeable asset-class reference |
+
+### Cross-cutting infrastructure
+
+| Document | Covers |
+| -------- | ------ |
+| [Telemetry & Observability](.docs/telemetry.md) | `llamatrade_telemetry` — metrics, structured logs, traces, conventions, and the metric catalog |
+
+### Services
+
+| Service | Port | Covers |
+| ------- | ---- | ------ |
+| [Auth](.docs/services/auth.md) | 8810 | Authentication, JWT, RBAC, Alpaca credential storage & OAuth |
+| [Strategy](.docs/services/strategy.md) | 8820 | Strategy CRUD, DSL parsing, templates, execution lifecycle |
+| [Backtest](.docs/services/backtesting.md) | 8830 | Historical backtesting over Celery, metrics calculation |
+| [Market Data](.docs/services/market-data.md) | 8840 | Real-time & historical data via Alpaca (REST + WebSocket) |
+| [Trading](.docs/services/trading.md) | 8850 | Order execution, risk management, positions, ledger fills |
+| [Portfolio](.docs/services/portfolio.md) | 8860 | The ledger — sleeves, lots, per-strategy P&L, book of record |
+| [Notification](.docs/services/notification.md) | 8870 | Alerts and channels (email, SMS, Slack) |
+| [Billing](.docs/services/billing.md) | 8880 | Stripe subscriptions, checkout, plan limits |
+| [Agent](.docs/services/agent.md) | 8890 | AI copilot — natural-language strategy building |
+
+### Decisions & planning
+
+- **ADRs** — [Gateway vs Direct Communication](.docs/decisions/gateway-vs-direct-communication.md) · [Tiingo vs Alpaca Market Data](.docs/decisions/tiingo-vs-alpaca-market-data.md)
+- **Active plans** ([`.docs/planning/`](.docs/planning/)) — [MVP Release Plan](.docs/planning/mvp-release-plan.md) · [Platform Remediation Tracker](.docs/planning/platform-remediation-plan-2026-07-18.md) · [Broker Setup (BYO keys)](.docs/planning/broker-setup-individual-traders.md) · [Broker API Legal Checklist](.docs/planning/broker-api-legal-checklist.md)
 
 ## Contributing
 

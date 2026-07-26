@@ -123,7 +123,7 @@ services/[name]/
 - All route handlers MUST be async
 - Use `Depends()` for dependency injection
 - Pydantic schemas MUST use suffixes: `Create`, `Response`, `Update`, `Request`
-- Tenant context MUST be extracted via `require_auth` middleware and passed through all layers
+- Tenant context MUST be resolved at the Connect boundary via `resolve_identity` (fail-closed `AuthMiddleware`) and passed through all layers
 - Use `HTTPException` for client errors, let unexpected errors propagate
 - **Enums:** Proto definitions are the single source of truth. Import integer constants from `llamatrade_proto.generated` (e.g., `ORDER_SIDE_BUY`). Use conversion helpers (`order_side_to_str()`) only for external APIs. Store as integers in database.
 
@@ -227,9 +227,9 @@ apps/web/src/
 
 - `libs/alpaca`: Alpaca API client wrapper — import as `llamatrade_alpaca`
 - `libs/common`: Middleware, shared models, utilities — import as `llamatrade_common`
-- `libs/compiler`: Strategy compiler — import as `llamatrade_compiler`
 - `libs/db`: SQLAlchemy models, database config — import as `llamatrade_db`
-- `libs/dsl`: Strategy DSL parser — import as `llamatrade_dsl`
+- `libs/dsl`: Strategy language — parser, validator, serializer, and static AST analysis/compilation (indicator extraction, required symbols, history window) — import as `llamatrade_dsl`
+- `libs/runtime`: Strategy execution core (backtest + live) — the `StrategySession` evaluation engine (indicators, conditions, weights, sizing) and the `StrategyRuntime` loop + adapters — import as `llamatrade_runtime`
 - `libs/proto`: Protobuf definitions + generated Connect code — import as `llamatrade_proto`
 - Changes to libs affect ALL services — test thoroughly
 
@@ -305,7 +305,7 @@ npm run lint:fix            # Frontend
 All operations MUST be tenant-scoped:
 
 1. JWT token contains `tenant_id` in payload
-2. Extract via `TenantContext = Depends(require_auth)`
+2. Resolve identity at the Connect boundary via `resolve_identity` / `resolve_identity_connect` (from `llamatrade_common.auth`), which the fail-closed `AuthMiddleware` populates — never trust the wire `TenantContext`
 3. Pass `ctx.tenant_id` to all service methods
 4. Filter ALL database queries by `tenant_id`
 5. Service-to-service calls: propagate via `X-Tenant-ID` header
@@ -382,4 +382,4 @@ Never allow cross-tenant data access. When in doubt, add tenant filtering.
 
 ### Ledger integration
 
-- Trading is the **execution arm** of the portfolio double-entry ledger: it publishes fill/reservation payloads to `ledger:fills:{account_id}` and reads sleeve state via `LedgerClient`. The locked contract (payload shapes, idempotency, identity threading) lives in `.docs/planning/CONTRACTS.md` — change it there first. The ledger is the **single source of truth** and is always on — there are no `LEDGER_*` rollout flags and no legacy fallback (sleeve-attributed behavior is keyed off whether an order/session carries a `sleeve_id`).
+- Trading is the **execution arm** of the portfolio double-entry ledger: it publishes fill/reservation payloads to the global `ledger:fills` stream and reads sleeve state via `LedgerClient`. The contract (payload shapes, idempotency, identity threading) lives in the **Integration Contract** section of `.docs/portfolio-ledger.md` — the single source of truth for money movement; change it there first. The ledger is the **single source of truth** and is always on — there are no `LEDGER_*` rollout flags and no legacy fallback (sleeve-attributed behavior is keyed off whether an order/session carries a `sleeve_id`).
