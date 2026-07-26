@@ -6,9 +6,10 @@
 
 import { BacktestStatus, type BacktestRun } from '@llamatrade/core/proto/backtest_pb';
 import { toDate, toNumber, useBacktestStore, type BacktestConfig } from '@llamatrade/core/stores/backtest';
-import { AlertTriangle } from 'lucide-react';
-import { useEffect, useMemo } from 'react';
+import { AlertTriangle, Play } from 'lucide-react';
+import { useEffect, useMemo, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
+
 
 import BacktestConfigForm from '../../components/backtest/BacktestConfigForm';
 import BacktestProgress from '../../components/backtest/BacktestProgress';
@@ -18,6 +19,7 @@ import MetricsPanel from '../../components/backtest/MetricsPanel';
 import MonthlyReturnsGrid from '../../components/backtest/MonthlyReturnsGrid';
 import RecentRunsPanel from '../../components/backtest/RecentRunsPanel';
 import TradesTable from '../../components/backtest/TradesTable';
+import { useRunConsole } from '../../store/runConsole';
 
 function isoDate(run: BacktestRun, field: 'startDate' | 'endDate'): string {
   const ts = run.config?.[field];
@@ -54,6 +56,7 @@ export default function BacktestPage() {
     progressMessage,
     error,
     strategies,
+    strategiesLoading,
     recentRuns,
     recentRunsLoading,
     fullTrades,
@@ -65,6 +68,9 @@ export default function BacktestPage() {
     fetchRecentRuns,
     clearError,
   } = useBacktestStore();
+
+  const openRunConsole = useRunConsole((s) => s.openRunConsole);
+  const deepLinkLaunched = useRef(false);
 
   const urlId = searchParams.get('id');
   const urlStrategy = searchParams.get('strategy') ?? undefined;
@@ -89,12 +95,17 @@ export default function BacktestPage() {
     }
   }, [urlId, currentBacktest, recentRuns, getBacktest]);
 
-  // Seed the rail from a ?strategy= deep link.
+  // A ?strategy= deep link (no ?id=) launches the Run Console for that strategy.
   useEffect(() => {
-    if (urlStrategy && !config.strategyId) {
-      setConfig({ strategyId: urlStrategy });
-    }
-  }, [urlStrategy, config.strategyId, setConfig]);
+    if (deepLinkLaunched.current || !urlStrategy || urlId) return;
+    if (strategiesLoading || strategies.length === 0) return;
+    deepLinkLaunched.current = true;
+    const name = strategies.find((s) => s.id === urlStrategy)?.name ?? 'Strategy';
+    openRunConsole(urlStrategy, name);
+    const next = new URLSearchParams(searchParams);
+    next.delete('strategy');
+    setSearchParams(next, { replace: true });
+  }, [urlStrategy, urlId, strategiesLoading, strategies, openRunConsole, searchParams, setSearchParams]);
 
   const handleRun = async () => {
     const id = await runBacktest();
@@ -169,10 +180,15 @@ export default function BacktestPage() {
             <h1 className="font-display uppercase text-[42px] leading-[0.9] tracking-[0.01em]">Backtest</h1>
             <div className="mt-2 font-mono text-[12px] text-ink/55">{subline}</div>
           </div>
-          <span className="inline-flex items-center gap-2 border-2 border-ink bg-paper px-3 py-2 font-mono text-[11px] font-bold uppercase tracking-[0.08em]">
-            <span className="w-2 h-2 bg-orange-500" />
-            Paper Simulation
-          </span>
+          <div className="flex items-center gap-3">
+            <span className="inline-flex items-center gap-2 border-2 border-ink bg-paper px-3 py-2 font-mono text-[11px] font-bold uppercase tracking-[0.08em]">
+              <span className="w-2 h-2 bg-orange-500" />
+              Paper Simulation
+            </span>
+            <button onClick={() => openRunConsole()} className="btn btn-primary">
+              <Play className="h-3.5 w-3.5" strokeWidth={2.6} /> New Backtest
+            </button>
+          </div>
         </div>
 
         {/* Error banner */}

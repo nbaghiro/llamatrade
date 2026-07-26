@@ -3,8 +3,10 @@
  * live preview (composition + DSL) · footer. Owns its own fetch/filter/selection
  * state so it can be dropped into the New Strategy modal or a full-page route.
  */
+import type { StrategyTemplate } from '@llamatrade/core/proto/strategy_pb';
 import { ArrowRight, Loader2, Plus, Search, Sparkles } from 'lucide-react';
 import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
+
 
 import {
   ALL_CATEGORIES,
@@ -13,7 +15,6 @@ import {
   DIFFICULTY_LABELS,
   TemplateCategory,
   TemplateDifficulty,
-  type StrategyTemplate,
 } from '../../data/strategy-templates';
 import { listTemplates } from '../../services/strategy';
 
@@ -117,19 +118,7 @@ export function TemplateBrowser({ onUseTemplate, onStartBlank, onCustomize }: Te
         setLoading(true);
         setError(null);
         const response = await listTemplates();
-        setTemplates(
-          response.templates.map((t) => ({
-            id: t.id,
-            name: t.name,
-            description: t.description,
-            category: t.category,
-            asset_class: t.assetClass,
-            config_sexpr: t.configSexpr,
-            config_json: {},
-            tags: [...t.tags],
-            difficulty: t.difficulty,
-          }))
-        );
+        setTemplates(response.templates);
       } catch {
         setError('Failed to load templates. Please try again.');
       } finally {
@@ -167,7 +156,7 @@ export function TemplateBrowser({ onUseTemplate, onStartBlank, onCustomize }: Te
     [filteredTemplates, selectedId]
   );
   const composition = useMemo(
-    () => (selected ? parseComposition(selected.config_sexpr) : null),
+    () => (selected ? parseComposition(selected.configSexpr) : null),
     [selected]
   );
 
@@ -246,7 +235,7 @@ export function TemplateBrowser({ onUseTemplate, onStartBlank, onCustomize }: Te
               {filteredTemplates.map((t) => {
                 const active = t.id === selectedId;
                 const count = new Set(
-                  Array.from(t.config_sexpr.matchAll(/\(asset\s+([A-Z][A-Z0-9.]*)/g), (m) => m[1])
+                  Array.from(t.configSexpr.matchAll(/\(asset\s+([A-Z][A-Z0-9.]*)/g), (m) => m[1])
                 ).size;
                 return (
                   <button
@@ -374,7 +363,7 @@ export function TemplateBrowser({ onUseTemplate, onStartBlank, onCustomize }: Te
                       </div>
                     }
                   >
-                    <DslCodeBlock code={selected.config_sexpr} className="border-2 border-ink" />
+                    <DslCodeBlock code={selected.configSexpr} className="border-2 border-ink" />
                   </Suspense>
                 </div>
 

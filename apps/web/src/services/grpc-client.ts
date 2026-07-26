@@ -6,7 +6,7 @@
  * token + tenant context from the auth store, and the telemetry interceptor.
  * Web uses the global `fetch` (no override).
  */
-import { configure } from '@llamatrade/core/net';
+import { authClient, configure } from '@llamatrade/core/net';
 
 import { getTenantContext, useAuthStore } from '../store/auth';
 import { telemetryInterceptor } from '../telemetry';
@@ -27,6 +27,19 @@ configure({
   getTenantContext,
   onUnauthenticated: () => {
     if (useAuthStore.getState().isAuthenticated) useAuthStore.getState().logout();
+  },
+  // Exchange the refresh token for a fresh access token on a 401, then retry once.
+  refreshTokens: async () => {
+    const { refreshToken, updateTokens } = useAuthStore.getState();
+    if (!refreshToken) return false;
+    try {
+      const res = await authClient.refreshToken({ refreshToken });
+      if (!res.accessToken) return false;
+      updateTokens(res.accessToken, res.refreshToken || refreshToken);
+      return true;
+    } catch {
+      return false;
+    }
   },
   // telemetry first (outermost) so it times the full call and sets traceparent
   extraInterceptors: [telemetryInterceptor],

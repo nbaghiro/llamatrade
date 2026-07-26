@@ -7,7 +7,7 @@ import { timeAgo } from './format';
 const TAG: Record<ActivityKind, { label: string; className: string }> = {
   buy: { label: 'Buy', className: 'bg-[#0f7a34] text-bone' },
   sell: { label: 'Sell', className: 'bg-[#c81e1e] text-bone' },
-  backtest: { label: 'Test', className: 'bg-[#1a1aff] text-bone' },
+  backtest: { label: 'Test', className: 'bg-[#2f52a8] text-bone' },
   dividend: { label: 'Div', className: 'bg-orange-500 text-ink' },
 };
 

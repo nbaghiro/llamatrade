@@ -11,13 +11,11 @@ import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 
 import CardForm from '../../components/billing/CardForm';
-import PlanCard from '../../components/billing/PlanCard';
+import PlanCard, { type BillingCycle } from '../../components/billing/PlanCard';
 import { billingClient } from '../../services/grpc-client';
 
 
 const stripePromise = loadStripe(import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY || '');
-
-type BillingCycle = 'monthly' | 'yearly';
 
 function billingCycleToInterval(cycle: BillingCycle): BillingInterval {
   return cycle === 'yearly' ? BillingInterval.YEARLY : BillingInterval.MONTHLY;

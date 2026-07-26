@@ -26,7 +26,7 @@ export function BacktestCard({ backtest }: BacktestCardProps) {
 
   return (
     <Link
-      to={`/backtest?strategy=${backtest.strategyId}&run=${backtest.id}`}
+      to={`/backtest?id=${backtest.id}`}
       className="block card-shadow p-3 transition-all duration-200 hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-lg"
     >
       {/* Equity Curve Chart */}

@@ -3,12 +3,13 @@
  * (list · preview · DSL), given the whole content width under the app header so
  * the library has room to breathe as it grows.
  */
+import type { StrategyTemplate } from '@llamatrade/core/proto/strategy_pb';
 import { useAgentStore } from '@llamatrade/core/stores/agent';
 import { ArrowLeft } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
+
 import { TemplateBrowser } from '../../components/strategies/TemplateBrowser';
-import type { StrategyTemplate } from '../../data/strategy-templates';
 import { useStrategyBuilderStore } from '../../store/strategy-builder';
 
 export default function TemplatesPage() {

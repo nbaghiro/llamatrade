@@ -10,8 +10,11 @@ export function AgentFAB() {
   const panelOpen = useAgentStore((s) => s.panelOpen);
   const togglePanel = useAgentStore((s) => s.togglePanel);
 
-  // Redundant on the full-page Copilot, and while the overlay panel is open.
-  if (location.pathname === '/copilot' || panelOpen) return null;
+  // Redundant on the full-page Copilot and while the panel is open; the strategy
+  // builder shows a compact launcher in its bottom insights bar instead.
+  const path = location.pathname;
+  const inBuilder = path.startsWith('/strategies/') && path !== '/strategies/templates';
+  if (path === '/copilot' || panelOpen || inBuilder) return null;
 
   return (
     <button

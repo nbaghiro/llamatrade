@@ -428,7 +428,6 @@ export const useStrategiesStore = create<StrategiesState>((set, get) => ({
         templateParams: original.templateParams,
         symbols: original.symbols,
         timeframe: original.timeframe,
-        parameters: original.parameters,
       });
 
       // Refresh list to include the clone

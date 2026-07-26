@@ -9,13 +9,14 @@
  *  3. Start from scratch — the blocks/DSL builder.
  */
 
+import type { StrategyTemplate } from '@llamatrade/core/proto/strategy_pb';
 import { useAgentStore } from '@llamatrade/core/stores/agent';
 import { ArrowLeft, ArrowRight, Maximize2, Sparkles, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
+
 import { CopilotConversation } from '../../components/agent/CopilotConversation';
-import type { StrategyTemplate } from '../../data/strategy-templates';
 import { useStrategyBuilderStore } from '../../store/strategy-builder';
 import { MagicIcon } from '../common/MagicIcon';
 

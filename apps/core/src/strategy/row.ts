@@ -17,7 +17,7 @@ import { dateShort, money, moneyShort, num } from '../format';
 
 export type StrategyPill = 'LIVE' | 'PAPER' | 'PAUSED' | 'DRAFT' | 'ARCHIVED';
 
-export type ImplementationType = 'dsl' | 'template';
+export type ImplementationType = 'dsl' | 'template' | 'custom';
 
 export interface StrategyRowView {
   strategy: Strategy;
@@ -41,9 +41,10 @@ export interface StrategyRowView {
 }
 
 export function getImplementationType(strategy: Strategy): ImplementationType {
-  // Every stored strategy compiles to a DSL (config_sexpr is the source of
-  // truth); template provenance is not persisted, so non-template means DSL.
-  return strategy.templateId ? 'template' : 'dsl';
+  // templateId ⇒ template; else dslCode ⇒ dsl; otherwise a hand-built custom strategy.
+  if (strategy.templateId) return 'template';
+  if (strategy.dslCode) return 'dsl';
+  return 'custom';
 }
 
 function pillFor(strategy: Strategy, deployment: StrategyDeployment | undefined): StrategyPill {

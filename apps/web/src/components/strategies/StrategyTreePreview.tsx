@@ -25,7 +25,7 @@ export function StrategyTreePreview({ onCreateStrategy, onBrowseTemplates }: Str
           <defs>
             <linearGradient id="lineGradient" x1="0%" y1="0%" x2="100%" y2="0%">
               <stop offset="0%" stopColor="#ff4d1c" />
-              <stop offset="50%" stopColor="#1a1aff" />
+              <stop offset="50%" stopColor="#2f52a8" />
               <stop offset="100%" stopColor="#0f7a34" />
             </linearGradient>
 
@@ -75,7 +75,7 @@ export function StrategyTreePreview({ onCreateStrategy, onBrowseTemplates }: Str
             <path d="M160 55 L160 75 L240 75 L240 95" />
           </g>
 
-          <circle r="3" fill="#1a1aff" className="pulse">
+          <circle r="3" fill="#2f52a8" className="pulse">
             <animateMotion dur="2s" repeatCount="indefinite" path="M160 55 L160 75 L80 75 L80 95" />
           </circle>
           <circle r="3" fill="#ff4d1c" className="pulse" style={{ animationDelay: '0.5s' }}>

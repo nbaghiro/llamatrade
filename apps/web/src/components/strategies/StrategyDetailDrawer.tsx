@@ -3,6 +3,7 @@ import { MoreHorizontal, Pause, Pencil, Play, Trash2, X } from 'lucide-react';
 import { lazy, Suspense, useState } from 'react';
 import { Link } from 'react-router-dom';
 
+import { useRunConsole } from '../../store/runConsole';
 
 import { EquityMiniChart } from './EquityMiniChart';
 import {
@@ -40,9 +41,10 @@ export function StrategyDetailDrawer({
   actionLoading,
 }: StrategyDetailDrawerProps) {
   const [menuOpen, setMenuOpen] = useState(false);
+  const openRunConsole = useRunConsole((s) => s.openRunConsole);
   const { strategy } = row;
 
-  const dsl = strategy.dslCode || strategy.compiledJson;
+  const dsl = strategy.dslCode;
   const allocations = positionAllocations(row.run);
 
   const results = row.run?.results;
@@ -187,13 +189,13 @@ export function StrategyDetailDrawer({
           <Pencil className="w-3.5 h-3.5" />
           Edit
         </Link>
-        <Link
-          to={`/backtest?strategy=${strategy.id}`}
+        <button
+          onClick={() => openRunConsole(strategy.id, strategy.name)}
           className="flex-1 flex items-center justify-center gap-1.5 font-mono text-[11px] font-bold uppercase tracking-wide border-2 border-ink px-2 py-3 bg-paper text-ink shadow-[3px_3px_0_rgb(var(--lt-ink))] hover:-translate-x-0.5 hover:-translate-y-0.5 transition-transform"
         >
           <Play className="w-3.5 h-3.5" />
           Backtest
-        </Link>
+        </button>
         <div className="relative">
           <button
             onClick={() => setMenuOpen((v) => !v)}

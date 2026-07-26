@@ -314,7 +314,7 @@ export function AuthShowcase() {
 
             {/* All strategies share one grid cell so the panel height stays fixed to the
                 tallest DSL; only the active one is visible, the rest reserve layout. */}
-            <div className="grid overflow-hidden px-4 py-4 text-bone" style={{ minHeight: 434 }}>
+            <div className="grid overflow-hidden px-4 py-4 text-bone" style={{ minHeight: 480 }}>
               {STRATEGIES.map((strategy, i) => (
                 <div
                   key={i}

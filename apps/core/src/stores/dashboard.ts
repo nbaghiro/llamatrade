@@ -21,6 +21,7 @@ import {
   type Transaction,
 } from '@llamatrade/core/proto/portfolio_pb';
 import type { Strategy } from '@llamatrade/core/proto/strategy_pb';
+import type { ActivityKind as WalletActivityKind } from './activity';
 import {
   backtestClient,
   marketDataClient,
@@ -51,7 +52,8 @@ export interface DashboardStrategy {
   curve: CurvePoint[]; // cumulative % return series for the sparkline
 }
 
-export type ActivityKind = 'buy' | 'sell' | 'dividend' | 'backtest';
+// Dashboard feed kinds: the trade-side subset of wallet activity, plus backtests.
+export type ActivityKind = Extract<WalletActivityKind, 'buy' | 'sell' | 'dividend'> | 'backtest';
 
 export interface DashboardActivity {
   id: string;

@@ -14,21 +14,6 @@ import {
 export { AssetClass, TemplateCategory, TemplateDifficulty };
 
 /**
- * Strategy template as returned by the backend API
- */
-export interface StrategyTemplate {
-  id: string;
-  name: string;
-  description: string;
-  category: TemplateCategory;
-  asset_class: AssetClass;
-  config_sexpr: string;
-  config_json: Record<string, unknown>;
-  tags: string[];
-  difficulty: TemplateDifficulty;
-}
-
-/**
  * Category display labels
  */
 export const CATEGORY_LABELS: Record<TemplateCategory, string> = {

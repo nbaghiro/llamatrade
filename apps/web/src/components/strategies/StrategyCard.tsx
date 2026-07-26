@@ -4,6 +4,7 @@ import {
   type Strategy,
 } from '@llamatrade/core/proto/strategy_pb';
 import { useStrategiesStore } from '@llamatrade/core/stores/strategies';
+import { getImplementationType, type ImplementationType } from '@llamatrade/core/strategy/row';
 import { MoreHorizontal, Play, Pause, Copy, Trash2, Edit2 } from 'lucide-react';
 import { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -14,8 +15,6 @@ interface StrategyCardProps {
 }
 
 type StatusKey = 'draft' | 'active' | 'paused' | 'archived';
-
-type ImplementationType = 'dsl' | 'template' | 'custom';
 
 const STATUS_COLORS: Record<StatusKey, { bg: string; text: string }> = {
   draft: { bg: 'bg-gray-100 dark:bg-gray-800', text: 'text-gray-700 dark:text-gray-300' },
@@ -37,12 +36,6 @@ function getStatusKey(status: StrategyStatus): StatusKey {
     default:
       return 'draft';
   }
-}
-
-function getImplementationType(strategy: Strategy): ImplementationType {
-  if (strategy.templateId) return 'template';
-  if (strategy.dslCode) return 'dsl';
-  return 'custom';
 }
 
 function getTypeLabel(type: ImplementationType): string {

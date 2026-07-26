@@ -45,7 +45,7 @@ export default function StrategyPreviewDialog() {
   useEffect(() => {
     if (!previewDialogOpen || !previewTemplate) return;
 
-    const parseResult = fromDSLString(previewTemplate.config_sexpr);
+    const parseResult = fromDSLString(previewTemplate.configSexpr);
 
     if (!parseResult) {
       // Fallback: create empty strategy with just the name if DSL parsing fails

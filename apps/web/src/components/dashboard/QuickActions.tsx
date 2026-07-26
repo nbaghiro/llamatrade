@@ -1,6 +1,7 @@
 import { LayoutGrid, Play, Plus } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
+import { useRunConsole } from '../../store/runConsole';
 import { useUIStore } from '../../store/ui';
 
 interface Action {
@@ -14,6 +15,7 @@ interface Action {
 export default function QuickActions() {
   const navigate = useNavigate();
   const openNewStrategyDialog = useUIStore((s) => s.openNewStrategyDialog);
+  const openRunConsole = useRunConsole((s) => s.openRunConsole);
 
   const actions: Action[] = [
     {
@@ -23,7 +25,7 @@ export default function QuickActions() {
       onClick: openNewStrategyDialog,
       primary: true,
     },
-    { title: 'Run Backtest', detail: 'Test against history', icon: Play, onClick: () => navigate('/backtest') },
+    { title: 'Run Backtest', detail: 'Test against history', icon: Play, onClick: () => openRunConsole() },
     { title: 'Templates', detail: 'Proven starting points', icon: LayoutGrid, onClick: () => navigate('/strategies/templates') },
   ];
 

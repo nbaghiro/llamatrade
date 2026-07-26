@@ -65,6 +65,15 @@
   scrollbar-color: rgb(var(--lt-ink) / 0.25) transparent;
 }
 
+/* Fully hidden scrollbar (scrolling still works) — opt in with .no-scrollbar */
+.no-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
 /* Focus — sharp orange ring (follows the now-zero radius) */
 :focus-visible {
   @apply outline-none ring-2 ring-orange-500 ring-offset-2 ring-offset-bone;
@@ -227,7 +236,7 @@ textarea:focus-visible {
   }
 
   .nav-link-active {
-    @apply text-ink bg-ink/5;
+    @apply text-bone bg-ink pointer-events-none;
     box-shadow: inset 3px 0 0 rgb(var(--lt-orange-500));
   }
 }
@@ -253,6 +262,13 @@ textarea:focus-visible {
   .bg-canvas {
     @apply bg-bone;
     background-image: radial-gradient(circle, var(--lt-grid-dot) 1px, transparent 1px);
+    background-size: 22px 22px;
+  }
+
+  /* Dotted node canvas on the dark (ink) ground — light dots, mirrors .bg-canvas. */
+  .bg-canvas-ink {
+    @apply bg-ink;
+    background-image: radial-gradient(circle, rgb(var(--lt-bone) / 0.07) 1px, transparent 1px);
     background-size: 22px 22px;
   }
 

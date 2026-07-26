@@ -3,9 +3,9 @@
  * Global UI state for dialogs, modals, and other transient UI elements.
  */
 
+import type { StrategyTemplate } from '@llamatrade/core/proto/strategy_pb';
 import { create } from 'zustand';
 
-import type { StrategyTemplate } from '../data/strategy-templates';
 
 interface UIState {
   // New Strategy Dialog

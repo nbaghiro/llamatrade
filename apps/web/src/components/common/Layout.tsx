@@ -10,6 +10,7 @@ import { useAuthStore } from '../../store/auth';
 import { useUIStore } from '../../store/ui';
 import { AgentFAB } from '../agent/AgentFAB';
 import { CopilotSidePanel } from '../agent/CopilotSidePanel';
+import { RunConsole } from '../backtest/RunConsole';
 
 import { Avatar } from './Avatar';
 import { Logo } from './Logo';
@@ -177,6 +178,7 @@ export default function Layout() {
       <NewStrategyDialog isOpen={newStrategyDialogOpen} onClose={closeNewStrategyDialog} />
 
       <StrategyPreviewDialog />
+      <RunConsole />
     </div>
   );
 }

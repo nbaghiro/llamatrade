@@ -1,12 +1,11 @@
 import type { BacktestRun } from '@llamatrade/core/proto/backtest_pb';
 import { StrategyStatus } from '@llamatrade/core/proto/strategy_pb';
-import { toDate, toNumber, useBacktestStore } from '@llamatrade/core/stores/backtest';
+import { useBacktestStore } from '@llamatrade/core/stores/backtest';
 import { type SortColumn, useStrategiesStore } from '@llamatrade/core/stores/strategies';
-import { AlertTriangle, ArrowDown, ArrowUp, Plus, RefreshCw, Search } from 'lucide-react';
+import { AlertTriangle, Plus, RefreshCw, Search } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 
-import { MiniChart } from '../../components/strategies/MiniChart';
 import { StrategyDetailDrawer } from '../../components/strategies/StrategyDetailDrawer';
 import {
   buildRow,
@@ -39,11 +38,28 @@ function sortValue(row: StrategyRowView, column: SortColumn): number | null {
   }
 }
 
-function backtestPeriodYears(run: BacktestRun): number | null {
-  const start = toDate(run.config?.startDate);
-  const end = toDate(run.config?.endDate);
-  if (!start || !end) return null;
-  return Math.max(1, Math.round((end.getTime() - start.getTime()) / (365 * 24 * 3600 * 1000)));
+interface KpiTileProps {
+  label: string;
+  value: string;
+  dark?: boolean;
+  accent?: 'green';
+}
+
+function KpiTile({ label, value, dark, accent }: KpiTileProps) {
+  return (
+    <div className={`min-w-[110px] flex-1 border-2 border-ink px-4 py-2.5 ${dark ? 'bg-ink' : 'bg-paper'}`}>
+      <div className={`font-mono text-[9px] font-bold uppercase tracking-[0.1em] ${dark ? 'text-bone/55' : 'text-ink/50'}`}>
+        {label}
+      </div>
+      <div
+        className={`mt-1.5 font-mono text-[19px] font-bold leading-none tabular-nums ${
+          dark ? 'text-orange-500' : accent === 'green' ? 'text-green-500' : 'text-ink'
+        }`}
+      >
+        {value}
+      </div>
+    </div>
+  );
 }
 
 export default function StrategiesPage() {
@@ -84,12 +100,6 @@ export default function StrategiesPage() {
     fetchDeployments();
     fetchRecentRuns();
   }, [fetchStrategies, fetchDeployments, fetchRecentRuns]);
-
-  const strategyNameById = useMemo(() => {
-    const map = new Map<string, string>();
-    strategies.forEach((s) => map.set(s.id, s.name));
-    return map;
-  }, [strategies]);
 
   // Latest completed run per strategy (recentRuns is newest-first, fully hydrated).
   const latestRunByStrategyId = useMemo(() => {
@@ -167,37 +177,20 @@ export default function StrategiesPage() {
 
   const totalAllocated = useMemo(() => rows.reduce((sum, r) => sum + (r.allocation ?? 0), 0), [rows]);
   const activeCount = strategies.filter((s) => s.status === StrategyStatus.ACTIVE).length;
-  const pausedCount = strategies.filter((s) => s.status === StrategyStatus.PAUSED).length;
   const draftCount = strategies.filter((s) => s.status === StrategyStatus.DRAFT).length;
 
-  const recentCells = useMemo(
+  const bestReturn = useMemo(
     () =>
-      recentRuns.slice(0, 4).map((run) => {
-        const metrics = run.results?.metrics;
-        const years = backtestPeriodYears(run);
-        const equityCurve = (run.results?.equityCurve ?? []).map((p) => toNumber(p.equity));
-        const benchmarkCurve = (run.results?.benchmarkEquityCurve ?? []).map((p) => toNumber(p.equity));
-        const hasBenchmark = benchmarkCurve.length > 1;
-        const returnPct = metrics ? toNumber(metrics.totalReturn) * 100 : 0;
-        return {
-          id: run.id,
-          name: strategyNameById.get(run.strategyId) ?? 'Strategy',
-          date: (toDate(run.completedAt) ?? toDate(run.createdAt) ?? new Date()).toLocaleDateString('en-US', {
-            month: 'short',
-            day: 'numeric',
-          }),
-          period: years ? `${years}y` : '—',
-          returnPct,
-          sharpe: metrics ? toNumber(metrics.sharpeRatio) : 0,
-          equityCurve,
-          benchmarkCurve,
-          // Excess return over the benchmark ("beat SPY by X%"); null when no benchmark was run.
-          alphaPct: hasBenchmark && metrics ? returnPct - toNumber(metrics.benchmarkReturn) * 100 : null,
-          benchmarkSymbol: run.results?.benchmarkSymbol || run.config?.benchmarkSymbol || 'SPY',
-        };
-      }),
-    [recentRuns, strategyNameById]
+      rows.reduce<number | null>(
+        (best, r) => (r.returnPct !== null && (best === null || r.returnPct > best) ? r.returnPct : best),
+        null
+      ),
+    [rows]
   );
+  const avgSharpe = useMemo(() => {
+    const vals = rows.map((r) => r.sharpe).filter((s): s is number => s !== null);
+    return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
+  }, [rows]);
 
   const runAction = async (fn: () => Promise<unknown>) => {
     setActionLoading(true);
@@ -218,46 +211,52 @@ export default function StrategiesPage() {
 
   return (
     <div className="min-h-[calc(100vh-56px)] bg-bone bg-grid">
-      <div className="max-w-[1760px] mx-auto px-6 lg:px-8 py-6">
+      <div className="mx-auto max-w-[1760px] px-6 py-6 lg:px-8">
         {/* Page header */}
-        <div className="flex items-end justify-between mb-4 gap-4 flex-wrap">
-          <div>
-            <h1 className="font-display uppercase text-4xl leading-none tracking-tight flex items-baseline gap-3">
-              Strategies
-              <span className="font-mono text-base font-bold text-orange-500 border-2 border-ink px-2 py-0.5 tabular-nums -translate-y-1.5">
-                {strategies.length}
-              </span>
-            </h1>
-            <div className="font-mono text-xs text-ink/55 mt-2">
-              Sorted by {sortColumn} · {activeCount} active · {pausedCount} paused · {draftCount} drafts
-              {'  ·  '}
-              {formatMoneyFull(totalAllocated)} deployed
-            </div>
-          </div>
+        <div className="mb-4 flex flex-wrap items-end justify-between gap-4">
+          <h1 className="flex items-baseline gap-3 font-display text-4xl uppercase leading-none tracking-tight">
+            Strategies
+            <span className="-translate-y-1.5 border-2 border-ink px-2 py-0.5 font-mono text-base font-bold tabular-nums text-orange-500">
+              {strategies.length}
+            </span>
+          </h1>
           <button
             onClick={openNewStrategyDialog}
-            className="flex items-center gap-2 font-mono text-xs font-bold uppercase tracking-wide border-2 border-ink px-4 py-3 bg-orange-500 text-ink shadow-[4px_4px_0_rgb(var(--lt-ink))] hover:-translate-x-0.5 hover:-translate-y-0.5 transition-transform"
+            className="flex items-center gap-2 border-2 border-ink bg-orange-500 px-4 py-3 font-mono text-xs font-bold uppercase tracking-wide text-ink shadow-[4px_4px_0_rgb(var(--lt-ink))] transition-transform hover:-translate-x-0.5 hover:-translate-y-0.5"
           >
-            <Plus className="w-4 h-4" />
+            <Plus className="h-4 w-4" />
             New Strategy
           </button>
         </div>
 
+        {/* KPI strip */}
+        <div className="mb-4 flex flex-wrap gap-2.5">
+          <KpiTile label="Deployed" value={formatMoneyFull(totalAllocated)} dark />
+          <KpiTile label="Live · Paper" value={String(activeCount)} />
+          <KpiTile label="Drafts" value={String(draftCount)} />
+          <KpiTile
+            label="Best Return"
+            value={bestReturn !== null ? formatReturn(bestReturn) : '—'}
+            accent={bestReturn !== null && bestReturn >= 0 ? 'green' : undefined}
+          />
+          <KpiTile label="Avg Sharpe" value={avgSharpe !== null ? avgSharpe.toFixed(2) : '—'} />
+        </div>
+
         {/* Toolbar */}
-        <div className="flex items-stretch gap-2.5 mb-4 flex-wrap">
-          <div className="flex-1 min-w-[240px] flex items-center gap-2.5 border-2 border-ink bg-paper px-3.5 shadow-[4px_4px_0_rgb(var(--lt-ink))]">
-            <Search className="w-4 h-4 text-ink/50 flex-none" />
+        <div className="mb-4 flex flex-wrap items-stretch gap-2.5">
+          <div className="flex min-w-[240px] flex-1 items-center gap-2.5 border-2 border-ink bg-paper px-3.5 shadow-[4px_4px_0_rgb(var(--lt-ink))]">
+            <Search className="h-4 w-4 flex-none text-ink/50" />
             <input
               type="text"
               placeholder="Search strategies, assets, methods…"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full bg-transparent outline-none border-0 focus-visible:ring-0 focus-visible:ring-offset-0 font-mono text-[13px] py-3 text-ink placeholder:text-ink/40"
+              className="w-full border-0 bg-transparent py-3 font-mono text-[13px] text-ink outline-none placeholder:text-ink/40 focus-visible:ring-0 focus-visible:ring-offset-0"
             />
           </div>
 
           <div className="flex items-center border-2 border-ink bg-paper shadow-[4px_4px_0_rgb(var(--lt-ink))]">
-            <span className="font-mono text-[9px] font-bold uppercase tracking-widest text-ink/45 pl-3 pr-1.5 border-r border-ink/15">
+            <span className="border-r border-ink/15 pl-3 pr-1.5 font-mono text-[9px] font-bold uppercase tracking-widest text-ink/45">
               Status
             </span>
             <div className="flex">
@@ -265,7 +264,7 @@ export default function StrategiesPage() {
                 <button
                   key={seg.value}
                   onClick={() => setStatusFilter(seg.value)}
-                  className={`font-mono text-[11px] font-bold uppercase tracking-wide px-3 py-3 transition-colors ${
+                  className={`px-3 py-3 font-mono text-[11px] font-bold uppercase tracking-wide transition-colors ${
                     i > 0 ? 'border-l border-ink/15' : ''
                   } ${statusFilter === seg.value ? 'bg-ink text-bone' : 'text-ink/60 hover:text-ink'}`}
                 >
@@ -277,9 +276,9 @@ export default function StrategiesPage() {
         </div>
 
         {error && (
-          <div className="mb-4 p-4 bg-red-50 border-2 border-ink flex items-center justify-between gap-3">
+          <div className="mb-4 flex items-center justify-between gap-3 border-2 border-ink bg-red-50 p-4">
             <div className="flex items-center gap-3">
-              <AlertTriangle className="w-5 h-5 text-red-600 flex-none" />
+              <AlertTriangle className="h-5 w-5 flex-none text-red-600" />
               <p className="text-sm text-red-700">{error}</p>
             </div>
             <div className="flex items-center gap-2">
@@ -289,7 +288,7 @@ export default function StrategiesPage() {
                 </Link>
               ) : (
                 <button onClick={() => fetchStrategies()} className="btn btn-secondary btn-sm">
-                  <RefreshCw className="w-4 h-4" />
+                  <RefreshCw className="h-4 w-4" />
                   Retry
                 </button>
               )}
@@ -310,14 +309,18 @@ export default function StrategiesPage() {
             <StrategyTreePreview onCreateStrategy={openNewStrategyDialog} onBrowseTemplates={openNewStrategyDialog} />
           </div>
         ) : (
-          <div className="grid grid-cols-1 lg:grid-cols-[1fr_388px] gap-4 items-start">
-            <div className="flex flex-col gap-4 min-w-0">
+          <div
+            className={`grid grid-cols-1 items-start gap-4 ${
+              selectedRow ? 'lg:grid-cols-[3fr_2fr]' : ''
+            }`}
+          >
+            <div className="min-w-0">
               {showEmpty ? (
-                <div className="card-shadow py-16 px-8 text-center">
-                  <h3 className="font-display uppercase text-2xl leading-tight text-ink">
+                <div className="card-shadow px-8 py-16 text-center">
+                  <h3 className="font-display text-2xl uppercase leading-tight text-ink">
                     Nothing matches those filters
                   </h3>
-                  <p className="font-mono text-xs text-ink/55 mt-2">Clear a filter to widen the list.</p>
+                  <p className="mt-2 font-mono text-xs text-ink/55">Clear a filter to widen the list.</p>
                 </div>
               ) : (
                 <StrategyTable
@@ -330,98 +333,6 @@ export default function StrategiesPage() {
                   sortDirection={sortDirection}
                   onSort={setSort}
                 />
-              )}
-
-              {/* Recent backtests strip */}
-              {recentCells.length > 0 && (
-                <div className="card-shadow">
-                  <div className="flex items-center justify-between px-4 py-3 border-b-2 border-ink">
-                    <span className="font-mono text-[11px] font-bold uppercase tracking-widest text-ink">
-                      Recent Backtests
-                    </span>
-                    <Link
-                      to="/backtest"
-                      className="font-mono text-[10.5px] font-bold uppercase tracking-wide text-orange-500 hover:text-orange-600"
-                    >
-                      All runs →
-                    </Link>
-                  </div>
-                  <div className="grid grid-cols-2 sm:grid-cols-4">
-                    {recentCells.map((cell, i) => {
-                      const positive = cell.returnPct >= 0;
-                      return (
-                        <div
-                          key={cell.id}
-                          className={`flex flex-col px-3.5 py-3.5 ${
-                            i > 0 ? 'border-l border-ink/10' : ''
-                          } ${i >= 2 ? 'border-t border-ink/10 sm:border-t-0' : ''}`}
-                        >
-                          <div className="font-bold text-[13px] leading-tight truncate text-ink">
-                            {cell.name}
-                          </div>
-
-                          {/* Equity sparkline — echoes the detail panel's chart */}
-                          <div className="mt-2.5">
-                            {cell.equityCurve.length > 1 ? (
-                              <MiniChart
-                                data={cell.equityCurve}
-                                positive={positive}
-                                showBenchmark={false}
-                                height={38}
-                                fluid
-                              />
-                            ) : (
-                              <div className="h-[38px] flex items-center font-mono text-[9px] uppercase tracking-wide text-ink/30">
-                                No curve
-                              </div>
-                            )}
-                          </div>
-
-                          {/* Return + risk-adjusted */}
-                          <div className="flex items-baseline gap-2 mt-2.5">
-                            <span
-                              className={`font-mono font-bold text-[17px] leading-none tabular-nums ${
-                                positive ? 'text-green-500' : 'text-red-500'
-                              }`}
-                            >
-                              {formatReturn(cell.returnPct)}
-                            </span>
-                            <span className="font-mono text-[9.5px] text-ink/45 tabular-nums">
-                              {cell.sharpe.toFixed(2)} SR
-                            </span>
-                          </div>
-
-                          {/* Excess return vs benchmark — the "did it beat SPY?" signal */}
-                          <div className="mt-1.5 flex items-center gap-1 font-mono text-[9.5px] uppercase tracking-wide tabular-nums">
-                            {cell.alphaPct === null ? (
-                              <span className="text-ink/35">No benchmark</span>
-                            ) : (
-                              <>
-                                <span className="text-ink/45">vs {cell.benchmarkSymbol}</span>
-                                <span
-                                  className={`inline-flex items-center gap-0.5 font-bold ${
-                                    cell.alphaPct >= 0 ? 'text-green-500' : 'text-red-500'
-                                  }`}
-                                >
-                                  {cell.alphaPct >= 0 ? (
-                                    <ArrowUp className="w-2.5 h-2.5" />
-                                  ) : (
-                                    <ArrowDown className="w-2.5 h-2.5" />
-                                  )}
-                                  {formatReturn(cell.alphaPct)}
-                                </span>
-                              </>
-                            )}
-                          </div>
-
-                          <div className="mt-1.5 font-mono text-[9px] uppercase tracking-wide text-ink/40">
-                            {cell.date} · {cell.period}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
               )}
             </div>
 

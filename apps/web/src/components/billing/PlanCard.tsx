@@ -8,7 +8,7 @@ import { PlanTier } from '@llamatrade/core/proto/billing_pb';
 import type { Money } from '@llamatrade/core/proto/common_pb';
 import { Check } from 'lucide-react';
 
-type BillingCycle = 'monthly' | 'yearly';
+export type BillingCycle = 'monthly' | 'yearly';
 
 interface PlanCardProps {
   plan: Plan;

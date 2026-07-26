@@ -16,7 +16,7 @@ interface RecentRunsPanelProps {
 }
 
 // Decorative dot palette (Monolith accents), assigned per row by position.
-const DOT_COLORS = ['#0f7a34', '#1a1aff', '#6b2fb3', '#c81e1e', '#0e8ba0'];
+const DOT_COLORS = ['#0f7a34', '#2f52a8', '#6b2fb3', '#c81e1e', '#0e8ba0'];
 
 const TIMEFRAME_LABELS: Record<string, string> = {
   '1Min': '1 Min',
