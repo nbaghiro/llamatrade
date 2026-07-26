@@ -26,7 +26,9 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    op.drop_index("ix_strategy_templates_category", table_name="strategy_templates")
+    # No explicit drop_index: revision 012 dropped and re-added the ``category``
+    # column, taking ``ix_strategy_templates_category`` with it, and drop_table
+    # removes any surviving dependent index anyway.
     op.drop_table("strategy_templates")
 
 

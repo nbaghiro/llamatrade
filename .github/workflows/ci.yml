@@ -119,6 +119,7 @@ jobs:
           pip install -e libs/runtime[dev]
           pip install -e libs/proto[dev]
           pip install -e libs/events
+          pip install -e libs/alpaca
 
       - name: Install coverage tools
         run: pip install pytest-cov coverage

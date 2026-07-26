@@ -4,7 +4,7 @@
 (the visual tree is derived client-side via ``fromDSLString``) are no longer stored — only the DSL
 string ``config_sexpr``, plus the ``symbols``/``timeframe`` projections kept for querying.
 
-Revision ID: 032_drop_strategy_version_derived_columns
+Revision ID: 032_drop_version_derived_cols
 Revises: 031_drop_strategy_templates
 """
 
@@ -15,7 +15,7 @@ from alembic import op
 from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
-revision: str = "032_drop_strategy_version_derived_columns"
+revision: str = "032_drop_version_derived_cols"
 down_revision: str | None = "031_drop_strategy_templates"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None

@@ -41,18 +41,28 @@ depends_on: str | Sequence[str] | None = None
 # chain stands up a complete schema on its own.
 _ORM_ONLY_TABLES = (AuditLog, DailyPnL, RiskConfig, StrategyExecution)
 
+# ``RLS_TABLES`` is the live constant, so a table added to it by a *later*
+# revision would be enabled here — before it exists. Such tables own their own
+# RLS DDL in the revision that creates them (029 for ``oauth_identities``) and
+# must be listed here so a from-scratch upgrade does not fail at this revision.
+_CREATED_BY_LATER_REVISIONS = frozenset({"oauth_identities"})
+
+
+def _tables() -> tuple[str, ...]:
+    return tuple(t for t in RLS_TABLES if t not in _CREATED_BY_LATER_REVISIONS)
+
 
 def upgrade() -> None:
     bind = op.get_bind()
     for model in _ORM_ONLY_TABLES:
         model.__table__.create(bind=bind, checkfirst=True)
 
-    for table in RLS_TABLES:
+    for table in _tables():
         for statement in enable_rls_statements(table):
             op.execute(statement)
 
 
 def downgrade() -> None:
-    for table in RLS_TABLES:
+    for table in _tables():
         for statement in disable_rls_statements(table):
             op.execute(statement)
