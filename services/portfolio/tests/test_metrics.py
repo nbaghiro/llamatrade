@@ -24,10 +24,22 @@ from src.metrics import (
 
 
 def _sample(text: str, name: str, labels: str) -> float:
-    """Return the current value of ``name{labels}`` in the exposition, or 0.0."""
-    pattern = re.compile(rf"^{re.escape(name)}\{{{re.escape(labels)}\}} (\S+)$", re.MULTILINE)
-    match = pattern.search(text)
-    return float(match.group(1)) if match else 0.0
+    """Return the value of the ``name`` sample carrying ``labels``, or 0.0 if absent.
+
+    Matches on label *containment*, not equality: the OTel Prometheus exporter
+    appends ``otel_scope_*`` labels whose presence varies by exporter version.
+    """
+    wanted = dict(re.findall(r'(\w+)="([^"]*)"', labels))
+    for line in text.splitlines():
+        if line.startswith("#") or not line.startswith(name):
+            continue
+        match = re.match(rf"{re.escape(name)}(?:\{{(?P<labels>[^}}]*)\}})?\s+(?P<value>\S+)$", line)
+        if match is None:
+            continue
+        present = dict(re.findall(r'(\w+)="([^"]*)"', match.group("labels") or ""))
+        if all(present.get(k) == v for k, v in wanted.items()):
+            return float(match.group("value"))
+    return 0.0
 
 
 def test_record_ingest_increments_events_ingested() -> None:

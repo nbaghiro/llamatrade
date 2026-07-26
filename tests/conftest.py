@@ -5,27 +5,25 @@ test containers. These containers are shared across all integration tests
 for efficiency.
 """
 
-import os
+from __future__ import annotations
 
-# Register fixture plugins for integration tests
-# Only loaded when running from root directory (tests.integration is in path)
-try:
-    # pytest_plugins handles module loading - no separate imports needed
-    pytest_plugins = [
-        "tests.integration.fixtures.auth",
-        "tests.integration.fixtures.backtest",
-        "tests.integration.fixtures.orders",
-        "tests.integration.fixtures.strategies",
-        "tests.integration.fixtures.trading",
-    ]
-except ImportError:
-    # Running service tests independently - fixtures not needed
-    pytest_plugins = []
+import os
 from collections.abc import Generator
+from typing import TYPE_CHECKING
 
 import pytest
-from testcontainers.postgres import PostgresContainer
-from testcontainers.redis import RedisContainer
+
+if TYPE_CHECKING:
+    from testcontainers.postgres import PostgresContainer
+    from testcontainers.redis import RedisContainer
+
+pytest_plugins = [
+    "tests.integration.fixtures.auth",
+    "tests.integration.fixtures.backtest",
+    "tests.integration.fixtures.orders",
+    "tests.integration.fixtures.strategies",
+    "tests.integration.fixtures.trading",
+]
 
 
 @pytest.fixture(scope="session")
@@ -35,6 +33,8 @@ def postgres_container() -> Generator[PostgresContainer]:
     Uses testcontainers to automatically manage container lifecycle.
     Container is started once per test session and cleaned up automatically.
     """
+    from testcontainers.postgres import PostgresContainer
+
     with PostgresContainer(
         image="postgres:16-alpine",
         username="postgres",
@@ -48,6 +48,8 @@ def postgres_container() -> Generator[PostgresContainer]:
 @pytest.fixture(scope="session")
 def redis_container() -> Generator[RedisContainer]:
     """Start Redis container for the test session."""
+    from testcontainers.redis import RedisContainer
+
     with RedisContainer(image="redis:7-alpine") as redis:
         yield redis
 
