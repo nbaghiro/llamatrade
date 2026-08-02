@@ -62,10 +62,8 @@ def make_mock_session(
     mock.title = title
     mock.status = status
     mock.message_count = message_count
-    mock.created_at = MagicMock()
-    mock.created_at.timestamp.return_value = datetime.now(UTC).timestamp()
-    mock.last_activity_at = MagicMock()
-    mock.last_activity_at.timestamp.return_value = datetime.now(UTC).timestamp()
+    mock.created_at = datetime.now(UTC)
+    mock.last_activity_at = datetime.now(UTC)
     return mock
 
 
@@ -82,8 +80,7 @@ def make_mock_message(
     mock.role = role
     mock.content = content
     mock.tool_calls_json = None
-    mock.created_at = MagicMock()
-    mock.created_at.timestamp.return_value = datetime.now(UTC).timestamp()
+    mock.created_at = datetime.now(UTC)
     return mock
 
 
@@ -220,6 +217,50 @@ class TestGetSession:
 
 
 # =============================================================================
+# List Sessions Tests
+# =============================================================================
+
+
+class TestListSessions:
+    """Tests for list_sessions endpoint."""
+
+    @pytest.mark.asyncio
+    async def test_list_sessions_zero_page_size_does_not_divide_by_zero(
+        self,
+        mock_request_context: MagicMock,
+        tenant_id: UUID,
+        user_id: UUID,
+    ) -> None:
+        """A client-supplied page_size=0 with rows must not raise ZeroDivisionError;
+        resolve_pagination floors it to the default."""
+        servicer = AgentServicer()
+        sessions = [make_mock_session(tenant_id=tenant_id, user_id=user_id)]
+        mock_conv = MagicMock()
+        mock_conv.list_sessions = AsyncMock(return_value=(sessions, 1))
+
+        request = agent_pb2.ListSessionsRequest(
+            context=common_pb2.TenantContext(tenant_id=str(tenant_id), user_id=str(user_id)),
+            pagination=common_pb2.PaginationRequest(page=0, page_size=0),
+        )
+
+        with (
+            patch.object(servicer, "_maker", return_value=MagicMock()),
+            patch("src.grpc.servicer.tenant_session", return_value=make_mock_db_session()),
+            patch(
+                "src.services.conversation_service.ConversationService",
+                return_value=mock_conv,
+            ),
+        ):
+            response = await servicer.list_sessions(request, mock_request_context)
+
+        assert response.pagination.current_page == 1
+        assert response.pagination.page_size == 20
+        assert response.pagination.total_items == 1
+        assert response.pagination.total_pages == 1
+        assert len(response.sessions) == 1
+
+
+# =============================================================================
 # Send Message Tests
 # =============================================================================
 
@@ -342,8 +383,7 @@ class TestStreamMessage:
         artifact.description = "d"
         artifact.artifact_json = {}
         artifact.is_committed = False
-        artifact.created_at = MagicMock()
-        artifact.created_at.timestamp.return_value = datetime.now(UTC).timestamp()
+        artifact.created_at = datetime.now(UTC)
 
         captured: dict[str, object] = {}
 
@@ -505,25 +545,93 @@ class TestStreamMessage:
         assert mock_conv.add_message.await_count == 2
 
 
+def make_proposal_message(
+    session_id: UUID,
+    confirmation_id: str = "c1",
+    tool_name: str = "run_backtest",
+    arguments: dict[str, object] | None = None,
+    status: str = "proposed",
+) -> MagicMock:
+    """Assistant message carrying a persisted tool-call proposal."""
+    message = make_mock_message(
+        session_id=session_id, role=MESSAGE_ROLE_ASSISTANT, content="I'll run a backtest."
+    )
+    message.tool_calls_json = [
+        {
+            "id": confirmation_id,
+            "name": tool_name,
+            "arguments": arguments if arguments is not None else {"strategy_id": "s1"},
+            "status": status,
+        }
+    ]
+    return message
+
+
 class TestConfirmToolCall:
-    """Tests for the ConfirmToolCall resume endpoint."""
+    """ConfirmToolCall executes the stored proposal, never the client echo."""
+
+    def _request(
+        self,
+        tenant_id: UUID,
+        user_id: UUID,
+        session_uuid: UUID,
+        confirmation_id: str = "c1",
+        tool_name: str = "run_backtest",
+        tool_arguments_json: str = "",
+    ) -> agent_pb2.ConfirmToolCallRequest:
+        return agent_pb2.ConfirmToolCallRequest(
+            context=common_pb2.TenantContext(tenant_id=str(tenant_id), user_id=str(user_id)),
+            session_id=str(session_uuid),
+            confirmation_id=confirmation_id,
+            tool_name=tool_name,
+            tool_arguments_json=tool_arguments_json,
+            approved=True,
+        )
+
+    def _mock_conv(self, session_uuid: UUID, messages: list[MagicMock]) -> MagicMock:
+        mock_conv = MagicMock()
+        mock_conv.get_session = AsyncMock(return_value=make_mock_session(session_id=session_uuid))
+        mock_conv.get_recent_messages = AsyncMock(return_value=messages)
+
+        async def _lock(session_id: UUID, confirmation_id: str) -> MagicMock | None:
+            for message in messages:
+                for call in message.tool_calls_json or []:
+                    if call.get("id") == confirmation_id:
+                        return message
+            return None
+
+        mock_conv.lock_message_with_proposal = AsyncMock(side_effect=_lock)
+        mock_conv.add_message = AsyncMock(return_value=make_mock_message())
+        mock_conv.db = AsyncMock()
+        return mock_conv
+
+    def _patches(self, servicer: AgentServicer, mock_conv: MagicMock, mock_agent: MagicMock):
+        return (
+            patch.object(servicer, "_maker", return_value=MagicMock()),
+            patch("src.grpc.servicer.tenant_session", return_value=make_mock_db_session()),
+            patch(
+                "src.services.conversation_service.ConversationService",
+                return_value=mock_conv,
+            ),
+            patch("src.services.agent_service.AgentService", return_value=mock_agent),
+            # confirm_tool_call binds the tenant GUC durably (real one needs a live
+            # session; the dedicated test below asserts the call happens).
+            patch("src.grpc.servicer.bind_tenant_guc"),
+        )
 
     @pytest.mark.asyncio
-    async def test_confirm_tool_call_resumes_and_single_writes(
+    async def test_confirm_executes_stored_args_ignoring_client_echo(
         self,
         mock_request_context: MagicMock,
         tenant_id: UUID,
         user_id: UUID,
     ) -> None:
-        """Approval threads the proposal to resume_with_tool and stores one
-        assistant message via the shared relay."""
+        """Approval executes the persisted name+arguments even when the client
+        echoes different arguments, and stores one assistant message."""
         servicer = AgentServicer()
         session_uuid = uuid4()
-
-        mock_conv = MagicMock()
-        mock_conv.get_session = AsyncMock(return_value=make_mock_session(session_id=session_uuid))
-        mock_conv.get_recent_messages = AsyncMock(return_value=[])
-        mock_conv.add_message = AsyncMock(return_value=make_mock_message())
+        proposal_msg = make_proposal_message(session_uuid, arguments={"strategy_id": "s1"})
+        mock_conv = self._mock_conv(session_uuid, [proposal_msg])
 
         captured: dict[str, object] = {}
 
@@ -535,13 +643,195 @@ class TestConfirmToolCall:
         mock_agent = MagicMock()
         mock_agent.resume_with_tool = fake_resume
 
+        request = self._request(
+            tenant_id,
+            user_id,
+            session_uuid,
+            tool_arguments_json='{"strategy_id": "SOMETHING-ELSE"}',
+        )
+
+        p1, p2, p3, p4, p5 = self._patches(servicer, mock_conv, mock_agent)
+        with p1, p2, p3, p4, p5:
+            events = [e async for e in servicer.confirm_tool_call(request, mock_request_context)]
+
+        assert captured["approved"] is True
+        assert captured["tool_name"] == "run_backtest"
+        assert captured["arguments_json"] == '{"strategy_id": "s1"}'
+        assert mock_conv.add_message.await_count == 1
+        assert any(e.event_type == STREAM_EVENT_TYPE_COMPLETE for e in events)
+        # The stored proposal is marked consumed and the change committed.
+        assert proposal_msg.tool_calls_json[0]["status"] == "consumed"
+        mock_conv.db.commit.assert_awaited_once()
+        # The read-modify-write goes through the row-locking lookup, not a plain scan.
+        mock_conv.lock_message_with_proposal.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_confirm_binds_tenant_guc_for_post_commit_scope(
+        self,
+        mock_request_context: MagicMock,
+        tenant_id: UUID,
+        user_id: UUID,
+    ) -> None:
+        """The session is bound to the tenant GUC before the mid-RPC commit, so
+        the post-commit history read, resume, and persist stay tenant-scoped
+        (tenant_session's one-shot GUC would be cleared by _consume_proposal)."""
+        servicer = AgentServicer()
+        session_uuid = uuid4()
+        mock_conv = self._mock_conv(session_uuid, [make_proposal_message(session_uuid)])
+
+        async def fake_resume(**kwargs: object):
+            yield {"type": STREAM_EVENT_TYPE_COMPLETE, "session_id": str(session_uuid)}
+
+        mock_agent = MagicMock()
+        mock_agent.resume_with_tool = fake_resume
+
+        request = self._request(tenant_id, user_id, session_uuid)
+        mock_db = AsyncMock()
+
+        @asynccontextmanager
+        async def _session():
+            yield mock_db
+
+        with (
+            patch.object(servicer, "_maker", return_value=MagicMock()),
+            patch("src.grpc.servicer.tenant_session", return_value=_session()),
+            patch(
+                "src.services.conversation_service.ConversationService",
+                return_value=mock_conv,
+            ),
+            patch("src.services.agent_service.AgentService", return_value=mock_agent),
+            patch("src.grpc.servicer.bind_tenant_guc") as bind_mock,
+        ):
+            _ = [e async for e in servicer.confirm_tool_call(request, mock_request_context)]
+
+        bind_mock.assert_called_once_with(mock_db, tenant_id)
+
+    @pytest.mark.asyncio
+    async def test_confirm_unknown_confirmation_id_rejected(
+        self,
+        mock_request_context: MagicMock,
+        tenant_id: UUID,
+        user_id: UUID,
+    ) -> None:
+        servicer = AgentServicer()
+        session_uuid = uuid4()
+        mock_conv = self._mock_conv(session_uuid, [make_proposal_message(session_uuid)])
+        mock_agent = MagicMock()
+
+        request = self._request(tenant_id, user_id, session_uuid, confirmation_id="nope")
+
+        p1, p2, p3, p4, p5 = self._patches(servicer, mock_conv, mock_agent)
+        with p1, p2, p3, p4, p5:
+            with pytest.raises(ConnectError) as exc_info:
+                _ = [e async for e in servicer.confirm_tool_call(request, mock_request_context)]
+
+        assert exc_info.value.code == Code.INVALID_ARGUMENT
+        mock_conv.add_message.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_confirm_already_consumed_rejected(
+        self,
+        mock_request_context: MagicMock,
+        tenant_id: UUID,
+        user_id: UUID,
+    ) -> None:
+        """Double-confirm: a consumed proposal cannot be executed again."""
+        servicer = AgentServicer()
+        session_uuid = uuid4()
+        consumed = make_proposal_message(session_uuid, status="consumed")
+        mock_conv = self._mock_conv(session_uuid, [consumed])
+        mock_agent = MagicMock()
+
+        request = self._request(tenant_id, user_id, session_uuid)
+
+        p1, p2, p3, p4, p5 = self._patches(servicer, mock_conv, mock_agent)
+        with p1, p2, p3, p4, p5:
+            with pytest.raises(ConnectError) as exc_info:
+                _ = [e async for e in servicer.confirm_tool_call(request, mock_request_context)]
+
+        assert exc_info.value.code == Code.INVALID_ARGUMENT
+        assert "already confirmed" in exc_info.value.message
+
+    @pytest.mark.asyncio
+    async def test_confirm_tool_name_mismatch_rejected(
+        self,
+        mock_request_context: MagicMock,
+        tenant_id: UUID,
+        user_id: UUID,
+    ) -> None:
+        servicer = AgentServicer()
+        session_uuid = uuid4()
+        proposal_msg = make_proposal_message(session_uuid, tool_name="run_backtest")
+        mock_conv = self._mock_conv(session_uuid, [proposal_msg])
+        mock_agent = MagicMock()
+
+        request = self._request(tenant_id, user_id, session_uuid, tool_name="delete_strategy")
+
+        p1, p2, p3, p4, p5 = self._patches(servicer, mock_conv, mock_agent)
+        with p1, p2, p3, p4, p5:
+            with pytest.raises(ConnectError) as exc_info:
+                _ = [e async for e in servicer.confirm_tool_call(request, mock_request_context)]
+
+        assert exc_info.value.code == Code.INVALID_ARGUMENT
+        # Not consumed: the legitimate client can still confirm it.
+        assert proposal_msg.tool_calls_json[0]["status"] == "proposed"
+
+    @pytest.mark.asyncio
+    async def test_confirm_requires_confirmation_id(
+        self,
+        mock_request_context: MagicMock,
+        tenant_id: UUID,
+        user_id: UUID,
+    ) -> None:
+        servicer = AgentServicer()
         request = agent_pb2.ConfirmToolCallRequest(
             context=common_pb2.TenantContext(tenant_id=str(tenant_id), user_id=str(user_id)),
-            session_id=str(session_uuid),
-            confirmation_id="c1",
+            session_id=str(uuid4()),
             tool_name="run_backtest",
-            tool_arguments_json='{"strategy_id": "s1"}',
             approved=True,
+        )
+
+        with pytest.raises(ConnectError) as exc_info:
+            _ = [e async for e in servicer.confirm_tool_call(request, mock_request_context)]
+
+        assert exc_info.value.code == Code.INVALID_ARGUMENT
+
+    @pytest.mark.asyncio
+    async def test_stream_message_persists_proposal_with_assistant_message(
+        self,
+        mock_request_context: MagicMock,
+        tenant_id: UUID,
+        user_id: UUID,
+    ) -> None:
+        """The confirmation event's proposal lands in tool_calls_json so the
+        confirm path can execute the stored call."""
+        from llamatrade_proto.generated.agent_pb2 import (
+            STREAM_EVENT_TYPE_TOOL_CONFIRMATION_REQUIRED,
+        )
+
+        servicer = AgentServicer()
+        session_uuid = uuid4()
+
+        mock_conv = MagicMock()
+        mock_conv.get_session = AsyncMock(return_value=make_mock_session(session_id=session_uuid))
+        mock_conv.get_recent_messages = AsyncMock(return_value=[])
+        mock_conv.add_message = AsyncMock(return_value=make_mock_message())
+
+        async def fake_stream(**kwargs: object):
+            yield {
+                "type": STREAM_EVENT_TYPE_TOOL_CONFIRMATION_REQUIRED,
+                "tool_name": "run_backtest",
+                "arguments_json": '{"strategy_id": "s1"}',
+                "confirmation_id": "c9",
+            }
+
+        mock_agent = MagicMock()
+        mock_agent.stream_message = fake_stream
+
+        request = agent_pb2.SendMessageRequest(
+            context=common_pb2.TenantContext(tenant_id=str(tenant_id), user_id=str(user_id)),
+            session_id=str(session_uuid),
+            content="backtest it",
         )
 
         with (
@@ -553,33 +843,17 @@ class TestConfirmToolCall:
             ),
             patch("src.services.agent_service.AgentService", return_value=mock_agent),
         ):
-            events = [e async for e in servicer.confirm_tool_call(request, mock_request_context)]
+            _ = [e async for e in servicer.stream_message(request, mock_request_context)]
 
-        assert captured["approved"] is True
-        assert captured["tool_name"] == "run_backtest"
-        assert captured["arguments_json"] == '{"strategy_id": "s1"}'
-        assert mock_conv.add_message.await_count == 1
-        assert any(e.event_type == STREAM_EVENT_TYPE_COMPLETE for e in events)
-
-    @pytest.mark.asyncio
-    async def test_confirm_tool_call_requires_tool_name(
-        self,
-        mock_request_context: MagicMock,
-        tenant_id: UUID,
-        user_id: UUID,
-    ) -> None:
-        """A missing tool_name yields an ERROR event."""
-        servicer = AgentServicer()
-        request = agent_pb2.ConfirmToolCallRequest(
-            context=common_pb2.TenantContext(tenant_id=str(tenant_id), user_id=str(user_id)),
-            session_id=str(uuid4()),
-            approved=True,
-        )
-
-        events = [e async for e in servicer.confirm_tool_call(request, mock_request_context)]
-
-        assert len(events) == 1
-        assert events[0].event_type == STREAM_EVENT_TYPE_ERROR
+        assistant_call = mock_conv.add_message.await_args_list[1].kwargs
+        assert assistant_call["tool_calls"] == [
+            {
+                "id": "c9",
+                "name": "run_backtest",
+                "arguments": {"strategy_id": "s1"},
+                "status": "proposed",
+            }
+        ]
 
 
 class TestHistoryFromMessages:
@@ -667,3 +941,98 @@ class TestGetSuggestedPrompts:
         call_args = mock_fn.call_args
         assert call_args[0][0] == "strategy_detail"
         assert call_args[0][1]["strategy_id"] == strategy_id
+
+
+# =============================================================================
+# Per-tenant LLM Rate Limit Tests
+# =============================================================================
+
+
+class TestLlmRateLimit:
+    """The LLM-calling RPCs enforce a per-tenant ceiling when Redis is configured."""
+
+    def _limited_servicer(self, allowed: bool) -> tuple[AgentServicer, MagicMock]:
+        servicer = AgentServicer()
+        limiter = MagicMock()
+        limiter.check_and_count = AsyncMock(return_value=allowed)
+        servicer._rate_limiter = limiter
+        servicer._llm_rate_rules = ((5, 60),)
+        return servicer, limiter
+
+    def test_default_servicer_has_no_limiter_without_redis(self) -> None:
+        """Without REDIS_URL the limiter is absent and enforcement is a no-op."""
+        assert AgentServicer()._rate_limiter is None
+
+    @pytest.mark.asyncio
+    async def test_enforce_is_noop_without_limiter(self) -> None:
+        servicer = AgentServicer()
+        servicer._rate_limiter = None
+        # Must not raise.
+        await servicer._enforce_llm_rate_limit(uuid4())
+
+    @pytest.mark.asyncio
+    async def test_enforce_keys_by_tenant(self) -> None:
+        servicer, limiter = self._limited_servicer(allowed=True)
+        tenant = uuid4()
+        await servicer._enforce_llm_rate_limit(tenant)
+        limiter.check_and_count.assert_awaited_once_with(f"agent:llm:{tenant}", 5, 60)
+
+    @pytest.mark.asyncio
+    async def test_send_message_rejected_when_over_limit(
+        self,
+        mock_request_context: MagicMock,
+        tenant_id: UUID,
+        user_id: UUID,
+    ) -> None:
+        servicer, limiter = self._limited_servicer(allowed=False)
+        request = agent_pb2.SendMessageRequest(
+            context=common_pb2.TenantContext(tenant_id=str(tenant_id), user_id=str(user_id)),
+            session_id=str(uuid4()),
+            content="hi",
+        )
+
+        with pytest.raises(ConnectError) as exc_info:
+            await servicer.send_message(request, mock_request_context)
+
+        assert exc_info.value.code == Code.RESOURCE_EXHAUSTED
+        limiter.check_and_count.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_stream_message_rejected_when_over_limit(
+        self,
+        mock_request_context: MagicMock,
+        tenant_id: UUID,
+        user_id: UUID,
+    ) -> None:
+        servicer, _ = self._limited_servicer(allowed=False)
+        request = agent_pb2.SendMessageRequest(
+            context=common_pb2.TenantContext(tenant_id=str(tenant_id), user_id=str(user_id)),
+            session_id=str(uuid4()),
+            content="hi",
+        )
+
+        with pytest.raises(ConnectError) as exc_info:
+            _ = [e async for e in servicer.stream_message(request, mock_request_context)]
+
+        assert exc_info.value.code == Code.RESOURCE_EXHAUSTED
+
+    @pytest.mark.asyncio
+    async def test_confirm_tool_call_rejected_when_over_limit(
+        self,
+        mock_request_context: MagicMock,
+        tenant_id: UUID,
+        user_id: UUID,
+    ) -> None:
+        servicer, _ = self._limited_servicer(allowed=False)
+        request = agent_pb2.ConfirmToolCallRequest(
+            context=common_pb2.TenantContext(tenant_id=str(tenant_id), user_id=str(user_id)),
+            session_id=str(uuid4()),
+            confirmation_id="c1",
+            tool_name="run_backtest",
+            approved=True,
+        )
+
+        with pytest.raises(ConnectError) as exc_info:
+            _ = [e async for e in servicer.confirm_tool_call(request, mock_request_context)]
+
+        assert exc_info.value.code == Code.RESOURCE_EXHAUSTED

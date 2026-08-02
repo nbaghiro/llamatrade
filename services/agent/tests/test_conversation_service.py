@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock, MagicMock
 from uuid import UUID, uuid4
 
 import pytest
+from sqlalchemy.dialects import postgresql
 
 from llamatrade_proto.generated.agent_pb2 import (
     AGENT_SESSION_STATUS_ACTIVE,
@@ -42,6 +43,15 @@ def mock_scalars_all(values: list[Any]) -> MagicMock:
     result = MagicMock()
     scalars_mock = MagicMock()
     scalars_mock.all.return_value = values
+    result.scalars.return_value = scalars_mock
+    return result
+
+
+def mock_scalars_first(value: Any) -> MagicMock:
+    """Create a mock result that returns the value from scalars().first()."""
+    result = MagicMock()
+    scalars_mock = MagicMock()
+    scalars_mock.first.return_value = value
     result.scalars.return_value = scalars_mock
     return result
 
@@ -715,6 +725,40 @@ class TestGetMessages:
         messages = await conversation_service.get_recent_messages(session_id, limit=3)
 
         assert [m.content for m in messages] == ["Oldest", "Middle", "Newest"]
+
+
+class TestLockMessageWithProposal:
+    """Tests for the row-locking proposal lookup that guards single-use confirms."""
+
+    @pytest.mark.asyncio
+    async def test_locks_row_and_filters_by_confirmation_id(
+        self,
+        conversation_service: ConversationService,
+    ) -> None:
+        """The lookup selects FOR UPDATE and matches on JSONB containment of the id."""
+        session_id = uuid4()
+        message = make_mock_message(session_id=session_id)
+        conversation_service.db.execute = AsyncMock(return_value=mock_scalars_first(message))
+
+        result = await conversation_service.lock_message_with_proposal(session_id, "c1")
+
+        assert result is message
+        stmt = conversation_service.db.execute.call_args.args[0]
+        compiled = str(stmt.compile(dialect=postgresql.dialect()))
+        assert "FOR UPDATE" in compiled.upper()
+        assert "@>" in compiled
+
+    @pytest.mark.asyncio
+    async def test_returns_none_when_no_row_holds_the_id(
+        self,
+        conversation_service: ConversationService,
+    ) -> None:
+        """An id carried by no message yields None (caller refuses the confirm)."""
+        conversation_service.db.execute = AsyncMock(return_value=mock_scalars_first(None))
+
+        result = await conversation_service.lock_message_with_proposal(uuid4(), "missing")
+
+        assert result is None
 
 
 # =============================================================================

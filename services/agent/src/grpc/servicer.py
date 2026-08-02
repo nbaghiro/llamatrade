@@ -8,8 +8,8 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from collections.abc import AsyncIterator
-from datetime import datetime
 from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
@@ -18,8 +18,13 @@ from connectrpc.errors import ConnectError
 from connectrpc.request import RequestContext
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from llamatrade_common.connect import resolve_identity_connect
-from llamatrade_db import get_session_maker, tenant_session
+from llamatrade_common import RateLimiter, pagination_response, resolve_pagination
+from llamatrade_common.connect import (
+    handle_service_errors,
+    parse_uuid,
+    resolve_identity_connect,
+)
+from llamatrade_db import bind_tenant_guc, get_session_maker, tenant_session
 from llamatrade_proto.generated import agent_pb2, common_pb2
 from llamatrade_proto.generated.agent_pb2 import (
     MESSAGE_ROLE_ASSISTANT,
@@ -33,8 +38,9 @@ from llamatrade_proto.generated.agent_pb2 import (
     STREAM_EVENT_TYPE_TOOL_CALL_START,
     STREAM_EVENT_TYPE_TOOL_CONFIRMATION_REQUIRED,
 )
+from llamatrade_proto.timestamps import to_proto_timestamp
 
-from src.grpc.error_handler import handle_service_errors, parse_uuid
+from src.redis_client import get_redis
 
 if TYPE_CHECKING:
     from llamatrade_db.models import AgentMessage
@@ -45,6 +51,11 @@ logger = logging.getLogger(__name__)
 
 # Number of most-recent prior turns replayed into the LLM for a session.
 HISTORY_MESSAGE_LIMIT = 40
+
+# Per-tenant ceiling on LLM-calling RPCs (chat/tool turns), best-effort abuse and
+# cost protection. Tunable via env; a true per-tenant cost quota is a follow-up.
+LLM_RATE_LIMIT = int(os.getenv("AGENT_LLM_RATE_LIMIT", "30"))
+LLM_RATE_WINDOW_SECONDS = int(os.getenv("AGENT_LLM_RATE_WINDOW_SECONDS", "60"))
 
 
 def _history_from_messages(messages: list[AgentMessage]) -> list[dict[str, str]]:
@@ -83,9 +94,15 @@ def _validate_tenant_context(context: common_pb2.TenantContext) -> tuple[UUID, U
     return resolve_identity_connect(context)
 
 
-def _timestamp_to_proto(dt: datetime) -> common_pb2.Timestamp:
-    """Convert datetime to proto Timestamp."""
-    return common_pb2.Timestamp(seconds=int(dt.timestamp()))
+def _parse_arguments_json(arguments_json: str) -> dict[str, Any]:
+    """Tool arguments dict from the event's JSON payload (empty on malformed)."""
+    if not arguments_json:
+        return {}
+    try:
+        parsed = json.loads(arguments_json)
+    except ValueError:
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
 
 
 class AgentServicer:
@@ -97,12 +114,33 @@ class AgentServicer:
     def __init__(self) -> None:
         """Initialize the servicer."""
         self._session_maker: async_sessionmaker[AsyncSession] | None = None
+        redis = get_redis()
+        self._rate_limiter: RateLimiter | None = RateLimiter(redis) if redis is not None else None
+        self._llm_rate_rules: tuple[tuple[int, int], ...] = (
+            (LLM_RATE_LIMIT, LLM_RATE_WINDOW_SECONDS),
+        )
 
     def _maker(self) -> async_sessionmaker[AsyncSession]:
         """The session factory (lazily created; tests inject a test-DB factory)."""
         if self._session_maker is None:
             self._session_maker = get_session_maker()
         return self._session_maker
+
+    async def _enforce_llm_rate_limit(self, tenant_id: UUID) -> None:
+        """Apply the per-tenant LLM ceiling; RESOURCE_EXHAUSTED when it trips.
+
+        A no-op when Redis is unconfigured; a Redis outage fails open (the
+        limiter's default) so an unavailable limiter cannot take the copilot down.
+        """
+        if self._rate_limiter is None:
+            return
+        key = f"agent:llm:{tenant_id}"
+        for limit, window in self._llm_rate_rules:
+            if not await self._rate_limiter.check_and_count(key, limit, window):
+                raise ConnectError(
+                    Code.RESOURCE_EXHAUSTED,
+                    "Too many requests; slow down and retry shortly.",
+                )
 
     # Session Management
 
@@ -134,8 +172,8 @@ class AgentServicer:
                 title=session.title or "",
                 status=session.status,
                 message_count=session.message_count,
-                created_at=_timestamp_to_proto(session.created_at),
-                last_activity_at=_timestamp_to_proto(session.last_activity_at),
+                created_at=to_proto_timestamp(session.created_at),
+                last_activity_at=to_proto_timestamp(session.last_activity_at),
             )
 
             return agent_pb2.CreateSessionResponse(session=proto_session)
@@ -186,7 +224,7 @@ class AgentServicer:
                         ],
                         inline_artifact_ids=m.inline_artifact_ids or [],
                         thinking=m.thinking or "",
-                        created_at=_timestamp_to_proto(m.created_at),
+                        created_at=to_proto_timestamp(m.created_at),
                     )
                     for m in db_messages
                 ]
@@ -206,7 +244,7 @@ class AgentServicer:
                     committed_resource_id=str(a.committed_resource_id)
                     if a.committed_resource_id
                     else "",
-                    created_at=_timestamp_to_proto(a.created_at),
+                    created_at=to_proto_timestamp(a.created_at),
                 )
                 for a in db_artifacts
             ]
@@ -218,8 +256,8 @@ class AgentServicer:
                 title=session.title or "",
                 status=session.status,
                 message_count=session.message_count,
-                created_at=_timestamp_to_proto(session.created_at),
-                last_activity_at=_timestamp_to_proto(session.last_activity_at),
+                created_at=to_proto_timestamp(session.created_at),
+                last_activity_at=to_proto_timestamp(session.last_activity_at),
             )
 
             return agent_pb2.GetSessionResponse(
@@ -239,8 +277,7 @@ class AgentServicer:
 
         from src.services.conversation_service import ConversationService
 
-        page = request.pagination.page if request.HasField("pagination") else 1
-        page_size = request.pagination.page_size if request.HasField("pagination") else 20
+        page, page_size = resolve_pagination(request.pagination)
 
         async with tenant_session(tenant_id, self._maker()) as db:
             service = ConversationService(db)
@@ -252,8 +289,6 @@ class AgentServicer:
                 page_size=page_size,
             )
 
-            total_pages = (total + page_size - 1) // page_size if total > 0 else 1
-
             return agent_pb2.ListSessionsResponse(
                 sessions=[
                     agent_pb2.AgentSession(
@@ -263,18 +298,13 @@ class AgentServicer:
                         title=s.title or "",
                         status=s.status,
                         message_count=s.message_count,
-                        created_at=_timestamp_to_proto(s.created_at),
-                        last_activity_at=_timestamp_to_proto(s.last_activity_at),
+                        created_at=to_proto_timestamp(s.created_at),
+                        last_activity_at=to_proto_timestamp(s.last_activity_at),
                     )
                     for s in sessions
                 ],
                 pagination=common_pb2.PaginationResponse(
-                    total_items=total,
-                    total_pages=total_pages,
-                    current_page=page,
-                    page_size=page_size,
-                    has_next=page < total_pages,
-                    has_previous=page > 1,
+                    **pagination_response(total, page, page_size)
                 ),
             )
 
@@ -316,6 +346,8 @@ class AgentServicer:
 
         if not request.content:
             raise ConnectError(Code.INVALID_ARGUMENT, "Message content is required")
+
+        await self._enforce_llm_rate_limit(tenant_id)
 
         from src.services.agent_service import AgentService
         from src.services.conversation_service import ConversationService
@@ -378,7 +410,7 @@ class AgentServicer:
                 session_id=str(user_msg.session_id),
                 role=user_msg.role,
                 content=user_msg.content,
-                created_at=_timestamp_to_proto(user_msg.created_at),
+                created_at=to_proto_timestamp(user_msg.created_at),
             )
 
             assistant_proto = agent_pb2.AgentMessage(
@@ -397,7 +429,7 @@ class AgentServicer:
                     )
                     for tc in (assistant_msg.tool_calls_json or [])
                 ],
-                created_at=_timestamp_to_proto(assistant_msg.created_at),
+                created_at=to_proto_timestamp(assistant_msg.created_at),
             )
 
             # Convert artifacts to proto
@@ -410,7 +442,7 @@ class AgentServicer:
                     description=a.description or "",
                     preview_json=json.dumps(a.artifact_json),
                     is_committed=a.is_committed,
-                    created_at=_timestamp_to_proto(a.created_at),
+                    created_at=to_proto_timestamp(a.created_at),
                 )
                 for a in new_artifacts
             ]
@@ -438,6 +470,8 @@ class AgentServicer:
                     error_message="Message content is required",
                 )
                 return
+
+            await self._enforce_llm_rate_limit(tenant_id)
 
             from src.services.agent_service import AgentService
             from src.services.conversation_service import ConversationService
@@ -520,6 +554,7 @@ class AgentServicer:
         full_content = ""
         full_thinking = ""
         inline_artifact_ids: list[str] = []
+        proposed_tool_calls: list[dict[str, Any]] = []
 
         async for event in events:
             event_type = event.get("type")
@@ -567,10 +602,20 @@ class AgentServicer:
                             description=artifact.description or "",
                             preview_json=json.dumps(artifact.artifact_json),
                             is_committed=artifact.is_committed,
-                            created_at=_timestamp_to_proto(artifact.created_at),
+                            created_at=to_proto_timestamp(artifact.created_at),
                         ),
                     )
             elif event_type == STREAM_EVENT_TYPE_TOOL_CONFIRMATION_REQUIRED:
+                # Persisted with the assistant message; ConfirmToolCall executes
+                # this stored proposal, never the client's echo.
+                proposed_tool_calls.append(
+                    {
+                        "id": event.get("confirmation_id", ""),
+                        "name": event.get("tool_name", ""),
+                        "arguments": _parse_arguments_json(event.get("arguments_json", "")),
+                        "status": "proposed",
+                    }
+                )
                 yield agent_pb2.AgentStreamEvent(
                     event_type=STREAM_EVENT_TYPE_TOOL_CONFIRMATION_REQUIRED,
                     session_id=str(session_id),
@@ -594,6 +639,7 @@ class AgentServicer:
             tenant_id=tenant_id,
             role=MESSAGE_ROLE_ASSISTANT,
             content=full_content,
+            tool_calls=proposed_tool_calls or None,
             inline_artifact_ids=inline_artifact_ids or None,
             thinking=full_thinking.strip() or None,
         )
@@ -609,23 +655,30 @@ class AgentServicer:
         request: agent_pb2.ConfirmToolCallRequest,
         ctx: RequestContext[object, object],
     ) -> AsyncIterator[agent_pb2.AgentStreamEvent]:
-        """Approve or deny a proposed tool call, then resume the agent turn."""
+        """Approve or deny a proposed tool call, then resume the agent turn.
+
+        Executes the proposal persisted with the assistant message, looked up
+        by ``confirmation_id`` — the client-echoed arguments are ignored and a
+        mismatched echoed tool name is rejected.
+        """
         try:
             tenant_id, user_id = _validate_tenant_context(request.context)
             session_id = parse_uuid(request.session_id, "session_id")
 
-            if not request.tool_name:
-                yield agent_pb2.AgentStreamEvent(
-                    event_type=STREAM_EVENT_TYPE_ERROR,
-                    session_id=str(session_id),
-                    error_message="tool_name is required",
-                )
-                return
+            if not request.confirmation_id:
+                raise ConnectError(Code.INVALID_ARGUMENT, "confirmation_id is required")
+
+            await self._enforce_llm_rate_limit(tenant_id)
 
             from src.services.agent_service import AgentService
             from src.services.conversation_service import ConversationService
 
             async with tenant_session(tenant_id, self._maker()) as db:
+                # _consume_proposal commits mid-RPC to release the row lock,
+                # which clears the transaction-local tenant GUC; bind it durably
+                # so the post-commit history read, resume, and single-writer
+                # persist stay tenant-scoped under the RLS role.
+                bind_tenant_guc(db, tenant_id)
                 conv_service = ConversationService(db)
 
                 session = await conv_service.get_session(tenant_id, session_id)
@@ -637,13 +690,17 @@ class AgentServicer:
                     )
                     return
 
+                proposal = await self._consume_proposal(
+                    conv_service, session_id, request.confirmation_id, request.tool_name
+                )
+
                 history = await _load_history(conv_service, session_id)
 
                 agent_service = AgentService(db, tenant_id, user_id)
                 events = agent_service.resume_with_tool(
                     session_id=session_id,
-                    tool_name=request.tool_name,
-                    arguments_json=request.tool_arguments_json,
+                    tool_name=proposal["name"],
+                    arguments_json=json.dumps(proposal["arguments"], default=str),
                     approved=request.approved,
                     history=history,
                 )
@@ -661,6 +718,51 @@ class AgentServicer:
                 session_id=request.session_id,
                 error_message=f"Internal error: {type(e).__name__}",
             )
+
+    async def _consume_proposal(
+        self,
+        conv_service: ConversationService,
+        session_id: UUID,
+        confirmation_id: str,
+        client_tool_name: str,
+    ) -> dict[str, Any]:
+        """Find the stored proposal for ``confirmation_id`` and mark it consumed.
+
+        The owning message row is locked FOR UPDATE for the whole read-modify-write
+        so two concurrent confirmations of one id serialize: the loser blocks, then
+        re-reads the consumed status and is refused. Raises INVALID_ARGUMENT for an
+        unknown id, an already-consumed proposal, or a client-echoed tool name that
+        mismatches the stored one.
+        """
+        message = await conv_service.lock_message_with_proposal(session_id, confirmation_id)
+        if message is None:
+            raise ConnectError(Code.INVALID_ARGUMENT, f"Unknown confirmation_id: {confirmation_id}")
+        calls = message.tool_calls_json or []
+        for index, call in enumerate(calls):
+            if call.get("id") != confirmation_id:
+                continue
+            if call.get("status") == "consumed":
+                raise ConnectError(
+                    Code.INVALID_ARGUMENT,
+                    f"Tool call already confirmed: {confirmation_id}",
+                )
+            stored_name = str(call.get("name", ""))
+            if client_tool_name and client_tool_name != stored_name:
+                raise ConnectError(
+                    Code.INVALID_ARGUMENT,
+                    "tool_name does not match the proposed tool call",
+                )
+            # New list assignment so the JSONB column change is tracked.
+            updated = [dict(c) for c in calls]
+            updated[index]["status"] = "consumed"
+            message.tool_calls_json = updated
+            await conv_service.db.commit()
+            arguments = call.get("arguments")
+            return {
+                "name": stored_name,
+                "arguments": arguments if isinstance(arguments, dict) else {},
+            }
+        raise ConnectError(Code.INVALID_ARGUMENT, f"Unknown confirmation_id: {confirmation_id}")
 
     # Artifacts
 
@@ -767,6 +869,6 @@ class AgentServicer:
                     committed_resource_id=str(artifact.committed_resource_id)
                     if artifact.committed_resource_id
                     else "",
-                    created_at=_timestamp_to_proto(artifact.created_at),
+                    created_at=to_proto_timestamp(artifact.created_at),
                 ),
             )

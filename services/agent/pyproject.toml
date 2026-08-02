@@ -12,6 +12,7 @@ dependencies = [
     "openai>=1.0.0",
     "google-genai>=1.0.0",
     "llamatrade-common",
+    "llamatrade-events",
     "llamatrade-db",
     "llamatrade-dsl",
     "llamatrade-proto",

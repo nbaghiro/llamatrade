@@ -17,9 +17,10 @@ COPY libs/db /app/libs/db
 COPY libs/telemetry /app/libs/telemetry
 COPY libs/proto /app/libs/proto
 COPY libs/dsl /app/libs/dsl
+COPY libs/events /app/libs/events
 
 # Install shared libraries
-RUN pip install --no-cache-dir /app/libs/telemetry /app/libs/common /app/libs/db /app/libs/proto /app/libs/dsl
+RUN pip install --no-cache-dir /app/libs/telemetry /app/libs/common /app/libs/db /app/libs/proto /app/libs/dsl /app/libs/events
 
 # Copy service files and install
 COPY services/agent/pyproject.toml services/agent/README.md /app/

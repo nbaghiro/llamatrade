@@ -283,6 +283,30 @@ class ConversationService:
         messages.reverse()
         return messages
 
+    async def lock_message_with_proposal(
+        self,
+        session_id: UUID,
+        confirmation_id: str,
+    ) -> AgentMessage | None:
+        """Lock the message whose ``tool_calls_json`` holds ``confirmation_id`` (FOR UPDATE).
+
+        Serializes concurrent confirmations of one proposal: the row lock is held
+        until the caller commits, so a second confirmation of the same id blocks
+        and then re-reads the now-consumed status instead of executing the tool a
+        second time. Returns None when no message carries the id.
+        """
+        query = (
+            select(AgentMessage)
+            .where(
+                (AgentMessage.session_id == session_id)
+                & AgentMessage.tool_calls_json.contains([{"id": confirmation_id}])
+            )
+            .order_by(AgentMessage.created_at.desc())
+            .with_for_update()
+        )
+        result = await self.db.execute(query)
+        return result.scalars().first()
+
     # Artifact Operations
 
     async def get_pending_artifacts(

@@ -18,7 +18,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from starlette.types import ASGIApp
 
 from llamatrade_common import AuthMiddleware, HealthChecker
-from llamatrade_db import get_pool_stats
+from llamatrade_common.health import cached_engine_check
+from llamatrade_db import close_db, get_engine, get_pool_stats
+from llamatrade_db.session import verify_rls_enforcement
 from llamatrade_telemetry import init_telemetry
 
 logger = logging.getLogger(__name__)
@@ -32,40 +34,25 @@ CORS_ORIGINS = os.getenv(
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     """Application lifespan handler."""
-    # Initialize database (non-critical - may fail if DB not available)
-    try:
-        from llamatrade_db import init_db
+    # Fail closed (prod/staging) if the DB role can bypass RLS.
+    await verify_rls_enforcement()
 
-        await init_db()
-        logger.info("Database initialized successfully")
-    except Exception as e:
-        logger.warning("Database initialization failed (non-critical): %s", e)
+    # Mount Connect ASGI app (mandatory: a missing servicer is a boot failure).
+    from llamatrade_proto.generated.agent_connect import (
+        AgentService,
+        AgentServiceASGIApplication,
+    )
 
-    # Mount Connect ASGI app
-    try:
-        from llamatrade_proto.generated.agent_connect import (
-            AgentService,
-            AgentServiceASGIApplication,
-        )
+    from src.grpc.servicer import AgentServicer
 
-        from src.grpc.servicer import AgentServicer
-
-        servicer = AgentServicer()
-        connect_app = AgentServiceASGIApplication(cast(AgentService, servicer))
-        app.mount("/", cast(ASGIApp, connect_app))
-        logger.info("Connect ASGI application mounted successfully")
-    except ImportError as e:
-        logger.warning("Connect dependencies not available: %s", e)
+    servicer = AgentServicer()
+    connect_app = AgentServiceASGIApplication(cast(AgentService, servicer))
+    app.mount("/", cast(ASGIApp, connect_app))
+    logger.info("Connect ASGI application mounted successfully")
 
     yield
 
-    # Cleanup
-    try:
-        from llamatrade_db import close_db
-
-        await close_db()
-    except Exception as e:
-        logger.warning("Database cleanup failed: %s", e)
+    await close_db()
 
 
 app = FastAPI(
@@ -91,4 +78,10 @@ app.add_middleware(
 # Export DB connection-pool stats on /metrics
 init_telemetry(app, service="agent", pool_stats_provider=get_pool_stats)
 
-app.include_router(HealthChecker("agent", "0.1.0").create_router())
+_check_database = cached_engine_check(get_engine)
+
+# LLM reachability is deliberately not probed: an upstream outage must not
+# recycle pods that still serve conversation history from the database.
+_health = HealthChecker("agent", "0.1.0")
+_health.add_check("database", lambda: _check_database())
+app.include_router(_health.create_router())

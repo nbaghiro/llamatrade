@@ -12,6 +12,11 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from llamatrade_db.models import PendingArtifact
+from llamatrade_events.catalog.notifications import (
+    NotificationEvent,
+    shared_notification_events,
+)
+from llamatrade_proto.generated import events_pb2
 from llamatrade_proto.generated.agent_pb2 import (
     STREAM_EVENT_TYPE_ARTIFACT_CREATED,
     STREAM_EVENT_TYPE_COMPLETE,
@@ -254,6 +259,17 @@ class AgentService:
                             "arguments_json": json.dumps(tool_call["input"], default=str),
                             "confirmation_id": tool_call["id"],
                         }
+                        # Durable pointer to the pending proposal: survives a
+                        # dropped stream, deduped per confirmation id.
+                        await shared_notification_events().publish_safe(
+                            NotificationEvent(
+                                category=(events_pb2.NOTIFICATION_CATEGORY_CONFIRMATION_PENDING),
+                                reason=tool_call["name"],
+                            ),
+                            tenant_id=str(self.tenant_id),
+                            user_id=str(self.user_id),
+                            dedup_parts=(str(tool_call["id"]),),
+                        )
                         awaiting_confirmation = True
                         break
 
@@ -371,8 +387,9 @@ class AgentService:
 
         Args:
             session_id: Session UUID
-            tool_name: Proposed tool name (echoed back by the client)
-            arguments_json: Proposed tool arguments as JSON (echoed back)
+            tool_name: Stored proposal's tool name (servicer-verified, never the
+                client echo)
+            arguments_json: Stored proposal's arguments as JSON
             approved: Whether the user approved the action
             history: Prior conversation turns to replay
             ui_context: Optional UI context data

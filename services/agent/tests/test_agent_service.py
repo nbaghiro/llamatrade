@@ -743,7 +743,8 @@ class TestToolConfirmation:
         agent_service: AgentService,
         session_id: UUID,
     ) -> None:
-        """Approval executes the tool and streams a follow-up summary."""
+        """Approval executes the stored proposal (servicer-supplied name+args)
+        and streams a follow-up summary."""
         from tests.fixtures.mock_llm import MockLLMClient
 
         from src.tools.base import ToolResult
@@ -927,6 +928,4 @@ class TestArtifactCreationFlow:
             async for event in agent_service.stream_message(session_id, "Create bad strategy"):
                 events.append(event)
 
-        # _maybe_create_artifact was called but should return None
-        # because validation result shows invalid
-        # The actual logic in _maybe_create_artifact checks for valid=True
+        # _maybe_create_artifact returns None when the validation result is invalid.
