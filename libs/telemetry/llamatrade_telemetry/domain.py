@@ -26,9 +26,6 @@ class TradingMetrics:
         self._fills = registry.counter(
             "llamatrade_trading_fills_total", ["side", "fill_type"], "Fills processed"
         )
-        self._rejections = registry.counter(
-            "llamatrade_trading_order_rejections_total", ["reason"], "Order rejections"
-        )
         self._risk_checks = registry.counter(
             "llamatrade_trading_risk_checks_total", ["result"], "Risk checks"
         )
@@ -72,9 +69,6 @@ class TradingMetrics:
         self.order_submission_latency = registry.histogram(
             "llamatrade_trading_order_submission_latency_seconds", (), "Signal->Alpaca latency"
         )
-        self.fill_latency = registry.histogram(
-            "llamatrade_trading_order_fill_latency_seconds", (), "Submit->fill latency"
-        )
         self.slippage_bps = registry.histogram(
             "llamatrade_trading_order_slippage_bps", ["side"], "Fill vs estimate slippage (bps)"
         )
@@ -108,9 +102,6 @@ class TradingMetrics:
 
     def fill(self, side: str, fill_type: str) -> None:
         self._fills.labels(side=side, fill_type=fill_type).inc()
-
-    def order_rejected(self, reason: str) -> None:
-        self._rejections.labels(reason=reason).inc()
 
     def risk_check(self, result: str) -> None:
         self._risk_checks.labels(result=result).inc()
@@ -225,21 +216,11 @@ class LedgerMetrics:
 
 
 class MarketDataMetrics:
-    """Market data: cache, streams, freshness, data quality."""
+    """Market data: streams, freshness, data quality."""
 
     def __init__(self) -> None:
-        self._cache_ops = registry.counter(
-            "llamatrade_marketdata_cache_operations_total",
-            ["data_type", "result"],
-            "Cache ops by result",
-        )
         self._stream_reconnects = registry.counter(
             "llamatrade_marketdata_stream_reconnects_total", (), "Stream reconnects"
-        )
-        self._queue_dropped = registry.counter(
-            "llamatrade_marketdata_client_queue_dropped_total",
-            (),
-            "Messages dropped (backpressure)",
         )
         self._data_gaps = registry.counter(
             "llamatrade_marketdata_data_gaps_detected_total", (), "Detected gaps in bar series"
@@ -254,14 +235,8 @@ class MarketDataMetrics:
             "llamatrade_marketdata_data_staleness_seconds", ["data_type"], "Age of served data"
         )
 
-    def cache_op(self, data_type: str, result: str) -> None:
-        self._cache_ops.labels(data_type=data_type, result=result).inc()
-
     def stream_reconnect(self) -> None:
         self._stream_reconnects.inc()
-
-    def queue_dropped(self) -> None:
-        self._queue_dropped.inc()
 
     def data_gap(self) -> None:
         self._data_gaps.inc()
@@ -271,7 +246,7 @@ class MarketDataMetrics:
 
 
 class StrategyMetrics:
-    """Strategy CRUD, DSL parsing/compilation, indicator + signal evaluation."""
+    """Strategy CRUD and DSL parsing/compilation."""
 
     def __init__(self) -> None:
         self._parse_errors = registry.counter(
@@ -286,20 +261,6 @@ class StrategyMetrics:
         self.compile_duration = registry.histogram(
             "llamatrade_strategy_compile_duration_seconds", (), "DSL compile time"
         )
-        self.indicator_compute_duration = registry.histogram(
-            "llamatrade_strategy_indicator_compute_duration_seconds",
-            ["indicator"],
-            "Indicator compute time",
-        )
-        self.signal_eval_duration = registry.histogram(
-            "llamatrade_strategy_signal_eval_duration_seconds", (), "Per-bar eval time"
-        )
-        self.max_lookback_bars = registry.histogram(
-            "llamatrade_strategy_max_lookback_bars", (), "Warmup bars required"
-        )
-        self.active_strategies = registry.gauge(
-            "llamatrade_strategy_active_total", ["status"], "Strategies by status"
-        )
 
     def parse_error(self, kind: str) -> None:
         self._parse_errors.labels(kind=kind).inc()
@@ -312,7 +273,7 @@ class StrategyMetrics:
 
 
 class BacktestMetrics:
-    """Backtest jobs, throughput, cache tiers, data quality."""
+    """Backtest jobs, throughput, data quality."""
 
     def __init__(self) -> None:
         self._jobs = registry.counter(
@@ -323,9 +284,6 @@ class BacktestMetrics:
         )
         self._progress_publish_failures = registry.counter(
             "llamatrade_backtest_progress_publish_failures_total", (), "Progress publish failures"
-        )
-        self._cache = registry.counter(
-            "llamatrade_backtest_cache_operations_total", ["tier", "result"], "Cache ops by tier"
         )
         self.execution_duration = registry.histogram(
             "llamatrade_backtest_execution_duration_seconds", (), "Wall-clock job duration"
@@ -340,12 +298,9 @@ class BacktestMetrics:
     def progress_publish_failure(self) -> None:
         self._progress_publish_failures.inc()
 
-    def cache_op(self, tier: str, result: str) -> None:
-        self._cache.labels(tier=tier, result=result).inc()
-
 
 class BillingMetrics:
-    """Subscriptions, payments, webhooks, plan enforcement, revenue."""
+    """Payments, webhooks, plan enforcement."""
 
     def __init__(self) -> None:
         self._invoice_paid = registry.counter(
@@ -371,13 +326,6 @@ class BillingMetrics:
             ["event_type"],
             "Webhook handler time",
         )
-        self.subscriptions = registry.gauge(
-            "llamatrade_billing_subscriptions_total",
-            ["plan", "state"],
-            "Subscriptions by plan/state",
-        )
-        self.mrr_dollars = registry.gauge("llamatrade_billing_mrr_dollars", (), "MRR ($)")
-        self.arr_dollars = registry.gauge("llamatrade_billing_arr_dollars", (), "ARR ($)")
 
     def invoice_paid(self, plan: str) -> None:
         self._invoice_paid.labels(plan=plan).inc()
@@ -473,14 +421,8 @@ class NotificationMetrics:
             ["channel", "reason"],
             "Delivery failures",
         )
-        self.alert_eval_latency = registry.histogram(
-            "llamatrade_notification_alert_eval_latency_seconds", (), "Condition->notification"
-        )
         self.delivery_latency = registry.histogram(
             "llamatrade_notification_delivery_latency_seconds", ["channel"], "Delivery latency"
-        )
-        self.unread_backlog = registry.gauge(
-            "llamatrade_notification_unread_backlog", (), "Unread notifications (fatigue signal)"
         )
 
     def alert_triggered(self, type: str) -> None:
@@ -497,7 +439,7 @@ class NotificationMetrics:
 
 
 class AgentMetrics:
-    """AI copilot: LLM requests, latency, tokens, cost, tool calls."""
+    """AI copilot: LLM requests, latency, tokens."""
 
     def __init__(self) -> None:
         self._requests = registry.counter(
@@ -507,17 +449,8 @@ class AgentMetrics:
         self._tokens = registry.counter(
             "llamatrade_agent_llm_tokens_total", ["model", "direction"], "LLM tokens"
         )
-        self._tool_calls = registry.counter(
-            "llamatrade_agent_tool_calls_total", ["result"], "Tool calls"
-        )
         self.llm_latency = registry.histogram(
             "llamatrade_agent_llm_latency_seconds", ["model"], "LLM latency"
-        )
-        self.llm_ttft = registry.histogram(
-            "llamatrade_agent_llm_ttft_seconds", ["model"], "Time to first token"
-        )
-        self.llm_cost_dollars = registry.counter(
-            "llamatrade_agent_llm_cost_dollars_total", ["model"], "LLM cost ($)"
         )
 
     def llm_request(self, model: str, result: str) -> None:
@@ -528,12 +461,6 @@ class AgentMetrics:
 
     def llm_tokens(self, model: str, direction: str, count: int) -> None:
         self._tokens.labels(model=model, direction=direction).inc(count)
-
-    def tool_call(self, result: str) -> None:
-        self._tool_calls.labels(result=result).inc()
-
-    def llm_cost(self, model: str, dollars: float) -> None:
-        self.llm_cost_dollars.labels(model=model).inc(dollars)
 
 
 class Metrics:

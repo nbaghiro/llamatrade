@@ -40,6 +40,7 @@ from llamatrade_telemetry.tracing import (
     extract_context,
     get_tracer,
     inject_context,
+    inject_headers,
     span,
 )
 
@@ -70,6 +71,7 @@ __all__ = [
     "span",
     "get_tracer",
     "inject_context",
+    "inject_headers",
     "extract_context",
     # conventions
     "conventions",

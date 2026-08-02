@@ -106,14 +106,11 @@ LATENCY_DEP = (0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5)
 LATENCY_TIGHT = (0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0)
 DURATION_JOB = (1.0, 5.0, 10.0, 30.0, 60.0, 120.0, 300.0, 600.0, 1800.0)
 SLIPPAGE_BPS = (1.0, 2.0, 5.0, 10.0, 25.0, 50.0, 100.0, 250.0)
-LOOKBACK_BARS = (10.0, 20.0, 50.0, 100.0, 200.0, 500.0, 1000.0)
-SIZE_BYTES = (64.0, 256.0, 1024.0, 4096.0, 16384.0, 65536.0, 262144.0, 1048576.0)
 PERCENT = (0.1, 0.5, 1.0, 2.0, 5.0, 10.0, 25.0, 50.0, 100.0)
 STALENESS_SECONDS = (1.0, 5.0, 15.0, 30.0, 60.0, 120.0, 300.0, 900.0)
 DELIVERY_SECONDS = (0.1, 0.5, 1.0, 2.0, 5.0, 10.0, 30.0, 60.0)
 BCRYPT_SECONDS = (0.05, 0.1, 0.2, 0.3, 0.5, 0.75, 1.0)
 LLM_SECONDS = (0.1, 0.5, 1.0, 2.0, 5.0, 10.0, 30.0, 60.0, 120.0)
-THROUGHPUT_BARS = (100.0, 1_000.0, 10_000.0, 100_000.0, 1_000_000.0)
 
 # Every histogram instrument the platform defines → its buckets. The registry
 # builds one OTel View per entry at MeterProvider construction. Creating a
@@ -121,17 +118,13 @@ THROUGHPUT_BARS = (100.0, 1_000.0, 10_000.0, 100_000.0, 1_000_000.0)
 HISTOGRAM_BUCKETS: dict[str, tuple[float, ...]] = {
     # cross-cutting
     "llamatrade_http_request_duration_seconds": LATENCY_RPC,
-    "llamatrade_http_request_size_bytes": SIZE_BYTES,
-    "llamatrade_http_response_size_bytes": SIZE_BYTES,
     "llamatrade_dependency_duration_seconds": LATENCY_DEP,
     "llamatrade_db_query_duration_seconds": LATENCY_DEP,
-    "llamatrade_cache_op_duration_seconds": LATENCY_DEP,
     "llamatrade_runtime_event_loop_lag_seconds": LATENCY_TIGHT,
-    "llamatrade_celery_task_duration_seconds": DURATION_JOB,
-    "llamatrade_celery_task_queue_wait_seconds": DURATION_JOB,
+    # alpaca lib
+    "llamatrade_alpaca_rate_limit_wait_seconds": DELIVERY_SECONDS,
     # trading
     "llamatrade_trading_order_submission_latency_seconds": LATENCY_TIGHT,
-    "llamatrade_trading_order_fill_latency_seconds": LATENCY_RPC,
     "llamatrade_trading_order_slippage_bps": SLIPPAGE_BPS,
     "llamatrade_trading_bar_processing_duration_seconds": LATENCY_TIGHT,
     "llamatrade_trading_bar_stream_latency_seconds": LATENCY_TIGHT,
@@ -139,7 +132,6 @@ HISTOGRAM_BUCKETS: dict[str, tuple[float, ...]] = {
     "llamatrade_trading_fill_processing_duration_seconds": LATENCY_TIGHT,
     "llamatrade_trading_position_drift_quantity_pct": PERCENT,
     "llamatrade_trading_order_sync_duration_seconds": LATENCY_DEP,
-    "llamatrade_trading_signal_processing_duration_seconds": LATENCY_TIGHT,
     "llamatrade_trading_position_reconciliation_duration_seconds": LATENCY_DEP,
     # ledger / portfolio
     "llamatrade_ledger_event_append_latency_seconds": LATENCY_DEP,
@@ -149,22 +141,16 @@ HISTOGRAM_BUCKETS: dict[str, tuple[float, ...]] = {
     "llamatrade_marketdata_data_staleness_seconds": STALENESS_SECONDS,
     # strategy / compiler
     "llamatrade_strategy_compile_duration_seconds": LATENCY_DEP,
-    "llamatrade_strategy_indicator_compute_duration_seconds": LATENCY_TIGHT,
-    "llamatrade_strategy_signal_eval_duration_seconds": LATENCY_TIGHT,
-    "llamatrade_strategy_max_lookback_bars": LOOKBACK_BARS,
     # backtest
     "llamatrade_backtest_execution_duration_seconds": DURATION_JOB,
-    "llamatrade_backtest_bar_throughput_bars_per_second": THROUGHPUT_BARS,
     # billing
     "llamatrade_billing_webhook_handler_duration_seconds": LATENCY_DEP,
     # auth
     "llamatrade_auth_bcrypt_hash_duration_seconds": BCRYPT_SECONDS,
     # notification
-    "llamatrade_notification_alert_eval_latency_seconds": LATENCY_DEP,
     "llamatrade_notification_delivery_latency_seconds": DELIVERY_SECONDS,
     # agent / llm
     "llamatrade_agent_llm_latency_seconds": LLM_SECONDS,
-    "llamatrade_agent_llm_ttft_seconds": LATENCY_RPC,
 }
 
 

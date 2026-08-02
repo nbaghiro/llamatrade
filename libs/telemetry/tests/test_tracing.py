@@ -22,6 +22,21 @@ def test_inject_extract_round_trip() -> None:
     assert ctx is not None
 
 
+def test_inject_headers_adds_traceparent_inside_active_span() -> None:
+    original = {"Authorization": "Bearer token"}
+    with tracing.span("parent"):
+        headers = tracing.inject_headers(original)
+    assert headers["Authorization"] == "Bearer token"
+    assert "traceparent" in headers
+    assert "traceparent" not in original
+
+
+def test_inject_headers_without_span_returns_headers_unchanged() -> None:
+    headers = tracing.inject_headers({"Authorization": "Bearer token"})
+    assert headers == {"Authorization": "Bearer token"}
+    assert tracing.inject_headers() == {}
+
+
 def test_build_sampler_variants() -> None:
     always = _build_sampler(TelemetrySettings(OTEL_TRACES_SAMPLER="always_on"))
     parent = _build_sampler(

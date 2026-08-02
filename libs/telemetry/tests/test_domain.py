@@ -8,7 +8,6 @@ def test_trading_domain() -> None:
     t = metrics.trading
     t.order_submitted(side="buy", type="market", status="accepted")
     t.fill(side="buy", fill_type="full")
-    t.order_rejected(reason="risk")
     t.risk_check(result="passed")
     t.risk_violation(violation_type="max_order_value")
     t.signal_generated(signal_type="entry")
@@ -21,8 +20,7 @@ def test_trading_domain() -> None:
     t.idempotent_replay()
     t.circuit_breaker_triggered(reason="daily_loss")
     t.ledger_event_published(kind="order_filled", status="success")
-    t.order_submission_latency.observe(0.01)
-    with t.fill_latency.time():
+    with t.order_submission_latency.time():
         pass
     t.slippage_bps.labels(side="buy").observe(3.0)
     t.bar_processing_duration.observe(0.005)
@@ -55,14 +53,12 @@ def test_ledger_domain() -> None:
 
 def test_marketdata_domain() -> None:
     m = metrics.marketdata
-    m.cache_op(data_type="bars", result="hit")
     m.stream_reconnect()
-    m.queue_dropped()
     m.data_gap()
     m.missing_symbol()
     m.stream_message_lag.observe(0.01)
     m.data_staleness.labels(data_type="bars").observe(5.0)
-    assert "llamatrade_marketdata_cache_operations_total" in scrape()
+    assert "llamatrade_marketdata_stream_reconnects_total" in scrape()
 
 
 def test_strategy_domain() -> None:
@@ -71,10 +67,6 @@ def test_strategy_domain() -> None:
     s.version_minted()
     s.template_instantiated(template="ma_crossover")
     s.compile_duration.observe(0.01)
-    s.indicator_compute_duration.labels(indicator="sma").observe(0.001)
-    s.signal_eval_duration.observe(0.001)
-    s.max_lookback_bars.observe(50)
-    s.active_strategies.labels(status="active").set(12)
     assert "llamatrade_strategy_versions_minted_total" in scrape()
 
 
@@ -83,7 +75,6 @@ def test_backtest_domain() -> None:
     b.job(state="completed")
     b.fetch_failure()
     b.progress_publish_failure()
-    b.cache_op(tier="redis", result="hit")
     b.execution_duration.observe(30)
     assert "llamatrade_backtest_jobs_total" in scrape()
 
@@ -97,10 +88,7 @@ def test_billing_domain() -> None:
     b.webhook_duplicate()
     b.plan_limit_exceeded(limit="backtests")
     b.webhook_handler_duration.labels(event_type="invoice.paid").observe(0.05)
-    b.subscriptions.labels(plan="pro", state="active").set(100)
-    b.mrr_dollars.set(12345)
-    b.arr_dollars.set(148140)
-    assert "llamatrade_billing_mrr_dollars 12345.0" in scrape()
+    assert "llamatrade_billing_invoice_paid_total" in scrape()
 
 
 def test_auth_domain() -> None:
@@ -123,9 +111,7 @@ def test_notification_domain() -> None:
     n.cooldown_skipped()
     n.delivered(channel="email")
     n.delivery_failed(channel="sms", reason="invalid_phone")
-    n.alert_eval_latency.observe(0.1)
     n.delivery_latency.labels(channel="email").observe(0.5)
-    n.unread_backlog.set(5)
     assert "llamatrade_notification_deliveries_total" in scrape()
 
 
@@ -134,8 +120,5 @@ def test_agent_domain() -> None:
     a.llm_request(model="claude-opus-4-8", result="success")
     a.llm_error(type="rate_limit")
     a.llm_tokens(model="claude-opus-4-8", direction="output", count=120)
-    a.tool_call(result="success")
-    a.llm_cost(model="claude-opus-4-8", dollars=0.05)
     a.llm_latency.labels(model="claude-opus-4-8").observe(1.2)
-    a.llm_ttft.labels(model="claude-opus-4-8").observe(0.3)
     assert "llamatrade_agent_llm_requests_total" in scrape()

@@ -1,4 +1,4 @@
-"""Cross-cutting instrumentation: HTTP, gRPC, DB, cache, EventBus, Celery.
+"""Cross-cutting instrumentation: HTTP, gRPC, DB, EventBus, Celery.
 
 Each module owns its standard metric instruments and exposes recorder helpers /
 middleware that the platform wires in via ``init_telemetry``. Per-service

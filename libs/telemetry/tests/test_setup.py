@@ -15,11 +15,8 @@ def test_init_idempotent_for_worker() -> None:
 
 def test_grpc_recorders() -> None:
     grpc.record_grpc_request("/svc/Method", "ok")
-    grpc.record_stream_message("/svc/Stream", "out")
-    grpc.GRPC_STREAM_ACTIVE.labels(method="/svc/Stream").inc()
     out = scrape()
     assert 'llamatrade_grpc_requests_total{method="/svc/Method",status="ok"} 1.0' in out
-    assert 'llamatrade_grpc_stream_active{method="/svc/Stream"} 1.0' in out
 
 
 def test_runtime_monitor_no_loop_is_noop() -> None:

@@ -113,6 +113,17 @@ def inject_context(carrier: MutableMapping[str, str]) -> None:
     inject(carrier)
 
 
+def inject_headers(headers: Mapping[str, str] | None = None) -> dict[str, str]:
+    """Return a copy of ``headers`` with the current W3C trace context injected.
+
+    Use at service-to-service header seams (Connect clients). With no active
+    span the propagator injects nothing and the copy comes back unchanged.
+    """
+    carrier: dict[str, str] = dict(headers) if headers else {}
+    inject(carrier)
+    return carrier
+
+
 def extract_context(carrier: Mapping[str, str]) -> Context:
     """Extract a trace context from inbound headers / stream metadata."""
     return extract(carrier)

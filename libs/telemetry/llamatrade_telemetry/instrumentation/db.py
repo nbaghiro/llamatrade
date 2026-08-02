@@ -9,9 +9,7 @@ counts without a background sampler. ``DB_RLS_BYPASS`` is incremented by
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable, Iterator
-from contextlib import contextmanager
-from time import perf_counter
+from collections.abc import Callable, Iterable
 from typing import Protocol
 
 from opentelemetry.metrics import CallbackOptions, Observation
@@ -82,13 +80,3 @@ def register_pool_observer(provider: Callable[[], PoolStatsLike | None]) -> None
             "Database connections by state (active/idle/max)",
         )
         _pool_registered = True
-
-
-@contextmanager
-def time_query(operation: str, table: str) -> Iterator[None]:
-    """Time a DB query and record it under ``operation``/``table``."""
-    start = perf_counter()
-    try:
-        yield
-    finally:
-        DB_QUERY_DURATION.labels(operation=operation, table=table).observe(perf_counter() - start)

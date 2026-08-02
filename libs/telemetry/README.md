@@ -17,6 +17,6 @@ init_telemetry(app, service="trading", version="0.1.0", pool_stats_provider=get_
 log = get_logger(__name__)
 
 metrics.trading.order_submitted(side="buy", type="market", status="accepted")
-with metrics.trading.fill_latency.time():
+with metrics.trading.order_submission_latency.time():
     ...
 ```

@@ -15,7 +15,9 @@ from time import perf_counter
 
 from opentelemetry import context as otel_context
 from opentelemetry.trace import SpanKind, Status, StatusCode
+from starlette.applications import Starlette
 from starlette.datastructures import MutableHeaders
+from starlette.routing import Match, Mount
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from llamatrade_telemetry import registry
@@ -62,6 +64,37 @@ def _headers(scope: Scope) -> dict[str, str]:
 _SKIP_ROUTES = frozenset({"/metrics", "/health"})
 
 
+UNMATCHED_ROUTE = "__unmatched__"
+
+
+def _mount_prefix(mount: Mount) -> str | None:
+    """The bounded path prefix a mount serves: its own mount path, or for root
+    mounts the mounted Connect application's public RPC prefix (``/pkg.Service``)."""
+    if mount.path:
+        return mount.path
+    prefix: object = getattr(mount.app, "path", None)
+    if isinstance(prefix, str) and prefix.strip("/"):
+        return prefix
+    return None
+
+
+def _resolve_route(scope: Scope, path: str) -> str:
+    """RED route label: the raw path when it maps to a registered route or a
+    mounted RPC prefix, else ``UNMATCHED_ROUTE`` so a 404 scanner mints one
+    bounded series instead of one per probed URL."""
+    app = scope.get("app")
+    if not isinstance(app, Starlette):
+        return path
+    for route in app.routes:
+        if isinstance(route, Mount):
+            prefix = _mount_prefix(route)
+            if prefix is not None and (path == prefix or path.startswith(prefix + "/")):
+                return path
+        elif route.matches(scope)[0] is not Match.NONE:
+            return path
+    return UNMATCHED_ROUTE
+
+
 def _transport(headers: dict[str, str], path: str) -> str:
     content_type = headers.get("content-type", "")
     if content_type.startswith("application/grpc"):
@@ -77,7 +110,11 @@ def _transport(headers: dict[str, str], path: str) -> str:
 
 
 class TelemetryMiddleware:
-    """Pure-ASGI RED metrics + request context + SERVER span."""
+    """Pure-ASGI RED metrics + request context + SERVER span.
+
+    Add last (``init_telemetry`` after every ``add_middleware`` call) so it sits
+    outermost and observes rejections from auth/CORS middleware.
+    """
 
     def __init__(self, app: ASGIApp, service_name: str = "llamatrade") -> None:
         self.app = app
@@ -105,7 +142,7 @@ class TelemetryMiddleware:
 
         method = scope.get("method", "GET")
         transport = _transport(headers, path)
-        route = path  # Connect/REST paths here are bounded by the proto/routes.
+        route = _resolve_route(scope, path)
         labels = {"transport": transport, "method": method, "route": route}
 
         HTTP_REQUESTS_IN_PROGRESS.labels(**labels).inc()
