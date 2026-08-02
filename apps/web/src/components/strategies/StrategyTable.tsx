@@ -92,7 +92,7 @@ export function StrategyTable({
       <div className="flex flex-col gap-2.5">
         {rows.map((row) => {
           const selected = row.strategy.id === selectedId;
-          const timeframe = (row.strategy.timeframe || '1D').toUpperCase();
+          const rebalance = (row.strategy.rebalance || 'daily').toUpperCase();
           const positions = row.strategy.symbols.length;
           const deployed = row.pill === 'LIVE' || row.pill === 'PAPER';
           return (
@@ -118,7 +118,7 @@ export function StrategyTable({
                 <div className="truncate text-[14.5px] font-bold leading-tight text-ink">{row.strategy.name}</div>
                 <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
                   <Chip className={pillClass(row.pill)}>{row.pill}</Chip>
-                  <Chip className="text-ink/70">{timeframe}</Chip>
+                  <Chip className="text-ink/70">{rebalance}</Chip>
                   <Chip className="text-ink/70">{positions} pos</Chip>
                 </div>
               </div>

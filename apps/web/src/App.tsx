@@ -5,8 +5,11 @@ import Layout from './components/common/Layout';
 import MarketingPage from './marketing/MarketingPage';
 import AlpacaCallbackPage from './pages/auth/AlpacaCallbackPage';
 import CompleteSignupPage from './pages/auth/CompleteSignupPage';
+import ForgotPasswordPage from './pages/auth/ForgotPasswordPage';
 import LoginPage from './pages/auth/LoginPage';
 import RegisterPage from './pages/auth/RegisterPage';
+import ResetPasswordPage from './pages/auth/ResetPasswordPage';
+import VerifyEmailPage from './pages/auth/VerifyEmailPage';
 import BillingPage from './pages/billing/BillingPage';
 import PaymentMethodsPage from './pages/billing/PaymentMethodsPage';
 import SubscribePage from './pages/billing/SubscribePage';
@@ -61,6 +64,9 @@ export default function App() {
       <Route path="/home" element={<MarketingPage />} />
       <Route path="/login" element={<LoginPage />} />
       <Route path="/register" element={<RegisterPage />} />
+      <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+      <Route path="/reset-password" element={<ResetPasswordPage />} />
+      <Route path="/verify-email" element={<VerifyEmailPage />} />
       {/* Alpaca OAuth returns (public): login handoff + sign-up completion. */}
       <Route path="/oauth/alpaca/callback" element={<AlpacaCallbackPage />} />
       <Route path="/signup/complete" element={<CompleteSignupPage />} />

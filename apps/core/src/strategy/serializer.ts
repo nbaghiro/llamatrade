@@ -14,6 +14,7 @@ import type {
   ConditionExpression,
   ConditionOperand,
   Comparator,
+  PriceRef,
 } from './types';
 import {
   hasChildren,
@@ -29,15 +30,24 @@ import {
   type ValidationIssue as ComprehensiveIssue,
   type ValidationResult as ComprehensiveResult,
 } from './validator';
+import {
+  DSL_BLOCK_TYPE_SET,
+  DSL_CROSSOVER_OPS,
+  DSL_FILTER_CRITERIA,
+  DSL_INDICATORS,
+  DSL_INDICATOR_SET,
+  DSL_LOGICAL_SET,
+  DSL_OPERATOR_SET,
+  DSL_SELECT_DIRECTIONS,
+  DSL_WEIGHT_METHODS,
+  DSL_WEIGHT_METHOD_SET,
+} from './vocabulary';
 
 export interface StrategyMetadata {
   name: string;
   description?: string;
   timeframe: string;
-  stopLossPct?: number;
-  takeProfitPct?: number;
-  trailingStopPct?: number;
-  positionSizePct?: number;
+  benchmark?: string;
 }
 
 /**
@@ -96,28 +106,15 @@ export interface ParseError {
 
 // Case conversion helpers
 
-// DSL keywords that should use kebab-case
-const KEBAB_CASE_KEYWORDS = new Set([
-  'inverse-volatility',
-  'min-variance',
-  'risk-parity',
-  'cross-above',
-  'cross-below',
-  'lookback-days',
-  'sort-by',
-  'custom-symbols',
-  'stop-loss-pct',
-  'take-profit-pct',
-  'trailing-stop-pct',
-  'position-size-pct',
-  'position-size',
-  'macd-line',
-  'macd-signal',
-  'bb-upper',
-  'bb-middle',
-  'bb-lower',
-  'williams-r',
-]);
+// Every hyphenated token in the backend vocabulary; internal state spells them snake_case.
+const KEBAB_CASE_KEYWORDS: ReadonlySet<string> = new Set(
+  [
+    ...DSL_WEIGHT_METHODS,
+    ...DSL_CROSSOVER_OPS,
+    ...DSL_INDICATORS,
+    ...DSL_FILTER_CRITERIA,
+  ].filter((token) => token.includes('-'))
+);
 
 /**
  * Convert snake_case to kebab-case for DSL serialization
@@ -140,6 +137,16 @@ export function isKebabCaseKeyword(str: string): boolean {
   return KEBAB_CASE_KEYWORDS.has(str);
 }
 
+// String escaping — mirrors the backend serializer/parser exactly.
+
+function escapeDSLString(s: string): string {
+  return s.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, '\\n');
+}
+
+function unescapeDSLString(s: string): string {
+  return s.replace(/\\"/g, '"').replace(/\\n/g, '\n').replace(/\\\\/g, '\\');
+}
+
 // Verbose text generation
 
 /**
@@ -156,6 +163,11 @@ function operandToText(operand: ConditionOperand): string {
       return `${operand.value}%`;
     }
     return String(operand.value);
+  }
+
+  if (operand.type === 'metric') {
+    const period = operand.period != null ? `${operand.period}d ` : '';
+    return `${period}${operand.metric} of ${operand.symbol}`;
   }
 
   // Indicator
@@ -215,6 +227,10 @@ function comparatorToText(comp: Comparator): string {
       return 'is greater than or equal to';
     case 'lte':
       return 'is less than or equal to';
+    case 'eq':
+      return 'is equal to';
+    case 'neq':
+      return 'is not equal to';
     case 'cross_above':
       return 'crosses above';
     case 'cross_below':
@@ -252,6 +268,13 @@ function operandToDSL(operand: ConditionOperand): string {
 
   if (operand.type === 'number') {
     return String(operand.value);
+  }
+
+  if (operand.type === 'metric') {
+    if (operand.period != null) {
+      return `(${operand.metric} ${operand.symbol} ${operand.period})`;
+    }
+    return `(${operand.metric} ${operand.symbol})`;
   }
 
   // Indicator
@@ -300,7 +323,10 @@ function operandToDSL(operand: ConditionOperand): string {
 }
 
 /**
- * Serialize comparator to DSL operator
+ * Serialize comparator to DSL operator.
+ *
+ * The operator spellings are the ones the backend grammar accepts
+ * (llamatrade_dsl.ast COMPARISON_OPS / CROSSOVER_OPS).
  */
 function comparatorToDSL(comp: Comparator): string {
   switch (comp) {
@@ -312,10 +338,14 @@ function comparatorToDSL(comp: Comparator): string {
       return '>=';
     case 'lte':
       return '<=';
+    case 'eq':
+      return '=';
+    case 'neq':
+      return '!=';
     case 'cross_above':
-      return 'cross-above';
+      return 'crosses-above';
     case 'cross_below':
-      return 'cross-below';
+      return 'crosses-below';
   }
 }
 
@@ -326,10 +356,6 @@ function conditionToDSL(condition: ConditionExpression): string {
   const op = comparatorToDSL(condition.comparator);
   const left = operandToDSL(condition.left);
   const right = operandToDSL(condition.right);
-
-  if (op === 'cross-above' || op === 'cross-below') {
-    return `(${op} ${left} ${right})`;
-  }
 
   return `(${op} ${left} ${right})`;
 }
@@ -357,15 +383,10 @@ function extractSymbolsFromCondition(
   condition: ConditionExpression,
   symbols: Set<string>
 ): void {
-  if (condition.left.type === 'price') {
-    symbols.add(condition.left.symbol);
-  } else if (condition.left.type === 'indicator') {
+  if (condition.left.type !== 'number') {
     symbols.add(condition.left.symbol);
   }
-
-  if (condition.right.type === 'price') {
-    symbols.add(condition.right.symbol);
-  } else if (condition.right.type === 'indicator') {
+  if (condition.right.type !== 'number') {
     symbols.add(condition.right.symbol);
   }
 }
@@ -398,6 +419,10 @@ function serializeWeightBlock(
     lines.push(`${indent}  :lookback ${block.lookbackDays}`);
   }
 
+  if (block.top != null) {
+    lines.push(`${indent}  :top ${block.top}`);
+  }
+
   for (const child of children) {
     if (isAssetBlock(child)) {
       const allocation = block.allocations[child.id] ?? 0;
@@ -411,9 +436,9 @@ function serializeWeightBlock(
       // Groups under a `specified` weight carry their allocation as `(group "Name" :weight N ...)` so the round-trip preserves the sleeve split.
       if (specified) {
         const allocation = block.allocations[child.id] ?? 0;
-        lines.push(`${indent}  (group "${child.name}" :weight ${allocation}`);
+        lines.push(`${indent}  (group "${escapeDSLString(child.name)}" :weight ${allocation}`);
       } else {
-        lines.push(`${indent}  (group "${child.name}"`);
+        lines.push(`${indent}  (group "${escapeDSLString(child.name)}"`);
       }
       lines.push(serializeChildren(child.childIds, tree, indent + '    '));
       lines.push(`${indent}  )`);
@@ -498,7 +523,7 @@ function serializeSingleBlock(block: Block, tree: StrategyTree, indent: string):
     return `${indent}(asset ${block.symbol})`;
   } else if (isGroupBlock(block)) {
     const lines: string[] = [];
-    lines.push(`${indent}(group "${block.name}"`);
+    lines.push(`${indent}(group "${escapeDSLString(block.name)}"`);
     lines.push(serializeChildren(block.childIds, tree, indent + '  '));
     lines.push(`${indent})`);
     return lines.join('\n');
@@ -580,7 +605,7 @@ function serializeChildren(
     if (isAssetBlock(child)) {
       lines.push(`${indent}(asset ${child.symbol})`);
     } else if (isGroupBlock(child)) {
-      lines.push(`${indent}(group "${child.name}"`);
+      lines.push(`${indent}(group "${escapeDSLString(child.name)}"`);
       lines.push(serializeChildren(child.childIds, tree, indent + '  '));
       lines.push(`${indent})`);
     } else if (isWeightBlock(child)) {
@@ -632,15 +657,18 @@ export function toDSL(tree: StrategyTree, metadata: StrategyMetadata): string {
   const root = tree.blocks[tree.rootId];
 
   // Strategy header with name as first argument (required by backend parser)
-  lines.push(`(strategy "${metadata.name}"`);
+  lines.push(`(strategy "${escapeDSLString(metadata.name)}"`);
 
-  // Optional rebalance frequency
+  // Keyword order matches the backend serializer: rebalance, benchmark, description.
   const rebalance = timeframeToRebalance(metadata.timeframe);
   lines.push(`  :rebalance ${rebalance}`);
 
-  // Optional description
+  if (metadata.benchmark) {
+    lines.push(`  :benchmark ${metadata.benchmark}`);
+  }
+
   if (metadata.description) {
-    lines.push(`  :description "${metadata.description}"`);
+    lines.push(`  :description "${escapeDSLString(metadata.description)}"`);
   }
 
   // Serialize children of root block
@@ -752,30 +780,11 @@ interface ParsedCondition {
   right: ConditionOperand;
 }
 
-// Token classification sets
-const DSL_KEYWORDS = new Set([
-  'strategy', 'weight', 'asset', 'group', 'if', 'else', 'filter',
-  'then', 'allocation', 'universe',
+// Token classification: the editor highlights exactly what the backend grammar accepts.
+const METHOD_TOKENS: ReadonlySet<string> = new Set([
+  ...DSL_WEIGHT_METHOD_SET,
+  ...DSL_SELECT_DIRECTIONS,
 ]);
-
-const DSL_METHODS = new Set([
-  'specified', 'equal', 'momentum', 'inverse-volatility', 'min-variance',
-  'risk-parity', 'inverse_volatility', 'min_variance', 'risk_parity',
-  'top', 'bottom',
-]);
-
-const DSL_INDICATORS = new Set([
-  'sma', 'ema', 'rsi', 'macd', 'macd-line', 'macd-signal',
-  'bbands', 'bb-upper', 'bb-middle', 'bb-lower',
-  'atr', 'adx', 'stochastic', 'cci', 'williams-r', 'obv', 'mfi', 'vwap', 'roc',
-]);
-
-const DSL_OPERATORS = new Set([
-  '>', '<', '>=', '<=', '=', '!=',
-  'cross-above', 'cross-below', 'crosses-above', 'crosses-below',
-]);
-
-const DSL_LOGICAL = new Set(['and', 'or', 'not']);
 
 /**
  * Classify a token value into its semantic type
@@ -809,23 +818,23 @@ function classifyToken(value: string): TokenType {
   // Check against known token types
   const lower = value.toLowerCase();
 
-  if (DSL_KEYWORDS.has(lower)) {
+  if (DSL_BLOCK_TYPE_SET.has(lower)) {
     return 'keyword';
   }
 
-  if (DSL_METHODS.has(lower)) {
+  if (METHOD_TOKENS.has(lower)) {
     return 'method';
   }
 
-  if (DSL_INDICATORS.has(lower)) {
+  if (DSL_INDICATOR_SET.has(lower)) {
     return 'indicator';
   }
 
-  if (DSL_OPERATORS.has(value)) {
+  if (DSL_OPERATOR_SET.has(value)) {
     return 'operator';
   }
 
-  if (DSL_LOGICAL.has(lower)) {
+  if (DSL_LOGICAL_SET.has(lower)) {
     return 'logical';
   }
 
@@ -923,6 +932,15 @@ export function tokenizeWithPositions(input: string): TokenWithPosition[] {
       let value = '"';
       current++; // Skip opening quote
       while (current < input.length && input[current] !== '"') {
+        if (input[current] === '\\' && current + 1 < input.length) {
+          if (input[current + 1] === '\n') {
+            line++;
+            lineStart = current + 2;
+          }
+          value += input[current] + input[current + 1];
+          current += 2;
+          continue;
+        }
         if (input[current] === '\n') {
           line++;
           lineStart = current + 1;
@@ -953,13 +971,13 @@ export function tokenizeWithPositions(input: string): TokenWithPosition[] {
       continue;
     }
 
-    // Number, symbol, or identifier
-    if (/[a-zA-Z0-9.<>=_-]/.test(char)) {
+    // Number, symbol, or identifier ('!' only ever starts the `!=` operator)
+    if (/[a-zA-Z0-9.<>=_!-]/.test(char)) {
       const start = current;
       const startLine = line;
       const startColumn = getColumn();
       let value = '';
-      while (current < input.length && /[a-zA-Z0-9.<>=_-]/.test(input[current])) {
+      while (current < input.length && /[a-zA-Z0-9.<>=_!-]/.test(input[current])) {
         value += input[current];
         current++;
       }
@@ -1004,7 +1022,7 @@ function parseExpr(tokens: string[], pos: { index: number }): unknown {
   // String literal
   if (token.startsWith('"') && token.endsWith('"')) {
     pos.index++;
-    return token.slice(1, -1);
+    return unescapeDSLString(token.slice(1, -1));
   }
 
   // Number
@@ -1032,8 +1050,10 @@ function parseConditionExpr(expr: unknown[], defaultSymbol: string): ParsedCondi
     case '>': comparator = 'gt'; break;
     case '<=': comparator = 'lte'; break;
     case '>=': comparator = 'gte'; break;
-    case 'cross-above': comparator = 'cross_above'; break;
-    case 'cross-below': comparator = 'cross_below'; break;
+    case '=': comparator = 'eq'; break;
+    case '!=': comparator = 'neq'; break;
+    case 'crosses-above': comparator = 'cross_above'; break;
+    case 'crosses-below': comparator = 'cross_below'; break;
     default: return null;
   }
 
@@ -1117,20 +1137,34 @@ function parseOperand(expr: unknown, defaultSymbol: string): ConditionOperand | 
   if (Array.isArray(expr) && expr.length >= 2) {
     const [indicator, ...args] = expr;
 
-    // Handle (price SYMBOL) syntax - e.g., (price BTC) or (price SPY)
+    // Handle (price SYMBOL [:field]) syntax - e.g., (price BTC) or (price SPY :high)
     if (indicator === 'price') {
       const firstArg = args[0];
       let symbol = defaultSymbol;
-      let field: 'close' | 'open' | 'high' | 'low' = 'close';
+      let field: PriceRef['field'] = 'close';
 
       if (typeof firstArg === 'string') {
         if (isTickerSymbol(firstArg)) {
           symbol = firstArg;
         } else if (isPriceSource(firstArg)) {
-          field = firstArg.toLowerCase() as 'close' | 'open' | 'high' | 'low';
+          field = firstArg.toLowerCase() as PriceRef['field'];
+        }
+      }
+      for (const arg of args) {
+        if (typeof arg === 'string' && arg.startsWith(':') && isPriceSource(arg.slice(1))) {
+          field = arg.slice(1).toLowerCase() as PriceRef['field'];
         }
       }
       return { type: 'price', symbol, field };
+    }
+
+    // Metrics: (drawdown SPY), (return SPY 30), (volatility SPY 21)
+    if (indicator === 'drawdown' || indicator === 'return' || indicator === 'volatility') {
+      const firstArg = args[0];
+      const symbol =
+        typeof firstArg === 'string' && isTickerSymbol(firstArg) ? firstArg : defaultSymbol;
+      const period = typeof args[1] === 'number' ? args[1] : undefined;
+      return { type: 'metric', metric: indicator, symbol, period };
     }
 
     switch (indicator) {
@@ -1171,23 +1205,14 @@ function parseOperand(expr: unknown, defaultSymbol: string): ConditionOperand | 
         };
       }
       case 'macd':
-      case 'macd-line': {
-        // (macd SPY 12 26 9 :line) or (macd-line close 12 26 9)
-        const { symbol, periodArgIndex } = extractSymbolFromIndicatorArgs(args, defaultSymbol);
-        return {
-          type: 'indicator',
-          indicator: 'macd_line',
-          symbol,
-          fastPeriod: typeof args[periodArgIndex] === 'number' ? args[periodArgIndex] : 12,
-          slowPeriod: typeof args[periodArgIndex + 1] === 'number' ? args[periodArgIndex + 1] : 26,
-          signalPeriod: typeof args[periodArgIndex + 2] === 'number' ? args[periodArgIndex + 2] : 9,
-        };
-      }
+      case 'macd-line':
       case 'macd-signal': {
+        // (macd SPY 12 26 9 :line|:signal), (macd-line close 12 26 9), or (macd-signal ...)
         const { symbol, periodArgIndex } = extractSymbolFromIndicatorArgs(args, defaultSymbol);
+        const wantsSignal = indicator === 'macd-signal' || args.includes(':signal');
         return {
           type: 'indicator',
-          indicator: 'macd_signal',
+          indicator: wantsSignal ? 'macd_signal' : 'macd_line',
           symbol,
           fastPeriod: typeof args[periodArgIndex] === 'number' ? args[periodArgIndex] : 12,
           slowPeriod: typeof args[periodArgIndex + 1] === 'number' ? args[periodArgIndex + 1] : 26,
@@ -1250,14 +1275,44 @@ function parseOperand(expr: unknown, defaultSymbol: string): ConditionOperand | 
           symbol,
         };
       }
-      case 'momentum':
-      case 'roc': {
-        // (momentum SPY 90) or (roc close 252)
+      case 'stoch': {
+        // (stoch SPY 14 3 3 :k) — %K is the default output, :d selects %D
+        const { symbol, periodArgIndex } = extractSymbolFromIndicatorArgs(args, defaultSymbol);
+        const period = typeof args[periodArgIndex] === 'number' ? args[periodArgIndex] : 14;
+        return {
+          type: 'indicator',
+          indicator: args.includes(':d') ? 'stochastic_d' : 'stochastic_k',
+          period,
+          symbol,
+        };
+      }
+      case 'cci':
+      case 'mfi':
+      case 'williams-r': {
+        // (cci SPY 20), (mfi SPY 14), (williams-r SPY 14)
+        const { symbol, periodArgIndex } = extractSymbolFromIndicatorArgs(args, defaultSymbol);
+        const fallback = indicator === 'cci' ? 20 : 14;
+        const period = typeof args[periodArgIndex] === 'number' ? args[periodArgIndex] : fallback;
+        return {
+          type: 'indicator',
+          indicator: indicator === 'williams-r' ? 'williams_r' : indicator,
+          period,
+          symbol,
+        };
+      }
+      case 'obv':
+      case 'vwap': {
+        // (obv SPY), (vwap SPY) — no parameters
+        const { symbol } = extractSymbolFromIndicatorArgs(args, defaultSymbol);
+        return { type: 'indicator', indicator, symbol };
+      }
+      case 'momentum': {
+        // (momentum SPY 90)
         const { symbol, periodArgIndex } = extractSymbolFromIndicatorArgs(args, defaultSymbol);
         const period = typeof args[periodArgIndex] === 'number' ? args[periodArgIndex] : 252;
         return {
           type: 'indicator',
-          indicator: 'sma', // Use SMA as placeholder for momentum/ROC
+          indicator: 'sma', // Use SMA as placeholder for momentum
           period,
           symbol,
           source: 'close',
@@ -1339,26 +1394,20 @@ export function fromDSLString(dslString: string): ParsedDSL | null {
               metadata.timeframe = rebalanceToTimeframe(value);
             }
             break;
+          case 'benchmark':
+            if (typeof value === 'string') {
+              metadata.benchmark = value;
+            }
+            break;
           case 'description':
             if (typeof value === 'string') {
               metadata.description = value;
             }
             break;
-          case 'stop-loss-pct':
-            if (typeof value === 'number') {
-              metadata.stopLossPct = value;
-            }
-            break;
-          case 'take-profit-pct':
-            if (typeof value === 'number') {
-              metadata.takeProfitPct = value;
-            }
-            break;
-          case 'position-size':
-            if (typeof value === 'number') {
-              metadata.positionSizePct = value;
-            }
-            break;
+          default:
+            // The backend parser rejects any other strategy-level keyword
+            // (incl. :stop-loss-pct / :take-profit-pct / :position-size).
+            return null;
         }
 
         i += 2; // Skip key and value
@@ -1471,6 +1520,13 @@ function parseWeightExpr(
     if (item === ':lookback') {
       const lookbackVal = expr[i + 1];
       weightBlock.lookbackDays = typeof lookbackVal === 'number' ? lookbackVal : undefined;
+      i += 2;
+      continue;
+    }
+
+    if (item === ':top') {
+      const topVal = expr[i + 1];
+      weightBlock.top = typeof topVal === 'number' ? topVal : undefined;
       i += 2;
       continue;
     }
@@ -1735,12 +1791,9 @@ function parseFilterExpr(
       continue;
     }
 
-    // Child block(s): parse into childIds so the filter's universe survives even
-    // when its assets are nested in a (weight ...) / (group ...). The previous
-    // code only scraped DIRECT (asset ...) children and dropped everything else —
-    // so `(filter ... (weight :method equal (asset A) ...))` became an EMPTY
-    // filter that failed backend validation ("0 available assets"). Also collect
-    // the flat symbol list for the filter config's custom universe.
+    // Parse child block(s) into childIds so the filter's universe survives even when
+    // its assets are nested in a (weight ...) / (group ...); also collect the flat
+    // symbol list for the filter config's custom universe.
     if (Array.isArray(item)) {
       filter.childIds.push(...parseBlockFromExpr(item, id, blocks));
       collectAssetSymbols(item, customSymbols);

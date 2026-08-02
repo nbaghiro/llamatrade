@@ -3,43 +3,38 @@
 import type { CompletionContext, CompletionResult, Completion } from '@codemirror/autocomplete';
 import { autocompletion } from '@codemirror/autocomplete';
 
+// Every label below must be vocabulary the backend parser accepts
+// (@llamatrade/core/strategy/vocabulary, generated from libs/dsl into
+// tests/conformance/vocabulary.json). The dsl-conformance suite enforces that.
+
 const blockTypes: Completion[] = [
-  { label: 'strategy', type: 'keyword', info: 'Define a trading strategy' },
-  { label: 'weight', type: 'keyword', info: 'Set weight allocation method', detail: '(allocation ...)' },
-  { label: 'allocation', type: 'keyword', info: 'Define portfolio allocation', detail: ':method :children' },
-  { label: 'group', type: 'keyword', info: 'Group assets together', detail: ':name :children' },
-  { label: 'asset', type: 'keyword', info: 'Add a tradable asset' },
-  { label: 'if', type: 'keyword', info: 'Conditional block', detail: '(condition) (then ...) (else ...)' },
-  { label: 'then', type: 'keyword', info: 'Then branch of conditional' },
-  { label: 'else', type: 'keyword', info: 'Else branch of conditional' },
-  { label: 'filter', type: 'keyword', info: 'Filter assets by criteria', detail: ':selection :count :sort-by' },
+  { label: 'strategy', type: 'keyword', info: 'Define a trading strategy', detail: '(strategy "Name" :rebalance ... blocks)' },
+  { label: 'weight', type: 'keyword', info: 'Allocate across child blocks', detail: '(weight :method ... blocks)' },
+  { label: 'group', type: 'keyword', info: 'Group assets together', detail: '(group "Name" [:weight N] blocks)' },
+  { label: 'asset', type: 'keyword', info: 'Add a tradable asset', detail: '(asset SYMBOL [:weight N])' },
+  { label: 'if', type: 'keyword', info: 'Conditional block', detail: '(if (condition) block [(else block)])' },
+  { label: 'else', type: 'keyword', info: 'Else branch of a conditional', detail: '(else block)' },
+  { label: 'filter', type: 'keyword', info: 'Rank and select assets', detail: '(filter :by ... :select (top N) blocks)' },
 ];
 
 const parameters: Completion[] = [
-  { label: ':name', type: 'property', info: 'Name of the strategy or group' },
-  { label: ':method', type: 'property', info: 'Weight allocation method' },
-  { label: ':symbol', type: 'property', info: 'Ticker symbol' },
-  { label: ':weight', type: 'property', info: 'Weight percent, 0–100 (siblings sum to 100)' },
-  { label: ':symbols', type: 'property', info: 'List of ticker symbols' },
-  { label: ':timeframe', type: 'property', info: 'Trading timeframe (1D, 1H, etc.)' },
-  { label: ':entry', type: 'property', info: 'Entry condition' },
-  { label: ':exit', type: 'property', info: 'Exit condition' },
-  { label: ':lookback-days', type: 'property', info: 'Lookback period in days' },
-  { label: ':children', type: 'property', info: 'Child elements' },
-  { label: ':selection', type: 'property', info: 'Filter selection (top/bottom)' },
-  { label: ':count', type: 'property', info: 'Number of assets to select' },
-  { label: ':sort-by', type: 'property', info: 'Sort criteria for filtering' },
-  { label: ':universe', type: 'property', info: 'Asset universe for filtering' },
-  { label: ':period', type: 'property', info: 'Time period for calculations' },
-  { label: ':description', type: 'property', info: 'Strategy description' },
-  { label: ':type', type: 'property', info: 'Strategy type' },
-  { label: ':position-size', type: 'property', info: 'Position sizing percentage' },
-  { label: ':stop-loss-pct', type: 'property', info: 'Stop loss percentage' },
-  { label: ':take-profit-pct', type: 'property', info: 'Take profit percentage' },
   { label: ':rebalance', type: 'property', info: 'Rebalance frequency (daily, weekly, monthly, quarterly, annually)' },
   { label: ':benchmark', type: 'property', info: 'Benchmark symbol for comparison' },
+  { label: ':description', type: 'property', info: 'Strategy description' },
+  { label: ':method', type: 'property', info: 'Weight allocation method' },
+  { label: ':lookback', type: 'property', info: 'Lookback period in days' },
+  { label: ':top', type: 'property', info: 'Allocate to the top N children (momentum only)' },
+  { label: ':weight', type: 'property', info: 'Weight percent, 0–100 (siblings sum to 100)' },
+  { label: ':by', type: 'property', info: 'Filter criteria (momentum, volatility, volume)' },
+  { label: ':select', type: 'property', info: 'Filter selection, e.g. (top 3)' },
+  { label: ':close', type: 'property', info: 'Closing price field' },
+  { label: ':open', type: 'property', info: 'Opening price field' },
+  { label: ':high', type: 'property', info: 'High price field' },
+  { label: ':low', type: 'property', info: 'Low price field' },
+  { label: ':volume', type: 'property', info: 'Volume field' },
 ];
 
+// market-cap parses but the validator rejects it (needs fundamentals), so it is not offered.
 const weightMethods: Completion[] = [
   { label: 'equal', type: 'type', info: 'Equal weight all assets' },
   { label: 'specified', type: 'type', info: 'Manually specified weights' },
@@ -55,12 +50,9 @@ const filterMethods: Completion[] = [
 ];
 
 const sortCriteria: Completion[] = [
-  { label: 'momentum', type: 'type', info: 'Sort by momentum' },
-  { label: 'market_cap', type: 'type', info: 'Sort by market cap' },
-  { label: 'volume', type: 'type', info: 'Sort by volume' },
-  { label: 'volatility', type: 'type', info: 'Sort by volatility' },
-  { label: 'rsi', type: 'type', info: 'Sort by RSI' },
-  { label: 'dividend_yield', type: 'type', info: 'Sort by dividend yield' },
+  { label: 'momentum', type: 'type', info: 'Rank by momentum' },
+  { label: 'volatility', type: 'type', info: 'Rank by volatility' },
+  { label: 'volume', type: 'type', info: 'Rank by volume' },
 ];
 
 const rebalanceFrequencies: Completion[] = [
@@ -91,7 +83,7 @@ const indicators: Completion[] = [
   { label: 'bbands', type: 'function', info: 'Bollinger Bands (outputs: :upper :middle :lower)', detail: '(bbands SYMBOL period stddev [:output])' },
 
   // Multi-output: Stochastic - outputs: :k (default), :d
-  { label: 'stoch', type: 'function', info: 'Stochastic Oscillator (outputs: :k :d)', detail: '(stoch SYMBOL k_period d_period [:output])' },
+  { label: 'stoch', type: 'function', info: 'Stochastic Oscillator (outputs: :k :d)', detail: '(stoch SYMBOL k_period d_period smoothing [:output])' },
 
   // Multi-output: ADX - outputs: :value (default), :plus_di, :minus_di
   { label: 'adx', type: 'function', info: 'Average Directional Index (outputs: :value :plus_di :minus_di)', detail: '(adx SYMBOL period [:output])' },
@@ -110,12 +102,13 @@ const indicators: Completion[] = [
   { label: 'vwap', type: 'function', info: 'Volume Weighted Average Price', detail: '(vwap SYMBOL)' },
 ];
 
-const priceFields: Completion[] = [
-  { label: 'close', type: 'variable', info: 'Closing price' },
-  { label: 'open', type: 'variable', info: 'Opening price' },
-  { label: 'high', type: 'variable', info: 'High price' },
-  { label: 'low', type: 'variable', info: 'Low price' },
-  { label: 'volume', type: 'variable', info: 'Trading volume' },
+// Price fields are only valid as a keyword inside (price SYMBOL :field); the bare
+// names are not values, so they are offered through `parameters` instead.
+const metrics: Completion[] = [
+  { label: 'price', type: 'function', info: 'Price of a symbol', detail: '(price SYMBOL [:field])' },
+  { label: 'drawdown', type: 'function', info: 'Drawdown from peak', detail: '(drawdown SYMBOL)' },
+  { label: 'return', type: 'function', info: 'Return over a period', detail: '(return SYMBOL [period])' },
+  { label: 'volatility', type: 'function', info: 'Realized volatility', detail: '(volatility SYMBOL [period])' },
 ];
 
 const operators: Completion[] = [
@@ -123,8 +116,10 @@ const operators: Completion[] = [
   { label: '<', type: 'operator', info: 'Less than' },
   { label: '>=', type: 'operator', info: 'Greater than or equal' },
   { label: '<=', type: 'operator', info: 'Less than or equal' },
-  { label: 'cross-above', type: 'operator', info: 'Crosses above' },
-  { label: 'cross-below', type: 'operator', info: 'Crosses below' },
+  { label: '=', type: 'operator', info: 'Equal to' },
+  { label: '!=', type: 'operator', info: 'Not equal to' },
+  { label: 'crosses-above', type: 'operator', info: 'Crosses above' },
+  { label: 'crosses-below', type: 'operator', info: 'Crosses below' },
 ];
 
 const logicalOps: Completion[] = [
@@ -190,12 +185,12 @@ function getCompletions(context: CompletionContext): CompletionResult | null {
   if (/:\s*method\s+$/.test(textBefore) || /:\s*method\s+\S*$/.test(textBefore)) {
     options = weightMethods;
   }
-  // Check if we're after :selection
-  else if (/:\s*selection\s+$/.test(textBefore) || /:\s*selection\s+\S*$/.test(textBefore)) {
+  // Check if we're inside :select (top|bottom N)
+  else if (/:\s*select\s+\(\s*\S*$/.test(textBefore)) {
     options = filterMethods;
   }
-  // Check if we're after :sort-by
-  else if (/:\s*sort-by\s+$/.test(textBefore) || /:\s*sort-by\s+\S*$/.test(textBefore)) {
+  // Check if we're after :by
+  else if (/:\s*by\s+$/.test(textBefore) || /:\s*by\s+\S*$/.test(textBefore)) {
     options = sortCriteria;
   }
   // Check if we're after :rebalance
@@ -207,16 +202,12 @@ function getCompletions(context: CompletionContext): CompletionResult | null {
     options = parameters;
   }
   // Check if we're in a condition context (after operators)
-  else if (/\(\s*(>|<|>=|<=|cross-above|cross-below)\s*$/.test(textBefore)) {
-    options = [...indicators, ...priceFields];
+  else if (/\(\s*(>=|<=|!=|>|<|=|crosses-above|crosses-below)\s*$/.test(textBefore)) {
+    options = [...indicators, ...metrics];
   }
   // Check if we're after an opening paren
   else if (/\(\s*$/.test(textBefore) || /\(\s*\S*$/.test(textBefore)) {
-    options = [...blockTypes, ...indicators, ...operators, ...logicalOps];
-  }
-  // Check if we're after :symbol or :symbols
-  else if (/:\s*symbols?\s+\[?["\s]*$/.test(textBefore) || /:\s*symbols?\s+\[?["\s]*\S*$/.test(textBefore)) {
-    options = commonSymbols;
+    options = [...blockTypes, ...indicators, ...metrics, ...operators, ...logicalOps];
   }
   // Check if we're typing an uppercase word (likely a symbol)
   else if (/^[A-Z][A-Z0-9]*$/.test(word)) {
@@ -227,7 +218,7 @@ function getCompletions(context: CompletionContext): CompletionResult | null {
     options = [
       ...blockTypes,
       ...indicators,
-      ...priceFields,
+      ...metrics,
       ...operators,
       ...logicalOps,
       ...weightMethods,
@@ -262,5 +253,19 @@ export const dslAutocomplete = autocompletion({
   closeOnBlur: true,
   maxRenderedOptions: 20,
 });
+
+/** Exposed so the conformance suite can check every label against the DSL vocabulary. */
+export const completionSets = {
+  blockTypes,
+  parameters,
+  weightMethods,
+  filterMethods,
+  sortCriteria,
+  rebalanceFrequencies,
+  indicators,
+  metrics,
+  operators,
+  logicalOps,
+} as const;
 
 export { getCompletions };

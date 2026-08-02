@@ -69,22 +69,29 @@ describe('tokenizeWithPositions', () => {
   });
 
   it('should classify indicators correctly', () => {
-    const input = '(sma ema rsi macd-line bb-upper)';
+    const input = '(sma ema rsi macd bbands stoch williams-r)';
     const tokens = tokenizeWithPositions(input);
 
     const indicators = tokens.filter((t) => t.type === 'indicator');
     expect(indicators.map((t) => t.value)).toEqual([
-      'sma', 'ema', 'rsi', 'macd-line', 'bb-upper',
+      'sma', 'ema', 'rsi', 'macd', 'bbands', 'stoch', 'williams-r',
+    ]);
+  });
+
+  it('should not classify names the backend parser rejects', () => {
+    const tokens = tokenizeWithPositions('(macd-line bb-upper cross-above allocation)');
+    expect(tokens.filter((t) => t.type === 'unknown').map((t) => t.value)).toEqual([
+      'macd-line', 'bb-upper', 'cross-above', 'allocation',
     ]);
   });
 
   it('should classify operators correctly', () => {
-    const input = '(> < >= <= cross-above cross-below)';
+    const input = '(> < >= <= = != crosses-above crosses-below)';
     const tokens = tokenizeWithPositions(input);
 
     const operators = tokens.filter((t) => t.type === 'operator');
     expect(operators.map((t) => t.value)).toEqual([
-      '>', '<', '>=', '<=', 'cross-above', 'cross-below',
+      '>', '<', '>=', '<=', '=', '!=', 'crosses-above', 'crosses-below',
     ]);
   });
 
@@ -174,14 +181,20 @@ describe('case conversion helpers', () => {
     it('should return true for DSL kebab-case keywords', () => {
       expect(isKebabCaseKeyword('inverse-volatility')).toBe(true);
       expect(isKebabCaseKeyword('min-variance')).toBe(true);
-      expect(isKebabCaseKeyword('cross-above')).toBe(true);
-      expect(isKebabCaseKeyword('macd-line')).toBe(true);
+      expect(isKebabCaseKeyword('crosses-above')).toBe(true);
+      expect(isKebabCaseKeyword('williams-r')).toBe(true);
     });
 
     it('should return false for non-kebab keywords', () => {
       expect(isKebabCaseKeyword('equal')).toBe(false);
       expect(isKebabCaseKeyword('momentum')).toBe(false);
       expect(isKebabCaseKeyword('sma')).toBe(false);
+    });
+
+    it('should return false for retired kebab keywords', () => {
+      expect(isKebabCaseKeyword('cross-above')).toBe(false);
+      expect(isKebabCaseKeyword('macd-line')).toBe(false);
+      expect(isKebabCaseKeyword('stop-loss-pct')).toBe(false);
     });
   });
 });
@@ -346,10 +359,8 @@ describe('fromDSLString', () => {
   });
 
   it('preserves a filter universe nested in a weight (multi-asset-trend shape)', () => {
-    // Regression: the DSL-text parser used to scrape only DIRECT (asset ...)
-    // children, so a filter wrapping its assets in a (weight ...) parsed to an
-    // EMPTY filter — which the backend rejected ("Select count (2) exceeds
-    // available assets (0)"). The universe must survive as real children.
+    // A filter that wraps its assets in a (weight ...) must keep them as real children,
+    // not parse to an empty filter the backend would reject.
     const dsl = `(strategy "Nested Filter"
   :rebalance weekly
   (filter :by momentum :select (top 2) :lookback 60
@@ -370,7 +381,7 @@ describe('fromDSLString', () => {
     expect(filter.childIds.length).toBeGreaterThan(0); // the nested weight is a real child
     expect(Object.values(tree.blocks).filter((b) => b.type === 'asset').length).toBe(5);
 
-    // Round-trips to a NON-empty filter (previously it emitted a childless filter).
+    // Round-trips to a NON-empty filter.
     const metadata: StrategyMetadata = {
       name: result!.metadata.name || 'Nested Filter',
       timeframe: result!.metadata.timeframe || '1W',

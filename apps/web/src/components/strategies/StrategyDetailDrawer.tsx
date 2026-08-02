@@ -53,7 +53,7 @@ export function StrategyDetailDrawer({
 
   const tags: string[] = [
     row.implementation.toUpperCase(),
-    strategy.timeframe || '1D',
+    (strategy.rebalance || 'daily').toUpperCase(),
     `${strategy.symbols.length} symbols`,
     `v${strategy.version}`,
   ];

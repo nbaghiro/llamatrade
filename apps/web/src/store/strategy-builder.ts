@@ -3,6 +3,7 @@ import {
   fromDSLString,
   conditionToText,
   validateTree,
+  type StrategyMetadata,
 } from '@llamatrade/core/strategy/serializer';
 import type {
   BlockId,
@@ -289,6 +290,7 @@ interface StrategyBuilderState {
   strategyName: string;
   strategyDescription: string;
   timeframe: string;
+  benchmark: string;
   isDirty: boolean;
 
   // Version tracking for optimistic locking
@@ -337,6 +339,7 @@ interface StrategyBuilderState {
   setStrategyName: (name: string) => void;
   setStrategyDescription: (description: string) => void;
   setTimeframe: (timeframe: string) => void;
+  setBenchmark: (benchmark: string) => void;
 
   // History operations
   undo: () => void;
@@ -374,6 +377,21 @@ interface StrategyBuilderState {
   getParent: (id: BlockId) => ParentBlock | undefined;
   reset: () => void;
   clearError: () => void;
+}
+
+/** Strategy-level metadata the DSL emitter needs, read off the store's own fields. */
+function dslMetadata(state: {
+  strategyName: string;
+  strategyDescription: string;
+  timeframe: string;
+  benchmark: string;
+}): StrategyMetadata {
+  return {
+    name: state.strategyName,
+    description: state.strategyDescription,
+    timeframe: state.timeframe,
+    benchmark: state.benchmark || undefined,
+  };
 }
 
 // Helper to save current state to history
@@ -479,6 +497,7 @@ export const useStrategyBuilderStore = create<StrategyBuilderState>()(
     strategyName: 'Untitled Strategy',
     strategyDescription: '',
     timeframe: '1D',
+    benchmark: '',
     isDirty: false,
 
     // Version tracking for optimistic locking
@@ -824,6 +843,7 @@ export const useStrategyBuilderStore = create<StrategyBuilderState>()(
           if (metadata.name) s.strategyName = metadata.name;
           if (metadata.description !== undefined) s.strategyDescription = metadata.description;
           if (metadata.timeframe) s.timeframe = metadata.timeframe;
+          s.benchmark = metadata.benchmark ?? '';
           const root = s.tree.blocks[s.tree.rootId];
           if (root && root.type === 'root' && metadata.name) root.name = metadata.name;
 
@@ -884,6 +904,7 @@ export const useStrategyBuilderStore = create<StrategyBuilderState>()(
           if (metadata.timeframe) {
             s.timeframe = metadata.timeframe;
           }
+          s.benchmark = metadata.benchmark ?? '';
 
           // Update root block name to match parsed strategy name
           const root = s.tree.blocks[s.tree.rootId];
@@ -906,12 +927,8 @@ export const useStrategyBuilderStore = create<StrategyBuilderState>()(
       },
 
       getDSLCode: () => {
-        const { tree, strategyName, strategyDescription, timeframe } = get();
-        return toDSL(tree, {
-          name: strategyName,
-          description: strategyDescription,
-          timeframe,
-        });
+        const state = get();
+        return toDSL(state.tree, dslMetadata(state));
       },
 
       clearDSLParseError: () => {
@@ -945,6 +962,7 @@ export const useStrategyBuilderStore = create<StrategyBuilderState>()(
           state.strategyName = 'Untitled Strategy';
           state.strategyDescription = '';
           state.timeframe = '1D';
+          state.benchmark = '';
           state.isDirty = false;
           state.serverVersion = 0;
           state.lastSavedAt = null;
@@ -989,6 +1007,13 @@ export const useStrategyBuilderStore = create<StrategyBuilderState>()(
         });
       },
 
+      setBenchmark: (benchmark) => {
+        set((state) => {
+          state.benchmark = benchmark;
+          state.isDirty = true;
+        });
+      },
+
       // Backend operations
       loadStrategy: async (id) => {
         set((state) => {
@@ -1011,15 +1036,17 @@ export const useStrategyBuilderStore = create<StrategyBuilderState>()(
             state.pendingTemplateId = null; // Clear template reference when loading saved strategy
             state.strategyName = strategy.name;
             state.strategyDescription = strategy.description || '';
-            state.timeframe = strategy.timeframe;
 
             // Track server version for optimistic locking
             state.serverVersion = strategy.version || 1;
             state.lastSavedAt = Date.now();
             state.conflictDetected = false;
 
-            // Derive the block tree from the DSL string — the single source of truth.
+            // Derive the block tree + strategy-level metadata (rebalance surfaces as the
+            // UI timeframe) from the DSL string.
             const parsed = fromDSLString(strategy.dslCode);
+            state.timeframe = parsed?.metadata?.timeframe ?? '1D';
+            state.benchmark = parsed?.metadata?.benchmark ?? '';
             let tree = parsed?.tree;
             if (!tree) {
               const rootId = uuidv4();
@@ -1062,7 +1089,8 @@ export const useStrategyBuilderStore = create<StrategyBuilderState>()(
               state.dslCode = toDSL(tree, {
                 name: strategy.name,
                 description: strategy.description || '',
-                timeframe: strategy.timeframe,
+                timeframe: state.timeframe,
+                benchmark: state.benchmark || undefined,
               });
             }
 
@@ -1108,6 +1136,7 @@ export const useStrategyBuilderStore = create<StrategyBuilderState>()(
             state.strategyName = metadata.name || template.name;
             state.strategyDescription = template.description || '';
             state.timeframe = metadata.timeframe || '1D';
+            state.benchmark = metadata.benchmark ?? '';
 
             state.tree = tree;
             state.viewMode = 'split';
@@ -1158,6 +1187,7 @@ export const useStrategyBuilderStore = create<StrategyBuilderState>()(
           state.strategyName = name || metadata.name || 'Untitled Strategy';
           state.strategyDescription = description || metadata.description || '';
           state.timeframe = metadata.timeframe || '1D';
+          state.benchmark = metadata.benchmark ?? '';
 
           state.tree = tree;
           state.viewMode = 'split';
@@ -1237,6 +1267,7 @@ export const useStrategyBuilderStore = create<StrategyBuilderState>()(
             state.strategyName = artifact.name || metadata.name || 'Untitled Strategy';
             state.strategyDescription = artifact.description || metadata.description || '';
             state.timeframe = metadata.timeframe || '1D';
+            state.benchmark = metadata.benchmark ?? '';
 
             state.tree = tree;
             state.viewMode = 'split';
@@ -1288,14 +1319,8 @@ export const useStrategyBuilderStore = create<StrategyBuilderState>()(
         });
 
         try {
-          const metadata = {
-            name: state.strategyName,
-            description: state.strategyDescription,
-            timeframe: state.timeframe,
-          };
-
           // The DSL string is the single source of truth; the tree is derived from it on load.
-          const dslCode = toDSL(state.tree, metadata);
+          const dslCode = toDSL(state.tree, dslMetadata(state));
           const context = getTenantContext();
 
           let savedStrategyId: string;
@@ -1309,7 +1334,6 @@ export const useStrategyBuilderStore = create<StrategyBuilderState>()(
               name: state.strategyName,
               description: state.strategyDescription || undefined,
               dslCode,
-              timeframe: state.timeframe,
             });
             savedStrategyId = response.strategy?.id ?? state.strategyId;
             savedName = response.strategy?.name ?? state.strategyName;
@@ -1320,7 +1344,6 @@ export const useStrategyBuilderStore = create<StrategyBuilderState>()(
               name: state.strategyName,
               description: state.strategyDescription || undefined,
               dslCode,
-              timeframe: state.timeframe,
             });
             if (!response.strategy?.id) {
               throw new Error('Failed to create strategy');
@@ -1404,8 +1427,7 @@ export const useStrategyBuilderStore = create<StrategyBuilderState>()(
         if (!state.conflictDetected || !state.strategyId) return;
 
         if (useLocal) {
-          // Force save local changes, overwriting server version
-          // Clear conflict flag and try saving again
+          // Force-save local changes over the server version.
           set((s) => {
             s.conflictDetected = false;
             s.error = null;
@@ -1480,6 +1502,7 @@ export const useStrategyBuilderStore = create<StrategyBuilderState>()(
           state.strategyName = 'New Strategy';
           state.strategyDescription = '';
           state.timeframe = '1D';
+          state.benchmark = '';
           state.isDirty = false;
           state.serverVersion = 0;
           state.lastSavedAt = null;
@@ -1520,11 +1543,7 @@ useStrategyBuilderStore.subscribe((state, prev) => {
   if (state.tree === prev.tree) return;
   if (suppressTreeToCode) return;
   if (state.viewMode !== 'code' && state.viewMode !== 'split') return;
-  const dsl = toDSL(state.tree, {
-    name: state.strategyName,
-    description: state.strategyDescription,
-    timeframe: state.timeframe,
-  });
+  const dsl = toDSL(state.tree, dslMetadata(state));
   if (dsl !== state.dslCode) {
     useStrategyBuilderStore.setState((s) => {
       s.dslCode = dsl;
@@ -1570,6 +1589,7 @@ export function createStrategyBuilderStore(initialTree?: StrategyTree, previewId
           : 'Preview Strategy',
         description: '',
         timeframe: '1D',
+        benchmark: undefined,
       })
     : '';
 
@@ -1600,6 +1620,7 @@ export function createStrategyBuilderStore(initialTree?: StrategyTree, previewId
         : 'Preview Strategy',
       strategyDescription: '',
       timeframe: '1D',
+      benchmark: '',
       isDirty: false,
 
       // Version tracking
@@ -1650,6 +1671,7 @@ export function createStrategyBuilderStore(initialTree?: StrategyTree, previewId
       setStrategyName: () => {},
       setStrategyDescription: () => {},
       setTimeframe: () => {},
+      setBenchmark: () => {},
 
       undo: () => {},
       redo: () => {},
@@ -1698,12 +1720,8 @@ export function createStrategyBuilderStore(initialTree?: StrategyTree, previewId
       syncTreeFromCode: () => false,
       commitCodeToTree: () => {},
       getDSLCode: () => {
-        const { tree, strategyName, strategyDescription, timeframe } = get();
-        return toDSL(tree, {
-          name: strategyName,
-          description: strategyDescription,
-          timeframe,
-        });
+        const state = get();
+        return toDSL(state.tree, dslMetadata(state));
       },
       clearDSLParseError: () => {},
 
@@ -1743,8 +1761,7 @@ export function useStrategyBuilderStoreWithContext<T = StrategyBuilderState>(
 ): T {
   const scopedStore = useContext(StrategyBuilderStoreContext);
 
-  // Use useStore with either scoped store or global store (as store reference)
-  // Zustand's create() returns a hook that also acts as a store reference
+  // Zustand's create() hook doubles as a store reference, so it can be passed to useStore.
   const effectiveSelector = selector ?? ((state: StrategyBuilderState) => state as unknown as T);
 
   return useStore(scopedStore ?? useStrategyBuilderStore, effectiveSelector);

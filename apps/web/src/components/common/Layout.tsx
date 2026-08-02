@@ -11,6 +11,7 @@ import { useUIStore } from '../../store/ui';
 import { AgentFAB } from '../agent/AgentFAB';
 import { CopilotSidePanel } from '../agent/CopilotSidePanel';
 import { RunConsole } from '../backtest/RunConsole';
+import { NotificationBell } from '../notifications/NotificationBell';
 
 import { Avatar } from './Avatar';
 import { Logo } from './Logo';
@@ -97,6 +98,7 @@ export default function Layout() {
         </div>
 
         <div className="flex items-center gap-2">
+          <NotificationBell />
           <NavLink
             to="/wallet"
             title="Wallet"

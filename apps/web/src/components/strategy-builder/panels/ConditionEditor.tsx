@@ -40,6 +40,16 @@ function getOperandDetails(operand: ConditionOperand) {
       value: 0,
     };
   }
+  if (operand.type === 'metric') {
+    // Metrics have no dedicated editor UI; degrade to a plain value edit.
+    return {
+      type: 'number' as OperandType,
+      function: 'value',
+      symbol: operand.symbol,
+      period: operand.period ?? 0,
+      value: 0,
+    };
+  }
   return {
     type: 'number' as OperandType,
     function: 'value',

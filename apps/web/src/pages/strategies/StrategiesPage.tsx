@@ -154,7 +154,7 @@ export default function StrategiesPage() {
     setSelectedId(id);
   };
 
-  // Hydrate the open strategy's DSL/symbols/timeframe on demand (the list ships
+  // Hydrate the open strategy's DSL/symbols on demand (the list ships
   // summaries only). Cached in the store, so reselecting is instant.
   useEffect(() => {
     if (selectedId && !drawerClosed) fetchStrategyDetail(selectedId);

@@ -42,7 +42,6 @@ export async function createStrategy(data: {
   templateId?: string;
   templateParams?: Record<string, string>;
   symbols?: string[];
-  timeframe?: string;
 }) {
   return strategyClient.createStrategy({
     name: data.name,
@@ -51,7 +50,6 @@ export async function createStrategy(data: {
     templateId: data.templateId,
     templateParams: data.templateParams,
     symbols: data.symbols,
-    timeframe: data.timeframe,
   });
 }
 
@@ -62,7 +60,6 @@ export async function updateStrategy(
     description?: string;
     dslCode?: string;
     symbols?: string[];
-    timeframe?: string;
     changeSummary?: string;
   }
 ) {
@@ -72,7 +69,6 @@ export async function updateStrategy(
     description: data.description,
     dslCode: data.dslCode,
     symbols: data.symbols,
-    timeframe: data.timeframe,
     changeSummary: data.changeSummary,
   });
 }

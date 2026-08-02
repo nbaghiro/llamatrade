@@ -84,7 +84,7 @@ export function buildRow(
     run,
     pill: pillFor(strategy, deployment),
     implementation,
-    meta: `${implementation} · ${strategy.timeframe || '1D'} · ${strategy.symbols.length} pos`,
+    meta: `${implementation} · ${strategy.rebalance || 'daily'} · ${strategy.symbols.length} pos`,
     returnPct,
     returnIsBacktest: !deployed && backtestReturn !== null,
     sharpe: metrics ? num(metrics.sharpeRatio) : null,

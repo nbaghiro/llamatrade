@@ -42,6 +42,7 @@ export interface WeightBlock extends BaseBlock {
   method: WeightMethod;
   allocations: Record<BlockId, number>; // for 'specified' method
   lookbackDays?: number; // for momentum, inverse_volatility, min_variance
+  top?: number; // for momentum: allocate to the top N children only
   childIds: BlockId[];
 }
 
@@ -68,7 +69,15 @@ export type IndicatorName =
 
 export type PriceField = 'current' | 'open' | 'high' | 'low' | 'close' | 'volume';
 export type IndicatorSource = 'price' | 'close' | 'high' | 'low' | 'open' | 'volume';
-export type Comparator = 'gt' | 'lt' | 'gte' | 'lte' | 'cross_above' | 'cross_below';
+export type Comparator =
+  | 'gt'
+  | 'lt'
+  | 'gte'
+  | 'lte'
+  | 'eq'
+  | 'neq'
+  | 'cross_above'
+  | 'cross_below';
 
 export interface IndicatorRef {
   type: 'indicator';
@@ -96,7 +105,16 @@ export interface NumberValue {
   isPercent?: boolean;
 }
 
-export type ConditionOperand = IndicatorRef | PriceRef | NumberValue;
+export type MetricName = 'drawdown' | 'return' | 'volatility';
+
+export interface MetricRef {
+  type: 'metric';
+  metric: MetricName;
+  symbol: string;
+  period?: number;
+}
+
+export type ConditionOperand = IndicatorRef | PriceRef | NumberValue | MetricRef;
 
 export interface ConditionExpression {
   left: ConditionOperand;
@@ -328,6 +346,8 @@ export const COMPARATORS: ComparatorInfo[] = [
   { value: 'lt', label: '<', verboseLabel: 'is less than' },
   { value: 'gte', label: '≥', verboseLabel: 'is greater than or equal to' },
   { value: 'lte', label: '≤', verboseLabel: 'is less than or equal to' },
+  { value: 'eq', label: '=', verboseLabel: 'is equal to' },
+  { value: 'neq', label: '≠', verboseLabel: 'is not equal to' },
   { value: 'cross_above', label: '↗', verboseLabel: 'crosses above' },
   { value: 'cross_below', label: '↘', verboseLabel: 'crosses below' },
 ];

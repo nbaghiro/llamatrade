@@ -24,7 +24,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 
 import {
   billingCycleProgress,
@@ -37,6 +37,7 @@ import {
 import InkPaymentCard from '../../components/billing/InkPaymentCard';
 import InvoiceTable from '../../components/billing/InvoiceTable';
 import UsageMeter from '../../components/billing/UsageMeter';
+import { NotificationSettings } from '../../components/notifications/NotificationSettings';
 import { startAlpacaLink } from '../../services/alpacaOAuth';
 import { useAuthStore } from '../../store/auth';
 
@@ -61,7 +62,11 @@ function holderNameOf(
 }
 
 export default function SettingsPage() {
-  const [activeTab, setActiveTab] = useState<Tab>('billing');
+  const [searchParams] = useSearchParams();
+  const requestedTab = searchParams.get('tab');
+  const [activeTab, setActiveTab] = useState<Tab>(
+    TABS.some((t) => t.key === requestedTab) ? (requestedTab as Tab) : 'billing'
+  );
   const user = useAuthStore((s) => s.user);
 
   const tenantShort = user?.tenantId ? user.tenantId.replace(/-/g, '').slice(0, 4) : '—';
@@ -108,12 +113,7 @@ export default function SettingsPage() {
         {activeTab === 'billing' && <BillingTab user={user} />}
         {activeTab === 'profile' && <ProfileTab user={user} tenantShort={tenantShort} />}
         {activeTab === 'broker' && <BrokerTab />}
-        {activeTab === 'notifications' && (
-          <Placeholder
-            title="Notifications"
-            body="Email and in-app alert preferences are coming soon."
-          />
-        )}
+        {activeTab === 'notifications' && <NotificationSettings />}
         {activeTab === 'security' && (
           <Placeholder
             title="Security"

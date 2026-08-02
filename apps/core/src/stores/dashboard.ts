@@ -170,13 +170,13 @@ function buildPortfolioCurve(
   return out;
 }
 
-/** Short type descriptor for the strategy row. Template slug > timeframe > symbols. */
+/** Short type descriptor for the strategy row. Template slug > rebalance > symbols. */
 function descriptorFor(strategy: Strategy | undefined): string {
   if (!strategy) return '';
   const tpl = strategy.templateId?.trim();
   const isSlug = tpl && /[a-z]/i.test(tpl) && !/^[0-9a-f-]{20,}$/i.test(tpl);
   if (isSlug) return tpl.replace(/_/g, '-').toLowerCase();
-  if (strategy.timeframe) return `${strategy.timeframe} bars`;
+  if (strategy.rebalance) return `${strategy.rebalance} rebalance`;
   if (strategy.symbols.length) return `${strategy.symbols.length} symbols`;
   return '';
 }

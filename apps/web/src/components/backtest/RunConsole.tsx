@@ -313,7 +313,7 @@ function ConfigureBody({
                     <div className="truncate text-[13px] font-bold text-ink">{s.name}</div>
                     <div className="mt-1.5 flex flex-wrap items-center gap-1">
                       <Chip className={meta.cls}>{meta.label}</Chip>
-                      <Chip className="text-ink/70">{(s.timeframe || '1D').toUpperCase()}</Chip>
+                      <Chip className="text-ink/70">{(s.rebalance || 'daily').toUpperCase()}</Chip>
                       <Chip className="text-ink/70">{s.symbols.length} pos</Chip>
                     </div>
                   </button>

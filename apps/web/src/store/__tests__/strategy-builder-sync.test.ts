@@ -103,6 +103,33 @@ describe('live code⇄tree sync', () => {
     expect(store.getState().dslParseError).toBeNull();
   });
 
+  it('carries :benchmark through the store round-trip', () => {
+    const dsl =
+      '(strategy "Bench" :rebalance weekly :benchmark QQQ (weight :method equal (asset SPY) (asset BND)))';
+    store.getState().setViewMode('split');
+    store.getState().updateDSLCode(dsl);
+    vi.advanceTimersByTime(CODE_COMMIT_WAIT);
+
+    expect(store.getState().dslParseError).toBeNull();
+    expect(store.getState().benchmark).toBe('QQQ');
+    expect(store.getState().getDSLCode()).toContain(':benchmark QQQ');
+  });
+
+  it('drops :benchmark when the code no longer declares one', () => {
+    store.getState().setViewMode('split');
+    store.getState().updateDSLCode(
+      '(strategy "Bench" :rebalance weekly :benchmark QQQ (weight :method equal (asset SPY)))'
+    );
+    vi.advanceTimersByTime(CODE_COMMIT_WAIT);
+    store.getState().updateDSLCode(
+      '(strategy "Bench" :rebalance weekly (weight :method equal (asset SPY)))'
+    );
+    vi.advanceTimersByTime(CODE_COMMIT_WAIT);
+
+    expect(store.getState().benchmark).toBe('');
+    expect(store.getState().getDSLCode()).not.toContain(':benchmark');
+  });
+
   it('keeps the last good tree and surfaces an error on invalid DSL', () => {
     store.getState().setViewMode('split');
     store.getState().updateDSLCode('(strategy "Rot" (weight :method equal (asset SPY)))');
