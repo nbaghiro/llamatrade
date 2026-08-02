@@ -272,8 +272,8 @@ class TestEvaluationStateMetrics:
         metric = Metric(name="return", symbol="AAPL", period=5)
         value = state.get_metric_value(metric)
 
-        # Calculate expected return
-        start_price = bar_history[-5].close
+        # (return SYM 5) spans 5 intervals, so the base is bars[-6], not bars[-5].
+        start_price = bar_history[-6].close
         end_price = bar_history[-1].close
         expected = (end_price - start_price) / start_price
 

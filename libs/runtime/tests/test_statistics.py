@@ -31,18 +31,34 @@ def _bars_v(rows: list[tuple[float, int]]) -> list[Bar]:
 
 
 def test_trailing_return_basic() -> None:
-    bars = _bars([100, 105, 110])  # lookback 2 -> from bars[-2]=105 to bars[-1]=110
-    assert trailing_return(bars, 2) == pytest.approx((110 - 105) / 105)
+    # lookback 2 spans 3 bars: base is bars[-3]=100, latest is bars[-1]=110.
+    bars = _bars([100, 105, 110])
+    assert trailing_return(bars, 2) == pytest.approx((110 - 100) / 100)
 
 
 def test_trailing_return_insufficient_or_degenerate_is_zero() -> None:
     assert trailing_return(_bars([100, 110]), 5) == 0.0  # not enough history
+    assert trailing_return(_bars([100, 105, 110]), 2) == pytest.approx(0.1)  # exactly lookback+1
+    assert trailing_return(_bars([100, 110]), 2) == 0.0  # needs lookback+1 = 3 bars
     assert trailing_return([], 3) == 0.0
     assert trailing_return(_bars([100, 110]), 0) == 0.0  # lookback < 1
 
 
 def test_trailing_return_nonpositive_base_is_zero() -> None:
-    assert trailing_return(_bars([50, 0, 110]), 2) == 0.0  # base = bars[-2] = 0
+    assert trailing_return(_bars([0, 55, 110]), 2) == 0.0  # base = bars[-3] = 0
+
+
+def test_trailing_return_agrees_with_momentum_indicator_on_lookback() -> None:
+    # trailing_return and the momentum indicator must reference the same base bar: the
+    # indicator differences close[-1] - close[-(lookback+1)], so their ratio is the return.
+    from llamatrade_runtime.indicators.library import momentum as momentum_indicator
+
+    closes = [100.0 * (1.1**i) for i in range(20)]  # 10% per bar
+    lookback = 10
+    arr = np.array(closes, dtype=np.float64)
+    mom = momentum_indicator(arr, lookback)
+    base = arr[-(lookback + 1)]
+    assert trailing_return(_bars(closes), lookback) == pytest.approx(mom[-1] / base)
 
 
 def test_return_volatility_zero_when_flat() -> None:

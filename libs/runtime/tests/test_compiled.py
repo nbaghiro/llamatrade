@@ -167,7 +167,6 @@ class TestStateManagement:
 
         assert not compiled.has_enough_history()
         assert compiled._bar_history == {}
-        assert compiled._indicator_cache == {}
 
     def test_add_bars_appends_to_history(self, equal_weight_sexpr: str) -> None:
         """Test add_bars appends to history."""
@@ -180,6 +179,39 @@ class TestStateManagement:
         assert len(compiled._bar_history["AAPL"]) == 1
         assert len(compiled._bar_history["GOOGL"]) == 1
         assert len(compiled._bar_history["MSFT"]) == 1
+
+    def test_add_bars_revises_a_same_timestamp_bar_in_place(self, equal_weight_sexpr: str) -> None:
+        """A re-sent period (a forming bar) replaces its slot instead of extending history."""
+        strategy = parse(equal_weight_sexpr)
+        compiled = CompiledStrategy.compile(strategy)
+
+        first, second = create_bars(2)
+        compiled.add_bars({"AAPL": first})
+        revised = Bar(
+            timestamp=first.timestamp,
+            open=first.open,
+            high=first.high * 2,
+            low=first.low,
+            close=first.close * 1.5,
+            volume=first.volume * 3,
+        )
+        compiled.add_bars({"AAPL": revised})
+        compiled.add_bars({"AAPL": second})
+
+        history = compiled._bar_history["AAPL"]
+        assert len(history) == 2
+        assert history[0] == revised
+        assert history[1] == second
+
+    def test_last_bars_returns_the_latest_bar_per_symbol(self, equal_weight_sexpr: str) -> None:
+        strategy = parse(equal_weight_sexpr)
+        compiled = CompiledStrategy.compile(strategy)
+
+        assert compiled.last_bars() == {}
+        bars = create_bars(3)
+        for bar in bars:
+            compiled.add_bars({"AAPL": bar, "GOOGL": bar})
+        assert compiled.last_bars() == {"AAPL": bars[-1], "GOOGL": bars[-1]}
 
     def test_has_enough_history_false_initially(self, equal_weight_sexpr: str) -> None:
         """Test has_enough_history returns False initially."""

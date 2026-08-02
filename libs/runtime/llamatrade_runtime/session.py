@@ -17,6 +17,7 @@ backtest faithfully predicts live by construction.
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Mapping
 from datetime import date
 
@@ -26,12 +27,16 @@ from llamatrade_runtime.evaluation.compiled import CompiledStrategy, compile_str
 from llamatrade_runtime.rebalance import should_rebalance
 from llamatrade_runtime.sizing import (
     DEFAULT_DRIFT_TOLERANCE,
+    DEFAULT_MIN_ORDER_NOTIONAL,
     Holding,
     IntendedOrder,
     SizingMode,
+    SizingState,
     size_orders,
 )
 from llamatrade_runtime.types import Bar
+
+logger = logging.getLogger(__name__)
 
 
 class StrategySession:
@@ -47,6 +52,7 @@ class StrategySession:
         *,
         sizing_mode: SizingMode = SizingMode.DRIFT,
         drift_tolerance: float = DEFAULT_DRIFT_TOLERANCE,
+        min_order_notional: float = DEFAULT_MIN_ORDER_NOTIONAL,
     ) -> None:
         """Build a session from a strategy S-expression or an already-parsed AST.
 
@@ -54,6 +60,8 @@ class StrategySession:
             strategy: the strategy DSL (S-expression text) or a parsed :class:`Strategy`.
             sizing_mode: BINARY (all-or-nothing) or DRIFT (resize within a band).
             drift_tolerance: DRIFT-mode band before a resize trade is worth doing.
+            min_order_notional: dollar floor under which an intended order is skipped
+                (the broker would reject it); 0 disables the guard.
 
         Raises:
             ValueError: if the strategy cannot be parsed, is invalid, or fails to compile.
@@ -81,10 +89,12 @@ class StrategySession:
         self._rebalance_freq: RebalanceFrequency | None = ast.rebalance
         self._sizing_mode = sizing_mode
         self._drift_tolerance = drift_tolerance
+        self._min_order_notional = min_order_notional
 
         # Portfolio-level rebalance/weights state (NOT per-symbol).
         self._last_rebalance: date | None = None
         self._current_weights: dict[str, float] = {}
+        self._sub_notional_skip_count = 0
 
     def evaluate(
         self,
@@ -133,6 +143,8 @@ class StrategySession:
             return []
 
         prices = {symbol: bar.close for symbol, bar in bars.items()}
+        free_cash = self._derive_free_cash(holdings, prices, equity)
+        sizing_state = SizingState()
         orders = size_orders(
             weights,
             holdings,
@@ -140,18 +152,64 @@ class StrategySession:
             equity,
             mode=self._sizing_mode,
             drift_tolerance=self._drift_tolerance,
+            min_order_notional=self._min_order_notional,
             current_weights=self._current_weights,
+            free_cash=free_cash,
+            state=sizing_state,
         )
+        self._sub_notional_skip_count += sizing_state.sub_notional_skips
 
         self._current_weights = dict(weights)
         self._last_rebalance = current_date
         return orders
+
+    def _derive_free_cash(
+        self, holdings: Mapping[str, Holding], prices: Mapping[str, float], equity: float
+    ) -> float:
+        """Cash available before this rebalance: equity minus the value of what is held.
+
+        Equity already includes every holding's market value, so free cash is derived by
+        subtracting the marked-to-market value of the holdings. Positions are subscribed, so
+        this tick prices every holding in the runtime's normal case. If a held symbol has no
+        price this tick, its value still sits in equity but cannot be subtracted, which would
+        overstate free cash and let the sizer fund buys the account cannot afford; treat that
+        as a data anomaly, log it, and fall back to 0 so buys are funded only by same-tick sell
+        proceeds rather than by overstated cash.
+        """
+        held_value = 0.0
+        unpriced: list[str] = []
+        for symbol, holding in holdings.items():
+            if holding.quantity <= 0:
+                continue
+            price = prices.get(symbol, 0.0)
+            if price > 0:
+                held_value += holding.quantity * price
+            else:
+                unpriced.append(symbol)
+
+        if unpriced:
+            logger.warning(
+                "held symbols unpriced this tick (%s); free cash cannot be derived without "
+                "overstating it — funding buys from same-tick sell proceeds only",
+                ", ".join(sorted(unpriced)),
+            )
+            return 0.0
+        return equity - held_value
+
+    def last_bars(self) -> dict[str, Bar]:
+        """The most recent bar per symbol in the merged history (empty before any bars).
+
+        Live feeds read this after warm-up to seed a forming bar from the preloaded bar of a
+        period already in progress.
+        """
+        return self._compiled.last_bars()
 
     def reset(self) -> None:
         """Reset all state (history, rebalance clock, weights) for a fresh run."""
         self._compiled.reset()
         self._last_rebalance = None
         self._current_weights = {}
+        self._sub_notional_skip_count = 0
 
     @property
     def symbols(self) -> list[str]:
@@ -189,6 +247,16 @@ class StrategySession:
         degraded run is visible rather than silently producing "no signal".
         """
         return self._compiled.degraded_eval_count
+
+    @property
+    def sub_notional_skip_count(self) -> int:
+        """Orders skipped for falling under the minimum notional since the last reset.
+
+        A rising count means the sleeve's equity is too small for the weights it is
+        being asked to hold — the consumer (live runner / backtest) should emit this
+        as a metric, as with :attr:`degraded_eval_count`.
+        """
+        return self._sub_notional_skip_count
 
 
 def _latest_date(bars: Mapping[str, Bar]) -> date:

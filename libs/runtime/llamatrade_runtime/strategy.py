@@ -6,7 +6,11 @@ S-expression. The runtime drives the session directly — no per-engine adapter 
 
 from llamatrade_runtime.rebalance import should_rebalance as should_rebalance
 from llamatrade_runtime.session import StrategySession
-from llamatrade_runtime.sizing import SizingMode
+from llamatrade_runtime.sizing import (
+    DEFAULT_DRIFT_TOLERANCE,
+    DEFAULT_MIN_ORDER_NOTIONAL,
+    SizingMode,
+)
 
 __all__ = ["build_session", "should_rebalance"]
 
@@ -15,12 +19,17 @@ def build_session(
     config_sexpr: str,
     *,
     sizing_mode: SizingMode = SizingMode.DRIFT,
+    drift_tolerance: float = DEFAULT_DRIFT_TOLERANCE,
+    min_order_notional: float = DEFAULT_MIN_ORDER_NOTIONAL,
 ) -> tuple[StrategySession, set[str], int]:
     """Compile a strategy into a session.
 
     Args:
         config_sexpr: the strategy S-expression in allocation format.
         sizing_mode: BINARY (all-or-nothing) or DRIFT (resize within a band).
+        drift_tolerance: DRIFT-mode band before a resize trade is worth doing.
+        min_order_notional: dollar floor under which an intended order is skipped;
+            0 disables the guard.
 
     Returns:
         ``(session, required_symbols, min_bars)`` — the session, the symbols it needs
@@ -29,5 +38,10 @@ def build_session(
     Raises:
         ValueError: if the strategy cannot be parsed, is invalid, or fails to compile.
     """
-    session = StrategySession(config_sexpr, sizing_mode=sizing_mode)
+    session = StrategySession(
+        config_sexpr,
+        sizing_mode=sizing_mode,
+        drift_tolerance=drift_tolerance,
+        min_order_notional=min_order_notional,
+    )
     return session, set(session.symbols), session.min_bars

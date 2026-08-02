@@ -18,6 +18,26 @@ def test_sharpe_positive_for_positive_drift() -> None:
     assert metrics.calculate_sharpe_ratio(returns) > 0
 
 
+def test_sortino_downside_deviation_against_hand_computed_series() -> None:
+    """Golden: downside deviation about the target, not std of losers about their mean.
+
+    Series [0.03, -0.01, 0.02, -0.02] with rf=0: mean excess 0.005; downside
+    deviation sqrt(mean([0, 0.01, 0, 0.02]^2)) = sqrt(0.000125) = 0.0111803;
+    Sortino = sqrt(252) * 0.005 / 0.0111803 = 7.0993. The old formula divided by
+    std of the two losing days about their own mean (0.005) and returned 15.87.
+    """
+    returns = np.array([0.03, -0.01, 0.02, -0.02])
+    assert metrics.calculate_sortino_ratio(returns, risk_free_rate=0.0) == pytest.approx(
+        7.0993, rel=1e-4
+    )
+
+
+def test_sortino_zero_when_no_downside() -> None:
+    """No return falls below the target, so downside deviation is zero."""
+    returns = np.array([0.01, 0.02, 0.03])
+    assert metrics.calculate_sortino_ratio(returns, risk_free_rate=0.0) == 0.0
+
+
 def test_max_drawdown_and_duration() -> None:
     equity = np.array([100.0, 120.0, 90.0, 130.0])
     dd, duration = metrics.calculate_max_drawdown(equity)

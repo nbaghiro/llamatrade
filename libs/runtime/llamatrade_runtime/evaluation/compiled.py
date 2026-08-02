@@ -56,11 +56,6 @@ def _empty_bar_history() -> dict[str, list[Bar]]:
     return {}
 
 
-def _empty_indicator_cache() -> dict[str, NDArray[np.float64]]:
-    """Factory for empty indicator cache."""
-    return {}
-
-
 def _empty_symbol_set() -> set[str]:
     """Factory for empty symbol set."""
     return set()
@@ -93,9 +88,6 @@ class CompiledStrategy:
     # metrics that read the full series). Keeps long runs from going O(N^2) on indicators.
     history_window: int | None = None
     _bar_history: dict[str, list[Bar]] = field(default_factory=_empty_bar_history, repr=False)
-    _indicator_cache: dict[str, NDArray[np.float64]] = field(
-        default_factory=_empty_indicator_cache, repr=False
-    )
     _last_allocation: dict[str, float] = field(default_factory=_empty_allocation, repr=False)
     # Running total of conditions that could not be evaluated (NaN/missing data)
     # and were treated as False — surfaced for the service to emit as a metric.
@@ -128,7 +120,6 @@ class CompiledStrategy:
     def reset(self) -> None:
         """Reset strategy state for a new evaluation run."""
         self._bar_history = {}
-        self._indicator_cache = {}
         self._last_allocation = {}
         self._degraded_eval_count = 0
 
@@ -137,23 +128,29 @@ class CompiledStrategy:
         """Total conditions treated as False due to NaN/missing data this run."""
         return self._degraded_eval_count
 
-    @property
-    def indicator_cache(self) -> dict[str, NDArray[np.float64]]:
-        """Get the indicator cache (for inspection/debugging)."""
-        return self._indicator_cache
-
     def add_bars(self, bars: dict[str, Bar]) -> None:
-        """Add bars for all symbols.
+        """Add bars for all symbols, revising the last bar in place when it is re-sent.
+
+        A live feed republishes the period in progress as it forms, so a bar carrying the
+        timestamp of the symbol's last stored bar supersedes it instead of extending the
+        series — one period always occupies exactly one slot of history.
 
         Args:
             bars: Dict mapping symbol to Bar
         """
         for symbol, bar in bars.items():
             history = self._bar_history.setdefault(symbol, [])
+            if history and history[-1].timestamp == bar.timestamp:
+                history[-1] = bar
+                continue
             history.append(bar)
             # Bound the retained history (when safe) so indicator recompute stays O(window).
             if self.history_window is not None and len(history) > self.history_window:
                 del history[: -self.history_window]
+
+    def last_bars(self) -> dict[str, Bar]:
+        """The most recent bar per symbol currently in history."""
+        return {symbol: bars[-1] for symbol, bars in self._bar_history.items() if bars}
 
     def has_enough_history(self) -> bool:
         """Check if we have enough bars for evaluation."""
@@ -170,19 +167,15 @@ class CompiledStrategy:
         Returns:
             Allocation with weights for each symbol
         """
-        # Add bars to history
         self.add_bars(bars)
 
-        # Check if we have enough history
         if not self.has_enough_history():
-            # Return empty allocation until we have enough data
             return Allocation(
                 weights={},
                 rebalance_needed=False,
                 metadata={"reason": "insufficient_history"},
             )
 
-        # Build evaluation state
         state = self._build_state(bars)
 
         # Compute allocations from strategy tree
@@ -192,7 +185,6 @@ class CompiledStrategy:
         # Normalize weights to sum to 100
         weights = self._normalize_weights(weights)
 
-        # Check if rebalance is needed
         rebalance_needed = self._check_rebalance_needed(weights)
         self._last_allocation = weights.copy()
 
@@ -207,13 +199,11 @@ class CompiledStrategy:
 
     def _build_state(self, current_bars: dict[str, Bar]) -> EvaluationState:
         """Build evaluation state from current data."""
-        # Get previous bars
         prev_bars: dict[str, Bar] = {}
         for symbol, history in self._bar_history.items():
             if len(history) >= 2:
                 prev_bars[symbol] = history[-2]
 
-        # Compute indicators for each symbol
         indicators = self._compute_all_indicators()
 
         return EvaluationState(
@@ -259,11 +249,11 @@ class CompiledStrategy:
             Dict mapping symbol to weight (0-100)
         """
         if isinstance(block, Strategy):
-            # Combine children weights
             return self._evaluate_children(block.children, state)
 
         if isinstance(block, Group):
-            # Groups just pass through to children
+            # A group's own :weight is a share consumed by its parent context;
+            # internally it allocates like any sibling list.
             return self._evaluate_children(block.children, state)
 
         if isinstance(block, Weight):
@@ -278,39 +268,104 @@ class CompiledStrategy:
         # block is Filter (the only remaining type in the Block union)
         return self._evaluate_filter(block, state)
 
-    def _evaluate_children(self, children: list[Block], state: EvaluationState) -> dict[str, float]:
-        """Evaluate multiple children and combine their weights."""
+    @staticmethod
+    def _declared_weight(block: Block) -> float | None:
+        """The share a block declares for itself, when its type can carry one."""
+        if isinstance(block, (Asset, Group)):
+            return block.weight
+        return None
+
+    def _share_and_allocation(
+        self, block: Block, state: EvaluationState
+    ) -> tuple[float | None, dict[str, float]]:
+        """A block's declared share and its internal allocation.
+
+        An If resolves to its taken branch, so an if wrapped around weighted
+        groups carries the taken branch's weight as its share.
+        """
+        if isinstance(block, If):
+            condition_met = evaluate_condition_safe(block.condition, state)
+            branch = block.then_block if condition_met else block.else_block
+            if branch is None:
+                return None, {}
+            return self._share_and_allocation(branch, state)
+        return self._declared_weight(block), self._evaluate_block(block, state)
+
+    @staticmethod
+    def _normalized(weights: dict[str, float]) -> dict[str, float]:
+        """Scale an allocation to sum to 100; an empty or zero-total allocation is empty."""
+        total = sum(weights.values())
+        if total <= 0:
+            return {}
+        return {s: w * 100.0 / total for s, w in weights.items()}
+
+    def _scaled_merge(self, pairs: list[tuple[dict[str, float], float]]) -> dict[str, float]:
+        """Scale each child allocation by its share and sum contributions per symbol."""
         combined: dict[str, float] = {}
+        for allocation, share in pairs:
+            for symbol, weight in allocation.items():
+                combined[symbol] = combined.get(symbol, 0.0) + weight * share / 100.0
+        return self._normalized(combined)
 
+    def _evaluate_children(self, children: list[Block], state: EvaluationState) -> dict[str, float]:
+        """Combine sibling blocks into one normalized allocation.
+
+        Declared weights act as shares when every contributing sibling declares
+        one; otherwise siblings split equally. A sibling that evaluates to an
+        empty allocation (a false condition with no else) contributes nothing
+        and its share redistributes through normalization.
+        """
+        contributions: list[tuple[dict[str, float], float | None]] = []
         for child in children:
-            child_weights = self._evaluate_block(child, state)
-            for symbol, weight in child_weights.items():
-                combined[symbol] = combined.get(symbol, 0) + weight
+            share, allocation = self._share_and_allocation(child, state)
+            if allocation:
+                contributions.append((allocation, share))
 
-        return combined
-
-    def _evaluate_weight(self, weight: Weight, state: EvaluationState) -> dict[str, float]:
-        """Evaluate a Weight block."""
-        # First get child allocations
-        child_weights: dict[str, float] = {}
-        for child in weight.children:
-            weights = self._evaluate_block(child, state)
-            child_weights.update(weights)
-
-        if not child_weights:
+        if not contributions:
             return {}
 
+        if all(share is not None for _, share in contributions):
+            pairs = [
+                (allocation, share) for allocation, share in contributions if share is not None
+            ]
+        else:
+            equal_share = 100.0 / len(contributions)
+            pairs = [(allocation, equal_share) for allocation, _ in contributions]
+
+        return self._scaled_merge(pairs)
+
+    def _evaluate_weight(self, weight: Weight, state: EvaluationState) -> dict[str, float]:
+        """Evaluate a Weight block: give each child a share, subdivided internally."""
         method = weight.method
-        symbols = list(child_weights.keys())
 
         if method == "specified":
-            # Use specified weights from assets
-            return child_weights
+            pairs: list[tuple[dict[str, float], float]] = []
+            for child in weight.children:
+                share, allocation = self._share_and_allocation(child, state)
+                if share is not None and allocation:
+                    pairs.append((allocation, share))
+            return self._scaled_merge(pairs)
 
         if method == "equal":
-            # Equal weight all children
-            equal_weight = 100.0 / len(symbols)
-            return {s: equal_weight for s in symbols}
+            allocations = [
+                allocation
+                for child in weight.children
+                if (allocation := self._evaluate_block(child, state))
+            ]
+            if not allocations:
+                return {}
+            equal_share = 100.0 / len(allocations)
+            return self._scaled_merge([(a, equal_share) for a in allocations])
+
+        # Computed methods rank individual symbols, so composite children
+        # flatten to their symbol union.
+        symbols: list[str] = []
+        for child in weight.children:
+            for symbol in self._evaluate_block(child, state):
+                if symbol not in symbols:
+                    symbols.append(symbol)
+        if not symbols:
+            return {}
 
         if method == "momentum":
             return self._compute_momentum_weights(symbols, state, weight.lookback, weight.top)
@@ -329,8 +384,8 @@ class CompiledStrategy:
         return {s: 100.0 / len(symbols) for s in symbols}
 
     def _evaluate_asset(self, asset: Asset) -> dict[str, float]:
-        """Evaluate an Asset block."""
-        return {asset.symbol: asset.weight or 0}
+        """An asset is its whole subtree; its declared :weight is the parent's share."""
+        return {asset.symbol: 100.0}
 
     def _evaluate_if(self, if_block: If, state: EvaluationState) -> dict[str, float]:
         """Evaluate an If block."""
@@ -345,11 +400,7 @@ class CompiledStrategy:
 
     def _evaluate_filter(self, filter_block: Filter, state: EvaluationState) -> dict[str, float]:
         """Evaluate a Filter block."""
-        # Get all child weights first
-        child_weights: dict[str, float] = {}
-        for child in filter_block.children:
-            weights = self._evaluate_block(child, state)
-            child_weights.update(weights)
+        child_weights = self._evaluate_children(filter_block.children, state)
 
         symbols = list(child_weights.keys())
         if not symbols:
@@ -370,8 +421,9 @@ class CompiledStrategy:
         else:
             selected = sorted_symbols[-count:]
 
-        # Filter weights to selected symbols
-        return {s: child_weights[s] for s in selected if s in child_weights}
+        # Keep the selected symbols' weights, renormalized so the block's
+        # allocation stays a full share for any parent to scale.
+        return self._normalized({s: child_weights[s] for s in selected if s in child_weights})
 
     def _compute_momentum_weights(
         self,

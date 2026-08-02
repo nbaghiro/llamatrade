@@ -8,10 +8,15 @@ from llamatrade_runtime.types import Bar
 
 
 def trailing_return(bars: list[Bar], lookback: int) -> float:
-    """Percent return ``lookback`` bars back to latest; 0.0 on short history or non-positive base."""
-    if lookback < 1 or len(bars) < lookback:
+    """Percent return over ``lookback`` bars (base is bars[-(lookback+1)]); 0.0 on short
+    history or a non-positive base.
+
+    ``lookback`` counts intervals, so it spans ``lookback + 1`` bars and agrees with the
+    ``momentum`` indicator (``close[-1] - close[-(lookback+1)]``) on the same lookback.
+    """
+    if lookback < 1 or len(bars) < lookback + 1:
         return 0.0
-    start = bars[-lookback].close
+    start = bars[-(lookback + 1)].close
     end = bars[-1].close
     return (end - start) / start if start > 0 else 0.0
 

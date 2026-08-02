@@ -10,6 +10,8 @@ weight computation in :class:`CompiledStrategy`.
 
 from __future__ import annotations
 
+import logging
+import math
 from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import StrEnum
@@ -17,6 +19,44 @@ from enum import StrEnum
 # 0.1 pp minimum weight change to open/close; 0.05 (5%) drift band before a resize is worth doing.
 DEFAULT_MIN_WEIGHT_CHANGE = 0.1
 DEFAULT_DRIFT_TOLERANCE = 0.05
+# Alpaca rejects an order under $1 of notional; 0 disables the guard.
+DEFAULT_MIN_ORDER_NOTIONAL = 1.0
+# Alpaca accepts at most 9 decimal places on a fractional-share quantity.
+DEFAULT_SHARE_DECIMALS = 9
+
+logger = logging.getLogger(__name__)
+
+
+def quantize_quantity(
+    quantity: float, *, fractional: bool = True, decimals: int = DEFAULT_SHARE_DECIMALS
+) -> float:
+    """Round an order quantity DOWN to a tradable share increment.
+
+    Fractional symbols round to ``decimals`` places (Alpaca rejects more than 9); whole-share
+    symbols round to integer shares. Rounding down never overshoots the cash or holdings the
+    quantity was sized against, and it makes a backtest fill the same quantity the broker would
+    accept live rather than the raw many-decimal float the simulator otherwise fills.
+    """
+    if quantity <= 0:
+        return 0.0
+    if not fractional:
+        return float(math.floor(quantity))
+    scale = 10.0**decimals
+    return math.floor(quantity * scale) / scale
+
+
+@dataclass(frozen=True)
+class ShareQuantization:
+    """Share-increment rounding applied to the sizer's emitted quantities.
+
+    A single setting for the batch; a per-asset fractionable lookup is a future refinement.
+    """
+
+    fractional: bool = True
+    decimals: int = DEFAULT_SHARE_DECIMALS
+
+    def apply(self, quantity: float) -> float:
+        return quantize_quantity(quantity, fractional=self.fractional, decimals=self.decimals)
 
 
 class SizingMode(StrEnum):
@@ -51,6 +91,32 @@ class IntendedOrder:
     price: float  # reference price used for sizing (the bar close)
 
 
+@dataclass
+class SizingState:
+    """Per-call sizing counters the caller folds into its own run totals.
+
+    Mirrors ``EvaluationState.degraded_evaluations``: the sizer records here, the session
+    accumulates and surfaces the run total (``StrategySession.sub_notional_skip_count``).
+    """
+
+    # Orders dropped under ``min_order_notional``, including buys the post-skip cash fit
+    # leaves under it.
+    sub_notional_skips: int = 0
+
+
+def affordable_quantity(
+    quantity: float, price: float, cash: float, commission: float = 0.0
+) -> float:
+    """The part of ``quantity`` that ``cash`` covers at ``price`` after ``commission``.
+
+    Shared by the sizer's post-skip cash fit and the simulated book's fill trim, so a buy
+    short of funding is reduced to what the cash affords rather than dropped whole.
+    """
+    if price <= 0:
+        return 0.0
+    return min(quantity, max((cash - commission) / price, 0.0))
+
+
 def size_orders(
     target_weights: Mapping[str, float],
     holdings: Mapping[str, Holding],
@@ -60,7 +126,11 @@ def size_orders(
     mode: SizingMode = SizingMode.DRIFT,
     drift_tolerance: float = DEFAULT_DRIFT_TOLERANCE,
     min_weight_change: float = DEFAULT_MIN_WEIGHT_CHANGE,
+    min_order_notional: float = DEFAULT_MIN_ORDER_NOTIONAL,
     current_weights: Mapping[str, float] | None = None,
+    free_cash: float | None = None,
+    quantization: ShareQuantization | None = None,
+    state: SizingState | None = None,
 ) -> list[IntendedOrder]:
     """Diff target weights against current holdings → intended orders.
 
@@ -73,8 +143,19 @@ def size_orders(
         drift_tolerance: DRIFT mode — skip resizes within this fraction of target value.
         min_weight_change: skip a symbol whose weight barely moved and whose held/flat
             state already matches the target (avoids no-op churn).
+        min_order_notional: drop orders worth less than this many dollars, which the broker
+            would reject anyway; 0 disables the guard.
         current_weights: optional previous weights, used only for the ``min_weight_change``
             churn guard. When omitted, the guard is derived from held/flat state alone.
+        free_cash: cash available before this rebalance. When provided, the buy side is fit
+            to ``free_cash`` plus the proceeds of the sells that land, so the batch is
+            affordable in both modes (a per-symbol drift band or a marked-up equity can
+            otherwise emit buys the account cannot fund). When omitted, the buys are assumed
+            to be funded exclusively by same-tick sells.
+        quantization: when provided, round every emitted order DOWN to a tradable share
+            increment (re-checking the notional floor after rounding) so backtest fills the
+            same quantity the broker accepts live. When omitted, quantities are unrounded.
+        state: optional counters the sizer records skips on for the caller to accumulate.
 
     Returns:
         Intended orders for every symbol whose holding must change, **sells before buys** so
@@ -107,7 +188,121 @@ def size_orders(
 
     # Sells before buys so a rebalance frees cash (from closes/trims) before spending it.
     orders.sort(key=lambda o: (o.side != "sell", o.symbol))
+    orders = _apply_notional_floor(orders, min_order_notional, free_cash, state)
+    if quantization is not None:
+        orders = _quantize_orders(orders, quantization, min_order_notional, state)
     return orders
+
+
+def _notional(order: IntendedOrder) -> float:
+    return order.quantity * order.price
+
+
+def _record_sub_notional_skip(
+    order: IntendedOrder, floor: float, state: SizingState | None
+) -> None:
+    """Record an order dropped for falling under the broker's minimum notional."""
+    if state is not None:
+        state.sub_notional_skips += 1
+    logger.debug(
+        "order below minimum notional (%s %s qty=%s @ %s = %s < %s); skipping",
+        order.side,
+        order.symbol,
+        order.quantity,
+        order.price,
+        _notional(order),
+        floor,
+    )
+
+
+def _apply_notional_floor(
+    orders: list[IntendedOrder],
+    floor: float,
+    free_cash: float | None,
+    state: SizingState | None,
+) -> list[IntendedOrder]:
+    """Drop orders under ``floor``, then fit the buys to the cash that funds them.
+
+    With ``free_cash`` known, the buys are fit to ``free_cash`` plus the proceeds of the
+    sells that land, so the batch is affordable regardless of the drift band or marked-up
+    equity. Without it, the fit falls back to covering only a skipped-sell shortfall (buys
+    assumed funded exclusively by same-tick sells). A skipped buy just leaves its cash unspent.
+    """
+    sells: list[IntendedOrder] = []
+    buys: list[IntendedOrder] = []
+    # The dropped-sell shortfall only funds the legacy (free_cash is None) budget, so it is
+    # accumulated only on that path.
+    track_shortfall = free_cash is None
+    shortfall = 0.0
+
+    for order in orders:
+        if _notional(order) < floor:
+            _record_sub_notional_skip(order, floor, state)
+            if track_shortfall and order.side == "sell":
+                shortfall += _notional(order)
+            continue
+        (buys if order.side == "buy" else sells).append(order)
+
+    if free_cash is not None:
+        budget = free_cash + sum(_notional(o) for o in sells)
+        return sells + _fit_buys_to_budget(buys, budget, floor, state)
+
+    if shortfall <= 0:
+        return sells + buys
+
+    budget = sum(_notional(o) for o in buys) - shortfall
+    return sells + _fit_buys_to_budget(buys, budget, floor, state)
+
+
+def _quantize_orders(
+    orders: list[IntendedOrder],
+    quantization: ShareQuantization,
+    floor: float,
+    state: SizingState | None,
+) -> list[IntendedOrder]:
+    """Round each order DOWN to a tradable share increment, then re-check the floor.
+
+    Rounding down never overshoots what the order was sized against; an order that rounds to
+    zero shares or below the notional floor is dropped and counted, mirroring the live path.
+    """
+    kept: list[IntendedOrder] = []
+    for order in orders:
+        quantity = quantization.apply(order.quantity)
+        rounded = IntendedOrder(
+            symbol=order.symbol, side=order.side, quantity=quantity, price=order.price
+        )
+        if quantity <= 0 or _notional(rounded) < floor:
+            _record_sub_notional_skip(rounded, floor, state)
+            continue
+        kept.append(rounded)
+    return kept
+
+
+def _fit_buys_to_budget(
+    buys: list[IntendedOrder], budget: float, floor: float, state: SizingState | None
+) -> list[IntendedOrder]:
+    """Scale buys to what ``budget`` affords, then drop any left under ``floor``.
+
+    A shortfall trims every buy by the same fraction (``budget / total``) so their relative
+    sizes (the target weights) are preserved, rather than fully funding the first buys in sort
+    order and starving the rest.
+    """
+    total = sum(_notional(o) for o in buys)
+    if total <= 0:
+        return []
+    scale = min(1.0, budget / total) if budget > 0 else 0.0
+
+    fitted: list[IntendedOrder] = []
+    for order in buys:
+        quantity = order.quantity * scale
+        trimmed = IntendedOrder(
+            symbol=order.symbol, side="buy", quantity=quantity, price=order.price
+        )
+        if quantity <= 0 or _notional(trimmed) < floor:
+            _record_sub_notional_skip(trimmed, floor, state)
+            continue
+        fitted.append(trimmed)
+    return fitted
 
 
 def _size_one(

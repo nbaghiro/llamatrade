@@ -6,6 +6,7 @@ These cover the two things the old per-symbol live adapter got wrong:
   2. the rebalance gate is portfolio-level, not consumed by whichever symbol came first.
 """
 
+import logging
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -69,6 +70,118 @@ def test_degraded_eval_count_surfaces_through_session():
     # reset() clears the counter for a fresh run.
     session.reset()
     assert session.degraded_eval_count == 0
+
+
+def test_sub_notional_skip_count_surfaces_through_session():
+    """A sleeve too small to place its target order counts the skip.
+
+    Same seam as ``degraded_eval_count``: counted per skip, cleared by ``reset()``.
+    """
+    tiny = '(strategy "Tiny" :rebalance daily (asset SPY :weight 100))'
+    session = StrategySession(tiny, sizing_mode=SizingMode.DRIFT)
+    start = datetime(2024, 1, 1, tzinfo=UTC)
+    steps = _series({"SPY": [100.0, 101.0, 102.0]}, start)
+
+    assert session.sub_notional_skip_count == 0
+    # $0.50 of equity buys $0.50 of SPY — under the $1 broker minimum.
+    orders = _run(session, steps, holdings={}, equity=0.5)
+
+    assert orders == []
+    # Two rebalance days once warm (the first step is short of min_bars), one skip each.
+    assert session.sub_notional_skip_count == 2
+
+    session.reset()
+    assert session.sub_notional_skip_count == 0
+
+
+def test_build_session_threads_the_sizing_knobs_through_to_the_session():
+    """A caller's drift band and notional floor must reach the sizer, not silently default."""
+    from llamatrade_runtime.strategy import build_session
+
+    tiny = '(strategy "Tiny" :rebalance daily (asset SPY :weight 100))'
+    start = datetime(2024, 1, 1, tzinfo=UTC)
+    steps = _series({"SPY": [100.0, 101.0]}, start)
+
+    defaulted, _symbols, _min_bars = build_session(tiny)
+    configured, _symbols, _min_bars = build_session(
+        tiny, drift_tolerance=0.9, min_order_notional=0.0
+    )
+
+    assert _run(defaulted, steps, holdings={}, equity=0.5) == []
+    assert defaulted.sub_notional_skip_count == 1
+    assert len(_run(configured, steps, holdings={}, equity=0.5)) == 1
+    assert configured.sub_notional_skip_count == 0
+
+
+def test_build_session_drift_tolerance_suppresses_a_resize_inside_the_band():
+    from llamatrade_runtime.strategy import build_session
+
+    tiny = '(strategy "Tiny" :rebalance daily (asset SPY :weight 100))'
+    start = datetime(2024, 1, 1, tzinfo=UTC)
+    steps = _series({"SPY": [100.0, 101.0]}, start)
+    holdings = {"SPY": Holding("SPY", 9.5)}
+
+    tight, _symbols, _min_bars = build_session(tiny, drift_tolerance=0.0)
+    loose, _symbols, _min_bars = build_session(tiny, drift_tolerance=0.5)
+
+    assert len(_run(tight, steps, holdings=holdings, equity=1000.0)) == 1
+    assert _run(loose, steps, holdings=holdings, equity=1000.0) == []
+
+
+def test_sub_notional_floor_is_configurable_off():
+    tiny = '(strategy "Tiny" :rebalance daily (asset SPY :weight 100))'
+    session = StrategySession(tiny, sizing_mode=SizingMode.DRIFT, min_order_notional=0.0)
+    start = datetime(2024, 1, 1, tzinfo=UTC)
+    steps = _series({"SPY": [100.0, 101.0]}, start)
+
+    orders = _run(session, steps, holdings={}, equity=0.5)
+
+    assert len(orders) == 1 and orders[0].side == "buy"
+    assert session.sub_notional_skip_count == 0
+
+
+def test_drift_buy_is_capped_by_free_cash_derived_from_equity_and_holdings():
+    """A suppressed sell (inside the band) must not fund a buy the sleeve cannot afford.
+
+    Fully invested (equity equals held value, so free cash is 0): A's trim stays inside the
+    5% band while B's target rises, but the buy has no funding and is dropped rather than sent
+    unfunded. This exercises the session deriving free cash as equity minus held value.
+    """
+    strat = (
+        '(strategy "Split" :rebalance daily '
+        "(weight :method specified (asset A :weight 95) (asset B :weight 5)))"
+    )
+    session = StrategySession(strat, sizing_mode=SizingMode.DRIFT)
+    start = datetime(2024, 1, 1, tzinfo=UTC)
+    steps = _series({"A": [50.0, 50.0], "B": [100.0, 100.0]}, start)
+    holdings = {"A": Holding("A", 196.0), "B": Holding("B", 2.0)}  # 9800 + 200 = 10000
+
+    orders = _run(session, steps, holdings=holdings, equity=10_000.0)
+
+    assert orders == []
+    assert session.sub_notional_skip_count == 1
+
+
+def test_free_cash_is_not_overstated_when_a_held_symbol_is_unpriced(caplog):
+    """An unpriced held symbol must not inflate free cash into an unfundable buy.
+
+    C is held but has no bar this tick, so its value sits in equity yet cannot be marked.
+    Deriving free cash as equity minus only the priced holdings would overstate it and fund a
+    B buy the account cannot afford; the session logs the anomaly and funds buys from same-tick
+    sell proceeds only (here none), so the buy is dropped rather than sent unfunded.
+    """
+    buy_b = '(strategy "Buy B" :rebalance daily (asset B :weight 100))'
+    session = StrategySession(buy_b, sizing_mode=SizingMode.DRIFT)
+    start = datetime(2024, 1, 1, tzinfo=UTC)
+    steps = _series({"B": [100.0, 100.0]}, start)
+    holdings = {"C": Holding("C", 100.0)}  # held, but never priced (no bar for C)
+
+    with caplog.at_level(logging.WARNING, logger="llamatrade_runtime.session"):
+        orders = _run(session, steps, holdings=holdings, equity=20_000.0)
+
+    assert orders == []
+    assert session.sub_notional_skip_count == 1
+    assert "unpriced" in caplog.text
 
 
 def test_cross_symbol_condition_picks_tlt_when_spy_rsi_high():

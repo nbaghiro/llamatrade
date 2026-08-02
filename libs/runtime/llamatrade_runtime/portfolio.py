@@ -8,7 +8,7 @@ from collections.abc import Mapping
 from datetime import datetime
 
 from llamatrade_runtime.models import ExecutionOutcome, Fill, Position, RejectedSignal, Trade
-from llamatrade_runtime.sizing import Holding
+from llamatrade_runtime.sizing import Holding, affordable_quantity
 
 
 class Portfolio:
@@ -45,8 +45,7 @@ class Portfolio:
         self, date: datetime, symbol: str, price: float, quantity: float, commission: float
     ) -> ExecutionOutcome:
         """Open or add to a long position, trimming the buy to what free cash affords after the fee."""
-        affordable_qty = (self.cash - commission) / price if price > 0 else 0.0
-        fill_qty = min(quantity, affordable_qty)
+        fill_qty = affordable_quantity(quantity, price, self.cash, commission)
         if fill_qty <= 0:
             return ExecutionOutcome(
                 rejected=RejectedSignal(

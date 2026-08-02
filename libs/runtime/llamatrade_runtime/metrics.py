@@ -52,11 +52,16 @@ def calculate_sortino_ratio(
     if len(daily_returns) == 0:
         return 0.0
 
-    negative_returns = daily_returns[daily_returns < 0]
-    if len(negative_returns) == 0 or np.std(negative_returns) == 0:
+    # Downside deviation about the daily risk-free target (minimum acceptable return),
+    # over ALL periods; the numerator is the mean excess return.
+    daily_rf = risk_free_rate / 252
+    excess_returns = daily_returns - daily_rf
+    downside = np.minimum(excess_returns, 0.0)
+    downside_deviation = float(np.sqrt(np.mean(downside**2)))
+    if downside_deviation == 0:
         return 0.0
 
-    return float(np.sqrt(252) * np.mean(daily_returns) / np.std(negative_returns))
+    return float(np.sqrt(252) * np.mean(excess_returns) / downside_deviation)
 
 
 def calculate_max_drawdown(equity: np.ndarray) -> tuple[float, int]:
@@ -73,7 +78,7 @@ def calculate_max_drawdown(equity: np.ndarray) -> tuple[float, int]:
 
     peak = np.maximum.accumulate(equity)
     # Guard against a non-positive peak (equity that started at/below zero):
-    # (peak - equity) / peak would be inf/nan and poison np.max (7A).
+    # (peak - equity) / peak would be inf/nan and poison np.max.
     with np.errstate(divide="ignore", invalid="ignore"):
         drawdown = np.where(peak > 0, (peak - equity) / peak, 0.0)
     drawdown = np.nan_to_num(drawdown, nan=0.0, posinf=0.0, neginf=0.0)
@@ -185,7 +190,7 @@ def calculate_returns(
 
     # Annual return (assuming 252 trading days). When the portfolio is wiped out
     # (final equity <= 0, i.e. 1 + total_return <= 0) a fractional power of a
-    # negative base is complex/nan, so clamp to -100% annualized (7A).
+    # negative base is complex/nan, so clamp to -100% annualized.
     if num_days <= 0:
         annual_return = 0.0
     elif 1 + total_return > 0:
@@ -194,7 +199,7 @@ def calculate_returns(
         annual_return = -1.0
 
     # Daily returns. Skip non-positive prior-equity denominators so a zero/
-    # negative equity point never yields inf/nan (7A).
+    # negative equity point never yields inf/nan.
     daily_returns_list: list[float]
     if len(equity) > 1:
         prev = equity[:-1]

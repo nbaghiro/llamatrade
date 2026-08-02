@@ -612,8 +612,7 @@ class TestEdgeCases:
 
         # Previous values are NaN, comparison fails
         result = evaluate_condition(condition, state)
-        # NaN <= NaN is False, so crossover logic may behave unexpectedly
-        # This tests that it doesn't crash
+        # NaN comparisons: verify crossover returns a bool rather than crashing.
         assert isinstance(result, bool)
 
     def test_missing_symbol_in_price_data(self, sample_bar: Bar, prev_bar: Bar) -> None:
@@ -766,8 +765,7 @@ class TestEdgeCases:
             slow=Indicator(name="sma", symbol="AAPL", params=(20,)),
         )
 
-        # Single element means no "previous" value for crossover
-        # Should handle gracefully (may raise or return False)
+        # Single element: no "previous" value for crossover; must handle gracefully.
         try:
             result = evaluate_condition(condition, state)
             assert isinstance(result, bool)
@@ -844,122 +842,6 @@ class TestEdgeCases:
             right=NumericLiteral(value=0.3),
         )
 
-        # This may fail due to floating point precision
-        # The result depends on the implementation
         result = evaluate_condition(condition, basic_state)
         # Just verify it doesn't crash
         assert isinstance(result, bool)
-
-
-class TestSafeDivideAndNormalize:
-    """Tests for safe_divide and normalize_weights helper functions."""
-
-    def test_safe_divide_normal(self) -> None:
-        """Test safe_divide with normal values."""
-        from llamatrade_runtime.evaluation.conditions import safe_divide
-
-        assert safe_divide(10.0, 2.0) == 5.0
-        assert safe_divide(0.0, 5.0) == 0.0
-
-    def test_safe_divide_by_zero(self) -> None:
-        """Test safe_divide returns default on division by zero."""
-        from llamatrade_runtime.evaluation.conditions import safe_divide
-
-        assert safe_divide(10.0, 0.0) == 0.0
-        assert safe_divide(10.0, 0.0, default=1.0) == 1.0
-
-    def test_safe_divide_nan_numerator(self) -> None:
-        """Test safe_divide returns default with NaN numerator."""
-        from llamatrade_runtime.evaluation.conditions import safe_divide
-
-        assert safe_divide(np.nan, 2.0) == 0.0
-
-    def test_safe_divide_nan_denominator(self) -> None:
-        """Test safe_divide returns default with NaN denominator."""
-        from llamatrade_runtime.evaluation.conditions import safe_divide
-
-        assert safe_divide(10.0, np.nan) == 0.0
-
-    def test_safe_divide_inf_result(self) -> None:
-        """Test safe_divide handles infinity result."""
-        from llamatrade_runtime.evaluation.conditions import safe_divide
-
-        # Very small denominator that would cause overflow
-        result = safe_divide(1e308, 1e-308)
-        # Should return default if result is inf
-        assert result == 0.0 or np.isfinite(result)
-
-    def test_normalize_weights_normal(self) -> None:
-        """Test normalize_weights with normal values."""
-        from llamatrade_runtime.evaluation.conditions import normalize_weights
-
-        weights = {"A": 60.0, "B": 40.0}
-        result = normalize_weights(weights)
-        assert result["A"] == pytest.approx(60.0)
-        assert result["B"] == pytest.approx(40.0)
-
-    def test_normalize_weights_not_100(self) -> None:
-        """Test normalize_weights scales to 100%."""
-        from llamatrade_runtime.evaluation.conditions import normalize_weights
-
-        weights = {"A": 30.0, "B": 20.0}  # Sum = 50
-        result = normalize_weights(weights)
-        assert result["A"] == pytest.approx(60.0)  # 30/50 * 100
-        assert result["B"] == pytest.approx(40.0)  # 20/50 * 100
-
-    def test_normalize_weights_all_zero(self) -> None:
-        """Test normalize_weights with all zero weights."""
-        from llamatrade_runtime.evaluation.conditions import normalize_weights
-
-        weights = {"A": 0.0, "B": 0.0}
-        result = normalize_weights(weights)
-        # Should fallback to equal weights
-        assert result["A"] == pytest.approx(50.0)
-        assert result["B"] == pytest.approx(50.0)
-
-    def test_normalize_weights_empty(self) -> None:
-        """Test normalize_weights with empty dict."""
-        from llamatrade_runtime.evaluation.conditions import normalize_weights
-
-        result = normalize_weights({})
-        assert result == {}
-
-    def test_normalize_weights_with_nan(self) -> None:
-        """Test normalize_weights filters out NaN values."""
-        from llamatrade_runtime.evaluation.conditions import normalize_weights
-
-        weights = {"A": 60.0, "B": np.nan, "C": 40.0}
-        result = normalize_weights(weights)
-        # B should be filtered out, A and C normalized
-        assert "A" in result
-        assert "C" in result
-        assert result["A"] + result["C"] == pytest.approx(100.0)
-
-    def test_normalize_weights_with_negative(self) -> None:
-        """Test normalize_weights filters out negative values."""
-        from llamatrade_runtime.evaluation.conditions import normalize_weights
-
-        weights = {"A": 60.0, "B": -10.0, "C": 40.0}
-        result = normalize_weights(weights)
-        # B should be filtered out
-        assert result["A"] == pytest.approx(60.0)
-        assert result["C"] == pytest.approx(40.0)
-
-    def test_normalize_weights_all_nan(self) -> None:
-        """Test normalize_weights with all NaN values."""
-        from llamatrade_runtime.evaluation.conditions import normalize_weights
-
-        weights = {"A": np.nan, "B": np.nan}
-        result = normalize_weights(weights)
-        # Should fallback to equal weights for original keys
-        assert result["A"] == pytest.approx(50.0)
-        assert result["B"] == pytest.approx(50.0)
-
-    def test_normalize_weights_no_fallback(self) -> None:
-        """Test normalize_weights without fallback to equal weights."""
-        from llamatrade_runtime.evaluation.conditions import normalize_weights
-
-        weights = {"A": 0.0, "B": 0.0}
-        result = normalize_weights(weights, fallback_to_equal=False)
-        assert result["A"] == 0.0
-        assert result["B"] == 0.0

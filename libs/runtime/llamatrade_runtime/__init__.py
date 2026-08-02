@@ -8,17 +8,25 @@ The evaluation core (compile → indicators → conditions → weights → sizin
 `libs/dsl` owns the strategy language and static AST analysis it builds on.
 """
 
+from llamatrade_runtime.aggregation import (
+    FormingBarAggregator,
+    daily_period_start,
+    market_timezone,
+)
 from llamatrade_runtime.evaluation.compiled import Allocation, CompiledStrategy, compile_strategy
 from llamatrade_runtime.evaluation.conditions import (
     EvaluationError,
     evaluate_condition,
     evaluate_condition_safe,
-    normalize_weights,
-    safe_divide,
 )
 from llamatrade_runtime.evaluation.state import EvaluationState
 from llamatrade_runtime.execution import ExecutionAdapter, SimulatedExecution
-from llamatrade_runtime.feed import BarFeed, HistoricalBarFeed
+from llamatrade_runtime.feed import (
+    BarFeed,
+    FormingBarFeed,
+    HistoricalBarFeed,
+    IntradayBarSource,
+)
 from llamatrade_runtime.indicators.library import (
     PriceData,
     compute_all_indicators,
@@ -34,10 +42,16 @@ from llamatrade_runtime.runtime import RuntimeCancelled, StrategyRuntime
 from llamatrade_runtime.session import StrategySession
 from llamatrade_runtime.sizing import (
     DEFAULT_DRIFT_TOLERANCE,
+    DEFAULT_MIN_ORDER_NOTIONAL,
     DEFAULT_MIN_WEIGHT_CHANGE,
+    DEFAULT_SHARE_DECIMALS,
     Holding,
     IntendedOrder,
+    ShareQuantization,
     SizingMode,
+    SizingState,
+    affordable_quantity,
+    quantize_quantity,
     size_orders,
 )
 from llamatrade_runtime.strategy import build_session
@@ -50,6 +64,8 @@ __all__ = [
     # Adapters / seams
     "BarFeed",
     "HistoricalBarFeed",
+    "FormingBarFeed",
+    "IntradayBarSource",
     "ExecutionAdapter",
     "SimulatedExecution",
     "Portfolio",
@@ -66,8 +82,6 @@ __all__ = [
     "EvaluationState",
     "evaluate_condition",
     "evaluate_condition_safe",
-    "normalize_weights",
-    "safe_divide",
     "EvaluationError",
     # Indicators
     "PriceData",
@@ -77,11 +91,20 @@ __all__ = [
     "Holding",
     "IntendedOrder",
     "SizingMode",
+    "SizingState",
+    "ShareQuantization",
     "size_orders",
+    "affordable_quantity",
+    "quantize_quantity",
     "DEFAULT_DRIFT_TOLERANCE",
     "DEFAULT_MIN_WEIGHT_CHANGE",
-    # Bar type
+    "DEFAULT_MIN_ORDER_NOTIONAL",
+    "DEFAULT_SHARE_DECIMALS",
+    # Bar type + period aggregation
     "Bar",
+    "FormingBarAggregator",
+    "daily_period_start",
+    "market_timezone",
     # Models / results
     "Fill",
     "Trade",

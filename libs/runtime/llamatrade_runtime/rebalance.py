@@ -45,10 +45,9 @@ def should_rebalance(
             return current_date > last_rebalance
 
         case "weekly":
-            # Rebalance on Monday (weekday 0), as long as a day has actually passed.
-            is_monday = current_date.weekday() == 0
-            days_passed = (current_date - last_rebalance).days
-            return is_monday and days_passed >= 1
+            # Fire on the first evaluated day of each ISO week (like the month/quarter/year
+            # cases key on a period change).
+            return current_date.isocalendar()[:2] != last_rebalance.isocalendar()[:2]
 
         case "monthly":
             return (

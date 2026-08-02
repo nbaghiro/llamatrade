@@ -33,6 +33,7 @@ asyncio_mode = "auto"
 testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_functions = ["test_*"]
+addopts = "--cov=llamatrade_runtime --cov-report=term-missing --cov-fail-under=80"
 
 [tool.coverage.run]
 source = ["llamatrade_runtime"]
