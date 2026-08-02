@@ -78,7 +78,7 @@
       "VTI",
       "VWO"
     ],
-    "timeframe": "1M"
+    "rebalance": "monthly"
   },
   {
     "id": "all-weather",
@@ -213,7 +213,7 @@
       "VTI",
       "VWO"
     ],
-    "timeframe": "3M"
+    "rebalance": "quarterly"
   },
   {
     "id": "risk-parity",
@@ -374,7 +374,7 @@
       "VNQI",
       "VWO"
     ],
-    "timeframe": "1M"
+    "rebalance": "monthly"
   },
   {
     "id": "momentum-sectors",
@@ -518,7 +518,7 @@
       "XLV",
       "XLY"
     ],
-    "timeframe": "1M"
+    "rebalance": "monthly"
   },
   {
     "id": "vigilant-asset-allocation",
@@ -884,7 +884,7 @@
       "VNQ",
       "VWO"
     ],
-    "timeframe": "1M"
+    "rebalance": "monthly"
   },
   {
     "id": "pullback-buyer",
@@ -1067,6 +1067,6 @@
       "TLT",
       "VTI"
     ],
-    "timeframe": "1D"
+    "rebalance": "daily"
   }
 ]

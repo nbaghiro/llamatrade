@@ -728,6 +728,10 @@ class Seeder:
             tier=billing_pb2.PLAN_TIER_PRO,
             price_monthly=Decimal("49.00"),
             price_yearly=Decimal("490.00"),
+            # Placeholder Stripe price ids so checkout/subscribe reach the Stripe
+            # API (stripe-mock locally); the paid path needs a non-empty price id.
+            stripe_price_id_monthly="price_demo_pro_monthly",
+            stripe_price_id_yearly="price_demo_pro_yearly",
             features={"live_paper": True, "ai_copilot": True, "backtests": True},
             # Keys must match billing_service DEFAULT_PLANS: the servicer reads
             # limits["live_strategies"] for BOTH max_strategies and max_live_sessions
@@ -758,8 +762,8 @@ class Seeder:
             billing_cycle=billing_pb2.BILLING_INTERVAL_MONTHLY,
             stripe_subscription_id="sub_demo_sofiarivera",
             stripe_customer_id="cus_demo_sofiarivera",
-            current_period_start=dt(date(2026, 6, 20), 0, 0),
-            current_period_end=dt(date(2026, 7, 20), 0, 0),
+            current_period_start=dt(TODAY - timedelta(days=10), 0, 0),
+            current_period_end=dt(TODAY + timedelta(days=20), 0, 0),
             cancel_at_period_end=False,
             trial_start=dt(DEPOSIT_DAY, 0, 0),
             trial_end=dt(DEPOSIT_DAY + timedelta(days=14), 0, 0),
@@ -895,7 +899,7 @@ class Seeder:
                     version=1,
                     config_sexpr=str(data["config_sexpr"]),
                     symbols=data["symbols"],  # type: ignore[arg-type]
-                    timeframe=str(data["timeframe"]),
+                    rebalance=str(data["rebalance"]),
                     changelog="Initial version",
                     created_by=self.user_id,
                     created_at=created,
@@ -1002,7 +1006,7 @@ class Seeder:
         occurred_at: datetime,
         event_id: UUID | None = None,
     ) -> None:
-        event = await self.writer.append(
+        event, _ = await self.writer.append(
             tenant_id=self.tenant_id,
             account_id=self.account_id,
             event_type=event_type,
@@ -1825,7 +1829,6 @@ class Seeder:
                         "description": mom_description,
                         "dsl_code": mom_dsl,
                         "symbols": mom_symbols,
-                        "timeframe": str(mom["timeframe"]),
                     },
                     is_committed=False,
                     created_at=dt(date(2026, 1, 17), 15, 33),
