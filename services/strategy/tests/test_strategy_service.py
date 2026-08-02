@@ -41,6 +41,15 @@ VALID_EQUAL_WEIGHT = """(strategy "Equal Weight Portfolio"
     (asset QQQ)
     (asset IWM)))"""
 
+FIVE_SYMBOL_STRATEGY = """(strategy "Five ETFs"
+  :rebalance monthly
+  (weight :method equal
+    (asset SPY)
+    (asset QQQ)
+    (asset IWM)
+    (asset AGG)
+    (asset TLT)))"""
+
 INVALID_SYNTAX = '(strategy "broken'  # Missing closing quotes and paren
 
 INVALID_MISSING_BODY = """(strategy "No Body"
@@ -88,7 +97,7 @@ def make_mock_version(
     config_sexpr: str | None = None,
     config_json: dict[str, str] | None = None,
     symbols: list[str] | None = None,
-    timeframe: str = "1D",
+    rebalance: str = "daily",
     changelog: str | None = None,
     created_by: UUID | None = None,
     created_at: datetime | None = None,
@@ -102,7 +111,7 @@ def make_mock_version(
     ver.config_sexpr = config_sexpr or VALID_RSI_STRATEGY
     ver.config_json = config_json or {"name": "Test Strategy"}
     ver.symbols = symbols or ["SPY", "TLT"]
-    ver.timeframe = timeframe
+    ver.rebalance = rebalance
     ver.changelog = changelog
     ver.created_by = created_by or uuid4()
     ver.created_at = created_at or datetime.now(UTC)
@@ -168,7 +177,7 @@ class TestCreateStrategy:
             strategy_id=mock_strategy.id,
             config_sexpr=VALID_RSI_STRATEGY,
             symbols=["SPY", "TLT"],
-            timeframe="1D",
+            rebalance="daily",
         )
 
         # Mock refresh to set required attributes
@@ -239,6 +248,23 @@ class TestCreateStrategy:
                 data=data,
             )
         assert "Invalid strategy" in str(exc_info.value)
+
+    async def test_create_strategy_rejects_over_symbol_cap(
+        self, mock_db: AsyncMock, tenant_id: UUID, user_id: UUID
+    ) -> None:
+        """Creating a strategy above the symbol cap fails before any DB write."""
+        service = StrategyService(mock_db)
+
+        data = StrategyCreate(name="Too Many", config_sexpr=FIVE_SYMBOL_STRATEGY)
+
+        with (
+            patch("src.services.strategy_service._MAX_SYMBOLS_PER_STRATEGY", 2),
+            pytest.raises(ValueError) as exc_info,
+        ):
+            await service.create_strategy(tenant_id=tenant_id, user_id=user_id, data=data)
+
+        assert "exceeding the limit of 2" in str(exc_info.value)
+        mock_db.commit.assert_not_called()
 
     async def test_create_strategy_extracts_symbols(
         self, mock_db: AsyncMock, tenant_id: UUID, user_id: UUID
@@ -390,9 +416,9 @@ class TestListStrategies:
         mock_count_result = MagicMock()
         mock_count_result.scalar.return_value = 3
 
-        # Mock list returns (strategy, symbols, timeframe) rows from the version join
+        # Mock list returns (strategy, symbols, rebalance) rows from the version join
         mock_list_result = MagicMock()
-        mock_list_result.all.return_value = [(s, ["SPY", "TLT"], "1D") for s in mock_strategies]
+        mock_list_result.all.return_value = [(s, ["SPY", "TLT"], "daily") for s in mock_strategies]
 
         mock_db.execute.side_effect = [mock_count_result, mock_list_result]
 
@@ -404,10 +430,10 @@ class TestListStrategies:
 
         assert len(strategies) == 3
         assert total == 3
-        # Rows carry the current version's symbols + timeframe: (strategy, symbols, timeframe)
-        _, symbols, timeframe = strategies[0]
+        # Rows carry the current version's symbols + rebalance: (strategy, symbols, rebalance)
+        _, symbols, rebalance = strategies[0]
         assert symbols == ["SPY", "TLT"]
-        assert timeframe == "1D"
+        assert rebalance == "daily"
 
     async def test_list_strategies_filter_by_status(
         self, mock_db: AsyncMock, tenant_id: UUID
@@ -546,8 +572,7 @@ class TestUpdateStrategy:
                 data=data,
             )
 
-        # Verify changelog was passed to the new version
-        # The add() call should have been made with a StrategyVersion containing changelog
+        # Verify the added StrategyVersion carries the changelog.
         add_call_args = mock_db.add.call_args
         added_version = add_call_args[0][0]  # First positional arg
         assert added_version.changelog == "Updated to MA crossover strategy"
@@ -868,10 +893,10 @@ class TestCloneStrategy:
             patch.object(service, "get_strategy") as mock_get,
             patch.object(service, "create_strategy") as mock_create,
         ):
-            # get_strategy now returns the (strategy, current version) row pair.
+            # get_strategy returns the (strategy, current version) row pair.
             mock_get.return_value = (original_strategy, original_version)
 
-            # Setup create_strategy to return the cloned (strategy, version) pair.
+            # create_strategy returns the cloned (strategy, version) pair.
             mock_create.return_value = (
                 make_mock_strategy(name="Cloned Strategy"),
                 original_version,
@@ -937,6 +962,29 @@ class TestValidation:
         result = await service.validate_config(INVALID_MISSING_BODY)
 
         assert result.valid is False
+
+    async def test_validate_rejects_over_symbol_cap(self, mock_db: AsyncMock) -> None:
+        """A strategy declaring more symbols than the cap is invalid, with a clear error."""
+        service = StrategyService(mock_db)
+
+        with patch("src.services.strategy_service._MAX_SYMBOLS_PER_STRATEGY", 2):
+            result = await service.validate_config(FIVE_SYMBOL_STRATEGY)
+
+        assert result.valid is False
+        assert any("exceeding the limit" in e.message for e in result.errors)
+
+    async def test_validate_warns_over_symbol_threshold(self, mock_db: AsyncMock) -> None:
+        """Between the warning threshold and the cap, the strategy is valid but warned."""
+        service = StrategyService(mock_db)
+
+        with (
+            patch("src.services.strategy_service._SYMBOL_WARNING_THRESHOLD", 2),
+            patch("src.services.strategy_service._MAX_SYMBOLS_PER_STRATEGY", 100),
+        ):
+            result = await service.validate_config(FIVE_SYMBOL_STRATEGY)
+
+        assert result.valid is True
+        assert any("execution speed" in w.message for w in result.warnings)
 
 
 # ===================
@@ -1539,7 +1587,7 @@ class TestExecutionStopRelease:
 
         assert result is not None  # stop still succeeds
         assert execution.status == EXECUTION_STATUS_STOPPED
-        # Close failed -> sleeve_id stays set as the "needs release" marker (3A).
+        # Close failed -> sleeve_id stays set as the "needs release" marker.
         assert execution.sleeve_id is not None
 
     async def test_reconcile_stranded_sleeves(self, mock_db: AsyncMock) -> None:

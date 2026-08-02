@@ -35,16 +35,12 @@ class ConfigOverride(TypedDict, total=False):
     """Runtime configuration overrides."""
 
     symbols: list[str]
-    timeframe: str
-    stop_loss_pct: float
-    take_profit_pct: float
-    sizing_type: str
-    sizing_value: float
 
 
 # Request field bounds. Caps guard the parser/DB against pathological input and
 # the capital ceiling guards the money path against absurd or overflow values.
-_MAX_SEXPR_LEN = 100_000
+# MAX_SEXPR_LEN is public: the compile RPC bounds its input against the same cap.
+MAX_SEXPR_LEN = 100_000
 _MAX_DESCRIPTION_LEN = 2_000
 _MAX_ALLOCATED_CAPITAL = Decimal("1000000000")
 
@@ -60,17 +56,14 @@ class StrategyCreate(BaseModel):
     config_sexpr: str = Field(
         ...,
         min_length=1,
-        max_length=_MAX_SEXPR_LEN,
+        max_length=MAX_SEXPR_LEN,
         description="S-expression strategy definition",
         examples=[
-            """(strategy
-  :name "RSI Mean Reversion"
-  :symbols ["AAPL" "MSFT"]
-  :timeframe "1D"
-  :entry (< (rsi close 14) 30)
-  :exit (> (rsi close 14) 70)
-  :stop-loss-pct 2.0
-  :take-profit-pct 6.0)"""
+            """(strategy "Balanced 60/40"
+  :rebalance monthly
+  (weight :method specified
+    (asset VTI :weight 60)
+    (asset BND :weight 40)))"""
         ],
     )
 
@@ -84,7 +77,7 @@ class StrategyUpdate(BaseModel):
     config_sexpr: str | None = Field(
         default=None,
         min_length=1,
-        max_length=_MAX_SEXPR_LEN,
+        max_length=MAX_SEXPR_LEN,
         description="New S-expression config (creates new version if changed)",
     )
     changelog: str | None = Field(

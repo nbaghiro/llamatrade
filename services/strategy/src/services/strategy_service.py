@@ -1,6 +1,8 @@
 """Strategy service - CRUD operations with S-expression DSL support."""
 
+import json
 import logging
+import os
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 from uuid import UUID
@@ -8,6 +10,7 @@ from uuid import UUID
 from fastapi import Depends
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import InstrumentedAttribute
 
 if TYPE_CHECKING:
     from llamatrade_proto.clients.ledger import LedgerClient
@@ -23,9 +26,11 @@ from llamatrade_dsl import (
     extract_indicators,
     get_required_symbols,
     parse_strategy,
+    to_json,
     validate_strategy,
 )
-from llamatrade_proto.generated import strategy_pb2
+from llamatrade_events.catalog.notifications import NotificationEvent, shared_notification_events
+from llamatrade_proto.generated import events_pb2, strategy_pb2
 from llamatrade_proto.generated.common_pb2 import (
     EXECUTION_STATUS_ERROR,
     EXECUTION_STATUS_PAUSED,
@@ -70,22 +75,6 @@ _VALID_STATUS_TRANSITIONS: set[tuple[int, int]] = {
 }
 
 
-def _rebalance_to_timeframe(rebalance: str | None) -> str:
-    """Convert rebalance frequency to a timeframe string.
-
-    Allocation strategies use rebalance frequency instead of intraday timeframes.
-    We map to daily-level timeframes for the DB schema.
-    """
-    mapping = {
-        "daily": "1D",
-        "weekly": "1W",
-        "monthly": "1M",
-        "quarterly": "3M",
-        "annually": "1Y",
-    }
-    return mapping.get(rebalance or "daily", "1D")
-
-
 def _validate_status_transition(current: int, target: int) -> tuple[bool, str]:
     """Validate a status transition.
 
@@ -116,13 +105,6 @@ _TEMPLATE_PARAM_FIELDS: dict[str, tuple[str, str, str]] = {
         r'^\[\s*(?:"[A-Za-z0-9.\-]+"\s*)+\]$',
         ":symbols {value}",
     ),
-    "timeframe": (r':timeframe\s+"[^"]*"', r"^[A-Za-z0-9]+$", ':timeframe "{value}"'),
-    "stop_loss_pct": (r":stop-loss-pct\s+[\d.]+", r"^\d+(?:\.\d+)?$", ":stop-loss-pct {value}"),
-    "take_profit_pct": (
-        r":take-profit-pct\s+[\d.]+",
-        r"^\d+(?:\.\d+)?$",
-        ":take-profit-pct {value}",
-    ),
 }
 
 
@@ -130,10 +112,9 @@ def _apply_template_params(config_sexpr: str, template_id: str, params: dict[str
     """Apply validated parameter overrides to a template's S-expression.
 
     Each override must be a known parameter and pass value validation (so
-    untrusted input cannot inject S-expression text). These override fields
-    predate the allocation DSL, so a field absent from the template is skipped
-    (logged) rather than failing the create — an unknown parameter or an invalid
-    value is still rejected.
+    untrusted input cannot inject S-expression text). A parameter whose field is
+    absent from the template is skipped (logged) rather than failing the create —
+    an unknown parameter or an invalid value is still rejected.
     """
     import re
 
@@ -148,6 +129,119 @@ def _apply_template_params(config_sexpr: str, template_id: str, params: dict[str
         if count == 0:
             logger.warning("template %r has no %r field to override; ignoring", template_id, name)
     return config_sexpr
+
+
+# Symbol-count bounds. The soft threshold warns; the hard cap rejects, so one
+# tenant cannot fan a single strategy out over an unbounded universe downstream
+# (backtest datasets and the live ingest subscription). The cap is configurable
+# via STRATEGY_MAX_SYMBOLS and must stay above the warning threshold.
+_SYMBOL_WARNING_THRESHOLD = 20
+_MAX_SYMBOLS_PER_STRATEGY = max(int(os.getenv("STRATEGY_MAX_SYMBOLS", "100")), 1)
+
+
+def _symbol_cap_error(symbol_count: int) -> str | None:
+    """A rejection message when a strategy declares more symbols than the cap allows."""
+    if symbol_count > _MAX_SYMBOLS_PER_STRATEGY:
+        return (
+            f"Strategy declares {symbol_count} symbols, exceeding the limit of "
+            f"{_MAX_SYMBOLS_PER_STRATEGY}"
+        )
+    return None
+
+
+def validate_config_sexpr(config_sexpr: str) -> strategy_pb2.ValidationResult:
+    """Validate a strategy S-expression without touching the database.
+
+    Returns the structured proto result (detected symbols/indicators, errors,
+    warnings). CPU-bound and free of I/O, so callers on the event loop should run
+    it via ``asyncio.to_thread``.
+    """
+    try:
+        with metrics.strategy.compile_duration.time():
+            ast = parse_strategy(config_sexpr)
+        validation = validate_strategy(ast)
+
+        if not validation.valid:
+            metrics.strategy.parse_error(kind="validate")
+
+        errors = [(str(e), e.line or 0, e.column or 0) for e in validation.errors]
+        warnings: list[str] = []
+
+        detected_symbols: list[str] = []
+        if validation.valid:
+            try:
+                detected_symbols = list(get_required_symbols(ast))
+            except Exception:
+                pass
+
+        cap_error = _symbol_cap_error(len(detected_symbols))
+        if cap_error is not None:
+            errors.append((cap_error, 0, 0))
+        elif len(detected_symbols) > _SYMBOL_WARNING_THRESHOLD:
+            warnings.append(
+                f"Trading more than {_SYMBOL_WARNING_THRESHOLD} symbols may impact execution speed"
+            )
+
+        detected_indicators: list[str] = []
+        if validation.valid:
+            try:
+                indicator_specs = extract_indicators(ast)
+                for spec in indicator_specs:
+                    params_str = ", ".join(str(p) for p in spec.params)
+                    detected_indicators.append(f"{spec.indicator_type}({params_str})")
+            except Exception:
+                pass
+
+        return validation_to_proto(
+            valid=validation.valid and cap_error is None,
+            errors=errors,
+            warnings=warnings,
+            detected_symbols=detected_symbols,
+            detected_indicators=detected_indicators,
+        )
+    except Exception as e:
+        metrics.strategy.parse_error(kind="parse")
+        line = int(getattr(e, "line", 0) or 0)
+        column = int(getattr(e, "column", 0) or 0)
+        return validation_to_proto(
+            valid=False,
+            errors=[(str(e), line, column)],
+            warnings=[],
+            detected_symbols=[],
+            detected_indicators=[],
+        )
+
+
+def compile_strategy_dsl(dsl_code: str) -> strategy_pb2.CompilationResult:
+    """Validate then compile DSL to its JSON form (CPU-bound, no I/O).
+
+    A compile failure on otherwise-valid DSL is surfaced as a structured error
+    rather than swallowed. Run via ``asyncio.to_thread`` off the event loop.
+    """
+    validation = validate_config_sexpr(dsl_code)
+
+    compiled_json_str = ""
+    compile_error: str | None = None
+    if validation.valid:
+        try:
+            ast = parse_strategy(dsl_code)
+            compiled_json_str = json.dumps(to_json(ast))
+        except Exception as e:
+            compile_error = f"compilation failed: {e}"
+
+    result = strategy_pb2.CompilationResult(
+        success=validation.valid and compile_error is None,
+        compiled_json=compiled_json_str,
+    )
+    if compile_error is not None:
+        result.errors.append(
+            strategy_pb2.CompilationError(
+                line=0, column=0, message=compile_error, code="COMPILE_ERROR"
+            )
+        )
+    result.errors.extend(validation.errors)
+    result.warnings.extend(validation.warnings)
+    return result
 
 
 class StrategyService:
@@ -236,7 +330,12 @@ class StrategyService:
 
         # Projections derived from the DSL (the source of truth) for querying.
         symbols = list(get_required_symbols(ast))
-        timeframe = _rebalance_to_timeframe(ast.rebalance)
+        rebalance = ast.rebalance or "daily"
+
+        cap_error = _symbol_cap_error(len(symbols))
+        if cap_error is not None:
+            metrics.strategy.parse_error(kind="validate")
+            raise ValueError(f"Invalid strategy: {cap_error}")
 
         # Generate unique name (adds suffix if name already exists)
         unique_name = await self._generate_unique_name(tenant_id, data.name)
@@ -262,7 +361,7 @@ class StrategyService:
                 version=1,
                 config_sexpr=data.config_sexpr,
                 symbols=symbols,
-                timeframe=timeframe,
+                rebalance=rebalance,
                 created_by=user_id,
             )
             self.db.add(version)
@@ -302,7 +401,7 @@ class StrategyService:
     ) -> tuple[list[tuple[Strategy, list[str], str]], int]:
         """List strategies for a tenant with optional filtering, search, and sort.
 
-        Each row is ``(strategy, symbols, timeframe)`` — symbols/timeframe are
+        Each row is ``(strategy, symbols, rebalance)`` — symbols/rebalance are
         joined from the current version so the list can render them without loading
         the DSL blob.
 
@@ -315,9 +414,9 @@ class StrategyService:
             page: Page number (1-indexed)
             page_size: Items per page
         """
-        # Outer-join current version for symbols/timeframe (no DSL blob); outer so a missing version row still lists the strategy.
+        # Outer-join current version for symbols/rebalance (no DSL blob); outer so a missing version row still lists the strategy.
         stmt = (
-            select(Strategy, StrategyVersion.symbols, StrategyVersion.timeframe)
+            select(Strategy, StrategyVersion.symbols, StrategyVersion.rebalance)
             .outerjoin(
                 StrategyVersion,
                 and_(
@@ -360,9 +459,9 @@ class StrategyService:
         result = await self.db.execute(stmt)
         rows = result.all()
 
-        return [(s, symbols or [], timeframe or "") for s, symbols, timeframe in rows], total
+        return [(s, symbols or [], rebalance or "daily") for s, symbols, rebalance in rows], total
 
-    def _get_sort_column(self, field: str | None) -> Any:
+    def _get_sort_column(self, field: str | None) -> InstrumentedAttribute[Any]:
         """Get SQLAlchemy column for sorting."""
         sort_columns = {
             "name": Strategy.name,
@@ -411,6 +510,11 @@ class StrategyService:
                 error_messages = [str(e) for e in validation.errors]
                 raise ValueError(f"Invalid strategy: {'; '.join(error_messages)}")
 
+            cap_error = _symbol_cap_error(len(get_required_symbols(ast)))
+            if cap_error is not None:
+                metrics.strategy.parse_error(kind="validate")
+                raise ValueError(f"Invalid strategy: {cap_error}")
+
         # Validate status transition before starting transaction
         if data.status is not None:
             is_valid, error_msg = _validate_status_transition(strategy.status, data.status)
@@ -435,7 +539,7 @@ class StrategyService:
 
                 # Projections derived from the DSL (the source of truth) for querying.
                 symbols = list(get_required_symbols(ast))
-                timeframe = _rebalance_to_timeframe(ast.rebalance)
+                rebalance = ast.rebalance or "daily"
 
                 version = StrategyVersion(
                     tenant_id=tenant_id,  # Defense-in-depth tenant isolation
@@ -443,7 +547,7 @@ class StrategyService:
                     version=new_version_num,
                     config_sexpr=data.config_sexpr,
                     symbols=symbols,
-                    timeframe=timeframe,
+                    rebalance=rebalance,
                     changelog=data.changelog,
                     created_by=user_id,
                 )
@@ -525,6 +629,14 @@ class StrategyService:
             execution.status = EXECUTION_STATUS_STOPPED
             execution.stopped_at = now
             execution.error_message = "Cancelled: strategy archived"
+            await self._notify(
+                tenant_id,
+                events_pb2.NOTIFICATION_CATEGORY_EXECUTION_CANCELLED,
+                execution_id=execution.id,
+                strategy_id=strategy_id,
+                reason="strategy archived",
+                dedup_parts=(str(execution.id), "cancelled"),
+            )
 
     async def activate_strategy(
         self,
@@ -685,58 +797,7 @@ class StrategyService:
 
         Returns validation result including detected symbols and indicators.
         """
-        try:
-            with metrics.strategy.compile_duration.time():
-                ast = parse_strategy(config_sexpr)
-            validation = validate_strategy(ast)
-
-            if not validation.valid:
-                metrics.strategy.parse_error(kind="validate")
-
-            errors = [str(e) for e in validation.errors]
-            warnings: list[str] = []
-
-            # Extract symbols from the allocation strategy
-            detected_symbols: list[str] = []
-            if validation.valid:
-                try:
-                    detected_symbols = list(get_required_symbols(ast))
-                except Exception:
-                    pass
-
-            # Add warning for strategies with many symbols
-            if len(detected_symbols) > 20:
-                warnings.append("Trading more than 20 symbols may impact execution speed")
-
-            # Extract detected indicators
-            detected_indicators: list[str] = []
-            if validation.valid:
-                try:
-                    indicator_specs = extract_indicators(ast)
-                    # Format as "indicator_type(params)" for display
-                    for spec in indicator_specs:
-                        params_str = ", ".join(str(p) for p in spec.params)
-                        detected_indicators.append(f"{spec.indicator_type}({params_str})")
-                except Exception:
-                    # Don't fail validation if indicator extraction fails
-                    pass
-
-            return validation_to_proto(
-                valid=validation.valid,
-                errors=errors,
-                warnings=warnings,
-                detected_symbols=detected_symbols,
-                detected_indicators=detected_indicators,
-            )
-        except Exception as e:
-            metrics.strategy.parse_error(kind="parse")
-            return validation_to_proto(
-                valid=False,
-                errors=[str(e)],
-                warnings=[],
-                detected_symbols=[],
-                detected_indicators=[],
-            )
+        return validate_config_sexpr(config_sexpr)
 
     # Execution methods
 
@@ -818,6 +879,32 @@ class StrategyService:
         """Get an execution by ID."""
         return await self._get_execution_by_id(tenant_id, execution_id)
 
+    async def _notify(
+        self,
+        tenant_id: UUID,
+        category: events_pb2.NotificationCategory.ValueType,
+        *,
+        user_id: UUID | None = None,
+        execution_id: UUID | None = None,
+        strategy_id: UUID | None = None,
+        sleeve_id: UUID | None = None,
+        reason: str = "",
+        dedup_parts: tuple[str, ...] = (),
+    ) -> None:
+        """Fire-and-forget lifecycle notification; never blocks the caller."""
+        await shared_notification_events().publish_safe(
+            NotificationEvent(
+                category=category,
+                execution_id=str(execution_id) if execution_id else "",
+                strategy_id=str(strategy_id) if strategy_id else "",
+                sleeve_id=str(sleeve_id) if sleeve_id else "",
+                reason=reason,
+            ),
+            tenant_id=str(tenant_id),
+            user_id=str(user_id) if user_id else "",
+            dedup_parts=dedup_parts,
+        )
+
     async def start_execution(
         self,
         tenant_id: UUID,
@@ -852,6 +939,14 @@ class StrategyService:
         await self.db.commit()
         await self.db.refresh(execution)
 
+        await self._notify(
+            tenant_id,
+            events_pb2.NOTIFICATION_CATEGORY_EXECUTION_STARTED,
+            user_id=user_id,
+            execution_id=execution.id,
+            strategy_id=execution.strategy_id,
+            dedup_parts=(str(execution.id), "started"),
+        )
         return execution
 
     async def _fund_sleeve(
@@ -894,6 +989,15 @@ class StrategyService:
                 sleeve_name=sleeve_name,
             )
         except ConnectError as e:
+            await self._notify(
+                tenant_id,
+                events_pb2.NOTIFICATION_CATEGORY_FUNDING_FAILED,
+                user_id=user_id,
+                execution_id=execution.id,
+                strategy_id=execution.strategy_id,
+                reason=e.message,
+                dedup_parts=(str(execution.id), "funding"),
+            )
             raise ValueError(f"Cannot start execution: sleeve funding failed: {e.message}") from e
 
         execution.sleeve_id = UUID(sleeve.id)
@@ -995,7 +1099,19 @@ class StrategyService:
         await self._close_sleeve(
             tenant_id, execution, ledger=ledger, user_id=user_id, reason=reason
         )
+        # _close_sleeve may commit (expiring attributes); reload so the caller can
+        # map the execution to a response without a lazy load outside the session.
+        await self.db.refresh(execution)
 
+        await self._notify(
+            tenant_id,
+            events_pb2.NOTIFICATION_CATEGORY_EXECUTION_STOPPED,
+            user_id=user_id,
+            execution_id=execution.id,
+            strategy_id=execution.strategy_id,
+            reason=reason or "",
+            dedup_parts=(str(execution.id), "stopped"),
+        )
         return execution
 
     async def _close_sleeve(
@@ -1040,6 +1156,15 @@ class StrategyService:
                 execution.id,
                 execution.sleeve_id,
                 e.message,
+            )
+            await self._notify(
+                tenant_id,
+                events_pb2.NOTIFICATION_CATEGORY_SLEEVE_RELEASE_DEFERRED,
+                user_id=user_id,
+                execution_id=execution.id,
+                sleeve_id=execution.sleeve_id,
+                reason=e.message,
+                dedup_parts=(str(execution.sleeve_id), "deferred"),
             )
             return
 

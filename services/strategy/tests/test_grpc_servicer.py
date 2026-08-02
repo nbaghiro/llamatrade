@@ -6,10 +6,12 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import UUID, uuid4
 
 import pytest
+from connectrpc.code import Code
 from connectrpc.errors import ConnectError
 from connectrpc.request import RequestContext
 
 from llamatrade_db.models.strategy import Strategy, StrategyExecution, StrategyVersion
+from llamatrade_proto.generated import common_pb2, strategy_pb2
 from llamatrade_proto.generated.common_pb2 import (
     EXECUTION_MODE_PAPER,
     EXECUTION_STATUS_PAUSED,
@@ -24,7 +26,6 @@ from llamatrade_proto.generated.strategy_pb2 import (
 )
 
 from src.grpc.servicer import StrategyServicer
-from src.proto_mappers import validation_to_proto
 
 pytestmark = pytest.mark.asyncio
 
@@ -110,7 +111,7 @@ def make_strategy_response(
     current_version: int = 1,
     config_sexpr: str = VALID_STRATEGY_SEXPR,
     symbols: list[str] | None = None,
-    timeframe: str = "1D",
+    rebalance: str = "daily",
 ) -> tuple[Strategy, StrategyVersion]:
     """Build the (Strategy, current StrategyVersion) row pair the service returns."""
     strategy = _make_strategy_row(id, name, description, status, current_version)
@@ -120,7 +121,7 @@ def make_strategy_response(
         version=current_version,
         config_sexpr=config_sexpr,
         symbols=symbols or ["AAPL", "GOOGL"],
-        timeframe=timeframe,
+        rebalance=rebalance,
         created_by=TEST_USER_ID,
         created_at=strategy.created_at,
     )
@@ -134,11 +135,11 @@ def make_strategy_summary(
     status: int = STRATEGY_STATUS_DRAFT,
     current_version: int = 1,
     symbols: list[str] | None = None,
-    timeframe: str = "1D",
+    rebalance: str = "daily",
 ) -> tuple[Strategy, list[str], str]:
-    """Build the (Strategy, symbols, timeframe) list row that list_strategies returns."""
+    """Build the (Strategy, symbols, rebalance) list row that list_strategies returns."""
     strategy = _make_strategy_row(id, name, description, status, current_version)
-    return strategy, symbols or ["AAPL", "GOOGL"], timeframe
+    return strategy, symbols or ["AAPL", "GOOGL"], rebalance
 
 
 def make_execution(
@@ -471,6 +472,55 @@ class TestListStrategies:
             response = await strategy_servicer.list_strategies(request, grpc_context)
 
             assert len(response.strategies) == 1
+            assert mock_service.list_strategies.await_args.kwargs["status"] == (
+                STRATEGY_STATUS_ACTIVE
+            )
+
+    async def test_list_strategies_without_a_status_filter_queries_every_status(
+        self, strategy_servicer: MockStrategyServicer, grpc_context: RequestContext
+    ) -> None:
+        """An unset filter keeps its skip-the-filter meaning."""
+        from llamatrade_proto.generated import common_pb2, strategy_pb2
+
+        with patch("src.services.strategy_service.StrategyService") as mock_service_cls:
+            mock_service = mock_service_cls.return_value
+            mock_service.list_strategies = AsyncMock(return_value=([], 0))
+
+            request = strategy_pb2.ListStrategiesRequest(
+                context=common_pb2.TenantContext(
+                    tenant_id=str(TEST_TENANT_ID),
+                    user_id=str(TEST_USER_ID),
+                ),
+            )
+
+            await strategy_servicer.list_strategies(request, grpc_context)
+
+            assert mock_service.list_strategies.await_args.kwargs["status"] is None
+
+    @pytest.mark.parametrize("status", [0, 99])
+    async def test_list_strategies_rejects_an_unspecified_or_unknown_status_filter(
+        self, strategy_servicer: MockStrategyServicer, grpc_context: RequestContext, status: int
+    ) -> None:
+        """An explicit UNSPECIFIED or an int outside the enum is INVALID_ARGUMENT, not a 500."""
+        from llamatrade_proto.generated import common_pb2, strategy_pb2
+
+        with patch("src.services.strategy_service.StrategyService") as mock_service_cls:
+            mock_service = mock_service_cls.return_value
+            mock_service.list_strategies = AsyncMock(return_value=([], 0))
+
+            request = strategy_pb2.ListStrategiesRequest(
+                context=common_pb2.TenantContext(
+                    tenant_id=str(TEST_TENANT_ID),
+                    user_id=str(TEST_USER_ID),
+                ),
+                statuses=[status],
+            )
+
+            with pytest.raises(ConnectError) as exc_info:
+                await strategy_servicer.list_strategies(request, grpc_context)
+
+            assert "INVALID_ARGUMENT" in str(exc_info.value.code)
+            mock_service.list_strategies.assert_not_awaited()
 
 
 class TestUpdateStrategy:
@@ -576,101 +626,80 @@ class TestDeleteStrategy:
 
 
 class TestCompileStrategy:
-    """Tests for compile_strategy gRPC method."""
+    """Tests for compile_strategy gRPC method.
+
+    Compilation is stateless: it resolves identity, bounds the input, and runs
+    the real parser/serializer off the event loop (no DB session, no service).
+    """
+
+    # A parseable allocation strategy in the current DSL.
+    VALID_SEXPR = '(strategy "Test" (weight :method equal (asset SPY) (asset AGG)))'
+
+    def _request(
+        self, dsl_code: str, *, tenant: str = str(TEST_TENANT_ID), user: str = str(TEST_USER_ID)
+    ) -> strategy_pb2.CompileStrategyRequest:
+        return strategy_pb2.CompileStrategyRequest(
+            context=common_pb2.TenantContext(tenant_id=tenant, user_id=user),
+            dsl_code=dsl_code,
+        )
 
     async def test_compile_strategy_valid(
         self, strategy_servicer: MockStrategyServicer, grpc_context: RequestContext
     ) -> None:
-        """Test compiling a valid strategy."""
-        from llamatrade_proto.generated import common_pb2, strategy_pb2
-
-        mock_validation = validation_to_proto(
-            valid=True, errors=[], warnings=[], detected_symbols=[], detected_indicators=[]
+        """A valid strategy compiles to JSON with no errors."""
+        response = await strategy_servicer.compile_strategy(
+            self._request(self.VALID_SEXPR), grpc_context
         )
-        # A genuinely parseable allocation strategy: compile_strategy mocks the
-        # validation layer but runs the real parser/serializer, so this must be
-        # valid current-DSL (the legacy VALID_STRATEGY_SEXPR no longer parses).
-        valid_sexpr = '(strategy "Test" (weight :method equal (asset SPY) (asset AGG)))'
 
-        with patch("src.services.strategy_service.StrategyService") as mock_service_cls:
-            mock_service = mock_service_cls.return_value
-            mock_service.validate_config = AsyncMock(return_value=mock_validation)
-
-            request = strategy_pb2.CompileStrategyRequest(
-                context=common_pb2.TenantContext(
-                    tenant_id=str(TEST_TENANT_ID),
-                    user_id=str(TEST_USER_ID),
-                ),
-                dsl_code=valid_sexpr,
-            )
-
-            response = await strategy_servicer.compile_strategy(request, grpc_context)
-
-            assert response.result.success is True
-            assert len(response.result.errors) == 0
-            assert response.result.compiled_json != ""
+        assert response.result.success is True
+        assert len(response.result.errors) == 0
+        assert response.result.compiled_json != ""
 
     async def test_compile_strategy_invalid(
         self, strategy_servicer: MockStrategyServicer, grpc_context: RequestContext
     ) -> None:
-        """Test compiling an invalid strategy."""
-        from llamatrade_proto.generated import common_pb2, strategy_pb2
-
-        mock_validation = validation_to_proto(
-            valid=False,
-            errors=["Missing entry condition"],
-            warnings=[],
-            detected_symbols=[],
-            detected_indicators=[],
+        """Unparseable/invalid DSL reports failure with structured errors."""
+        response = await strategy_servicer.compile_strategy(
+            self._request("(strategy (invalid))"), grpc_context
         )
 
-        with patch("src.services.strategy_service.StrategyService") as mock_service_cls:
-            mock_service = mock_service_cls.return_value
-            mock_service.validate_config = AsyncMock(return_value=mock_validation)
-
-            request = strategy_pb2.CompileStrategyRequest(
-                context=common_pb2.TenantContext(
-                    tenant_id=str(TEST_TENANT_ID),
-                    user_id=str(TEST_USER_ID),
-                ),
-                dsl_code="(strategy (invalid))",
-            )
-
-            response = await strategy_servicer.compile_strategy(request, grpc_context)
-
-            assert response.result.success is False
-            assert len(response.result.errors) > 0
+        assert response.result.success is False
+        assert len(response.result.errors) > 0
 
     async def test_compile_strategy_surfaces_compile_error(
         self, strategy_servicer: MockStrategyServicer, grpc_context: RequestContext
     ) -> None:
-        """Valid DSL that fails to compile reports an error, not silent success."""
-        from llamatrade_proto.generated import common_pb2, strategy_pb2
-
-        mock_validation = validation_to_proto(
-            valid=True, errors=[], warnings=[], detected_symbols=[], detected_indicators=[]
-        )
-
-        with (
-            patch("src.services.strategy_service.StrategyService") as mock_service_cls,
-            patch("llamatrade_dsl.to_json", side_effect=RuntimeError("boom")),
-        ):
-            mock_service = mock_service_cls.return_value
-            mock_service.validate_config = AsyncMock(return_value=mock_validation)
-
-            request = strategy_pb2.CompileStrategyRequest(
-                context=common_pb2.TenantContext(
-                    tenant_id=str(TEST_TENANT_ID),
-                    user_id=str(TEST_USER_ID),
-                ),
-                dsl_code=VALID_STRATEGY_SEXPR,
+        """Valid DSL that fails to serialize reports an error, not silent success."""
+        with patch("src.services.strategy_service.to_json", side_effect=RuntimeError("boom")):
+            response = await strategy_servicer.compile_strategy(
+                self._request(self.VALID_SEXPR), grpc_context
             )
-
-            response = await strategy_servicer.compile_strategy(request, grpc_context)
 
         assert response.result.success is False
         assert response.result.compiled_json == ""
         assert any(e.code == "COMPILE_ERROR" for e in response.result.errors)
+
+    async def test_compile_strategy_rejects_oversized_input(
+        self, strategy_servicer: MockStrategyServicer, grpc_context: RequestContext
+    ) -> None:
+        """DSL longer than the cap is rejected before parsing."""
+        from src.models import MAX_SEXPR_LEN
+
+        with pytest.raises(ConnectError) as exc:
+            await strategy_servicer.compile_strategy(
+                self._request("x" * (MAX_SEXPR_LEN + 1)), grpc_context
+            )
+        assert exc.value.code == Code.INVALID_ARGUMENT
+
+    async def test_compile_strategy_requires_identity(
+        self, strategy_servicer: MockStrategyServicer, grpc_context: RequestContext
+    ) -> None:
+        """An empty tenant context is rejected (compile still requires auth)."""
+        with pytest.raises(ConnectError) as exc:
+            await strategy_servicer.compile_strategy(
+                self._request(self.VALID_SEXPR, tenant="", user=""), grpc_context
+            )
+        assert exc.value.code == Code.UNAUTHENTICATED
 
 
 class TestUpdateStrategyStatus:
@@ -748,7 +777,7 @@ class TestListStrategyVersions:
                 version=1,
                 config_sexpr=VALID_STRATEGY_SEXPR,
                 symbols=["AAPL"],
-                timeframe="1D",
+                rebalance="daily",
                 changelog="Initial version",
                 created_by=TEST_USER_ID,
                 created_at=now,
@@ -759,7 +788,7 @@ class TestListStrategyVersions:
                 version=2,
                 config_sexpr=VALID_STRATEGY_SEXPR,
                 symbols=["AAPL"],
-                timeframe="1D",
+                rebalance="daily",
                 changelog="Updated entry condition",
                 created_by=TEST_USER_ID,
                 created_at=now,
@@ -966,6 +995,64 @@ class TestExecutionManagement:
 
             assert len(response.executions) == 1
             assert response.pagination.total_items == 1
+            assert mock_service.list_executions.await_args.kwargs["status"] is None
+            assert mock_service.list_executions.await_args.kwargs["mode"] is None
+
+    async def test_list_executions_applies_valid_status_and_mode_filters(
+        self, strategy_servicer: MockStrategyServicer, grpc_context: RequestContext
+    ) -> None:
+        """Test filtering executions by status and mode."""
+        from llamatrade_proto.generated import common_pb2, strategy_pb2
+
+        with patch("src.services.strategy_service.StrategyService") as mock_service_cls:
+            mock_service = mock_service_cls.return_value
+            mock_service.list_executions = AsyncMock(return_value=([], 0))
+
+            request = strategy_pb2.ListExecutionsRequest(
+                context=common_pb2.TenantContext(
+                    tenant_id=str(TEST_TENANT_ID),
+                    user_id=str(TEST_USER_ID),
+                ),
+                statuses=[EXECUTION_STATUS_RUNNING],
+                modes=[EXECUTION_MODE_PAPER],
+            )
+
+            await strategy_servicer.list_executions(request, grpc_context)
+
+            assert mock_service.list_executions.await_args.kwargs["status"] == (
+                EXECUTION_STATUS_RUNNING
+            )
+            assert mock_service.list_executions.await_args.kwargs["mode"] == EXECUTION_MODE_PAPER
+
+    @pytest.mark.parametrize(("statuses", "modes"), [([0], []), ([99], []), ([], [0]), ([], [42])])
+    async def test_list_executions_rejects_an_unspecified_or_unknown_filter(
+        self,
+        strategy_servicer: MockStrategyServicer,
+        grpc_context: RequestContext,
+        statuses: list[int],
+        modes: list[int],
+    ) -> None:
+        """An explicit UNSPECIFIED or an int outside the enum is INVALID_ARGUMENT, not a 500."""
+        from llamatrade_proto.generated import common_pb2, strategy_pb2
+
+        with patch("src.services.strategy_service.StrategyService") as mock_service_cls:
+            mock_service = mock_service_cls.return_value
+            mock_service.list_executions = AsyncMock(return_value=([], 0))
+
+            request = strategy_pb2.ListExecutionsRequest(
+                context=common_pb2.TenantContext(
+                    tenant_id=str(TEST_TENANT_ID),
+                    user_id=str(TEST_USER_ID),
+                ),
+                statuses=statuses,
+                modes=modes,
+            )
+
+            with pytest.raises(ConnectError) as exc_info:
+                await strategy_servicer.list_executions(request, grpc_context)
+
+            assert "INVALID_ARGUMENT" in str(exc_info.value.code)
+            mock_service.list_executions.assert_not_awaited()
 
     async def test_start_execution_success(
         self, strategy_servicer: MockStrategyServicer, grpc_context: RequestContext

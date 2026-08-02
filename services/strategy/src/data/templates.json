@@ -1,0 +1,1168 @@
+[
+  {
+    "id": "classic-60-40",
+    "name": "Classic 60/40",
+    "description": "The foundational portfolio—60% stocks, 40% bonds. Simple, time-tested, effective.",
+    "category": "TEMPLATE_CATEGORY_BUY_AND_HOLD",
+    "asset_class": "ASSET_CLASS_MULTI_ASSET",
+    "tags": [
+      "classic",
+      "balanced"
+    ],
+    "difficulty": "TEMPLATE_DIFFICULTY_BEGINNER",
+    "config_sexpr": "(strategy \"Classic 60/40\"\n  :rebalance monthly\n  :benchmark SPY\n  (weight :method specified\n    (group \"Equities\" :weight 60\n      (weight :method equal\n        (asset VTI)\n        (asset VEA)\n        (asset VWO)))\n    (group \"Bonds\" :weight 40\n      (weight :method equal\n        (asset BND)\n        (asset BNDX)))))"
+  },
+  {
+    "id": "three-fund",
+    "name": "Three-Fund Portfolio",
+    "description": "Bogleheads classic—total US market, international, and bonds for maximum diversification.",
+    "category": "TEMPLATE_CATEGORY_BUY_AND_HOLD",
+    "asset_class": "ASSET_CLASS_MULTI_ASSET",
+    "tags": [
+      "bogleheads",
+      "diversified"
+    ],
+    "difficulty": "TEMPLATE_DIFFICULTY_BEGINNER",
+    "config_sexpr": "(strategy \"Three-Fund Portfolio\"\n  :rebalance quarterly\n  :benchmark VTI\n  (weight :method specified\n    (group \"US Equities\" :weight 50\n      (weight :method specified\n        (asset VTI :weight 80)\n        (asset VXF :weight 20)))\n    (group \"International\" :weight 30\n      (weight :method equal\n        (asset VXUS)\n        (asset VEA)\n        (asset VWO)))\n    (group \"Fixed Income\" :weight 20\n      (weight :method equal\n        (asset BND)\n        (asset BNDX)))))"
+  },
+  {
+    "id": "permanent-portfolio",
+    "name": "Permanent Portfolio",
+    "description": "Harry Browne's 4x25% allocation designed for all economic conditions—stocks, bonds, gold, cash.",
+    "category": "TEMPLATE_CATEGORY_BUY_AND_HOLD",
+    "asset_class": "ASSET_CLASS_MULTI_ASSET",
+    "tags": [
+      "all-weather",
+      "harry-browne",
+      "famous-portfolio"
+    ],
+    "difficulty": "TEMPLATE_DIFFICULTY_BEGINNER",
+    "config_sexpr": "(strategy \"Permanent Portfolio\"\n  :rebalance quarterly\n  :benchmark SPY\n  (weight :method specified\n    (group \"Growth\" :weight 25\n      (weight :method equal\n        (asset VTI)\n        (asset VEA)))\n    (group \"Deflation Hedge\" :weight 25\n      (weight :method specified\n        (asset TLT :weight 70)\n        (asset EDV :weight 30)))\n    (group \"Inflation Hedge\" :weight 25\n      (weight :method equal\n        (asset GLD)\n        (asset IAU)))\n    (group \"Cash\" :weight 25\n      (weight :method equal\n        (asset SHY)\n        (asset BIL)))))"
+  },
+  {
+    "id": "all-weather",
+    "name": "All-Weather Portfolio",
+    "description": "Ray Dalio inspired diversified allocation for all economic conditions.",
+    "category": "TEMPLATE_CATEGORY_BUY_AND_HOLD",
+    "asset_class": "ASSET_CLASS_MULTI_ASSET",
+    "tags": [
+      "all-weather",
+      "ray-dalio",
+      "famous-portfolio"
+    ],
+    "difficulty": "TEMPLATE_DIFFICULTY_BEGINNER",
+    "config_sexpr": "(strategy \"All-Weather Portfolio\"\n  :rebalance quarterly\n  :benchmark SPY\n  (weight :method specified\n    (group \"Equities\" :weight 30\n      (weight :method equal\n        (asset VTI)\n        (asset VEA)\n        (asset VWO)))\n    (group \"Long Bonds\" :weight 40\n      (weight :method specified\n        (asset TLT :weight 60)\n        (asset EDV :weight 40)))\n    (group \"Intermediate Bonds\" :weight 15\n      (weight :method equal\n        (asset IEF)\n        (asset VGIT)))\n    (group \"Commodities\" :weight 15\n      (weight :method equal\n        (asset GLD)\n        (asset DBC)\n        (asset PDBC)))))"
+  },
+  {
+    "id": "golden-butterfly",
+    "name": "Golden Butterfly",
+    "description": "Balanced allocation with small-cap value tilt—total market, SCV, long bonds, short bonds, gold.",
+    "category": "TEMPLATE_CATEGORY_BUY_AND_HOLD",
+    "asset_class": "ASSET_CLASS_MULTI_ASSET",
+    "tags": [
+      "all-weather",
+      "small-cap-value",
+      "famous-portfolio"
+    ],
+    "difficulty": "TEMPLATE_DIFFICULTY_BEGINNER",
+    "config_sexpr": "(strategy \"Golden Butterfly\"\n  :rebalance quarterly\n  :benchmark SPY\n  (weight :method specified\n    (group \"Large Cap\" :weight 20\n      (weight :method equal\n        (asset VTI)\n        (asset VOO)))\n    (group \"Small Cap Value\" :weight 20\n      (weight :method equal\n        (asset IJS)\n        (asset AVUV)\n        (asset VBR)))\n    (group \"Long Bonds\" :weight 20\n      (weight :method specified\n        (asset TLT :weight 60)\n        (asset EDV :weight 40)))\n    (group \"Short Bonds\" :weight 20\n      (weight :method equal\n        (asset SHY)\n        (asset VGSH)\n        (asset BIL)))\n    (group \"Gold\" :weight 20\n      (weight :method equal\n        (asset GLD)\n        (asset IAU)))))"
+  },
+  {
+    "id": "core-satellite",
+    "name": "Core-Satellite",
+    "description": "Stable core of index funds combined with satellite positions in higher-conviction plays.",
+    "category": "TEMPLATE_CATEGORY_BUY_AND_HOLD",
+    "asset_class": "ASSET_CLASS_MULTI_ASSET",
+    "tags": [
+      "core-satellite",
+      "hybrid"
+    ],
+    "difficulty": "TEMPLATE_DIFFICULTY_INTERMEDIATE",
+    "config_sexpr": "(strategy \"Core-Satellite\"\n  :rebalance monthly\n  :benchmark SPY\n  (weight :method specified\n    (group \"Core\" :weight 70\n      (weight :method specified\n        (group \"US Large\" :weight 50\n          (weight :method equal\n            (asset VTI)\n            (asset VOO)\n            (asset IVV)))\n        (group \"International\" :weight 20\n          (weight :method equal\n            (asset VXUS)\n            (asset VEA)\n            (asset VWO)))\n        (group \"Bonds\" :weight 30\n          (weight :method equal\n            (asset BND)\n            (asset AGG)\n            (asset BNDX)))))\n    (group \"Satellite\" :weight 30\n      (weight :method momentum :lookback 60\n        (asset QQQ)\n        (asset ARKK)\n        (asset VNQ)\n        (asset SMH)\n        (asset XBI)))))"
+  },
+  {
+    "id": "risk-parity",
+    "name": "Risk Parity",
+    "description": "Allocate by risk contribution using inverse volatility—equal risk across asset classes.",
+    "category": "TEMPLATE_CATEGORY_BUY_AND_HOLD",
+    "asset_class": "ASSET_CLASS_MULTI_ASSET",
+    "tags": [
+      "risk-parity",
+      "all-weather"
+    ],
+    "difficulty": "TEMPLATE_DIFFICULTY_INTERMEDIATE",
+    "config_sexpr": "(strategy \"Risk Parity\"\n  :rebalance monthly\n  :benchmark SPY\n  (weight :method specified\n    (group \"Equities\" :weight 25\n      (weight :method inverse-volatility :lookback 60\n        (asset SPY)\n        (asset VEA)\n        (asset VWO)\n        (asset IWM)))\n    (group \"Fixed Income\" :weight 25\n      (weight :method inverse-volatility :lookback 60\n        (asset TLT)\n        (asset IEF)\n        (asset LQD)\n        (asset TIP)))\n    (group \"Commodities\" :weight 25\n      (weight :method inverse-volatility :lookback 60\n        (asset GLD)\n        (asset DBC)\n        (asset USO)\n        (asset UNG)))\n    (group \"Alternatives\" :weight 25\n      (weight :method inverse-volatility :lookback 60\n        (asset VNQ)\n        (asset VNQI)\n        (asset DBMF)))))"
+  },
+  {
+    "id": "adaptive-asset-allocation",
+    "name": "Adaptive Asset Allocation",
+    "description": "Dynamic allocation based on momentum and volatility signals across asset classes.",
+    "category": "TEMPLATE_CATEGORY_BUY_AND_HOLD",
+    "asset_class": "ASSET_CLASS_MULTI_ASSET",
+    "tags": [
+      "adaptive",
+      "momentum",
+      "volatility",
+      "dynamic"
+    ],
+    "difficulty": "TEMPLATE_DIFFICULTY_INTERMEDIATE",
+    "config_sexpr": "(strategy \"Adaptive Asset Allocation\"\n  :rebalance monthly\n  :benchmark SPY\n  (weight :method specified\n    (group \"Risk Assets\" :weight 60\n      (filter :by momentum :select (top 3) :lookback 90\n        (weight :method inverse-volatility :lookback 60\n          (asset SPY)\n          (asset VEA)\n          (asset VWO)\n          (asset VNQ)\n          (asset DBC))))\n    (group \"Safe Assets\" :weight 40\n      (filter :by momentum :select (top 2) :lookback 60\n        (weight :method inverse-volatility :lookback 60\n          (asset TLT)\n          (asset IEF)\n          (asset GLD)\n          (asset SHY))))))"
+  },
+  {
+    "id": "larry-portfolio",
+    "name": "Larry Portfolio",
+    "description": "Larry Swedroe's factor-tilted allocation emphasizing small-cap value globally.",
+    "category": "TEMPLATE_CATEGORY_FACTOR",
+    "asset_class": "ASSET_CLASS_EQUITY",
+    "tags": [
+      "small-cap-value",
+      "larry-swedroe",
+      "famous-portfolio"
+    ],
+    "difficulty": "TEMPLATE_DIFFICULTY_BEGINNER",
+    "config_sexpr": "(strategy \"Larry Portfolio\"\n  :rebalance quarterly\n  :benchmark SPY\n  (weight :method specified\n    (group \"US Small Value\" :weight 30\n      (weight :method equal\n        (asset AVUV)\n        (asset IJS)\n        (asset VBR)))\n    (group \"Intl Small Value\" :weight 30\n      (weight :method equal\n        (asset AVDV)\n        (asset DLS)\n        (asset VSS)))\n    (group \"Emerging Value\" :weight 10\n      (weight :method equal\n        (asset AVES)\n        (asset DEM)))\n    (group \"Fixed Income\" :weight 30\n      (weight :method equal\n        (asset BND)\n        (asset BNDX)\n        (asset TIP)))))"
+  },
+  {
+    "id": "multi-factor-smart-beta",
+    "name": "Multi-Factor Smart Beta",
+    "description": "Combined Value + Momentum + Quality + Size factor exposure via ETFs.",
+    "category": "TEMPLATE_CATEGORY_FACTOR",
+    "asset_class": "ASSET_CLASS_EQUITY",
+    "tags": [
+      "smart-beta",
+      "multi-factor"
+    ],
+    "difficulty": "TEMPLATE_DIFFICULTY_BEGINNER",
+    "config_sexpr": "(strategy \"Multi-Factor Smart Beta\"\n  :rebalance quarterly\n  :benchmark SPY\n  (weight :method specified\n    (group \"Value Factor\" :weight 25\n      (weight :method equal\n        (asset VLUE)\n        (asset VTV)\n        (asset RPV)))\n    (group \"Momentum Factor\" :weight 25\n      (weight :method equal\n        (asset MTUM)\n        (asset PDP)))\n    (group \"Quality Factor\" :weight 25\n      (weight :method equal\n        (asset QUAL)\n        (asset SPHQ)))\n    (group \"Size Factor\" :weight 25\n      (weight :method equal\n        (asset SIZE)\n        (asset IJR)\n        (asset VBR)))))"
+  },
+  {
+    "id": "momentum-sectors",
+    "name": "Momentum Sectors",
+    "description": "Weight sectors by recent momentum—more allocation to stronger performers.",
+    "category": "TEMPLATE_CATEGORY_FACTOR",
+    "asset_class": "ASSET_CLASS_EQUITY",
+    "tags": [
+      "momentum",
+      "sectors",
+      "rotation"
+    ],
+    "difficulty": "TEMPLATE_DIFFICULTY_INTERMEDIATE",
+    "config_sexpr": "(strategy \"Momentum Sectors\"\n  :rebalance monthly\n  :benchmark SPY\n  (weight :method specified\n    (group \"Cyclical Sectors\" :weight 50\n      (filter :by momentum :select (top 3) :lookback 90\n        (weight :method equal\n          (asset XLK)\n          (asset XLF)\n          (asset XLI)\n          (asset XLY)\n          (asset XLC))))\n    (group \"Defensive Sectors\" :weight 30\n      (filter :by momentum :select (top 2) :lookback 90\n        (weight :method equal\n          (asset XLV)\n          (asset XLP)\n          (asset XLU)\n          (asset XLRE))))\n    (group \"Commodity Sectors\" :weight 20\n      (weight :method momentum :lookback 60\n        (asset XLE)\n        (asset XLB)))))"
+  },
+  {
+    "id": "small-cap-value-tilt",
+    "name": "Small-Cap Value Tilt",
+    "description": "Size + value factor combination for enhanced returns.",
+    "category": "TEMPLATE_CATEGORY_FACTOR",
+    "asset_class": "ASSET_CLASS_EQUITY",
+    "tags": [
+      "factor",
+      "small-cap-value"
+    ],
+    "difficulty": "TEMPLATE_DIFFICULTY_INTERMEDIATE",
+    "config_sexpr": "(strategy \"Small-Cap Value Tilt\"\n  :rebalance monthly\n  :benchmark IWM\n  (weight :method specified\n    (group \"US Small Value Core\" :weight 50\n      (weight :method inverse-volatility :lookback 60\n        (asset AVUV)\n        (asset IJS)\n        (asset VBR)\n        (asset SLYV)))\n    (group \"Intl Small Value\" :weight 30\n      (weight :method inverse-volatility :lookback 60\n        (asset AVDV)\n        (asset DLS)\n        (asset SCZ)))\n    (group \"Micro Cap\" :weight 20\n      (weight :method inverse-volatility :lookback 60\n        (asset IWC)\n        (asset FDM)))))"
+  },
+  {
+    "id": "deep-value",
+    "name": "Deep Value",
+    "description": "Concentrated value factor exposure with rotation to top performers.",
+    "category": "TEMPLATE_CATEGORY_FACTOR",
+    "asset_class": "ASSET_CLASS_EQUITY",
+    "tags": [
+      "factor",
+      "value",
+      "concentrated"
+    ],
+    "difficulty": "TEMPLATE_DIFFICULTY_INTERMEDIATE",
+    "config_sexpr": "(strategy \"Deep Value\"\n  :rebalance monthly\n  :benchmark SPY\n  (weight :method specified\n    (group \"Large Value\" :weight 40\n      (filter :by momentum :select (top 2) :lookback 60\n        (weight :method equal\n          (asset VTV)\n          (asset RPV)\n          (asset SPYV)\n          (asset SCHV))))\n    (group \"Small Value\" :weight 40\n      (filter :by momentum :select (top 2) :lookback 60\n        (weight :method equal\n          (asset IJS)\n          (asset VBR)\n          (asset SLYV)\n          (asset AVUV))))\n    (group \"Intl Value\" :weight 20\n      (filter :by momentum :select (top 1) :lookback 60\n        (weight :method equal\n          (asset EFV)\n          (asset FNDF)\n          (asset IVAL))))))"
+  },
+  {
+    "id": "sector-rsi-rotation",
+    "name": "Sector RSI Rotation",
+    "description": "Rotate into oversold sectors using RSI signals with momentum-weighted allocation.",
+    "category": "TEMPLATE_CATEGORY_FACTOR",
+    "asset_class": "ASSET_CLASS_EQUITY",
+    "tags": [
+      "rotation",
+      "rsi",
+      "sectors",
+      "mean-reversion"
+    ],
+    "difficulty": "TEMPLATE_DIFFICULTY_ADVANCED",
+    "config_sexpr": "(strategy \"Sector RSI Rotation\"\n  :rebalance weekly\n  :benchmark SPY\n  (if (< (rsi XLK 14) 35)\n    (group \"Oversold Tech\"\n      (weight :method inverse-volatility :lookback 20\n        (asset XLK)\n        (asset SMH)\n        (asset SOXX)\n        (asset IGV)))\n    (else\n      (if (< (rsi XLF 14) 35)\n        (group \"Oversold Financials\"\n          (weight :method inverse-volatility :lookback 20\n            (asset XLF)\n            (asset KRE)\n            (asset KBE)\n            (asset IAI)))\n        (else\n          (if (< (rsi XLV 14) 35)\n            (group \"Oversold Healthcare\"\n              (weight :method inverse-volatility :lookback 20\n                (asset XLV)\n                (asset XBI)\n                (asset IBB)\n                (asset IHI)))\n            (else\n              (if (< (rsi XLE 14) 35)\n                (group \"Oversold Energy\"\n                  (weight :method inverse-volatility :lookback 20\n                    (asset XLE)\n                    (asset XOP)\n                    (asset OIH)\n                    (asset AMLP)))\n                (else\n                  (group \"Default Momentum\"\n                    (filter :by momentum :select (top 4) :lookback 60\n        (weight :method equal\n                        (asset XLK)\n                        (asset XLF)\n                        (asset XLV)\n                        (asset XLI)\n                        (asset XLE)\n                        (asset XLY)))))))))))))"
+  },
+  {
+    "id": "international-value-momentum",
+    "name": "International Value Momentum",
+    "description": "Combine value and momentum factors internationally with trend filter.",
+    "category": "TEMPLATE_CATEGORY_FACTOR",
+    "asset_class": "ASSET_CLASS_EQUITY",
+    "tags": [
+      "international",
+      "value",
+      "momentum",
+      "multi-factor"
+    ],
+    "difficulty": "TEMPLATE_DIFFICULTY_ADVANCED",
+    "config_sexpr": "(strategy \"International Value Momentum\"\n  :rebalance monthly\n  :benchmark VEU\n  (weight :method specified\n    (group \"Value Core\" :weight 40\n      (if (> (price VEU) (sma VEU 200))\n        (weight :method inverse-volatility :lookback 60\n          (asset EFV)\n          (asset FNDF)\n          (asset IVAL)\n          (asset DEM))\n        (else\n          (weight :method equal\n            (asset SHY)\n            (asset BIL)))))\n    (group \"Momentum Satellite\" :weight 35\n      (if (> (price VEU) (sma VEU 200))\n        (if (> (momentum VWO 60) (momentum VEA 60))\n          (weight :method momentum :lookback 90\n            (asset VWO)\n            (asset IEMG)\n            (asset EEM)\n            (asset SCHE))\n          (else\n            (weight :method momentum :lookback 90\n              (asset VEA)\n              (asset EFA)\n              (asset IEFA)\n              (asset SCHF))))\n        (else\n          (weight :method equal\n            (asset SHY)\n            (asset BIL)))))\n    (group \"Regional Rotation\" :weight 25\n      (filter :by momentum :select (top 2) :lookback 60\n        (weight :method equal\n          (asset EWJ)\n          (asset EWG)\n          (asset EWU)\n          (asset EWC)\n          (asset EWA)\n          (asset EWZ))))))"
+  },
+  {
+    "id": "factor-timing",
+    "name": "Factor Timing Strategy",
+    "description": "Dynamic factor rotation: momentum vs value based on trend, low-vol vs size based on VIX, plus quality core.",
+    "category": "TEMPLATE_CATEGORY_FACTOR",
+    "asset_class": "ASSET_CLASS_EQUITY",
+    "tags": [
+      "factors",
+      "timing",
+      "rotation",
+      "multi-factor"
+    ],
+    "difficulty": "TEMPLATE_DIFFICULTY_ADVANCED",
+    "config_sexpr": "(strategy \"Factor Timing Strategy\"\n  :rebalance weekly\n  :benchmark SPY\n  (weight :method specified\n    (group \"Trend Factor\" :weight 25\n      (if (> (price SPY) (sma SPY 200))\n        (if (> (momentum MTUM 30) (momentum VLUE 30))\n          (weight :method equal\n            (asset MTUM)\n            (asset PDP)\n            (asset DWAS))\n          (else\n            (weight :method equal\n              (asset VLUE)\n              (asset VTV)\n              (asset SCHV))))\n        (else\n          (weight :method equal\n            (asset USMV)\n            (asset SPLV)\n            (asset ACWV)))))\n    (group \"Vol Factor\" :weight 25\n      (if (< (price VIX) 15)\n        (weight :method inverse-volatility :lookback 30\n          (asset SIZE)\n          (asset IJR)\n          (asset IWM)\n          (asset SCHA))\n        (else\n          (if (< (price VIX) 25)\n            (weight :method equal\n              (asset USMV)\n              (asset SPLV))\n            (else\n              (weight :method equal\n                (asset SHY)\n                (asset BIL)\n                (asset MINT)))))))\n    (group \"Quality Core\" :weight 30\n      (filter :by momentum :select (top 2) :lookback 60\n        (weight :method equal\n          (asset QUAL)\n          (asset SPHQ)\n          (asset JQUA)\n          (asset DGRW))))\n    (group \"Dividend Anchor\" :weight 20\n      (weight :method inverse-volatility :lookback 60\n        (asset SCHD)\n        (asset VIG)\n        (asset NOBL)\n        (asset SDY)))))"
+  },
+  {
+    "id": "dividend-aristocrats",
+    "name": "Dividend Aristocrats",
+    "description": "Blue-chip companies with 25+ years of consecutive dividend increases.",
+    "category": "TEMPLATE_CATEGORY_INCOME",
+    "asset_class": "ASSET_CLASS_EQUITY",
+    "tags": [
+      "dividends",
+      "aristocrats",
+      "blue-chip"
+    ],
+    "difficulty": "TEMPLATE_DIFFICULTY_BEGINNER",
+    "config_sexpr": "(strategy \"Dividend Aristocrats\"\n  :rebalance quarterly\n  :benchmark SPY\n  (weight :method specified\n    (group \"Dividend ETFs\" :weight 40\n      (weight :method equal\n        (asset NOBL)\n        (asset SDY)\n        (asset VIG)\n        (asset DGRO)))\n    (group \"Consumer Staples Aristocrats\" :weight 30\n      (weight :method equal\n        (asset KO)\n        (asset PEP)\n        (asset PG)\n        (asset CL)))\n    (group \"Healthcare Aristocrats\" :weight 30\n      (weight :method equal\n        (asset JNJ)\n        (asset ABT)\n        (asset ADP)\n        (asset MDT)))))"
+  },
+  {
+    "id": "quality-dividend",
+    "name": "Quality Dividend",
+    "description": "High-quality dividend growers with proven track records of increasing payouts.",
+    "category": "TEMPLATE_CATEGORY_INCOME",
+    "asset_class": "ASSET_CLASS_EQUITY",
+    "tags": [
+      "dividends",
+      "quality",
+      "dividend-growth"
+    ],
+    "difficulty": "TEMPLATE_DIFFICULTY_BEGINNER",
+    "config_sexpr": "(strategy \"Quality Dividend\"\n  :rebalance quarterly\n  :benchmark SPY\n  (weight :method specified\n    (group \"Dividend Growth\" :weight 50\n      (weight :method equal\n        (asset DGRW)\n        (asset SCHD)\n        (asset VIG)\n        (asset NOBL)))\n    (group \"Quality Income\" :weight 30\n      (weight :method equal\n        (asset SPHD)\n        (asset HDV)\n        (asset DVY)))\n    (group \"International Dividend\" :weight 20\n      (weight :method equal\n        (asset VIGI)\n        (asset IDV)\n        (asset SCHY)))))"
+  },
+  {
+    "id": "covered-call-income",
+    "name": "Covered Call Income",
+    "description": "Buy-write strategy using covered call ETFs for enhanced income generation.",
+    "category": "TEMPLATE_CATEGORY_INCOME",
+    "asset_class": "ASSET_CLASS_OPTIONS",
+    "tags": [
+      "covered-call",
+      "options",
+      "premium-income"
+    ],
+    "difficulty": "TEMPLATE_DIFFICULTY_BEGINNER",
+    "config_sexpr": "(strategy \"Covered Call Income\"\n  :rebalance monthly\n  :benchmark SPY\n  (weight :method specified\n    (group \"Index Covered Calls\" :weight 50\n      (weight :method equal\n        (asset XYLD)\n        (asset QYLD)\n        (asset DIVO)))\n    (group \"Active Premium\" :weight 30\n      (weight :method equal\n        (asset JEPI)\n        (asset JEPQ)))\n    (group \"Buffer Income\" :weight 20\n      (weight :method equal\n        (asset NUSI)\n        (asset PBP)))))"
+  },
+  {
+    "id": "reit-income",
+    "name": "REIT Income",
+    "description": "Diversified REIT income portfolio across property sectors.",
+    "category": "TEMPLATE_CATEGORY_INCOME",
+    "asset_class": "ASSET_CLASS_EQUITY",
+    "tags": [
+      "reits",
+      "real-estate",
+      "income",
+      "diversified"
+    ],
+    "difficulty": "TEMPLATE_DIFFICULTY_BEGINNER",
+    "config_sexpr": "(strategy \"REIT Income\"\n  :rebalance quarterly\n  :benchmark VNQ\n  (weight :method specified\n    (group \"Diversified REITs\" :weight 40\n      (weight :method equal\n        (asset VNQ)\n        (asset VNQI)\n        (asset RWR)\n        (asset USRT)))\n    (group \"Specialty REITs\" :weight 35\n      (weight :method equal\n        (asset XLRE)\n        (asset ICF)\n        (asset IYR)))\n    (group \"Mortgage REITs\" :weight 25\n      (weight :method equal\n        (asset REM)\n        (asset MORT)))))"
+  },
+  {
+    "id": "income-focus",
+    "name": "Income Focus",
+    "description": "Maximize income through dividends, REITs, and high-yield bonds.",
+    "category": "TEMPLATE_CATEGORY_INCOME",
+    "asset_class": "ASSET_CLASS_MULTI_ASSET",
+    "tags": [
+      "dividends",
+      "reits",
+      "high-yield"
+    ],
+    "difficulty": "TEMPLATE_DIFFICULTY_INTERMEDIATE",
+    "config_sexpr": "(strategy \"Income Focus\"\n  :rebalance quarterly\n  :benchmark SPY\n  (weight :method specified\n    (group \"Dividend Equities\" :weight 35\n      (weight :method inverse-volatility :lookback 60\n        (asset SCHD)\n        (asset VYM)\n        (asset DVY)\n        (asset HDV)\n        (asset SPHD)))\n    (group \"REITs\" :weight 25\n      (weight :method inverse-volatility :lookback 60\n        (asset VNQ)\n        (asset VNQI)\n        (asset RWR)\n        (asset USRT)))\n    (group \"Fixed Income\" :weight 25\n      (weight :method inverse-volatility :lookback 60\n        (asset HYG)\n        (asset LQD)\n        (asset VCIT)\n        (asset VCLT)))\n    (group \"Preferred & MLPs\" :weight 15\n      (weight :method equal\n        (asset PFF)\n        (asset PFFD)\n        (asset AMLP)))))"
+  },
+  {
+    "id": "dividend-growth-barbell",
+    "name": "Dividend Growth Barbell",
+    "description": "Barbell strategy combining stable dividend income with conditional growth exposure.",
+    "category": "TEMPLATE_CATEGORY_INCOME",
+    "asset_class": "ASSET_CLASS_EQUITY",
+    "tags": [
+      "dividends",
+      "growth",
+      "barbell",
+      "conditional"
+    ],
+    "difficulty": "TEMPLATE_DIFFICULTY_INTERMEDIATE",
+    "config_sexpr": "(strategy \"Dividend Growth Barbell\"\n  :rebalance monthly\n  :benchmark SPY\n  (weight :method specified\n    (group \"Dividend Core\" :weight 60\n      (weight :method inverse-volatility :lookback 60\n        (asset SCHD)\n        (asset VIG)\n        (asset NOBL)\n        (asset DGRO)\n        (asset DGRW)))\n    (group \"Growth Satellite\" :weight 25\n      (if (> (price SPY) (sma SPY 50))\n        (if (> (momentum QQQ 30) (momentum VUG 30))\n          (weight :method equal\n            (asset QQQ)\n            (asset QQQM)\n            (asset VGT))\n          (else\n            (weight :method equal\n              (asset VUG)\n              (asset SCHG)\n              (asset IWF))))\n        (else\n          (weight :method equal\n            (asset SHY)\n            (asset MINT)\n            (asset BIL)))))\n    (group \"Defensive Anchor\" :weight 15\n      (weight :method equal\n        (asset XLP)\n        (asset XLU)\n        (asset VPU)))))"
+  },
+  {
+    "id": "high-yield-rotation",
+    "name": "High Yield Rotation",
+    "description": "Rotate between high-yield sectors by spread and momentum signals.",
+    "category": "TEMPLATE_CATEGORY_INCOME",
+    "asset_class": "ASSET_CLASS_FIXED_INCOME",
+    "tags": [
+      "high-yield",
+      "rotation",
+      "spreads",
+      "income"
+    ],
+    "difficulty": "TEMPLATE_DIFFICULTY_INTERMEDIATE",
+    "config_sexpr": "(strategy \"High Yield Rotation\"\n  :rebalance monthly\n  :benchmark HYG\n  (weight :method specified\n    (group \"Corporate High Yield\" :weight 50\n      (filter :by momentum :select (top 2) :lookback 60\n        (weight :method equal\n          (asset HYG)\n          (asset JNK)\n          (asset USHY)\n          (asset SHYG)\n          (asset HYLB))))\n    (group \"Emerging Markets Debt\" :weight 30\n      (filter :by momentum :select (top 2) :lookback 60\n        (weight :method equal\n          (asset EMB)\n          (asset VWOB)\n          (asset PCY)\n          (asset EMLC))))\n    (group \"Floating Rate\" :weight 20\n      (weight :method equal\n        (asset BKLN)\n        (asset SRLN)\n        (asset FLOT)))))"
+  },
+  {
+    "id": "income-regime-switch",
+    "name": "Income Regime Switch",
+    "description": "Dynamic income allocation switching between rate-sensitive and equity income based on bond trends and equity momentum.",
+    "category": "TEMPLATE_CATEGORY_INCOME",
+    "asset_class": "ASSET_CLASS_MULTI_ASSET",
+    "tags": [
+      "regime",
+      "rates",
+      "switch",
+      "income"
+    ],
+    "difficulty": "TEMPLATE_DIFFICULTY_ADVANCED",
+    "config_sexpr": "(strategy \"Income Regime Switch\"\n  :rebalance weekly\n  :benchmark SPY\n  (if (> (price TLT) (sma TLT 50))\n    (if (> (momentum SCHD 60) 0)\n      (group \"Falling Rates + Strong Dividends\"\n        (weight :method specified\n          (group \"Duration\" :weight 35\n            (weight :method equal\n              (asset TLT)\n              (asset EDV)\n              (asset ZROZ)))\n          (group \"Corporate Bonds\" :weight 25\n            (weight :method equal\n              (asset VCLT)\n              (asset LQD)\n              (asset IGIB)))\n          (group \"Dividend Equity\" :weight 40\n            (weight :method inverse-volatility :lookback 30\n              (asset SCHD)\n              (asset VIG)\n              (asset NOBL)\n              (asset DGRO)))))\n      (else\n        (group \"Falling Rates + Weak Dividends\"\n          (weight :method specified\n            (group \"Long Duration\" :weight 50\n              (weight :method equal\n                (asset TLT)\n                (asset EDV)\n                (asset ZROZ)))\n            (group \"Investment Grade\" :weight 30\n              (weight :method equal\n                (asset VCLT)\n                (asset LQD)))\n            (group \"Cash\" :weight 20\n              (weight :method equal\n                (asset SHY)\n                (asset BIL)\n                (asset MINT)))))))\n    (else\n      (if (> (momentum VNQ 60) (momentum SCHD 60))\n        (group \"Rising Rates + Strong REITs\"\n          (weight :method specified\n            (group \"REITs\" :weight 45\n              (weight :method inverse-volatility :lookback 30\n                (asset VNQ)\n                (asset VNQI)\n                (asset RWR)\n                (asset USRT)))\n            (group \"Dividends\" :weight 35\n              (weight :method equal\n                (asset SCHD)\n                (asset VIG)\n                (asset NOBL)))\n            (group \"Short Duration\" :weight 20\n              (weight :method equal\n                (asset SHY)\n                (asset VGSH)\n                (asset BIL)))))\n        (else\n          (group \"Rising Rates + Weak REITs\"\n            (weight :method specified\n              (group \"Dividend Focus\" :weight 55\n                (weight :method inverse-volatility :lookback 30\n                  (asset SCHD)\n                  (asset VIG)\n                  (asset NOBL)\n                  (asset DGRO)\n                  (asset HDV)))\n              (group \"Floating Rate\" :weight 25\n                (weight :method equal\n                  (asset BKLN)\n                  (asset SRLN)\n                  (asset FLOT)))\n              (group \"Cash\" :weight 20\n                (weight :method equal\n                  (asset SHY)\n                  (asset BIL))))))))))"
+  },
+  {
+    "id": "tail-risk-hedged",
+    "name": "Tail Risk Hedged",
+    "description": "Core equity exposure with tail hedge allocation for crash protection.",
+    "category": "TEMPLATE_CATEGORY_TACTICAL",
+    "asset_class": "ASSET_CLASS_OPTIONS",
+    "tags": [
+      "hedged",
+      "tail-risk",
+      "crash-protection"
+    ],
+    "difficulty": "TEMPLATE_DIFFICULTY_BEGINNER",
+    "config_sexpr": "(strategy \"Tail Risk Hedged\"\n  :rebalance monthly\n  :benchmark SPY\n  (weight :method specified\n    (group \"Equity Core\" :weight 75\n      (weight :method equal\n        (asset SPY)\n        (asset VTI)\n        (asset VOO)))\n    (group \"Tail Hedge\" :weight 15\n      (weight :method equal\n        (asset TAIL)\n        (asset VIXY)))\n    (group \"Bond Ballast\" :weight 10\n      (weight :method equal\n        (asset TLT)\n        (asset IEF)))))"
+  },
+  {
+    "id": "simple-defensive",
+    "name": "Simple Defensive",
+    "description": "Simple SPY/TLT 50/50 allocation with VIX-triggered defensive shift.",
+    "category": "TEMPLATE_CATEGORY_TACTICAL",
+    "asset_class": "ASSET_CLASS_MULTI_ASSET",
+    "tags": [
+      "defensive",
+      "simple",
+      "vix",
+      "beginner"
+    ],
+    "difficulty": "TEMPLATE_DIFFICULTY_INTERMEDIATE",
+    "config_sexpr": "(strategy \"Simple Defensive\"\n  :rebalance daily\n  :benchmark SPY\n  (if (> (price VIX) 30)\n    (group \"High Vol Defensive\"\n      (weight :method specified\n        (group \"Minimal Equity\" :weight 20\n          (weight :method equal\n            (asset SPY)\n            (asset USMV)))\n        (group \"Safety\" :weight 80\n          (weight :method inverse-volatility :lookback 20\n            (asset TLT)\n            (asset IEF)\n            (asset GLD)\n            (asset SHY)))))\n    (else\n      (if (> (price VIX) 20)\n        (group \"Moderate Vol\"\n          (weight :method specified\n            (group \"Equity\" :weight 40\n              (weight :method equal\n                (asset SPY)\n                (asset VTI)))\n            (group \"Bonds\" :weight 60\n              (weight :method equal\n                (asset TLT)\n                (asset IEF)\n                (asset AGG)))))\n        (else\n          (group \"Low Vol Risk On\"\n            (weight :method specified\n              (group \"Equity\" :weight 60\n                (weight :method equal\n                  (asset SPY)\n                  (asset VTI)\n                  (asset QQQ)))\n              (group \"Bonds\" :weight 40\n                (weight :method equal\n                  (asset TLT)\n                  (asset IEF))))))))))"
+  },
+  {
+    "id": "volatility-regime",
+    "name": "Volatility Regime",
+    "description": "Adjust allocation based on VIX levels—aggressive in low vol, defensive in high vol.",
+    "category": "TEMPLATE_CATEGORY_TACTICAL",
+    "asset_class": "ASSET_CLASS_MULTI_ASSET",
+    "tags": [
+      "vix",
+      "regime",
+      "volatility"
+    ],
+    "difficulty": "TEMPLATE_DIFFICULTY_ADVANCED",
+    "config_sexpr": "(strategy \"Volatility Regime\"\n  :rebalance daily\n  :benchmark SPY\n  (if (> (price VIX) 35)\n    (group \"Crisis Mode\"\n      (weight :method specified\n        (group \"Safety First\" :weight 50\n          (weight :method equal\n            (asset SHY)\n            (asset BIL)\n            (asset MINT)))\n        (group \"Flight to Quality\" :weight 30\n          (weight :method equal\n            (asset TLT)\n            (asset IEF)\n            (asset VGIT)))\n        (group \"Hard Assets\" :weight 20\n          (weight :method equal\n            (asset GLD)\n            (asset IAU)))))\n    (else\n      (if (> (price VIX) 25)\n        (group \"High Alert\"\n          (weight :method specified\n            (group \"Defensive Equity\" :weight 35\n              (weight :method inverse-volatility :lookback 20\n                (asset USMV)\n                (asset SPLV)\n                (asset XLP)\n                (asset XLU)))\n            (group \"Duration\" :weight 40\n              (weight :method equal\n                (asset TLT)\n                (asset IEF)\n                (asset AGG)))\n            (group \"Hedges\" :weight 25\n              (weight :method equal\n                (asset GLD)\n                (asset SHY)))))\n        (else\n          (if (> (price VIX) 18)\n            (group \"Cautious\"\n              (weight :method specified\n                (group \"Broad Equity\" :weight 50\n                  (weight :method equal\n                    (asset SPY)\n                    (asset VTI)\n                    (asset VOO)))\n                (group \"Bonds\" :weight 35\n                  (weight :method equal\n                    (asset TLT)\n                    (asset IEF)\n                    (asset AGG)))\n                (group \"Alternatives\" :weight 15\n                  (weight :method equal\n                    (asset GLD)\n                    (asset VNQ)))))\n            (else\n              (group \"Risk On\"\n                (weight :method specified\n                  (group \"Growth Equity\" :weight 60\n                    (weight :method momentum :lookback 60\n                      (asset SPY)\n                      (asset QQQ)\n                      (asset IWM)\n                      (asset VWO)))\n                  (group \"Factor Tilt\" :weight 25\n                    (weight :method momentum :lookback 60\n                      (asset MTUM)\n                      (asset SIZE)\n                      (asset QUAL)))\n                  (group \"Minimal Bonds\" :weight 15\n                    (weight :method equal\n                      (asset TLT)\n                      (asset IEF))))))))))))"
+  },
+  {
+    "id": "sector-rotation-tactical",
+    "name": "Sector Rotation Tactical",
+    "description": "Rotate into top 3 sectors by momentum with trend filter.",
+    "category": "TEMPLATE_CATEGORY_TACTICAL",
+    "asset_class": "ASSET_CLASS_EQUITY",
+    "tags": [
+      "sectors",
+      "rotation",
+      "momentum",
+      "tactical"
+    ],
+    "difficulty": "TEMPLATE_DIFFICULTY_ADVANCED",
+    "config_sexpr": "(strategy \"Sector Rotation Tactical\"\n  :rebalance weekly\n  :benchmark SPY\n  (if (> (price SPY) (sma SPY 200))\n    (if (> (price SPY) (sma SPY 50))\n      (group \"Strong Uptrend\"\n        (weight :method specified\n          (group \"Top Cyclicals\" :weight 60\n            (filter :by momentum :select (top 3) :lookback 90\n        (weight :method equal\n                (asset XLK)\n                (asset XLF)\n                (asset XLI)\n                (asset XLY)\n                (asset XLC))))\n          (group \"Top Defensives\" :weight 25\n            (filter :by momentum :select (top 2) :lookback 90\n        (weight :method equal\n                (asset XLV)\n                (asset XLP)\n                (asset XLU))))\n          (group \"Commodities\" :weight 15\n            (weight :method momentum :lookback 60\n              (asset XLE)\n              (asset XLB)))))\n      (else\n        (group \"Weakening Uptrend\"\n          (weight :method specified\n            (group \"Quality Sectors\" :weight 50\n              (filter :by momentum :select (top 2) :lookback 60\n        (weight :method equal\n                  (asset XLK)\n                  (asset XLV)\n                  (asset XLP))))\n            (group \"Bond Buffer\" :weight 30\n              (weight :method equal\n                (asset IEF)\n                (asset TLT)\n                (asset AGG)))\n            (group \"Gold Hedge\" :weight 20\n              (weight :method equal\n                (asset GLD)\n                (asset IAU)))))))\n    (else\n      (if (< (price SPY) (sma SPY 50))\n        (group \"Strong Downtrend\"\n          (weight :method specified\n            (group \"Full Defense\" :weight 70\n              (weight :method inverse-volatility :lookback 20\n                (asset SHY)\n                (asset IEF)\n                (asset TLT)\n                (asset BIL)))\n            (group \"Safe Havens\" :weight 30\n              (weight :method equal\n                (asset GLD)\n                (asset IAU)\n                (asset TAIL)))))\n        (else\n          (group \"Bottoming\"\n            (weight :method specified\n              (group \"Defensive Equity\" :weight 40\n                (weight :method inverse-volatility :lookback 30\n                  (asset XLP)\n                  (asset XLU)\n                  (asset XLV)\n                  (asset USMV)))\n              (group \"Duration\" :weight 40\n                (weight :method equal\n                  (asset TLT)\n                  (asset IEF)\n                  (asset AGG)))\n              (group \"Gold\" :weight 20\n                (weight :method equal\n                  (asset GLD)\n                  (asset IAU))))))))))"
+  },
+  {
+    "id": "macd-regime-tactical",
+    "name": "MACD Regime Tactical",
+    "description": "Use MACD histogram for market regime detection—positive histogram is risk-on, negative is defensive.",
+    "category": "TEMPLATE_CATEGORY_TACTICAL",
+    "asset_class": "ASSET_CLASS_MULTI_ASSET",
+    "tags": [
+      "macd",
+      "histogram",
+      "regime",
+      "tactical"
+    ],
+    "difficulty": "TEMPLATE_DIFFICULTY_ADVANCED",
+    "config_sexpr": "(strategy \"MACD Regime Tactical\"\n  :rebalance daily\n  :benchmark SPY\n  (if (> (macd SPY 12 26 9 :histogram) 0)\n    (if (> (price SPY) (sma SPY 200))\n      (group \"Strong Bull\"\n        (weight :method specified\n          (group \"Growth Core\" :weight 50\n            (weight :method momentum :lookback 60\n              (asset SPY)\n              (asset QQQ)\n              (asset VGT)\n              (asset SMH)))\n          (group \"International\" :weight 25\n            (filter :by momentum :select (top 2) :lookback 60\n        (weight :method equal\n                (asset VEA)\n                (asset VWO)\n                (asset EFA))))\n          (group \"Small Bonds\" :weight 25\n            (weight :method equal\n              (asset TLT)\n              (asset IEF)))))\n      (else\n        (group \"Recovery Phase\"\n          (weight :method specified\n            (group \"Broad Equity\" :weight 40\n              (weight :method equal\n                (asset SPY)\n                (asset VTI)\n                (asset VOO)))\n            (group \"Bonds\" :weight 40\n              (weight :method equal\n                (asset TLT)\n                (asset IEF)\n                (asset AGG)))\n            (group \"Alternatives\" :weight 20\n              (weight :method equal\n                (asset GLD)\n                (asset VNQ)))))))\n    (else\n      (if (> (price SPY) (sma SPY 200))\n        (group \"Weakening Bull\"\n          (weight :method specified\n            (group \"Defensive Equity\" :weight 35\n              (weight :method inverse-volatility :lookback 30\n                (asset USMV)\n                (asset SPLV)\n                (asset XLP)\n                (asset XLU)))\n            (group \"Duration\" :weight 40\n              (weight :method equal\n                (asset TLT)\n                (asset IEF)\n                (asset VGIT)))\n            (group \"Hedges\" :weight 25\n              (weight :method equal\n                (asset GLD)\n                (asset SHY)))))\n        (else\n          (group \"Bear Market\"\n            (weight :method specified\n              (group \"Flight to Safety\" :weight 50\n                (weight :method inverse-volatility :lookback 20\n                  (asset TLT)\n                  (asset IEF)\n                  (asset SHY)\n                  (asset BIL)))\n              (group \"Hard Assets\" :weight 35\n                (weight :method equal\n                  (asset GLD)\n                  (asset IAU)\n                  (asset TIP)))\n              (group \"Cash\" :weight 15\n                (weight :method equal\n                  (asset MINT)\n                  (asset BIL))))))))))"
+  },
+  {
+    "id": "multi-regime-adaptive",
+    "name": "Multi-Regime Adaptive Allocation",
+    "description": "Three-tier VIX regime system: crisis mode (defensive), cautious mode (balanced), risk-on mode (aggressive).",
+    "category": "TEMPLATE_CATEGORY_TACTICAL",
+    "asset_class": "ASSET_CLASS_MULTI_ASSET",
+    "tags": [
+      "regime",
+      "vix",
+      "adaptive",
+      "multi-tier"
+    ],
+    "difficulty": "TEMPLATE_DIFFICULTY_ADVANCED",
+    "config_sexpr": "(strategy \"Multi-Regime Adaptive\"\n  :rebalance daily\n  :benchmark SPY\n  (if (> (price VIX) 35)\n    (group \"Crisis Mode\"\n      (weight :method specified\n        (group \"Cash & Short Duration\" :weight 45\n          (weight :method equal\n            (asset SHY)\n            (asset BIL)\n            (asset MINT)\n            (asset VGSH)))\n        (group \"Long Duration\" :weight 30\n          (weight :method equal\n            (asset TLT)\n            (asset EDV)\n            (asset ZROZ)))\n        (group \"Gold & Hedges\" :weight 25\n          (weight :method equal\n            (asset GLD)\n            (asset IAU)\n            (asset TAIL)))))\n    (else\n      (if (> (price VIX) 25)\n        (group \"High Caution Mode\"\n          (weight :method specified\n            (group \"Defensive Equity\" :weight 30\n              (weight :method inverse-volatility :lookback 20\n                (asset USMV)\n                (asset SPLV)\n                (asset XLP)\n                (asset XLU)\n                (asset XLV)))\n            (group \"Quality Bonds\" :weight 45\n              (weight :method equal\n                (asset TLT)\n                (asset IEF)\n                (asset AGG)\n                (asset VGIT)))\n            (group \"Alternatives\" :weight 25\n              (weight :method equal\n                (asset GLD)\n                (asset VNQ)\n                (asset TIP)))))\n        (else\n          (if (> (price VIX) 18)\n            (group \"Cautious Mode\"\n              (weight :method specified\n                (group \"Broad Equity\" :weight 45\n                  (weight :method equal\n                    (asset SPY)\n                    (asset VTI)\n                    (asset VOO)\n                    (asset VEA)))\n                (group \"Bonds\" :weight 35\n                  (weight :method equal\n                    (asset TLT)\n                    (asset IEF)\n                    (asset AGG)))\n                (group \"Alternatives\" :weight 20\n                  (weight :method equal\n                    (asset GLD)\n                    (asset VNQ)\n                    (asset DBC)))))\n            (else\n              (group \"Risk-On Mode\"\n                (weight :method specified\n                  (group \"Growth Equity\" :weight 55\n                    (weight :method momentum :lookback 60\n                      (asset SPY)\n                      (asset QQQ)\n                      (asset IWM)\n                      (asset VWO)\n                      (asset VEA)))\n                  (group \"Factor Exposure\" :weight 25\n                    (filter :by momentum :select (top 3) :lookback 60\n        (weight :method equal\n                        (asset MTUM)\n                        (asset SIZE)\n                        (asset QUAL)\n                        (asset VLUE))))\n                  (group \"Minimal Bonds\" :weight 20\n                    (weight :method equal\n                      (asset TLT)\n                      (asset IEF)\n                      (asset VNQ))))))))))))"
+  },
+  {
+    "id": "global-macro-multi-asset",
+    "name": "Global Macro Multi-Asset",
+    "description": "Institutional-style global macro: US/International equity rotation, inflation-protected bonds, trend-filtered commodities.",
+    "category": "TEMPLATE_CATEGORY_TACTICAL",
+    "asset_class": "ASSET_CLASS_MULTI_ASSET",
+    "tags": [
+      "global",
+      "macro",
+      "rotation",
+      "institutional"
+    ],
+    "difficulty": "TEMPLATE_DIFFICULTY_ADVANCED",
+    "config_sexpr": "(strategy \"Global Macro Multi-Asset\"\n  :rebalance weekly\n  :benchmark SPY\n  (weight :method specified\n    (group \"Equity Rotation\" :weight 35\n      (if (> (momentum SPY 90) (momentum VEU 90))\n        (if (> (price SPY) (sma SPY 200))\n          (weight :method momentum :lookback 60\n            (asset SPY)\n            (asset QQQ)\n            (asset VTI)\n            (asset IWM))\n          (else\n            (weight :method inverse-volatility :lookback 30\n              (asset SPY)\n              (asset VTI)\n              (asset USMV))))\n        (else\n          (if (> (price VEU) (sma VEU 200))\n            (weight :method momentum :lookback 60\n              (asset VEU)\n              (asset VEA)\n              (asset VWO)\n              (asset EFA))\n            (else\n              (weight :method equal\n                (asset SHY)\n                (asset IEF)))))))\n    (group \"Inflation Protected\" :weight 25\n      (if (> (momentum TIP 60) 0)\n        (weight :method equal\n          (asset TIP)\n          (asset VTIP)\n          (asset SCHP)\n          (asset STIP))\n        (else\n          (weight :method equal\n            (asset IEF)\n            (asset VGIT)))))\n    (group \"Commodities\" :weight 25\n      (if (> (price DBC) (sma DBC 100))\n        (if (> (momentum GLD 60) (momentum DBC 60))\n          (weight :method equal\n            (asset GLD)\n            (asset IAU)\n            (asset SGOL))\n          (else\n            (weight :method momentum :lookback 60\n              (asset DBC)\n              (asset PDBC)\n              (asset DBA)\n              (asset DBE))))\n        (else\n          (weight :method equal\n            (asset SHY)\n            (asset BIL)))))\n    (group \"Trend Following\" :weight 15\n      (weight :method inverse-volatility :lookback 60\n        (asset DBMF)\n        (asset KMLM)\n        (asset CTA)))))"
+  },
+  {
+    "id": "risk-on-off",
+    "name": "Risk-On/Risk-Off Tactical",
+    "description": "Switch between aggressive growth and defensive positions based on market regime.",
+    "category": "TEMPLATE_CATEGORY_TACTICAL",
+    "asset_class": "ASSET_CLASS_MULTI_ASSET",
+    "tags": [
+      "regime",
+      "risk-management"
+    ],
+    "difficulty": "TEMPLATE_DIFFICULTY_ADVANCED",
+    "config_sexpr": "(strategy \"Risk-On/Risk-Off Tactical\"\n  :rebalance daily\n  :benchmark SPY\n  (weight :method specified\n    (if (> (price SPY) (sma SPY 200))\n      (if (> (price SPY) (sma SPY 50))\n        (group \"Full Risk On\" :weight 85\n          (weight :method specified\n            (group \"Growth Core\" :weight 40\n              (weight :method momentum :lookback 60\n                (asset QQQ)\n                (asset VGT)\n                (asset SMH)\n                (asset ARKK)\n                (asset XBI)))\n            (group \"High Beta\" :weight 35\n              (filter :by momentum :select (top 4) :lookback 60\n        (weight :method equal\n                  (asset TSLA)\n                  (asset NVDA)\n                  (asset AMD)\n                  (asset AMZN)\n                  (asset GOOGL)\n                  (asset META))))\n            (group \"International Growth\" :weight 25\n              (weight :method momentum :lookback 60\n                (asset VWO)\n                (asset EEM)\n                (asset VEA)\n                (asset EFA)))))\n        (else\n          (group \"Cautious Risk On\" :weight 85\n            (weight :method specified\n              (group \"Quality Growth\" :weight 50\n                (weight :method inverse-volatility :lookback 30\n                  (asset SPY)\n                  (asset QQQ)\n                  (asset VTI)\n                  (asset QUAL)))\n              (group \"Defensive Growth\" :weight 50\n                (weight :method equal\n                  (asset USMV)\n                  (asset SPLV)\n                  (asset XLV)\n                  (asset XLP)))))))\n      (else\n        (if (> (price SPY) (sma SPY 50))\n          (group \"Early Recovery\" :weight 85\n            (weight :method specified\n              (group \"Broad Equity\" :weight 50\n                (weight :method equal\n                  (asset SPY)\n                  (asset VTI)\n                  (asset VOO)))\n              (group \"Bonds\" :weight 30\n                (weight :method equal\n                  (asset TLT)\n                  (asset IEF)\n                  (asset AGG)))\n              (group \"Gold\" :weight 20\n                (weight :method equal\n                  (asset GLD)\n                  (asset IAU)))))\n          (else\n            (group \"Risk Off\" :weight 85\n              (weight :method specified\n                (group \"Treasuries\" :weight 45\n                  (weight :method inverse-volatility :lookback 20\n                    (asset TLT)\n                    (asset IEF)\n                    (asset SHY)\n                    (asset VGIT)))\n                (group \"Defensive Equity\" :weight 25\n                  (weight :method equal\n                    (asset XLU)\n                    (asset XLP)\n                    (asset USMV)\n                    (asset SPLV)))\n                (group \"Safe Havens\" :weight 30\n                  (weight :method equal\n                    (asset GLD)\n                    (asset IAU)\n                    (asset TAIL)\n                    (asset TIP)))))))))\n    (group \"Core Anchor\" :weight 15\n      (weight :method inverse-volatility :lookback 60\n        (asset VTI)\n        (asset BND)\n        (asset BNDX)\n        (asset VNQ)))))"
+  },
+  {
+    "id": "ma-crossover",
+    "name": "Moving Average Crossover",
+    "description": "Trend-following allocation using EMA crossovers.",
+    "category": "TEMPLATE_CATEGORY_TREND",
+    "asset_class": "ASSET_CLASS_MULTI_ASSET",
+    "tags": [
+      "trend",
+      "ema",
+      "crossover"
+    ],
+    "difficulty": "TEMPLATE_DIFFICULTY_BEGINNER",
+    "config_sexpr": "(strategy \"Moving Average Crossover\"\n  :rebalance daily\n  :benchmark SPY\n  (if (> (ema SPY 12) (ema SPY 26))\n    (group \"Risk On\"\n      (weight :method equal\n        (asset SPY)\n        (asset VTI)\n        (asset VOO)))\n    (else\n      (group \"Risk Off\"\n        (weight :method equal\n          (asset TLT)\n          (asset IEF)\n          (asset SHY))))))"
+  },
+  {
+    "id": "dual-ma",
+    "name": "Dual Moving Average",
+    "description": "Golden cross strategy—bullish when 50-day crosses above 200-day moving average.",
+    "category": "TEMPLATE_CATEGORY_TREND",
+    "asset_class": "ASSET_CLASS_MULTI_ASSET",
+    "tags": [
+      "golden-cross",
+      "moving-average",
+      "crossover"
+    ],
+    "difficulty": "TEMPLATE_DIFFICULTY_INTERMEDIATE",
+    "config_sexpr": "(strategy \"Dual Moving Average\"\n  :rebalance daily\n  :benchmark SPY\n  (if (> (sma SPY 50) (sma SPY 200))\n    (group \"Bull Market\"\n      (weight :method specified\n        (group \"US Equity\" :weight 60\n          (weight :method momentum :lookback 60\n            (asset SPY)\n            (asset VTI)\n            (asset VOO)\n            (asset IVV)))\n        (group \"Growth Tilt\" :weight 40\n          (weight :method momentum :lookback 60\n            (asset QQQ)\n            (asset VGT)\n            (asset IWF)))))\n    (else\n      (group \"Bear Market\"\n        (weight :method specified\n          (group \"Duration\" :weight 50\n            (weight :method inverse-volatility :lookback 30\n              (asset TLT)\n              (asset IEF)\n              (asset VGIT)\n              (asset EDV)))\n          (group \"Cash & Gold\" :weight 50\n            (weight :method equal\n              (asset SHY)\n              (asset GLD)\n              (asset IAU)\n              (asset BIL))))))))"
+  },
+  {
+    "id": "dual-momentum",
+    "name": "Dual Momentum",
+    "description": "Classic dual momentum: compare US vs International, allocate to winner or bonds.",
+    "category": "TEMPLATE_CATEGORY_TREND",
+    "asset_class": "ASSET_CLASS_MULTI_ASSET",
+    "tags": [
+      "momentum",
+      "trend",
+      "dual-momentum"
+    ],
+    "difficulty": "TEMPLATE_DIFFICULTY_ADVANCED",
+    "config_sexpr": "(strategy \"Dual Momentum\"\n  :rebalance monthly\n  :benchmark SPY\n  (if (> (momentum SPY 252) 0)\n    (if (> (momentum SPY 252) (momentum EFA 252))\n      (group \"US Equity\"\n        (weight :method specified\n          (group \"Large Cap\" :weight 60\n            (weight :method momentum :lookback 60\n              (asset SPY)\n              (asset VTI)\n              (asset VOO)))\n          (group \"Mid/Small\" :weight 40\n            (weight :method momentum :lookback 60\n              (asset IJH)\n              (asset IWM)\n              (asset VB)))))\n      (else\n        (group \"International Equity\"\n          (weight :method specified\n            (group \"Developed\" :weight 60\n              (weight :method momentum :lookback 60\n                (asset EFA)\n                (asset VEA)\n                (asset IEFA)\n                (asset SCHF)))\n            (group \"Emerging\" :weight 40\n              (weight :method momentum :lookback 60\n                (asset VWO)\n                (asset EEM)\n                (asset IEMG)))))))\n    (else\n      (group \"Bonds\"\n        (weight :method specified\n          (group \"Treasury\" :weight 60\n            (weight :method inverse-volatility :lookback 30\n              (asset AGG)\n              (asset BND)\n              (asset TLT)\n              (asset IEF)))\n          (group \"Short Duration\" :weight 40\n            (weight :method equal\n              (asset SHY)\n              (asset VGSH)\n              (asset BIL))))))))"
+  },
+  {
+    "id": "donchian-breakout",
+    "name": "Donchian Channel Breakout",
+    "description": "Turtle trading inspired breakout strategy.",
+    "category": "TEMPLATE_CATEGORY_TREND",
+    "asset_class": "ASSET_CLASS_MULTI_ASSET",
+    "tags": [
+      "breakout",
+      "donchian",
+      "turtle"
+    ],
+    "difficulty": "TEMPLATE_DIFFICULTY_ADVANCED",
+    "config_sexpr": "(strategy \"Donchian Breakout\"\n  :rebalance daily\n  :benchmark SPY\n  (if (> (price SPY) (donchian SPY 20 :upper))\n    (group \"Breakout Long\"\n      (weight :method specified\n        (group \"Core Equity\" :weight 60\n          (weight :method momentum :lookback 20\n            (asset SPY)\n            (asset QQQ)\n            (asset IWM)\n            (asset VTI)))\n        (group \"Leveraged Satellite\" :weight 40\n          (weight :method inverse-volatility :lookback 10\n            (asset SSO)\n            (asset QLD)\n            (asset UWM)))))\n    (else\n      (if (< (price SPY) (donchian SPY 20 :lower))\n        (group \"Breakdown Defensive\"\n          (weight :method specified\n            (group \"Treasuries\" :weight 50\n              (weight :method inverse-volatility :lookback 20\n                (asset TLT)\n                (asset IEF)\n                (asset SHY)\n                (asset VGIT)))\n            (group \"Safe Havens\" :weight 50\n              (weight :method equal\n                (asset GLD)\n                (asset IAU)\n                (asset TAIL)\n                (asset BIL)))))\n        (else\n          (group \"Range Bound\"\n            (weight :method specified\n              (group \"Balanced Equity\" :weight 50\n                (weight :method inverse-volatility :lookback 30\n                  (asset SPY)\n                  (asset VTI)\n                  (asset USMV)\n                  (asset SPLV)))\n              (group \"Bonds\" :weight 50\n                (weight :method equal\n                  (asset TLT)\n                  (asset IEF)\n                  (asset AGG)\n                  (asset BND))))))))))"
+  },
+  {
+    "id": "multi-asset-trend",
+    "name": "Multi-Asset Trend",
+    "description": "Trend following across 4 major asset classes with individual trend filters.",
+    "category": "TEMPLATE_CATEGORY_TREND",
+    "asset_class": "ASSET_CLASS_MULTI_ASSET",
+    "tags": [
+      "multi-asset",
+      "trend",
+      "diversified"
+    ],
+    "difficulty": "TEMPLATE_DIFFICULTY_ADVANCED",
+    "config_sexpr": "(strategy \"Multi-Asset Trend\"\n  :rebalance weekly\n  :benchmark SPY\n  (weight :method specified\n    (group \"Equities\" :weight 30\n      (if (> (price SPY) (sma SPY 200))\n        (if (> (momentum SPY 60) (momentum VEU 60))\n          (weight :method momentum :lookback 60\n            (asset SPY)\n            (asset VTI)\n            (asset QQQ)\n            (asset IWM))\n          (else\n            (weight :method momentum :lookback 60\n              (asset VEU)\n              (asset VEA)\n              (asset VWO)\n              (asset EFA))))\n        (else\n          (weight :method equal\n            (asset SHY)\n            (asset BIL)\n            (asset MINT)))))\n    (group \"Bonds\" :weight 25\n      (if (> (price TLT) (sma TLT 200))\n        (weight :method inverse-volatility :lookback 30\n          (asset TLT)\n          (asset IEF)\n          (asset EDV)\n          (asset ZROZ))\n        (else\n          (weight :method equal\n            (asset SHY)\n            (asset VGSH)\n            (asset BIL)))))\n    (group \"Gold\" :weight 20\n      (if (> (price GLD) (sma GLD 200))\n        (weight :method equal\n          (asset GLD)\n          (asset IAU)\n          (asset SGOL))\n        (else\n          (weight :method equal\n            (asset SHY)\n            (asset BIL)))))\n    (group \"Commodities\" :weight 25\n      (if (> (price DBC) (sma DBC 200))\n        (filter :by momentum :select (top 2) :lookback 60\n        (weight :method equal\n            (asset DBC)\n            (asset PDBC)\n            (asset DBA)\n            (asset DBE)\n            (asset DBB)))\n        (else\n          (weight :method equal\n            (asset SHY)\n            (asset BIL)))))))"
+  },
+  {
+    "id": "turtle-trend-system",
+    "name": "Turtle Trend System",
+    "description": "Full turtle rules implementation with channel breakouts and position sizing.",
+    "category": "TEMPLATE_CATEGORY_TREND",
+    "asset_class": "ASSET_CLASS_MULTI_ASSET",
+    "tags": [
+      "turtle",
+      "breakout",
+      "position-sizing",
+      "trend"
+    ],
+    "difficulty": "TEMPLATE_DIFFICULTY_ADVANCED",
+    "config_sexpr": "(strategy \"Turtle Trend System\"\n  :rebalance daily\n  :benchmark SPY\n  (if (> (price SPY) (donchian SPY 20 :upper))\n    (group \"Long Entry\"\n      (weight :method specified\n        (group \"Core Positions\" :weight 60\n          (weight :method inverse-volatility :lookback 20\n            (asset SPY)\n            (asset QQQ)\n            (asset IWM)\n            (asset VEA)))\n        (group \"Commodity Trend\" :weight 25\n          (if (> (price GLD) (donchian GLD 20 :upper))\n            (weight :method equal\n              (asset GLD)\n              (asset DBC))\n            (else\n              (weight :method equal\n                (asset SHY)\n                (asset BIL)))))\n        (group \"Bond Trend\" :weight 15\n          (if (> (price TLT) (donchian TLT 20 :upper))\n            (weight :method equal\n              (asset TLT)\n              (asset IEF))\n            (else\n              (weight :method equal\n                (asset SHY)\n                (asset BIL)))))))\n    (else\n      (if (< (price SPY) (donchian SPY 10 :lower))\n        (group \"Exit to Safety\"\n          (weight :method specified\n            (group \"Cash\" :weight 50\n              (weight :method equal\n                (asset SHY)\n                (asset BIL)\n                (asset MINT)\n                (asset VGSH)))\n            (group \"Safe Havens\" :weight 50\n              (weight :method inverse-volatility :lookback 20\n                (asset TLT)\n                (asset GLD)\n                (asset IAU)\n                (asset TAIL)))))\n        (else\n          (group \"Hold Pattern\"\n            (weight :method specified\n              (group \"Reduced Equity\" :weight 40\n                (weight :method inverse-volatility :lookback 30\n                  (asset SPY)\n                  (asset VTI)\n                  (asset USMV)))\n              (group \"Bonds\" :weight 40\n                (weight :method equal\n                  (asset TLT)\n                  (asset IEF)\n                  (asset AGG)))\n              (group \"Gold\" :weight 20\n                (weight :method equal\n                  (asset GLD)\n                  (asset IAU))))))))))"
+  },
+  {
+    "id": "adaptive-trend-filter",
+    "name": "Adaptive Trend Filter",
+    "description": "ATR-based adaptive lookback for trend following with volatility adjustment.",
+    "category": "TEMPLATE_CATEGORY_TREND",
+    "asset_class": "ASSET_CLASS_MULTI_ASSET",
+    "tags": [
+      "adaptive",
+      "atr",
+      "trend",
+      "volatility"
+    ],
+    "difficulty": "TEMPLATE_DIFFICULTY_ADVANCED",
+    "config_sexpr": "(strategy \"Adaptive Trend Filter\"\n  :rebalance daily\n  :benchmark SPY\n  (if (> (price VIX) 30)\n    (group \"High Vol Regime\"\n      (if (> (price SPY) (sma SPY 50))\n        (weight :method specified\n          (group \"Short Lookback Long\" :weight 50\n            (weight :method inverse-volatility :lookback 10\n              (asset SPY)\n              (asset VTI)\n              (asset USMV)))\n          (group \"Hedges\" :weight 50\n            (weight :method equal\n              (asset TLT)\n              (asset GLD)\n              (asset SHY)\n              (asset TAIL))))\n        (else\n          (weight :method specified\n            (group \"Defensive\" :weight 70\n              (weight :method inverse-volatility :lookback 10\n                (asset TLT)\n                (asset IEF)\n                (asset SHY)\n                (asset BIL)))\n            (group \"Safe Havens\" :weight 30\n              (weight :method equal\n                (asset GLD)\n                (asset IAU)\n                (asset TAIL)))))))\n    (else\n      (if (> (price VIX) 20)\n        (group \"Medium Vol Regime\"\n          (if (> (price SPY) (sma SPY 100))\n            (weight :method specified\n              (group \"Moderate Equity\" :weight 60\n                (weight :method inverse-volatility :lookback 30\n                  (asset SPY)\n                  (asset VTI)\n                  (asset QQQ)\n                  (asset USMV)))\n              (group \"Bonds\" :weight 40\n                (weight :method equal\n                  (asset TLT)\n                  (asset IEF)\n                  (asset AGG))))\n            (else\n              (weight :method specified\n                (group \"Defensive Equity\" :weight 40\n                  (weight :method inverse-volatility :lookback 30\n                    (asset USMV)\n                    (asset SPLV)\n                    (asset XLP)\n                    (asset XLU)))\n                (group \"Bonds\" :weight 60\n                  (weight :method equal\n                    (asset TLT)\n                    (asset IEF)\n                    (asset AGG)\n                    (asset SHY)))))))\n        (else\n          (group \"Low Vol Regime\"\n            (if (> (price SPY) (sma SPY 200))\n              (weight :method specified\n                (group \"Full Risk\" :weight 70\n                  (weight :method momentum :lookback 60\n                    (asset SPY)\n                    (asset QQQ)\n                    (asset IWM)\n                    (asset VEA)\n                    (asset VWO)))\n                (group \"Satellite\" :weight 30\n                  (filter :by momentum :select (top 2) :lookback 60\n        (weight :method equal\n                      (asset MTUM)\n                      (asset SIZE)\n                      (asset QUAL)\n                      (asset VLUE)))))\n              (else\n                (weight :method specified\n                  (group \"Cautious\" :weight 50\n                    (weight :method equal\n                      (asset SPY)\n                      (asset VTI)\n                      (asset USMV)))\n                  (group \"Bonds\" :weight 50\n                    (weight :method equal\n                      (asset TLT)\n                      (asset IEF)\n                      (asset AGG))))))))))))"
+  },
+  {
+    "id": "trend-mean-reversion-hybrid",
+    "name": "Trend Mean Reversion Hybrid",
+    "description": "Trend core with mean reversion satellite for diversified alpha.",
+    "category": "TEMPLATE_CATEGORY_TREND",
+    "asset_class": "ASSET_CLASS_MULTI_ASSET",
+    "tags": [
+      "hybrid",
+      "trend",
+      "mean-reversion",
+      "diversified"
+    ],
+    "difficulty": "TEMPLATE_DIFFICULTY_ADVANCED",
+    "config_sexpr": "(strategy \"Trend Mean Reversion Hybrid\"\n  :rebalance daily\n  :benchmark SPY\n  (weight :method specified\n    (group \"Trend Core\" :weight 50\n      (if (> (price SPY) (sma SPY 200))\n        (if (> (momentum SPY 60) (momentum TLT 60))\n          (weight :method momentum :lookback 60\n            (asset SPY)\n            (asset QQQ)\n            (asset VTI)\n            (asset IWM))\n          (else\n            (weight :method inverse-volatility :lookback 30\n              (asset SPY)\n              (asset VTI)\n              (asset TLT)\n              (asset IEF))))\n        (else\n          (weight :method inverse-volatility :lookback 30\n            (asset TLT)\n            (asset IEF)\n            (asset GLD)\n            (asset SHY)))))\n    (group \"Mean Reversion Satellite\" :weight 35\n      (if (< (rsi SPY 14) 25)\n        (group \"Deep Oversold\"\n          (weight :method specified\n            (group \"Aggressive Long\" :weight 70\n              (weight :method equal\n                (asset SPY)\n                (asset QQQ)\n                (asset IWM)))\n            (group \"Leveraged\" :weight 30\n              (weight :method equal\n                (asset SSO)\n                (asset QLD)))))\n        (else\n          (if (< (rsi SPY 14) 35)\n            (group \"Oversold\"\n              (weight :method inverse-volatility :lookback 20\n                (asset SPY)\n                (asset VTI)\n                (asset QQQ)\n                (asset USMV)))\n            (else\n              (if (> (rsi SPY 14) 75)\n                (group \"Deep Overbought\"\n                  (weight :method inverse-volatility :lookback 20\n                    (asset TLT)\n                    (asset IEF)\n                    (asset GLD)\n                    (asset SHY)))\n                (else\n                  (if (> (rsi SPY 14) 65)\n                    (group \"Overbought\"\n                      (weight :method equal\n                        (asset USMV)\n                        (asset SPLV)\n                        (asset TLT)\n                        (asset IEF)))\n                    (else\n                      (group \"Neutral\"\n                        (weight :method equal\n                          (asset SPY)\n                          (asset TLT)\n                          (asset SHY))))))))))))\n    (group \"Anchor\" :weight 15\n      (weight :method inverse-volatility :lookback 60\n        (asset VTI)\n        (asset BND)\n        (asset GLD)\n        (asset VNQ)))))"
+  },
+  {
+    "id": "pullback-buyer",
+    "name": "Pullback Buyer",
+    "description": "Buy 5% pullbacks in uptrending markets for mean reversion entries.",
+    "category": "TEMPLATE_CATEGORY_MEAN_REVERSION",
+    "asset_class": "ASSET_CLASS_EQUITY",
+    "tags": [
+      "pullback",
+      "dip-buying",
+      "beginner",
+      "mean-reversion"
+    ],
+    "difficulty": "TEMPLATE_DIFFICULTY_BEGINNER",
+    "config_sexpr": "(strategy \"Pullback Buyer\"\n  :rebalance daily\n  :benchmark SPY\n  (if (> (price SPY) (sma SPY 200))\n    (if (< (rsi SPY 5) 20)\n      (group \"Deep Oversold\"\n        (weight :method equal\n          (asset SPY)\n          (asset QQQ)\n          (asset VTI)))\n      (else\n        (if (< (rsi SPY 5) 30)\n          (group \"Oversold\"\n            (weight :method equal\n              (asset SPY)\n              (asset VTI)))\n          (else\n            (group \"Neutral\"\n              (weight :method equal\n                (asset SHY)\n                (asset BIL)\n                (asset MINT)))))))\n    (else\n      (group \"Downtrend Safety\"\n        (weight :method equal\n          (asset SHY)\n          (asset IEF)\n          (asset TLT))))))"
+  },
+  {
+    "id": "macd-strategy",
+    "name": "MACD Momentum",
+    "description": "Trade based on MACD histogram crossovers.",
+    "category": "TEMPLATE_CATEGORY_MEAN_REVERSION",
+    "asset_class": "ASSET_CLASS_MULTI_ASSET",
+    "tags": [
+      "momentum",
+      "macd"
+    ],
+    "difficulty": "TEMPLATE_DIFFICULTY_INTERMEDIATE",
+    "config_sexpr": "(strategy \"MACD Momentum\"\n  :rebalance daily\n  :benchmark SPY\n  (if (> (macd SPY 12 26 9 :histogram) 0)\n    (if (> (price SPY) (sma SPY 200))\n      (group \"Strong Long\"\n        (weight :method momentum :lookback 30\n          (asset SPY)\n          (asset QQQ)\n          (asset VTI)\n          (asset IWM)))\n      (else\n        (group \"Cautious Long\"\n          (weight :method inverse-volatility :lookback 20\n            (asset SPY)\n            (asset VTI)\n            (asset USMV)\n            (asset SPLV)))))\n    (else\n      (if (> (price SPY) (sma SPY 200))\n        (group \"Weakening\"\n          (weight :method specified\n            (group \"Reduced Equity\" :weight 40\n              (weight :method equal\n                (asset SPY)\n                (asset USMV)))\n            (group \"Bonds\" :weight 60\n              (weight :method equal\n                (asset TLT)\n                (asset IEF)\n                (asset SHY)))))\n        (else\n          (group \"Defensive\"\n            (weight :method inverse-volatility :lookback 20\n              (asset SHY)\n              (asset IEF)\n              (asset TLT)\n              (asset GLD))))))))"
+  },
+  {
+    "id": "rsi-mean-reversion",
+    "name": "RSI Mean Reversion",
+    "description": "Allocate to equities when oversold, bonds when overbought.",
+    "category": "TEMPLATE_CATEGORY_MEAN_REVERSION",
+    "asset_class": "ASSET_CLASS_MULTI_ASSET",
+    "tags": [
+      "mean-reversion",
+      "rsi",
+      "oscillator"
+    ],
+    "difficulty": "TEMPLATE_DIFFICULTY_INTERMEDIATE",
+    "config_sexpr": "(strategy \"RSI Mean Reversion\"\n  :rebalance daily\n  :benchmark SPY\n  (if (< (rsi SPY 14) 25)\n    (group \"Deep Oversold Long\"\n      (weight :method specified\n        (group \"Core Long\" :weight 70\n          (weight :method equal\n            (asset SPY)\n            (asset QQQ)\n            (asset VTI)))\n        (group \"Leverage Tilt\" :weight 30\n          (weight :method equal\n            (asset SSO)\n            (asset QLD)))))\n    (else\n      (if (< (rsi SPY 14) 35)\n        (group \"Oversold Long\"\n          (weight :method inverse-volatility :lookback 20\n            (asset SPY)\n            (asset VTI)\n            (asset QQQ)\n            (asset IWM)))\n        (else\n          (if (> (rsi SPY 14) 75)\n            (group \"Deep Overbought Defensive\"\n              (weight :method inverse-volatility :lookback 20\n                (asset TLT)\n                (asset IEF)\n                (asset GLD)\n                (asset SHY)))\n            (else\n              (if (> (rsi SPY 14) 65)\n                (group \"Overbought Cautious\"\n                  (weight :method specified\n                    (group \"Defensive Equity\" :weight 40\n                      (weight :method equal\n                        (asset USMV)\n                        (asset SPLV)\n                        (asset XLP)))\n                    (group \"Bonds\" :weight 60\n                      (weight :method equal\n                        (asset TLT)\n                        (asset IEF)\n                        (asset AGG)))))\n                (else\n                  (group \"Neutral\"\n                    (weight :method specified\n                      (group \"Equity\" :weight 50\n                        (weight :method equal\n                          (asset SPY)\n                          (asset VTI)))\n                      (group \"Bonds\" :weight 50\n                        (weight :method equal\n                          (asset TLT)\n                          (asset IEF))))))))))))))"
+  },
+  {
+    "id": "bollinger-bounce",
+    "name": "Bollinger Bounce",
+    "description": "Mean reversion strategy using Bollinger Bands.",
+    "category": "TEMPLATE_CATEGORY_MEAN_REVERSION",
+    "asset_class": "ASSET_CLASS_MULTI_ASSET",
+    "tags": [
+      "mean-reversion",
+      "bollinger",
+      "bands"
+    ],
+    "difficulty": "TEMPLATE_DIFFICULTY_INTERMEDIATE",
+    "config_sexpr": "(strategy \"Bollinger Bounce\"\n  :rebalance daily\n  :benchmark SPY\n  (if (< (price SPY) (bbands SPY 20 2 :lower))\n    (if (> (price SPY) (sma SPY 200))\n      (group \"Oversold in Uptrend\"\n        (weight :method specified\n          (group \"Core Long\" :weight 60\n            (weight :method equal\n              (asset SPY)\n              (asset QQQ)\n              (asset VTI)))\n          (group \"Momentum Tilt\" :weight 40\n            (weight :method momentum :lookback 20\n              (asset IWM)\n              (asset VWO)\n              (asset VEA)))))\n      (else\n        (group \"Oversold in Downtrend\"\n          (weight :method inverse-volatility :lookback 20\n            (asset SPY)\n            (asset VTI)\n            (asset USMV)\n            (asset SHY)))))\n    (else\n      (if (> (price SPY) (bbands SPY 20 2 :upper))\n        (if (> (price SPY) (sma SPY 200))\n          (group \"Overbought in Uptrend\"\n            (weight :method specified\n              (group \"Reduced Equity\" :weight 50\n                (weight :method equal\n                  (asset SPY)\n                  (asset USMV)\n                  (asset SPLV)))\n              (group \"Bond Buffer\" :weight 50\n                (weight :method equal\n                  (asset TLT)\n                  (asset IEF)\n                  (asset AGG)))))\n          (else\n            (group \"Overbought in Downtrend\"\n              (weight :method inverse-volatility :lookback 20\n                (asset TLT)\n                (asset IEF)\n                (asset GLD)\n                (asset SHY)))))\n        (else\n          (group \"Middle Band\"\n            (weight :method specified\n              (group \"Equity\" :weight 50\n                (weight :method equal\n                  (asset SPY)\n                  (asset VTI)\n                  (asset VOO)))\n              (group \"Bonds\" :weight 50\n                (weight :method equal\n                  (asset TLT)\n                  (asset IEF)\n                  (asset AGG))))))))))"
+  },
+  {
+    "id": "pairs-trading",
+    "name": "Pairs Trading",
+    "description": "Mean reversion on correlated asset pairs (KO/PEP).",
+    "category": "TEMPLATE_CATEGORY_MEAN_REVERSION",
+    "asset_class": "ASSET_CLASS_EQUITY",
+    "tags": [
+      "pairs",
+      "mean-reversion",
+      "statistical-arbitrage"
+    ],
+    "difficulty": "TEMPLATE_DIFFICULTY_ADVANCED",
+    "config_sexpr": "(strategy \"Pairs Trading\"\n  :rebalance daily\n  :benchmark SPY\n  (weight :method specified\n    (group \"Consumer Staples Pair\" :weight 35\n      (if (< (rsi KO 14) 30)\n        (weight :method specified\n          (asset KO :weight 70)\n          (asset PEP :weight 30))\n        (else\n          (if (< (rsi PEP 14) 30)\n            (weight :method specified\n              (asset PEP :weight 70)\n              (asset KO :weight 30))\n            (else\n              (weight :method equal\n                (asset KO)\n                (asset PEP)))))))\n    (group \"Tech Pair\" :weight 35\n      (if (< (rsi MSFT 14) 30)\n        (weight :method specified\n          (asset MSFT :weight 70)\n          (asset AAPL :weight 30))\n        (else\n          (if (< (rsi AAPL 14) 30)\n            (weight :method specified\n              (asset AAPL :weight 70)\n              (asset MSFT :weight 30))\n            (else\n              (weight :method equal\n                (asset MSFT)\n                (asset AAPL)))))))\n    (group \"Financial Pair\" :weight 30\n      (if (< (rsi JPM 14) 30)\n        (weight :method specified\n          (asset JPM :weight 70)\n          (asset BAC :weight 30))\n        (else\n          (if (< (rsi BAC 14) 30)\n            (weight :method specified\n              (asset BAC :weight 70)\n              (asset JPM :weight 30))\n            (else\n              (weight :method equal\n                (asset JPM)\n                (asset BAC)))))))))"
+  },
+  {
+    "id": "oversold-sectors",
+    "name": "Oversold Sectors",
+    "description": "Buy oversold sector ETFs for sector-level mean reversion.",
+    "category": "TEMPLATE_CATEGORY_MEAN_REVERSION",
+    "asset_class": "ASSET_CLASS_EQUITY",
+    "tags": [
+      "sectors",
+      "oversold",
+      "mean-reversion"
+    ],
+    "difficulty": "TEMPLATE_DIFFICULTY_ADVANCED",
+    "config_sexpr": "(strategy \"Oversold Sectors\"\n  :rebalance weekly\n  :benchmark SPY\n  (if (> (price SPY) (sma SPY 200))\n    (if (< (rsi XLK 14) 30)\n      (group \"Oversold Tech\"\n        (weight :method inverse-volatility :lookback 20\n          (asset XLK)\n          (asset SMH)\n          (asset SOXX)\n          (asset IGV)))\n      (else\n        (if (< (rsi XLF 14) 30)\n          (group \"Oversold Financials\"\n            (weight :method inverse-volatility :lookback 20\n              (asset XLF)\n              (asset KRE)\n              (asset KBE)\n              (asset IAI)))\n          (else\n            (if (< (rsi XLV 14) 30)\n              (group \"Oversold Healthcare\"\n                (weight :method inverse-volatility :lookback 20\n                  (asset XLV)\n                  (asset XBI)\n                  (asset IBB)\n                  (asset IHI)))\n              (else\n                (if (< (rsi XLE 14) 30)\n                  (group \"Oversold Energy\"\n                    (weight :method inverse-volatility :lookback 20\n                      (asset XLE)\n                      (asset XOP)\n                      (asset OIH)\n                      (asset AMLP)))\n                  (else\n                    (if (< (rsi XLI 14) 30)\n                      (group \"Oversold Industrials\"\n                        (weight :method inverse-volatility :lookback 20\n                          (asset XLI)\n                          (asset ITA)\n                          (asset XAR)))\n                      (else\n                        (group \"No Oversold - Cash\"\n                          (weight :method equal\n                            (asset SHY)\n                            (asset BIL)\n                            (asset MINT)))))))))))))\n    (else\n      (group \"Downtrend Safety\"\n        (weight :method inverse-volatility :lookback 20\n          (asset SHY)\n          (asset IEF)\n          (asset TLT)\n          (asset GLD))))))"
+  },
+  {
+    "id": "vix-term-structure",
+    "name": "VIX Term Structure",
+    "description": "VIX contango/backwardation plays for volatility mean reversion.",
+    "category": "TEMPLATE_CATEGORY_MEAN_REVERSION",
+    "asset_class": "ASSET_CLASS_MULTI_ASSET",
+    "tags": [
+      "vix",
+      "term-structure",
+      "contango",
+      "mean-reversion"
+    ],
+    "difficulty": "TEMPLATE_DIFFICULTY_ADVANCED",
+    "config_sexpr": "(strategy \"VIX Term Structure\"\n  :rebalance daily\n  :benchmark SPY\n  (if (> (price VIX) 35)\n    (group \"Extreme Fear - Fade\"\n      (weight :method specified\n        (group \"Core Equity\" :weight 50\n          (weight :method inverse-volatility :lookback 10\n            (asset SPY)\n            (asset VTI)\n            (asset QQQ)\n            (asset IWM)))\n        (group \"Safe Haven Hedge\" :weight 50\n          (weight :method equal\n            (asset TLT)\n            (asset GLD)\n            (asset SHY)\n            (asset TAIL)))))\n    (else\n      (if (> (price VIX) 25)\n        (group \"High Fear\"\n          (weight :method specified\n            (group \"Equity\" :weight 60\n              (weight :method inverse-volatility :lookback 20\n                (asset SPY)\n                (asset VTI)\n                (asset USMV)\n                (asset SPLV)))\n            (group \"Bonds\" :weight 40\n              (weight :method equal\n                (asset TLT)\n                (asset IEF)\n                (asset AGG)))))\n        (else\n          (if (> (price VIX) 18)\n            (group \"Moderate Fear\"\n              (weight :method specified\n                (group \"Equity\" :weight 70\n                  (weight :method momentum :lookback 60\n                    (asset SPY)\n                    (asset QQQ)\n                    (asset VTI)\n                    (asset IWM)))\n                (group \"Bonds\" :weight 30\n                  (weight :method equal\n                    (asset TLT)\n                    (asset IEF)))))\n            (else\n              (if (< (price VIX) 12)\n                (group \"Extreme Complacency\"\n                  (weight :method specified\n                    (group \"Reduced Equity\" :weight 50\n                      (weight :method equal\n                        (asset SPY)\n                        (asset USMV)\n                        (asset SPLV)))\n                    (group \"Hedges\" :weight 50\n                      (weight :method equal\n                        (asset TAIL)\n                        (asset VIXY)\n                        (asset TLT)\n                        (asset GLD)))))\n                (else\n                  (group \"Normal - Full Risk\"\n                    (weight :method specified\n                      (group \"Equity\" :weight 80\n                        (weight :method momentum :lookback 60\n                          (asset SPY)\n                          (asset QQQ)\n                          (asset VTI)\n                          (asset IWM)\n                          (asset VEA)))\n                      (group \"Bonds\" :weight 20\n                        (weight :method equal\n                          (asset TLT)\n                          (asset IEF))))))))))))))"
+  },
+  {
+    "id": "double-oversold-reversion",
+    "name": "Double Oversold Reversion",
+    "description": "Requires both RSI and Bollinger Band oversold confirmation—higher conviction mean reversion entries.",
+    "category": "TEMPLATE_CATEGORY_MEAN_REVERSION",
+    "asset_class": "ASSET_CLASS_EQUITY",
+    "tags": [
+      "double-confirmation",
+      "rsi",
+      "bollinger",
+      "mean-reversion"
+    ],
+    "difficulty": "TEMPLATE_DIFFICULTY_ADVANCED",
+    "config_sexpr": "(strategy \"Double Oversold Reversion\"\n  :rebalance daily\n  :benchmark SPY\n  (if (> (price SPY) (sma SPY 200))\n    (if (< (rsi SPY 14) 25)\n      (if (< (price SPY) (bbands SPY 20 2.5 :lower))\n        (group \"Double Confirm Deep Oversold\"\n          (weight :method specified\n            (group \"Core Long\" :weight 50\n              (weight :method equal\n                (asset SPY)\n                (asset QQQ)\n                (asset VTI)))\n            (group \"Leverage Satellite\" :weight 30\n              (weight :method equal\n                (asset SSO)\n                (asset QLD)\n                (asset UWM)))\n            (group \"High Beta\" :weight 20\n              (weight :method momentum :lookback 10\n                (asset IWM)\n                (asset VWO)\n                (asset ARKK)))))\n        (else\n          (group \"RSI Only Oversold\"\n            (weight :method inverse-volatility :lookback 15\n              (asset SPY)\n              (asset QQQ)\n              (asset VTI)\n              (asset IWM)))))\n      (else\n        (if (< (rsi SPY 14) 35)\n          (if (< (price SPY) (bbands SPY 20 2 :lower))\n            (group \"Moderate Double Confirm\"\n              (weight :method inverse-volatility :lookback 20\n                (asset SPY)\n                (asset VTI)\n                (asset QQQ)\n                (asset VOO)))\n            (else\n              (group \"Light Oversold\"\n                (weight :method equal\n                  (asset SPY)\n                  (asset VTI)\n                  (asset SHY)))))\n          (else\n            (if (> (rsi SPY 14) 75)\n              (if (> (price SPY) (bbands SPY 20 2.5 :upper))\n                (group \"Double Confirm Overbought\"\n                  (weight :method inverse-volatility :lookback 20\n                    (asset TLT)\n                    (asset IEF)\n                    (asset GLD)\n                    (asset SHY)))\n                (else\n                  (group \"RSI Only Overbought\"\n                    (weight :method specified\n                      (group \"Defensive Equity\" :weight 40\n                        (weight :method equal\n                          (asset USMV)\n                          (asset SPLV)\n                          (asset XLP)))\n                      (group \"Bonds\" :weight 60\n                        (weight :method equal\n                          (asset TLT)\n                          (asset IEF)\n                          (asset SHY)))))))\n              (else\n                (group \"Neutral Zone\"\n                  (weight :method specified\n                    (group \"Equity\" :weight 60\n                      (weight :method equal\n                        (asset SPY)\n                        (asset VTI)\n                        (asset VOO)))\n                    (group \"Bonds\" :weight 40\n                      (weight :method equal\n                        (asset IEF)\n                        (asset AGG)))))))))))\n    (else\n      (group \"Downtrend Protection\"\n        (weight :method inverse-volatility :lookback 20\n          (asset SHY)\n          (asset IEF)\n          (asset TLT)\n          (asset GLD)\n          (asset TAIL))))))"
+  },
+  {
+    "id": "crypto-market-cap",
+    "name": "Crypto Market Cap",
+    "description": "Market-cap weighted allocation to top cryptocurrencies—BTC, ETH, SOL.",
+    "category": "TEMPLATE_CATEGORY_ALTERNATIVES",
+    "asset_class": "ASSET_CLASS_CRYPTO",
+    "tags": [
+      "bitcoin",
+      "ethereum",
+      "market-cap"
+    ],
+    "difficulty": "TEMPLATE_DIFFICULTY_BEGINNER",
+    "config_sexpr": "(strategy \"Crypto Market Cap\"\n  :rebalance weekly\n  :benchmark BTCUSD\n  (weight :method specified\n    (group \"Large Cap\" :weight 70\n      (weight :method specified\n        (asset BTC :weight 70)\n        (asset ETH :weight 30)))\n    (group \"Mid Cap\" :weight 30\n      (weight :method equal\n        (asset SOL)\n        (asset AVAX)\n        (asset MATIC)\n        (asset DOT)))))"
+  },
+  {
+    "id": "real-assets-balanced",
+    "name": "Real Assets Balanced",
+    "description": "REITs, commodities, and TIPS for real asset exposure.",
+    "category": "TEMPLATE_CATEGORY_ALTERNATIVES",
+    "asset_class": "ASSET_CLASS_MULTI_ASSET",
+    "tags": [
+      "real-assets",
+      "reits",
+      "tips",
+      "alternatives"
+    ],
+    "difficulty": "TEMPLATE_DIFFICULTY_BEGINNER",
+    "config_sexpr": "(strategy \"Real Assets Balanced\"\n  :rebalance quarterly\n  :benchmark SPY\n  (weight :method specified\n    (group \"Real Estate\" :weight 30\n      (weight :method equal\n        (asset VNQ)\n        (asset VNQI)\n        (asset RWR)\n        (asset USRT)))\n    (group \"Commodities\" :weight 30\n      (weight :method equal\n        (asset DBC)\n        (asset PDBC)\n        (asset GLD)\n        (asset DBA)))\n    (group \"Inflation Protected\" :weight 25\n      (weight :method equal\n        (asset TIP)\n        (asset VTIP)\n        (asset SCHP)))\n    (group \"Precious Metals\" :weight 15\n      (weight :method equal\n        (asset GLD)\n        (asset IAU)\n        (asset SLV)))))"
+  },
+  {
+    "id": "dragon-portfolio",
+    "name": "Dragon Portfolio",
+    "description": "Chris Cole's 100-year portfolio—stocks, bonds, gold, commodity trend, and long volatility for all regimes.",
+    "category": "TEMPLATE_CATEGORY_ALTERNATIVES",
+    "asset_class": "ASSET_CLASS_MULTI_ASSET",
+    "tags": [
+      "chris-cole",
+      "artemis",
+      "100-year",
+      "famous-portfolio"
+    ],
+    "difficulty": "TEMPLATE_DIFFICULTY_BEGINNER",
+    "config_sexpr": "(strategy \"Dragon Portfolio\"\n  :rebalance quarterly\n  :benchmark SPY\n  (weight :method specified\n    (group \"Equity Growth\" :weight 24\n      (weight :method equal\n        (asset VTI)\n        (asset VEA)\n        (asset VWO)))\n    (group \"Fixed Income\" :weight 18\n      (weight :method equal\n        (asset TLT)\n        (asset IEF)\n        (asset AGG)))\n    (group \"Gold Store of Value\" :weight 19\n      (weight :method equal\n        (asset GLD)\n        (asset IAU)\n        (asset SGOL)))\n    (group \"Commodity Trend\" :weight 18\n      (weight :method equal\n        (asset DBMF)\n        (asset KMLM)\n        (asset CTA)))\n    (group \"Long Volatility\" :weight 21\n      (weight :method equal\n        (asset TAIL)\n        (asset VIXY)))))"
+  },
+  {
+    "id": "managed-futures-trend",
+    "name": "Managed Futures Trend",
+    "description": "CTA-style trend following via managed futures ETFs.",
+    "category": "TEMPLATE_CATEGORY_ALTERNATIVES",
+    "asset_class": "ASSET_CLASS_COMMODITY",
+    "tags": [
+      "managed-futures",
+      "trend",
+      "cta"
+    ],
+    "difficulty": "TEMPLATE_DIFFICULTY_INTERMEDIATE",
+    "config_sexpr": "(strategy \"Managed Futures Trend\"\n  :rebalance monthly\n  :benchmark SPY\n  (weight :method specified\n    (group \"Core CTA\" :weight 60\n      (weight :method inverse-volatility :lookback 60\n        (asset DBMF)\n        (asset KMLM)\n        (asset CTA)\n        (asset WTMF)))\n    (group \"Commodity Trend\" :weight 25\n      (filter :by momentum :select (top 2) :lookback 60\n        (weight :method equal\n          (asset DBC)\n          (asset PDBC)\n          (asset GLD)\n          (asset DBA))))\n    (group \"Cash Buffer\" :weight 15\n      (weight :method equal\n        (asset SHY)\n        (asset BIL)))))"
+  },
+  {
+    "id": "gold-miners-rotation",
+    "name": "Gold Miners Rotation",
+    "description": "Gold vs miners rotation based on relative strength.",
+    "category": "TEMPLATE_CATEGORY_ALTERNATIVES",
+    "asset_class": "ASSET_CLASS_COMMODITY",
+    "tags": [
+      "gold",
+      "miners",
+      "rotation",
+      "alternatives"
+    ],
+    "difficulty": "TEMPLATE_DIFFICULTY_INTERMEDIATE",
+    "config_sexpr": "(strategy \"Gold Miners Rotation\"\n  :rebalance monthly\n  :benchmark GLD\n  (if (> (momentum GLD 60) (momentum GDX 60))\n    (group \"Physical Gold\"\n      (weight :method equal\n        (asset GLD)\n        (asset IAU)\n        (asset SGOL)\n        (asset AAAU)))\n    (else\n      (if (> (momentum GDX 60) (momentum GDXJ 60))\n        (group \"Senior Miners\"\n          (weight :method inverse-volatility :lookback 30\n            (asset GDX)\n            (asset RING)\n            (asset SGDM)))\n        (else\n          (group \"Junior Miners\"\n            (weight :method inverse-volatility :lookback 30\n              (asset GDXJ)\n              (asset GOEX)\n              (asset SILJ))))))))"
+  },
+  {
+    "id": "commodity-momentum",
+    "name": "Commodity Momentum",
+    "description": "Trend following across commodity sectors with momentum weighting.",
+    "category": "TEMPLATE_CATEGORY_ALTERNATIVES",
+    "asset_class": "ASSET_CLASS_COMMODITY",
+    "tags": [
+      "commodity",
+      "momentum",
+      "trend"
+    ],
+    "difficulty": "TEMPLATE_DIFFICULTY_INTERMEDIATE",
+    "config_sexpr": "(strategy \"Commodity Momentum\"\n  :rebalance monthly\n  :benchmark DBC\n  (weight :method specified\n    (group \"Energy\" :weight 30\n      (weight :method momentum :lookback 60\n        (asset DBE)\n        (asset USO)\n        (asset UNG)\n        (asset XLE)))\n    (group \"Agriculture\" :weight 25\n      (weight :method momentum :lookback 60\n        (asset DBA)\n        (asset CORN)\n        (asset WEAT)\n        (asset SOYB)))\n    (group \"Metals\" :weight 25\n      (weight :method momentum :lookback 60\n        (asset GLD)\n        (asset SLV)\n        (asset DBB)\n        (asset CPER)))\n    (group \"Broad\" :weight 20\n      (weight :method momentum :lookback 60\n        (asset DBC)\n        (asset PDBC)\n        (asset GSG)))))"
+  },
+  {
+    "id": "global-macro-regime",
+    "name": "Global Macro Regime",
+    "description": "Regime-based allocation using VIX for growth vs defensive positioning.",
+    "category": "TEMPLATE_CATEGORY_ALTERNATIVES",
+    "asset_class": "ASSET_CLASS_MULTI_ASSET",
+    "tags": [
+      "macro",
+      "regime",
+      "vix"
+    ],
+    "difficulty": "TEMPLATE_DIFFICULTY_ADVANCED",
+    "config_sexpr": "(strategy \"Global Macro Regime\"\n  :rebalance daily\n  :benchmark SPY\n  (if (< (price VIX) 15)\n    (group \"Risk On\"\n      (weight :method specified\n        (group \"Global Equity\" :weight 50\n          (weight :method momentum :lookback 60\n            (asset SPY)\n            (asset QQQ)\n            (asset VEA)\n            (asset VWO)\n            (asset EEM)))\n        (group \"Commodities\" :weight 35\n          (weight :method momentum :lookback 60\n            (asset DBC)\n            (asset GLD)\n            (asset DBA)\n            (asset DBE)\n            (asset DBB)))\n        (group \"Alternatives\" :weight 15\n          (weight :method equal\n            (asset VNQ)\n            (asset VNQI)))))\n    (else\n      (if (< (price VIX) 22)\n        (group \"Balanced\"\n          (weight :method specified\n            (group \"Equity\" :weight 40\n              (weight :method inverse-volatility :lookback 30\n                (asset SPY)\n                (asset VTI)\n                (asset VEA)\n                (asset USMV)))\n            (group \"Commodities\" :weight 25\n              (weight :method equal\n                (asset GLD)\n                (asset DBC)\n                (asset TIP)))\n            (group \"Bonds\" :weight 35\n              (weight :method equal\n                (asset TLT)\n                (asset IEF)\n                (asset AGG)))))\n        (else\n          (if (< (price VIX) 30)\n            (group \"Cautious\"\n              (weight :method specified\n                (group \"Defensive Equity\" :weight 25\n                  (weight :method inverse-volatility :lookback 20\n                    (asset USMV)\n                    (asset SPLV)\n                    (asset XLP)\n                    (asset XLU)))\n                (group \"Safe Haven\" :weight 40\n                  (weight :method equal\n                    (asset TLT)\n                    (asset IEF)\n                    (asset GLD)\n                    (asset IAU)))\n                (group \"Cash\" :weight 35\n                  (weight :method equal\n                    (asset SHY)\n                    (asset BIL)\n                    (asset MINT)))))\n            (else\n              (group \"Crisis\"\n                (weight :method specified\n                  (group \"Treasuries\" :weight 45\n                    (weight :method inverse-volatility :lookback 10\n                      (asset TLT)\n                      (asset IEF)\n                      (asset SHY)\n                      (asset EDV)))\n                  (group \"Gold\" :weight 35\n                    (weight :method equal\n                      (asset GLD)\n                      (asset IAU)\n                      (asset SGOL)))\n                  (group \"Cash\" :weight 20\n                    (weight :method equal\n                      (asset BIL)\n                      (asset MINT))))))))))))"
+  },
+  {
+    "id": "crypto-trend-vol-filter",
+    "name": "Crypto Trend Vol Filter",
+    "description": "Crypto allocation with dual trend filters: BTC trend for core, ETH trend for altcoin satellite. Safety to stablecoins when down.",
+    "category": "TEMPLATE_CATEGORY_ALTERNATIVES",
+    "asset_class": "ASSET_CLASS_CRYPTO",
+    "tags": [
+      "crypto",
+      "trend",
+      "volatility",
+      "stablecoin"
+    ],
+    "difficulty": "TEMPLATE_DIFFICULTY_ADVANCED",
+    "config_sexpr": "(strategy \"Crypto Trend Vol Filter\"\n  :rebalance daily\n  :benchmark BTCUSD\n  (weight :method specified\n    (group \"BTC Core\" :weight 40\n      (if (> (price BTC) (sma BTC 50))\n        (if (> (price BTC) (sma BTC 200))\n          (group \"Strong BTC Trend\"\n            (weight :method specified\n              (asset BTC :weight 80)\n              (asset WBTC :weight 20)))\n          (else\n            (group \"Weak BTC Trend\"\n              (weight :method equal\n                (asset BTC)\n                (asset USDC)))))\n        (else\n          (group \"BTC Downtrend\"\n            (weight :method equal\n              (asset USDC)\n              (asset USDT))))))\n    (group \"ETH Ecosystem\" :weight 35\n      (if (> (price ETH) (sma ETH 50))\n        (if (> (momentum ETH 30) (momentum BTC 30))\n          (group \"ETH Outperforming\"\n            (weight :method specified\n              (group \"Core ETH\" :weight 60\n                (asset ETH :weight 100))\n              (group \"L2s\" :weight 40\n                (weight :method equal\n                  (asset MATIC)\n                  (asset ARB)\n                  (asset OP)))))\n          (else\n            (group \"ETH Underperforming\"\n              (weight :method equal\n                (asset ETH)\n                (asset USDC)))))\n        (else\n          (group \"ETH Downtrend\"\n            (weight :method equal\n              (asset USDC)\n              (asset USDT))))))\n    (group \"Alt Satellite\" :weight 25\n      (if (> (price ETH) (sma ETH 50))\n        (if (> (price BTC) (sma BTC 50))\n          (group \"Risk On Alts\"\n            (filter :by momentum :select (top 3) :lookback 30\n        (weight :method equal\n                (asset SOL)\n                (asset AVAX)\n                (asset DOT)\n                (asset LINK)\n                (asset ATOM))))\n          (else\n            (group \"Cautious Alts\"\n              (weight :method equal\n                (asset SOL)\n                (asset AVAX)\n                (asset USDC)))))\n        (else\n          (group \"Alt Downtrend\"\n            (weight :method equal\n              (asset USDC)\n              (asset USDT))))))))"
+  },
+  {
+    "id": "ivy-portfolio",
+    "name": "Ivy Portfolio",
+    "description": "Meb Faber's endowment-style allocation—equal weight across 5 asset classes with trend filter.",
+    "category": "TEMPLATE_CATEGORY_BUY_AND_HOLD",
+    "asset_class": "ASSET_CLASS_MULTI_ASSET",
+    "tags": [
+      "endowment",
+      "diversified",
+      "meb-faber"
+    ],
+    "difficulty": "TEMPLATE_DIFFICULTY_INTERMEDIATE",
+    "config_sexpr": "(strategy \"Ivy Portfolio\"\n  :rebalance monthly\n  :benchmark SPY\n  (weight :method specified\n    (group \"US Equities\" :weight 20\n      (if (> (price VTI) (sma VTI 200))\n        (weight :method equal\n          (asset VTI)\n          (asset VOO)\n          (asset ITOT))\n        (else\n          (weight :method equal\n            (asset SHY)\n            (asset BIL)))))\n    (group \"International Equities\" :weight 20\n      (if (> (price VEA) (sma VEA 200))\n        (weight :method equal\n          (asset VEA)\n          (asset IEFA)\n          (asset VWO)\n          (asset IEMG))\n        (else\n          (weight :method equal\n            (asset SHY)\n            (asset BIL)))))\n    (group \"Bonds\" :weight 20\n      (if (> (price BND) (sma BND 200))\n        (weight :method equal\n          (asset BND)\n          (asset AGG)\n          (asset BNDX))\n        (else\n          (weight :method equal\n            (asset SHY)\n            (asset BIL)))))\n    (group \"Real Estate\" :weight 20\n      (if (> (price VNQ) (sma VNQ 200))\n        (weight :method equal\n          (asset VNQ)\n          (asset SCHH)\n          (asset VNQI)\n          (asset REM))\n        (else\n          (weight :method equal\n            (asset SHY)\n            (asset BIL)))))\n    (group \"Commodities\" :weight 20\n      (if (> (price DBC) (sma DBC 200))\n        (weight :method equal\n          (asset DBC)\n          (asset GSG)\n          (asset PDBC)\n          (asset GLD))\n        (else\n          (weight :method equal\n            (asset SHY)\n            (asset BIL)))))))"
+  },
+  {
+    "id": "swensen-portfolio",
+    "name": "Swensen Portfolio",
+    "description": "David Swensen's Yale endowment model adapted for individual investors—tilts toward equities with broad diversification.",
+    "category": "TEMPLATE_CATEGORY_BUY_AND_HOLD",
+    "asset_class": "ASSET_CLASS_MULTI_ASSET",
+    "tags": [
+      "endowment",
+      "yale",
+      "david-swensen"
+    ],
+    "difficulty": "TEMPLATE_DIFFICULTY_INTERMEDIATE",
+    "config_sexpr": "(strategy \"Swensen Portfolio\"\n  :rebalance quarterly\n  :benchmark SPY\n  (weight :method specified\n    (group \"US Equities\" :weight 30\n      (weight :method specified\n        (group \"Total Market\" :weight 70\n          (weight :method equal\n            (asset VTI)\n            (asset ITOT)\n            (asset SPTM)))\n        (group \"Small Cap Value\" :weight 30\n          (weight :method equal\n            (asset VBR)\n            (asset IJS)\n            (asset SLYV)))))\n    (group \"International Developed\" :weight 15\n      (weight :method equal\n        (asset VEA)\n        (asset IEFA)\n        (asset SCHF)\n        (asset EFA)))\n    (group \"Emerging Markets\" :weight 10\n      (weight :method equal\n        (asset VWO)\n        (asset IEMG)\n        (asset SCHE)\n        (asset EEM)))\n    (group \"Real Estate\" :weight 15\n      (weight :method specified\n        (group \"US REITs\" :weight 70\n          (weight :method equal\n            (asset VNQ)\n            (asset SCHH)\n            (asset IYR)))\n        (group \"International REITs\" :weight 30\n          (weight :method equal\n            (asset VNQI)\n            (asset RWX)))))\n    (group \"TIPS\" :weight 15\n      (weight :method equal\n        (asset TIP)\n        (asset SCHP)\n        (asset VTIP)\n        (asset STIP)))\n    (group \"Nominal Bonds\" :weight 15\n      (weight :method equal\n        (asset BND)\n        (asset AGG)\n        (asset SCHZ)\n        (asset BIV)))))"
+  },
+  {
+    "id": "accelerating-dual-momentum",
+    "name": "Accelerating Dual Momentum",
+    "description": "Gary Antonacci's dual momentum—combines absolute and relative momentum to switch between US, international, and bonds.",
+    "category": "TEMPLATE_CATEGORY_TREND",
+    "asset_class": "ASSET_CLASS_MULTI_ASSET",
+    "tags": [
+      "dual-momentum",
+      "gary-antonacci",
+      "absolute-momentum",
+      "relative-momentum"
+    ],
+    "difficulty": "TEMPLATE_DIFFICULTY_ADVANCED",
+    "config_sexpr": "(strategy \"Accelerating Dual Momentum\"\n  :rebalance monthly\n  :benchmark SPY\n  (if (> (return VTI 252) 0)\n    (if (> (return VTI 252) (return VEA 252))\n      (if (> (return VTI 126) (return VTI 252))\n        (group \"Accelerating US Momentum\"\n          (weight :method specified\n            (group \"Core US\" :weight 60\n              (weight :method momentum :lookback 63\n                (asset VTI)\n                (asset QQQ)\n                (asset IWM)\n                (asset VOO)))\n            (group \"Sector Leaders\" :weight 40\n              (filter :by momentum :select (top 3) :lookback 63\n                (weight :method equal\n                  (asset XLK)\n                  (asset XLY)\n                  (asset XLF)\n                  (asset XLI)\n                  (asset XLE)\n                  (asset XLV))))))\n        (else\n          (group \"Decelerating US Momentum\"\n            (weight :method inverse-volatility :lookback 20\n              (asset VTI)\n              (asset SPY)\n              (asset VOO)\n              (asset IEF)))))\n      (else\n        (if (> (return VEA 126) (return VEA 252))\n          (group \"Accelerating International\"\n            (weight :method specified\n              (group \"Developed Markets\" :weight 60\n                (weight :method momentum :lookback 63\n                  (asset VEA)\n                  (asset IEFA)\n                  (asset EFA)\n                  (asset SCHF)))\n              (group \"Emerging Markets\" :weight 40\n                (weight :method momentum :lookback 63\n                  (asset VWO)\n                  (asset IEMG)\n                  (asset EEM)\n                  (asset SCHE)))))\n          (else\n            (group \"Decelerating International\"\n              (weight :method inverse-volatility :lookback 20\n                (asset VEA)\n                (asset IEFA)\n                (asset IEF)\n                (asset BND)))))))\n    (else\n      (if (> (return BND 63) 0)\n        (group \"Bonds Trending Up\"\n          (weight :method specified\n            (group \"Long Duration\" :weight 50\n              (weight :method equal\n                (asset TLT)\n                (asset VGLT)\n                (asset EDV)))\n            (group \"Intermediate\" :weight 30\n              (weight :method equal\n                (asset IEF)\n                (asset VGIT)\n                (asset BND)))\n            (group \"Short Safety\" :weight 20\n              (weight :method equal\n                (asset SHY)\n                (asset BIL)))))\n        (else\n          (group \"Full Defensive\"\n            (weight :method inverse-volatility :lookback 20\n              (asset SHY)\n              (asset BIL)\n              (asset SGOV)\n              (asset GLD)\n              (asset TIP))))))))"
+  },
+  {
+    "id": "vigilant-asset-allocation",
+    "name": "Vigilant Asset Allocation (VAA)",
+    "description": "Wouter Keller's defensive momentum strategy—monitors canary assets for crash warnings and shifts to safety.",
+    "category": "TEMPLATE_CATEGORY_TREND",
+    "asset_class": "ASSET_CLASS_MULTI_ASSET",
+    "tags": [
+      "vaa",
+      "wouter-keller",
+      "canary",
+      "defensive-momentum"
+    ],
+    "difficulty": "TEMPLATE_DIFFICULTY_ADVANCED",
+    "config_sexpr": "(strategy \"Vigilant Asset Allocation\"\n  :rebalance monthly\n  :benchmark SPY\n  (if (> (return VWO 63) 0)\n    (if (> (return BND 63) 0)\n      (group \"Both Canaries Positive - Risk On\"\n        (weight :method specified\n          (group \"Offensive Assets\" :weight 75\n            (filter :by momentum :select (top 4) :lookback 63\n              (weight :method equal\n                (asset SPY)\n                (asset VEA)\n                (asset VWO)\n                (asset BND)\n                (asset VNQ)\n                (asset GLD)\n                (asset DBC))))\n          (group \"Safety Net\" :weight 25\n            (weight :method equal\n              (asset SHY)\n              (asset IEF)\n              (asset BIL)))))\n      (else\n        (group \"BND Canary Negative - Partial Defense\"\n          (weight :method specified\n            (group \"Reduced Risk\" :weight 40\n              (filter :by momentum :select (top 2) :lookback 63\n                (weight :method equal\n                  (asset SPY)\n                  (asset VEA)\n                  (asset VNQ)\n                  (asset GLD))))\n            (group \"Safety\" :weight 60\n              (weight :method inverse-volatility :lookback 20\n                (asset SHY)\n                (asset IEF)\n                (asset TLT)\n                (asset BIL)))))))\n    (else\n      (if (> (return BND 63) 0)\n        (group \"VWO Canary Negative - Partial Defense\"\n          (weight :method specified\n            (group \"Reduced Risk\" :weight 40\n              (filter :by momentum :select (top 2) :lookback 63\n                (weight :method equal\n                  (asset SPY)\n                  (asset BND)\n                  (asset GLD)\n                  (asset TLT))))\n            (group \"Safety\" :weight 60\n              (weight :method inverse-volatility :lookback 20\n                (asset SHY)\n                (asset IEF)\n                (asset BIL)))))\n        (else\n          (group \"Both Canaries Negative - Full Crash Protection\"\n            (weight :method inverse-volatility :lookback 20\n              (asset SHY)\n              (asset IEF)\n              (asset BIL)\n              (asset SGOV)\n              (asset USFR))))))))"
+  },
+  {
+    "id": "protective-asset-allocation",
+    "name": "Protective Asset Allocation (PAA)",
+    "description": "Keller's breadth-based momentum strategy—uses asset breadth to determine equity exposure level.",
+    "category": "TEMPLATE_CATEGORY_TREND",
+    "asset_class": "ASSET_CLASS_MULTI_ASSET",
+    "tags": [
+      "paa",
+      "wouter-keller",
+      "breadth",
+      "protective"
+    ],
+    "difficulty": "TEMPLATE_DIFFICULTY_ADVANCED",
+    "config_sexpr": "(strategy \"Protective Asset Allocation\"\n  :rebalance monthly\n  :benchmark SPY\n  (if (> (return SPY 63) 0)\n    (if (> (return VEA 63) 0)\n      (if (> (return VWO 63) 0)\n        (if (> (return BND 63) 0)\n          (group \"High Breadth (4/4) - Full Risk On\"\n            (weight :method specified\n              (group \"Equity Core\" :weight 60\n                (filter :by momentum :select (top 3) :lookback 63\n                  (weight :method equal\n                    (asset SPY)\n                    (asset QQQ)\n                    (asset VEA)\n                    (asset VWO)\n                    (asset IWM))))\n              (group \"Real Assets\" :weight 25\n                (weight :method momentum :lookback 63\n                  (asset VNQ)\n                  (asset GLD)\n                  (asset DBC)\n                  (asset TIP)))\n              (group \"Bond Anchor\" :weight 15\n                (weight :method equal\n                  (asset BND)\n                  (asset AGG)))))\n          (else\n            (group \"Good Breadth (3/4) - Moderate Risk\"\n              (weight :method specified\n                (group \"Equity\" :weight 50\n                  (filter :by momentum :select (top 2) :lookback 63\n                    (weight :method equal\n                      (asset SPY)\n                      (asset VEA)\n                      (asset VWO)\n                      (asset QQQ))))\n                (group \"Bonds\" :weight 50\n                  (weight :method inverse-volatility :lookback 20\n                    (asset IEF)\n                    (asset TLT)\n                    (asset BND)\n                    (asset SHY)))))))\n        (else\n          (group \"Moderate Breadth (2/4) - Reduced Risk\"\n            (weight :method specified\n              (group \"Equity\" :weight 35\n                (weight :method momentum :lookback 63\n                  (asset SPY)\n                  (asset VEA)\n                  (asset USMV)))\n              (group \"Bonds\" :weight 65\n                (weight :method inverse-volatility :lookback 20\n                  (asset IEF)\n                  (asset TLT)\n                  (asset SHY)\n                  (asset BIL)))))))\n      (else\n        (group \"Low Breadth (1/4) - Defensive\"\n          (weight :method specified\n            (group \"Minimal Equity\" :weight 20\n              (weight :method equal\n                (asset USMV)\n                (asset SPLV)\n                (asset XLP)))\n            (group \"Heavy Bonds\" :weight 80\n              (weight :method inverse-volatility :lookback 20\n                (asset SHY)\n                (asset IEF)\n                (asset BIL)\n                (asset SGOV)))))))\n    (else\n      (group \"Zero Breadth (0/4) - Full Safety\"\n        (weight :method inverse-volatility :lookback 20\n          (asset SHY)\n          (asset BIL)\n          (asset SGOV)\n          (asset USFR)\n          (asset GLD))))))"
+  },
+  {
+    "id": "credit-spread-tactical",
+    "name": "Credit Spread Tactical",
+    "description": "Uses high-yield credit spreads as a risk indicator—wide spreads trigger defensive positioning.",
+    "category": "TEMPLATE_CATEGORY_TACTICAL",
+    "asset_class": "ASSET_CLASS_MULTI_ASSET",
+    "tags": [
+      "credit-spread",
+      "high-yield",
+      "risk-indicator"
+    ],
+    "difficulty": "TEMPLATE_DIFFICULTY_ADVANCED",
+    "config_sexpr": "(strategy \"Credit Spread Tactical\"\n  :rebalance weekly\n  :benchmark SPY\n  (if (> (price HYG) (sma HYG 50))\n    (if (> (price HYG) (sma HYG 20))\n      (group \"Credit Improving - Full Risk On\"\n        (weight :method specified\n          (group \"High Beta Equity\" :weight 50\n            (weight :method momentum :lookback 30\n              (asset QQQ)\n              (asset IWM)\n              (asset VWO)\n              (asset XLY)\n              (asset XLF)))\n          (group \"Credit Exposure\" :weight 30\n            (weight :method equal\n              (asset HYG)\n              (asset JNK)\n              (asset BKLN)\n              (asset SJNK)))\n          (group \"Equity Core\" :weight 20\n            (weight :method equal\n              (asset SPY)\n              (asset VTI)))))\n      (else\n        (group \"Credit Stable - Moderate Risk\"\n          (weight :method specified\n            (group \"Equity\" :weight 60\n              (weight :method inverse-volatility :lookback 20\n                (asset SPY)\n                (asset VTI)\n                (asset USMV)\n                (asset QQQ)))\n            (group \"Credit\" :weight 20\n              (weight :method equal\n                (asset HYG)\n                (asset LQD)))\n            (group \"Treasuries\" :weight 20\n              (weight :method equal\n                (asset IEF)\n                (asset TLT)))))))\n    (else\n      (if (< (price HYG) (sma HYG 100))\n        (group \"Credit Deteriorating - Defensive\"\n          (weight :method specified\n            (group \"Safe Haven\" :weight 60\n              (weight :method inverse-volatility :lookback 20\n                (asset TLT)\n                (asset IEF)\n                (asset GLD)\n                (asset SHY)))\n            (group \"Quality Equity\" :weight 25\n              (weight :method equal\n                (asset USMV)\n                (asset SPLV)\n                (asset XLP)\n                (asset XLU)))\n            (group \"Cash Equivalent\" :weight 15\n              (weight :method equal\n                (asset SHY)\n                (asset BIL)))))\n        (else\n          (group \"Credit Neutral - Balanced\"\n            (weight :method specified\n              (group \"Equity\" :weight 40\n                (weight :method equal\n                  (asset SPY)\n                  (asset VTI)\n                  (asset USMV)))\n              (group \"Bonds\" :weight 40\n                (weight :method inverse-volatility :lookback 20\n                  (asset BND)\n                  (asset IEF)\n                  (asset TLT)\n                  (asset LQD)))\n              (group \"Alternatives\" :weight 20\n                (weight :method equal\n                  (asset GLD)\n                  (asset TIP))))))))))"
+  },
+  {
+    "id": "breadth-thrust-momentum",
+    "name": "Breadth Thrust Momentum",
+    "description": "Combines market breadth signals with sector momentum—expands equity exposure when breadth improves.",
+    "category": "TEMPLATE_CATEGORY_TACTICAL",
+    "asset_class": "ASSET_CLASS_EQUITY",
+    "tags": [
+      "breadth",
+      "thrust",
+      "momentum",
+      "sectors"
+    ],
+    "difficulty": "TEMPLATE_DIFFICULTY_ADVANCED",
+    "config_sexpr": "(strategy \"Breadth Thrust Momentum\"\n  :rebalance weekly\n  :benchmark SPY\n  (if (> (price RSP) (sma RSP 20))\n    (if (> (rsi RSP 14) 50)\n      (group \"Breadth Expanding - Aggressive\"\n        (weight :method specified\n          (group \"High Beta Sectors\" :weight 50\n            (filter :by momentum :select (top 3) :lookback 21\n              (weight :method equal\n                (asset XLK)\n                (asset XLY)\n                (asset XLF)\n                (asset XLI)\n                (asset XLE))))\n          (group \"Small/Mid Cap\" :weight 30\n            (weight :method momentum :lookback 21\n              (asset IWM)\n              (asset MDY)\n              (asset IJR)\n              (asset VXF)))\n          (group \"Core Index\" :weight 20\n            (weight :method equal\n              (asset SPY)\n              (asset RSP)))))\n      (else\n        (group \"Breadth Neutral - Balanced Sectors\"\n          (weight :method specified\n            (group \"Diversified Sectors\" :weight 60\n              (filter :by momentum :select (top 4) :lookback 42\n                (weight :method equal\n                  (asset XLK)\n                  (asset XLV)\n                  (asset XLF)\n                  (asset XLI)\n                  (asset XLC)\n                  (asset XLY))))\n            (group \"Core\" :weight 40\n              (weight :method equal\n                (asset SPY)\n                (asset VTI)\n                (asset RSP)))))))\n    (else\n      (if (< (rsi RSP 14) 30)\n        (group \"Breadth Oversold - Contrarian Entry\"\n          (weight :method specified\n            (group \"Value Sectors\" :weight 40\n              (weight :method equal\n                (asset XLF)\n                (asset XLE)\n                (asset XLI)\n                (asset XLB)))\n            (group \"Defensive\" :weight 40\n              (weight :method equal\n                (asset XLP)\n                (asset XLU)\n                (asset XLV)\n                (asset USMV)))\n            (group \"Bonds\" :weight 20\n              (weight :method equal\n                (asset IEF)\n                (asset TLT)))))\n        (else\n          (group \"Breadth Contracting - Defensive\"\n            (weight :method specified\n              (group \"Defensive Equity\" :weight 40\n                (weight :method inverse-volatility :lookback 20\n                  (asset XLP)\n                  (asset XLU)\n                  (asset XLV)\n                  (asset USMV)\n                  (asset SPLV)))\n              (group \"Bonds\" :weight 50\n                (weight :method inverse-volatility :lookback 20\n                  (asset TLT)\n                  (asset IEF)\n                  (asset SHY)\n                  (asset BND)))\n              (group \"Gold Hedge\" :weight 10\n                (weight :method equal\n                  (asset GLD)\n                  (asset IAU))))))))))"
+  },
+  {
+    "id": "quarterly-drift-bands",
+    "name": "Quarterly Drift Bands",
+    "description": "Tactical rebalancing based on allocation drift—only rebalances when positions exceed threshold bands.",
+    "category": "TEMPLATE_CATEGORY_TACTICAL",
+    "asset_class": "ASSET_CLASS_MULTI_ASSET",
+    "tags": [
+      "drift",
+      "bands",
+      "rebalancing",
+      "tactical"
+    ],
+    "difficulty": "TEMPLATE_DIFFICULTY_INTERMEDIATE",
+    "config_sexpr": "(strategy \"Quarterly Drift Bands\"\n  :rebalance quarterly\n  :benchmark SPY\n  (weight :method specified\n    (group \"US Equities\" :weight 40\n      (if (> (return VTI 63) (return VEA 63))\n        (group \"US Outperforming\"\n          (weight :method specified\n            (group \"Large Cap\" :weight 60\n              (weight :method equal\n                (asset VTI)\n                (asset SPY)\n                (asset VOO)))\n            (group \"Growth Tilt\" :weight 40\n              (weight :method momentum :lookback 63\n                (asset QQQ)\n                (asset VUG)\n                (asset IWF)\n                (asset MGK)))))\n        (else\n          (group \"US Underperforming\"\n            (weight :method inverse-volatility :lookback 20\n              (asset VTI)\n              (asset SPY)\n              (asset USMV)\n              (asset SPLV))))))\n    (group \"International Equities\" :weight 25\n      (if (> (return VEA 63) 0)\n        (group \"International Positive\"\n          (weight :method specified\n            (group \"Developed\" :weight 60\n              (weight :method momentum :lookback 63\n                (asset VEA)\n                (asset IEFA)\n                (asset EFA)\n                (asset SCHF)))\n            (group \"Emerging\" :weight 40\n              (weight :method momentum :lookback 63\n                (asset VWO)\n                (asset IEMG)\n                (asset EEM)))))\n        (else\n          (group \"International Negative\"\n            (weight :method inverse-volatility :lookback 20\n              (asset VEA)\n              (asset IEFA)\n              (asset SHY))))))\n    (group \"Fixed Income\" :weight 25\n      (if (> (return TLT 42) (return SHY 42))\n        (group \"Duration Favorable\"\n          (weight :method specified\n            (group \"Long Duration\" :weight 50\n              (weight :method equal\n                (asset TLT)\n                (asset VGLT)\n                (asset EDV)))\n            (group \"Intermediate\" :weight 50\n              (weight :method equal\n                (asset IEF)\n                (asset BND)\n                (asset AGG)))))\n        (else\n          (group \"Duration Unfavorable\"\n            (weight :method inverse-volatility :lookback 20\n              (asset SHY)\n              (asset BIL)\n              (asset VGSH)\n              (asset SGOV))))))\n    (group \"Alternatives\" :weight 10\n      (if (> (return GLD 63) 0)\n        (group \"Gold Trending\"\n          (weight :method momentum :lookback 42\n            (asset GLD)\n            (asset IAU)\n            (asset SGOL)\n            (asset DBC)))\n        (else\n          (group \"Gold Weak\"\n            (weight :method equal\n              (asset TIP)\n              (asset VTIP)\n              (asset SCHP))))))))"
+  },
+  {
+    "id": "tqqq-tmf-hedged-growth",
+    "name": "TQQQ/TMF Hedged Growth",
+    "description": "Leveraged growth strategy using 3x Nasdaq hedged with 3x long bonds—dynamic allocation based on volatility regime.",
+    "category": "TEMPLATE_CATEGORY_TACTICAL",
+    "asset_class": "ASSET_CLASS_EQUITY",
+    "tags": [
+      "leveraged",
+      "tqqq",
+      "tmf",
+      "hedgefundie",
+      "growth"
+    ],
+    "difficulty": "TEMPLATE_DIFFICULTY_ADVANCED",
+    "config_sexpr": "(strategy \"TQQQ/TMF Hedged Growth\"\n  :rebalance weekly\n  :benchmark QQQ\n  (if (< (price VIX) 20)\n    (if (> (price QQQ) (sma QQQ 50))\n      (group \"Low Vol Bull - Aggressive Leverage\"\n        (weight :method specified\n          (group \"Leveraged Equity\" :weight 60\n            (weight :method specified\n              (asset TQQQ :weight 70)\n              (asset UPRO :weight 30)))\n          (group \"Leveraged Bonds\" :weight 25\n            (weight :method equal\n              (asset TMF)\n              (asset TYD)))\n          (group \"Cash Buffer\" :weight 15\n            (weight :method equal\n              (asset SHY)\n              (asset BIL)))))\n      (else\n        (group \"Low Vol Bear - Reduce Leverage\"\n          (weight :method specified\n            (group \"Reduced Leverage\" :weight 40\n              (weight :method equal\n                (asset TQQQ)\n                (asset QQQ)))\n            (group \"Bond Hedge\" :weight 40\n              (weight :method equal\n                (asset TMF)\n                (asset TLT)))\n            (group \"Cash\" :weight 20\n              (weight :method equal\n                (asset SHY)\n                (asset BIL)))))))\n    (else\n      (if (< (price VIX) 30)\n        (group \"Elevated Vol - Balanced Approach\"\n          (weight :method specified\n            (group \"Unleveraged Equity\" :weight 40\n              (weight :method equal\n                (asset QQQ)\n                (asset SPY)\n                (asset USMV)))\n            (group \"Mixed Duration\" :weight 40\n              (weight :method inverse-volatility :lookback 10\n                (asset TLT)\n                (asset IEF)\n                (asset SHY)\n                (asset TMF)))\n            (group \"Safety\" :weight 20\n              (weight :method equal\n                (asset SHY)\n                (asset GLD)))))\n        (else\n          (if (< (price VIX) 40)\n            (group \"High Vol - Defensive\"\n              (weight :method specified\n                (group \"Minimal Equity\" :weight 20\n                  (weight :method equal\n                    (asset USMV)\n                    (asset SPLV)\n                    (asset XLP)))\n                (group \"Bonds\" :weight 50\n                  (weight :method inverse-volatility :lookback 10\n                    (asset TLT)\n                    (asset IEF)\n                    (asset SHY)))\n                (group \"Safe Haven\" :weight 30\n                  (weight :method equal\n                    (asset GLD)\n                    (asset SHY)\n                    (asset BIL)))))\n            (else\n              (group \"Extreme Vol - Full Safety\"\n                (weight :method inverse-volatility :lookback 10\n                  (asset SHY)\n                  (asset BIL)\n                  (asset SGOV)\n                  (asset GLD)\n                  (asset TLT))))))))))"
+  },
+  {
+    "id": "leveraged-risk-parity",
+    "name": "Leveraged Risk Parity",
+    "description": "Risk parity with leveraged ETFs (UPRO/TMF)—equalizes risk contribution between stocks and bonds with leverage.",
+    "category": "TEMPLATE_CATEGORY_TACTICAL",
+    "asset_class": "ASSET_CLASS_MULTI_ASSET",
+    "tags": [
+      "leveraged",
+      "risk-parity",
+      "upro",
+      "tmf",
+      "hfea"
+    ],
+    "difficulty": "TEMPLATE_DIFFICULTY_ADVANCED",
+    "config_sexpr": "(strategy \"Leveraged Risk Parity\"\n  :rebalance monthly\n  :benchmark SPY\n  (if (> (price SPY) (sma SPY 200))\n    (if (< (price VIX) 25)\n      (group \"Bull Market Low Vol\"\n        (weight :method specified\n          (group \"Leveraged Equity\" :weight 55\n            (weight :method specified\n              (asset UPRO :weight 60)\n              (asset TQQQ :weight 25)\n              (asset TNA :weight 15)))\n          (group \"Leveraged Bonds\" :weight 45\n            (weight :method specified\n              (asset TMF :weight 70)\n              (asset TYD :weight 30)))))\n      (else\n        (group \"Bull Market High Vol - Reduce Leverage\"\n          (weight :method specified\n            (group \"Mixed Leverage Equity\" :weight 45\n              (weight :method equal\n                (asset UPRO)\n                (asset SPY)\n                (asset SSO)))\n            (group \"Mixed Leverage Bonds\" :weight 40\n              (weight :method equal\n                (asset TMF)\n                (asset TLT)\n                (asset UBT)))\n            (group \"Safety\" :weight 15\n              (weight :method equal\n                (asset SHY)\n                (asset GLD)))))))\n    (else\n      (if (> (price SPY) (sma SPY 50))\n        (group \"Correction Mode\"\n          (weight :method specified\n            (group \"Unleveraged Equity\" :weight 30\n              (weight :method inverse-volatility :lookback 20\n                (asset SPY)\n                (asset VTI)\n                (asset USMV)\n                (asset SPLV)))\n            (group \"Mixed Bonds\" :weight 50\n              (weight :method inverse-volatility :lookback 20\n                (asset TLT)\n                (asset TMF)\n                (asset IEF)\n                (asset SHY)))\n            (group \"Hedges\" :weight 20\n              (weight :method equal\n                (asset GLD)\n                (asset TIP)\n                (asset SHY)))))\n        (else\n          (group \"Bear Market - Full Defense\"\n            (weight :method inverse-volatility :lookback 20\n              (asset SHY)\n              (asset IEF)\n              (asset TLT)\n              (asset GLD)\n              (asset BIL)\n              (asset SGOV))))))))"
+  },
+  {
+    "id": "vix-mean-reversion-confirmed",
+    "name": "VIX Mean Reversion with Confirmation",
+    "description": "Buys equities on VIX spikes above 25—requires VIX to start declining before entry to avoid catching falling knives.",
+    "category": "TEMPLATE_CATEGORY_MEAN_REVERSION",
+    "asset_class": "ASSET_CLASS_EQUITY",
+    "tags": [
+      "vix",
+      "mean-reversion",
+      "confirmation",
+      "fear"
+    ],
+    "difficulty": "TEMPLATE_DIFFICULTY_ADVANCED",
+    "config_sexpr": "(strategy \"VIX Mean Reversion Confirmed\"\n  :rebalance daily\n  :benchmark SPY\n  (if (> (price VIX) 35)\n    (if (< (price VIX) (sma VIX 5))\n      (group \"Extreme Fear Reverting - Aggressive Entry\"\n        (weight :method specified\n          (group \"High Beta\" :weight 50\n            (weight :method momentum :lookback 5\n              (asset TQQQ)\n              (asset UPRO)\n              (asset SSO)\n              (asset QLD)))\n          (group \"Beaten Down Sectors\" :weight 30\n            (filter :by momentum :select (bottom 3) :lookback 21\n              (weight :method equal\n                (asset XLK)\n                (asset XLY)\n                (asset XLF)\n                (asset XLI)\n                (asset XLE))))\n          (group \"Core Long\" :weight 20\n            (weight :method equal\n              (asset SPY)\n              (asset QQQ)\n              (asset IWM)))))\n      (else\n        (group \"Extreme Fear Still Rising - Wait\"\n          (weight :method inverse-volatility :lookback 5\n            (asset SHY)\n            (asset BIL)\n            (asset GLD)\n            (asset TLT)))))\n    (else\n      (if (> (price VIX) 25)\n        (if (< (price VIX) (sma VIX 5))\n          (group \"High Fear Reverting - Moderate Entry\"\n            (weight :method specified\n              (group \"Leveraged\" :weight 30\n                (weight :method equal\n                  (asset SSO)\n                  (asset QLD)))\n              (group \"Core Equity\" :weight 50\n                (weight :method inverse-volatility :lookback 10\n                  (asset SPY)\n                  (asset QQQ)\n                  (asset VTI)\n                  (asset IWM)))\n              (group \"Hedge\" :weight 20\n                (weight :method equal\n                  (asset TLT)\n                  (asset GLD)))))\n          (else\n            (group \"High Fear Rising - Cautious\"\n              (weight :method specified\n                (group \"Defensive Equity\" :weight 30\n                  (weight :method equal\n                    (asset USMV)\n                    (asset SPLV)\n                    (asset XLP)))\n                (group \"Bonds\" :weight 50\n                  (weight :method inverse-volatility :lookback 10\n                    (asset TLT)\n                    (asset IEF)\n                    (asset SHY)))\n                (group \"Gold\" :weight 20\n                  (weight :method equal\n                    (asset GLD)\n                    (asset IAU)))))))\n        (else\n          (if (< (price VIX) 15)\n            (if (> (price VIX) (sma VIX 10))\n              (group \"Complacency Warning - Reducing\"\n                (weight :method specified\n                  (group \"Quality Equity\" :weight 50\n                    (weight :method inverse-volatility :lookback 20\n                      (asset SPY)\n                      (asset VTI)\n                      (asset USMV)\n                      (asset QUAL)))\n                  (group \"Tail Hedge\" :weight 20\n                    (weight :method equal\n                      (asset TAIL)\n                      (asset VIXY)))\n                  (group \"Bonds\" :weight 30\n                    (weight :method equal\n                      (asset TLT)\n                      (asset IEF)\n                      (asset SHY)))))\n              (else\n                (group \"Low Vol Trending - Ride Momentum\"\n                  (weight :method specified\n                    (group \"Momentum Equity\" :weight 70\n                      (weight :method momentum :lookback 42\n                        (asset QQQ)\n                        (asset SPY)\n                        (asset IWM)\n                        (asset VGT)\n                        (asset XLY)))\n                    (group \"Bonds\" :weight 30\n                      (weight :method equal\n                        (asset IEF)\n                        (asset BND)))))))\n            (else\n              (group \"Normal Vol - Balanced\"\n                (weight :method specified\n                  (group \"Equity\" :weight 60\n                    (weight :method momentum :lookback 42\n                      (asset SPY)\n                      (asset QQQ)\n                      (asset VTI)\n                      (asset IWM)))\n                  (group \"Bonds\" :weight 40\n                    (weight :method inverse-volatility :lookback 20\n                      (asset BND)\n                      (asset IEF)\n                      (asset TLT)\n                      (asset SHY))))))))))))"
+  },
+  {
+    "id": "sector-mean-reversion-rotation",
+    "name": "Sector Mean Reversion Rotation",
+    "description": "Identifies oversold sectors using RSI and z-scores—rotates into beaten-down sectors with trend confirmation.",
+    "category": "TEMPLATE_CATEGORY_MEAN_REVERSION",
+    "asset_class": "ASSET_CLASS_EQUITY",
+    "tags": [
+      "sectors",
+      "rsi",
+      "oversold",
+      "rotation"
+    ],
+    "difficulty": "TEMPLATE_DIFFICULTY_ADVANCED",
+    "config_sexpr": "(strategy \"Sector Mean Reversion Rotation\"\n  :rebalance weekly\n  :benchmark SPY\n  (if (> (price SPY) (sma SPY 200))\n    (if (< (rsi XLF 14) 30)\n      (if (> (price XLF) (sma XLF 50))\n        (group \"Financials Oversold in Uptrend\"\n          (weight :method specified\n            (group \"Financial Sector\" :weight 40\n              (weight :method equal\n                (asset XLF)\n                (asset KBE)\n                (asset KRE)\n                (asset IAI)))\n            (group \"Core Allocation\" :weight 40\n              (weight :method momentum :lookback 21\n                (asset SPY)\n                (asset QQQ)\n                (asset VTI)))\n            (group \"Bonds\" :weight 20\n              (weight :method equal\n                (asset IEF)\n                (asset BND)))))\n        (else\n          (group \"Financials Oversold Downtrend - Skip\"\n            (weight :method momentum :lookback 42\n              (asset SPY)\n              (asset QQQ)\n              (asset VTI)\n              (asset IWM)))))\n      (else\n        (if (< (rsi XLE 14) 30)\n          (if (> (price XLE) (sma XLE 50))\n            (group \"Energy Oversold in Uptrend\"\n              (weight :method specified\n                (group \"Energy Sector\" :weight 40\n                  (weight :method equal\n                    (asset XLE)\n                    (asset XOP)\n                    (asset OIH)\n                    (asset VDE)))\n                (group \"Core Allocation\" :weight 40\n                  (weight :method momentum :lookback 21\n                    (asset SPY)\n                    (asset QQQ)\n                    (asset VTI)))\n                (group \"Bonds\" :weight 20\n                  (weight :method equal\n                    (asset IEF)\n                    (asset BND)))))\n            (else\n              (group \"Energy Oversold Downtrend - Skip\"\n                (weight :method momentum :lookback 42\n                  (asset SPY)\n                  (asset QQQ)\n                  (asset VTI)))))\n          (else\n            (if (< (rsi XLI 14) 30)\n              (if (> (price XLI) (sma XLI 50))\n                (group \"Industrials Oversold in Uptrend\"\n                  (weight :method specified\n                    (group \"Industrial Sector\" :weight 40\n                      (weight :method equal\n                        (asset XLI)\n                        (asset IYT)\n                        (asset XAR)))\n                    (group \"Core\" :weight 40\n                      (weight :method momentum :lookback 21\n                        (asset SPY)\n                        (asset QQQ)\n                        (asset VTI)))\n                    (group \"Bonds\" :weight 20\n                      (weight :method equal\n                        (asset IEF)\n                        (asset BND)))))\n                (else\n                  (group \"Industrials Skip\"\n                    (weight :method momentum :lookback 42\n                      (asset SPY)\n                      (asset QQQ)\n                      (asset VTI)))))\n              (else\n                (group \"No Sectors Oversold - Momentum\"\n                  (weight :method specified\n                    (group \"Top Sectors\" :weight 60\n                      (filter :by momentum :select (top 3) :lookback 42\n                        (weight :method equal\n                          (asset XLK)\n                          (asset XLY)\n                          (asset XLF)\n                          (asset XLI)\n                          (asset XLE)\n                          (asset XLV))))\n                    (group \"Core\" :weight 40\n                      (weight :method momentum :lookback 42\n                        (asset SPY)\n                        (asset QQQ)\n                        (asset VTI)))))))))))\n    (else\n      (group \"Market Downtrend - Defensive\"\n        (weight :method specified\n          (group \"Defensive Sectors\" :weight 40\n            (weight :method inverse-volatility :lookback 20\n              (asset XLP)\n              (asset XLU)\n              (asset XLV)\n              (asset USMV)))\n          (group \"Bonds\" :weight 50\n            (weight :method inverse-volatility :lookback 20\n              (asset TLT)\n              (asset IEF)\n              (asset SHY)\n              (asset BND)))\n          (group \"Gold\" :weight 10\n            (weight :method equal\n              (asset GLD)\n              (asset IAU))))))))"
+  },
+  {
+    "id": "bond-duration-switch",
+    "name": "Bond Duration Switch",
+    "description": "Switches between short, intermediate, and long-duration bonds based on yield curve signals and rate trends.",
+    "category": "TEMPLATE_CATEGORY_INCOME",
+    "asset_class": "ASSET_CLASS_FIXED_INCOME",
+    "tags": [
+      "duration",
+      "yield-curve",
+      "bonds",
+      "rates"
+    ],
+    "difficulty": "TEMPLATE_DIFFICULTY_ADVANCED",
+    "config_sexpr": "(strategy \"Bond Duration Switch\"\n  :rebalance monthly\n  :benchmark BND\n  (if (> (price TLT) (sma TLT 50))\n    (if (> (return TLT 63) (return SHY 63))\n      (group \"Long Duration Favorable\"\n        (weight :method specified\n          (group \"Long Bonds\" :weight 50\n            (weight :method equal\n              (asset TLT)\n              (asset VGLT)\n              (asset EDV)\n              (asset SPTL)))\n          (group \"Intermediate\" :weight 30\n            (weight :method equal\n              (asset IEF)\n              (asset VGIT)\n              (asset BIV)))\n          (group \"TIPS\" :weight 20\n            (weight :method equal\n              (asset TIP)\n              (asset SCHP)\n              (asset VTIP)))))\n      (else\n        (group \"Mixed Duration - Barbell\"\n          (weight :method specified\n            (group \"Long End\" :weight 30\n              (weight :method equal\n                (asset TLT)\n                (asset EDV)))\n            (group \"Short End\" :weight 40\n              (weight :method equal\n                (asset SHY)\n                (asset VGSH)\n                (asset BIL)\n                (asset SGOV)))\n            (group \"Inflation Protection\" :weight 30\n              (weight :method equal\n                (asset TIP)\n                (asset SCHP)\n                (asset STIP)))))))\n    (else\n      (if (< (price TLT) (sma TLT 100))\n        (group \"Rising Rates Environment\"\n          (weight :method specified\n            (group \"Ultra Short\" :weight 50\n              (weight :method equal\n                (asset BIL)\n                (asset SGOV)\n                (asset USFR)\n                (asset SHV)))\n            (group \"Floating Rate\" :weight 30\n              (weight :method equal\n                (asset FLOT)\n                (asset FLRN)\n                (asset TFLO)))\n            (group \"Short TIPS\" :weight 20\n              (weight :method equal\n                (asset STIP)\n                (asset VTIP)))))\n        (else\n          (group \"Neutral Duration\"\n            (weight :method specified\n              (group \"Aggregate\" :weight 40\n                (weight :method equal\n                  (asset BND)\n                  (asset AGG)\n                  (asset SCHZ)))\n              (group \"Short Duration\" :weight 35\n                (weight :method equal\n                  (asset SHY)\n                  (asset VGSH)\n                  (asset BSV)))\n              (group \"Intermediate\" :weight 25\n                (weight :method equal\n                  (asset IEF)\n                  (asset VGIT))))))))))"
+  },
+  {
+    "id": "dividend-quality-barbell",
+    "name": "Dividend Quality Barbell",
+    "description": "Barbells high-yield assets (REITs, BDCs) with dividend growth stocks—balances current income vs income growth.",
+    "category": "TEMPLATE_CATEGORY_INCOME",
+    "asset_class": "ASSET_CLASS_MULTI_ASSET",
+    "tags": [
+      "dividend",
+      "yield",
+      "growth",
+      "barbell",
+      "income"
+    ],
+    "difficulty": "TEMPLATE_DIFFICULTY_ADVANCED",
+    "config_sexpr": "(strategy \"Dividend Quality Barbell\"\n  :rebalance monthly\n  :benchmark VYM\n  (weight :method specified\n    (group \"High Yield Bucket\" :weight 40\n      (if (> (price VNQ) (sma VNQ 50))\n        (group \"REITs Trending\"\n          (weight :method specified\n            (group \"Equity REITs\" :weight 50\n              (weight :method momentum :lookback 42\n                (asset VNQ)\n                (asset SCHH)\n                (asset IYR)\n                (asset XLRE)))\n            (group \"Mortgage REITs\" :weight 25\n              (weight :method equal\n                (asset REM)\n                (asset MORT)))\n            (group \"Specialty High Yield\" :weight 25\n              (weight :method equal\n                (asset BIZD)\n                (asset SDIV)))))\n        (else\n          (group \"REITs Weak - Bonds Focus\"\n            (weight :method specified\n              (group \"High Yield Bonds\" :weight 60\n                (weight :method inverse-volatility :lookback 20\n                  (asset HYG)\n                  (asset JNK)\n                  (asset SJNK)\n                  (asset BKLN)))\n              (group \"Preferred Stock\" :weight 40\n                (weight :method equal\n                  (asset PFF)\n                  (asset PGX)\n                  (asset PFFD))))))))\n    (group \"Dividend Growth Bucket\" :weight 40\n      (if (> (return NOBL 126) (return VYM 126))\n        (group \"Aristocrats Outperforming\"\n          (weight :method specified\n            (group \"Dividend Aristocrats\" :weight 50\n              (weight :method equal\n                (asset NOBL)\n                (asset SDY)\n                (asset DGRO)))\n            (group \"Dividend Growth\" :weight 30\n              (weight :method momentum :lookback 63\n                (asset VIG)\n                (asset DGRW)\n                (asset SCHD)))\n            (group \"Quality Dividend\" :weight 20\n              (weight :method equal\n                (asset SPHD)\n                (asset DVY)))))\n        (else\n          (group \"High Yield Outperforming\"\n            (weight :method specified\n              (group \"High Dividend Yield\" :weight 60\n                (weight :method momentum :lookback 42\n                  (asset VYM)\n                  (asset HDV)\n                  (asset SCHD)\n                  (asset SPYD)))\n              (group \"International Dividend\" :weight 40\n                (weight :method equal\n                  (asset VYMI)\n                  (asset IDV)\n                  (asset SCHY))))))))\n    (group \"Income Stabilizer\" :weight 20\n      (if (> (return TLT 42) 0)\n        (group \"Bonds Positive\"\n          (weight :method specified\n            (group \"Investment Grade\" :weight 60\n              (weight :method equal\n                (asset LQD)\n                (asset VCIT)\n                (asset IGIB)))\n            (group \"Long Duration\" :weight 40\n              (weight :method equal\n                (asset TLT)\n                (asset VGLT)))))\n        (else\n          (group \"Bonds Negative\"\n            (weight :method inverse-volatility :lookback 20\n              (asset SHY)\n              (asset VCSH)\n              (asset BSV)\n              (asset BIL)\n              (asset MINT))))))))"
+  },
+  {
+    "id": "country-momentum-rotation",
+    "name": "Country Momentum Rotation",
+    "description": "Rotates across country and region ETFs based on 6-12 month momentum—captures global rotation themes.",
+    "category": "TEMPLATE_CATEGORY_ALTERNATIVES",
+    "asset_class": "ASSET_CLASS_EQUITY",
+    "tags": [
+      "country",
+      "momentum",
+      "rotation",
+      "global"
+    ],
+    "difficulty": "TEMPLATE_DIFFICULTY_ADVANCED",
+    "config_sexpr": "(strategy \"Country Momentum Rotation\"\n  :rebalance monthly\n  :benchmark VEU\n  (if (> (return VEU 126) 0)\n    (group \"International Trend Positive\"\n      (weight :method specified\n        (group \"Top Momentum Countries\" :weight 60\n          (filter :by momentum :select (top 4) :lookback 126\n            (weight :method equal\n              (asset EWJ)\n              (asset EWG)\n              (asset EWU)\n              (asset EWC)\n              (asset EWA)\n              (asset EWH)\n              (asset EWT)\n              (asset EWY)\n              (asset EWZ)\n              (asset EWW)\n              (asset INDA)\n              (asset FXI))))\n        (group \"Regional Diversification\" :weight 25\n          (filter :by momentum :select (top 2) :lookback 63\n            (weight :method equal\n              (asset VGK)\n              (asset VPL)\n              (asset VWO)\n              (asset FM))))\n        (group \"US Anchor\" :weight 15\n          (weight :method equal\n            (asset SPY)\n            (asset VTI)))))\n    (else\n      (if (> (return VEU 42) 0)\n        (group \"Short-term Recovery\"\n          (weight :method specified\n            (group \"Recovering Countries\" :weight 40\n              (filter :by momentum :select (top 3) :lookback 42\n                (weight :method equal\n                  (asset EWJ)\n                  (asset EWG)\n                  (asset EWU)\n                  (asset EWC)\n                  (asset EWA)\n                  (asset EWT)\n                  (asset INDA))))\n            (group \"Safe Developed\" :weight 30\n              (weight :method inverse-volatility :lookback 20\n                (asset EWC)\n                (asset EWA)\n                (asset EWL)\n                (asset EUFN)))\n            (group \"US & Bonds\" :weight 30\n              (weight :method equal\n                (asset SPY)\n                (asset VTI)\n                (asset IEF)))))\n        (else\n          (group \"International Downtrend\"\n            (weight :method specified\n              (group \"US Focus\" :weight 50\n                (weight :method momentum :lookback 63\n                  (asset SPY)\n                  (asset VTI)\n                  (asset QQQ)\n                  (asset USMV)))\n              (group \"Safe Haven Countries\" :weight 25\n                (weight :method inverse-volatility :lookback 20\n                  (asset EWC)\n                  (asset EWL)\n                  (asset EWA)\n                  (asset EWS)))\n              (group \"Bonds\" :weight 25\n                (weight :method inverse-volatility :lookback 20\n                  (asset TLT)\n                  (asset IEF)\n                  (asset BNDX)\n                  (asset SHY))))))))))"
+  },
+  {
+    "id": "commodity-carry-momentum",
+    "name": "Commodity Carry + Momentum",
+    "description": "Combines roll yield (carry) signals with price momentum for commodity selection—avoids contango traps.",
+    "category": "TEMPLATE_CATEGORY_ALTERNATIVES",
+    "asset_class": "ASSET_CLASS_COMMODITY",
+    "tags": [
+      "commodity",
+      "carry",
+      "momentum",
+      "roll-yield"
+    ],
+    "difficulty": "TEMPLATE_DIFFICULTY_ADVANCED",
+    "config_sexpr": "(strategy \"Commodity Carry + Momentum\"\n  :rebalance monthly\n  :benchmark DBC\n  (if (> (return DBC 126) 0)\n    (group \"Commodities Trending Up\"\n      (weight :method specified\n        (group \"Energy\" :weight 30\n          (if (> (return USO 63) (return UNG 63))\n            (group \"Oil Outperforming\"\n              (weight :method momentum :lookback 42\n                (asset USO)\n                (asset BNO)\n                (asset DBE)\n                (asset XLE)))\n            (else\n              (group \"Gas Outperforming\"\n                (weight :method momentum :lookback 42\n                  (asset UNG)\n                  (asset BOIL)\n                  (asset DBE)\n                  (asset FCG))))))\n        (group \"Precious Metals\" :weight 25\n          (if (> (return GLD 63) 0)\n            (group \"Gold Trending\"\n              (weight :method momentum :lookback 42\n                (asset GLD)\n                (asset IAU)\n                (asset SLV)\n                (asset GDX)))\n            (else\n              (group \"Gold Weak - Silver Focus\"\n                (weight :method equal\n                  (asset SLV)\n                  (asset SIVR)\n                  (asset SIL))))))\n        (group \"Agriculture\" :weight 25\n          (filter :by momentum :select (top 2) :lookback 63\n            (weight :method equal\n              (asset DBA)\n              (asset CORN)\n              (asset WEAT)\n              (asset SOYB)\n              (asset COW))))\n        (group \"Industrial Metals\" :weight 20\n          (if (> (return COPX 63) 0)\n            (group \"Copper Trending\"\n              (weight :method momentum :lookback 42\n                (asset COPX)\n                (asset DBB)\n                (asset CPER)))\n            (else\n              (group \"Diversified Metals\"\n                (weight :method equal\n                  (asset DBB)\n                  (asset JJM)\n                  (asset XME))))))))\n    (else\n      (if (> (return GLD 63) 0)\n        (group \"Commodities Down Gold Up\"\n          (weight :method specified\n            (group \"Precious Metals Safe Haven\" :weight 50\n              (weight :method momentum :lookback 42\n                (asset GLD)\n                (asset IAU)\n                (asset SLV)\n                (asset SGOL)))\n            (group \"Miners\" :weight 25\n              (weight :method momentum :lookback 21\n                (asset GDX)\n                (asset GDXJ)\n                (asset SIL)))\n            (group \"Cash/Bonds\" :weight 25\n              (weight :method equal\n                (asset SHY)\n                (asset TIP)))))\n        (else\n          (group \"Full Commodity Downtrend\"\n            (weight :method specified\n              (group \"Minimal Commodity\" :weight 20\n                (weight :method equal\n                  (asset GLD)\n                  (asset IAU)\n                  (asset SGOL)))\n              (group \"Inflation Protection\" :weight 30\n                (weight :method equal\n                  (asset TIP)\n                  (asset SCHP)\n                  (asset VTIP)\n                  (asset STIP)))\n              (group \"Cash Equivalents\" :weight 50\n                (weight :method inverse-volatility :lookback 10\n                  (asset SHY)\n                  (asset BIL)\n                  (asset SGOV)\n                  (asset USFR))))))))))"
+  },
+  {
+    "id": "quality-factor-portfolio",
+    "name": "Quality Factor Portfolio",
+    "description": "Invests in high-quality companies with strong ROE, low debt, and stable earnings—based on Buffett/Novy-Marx research.",
+    "category": "TEMPLATE_CATEGORY_FACTOR",
+    "asset_class": "ASSET_CLASS_EQUITY",
+    "tags": [
+      "quality",
+      "factor",
+      "buffett",
+      "roe",
+      "profitability"
+    ],
+    "difficulty": "TEMPLATE_DIFFICULTY_INTERMEDIATE",
+    "config_sexpr": "(strategy \"Quality Factor Portfolio\"\n  :rebalance monthly\n  :benchmark SPY\n  (if (> (price SPY) (sma SPY 200))\n    (group \"Bull Market Quality\"\n      (weight :method specified\n        (group \"Quality Core\" :weight 50\n          (weight :method momentum :lookback 63\n            (asset QUAL)\n            (asset SPHQ)\n            (asset DGRW)\n            (asset JQUA)))\n        (group \"Quality Dividend\" :weight 30\n          (weight :method equal\n            (asset SCHD)\n            (asset VIG)\n            (asset DGRO)\n            (asset NOBL)))\n        (group \"Quality Growth\" :weight 20\n          (weight :method momentum :lookback 42\n            (asset QGRO)\n            (asset VOOG)\n            (asset SPYG)))))\n    (else\n      (if (> (price SPY) (sma SPY 50))\n        (group \"Correction - Defensive Quality\"\n          (weight :method specified\n            (group \"Low Vol Quality\" :weight 50\n              (weight :method inverse-volatility :lookback 20\n                (asset QUAL)\n                (asset USMV)\n                (asset SPLV)\n                (asset SPHQ)))\n            (group \"Quality Dividend\" :weight 30\n              (weight :method equal\n                (asset SCHD)\n                (asset VIG)\n                (asset NOBL)))\n            (group \"Bonds\" :weight 20\n              (weight :method equal\n                (asset IEF)\n                (asset BND)))))\n        (else\n          (group \"Bear Market - Quality + Safety\"\n            (weight :method specified\n              (group \"Defensive Quality\" :weight 30\n                (weight :method equal\n                  (asset QUAL)\n                  (asset USMV)\n                  (asset XLP)))\n              (group \"Bonds\" :weight 50\n                (weight :method inverse-volatility :lookback 20\n                  (asset TLT)\n                  (asset IEF)\n                  (asset SHY)\n                  (asset BND)))\n              (group \"Gold\" :weight 20\n                (weight :method equal\n                  (asset GLD)\n                  (asset IAU))))))))))"
+  },
+  {
+    "id": "fama-french-multi-factor",
+    "name": "Fama-French Multi-Factor",
+    "description": "Classic academic multi-factor approach combining size, value, momentum, and profitability factors.",
+    "category": "TEMPLATE_CATEGORY_FACTOR",
+    "asset_class": "ASSET_CLASS_EQUITY",
+    "tags": [
+      "fama-french",
+      "academic",
+      "size",
+      "value",
+      "momentum",
+      "profitability"
+    ],
+    "difficulty": "TEMPLATE_DIFFICULTY_ADVANCED",
+    "config_sexpr": "(strategy \"Fama-French Multi-Factor\"\n  :rebalance monthly\n  :benchmark SPY\n  (if (> (price SPY) (sma SPY 200))\n    (if (> (return MTUM 63) (return VLUE 63))\n      (group \"Momentum Leading\"\n        (weight :method specified\n          (group \"Momentum Factor\" :weight 35\n            (weight :method momentum :lookback 42\n              (asset MTUM)\n              (asset FDMO)\n              (asset PDP)\n              (asset IMTM)))\n          (group \"Size Factor\" :weight 25\n            (weight :method momentum :lookback 63\n              (asset VBR)\n              (asset IJS)\n              (asset SLYV)\n              (asset IWN)))\n          (group \"Quality Factor\" :weight 25\n            (weight :method equal\n              (asset QUAL)\n              (asset SPHQ)\n              (asset JQUA)))\n          (group \"Value Factor\" :weight 15\n            (weight :method equal\n              (asset VLUE)\n              (asset VTV)\n              (asset IUSV)))))\n      (else\n        (group \"Value Leading\"\n          (weight :method specified\n            (group \"Value Factor\" :weight 35\n              (weight :method momentum :lookback 42\n                (asset VLUE)\n                (asset VTV)\n                (asset IUSV)\n                (asset RPV)))\n            (group \"Size Factor\" :weight 30\n              (weight :method momentum :lookback 63\n                (asset VBR)\n                (asset IJS)\n                (asset SLYV)\n                (asset VIOV)))\n            (group \"Quality Factor\" :weight 20\n              (weight :method equal\n                (asset QUAL)\n                (asset SPHQ)))\n            (group \"Momentum Factor\" :weight 15\n              (weight :method equal\n                (asset MTUM)\n                (asset PDP)))))))\n    (else\n      (if (> (price SPY) (sma SPY 50))\n        (group \"Correction - Defensive Factors\"\n          (weight :method specified\n            (group \"Low Vol Factor\" :weight 40\n              (weight :method inverse-volatility :lookback 20\n                (asset USMV)\n                (asset SPLV)\n                (asset LGLV)))\n            (group \"Quality Factor\" :weight 30\n              (weight :method equal\n                (asset QUAL)\n                (asset SPHQ)\n                (asset SCHD)))\n            (group \"Bonds\" :weight 30\n              (weight :method equal\n                (asset IEF)\n                (asset BND)\n                (asset AGG)))))\n        (else\n          (group \"Bear Market - Safety First\"\n            (weight :method inverse-volatility :lookback 20\n              (asset SHY)\n              (asset IEF)\n              (asset TLT)\n              (asset USMV)\n              (asset GLD)\n              (asset BIL))))))))"
+  },
+  {
+    "id": "betting-against-beta",
+    "name": "Betting Against Beta",
+    "description": "Low-beta anomaly strategy—overweights low-beta stocks which historically outperform on risk-adjusted basis.",
+    "category": "TEMPLATE_CATEGORY_FACTOR",
+    "asset_class": "ASSET_CLASS_EQUITY",
+    "tags": [
+      "low-beta",
+      "anomaly",
+      "frazzini",
+      "pedersen",
+      "leverage"
+    ],
+    "difficulty": "TEMPLATE_DIFFICULTY_ADVANCED",
+    "config_sexpr": "(strategy \"Betting Against Beta\"\n  :rebalance monthly\n  :benchmark SPY\n  (if (< (price VIX) 20)\n    (if (> (price SPY) (sma SPY 50))\n      (group \"Low Vol Bull - Leverage Low Beta\"\n        (weight :method specified\n          (group \"Core Low Beta\" :weight 50\n            (weight :method inverse-volatility :lookback 60\n              (asset USMV)\n              (asset SPLV)\n              (asset LGLV)\n              (asset XMLV)))\n          (group \"Leveraged Low Vol\" :weight 30\n            (weight :method equal\n              (asset SSO)\n              (asset USMV)))\n          (group \"Low Beta Sectors\" :weight 20\n            (weight :method inverse-volatility :lookback 42\n              (asset XLP)\n              (asset XLU)\n              (asset XLV)\n              (asset VPU)))))\n      (else\n        (group \"Low Vol Correction\"\n          (weight :method specified\n            (group \"Pure Low Beta\" :weight 60\n              (weight :method inverse-volatility :lookback 42\n                (asset USMV)\n                (asset SPLV)\n                (asset XLP)\n                (asset XLU)))\n            (group \"Bonds\" :weight 40\n              (weight :method equal\n                (asset IEF)\n                (asset TLT)\n                (asset BND)))))))\n    (else\n      (if (< (price VIX) 30)\n        (group \"Elevated Vol - Reduce Exposure\"\n          (weight :method specified\n            (group \"Defensive Low Beta\" :weight 40\n              (weight :method inverse-volatility :lookback 20\n                (asset USMV)\n                (asset SPLV)\n                (asset XLP)\n                (asset XLU)\n                (asset XLV)))\n            (group \"Bonds\" :weight 45\n              (weight :method inverse-volatility :lookback 20\n                (asset TLT)\n                (asset IEF)\n                (asset SHY)\n                (asset AGG)))\n            (group \"Gold\" :weight 15\n              (weight :method equal\n                (asset GLD)\n                (asset IAU)))))\n        (else\n          (group \"High Vol - Full Defense\"\n            (weight :method inverse-volatility :lookback 10\n              (asset SHY)\n              (asset BIL)\n              (asset IEF)\n              (asset TLT)\n              (asset GLD)\n              (asset SGOV))))))))"
+  },
+  {
+    "id": "coffeehouse-portfolio",
+    "name": "Coffeehouse Portfolio",
+    "description": "Bill Schultheis' 7-fund lazy portfolio—40% bonds, 60% equities split across diversified stock funds.",
+    "category": "TEMPLATE_CATEGORY_BUY_AND_HOLD",
+    "asset_class": "ASSET_CLASS_MULTI_ASSET",
+    "tags": [
+      "lazy",
+      "coffeehouse",
+      "schultheis",
+      "diversified",
+      "simple"
+    ],
+    "difficulty": "TEMPLATE_DIFFICULTY_BEGINNER",
+    "config_sexpr": "(strategy \"Coffeehouse Portfolio\"\n  :rebalance quarterly\n  :benchmark SPY\n  (weight :method specified\n    (group \"Bonds\" :weight 40\n      (weight :method equal\n        (asset BND)\n        (asset AGG)\n        (asset SCHZ)\n        (asset BNDX)))\n    (group \"Large Cap Blend\" :weight 10\n      (weight :method equal\n        (asset VTI)\n        (asset ITOT)\n        (asset SPTM)))\n    (group \"Large Cap Value\" :weight 10\n      (weight :method equal\n        (asset VTV)\n        (asset SCHV)\n        (asset IVE)\n        (asset IUSV)))\n    (group \"Small Cap Blend\" :weight 10\n      (weight :method equal\n        (asset VB)\n        (asset IJR)\n        (asset SCHA)\n        (asset IWM)))\n    (group \"Small Cap Value\" :weight 10\n      (weight :method equal\n        (asset VBR)\n        (asset IJS)\n        (asset SLYV)\n        (asset VIOV)))\n    (group \"International\" :weight 10\n      (weight :method equal\n        (asset VEA)\n        (asset IEFA)\n        (asset SCHF)\n        (asset VWO)))\n    (group \"REITs\" :weight 10\n      (weight :method equal\n        (asset VNQ)\n        (asset SCHH)\n        (asset IYR)\n        (asset XLRE)))))"
+  },
+  {
+    "id": "adx-trend-confirmation",
+    "name": "ADX Trend Confirmation",
+    "description": "Uses ADX (Average Directional Index) to confirm trend strength—only enters when ADX indicates strong trend.",
+    "category": "TEMPLATE_CATEGORY_TREND",
+    "asset_class": "ASSET_CLASS_EQUITY",
+    "tags": [
+      "adx",
+      "trend-strength",
+      "confirmation",
+      "directional"
+    ],
+    "difficulty": "TEMPLATE_DIFFICULTY_ADVANCED",
+    "config_sexpr": "(strategy \"ADX Trend Confirmation\"\n  :rebalance weekly\n  :benchmark SPY\n  (if (> (adx SPY 14) 25)\n    (if (> (price SPY) (sma SPY 50))\n      (group \"Strong Uptrend Confirmed\"\n        (weight :method specified\n          (group \"Trend Leaders\" :weight 50\n            (filter :by momentum :select (top 3) :lookback 21\n              (weight :method equal\n                (asset SPY)\n                (asset QQQ)\n                (asset IWM)\n                (asset VTI)\n                (asset DIA))))\n          (group \"Sector Momentum\" :weight 35\n            (filter :by momentum :select (top 3) :lookback 42\n              (weight :method equal\n                (asset XLK)\n                (asset XLY)\n                (asset XLF)\n                (asset XLI)\n                (asset XLE)\n                (asset XLV))))\n          (group \"Leveraged Satellite\" :weight 15\n            (weight :method equal\n              (asset SSO)\n              (asset QLD)))))\n      (else\n        (group \"Strong Downtrend Confirmed\"\n          (weight :method specified\n            (group \"Inverse/Hedge\" :weight 30\n              (weight :method equal\n                (asset SH)\n                (asset TAIL)\n                (asset VIXY)))\n            (group \"Safe Haven\" :weight 50\n              (weight :method inverse-volatility :lookback 10\n                (asset TLT)\n                (asset GLD)\n                (asset SHY)\n                (asset IEF)))\n            (group \"Defensive Equity\" :weight 20\n              (weight :method equal\n                (asset XLP)\n                (asset XLU)\n                (asset USMV)))))))\n    (else\n      (if (> (adx SPY 14) 20)\n        (if (> (price SPY) (sma SPY 50))\n          (group \"Moderate Uptrend\"\n            (weight :method specified\n              (group \"Core Equity\" :weight 60\n                (weight :method momentum :lookback 42\n                  (asset SPY)\n                  (asset VTI)\n                  (asset QQQ)\n                  (asset IWM)))\n              (group \"Bonds\" :weight 40\n                (weight :method equal\n                  (asset IEF)\n                  (asset BND)\n                  (asset AGG)))))\n          (else\n            (group \"Moderate Downtrend\"\n              (weight :method specified\n                (group \"Defensive\" :weight 40\n                  (weight :method inverse-volatility :lookback 20\n                    (asset USMV)\n                    (asset SPLV)\n                    (asset XLP)\n                    (asset XLU)))\n                (group \"Bonds\" :weight 60\n                  (weight :method inverse-volatility :lookback 20\n                    (asset TLT)\n                    (asset IEF)\n                    (asset SHY)\n                    (asset AGG)))))))\n        (else\n          (group \"Weak/No Trend - Range Bound\"\n            (weight :method specified\n              (group \"Balanced Equity\" :weight 40\n                (weight :method inverse-volatility :lookback 42\n                  (asset SPY)\n                  (asset VTI)\n                  (asset USMV)\n                  (asset SPLV)))\n              (group \"Bonds\" :weight 40\n                (weight :method equal\n                  (asset BND)\n                  (asset IEF)\n                  (asset AGG)\n                  (asset SHY)))\n              (group \"Alternatives\" :weight 20\n                (weight :method equal\n                  (asset GLD)\n                  (asset VNQ)\n                  (asset TIP))))))))))"
+  },
+  {
+    "id": "preferred-stock-ladder",
+    "name": "Preferred Stock Ladder",
+    "description": "Focus on preferred stocks for stable income—uses PFF, PGX, PFFD with credit quality and duration management.",
+    "category": "TEMPLATE_CATEGORY_INCOME",
+    "asset_class": "ASSET_CLASS_FIXED_INCOME",
+    "tags": [
+      "preferred",
+      "income",
+      "yield",
+      "credit",
+      "stable"
+    ],
+    "difficulty": "TEMPLATE_DIFFICULTY_INTERMEDIATE",
+    "config_sexpr": "(strategy \"Preferred Stock Ladder\"\n  :rebalance monthly\n  :benchmark PFF\n  (if (> (price HYG) (sma HYG 50))\n    (group \"Credit Environment Favorable\"\n      (weight :method specified\n        (group \"Core Preferred\" :weight 50\n          (weight :method equal\n            (asset PFF)\n            (asset PGX)\n            (asset PFFD)\n            (asset PSK)))\n        (group \"Financial Preferred\" :weight 25\n          (weight :method equal\n            (asset KBWP)\n            (asset PGF)\n            (asset FPE)))\n        (group \"Convertible Preferred\" :weight 15\n          (weight :method equal\n            (asset CWB)\n            (asset ICVT)))\n        (group \"Short Duration\" :weight 10\n          (weight :method equal\n            (asset PFFV)\n            (asset VRP)))))\n    (else\n      (if (> (price HYG) (sma HYG 100))\n        (group \"Credit Neutral\"\n          (weight :method specified\n            (group \"Investment Grade Preferred\" :weight 50\n              (weight :method inverse-volatility :lookback 20\n                (asset PFF)\n                (asset PFFD)\n                (asset PSK)))\n            (group \"Variable Rate\" :weight 25\n              (weight :method equal\n                (asset VRP)\n                (asset PFFV)))\n            (group \"Short Duration Bonds\" :weight 25\n              (weight :method equal\n                (asset SHY)\n                (asset VCSH)\n                (asset BSV)))))\n        (else\n          (group \"Credit Stress - Defensive\"\n            (weight :method specified\n              (group \"Minimal Preferred\" :weight 20\n                (weight :method equal\n                  (asset PFF)\n                  (asset PFFD)))\n              (group \"Investment Grade Bonds\" :weight 50\n                (weight :method inverse-volatility :lookback 20\n                  (asset LQD)\n                  (asset VCIT)\n                  (asset IGIB)\n                  (asset BND)))\n              (group \"Treasuries\" :weight 30\n                (weight :method equal\n                  (asset SHY)\n                  (asset IEF)\n                  (asset BIL))))))))))"
+  },
+  {
+    "id": "turn-of-month-effect",
+    "name": "Turn-of-Month Effect",
+    "description": "Exploits documented turn-of-month seasonality—full equity exposure around month boundaries, defensive mid-month.",
+    "category": "TEMPLATE_CATEGORY_MEAN_REVERSION",
+    "asset_class": "ASSET_CLASS_EQUITY",
+    "tags": [
+      "seasonality",
+      "calendar",
+      "turn-of-month",
+      "anomaly"
+    ],
+    "difficulty": "TEMPLATE_DIFFICULTY_INTERMEDIATE",
+    "config_sexpr": "(strategy \"Turn-of-Month Effect\"\n  :rebalance daily\n  :benchmark SPY\n  (if (> (price SPY) (sma SPY 200))\n    (if (> (price SPY) (sma SPY 20))\n      (group \"Uptrend - Aggressive Turn of Month\"\n        (weight :method specified\n          (group \"Core Equity\" :weight 60\n            (weight :method momentum :lookback 21\n              (asset SPY)\n              (asset QQQ)\n              (asset VTI)\n              (asset IWM)))\n          (group \"Leveraged Satellite\" :weight 25\n            (weight :method equal\n              (asset SSO)\n              (asset QLD)\n              (asset UWM)))\n          (group \"Safety Buffer\" :weight 15\n            (weight :method equal\n              (asset IEF)\n              (asset SHY)))))\n      (else\n        (group \"Uptrend Pullback - Moderate\"\n          (weight :method specified\n            (group \"Core Equity\" :weight 50\n              (weight :method equal\n                (asset SPY)\n                (asset VTI)\n                (asset QQQ)))\n            (group \"Low Vol Equity\" :weight 25\n              (weight :method equal\n                (asset USMV)\n                (asset SPLV)\n                (asset XLP)))\n            (group \"Bonds\" :weight 25\n              (weight :method equal\n                (asset IEF)\n                (asset BND)\n                (asset SHY)))))))\n    (else\n      (if (> (price SPY) (sma SPY 50))\n        (group \"Correction - Cautious Turn of Month\"\n          (weight :method specified\n            (group \"Defensive Equity\" :weight 35\n              (weight :method inverse-volatility :lookback 20\n                (asset USMV)\n                (asset SPLV)\n                (asset XLP)\n                (asset XLU)))\n            (group \"Core Equity\" :weight 25\n              (weight :method equal\n                (asset SPY)\n                (asset VTI)))\n            (group \"Bonds\" :weight 40\n              (weight :method inverse-volatility :lookback 20\n                (asset TLT)\n                (asset IEF)\n                (asset SHY)\n                (asset BND)))))\n        (else\n          (group \"Downtrend - Skip Turn of Month\"\n            (weight :method specified\n              (group \"Minimal Equity\" :weight 20\n                (weight :method equal\n                  (asset USMV)\n                  (asset XLP)\n                  (asset XLU)))\n              (group \"Bonds\" :weight 60\n                (weight :method inverse-volatility :lookback 20\n                  (asset TLT)\n                  (asset IEF)\n                  (asset SHY)\n                  (asset AGG)))\n              (group \"Gold\" :weight 20\n                (weight :method equal\n                  (asset GLD)\n                  (asset IAU))))))))))"
+  },
+  {
+    "id": "volatility-risk-premium",
+    "name": "Volatility Risk Premium",
+    "description": "Harvests volatility risk premium by selling vol—uses SVXY when term structure in contango, defensive when VIX spikes.",
+    "category": "TEMPLATE_CATEGORY_ALTERNATIVES",
+    "asset_class": "ASSET_CLASS_OPTIONS",
+    "tags": [
+      "volatility",
+      "premium",
+      "contango",
+      "svxy",
+      "vix"
+    ],
+    "difficulty": "TEMPLATE_DIFFICULTY_ADVANCED",
+    "config_sexpr": "(strategy \"Volatility Risk Premium\"\n  :rebalance daily\n  :benchmark SPY\n  (if (< (price VIX) 15)\n    (if (> (price SPY) (sma SPY 50))\n      (group \"Low VIX Bull - Harvest Vol Premium\"\n        (weight :method specified\n          (group \"Short Vol\" :weight 40\n            (weight :method equal\n              (asset SVXY)\n              (asset SVOL)))\n          (group \"Equity Core\" :weight 40\n            (weight :method momentum :lookback 21\n              (asset SPY)\n              (asset QQQ)\n              (asset VTI)))\n          (group \"Buffer\" :weight 20\n            (weight :method equal\n              (asset IEF)\n              (asset SHY)))))\n      (else\n        (group \"Low VIX Divergence - Caution\"\n          (weight :method specified\n            (group \"Reduced Short Vol\" :weight 20\n              (weight :method equal\n                (asset SVXY)\n                (asset SVOL)))\n            (group \"Equity\" :weight 40\n              (weight :method equal\n                (asset SPY)\n                (asset VTI)\n                (asset USMV)))\n            (group \"Bonds\" :weight 40\n              (weight :method equal\n                (asset IEF)\n                (asset TLT)\n                (asset SHY)))))))\n    (else\n      (if (< (price VIX) 20)\n        (group \"Normal VIX - Moderate Vol Harvest\"\n          (weight :method specified\n            (group \"Small Short Vol\" :weight 15\n              (weight :method equal\n                (asset SVXY)\n                (asset SVOL)))\n            (group \"Balanced Equity\" :weight 45\n              (weight :method inverse-volatility :lookback 20\n                (asset SPY)\n                (asset VTI)\n                (asset USMV)\n                (asset QQQ)))\n            (group \"Bonds\" :weight 40\n              (weight :method equal\n                (asset IEF)\n                (asset BND)\n                (asset SHY)))))\n        (else\n          (if (< (price VIX) 30)\n            (group \"Elevated VIX - No Vol Harvest\"\n              (weight :method specified\n                (group \"Defensive Equity\" :weight 30\n                  (weight :method inverse-volatility :lookback 10\n                    (asset USMV)\n                    (asset SPLV)\n                    (asset XLP)\n                    (asset XLU)))\n                (group \"Bonds\" :weight 50\n                  (weight :method inverse-volatility :lookback 10\n                    (asset TLT)\n                    (asset IEF)\n                    (asset SHY)))\n                (group \"Gold\" :weight 20\n                  (weight :method equal\n                    (asset GLD)\n                    (asset IAU)))))\n            (else\n              (group \"VIX Spike - Full Safety\"\n                (weight :method inverse-volatility :lookback 5\n                  (asset SHY)\n                  (asset BIL)\n                  (asset SGOV)\n                  (asset GLD)\n                  (asset TLT)\n                  (asset IEF))))))))))"
+  }
+]

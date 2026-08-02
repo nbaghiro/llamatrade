@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-import json
+import asyncio
 import logging
+from collections.abc import Sequence
 from decimal import Decimal
 from typing import TYPE_CHECKING, cast
 from uuid import UUID
@@ -15,22 +16,40 @@ from connectrpc.code import Code
 from connectrpc.errors import ConnectError
 from connectrpc.request import RequestContext
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from llamatrade_common.connect import resolve_identity_connect
-from llamatrade_db import get_session_maker, system_session, tenant_session
+from llamatrade_common import pagination_response, resolve_pagination
+from llamatrade_common.connect import (
+    handle_service_errors,
+    parse_uuid,
+    resolve_identity_connect,
+)
+from llamatrade_db import get_session_maker, tenant_session
 from llamatrade_db.models import StrategyExecution
 from llamatrade_db.plan_limits import PlanLimitExceededError, enforce_plan_limit
-from llamatrade_proto.generated import common_pb2, strategy_pb2
-from llamatrade_proto.generated.common_pb2 import EXECUTION_MODE_PAPER
+from llamatrade_events.catalog.notifications import (
+    NotificationEvent,
+    shared_notification_events,
+)
+from llamatrade_proto.generated import common_pb2, events_pb2, strategy_pb2
+from llamatrade_proto.generated.common_pb2 import (
+    EXECUTION_MODE_PAPER,
+    EXECUTION_MODE_UNSPECIFIED,
+    EXECUTION_STATUS_UNSPECIFIED,
+    ExecutionMode,
+    ExecutionStatus,
+)
 from llamatrade_proto.generated.strategy_pb2 import (
     STRATEGY_STATUS_ACTIVE,
     STRATEGY_STATUS_ARCHIVED,
     STRATEGY_STATUS_PAUSED,
+    STRATEGY_STATUS_UNSPECIFIED,
+    StrategyStatus,
 )
+from llamatrade_telemetry import metrics
 
-from src.grpc.error_handler import handle_service_errors, parse_uuid
-from src.models import ConfigOverride
+from src.models import MAX_SEXPR_LEN, ConfigOverride
 from src.proto_mappers import (
     execution_to_proto,
     strategy_summary_to_proto,
@@ -42,6 +61,29 @@ from src.proto_mappers import (
 logger = logging.getLogger(__name__)
 
 
+# Values a client may filter on. UNSPECIFIED is the "no filter" sentinel, never a filter
+# value, and a value outside the enum has no database label to bind to.
+_STRATEGY_STATUS_FILTERS = frozenset(StrategyStatus.values()) - {STRATEGY_STATUS_UNSPECIFIED}
+_EXECUTION_STATUS_FILTERS = frozenset(ExecutionStatus.values()) - {EXECUTION_STATUS_UNSPECIFIED}
+_EXECUTION_MODE_FILTERS = frozenset(ExecutionMode.values()) - {EXECUTION_MODE_UNSPECIFIED}
+
+
+def _enum_filter(values: Sequence[int], allowed: frozenset[int], field: str) -> int | None:
+    """The filter a repeated request field carries, or None when it is unset.
+
+    Every value is checked, so an explicit UNSPECIFIED or an int outside the enum is
+    reported as INVALID_ARGUMENT instead of failing later on the database enum bridge.
+    Only the first value is applied — the service layer filters on one value.
+    """
+    for value in values:
+        if value not in allowed:
+            raise ConnectError(
+                Code.INVALID_ARGUMENT,
+                f"{field}: {value} is not a valid filter value (expected one of {sorted(allowed)})",
+            )
+    return values[0] if values else None
+
+
 def _validate_tenant_context(context: common_pb2.TenantContext) -> tuple[UUID, UUID]:
     """Verified ``(tenant_id, user_id)`` for the call.
 
@@ -49,6 +91,30 @@ def _validate_tenant_context(context: common_pb2.TenantContext) -> tuple[UUID, U
     rejecting a request whose wire ``context`` tenant doesn't match the token.
     """
     return resolve_identity_connect(context)
+
+
+def _strategy_integrity_message(error: IntegrityError) -> str | None:
+    """User-facing message for a strategy unique-constraint violation.
+
+    Returns None for any other constraint so the shared decorator falls back to
+    its generic message; the raw exception text is never surfaced.
+    """
+    orig = str(error.orig).lower() if error.orig else ""
+    combined = f"{orig} {error!s}".lower()
+    if "uq_strategy_tenant_name" in combined or (
+        "strategies" in combined and "name" in combined and "unique" in combined
+    ):
+        return "A strategy with this name already exists. Please choose a different name."
+    if "uq_version_strategy_version" in combined or (
+        "strategy_versions" in combined and "version" in combined and "unique" in combined
+    ):
+        return "Version conflict detected. Please refresh and try again."
+    return None
+
+
+# All servicer handlers map database/service exceptions through the shared
+# decorator, injecting the strategy-specific constraint messages.
+_handle_errors = handle_service_errors(on_integrity_error=_strategy_integrity_message)
 
 
 class StrategyServicer:
@@ -80,7 +146,7 @@ class StrategyServicer:
             )
         return self._ledger_client
 
-    @handle_service_errors
+    @_handle_errors
     async def get_strategy(
         self,
         request: strategy_pb2.GetStrategyRequest,
@@ -115,7 +181,7 @@ class StrategyServicer:
                 strategy=strategy_to_proto(*result),
             )
 
-    @handle_service_errors
+    @_handle_errors
     async def list_strategies(
         self,
         request: strategy_pb2.ListStrategiesRequest,
@@ -126,8 +192,7 @@ class StrategyServicer:
 
         tenant_id, _ = _validate_tenant_context(request.context)
 
-        # Map status filters - pass proto int value directly
-        status = request.statuses[0] if request.statuses else None
+        status = _enum_filter(request.statuses, _STRATEGY_STATUS_FILTERS, "statuses")
 
         search = request.search if request.search else None
 
@@ -142,8 +207,7 @@ class StrategyServicer:
             elif request.sort.direction == common_pb2.SORT_DIRECTION_DESC:
                 sort_direction = "desc"
 
-        page = request.pagination.page if request.HasField("pagination") else 1
-        page_size = request.pagination.page_size if request.HasField("pagination") else 20
+        page, page_size = resolve_pagination(request.pagination)
 
         async with tenant_session(tenant_id, self._maker()) as db:
             service = StrategyService(db)
@@ -157,24 +221,17 @@ class StrategyServicer:
                 page_size=page_size,
             )
 
-            total_pages = (total + page_size - 1) // page_size if total > 0 else 1
-
             return strategy_pb2.ListStrategiesResponse(
                 strategies=[
-                    strategy_summary_to_proto(s, symbols, timeframe)
-                    for s, symbols, timeframe in strategies
+                    strategy_summary_to_proto(s, symbols, rebalance)
+                    for s, symbols, rebalance in strategies
                 ],
                 pagination=common_pb2.PaginationResponse(
-                    total_items=total,
-                    total_pages=total_pages,
-                    current_page=page,
-                    page_size=page_size,
-                    has_next=page < total_pages,
-                    has_previous=page > 1,
+                    **pagination_response(total, page, page_size)
                 ),
             )
 
-    @handle_service_errors
+    @_handle_errors
     async def create_strategy(
         self,
         request: strategy_pb2.CreateStrategyRequest,
@@ -228,7 +285,7 @@ class StrategyServicer:
             # Validation errors are invalid arguments
             raise ConnectError(Code.INVALID_ARGUMENT, str(e))
 
-    @handle_service_errors
+    @_handle_errors
     async def update_strategy(
         self,
         request: strategy_pb2.UpdateStrategyRequest,
@@ -271,7 +328,7 @@ class StrategyServicer:
             # Validation errors are invalid arguments
             raise ConnectError(Code.INVALID_ARGUMENT, str(e))
 
-    @handle_service_errors
+    @_handle_errors
     async def delete_strategy(
         self,
         request: strategy_pb2.DeleteStrategyRequest,
@@ -303,55 +360,32 @@ class StrategyServicer:
 
             return strategy_pb2.DeleteStrategyResponse(success=True)
 
-    @handle_service_errors
+    @_handle_errors
     async def compile_strategy(
         self,
         request: strategy_pb2.CompileStrategyRequest,
         ctx: RequestContext[object, object],
     ) -> strategy_pb2.CompileStrategyResponse:
-        """Compile/validate DSL code (stateless — touches no tenant data)."""
-        from src.services.strategy_service import StrategyService
+        """Compile/validate DSL code (stateless — reads no tenant data).
 
-        # Compilation reads no tenant rows, so it runs outside a tenant scope.
-        async with system_session(self._maker()) as db:
-            service = StrategyService(db)
-            validation = await service.validate_config(request.dsl_code)
+        Identity is still resolved so an unauthenticated caller cannot spend
+        parser capacity, and the input is length-bounded before the CPU-bound
+        parse runs off the event loop.
+        """
+        from src.services.strategy_service import compile_strategy_dsl
 
-            # Compile validated DSL to JSON; a compile failure on otherwise-valid
-            # DSL is surfaced to the caller, not swallowed.
-            compiled_json_str = ""
-            compile_error: str | None = None
-            if validation.valid:
-                from llamatrade_dsl import parse_strategy, to_json
+        _validate_tenant_context(request.context)
 
-                try:
-                    ast = parse_strategy(request.dsl_code)
-                    compiled_json_str = json.dumps(to_json(ast))
-                except Exception as e:
-                    compile_error = f"compilation failed: {e}"
-
-            result = strategy_pb2.CompilationResult(
-                success=validation.valid and compile_error is None,
-                compiled_json=compiled_json_str,
+        if len(request.dsl_code) > MAX_SEXPR_LEN:
+            raise ConnectError(
+                Code.INVALID_ARGUMENT,
+                f"dsl_code exceeds the maximum length of {MAX_SEXPR_LEN} characters",
             )
 
-            if compile_error is not None:
-                result.errors.append(
-                    strategy_pb2.CompilationError(
-                        line=0,
-                        column=0,
-                        message=compile_error,
-                        code="COMPILE_ERROR",
-                    )
-                )
+        result = await asyncio.to_thread(compile_strategy_dsl, request.dsl_code)
+        return strategy_pb2.CompileStrategyResponse(result=result)
 
-            # validation already carries structured errors/warnings (proto).
-            result.errors.extend(validation.errors)
-            result.warnings.extend(validation.warnings)
-
-            return strategy_pb2.CompileStrategyResponse(result=result)
-
-    @handle_service_errors
+    @_handle_errors
     async def validate_strategy(
         self,
         request: strategy_pb2.ValidateStrategyRequest,
@@ -380,7 +414,7 @@ class StrategyServicer:
 
             return strategy_pb2.ValidateStrategyResponse(result=validation)
 
-    @handle_service_errors
+    @_handle_errors
     async def list_strategy_versions(
         self,
         request: strategy_pb2.ListStrategyVersionsRequest,
@@ -392,8 +426,7 @@ class StrategyServicer:
         tenant_id, _ = _validate_tenant_context(request.context)
         strategy_id = parse_uuid(request.strategy_id, "strategy_id")
 
-        page = request.pagination.page if request.HasField("pagination") else 1
-        page_size = request.pagination.page_size if request.HasField("pagination") else 20
+        page, page_size = resolve_pagination(request.pagination)
 
         async with tenant_session(tenant_id, self._maker()) as db:
             service = StrategyService(db)
@@ -402,24 +435,16 @@ class StrategyServicer:
             # Manual pagination since service returns all
             total = len(versions)
             start = (page - 1) * page_size
-            end = start + page_size
-            paginated = versions[start:end]
-
-            total_pages = (total + page_size - 1) // page_size if total > 0 else 1
+            paginated = versions[start : start + page_size]
 
             return strategy_pb2.ListStrategyVersionsResponse(
                 versions=[strategy_version_to_proto(v) for v in paginated],
                 pagination=common_pb2.PaginationResponse(
-                    total_items=total,
-                    total_pages=total_pages,
-                    current_page=page,
-                    page_size=page_size,
-                    has_next=page < total_pages,
-                    has_previous=page > 1,
+                    **pagination_response(total, page, page_size)
                 ),
             )
 
-    @handle_service_errors
+    @_handle_errors
     async def update_strategy_status(
         self,
         request: strategy_pb2.UpdateStrategyStatusRequest,
@@ -479,7 +504,7 @@ class StrategyServicer:
             # Status transition validation errors
             raise ConnectError(Code.INVALID_ARGUMENT, str(e))
 
-    @handle_service_errors
+    @_handle_errors
     async def clone_strategy(
         self,
         request: strategy_pb2.CloneStrategyRequest,
@@ -536,7 +561,7 @@ class StrategyServicer:
                 strategy=strategy_to_proto(*result),
             )
 
-    @handle_service_errors
+    @_handle_errors
     async def create_execution(
         self,
         request: strategy_pb2.CreateExecutionRequest,
@@ -592,7 +617,7 @@ class StrategyServicer:
                 execution=execution_to_proto(execution),
             )
 
-    @handle_service_errors
+    @_handle_errors
     async def get_execution(
         self,
         request: strategy_pb2.GetExecutionRequest,
@@ -618,7 +643,7 @@ class StrategyServicer:
                 execution=execution_to_proto(execution),
             )
 
-    @handle_service_errors
+    @_handle_errors
     async def list_executions(
         self,
         request: strategy_pb2.ListExecutionsRequest,
@@ -629,15 +654,13 @@ class StrategyServicer:
 
         tenant_id, _ = _validate_tenant_context(request.context)
 
-        # Map filters - pass proto int values directly
         strategy_id = (
             parse_uuid(request.strategy_id, "strategy_id") if request.strategy_id else None
         )
-        status = request.statuses[0] if request.statuses else None
-        mode = request.modes[0] if request.modes else None
+        status = _enum_filter(request.statuses, _EXECUTION_STATUS_FILTERS, "statuses")
+        mode = _enum_filter(request.modes, _EXECUTION_MODE_FILTERS, "modes")
 
-        page = request.pagination.page if request.HasField("pagination") else 1
-        page_size = request.pagination.page_size if request.HasField("pagination") else 20
+        page, page_size = resolve_pagination(request.pagination)
 
         async with tenant_session(tenant_id, self._maker()) as db:
             service = StrategyService(db)
@@ -650,21 +673,14 @@ class StrategyServicer:
                 page_size=page_size,
             )
 
-            total_pages = (total + page_size - 1) // page_size if total > 0 else 1
-
             return strategy_pb2.ListExecutionsResponse(
                 executions=[execution_to_proto(e) for e in executions],
                 pagination=common_pb2.PaginationResponse(
-                    total_items=total,
-                    total_pages=total_pages,
-                    current_page=page,
-                    page_size=page_size,
-                    has_next=page < total_pages,
-                    has_previous=page > 1,
+                    **pagination_response(total, page, page_size)
                 ),
             )
 
-    @handle_service_errors
+    @_handle_errors
     async def _enforce_live_strategy_quota(self, db: AsyncSession, tenant_id: UUID) -> None:
         """Reject when the tenant is at its plan's live-strategy limit."""
         running = (
@@ -681,6 +697,15 @@ class StrategyServicer:
         try:
             await enforce_plan_limit(db, tenant_id, "live_strategies", running)
         except PlanLimitExceededError as e:
+            metrics.billing.plan_limit_exceeded(limit="live_strategies")
+            await shared_notification_events().publish_safe(
+                NotificationEvent(
+                    category=events_pb2.NOTIFICATION_CATEGORY_PLAN_LIMIT_REACHED,
+                    reason=f"{e.limit} live strategies",
+                ),
+                tenant_id=str(tenant_id),
+                dedup_parts=("live_strategies", str(e.limit)),
+            )
             raise ConnectError(
                 Code.RESOURCE_EXHAUSTED,
                 f"Plan limit reached: {e.limit} live strateg(ies); upgrade to run more.",
@@ -721,7 +746,7 @@ class StrategyServicer:
             # State transition / funding errors are precondition failures
             raise ConnectError(Code.FAILED_PRECONDITION, str(e))
 
-    @handle_service_errors
+    @_handle_errors
     async def pause_execution(
         self,
         request: strategy_pb2.PauseExecutionRequest,
@@ -751,7 +776,7 @@ class StrategyServicer:
             # State transition errors are precondition failures
             raise ConnectError(Code.FAILED_PRECONDITION, str(e))
 
-    @handle_service_errors
+    @_handle_errors
     async def stop_execution(
         self,
         request: strategy_pb2.StopExecutionRequest,
@@ -789,7 +814,7 @@ class StrategyServicer:
             # State transition errors are precondition failures
             raise ConnectError(Code.FAILED_PRECONDITION, str(e))
 
-    @handle_service_errors
+    @_handle_errors
     async def list_templates(
         self,
         request: strategy_pb2.ListTemplatesRequest,
@@ -809,7 +834,7 @@ class StrategyServicer:
         asset_class = request.asset_class if request.asset_class else None
         difficulty = request.difficulty if request.difficulty else None
 
-        templates = await template_service.list_templates(
+        templates = template_service.list_templates(
             category=category,
             asset_class=asset_class,
             difficulty=difficulty,
@@ -819,7 +844,7 @@ class StrategyServicer:
             templates=[template_to_proto(t) for t in templates],
         )
 
-    @handle_service_errors
+    @_handle_errors
     async def get_template(
         self,
         request: strategy_pb2.GetTemplateRequest,
@@ -832,7 +857,7 @@ class StrategyServicer:
         from src.services.template_service import get_template_service
 
         template_service = get_template_service()
-        template = await template_service.get_template(request.template_id)
+        template = template_service.get_template(request.template_id)
 
         if not template:
             raise ConnectError(

@@ -1,8 +1,8 @@
-"""Golden round-trip tests for the DB-row -> proto strategy mappers (1A).
+"""Golden round-trip tests for the DB-row -> proto strategy mappers.
 
 Validates the canonical mappers in isolation: DB row in, proto out, with
 (1) Decimal precision preserved (no float hop, 5A), (2) the proto field-name drift
-applied (7A) — DB ``config_sexpr`` -> proto ``dsl_code``, ``changelog`` ->
+applied — DB ``config_sexpr`` -> proto ``dsl_code``, ``changelog`` ->
 ``change_summary`` — and (3) no proto Decimal field left unset outside an explicit allowlist.
 """
 
@@ -81,7 +81,7 @@ def _make_version() -> StrategyVersion:
         version=3,
         config_sexpr=_DSL,
         symbols=["SPY", "AGG"],
-        timeframe="1D",
+        rebalance="daily",
         changelog="tightened stops",
         created_by=_USER_ID,
         created_at=_CREATED,
@@ -129,7 +129,7 @@ def test_strategy_flatten_and_field_renames() -> None:
     assert proto.dsl_code == _DSL
 
     assert list(proto.symbols) == ["SPY", "AGG"]
-    assert proto.timeframe == "1D"
+    assert proto.rebalance == "daily"
     assert proto.created_at.seconds == int(_CREATED.timestamp())
     assert proto.updated_at.seconds == int(_UPDATED.timestamp())
 
@@ -142,11 +142,11 @@ def test_strategy_decimal_fields_unset_allowlist() -> None:
 
 
 def test_strategy_summary_carries_symbols_omits_dsl() -> None:
-    proto = strategy_summary_to_proto(_make_strategy(), ["SPY", "AGG"], "1D")
+    proto = strategy_summary_to_proto(_make_strategy(), ["SPY", "AGG"], "daily")
     assert proto.id == str(_STRATEGY_ID)
     assert proto.tenant_id == str(_TENANT_ID)
     assert list(proto.symbols) == ["SPY", "AGG"]
-    assert proto.timeframe == "1D"
+    assert proto.rebalance == "daily"
     # The DSL config is omitted from the list projection.
     assert proto.dsl_code == ""
 
@@ -229,7 +229,7 @@ def test_template_maps_fields_and_drops_config_json() -> None:
 def test_validation_maps_to_structured_proto() -> None:
     proto = validation_to_proto(
         valid=False,
-        errors=["missing entry condition"],
+        errors=[("missing entry condition", 3, 7)],
         warnings=["trades many symbols"],
         detected_symbols=["SPY", "AGG"],
         detected_indicators=["rsi(14)"],
@@ -238,7 +238,7 @@ def test_validation_maps_to_structured_proto() -> None:
     assert len(proto.errors) == 1
     assert proto.errors[0].message == "missing entry condition"
     assert proto.errors[0].code == "VALIDATION_ERROR"
-    assert proto.errors[0].line == 0 and proto.errors[0].column == 0
+    assert proto.errors[0].line == 3 and proto.errors[0].column == 7
     assert proto.warnings[0].code == "WARNING"
     assert list(proto.detected_symbols) == ["SPY", "AGG"]
     assert list(proto.detected_indicators) == ["rsi(14)"]

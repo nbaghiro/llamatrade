@@ -16,9 +16,10 @@ COPY libs/common /app/libs/common
 COPY libs/db /app/libs/db
 COPY libs/dsl /app/libs/dsl
 COPY libs/proto /app/libs/proto
+COPY libs/events /app/libs/events
 
 # Install shared libraries (order matters for dependencies; telemetry first)
-RUN pip install --no-cache-dir /app/libs/telemetry /app/libs/common /app/libs/db /app/libs/dsl /app/libs/proto
+RUN pip install --no-cache-dir /app/libs/telemetry /app/libs/common /app/libs/db /app/libs/dsl /app/libs/proto /app/libs/events
 
 # Copy service files and install
 COPY services/strategy/pyproject.toml services/strategy/README.md /app/
@@ -44,13 +45,13 @@ USER appuser
 # Environment variables
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
-    PORT=8002
+    PORT=8820
 
-EXPOSE 8002
+EXPOSE 8820
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8002/health')" || exit 1
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8820/health')" || exit 1
 
 # Run the application
-CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8002"]
+CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8820"]

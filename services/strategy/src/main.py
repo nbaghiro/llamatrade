@@ -17,7 +17,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from starlette.types import ASGIApp
 
 from llamatrade_common import AuthMiddleware, HealthChecker
-from llamatrade_db import close_db, get_pool_stats
+from llamatrade_common.health import cached_engine_check
+from llamatrade_db import close_db, get_engine, get_pool_stats
+from llamatrade_db.session import verify_rls_enforcement
 from llamatrade_telemetry import init_telemetry
 
 logger = logging.getLogger(__name__)
@@ -31,21 +33,22 @@ CORS_ORIGINS = os.getenv(
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     """Application lifespan handler."""
-    # Mount Connect ASGI app
-    try:
-        from llamatrade_proto.generated.strategy_connect import (
-            StrategyService,
-            StrategyServiceASGIApplication,
-        )
+    # Fail closed (prod/staging) if the DB role can bypass RLS.
+    await verify_rls_enforcement()
 
-        from src.grpc.servicer import StrategyServicer
+    # Mount the Connect ASGI app. Load-bearing: without it the service serves only
+    # health, so a failed import or mount must crash startup rather than degrade.
+    from llamatrade_proto.generated.strategy_connect import (
+        StrategyService,
+        StrategyServiceASGIApplication,
+    )
 
-        servicer = StrategyServicer()
-        connect_app = StrategyServiceASGIApplication(cast(StrategyService, servicer))
-        app.mount("/", cast(ASGIApp, connect_app))
-        logger.info("Connect ASGI application mounted successfully")
-    except ImportError as e:
-        logger.warning("Connect dependencies not available: %s", e)
+    from src.grpc.servicer import StrategyServicer
+
+    servicer = StrategyServicer()
+    connect_app = StrategyServiceASGIApplication(cast(StrategyService, servicer))
+    app.mount("/", cast(ASGIApp, connect_app))
+    logger.info("Connect ASGI application mounted successfully")
 
     # Periodically release sleeves stranded by a failed ledger close (must never
     # block startup; a single pod runs the sweep via an advisory lock).
@@ -98,4 +101,8 @@ app.add_middleware(
 init_telemetry(app, service="strategy", pool_stats_provider=get_pool_stats)
 
 
-app.include_router(HealthChecker("strategy", "0.1.0").create_router())
+_check_database = cached_engine_check(get_engine)
+
+_health = HealthChecker("strategy", "0.1.0")
+_health.add_check("database", lambda: _check_database())
+app.include_router(_health.create_router())

@@ -34,7 +34,7 @@ async def _run_sweep() -> int:
     ledger = LedgerClient(
         os.getenv("PORTFOLIO_GRPC_TARGET", "portfolio:8860"), service_name="strategy"
     )
-    async with system_session() as db:
+    async with system_session(reason="strategy stranded-sleeve sweep") as db:
         return await StrategyService(db).reconcile_stranded_sleeves(ledger=ledger)
 
 

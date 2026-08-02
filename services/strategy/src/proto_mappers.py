@@ -3,9 +3,9 @@
 Proto is the single source of truth for the read/wire shape (decision 1A): these
 functions map the persisted ``Strategy``/``StrategyVersion``/``StrategyExecution``
 rows straight to the generated proto messages in one pass, with no intermediate
-Pydantic layer, and money kept as ``Decimal`` end-to-end (5A).
+Pydantic layer, and money kept as ``Decimal`` end-to-end.
 
-Proto field names are authoritative (7A): the DB's ``config_sexpr`` maps to proto
+Proto field names are authoritative: the DB's ``config_sexpr`` maps to proto
 ``dsl_code`` and ``changelog`` to ``change_summary`` — read from the DB column, write to the
 proto field. The DSL string is the single source of truth; the JSON IR and visual tree are
 derived on demand (client-side ``fromDSLString``, or the ``CompileStrategy`` RPC), never stored
@@ -16,26 +16,34 @@ or returned on the strategy. Enum columns are stored as proto ints via TypeDecor
 from __future__ import annotations
 
 import json
-from datetime import datetime
+from datetime import UTC, datetime
 from decimal import Decimal
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from llamatrade_db.models.strategy import Strategy, StrategyExecution, StrategyVersion
 from llamatrade_proto.generated import common_pb2, strategy_pb2
+from llamatrade_proto.timestamps import to_proto_timestamp
 
 if TYPE_CHECKING:
     from src.services.template_service import TemplateData
 
 
 def _ts(value: datetime) -> common_pb2.Timestamp:
-    return common_pb2.Timestamp(seconds=int(value.timestamp()))
+    """Encode a DB timestamp, treating a naive value as UTC.
+
+    ``created_at``/``updated_at`` are TIMESTAMPTZ (aware); ``started_at``/``stopped_at``
+    are TIMESTAMP WITHOUT TIME ZONE, stored as UTC and read back naive.
+    """
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=UTC)
+    return to_proto_timestamp(value)
 
 
 def _dec(value: Decimal) -> common_pb2.Decimal:
     return common_pb2.Decimal(value=str(value))
 
 
-def _config_override_map(config_override: dict[str, Any] | None) -> dict[str, str]:
+def _config_override_map(config_override: dict[str, object] | None) -> dict[str, str]:
     """Flatten a persisted ConfigOverride blob to the proto ``map<string, string>``.
 
     List values (e.g. ``symbols``) are JSON-encoded; scalars are stringified.
@@ -55,7 +63,7 @@ def strategy_to_proto(strategy: Strategy, version: StrategyVersion) -> strategy_
     """Map a Strategy row + its current StrategyVersion to a flattened proto Strategy.
 
     The proto ``Strategy`` message flattens the strategy metadata with the current
-    version's config: ``dsl_code`` (from ``config_sexpr``), ``symbols``, and ``timeframe``.
+    version's config: ``dsl_code`` (from ``config_sexpr``), ``symbols``, and ``rebalance``.
     ``template_id``/``template_params`` and the backtest-derived ``best_sharpe``/``best_return``
     have no DB column and are left unset.
     """
@@ -68,7 +76,7 @@ def strategy_to_proto(strategy: Strategy, version: StrategyVersion) -> strategy_
         version=strategy.current_version,
         dsl_code=version.config_sexpr,
         symbols=list(version.symbols),
-        timeframe=version.timeframe,
+        rebalance=version.rebalance,
         created_by=str(strategy.created_by),
         created_at=_ts(strategy.created_at),
         updated_at=_ts(strategy.updated_at),
@@ -76,11 +84,11 @@ def strategy_to_proto(strategy: Strategy, version: StrategyVersion) -> strategy_
 
 
 def strategy_summary_to_proto(
-    strategy: Strategy, symbols: list[str], timeframe: str
+    strategy: Strategy, symbols: list[str], rebalance: str
 ) -> strategy_pb2.Strategy:
     """Map a Strategy row to a proto Strategy summary for the list view.
 
-    Carries the current version's ``symbols`` + ``timeframe`` (from the list join)
+    Carries the current version's ``symbols`` + ``rebalance`` (from the list join)
     so the list renders them; the DSL config is omitted (fetch via GetStrategy).
     """
     return strategy_pb2.Strategy(
@@ -91,7 +99,7 @@ def strategy_summary_to_proto(
         status=strategy.status,
         version=strategy.current_version,
         symbols=list(symbols),
-        timeframe=timeframe,
+        rebalance=rebalance,
         created_by=str(strategy.created_by),
         created_at=_ts(strategy.created_at),
         updated_at=_ts(strategy.updated_at),
@@ -116,9 +124,9 @@ def strategy_version_to_proto(version: StrategyVersion) -> strategy_pb2.Strategy
 def execution_to_proto(execution: StrategyExecution) -> strategy_pb2.StrategyExecution:
     """Map a StrategyExecution row to a fully-populated proto StrategyExecution.
 
-    ``symbols``/``timeframe`` have no execution column (they live on the version)
-    and are left unset. Nullable timestamps and ``allocated_capital`` are only set
-    when present (5A: Decimal via string, no float hop).
+    ``symbols`` has no execution column (it lives on the version) and is left unset.
+    Nullable timestamps and ``allocated_capital`` are only set when present
+    (5A: Decimal via string, no float hop).
     """
     proto = strategy_pb2.StrategyExecution(
         id=str(execution.id),
@@ -165,22 +173,23 @@ def template_to_proto(template: TemplateData) -> strategy_pb2.StrategyTemplate:
 def validation_to_proto(
     *,
     valid: bool,
-    errors: list[str],
+    errors: list[tuple[str, int, int]],
     warnings: list[str],
     detected_symbols: list[str],
     detected_indicators: list[str],
 ) -> strategy_pb2.ValidationResult:
-    """Map raw DSL validation output to a proto ValidationResult.
+    """Map DSL validation output to a proto ValidationResult.
 
-    The service pre-stringifies DSL errors (location embedded in the message text),
-    so ``line``/``column`` stay 0 here — behavior identical to the prior servicer
-    mapping (7A).
+    Errors are (message, line, column) triples so the editor can underline the
+    offending token; warnings carry no positions.
     """
     return strategy_pb2.ValidationResult(
         valid=valid,
         errors=[
-            strategy_pb2.CompilationError(line=0, column=0, message=e, code="VALIDATION_ERROR")
-            for e in errors
+            strategy_pb2.CompilationError(
+                line=line, column=column, message=message, code="VALIDATION_ERROR"
+            )
+            for message, line, column in errors
         ],
         warnings=[
             strategy_pb2.CompilationWarning(line=0, column=0, message=w, code="WARNING")
