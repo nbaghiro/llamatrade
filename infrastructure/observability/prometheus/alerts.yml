@@ -3,7 +3,7 @@
 # Implements the Tier-2 SLOs from .docs/telemetry.md §2:
 #   - Service availability (5xx ratio)         target 99.9%
 #   - Order-submission p99 latency             target < 1s
-#   - Market-data freshness (stream lag) p95   target < 2s
+#   - Market-data freshness (bar fan-out) p95  target < 120s (legacy stream < 2s)
 #   - Ledger reconciliation drift              target ~0
 #   - EventBus consumer lag                    backlog should drain
 #   - DB pool exhaustion                       target 0
@@ -101,10 +101,36 @@ groups:
             {{ $value | humanizeDuration }}, breaching the < 1s SLO.
 
   # ---------------------------------------------------------------------------
-  # SLO 3: Market-data freshness — stream lag p95 < 2s (Alpaca ts → received).
+  # SLO 3: Market-data freshness. Bus mode's end-to-end series is the bar
+  # fan-out lag (Alpaca bar ts → ingest → bus → serving fan-out), recorded by
+  # BusBridge. Minute bars close up to ~60s after their timestamp by
+  # construction, so the SLO gates at p95 > 120s: one aggregation window plus
+  # ~60s of real pipeline budget. The direct Alpaca stream (legacy path,
+  # bridge.py) keeps its < 2s per-message rule under a distinct alert name.
   # ---------------------------------------------------------------------------
   - name: slo_marketdata_freshness
     rules:
+      - alert: MarketDataBarFanoutLagHigh
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum by (le) (
+              rate(llamatrade_marketdata_bar_fanout_lag_seconds_bucket[10m])
+            )
+          ) > 120
+        for: 10m
+        labels:
+          severity: page
+          slo: marketdata_freshness
+        annotations:
+          summary: "Bar fan-out lag p95 above 120s (bus mode)"
+          description: >
+            p95 end-to-end bar lag (bar timestamp → serving fan-out) is
+            {{ $value | humanizeDuration }} over 10m. Minute bars arrive up to
+            ~60s after their timestamp by construction, so the 120s threshold
+            leaves ~60s of pipeline budget on top of the aggregation window; a
+            sustained breach means live signals act on stale bars.
+
       - alert: MarketDataStreamLagHigh
         expr: |
           histogram_quantile(
@@ -118,10 +144,11 @@ groups:
           severity: page
           slo: marketdata_freshness
         annotations:
-          summary: "Market-data stream lag p95 above 2s"
+          summary: "Market-data stream lag p95 above 2s (legacy direct stream)"
           description: >
-            p95 market-data stream message lag is {{ $value | humanizeDuration }},
-            breaching the < 2s freshness SLO. Live signals may act on stale data.
+            p95 direct Alpaca stream message lag is {{ $value | humanizeDuration }},
+            breaching the < 2s freshness target on the legacy (non-bus) serving
+            path. Live signals may act on stale data.
 
   # ---------------------------------------------------------------------------
   # SLO 4: Ledger reconciliation drift — should be ~0.
@@ -265,6 +292,42 @@ groups:
             {{ $labels.stream }} enough consecutive times to rule out a transient
             fault. The reader is still retrying and the stream is not moving:
             check the Workload Identity binding and the Managed Kafka IAM grant.
+
+  # ---------------------------------------------------------------------------
+  # Event backbone durability: generic per-stream publish failures and dead-
+  # letter backlogs (any stream; the ledger fill DLQ below has its own replay
+  # runbook). llamatrade_events_dlq_depth is recorded by a DlqDepthSampler in
+  # the stream's owning consumer service, so a DLQ appears once its sampler runs.
+  # ---------------------------------------------------------------------------
+  - name: eventbus_durability
+    rules:
+      - alert: EventBusPublishFailures
+        expr: sum by (stream) (rate(llamatrade_events_publish_failures_total[5m])) > 0
+        for: 10m
+        labels:
+          severity: ticket
+          area: event_backbone
+        annotations:
+          summary: "Event publish failures on {{ $labels.stream }}"
+          description: >
+            Publishes to {{ $labels.stream }} have been failing at
+            {{ $value }}/s for 10m. Fire-and-forget producers drop these events
+            (notifications, progress); find the failing producer on the
+            publish-failure log lines and check broker health.
+
+      - alert: EventBusDLQBacklog
+        expr: llamatrade_events_dlq_depth > 0
+        for: 15m
+        labels:
+          severity: ticket
+          area: event_backbone
+        annotations:
+          summary: "Dead-lettered events parked on {{ $labels.stream }}"
+          description: >
+            {{ $value }} event(s) parked on the {{ $labels.stream }} dead-letter
+            stream for 15m. Each is an event its consumer gave up on (poison or
+            retries exhausted); fix the root cause, then replay rather than
+            purge.
 
   # ---------------------------------------------------------------------------
   # Ledger cash integrity: the position-drift dollar gauge is alerted above

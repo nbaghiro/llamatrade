@@ -2,9 +2,8 @@
 #
 # Services export traces via OTLP/HTTP when OTEL_EXPORTER_OTLP_ENDPOINT is set
 # (see docker-compose.dev.yml). The collector receives OTLP (http + grpc),
-# batches, and exports. By default it just logs spans (debug exporter) so the
-# pipeline is verifiable without standing up Tempo/Cloud Trace. Uncomment a real
-# backend exporter below when you want persistent traces.
+# batches, and exports to Tempo (persistent traces, queried via Grafana) with
+# the debug exporter kept as a secondary sink for one-line span summaries.
 receivers:
   otlp:
     protocols:
@@ -25,16 +24,15 @@ processors:
     spike_limit_percentage: 25
 
 exporters:
-  # Default dev sink: log a one-line summary of every batch. Replace/augment
-  # with a real backend below for persistent traces.
+  # Secondary dev sink: log a one-line summary of every batch.
   debug:
     verbosity: normal
 
-  # --- Tempo (self-hosted) -------------------------------------------------
-  # otlp/tempo:
-  #   endpoint: tempo:4317
-  #   tls:
-  #     insecure: true
+  # Persistent trace backend (grafana/tempo, see docker-compose.dev.yml).
+  otlp/tempo:
+    endpoint: tempo:4317
+    tls:
+      insecure: true
 
   # --- Google Cloud Trace (GCP) -------------------------------------------
   # Requires the contrib image (already used here) + GCP credentials mounted
@@ -57,6 +55,5 @@ service:
     traces:
       receivers: [otlp]
       processors: [memory_limiter, batch]
-      exporters: [debug]
-      # exporters: [debug, otlp/tempo]      # add Tempo
+      exporters: [debug, otlp/tempo]
       # exporters: [debug, googlecloud]     # or Cloud Trace

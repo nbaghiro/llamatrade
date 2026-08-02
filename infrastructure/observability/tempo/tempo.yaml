@@ -1,0 +1,29 @@
+# Grafana Tempo (single binary) for the LlamaTrade dev stack.
+#
+# The OTel Collector forwards traces here (otlp/tempo exporter); Grafana reads
+# them back over the HTTP API on :3200 (Tempo datasource). Storage is a local
+# volume with a modest retention window — this is a dev trace store, not an
+# archive.
+server:
+  http_listen_port: 3200
+
+distributor:
+  receivers:
+    otlp:
+      protocols:
+        grpc:
+          endpoint: 0.0.0.0:4317
+        http:
+          endpoint: 0.0.0.0:4318
+
+compactor:
+  compaction:
+    block_retention: 48h
+
+storage:
+  trace:
+    backend: local
+    local:
+      path: /var/tempo/blocks
+    wal:
+      path: /var/tempo/wal

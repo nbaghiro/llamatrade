@@ -21,6 +21,10 @@ spec:
       labels:
         app: market-data-ingestor
         tier: backend
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8841"
+        prometheus.io/path: "/metrics"
     spec:
       serviceAccountName: market-data
       containers:
@@ -30,6 +34,9 @@ spec:
             - python
             - -m
             - src.ingest.main
+          ports:
+            - containerPort: 8841
+              name: metrics
           env:
             - name: ALPACA_API_KEY
               valueFrom:

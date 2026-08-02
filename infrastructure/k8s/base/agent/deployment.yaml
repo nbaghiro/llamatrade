@@ -16,6 +16,10 @@ spec:
       labels:
         app: agent
         tier: backend
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8890"
+        prometheus.io/path: "/metrics"
     spec:
       serviceAccountName: agent
       containers:
@@ -23,6 +27,7 @@ spec:
           image: gcr.io/llamatrade/agent:latest
           ports:
             - containerPort: 8890
+              name: http
           env:
             - name: DATABASE_URL
               valueFrom:

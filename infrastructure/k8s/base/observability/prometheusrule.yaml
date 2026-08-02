@@ -72,6 +72,19 @@ spec:
             description: "p99 order-submission latency (signal → Alpaca) breaches the < 1s SLO."
     - name: slo_marketdata_freshness
       rules:
+        - alert: MarketDataBarFanoutLagHigh
+          expr: |
+            histogram_quantile(
+              0.95,
+              sum by (le) (rate(llamatrade_marketdata_bar_fanout_lag_seconds_bucket[10m]))
+            ) > 120
+          for: 10m
+          labels:
+            severity: page
+            slo: marketdata_freshness
+          annotations:
+            summary: "Bar fan-out lag p95 above 120s (bus mode)"
+            description: "p95 end-to-end bar lag breaches 120s (~60s aggregation window + ~60s pipeline budget) — live signals act on stale bars."
         - alert: MarketDataStreamLagHigh
           expr: |
             histogram_quantile(
@@ -83,8 +96,8 @@ spec:
             severity: page
             slo: marketdata_freshness
           annotations:
-            summary: "Market-data stream lag p95 above 2s"
-            description: "p95 market-data stream lag breaches the < 2s freshness SLO."
+            summary: "Market-data stream lag p95 above 2s (legacy direct stream)"
+            description: "p95 direct Alpaca stream lag breaches the < 2s freshness target on the legacy (non-bus) path."
     - name: slo_ledger_integrity
       rules:
         - alert: LedgerReconciliationDrift
@@ -173,6 +186,26 @@ spec:
           annotations:
             summary: "Event-backbone credentials broken on {{ $labels.stream }} ({{ $labels.mode }})"
             description: "A reader has failed to start enough consecutive times to rule out a transient fault — check Workload Identity and the Managed Kafka IAM grant."
+    - name: eventbus_durability
+      rules:
+        - alert: EventBusPublishFailures
+          expr: sum by (stream) (rate(llamatrade_events_publish_failures_total[5m])) > 0
+          for: 10m
+          labels:
+            severity: ticket
+            area: event_backbone
+          annotations:
+            summary: "Event publish failures on {{ $labels.stream }}"
+            description: "Publishes failing at {{ $value }}/s for 10m — fire-and-forget producers drop these events; check the publish-failure log lines and broker health."
+        - alert: EventBusDLQBacklog
+          expr: llamatrade_events_dlq_depth > 0
+          for: 15m
+          labels:
+            severity: ticket
+            area: event_backbone
+          annotations:
+            summary: "Dead-lettered events parked on {{ $labels.stream }}"
+            description: "{{ $value }} event(s) parked for 15m (poison or retries exhausted) — fix the root cause then replay rather than purge."
     - name: ledger_cash_integrity
       rules:
         - alert: LedgerCashVsBrokerMismatch

@@ -16,6 +16,10 @@ spec:
       labels:
         app: notification
         tier: backend
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8870"
+        prometheus.io/path: "/metrics"
     spec:
       serviceAccountName: notification
       containers:
@@ -23,6 +27,7 @@ spec:
           image: gcr.io/llamatrade/notification:latest
           ports:
             - containerPort: 8870
+              name: http
           env:
             - name: DATABASE_URL
               valueFrom:

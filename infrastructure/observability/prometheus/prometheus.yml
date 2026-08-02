@@ -32,7 +32,7 @@ scrape_configs:
     static_configs:
       - targets: ["otel-collector:8888"]
 
-  # --- LlamaTrade backend services (9) ------------------------------------
+  # --- LlamaTrade backend services (9 + ingestor) ---------------------------
   # job=<service-name> is the dashboard/alert dimension.
   - job_name: auth
     static_configs:
@@ -46,6 +46,10 @@ scrape_configs:
   - job_name: market-data
     static_configs:
       - targets: ["market-data:8840"]
+  # Ingestor (writer role): no gRPC port, plain /metrics listener on 8841.
+  - job_name: market-data-ingestor
+    static_configs:
+      - targets: ["market-data-ingestor:8841"]
   - job_name: trading
     static_configs:
       - targets: ["trading:8850"]

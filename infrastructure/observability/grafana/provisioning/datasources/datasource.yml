@@ -13,3 +13,10 @@ datasources:
       httpMethod: POST
       # Match Prometheus scrape_interval so $__rate_interval picks sane windows.
       timeInterval: 15s
+
+  - name: Tempo
+    type: tempo
+    access: proxy
+    # Tempo HTTP API; traces arrive via the OTel Collector's otlp/tempo exporter.
+    url: http://tempo:3200
+    editable: true

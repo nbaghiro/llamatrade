@@ -16,6 +16,10 @@ spec:
       labels:
         app: billing
         tier: backend
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8880"
+        prometheus.io/path: "/metrics"
     spec:
       serviceAccountName: billing
       containers:

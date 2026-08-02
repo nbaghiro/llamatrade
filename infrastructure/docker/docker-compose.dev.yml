@@ -20,6 +20,7 @@ services:
     volumes:
       - ../../services/auth/src:/app/src:cached
       - ../../libs/common/llamatrade_common:/app/libs/common/llamatrade_common:cached
+      - ../../libs/telemetry/llamatrade_telemetry:/app/libs/telemetry/llamatrade_telemetry:cached
       - ../../libs/db/llamatrade_db:/app/libs/db/llamatrade_db:cached
       - ../../libs/proto/llamatrade_proto:/app/libs/proto/llamatrade_proto:cached
     environment:
@@ -33,6 +34,7 @@ services:
     volumes:
       - ../../services/strategy/src:/app/src:cached
       - ../../libs/common/llamatrade_common:/app/libs/common/llamatrade_common:cached
+      - ../../libs/telemetry/llamatrade_telemetry:/app/libs/telemetry/llamatrade_telemetry:cached
       - ../../libs/db/llamatrade_db:/app/libs/db/llamatrade_db:cached
       - ../../libs/proto/llamatrade_proto:/app/libs/proto/llamatrade_proto:cached
     environment:
@@ -46,6 +48,7 @@ services:
     volumes:
       - ../../services/backtest/src:/app/src:cached
       - ../../libs/common/llamatrade_common:/app/libs/common/llamatrade_common:cached
+      - ../../libs/telemetry/llamatrade_telemetry:/app/libs/telemetry/llamatrade_telemetry:cached
       - ../../libs/db/llamatrade_db:/app/libs/db/llamatrade_db:cached
       - ../../libs/proto/llamatrade_proto:/app/libs/proto/llamatrade_proto:cached
     environment:
@@ -59,6 +62,7 @@ services:
     volumes:
       - ../../services/backtest/src:/app/src:cached
       - ../../libs/common/llamatrade_common:/app/libs/common/llamatrade_common:cached
+      - ../../libs/telemetry/llamatrade_telemetry:/app/libs/telemetry/llamatrade_telemetry:cached
       - ../../libs/db/llamatrade_db:/app/libs/db/llamatrade_db:cached
       - ../../libs/proto/llamatrade_proto:/app/libs/proto/llamatrade_proto:cached
     environment:
@@ -74,6 +78,7 @@ services:
     volumes:
       - ../../services/backtest/src:/app/src:cached
       - ../../libs/common/llamatrade_common:/app/libs/common/llamatrade_common:cached
+      - ../../libs/telemetry/llamatrade_telemetry:/app/libs/telemetry/llamatrade_telemetry:cached
       - ../../libs/db/llamatrade_db:/app/libs/db/llamatrade_db:cached
       - ../../libs/proto/llamatrade_proto:/app/libs/proto/llamatrade_proto:cached
     environment:
@@ -87,6 +92,7 @@ services:
     volumes:
       - ../../services/market-data/src:/app/src:cached
       - ../../libs/common/llamatrade_common:/app/libs/common/llamatrade_common:cached
+      - ../../libs/telemetry/llamatrade_telemetry:/app/libs/telemetry/llamatrade_telemetry:cached
       - ../../libs/db/llamatrade_db:/app/libs/db/llamatrade_db:cached
       - ../../libs/proto/llamatrade_proto:/app/libs/proto/llamatrade_proto:cached
       - ../../libs/alpaca/llamatrade_alpaca:/app/libs/alpaca/llamatrade_alpaca:cached
@@ -110,11 +116,14 @@ services:
     volumes:
       - ../../services/market-data/src:/app/src:cached
       - ../../libs/common/llamatrade_common:/app/libs/common/llamatrade_common:cached
+      - ../../libs/telemetry/llamatrade_telemetry:/app/libs/telemetry/llamatrade_telemetry:cached
       - ../../libs/db/llamatrade_db:/app/libs/db/llamatrade_db:cached
       - ../../libs/proto/llamatrade_proto:/app/libs/proto/llamatrade_proto:cached
       - ../../libs/alpaca/llamatrade_alpaca:/app/libs/alpaca/llamatrade_alpaca:cached
     environment:
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
+    ports:
+      - "8841:8841"
     command: python -m src.ingest.main
 
   trading:
@@ -124,6 +133,7 @@ services:
     volumes:
       - ../../services/trading/src:/app/src:cached
       - ../../libs/common/llamatrade_common:/app/libs/common/llamatrade_common:cached
+      - ../../libs/telemetry/llamatrade_telemetry:/app/libs/telemetry/llamatrade_telemetry:cached
       - ../../libs/db/llamatrade_db:/app/libs/db/llamatrade_db:cached
       - ../../libs/proto/llamatrade_proto:/app/libs/proto/llamatrade_proto:cached
     environment:
@@ -137,6 +147,7 @@ services:
     volumes:
       - ../../services/portfolio/src:/app/src:cached
       - ../../libs/common/llamatrade_common:/app/libs/common/llamatrade_common:cached
+      - ../../libs/telemetry/llamatrade_telemetry:/app/libs/telemetry/llamatrade_telemetry:cached
       - ../../libs/db/llamatrade_db:/app/libs/db/llamatrade_db:cached
       - ../../libs/proto/llamatrade_proto:/app/libs/proto/llamatrade_proto:cached
     environment:
@@ -150,6 +161,7 @@ services:
     volumes:
       - ../../services/notification/src:/app/src:cached
       - ../../libs/common/llamatrade_common:/app/libs/common/llamatrade_common:cached
+      - ../../libs/telemetry/llamatrade_telemetry:/app/libs/telemetry/llamatrade_telemetry:cached
       - ../../libs/db/llamatrade_db:/app/libs/db/llamatrade_db:cached
       - ../../libs/proto/llamatrade_proto:/app/libs/proto/llamatrade_proto:cached
       - ../../libs/dsl/llamatrade_dsl:/app/libs/dsl/llamatrade_dsl:cached
@@ -157,6 +169,8 @@ services:
       - ../../libs/events/llamatrade_events:/app/libs/events/llamatrade_events:cached
     environment:
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
+      # Email header-logo assets resolve to the local origin so they render in mailpit QA.
+      EMAIL_ASSET_BASE_URL: http://localhost:8800
     command: uvicorn src.main:app --host 0.0.0.0 --port 8870 --reload --reload-dir /app/src
 
   # stripe-mock: a real-shaped Stripe API for local/e2e. Billing points its SDK
@@ -174,6 +188,7 @@ services:
     volumes:
       - ../../services/billing/src:/app/src:cached
       - ../../libs/common/llamatrade_common:/app/libs/common/llamatrade_common:cached
+      - ../../libs/telemetry/llamatrade_telemetry:/app/libs/telemetry/llamatrade_telemetry:cached
       - ../../libs/db/llamatrade_db:/app/libs/db/llamatrade_db:cached
       - ../../libs/proto/llamatrade_proto:/app/libs/proto/llamatrade_proto:cached
     environment:
@@ -192,6 +207,7 @@ services:
     volumes:
       - ../../services/agent/src:/app/src:cached
       - ../../libs/common/llamatrade_common:/app/libs/common/llamatrade_common:cached
+      - ../../libs/telemetry/llamatrade_telemetry:/app/libs/telemetry/llamatrade_telemetry:cached
       - ../../libs/db/llamatrade_db:/app/libs/db/llamatrade_db:cached
       - ../../libs/proto/llamatrade_proto:/app/libs/proto/llamatrade_proto:cached
       - ../../libs/dsl/llamatrade_dsl:/app/libs/dsl/llamatrade_dsl:cached
@@ -259,12 +275,28 @@ services:
     image: otel/opentelemetry-collector-contrib:0.117.0
     container_name: llamatrade-otel-collector
     command: ["--config=/etc/otelcol/config.yaml"]
+    depends_on:
+      - tempo
     volumes:
       - ../observability/otel-collector/config.yaml:/etc/otelcol/config.yaml:ro
     ports:
       - "4318:4318" # OTLP HTTP
       - "4317:4317" # OTLP gRPC
       - "13133:13133" # health
+
+  # Trace backend: the collector exports OTLP to Tempo; Grafana queries :3200.
+  tempo:
+    image: grafana/tempo:2.7.1
+    container_name: llamatrade-tempo
+    # The image's default user (10001) cannot create /var/tempo on a fresh named
+    # volume; root is acceptable for the dev stack.
+    user: root
+    command: ["-config.file=/etc/tempo/tempo.yaml"]
+    volumes:
+      - ../observability/tempo/tempo.yaml:/etc/tempo/tempo.yaml:ro
+      - llamatrade_tempo_data:/var/tempo
+    ports:
+      - "3200:3200" # Tempo HTTP API (Grafana datasource / TraceQL)
 
   grafana:
     image: grafana/grafana:11.4.0
@@ -285,3 +317,4 @@ services:
 volumes:
   llamatrade_prometheus_data:
   llamatrade_grafana_data:
+  llamatrade_tempo_data:

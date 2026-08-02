@@ -16,6 +16,10 @@ spec:
       labels:
         app: market-data
         tier: backend
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8840"
+        prometheus.io/path: "/metrics"
     spec:
       serviceAccountName: market-data
       containers:
@@ -23,6 +27,7 @@ spec:
           image: gcr.io/llamatrade/market-data:latest
           ports:
             - containerPort: 8840
+              name: http
           env:
             - name: ALPACA_API_KEY
               valueFrom:
