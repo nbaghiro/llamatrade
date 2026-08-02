@@ -5,14 +5,15 @@ from uuid import uuid4
 
 import pytest
 
+from llamatrade_events import PoisonError, derive_event_id, make_envelope
 from llamatrade_proto.generated import events_pb2
 
 from src.ledger.ingestion import FillQuarantineError
-from src.tasks.fill_ingestion import process_stream_entry
+from src.tasks.fill_ingestion import make_entry_handler
 
 
-def _fill() -> events_pb2.LedgerFill:
-    return events_pb2.LedgerFill(
+def _fill_env() -> events_pb2.EventEnvelope:
+    fill = events_pb2.LedgerFill(
         tenant_id=str(uuid4()),
         account_id=str(uuid4()),
         sleeve_id=str(uuid4()),
@@ -23,6 +24,9 @@ def _fill() -> events_pb2.LedgerFill:
         price="100",
         filled_at="2026-07-28T14:30:00Z",
     )
+    return make_envelope(
+        events_pb2.EVENT_TYPE_LEDGER_FILL, fill, event_id=derive_event_id(fill.client_order_id)
+    )
 
 
 @pytest.mark.asyncio
@@ -32,9 +36,9 @@ async def test_quarantine_dispatches_tenant_alert() -> None:
 
     dispatcher = AsyncMock()
     with patch("src.alerts.get_ledger_alert_dispatcher", return_value=dispatcher):
-        verdict = await process_stream_entry(handler, _fill())
+        with pytest.raises(PoisonError):
+            await make_entry_handler(handler)(_fill_env())
 
-    assert verdict == "drop"
     dispatcher.dispatch.assert_awaited_once()
     _, incident = dispatcher.dispatch.await_args.args
     assert incident.kind == "fill_quarantined"
@@ -49,6 +53,5 @@ async def test_alert_failure_does_not_change_verdict() -> None:
     dispatcher = AsyncMock()
     dispatcher.dispatch = AsyncMock(side_effect=RuntimeError("webhook store down"))
     with patch("src.alerts.get_ledger_alert_dispatcher", return_value=dispatcher):
-        verdict = await process_stream_entry(handler, _fill())
-
-    assert verdict == "drop"
+        with pytest.raises(PoisonError):  # still poison → quarantined, never retried
+            await make_entry_handler(handler)(_fill_env())

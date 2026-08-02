@@ -1,0 +1,655 @@
+{
+  "multi_account_interleave": {
+    "rows": [
+      {
+        "event_id": "5b31f8f7-ba83-a938-d979-7717feeff007",
+        "account_id": "89138dcb-3caa-5da9-91c1-a18cb7b03d0d",
+        "sleeve_id": "1faa9788-9cd2-5ab3-ba83-4f562b91ee93",
+        "event_type": "order_submitted",
+        "data": {
+          "sleeve_id": "1faa9788-9cd2-5ab3-ba83-4f562b91ee93",
+          "client_order_id": "a-1",
+          "symbol": "SPY",
+          "side": "buy",
+          "reserved": "15000"
+        }
+      },
+      {
+        "event_id": "6265b750-d2be-3dbd-fd4a-5482d72ff224",
+        "account_id": "14935f97-5c1a-5cb1-9468-7355c3388b6e",
+        "sleeve_id": "a75814fc-12ed-5836-ad53-32d2c2589485",
+        "event_type": "order_submitted",
+        "data": {
+          "sleeve_id": "a75814fc-12ed-5836-ad53-32d2c2589485",
+          "client_order_id": "b-1",
+          "symbol": "SPY",
+          "side": "buy",
+          "reserved": "8000"
+        }
+      },
+      {
+        "event_id": "508bf1d5-db9b-1d4d-fa90-decd9f4fddbe",
+        "account_id": "9e4a3179-706f-5903-999b-a130c3dd453a",
+        "sleeve_id": "6677a903-5d88-5508-9abc-f6773651fd2b",
+        "event_type": "order_submitted",
+        "data": {
+          "sleeve_id": "6677a903-5d88-5508-9abc-f6773651fd2b",
+          "client_order_id": "c-1",
+          "symbol": "SPY",
+          "side": "buy",
+          "reserved": "30000"
+        }
+      },
+      {
+        "event_id": "2f8fe63a-6224-321d-e5d0-a24cf30067d3",
+        "account_id": "89138dcb-3caa-5da9-91c1-a18cb7b03d0d",
+        "sleeve_id": "1faa9788-9cd2-5ab3-ba83-4f562b91ee93",
+        "event_type": "order_filled",
+        "data": {
+          "sleeve_id": "1faa9788-9cd2-5ab3-ba83-4f562b91ee93",
+          "symbol": "SPY",
+          "side": "buy",
+          "qty": "100",
+          "price": "150",
+          "client_order_id": "a-1"
+        }
+      },
+      {
+        "event_id": "3e499e75-2620-c6a9-0ed5-9a200a181324",
+        "account_id": "14935f97-5c1a-5cb1-9468-7355c3388b6e",
+        "sleeve_id": "a75814fc-12ed-5836-ad53-32d2c2589485",
+        "event_type": "order_filled",
+        "data": {
+          "sleeve_id": "a75814fc-12ed-5836-ad53-32d2c2589485",
+          "symbol": "SPY",
+          "side": "buy",
+          "qty": "20",
+          "price": "400",
+          "client_order_id": "b-1"
+        }
+      },
+      {
+        "event_id": "a6f7ef47-ee8d-c84a-f905-6a3051ddc302",
+        "account_id": "9e4a3179-706f-5903-999b-a130c3dd453a",
+        "sleeve_id": "6677a903-5d88-5508-9abc-f6773651fd2b",
+        "event_type": "order_filled",
+        "data": {
+          "sleeve_id": "6677a903-5d88-5508-9abc-f6773651fd2b",
+          "symbol": "SPY",
+          "side": "buy",
+          "qty": "100",
+          "price": "300",
+          "client_order_id": "c-1"
+        }
+      },
+      {
+        "event_id": "982d6eef-c2e2-1764-7135-13abe54a8c9f",
+        "account_id": "89138dcb-3caa-5da9-91c1-a18cb7b03d0d",
+        "sleeve_id": "1faa9788-9cd2-5ab3-ba83-4f562b91ee93",
+        "event_type": "order_submitted",
+        "data": {
+          "sleeve_id": "1faa9788-9cd2-5ab3-ba83-4f562b91ee93",
+          "client_order_id": "a-2",
+          "symbol": "SPY",
+          "side": "buy",
+          "reserved": "7500"
+        }
+      },
+      {
+        "event_id": "d72e654c-3645-b02d-de39-fe0be595ef17",
+        "account_id": "89138dcb-3caa-5da9-91c1-a18cb7b03d0d",
+        "sleeve_id": "1faa9788-9cd2-5ab3-ba83-4f562b91ee93",
+        "event_type": "order_filled",
+        "data": {
+          "sleeve_id": "1faa9788-9cd2-5ab3-ba83-4f562b91ee93",
+          "symbol": "SPY",
+          "side": "buy",
+          "qty": "30",
+          "price": "150",
+          "client_order_id": "a-2"
+        }
+      },
+      {
+        "event_id": "401c1aa6-60bf-3973-aaa2-00ac1157141c",
+        "account_id": "89138dcb-3caa-5da9-91c1-a18cb7b03d0d",
+        "sleeve_id": "1faa9788-9cd2-5ab3-ba83-4f562b91ee93",
+        "event_type": "order_cancelled",
+        "data": {
+          "sleeve_id": "1faa9788-9cd2-5ab3-ba83-4f562b91ee93",
+          "client_order_id": "a-2",
+          "symbol": "SPY",
+          "side": "buy"
+        }
+      },
+      {
+        "event_id": "77c10054-01bd-4fd1-dd7a-bead933235ef",
+        "account_id": "14935f97-5c1a-5cb1-9468-7355c3388b6e",
+        "sleeve_id": "a75814fc-12ed-5836-ad53-32d2c2589485",
+        "event_type": "order_filled",
+        "data": {
+          "sleeve_id": "a75814fc-12ed-5836-ad53-32d2c2589485",
+          "symbol": "SPY",
+          "side": "sell",
+          "qty": "5",
+          "price": "410",
+          "client_order_id": "b-2",
+          "cost_basis": "2000",
+          "realized_pnl": "50"
+        }
+      }
+    ],
+    "projections": {
+      "89138dcb-3caa-5da9-91c1-a18cb7b03d0d": {
+        "poison_events": 0,
+        "sleeves": {
+          "1faa9788-9cd2-5ab3-ba83-4f562b91ee93": {
+            "cash": "-19500",
+            "reserved": "0",
+            "realized_pnl": "0",
+            "positions": {
+              "SPY": {
+                "qty": "130",
+                "cost_basis": "19500"
+              }
+            }
+          }
+        }
+      },
+      "14935f97-5c1a-5cb1-9468-7355c3388b6e": {
+        "poison_events": 0,
+        "sleeves": {
+          "a75814fc-12ed-5836-ad53-32d2c2589485": {
+            "cash": "-5950",
+            "reserved": "0",
+            "realized_pnl": "50",
+            "positions": {
+              "SPY": {
+                "qty": "15",
+                "cost_basis": "6000"
+              }
+            }
+          }
+        }
+      },
+      "9e4a3179-706f-5903-999b-a130c3dd453a": {
+        "poison_events": 0,
+        "sleeves": {
+          "6677a903-5d88-5508-9abc-f6773651fd2b": {
+            "cash": "-30000",
+            "reserved": "0",
+            "realized_pnl": "0",
+            "positions": {
+              "SPY": {
+                "qty": "100",
+                "cost_basis": "30000"
+              }
+            }
+          }
+        }
+      }
+    },
+    "quarantine": {
+      "dlq": [],
+      "alerts": []
+    },
+    "ingest": {
+      "success": 10
+    },
+    "partition_control": {
+      "paused_cursors": [],
+      "resumed_cursors": []
+    }
+  },
+  "duplicate_redelivery": {
+    "rows": [
+      {
+        "event_id": "5afa0474-fc5d-ccac-82b6-9ac2ff990a54",
+        "account_id": "89138dcb-3caa-5da9-91c1-a18cb7b03d0d",
+        "sleeve_id": "1faa9788-9cd2-5ab3-ba83-4f562b91ee93",
+        "event_type": "order_submitted",
+        "data": {
+          "sleeve_id": "1faa9788-9cd2-5ab3-ba83-4f562b91ee93",
+          "client_order_id": "dup-1",
+          "symbol": "SPY",
+          "side": "buy",
+          "reserved": "5000"
+        }
+      },
+      {
+        "event_id": "d68bcc1b-d52b-45d5-1249-bb370fe082c5",
+        "account_id": "89138dcb-3caa-5da9-91c1-a18cb7b03d0d",
+        "sleeve_id": "1faa9788-9cd2-5ab3-ba83-4f562b91ee93",
+        "event_type": "order_filled",
+        "data": {
+          "sleeve_id": "1faa9788-9cd2-5ab3-ba83-4f562b91ee93",
+          "symbol": "SPY",
+          "side": "buy",
+          "qty": "10",
+          "price": "500",
+          "client_order_id": "dup-1"
+        }
+      },
+      {
+        "event_id": "ab911f8f-c314-f7cc-5cc8-be9e600d94d5",
+        "account_id": "89138dcb-3caa-5da9-91c1-a18cb7b03d0d",
+        "sleeve_id": "1faa9788-9cd2-5ab3-ba83-4f562b91ee93",
+        "event_type": "order_filled",
+        "data": {
+          "sleeve_id": "1faa9788-9cd2-5ab3-ba83-4f562b91ee93",
+          "symbol": "SPY",
+          "side": "buy",
+          "qty": "2",
+          "price": "500",
+          "client_order_id": "dup-2"
+        }
+      }
+    ],
+    "projections": {
+      "89138dcb-3caa-5da9-91c1-a18cb7b03d0d": {
+        "poison_events": 0,
+        "sleeves": {
+          "1faa9788-9cd2-5ab3-ba83-4f562b91ee93": {
+            "cash": "-6000",
+            "reserved": "0",
+            "realized_pnl": "0",
+            "positions": {
+              "SPY": {
+                "qty": "12",
+                "cost_basis": "6000"
+              }
+            }
+          }
+        }
+      }
+    },
+    "quarantine": {
+      "dlq": [],
+      "alerts": []
+    },
+    "ingest": {
+      "success": 5
+    },
+    "partition_control": {
+      "paused_cursors": [],
+      "resumed_cursors": []
+    }
+  },
+  "out_of_order_reservation_after_terminal": {
+    "rows": [
+      {
+        "event_id": "06d236b3-2446-8391-45e8-708b9ced1318",
+        "account_id": "89138dcb-3caa-5da9-91c1-a18cb7b03d0d",
+        "sleeve_id": "1faa9788-9cd2-5ab3-ba83-4f562b91ee93",
+        "event_type": "order_filled",
+        "data": {
+          "sleeve_id": "1faa9788-9cd2-5ab3-ba83-4f562b91ee93",
+          "symbol": "SPY",
+          "side": "buy",
+          "qty": "10",
+          "price": "100",
+          "client_order_id": "oo-1"
+        }
+      },
+      {
+        "event_id": "cf407011-b870-f0d5-a256-adb51717dee3",
+        "account_id": "89138dcb-3caa-5da9-91c1-a18cb7b03d0d",
+        "sleeve_id": "1faa9788-9cd2-5ab3-ba83-4f562b91ee93",
+        "event_type": "order_submitted",
+        "data": {
+          "sleeve_id": "1faa9788-9cd2-5ab3-ba83-4f562b91ee93",
+          "client_order_id": "oo-1",
+          "symbol": "SPY",
+          "side": "buy",
+          "reserved": "1000"
+        }
+      }
+    ],
+    "projections": {
+      "89138dcb-3caa-5da9-91c1-a18cb7b03d0d": {
+        "poison_events": 0,
+        "sleeves": {
+          "1faa9788-9cd2-5ab3-ba83-4f562b91ee93": {
+            "cash": "-1000",
+            "reserved": "0",
+            "realized_pnl": "0",
+            "positions": {
+              "SPY": {
+                "qty": "10",
+                "cost_basis": "1000"
+              }
+            }
+          }
+        }
+      }
+    },
+    "quarantine": {
+      "dlq": [],
+      "alerts": []
+    },
+    "ingest": {
+      "success": 2
+    },
+    "partition_control": {
+      "paused_cursors": [],
+      "resumed_cursors": []
+    }
+  },
+  "poison_mid_stream": {
+    "rows": [
+      {
+        "event_id": "6320f087-243b-7109-67cd-bbde62e9dc4c",
+        "account_id": "89138dcb-3caa-5da9-91c1-a18cb7b03d0d",
+        "sleeve_id": "1faa9788-9cd2-5ab3-ba83-4f562b91ee93",
+        "event_type": "order_filled",
+        "data": {
+          "sleeve_id": "1faa9788-9cd2-5ab3-ba83-4f562b91ee93",
+          "symbol": "SPY",
+          "side": "buy",
+          "qty": "10",
+          "price": "100",
+          "client_order_id": "good-1"
+        }
+      },
+      {
+        "event_id": "7340a463-5038-d9be-9861-a40a614ab3cd",
+        "account_id": "14935f97-5c1a-5cb1-9468-7355c3388b6e",
+        "sleeve_id": "a75814fc-12ed-5836-ad53-32d2c2589485",
+        "event_type": "order_filled",
+        "data": {
+          "sleeve_id": "a75814fc-12ed-5836-ad53-32d2c2589485",
+          "symbol": "SPY",
+          "side": "buy",
+          "qty": "4",
+          "price": "250",
+          "client_order_id": "good-2"
+        }
+      },
+      {
+        "event_id": "ffb8c23e-7ed1-a499-c7cb-052772261010",
+        "account_id": "89138dcb-3caa-5da9-91c1-a18cb7b03d0d",
+        "sleeve_id": "1faa9788-9cd2-5ab3-ba83-4f562b91ee93",
+        "event_type": "order_filled",
+        "data": {
+          "sleeve_id": "1faa9788-9cd2-5ab3-ba83-4f562b91ee93",
+          "symbol": "SPY",
+          "side": "buy",
+          "qty": "6",
+          "price": "110",
+          "client_order_id": "good-3"
+        }
+      }
+    ],
+    "projections": {
+      "89138dcb-3caa-5da9-91c1-a18cb7b03d0d": {
+        "poison_events": 0,
+        "sleeves": {
+          "1faa9788-9cd2-5ab3-ba83-4f562b91ee93": {
+            "cash": "-1660",
+            "reserved": "0",
+            "realized_pnl": "0",
+            "positions": {
+              "SPY": {
+                "qty": "16",
+                "cost_basis": "1660"
+              }
+            }
+          }
+        }
+      },
+      "14935f97-5c1a-5cb1-9468-7355c3388b6e": {
+        "poison_events": 0,
+        "sleeves": {
+          "a75814fc-12ed-5836-ad53-32d2c2589485": {
+            "cash": "-1000",
+            "reserved": "0",
+            "realized_pnl": "0",
+            "positions": {
+              "SPY": {
+                "qty": "4",
+                "cost_basis": "1000"
+              }
+            }
+          }
+        }
+      }
+    },
+    "quarantine": {
+      "dlq": [
+        {
+          "key": null,
+          "client_order_id": null,
+          "decodable": false
+        },
+        {
+          "key": "14935f97-5c1a-5cb1-9468-7355c3388b6e",
+          "client_order_id": "tele-1",
+          "decodable": true
+        },
+        {
+          "key": "89138dcb-3caa-5da9-91c1-a18cb7b03d0d",
+          "client_order_id": "oversell-1",
+          "decodable": true
+        }
+      ],
+      "alerts": [
+        {
+          "tenant_id": "67de2584-5299-51a6-b7f7-594c6156dab1",
+          "kind": "fill_quarantined",
+          "client_order_id": "oversell-1"
+        }
+      ]
+    },
+    "ingest": {
+      "poison": 2,
+      "quarantine": 1,
+      "success": 3
+    },
+    "partition_control": {
+      "paused_cursors": [],
+      "resumed_cursors": []
+    }
+  },
+  "transient_db_failure": {
+    "rows": [
+      {
+        "event_id": "46e9bc34-76c9-2ea2-4fb1-7adac6cd9cda",
+        "account_id": "89138dcb-3caa-5da9-91c1-a18cb7b03d0d",
+        "sleeve_id": "1faa9788-9cd2-5ab3-ba83-4f562b91ee93",
+        "event_type": "order_filled",
+        "data": {
+          "sleeve_id": "1faa9788-9cd2-5ab3-ba83-4f562b91ee93",
+          "symbol": "SPY",
+          "side": "buy",
+          "qty": "10",
+          "price": "100",
+          "client_order_id": "t-1"
+        }
+      },
+      {
+        "event_id": "b1ad9ff6-eb8d-ad4a-a419-50317bd6fb7b",
+        "account_id": "14935f97-5c1a-5cb1-9468-7355c3388b6e",
+        "sleeve_id": "a75814fc-12ed-5836-ad53-32d2c2589485",
+        "event_type": "order_filled",
+        "data": {
+          "sleeve_id": "a75814fc-12ed-5836-ad53-32d2c2589485",
+          "symbol": "SPY",
+          "side": "buy",
+          "qty": "8",
+          "price": "200",
+          "client_order_id": "t-2"
+        }
+      },
+      {
+        "event_id": "b6b5bcaa-b8dc-5b28-e928-0befc2258e3f",
+        "account_id": "89138dcb-3caa-5da9-91c1-a18cb7b03d0d",
+        "sleeve_id": "1faa9788-9cd2-5ab3-ba83-4f562b91ee93",
+        "event_type": "order_filled",
+        "data": {
+          "sleeve_id": "1faa9788-9cd2-5ab3-ba83-4f562b91ee93",
+          "symbol": "SPY",
+          "side": "buy",
+          "qty": "3",
+          "price": "105",
+          "client_order_id": "t-3"
+        }
+      }
+    ],
+    "projections": {
+      "89138dcb-3caa-5da9-91c1-a18cb7b03d0d": {
+        "poison_events": 0,
+        "sleeves": {
+          "1faa9788-9cd2-5ab3-ba83-4f562b91ee93": {
+            "cash": "-1315",
+            "reserved": "0",
+            "realized_pnl": "0",
+            "positions": {
+              "SPY": {
+                "qty": "13",
+                "cost_basis": "1315"
+              }
+            }
+          }
+        }
+      },
+      "14935f97-5c1a-5cb1-9468-7355c3388b6e": {
+        "poison_events": 0,
+        "sleeves": {
+          "a75814fc-12ed-5836-ad53-32d2c2589485": {
+            "cash": "-1600",
+            "reserved": "0",
+            "realized_pnl": "0",
+            "positions": {
+              "SPY": {
+                "qty": "8",
+                "cost_basis": "1600"
+              }
+            }
+          }
+        }
+      }
+    },
+    "quarantine": {
+      "dlq": [],
+      "alerts": []
+    },
+    "ingest": {
+      "retry": 2,
+      "success": 3
+    },
+    "partition_control": {
+      "paused_cursors": [
+        "2"
+      ],
+      "resumed_cursors": [
+        "2"
+      ]
+    }
+  },
+  "restart_resume": {
+    "rows": [
+      {
+        "event_id": "a5fa777a-3dc6-7268-caea-6eea038ba141",
+        "account_id": "89138dcb-3caa-5da9-91c1-a18cb7b03d0d",
+        "sleeve_id": "1faa9788-9cd2-5ab3-ba83-4f562b91ee93",
+        "event_type": "order_filled",
+        "data": {
+          "sleeve_id": "1faa9788-9cd2-5ab3-ba83-4f562b91ee93",
+          "symbol": "SPY",
+          "side": "buy",
+          "qty": "10",
+          "price": "100",
+          "client_order_id": "r-1"
+        }
+      },
+      {
+        "event_id": "211fc184-341d-e0bd-abb3-8d88129aa4eb",
+        "account_id": "14935f97-5c1a-5cb1-9468-7355c3388b6e",
+        "sleeve_id": "a75814fc-12ed-5836-ad53-32d2c2589485",
+        "event_type": "order_filled",
+        "data": {
+          "sleeve_id": "a75814fc-12ed-5836-ad53-32d2c2589485",
+          "symbol": "SPY",
+          "side": "buy",
+          "qty": "5",
+          "price": "300",
+          "client_order_id": "r-2"
+        }
+      },
+      {
+        "event_id": "bcd2e296-b5bc-e29a-f8a2-a324467716ab",
+        "account_id": "89138dcb-3caa-5da9-91c1-a18cb7b03d0d",
+        "sleeve_id": "1faa9788-9cd2-5ab3-ba83-4f562b91ee93",
+        "event_type": "order_filled",
+        "data": {
+          "sleeve_id": "1faa9788-9cd2-5ab3-ba83-4f562b91ee93",
+          "symbol": "SPY",
+          "side": "sell",
+          "qty": "4",
+          "price": "120",
+          "client_order_id": "r-3",
+          "cost_basis": "400",
+          "realized_pnl": "80"
+        }
+      },
+      {
+        "event_id": "1623f23b-0e2e-5cc8-1b23-ee4df527ea79",
+        "account_id": "14935f97-5c1a-5cb1-9468-7355c3388b6e",
+        "sleeve_id": "a75814fc-12ed-5836-ad53-32d2c2589485",
+        "event_type": "order_filled",
+        "data": {
+          "sleeve_id": "a75814fc-12ed-5836-ad53-32d2c2589485",
+          "symbol": "SPY",
+          "side": "buy",
+          "qty": "1",
+          "price": "310",
+          "client_order_id": "r-4"
+        }
+      }
+    ],
+    "projections": {
+      "89138dcb-3caa-5da9-91c1-a18cb7b03d0d": {
+        "poison_events": 0,
+        "sleeves": {
+          "1faa9788-9cd2-5ab3-ba83-4f562b91ee93": {
+            "cash": "-520",
+            "reserved": "0",
+            "realized_pnl": "80",
+            "positions": {
+              "SPY": {
+                "qty": "6",
+                "cost_basis": "600"
+              }
+            }
+          }
+        }
+      },
+      "14935f97-5c1a-5cb1-9468-7355c3388b6e": {
+        "poison_events": 0,
+        "sleeves": {
+          "a75814fc-12ed-5836-ad53-32d2c2589485": {
+            "cash": "-1810",
+            "reserved": "0",
+            "realized_pnl": "0",
+            "positions": {
+              "SPY": {
+                "qty": "6",
+                "cost_basis": "1810"
+              }
+            }
+          }
+        }
+      }
+    },
+    "quarantine": {
+      "dlq": [],
+      "alerts": []
+    },
+    "ingest": {
+      "success": 4
+    },
+    "partition_control": {
+      "paused_cursors": [],
+      "resumed_cursors": []
+    }
+  }
+}

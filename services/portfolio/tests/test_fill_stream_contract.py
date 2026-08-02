@@ -2,8 +2,10 @@
 
 A proto ``LedgerFill`` published exactly as trading publishes it round-trips
 through the in-memory ``FakeTransport`` — publish → durable consume → decode →
-translate — into the portfolio ingestion. This exercises the transport + proto
-codec + translation together, which the mock-based ingestion tests skip.
+translate — into the portfolio ingestion, driven by the SAME
+``consume_fill_stream`` composition production runs. This exercises the
+transport + proto codec + consumer runtime + translation together, which the
+mock-based ingestion tests skip.
 """
 
 from uuid import UUID, uuid4
@@ -15,13 +17,7 @@ from llamatrade_events import EventBus, FillEvents, LedgerFill
 from llamatrade_events.testing import FakeTransport
 
 from src.ledger.ingestion import LedgerAppend
-from src.tasks.fill_ingestion import (
-    CURSOR_BEGIN,
-    LEDGER_FILLS_STREAM,
-    PORTFOLIO_LEDGER_GROUP,
-    _decode_message,
-    process_stream_entry,
-)
+from src.tasks.fill_ingestion import LEDGER_FILLS_STREAM, consume_fill_stream
 
 pytestmark = pytest.mark.asyncio
 
@@ -47,16 +43,7 @@ async def test_ledger_fill_contract_roundtrips_through_stream() -> None:
     async def handler(a: LedgerAppend) -> None:
         appends.append(a)
 
-    async for _entry_id, raw in fills.bus.consume_raw(
-        LEDGER_FILLS_STREAM,
-        PORTFOLIO_LEDGER_GROUP,
-        "test-consumer",
-        group_start_id=CURSOR_BEGIN,
-    ):
-        message = _decode_message(raw)
-        assert message is not None
-        assert await process_stream_entry(handler, message) == "ack"
-        break
+    await consume_fill_stream(fills, handler, consumer_name="test-consumer")
 
     await fills.close()
 

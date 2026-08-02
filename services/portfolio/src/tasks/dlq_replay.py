@@ -18,6 +18,7 @@ import asyncio
 import logging
 
 from llamatrade_events import CURSOR_BEGIN, Cursor, EventBus, FillEvents, decode_envelope
+from llamatrade_telemetry import configure_logging
 
 from src.tasks.fill_ingestion import LEDGER_FILLS_DLQ_STREAM, LEDGER_FILLS_STREAM
 
@@ -111,5 +112,5 @@ async def main() -> None:
 
 
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO)
+    configure_logging("portfolio-dlq-replay")
     asyncio.run(main())

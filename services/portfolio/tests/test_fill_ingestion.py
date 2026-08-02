@@ -1,9 +1,12 @@
-"""Fill-ingestion wiring tests — pure, no Redis/DB.
+"""Fill-ingestion wiring tests — pure, no broker/DB.
 
-Covers the stream-entry path (``process_stream_entry``): translate a parsed proto
-message → append, with ack/drop/retry verdicts. The DB persistence
-(``persist_append`` → ``LedgerWriter``) is the thin IO shell, exercised by the
-integration suite.
+Covers the per-envelope path (``make_entry_handler``): parse + translate a
+consumed envelope → append, with poison/quarantine surfaced as ``PoisonError``
+and transient failures re-raised; the quarantine park (``make_fill_quarantine``);
+and the composed ``consume_fill_stream`` over the in-memory transport. The DB
+persistence (``persist_append`` → ``LedgerWriter``) is the thin IO shell,
+exercised by the integration suite; loop-vs-legacy equivalence is pinned by
+``test_fill_ingestion_parity.py``.
 """
 
 from typing import cast
@@ -15,12 +18,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from llamatrade_db.models.ledger import LedgerEventType
 from llamatrade_events import (
     EventBus,
+    EventEnvelope,
+    FillEvents,
     LedgerFill,
     LedgerReservation,
+    PoisonError,
+    decode_envelope,
     derive_event_id,
     encode_envelope,
     make_envelope,
 )
+from llamatrade_events.testing import FakeTransport
 from llamatrade_proto.generated import events_pb2
 
 from src.ledger.ingestion import FillQuarantineError, LedgerAppend
@@ -29,21 +37,35 @@ from src.tasks.fill_ingestion import (
     LEDGER_FILLS_STREAM,
     PORTFOLIO_LEDGER_GROUP,
     _dead_letter,
-    handle_ledger_entry,
-    process_stream_entry,
+    consume_fill_stream,
+    fill_retry_policy,
+    make_entry_handler,
+    make_fill_quarantine,
 )
+
+
+def _fill_env(**overrides: str) -> EventEnvelope:
+    """A decoded envelope wrapping a LedgerFill (what the entry handler receives)."""
+    fill = _fill(**overrides)
+    return make_envelope(
+        events_pb2.EVENT_TYPE_LEDGER_FILL,
+        fill,
+        event_id=derive_event_id(fill.client_order_id),
+    )
+
+
+def _reservation_env(**overrides: str) -> EventEnvelope:
+    reservation = _reservation(**overrides)
+    return make_envelope(
+        events_pb2.EVENT_TYPE_LEDGER_RESERVATION,
+        reservation,
+        event_id=derive_event_id(reservation.client_order_id, reservation.event_type),
+    )
 
 
 def _raw_fill(**overrides: str) -> bytes:
     """A wire-encoded envelope wrapping a LedgerFill (what the consumer receives)."""
-    fill = _fill(**overrides)
-    return encode_envelope(
-        make_envelope(
-            events_pb2.EVENT_TYPE_LEDGER_FILL,
-            fill,
-            event_id=derive_event_id(fill.client_order_id),
-        )
-    )
+    return encode_envelope(_fill_env(**overrides))
 
 
 TENANT = str(uuid4())
@@ -103,9 +125,8 @@ class _FlakyRecorder:
 
 async def test_translates_and_drives_handler() -> None:
     rec = _Recorder()
-    verdict = await process_stream_entry(rec, _fill())
+    await make_entry_handler(rec)(_fill_env())
 
-    assert verdict == "ack"
     assert len(rec.appends) == 1
     append = rec.appends[0]
     assert append.tenant_id == UUID(TENANT)
@@ -120,52 +141,49 @@ async def test_translates_and_drives_handler() -> None:
 
 async def test_idempotency_id_is_deterministic() -> None:
     rec = _Recorder()
-    await process_stream_entry(rec, _fill())
-    await process_stream_entry(rec, _fill())
+    handle = make_entry_handler(rec)
+    await handle(_fill_env())
+    await handle(_fill_env())
     # Same client_order_id → identical ledger event_id (writer dedups on it).
     assert rec.appends[0].event_id == rec.appends[1].event_id
 
 
-async def test_ack_on_success() -> None:
+async def test_unknown_lifecycle_kind_is_poison() -> None:
     rec = _Recorder()
-    verdict = await process_stream_entry(rec, _fill())
-    assert verdict == "ack"
-    assert len(rec.appends) == 1
-
-
-async def test_poison_dropped() -> None:
-    rec = _Recorder()
-    verdict = await process_stream_entry(rec, _reservation(event_type="order_teleported"))
-    assert verdict == "drop"  # acked anyway — never redeliver poison forever
+    with pytest.raises(PoisonError):
+        await make_entry_handler(rec)(_reservation_env(event_type="order_teleported"))
     assert rec.appends == []
 
 
 async def test_missing_required_field_is_poison() -> None:
     rec = _Recorder()
     # An empty required scalar (proto3 can't omit fields) is poison, not retried.
-    verdict = await process_stream_entry(rec, _fill(price=""))
-    assert verdict == "drop"
+    with pytest.raises(PoisonError):
+        await make_entry_handler(rec)(_fill_env(price=""))
     assert rec.appends == []
 
 
-async def test_transient_failure_retries() -> None:
+async def test_transient_failure_reraises_for_retry() -> None:
+    """A persistence failure propagates untouched — the RetryForever policy
+    classifies it transient and redelivers until it lands."""
     rec = _FlakyRecorder(failures=1)
-    first = await process_stream_entry(rec, _fill())
-    second = await process_stream_entry(rec, _fill())  # group redelivery
-    assert first == "retry"  # left pending
-    assert second == "ack"
+    handle = make_entry_handler(rec)
+    with pytest.raises(ConnectionError):
+        await handle(_fill_env())
+    await handle(_fill_env())  # in-place retry
     assert len(rec.appends) == 1
 
 
-async def test_quarantined_fill_is_dropped_not_retried() -> None:
-    """A sell with no resolvable cost basis (FillQuarantineError) is dropped + alerted,
-    never left pending — or it would redeliver forever and wedge the FIFO consumer."""
+async def test_quarantined_fill_raises_poison_not_transient() -> None:
+    """A sell with no resolvable cost basis (FillQuarantineError) surfaces as
+    PoisonError (quarantine + ack), never as a transient retry — or it would
+    redeliver forever and wedge the FIFO consumer."""
 
     async def _quarantine(_append: LedgerAppend) -> None:
         raise FillQuarantineError("no open lots to cover the sell")
 
-    verdict = await process_stream_entry(_quarantine, _fill(side="sell"))
-    assert verdict == "drop"  # NOT "retry"
+    with pytest.raises(PoisonError):
+        await make_entry_handler(_quarantine)(_fill_env(side="sell"))
 
 
 class _FakeBus:
@@ -219,79 +237,103 @@ async def test_dead_letter_swallows_publish_failure() -> None:
     await _dead_letter(cast(EventBus, _BadBus()), b"x")  # must not raise
 
 
-# --- handle_ledger_entry: per-entry decode → persist → ack (in-place retry) ----
+# --- make_fill_quarantine: park the raw entry on the ledger DLQ ---------------
 
 
-async def test_handle_entry_success_acks() -> None:
+async def test_quarantine_parks_undecodable_bytes_unkeyed() -> None:
+    bus = _FakeBus()
+    await make_fill_quarantine(cast(EventBus, bus))(
+        b"\xffnot-an-envelope", None, ValueError("bad bytes")
+    )
+    assert bus.published == [(LEDGER_FILLS_DLQ_STREAM, b"\xffnot-an-envelope", None)]
+
+
+async def test_quarantine_parks_decodable_entry_keyed_by_account() -> None:
+    bus = _FakeBus()
+    raw = _raw_fill(side="sell")
+    await make_fill_quarantine(cast(EventBus, bus))(
+        raw, decode_envelope(raw), FillQuarantineError("no open lots")
+    )
+    assert bus.published == [(LEDGER_FILLS_DLQ_STREAM, raw, ACCOUNT)]
+
+
+# --- consume_fill_stream: the composed consumer over the in-memory transport --
+
+
+def _stream_fixture() -> tuple[FakeTransport, FillEvents]:
+    transport = FakeTransport()
+    return transport, FillEvents(bus=EventBus(transport))
+
+
+def _dlq_parks(transport: FakeTransport) -> list[tuple[bytes, str | None]]:
+    return [(r.value, r.key) for r in transport.records if r.stream == LEDGER_FILLS_DLQ_STREAM]
+
+
+async def test_consume_success_persists_and_commits() -> None:
+    transport, fills = _stream_fixture()
+    await fills.publish_fill(_fill())
     rec = _Recorder()
-    bus = _FakeBus()
-    await handle_ledger_entry(cast(EventBus, bus), rec, "0:0", _raw_fill())
+
+    await consume_fill_stream(fills, rec, consumer_name="c1")
+
     assert len(rec.appends) == 1
-    assert bus.acked == ["0:0"]  # committed
-    assert bus.published == []  # nothing dead-lettered
-    assert bus.paused == []  # no retry → no partition pause
+    assert await fills.bus.pending(LEDGER_FILLS_STREAM, PORTFOLIO_LEDGER_GROUP) == 0  # committed
+    assert _dlq_parks(transport) == []
+    assert transport.pause_calls == []  # no retry → no partition pause
 
 
-async def test_handle_entry_retries_in_place_then_acks(monkeypatch: pytest.MonkeyPatch) -> None:
-    import src.tasks.fill_ingestion as fi
-
-    monkeypatch.setattr(fi, "_RETRY_BASE_DELAY_SECONDS", 0.0)
-    monkeypatch.setattr(fi, "_RETRY_MAX_DELAY_SECONDS", 0.0)
-    rec = _FlakyRecorder(failures=2)  # two transient DB hiccups, then success
-    bus = _FakeBus()
-    await handle_ledger_entry(cast(EventBus, bus), rec, "0:0", _raw_fill())
-    # Retried in place until it landed (Kafka won't redeliver to a live consumer),
-    # then committed exactly once — never dead-lettered a real fill.
-    assert len(rec.appends) == 1
-    assert bus.acked == ["0:0"]
-    assert bus.published == []
-
-
-async def test_handle_entry_retry_pauses_partition_until_success(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """The retried entry's partition is paused once (not per attempt) and resumed
-    after the fill lands, so the fetcher stops prefetching the stalled partition."""
-    import src.tasks.fill_ingestion as fi
-
-    monkeypatch.setattr(fi, "_RETRY_BASE_DELAY_SECONDS", 0.0)
-    monkeypatch.setattr(fi, "_RETRY_MAX_DELAY_SECONDS", 0.0)
+async def test_consume_retries_in_place_pausing_the_partition() -> None:
+    """A transient failure never dead-letters: the entry retries in place with
+    its partition paused once, then commits exactly once when the fill lands."""
+    transport, fills = _stream_fixture()
+    await fills.publish_fill(_fill())
     rec = _FlakyRecorder(failures=3)
-    bus = _FakeBus()
-    await handle_ledger_entry(cast(EventBus, bus), rec, "2:7", _raw_fill())
-    assert bus.paused == [(LEDGER_FILLS_STREAM, PORTFOLIO_LEDGER_GROUP, "2:7")]
-    assert bus.resumed == [(LEDGER_FILLS_STREAM, PORTFOLIO_LEDGER_GROUP, "2:7")]
-    assert bus.acked == ["2:7"]
+    consumer = fills.consumer(
+        consumer_name="c1",
+        policy=fill_retry_policy(fills.bus, base_delay_seconds=0.0, max_delay_seconds=0.0),
+    )
+
+    await consumer.run(make_entry_handler(rec))
+
     assert len(rec.appends) == 1
+    assert _dlq_parks(transport) == []  # never dead-lettered a real fill
+    assert len(transport.pause_calls) == 1  # paused once, not per attempt
+    assert len(transport.resume_calls) == 1
+    assert await fills.bus.pending(LEDGER_FILLS_STREAM, PORTFOLIO_LEDGER_GROUP) == 0
 
 
-async def test_handle_entry_poison_deadletters_and_acks() -> None:
+async def test_consume_undecodable_entry_parks_unkeyed_and_continues() -> None:
+    transport, fills = _stream_fixture()
+    garbage = b"\xffnot-an-envelope"
+    await fills.bus.publish_raw(LEDGER_FILLS_STREAM, garbage)
+    await fills.publish_fill(_fill())
     rec = _Recorder()
-    bus = _FakeBus()
-    await handle_ledger_entry(cast(EventBus, bus), rec, "0:0", b"\xffnot-an-envelope")
-    assert rec.appends == []
-    assert bus.published[0][0] == LEDGER_FILLS_DLQ_STREAM  # parked
-    assert bus.published[0][2] is None  # undecodable → parked unkeyed
-    assert bus.acked == ["0:0"]  # acked so it can't wedge the partition
+
+    await consume_fill_stream(fills, rec, consumer_name="c1")
+
+    assert _dlq_parks(transport) == [(garbage, None)]  # parked unkeyed, raw preserved
+    assert len(rec.appends) == 1  # the stream continued past the poison entry
+    assert await fills.bus.pending(LEDGER_FILLS_STREAM, PORTFOLIO_LEDGER_GROUP) == 0
 
 
-async def test_handle_entry_quarantine_deadletters_and_acks() -> None:
+async def test_consume_quarantined_fill_parks_keyed_and_commits() -> None:
+    transport, fills = _stream_fixture()
+    await fills.publish_fill(_fill(side="sell"))
+
     async def _quarantine(_append: LedgerAppend) -> None:
         raise FillQuarantineError("no open lots to cover the sell")
 
-    bus = _FakeBus()
-    await handle_ledger_entry(cast(EventBus, bus), _quarantine, "0:0", _raw_fill(side="sell"))
-    assert bus.published[0][0] == LEDGER_FILLS_DLQ_STREAM  # parked, not lost
-    assert bus.published[0][2] == ACCOUNT  # keyed by account for ordered replay
-    assert bus.acked == ["0:0"]
+    await consume_fill_stream(fills, _quarantine, consumer_name="c1")
+
+    parks = _dlq_parks(transport)
+    assert len(parks) == 1
+    assert parks[0][1] == ACCOUNT  # keyed by account for ordered replay
+    assert await fills.bus.pending(LEDGER_FILLS_STREAM, PORTFOLIO_LEDGER_GROUP) == 0
 
 
 async def test_routes_lifecycle_events() -> None:
     rec = _Recorder()
-    verdict = await process_stream_entry(
-        rec, _reservation(event_type="order_submitted", reserved="1000")
-    )
-    assert verdict == "ack"
+    await make_entry_handler(rec)(_reservation_env(event_type="order_submitted", reserved="1000"))
     append = rec.appends[0]
     assert append.event_type == LedgerEventType.ORDER_SUBMITTED
     assert append.data["reserved"] == "1000"
@@ -299,8 +341,9 @@ async def test_routes_lifecycle_events() -> None:
 
 async def test_reservation_and_fill_have_distinct_ids() -> None:
     rec = _Recorder()
-    await process_stream_entry(rec, _reservation(event_type="order_submitted", reserved="1502.50"))
-    await process_stream_entry(rec, _fill())
+    handle = make_entry_handler(rec)
+    await handle(_reservation_env(event_type="order_submitted", reserved="1502.50"))
+    await handle(_fill_env())
     # Reservation stage must not collide with the fill's idempotency key.
     assert rec.appends[0].event_id != rec.appends[1].event_id
 

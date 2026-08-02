@@ -16,6 +16,7 @@ from llamatrade_common.auth import mint_service_token
 from llamatrade_proto.generated import common_pb2, market_data_pb2
 from llamatrade_proto.generated.market_data_connect import MarketDataServiceClient
 from llamatrade_proto.timestamps import to_proto_timestamp
+from llamatrade_telemetry import inject_headers
 
 logger = logging.getLogger(__name__)
 
@@ -75,7 +76,9 @@ class MarketDataClient:
 
     def _headers(self) -> dict[str, str]:
         """Internal service token so the call clears market-data's fail-closed auth."""
-        return {"Authorization": f"Bearer {mint_service_token(service_name='portfolio')}"}
+        return inject_headers(
+            {"Authorization": f"Bearer {mint_service_token(service_name='portfolio')}"}
+        )
 
     async def close(self) -> None:
         if self._client is not None:

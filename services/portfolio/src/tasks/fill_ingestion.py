@@ -1,15 +1,20 @@
 """Wiring for fill ingestion over the Kafka ledger-fills consumer group.
 
 The pure translation (``fill_to_append`` / ``reservation_to_append``, routed by
-``append_from_message``) lives in ``src.ledger.ingestion``. This module parses
-each envelope to its proto and supplies the **handler** that persists a
-translated append: open a fresh session, append the balanced event idempotently
-via ``LedgerWriter``, and commit. Each fill gets its own short transaction so one
-bad fill can't poison a batch.
+``append_from_message``) lives in ``src.ledger.ingestion``. This module supplies
+the **handler** that persists a translated append — open a fresh session, append
+the balanced event idempotently via ``LedgerWriter``, commit (each fill gets its
+own short transaction so one bad fill can't poison a batch) — and composes the
+events lib's ``StreamConsumer`` around it.
 
 ``persist_append`` is the unit-tested core; ``make_fill_handler`` binds it to a
-session factory; ``process_stream_entry`` decides ack/drop/retry per entry;
-``consume_fill_stream`` drives the consumer group.
+session factory; ``make_entry_handler`` wraps it as the per-envelope consumer
+handler (translate, quarantine, ingest metrics); ``fill_retry_policy`` is the
+``RetryForever`` policy (transient failures redeliver indefinitely, poison parks
+on the ledger DLQ); ``consume_fill_stream`` drives the consumer group. The
+consumer runtime extracts the producer's trace context and records
+``llamatrade_events_consumed_total``; parity with the previous hand-rolled loop
+is pinned by ``tests/test_fill_ingestion_parity.py``.
 """
 
 from __future__ import annotations
@@ -17,7 +22,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
-from typing import Literal
+from collections.abc import Awaitable, Callable
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -30,12 +35,15 @@ from llamatrade_db import (
 )
 from llamatrade_db.models.ledger import LedgerEventType
 from llamatrade_events import (
-    CURSOR_BEGIN,
+    ErrorDisposition,
     EventBus,
+    EventEnvelope,
     FillEvents,
     LedgerFill,
     LedgerReservation,
-    decode_envelope,
+    PoisonError,
+    QuarantineHandler,
+    RetryForever,
 )
 from llamatrade_telemetry import counter, gauge
 
@@ -370,100 +378,110 @@ async def _dispatch_quarantine_alert(message: LedgerFill | LedgerReservation, de
         logger.exception("quarantine alert dispatch failed; the drop verdict stands")
 
 
-async def process_stream_entry(
-    handler: FillHandler, message: LedgerFill | LedgerReservation
-) -> Literal["ack", "drop", "retry"]:
-    """Process one parsed ledger message; the verdict drives acking.
+def classify_fill_error(_exc: BaseException) -> ErrorDisposition:
+    """Every failure the entry handler didn't declare poison is transient.
 
-    - ``ack``: persisted (or deduped) — commit past it.
-    - ``drop``: poison payload (translation failed) or a quarantined fill (a
-      sell with no resolvable cost basis) — ack anyway after alerting, or it
-      would redeliver forever and wedge its partition.
-    - ``retry``: transient persistence failure — leave uncommitted so it
-      redelivers (idempotent at the writer, so a half-applied retry is safe).
+    A fill is money: a persistence failure (DB down, pool exhausted) must
+    redeliver until it lands, never dead-letter. The entry handler raises
+    ``PoisonError`` explicitly for the only structurally-wrong cases
+    (untranslatable payloads, quarantined fills).
     """
-    from src.metrics import record_ingest
+    return "transient"
 
-    try:
-        append = append_from_message(message)
-    except Exception:
-        logger.exception("poison ledger stream entry; dropping")
-        record_ingest("poison")
-        return "drop"
-    try:
-        await handler(append)
-    except FillQuarantineError as e:
-        # A balanced-but-wrong record (or an infinite retry) is worse than a surfaced, recoverable drop; log at ERROR with the order id so the fill is identifiable for reconciliation.
-        logger.error(
-            "quarantining unrecordable ledger fill (client_order_id=%s): %s",
-            getattr(message, "client_order_id", "?"),
-            e,
-        )
-        record_ingest("quarantine")
-        await _dispatch_quarantine_alert(message, str(e))
-        return "drop"
-    except Exception:
-        logger.exception("transient failure persisting ledger stream entry; leaving pending")
-        record_ingest("retry")
-        return "retry"
-    record_ingest("success")
-    return "ack"
+
+def make_entry_handler(handler: FillHandler) -> Callable[[EventEnvelope], Awaitable[None]]:
+    """The ``StreamConsumer`` handler for one consumed fill-stream envelope.
+
+    Parse → translate → persist. Translation failures and quarantined fills
+    (a sell with no resolvable cost basis) raise ``PoisonError`` after their
+    metric/alert bookkeeping — the retry policy hands them to the quarantine
+    park. Anything else re-raises as transient (retried in place, forever).
+    """
+
+    async def handle(env: EventEnvelope) -> None:
+        from src.metrics import record_ingest
+
+        try:
+            message = FillEvents.payload(env)
+            append = append_from_message(message)
+        except Exception as exc:
+            logger.exception("poison ledger stream entry; quarantining")
+            record_ingest("poison")
+            raise PoisonError(str(exc)) from exc
+        try:
+            await handler(append)
+        except FillQuarantineError as e:
+            # A balanced-but-wrong record (or an infinite retry) is worse than a surfaced, recoverable drop; log at ERROR with the order id so the fill is identifiable for reconciliation.
+            logger.error(
+                "quarantining unrecordable ledger fill (client_order_id=%s): %s",
+                getattr(message, "client_order_id", "?"),
+                e,
+            )
+            record_ingest("quarantine")
+            await _dispatch_quarantine_alert(message, str(e))
+            raise PoisonError(str(e)) from e
+        except Exception:
+            logger.exception("transient failure persisting ledger stream entry; retrying in place")
+            record_ingest("retry")
+            raise
+        record_ingest("success")
+
+    return handle
+
+
+def make_fill_quarantine(bus: EventBus) -> QuarantineHandler:
+    """Quarantine for the fill stream: park the RAW entry on the ledger DLQ.
+
+    Keyed by ``account_id`` when the payload is readable so park → replay
+    preserves per-account order; undecodable/unparseable entries park unkeyed.
+    Undecodable bytes never reached the entry handler, so their poison ingest
+    metric is recorded here.
+    """
+
+    async def quarantine(raw: bytes, env: EventEnvelope | None, _exc: BaseException) -> None:
+        from src.metrics import record_ingest
+
+        key: str | None = None
+        if env is None:
+            record_ingest("poison")
+        else:
+            with contextlib.suppress(Exception):
+                key = FillEvents.payload(env).account_id or None
+        await _dead_letter(bus, raw, key=key)
+
+    return quarantine
 
 
 # In-place retry backoff for a transient persistence failure. On Kafka an
 # uncommitted offset is NOT redelivered to a live consumer (only on
-# restart/rebalance), so a fill is retried here until it lands — which is what
-# "never skip a fill" requires. Handling is sequential, so the retry stalls
-# EVERY partition assigned to this pod, not just the account's: the record's
-# partition is paused so the fetcher stops prefetching it, and the transport's
-# max_poll_interval_ms is raised so a long DB outage can't evict the member and
-# trigger a rebalance storm. The writer is idempotent, so a re-run is safe.
+# restart/rebalance), so the RetryForever policy retries a fill until it lands —
+# which is what "never skip a fill" requires. Handling is sequential, so the
+# retry stalls EVERY partition assigned to this pod, not just the account's: the
+# consumer pauses the record's partition so the fetcher stops prefetching it,
+# and the transport's max_poll_interval_ms is raised so a long DB outage can't
+# evict the member and trigger a rebalance storm. The writer is idempotent, so a
+# re-run is safe.
 _RETRY_BASE_DELAY_SECONDS = 0.5
 _RETRY_MAX_DELAY_SECONDS = 30.0
 
 
-async def handle_ledger_entry(bus: EventBus, handler: FillHandler, cursor: str, raw: bytes) -> None:
-    """Decode + persist one consumed entry, then ack (commit) it.
-
-    Poison/undecodable and quarantined entries are dead-lettered (keyed by
-    account where recoverable) and acked so one bad entry can't wedge the
-    partition. A transient failure is retried in place (idempotent writer) with
-    backoff until it succeeds — the ledger self-heals when the DB recovers
-    rather than dead-lettering a real fill. The retry blocks this pod's whole
-    assignment (handling is sequential); the entry's own partition is paused for
-    the duration and resumed once it lands.
-    """
-    from src.metrics import record_ingest
-
-    message = _decode_message(raw)
-    if message is None:
-        # Undecodable / unknown-type entry: poison, not transient — dead-letter unkeyed (no recoverable account) and ack so it can't wedge the partition.
-        await _dead_letter(bus, raw)
-        record_ingest("poison")
-        await bus.ack(LEDGER_FILLS_STREAM, PORTFOLIO_LEDGER_GROUP, cursor)
-        return
-
-    attempt = 0
-    paused = False
-    try:
-        while True:
-            verdict = await process_stream_entry(handler, message)
-            if verdict != "retry":
-                break
-            if not paused:
-                await bus.pause_partition(LEDGER_FILLS_STREAM, PORTFOLIO_LEDGER_GROUP, cursor)
-                paused = True
-            attempt += 1
-            delay = min(_RETRY_BASE_DELAY_SECONDS * (2 ** (attempt - 1)), _RETRY_MAX_DELAY_SECONDS)
-            await asyncio.sleep(delay)
-    finally:
-        if paused:
-            await bus.resume_partition(LEDGER_FILLS_STREAM, PORTFOLIO_LEDGER_GROUP, cursor)
-
-    if verdict == "drop":
-        # Translation poison or a quarantined fill — park it keyed by account (preserving per-account replay order) before acking so it's recoverable rather than silently lost.
-        await _dead_letter(bus, raw, key=message.account_id or None)
-    await bus.ack(LEDGER_FILLS_STREAM, PORTFOLIO_LEDGER_GROUP, cursor)
+def fill_retry_policy(
+    bus: EventBus,
+    *,
+    base_delay_seconds: float | None = None,
+    max_delay_seconds: float | None = None,
+) -> RetryForever:
+    """The fill stream's never-give-up retry policy (see ``classify_fill_error``)."""
+    return RetryForever(
+        classify=classify_fill_error,
+        quarantine=make_fill_quarantine(bus),
+        base_delay_seconds=(
+            _RETRY_BASE_DELAY_SECONDS if base_delay_seconds is None else base_delay_seconds
+        ),
+        max_delay_seconds=(
+            _RETRY_MAX_DELAY_SECONDS if max_delay_seconds is None else max_delay_seconds
+        ),
+    )
 
 
 async def consume_fill_stream(
@@ -471,15 +489,20 @@ async def consume_fill_stream(
     handler: FillHandler,
     *,
     consumer_name: str,
-) -> None:  # pragma: no cover - IO loop, per-entry logic covered via handle_ledger_entry
+    stop_event: asyncio.Event | None = None,
+) -> None:
     """Consume the ledger fill topic as a Kafka consumer-group member.
 
-    Kafka assigns each account's partition to one member, so per-account order
-    (buy-before-sell for FIFO cost basis) holds while the fold runs N-way parallel
-    across accounts; the group coordinator handles failover. Consumes RAW bytes
-    (``consume_raw``) so a corrupt entry is handled in ``handle_ledger_entry``
-    rather than crashing the loop. ``group_start`` = begin so a fresh group never
-    misses a published fill (the writer dedupes redelivery). Runs until cancelled.
+    A ``StreamConsumer`` under the ``RetryForever`` policy: it extracts the
+    producer's trace context (CONSUMER span per entry), records
+    ``llamatrade_events_consumed_total``, retries transient failures in place
+    forever (entry partition paused), quarantines poison via the ledger DLQ
+    park, and commits the offset only after the handler returns. Entries are
+    handled strictly serially, so per-account order (buy-before-sell for FIFO
+    cost basis) holds; Kafka assigns each account's partition to one member and
+    the group coordinator handles failover. ``group_start`` = begin so a fresh
+    group never misses a published fill (the writer dedupes redelivery). Runs
+    until cancelled (or ``stop_event`` is set).
     """
     logger.info(
         "ledger fill consumer started (stream=%s group=%s consumer=%s)",
@@ -487,20 +510,8 @@ async def consume_fill_stream(
         PORTFOLIO_LEDGER_GROUP,
         consumer_name,
     )
-    bus = fills.bus
-    async for cursor, raw in bus.consume_raw(
-        LEDGER_FILLS_STREAM, PORTFOLIO_LEDGER_GROUP, consumer_name, group_start_id=CURSOR_BEGIN
-    ):
-        await handle_ledger_entry(bus, handler, cursor, raw)
-
-
-def _decode_message(raw: bytes) -> LedgerFill | LedgerReservation | None:
-    """Decode raw bytes → ledger message, or ``None`` if undecodable / unknown type."""
-    try:
-        return FillEvents.payload(decode_envelope(raw))
-    except Exception:
-        logger.exception("undecodable or unknown-type ledger stream entry; dropping")
-        return None
+    consumer = fills.consumer(consumer_name=consumer_name, policy=fill_retry_policy(fills.bus))
+    await consumer.run(make_entry_handler(handler), stop_event=stop_event)
 
 
 LAG_SAMPLE_INTERVAL_SECONDS = 30.0
