@@ -52,12 +52,12 @@ jobs:
           .venv/bin/pip install --upgrade pip
           # Install all libs (needed for type checking). Order matters: local
           # packages are not on PyPI, so each must be installed before its dependents
-          # (telemetry/proto/dsl are leaves; common/db/alpaca need telemetry;
-          # events needs proto; runtime needs dsl).
+          # (telemetry/dsl are leaves; common/alpaca need telemetry; proto needs
+          # common; db/events need proto; runtime needs dsl).
           .venv/bin/pip install -e libs/telemetry
-          .venv/bin/pip install -e libs/proto
           .venv/bin/pip install -e libs/dsl
           .venv/bin/pip install -e libs/common
+          .venv/bin/pip install -e libs/proto
           .venv/bin/pip install -e libs/db
           .venv/bin/pip install -e libs/runtime
           .venv/bin/pip install -e libs/alpaca
@@ -132,11 +132,11 @@ jobs:
       - name: Install shared libs
         run: |
           pip install -e libs/telemetry
-          pip install -e libs/common[dev]
-          pip install -e libs/db[dev]
           pip install -e libs/dsl[dev]
-          pip install -e libs/runtime[dev]
+          pip install -e libs/common[dev]
           pip install -e libs/proto[dev]
+          pip install -e libs/db[dev]
+          pip install -e libs/runtime[dev]
           pip install -e libs/events
           pip install -e libs/alpaca
 
@@ -371,9 +371,9 @@ jobs:
           python -m venv .venv
           .venv/bin/pip install --upgrade pip
           .venv/bin/pip install -e libs/telemetry
-          .venv/bin/pip install -e libs/proto
           .venv/bin/pip install -e libs/dsl
           .venv/bin/pip install -e libs/common
+          .venv/bin/pip install -e libs/proto
           .venv/bin/pip install -e libs/db
           .venv/bin/pip install -e libs/runtime
           .venv/bin/pip install -e libs/alpaca
@@ -582,9 +582,9 @@ jobs:
         # packages are not on PyPI, so each is installed before its dependents.
         run: |
           pip install -e libs/telemetry
-          pip install -e libs/proto[dev]
           pip install -e libs/dsl
           pip install -e libs/common
+          pip install -e libs/proto[dev]
           pip install -e libs/db
           pip install -e libs/runtime
           pip install -e libs/alpaca
