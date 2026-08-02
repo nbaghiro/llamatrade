@@ -218,6 +218,21 @@ class TestTradingEventPublisher:
     async def test_close_without_connection(self) -> None:
         await TradingEventPublisher().close()  # Should not raise
 
+    def test_is_connected_false_before_bus_created(self) -> None:
+        """The Kafka health probe reads False until the publisher first uses its bus."""
+        assert TradingEventPublisher().is_connected() is False
+
+    def test_is_connected_delegates_to_kafka_transport(self, monkeypatch) -> None:
+        """Once a bus exists, liveness comes from the shared transport, not a new connection."""
+        from llamatrade_events import EventBus, KafkaTransport
+
+        transport = KafkaTransport()
+        publisher = TradingEventPublisher()
+        publisher._bus = EventBus(transport)
+        assert publisher.is_connected() is False  # no producer/consumer started yet
+        monkeypatch.setattr(transport, "is_connected", lambda: True)
+        assert publisher.is_connected() is True
+
 
 class TestTradingEventSubscriber:
     """Tests for TradingEventSubscriber."""

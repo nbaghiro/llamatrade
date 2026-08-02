@@ -359,13 +359,17 @@ async def create_position_service(tenant_id: UUID | None = None) -> PositionServ
     """Create position service with a request-scoped DB session.
 
     Used by the gRPC servicer where FastAPI DI is not available. The caller MUST
-    ``await service.aclose()`` when done (trading-hardening 13A). When a
-    ``tenant_id`` is given, the session is bound to it for Postgres RLS.
-    """
-    from llamatrade_db import get_session_maker, set_tenant_guc
+    ``await service.aclose()`` when done (trading-hardening 13A). The session is
+    bound to ``tenant_id`` for Postgres RLS on every transaction.
 
+    Raises:
+        ValueError: If ``tenant_id`` is None — this factory is always tenant-scoped.
+    """
+    from llamatrade_db.session import bind_tenant_guc, get_session_maker
+
+    if tenant_id is None:
+        raise ValueError("create_position_service requires a tenant_id (RLS scope)")
     db = get_session_maker()()
-    if tenant_id is not None:
-        await set_tenant_guc(db, tenant_id)
+    bind_tenant_guc(db, tenant_id)
     market_data = get_market_data_client()
     return PositionService(db=db, market_data=market_data)

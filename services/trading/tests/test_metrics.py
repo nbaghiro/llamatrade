@@ -334,3 +334,45 @@ class TestDegradedEvalsMetric:
         before = _sample(_exposition(), metric)
         record_degraded_evals(0)
         assert _sample(_exposition(), metric) == before
+
+
+class TestSubNotionalSkipsMetric:
+    """record_sub_notional_skips — orders dropped under the broker's notional floor."""
+
+    def test_increments_by_count(self) -> None:
+        from src.metrics import record_sub_notional_skips
+
+        metric = "llamatrade_trading_strategy_sub_notional_skips_total"
+        before = _sample(_exposition(), metric)
+        record_sub_notional_skips(2)
+        assert _sample(_exposition(), metric) == before + 2
+
+    def test_nonpositive_is_noop(self) -> None:
+        from src.metrics import record_sub_notional_skips
+
+        metric = "llamatrade_trading_strategy_sub_notional_skips_total"
+        before = _sample(_exposition(), metric)
+        record_sub_notional_skips(0)
+        assert _sample(_exposition(), metric) == before
+
+
+class TestSymbolLifecycleMetrics:
+    """Evaluation stalls and broker symbol halts, both without session labels."""
+
+    def test_evaluation_stall_counts_one_per_episode(self) -> None:
+        from src.metrics import record_evaluation_stall
+
+        metric = "llamatrade_trading_evaluation_stalls_total"
+        before = _sample(_exposition(), metric)
+        record_evaluation_stall()
+        assert _sample(_exposition(), metric) == before + 1
+
+    def test_symbol_halt_is_labelled_by_reason(self) -> None:
+        from src.metrics import record_symbol_halt
+
+        metric = "llamatrade_trading_symbol_halts_total"
+        before = _sample(_exposition(), metric, reason="inactive")
+        record_symbol_halt("inactive")
+        text = _exposition()
+        assert _sample(text, metric, reason="inactive") == before + 1
+        assert "tenant_id=" not in text

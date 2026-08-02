@@ -7,11 +7,14 @@ tenant_id doesn't match — closing the cross-tenant IDOR on the money path.
 
 from __future__ import annotations
 
+from typing import cast
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import UUID, uuid4
 
-import grpc.aio
 import pytest
+from connectrpc.code import Code
+from connectrpc.errors import ConnectError
+from connectrpc.request import RequestContext
 
 from llamatrade_common import TenantContext, reset_context, set_context
 from llamatrade_proto.generated import common_pb2, trading_pb2
@@ -24,25 +27,8 @@ USER = UUID("33333333-3333-3333-3333-333333333333")
 SESSION_ID = UUID("44444444-4444-4444-4444-444444444444")
 
 
-class MockServicerContext:
-    """Mock gRPC context whose abort records the status code and raises."""
-
-    def __init__(self) -> None:
-        self.code: grpc.StatusCode | None = None
-        self.details: str | None = None
-
-    async def abort(self, code: grpc.StatusCode, details: str) -> None:
-        self.code = code
-        self.details = details
-        raise grpc.aio.AioRpcError(
-            code=code,
-            initial_metadata=grpc.aio.Metadata(),
-            trailing_metadata=grpc.aio.Metadata(),
-            details=details,
-        )
-
-    def cancelled(self) -> bool:
-        return False
+def _ctx() -> RequestContext:
+    return cast(RequestContext, MagicMock(spec=RequestContext))
 
 
 @pytest.fixture
@@ -66,19 +52,19 @@ def _submit_request(wire_tenant: UUID, wire_user: UUID = USER) -> trading_pb2.Su
 
 async def test_cross_tenant_submit_is_denied(servicer):
     """An authenticated tenant-A principal cannot submit with a tenant-B body."""
-    ctx = MockServicerContext()
+    ctx = _ctx()
     token = set_context(TenantContext(tenant_id=TENANT_A, user_id=USER))
     try:
-        with pytest.raises(grpc.aio.AioRpcError):
-            await servicer.SubmitOrder(_submit_request(wire_tenant=TENANT_B), ctx)
+        with pytest.raises(ConnectError) as exc_info:
+            await servicer.submit_order(_submit_request(wire_tenant=TENANT_B), ctx)
     finally:
         reset_context(token)
-    assert ctx.code == grpc.StatusCode.PERMISSION_DENIED
+    assert exc_info.value.code == Code.PERMISSION_DENIED
 
 
 async def test_matching_tenant_submit_proceeds(servicer):
     """A tenant-A principal with a tenant-A body reaches the executor."""
-    ctx = MockServicerContext()
+    ctx = _ctx()
     mock_order = MagicMock()
     mock_order.id = uuid4()
     mock_order.client_order_id = "lt-abc"
@@ -105,7 +91,7 @@ async def test_matching_tenant_submit_proceeds(servicer):
             "src.grpc.servicer.create_order_executor",
             new=AsyncMock(return_value=mock_executor),
         ):
-            response = await servicer.SubmitOrder(_submit_request(wire_tenant=TENANT_A), ctx)
+            response = await servicer.submit_order(_submit_request(wire_tenant=TENANT_A), ctx)
         assert response.order.symbol == "AAPL"
         mock_executor.submit_order.assert_called_once()
         # The executor is created for the *authenticated* tenant (2A creds path).
@@ -117,7 +103,7 @@ async def test_matching_tenant_submit_proceeds(servicer):
 
 async def test_unauthenticated_submit_is_rejected(servicer):
     """No principal and an empty wire context → UNAUTHENTICATED."""
-    ctx = MockServicerContext()
+    ctx = _ctx()
     request = trading_pb2.SubmitOrderRequest(
         context=common_pb2.TenantContext(tenant_id="", user_id=""),
         session_id=str(SESSION_ID),
@@ -127,14 +113,14 @@ async def test_unauthenticated_submit_is_rejected(servicer):
         time_in_force=trading_pb2.TIME_IN_FORCE_DAY,
         quantity=common_pb2.Decimal(value="10"),
     )
-    with pytest.raises(grpc.aio.AioRpcError):
-        await servicer.SubmitOrder(request, ctx)
-    assert ctx.code == grpc.StatusCode.UNAUTHENTICATED
+    with pytest.raises(ConnectError) as exc_info:
+        await servicer.submit_order(request, ctx)
+    assert exc_info.value.code == Code.UNAUTHENTICATED
 
 
 async def test_service_principal_trusts_wire_tenant(servicer):
     """A service principal forwards the wire tenant (inter-service calls)."""
-    ctx = MockServicerContext()
+    ctx = _ctx()
     mock_order = MagicMock()
     mock_order.id = uuid4()
     mock_order.client_order_id = "lt-svc"
@@ -161,7 +147,7 @@ async def test_service_principal_trusts_wire_tenant(servicer):
             "src.grpc.servicer.create_order_executor",
             new=AsyncMock(return_value=mock_executor),
         ):
-            await servicer.SubmitOrder(_submit_request(wire_tenant=TENANT_B), ctx)
+            await servicer.submit_order(_submit_request(wire_tenant=TENANT_B), ctx)
         _, kwargs = mock_executor.submit_order.call_args
         # Service principal → the wire tenant (B) is trusted, not blocked.
         assert kwargs["tenant_id"] == TENANT_B
@@ -171,14 +157,14 @@ async def test_service_principal_trusts_wire_tenant(servicer):
 
 async def test_cross_tenant_list_orders_is_denied(servicer):
     """The guard applies to read RPCs too, not just order placement."""
-    ctx = MockServicerContext()
+    ctx = _ctx()
     request = trading_pb2.ListOrdersRequest(
         context=common_pb2.TenantContext(tenant_id=str(TENANT_B), user_id=str(USER)),
     )
     token = set_context(TenantContext(tenant_id=TENANT_A, user_id=USER))
     try:
-        with pytest.raises(grpc.aio.AioRpcError):
-            await servicer.ListOrders(request, ctx)
+        with pytest.raises(ConnectError) as exc_info:
+            await servicer.list_orders(request, ctx)
     finally:
         reset_context(token)
-    assert ctx.code == grpc.StatusCode.PERMISSION_DENIED
+    assert exc_info.value.code == Code.PERMISSION_DENIED

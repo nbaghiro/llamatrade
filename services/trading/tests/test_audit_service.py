@@ -365,17 +365,19 @@ class TestAuditServiceErrors:
         assert log_entry.data["service"] == "Alpaca"
 
 
-async def test_log_uses_session_maker_when_provided(sample_order_response, tenant_id, session_id):
+async def test_log_uses_tenant_scoped_session_maker(sample_order_response, tenant_id, session_id):
     """With a session_maker (long-lived callers like the runner), each audit
-    write opens its own short session and commits (GAP 14)."""
+    write opens its own short session scoped to the record's tenant:
+    the RLS tenant GUC is set before the write, in the same transaction."""
     from unittest.mock import AsyncMock, MagicMock
 
     from llamatrade_db.models.audit import AuditLog
 
-    added: list = []
+    added: list[object] = []
     session = MagicMock()
     session.add = MagicMock(side_effect=added.append)
     session.commit = AsyncMock()
+    session.execute = AsyncMock()
     cm = MagicMock()
     cm.__aenter__ = AsyncMock(return_value=session)
     cm.__aexit__ = AsyncMock(return_value=False)
@@ -386,5 +388,8 @@ async def test_log_uses_session_maker_when_provided(sample_order_response, tenan
         tenant_id=tenant_id, session_id=session_id, order=sample_order_response
     )
 
+    guc_call = session.execute.await_args_list[0]
+    assert "set_config('app.current_tenant'" in str(guc_call.args[0])
+    assert guc_call.args[1] == {"tenant": str(tenant_id)}
     assert any(isinstance(o, AuditLog) for o in added)
     session.commit.assert_awaited_once()

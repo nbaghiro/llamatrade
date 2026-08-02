@@ -4,7 +4,10 @@ Extends SessionService to integrate with StrategyRunner for live trading.
 When sessions start, runners start. When sessions stop, runners stop.
 
 Safety features:
-- Preflight checks before starting sessions (subscription, credentials, buying power)
+- Preflight checks before starting sessions (subscription, credentials, buying
+  power, symbol tradability)
+- A per-session ownership lease held for the runner's lifetime, so only one
+  replica ever runs a session
 - Per-tenant credential isolation via database query
 - Credential mode validation (paper credentials can't be used for live trading)
 """
@@ -19,9 +22,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from llamatrade_alpaca import (
     TradingClient,
+    TradingStreamClient,
     get_trading_client,
 )
-from llamatrade_db import get_db, get_session_maker
+from llamatrade_db import get_db
 from llamatrade_db.models.billing import Plan, Subscription
 from llamatrade_db.models.strategy import StrategyExecution, StrategyVersion
 from llamatrade_proto.generated.billing_pb2 import PLAN_TIER_FREE
@@ -48,6 +52,7 @@ from src.runner.warmup import preload_session_history
 from src.services.alert_service import AlertService
 from src.services.session_service import SessionService
 from src.streaming.publisher import get_trading_event_publisher
+from src.symbol_status import asset_halt_reason, halt_description
 
 logger = logging.getLogger(__name__)
 
@@ -73,8 +78,7 @@ class LiveSessionService(SessionService):
         self.order_executor = order_executor
         self.risk_manager = risk_manager
         self.alpaca_client = alpaca_client
-        # The order executor's DB session is request-scoped UNLESS it is handed
-        # to a runner (then the runner owns it for the session's lifetime).
+        # The order executor's DB session is request-scoped unless handed to a runner, which then owns it for the session's lifetime.
         self._executor_handed_off = False
 
     async def aclose(self) -> None:
@@ -118,13 +122,20 @@ class LiveSessionService(SessionService):
 
         Raises:
             ValueError: If preflight checks fail (subscription, credentials,
-                buying power) or another active session already trades the sleeve.
+                buying power, symbol tradability) or another active session
+                already trades the sleeve.
         """
+        # Resolved up front so preflight can refuse an untradable symbol before any session row exists.
+        actual_symbols = await self._resolve_symbols(
+            tenant_id, strategy_id, strategy_version, symbols
+        )
+
         # Run preflight checks BEFORE creating session
         creds = await self._preflight_checks(
             tenant_id=tenant_id,
             credentials_id=credentials_id,
             mode=mode,
+            symbols=actual_symbols,
         )
 
         # Ledger identity from the funded strategy execution (None = legacy)
@@ -133,8 +144,7 @@ class LiveSessionService(SessionService):
                 tenant_id, strategy_id, execution_id
             )
 
-        # One active session per sleeve: two runners sharing a sleeve would
-        # race its free cash and double-trade its targets.
+        # One active session per sleeve: two runners sharing a sleeve would race its free cash and double-trade its targets.
         if sleeve_id is not None:
             await self._ensure_sleeve_not_in_use(tenant_id, sleeve_id)
 
@@ -147,20 +157,21 @@ class LiveSessionService(SessionService):
             name=name,
             mode=mode,
             credentials_id=credentials_id,
-            symbols=symbols,
+            symbols=actual_symbols,
             config=config,
             sleeve_id=sleeve_id,
             account_id=account_id,
         )
 
-        # Load strategy and start runner
+        # Take ownership, then load strategy and start runner
         try:
+            await self._acquire_session_lease(response.id)
             await self._start_runner(
                 session_id=response.id,
                 tenant_id=tenant_id,
                 strategy_id=strategy_id,
                 version=strategy_version,
-                symbols=symbols,
+                symbols=actual_symbols,
                 mode=mode,
                 credentials=creds,
                 sleeve_id=sleeve_id,
@@ -168,11 +179,57 @@ class LiveSessionService(SessionService):
             )
         except Exception as e:
             logger.error(f"Failed to start runner for session {response.id}: {e}")
+            # Free the lease so a healthy replica can retry this session.
+            from src.recovery import release_session_lease
+
+            await release_session_lease(response.id)
             # Update session status to error
             await super().set_error(response.id, tenant_id, str(e))
             raise
 
         return response
+
+    async def _acquire_session_lease(self, session_id: UUID) -> None:
+        """Take the per-session ownership lease the rehydrator also claims.
+
+        Holding it on the normal start path is what stops a peer replica's
+        rehydrate pass from adopting (and double-running) a session started
+        here. Refuses the start when the lease cannot be taken rather than
+        running a session two replicas may both own.
+
+        Raises:
+            ValueError: If another replica already owns the session.
+        """
+        from src.recovery import acquire_session_lease
+
+        if not await acquire_session_lease(session_id):
+            raise ValueError(f"Session {session_id} is already owned by another trading replica")
+
+    async def _resolve_symbols(
+        self,
+        tenant_id: UUID,
+        strategy_id: UUID,
+        version: int | None,
+        symbols: list[str] | None,
+    ) -> list[str]:
+        """The symbols a session will subscribe to: explicit ones, else the version's.
+
+        Raises:
+            ValueError: If the strategy/version is missing or defines no symbols.
+        """
+        if symbols:
+            return symbols
+        strategy = await self._get_strategy(tenant_id, strategy_id)
+        if not strategy:
+            raise ValueError(f"Strategy {strategy_id} not found")
+        actual_version = version or strategy.current_version
+        strategy_ver = await self._get_strategy_version(strategy_id, actual_version)
+        if not strategy_ver:
+            raise ValueError(f"Strategy version {actual_version} not found")
+        resolved = list(strategy_ver.symbols or [])
+        if not resolved:
+            raise ValueError("No symbols specified")
+        return resolved
 
     async def stop_session(
         self,
@@ -180,9 +237,7 @@ class LiveSessionService(SessionService):
         tenant_id: UUID,
     ) -> SessionResponse | None:
         """Stop a trading session and its runner."""
-        # Verify tenant ownership BEFORE touching the in-process runner registry:
-        # it is keyed by session_id alone, so acting first would let a caller halt
-        # another tenant's runner by supplying its session id (cross-tenant DoS).
+        # Verify tenant ownership before touching the in-process runner registry: it is keyed by session_id alone, so acting first would let a caller halt another tenant's runner via its session id (cross-tenant DoS).
         if await self._get_session_by_id(tenant_id, session_id) is None:
             return None
 
@@ -249,8 +304,7 @@ class LiveSessionService(SessionService):
             EXECUTION_STATUS_RUNNING,
         )
 
-        # Open funded executions only (a released sleeve has sleeve_id cleared);
-        # limit 2 is enough to detect ambiguity.
+        # Open funded executions only (a released sleeve has sleeve_id cleared); limit 2 is enough to detect ambiguity.
         funded = list(
             await self.db.scalars(
                 select(StrategyExecution)
@@ -347,40 +401,35 @@ class LiveSessionService(SessionService):
         if not actual_symbols:
             raise ValueError("No symbols specified")
 
-        # Build the shared StrategySession (merged-symbol evaluation + portfolio-level
-        # rebalance, identical to backtest). DRIFT sizing (resize against sleeve equity)
-        # only when this session is funded (has a sleeve); otherwise BINARY.
+        # Shared StrategySession (merged-symbol evaluation + portfolio-level rebalance, identical to backtest); DRIFT sizing only when funded (has a sleeve), otherwise BINARY.
         sleeve_aware = sleeve_id is not None
         session = StrategySession(
             strategy_sexpr,
             sizing_mode=SizingMode.DRIFT if sleeve_aware else SizingMode.BINARY,
         )
 
-        # Execution primitives from the provider seam (BYO today); metrics via
-        # lifecycle hooks (lib is service-agnostic).
+        # Execution primitives from the provider seam (BYO); metrics via lifecycle hooks (lib is service-agnostic).
         bar_stream = build_bar_stream(
             credentials,
             on_reconnect=record_bar_stream_reconnect,
             on_connection_change=set_bar_stream_connected,
         )
-        trade_stream = build_trade_stream(
-            credentials,
-            on_reconnect=record_trade_stream_reconnect,
-            on_connection_change=set_trade_stream_connected,
-        )
+
+        # A factory (not an instance) so the runner can rebuild the trade stream from scratch if its fill feed gives up (resetting the reconnect-attempt counter) rather than trade blind.
+        def trade_stream_factory() -> TradingStreamClient:
+            return build_trade_stream(
+                credentials,
+                on_reconnect=record_trade_stream_reconnect,
+                on_connection_change=set_trade_stream_connected,
+            )
+
+        trade_stream = trade_stream_factory()
         session_alpaca_client = build_trading_client(credentials)
 
-        # Fail fast if any strategy symbol isn't tradable — else every order for it is rejected.
-        try:
-            await self._check_symbols_tradable(session_alpaca_client, actual_symbols)
-        except Exception:
-            await session_alpaca_client.close()
-            raise
+        # Warm-up fetches daily bars (the natural grid for calendar/allocation strategies); the live stream is 1-minute regardless.
+        timeframe = "1D"
 
-        timeframe = strategy_ver.timeframe or "1Min"
-
-        # Prime the session's indicators from historical bars so it trades from the first live bar
-        # instead of sitting cold until min_bars real-time bars accumulate (G4). Best-effort.
+        # Prime the session's indicators from historical bars so it trades from the first live bar rather than sitting cold until min_bars accumulate. Best-effort.
         try:
             await preload_session_history(
                 session, actual_symbols, timeframe, get_market_data_client()
@@ -414,17 +463,16 @@ class LiveSessionService(SessionService):
             session=session,
             bar_stream=bar_stream,
             trade_stream=trade_stream,
+            trade_stream_factory=trade_stream_factory,
             order_executor=self.order_executor,
             risk_manager=self.risk_manager,
             alpaca_client=session_alpaca_client,
             ledger_publisher=ledger_publisher,
             portfolio_client=portfolio_client,
-            # Fill/rejection/connection/circuit-breaker alerts → tenant webhooks
-            # (GAP 14). Own short sessions so the runner's loops don't share one.
-            alert_service=AlertService(session_maker=get_session_maker()),
+            # Fill/rejection/connection/circuit-breaker alerts → tenant webhooks (GAP 14); own short sessions so the runner's loops don't share one.
+            alert_service=AlertService(),
         )
-        # The runner now owns the order executor (and its DB session) for the
-        # session's lifetime — don't close it when this RPC returns.
+        # The runner owns the order executor (and its DB session) for the session's lifetime — don't close it when this RPC returns.
         self._executor_handed_off = True
 
         logger.info(f"Started runner for session {session_id} (credentials: {credentials.name})")
@@ -435,8 +483,7 @@ class LiveSessionService(SessionService):
             await self.runner_manager.stop_runner(session_id)
             logger.info(f"Stopped runner for session {session_id}")
 
-        # Free the per-session advisory lock if this pod rehydrated it (no-op
-        # otherwise), so a stopped session never keeps holding its ownership lease.
+        # Free the per-session advisory lock if this pod rehydrated it (no-op otherwise), so a stopped session never keeps holding its ownership lease.
         from src.recovery import release_session_lease
 
         await release_session_lease(session_id)
@@ -488,6 +535,7 @@ class LiveSessionService(SessionService):
         tenant_id: UUID,
         credentials_id: UUID,
         mode: int,  # ExecutionMode proto value: PAPER=1, LIVE=2
+        symbols: list[str] | None = None,
     ) -> DecryptedCredentials:
         """Run all preflight checks before starting a trading session.
 
@@ -495,6 +543,8 @@ class LiveSessionService(SessionService):
             tenant_id: Tenant starting the session
             credentials_id: Alpaca credentials to use
             mode: ExecutionMode proto value (PAPER=1, LIVE=2)
+            symbols: Symbols the session will subscribe to (checked against the
+                broker's asset listing)
 
         Returns:
             Decrypted credentials for use in the session
@@ -519,6 +569,10 @@ class LiveSessionService(SessionService):
 
         # 4. Validate Alpaca account status and buying power
         await self._check_alpaca_account(creds, mode)
+
+        # 5. Validate every subscribed symbol is active and tradable at the broker
+        if symbols:
+            await self._check_symbols_with_credentials(creds, symbols)
 
         return creds
 
@@ -594,6 +648,13 @@ class LiveSessionService(SessionService):
                 "Please check your Alpaca dashboard."
             )
 
+        # Cash accounts settle T+1; the ledger models margin-account cash only, so admitting one would let same-day rotations trigger good-faith violations the book cannot see.
+        if account.multiplier.strip() == "1":
+            raise ValueError(
+                "Cash brokerage accounts are not supported yet; a margin account "
+                "is required for automated trading."
+            )
+
         # Check buying power: $0 for paper, $500 for live
         if mode == EXECUTION_MODE_LIVE and account.buying_power < 500.0:
             raise ValueError(
@@ -601,24 +662,35 @@ class LiveSessionService(SessionService):
                 f"Minimum required: $500.00"
             )
 
-    async def _check_symbols_tradable(self, client: TradingClient, symbols: list[str]) -> None:
-        """Reject the session if any strategy symbol is unknown or not tradable.
+    async def _check_symbols_with_credentials(
+        self, creds: DecryptedCredentials, symbols: list[str]
+    ) -> None:
+        """Run the symbol tradability check with the session's own broker credentials."""
+        client = build_trading_client(creds)
+        try:
+            await self._check_symbols_tradable(client, symbols)
+        finally:
+            await client.close()
 
-        A delisted or mistyped symbol would otherwise start a live session whose
-        every order for it is rejected by the broker — fail fast instead.
+    async def _check_symbols_tradable(self, client: TradingClient, symbols: list[str]) -> None:
+        """Reject the session unless every symbol is active and tradable at the broker.
+
+        A delisted, suspended or mistyped symbol would otherwise start a live
+        session whose every order for it is rejected by the broker — fail fast
+        instead.
 
         Raises:
-            ValueError: Listing the offending symbols.
+            ValueError: Listing each offending symbol with why it was refused.
         """
-        not_tradable: list[str] = []
+        refusals: list[str] = []
         for symbol in symbols:
-            asset = await client.get_asset(symbol)
-            if asset is None or not asset.tradable:
-                not_tradable.append(symbol)
-        if not_tradable:
+            reason = asset_halt_reason(await client.get_asset(symbol))
+            if reason is not None:
+                refusals.append(f"{symbol} ({halt_description(reason)})")
+        if refusals:
             raise ValueError(
-                "Cannot start session: these symbols are not tradable on this account: "
-                + ", ".join(sorted(not_tradable))
+                "Cannot start session: these symbols cannot be traded on this account: "
+                + ", ".join(sorted(refusals))
             )
 
     async def _get_credentials_by_id(
@@ -645,16 +717,20 @@ class LiveSessionService(SessionService):
 async def create_live_session_service(tenant_id: UUID | None = None) -> LiveSessionService:
     """Create a live session service without dependency injection.
 
-    Used by the gRPC servicer where FastAPI DI is not available. When a
-    ``tenant_id`` is given, the session is bound to it for Postgres RLS.
+    Used by the gRPC servicer where FastAPI DI is not available. The session is
+    bound to ``tenant_id`` for Postgres RLS on every transaction.
+
+    Raises:
+        ValueError: If ``tenant_id`` is None — this factory is always tenant-scoped.
     """
-    from llamatrade_db import get_session_maker, set_tenant_guc
+    from llamatrade_db.session import bind_tenant_guc, get_session_maker
 
     from src.executor.order_executor import create_order_executor
 
+    if tenant_id is None:
+        raise ValueError("create_live_session_service requires a tenant_id (RLS scope)")
     db = get_session_maker()()
-    if tenant_id is not None:
-        await set_tenant_guc(db, tenant_id)
+    bind_tenant_guc(db, tenant_id)
     order_executor = await create_order_executor(tenant_id=tenant_id)
     return LiveSessionService(
         db=db,

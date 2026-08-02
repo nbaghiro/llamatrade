@@ -1,378 +1,345 @@
-"""Concurrency and race condition tests.
+"""Concurrency and race-condition tests driving production code paths.
 
-These tests verify thread-safety and race condition handling:
-1. Multiple runners processing same symbol
-2. Concurrent order submissions
-3. Position reconciliation during active trading
-4. Cache access under concurrent load
+Covered here:
+1. Deterministic-order idempotency in OrderExecutor.submit_order (replay,
+   stranded resume, broker adoption, concurrent duplicate suppression)
+2. Multiple runners processing the same symbol
+3. AsyncTTLCache access under concurrent load
 """
 
 import asyncio
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
+from typing import cast
 from unittest.mock import AsyncMock, MagicMock
 from uuid import UUID, uuid4
 
-import pytest
+from sqlalchemy.exc import MultipleResultsFound
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.sql import Select
 
-from llamatrade_alpaca import MockBarStream, MockTradeStream
-from llamatrade_alpaca import StreamBar as BarData
+from llamatrade_alpaca import AlpacaError, MockBarStream, MockTradeStream, TradingClient
+from llamatrade_alpaca import Order as AlpacaOrder
+from llamatrade_alpaca import OrderSide as AlpacaOrderSide
+from llamatrade_alpaca import OrderStatus as AlpacaOrderStatus
+from llamatrade_alpaca import OrderType as AlpacaOrderType
+from llamatrade_alpaca import TimeInForce as AlpacaTimeInForce
+from llamatrade_db.models.trading import Order
 from llamatrade_proto.generated.trading_pb2 import (
     ORDER_SIDE_BUY,
+    ORDER_STATUS_ACCEPTED,
+    ORDER_STATUS_PENDING,
     ORDER_TYPE_MARKET,
     TIME_IN_FORCE_DAY,
 )
 
-from src.executor.order_executor import OrderExecutor
+from src.executor.order_executor import OrderExecutor, generate_deterministic_order_id
 from src.models import OrderCreate, RiskCheckResult
 from src.risk.risk_manager import RiskManager
 from src.runner.runner import RunnerConfig, StrategyRunner
+from src.utils.cache import AsyncTTLCache
 
 # Test UUIDs
 TEST_TENANT_ID = UUID("11111111-1111-1111-1111-111111111111")
 TEST_SESSION_ID = UUID("44444444-4444-4444-4444-444444444444")
 TEST_STRATEGY_ID = UUID("33333333-3333-3333-3333-333333333333")
 
+SIGNAL_TS = datetime(2025, 1, 16, 15, 30, tzinfo=UTC)
 
-@pytest.fixture
-def sample_bars():
-    """Create sample bars for testing."""
-    base_time = datetime(2025, 1, 16, 15, 0, tzinfo=UTC)
-    bars = []
-    price = 150.0
 
-    for i in range(60):
-        timestamp = base_time + timedelta(minutes=i)
-        price = price * (1 + (0.001 if i % 3 == 0 else -0.0005))
-        bars.append(
-            BarData(
-                symbol="AAPL",
-                timestamp=timestamp,
-                open=price * 0.999,
-                high=price * 1.005,
-                low=price * 0.995,
-                close=price,
-                volume=10000 + i * 100,
-            )
+class FakeOrderDB:
+    """In-memory AsyncSession double: persists Order rows, serves client-id lookups."""
+
+    def __init__(self) -> None:
+        self.rows: list[Order] = []
+        self._pending: list[Order] = []
+
+    def add(self, obj: Order) -> None:
+        self._pending.append(obj)
+
+    async def execute(self, stmt: Select[tuple[Order]]) -> MagicMock:
+        await asyncio.sleep(0)
+        params = stmt.compile().params
+        client_id = next(
+            (value for key, value in params.items() if key.startswith("client_order_id")), None
         )
+        matches = [row for row in self.rows if row.client_order_id == client_id]
+        result = MagicMock()
+        if len(matches) > 1:
+            result.scalar_one_or_none.side_effect = MultipleResultsFound()
+        else:
+            result.scalar_one_or_none.return_value = matches[0] if matches else None
+        result.scalars.return_value.all.return_value = matches
+        return result
 
-    return bars
+    async def commit(self) -> None:
+        await asyncio.sleep(0)
+        self.rows.extend(self._pending)
+        self._pending.clear()
 
+    async def refresh(self, obj: Order) -> None:
+        if obj.id is None:
+            obj.id = uuid4()
 
-@pytest.fixture
-def mock_alpaca_client():
-    """Create a mock Alpaca trading client."""
-    client = AsyncMock()
-    client.get_account = AsyncMock(
-        return_value={
-            "id": "test-account",
-            "equity": "100000.00",
-            "cash": "100000.00",
-        }
-    )
-    client.submit_order = AsyncMock(
-        return_value={
-            "id": f"alpaca-{uuid4()}",
-            "status": "accepted",
-            "filled_qty": "0",
-        }
-    )
-    client.get_positions = AsyncMock(return_value=[])
-    return client
+    async def close(self) -> None:
+        return None
 
 
-@pytest.fixture
-def mock_risk_manager():
-    """Create a mock risk manager that passes all checks."""
-    manager = AsyncMock(spec=RiskManager)
-    manager.check_order = AsyncMock(return_value=RiskCheckResult(passed=True, violations=[]))
-    manager.get_limits = AsyncMock(return_value=None)
-    return manager
+class FakeBroker:
+    """Broker double enforcing Alpaca's per-account client_order_id uniqueness."""
 
+    def __init__(self) -> None:
+        self.orders_by_client_id: dict[str, AlpacaOrder] = {}
+        self.submit_calls: int = 0
 
-@pytest.fixture
-def mock_order_executor():
-    """Create a mock order executor."""
-    executor = MagicMock(spec=OrderExecutor)
-    executor.submit_order = AsyncMock(
-        return_value=MagicMock(
-            id=uuid4(),
-            alpaca_order_id=f"alpaca-{uuid4()}",
-            symbol="AAPL",
-            status="submitted",
-        )
-    )
-    return executor
-
-
-class TestConcurrentOrderSubmission:
-    """Tests for concurrent order submission scenarios."""
-
-    async def test_concurrent_orders_from_same_session(
+    async def submit_order(
         self,
-        mock_alpaca_client,
-        mock_risk_manager,
-    ):
-        """Test concurrent order submissions from the same session."""
-        order_ids = []
-        submission_lock = asyncio.Lock()
+        symbol: str,
+        qty: Decimal,
+        side: str,
+        order_type: str,
+        time_in_force: str,
+        limit_price: Decimal | None = None,
+        stop_price: Decimal | None = None,
+        client_order_id: str | None = None,
+    ) -> AlpacaOrder:
+        self.submit_calls += 1
+        await asyncio.sleep(0)  # dispatch window where a concurrent duplicate can race
+        key = client_order_id or str(uuid4())
+        if key in self.orders_by_client_id:
+            raise AlpacaError(f"client_order_id {key} already in use")
+        order = AlpacaOrder(
+            id=f"alpaca-{len(self.orders_by_client_id) + 1}",
+            client_order_id=key,
+            symbol=symbol,
+            qty=Decimal(str(qty)),
+            side=AlpacaOrderSide.BUY if side == "buy" else AlpacaOrderSide.SELL,
+            order_type=AlpacaOrderType.MARKET,
+            status=AlpacaOrderStatus.ACCEPTED,
+            time_in_force=AlpacaTimeInForce.DAY,
+            created_at=datetime.now(UTC),
+        )
+        self.orders_by_client_id[key] = order
+        return order
 
-        async def track_submission(**kwargs):
-            async with submission_lock:
-                order_id = uuid4()
-                order_ids.append(order_id)
-                await asyncio.sleep(0.01)  # Simulate network latency
-                return MagicMock(
-                    id=order_id,
-                    alpaca_order_id=f"alpaca-{order_id}",
-                    symbol=kwargs.get("order", MagicMock()).symbol,
-                    status="submitted",
+    async def get_order_by_client_id(self, client_order_id: str) -> AlpacaOrder | None:
+        await asyncio.sleep(0)
+        return self.orders_by_client_id.get(client_order_id)
+
+
+def _executor(db: FakeOrderDB, broker: FakeBroker) -> OrderExecutor:
+    risk = AsyncMock()
+    risk.check_order = AsyncMock(return_value=RiskCheckResult(passed=True, violations=[]))
+    return OrderExecutor(
+        db=cast(AsyncSession, db),
+        alpaca_client=cast(TradingClient, broker),
+        risk_manager=cast(RiskManager, risk),
+    )
+
+
+def _order_create(symbol: str = "AAPL") -> OrderCreate:
+    return OrderCreate(
+        symbol=symbol,
+        side=ORDER_SIDE_BUY,
+        qty=Decimal("10"),
+        order_type=ORDER_TYPE_MARKET,
+        time_in_force=TIME_IN_FORCE_DAY,
+    )
+
+
+def _client_id() -> str:
+    return generate_deterministic_order_id(TEST_SESSION_ID, "AAPL", "buy", SIGNAL_TS)
+
+
+def _pending_row(client_order_id: str) -> Order:
+    order = Order(
+        tenant_id=TEST_TENANT_ID,
+        session_id=TEST_SESSION_ID,
+        client_order_id=client_order_id,
+        symbol="AAPL",
+        side=ORDER_SIDE_BUY,
+        order_type=ORDER_TYPE_MARKET,
+        time_in_force=TIME_IN_FORCE_DAY,
+        qty=Decimal("10"),
+        status=ORDER_STATUS_PENDING,
+        filled_qty=Decimal("0"),
+    )
+    order.id = uuid4()
+    return order
+
+
+class TestDeterministicSubmitIdempotency:
+    """The real submit_order path: one signal, one broker order — no matter what."""
+
+    async def test_retry_after_success_replays_existing(self) -> None:
+        """A resubmitted signal returns the recorded order without a second dispatch."""
+        db, broker = FakeOrderDB(), FakeBroker()
+        executor = _executor(db, broker)
+
+        first = await executor.submit_order(
+            TEST_TENANT_ID, TEST_SESSION_ID, _order_create(), signal_timestamp=SIGNAL_TS
+        )
+        second = await executor.submit_order(
+            TEST_TENANT_ID, TEST_SESSION_ID, _order_create(), signal_timestamp=SIGNAL_TS
+        )
+
+        assert second is first
+        assert broker.submit_calls == 1
+        assert len(db.rows) == 1
+        assert first.alpaca_order_id == "alpaca-1"
+
+    async def test_concurrent_same_signal_yields_single_broker_order(self) -> None:
+        """Concurrent duplicates serialize at the broker: exactly one order is placed;
+        losers surface as errors instead of silent double-submission."""
+        db, broker = FakeOrderDB(), FakeBroker()
+        executor = _executor(db, broker)
+
+        results = await asyncio.gather(
+            *[
+                executor.submit_order(
+                    TEST_TENANT_ID, TEST_SESSION_ID, _order_create(), signal_timestamp=SIGNAL_TS
                 )
+                for _ in range(5)
+            ],
+            return_exceptions=True,
+        )
 
-        mock_order_executor = MagicMock(spec=OrderExecutor)
-        mock_order_executor.submit_order = AsyncMock(side_effect=track_submission)
+        assert set(broker.orders_by_client_id) == {_client_id()}
+        successes = [r for r in results if isinstance(r, Order)]
+        failures = [r for r in results if not isinstance(r, Order)]
+        assert successes, "at least one submission must win"
+        assert {order.alpaca_order_id for order in successes} == {"alpaca-1"}
+        assert all(isinstance(failure, ValueError) for failure in failures)
+        assert {row.client_order_id for row in db.rows} == {_client_id()}
 
-        # Create 10 order submissions concurrently
-        orders = [
-            OrderCreate(
-                symbol="AAPL",
-                side=ORDER_SIDE_BUY,
-                qty=Decimal("10"),
-                order_type=ORDER_TYPE_MARKET,
-                time_in_force=TIME_IN_FORCE_DAY,
-            )
-            for _ in range(10)
-        ]
+    async def test_stranded_pending_row_is_resumed_not_duplicated(self) -> None:
+        """A row recorded PENDING that never reached the broker is redispatched
+        on the same row (crash in the submit window, 3A)."""
+        db, broker = FakeOrderDB(), FakeBroker()
+        executor = _executor(db, broker)
+        stranded = _pending_row(_client_id())
+        db.rows.append(stranded)
 
-        async def submit_order(order: OrderCreate):
-            return await mock_order_executor.submit_order(
-                tenant_id=TEST_TENANT_ID,
-                session_id=TEST_SESSION_ID,
-                order=order,
-            )
+        result = await executor.submit_order(
+            TEST_TENANT_ID, TEST_SESSION_ID, _order_create(), signal_timestamp=SIGNAL_TS
+        )
 
-        # Submit all orders concurrently
-        results = await asyncio.gather(*[submit_order(o) for o in orders])
+        assert result is stranded
+        assert broker.submit_calls == 1
+        assert result.alpaca_order_id == "alpaca-1"
+        assert len(db.rows) == 1
 
-        # Verify all orders were submitted
-        assert len(results) == 10
-        assert len(order_ids) == 10
+    async def test_broker_confirmed_order_is_adopted_without_resubmit(self) -> None:
+        """A PENDING row whose order did reach the broker before a crash adopts
+        the broker order instead of placing a second one."""
+        db, broker = FakeOrderDB(), FakeBroker()
+        executor = _executor(db, broker)
+        client_id = _client_id()
+        stranded = _pending_row(client_id)
+        db.rows.append(stranded)
+        broker.orders_by_client_id[client_id] = AlpacaOrder(
+            id="alpaca-lost-response",
+            client_order_id=client_id,
+            symbol="AAPL",
+            qty=Decimal("10"),
+            side=AlpacaOrderSide.BUY,
+            order_type=AlpacaOrderType.MARKET,
+            status=AlpacaOrderStatus.ACCEPTED,
+            time_in_force=AlpacaTimeInForce.DAY,
+            created_at=datetime.now(UTC),
+        )
 
-        # Verify all order IDs are unique
-        assert len(set(order_ids)) == 10
+        result = await executor.submit_order(
+            TEST_TENANT_ID, TEST_SESSION_ID, _order_create(), signal_timestamp=SIGNAL_TS
+        )
 
-    async def test_concurrent_orders_different_symbols(
-        self,
-        mock_risk_manager,
-    ):
-        """Test concurrent order submissions for different symbols."""
-        symbols = ["AAPL", "GOOGL", "MSFT", "AMZN", "TSLA"]
-        submitted_symbols = []
-        symbol_lock = asyncio.Lock()
+        assert result is stranded
+        assert result.alpaca_order_id == "alpaca-lost-response"
+        assert result.status == ORDER_STATUS_ACCEPTED
+        assert broker.submit_calls == 0
 
-        async def track_symbol(**kwargs):
-            order = kwargs.get("order", MagicMock())
-            async with symbol_lock:
-                submitted_symbols.append(order.symbol)
-                await asyncio.sleep(0.01)
-            return MagicMock(
-                id=uuid4(),
-                alpaca_order_id=f"alpaca-{uuid4()}",
-                symbol=order.symbol,
-                status="submitted",
-            )
+    async def test_distinct_signals_both_dispatch(self) -> None:
+        """Different signal timestamps derive different ids — no false dedup."""
+        db, broker = FakeOrderDB(), FakeBroker()
+        executor = _executor(db, broker)
 
-        mock_order_executor = MagicMock(spec=OrderExecutor)
-        mock_order_executor.submit_order = AsyncMock(side_effect=track_symbol)
+        first = await executor.submit_order(
+            TEST_TENANT_ID, TEST_SESSION_ID, _order_create(), signal_timestamp=SIGNAL_TS
+        )
+        second = await executor.submit_order(
+            TEST_TENANT_ID,
+            TEST_SESSION_ID,
+            _order_create(),
+            signal_timestamp=SIGNAL_TS + timedelta(minutes=1),
+        )
 
-        orders = [
-            OrderCreate(
-                symbol=symbol,
-                side=ORDER_SIDE_BUY,
-                qty=Decimal("10"),
-                order_type=ORDER_TYPE_MARKET,
-                time_in_force=TIME_IN_FORCE_DAY,
-            )
-            for symbol in symbols
-        ]
-
-        async def submit_order(order: OrderCreate):
-            return await mock_order_executor.submit_order(
-                tenant_id=TEST_TENANT_ID,
-                session_id=TEST_SESSION_ID,
-                order=order,
-            )
-
-        results = await asyncio.gather(*[submit_order(o) for o in orders])
-
-        # Verify all symbols were submitted
-        assert len(results) == 5
-        assert set(submitted_symbols) == set(symbols)
-
-
-class TestConcurrentRiskChecks:
-    """Tests for concurrent risk check scenarios."""
-
-    async def test_concurrent_risk_checks(self):
-        """Test that risk checks can run concurrently without race conditions."""
-        check_count = 0
-        check_lock = asyncio.Lock()
-
-        async def count_check(**kwargs):
-            nonlocal check_count
-            async with check_lock:
-                check_count += 1
-            await asyncio.sleep(0.01)  # Simulate processing
-            return RiskCheckResult(passed=True, violations=[])
-
-        mock_risk_manager = AsyncMock(spec=RiskManager)
-        mock_risk_manager.check_order = AsyncMock(side_effect=count_check)
-
-        # Run 20 concurrent risk checks
-        tasks = [
-            mock_risk_manager.check_order(
-                tenant_id=TEST_TENANT_ID,
-                symbol="AAPL",
-                side="buy",
-                qty=10.0,
-                order_type="market",
-            )
-            for _ in range(20)
-        ]
-
-        results = await asyncio.gather(*tasks)
-
-        assert len(results) == 20
-        assert check_count == 20
-        assert all(r.passed for r in results)
-
-    async def test_concurrent_risk_checks_with_failures(self):
-        """Test concurrent risk checks where some fail."""
-        check_count = 0
-        check_lock = asyncio.Lock()
-
-        async def alternating_check(**kwargs):
-            nonlocal check_count
-            async with check_lock:
-                current = check_count
-                check_count += 1
-            await asyncio.sleep(0.01)
-            # Every other check fails
-            if current % 2 == 0:
-                return RiskCheckResult(passed=True, violations=[])
-            else:
-                return RiskCheckResult(passed=False, violations=["Test violation"])
-
-        mock_risk_manager = AsyncMock(spec=RiskManager)
-        mock_risk_manager.check_order = AsyncMock(side_effect=alternating_check)
-
-        tasks = [
-            mock_risk_manager.check_order(
-                tenant_id=TEST_TENANT_ID,
-                symbol="AAPL",
-                side="buy",
-                qty=10.0,
-                order_type="market",
-            )
-            for _ in range(20)
-        ]
-
-        results = await asyncio.gather(*tasks)
-
-        passed = [r for r in results if r.passed]
-        failed = [r for r in results if not r.passed]
-
-        assert len(passed) == 10
-        assert len(failed) == 10
+        assert first.client_order_id != second.client_order_id
+        assert broker.submit_calls == 2
+        assert len(broker.orders_by_client_id) == 2
 
 
 class TestConcurrentCacheAccess:
-    """Tests for concurrent cache access."""
+    """Concurrent access against the real AsyncTTLCache."""
 
-    async def test_concurrent_cache_reads(self):
-        """Test concurrent cache reads don't cause race conditions."""
-        from src.utils.cache import AsyncTTLCache
+    async def test_concurrent_cache_reads(self) -> None:
+        """Concurrent reads return the values written, with no lost entries."""
+        cache: AsyncTTLCache = AsyncTTLCache(default_ttl=60.0)
 
-        cache = AsyncTTLCache(default_ttl=60.0)
-
-        # Pre-populate cache
         for i in range(10):
             await cache.set(f"key_{i}", f"value_{i}")
 
-        async def read_key(key: str):
-            await asyncio.sleep(0.001)  # Slight delay to encourage interleaving
+        async def read_key(key: str) -> object:
+            await asyncio.sleep(0.001)
             return await cache.get(key)
 
-        # Read all keys concurrently multiple times
-        tasks = []
-        for _ in range(10):
-            for i in range(10):
-                tasks.append(read_key(f"key_{i}"))
-
+        tasks = [read_key(f"key_{i}") for _ in range(10) for i in range(10)]
         results = await asyncio.gather(*tasks)
 
-        # Verify all reads returned correct values
         assert len(results) == 100
-        # All should be non-None
-        non_none_results = [r for r in results if r is not None]
-        assert len(non_none_results) == 100
+        assert all(r is not None for r in results)
 
-    async def test_concurrent_cache_writes(self):
-        """Test concurrent cache writes don't cause data loss."""
-        from src.utils.cache import AsyncTTLCache
+    async def test_concurrent_cache_writes(self) -> None:
+        """Concurrent writes to distinct keys lose nothing."""
+        cache: AsyncTTLCache = AsyncTTLCache(default_ttl=60.0)
 
-        cache = AsyncTTLCache(default_ttl=60.0)
-
-        async def write_key(i: int):
+        async def write_key(i: int) -> None:
             await asyncio.sleep(0.001)
             await cache.set(f"concurrent_key_{i}", f"value_{i}")
 
-        # Write 50 keys concurrently
         await asyncio.gather(*[write_key(i) for i in range(50)])
 
-        # Verify all writes succeeded
         for i in range(50):
             value = await cache.get(f"concurrent_key_{i}")
             assert value == f"value_{i}", f"Missing or wrong value for key_{i}"
 
-    async def test_concurrent_cache_read_write(self):
-        """Test concurrent reads and writes don't interfere."""
-        from src.utils.cache import AsyncTTLCache
+    async def test_concurrent_cache_read_write(self) -> None:
+        """Interleaved reads and writes stay consistent per key."""
+        cache: AsyncTTLCache = AsyncTTLCache(default_ttl=60.0)
 
-        cache = AsyncTTLCache(default_ttl=60.0)
-
-        # Pre-populate some keys
         for i in range(10):
             await cache.set(f"rw_key_{i}", f"initial_{i}")
 
-        read_results = []
-        write_count = 0
-        results_lock = asyncio.Lock()
+        async def read_operation(key: str) -> object:
+            return await cache.get(key)
 
-        async def read_operation(key: str):
-            result = await cache.get(key)
-            async with results_lock:
-                read_results.append(result)
-
-        async def write_operation(key: str, value: str):
-            nonlocal write_count
+        async def write_operation(key: str, value: str) -> None:
             await cache.set(key, value)
-            async with results_lock:
-                write_count += 1
 
-        # Mix reads and writes concurrently
-        tasks = []
+        read_tasks = []
+        write_tasks = []
         for i in range(10):
-            tasks.append(read_operation(f"rw_key_{i}"))
-            tasks.append(write_operation(f"rw_key_{i}", f"updated_{i}"))
-            tasks.append(read_operation(f"rw_key_{i}"))
+            read_tasks.append(read_operation(f"rw_key_{i}"))
+            write_tasks.append(write_operation(f"rw_key_{i}", f"updated_{i}"))
+            read_tasks.append(read_operation(f"rw_key_{i}"))
 
-        await asyncio.gather(*tasks)
+        reads, _ = await asyncio.gather(asyncio.gather(*read_tasks), asyncio.gather(*write_tasks))
 
-        # Verify operations completed
-        assert write_count == 10
-        # Some reads should have gotten initial values, some updated
-        assert len(read_results) == 20
+        assert len(reads) == 20
+        # Every read observes either the initial or the updated value for its key.
+        for read in reads:
+            assert isinstance(read, str) and (
+                read.startswith("initial_") or read.startswith("updated_")
+            )
 
 
 class TestMultipleRunners:
@@ -383,14 +350,14 @@ class TestMultipleRunners:
         sample_bars,
         mock_alpaca_client,
         mock_risk_manager,
-        mock_order_executor,
-    ):
+    ) -> None:
         """Test multiple runners can process the same symbol concurrently."""
 
         def simple_strategy(symbol, bars, position, equity):
-            if len(bars) < 20:
-                return None
             return None  # No signals to avoid order submission complexity
+
+        mock_order_executor = MagicMock(spec=OrderExecutor)
+        mock_order_executor.submit_order = AsyncMock()
 
         runners = []
         for i in range(3):
@@ -434,113 +401,32 @@ class TestMultipleRunners:
             assert len(runner._bar_history["AAPL"]) > 0
 
 
-class TestPositionReconciliationConcurrency:
-    """Tests for position reconciliation during active trading."""
-
-    async def test_reconciliation_during_order_submission(
-        self,
-        sample_bars,
-        mock_alpaca_client,
-        mock_risk_manager,
-    ):
-        """Test position reconciliation doesn't interfere with order submission."""
-        orders_submitted = []
-        reconciliations_done = []
-        lock = asyncio.Lock()
-
-        async def track_order(**kwargs):
-            async with lock:
-                orders_submitted.append(kwargs)
-            await asyncio.sleep(0.02)  # Simulate order processing
-            return MagicMock(
-                id=uuid4(),
-                alpaca_order_id=f"alpaca-{uuid4()}",
-                symbol="AAPL",
-                status="submitted",
-            )
-
-        async def track_reconciliation(**kwargs):
-            async with lock:
-                reconciliations_done.append(kwargs)
-            await asyncio.sleep(0.01)
-
-        mock_order_executor = MagicMock(spec=OrderExecutor)
-        mock_order_executor.submit_order = AsyncMock(side_effect=track_order)
-
-        # Simulate concurrent order submissions and reconciliations
-        order_tasks = [
-            mock_order_executor.submit_order(
-                tenant_id=TEST_TENANT_ID,
-                session_id=TEST_SESSION_ID,
-                order=OrderCreate(
-                    symbol="AAPL",
-                    side=ORDER_SIDE_BUY,
-                    qty=Decimal("10"),
-                    order_type=ORDER_TYPE_MARKET,
-                    time_in_force=TIME_IN_FORCE_DAY,
-                ),
-            )
-            for _ in range(5)
-        ]
-
-        reconciliation_tasks = [track_reconciliation(session_id=TEST_SESSION_ID) for _ in range(5)]
-
-        # Run both types of tasks concurrently
-        all_tasks = order_tasks + reconciliation_tasks
-        await asyncio.gather(*all_tasks)
-
-        # Verify both completed without interference
-        assert len(orders_submitted) == 5
-        assert len(reconciliations_done) == 5
-
-
 class TestAsyncTTLCacheStress:
     """Stress tests for AsyncTTLCache under high concurrency."""
 
-    async def test_high_concurrency_stress(self):
+    async def test_high_concurrency_stress(self) -> None:
         """Stress test cache with high concurrent access."""
-        from src.utils.cache import AsyncTTLCache
+        cache: AsyncTTLCache = AsyncTTLCache(default_ttl=60.0, max_size=100)
 
-        cache = AsyncTTLCache(default_ttl=60.0, max_size=100)
+        async def stress_operation(op_id: int) -> None:
+            key = f"stress_key_{op_id % 20}"  # 20 unique keys
+            if op_id % 3 == 0:
+                await cache.set(key, f"value_{op_id}")
+            elif op_id % 3 == 1:
+                await cache.get(key)
+            else:
+                await cache.invalidate(key)
 
-        operations_completed = 0
-        errors = []
-        lock = asyncio.Lock()
-
-        async def stress_operation(op_id: int):
-            nonlocal operations_completed
-            try:
-                key = f"stress_key_{op_id % 20}"  # 20 unique keys
-
-                if op_id % 3 == 0:
-                    await cache.set(key, f"value_{op_id}")
-                elif op_id % 3 == 1:
-                    await cache.get(key)
-                else:
-                    await cache.invalidate(key)
-
-                async with lock:
-                    operations_completed += 1
-            except Exception as e:
-                async with lock:
-                    errors.append(str(e))
-
-        # Run 1000 operations concurrently
+        # 1000 concurrent operations must complete without raising
         await asyncio.gather(*[stress_operation(i) for i in range(1000)])
 
-        # Verify all operations completed without errors
-        assert len(errors) == 0, f"Errors occurred: {errors}"
-        assert operations_completed == 1000
-
-    async def test_cache_eviction_under_pressure(self):
+    async def test_cache_eviction_under_pressure(self) -> None:
         """Test cache eviction works correctly under concurrent pressure."""
-        from src.utils.cache import AsyncTTLCache
+        cache: AsyncTTLCache = AsyncTTLCache(default_ttl=0.1, max_size=10)
 
-        cache = AsyncTTLCache(default_ttl=0.1, max_size=10)  # Small cache, short TTL
-
-        async def write_and_read(key: str):
+        async def write_and_read(key: str) -> object:
             await cache.set(key, f"value_{key}")
-            await asyncio.sleep(0.05)  # Some delay
+            await asyncio.sleep(0.05)
             return await cache.get(key)
 
         # Write more keys than cache size concurrently

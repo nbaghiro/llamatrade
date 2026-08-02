@@ -1,720 +1,279 @@
-"""Test alert service."""
+"""Alert service tests: every on_* maps to the right published NotificationEvent.
 
-import hashlib
-import hmac
-import json
-from datetime import UTC, datetime
-from decimal import Decimal
-from unittest.mock import AsyncMock, MagicMock, patch
+The service is a producer facade; assertions run against the wire records a
+FakeTransport captured, so the category mapping, severity mapping, field
+threading, and dedup semantics are pinned at the envelope level.
+"""
 
-import httpx
+from __future__ import annotations
+
+from unittest.mock import MagicMock
+from uuid import UUID, uuid4
+
 import pytest
 
-from llamatrade_db.models.trading import Order
-from llamatrade_proto.generated.trading_pb2 import (
-    ORDER_SIDE_BUY,
-    ORDER_STATUS_FILLED,
-    ORDER_TYPE_MARKET,
-)
+from llamatrade_events import EventBus, EventEnvelope
+from llamatrade_events.catalog.notifications import NotificationEvents
+from llamatrade_events.testing import FakeTransport
+from llamatrade_proto.generated import events_pb2
 
 from src.services.alert_service import (
+    CATEGORY_BY_ALERT_TYPE,
     Alert,
     AlertPriority,
     AlertService,
     AlertType,
+    get_alert_service,
 )
 
+TENANT_ID = UUID("11111111-1111-1111-1111-111111111111")
+SESSION_ID = UUID("22222222-2222-2222-2222-222222222222")
+_E = events_pb2
 
-@pytest.fixture
-def alert_service(mock_db):
-    """Create alert service with mocked database."""
-    return AlertService(mock_db)
-
-
-@pytest.fixture
-def alert_service_no_db():
-    """Create alert service without database."""
-    return AlertService()
+pytestmark = pytest.mark.asyncio
 
 
 @pytest.fixture
-def sample_order_response(order_id):
-    """Create a sample order response."""
-    return Order(
-        id=order_id,
-        alpaca_order_id="alpaca-123",
-        symbol="AAPL",
-        side=ORDER_SIDE_BUY,
-        qty=Decimal("10.0"),
-        order_type=ORDER_TYPE_MARKET,
-        status=ORDER_STATUS_FILLED,
-        filled_qty=Decimal("10.0"),
-        filled_avg_price=Decimal("150.50"),
-        submitted_at=datetime.now(UTC),
-        filled_at=datetime.now(UTC),
-    )
+def transport() -> FakeTransport:
+    return FakeTransport()
 
 
 @pytest.fixture
-def mock_webhook():
-    """Create a mock webhook."""
-    webhook = MagicMock()
-    webhook.url = "https://example.com/webhook"
-    webhook.secret = "test-secret"
-    webhook.events = []  # Accept all events
-    return webhook
+def service(transport: FakeTransport) -> AlertService:
+    return AlertService(events=NotificationEvents(bus=EventBus(transport)))
 
 
-class TestAlert:
-    """Tests for Alert dataclass."""
+def _published(transport: FakeTransport) -> list[EventEnvelope]:
+    return [EventEnvelope.FromString(value) for _, value in transport.published]
 
-    def test_alert_creation(self, tenant_id, session_id):
-        """Test creating an Alert instance."""
-        alert = Alert(
-            tenant_id=tenant_id,
-            session_id=session_id,
-            alert_type=AlertType.ORDER_FILLED,
-            priority=AlertPriority.LOW,
-            title="Test Alert",
-            message="This is a test",
+
+def _payload(envelope: EventEnvelope) -> events_pb2.NotificationEvent:
+    return NotificationEvents.payload(envelope)
+
+
+class TestMapping:
+    def test_every_alert_type_maps_to_a_category(self) -> None:
+        assert set(CATEGORY_BY_ALERT_TYPE) == set(AlertType)
+
+    async def test_send_publishes_envelope_keyed_by_tenant(
+        self, service: AlertService, transport: FakeTransport
+    ) -> None:
+        ok = await service.send(
+            Alert(
+                tenant_id=TENANT_ID,
+                alert_type=AlertType.ORDER_REJECTED,
+                priority=AlertPriority.MEDIUM,
+            )
         )
+        assert ok
+        assert transport.records[0].key == str(TENANT_ID)
+        stream, _ = transport.published[0]
+        assert stream == "notifications"
+        env = _published(transport)[0]
+        assert env.type == _E.EVENT_TYPE_NOTIFICATION
+        assert env.tenant_id == str(TENANT_ID)
 
-        assert alert.tenant_id == tenant_id
-        assert alert.session_id == session_id
-        assert alert.alert_type == AlertType.ORDER_FILLED
-        assert alert.priority == AlertPriority.LOW
-        assert alert.timestamp is not None
-
-    def test_alert_with_metadata(self, tenant_id):
-        """Test creating Alert with metadata."""
-        alert = Alert(
-            tenant_id=tenant_id,
-            alert_type=AlertType.RISK_BREACH,
-            priority=AlertPriority.HIGH,
-            title="Risk Breach",
-            message="Daily loss limit exceeded",
-            metadata={"current_loss": -1500.0, "limit": 1000.0},
+    async def test_critical_priority_maps_to_critical_severity(
+        self, service: AlertService, transport: FakeTransport
+    ) -> None:
+        await service.send(
+            Alert(
+                tenant_id=TENANT_ID,
+                alert_type=AlertType.SESSION_ERROR,
+                priority=AlertPriority.CRITICAL,
+            )
         )
+        assert _payload(_published(transport)[0]).severity == _E.NOTIFICATION_SEVERITY_CRITICAL
 
-        assert alert.metadata["current_loss"] == -1500.0
-        assert alert.metadata["limit"] == 1000.0
-
-
-class TestAlertService:
-    """Tests for AlertService."""
-
-    async def test_send_no_webhooks(self, alert_service, mock_db, tenant_id):
-        """Test sending alert when no webhooks configured."""
-        mock_result = MagicMock()
-        mock_result.scalars.return_value.all.return_value = []
-        mock_db.execute.return_value = mock_result
-
-        alert = Alert(
-            tenant_id=tenant_id,
-            alert_type=AlertType.ORDER_FILLED,
-            priority=AlertPriority.LOW,
-            title="Test",
-            message="Test message",
+    async def test_non_critical_leaves_severity_to_category_default(
+        self, service: AlertService, transport: FakeTransport
+    ) -> None:
+        await service.send(
+            Alert(
+                tenant_id=TENANT_ID,
+                alert_type=AlertType.ORDER_FILLED,
+                priority=AlertPriority.LOW,
+            )
         )
+        assert _payload(_published(transport)[0]).severity == _E.NOTIFICATION_SEVERITY_UNSPECIFIED
 
-        result = await alert_service.send(alert)
+    async def test_publish_failure_returns_false_and_does_not_raise(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        events = NotificationEvents(bus=EventBus(FakeTransport()))
 
-        assert result is True  # No failures if no webhooks
+        async def boom(*args: object, **kwargs: object) -> None:
+            raise RuntimeError("broker down")
 
-    async def test_should_send_all_events(self, alert_service, mock_webhook, tenant_id):
-        """Test webhook with no event filter accepts all."""
-        alert = Alert(
-            tenant_id=tenant_id,
-            alert_type=AlertType.ORDER_FILLED,
-            priority=AlertPriority.LOW,
-            title="Test",
-            message="Test",
+        monkeypatch.setattr(events.bus, "publish_envelope", boom)
+        service = AlertService(events=events)
+        ok = await service.send(
+            Alert(
+                tenant_id=TENANT_ID,
+                alert_type=AlertType.ORDER_FILLED,
+                priority=AlertPriority.LOW,
+            )
         )
+        assert ok is False
 
-        result = alert_service._should_send(alert, mock_webhook)
 
-        assert result is True
+class TestEventMethods:
+    async def test_on_order_filled(self, service: AlertService, transport: FakeTransport) -> None:
+        order = MagicMock()
+        order.id = uuid4()
+        order.symbol = "AAPL"
+        order.side = 1  # ORDER_SIDE_BUY
+        order.filled_qty = 10.0
+        order.filled_avg_price = 150.25
+        order.client_order_id = "lt-abc"
+        await service.on_order_filled(TENANT_ID, SESSION_ID, order)
 
-    async def test_should_send_filtered_events(self, alert_service, mock_webhook, tenant_id):
-        """Test webhook with event filter."""
-        mock_webhook.events = ["risk_breach", "session_error"]
+        event = _payload(_published(transport)[0])
+        assert event.category == _E.NOTIFICATION_CATEGORY_ORDER_FILLED
+        assert event.symbol == "AAPL"
+        assert event.amount == "150.25"
+        assert event.session_id == str(SESSION_ID)
+        assert event.extra["client_order_id"] == "lt-abc"
 
-        # Order filled not in events list
-        alert = Alert(
-            tenant_id=tenant_id,
-            alert_type=AlertType.ORDER_FILLED,
-            priority=AlertPriority.LOW,
-            title="Test",
-            message="Test",
+    async def test_on_order_rejected(self, service: AlertService, transport: FakeTransport) -> None:
+        await service.on_order_rejected(
+            TENANT_ID, SESSION_ID, "TLT", "buy", 5.0, "insufficient buying power"
         )
+        event = _payload(_published(transport)[0])
+        assert event.category == _E.NOTIFICATION_CATEGORY_ORDER_REJECTED
+        assert event.reason == "insufficient buying power"
+        assert event.extra["side"] == "buy"
 
-        result = alert_service._should_send(alert, mock_webhook)
-        assert result is False
+    async def test_on_position_events(
+        self, service: AlertService, transport: FakeTransport
+    ) -> None:
+        await service.on_position_opened(TENANT_ID, SESSION_ID, "SPY", "buy", 10.0, 500.0)
+        await service.on_position_closed(TENANT_ID, SESSION_ID, "SPY", 10.0, 42.5)
+        events = [_payload(e) for e in _published(transport)]
+        assert events[0].category == _E.NOTIFICATION_CATEGORY_POSITION_OPENED
+        assert events[1].category == _E.NOTIFICATION_CATEGORY_POSITION_CLOSED
+        assert events[1].amount == "42.50"
 
-        # Risk breach is in events list
-        alert.alert_type = AlertType.RISK_BREACH
-        result = alert_service._should_send(alert, mock_webhook)
-        assert result is True
-
-
-class TestAlertServiceEvents:
-    """Tests for alert service event handlers."""
-
-    async def test_on_order_filled(
-        self, alert_service_no_db, tenant_id, session_id, sample_order_response
-    ):
-        """Test on_order_filled creates correct alert."""
-        with patch.object(alert_service_no_db, "send", new_callable=AsyncMock) as mock_send:
-            mock_send.return_value = True
-
-            await alert_service_no_db.on_order_filled(
-                tenant_id=tenant_id,
-                session_id=session_id,
-                order=sample_order_response,
-            )
-
-            mock_send.assert_called_once()
-            alert = mock_send.call_args[0][0]
-            assert alert.alert_type == AlertType.ORDER_FILLED
-            assert alert.priority == AlertPriority.LOW
-            assert "AAPL" in alert.title
-
-    async def test_on_order_rejected(self, alert_service_no_db, tenant_id, session_id):
-        """Test on_order_rejected creates correct alert."""
-        with patch.object(alert_service_no_db, "send", new_callable=AsyncMock) as mock_send:
-            mock_send.return_value = True
-
-            await alert_service_no_db.on_order_rejected(
-                tenant_id=tenant_id,
-                session_id=session_id,
-                symbol="AAPL",
-                side="buy",
-                qty=100.0,
-                reason="Insufficient funds",
-            )
-
-            alert = mock_send.call_args[0][0]
-            assert alert.alert_type == AlertType.ORDER_REJECTED
-            assert alert.priority == AlertPriority.MEDIUM
-
-    async def test_on_position_opened(self, alert_service_no_db, tenant_id, session_id):
-        """Test on_position_opened creates correct alert."""
-        with patch.object(alert_service_no_db, "send", new_callable=AsyncMock) as mock_send:
-            mock_send.return_value = True
-
-            await alert_service_no_db.on_position_opened(
-                tenant_id=tenant_id,
-                session_id=session_id,
-                symbol="AAPL",
-                side="long",
-                qty=10.0,
-                price=150.0,
-            )
-
-            alert = mock_send.call_args[0][0]
-            assert alert.alert_type == AlertType.POSITION_OPENED
-            assert alert.symbol == "AAPL"
-
-    async def test_on_position_closed_profit(self, alert_service_no_db, tenant_id, session_id):
-        """Test on_position_closed with profit uses LOW priority."""
-        with patch.object(alert_service_no_db, "send", new_callable=AsyncMock) as mock_send:
-            mock_send.return_value = True
-
-            await alert_service_no_db.on_position_closed(
-                tenant_id=tenant_id,
-                session_id=session_id,
-                symbol="AAPL",
-                qty=10.0,
-                pnl=100.0,  # Profit
-            )
-
-            alert = mock_send.call_args[0][0]
-            assert alert.priority == AlertPriority.LOW
-
-    async def test_on_position_closed_loss(self, alert_service_no_db, tenant_id, session_id):
-        """Test on_position_closed with loss uses MEDIUM priority."""
-        with patch.object(alert_service_no_db, "send", new_callable=AsyncMock) as mock_send:
-            mock_send.return_value = True
-
-            await alert_service_no_db.on_position_closed(
-                tenant_id=tenant_id,
-                session_id=session_id,
-                symbol="AAPL",
-                qty=10.0,
-                pnl=-100.0,  # Loss
-            )
-
-            alert = mock_send.call_args[0][0]
-            assert alert.priority == AlertPriority.MEDIUM
-
-    async def test_on_risk_breach(self, alert_service_no_db, tenant_id, session_id):
-        """Test on_risk_breach creates HIGH priority alert."""
-        with patch.object(alert_service_no_db, "send", new_callable=AsyncMock) as mock_send:
-            mock_send.return_value = True
-
-            await alert_service_no_db.on_risk_breach(
-                tenant_id=tenant_id,
-                session_id=session_id,
-                breach_type="position_size",
-                details={"current": 15000, "limit": 10000},
-            )
-
-            alert = mock_send.call_args[0][0]
-            assert alert.alert_type == AlertType.RISK_BREACH
-            assert alert.priority == AlertPriority.HIGH
-
-    async def test_on_daily_loss_limit(self, alert_service_no_db, tenant_id, session_id):
-        """Test on_daily_loss_limit creates CRITICAL alert."""
-        with patch.object(alert_service_no_db, "send", new_callable=AsyncMock) as mock_send:
-            mock_send.return_value = True
-
-            await alert_service_no_db.on_daily_loss_limit(
-                tenant_id=tenant_id,
-                session_id=session_id,
-                current_loss=-1500.0,
-                limit=1000.0,
-            )
-
-            alert = mock_send.call_args[0][0]
-            assert alert.alert_type == AlertType.DAILY_LOSS_LIMIT
-            assert alert.priority == AlertPriority.CRITICAL
-
-    async def test_on_strategy_error(self, alert_service_no_db, tenant_id, session_id):
-        """Test on_strategy_error creates CRITICAL alert."""
-        with patch.object(alert_service_no_db, "send", new_callable=AsyncMock) as mock_send:
-            mock_send.return_value = True
-
-            await alert_service_no_db.on_strategy_error(
-                tenant_id=tenant_id,
-                session_id=session_id,
-                error="Unexpected exception in strategy",
-            )
-
-            alert = mock_send.call_args[0][0]
-            assert alert.alert_type == AlertType.STRATEGY_ERROR
-            assert alert.priority == AlertPriority.CRITICAL
-
-    async def test_on_session_started(self, alert_service_no_db, tenant_id, session_id):
-        """Test on_session_started creates alert."""
-        with patch.object(alert_service_no_db, "send", new_callable=AsyncMock) as mock_send:
-            mock_send.return_value = True
-
-            await alert_service_no_db.on_session_started(
-                tenant_id=tenant_id,
-                session_id=session_id,
-                strategy_name="Moving Average Crossover",
-                mode="paper",
-            )
-
-            alert = mock_send.call_args[0][0]
-            assert alert.alert_type == AlertType.SESSION_STARTED
-            assert "Moving Average Crossover" in alert.message
-
-    async def test_on_session_error(self, alert_service_no_db, tenant_id, session_id):
-        """Test on_session_error creates CRITICAL alert."""
-        with patch.object(alert_service_no_db, "send", new_callable=AsyncMock) as mock_send:
-            mock_send.return_value = True
-
-            await alert_service_no_db.on_session_error(
-                tenant_id=tenant_id,
-                session_id=session_id,
-                error="Database connection failed",
-            )
-
-            alert = mock_send.call_args[0][0]
-            assert alert.alert_type == AlertType.SESSION_ERROR
-            assert alert.priority == AlertPriority.CRITICAL
-
-    async def test_on_connection_lost(self, alert_service_no_db, tenant_id, session_id):
-        """Test on_connection_lost creates HIGH priority alert."""
-        with patch.object(alert_service_no_db, "send", new_callable=AsyncMock) as mock_send:
-            mock_send.return_value = True
-
-            await alert_service_no_db.on_connection_lost(
-                tenant_id=tenant_id,
-                session_id=session_id,
-                service="Alpaca WebSocket",
-            )
-
-            alert = mock_send.call_args[0][0]
-            assert alert.alert_type == AlertType.CONNECTION_LOST
-            assert alert.priority == AlertPriority.HIGH
-
-
-class TestAlertServiceClose:
-    """Tests for alert service cleanup."""
-
-    async def test_close_with_client(self, alert_service_no_db):
-        """Test closing service with HTTP client."""
-        mock_client = AsyncMock()
-        alert_service_no_db._http_client = mock_client
-
-        await alert_service_no_db.close()
-
-        mock_client.aclose.assert_called_once()
-        assert alert_service_no_db._http_client is None
-
-    async def test_close_without_client(self, alert_service_no_db):
-        """Test closing service without HTTP client."""
-        # Should not raise
-        await alert_service_no_db.close()
-
-
-class TestWebhookSecurity:
-    """Tests for webhook HMAC signature and security."""
-
-    async def test_hmac_signature_computed_correctly(
-        self, alert_service_no_db, mock_webhook, tenant_id
-    ):
-        """Test HMAC signature is computed correctly."""
-        mock_client = AsyncMock()
-        mock_response = MagicMock()
-        mock_response.status_code = 200
-        mock_response.raise_for_status = MagicMock()
-        mock_client.post.return_value = mock_response
-        alert_service_no_db._http_client = mock_client
-
-        alert = Alert(
-            tenant_id=tenant_id,
-            alert_type=AlertType.ORDER_FILLED,
-            priority=AlertPriority.LOW,
-            title="Test",
-            message="Test message",
+    async def test_on_position_drift_side_mismatch_is_critical(
+        self, service: AlertService, transport: FakeTransport
+    ) -> None:
+        await service.on_position_drift(
+            TENANT_ID, SESSION_ID, "QQQ", "side_mismatch", 10.0, -10.0, "alerted"
         )
+        event = _payload(_published(transport)[0])
+        assert event.category == _E.NOTIFICATION_CATEGORY_POSITION_DRIFT
+        assert event.severity == _E.NOTIFICATION_SEVERITY_CRITICAL
+        assert event.extra["drift_type"] == "side_mismatch"
 
-        await alert_service_no_db._send_webhook(mock_webhook, alert)
-
-        # Verify signature header was added
-        call_kwargs = mock_client.post.call_args[1]
-        headers = call_kwargs["headers"]
-        assert "X-Webhook-Signature" in headers
-        assert headers["X-Webhook-Signature"].startswith("sha256=")
-
-        # Verify signature is correct
-        payload = call_kwargs["json"]
-        payload_bytes = json.dumps(payload, sort_keys=True).encode("utf-8")
-        expected_sig = hmac.new(
-            mock_webhook.secret.encode("utf-8"),
-            payload_bytes,
-            hashlib.sha256,
-        ).hexdigest()
-        assert headers["X-Webhook-Signature"] == f"sha256={expected_sig}"
-
-    async def test_no_signature_when_no_secret(self, alert_service_no_db, mock_webhook, tenant_id):
-        """Test no signature header when webhook has no secret."""
-        mock_webhook.secret = None
-        mock_client = AsyncMock()
-        mock_response = MagicMock()
-        mock_response.status_code = 200
-        mock_response.raise_for_status = MagicMock()
-        mock_client.post.return_value = mock_response
-        alert_service_no_db._http_client = mock_client
-
-        alert = Alert(
-            tenant_id=tenant_id,
-            alert_type=AlertType.ORDER_FILLED,
-            priority=AlertPriority.LOW,
-            title="Test",
-            message="Test message",
+    async def test_on_position_drift_qty_is_not_critical(
+        self, service: AlertService, transport: FakeTransport
+    ) -> None:
+        await service.on_position_drift(
+            TENANT_ID, SESSION_ID, "QQQ", "quantity_mismatch", 10.0, 11.0, "alerted"
         )
+        assert _payload(_published(transport)[0]).severity == _E.NOTIFICATION_SEVERITY_UNSPECIFIED
 
-        await alert_service_no_db._send_webhook(mock_webhook, alert)
-
-        call_kwargs = mock_client.post.call_args[1]
-        headers = call_kwargs["headers"]
-        assert "X-Webhook-Signature" not in headers
-
-    async def test_custom_headers_included(self, alert_service_no_db, mock_webhook, tenant_id):
-        """Test custom headers from webhook config are included."""
-        mock_webhook.headers = {"X-Custom-Header": "custom-value", "Authorization": "Bearer token"}
-        mock_client = AsyncMock()
-        mock_response = MagicMock()
-        mock_response.status_code = 200
-        mock_response.raise_for_status = MagicMock()
-        mock_client.post.return_value = mock_response
-        alert_service_no_db._http_client = mock_client
-
-        alert = Alert(
-            tenant_id=tenant_id,
-            alert_type=AlertType.ORDER_FILLED,
-            priority=AlertPriority.LOW,
-            title="Test",
-            message="Test message",
+    async def test_on_risk_breach_threads_details(
+        self, service: AlertService, transport: FakeTransport
+    ) -> None:
+        await service.on_risk_breach(
+            TENANT_ID, SESSION_ID, "signal_rejected", {"symbol": "IWM", "violations": "max qty"}
         )
+        event = _payload(_published(transport)[0])
+        assert event.category == _E.NOTIFICATION_CATEGORY_RISK_BREACH
+        assert event.symbol == "IWM"
+        assert event.reason == "signal_rejected"
 
-        await alert_service_no_db._send_webhook(mock_webhook, alert)
+    async def test_loss_limits_map_to_risk_breach(
+        self, service: AlertService, transport: FakeTransport
+    ) -> None:
+        await service.on_daily_loss_limit(TENANT_ID, SESSION_ID, 500.0, 400.0)
+        await service.on_drawdown_limit(TENANT_ID, SESSION_ID, 12.5, 10.0)
+        events = [_payload(e) for e in _published(transport)]
+        assert all(e.category == _E.NOTIFICATION_CATEGORY_RISK_BREACH for e in events)
+        assert all(e.severity == _E.NOTIFICATION_SEVERITY_CRITICAL for e in events)
 
-        call_kwargs = mock_client.post.call_args[1]
-        headers = call_kwargs["headers"]
-        assert headers["X-Custom-Header"] == "custom-value"
-        assert headers["Authorization"] == "Bearer token"
+    async def test_on_strategy_error(self, service: AlertService, transport: FakeTransport) -> None:
+        await service.on_strategy_error(TENANT_ID, SESSION_ID, "evaluation blew up")
+        event = _payload(_published(transport)[0])
+        assert event.category == _E.NOTIFICATION_CATEGORY_STRATEGY_ERROR
+        assert event.reason == "evaluation blew up"
 
-
-class TestWebhookRetryLogic:
-    """Tests for webhook retry logic."""
-
-    async def test_retry_on_connection_error(self, alert_service_no_db, mock_webhook, tenant_id):
-        """Test webhook retries on connection error."""
-        mock_client = AsyncMock()
-        # Fail twice, then succeed
-        mock_response = MagicMock()
-        mock_response.status_code = 200
-        mock_response.raise_for_status = MagicMock()
-        mock_client.post.side_effect = [
-            httpx.ConnectError("Connection refused"),
-            httpx.ConnectError("Connection refused"),
-            mock_response,
+    async def test_session_lifecycle_events(
+        self, service: AlertService, transport: FakeTransport
+    ) -> None:
+        await service.on_session_started(TENANT_ID, SESSION_ID, "Recession Radar", "paper")
+        await service.on_session_stopped(TENANT_ID, SESSION_ID, "user requested")
+        await service.on_session_error(TENANT_ID, SESSION_ID, "runner crashed")
+        categories = [_payload(e).category for e in _published(transport)]
+        assert categories == [
+            _E.NOTIFICATION_CATEGORY_SESSION_STARTED,
+            _E.NOTIFICATION_CATEGORY_SESSION_STOPPED,
+            _E.NOTIFICATION_CATEGORY_SESSION_ERROR,
         ]
-        alert_service_no_db._http_client = mock_client
 
-        alert = Alert(
-            tenant_id=tenant_id,
-            alert_type=AlertType.ORDER_FILLED,
-            priority=AlertPriority.LOW,
-            title="Test",
-            message="Test message",
+    async def test_on_connection_lost(
+        self, service: AlertService, transport: FakeTransport
+    ) -> None:
+        await service.on_connection_lost(TENANT_ID, SESSION_ID, "trade_stream")
+        event = _payload(_published(transport)[0])
+        assert event.category == _E.NOTIFICATION_CATEGORY_CONNECTION_LOST
+        assert event.extra["service"] == "trade_stream"
+
+    async def test_circuit_breaker_events(
+        self, service: AlertService, transport: FakeTransport
+    ) -> None:
+        await service.on_circuit_breaker_triggered(
+            TENANT_ID, SESSION_ID, "daily_loss", {"loss": 900.0}
         )
+        await service.on_circuit_breaker_reset(TENANT_ID, SESSION_ID)
+        events = [_payload(e) for e in _published(transport)]
+        assert events[0].category == _E.NOTIFICATION_CATEGORY_CIRCUIT_BREAKER_TRIGGERED
+        assert events[0].severity == _E.NOTIFICATION_SEVERITY_CRITICAL
+        assert events[1].category == _E.NOTIFICATION_CATEGORY_CIRCUIT_BREAKER_RESET
 
-        await alert_service_no_db._send_webhook(mock_webhook, alert)
-
-        # Should have been called 3 times (2 retries + 1 success)
-        assert mock_client.post.call_count == 3
-
-    async def test_retry_exhausted_raises_error(self, alert_service_no_db, mock_webhook, tenant_id):
-        """Test webhook raises error after retries exhausted."""
-        mock_client = AsyncMock()
-        mock_client.post.side_effect = httpx.ConnectError("Connection refused")
-        alert_service_no_db._http_client = mock_client
-
-        alert = Alert(
-            tenant_id=tenant_id,
-            alert_type=AlertType.ORDER_FILLED,
-            priority=AlertPriority.LOW,
-            title="Test",
-            message="Test message",
-        )
-
-        # With reraise=True, the original exception is raised after retries exhausted
-        with pytest.raises(httpx.ConnectError):
-            await alert_service_no_db._send_webhook(mock_webhook, alert)
-
-        # Should have been called 3 times (max attempts)
-        assert mock_client.post.call_count == 3
-
-    async def test_retry_on_5xx_error(self, alert_service_no_db, mock_webhook, tenant_id):
-        """Test webhook retries on 5xx HTTP errors."""
-        mock_client = AsyncMock()
-        mock_error_response = MagicMock()
-        mock_error_response.status_code = 503
-        mock_error_response.raise_for_status.side_effect = httpx.HTTPStatusError(
-            "Service Unavailable",
-            request=MagicMock(),
-            response=mock_error_response,
-        )
-
-        mock_success_response = MagicMock()
-        mock_success_response.status_code = 200
-        mock_success_response.raise_for_status = MagicMock()
-
-        mock_client.post.side_effect = [
-            mock_error_response,
-            mock_success_response,
-        ]
-        alert_service_no_db._http_client = mock_client
-
-        alert = Alert(
-            tenant_id=tenant_id,
-            alert_type=AlertType.ORDER_FILLED,
-            priority=AlertPriority.LOW,
-            title="Test",
-            message="Test message",
-        )
-
-        await alert_service_no_db._send_webhook(mock_webhook, alert)
-
-        assert mock_client.post.call_count == 2
+    async def test_bracket_hits(self, service: AlertService, transport: FakeTransport) -> None:
+        await service.on_stop_loss_hit(TENANT_ID, SESSION_ID, "SPY", 5.0, 490.0, 489.5)
+        await service.on_take_profit_hit(TENANT_ID, SESSION_ID, "SPY", 5.0, 520.0, 520.5, 152.5)
+        events = [_payload(e) for e in _published(transport)]
+        assert events[0].category == _E.NOTIFICATION_CATEGORY_STOP_LOSS_HIT
+        assert events[1].category == _E.NOTIFICATION_CATEGORY_TAKE_PROFIT_HIT
+        assert events[1].extra["pnl"] == "152.5"
 
 
-class TestWebhookDeliveryTracking:
-    """Tests for webhook delivery tracking."""
+class TestDedupSemantics:
+    async def test_repeated_stall_episode_collapses(
+        self, service: AlertService, transport: FakeTransport
+    ) -> None:
+        for _ in range(2):
+            await service.on_evaluation_stalled(TENANT_ID, SESSION_ID, ["SPY"], 700.0)
+        ids = {e.id for e in _published(transport)}
+        assert len(ids) == 1
 
-    async def test_success_resets_failure_count(
-        self, alert_service, mock_db, mock_webhook, tenant_id
-    ):
-        """Test successful delivery resets failure count."""
-        mock_webhook.failure_count = 3
-        mock_webhook.last_triggered_at = None
-        mock_webhook.last_status_code = 500
+    async def test_symbol_halt_dedups_per_symbol(
+        self, service: AlertService, transport: FakeTransport
+    ) -> None:
+        await service.on_symbol_not_tradable(TENANT_ID, SESSION_ID, "ABC", "inactive", "halted")
+        await service.on_symbol_not_tradable(TENANT_ID, SESSION_ID, "XYZ", "inactive", "halted")
+        ids = {e.id for e in _published(transport)}
+        assert len(ids) == 2
 
-        mock_client = AsyncMock()
-        mock_response = MagicMock()
-        mock_response.status_code = 200
-        mock_response.raise_for_status = MagicMock()
-        mock_client.post.return_value = mock_response
-        alert_service._http_client = mock_client
+    async def test_order_fills_never_collapse(
+        self, service: AlertService, transport: FakeTransport
+    ) -> None:
+        for _ in range(2):
+            await service.on_order_rejected(TENANT_ID, SESSION_ID, "SPY", "buy", 1.0, "same")
+        ids = {e.id for e in _published(transport)}
+        assert len(ids) == 2
 
-        alert = Alert(
-            tenant_id=tenant_id,
-            alert_type=AlertType.ORDER_FILLED,
-            priority=AlertPriority.LOW,
-            title="Test",
-            message="Test message",
-        )
-
-        await alert_service._send_webhook(mock_webhook, alert)
-
-        # Verify failure count was reset
-        assert mock_webhook.failure_count == 0
-        assert mock_webhook.last_status_code == 200
-        assert mock_webhook.last_triggered_at is not None
-        mock_db.commit.assert_called()
-
-    async def test_failure_increments_failure_count(
-        self, alert_service, mock_db, mock_webhook, tenant_id
-    ):
-        """Test failed delivery increments failure count."""
-        mock_webhook.failure_count = 2
-        mock_webhook.last_triggered_at = None
-        mock_webhook.last_status_code = None
-
-        mock_client = AsyncMock()
-        mock_client.post.side_effect = httpx.ConnectError("Connection refused")
-        alert_service._http_client = mock_client
-
-        alert = Alert(
-            tenant_id=tenant_id,
-            alert_type=AlertType.ORDER_FILLED,
-            priority=AlertPriority.LOW,
-            title="Test",
-            message="Test message",
-        )
-
-        # With reraise=True, the original exception is raised after retries exhausted
-        with pytest.raises(httpx.ConnectError):
-            await alert_service._send_webhook(mock_webhook, alert)
-
-        # Verify failure count was incremented
-        assert mock_webhook.failure_count == 3
-        assert mock_webhook.last_triggered_at is not None
-        mock_db.commit.assert_called()
-
-    async def test_http_status_code_tracked_on_failure(
-        self, alert_service, mock_db, mock_webhook, tenant_id
-    ):
-        """Test HTTP status code is tracked on HTTP error failure."""
-        mock_webhook.failure_count = 0
-        mock_webhook.last_status_code = None
-
-        mock_client = AsyncMock()
-        mock_error_response = MagicMock()
-        mock_error_response.status_code = 403
-        mock_error_response.raise_for_status.side_effect = httpx.HTTPStatusError(
-            "Forbidden",
-            request=MagicMock(),
-            response=mock_error_response,
-        )
-        mock_client.post.return_value = mock_error_response
-        alert_service._http_client = mock_client
-
-        alert = Alert(
-            tenant_id=tenant_id,
-            alert_type=AlertType.ORDER_FILLED,
-            priority=AlertPriority.LOW,
-            title="Test",
-            message="Test message",
-        )
-
-        # With reraise=True, the original exception is raised after retries exhausted
-        with pytest.raises(httpx.HTTPStatusError):
-            await alert_service._send_webhook(mock_webhook, alert)
-
-        # Verify status code was tracked
-        assert mock_webhook.last_status_code == 403
-        assert mock_webhook.failure_count == 1
-
-    async def test_delivery_tracking_handles_db_error(
-        self, alert_service, mock_db, mock_webhook, tenant_id
-    ):
-        """Test delivery tracking gracefully handles database errors."""
-        mock_webhook.failure_count = 0
-        mock_db.commit.side_effect = Exception("Database error")
-
-        mock_client = AsyncMock()
-        mock_response = MagicMock()
-        mock_response.status_code = 200
-        mock_response.raise_for_status = MagicMock()
-        mock_client.post.return_value = mock_response
-        alert_service._http_client = mock_client
-
-        alert = Alert(
-            tenant_id=tenant_id,
-            alert_type=AlertType.ORDER_FILLED,
-            priority=AlertPriority.LOW,
-            title="Test",
-            message="Test message",
-        )
-
-        # Should not raise despite database error
-        await alert_service._send_webhook(mock_webhook, alert)
-
-        mock_db.rollback.assert_called()
+    async def test_sleeve_freeze_dedups_per_sleeve(
+        self, service: AlertService, transport: FakeTransport
+    ) -> None:
+        sleeve = uuid4()
+        for _ in range(2):
+            await service.on_sleeve_frozen(TENANT_ID, sleeve, "drift")
+        assert len({e.id for e in _published(transport)}) == 1
 
 
-class TestWebhookErrorIsolation:
-    """Tests for error isolation between webhooks."""
-
-    async def test_single_webhook_failure_does_not_break_others(
-        self, alert_service, mock_db, tenant_id
-    ):
-        """Test that one webhook failure doesn't prevent others from sending."""
-        webhook1 = MagicMock()
-        webhook1.url = "https://example1.com/webhook"
-        webhook1.secret = "secret1"
-        webhook1.events = []
-        webhook1.headers = None
-        webhook1.failure_count = 0
-        webhook1.last_triggered_at = None
-        webhook1.last_status_code = None
-
-        webhook2 = MagicMock()
-        webhook2.url = "https://example2.com/webhook"
-        webhook2.secret = "secret2"
-        webhook2.events = []
-        webhook2.headers = None
-        webhook2.failure_count = 0
-        webhook2.last_triggered_at = None
-        webhook2.last_status_code = None
-
-        # Mock _get_webhooks to return both webhooks
-        mock_result = MagicMock()
-        mock_result.scalars.return_value.all.return_value = [webhook1, webhook2]
-        mock_db.execute.return_value = mock_result
-
-        # Mock HTTP client - first webhook fails, second succeeds
-        mock_client = AsyncMock()
-
-        async def mock_post(url, **kwargs):
-            if url == "https://example1.com/webhook":
-                raise httpx.ConnectError("Connection refused")
-            response = MagicMock()
-            response.status_code = 200
-            response.raise_for_status = MagicMock()
-            return response
-
-        mock_client.post.side_effect = mock_post
-        alert_service._http_client = mock_client
-
-        alert = Alert(
-            tenant_id=tenant_id,
-            alert_type=AlertType.ORDER_FILLED,
-            priority=AlertPriority.LOW,
-            title="Test",
-            message="Test message",
-        )
-
-        # Should return False (partial failure) but not raise
-        result = await alert_service.send(alert)
-
-        assert result is False  # One webhook failed
-        # Verify both webhooks were attempted (with retries for first)
-        assert mock_client.post.call_count >= 2
+def test_get_alert_service_returns_publisher() -> None:
+    assert isinstance(get_alert_service(), AlertService)

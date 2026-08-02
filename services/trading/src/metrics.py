@@ -27,8 +27,7 @@ from __future__ import annotations
 
 from llamatrade_telemetry import counter, histogram, metrics
 
-# Shared domain handles (histograms/gauges exposed for direct ``.observe()``
-# / ``.set()`` use by call sites that already held a handle reference).
+# Shared domain handles exposed for direct ``.observe()`` / ``.set()`` use by call sites holding a handle reference.
 ORDER_SUBMISSION_DURATION = metrics.trading.order_submission_latency
 ACTIVE_RUNNERS = metrics.trading.active_runners
 BAR_STREAM_CONNECTED = metrics.trading.bar_stream_connected
@@ -39,11 +38,6 @@ ORDER_SYNC_DURATION = histogram(
     "llamatrade_trading_order_sync_duration_seconds",
     (),
     "Time to sync order status with Alpaca",
-)
-SIGNAL_PROCESSING_DURATION = histogram(
-    "llamatrade_trading_signal_processing_duration_seconds",
-    (),
-    "Time to process a trading signal",
 )
 POSITION_RECONCILIATION_DURATION = histogram(
     "llamatrade_trading_position_reconciliation_duration_seconds",
@@ -77,15 +71,25 @@ TRADE_STREAM_EVENTS_TOTAL = counter(
     ["event_type"],  # new, fill, partial_fill, canceled, rejected, ...
     "Trade-stream events by type",
 )
-CIRCUIT_BREAKER_RESETS_TOTAL = counter(
-    "llamatrade_trading_circuit_breaker_resets_total",
-    (),
-    "Circuit breaker reset events",
-)
 STRATEGY_DEGRADED_EVALS_TOTAL = counter(
     "llamatrade_trading_strategy_degraded_evals_total",
     (),
     "Strategy conditions that could not be evaluated (NaN/missing data) and were treated as False",
+)
+STRATEGY_SUB_NOTIONAL_SKIPS_TOTAL = counter(
+    "llamatrade_trading_strategy_sub_notional_skips_total",
+    (),
+    "Intended orders skipped for falling under the minimum order notional",
+)
+EVALUATION_STALLS_TOTAL = counter(
+    "llamatrade_trading_evaluation_stalls_total",
+    (),
+    "Stall episodes where the all-symbols evaluation gate stayed shut past the staleness window",
+)
+SYMBOL_HALTS_TOTAL = counter(
+    "llamatrade_trading_symbol_halts_total",
+    ["reason"],  # unknown, inactive, not_tradable
+    "Subscribed symbols the broker stopped listing as active and tradable",
 )
 
 
@@ -199,6 +203,34 @@ def record_degraded_evals(count: int) -> None:
     """
     if count > 0:
         STRATEGY_DEGRADED_EVALS_TOTAL.inc(count)
+
+
+def record_sub_notional_skips(count: int) -> None:
+    """Record `count` intended orders dropped under the minimum order notional.
+
+    A rising rate means a sleeve's equity is too small for the weights its strategy
+    asks it to hold, so rebalances silently do nothing. No session/tenant labels.
+    """
+    if count > 0:
+        STRATEGY_SUB_NOTIONAL_SKIPS_TOTAL.inc(count)
+
+
+def record_evaluation_stall() -> None:
+    """Record one stall episode of the all-symbols evaluation gate.
+
+    Counted once per episode (not per tick), so the rate reads as "sessions that
+    went blind", not "how long they stayed blind". No session/tenant labels.
+    """
+    EVALUATION_STALLS_TOTAL.inc()
+
+
+def record_symbol_halt(reason: str) -> None:
+    """Record a subscribed symbol that stopped being active/tradable at the broker.
+
+    Args:
+        reason: Bounded halt reason (unknown, inactive, not_tradable).
+    """
+    SYMBOL_HALTS_TOTAL.labels(reason=reason).inc()
 
 
 def update_runner_gauge(active_count: int) -> None:

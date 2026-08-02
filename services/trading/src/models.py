@@ -20,12 +20,10 @@ from llamatrade_proto.generated.trading_pb2 import (
     ORDER_TYPE_STOP,
     ORDER_TYPE_STOP_LIMIT,
     ORDER_TYPE_TRAILING_STOP,
-    TIME_IN_FORCE_CLS,
     TIME_IN_FORCE_DAY,
     TIME_IN_FORCE_FOK,
     TIME_IN_FORCE_GTC,
     TIME_IN_FORCE_IOC,
-    TIME_IN_FORCE_OPG,
     OrderSide,
     OrderType,
     TimeInForce,
@@ -39,32 +37,14 @@ class BracketType(IntEnum):
     TAKE_PROFIT = 2
 
 
-_ORDER_SIDE_TO_STR: dict[int, str] = {
-    ORDER_SIDE_BUY: "buy",
-    ORDER_SIDE_SELL: "sell",
-}
-
-_ORDER_TYPE_TO_STR: dict[int, str] = {
-    ORDER_TYPE_MARKET: "market",
-    ORDER_TYPE_LIMIT: "limit",
-    ORDER_TYPE_STOP: "stop",
-    ORDER_TYPE_STOP_LIMIT: "stop_limit",
-    ORDER_TYPE_TRAILING_STOP: "trailing_stop",
-}
-
-_TIME_IN_FORCE_TO_STR: dict[int, str] = {
-    TIME_IN_FORCE_DAY: "day",
-    TIME_IN_FORCE_GTC: "gtc",
-    TIME_IN_FORCE_IOC: "ioc",
-    TIME_IN_FORCE_FOK: "fok",
-    TIME_IN_FORCE_OPG: "opg",
-    TIME_IN_FORCE_CLS: "cls",
-}
-
-
 def order_side_to_str(value: OrderSide.ValueType) -> Literal["buy", "sell"]:
     """Convert OrderSide proto value to string for Alpaca API."""
     return "sell" if value == ORDER_SIDE_SELL else "buy"
+
+
+def signal_type_to_order_side(signal_type: str) -> OrderSide.ValueType:
+    """Broker side for a strategy signal type: ``cover`` buys back, ``short`` sells."""
+    return ORDER_SIDE_BUY if signal_type in ("buy", "cover") else ORDER_SIDE_SELL
 
 
 def order_type_to_str(
@@ -105,17 +85,15 @@ class OrderCreate(BaseModel):
     stop_loss_price: Decimal | None = None
     take_profit_price: Decimal | None = None
     bracket_time_in_force: TimeInForce.ValueType = TIME_IN_FORCE_GTC
-    # Ledger attribution, fixed at origination (portfolio-ledger.md).
-    # None → resolved from the session (strategy sleeve) or Manual sleeve.
+    # Ledger attribution, fixed at origination (portfolio-ledger.md); None → resolved from the session (strategy sleeve) or Manual sleeve.
     sleeve_id: UUID | None = None
     account_id: UUID | None = None
-    # Reference price for market orders (signal price), used to size the
-    # §4 cash reservation. Never sent to the broker.
+    # Reference price for market orders (signal price), used to size the §4 cash reservation; never sent to the broker.
     est_price: Decimal | None = None
 
     @model_validator(mode="after")
     def _validate_price_for_type(self) -> OrderCreate:
-        """Reject orders missing the price their type requires (6A).
+        """Reject orders missing the price their type requires.
 
         A limit/stop/trailing order with no price would only be rejected at the
         broker after a wasted round-trip — fail fast with a clear message
@@ -136,6 +114,19 @@ class OrderCreate(BaseModel):
         return self
 
 
+# Key under which the degradation marker is stored in TradingSession.config.
+SESSION_DEGRADED_KEY = "degraded"
+
+
+class SessionDegradation(BaseModel):
+    """A non-fatal condition flagging a still-running session for user attention."""
+
+    reason: str
+    symbols: list[str] = Field(default_factory=list)
+    detail: str = ""
+    detected_at: datetime
+
+
 class SessionResponse(BaseModel):
     id: UUID
     tenant_id: UUID
@@ -150,6 +141,8 @@ class SessionResponse(BaseModel):
     # Ledger identity (None for legacy/unfunded sessions)
     sleeve_id: UUID | None = None
     account_id: UUID | None = None
+    # Set while the session runs but needs a user decision (e.g. delisted symbol)
+    degraded: SessionDegradation | None = None
 
 
 class RiskLimits(BaseModel):

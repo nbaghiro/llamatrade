@@ -1,7 +1,7 @@
-"""Trading event publisher for real-time updates via Redis Streams.
+"""Trading event publisher for real-time updates over the Kafka-backed event bus.
 
 Publishes order/position UI events and ledger fill/lifecycle payloads onto
-durable Redis Streams (via the shared ``EventBus``). UI events fan out to live
+durable event streams (via the shared ``EventBus``). UI events fan out to live
 tail-readers (each gets the full stream + reconnect replay); ledger payloads are
 consumed by the portfolio service's durable consumer group.
 
@@ -11,7 +11,6 @@ wrapped in an event envelope by ``OrderEvents`` / ``PositionEvents``.
 """
 
 import logging
-import os
 from datetime import UTC, datetime
 from decimal import Decimal
 from uuid import UUID
@@ -19,17 +18,17 @@ from uuid import UUID
 from llamatrade_events import EventBus as EventsBus
 from llamatrade_events import (
     FillEvents,
+    KafkaTransport,
     LedgerFill,
     LedgerReservation,
     OrderEvents,
     PositionEvents,
-    RedisStreamsTransport,
+    get_default_transport,
 )
 from llamatrade_proto.generated import common_pb2, trading_pb2
+from llamatrade_proto.timestamps import to_proto_timestamp
 
 logger = logging.getLogger(__name__)
-
-REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 
 # Status string → proto OrderStatus enum.
 _ORDER_STATUS: dict[str, trading_pb2.OrderStatus.ValueType] = {
@@ -60,8 +59,8 @@ _ORDER_TYPE: dict[str, trading_pb2.OrderType.ValueType] = {
 
 
 def _now_timestamp() -> common_pb2.Timestamp:
-    """Current time as a proto Timestamp (whole seconds)."""
-    return common_pb2.Timestamp(seconds=int(datetime.now(UTC).timestamp()))
+    """Current time as a proto Timestamp."""
+    return to_proto_timestamp(datetime.now(UTC))
 
 
 def _build_order_update(
@@ -158,20 +157,20 @@ def _build_position_update(
 
 
 class TradingEventPublisher:
-    """Publishes trading events (orders, positions, ledger fills) to Redis Streams.
+    """Publishes trading events (orders, positions, ledger fills) to the event bus.
 
-    Each session has its own UI streams for orders and positions; ledger
-    fill/lifecycle payloads go to one global stream.
+    Each session has its own logical UI streams for orders and positions (one
+    shared topic per family, keyed by session); ledger fill/lifecycle payloads
+    go to one global stream keyed by account.
 
-    Streams:
-        - lt:trading:orders:{session_id}    - order UI updates (tail)
-        - lt:trading:positions:{session_id} - position UI updates (tail)
-        - lt:ledger:fills                   - ledger fill/lifecycle (consumer group)
+    Topics:
+        - lt.trading.orders    - order UI updates (tail, keyed by session_id)
+        - lt.trading.positions - position UI updates (tail, keyed by session_id)
+        - lt.ledger.fills      - ledger fill/lifecycle (consumer group, keyed by account_id)
     """
 
     def __init__(
         self,
-        redis_url: str | None = None,
         orders_events: OrderEvents | None = None,
         positions_events: PositionEvents | None = None,
         fills: FillEvents | None = None,
@@ -179,24 +178,22 @@ class TradingEventPublisher:
         """Initialize the publisher.
 
         Args:
-            redis_url: Redis connection URL. Defaults to REDIS_URL env var.
             orders_events: Order UI-stream channel (injected in tests; lazily
                 created otherwise).
             positions_events: Position UI-stream channel (injected in tests;
                 lazily created otherwise).
             fills: Ledger fill/reservation publisher (injected in tests; lazily
-                created otherwise). Proto wire onto ``lt:ledger:fills``.
+                created otherwise). Proto wire onto ``lt.ledger.fills``.
         """
-        self.redis_url = redis_url or REDIS_URL
         self._bus: EventsBus | None = None
         self._orders_events: OrderEvents | None = orders_events
         self._positions_events: PositionEvents | None = positions_events
         self._fills: FillEvents | None = fills
 
     def _get_bus(self) -> EventsBus:
-        """Get or create the shared events bus (Redis Streams transport)."""
+        """Get or create the shared events bus (backend selected by config)."""
         if self._bus is None:
-            self._bus = EventsBus(RedisStreamsTransport(self.redis_url))
+            self._bus = EventsBus(get_default_transport())
         return self._bus
 
     def _get_orders_events(self) -> OrderEvents:
@@ -216,6 +213,17 @@ class TradingEventPublisher:
         if self._fills is None:
             self._fills = FillEvents(bus=self._get_bus())
         return self._fills
+
+    def is_connected(self) -> bool:
+        """Whether the shared transport holds a live producer/consumer.
+
+        Answers the Kafka health probe from the publisher's own transport so no
+        second broker connection is opened; False until the bus is first used.
+        """
+        if self._bus is None:
+            return False
+        transport = self._bus.transport
+        return isinstance(transport, KafkaTransport) and transport.is_connected()
 
     async def publish_order_update(
         self,
@@ -393,7 +401,7 @@ class TradingEventPublisher:
         built by ``src.ledger_events`` — ``LedgerFill`` and ``LedgerReservation``
         share this stream, discriminated by their EventType. Idempotency seeds
         (``client_order_id`` / ``client_order_id:event_type``) are set by
-        ``FillEvents``. Returns the stream entry id.
+        ``FillEvents``. Returns the assigned stream cursor.
         """
         from src.metrics import record_ledger_publish
 
@@ -440,16 +448,13 @@ class TradingEventPublisher:
 _publisher: TradingEventPublisher | None = None
 
 
-def get_trading_event_publisher(redis_url: str | None = None) -> TradingEventPublisher:
+def get_trading_event_publisher() -> TradingEventPublisher:
     """Get the trading event publisher instance.
-
-    Args:
-        redis_url: Optional Redis URL. Only used on first call.
 
     Returns:
         TradingEventPublisher instance.
     """
     global _publisher
     if _publisher is None:
-        _publisher = TradingEventPublisher(redis_url)
+        _publisher = TradingEventPublisher()
     return _publisher

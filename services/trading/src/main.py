@@ -17,7 +17,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from starlette.types import ASGIApp
 
 from llamatrade_common import AuthMiddleware, HealthChecker
-from llamatrade_db import close_db, get_pool_stats
+from llamatrade_common.health import cached_engine_check, check_kafka
+from llamatrade_db import close_db, get_engine, get_pool_stats
+from llamatrade_db.session import verify_rls_enforcement
 from llamatrade_telemetry import init_telemetry
 
 logger = logging.getLogger(__name__)
@@ -30,27 +32,24 @@ CORS_ORIGINS = os.getenv(
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     """Application lifespan handler."""
-    # Mount Connect ASGI app
-    try:
-        from llamatrade_proto.generated.trading_connect import (
-            TradingService,
-            TradingServiceASGIApplication,
-        )
+    # Fail closed (prod/staging) if the DB role can bypass RLS.
+    await verify_rls_enforcement()
 
-        from src.grpc.servicer import TradingServicer
+    # Mount Connect ASGI app; a missing Connect dependency must crash startup (ImportError propagates) so the service never boots with no RPC surface on its money path.
+    from llamatrade_proto.generated.trading_connect import (
+        TradingService,
+        TradingServiceASGIApplication,
+    )
 
-        servicer = TradingServicer()
-        # gRPC ServicerContext and Connect RequestContext are compatible at runtime
-        connect_app = TradingServiceASGIApplication(cast(TradingService, servicer))
-        app.mount("/", cast(ASGIApp, connect_app))
-        logger.info("Connect ASGI application mounted successfully")
-    except ImportError as e:
-        logger.warning("Connect dependencies not available: %s", e)
+    from src.grpc.servicer import TradingServicer
 
-    # Re-attach runners to sessions left RUNNING/PAUSED by a crashed pod, and
-    # keep reclaiming on an interval. Ownership is arbitrated by a per-session
-    # advisory lock so scaled replicas never double-run a session. Must never
-    # block startup.
+    servicer = TradingServicer()
+    # gRPC ServicerContext and Connect RequestContext are compatible at runtime
+    connect_app = TradingServiceASGIApplication(cast(TradingService, servicer))
+    app.mount("/", cast(ASGIApp, connect_app))
+    logger.info("Connect ASGI application mounted successfully")
+
+    # Re-attach runners to sessions left RUNNING/PAUSED by a crashed pod and keep reclaiming on an interval; a per-session advisory lock arbitrates ownership so replicas never double-run a session. Must never block startup.
     stop_event = asyncio.Event()
     rehydration_task: asyncio.Task[None] | None = None
     try:
@@ -84,12 +83,10 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# Unified telemetry: RED middleware, /metrics endpoint, JSON logging, tracing,
-# and DB connection-pool gauges.
+# Unified telemetry: RED middleware, /metrics endpoint, JSON logging, tracing, DB connection-pool gauges.
 init_telemetry(app, service="trading", version="0.1.0", pool_stats_provider=get_pool_stats)
 
-# Authentication (fail-closed for non-public paths); added before CORS so CORS
-# stays outermost and still handles preflight + headers on 401 responses.
+# Authentication (fail-closed for non-public paths); added before CORS so CORS stays outermost and still handles preflight + headers on 401 responses.
 app.add_middleware(AuthMiddleware)
 
 app.add_middleware(
@@ -102,4 +99,23 @@ app.add_middleware(
 )
 
 
-app.include_router(HealthChecker("trading", "0.1.0").create_router())
+_check_database = cached_engine_check(get_engine)
+
+
+async def _check_kafka() -> bool:
+    """Kafka health answered from the publisher's shared transport.
+
+    Trading holds a live producer transport once it publishes fill/order events;
+    its ``is_connected`` answers the probe so no second broker connection (which
+    would fail the SASL handshake with no token provider) is opened.
+    """
+    from src.streaming import get_trading_event_publisher
+
+    return await check_kafka(is_alive=get_trading_event_publisher().is_connected)
+
+
+_health = HealthChecker("trading", "0.1.0")
+_health.add_check("database", lambda: _check_database())
+# Kafka carries fill/order events to the ledger; non-critical so session reads and order submission stay available while the backbone recovers.
+_health.add_check("kafka", _check_kafka, critical=False)
+app.include_router(_health.create_router())

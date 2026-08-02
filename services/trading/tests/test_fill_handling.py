@@ -602,6 +602,170 @@ class TestOrderRejection:
         assert runner._orders_rejected == initial_rejected + 1
 
 
+def _fill_event(
+    event_type: TradeEventType,
+    *,
+    client_order_id: str = "client-456",
+    side: str = "buy",
+    fill_qty: str,
+    total_filled_qty: str,
+    fill_price: str = "150.00",
+    order_qty: str = "10",
+) -> TradeEvent:
+    now = datetime.now(UTC)
+    fill = FillData(
+        order_id="order-123",
+        client_order_id=client_order_id,
+        symbol="AAPL",
+        side=side,
+        fill_qty=Decimal(fill_qty),
+        fill_price=Decimal(fill_price),
+        total_filled_qty=Decimal(total_filled_qty),
+        remaining_qty=Decimal(order_qty) - Decimal(total_filled_qty),
+        timestamp=now,
+    )
+    return TradeEvent(
+        event_type=event_type,
+        order_id="order-123",
+        client_order_id=client_order_id,
+        symbol="AAPL",
+        side=side,
+        order_type="market",
+        qty=Decimal(order_qty),
+        filled_qty=Decimal(total_filled_qty),
+        filled_avg_price=Decimal(fill_price),
+        timestamp=now,
+        fill=fill,
+    )
+
+
+class TestFillDeltaTracking:
+    """Partial + terminal fill events must book only their delta."""
+
+    async def test_partial_then_terminal_full_does_not_double_apply(self, runner_with_trade_stream):
+        """partial(3) followed by the terminal fill(10) yields a position of 10, not 13."""
+        runner = runner_with_trade_stream
+
+        await runner._handle_partial_fill_event(
+            _fill_event(TradeEventType.PARTIAL_FILL, fill_qty="3", total_filled_qty="3")
+        )
+        assert runner._positions["AAPL"].quantity == Decimal("3")
+
+        await runner._handle_fill_event(
+            _fill_event(TradeEventType.FILL, fill_qty="10", total_filled_qty="10")
+        )
+        assert runner._positions["AAPL"].quantity == Decimal("10")
+
+    async def test_two_partials_then_terminal_full(self, runner_with_trade_stream):
+        runner = runner_with_trade_stream
+
+        await runner._handle_partial_fill_event(
+            _fill_event(TradeEventType.PARTIAL_FILL, fill_qty="3", total_filled_qty="3")
+        )
+        await runner._handle_partial_fill_event(
+            _fill_event(TradeEventType.PARTIAL_FILL, fill_qty="4", total_filled_qty="7")
+        )
+        assert runner._positions["AAPL"].quantity == Decimal("7")
+
+        await runner._handle_fill_event(
+            _fill_event(TradeEventType.FILL, fill_qty="10", total_filled_qty="10")
+        )
+        assert runner._positions["AAPL"].quantity == Decimal("10")
+
+    async def test_duplicate_partial_does_not_double_apply(self, runner_with_trade_stream):
+        runner = runner_with_trade_stream
+        event = _fill_event(TradeEventType.PARTIAL_FILL, fill_qty="3", total_filled_qty="3")
+
+        await runner._handle_partial_fill_event(event)
+        await runner._handle_partial_fill_event(event)  # redelivered duplicate
+
+        assert runner._positions["AAPL"].quantity == Decimal("3")
+
+    async def test_out_of_order_stale_partial_is_ignored(self, runner_with_trade_stream):
+        runner = runner_with_trade_stream
+
+        await runner._handle_partial_fill_event(
+            _fill_event(TradeEventType.PARTIAL_FILL, fill_qty="7", total_filled_qty="7")
+        )
+        # Older partial (cumulative 3) arriving late must not rewind or re-apply.
+        await runner._handle_partial_fill_event(
+            _fill_event(TradeEventType.PARTIAL_FILL, fill_qty="3", total_filled_qty="3")
+        )
+
+        assert runner._positions["AAPL"].quantity == Decimal("7")
+
+    async def test_replayed_terminal_fill_does_not_double_apply(self, runner_with_trade_stream):
+        runner = runner_with_trade_stream
+        event = _fill_event(TradeEventType.FILL, fill_qty="10", total_filled_qty="10")
+
+        await runner._handle_fill_event(event)
+        await runner._handle_fill_event(event)  # reconnect replay of the terminal fill
+
+        assert runner._positions["AAPL"].quantity == Decimal("10")
+        assert runner._fills_processed == 1
+
+    async def test_terminal_fill_clears_tracking_entry(self, runner_with_trade_stream):
+        runner = runner_with_trade_stream
+
+        await runner._handle_partial_fill_event(
+            _fill_event(TradeEventType.PARTIAL_FILL, fill_qty="3", total_filled_qty="3")
+        )
+        assert "client-456" in runner._applied_fill_qty
+
+        await runner._handle_fill_event(
+            _fill_event(TradeEventType.FILL, fill_qty="10", total_filled_qty="10")
+        )
+        assert "client-456" not in runner._applied_fill_qty
+        assert "client-456" in runner._terminal_order_ids
+
+    async def test_cancel_clears_tracking_entry(self, runner_with_trade_stream):
+        runner = runner_with_trade_stream
+
+        await runner._handle_partial_fill_event(
+            _fill_event(TradeEventType.PARTIAL_FILL, fill_qty="3", total_filled_qty="3")
+        )
+        event = TradeEvent(
+            event_type=TradeEventType.CANCELED,
+            order_id="order-123",
+            client_order_id="client-456",
+            symbol="AAPL",
+            side="buy",
+            order_type="market",
+            qty=Decimal("10"),
+            filled_qty=Decimal("3"),
+            filled_avg_price=Decimal("150.00"),
+            timestamp=datetime.now(UTC),
+        )
+        await runner._handle_order_canceled(event)
+
+        assert "client-456" not in runner._applied_fill_qty
+        # The partial that landed before the cancel stays booked.
+        assert runner._positions["AAPL"].quantity == Decimal("3")
+
+    async def test_deltas_tracked_per_order(self, runner_with_trade_stream):
+        """Concurrent orders track independently — one order's fills never mask another's."""
+        runner = runner_with_trade_stream
+
+        await runner._handle_partial_fill_event(
+            _fill_event(
+                TradeEventType.PARTIAL_FILL,
+                client_order_id="order-a",
+                fill_qty="3",
+                total_filled_qty="3",
+            )
+        )
+        await runner._handle_fill_event(
+            _fill_event(
+                TradeEventType.FILL,
+                client_order_id="order-b",
+                fill_qty="5",
+                total_filled_qty="5",
+            )
+        )
+
+        assert runner._positions["AAPL"].quantity == Decimal("8")
+
+
 class TestPartialFills:
     """Tests for partial fill handling."""
 

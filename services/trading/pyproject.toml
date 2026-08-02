@@ -14,7 +14,7 @@ dependencies = [
     "exchange-calendars>=4.2.0",
     "redis>=5.0.0",
     "tenacity>=8.2.0",
-    "llamatrade-common",
+    "llamatrade-common[gcp-kms]",
     "llamatrade-db",
     "llamatrade-dsl",
     "llamatrade-alpaca",

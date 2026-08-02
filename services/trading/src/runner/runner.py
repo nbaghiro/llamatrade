@@ -1,20 +1,22 @@
 """Strategy runner for live trading execution."""
 
 import asyncio
+import contextlib
 import logging
 import os
 import time
 from collections import deque
-from collections.abc import Sequence
+from collections.abc import AsyncIterator, Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any, Literal, Protocol
 from uuid import UUID
 
+from sqlalchemy import select
+
 from llamatrade_alpaca import (
-    BarStreamClient,
-    MockBarStream,
+    FillData,
     MockTradeStream,
     TradeEvent,
     TradeEventType,
@@ -26,13 +28,16 @@ from llamatrade_alpaca import (
 )
 from llamatrade_proto.generated.common_pb2 import EXECUTION_MODE_LIVE, EXECUTION_MODE_PAPER
 from llamatrade_proto.generated.trading_pb2 import (
-    ORDER_SIDE_BUY,
-    ORDER_SIDE_SELL,
     ORDER_TYPE_MARKET,
     TIME_IN_FORCE_DAY,
 )
 from llamatrade_runtime import Bar as CompilerBar
-from llamatrade_runtime import Holding, StrategySession
+from llamatrade_runtime import (
+    FormingBarAggregator,
+    Holding,
+    StrategySession,
+    quantize_quantity,
+)
 
 from src.circuit_breaker import (
     CircuitBreaker,
@@ -46,21 +51,53 @@ from src.metrics import (
     record_bar_latency,
     record_bar_processed,
     record_degraded_evals,
+    record_evaluation_stall,
     record_fill_processed,
     record_position_reconciliation,
     record_signal,
     record_slippage,
     record_strategy_error,
+    record_sub_notional_skips,
+    record_symbol_halt,
     record_trade_stream_event,
+    record_trade_stream_reconnect,
     update_runner_gauge,
 )
-from src.models import OrderCreate, RiskLimits
+from src.models import (
+    SESSION_DEGRADED_KEY,
+    OrderCreate,
+    RiskLimits,
+    SessionDegradation,
+    signal_type_to_order_side,
+)
 from src.risk.risk_manager import RiskManager
+from src.runner.intent_capture import (
+    LOOP_HAND_ROLLED,
+    LOOP_RUNTIME,
+    BookContext,
+    CaptureObserver,
+    OrderIntent,
+    capture_from_env,
+)
+from src.runner.runtime_adapters import to_compiler_bar
 from src.services.alert_service import AlertService
 from src.streaming.publisher import TradingEventPublisher
+from src.symbol_status import asset_halt_reason, halt_description
 from src.utils.trading_hours import TradingHoursChecker, TradingHoursConfig
 
 logger = logging.getLogger(__name__)
+
+# Max time the all-symbols evaluation gate may stay shut before the session is reported stalled.
+EVALUATION_STALL_SECONDS = int(os.getenv("TRADING_EVALUATION_STALL_SECONDS", "300"))
+
+# Order-quantity rounding at the sizer boundary: fractional symbols round to SHARE_DECIMALS places (Alpaca accepts at most 9), else whole shares.
+_FRACTIONAL_SHARES = os.getenv("TRADING_FRACTIONAL_SHARES", "true").lower() in ("1", "true", "yes")
+_SHARE_DECIMALS = int(os.getenv("TRADING_SHARE_DECIMALS", "9"))
+_MIN_ORDER_NOTIONAL = Decimal(os.getenv("TRADING_MIN_ORDER_NOTIONAL", "1"))
+
+# Trade-stream supervisor restart backoff (see StrategyRunner._trade_stream_loop).
+_TRADE_STREAM_RESTART_BASE_DELAY_S = 1.0
+_TRADE_STREAM_RESTART_MAX_DELAY_S = 60.0
 
 
 @dataclass
@@ -92,6 +129,11 @@ def _realized_pnl(
     return (exit_price - entry_price if is_long else entry_price - exit_price) * qty
 
 
+def _book_context(holdings: Mapping[str, Holding], equity: float) -> BookContext:
+    """The capture's view of the book an evaluation is about to size against."""
+    return BookContext(equity=equity, holdings={s: h.quantity for s, h in holdings.items()})
+
+
 @dataclass
 class RunnerConfig:
     """Configuration for strategy runner."""
@@ -105,25 +147,49 @@ class RunnerConfig:
     risk_limits: RiskLimits | None = None
     mode: int = EXECUTION_MODE_PAPER  # ExecutionMode proto value: PAPER=1, LIVE=2
 
-    # Ledger identity (from the funded strategy execution; None = legacy
-    # unfunded session — no ledger events are emitted). See portfolio-ledger.md.
+    # Ledger identity from the funded execution; None = unfunded session, no ledger events. See portfolio-ledger.md.
     sleeve_id: UUID | None = None
     account_id: UUID | None = None
 
-    # Position reconciliation settings
+    # Alert once when every-symbol bar sync has been blocked this long
+    evaluation_stall_seconds: int = EVALUATION_STALL_SECONDS
+
+    # Order-quantity rounding at the sizer boundary (see quantize_quantity).
+    fractional_shares: bool = _FRACTIONAL_SHARES
+    share_decimals: int = _SHARE_DECIMALS
+    min_order_notional: Decimal = _MIN_ORDER_NOTIONAL
+
+    # Probe each subscribed symbol's broker asset status on the reconciliation tick
+    symbol_lifecycle_check_enabled: bool = True
+
     position_reconciliation_enabled: bool = True
     position_reconciliation_interval_seconds: int = 300  # 5 minutes
     position_drift_auto_correct_threshold_pct: float = 5.0  # Auto-correct if < 5% drift
     position_drift_alert_threshold_pct: float = 10.0  # Alert if >= 10% drift
 
-    # Proactive ledger re-publish drain (4A) for sleeve sessions; idempotent.
+    # Idempotent ledger re-publish drain; window is measured on the order's terminal transition (updated_at), so it must exceed the longest tolerable publish outage.
     ledger_republish_interval_seconds: int = 120
-    ledger_republish_window_seconds: int = 900
+    ledger_republish_window_seconds: int = 3600
 
-    # Trading hours settings
     enforce_trading_hours: bool = True  # Skip signals outside market hours
     allow_premarket: bool = False  # Allow trading during pre-market (4 AM - 9:30 AM ET)
     allow_afterhours: bool = False  # Allow trading during after-hours (4 PM - 8 PM ET)
+
+
+class BarStream(Protocol):
+    """The live bar-stream surface the runner drives.
+
+    Satisfied structurally by ``BarStreamClient`` (per-tenant Alpaca WebSocket),
+    ``ServiceBarStream`` (shared market-data fan-out), and ``MockBarStream`` (tests),
+    so a new stream source is pluggable without widening a concrete union.
+    """
+
+    @property
+    def connected(self) -> bool: ...
+    async def connect(self) -> bool: ...
+    async def subscribe(self, symbols: list[str]) -> bool: ...
+    def stream(self) -> AsyncIterator[BarData]: ...
+    async def disconnect(self) -> None: ...
 
 
 class StrategyFunction(Protocol):
@@ -157,7 +223,7 @@ class StrategyRunner:
         self,
         config: RunnerConfig,
         strategy_fn: StrategyFunction | None,
-        bar_stream: BarStreamClient | MockBarStream,
+        bar_stream: BarStream,
         trade_stream: TradingStreamClient | MockTradeStream,
         order_executor: OrderExecutor,
         risk_manager: RiskManager,
@@ -168,6 +234,7 @@ class StrategyRunner:
         ledger_publisher: TradingEventPublisher | None = None,
         portfolio_client: PortfolioLedgerClient | None = None,
         session: StrategySession | None = None,
+        trade_stream_factory: Callable[[], TradingStreamClient | MockTradeStream] | None = None,
     ):
         # One eval source: the merged-symbol session (prod) or a per-symbol strategy_fn (tests).
         if session is None and strategy_fn is None:
@@ -175,12 +242,22 @@ class StrategyRunner:
         self.config = config
         self.strategy_fn = strategy_fn
         self._session = session
+        # Folds the one-minute stream into one forming bar per symbol per strategy period so live indicators read the same grid a backtest does; seeded from the warm-up preload's in-progress bar.
+        self._aggregator = FormingBarAggregator(
+            seed=session.last_bars() if session is not None else None
+        )
         # Session-path eval buffers: latest bar + timestamp per symbol; last period evaluated.
         self._latest_bars: dict[str, CompilerBar] = {}
         self._latest_ts: dict[str, datetime] = {}
         self._last_evaluated_ts: datetime | None = None
-        # Last observed cumulative degraded-eval count, to emit per-eval deltas.
+        # Last observed cumulative session counters, to emit deltas rather than absolutes.
         self._last_degraded_eval_count = 0
+        self._last_sub_notional_skip_count = 0
+        # Evaluation-gate health: when it last opened, and whether the current stall episode was already alerted (one alert per episode).
+        self._last_gate_open_at: datetime | None = None
+        self._stall_alerted = False
+        # Symbols the broker no longer lists as active and tradable.
+        self._halted_symbols: set[str] = set()
         self.bar_stream = bar_stream
         self.order_executor = order_executor
         self.risk_manager = risk_manager
@@ -188,13 +265,14 @@ class StrategyRunner:
         self.alerts = alert_service
         self.strategy_name = strategy_name
         self.trade_stream = trade_stream
+        # Rebuilds a fresh trade-update client when the supervised fill stream gives up (resets the reconnect-attempt counter); None in tests.
+        self._trade_stream_factory = trade_stream_factory
         self.ledger_publisher = ledger_publisher
         self.portfolio_client = portfolio_client
 
-        # State
         self._running = False
         self._paused = False
-        # Use deque with maxlen for O(1) append and automatic size limiting
+        # deque with maxlen for O(1) append and automatic size limiting
         max_history_size = config.warmup_bars + 100
         self._bar_history: dict[str, deque[BarData]] = {
             s: deque(maxlen=max_history_size) for s in config.symbols
@@ -210,15 +288,24 @@ class StrategyRunner:
         # Pending (submitted, unfilled) orders: client_order_id -> signal, for fill-time updates.
         self._pending_orders: dict[str, Signal] = {}
 
-        # Opt-in: drive the live loop through the shared StrategyRuntime (unifies with backtest).
-        # Off by default — the hand-rolled loop stays the production path until paper-QA validates.
+        # Cumulative filled qty already applied to the local book per client_order_id, so partial + terminal fill events book only their delta.
+        self._applied_fill_qty: dict[str, Decimal] = {}
+        # Recently-terminal orders — a replayed fill event for one must not re-apply.
+        self._terminal_order_ids: deque[str] = deque(maxlen=512)
+
+        # Opt-in: drive the live loop through the shared StrategyRuntime (default off; hand-rolled loop is the production path).
         self._use_runtime_loop = os.getenv("TRADING_USE_RUNTIME_LOOP", "").lower() in (
             "1",
             "true",
             "yes",
         )
+        # Which loop start() dispatches on; the intent capture (off unless TRADING_INTENT_CAPTURE_DIR is set) labels its records with it.
+        self._runtime_loop_selected = self._use_runtime_loop and session is not None
+        self._intent_capture = capture_from_env(
+            config.execution_id,
+            LOOP_RUNTIME if self._runtime_loop_selected else LOOP_HAND_ROLLED,
+        )
 
-        # Circuit breaker
         self._circuit_breaker = create_circuit_breaker(
             tenant_id=config.tenant_id,
             session_id=config.execution_id,
@@ -227,7 +314,6 @@ class StrategyRunner:
             config=circuit_breaker_config,
         )
 
-        # Trading hours checker
         self._trading_hours: TradingHoursChecker | None = None
         if config.enforce_trading_hours:
             trading_hours_config = TradingHoursConfig(
@@ -236,13 +322,11 @@ class StrategyRunner:
             )
             self._trading_hours = TradingHoursChecker(trading_hours_config)
 
-        # Metrics
         self._signals_generated = 0
         self._orders_submitted = 0
         self._orders_rejected = 0
         self._fills_processed = 0
 
-        # Reconciliation tracking
         self._last_reconciliation_time: datetime | None = None
         self._reconciliation_error_count: int = 0
 
@@ -287,6 +371,8 @@ class StrategyRunner:
             ),
             "reconciliation_error_count": self._reconciliation_error_count,
             "trade_stream_connected": self.trade_stream.connected,
+            "halted_symbols": sorted(self._halted_symbols),
+            "evaluation_stalled": self._stall_alerted,
         }
 
     @property
@@ -317,13 +403,10 @@ class StrategyRunner:
 
         logger.info(f"Starting strategy runner for execution {self.config.execution_id}")
 
-        # Sync equity before starting. Positions are recovered from the broker
-        # (source of truth) via the periodic reconciliation loop below.
+        # Sync equity before starting; positions are recovered from the broker (source of truth) via the periodic reconciliation loop below.
         await self._sync_equity()
 
-        # Reconcile any orders a previous crash left PENDING with no broker id
-        # (3A): adopt those the broker actually placed, reject those it never
-        # received. Best-effort — a recovery hiccup must not block session start.
+        # Reconcile orders a prior crash left PENDING with no broker id: adopt those the broker placed, reject those it never received. Best-effort — a hiccup must not block session start.
         try:
             recovered = await self.order_executor.recover_stranded_orders(
                 self.config.tenant_id, self.config.execution_id
@@ -333,9 +416,7 @@ class StrategyRunner:
         except Exception as e:
             logger.warning("Stranded-order recovery failed at startup: %s", e)
 
-        # Re-emit ledger events for recently-terminal orders whose original
-        # publish may have failed before a crash (4A safety net). Idempotent at
-        # the ledger; only meaningful for sleeve-attributed sessions.
+        # Re-emit ledger events for recently-terminal orders whose original publish may have failed before a crash (4A safety net); idempotent at the ledger.
         if self.config.sleeve_id is not None:
             try:
                 republished = await self.order_executor.republish_ledger_for_terminal_orders(
@@ -348,10 +429,8 @@ class StrategyRunner:
             except Exception as e:
                 logger.warning("Ledger re-publish at startup failed: %s", e)
 
-        # Connect to bar stream
         if not self.bar_stream.connected:
             if not await self.bar_stream.connect():
-                # Send connection lost alert
                 if self.alerts:
                     await self.alerts.on_connection_lost(
                         tenant_id=self.config.tenant_id,
@@ -360,11 +439,9 @@ class StrategyRunner:
                     )
                 raise RuntimeError("Failed to connect to bar stream")
 
-        # Subscribe to symbols
         if not await self.bar_stream.subscribe(self.config.symbols):
             raise RuntimeError("Failed to subscribe to symbols")
 
-        # Connect to trade stream for fill updates
         if not self.trade_stream.connected:
             if not await self.trade_stream.connect():
                 if self.alerts:
@@ -381,12 +458,13 @@ class StrategyRunner:
         logger.info("Connected to trade stream for fill updates")
 
         self._running = True
+        # Staleness is measured from here until the gate first opens.
+        self._last_gate_open_at = datetime.now(UTC)
 
         mode: Literal["live", "paper"] = (
             "live" if self.config.mode == EXECUTION_MODE_LIVE else "paper"
         )
 
-        # Send session started alert
         if self.alerts:
             await self.alerts.on_session_started(
                 tenant_id=self.config.tenant_id,
@@ -395,23 +473,18 @@ class StrategyRunner:
                 mode=mode,
             )
 
-        # Start periodic equity sync task
         self._equity_sync_task = asyncio.create_task(self._equity_sync_loop())
 
-        # Start periodic position reconciliation task (if enabled)
         if self.config.position_reconciliation_enabled and self.alpaca_client:
             self._position_sync_task = asyncio.create_task(self._position_sync_loop())
 
-        # Start trade stream processing task (for event-driven position updates)
         self._trade_stream_task = asyncio.create_task(self._trade_stream_loop())
 
-        # Start proactive ledger re-publish drain (sleeve-attributed sessions only)
         if self.config.sleeve_id is not None:
             self._ledger_republish_task = asyncio.create_task(self._ledger_republish_loop())
 
-        # Main processing loop
         try:
-            if self._use_runtime_loop and self._session is not None:
+            if self._runtime_loop_selected:
                 await self._run_via_runtime()
             else:
                 async for bar in self.bar_stream.stream():
@@ -427,7 +500,6 @@ class StrategyRunner:
             logger.info("Runner cancelled")
         except Exception as e:
             logger.error(f"Runner error: {e}")
-            # Send session error alert
             if self.alerts:
                 await self.alerts.on_session_error(
                     tenant_id=self.config.tenant_id,
@@ -437,6 +509,13 @@ class StrategyRunner:
             raise
         finally:
             self._running = False
+            self._drain_session_counters()
+            if self._trade_stream_task:
+                self._trade_stream_task.cancel()
+                try:
+                    await self._trade_stream_task
+                except asyncio.CancelledError:
+                    pass
             if self._equity_sync_task:
                 self._equity_sync_task.cancel()
                 try:
@@ -462,11 +541,9 @@ class StrategyRunner:
         logger.info(f"Stopping runner for execution {self.config.execution_id}")
         self._running = False
 
-        # Disconnect streams
         await self.bar_stream.disconnect()
         await self.trade_stream.disconnect()
 
-        # Cancel background tasks
         if self._trade_stream_task and not self._trade_stream_task.done():
             self._trade_stream_task.cancel()
             try:
@@ -474,7 +551,6 @@ class StrategyRunner:
             except asyncio.CancelledError:
                 pass
 
-        # Send session stopped alert
         if self.alerts:
             await self.alerts.on_session_stopped(
                 tenant_id=self.config.tenant_id,
@@ -513,7 +589,6 @@ class StrategyRunner:
             reason: Optional reason for manual trigger.
         """
         await self._circuit_breaker.manual_trigger(reason)
-        # Also pause the runner
         self.pause()
 
     async def _run_via_runtime(self) -> None:
@@ -530,13 +605,18 @@ class StrategyRunner:
         feed = StreamBarFeed(
             self.bar_stream,
             self.config.symbols,
+            aggregator=self._aggregator,
             gate=self._live_gate,
             on_bar=self._store_live_bar,
             is_running=lambda: self._running,
         )
-        portfolio = LedgerPortfolio(self._live_holdings, self._live_equity)
+        portfolio = LedgerPortfolio(self._runtime_holdings, self._live_equity)
         execution = RunnerExecution(self._submit_runtime_order)
-        runtime = StrategyRuntime(self._session, portfolio, execution)
+        # The tick observer closes each evaluation's capture record, including empty ones.
+        observer = (
+            CaptureObserver(self._intent_capture) if self._intent_capture is not None else None
+        )
+        runtime = StrategyRuntime(self._session, portfolio, execution, observer=observer)
         await runtime.stream(feed, should_stop=lambda: not self._running)
 
     def _live_gate(self, ts: datetime) -> bool:
@@ -557,11 +637,22 @@ class StrategyRunner:
             record_bar_latency(latency)
         if bar.symbol in self._bar_history:
             self._bar_history[bar.symbol].append(bar)
+        # Same gate bookkeeping as the hand-rolled path, so stall detection applies here too.
+        self._latest_ts[bar.symbol] = bar.timestamp
+        if all(self._latest_ts.get(s) == bar.timestamp for s in self.config.symbols):
+            self._note_gate_open()
 
     def _live_holdings(self) -> dict[str, Holding]:
         return {
             s: Holding(s, float(p.quantity)) for s, p in self._positions.items() if p.quantity > 0
         }
+
+    def _runtime_holdings(self) -> dict[str, Holding]:
+        """Holdings for a runtime tick, staging the book its evaluation will size against."""
+        holdings = self._live_holdings()
+        if self._intent_capture is not None:
+            self._intent_capture.stage_book(_book_context(holdings, self._live_equity()))
+        return holdings
 
     def _live_equity(self) -> float:
         return float(self._equity)
@@ -570,6 +661,8 @@ class StrategyRunner:
         self, side: str, symbol: str, quantity: float, price: float, ts: datetime
     ) -> None:
         """Build a Signal from a runtime order and submit it through the hardened path."""
+        if self._intent_capture is not None:
+            self._intent_capture.stage(OrderIntent(symbol, side, quantity, price))
         signal = Signal(
             type=side,
             symbol=symbol,
@@ -591,11 +684,9 @@ class StrategyRunner:
         if latency > 0:
             record_bar_latency(latency)
 
-        # Ignore bars for untracked symbols
         if symbol not in self._bar_history:
             return
 
-        # Add to history (deque with maxlen handles size limiting automatically)
         self._bar_history[symbol].append(bar)
 
         # Production path: the shared merged-symbol session evaluates all symbols together.
@@ -623,22 +714,18 @@ class StrategyRunner:
             )
             return
 
-        # Check trading hours before generating signals
         if self._trading_hours and not self._trading_hours.is_market_open(bar.timestamp):
             logger.debug(
                 f"Market closed at {bar.timestamp}, skipping signal generation for {symbol}"
             )
             return
 
-        # Get current position
         position = self._positions.get(symbol)
 
-        # Check circuit breaker before generating signals
         if not self._circuit_breaker.can_trade():
             logger.debug(f"Circuit breaker triggered, skipping signal generation for {symbol}")
             return
 
-        # Generate signal
         try:
             assert self.strategy_fn is not None  # guaranteed when session is None
             signal = self.strategy_fn(
@@ -656,9 +743,7 @@ class StrategyRunner:
         except Exception as e:
             logger.error(f"Strategy error for {symbol}: {e}")
             record_strategy_error("signal_generation")
-            # Record error in circuit breaker
             await self._circuit_breaker.record_api_error(str(e))
-            # Send strategy error alert
             if self.alerts:
                 await self.alerts.on_strategy_error(
                     tenant_id=self.config.tenant_id,
@@ -666,34 +751,30 @@ class StrategyRunner:
                     error=f"Error processing {symbol}: {e}",
                 )
         finally:
-            # Record bar processing metrics
             duration = time.perf_counter() - start_time
             record_bar_processed(duration)
 
     async def _evaluate_session(self, bar: BarData) -> None:
         """Merged-symbol evaluation via the shared StrategySession.
 
-        Buffers the latest bar per symbol and evaluates the strategy **once per bar
-        period**, only when every subscribed symbol has produced a bar for that timestamp.
+        Folds the bar into its symbol's forming period bar and evaluates the strategy **once per
+        bar period**, only when every subscribed symbol has produced a bar for that timestamp.
         This gives the session a complete cross-symbol snapshot (so conditions like
-        "hold TLT when RSI(SPY) > 70" work) and a single portfolio-level rebalance, without
-        feeding the same period's bars more than once.
+        "hold TLT when RSI(SPY) > 70" work) and a single portfolio-level rebalance, over the same
+        one-bar-per-period history a backtest of the strategy reads.
         """
         assert self._session is not None
-        self._latest_bars[bar.symbol] = CompilerBar(
-            timestamp=bar.timestamp,
-            open=bar.open,
-            high=bar.high,
-            low=bar.low,
-            close=bar.close,
-            volume=int(bar.volume),
-        )
+        self._latest_bars[bar.symbol] = self._aggregator.update(bar.symbol, to_compiler_bar(bar))
         self._latest_ts[bar.symbol] = bar.timestamp
         ts = bar.timestamp
 
         # Wait until every subscribed symbol has this period's bar.
-        if any(self._latest_ts.get(s) != ts for s in self.config.symbols):
+        missing = [s for s in self.config.symbols if self._latest_ts.get(s) != ts]
+        if missing:
+            await self._check_evaluation_stall(missing)
             return
+        self._note_gate_open()
+
         # Evaluate each period at most once.
         if ts == self._last_evaluated_ts:
             return
@@ -707,19 +788,19 @@ class StrategyRunner:
         holdings = {
             s: Holding(s, float(p.quantity)) for s, p in self._positions.items() if p.quantity > 0
         }
-        # Offload the strategy/indicator math (NumPy, releases the GIL) to a worker
-        # thread so it never blocks the event loop driving the fill/equity loops (15A).
-        # Safe: this session is owned solely by this runner and evaluated serially.
+        # Offload the strategy/indicator math (NumPy, releases the GIL) so it never blocks the fill/equity event loop; safe because this session is owned solely by this runner and evaluated serially.
         orders = await asyncio.to_thread(
             self._session.evaluate, self._latest_bars, holdings, float(self._equity)
         )
 
-        # Surface conditions that couldn't be evaluated (NaN/missing data) as a
-        # metric, so a strategy silently producing "no signal" is observable.
-        degraded = self._session.degraded_eval_count
-        if degraded > self._last_degraded_eval_count:
-            record_degraded_evals(degraded - self._last_degraded_eval_count)
-            self._last_degraded_eval_count = degraded
+        self._drain_session_counters()
+
+        if self._intent_capture is not None:
+            self._intent_capture.record(
+                ts,
+                [OrderIntent(o.symbol, o.side, o.quantity, o.price) for o in orders],
+                _book_context(holdings, float(self._equity)),
+            )
 
         for order in orders:
             signal = Signal(
@@ -733,6 +814,163 @@ class StrategyRunner:
             record_signal(signal.type)
             await self._process_signal(signal)
 
+    def _drain_session_counters(self) -> None:
+        """Emit the increments of the session's degraded-eval and sub-notional-skip counters.
+
+        Both are cumulative on the session and carry no metric labels, so a strategy that
+        silently produces "no signal" (stale/missing indicator data) or whose orders keep
+        falling under the broker's notional floor is observable at the fleet level. Called
+        from both live loops: per evaluation on the hand-rolled path, on the equity-sync
+        tick (which covers the runtime loop) and once more when the runner winds down.
+        """
+        if self._session is None:
+            return
+        degraded = self._session.degraded_eval_count
+        if degraded > self._last_degraded_eval_count:
+            record_degraded_evals(degraded - self._last_degraded_eval_count)
+            self._last_degraded_eval_count = degraded
+        skipped = self._session.sub_notional_skip_count
+        if skipped > self._last_sub_notional_skip_count:
+            record_sub_notional_skips(skipped - self._last_sub_notional_skip_count)
+            self._last_sub_notional_skip_count = skipped
+
+    def _note_gate_open(self) -> None:
+        """Record that every subscribed symbol has the current period's bar."""
+        self._last_gate_open_at = datetime.now(UTC)
+        if self._stall_alerted:
+            logger.info("Evaluation gate recovered for execution %s", self.config.execution_id)
+            self._stall_alerted = False
+
+    def _stalled_symbols(self) -> list[str]:
+        """Symbols holding the evaluation gate shut (behind the newest bar period).
+
+        With no per-symbol lag the whole feed is stale, so every subscribed
+        symbol is reported.
+        """
+        if not self._latest_ts:
+            return list(self.config.symbols)
+        newest = max(self._latest_ts.values())
+        behind = [s for s in self.config.symbols if self._latest_ts.get(s) != newest]
+        return behind or list(self.config.symbols)
+
+    async def _check_evaluation_stall(self, missing: list[str]) -> None:
+        """Alert once per episode when the all-symbols gate stays shut too long.
+
+        One symbol whose bars stop arriving freezes the whole strategy: it keeps
+        running but never evaluates, rebalances or trades, which is otherwise
+        indistinguishable from "the strategy chose to do nothing".
+        """
+        # Only the merged-symbol session path has an all-symbols gate to watch.
+        if self._session is None:
+            return
+        now = datetime.now(UTC)
+        # A paused session, or a closed market, is not a stall — restart the clock.
+        if self._paused or (self._trading_hours and not self._trading_hours.is_market_open(now)):
+            self._last_gate_open_at = now
+            return
+        since = self._last_gate_open_at
+        if since is None:
+            return
+        stale_seconds = (now - since).total_seconds()
+        if stale_seconds < self.config.evaluation_stall_seconds or self._stall_alerted:
+            return
+
+        self._stall_alerted = True
+        record_evaluation_stall()
+        logger.warning(
+            "Evaluation stalled for execution %s: no complete bar set for %.0fs (waiting on %s)",
+            self.config.execution_id,
+            stale_seconds,
+            ", ".join(missing),
+        )
+        if self.alerts:
+            await self.alerts.on_evaluation_stalled(
+                tenant_id=self.config.tenant_id,
+                session_id=self.config.execution_id,
+                symbols=missing,
+                stale_seconds=stale_seconds,
+            )
+
+    async def _check_symbol_lifecycle(self) -> None:
+        """Flag subscribed symbols the broker stopped listing as active and tradable.
+
+        Nothing is force-closed: the session is marked degraded and the user is
+        alerted to decide, since liquidating a delisted holding is their call.
+        Each symbol is reported once.
+        """
+        if not self.alpaca_client or not self.config.symbol_lifecycle_check_enabled:
+            return
+
+        for symbol in self.config.symbols:
+            if symbol in self._halted_symbols:
+                continue
+            try:
+                asset = await self.alpaca_client.get_asset(symbol)
+            except Exception as e:
+                logger.warning("Asset status check failed for %s: %s", symbol, e)
+                continue
+            reason = asset_halt_reason(asset)
+            if reason is None:
+                continue
+
+            self._halted_symbols.add(symbol)
+            record_symbol_halt(reason)
+            logger.warning(
+                "Symbol %s is %s; marking execution %s degraded",
+                symbol,
+                halt_description(reason),
+                self.config.execution_id,
+            )
+            await self._mark_session_degraded(reason)
+            if self.alerts:
+                await self.alerts.on_symbol_not_tradable(
+                    tenant_id=self.config.tenant_id,
+                    session_id=self.config.execution_id,
+                    symbol=symbol,
+                    reason=reason,
+                    description=halt_description(reason),
+                )
+
+    async def _mark_session_degraded(self, reason: str) -> None:
+        """Persist the degradation marker on the session row for session reads.
+
+        Best-effort: the alert is the primary notification, so a write failure
+        must not take the runner down.
+        """
+        from llamatrade_db import get_session_maker
+        from llamatrade_db.models.trading import TradingSession
+        from llamatrade_db.session import bind_tenant_guc
+
+        symbols = sorted(self._halted_symbols)
+        marker = SessionDegradation(
+            reason=reason,
+            symbols=symbols,
+            detail=f"{', '.join(symbols)} {halt_description(reason)}",
+            detected_at=datetime.now(UTC),
+        )
+        try:
+            async with get_session_maker()() as db:
+                bind_tenant_guc(db, self.config.tenant_id)
+                session = await db.scalar(
+                    select(TradingSession).where(
+                        TradingSession.id == self.config.execution_id,
+                        TradingSession.tenant_id == self.config.tenant_id,
+                    )
+                )
+                if session is None:
+                    return
+                session.config = {
+                    **(session.config or {}),
+                    SESSION_DEGRADED_KEY: marker.model_dump(mode="json"),
+                }
+                await db.commit()
+        except Exception as e:
+            logger.warning(
+                "Failed to persist degraded marker for execution %s: %s",
+                self.config.execution_id,
+                e,
+            )
+
     async def _process_signal(self, signal: Signal) -> None:
         """Process a trading signal."""
         logger.info(f"Signal: {signal.type} {signal.quantity} {signal.symbol}")
@@ -742,8 +980,7 @@ class StrategyRunner:
             logger.warning(f"Circuit breaker triggered, rejecting signal for {signal.symbol}")
             return
 
-        # Ledger accounting is long-only: lots have no short side yet, so a
-        # short would be silently miscounted. Reject rather than corrupt.
+        # Ledger accounting is long-only: lots have no short side, so a short would be silently miscounted — reject rather than corrupt.
         if signal.type in ("short", "cover") and self.config.sleeve_id is not None:
             logger.warning(
                 f"Rejecting {signal.type} signal for {signal.symbol}: "
@@ -752,8 +989,7 @@ class StrategyRunner:
             record_strategy_error("short_unsupported_for_sleeve")
             return
 
-        # Sleeve free-cash fit: scale buys down to what the sleeve can afford
-        # rather than overdraw (mirrors portfolio sizing.fit_to_free_cash).
+        # Sleeve free-cash fit: scale buys down to what the sleeve can afford rather than overdraw (mirrors portfolio sizing.fit_to_free_cash).
         if signal.type in ("buy", "cover") and self._free_cash is not None and signal.price > 0:
             affordable_qty = self._free_cash / signal.price
             if affordable_qty <= 0:
@@ -766,19 +1002,43 @@ class StrategyRunner:
                 )
                 signal.quantity = affordable_qty
 
-        # Convert signal to order
+        # Round to a tradable share increment (shared sizer) so live matches a quantizing backtest, then re-check the notional floor since rounding can drop an order below the broker minimum.
+        rounded = Decimal(
+            str(
+                quantize_quantity(
+                    float(signal.quantity),
+                    fractional=self.config.fractional_shares,
+                    decimals=self.config.share_decimals,
+                )
+            )
+        )
+        if rounded <= 0:
+            logger.info(f"Skipping {signal.type} {signal.symbol}: rounds to zero shares")
+            record_sub_notional_skips(1)
+            return
+        if signal.price > 0 and rounded * signal.price < self.config.min_order_notional:
+            logger.info(
+                f"Skipping {signal.type} {signal.symbol}: notional "
+                f"${rounded * signal.price:.2f} below floor ${self.config.min_order_notional:.2f}"
+            )
+            record_sub_notional_skips(1)
+            return
+        signal.quantity = rounded
+
         order = self._signal_to_order(signal)
 
         # Submit order via the OrderExecutor (DB-backed, broker is source of truth).
         try:
-            # Run risk checks (submit_order also checks internally; this lets us
-            # raise a strategy-level alert before persisting an order).
+            # Single risk check with full context (sleeve + session), reusing the signal's evaluation price so no market-data RPC is needed; the result is passed into submit_order so it is not re-run there.
             risk_result = await self.risk_manager.check_order(
                 tenant_id=self.config.tenant_id,
                 symbol=signal.symbol,
                 side=signal.type,
                 qty=signal.quantity,
                 order_type="market",
+                session_id=self.config.execution_id,
+                sleeve_id=self.config.sleeve_id,
+                reference_price=signal.price if signal.price > 0 else None,
             )
 
             if not risk_result.passed:
@@ -798,13 +1058,13 @@ class StrategyRunner:
                     )
                 return
 
-            # signal_timestamp makes the client_order_id deterministic, so a
-            # retry after a crash collapses onto the same broker order.
+            # signal_timestamp makes the client_order_id deterministic, so a retry after a crash collapses onto the same broker order.
             result = await self.order_executor.submit_order(
                 tenant_id=self.config.tenant_id,
                 session_id=self.config.execution_id,
                 order=order,
                 signal_timestamp=signal.timestamp,
+                risk_result=risk_result,
             )
             self._orders_submitted += 1
             logger.info(f"Order submitted: {result.id} status={result.status}")
@@ -819,12 +1079,11 @@ class StrategyRunner:
             logger.error(f"Order submission failed: {e}")
             self._orders_rejected += 1
             record_strategy_error("order_submission")
-            # Record error in circuit breaker
             await self._circuit_breaker.record_order_error(str(e))
 
     def _signal_to_order(self, signal: Signal) -> OrderCreate:
         """Convert a signal to an order request."""
-        side = ORDER_SIDE_BUY if signal.type in ("buy", "cover") else ORDER_SIDE_SELL
+        side = signal_type_to_order_side(signal.type)
 
         return OrderCreate(
             symbol=signal.symbol,
@@ -836,98 +1095,6 @@ class StrategyRunner:
             account_id=self.config.account_id,
             est_price=signal.price if signal.price > 0 else None,
         )
-
-    async def _update_position(self, signal: Signal) -> None:
-        """Update in-memory position tracking after a signal.
-
-        The live runner reconciles positions from broker fills (the trade
-        stream); this helper maintains the same in-memory projection for
-        synchronous callers and tests.
-        """
-        symbol = signal.symbol
-
-        if signal.type == "buy":
-            self._positions[symbol] = RunnerPosition(
-                symbol=symbol,
-                side="long",
-                quantity=signal.quantity,
-                entry_price=signal.price,
-                entry_date=signal.timestamp,
-            )
-            # Send position opened alert
-            if self.alerts:
-                await self.alerts.on_position_opened(
-                    tenant_id=self.config.tenant_id,
-                    session_id=self.config.execution_id,
-                    symbol=symbol,
-                    side="long",
-                    qty=float(signal.quantity),
-                    price=float(signal.price),
-                )
-
-        elif signal.type == "sell":
-            old_position = self._positions.get(symbol)
-            if symbol in self._positions:
-                del self._positions[symbol]
-            # Send position closed alert and record trade in circuit breaker
-            if old_position:
-                pnl = _realized_pnl(
-                    entry_price=old_position.entry_price,
-                    exit_price=signal.price,
-                    qty=old_position.quantity,
-                    is_long=True,
-                )
-                await self._circuit_breaker.record_trade(is_win=pnl >= 0, pnl=pnl)
-                if self.alerts:
-                    await self.alerts.on_position_closed(
-                        tenant_id=self.config.tenant_id,
-                        session_id=self.config.execution_id,
-                        symbol=symbol,
-                        qty=float(old_position.quantity),
-                        pnl=float(pnl),
-                    )
-
-        elif signal.type == "short":
-            self._positions[symbol] = RunnerPosition(
-                symbol=symbol,
-                side="short",
-                quantity=signal.quantity,
-                entry_price=signal.price,
-                entry_date=signal.timestamp,
-            )
-            # Send position opened alert
-            if self.alerts:
-                await self.alerts.on_position_opened(
-                    tenant_id=self.config.tenant_id,
-                    session_id=self.config.execution_id,
-                    symbol=symbol,
-                    side="short",
-                    qty=float(signal.quantity),
-                    price=float(signal.price),
-                )
-
-        elif signal.type == "cover":
-            old_position = self._positions.get(symbol)
-            if symbol in self._positions:
-                del self._positions[symbol]
-            # Send position closed alert and record trade in circuit breaker
-            if old_position:
-                # For short: profit when price goes down
-                pnl = _realized_pnl(
-                    entry_price=old_position.entry_price,
-                    exit_price=signal.price,
-                    qty=old_position.quantity,
-                    is_long=False,
-                )
-                await self._circuit_breaker.record_trade(is_win=pnl >= 0, pnl=pnl)
-                if self.alerts:
-                    await self.alerts.on_position_closed(
-                        tenant_id=self.config.tenant_id,
-                        session_id=self.config.execution_id,
-                        symbol=symbol,
-                        qty=float(old_position.quantity),
-                        pnl=float(pnl),
-                    )
 
     def set_equity(self, equity: Decimal) -> None:
         """Update equity value (called by external sync)."""
@@ -958,20 +1125,16 @@ class StrategyRunner:
             self._equity = account.equity
             logger.debug(f"Synced equity: ${self._equity:,.2f}")
 
-            # Update circuit breaker with current equity
             self._circuit_breaker.update_equity(self._equity)
 
-            # Perform periodic circuit breaker health check
             if not self._circuit_breaker.is_triggered:
                 triggered = await self._circuit_breaker.check_thresholds()
                 if triggered:
                     logger.warning("Circuit breaker triggered during equity sync health check")
-                    # Pause the runner when circuit breaker triggers
                     self.pause()
 
         except Exception as e:
             logger.warning(f"Failed to sync equity: {e}")
-            # Record API error in circuit breaker
             await self._circuit_breaker.record_api_error(str(e))
 
     async def _sync_sleeve_equity(self) -> bool:
@@ -994,9 +1157,7 @@ class StrategyRunner:
             await self._circuit_breaker.record_api_error(str(e))
             return True  # handled (do NOT fall back to whole-account equity)
 
-        # The sleeve was retired (stop/archive). Stop trading this session — its
-        # holdings have been re-homed, so there is nothing left to manage. The
-        # loops all honor _running and wind down on their next iteration.
+        # Sleeve retired (stop/archive): holdings are re-homed, nothing left to manage — stop this session (loops honor _running and wind down next iteration).
         from llamatrade_proto.generated.ledger_pb2 import SLEEVE_STATUS_CLOSED
 
         if detail.sleeve.status == SLEEVE_STATUS_CLOSED:
@@ -1028,19 +1189,27 @@ class StrategyRunner:
         return True
 
     async def _equity_sync_loop(self) -> None:
-        """Periodically sync equity from Alpaca (every 60 seconds)."""
+        """Periodically sync equity, watch the evaluation gate, and drain session counters.
+
+        The stall check rides this loop as well as the bar path, so a feed that
+        goes completely silent (no bars at all) is still reported. The counter
+        drain rides it because the runtime loop has no per-evaluation runner hook.
+        """
         while self._running:
             await asyncio.sleep(60)
             if self._running:
                 await self._sync_equity()
+                await self._check_evaluation_stall(self._stalled_symbols())
+                self._drain_session_counters()
 
     async def _position_sync_loop(self) -> None:
-        """Periodically reconcile positions with Alpaca."""
+        """Periodically reconcile positions and re-check symbol tradability."""
         interval = self.config.position_reconciliation_interval_seconds
         while self._running:
             await asyncio.sleep(interval)
             if self._running:
                 await self._sync_positions()
+                await self._check_symbol_lifecycle()
 
     async def _ledger_republish_loop(self) -> None:
         """Proactively re-emit ledger events for recently-terminal orders (4A drain)."""
@@ -1060,36 +1229,88 @@ class StrategyRunner:
                 logger.warning("Periodic ledger re-publish failed: %s", e)
 
     async def _trade_stream_loop(self) -> None:
-        """Process trade updates from Alpaca for event-driven position management.
+        """Supervise the trade-updates stream for the runner's lifetime.
 
-        This loop receives fill events and updates positions based on actual
-        broker fills rather than optimistic assumptions. This ensures position
-        state matches broker reality.
+        Fills are the source of truth for position state, so the fill feed must
+        never end silently. The client reconnects on transient drops, but after
+        it exhausts its own attempts ``stream()`` returns normally — the async
+        ``for`` would then end with no exception and never restart. This loop
+        treats generator exhaustion (and any crash) as a fault: it alerts, backs
+        off, rebuilds the client (resetting its attempt counter), and resumes, so
+        a multi-minute outage degrades to reconnection latency rather than the
+        runner trading blind while the bar loop keeps submitting orders.
         """
-        logger.info("Starting trade stream processing loop")
+        logger.info("Starting trade stream supervisor loop")
+        backoff = _TRADE_STREAM_RESTART_BASE_DELAY_S
+        while self._running:
+            try:
+                async for event in self.trade_stream.stream():
+                    if not self._running:
+                        return
+                    backoff = _TRADE_STREAM_RESTART_BASE_DELAY_S  # healthy feed
+                    record_trade_stream_event(event.event_type.value)
+                    try:
+                        await self._handle_trade_event(event)
+                    except Exception as e:
+                        logger.error(f"Error handling trade event: {e}")
+                        record_strategy_error("trade_event_processing")
+            except asyncio.CancelledError:
+                logger.info("Trade stream loop cancelled")
+                return
+            except Exception as e:
+                logger.error(f"Trade stream loop error: {e}")
 
-        try:
-            async for event in self.trade_stream.stream():
-                if not self._running:
-                    break
+            if not self._running:
+                return
 
-                record_trade_stream_event(event.event_type.value)
-                try:
-                    await self._handle_trade_event(event)
-                except Exception as e:
-                    logger.error(f"Error handling trade event: {e}")
-                    record_strategy_error("trade_event_processing")
-
-        except asyncio.CancelledError:
-            logger.info("Trade stream loop cancelled")
-        except Exception as e:
-            logger.error(f"Trade stream loop error: {e}")
+            # Feed ended/crashed while the session is live and fills stopped arriving: alert, back off, rebuild the client, retry.
+            logger.error(
+                "Trade stream ended for execution %s; fills are not being received. "
+                "Restarting in %.0fs",
+                self.config.execution_id,
+                backoff,
+            )
+            record_strategy_error("trade_stream_exhausted")
             if self.alerts:
-                await self.alerts.on_strategy_error(
+                await self.alerts.on_connection_lost(
                     tenant_id=self.config.tenant_id,
                     session_id=self.config.execution_id,
-                    error=f"Trade stream error: {e}",
+                    service="trade_stream",
                 )
+            try:
+                await asyncio.sleep(backoff)
+            except asyncio.CancelledError:
+                return
+            backoff = min(backoff * 2, _TRADE_STREAM_RESTART_MAX_DELAY_S)
+            if not self._running:
+                return
+            await self._rebuild_trade_stream()
+        logger.info("Trade stream supervisor loop stopped")
+
+    async def _rebuild_trade_stream(self) -> None:
+        """Replace the trade-update client with a fresh one, then reconnect+subscribe.
+
+        A fresh client (from the factory) starts with a zeroed reconnect-attempt
+        counter, so the next ``stream()`` reconnects from scratch instead of being
+        stuck past the give-up threshold. With no factory (tests) the existing
+        client is reconnected — ``connect()`` also resets the counter on success.
+        Best-effort: a failure here is retried on the next supervisor pass.
+        """
+        record_trade_stream_reconnect()
+        try:
+            if self._trade_stream_factory is not None:
+                with contextlib.suppress(Exception):
+                    await self.trade_stream.disconnect()
+                self.trade_stream = self._trade_stream_factory()
+            if not self.trade_stream.connected and not await self.trade_stream.connect():
+                logger.warning("Trade stream reconnect failed; will retry")
+                return
+            if not await self.trade_stream.subscribe():
+                logger.warning("Trade stream re-subscribe failed; will retry")
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            logger.warning("Trade stream rebuild failed: %s", e)
 
     async def _handle_trade_event(self, event: TradeEvent) -> None:
         """Handle a trade update event from Alpaca.
@@ -1097,7 +1318,6 @@ class StrategyRunner:
         Args:
             event: The trade event to process
         """
-        # Only process events for symbols we're tracking
         if event.symbol not in self.config.symbols:
             return
 
@@ -1116,9 +1336,7 @@ class StrategyRunner:
         elif event.event_type == TradeEventType.REJECTED:
             await self._handle_order_rejected(event)
 
-        # Ledger emission: one fill payload per order, at terminal state only
-        # (the builder returns None for everything else). Never lets a publish
-        # failure break trade-event processing.
+        # Ledger emission: one fill payload per order at terminal state only (builder returns None otherwise); a publish failure never breaks trade-event processing.
         await self._publish_ledger_fill(event)
 
     async def _publish_ledger_fill(self, event: TradeEvent) -> None:
@@ -1168,8 +1386,7 @@ class StrategyRunner:
         except Exception as e:
             logger.error(f"Failed to publish ledger event for {event.client_order_id}: {e}")
 
-        # A terminal event changes sleeve cash/lots — drop the cached state so
-        # the next equity sync (and free-cash fit) sees fresh numbers.
+        # A terminal event changes sleeve cash/lots — drop the cached state so the next equity sync (and free-cash fit) sees fresh numbers.
         if payload is not None and self.portfolio_client is not None:
             self.portfolio_client.invalidate(self.config.sleeve_id)
 
@@ -1188,18 +1405,21 @@ class StrategyRunner:
         fill = event.fill
         symbol = fill.symbol
         side = fill.side
-        fill_qty = fill.fill_qty
         fill_price = fill.fill_price
+
+        fill_qty = self._unapplied_fill_delta(event.event_type, fill)
+        if fill_qty <= 0:
+            logger.info(
+                f"Skipping duplicate/out-of-order {event.event_type.value} event "
+                f"for order {fill.client_order_id} ({symbol})"
+            )
+            return
 
         logger.info(f"Processing fill: {side} {fill_qty} {symbol} @ ${fill_price:.2f}")
 
-        # Drop any pending-order bookkeeping for this fill; position state below
-        # is derived from the broker fill, the source of truth. Retain the
-        # originating signal so we can compare the fill against its pre-trade
-        # estimated price (slippage) once the fill is processed.
+        # Drop pending-order bookkeeping for this fill; position state below derives from the broker fill (source of truth). Keep the originating signal to measure slippage against its pre-trade price.
         pending_signal = self._pending_orders.pop(fill.client_order_id, None)
 
-        # Update position based on fill
         old_position = self._positions.get(symbol)
 
         if side == "buy":
@@ -1330,14 +1550,11 @@ class StrategyRunner:
                         price=float(fill_price),
                     )
 
-        # Record metrics
         self._fills_processed += 1
         duration = time.perf_counter() - start_time
         record_fill_processed(side=side, fill_type="full", duration=duration)
 
-        # Slippage: compare the broker fill against the signal's pre-trade
-        # estimate (its market price at signal time). Only when we still have
-        # the originating signal and it carried a usable reference price.
+        # Slippage: compare the broker fill against the signal's pre-trade estimate, only when we still have the originating signal with a usable reference price.
         if pending_signal is not None:
             record_slippage(
                 side=side, fill_price=float(fill_price), est_price=float(pending_signal.price)
@@ -1345,15 +1562,40 @@ class StrategyRunner:
 
         logger.info(f"Fill processed: {symbol} now {self._positions.get(symbol, 'flat')}")
 
+    def _unapplied_fill_delta(self, event_type: TradeEventType, fill: FillData) -> Decimal:
+        """Portion of the order's cumulative filled qty not yet applied locally.
+
+        Tracks cumulative filled qty per client_order_id so a partial followed by
+        the terminal fill books only the remainder, and a duplicate or
+        out-of-order event yields a non-positive delta (the caller skips it).
+        Terminal fills clear the entry and remember the order id so a replayed
+        event can never re-apply.
+        """
+        coid = fill.client_order_id
+        if coid in self._terminal_order_ids:
+            return Decimal("0")
+        applied = self._applied_fill_qty.get(coid, Decimal("0"))
+        # A stream that doesn't report cumulative qty degrades to per-event booking.
+        cumulative = fill.total_filled_qty if fill.total_filled_qty > 0 else applied + fill.fill_qty
+        if event_type is TradeEventType.FILL:
+            self._applied_fill_qty.pop(coid, None)
+            self._terminal_order_ids.append(coid)
+        elif cumulative > applied:
+            self._applied_fill_qty[coid] = cumulative
+        return cumulative - applied
+
+    def _clear_fill_tracking(self, client_order_id: str) -> None:
+        """Drop per-order fill tracking at a terminal (cancel/expiry/reject) event."""
+        self._applied_fill_qty.pop(client_order_id, None)
+        self._terminal_order_ids.append(client_order_id)
+
     async def _handle_partial_fill_event(self, event: TradeEvent) -> None:
         """Handle a partial fill event.
 
         For partial fills, we update position incrementally.
         """
-        # Treat partial fills similarly to full fills for position tracking
         await self._handle_fill_event(event)
 
-        # Log that this was a partial fill
         if event.fill:
             logger.info(
                 f"Partial fill: {event.fill.fill_qty}/{event.qty} "
@@ -1365,8 +1607,8 @@ class StrategyRunner:
 
         Remove from pending orders - no position update needed.
         """
-        # Remove from pending orders if we were tracking it
         signal = self._pending_orders.pop(event.client_order_id, None)
+        self._clear_fill_tracking(event.client_order_id)
         if signal:
             logger.info(f"Order canceled: {event.symbol} {signal.type} {signal.quantity}")
 
@@ -1376,6 +1618,7 @@ class StrategyRunner:
         Remove from pending orders and alert.
         """
         signal = self._pending_orders.pop(event.client_order_id, None)
+        self._clear_fill_tracking(event.client_order_id)
         if signal:
             logger.warning(f"Order rejected: {event.symbol} {signal.type} {signal.quantity}")
             self._orders_rejected += 1
@@ -1414,18 +1657,14 @@ class StrategyRunner:
         start_time = time.perf_counter()
 
         try:
-            # Fetch positions from Alpaca
             broker_positions = await self.alpaca_client.get_positions()
 
-            # Build lookup by symbol
             broker_by_symbol = {p.symbol: p for p in broker_positions}
             local_symbols = set(self._positions.keys())
             broker_symbols = set(broker_by_symbol.keys())
 
-            # Track symbols relevant to this strategy
             strategy_symbols = set(self.config.symbols)
 
-            # Check for discrepancies
             all_ok = True
 
             # 1. Positions we track locally but broker doesn't have
@@ -1686,7 +1925,6 @@ class StrategyRunner:
             record_position_reconciliation(result="error", duration=duration)
             logger.error(f"Failed to reconcile positions: {e}")
 
-            # Track error count
             self._reconciliation_error_count += 1
 
             # Alert if 3+ consecutive failures
@@ -1697,7 +1935,6 @@ class StrategyRunner:
                     error=f"Position reconciliation failing ({self._reconciliation_error_count} consecutive errors): {e}",
                 )
 
-            # Record API error in circuit breaker
             await self._circuit_breaker.record_api_error(str(e))
 
 
@@ -1721,7 +1958,7 @@ class RunnerManager:
         self,
         config: RunnerConfig,
         strategy_fn: StrategyFunction | None,
-        bar_stream: BarStreamClient | MockBarStream,
+        bar_stream: BarStream,
         trade_stream: TradingStreamClient | MockTradeStream,
         order_executor: OrderExecutor,
         risk_manager: RiskManager,
@@ -1732,6 +1969,7 @@ class RunnerManager:
         ledger_publisher: TradingEventPublisher | None = None,
         portfolio_client: PortfolioLedgerClient | None = None,
         session: StrategySession | None = None,
+        trade_stream_factory: Callable[[], TradingStreamClient | MockTradeStream] | None = None,
     ) -> StrategyRunner:
         """Create and start a new runner.
 
@@ -1769,15 +2007,14 @@ class RunnerManager:
             ledger_publisher=ledger_publisher,
             portfolio_client=portfolio_client,
             session=session,
+            trade_stream_factory=trade_stream_factory,
         )
 
         self._runners[execution_id] = runner
 
-        # Start in background task
         task = asyncio.create_task(runner.start())
         self._tasks[execution_id] = task
 
-        # Update active runners metric
         update_runner_gauge(len(self.active_runners))
 
         return runner
@@ -1790,7 +2027,6 @@ class RunnerManager:
 
         await runner.stop()
 
-        # Cancel task
         task = self._tasks.get(execution_id)
         if task:
             task.cancel()
@@ -1802,7 +2038,6 @@ class RunnerManager:
         del self._runners[execution_id]
         del self._tasks[execution_id]
 
-        # Update active runners metric
         update_runner_gauge(len(self.active_runners))
 
         return True

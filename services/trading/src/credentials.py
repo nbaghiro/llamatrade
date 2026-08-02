@@ -14,7 +14,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from llamatrade_common.utils import decrypt_value
+from llamatrade_common.utils import async_decrypt_value
 from llamatrade_db.models.auth import AlpacaCredentials
 from llamatrade_db.models.trading import TradingSession
 
@@ -51,14 +51,15 @@ async def resolve_credentials(
         return DecryptedCredentials(
             id=creds.id,
             name=creds.name,
-            access_token=decrypt_value(creds.access_token_encrypted or ""),
+            access_token=await async_decrypt_value(creds.access_token_encrypted or ""),
             is_paper=creds.is_paper,
         )
+    # Two decrypts per resolution, run per order placement; the seam is unblocked here, not cached.
     return DecryptedCredentials(
         id=creds.id,
         name=creds.name,
-        api_key=decrypt_value(creds.api_key_encrypted or ""),
-        api_secret=decrypt_value(creds.api_secret_encrypted or ""),
+        api_key=await async_decrypt_value(creds.api_key_encrypted or ""),
+        api_secret=await async_decrypt_value(creds.api_secret_encrypted or ""),
         is_paper=creds.is_paper,
     )
 

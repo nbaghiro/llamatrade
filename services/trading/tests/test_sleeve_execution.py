@@ -265,9 +265,37 @@ class TestSleeveBuyingPower:
 
     @pytest.mark.asyncio
     async def test_active_sleeve_sell_passes_without_cash_check(self) -> None:
+        # No symbol/qty supplied → the status gate passes, coverage is checked elsewhere.
         risk = self._risk(_sleeve_detail(balance="0"))
         violation = await risk._check_sleeve(TENANT_ID, SLEEVE_ID, "sell", Decimal("1e9"))
         assert violation is None
+
+    @pytest.mark.asyncio
+    async def test_sell_within_holdings_passes(self) -> None:
+        risk = self._risk(_sleeve_detail(lots=[_lot(symbol="SPY", qty="50")]))
+        violation = await risk._check_sleeve(
+            TENANT_ID, SLEEVE_ID, "sell", Decimal("0"), symbol="SPY", qty=Decimal("30")
+        )
+        assert violation is None
+
+    @pytest.mark.asyncio
+    async def test_sell_exceeding_holdings_violates(self) -> None:
+        risk = self._risk(_sleeve_detail(lots=[_lot(symbol="SPY", qty="50")]))
+        violation = await risk._check_sleeve(
+            TENANT_ID, SLEEVE_ID, "sell", Decimal("0"), symbol="SPY", qty=Decimal("60")
+        )
+        assert violation is not None
+        assert "exceeds sleeve holdings" in violation
+
+    @pytest.mark.asyncio
+    async def test_sell_of_unheld_symbol_violates(self) -> None:
+        # The F5 freeze trigger: a sell of a symbol the target sleeve does not hold.
+        risk = self._risk(_sleeve_detail(lots=[]))
+        violation = await risk._check_sleeve(
+            TENANT_ID, SLEEVE_ID, "sell", Decimal("0"), symbol="AAPL", qty=Decimal("100")
+        )
+        assert violation is not None
+        assert "exceeds sleeve holdings of 0" in violation
 
     @pytest.mark.asyncio
     async def test_closed_sleeve_blocks_buys(self) -> None:

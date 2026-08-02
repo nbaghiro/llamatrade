@@ -13,7 +13,15 @@ from datetime import datetime
 from typing import Protocol
 
 from llamatrade_alpaca import StreamBar as BarData
-from llamatrade_runtime import Bar, ExecutionOutcome, Holding, IntendedOrder, Portfolio
+from llamatrade_runtime import (
+    Bar,
+    ExecutionOutcome,
+    FormingBarAggregator,
+    FormingBarFeed,
+    Holding,
+    IntendedOrder,
+    Portfolio,
+)
 
 # Submit a sized order through the runner's hardened path: (side, symbol, quantity, price, ts).
 SubmitOrder = Callable[[str, str, float, float, datetime], Awaitable[None]]
@@ -37,14 +45,13 @@ def to_compiler_bar(bar: BarData) -> Bar:
     )
 
 
-class StreamBarFeed:
-    """Async ``BarFeed`` over the live bar stream.
+class StreamBarFeed(FormingBarFeed):
+    """``FormingBarFeed`` over the Alpaca-shaped live bar stream.
 
-    Buffers the latest bar per symbol and yields a complete ``{symbol: Bar}`` snapshot once every
-    subscribed symbol has a bar for a period (evaluated at most once per period) and the ``gate``
-    (market-open + circuit-breaker) allows trading — mirroring the runner's ``_evaluate_session``.
-    ``on_bar`` runs the runner's per-bar side effects (history + latency metric); ``is_running``
-    breaks the loop when the session stops.
+    Translation only: each streamed bar becomes ``(symbol, Bar)`` for the shared feed, which folds
+    the one-minute stream into the strategy's period grid, applies the all-symbols/once-per-period
+    gate, and yields the snapshot. ``on_bar`` runs the runner's per-bar side effects (history +
+    latency metric) on every raw bar, including symbols the strategy does not subscribe to.
     """
 
     def __init__(
@@ -52,50 +59,26 @@ class StreamBarFeed:
         bar_stream: BarStream,
         symbols: Sequence[str],
         *,
+        aggregator: FormingBarAggregator | None = None,
         gate: Callable[[datetime], bool] | None = None,
         on_bar: Callable[[BarData], None] | None = None,
         is_running: Callable[[], bool] | None = None,
     ) -> None:
         self._bar_stream = bar_stream
-        self._symbols = list(symbols)
-        self._gate = gate
         self._on_bar = on_bar
-        self._is_running = is_running
-        self._latest: dict[str, Bar] = {}
-        self._latest_ts: dict[str, datetime] = {}
-        self._last_evaluated_ts: datetime | None = None
+        super().__init__(
+            self._translated(),
+            symbols,
+            aggregator=aggregator,
+            gate=gate,
+            is_running=is_running,
+        )
 
-    @property
-    def total_ticks(self) -> int | None:
-        return None  # unbounded live feed
-
-    def __aiter__(self) -> AsyncIterator[tuple[datetime, dict[str, Bar], bool]]:
-        return self._iterate()
-
-    async def _iterate(self) -> AsyncIterator[tuple[datetime, dict[str, Bar], bool]]:
+    async def _translated(self) -> AsyncIterator[tuple[str, Bar]]:
         async for bar in self._bar_stream.stream():
-            if self._is_running is not None and not self._is_running():
-                break
             if self._on_bar is not None:
                 self._on_bar(bar)
-            if bar.symbol not in self._symbols:
-                continue
-
-            self._latest[bar.symbol] = to_compiler_bar(bar)
-            self._latest_ts[bar.symbol] = bar.timestamp
-            ts = bar.timestamp
-
-            # Wait until every subscribed symbol has this period's bar, evaluate once per period.
-            if any(self._latest_ts.get(s) != ts for s in self._symbols):
-                continue
-            if ts == self._last_evaluated_ts:
-                continue
-            self._last_evaluated_ts = ts
-
-            if self._gate is not None and not self._gate(ts):
-                continue
-
-            yield ts, dict(self._latest), False
+            yield bar.symbol, to_compiler_bar(bar)
 
 
 class LedgerPortfolio(Portfolio):

@@ -454,16 +454,3 @@ class TestMapAlpacaStatus:
         """Regression: Alpaca 'canceled' (one L) maps to internal CANCELLED (two L)."""
         assert AlpacaOrderStatus.CANCELED.value == "canceled"
         assert OrderSubmissionMixin._map_alpaca_status("canceled") == ORDER_STATUS_CANCELLED
-
-
-class TestGetCurrentUtcTime:
-    """Tests for _get_current_utc_time method."""
-
-    def test_returns_utc_datetime(
-        self,
-        executor: MockExecutor,
-    ) -> None:
-        """Test that UTC datetime is returned."""
-
-        result = executor._get_current_utc_time()
-        assert result.tzinfo == UTC

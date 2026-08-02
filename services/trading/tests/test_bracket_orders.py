@@ -593,72 +593,6 @@ class TestSyncWithBracketFills:
         assert len(orders_created) == 2
 
 
-class TestGetOrderWithBracketInfo:
-    """Tests for get_order with bracket info included."""
-
-    async def test_get_order_includes_bracket_ids(
-        self,
-        bracket_order_executor,
-        mock_db,
-        tenant_id,
-        order_id,
-    ):
-        """Test that get_order can include bracket order IDs."""
-        sl_order_id = uuid4()
-        tp_order_id = uuid4()
-
-        # Parent order
-        parent_order = MagicMock(spec=Order)
-        parent_order.id = order_id
-        parent_order.tenant_id = tenant_id
-        parent_order.session_id = uuid4()
-        parent_order.alpaca_order_id = "alpaca-123"
-        parent_order.client_order_id = "client-123"
-        parent_order.symbol = "AAPL"
-        parent_order.side = ORDER_SIDE_BUY
-        parent_order.qty = Decimal("10")
-        parent_order.order_type = ORDER_TYPE_MARKET
-        parent_order.limit_price = None
-        parent_order.stop_price = None
-        parent_order.status = ORDER_STATUS_FILLED
-        parent_order.filled_qty = Decimal("10")
-        parent_order.filled_avg_price = Decimal("150.0")
-        parent_order.submitted_at = None
-        parent_order.created_at = MagicMock()
-        parent_order.filled_at = None
-        parent_order.stop_loss_price = Decimal("145.0")
-        parent_order.take_profit_price = Decimal("165.0")
-        parent_order.parent_order_id = None
-        parent_order.bracket_type = None
-
-        # Bracket orders
-        sl_order = MagicMock(spec=Order)
-        sl_order.id = sl_order_id
-        sl_order.bracket_type = BracketType.STOP_LOSS
-
-        tp_order = MagicMock(spec=Order)
-        tp_order.id = tp_order_id
-        tp_order.bracket_type = BracketType.TAKE_PROFIT
-
-        # Mock queries
-        parent_result = MagicMock()
-        parent_result.scalar_one_or_none.return_value = parent_order
-
-        bracket_result = MagicMock()
-        bracket_result.scalars.return_value.all.return_value = [sl_order, tp_order]
-
-        mock_db.execute = AsyncMock(side_effect=[parent_result, bracket_result])
-
-        # get_order returns the parent Order row directly (proto mapping happens in the servicer).
-        result = await bracket_order_executor.get_order(order_id=order_id, tenant_id=tenant_id)
-        assert result is parent_order
-
-        # Bracket children resolve via _get_bracket_orders (used by fill/cancel handling).
-        sl_order_row, tp_order_row = await bracket_order_executor._get_bracket_orders(order_id)
-        assert sl_order_row is not None and sl_order_row.id == sl_order_id
-        assert tp_order_row is not None and tp_order_row.id == tp_order_id
-
-
 class TestBracketOrderValidation:
     """Tests for bracket order validation."""
 
@@ -1003,8 +937,11 @@ class TestOCORaceConditionHandling:
 
         await bracket_order_executor._handle_bracket_fill(sl_order)
 
-        # Verify SELECT FOR UPDATE was used in the query
-        call_args = mock_db.execute.call_args
-        stmt = call_args[0][0]
-        # The statement should have with_for_update applied
-        assert hasattr(stmt, "_for_update_arg") or "FOR UPDATE" in str(stmt)
+        # The sibling query must actually lock: with_for_update() populates
+        # _for_update_arg (None on a plain select) and compiles to FOR UPDATE.
+        stmt = mock_db.execute.call_args.args[0]
+        assert stmt._for_update_arg is not None
+        from sqlalchemy.dialects import postgresql
+
+        compiled_sql = str(stmt.compile(dialect=postgresql.dialect()))
+        assert "FOR UPDATE" in compiled_sql

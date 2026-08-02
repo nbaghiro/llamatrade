@@ -1,7 +1,7 @@
 """Tests for the live-execution runtime adapters (feed buffering/gating, execution delegation).
 
-These lock the one piece that reimplements runner logic — ``StreamBarFeed``'s per-period
-all-symbols buffering + once-per-period + gate — against ``_evaluate_session``'s semantics.
+These lock ``StreamBarFeed``'s per-period all-symbols buffering + once-per-period + gate against
+``_evaluate_session``'s semantics, and its translation of stream bars into period bars.
 """
 
 from collections.abc import AsyncIterator
@@ -82,6 +82,24 @@ async def test_feed_on_bar_sees_all_bars_but_snapshot_excludes_untracked() -> No
     assert seen == ["SPY", "XXX", "QQQ"]  # on_bar hook sees every raw bar (history/metrics)
     assert len(ticks) == 1
     assert set(ticks[0][1]) == {"SPY", "QQQ"}  # untracked XXX never enters the snapshot
+
+
+@pytest.mark.asyncio
+async def test_feed_snapshot_carries_folded_period_bars() -> None:
+    """Stream bars are folded into the strategy's period, not passed through one per minute."""
+    t0 = datetime(2024, 1, 2, 15, 0, tzinfo=UTC)
+    t1 = t0 + timedelta(minutes=1)
+    bars = [
+        _FakeBar("SPY", t0, open=100.0, high=101.0, low=99.0, close=100.5, volume=10),
+        _FakeBar("SPY", t1, open=100.5, high=104.0, low=100.0, close=103.0, volume=20),
+    ]
+    ticks = await _collect(StreamBarFeed(_FakeStream(bars), ["SPY"]))
+
+    assert len(ticks) == 2
+    first, second = ticks[0][1]["SPY"], ticks[1][1]["SPY"]
+    assert first.timestamp == second.timestamp  # one slot for the period
+    assert (second.open, second.high, second.low, second.close) == (100.0, 104.0, 99.0, 103.0)
+    assert second.volume == 30
 
 
 @pytest.mark.asyncio

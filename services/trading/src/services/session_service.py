@@ -7,6 +7,7 @@ from typing import Any
 from uuid import UUID
 
 from fastapi import Depends
+from pydantic import ValidationError
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -20,7 +21,7 @@ from llamatrade_proto.generated.common_pb2 import (
     EXECUTION_STATUS_STOPPED,
 )
 
-from src.models import SessionResponse
+from src.models import SESSION_DEGRADED_KEY, SessionDegradation, SessionResponse
 
 logger = logging.getLogger(__name__)
 
@@ -337,6 +338,22 @@ class SessionService:
             return None
         return detail.sleeve.realized_pnl
 
+    @staticmethod
+    def _degradation(s: TradingSession) -> SessionDegradation | None:
+        """Read the degradation marker the runner writes into the session config.
+
+        A marker written by an older/newer shape is ignored rather than failing
+        the read — the session itself is still perfectly readable.
+        """
+        raw: object = (s.config or {}).get(SESSION_DEGRADED_KEY)
+        if not isinstance(raw, dict):
+            return None
+        try:
+            return SessionDegradation.model_validate(raw)
+        except ValidationError:
+            logger.warning("Ignoring unreadable degradation marker on session %s", s.id)
+            return None
+
     async def _to_response_with_pnl(self, s: TradingSession) -> SessionResponse:
         """Convert session to response with P&L calculation.
 
@@ -363,6 +380,7 @@ class SessionService:
             name=s.name,
             sleeve_id=s.sleeve_id,
             account_id=s.account_id,
+            degraded=self._degradation(s),
         )
 
     def _to_response(self, s: TradingSession) -> SessionResponse:
@@ -383,6 +401,7 @@ class SessionService:
             name=s.name,
             sleeve_id=s.sleeve_id,
             account_id=s.account_id,
+            degraded=self._degradation(s),
         )
 
 

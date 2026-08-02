@@ -2,11 +2,14 @@
 
 from datetime import UTC, datetime
 from decimal import Decimal
+from typing import cast
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import UUID, uuid4
 
-import grpc.aio
 import pytest
+from connectrpc.code import Code
+from connectrpc.errors import ConnectError
+from connectrpc.request import RequestContext
 
 from llamatrade_proto.generated.trading_pb2 import (
     ORDER_SIDE_BUY,
@@ -30,34 +33,10 @@ TEST_ORDER_ID = UUID("55555555-5555-5555-5555-555555555555")
 pytestmark = pytest.mark.asyncio
 
 
-class MockServicerContext:
-    """Mock gRPC servicer context for testing."""
-
-    def __init__(self) -> None:
-        self.code = None
-        self.details = None
-        self._cancelled = False
-
-    async def abort(self, code, details: str) -> None:
-        """Mock abort that raises an exception."""
-        self.code = code
-        self.details = details
-        raise grpc.aio.AioRpcError(
-            code=code,
-            initial_metadata=grpc.aio.Metadata(),
-            trailing_metadata=grpc.aio.Metadata(),
-            details=details,
-            debug_error_string=None,
-        )
-
-    def cancelled(self) -> bool:
-        return self._cancelled
-
-
 @pytest.fixture
-def grpc_context() -> MockServicerContext:
-    """Create a mock gRPC context."""
-    return MockServicerContext()
+def grpc_context() -> RequestContext:
+    """Create a mock Connect request context."""
+    return cast(RequestContext, MagicMock(spec=RequestContext))
 
 
 @pytest.fixture
@@ -197,7 +176,7 @@ class TestSubmitOrder:
                 quantity=common_pb2.Decimal(value="10"),
             )
 
-            response = await trading_servicer.SubmitOrder(request, grpc_context)
+            response = await trading_servicer.submit_order(request, grpc_context)
 
             assert response.order.symbol == "AAPL"
             assert response.order.side == trading_pb2.ORDER_SIDE_BUY
@@ -227,7 +206,7 @@ class TestSubmitOrder:
                 limit_price=common_pb2.Decimal(value="150.50"),
             )
 
-            response = await trading_servicer.SubmitOrder(request, grpc_context)
+            response = await trading_servicer.submit_order(request, grpc_context)
 
             assert response.order.type == trading_pb2.ORDER_TYPE_LIMIT
 
@@ -255,10 +234,10 @@ class TestSubmitOrder:
                 quantity=common_pb2.Decimal(value="-10"),
             )
 
-            with pytest.raises(grpc.aio.AioRpcError) as exc_info:
-                await trading_servicer.SubmitOrder(request, grpc_context)
+            with pytest.raises(ConnectError) as exc_info:
+                await trading_servicer.submit_order(request, grpc_context)
 
-            assert exc_info.value.code() == grpc.StatusCode.INVALID_ARGUMENT
+            assert exc_info.value.code == Code.INVALID_ARGUMENT
 
     async def test_submit_order_attribution_failure_is_fail_loud(
         self, trading_servicer, grpc_context
@@ -290,11 +269,43 @@ class TestSubmitOrder:
                 type=trading_pb2.ORDER_TYPE_MARKET,
                 quantity=common_pb2.Decimal(value="10"),
             )
-            with pytest.raises(grpc.aio.AioRpcError) as exc_info:
-                await trading_servicer.SubmitOrder(request, grpc_context)
+            with pytest.raises(ConnectError) as exc_info:
+                await trading_servicer.submit_order(request, grpc_context)
 
-        assert exc_info.value.code() == grpc.StatusCode.INTERNAL
+        assert exc_info.value.code == Code.INTERNAL
         mock_executor.submit_order.assert_not_called()  # order never placed unattributed
+
+    async def test_submit_order_threads_symbol_and_side_to_attribution(
+        self, trading_servicer, grpc_context
+    ):
+        """A public manual sell threads symbol/side into the resolver so an
+        Unmanaged-only holding routes there instead of always falling back to Manual (F5)."""
+        from llamatrade_proto.generated import common_pb2, trading_pb2
+
+        mock_executor = create_mock_executor(submit_order_return=make_mock_order(side="SELL"))
+        resolver = AsyncMock(return_value=(None, None))
+
+        with (
+            patch(
+                "src.grpc.servicer.create_order_executor",
+                new=AsyncMock(return_value=mock_executor),
+            ),
+            patch("src.attribution.resolve_order_attribution", new=resolver),
+        ):
+            request = trading_pb2.SubmitOrderRequest(
+                context=common_pb2.TenantContext(
+                    tenant_id=str(TEST_TENANT_ID), user_id=str(TEST_USER_ID)
+                ),
+                session_id=str(TEST_SESSION_ID),
+                symbol="AAPL",
+                side=trading_pb2.ORDER_SIDE_SELL,
+                type=trading_pb2.ORDER_TYPE_MARKET,
+                quantity=common_pb2.Decimal(value="10"),
+            )
+            await trading_servicer.submit_order(request, grpc_context)
+
+        assert resolver.await_args.kwargs["symbol"] == "AAPL"
+        assert resolver.await_args.kwargs["side"] == "sell"
 
 
 class TestCancelOrder:
@@ -321,7 +332,7 @@ class TestCancelOrder:
                 order_id=str(TEST_ORDER_ID),
             )
 
-            response = await trading_servicer.CancelOrder(request, grpc_context)
+            response = await trading_servicer.cancel_order(request, grpc_context)
 
             assert response.order.status == trading_pb2.ORDER_STATUS_CANCELLED
             mock_executor.cancel_order.assert_called_once()
@@ -343,10 +354,10 @@ class TestCancelOrder:
                 order_id=str(TEST_ORDER_ID),
             )
 
-            with pytest.raises(grpc.aio.AioRpcError) as exc_info:
-                await trading_servicer.CancelOrder(request, grpc_context)
+            with pytest.raises(ConnectError) as exc_info:
+                await trading_servicer.cancel_order(request, grpc_context)
 
-            assert exc_info.value.code() == grpc.StatusCode.FAILED_PRECONDITION
+            assert exc_info.value.code == Code.FAILED_PRECONDITION
 
     async def test_cancel_order_uses_session_credentials(self, trading_servicer, grpc_context):
         """CancelOrder must build the executor for the order's OWN session so the
@@ -371,7 +382,7 @@ class TestCancelOrder:
                 order_id=str(TEST_ORDER_ID),
             )
 
-            await trading_servicer.CancelOrder(request, grpc_context)
+            await trading_servicer.cancel_order(request, grpc_context)
 
         # The cancelling executor must be created bound to the order's session
         # (per-tenant creds) — never with tenant_id alone, which falls back to
@@ -405,7 +416,7 @@ class TestGetOrder:
                 order_id=str(TEST_ORDER_ID),
             )
 
-            response = await trading_servicer.GetOrder(request, grpc_context)
+            response = await trading_servicer.get_order(request, grpc_context)
 
             assert response.order.id == str(TEST_ORDER_ID)
             assert response.order.symbol == "AAPL"
@@ -427,10 +438,10 @@ class TestGetOrder:
                 order_id=str(uuid4()),
             )
 
-            with pytest.raises(grpc.aio.AioRpcError) as exc_info:
-                await trading_servicer.GetOrder(request, grpc_context)
+            with pytest.raises(ConnectError) as exc_info:
+                await trading_servicer.get_order(request, grpc_context)
 
-            assert exc_info.value.code() == grpc.StatusCode.NOT_FOUND
+            assert exc_info.value.code == Code.NOT_FOUND
 
 
 class TestListOrders:
@@ -453,7 +464,7 @@ class TestListOrders:
                 session_id=str(TEST_SESSION_ID),
             )
 
-            response = await trading_servicer.ListOrders(request, grpc_context)
+            response = await trading_servicer.list_orders(request, grpc_context)
 
             assert len(response.orders) == 0
             assert response.pagination.total_items == 0
@@ -479,7 +490,7 @@ class TestListOrders:
                 session_id=str(TEST_SESSION_ID),
             )
 
-            response = await trading_servicer.ListOrders(request, grpc_context)
+            response = await trading_servicer.list_orders(request, grpc_context)
 
             assert len(response.orders) == 2
             assert response.pagination.total_items == 2
@@ -503,10 +514,88 @@ class TestListOrders:
                 statuses=[trading_pb2.ORDER_STATUS_FILLED],
             )
 
-            response = await trading_servicer.ListOrders(request, grpc_context)
+            response = await trading_servicer.list_orders(request, grpc_context)
 
             assert len(response.orders) == 1
             assert response.orders[0].status == trading_pb2.ORDER_STATUS_FILLED
+            assert mock_executor.list_orders.await_args.kwargs["status"] == (
+                trading_pb2.ORDER_STATUS_FILLED
+            )
+
+    async def test_list_orders_without_a_status_filter_queries_every_status(
+        self, trading_servicer, grpc_context
+    ):
+        """An unset filter keeps its skip-the-filter meaning."""
+        from llamatrade_proto.generated import common_pb2, trading_pb2
+
+        mock_executor = create_mock_executor(list_orders_return=([], 0))
+
+        with patch(
+            "src.grpc.servicer.create_order_executor", new=AsyncMock(return_value=mock_executor)
+        ):
+            request = trading_pb2.ListOrdersRequest(
+                context=common_pb2.TenantContext(
+                    tenant_id=str(TEST_TENANT_ID),
+                    user_id=str(TEST_USER_ID),
+                ),
+                session_id=str(TEST_SESSION_ID),
+            )
+
+            await trading_servicer.list_orders(request, grpc_context)
+
+            assert mock_executor.list_orders.await_args.kwargs["status"] is None
+
+    @pytest.mark.parametrize("status", [0, 99])
+    async def test_list_orders_rejects_an_unspecified_or_unknown_status_filter(
+        self, trading_servicer, grpc_context, status
+    ):
+        """An explicit UNSPECIFIED or an int outside the enum is a client error, not a 500."""
+        from llamatrade_proto.generated import common_pb2, trading_pb2
+
+        mock_executor = create_mock_executor(list_orders_return=([], 0))
+
+        with patch(
+            "src.grpc.servicer.create_order_executor", new=AsyncMock(return_value=mock_executor)
+        ):
+            request = trading_pb2.ListOrdersRequest(
+                context=common_pb2.TenantContext(
+                    tenant_id=str(TEST_TENANT_ID),
+                    user_id=str(TEST_USER_ID),
+                ),
+                session_id=str(TEST_SESSION_ID),
+                statuses=[status],
+            )
+
+            with pytest.raises(ConnectError) as exc_info:
+                await trading_servicer.list_orders(request, grpc_context)
+
+            assert exc_info.value.code == Code.INVALID_ARGUMENT
+            mock_executor.list_orders.assert_not_awaited()
+
+    async def test_list_orders_zero_page_size_does_not_crash(self, trading_servicer, grpc_context):
+        """A client-supplied page_size of 0 floors to a nonzero divisor (no ZeroDivisionError)."""
+        from llamatrade_proto.generated import common_pb2, trading_pb2
+
+        mock_executor = create_mock_executor(list_orders_return=([make_mock_order()], 1))
+
+        with patch(
+            "src.grpc.servicer.create_order_executor", new=AsyncMock(return_value=mock_executor)
+        ):
+            request = trading_pb2.ListOrdersRequest(
+                context=common_pb2.TenantContext(
+                    tenant_id=str(TEST_TENANT_ID),
+                    user_id=str(TEST_USER_ID),
+                ),
+                session_id=str(TEST_SESSION_ID),
+                pagination=common_pb2.PaginationRequest(page=0, page_size=0),
+            )
+
+            response = await trading_servicer.list_orders(request, grpc_context)
+
+            assert response.pagination.page_size >= 1
+            assert response.pagination.current_page == 1
+            assert response.pagination.total_pages == 1
+            assert mock_executor.list_orders.await_args.kwargs["page_size"] >= 1
 
 
 class TestGetPosition:
@@ -532,7 +621,7 @@ class TestGetPosition:
                 symbol="AAPL",
             )
 
-            response = await trading_servicer.GetPosition(request, grpc_context)
+            response = await trading_servicer.get_position(request, grpc_context)
 
             assert response.position.symbol == "AAPL"
             assert response.position.side == trading_pb2.POSITION_SIDE_LONG
@@ -556,10 +645,10 @@ class TestGetPosition:
                 symbol="INVALID",
             )
 
-            with pytest.raises(grpc.aio.AioRpcError) as exc_info:
-                await trading_servicer.GetPosition(request, grpc_context)
+            with pytest.raises(ConnectError) as exc_info:
+                await trading_servicer.get_position(request, grpc_context)
 
-            assert exc_info.value.code() == grpc.StatusCode.NOT_FOUND
+            assert exc_info.value.code == Code.NOT_FOUND
 
 
 class TestListPositions:
@@ -583,7 +672,7 @@ class TestListPositions:
                 session_id=str(TEST_SESSION_ID),
             )
 
-            response = await trading_servicer.ListPositions(request, grpc_context)
+            response = await trading_servicer.list_positions(request, grpc_context)
 
             assert len(response.positions) == 0
 
@@ -609,7 +698,7 @@ class TestListPositions:
                 session_id=str(TEST_SESSION_ID),
             )
 
-            response = await trading_servicer.ListPositions(request, grpc_context)
+            response = await trading_servicer.list_positions(request, grpc_context)
 
             assert len(response.positions) == 2
             assert response.positions[0].symbol == "AAPL"
@@ -646,7 +735,7 @@ class TestClosePosition:
                 symbol="AAPL",
             )
 
-            response = await trading_servicer.ClosePosition(request, grpc_context)
+            response = await trading_servicer.close_position(request, grpc_context)
 
             assert response.order.side == trading_pb2.ORDER_SIDE_SELL
 
@@ -669,26 +758,21 @@ class TestClosePosition:
                 symbol="INVALID",
             )
 
-            with pytest.raises(grpc.aio.AioRpcError) as exc_info:
-                await trading_servicer.ClosePosition(request, grpc_context)
+            with pytest.raises(ConnectError) as exc_info:
+                await trading_servicer.close_position(request, grpc_context)
 
-            assert exc_info.value.code() == grpc.StatusCode.NOT_FOUND
+            assert exc_info.value.code == Code.NOT_FOUND
 
 
 class TestStreamOrderUpdates:
-    """Tests for StreamOrderUpdates gRPC method."""
+    """Tests for stream_order_updates Connect method."""
 
     async def test_stream_order_updates_starts(self, trading_servicer, grpc_context):
-        """Test that order updates stream can be started and exits on cancel."""
-        import asyncio
+        """An empty tail yields nothing and the subscriber is closed on exit."""
+        from collections.abc import AsyncIterator
         from unittest.mock import AsyncMock, MagicMock, patch
 
         from llamatrade_proto.generated import common_pb2, trading_pb2
-
-        # Set context to cancelled after a short time
-        async def cancel_after_delay():
-            await asyncio.sleep(0.1)
-            grpc_context._cancelled = True
 
         request = trading_pb2.StreamOrderUpdatesRequest(
             context=common_pb2.TenantContext(
@@ -698,48 +782,38 @@ class TestStreamOrderUpdates:
             session_id=str(TEST_SESSION_ID),
         )
 
-        # Mock the subscriber to return empty generator
         mock_subscriber = MagicMock()
 
-        async def empty_subscribe(_):
-            # Yield nothing, just loop until cancelled
+        async def empty_tail(
+            sid: str, *, last_seen_id: str = ""
+        ) -> AsyncIterator[tuple[str, trading_pb2.OrderUpdate]]:
             return
-            yield  # Make it a generator
+            yield  # Make it an async generator
 
-        mock_subscriber.subscribe_orders = empty_subscribe
+        mock_subscriber.tail_orders = empty_tail
         mock_subscriber.close = AsyncMock()
-
-        # Start the cancellation task
-        cancel_task = asyncio.create_task(cancel_after_delay())
 
         with patch(
             "src.grpc.servicer.get_trading_event_subscriber",
             return_value=mock_subscriber,
         ):
-            # Iterate over the async generator
             responses = []
-            async for response in trading_servicer.StreamOrderUpdates(request, grpc_context):
+            async for response in trading_servicer.stream_order_updates(request, grpc_context):
                 responses.append(response)
 
-        await cancel_task
-        # Should complete without errors
         assert len(responses) == 0
+        mock_subscriber.close.assert_called_once()
 
 
 class TestStreamPositionUpdates:
-    """Tests for StreamPositionUpdates gRPC method."""
+    """Tests for stream_position_updates Connect method."""
 
     async def test_stream_position_updates_starts(self, trading_servicer, grpc_context):
-        """Test that position updates stream can be started and exits on cancel."""
-        import asyncio
+        """An empty tail yields nothing and the subscriber is closed on exit."""
+        from collections.abc import AsyncIterator
         from unittest.mock import AsyncMock, MagicMock, patch
 
         from llamatrade_proto.generated import common_pb2, trading_pb2
-
-        # Set context to cancelled after a short time
-        async def cancel_after_delay():
-            await asyncio.sleep(0.1)
-            grpc_context._cancelled = True
 
         request = trading_pb2.StreamPositionUpdatesRequest(
             context=common_pb2.TenantContext(
@@ -749,29 +823,24 @@ class TestStreamPositionUpdates:
             session_id=str(TEST_SESSION_ID),
         )
 
-        # Mock the subscriber to return empty generator
         mock_subscriber = MagicMock()
 
-        async def empty_subscribe(_):
-            # Yield nothing, just loop until cancelled
+        async def empty_tail(
+            sid: str, *, last_seen_id: str = ""
+        ) -> AsyncIterator[tuple[str, trading_pb2.PositionUpdate]]:
             return
-            yield  # Make it a generator
+            yield  # Make it an async generator
 
-        mock_subscriber.subscribe_positions = empty_subscribe
+        mock_subscriber.tail_positions = empty_tail
         mock_subscriber.close = AsyncMock()
-
-        # Start the cancellation task
-        cancel_task = asyncio.create_task(cancel_after_delay())
 
         with patch(
             "src.grpc.servicer.get_trading_event_subscriber",
             return_value=mock_subscriber,
         ):
-            # Iterate over the async generator
             responses = []
-            async for response in trading_servicer.StreamPositionUpdates(request, grpc_context):
+            async for response in trading_servicer.stream_position_updates(request, grpc_context):
                 responses.append(response)
 
-        await cancel_task
-        # Should complete without errors
         assert len(responses) == 0
+        mock_subscriber.close.assert_called_once()

@@ -68,7 +68,8 @@ class MarketDataClient:
         try:
             client = self._get_client()
             prices = await client.get_latest_prices(symbols)
-            return {symbol: float(price) for symbol, price in prices.items()}
+            # Omit unpriceable symbols (0/None) so callers skip marking rather than mark a position to $0 on a transient outage or thin snapshot.
+            return {sym: float(p) for sym, p in prices.items() if p and float(p) > 0}
         except Exception as e:
             logger.warning("Failed to get prices for %s: %s", symbols, e)
             return {}
@@ -114,7 +115,8 @@ class MarketDataClient:
             # Calculate time range based on limit
             end = datetime.now()
             if timeframe in ("1D", "1DAY"):
-                start = end - timedelta(days=limit or 100)
+                # `limit` counts trading bars; pad to calendar days so weekends/holidays don't leave a daily warm-up short of its lookback window.
+                start = end - timedelta(days=int((limit or 100) * 1.5) + 5)
             elif timeframe in ("1H", "1HOUR"):
                 start = end - timedelta(hours=limit or 100)
             else:

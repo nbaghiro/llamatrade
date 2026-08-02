@@ -86,22 +86,30 @@ class RiskManager:
         limit_price: Decimal | None = None,
         session_id: UUID | None = None,
         sleeve_id: UUID | None = None,
+        reference_price: Decimal | None = None,
     ) -> RiskCheckResult:
         """Check if an order passes all risk limits.
 
         Checks performed (in order):
         0. Market hours - orders blocked outside trading hours
         1. Max order value
-        1b. Sleeve buying power (buys must fit the sleeve's
-            free cash = balance − reserved)
+        1b. Sleeve buying power / holdings (buys must fit the sleeve's free cash =
+            balance − reserved; sells must not exceed the sleeve's holdings)
         2. Allowed symbols
         3. Position size
         4. Daily loss
         5. Order rate limit
+
+        ``reference_price`` (the caller's known price for the symbol, e.g. the
+        signal's evaluation-bar close) values a market order and seeds the price
+        cache so no market-data RPC is needed on the hot path.
         """
         start_time = time.perf_counter()
         violations: list[str] = []
         limits = await self.get_limits(tenant_id, session_id)
+
+        if reference_price is not None and reference_price > 0:
+            self._price_cache[symbol.upper()] = reference_price
 
         # 0. Check market hours (first check, unless explicitly bypassed)
         if not limits.allow_outside_market_hours:
@@ -120,10 +128,11 @@ class RiskManager:
                 record_risk_check(passed=False, violations=violations, duration=duration)
                 return RiskCheckResult(passed=False, violations=violations)
 
-        # Estimate order value in Decimal so risk gating never turns on float
-        # rounding at a limit / buying-power boundary.
+        # Estimate order value in Decimal so risk gating never turns on float rounding at a limit / buying-power boundary.
         if limit_price:
             estimated_price = limit_price
+        elif reference_price is not None and reference_price > 0:
+            estimated_price = reference_price
         else:
             estimated_price = await self._get_current_price(symbol)
             if estimated_price is None:
@@ -141,9 +150,11 @@ class RiskManager:
                 f"Order value ${order_value:.2f} exceeds limit ${limits.max_order_value:.2f}"
             )
 
-        # 1b. Check sleeve status + buying power (ledger book of record)
+        # 1b. Check sleeve status + buying power / holdings (ledger book of record)
         if sleeve_id is not None:
-            sleeve_violation = await self._check_sleeve(tenant_id, sleeve_id, side, order_value)
+            sleeve_violation = await self._check_sleeve(
+                tenant_id, sleeve_id, side, order_value, symbol=symbol, qty=qty
+            )
             if sleeve_violation:
                 violations.append(sleeve_violation)
 
@@ -154,7 +165,13 @@ class RiskManager:
         # 3. Check position size (if we have DB access)
         if self.db and limits.max_position_size and session_id:
             position_check = await self._check_position_size(
-                tenant_id, session_id, symbol, qty, side, limits.max_position_size
+                tenant_id,
+                session_id,
+                symbol,
+                qty,
+                side,
+                limits.max_position_size,
+                reference_price=reference_price,
             )
             if not position_check:
                 violations.append(f"Position would exceed max size ${limits.max_position_size:.2f}")
@@ -187,16 +204,23 @@ class RiskManager:
         sleeve_id: UUID,
         side: str,
         order_value: Decimal,
+        *,
+        symbol: str | None = None,
+        qty: Decimal | None = None,
     ) -> str | None:
         """Violation string for sleeve-level rejections, else None.
 
-        Two checks (one sleeve fetch): a non-ACTIVE sleeve blocks every order —
+        Checks (one sleeve fetch): a non-ACTIVE sleeve blocks every order —
         FROZEN (reconciliation found a contradiction — manual review gate) or
         CLOSED (the sleeve was retired on stop/archive; a stray late order must
-        not resurrect it) — and buys must fit the sleeve's free cash. Fail-safe:
-        if sleeve state can't be fetched we reject (consistent with the
-        price-unavailable path) — overdrafting another strategy's capital is
-        worse than a delayed order.
+        not resurrect it); a buy must fit the sleeve's free cash; and a sell must
+        not exceed the sleeve's holdings of the symbol. The sell-coverage check
+        stops a sell of a symbol the target sleeve does not hold (e.g. a manual
+        sell routed to Manual with no matching lots) from booking a fill that
+        finds no lots and freezes the book. Fail-safe: if sleeve state can't be
+        fetched we reject (consistent with the price-unavailable path) —
+        overdrafting or overselling another strategy's book is worse than a
+        delayed order.
         """
         from llamatrade_proto.generated.ledger_pb2 import (
             SLEEVE_STATUS_ACTIVE,
@@ -219,6 +243,21 @@ class RiskManager:
             free_cash = Decimal(str(detail.sleeve.cash.free))
             if order_value > free_cash:
                 return f"Order value ${order_value:.2f} exceeds sleeve free cash ${free_cash:.2f}"
+        elif side.lower() == "sell" and symbol is not None and qty is not None:
+            want = symbol.upper()
+            held = sum(
+                (
+                    Decimal(str(lot.qty))
+                    for lot in detail.lots
+                    if lot.symbol.upper() == want and lot.is_open
+                ),
+                Decimal("0"),
+            )
+            if qty > held:
+                return (
+                    f"Sell of {qty} {symbol} exceeds sleeve holdings of {held} "
+                    f"in sleeve {sleeve_id}"
+                )
         return None
 
     async def check_daily_loss(
@@ -505,6 +544,7 @@ class RiskManager:
         qty: Decimal,
         side: str,
         max_size: Decimal,
+        reference_price: Decimal | None = None,
     ) -> bool:
         """Check if order would exceed position size limit."""
         if not self.db:
@@ -523,9 +563,11 @@ class RiskManager:
 
         current_qty = Decimal(str(position.qty)) if position else Decimal("0")
 
-        # Get price from position or fetch it
+        # Get price from position, the caller's reference price, or fetch it.
         if position and position.current_price:
             current_price = Decimal(str(position.current_price))
+        elif reference_price is not None and reference_price > 0:
+            current_price = reference_price
         else:
             # Fetch price from market data
             fetched_price = await self._get_current_price(symbol)

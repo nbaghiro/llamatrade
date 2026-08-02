@@ -1,5 +1,9 @@
 """Seed a live ``StrategySession``'s indicator history from the market-data store so it can trade
-from the first live bar instead of warming up over real time."""
+from the first live bar instead of warming up over real time.
+
+A daily read includes the period currently forming (market-data serves it without storing it), so
+a session started mid-day is primed with that day's bar so far; the runner adopts it as the seed
+of its forming bar, and the intraday stream extends it rather than starting the period over."""
 
 from __future__ import annotations
 

@@ -1,28 +1,40 @@
-"""Trading gRPC servicer implementation."""
+"""Trading Connect servicer implementation."""
 
 from __future__ import annotations
 
 import asyncio
 import inspect
 import logging
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Sequence
 from decimal import Decimal
-from typing import TYPE_CHECKING, Any, NoReturn
+from typing import TYPE_CHECKING
 from uuid import UUID
 
-import grpc.aio
+from connectrpc.code import Code
+from connectrpc.errors import ConnectError
+from connectrpc.request import RequestContext
 
-from llamatrade_common import AuthError, resolve_identity
+from llamatrade_common import pagination_response, resolve_pagination
+from llamatrade_common.connect import resolve_identity_connect
+from llamatrade_proto.generated.common_pb2 import (
+    EXECUTION_STATUS_ERROR,
+    EXECUTION_STATUS_PAUSED,
+    EXECUTION_STATUS_RUNNING,
+    EXECUTION_STATUS_STOPPED,
+)
 from llamatrade_proto.generated.trading_pb2 import (
     ORDER_SIDE_BUY,
     ORDER_SIDE_SELL,
+    ORDER_STATUS_UNSPECIFIED,
     ORDER_TYPE_MARKET,
     TIME_IN_FORCE_DAY,
+    OrderStatus,
 )
+from llamatrade_proto.timestamps import to_proto_timestamp
 
 from src import proto_mappers
 from src.executor.order_executor import create_order_executor
-from src.models import OrderCreate, SessionResponse
+from src.models import OrderCreate, SessionResponse, order_side_to_str
 from src.streaming import get_trading_event_subscriber
 
 if TYPE_CHECKING:
@@ -33,36 +45,37 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# Map the transport-neutral AuthError codes to gRPC status codes (1A).
-_AUTH_CODE_TO_GRPC = {
-    "unauthenticated": grpc.StatusCode.UNAUTHENTICATED,
-    "permission_denied": grpc.StatusCode.PERMISSION_DENIED,
-    "invalid_argument": grpc.StatusCode.INVALID_ARGUMENT,
-}
+# Status values a client may filter on; UNSPECIFIED is the "no filter" sentinel (never a filter value), and a value outside the enum has no database label to bind to.
+_ORDER_STATUS_FILTERS = frozenset(OrderStatus.values()) - {ORDER_STATUS_UNSPECIFIED}
+# Sessions carry a narrower set than ExecutionStatus: there is no PENDING session label.
+_SESSION_STATUS_FILTERS = frozenset(
+    {
+        EXECUTION_STATUS_RUNNING,
+        EXECUTION_STATUS_PAUSED,
+        EXECUTION_STATUS_STOPPED,
+        EXECUTION_STATUS_ERROR,
+    }
+)
 
 
-def _identity(request_context: Any) -> tuple[UUID, UUID]:
-    """Verified (tenant_id, user_id) for the call.
+def _status_filter(values: Sequence[int], allowed: frozenset[int], field: str) -> int | None:
+    """The status filter a request carries, or None when the field is unset.
 
-    Derives identity from the authenticated principal (the JWT, via the
-    AuthMiddleware contextvar) rather than trusting the wire ``context``, and
-    rejects a request whose wire tenant doesn't match the token (1A).
+    Every value is checked, so an explicit UNSPECIFIED or an int outside the enum is
+    reported as INVALID_ARGUMENT instead of failing later on the database enum bridge.
+    Only the first value is applied — the service layer filters on one status.
     """
-    return resolve_identity(
-        request_context.tenant_id or None,
-        request_context.user_id or None,
-    )
-
-
-async def _abort_auth(context: grpc.aio.ServicerContext[Any, Any], err: AuthError) -> NoReturn:
-    """Abort with the gRPC status code for an auth failure (``context.abort`` never returns)."""
-    await context.abort(
-        _AUTH_CODE_TO_GRPC.get(err.code, grpc.StatusCode.UNAUTHENTICATED), err.message
-    )
+    for value in values:
+        if value not in allowed:
+            raise ConnectError(
+                Code.INVALID_ARGUMENT,
+                f"{field}: {value} is not a valid filter value (expected one of {sorted(allowed)})",
+            )
+    return values[0] if values else None
 
 
 async def _aclose(obj: object | None) -> None:
-    """Best-effort release of a request-scoped service's resources (13A).
+    """Best-effort release of a request-scoped service's resources.
 
     Tolerates test mocks (whose ``aclose`` returns a non-awaitable).
     """
@@ -80,9 +93,9 @@ async def _aclose(obj: object | None) -> None:
 
 
 class TradingServicer:
-    """gRPC servicer for the Trading service.
+    """Connect servicer for the Trading service.
 
-    Implements the TradingService defined in trading.proto.
+    Implements the TradingService Protocol defined in trading_connect.py.
     """
 
     def __init__(self) -> None:
@@ -92,13 +105,9 @@ class TradingServicer:
     def _get_ledger(self) -> LedgerClient:
         """Lazy LedgerClient to the portfolio service (sleeve resolution)."""
         if self._ledger_client is None:
-            import os
+            from src.attribution import get_ledger_client
 
-            from llamatrade_proto.clients.ledger import LedgerClient
-
-            self._ledger_client = LedgerClient(
-                os.getenv("PORTFOLIO_GRPC_TARGET", "portfolio:8860"), service_name="trading"
-            )
+            self._ledger_client = get_ledger_client()
         return self._ledger_client
 
     async def _resolve_order_attribution(
@@ -108,52 +117,34 @@ class TradingServicer:
         user_id: str,
         session_id: UUID,
         requested_sleeve_id: str,
+        symbol: str,
+        side: str,
     ) -> tuple[UUID | None, UUID | None]:
         """(sleeve_id, account_id) for an order, fixed at origination.
 
-        Resolution order (portfolio-ledger.md): explicit request sleeve → the
-        session's strategy sleeve → the account's Manual sleeve (an
-        unattributed order is a manual trade). Resolution failures **raise** (the
-        SubmitOrder RPC then fails) rather than silently booking the order as an
-        unattributed manual trade: a mis-attributed order with no ledger events
-        is worse than a rejected one (hardening 7A).
+        Delegates to the shared resolver (``src.attribution``); a resolution
+        failure raises so the SubmitOrder RPC fails rather than silently booking
+        the order as an unattributed manual trade (hardening 7A). ``symbol``/``side``
+        drive Unmanaged sell-routing: a manual sell of a holding the Manual sleeve
+        does not carry books against Unmanaged instead of freezing the book.
         """
-        from sqlalchemy import select
+        from src.attribution import resolve_order_attribution
 
-        from llamatrade_db.models.trading import TradingSession
-        from llamatrade_proto.generated.ledger_pb2 import SLEEVE_TYPE_MANUAL
-
-        session = await db.scalar(
-            select(TradingSession).where(
-                TradingSession.tenant_id == tenant_id,
-                TradingSession.id == session_id,
-            )
+        return await resolve_order_attribution(
+            db=db,
+            ledger=self._get_ledger(),
+            tenant_id=tenant_id,
+            session_id=session_id,
+            requested_sleeve_id=requested_sleeve_id,
+            user_id=user_id,
+            symbol=symbol,
+            side=side,
         )
-        if requested_sleeve_id:
-            sleeve_id = UUID(requested_sleeve_id)
-            if session is not None and session.account_id is not None:
-                return sleeve_id, session.account_id
-            detail = await self._get_ledger().get_sleeve(
-                str(tenant_id), user_id, requested_sleeve_id
-            )
-            return sleeve_id, UUID(detail.sleeve.account_id)
 
-        if session is not None and session.sleeve_id is not None:
-            return session.sleeve_id, session.account_id
-
-        if session is not None:
-            bootstrap = await self._get_ledger().get_or_create_account(
-                str(tenant_id), user_id, str(session.credentials_id)
-            )
-            manual = next((s for s in bootstrap.base_sleeves if s.type == SLEEVE_TYPE_MANUAL), None)
-            if manual is not None:
-                return UUID(manual.id), UUID(bootstrap.account.id)
-        return None, None
-
-    async def StartSession(
+    async def start_session(
         self,
         request: trading_pb2.StartTradingSessionRequest,
-        context: grpc.aio.ServicerContext[Any, Any],
+        ctx: RequestContext[object, object],
     ) -> trading_pb2.StartTradingSessionResponse:
         """Start a trading session (preflight checks + runner launch)."""
         from llamatrade_proto.generated import trading_pb2
@@ -163,7 +154,7 @@ class TradingServicer:
 
         service = None
         try:
-            tenant_id, user_id = _identity(request.context)
+            tenant_id, user_id = resolve_identity_connect(request.context)
             service = await create_live_session_service(tenant_id)
             session = await service.start_session(
                 tenant_id=tenant_id,
@@ -177,22 +168,20 @@ class TradingServicer:
                 execution_id=UUID(request.execution_id) if request.execution_id else None,
             )
             return trading_pb2.StartTradingSessionResponse(session=self._to_proto_session(session))
-        except grpc.aio.AioRpcError:
+        except ConnectError:
             raise
-        except AuthError as e:
-            await _abort_auth(context, e)
         except ValueError as e:
-            await context.abort(grpc.StatusCode.FAILED_PRECONDITION, str(e))
+            raise ConnectError(Code.FAILED_PRECONDITION, str(e))
         except Exception as e:
-            logger.error("StartSession error: %s", e, exc_info=True)
-            await context.abort(grpc.StatusCode.INTERNAL, "Failed to start session")
+            logger.error("start_session error: %s", e, exc_info=True)
+            raise ConnectError(Code.INTERNAL, "Failed to start session")
         finally:
             await _aclose(service)
 
-    async def StopSession(
+    async def stop_session(
         self,
         request: trading_pb2.StopTradingSessionRequest,
-        context: grpc.aio.ServicerContext[Any, Any],
+        ctx: RequestContext[object, object],
     ) -> trading_pb2.StopTradingSessionResponse:
         """Stop a trading session and its runner."""
         from llamatrade_proto.generated import trading_pb2
@@ -201,31 +190,29 @@ class TradingServicer:
 
         service = None
         try:
-            tenant_id, _user_id = _identity(request.context)
+            tenant_id, _user_id = resolve_identity_connect(request.context)
             service = await create_live_session_service(tenant_id)
             session = await service.stop_session(
                 session_id=UUID(request.session_id),
                 tenant_id=tenant_id,
             )
             if session is None:
-                await context.abort(grpc.StatusCode.NOT_FOUND, "Session not found")
+                raise ConnectError(Code.NOT_FOUND, "Session not found")
             return trading_pb2.StopTradingSessionResponse(session=self._to_proto_session(session))
-        except grpc.aio.AioRpcError:
+        except ConnectError:
             raise
-        except AuthError as e:
-            await _abort_auth(context, e)
         except ValueError as e:
-            await context.abort(grpc.StatusCode.FAILED_PRECONDITION, str(e))
+            raise ConnectError(Code.FAILED_PRECONDITION, str(e))
         except Exception as e:
-            logger.error("StopSession error: %s", e, exc_info=True)
-            await context.abort(grpc.StatusCode.INTERNAL, "Failed to stop session")
+            logger.error("stop_session error: %s", e, exc_info=True)
+            raise ConnectError(Code.INTERNAL, "Failed to stop session")
         finally:
             await _aclose(service)
 
-    async def PauseSession(
+    async def pause_session(
         self,
         request: trading_pb2.PauseTradingSessionRequest,
-        context: grpc.aio.ServicerContext[Any, Any],
+        ctx: RequestContext[object, object],
     ) -> trading_pb2.PauseTradingSessionResponse:
         """Pause a trading session and its runner."""
         from llamatrade_proto.generated import trading_pb2
@@ -234,31 +221,29 @@ class TradingServicer:
 
         service = None
         try:
-            tenant_id, _user_id = _identity(request.context)
+            tenant_id, _user_id = resolve_identity_connect(request.context)
             service = await create_live_session_service(tenant_id)
             session = await service.pause_session(
                 session_id=UUID(request.session_id),
                 tenant_id=tenant_id,
             )
             if session is None:
-                await context.abort(grpc.StatusCode.NOT_FOUND, "Session not found")
+                raise ConnectError(Code.NOT_FOUND, "Session not found")
             return trading_pb2.PauseTradingSessionResponse(session=self._to_proto_session(session))
-        except grpc.aio.AioRpcError:
+        except ConnectError:
             raise
-        except AuthError as e:
-            await _abort_auth(context, e)
         except ValueError as e:
-            await context.abort(grpc.StatusCode.FAILED_PRECONDITION, str(e))
+            raise ConnectError(Code.FAILED_PRECONDITION, str(e))
         except Exception as e:
-            logger.error("PauseSession error: %s", e, exc_info=True)
-            await context.abort(grpc.StatusCode.INTERNAL, "Failed to pause session")
+            logger.error("pause_session error: %s", e, exc_info=True)
+            raise ConnectError(Code.INTERNAL, "Failed to pause session")
         finally:
             await _aclose(service)
 
-    async def ResumeSession(
+    async def resume_session(
         self,
         request: trading_pb2.ResumeTradingSessionRequest,
-        context: grpc.aio.ServicerContext[Any, Any],
+        ctx: RequestContext[object, object],
     ) -> trading_pb2.ResumeTradingSessionResponse:
         """Resume a paused trading session and its runner."""
         from llamatrade_proto.generated import trading_pb2
@@ -267,31 +252,29 @@ class TradingServicer:
 
         service = None
         try:
-            tenant_id, _user_id = _identity(request.context)
+            tenant_id, _user_id = resolve_identity_connect(request.context)
             service = await create_live_session_service(tenant_id)
             session = await service.resume_session(
                 session_id=UUID(request.session_id),
                 tenant_id=tenant_id,
             )
             if session is None:
-                await context.abort(grpc.StatusCode.NOT_FOUND, "Session not found")
+                raise ConnectError(Code.NOT_FOUND, "Session not found")
             return trading_pb2.ResumeTradingSessionResponse(session=self._to_proto_session(session))
-        except grpc.aio.AioRpcError:
+        except ConnectError:
             raise
-        except AuthError as e:
-            await _abort_auth(context, e)
         except ValueError as e:
-            await context.abort(grpc.StatusCode.FAILED_PRECONDITION, str(e))
+            raise ConnectError(Code.FAILED_PRECONDITION, str(e))
         except Exception as e:
-            logger.error("ResumeSession error: %s", e, exc_info=True)
-            await context.abort(grpc.StatusCode.INTERNAL, "Failed to resume session")
+            logger.error("resume_session error: %s", e, exc_info=True)
+            raise ConnectError(Code.INTERNAL, "Failed to resume session")
         finally:
             await _aclose(service)
 
-    async def GetSession(
+    async def get_session(
         self,
         request: trading_pb2.GetTradingSessionRequest,
-        context: grpc.aio.ServicerContext[Any, Any],
+        ctx: RequestContext[object, object],
     ) -> trading_pb2.GetTradingSessionResponse:
         """Get a trading session with P&L."""
         from llamatrade_proto.generated import trading_pb2
@@ -300,29 +283,27 @@ class TradingServicer:
 
         service = None
         try:
-            tenant_id, _user_id = _identity(request.context)
+            tenant_id, _user_id = resolve_identity_connect(request.context)
             service = await create_live_session_service(tenant_id)
             session = await service.get_session(
                 session_id=UUID(request.session_id),
                 tenant_id=tenant_id,
             )
             if session is None:
-                await context.abort(grpc.StatusCode.NOT_FOUND, "Session not found")
+                raise ConnectError(Code.NOT_FOUND, "Session not found")
             return trading_pb2.GetTradingSessionResponse(session=self._to_proto_session(session))
-        except grpc.aio.AioRpcError:
+        except ConnectError:
             raise
-        except AuthError as e:
-            await _abort_auth(context, e)
         except Exception as e:
-            logger.error("GetSession error: %s", e, exc_info=True)
-            await context.abort(grpc.StatusCode.INTERNAL, "Failed to get session")
+            logger.error("get_session error: %s", e, exc_info=True)
+            raise ConnectError(Code.INTERNAL, "Failed to get session")
         finally:
             await _aclose(service)
 
-    async def ListSessions(
+    async def list_sessions(
         self,
         request: trading_pb2.ListTradingSessionsRequest,
-        context: grpc.aio.ServicerContext[Any, Any],
+        ctx: RequestContext[object, object],
     ) -> trading_pb2.ListTradingSessionsResponse:
         """List trading sessions for the tenant."""
         from llamatrade_proto.generated import common_pb2, trading_pb2
@@ -331,63 +312,63 @@ class TradingServicer:
 
         service = None
         try:
-            tenant_id, _user_id = _identity(request.context)
+            tenant_id, _user_id = resolve_identity_connect(request.context)
             service = await create_live_session_service(tenant_id)
-            page = request.pagination.page if request.HasField("pagination") else 1
-            page_size = request.pagination.page_size if request.HasField("pagination") else 20
+            page, page_size = resolve_pagination(
+                request.pagination if request.HasField("pagination") else None
+            )
+            # Singular proto3 enum: an unset filter and an explicit UNSPECIFIED share the same wire value, so 0 keeps its documented "all statuses" meaning.
+            status = _status_filter(
+                (request.status,) if request.status else (), _SESSION_STATUS_FILTERS, "status"
+            )
             sessions, total = await service.list_sessions(
                 tenant_id=tenant_id,
-                status=request.status or None,
+                status=status,
                 strategy_id=UUID(request.strategy_id) if request.strategy_id else None,
-                page=max(page, 1),
-                page_size=max(page_size, 1),
+                page=page,
+                page_size=page_size,
             )
-            total_pages = (total + page_size - 1) // page_size if total > 0 else 1
             return trading_pb2.ListTradingSessionsResponse(
                 sessions=[self._to_proto_session(s) for s in sessions],
                 pagination=common_pb2.PaginationResponse(
-                    total_items=total,
-                    total_pages=total_pages,
-                    current_page=page,
-                    page_size=page_size,
-                    has_next=page < total_pages,
-                    has_previous=page > 1,
+                    **pagination_response(total, page, page_size)
                 ),
             )
-        except grpc.aio.AioRpcError:
+        except ConnectError:
             raise
-        except AuthError as e:
-            await _abort_auth(context, e)
+        except ValueError as e:
+            raise ConnectError(Code.INVALID_ARGUMENT, str(e))
         except Exception as e:
-            logger.error("ListSessions error: %s", e, exc_info=True)
-            await context.abort(grpc.StatusCode.INTERNAL, "Failed to list sessions")
+            logger.error("list_sessions error: %s", e, exc_info=True)
+            raise ConnectError(Code.INTERNAL, "Failed to list sessions")
         finally:
             await _aclose(service)
 
-    async def SubmitOrder(
+    async def submit_order(
         self,
         request: trading_pb2.SubmitOrderRequest,
-        context: grpc.aio.ServicerContext[Any, Any],
+        ctx: RequestContext[object, object],
     ) -> trading_pb2.SubmitOrderResponse:
         """Submit a new order."""
         from llamatrade_proto.generated import trading_pb2
 
         executor = None
         try:
-            tenant_id, user_id = _identity(request.context)
+            tenant_id, user_id = resolve_identity_connect(request.context)
             session_id = UUID(request.session_id)
 
-            # The executor's Alpaca client is built from this session's own
-            # per-tenant credentials, never the platform default (2A).
+            # The executor's Alpaca client is built from this session's own per-tenant credentials, never the platform default.
             executor = await create_order_executor(session_id=session_id, tenant_id=tenant_id)
 
-            # Ledger attribution, fixed at origination (portfolio-ledger.md)
+            # Ledger attribution, fixed at origination (portfolio-ledger.md); symbol/side let a manual sell of an Unmanaged-only holding route there.
             sleeve_id, account_id = await self._resolve_order_attribution(
                 db=executor.db,
                 tenant_id=tenant_id,
                 user_id=str(user_id),
                 session_id=session_id,
                 requested_sleeve_id=request.sleeve_id,
+                symbol=request.symbol,
+                side=order_side_to_str(request.side or ORDER_SIDE_BUY),
             )
 
             order_create = OrderCreate(
@@ -414,108 +395,100 @@ class TradingServicer:
                 order=order_create,
             )
             return trading_pb2.SubmitOrderResponse(order=proto_mappers.order_to_proto(order))
-        except grpc.aio.AioRpcError:
+        except ConnectError:
             raise
-        except AuthError as e:
-            await _abort_auth(context, e)
         except ValueError as e:
-            await context.abort(grpc.StatusCode.INVALID_ARGUMENT, str(e))
+            raise ConnectError(Code.INVALID_ARGUMENT, str(e))
         except Exception as e:
-            logger.error("SubmitOrder error: %s", e, exc_info=True)
-            await context.abort(grpc.StatusCode.INTERNAL, "Failed to submit order")
+            logger.error("submit_order error: %s", e, exc_info=True)
+            raise ConnectError(Code.INTERNAL, "Failed to submit order")
         finally:
             await _aclose(executor)
 
-    async def CancelOrder(
+    async def cancel_order(
         self,
         request: trading_pb2.CancelOrderRequest,
-        context: grpc.aio.ServicerContext[Any, Any],
+        ctx: RequestContext[object, object],
     ) -> trading_pb2.CancelOrderResponse:
         """Cancel an order."""
         from llamatrade_proto.generated import trading_pb2
 
         executor = None
         try:
-            tenant_id, _user_id = _identity(request.context)
+            tenant_id, _user_id = resolve_identity_connect(request.context)
             order_id = UUID(request.order_id)
 
-            # Resolve the order's owning session first so the cancel is placed on
-            # the tenant's OWN Alpaca account via that session's per-tenant
-            # credentials — never the platform/env account (GAP 10). The lookup
-            # needs no broker client, so a tenant-only executor is fine for it.
+            # Resolve the order's owning session first so the cancel hits the tenant's OWN Alpaca account via that session's per-tenant credentials, never the platform/env account (GAP 10); the lookup needs no broker client, so a tenant-only executor suffices.
             probe = await create_order_executor(tenant_id=tenant_id)
             try:
                 session_id = await probe.get_order_session_id(order_id, tenant_id)
             finally:
                 await _aclose(probe)
             if session_id is None:
-                await context.abort(grpc.StatusCode.NOT_FOUND, f"Order not found: {order_id}")
+                raise ConnectError(Code.NOT_FOUND, f"Order not found: {order_id}")
 
             executor = await create_order_executor(session_id=session_id, tenant_id=tenant_id)
             success = await executor.cancel_order(order_id=order_id, tenant_id=tenant_id)
             if not success:
-                await context.abort(grpc.StatusCode.FAILED_PRECONDITION, "Cannot cancel order")
+                raise ConnectError(Code.FAILED_PRECONDITION, "Cannot cancel order")
 
             order = await executor.get_order(order_id=order_id, tenant_id=tenant_id)
             if not order:
-                await context.abort(grpc.StatusCode.NOT_FOUND, f"Order not found: {order_id}")
+                raise ConnectError(Code.NOT_FOUND, f"Order not found: {order_id}")
 
             return trading_pb2.CancelOrderResponse(order=proto_mappers.order_to_proto(order))
-        except grpc.aio.AioRpcError:
+        except ConnectError:
             raise
-        except AuthError as e:
-            await _abort_auth(context, e)
         except Exception as e:
-            logger.error("CancelOrder error: %s", e, exc_info=True)
-            await context.abort(grpc.StatusCode.INTERNAL, "Failed to cancel order")
+            logger.error("cancel_order error: %s", e, exc_info=True)
+            raise ConnectError(Code.INTERNAL, "Failed to cancel order")
         finally:
             await _aclose(executor)
 
-    async def GetOrder(
+    async def get_order(
         self,
         request: trading_pb2.GetOrderRequest,
-        context: grpc.aio.ServicerContext[Any, Any],
+        ctx: RequestContext[object, object],
     ) -> trading_pb2.GetOrderResponse:
         """Get an order by ID."""
         from llamatrade_proto.generated import trading_pb2
 
         executor = None
         try:
-            tenant_id, _user_id = _identity(request.context)
+            tenant_id, _user_id = resolve_identity_connect(request.context)
             order_id = UUID(request.order_id)
 
             executor = await create_order_executor(tenant_id=tenant_id)
             order = await executor.get_order(order_id=order_id, tenant_id=tenant_id)
             if not order:
-                await context.abort(grpc.StatusCode.NOT_FOUND, f"Order not found: {order_id}")
+                raise ConnectError(Code.NOT_FOUND, f"Order not found: {order_id}")
 
             return trading_pb2.GetOrderResponse(order=proto_mappers.order_to_proto(order))
-        except grpc.aio.AioRpcError:
+        except ConnectError:
             raise
-        except AuthError as e:
-            await _abort_auth(context, e)
         except Exception as e:
-            logger.error("GetOrder error: %s", e, exc_info=True)
-            await context.abort(grpc.StatusCode.INTERNAL, "Failed to get order")
+            logger.error("get_order error: %s", e, exc_info=True)
+            raise ConnectError(Code.INTERNAL, "Failed to get order")
         finally:
             await _aclose(executor)
 
-    async def ListOrders(
+    async def list_orders(
         self,
         request: trading_pb2.ListOrdersRequest,
-        context: grpc.aio.ServicerContext[Any, Any],
+        ctx: RequestContext[object, object],
     ) -> trading_pb2.ListOrdersResponse:
         """List orders for a tenant."""
         from llamatrade_proto.generated import common_pb2, trading_pb2
 
         executor = None
         try:
-            tenant_id, _user_id = _identity(request.context)
+            tenant_id, _user_id = resolve_identity_connect(request.context)
             session_id = UUID(request.session_id) if request.session_id else None
-            status = request.statuses[0] if request.statuses else None
+            status = _status_filter(request.statuses, _ORDER_STATUS_FILTERS, "statuses")
 
-            page = request.pagination.page if request.HasField("pagination") else 1
-            page_size = request.pagination.page_size if request.HasField("pagination") else 20
+            page, page_size = resolve_pagination(
+                request.pagination if request.HasField("pagination") else None
+            )
 
             executor = await create_order_executor(tenant_id=tenant_id)
             orders, total = await executor.list_orders(
@@ -527,33 +500,27 @@ class TradingServicer:
             )
 
             proto_orders = [proto_mappers.order_to_proto(o) for o in orders]
-            total_pages = (total + page_size - 1) // page_size
 
             return trading_pb2.ListOrdersResponse(
                 orders=proto_orders,
                 pagination=common_pb2.PaginationResponse(
-                    total_items=total,
-                    total_pages=total_pages,
-                    current_page=page,
-                    page_size=page_size,
-                    has_next=page < total_pages,
-                    has_previous=page > 1,
+                    **pagination_response(total, page, page_size)
                 ),
             )
-        except grpc.aio.AioRpcError:
+        except ConnectError:
             raise
-        except AuthError as e:
-            await _abort_auth(context, e)
+        except ValueError as e:
+            raise ConnectError(Code.INVALID_ARGUMENT, str(e))
         except Exception as e:
-            logger.error("ListOrders error: %s", e, exc_info=True)
-            await context.abort(grpc.StatusCode.INTERNAL, "Failed to list orders")
+            logger.error("list_orders error: %s", e, exc_info=True)
+            raise ConnectError(Code.INTERNAL, "Failed to list orders")
         finally:
             await _aclose(executor)
 
-    async def GetPosition(
+    async def get_position(
         self,
         request: trading_pb2.GetPositionRequest,
-        context: grpc.aio.ServicerContext[Any, Any],
+        ctx: RequestContext[object, object],
     ) -> trading_pb2.GetPositionResponse:
         """Get a position by symbol."""
         from llamatrade_proto.generated import trading_pb2
@@ -562,7 +529,7 @@ class TradingServicer:
 
         service = None
         try:
-            tenant_id, _user_id = _identity(request.context)
+            tenant_id, _user_id = resolve_identity_connect(request.context)
             session_id = UUID(request.session_id)
             symbol = request.symbol
 
@@ -573,27 +540,23 @@ class TradingServicer:
                 symbol=symbol,
             )
             if not position:
-                await context.abort(
-                    grpc.StatusCode.NOT_FOUND, f"Position not found for symbol: {symbol}"
-                )
+                raise ConnectError(Code.NOT_FOUND, f"Position not found for symbol: {symbol}")
 
             return trading_pb2.GetPositionResponse(
                 position=proto_mappers.position_to_proto(position)
             )
-        except grpc.aio.AioRpcError:
+        except ConnectError:
             raise
-        except AuthError as e:
-            await _abort_auth(context, e)
         except Exception as e:
-            logger.error("GetPosition error: %s", e, exc_info=True)
-            await context.abort(grpc.StatusCode.INTERNAL, "Failed to get position")
+            logger.error("get_position error: %s", e, exc_info=True)
+            raise ConnectError(Code.INTERNAL, "Failed to get position")
         finally:
             await _aclose(service)
 
-    async def ListPositions(
+    async def list_positions(
         self,
         request: trading_pb2.ListPositionsRequest,
-        context: grpc.aio.ServicerContext[Any, Any],
+        ctx: RequestContext[object, object],
     ) -> trading_pb2.ListPositionsResponse:
         """List positions for a session."""
         from llamatrade_proto.generated import trading_pb2
@@ -602,7 +565,7 @@ class TradingServicer:
 
         service = None
         try:
-            tenant_id, _user_id = _identity(request.context)
+            tenant_id, _user_id = resolve_identity_connect(request.context)
             session_id = UUID(request.session_id)
 
             service = await create_position_service(tenant_id)
@@ -613,20 +576,18 @@ class TradingServicer:
 
             proto_positions = [proto_mappers.position_to_proto(p) for p in positions]
             return trading_pb2.ListPositionsResponse(positions=proto_positions)
-        except grpc.aio.AioRpcError:
+        except ConnectError:
             raise
-        except AuthError as e:
-            await _abort_auth(context, e)
         except Exception as e:
-            logger.error("ListPositions error: %s", e, exc_info=True)
-            await context.abort(grpc.StatusCode.INTERNAL, "Failed to list positions")
+            logger.error("list_positions error: %s", e, exc_info=True)
+            raise ConnectError(Code.INTERNAL, "Failed to list positions")
         finally:
             await _aclose(service)
 
-    async def ClosePosition(
+    async def close_position(
         self,
         request: trading_pb2.ClosePositionRequest,
-        context: grpc.aio.ServicerContext[Any, Any],
+        ctx: RequestContext[object, object],
     ) -> trading_pb2.ClosePositionResponse:
         """Close a position."""
         from llamatrade_proto.generated import trading_pb2
@@ -636,7 +597,7 @@ class TradingServicer:
         executor = None
         service = None
         try:
-            tenant_id, _user_id = _identity(request.context)
+            tenant_id, _user_id = resolve_identity_connect(request.context)
             session_id = UUID(request.session_id)
             symbol = request.symbol
 
@@ -647,7 +608,7 @@ class TradingServicer:
                 symbol=symbol,
             )
             if not position:
-                await context.abort(grpc.StatusCode.NOT_FOUND, f"No position for symbol: {symbol}")
+                raise ConnectError(Code.NOT_FOUND, f"No position for symbol: {symbol}")
 
             quantity = (
                 Decimal(request.quantity.value)
@@ -669,7 +630,7 @@ class TradingServicer:
                 qty=quantity,
             )
 
-            # Closing order hits the session's own brokerage account (2A).
+            # Closing order hits the session's own brokerage account.
             executor = await create_order_executor(session_id=session_id, tenant_id=tenant_id)
             order = await executor.submit_order(
                 tenant_id=tenant_id,
@@ -678,31 +639,25 @@ class TradingServicer:
             )
 
             return trading_pb2.ClosePositionResponse(order=proto_mappers.order_to_proto(order))
-        except grpc.aio.AioRpcError:
+        except ConnectError:
             raise
-        except AuthError as e:
-            await _abort_auth(context, e)
         except ValueError as e:
-            await context.abort(grpc.StatusCode.INVALID_ARGUMENT, str(e))
+            raise ConnectError(Code.INVALID_ARGUMENT, str(e))
         except Exception as e:
-            logger.error("ClosePosition error: %s", e, exc_info=True)
-            await context.abort(grpc.StatusCode.INTERNAL, "Failed to close position")
+            logger.error("close_position error: %s", e, exc_info=True)
+            raise ConnectError(Code.INTERNAL, "Failed to close position")
         finally:
             await _aclose(executor)
             await _aclose(service)
 
-    async def StreamOrderUpdates(
+    async def stream_order_updates(
         self,
         request: trading_pb2.StreamOrderUpdatesRequest,
-        context: grpc.aio.ServicerContext[Any, Any],
+        ctx: RequestContext[object, object],
     ) -> AsyncGenerator[trading_pb2.OrderUpdate]:
         """Stream real-time order updates via Redis Streams (tail-read)."""
-        # Require a valid principal before streaming (1A).
-        try:
-            _identity(request.context)
-        except AuthError as e:
-            await _abort_auth(context, e)
-            return
+        # Require a valid principal before streaming (raises ConnectError on failure).
+        resolve_identity_connect(request.context)
         session_id = request.session_id
         logger.info("Starting order updates stream for session: %s", session_id)
 
@@ -711,8 +666,6 @@ class TradingServicer:
             async for cursor, update in subscriber.tail_orders(
                 session_id, last_seen_id=request.last_seen_id
             ):
-                if context.cancelled():
-                    break
                 update.stream_cursor = cursor
                 yield update
 
@@ -724,17 +677,13 @@ class TradingServicer:
         finally:
             await subscriber.close()
 
-    async def StreamPositionUpdates(
+    async def stream_position_updates(
         self,
         request: trading_pb2.StreamPositionUpdatesRequest,
-        context: grpc.aio.ServicerContext[Any, Any],
+        ctx: RequestContext[object, object],
     ) -> AsyncGenerator[trading_pb2.PositionUpdate]:
         """Stream real-time position updates via Redis Streams (tail-read)."""
-        try:
-            _identity(request.context)
-        except AuthError as e:
-            await _abort_auth(context, e)
-            return
+        resolve_identity_connect(request.context)
         session_id = request.session_id
         logger.info("Starting position updates stream for session: %s", session_id)
 
@@ -743,8 +692,6 @@ class TradingServicer:
             async for cursor, update in subscriber.tail_positions(
                 session_id, last_seen_id=request.last_seen_id
             ):
-                if context.cancelled():
-                    break
                 update.stream_cursor = cursor
                 yield update
 
@@ -770,12 +717,10 @@ class TradingServicer:
             is_active=session.status == EXECUTION_STATUS_RUNNING,
             total_pnl=common_pb2.Decimal(value=str(session.pnl)),
             total_trades=session.trades_count,
-            started_at=common_pb2.Timestamp(seconds=int(session.started_at.timestamp())),
+            started_at=to_proto_timestamp(session.started_at),
             sleeve_id=str(session.sleeve_id) if session.sleeve_id else "",
             account_id=str(session.account_id) if session.account_id else "",
         )
         if session.stopped_at:
-            proto.ended_at.CopyFrom(
-                common_pb2.Timestamp(seconds=int(session.stopped_at.timestamp()))
-            )
+            proto.ended_at.CopyFrom(to_proto_timestamp(session.stopped_at))
         return proto

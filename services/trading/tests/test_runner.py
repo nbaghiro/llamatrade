@@ -300,67 +300,6 @@ class TestStrategyRunner:
 
         assert order.side == ORDER_SIDE_SELL  # Short = sell
 
-    async def test_update_position_buy(self, strategy_runner):
-        """Test position update on buy signal."""
-        signal = Signal(
-            type="buy",
-            symbol="AAPL",
-            quantity=Decimal("10.0"),
-            price=Decimal("150.0"),
-        )
-
-        await strategy_runner._update_position(signal)
-
-        assert "AAPL" in strategy_runner._positions
-        assert strategy_runner._positions["AAPL"].side == "long"
-        assert strategy_runner._positions["AAPL"].quantity == 10.0
-
-    async def test_update_position_sell(self, strategy_runner):
-        """Test position update on sell signal (close long)."""
-        # First create a position
-        buy_signal = Signal(
-            type="buy", symbol="AAPL", quantity=Decimal("10.0"), price=Decimal("150.0")
-        )
-        await strategy_runner._update_position(buy_signal)
-
-        # Then sell it
-        sell_signal = Signal(
-            type="sell", symbol="AAPL", quantity=Decimal("10.0"), price=Decimal("155.0")
-        )
-        await strategy_runner._update_position(sell_signal)
-
-        assert "AAPL" not in strategy_runner._positions
-
-    async def test_update_position_short(self, strategy_runner):
-        """Test position update on short signal."""
-        signal = Signal(
-            type="short",
-            symbol="AAPL",
-            quantity=Decimal("10.0"),
-            price=Decimal("155.0"),
-        )
-
-        await strategy_runner._update_position(signal)
-
-        assert "AAPL" in strategy_runner._positions
-        assert strategy_runner._positions["AAPL"].side == "short"
-
-    async def test_update_position_cover(self, strategy_runner):
-        """Test position update on cover signal (close short)."""
-        # First create a short position
-        short_signal = Signal(
-            type="short", symbol="AAPL", quantity=Decimal("10.0"), price=Decimal("155.0")
-        )
-        await strategy_runner._update_position(short_signal)
-
-        # Then cover it
-        cover_signal = Signal(
-            type="cover", symbol="AAPL", quantity=Decimal("10.0"), price=Decimal("150.0")
-        )
-        await strategy_runner._update_position(cover_signal)
-
-        assert "AAPL" not in strategy_runner._positions
-
 
 class TestRunnerManager:
     """Tests for RunnerManager."""

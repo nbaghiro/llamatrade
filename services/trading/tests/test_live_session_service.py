@@ -554,6 +554,8 @@ class TestLiveSessionServiceStartSession:
         live_session_service._preflight_checks = AsyncMock(return_value=mock_credentials)
         # Legacy (unfunded) session: no ledger identity
         live_session_service._resolve_ledger_identity = AsyncMock(return_value=(None, None))
+        # Ownership lease (see test_session_lease.py for its own coverage)
+        live_session_service._acquire_session_lease = AsyncMock()
 
         # Mock parent start_session
         with patch.object(
@@ -595,6 +597,8 @@ class TestLiveSessionServiceStartSession:
         live_session_service._preflight_checks = AsyncMock(return_value=mock_credentials)
         # Legacy (unfunded) session: no ledger identity
         live_session_service._resolve_ledger_identity = AsyncMock(return_value=(None, None))
+        # Ownership lease (see test_session_lease.py for its own coverage)
+        live_session_service._acquire_session_lease = AsyncMock()
 
         # Mock parent start_session
         with patch.object(
@@ -1148,7 +1152,7 @@ class TestLiveSessionServiceGetCredentials:
         mock_result.scalar_one_or_none.return_value = mock_creds
         mock_db.execute.return_value = mock_result
 
-        with patch("src.credentials.decrypt_value") as mock_decrypt:
+        with patch("src.credentials.async_decrypt_value") as mock_decrypt:
             mock_decrypt.side_effect = ["decrypted_key", "decrypted_secret"]
 
             result = await live_session_service._get_credentials_by_id(credentials_id, tenant_id)

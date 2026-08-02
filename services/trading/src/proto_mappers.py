@@ -2,25 +2,21 @@
 
 Proto is the single source of truth for the read/wire shape (decision 1A): map
 the persisted ``Position`` row straight to the generated proto message, money as
-``Decimal`` end-to-end (5A), with no intermediate Pydantic layer. This fully
+``Decimal`` end-to-end, with no intermediate Pydantic layer. This fully
 populates fields the old ``PositionResponse`` dropped (id, tenant_id, session_id,
 average_entry_price, realized_pnl, opened_at, updated_at) instead of blanking
 them or reconstructing them at the servicer boundary.
 """
 
-from datetime import datetime
 from decimal import Decimal
 
 from llamatrade_db.models.trading import Order, Position
 from llamatrade_proto.generated import common_pb2, trading_pb2
+from llamatrade_proto.timestamps import to_proto_timestamp
 
 
 def _dec(value: Decimal) -> common_pb2.Decimal:
     return common_pb2.Decimal(value=str(value))
-
-
-def _ts(value: datetime) -> common_pb2.Timestamp:
-    return common_pb2.Timestamp(seconds=int(value.timestamp()))
 
 
 def position_to_proto(p: Position) -> trading_pb2.Position:
@@ -38,8 +34,8 @@ def position_to_proto(p: Position) -> trading_pb2.Position:
         cost_basis=_dec(p.cost_basis),
         average_entry_price=_dec(p.avg_entry_price),
         realized_pnl=_dec(p.realized_pl),
-        opened_at=_ts(p.opened_at),
-        updated_at=_ts(p.updated_at),
+        opened_at=to_proto_timestamp(p.opened_at),
+        updated_at=to_proto_timestamp(p.updated_at),
     )
     if p.current_price is not None:
         proto.current_price.CopyFrom(_dec(p.current_price))
@@ -83,10 +79,10 @@ def order_to_proto(o: Order) -> trading_pb2.Order:
         proto.average_fill_price.CopyFrom(_dec(o.filled_avg_price))
     submitted = o.submitted_at or o.created_at
     if submitted:
-        proto.created_at.CopyFrom(_ts(submitted))
-        proto.submitted_at.CopyFrom(_ts(submitted))
+        proto.created_at.CopyFrom(to_proto_timestamp(submitted))
+        proto.submitted_at.CopyFrom(to_proto_timestamp(submitted))
     if o.filled_at:
-        proto.filled_at.CopyFrom(_ts(o.filled_at))
+        proto.filled_at.CopyFrom(to_proto_timestamp(o.filled_at))
     if o.canceled_at:
-        proto.cancelled_at.CopyFrom(_ts(o.canceled_at))
+        proto.cancelled_at.CopyFrom(to_proto_timestamp(o.canceled_at))
     return proto

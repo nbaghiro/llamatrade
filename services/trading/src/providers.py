@@ -9,6 +9,7 @@ Alpaca Broker API path is added these gain a provider-selection branch. See
 
 from __future__ import annotations
 
+import os
 from collections.abc import Callable
 
 from llamatrade_alpaca import (
@@ -19,6 +20,11 @@ from llamatrade_alpaca import (
 )
 
 from src.credentials import DecryptedCredentials
+from src.runner.service_bar_stream import ServiceBarStream
+
+# Opt-in (default off): source live bars from the shared market-data StreamBars fan-out (one platform connection) instead of a per-tenant Alpaca WebSocket. See service_bar_stream.py.
+_BARS_FROM_SERVICE = os.getenv("TRADING_BARS_FROM_SERVICE", "").lower() in ("1", "true", "yes")
+_MARKET_DATA_TARGET = os.getenv("MARKET_DATA_GRPC_TARGET", "market-data:8840")
 
 
 def build_trading_client(creds: DecryptedCredentials) -> TradingClient:
@@ -43,8 +49,21 @@ def build_bar_stream(
     *,
     on_reconnect: Callable[[], None] | None = None,
     on_connection_change: Callable[[bool], None] | None = None,
-) -> BarStreamClient:
-    """Market-data (bar) stream from the account's own Alpaca credentials."""
+) -> BarStreamClient | ServiceBarStream:
+    """Market-data (bar) stream for a session.
+
+    Default: the account's own Alpaca WebSocket. With ``TRADING_BARS_FROM_SERVICE``:
+    the shared market-data ``StreamBars`` fan-out (one platform connection), which lets
+    a tenant run multiple concurrent live strategies without exhausting their single
+    Alpaca market-data stream. Credentials are unused in the shared-stream path (bars
+    are public); per-tenant creds remain for execution / trade-updates.
+    """
+    if _BARS_FROM_SERVICE:
+        return ServiceBarStream(
+            _MARKET_DATA_TARGET,
+            on_reconnect=on_reconnect,
+            on_connection_change=on_connection_change,
+        )
     return BarStreamClient(
         api_key=creds.api_key,
         api_secret=creds.api_secret,

@@ -49,6 +49,7 @@ from src.metrics import (
 from src.models import (
     BracketType,
     OrderCreate,
+    RiskCheckResult,
     order_side_to_str,
     order_type_to_str,
     time_in_force_to_str,
@@ -77,8 +78,15 @@ def generate_deterministic_order_id(
     crash resolves to the existing broker order instead of placing a second
     one — the broker enforces client_order_id uniqueness per account.
 
+    An aware ``signal_timestamp`` is converted to UTC before hashing, so the
+    same instant expressed in any offset derives the same id (ids for UTC
+    inputs are unchanged). A naive timestamp is hashed as given, which reads it
+    as UTC wall clock.
+
     Format: ``lt-{sha256(key)[:16]}``.
     """
+    if signal_timestamp.tzinfo is not None:
+        signal_timestamp = signal_timestamp.astimezone(UTC)
     data = f"{session_id}:{symbol}:{side}:{signal_timestamp.isoformat()}"
     digest = hashlib.sha256(data.encode()).hexdigest()[:16]
     return f"lt-{digest}"
@@ -103,8 +111,7 @@ class OrderExecutor(OrderSubmissionMixin):
         self.alerts = alert_service
         self.audit = audit_service
         self.publisher = event_publisher
-        # True when this executor built a session-specific Alpaca client it owns
-        # (manual order path); the shared singleton must never be closed.
+        # True when this executor owns a session-specific Alpaca client (manual order path); the shared singleton must never be closed.
         self._owns_alpaca = owns_alpaca
 
     async def aclose(self) -> None:
@@ -126,6 +133,7 @@ class OrderExecutor(OrderSubmissionMixin):
         session_id: UUID,
         order: OrderCreate,
         signal_timestamp: datetime | None = None,
+        risk_result: RiskCheckResult | None = None,
     ) -> Order:
         """Submit an order after risk checks.
 
@@ -135,11 +143,15 @@ class OrderExecutor(OrderSubmissionMixin):
         returned as-is, and the broker rejects a duplicate that we recorded but
         never persisted. Without it (e.g. ad-hoc manual orders), a random id is
         used — still sent to the broker, but not crash-idempotent.
+
+        When ``risk_result`` is supplied the caller already ran the risk check
+        (the live runner, which also prefilled the price cache), so it is used
+        as-is rather than running a second full check with its own market-data
+        RPC. Without it (the manual order path) the check runs here.
         """
         start_time = time.perf_counter()
 
-        # Generate client order ID. Deterministic when we have a signal to key
-        # off (live runner) so retries collapse onto the same broker order.
+        # Client order id is deterministic when keyed off a signal (live runner) so retries collapse onto the same broker order.
         if signal_timestamp is not None:
             client_order_id = generate_deterministic_order_id(
                 session_id=session_id,
@@ -154,9 +166,7 @@ class OrderExecutor(OrderSubmissionMixin):
                 replay = await self._idempotent_replay(existing, client_order_id)
                 if replay is not None:
                     return replay
-                # Stranded: recorded PENDING but never reached the broker (crash in
-                # the submit window). Resume by reusing the existing row — neither
-                # drop the signal nor place a duplicate (3A).
+                # Stranded: recorded PENDING but never reached the broker (crash in the submit window). Resume the existing row — neither drop the signal nor place a duplicate.
                 logger.warning(
                     "Resuming stranded order client_order_id=%s (recorded, never submitted)",
                     client_order_id,
@@ -166,11 +176,12 @@ class OrderExecutor(OrderSubmissionMixin):
             client_order_id = str(uuid4())
             resume_order = None
 
-        risk_result = await self._run_risk_check(
-            tenant_id=tenant_id,
-            order=order,
-            session_id=session_id,
-        )
+        if risk_result is None:
+            risk_result = await self._run_risk_check(
+                tenant_id=tenant_id,
+                order=order,
+                session_id=session_id,
+            )
 
         if not risk_result.passed:
             await self._handle_risk_rejection(
@@ -220,8 +231,7 @@ class OrderExecutor(OrderSubmissionMixin):
             await self.db.commit()
             await self.db.refresh(db_order)
 
-        # Submit to Alpaca (using mixin method). Passing our client_order_id
-        # lets the broker enforce idempotency on retry.
+        # Submit to Alpaca; passing our client_order_id lets the broker enforce idempotency on retry.
         try:
             result = await self._submit_to_alpaca(order=order, client_order_id=client_order_id)
 
@@ -246,8 +256,7 @@ class OrderExecutor(OrderSubmissionMixin):
                     order_type=order_type_to_str(order.order_type),
                 )
 
-            # Ledger cash reservation (portfolio-ledger.md): earmark the estimated
-            # notional of resting buys so sleeve free cash stays honest.
+            # Ledger cash reservation (portfolio-ledger.md): earmark the estimated notional of resting buys so sleeve free cash stays honest.
             await self._publish_ledger_lifecycle(
                 db_order, "order_submitted", reserved=self._reservation_amount(order)
             )
@@ -278,7 +287,7 @@ class OrderExecutor(OrderSubmissionMixin):
         return db_order
 
     async def _idempotent_replay(self, existing: Order, client_order_id: str) -> Order | None:
-        """Resolve a re-submitted deterministic order (3A).
+        """Resolve a re-submitted deterministic order.
 
         Returns the existing order's response when it was already dispatched
         (has a broker id or has advanced past PENDING), or when the broker
@@ -309,7 +318,7 @@ class OrderExecutor(OrderSubmissionMixin):
         return existing
 
     async def recover_stranded_orders(self, tenant_id: UUID, session_id: UUID) -> int:
-        """Reconcile orders left PENDING with no broker id by a submit-window crash (3A).
+        """Reconcile orders left PENDING with no broker id by a submit-window crash.
 
         For each, ask the broker by ``client_order_id``: if it actually went
         through, adopt it (and emit any terminal ledger events the stream missed);
@@ -452,8 +461,7 @@ class OrderExecutor(OrderSubmissionMixin):
 
         await self.db.commit()
 
-        # Release the ledger cash reservation (idempotent at the ledger —
-        # the runner publishes the same release for stream-observed cancels)
+        # Release the ledger cash reservation (idempotent at the ledger — the runner publishes the same release for stream-observed cancels).
         await self._publish_ledger_lifecycle(order, "order_cancelled")
 
         if self.audit:
@@ -481,11 +489,18 @@ class OrderExecutor(OrderSubmissionMixin):
         """Emit the §1a fill (or filled portion) + §4 release for a terminal order.
 
         Idempotent at the ledger (dedup on event_id), so safe to call repeatedly.
-        No-op for unattributed orders or when no publisher is configured. Failures
-        log, never raise.
+        An unattributed order first resolves the account's Manual sleeve;
+        if that fails the order is skipped (reconciliation still catches it).
+        No-op when no publisher is configured. Failures log, never raise.
         """
-        if self.publisher is None or order.sleeve_id is None or order.account_id is None:
+        if self.publisher is None:
             return
+        sleeve_id, account_id = order.sleeve_id, order.account_id
+        if sleeve_id is None or account_id is None:
+            resolved = await self._backfill_order_attribution(order)
+            if resolved is None:
+                return
+            sleeve_id, account_id = resolved
         try:
             payload = build_ledger_fill_payload_from_order(order)
             if payload is not None:
@@ -501,8 +516,8 @@ class OrderExecutor(OrderSubmissionMixin):
                 release = build_ledger_lifecycle_payload(
                     kind=kind,
                     tenant_id=order.tenant_id,
-                    account_id=order.account_id,
-                    sleeve_id=order.sleeve_id,
+                    account_id=account_id,
+                    sleeve_id=sleeve_id,
                     client_order_id=order.client_order_id,
                     symbol=order.symbol,
                     side=order_side_to_str(order.side),
@@ -512,17 +527,58 @@ class OrderExecutor(OrderSubmissionMixin):
         except Exception as e:
             logger.error(f"Failed to publish ledger events for order {order.client_order_id}: {e}")
 
+    async def _backfill_order_attribution(self, order: Order) -> tuple[UUID, UUID] | None:
+        """Resolve + persist Manual-sleeve attribution for an unattributed order.
+
+        Reuses the submission-time resolver, so a terminal order that missed
+        attribution still reaches the ledger instead of surfacing later as
+        broker drift adopted into Unmanaged. Fail-safe: None (with a warning)
+        keeps the early-return behavior and leaves the order to reconciliation.
+        """
+        from src.attribution import get_ledger_client, resolve_order_attribution
+
+        try:
+            sleeve_id, account_id = await resolve_order_attribution(
+                db=self.db,
+                ledger=get_ledger_client(),
+                tenant_id=order.tenant_id,
+                session_id=order.session_id,
+                requested_sleeve_id="",
+                symbol=order.symbol,
+                side=order_side_to_str(order.side),
+            )
+        except Exception:
+            logger.warning(
+                f"Attribution resolution failed for terminal order {order.client_order_id}; "
+                "skipping ledger emission (reconciliation will surface it)",
+                exc_info=True,
+            )
+            return None
+        if sleeve_id is None or account_id is None:
+            logger.warning(
+                f"No resolvable sleeve for terminal order {order.client_order_id}; "
+                "skipping ledger emission (reconciliation will surface it)"
+            )
+            return None
+        order.sleeve_id = sleeve_id
+        order.account_id = account_id
+        await self.db.commit()
+        return sleeve_id, account_id
+
     async def republish_ledger_for_terminal_orders(
         self, tenant_id: UUID, session_id: UUID, since: datetime | None = None
     ) -> int:
-        """Re-emit ledger events for already-terminal, sleeve-attributed orders (4A).
+        """Re-emit ledger events for already-terminal, sleeve-attributed orders.
 
         A safety net for the narrow window where an order reached a terminal
         state but its ledger publish failed (e.g. Redis briefly down): a later
         REST sync won't re-fire it because the DB status no longer changes.
         Re-publishing is idempotent at the ledger (dedup on event_id), so this
-        never double-counts. ``since`` bounds the scan to recent orders. Returns
-        the number of orders re-published.
+        never double-counts. ``since`` bounds the scan on ``updated_at`` (when the
+        order last changed, i.e. its terminal transition) rather than
+        ``created_at``, so a long-lived order that only just reached a terminal
+        state during an outage is still re-published. Returns the number of
+        orders re-published.
         """
         if self.publisher is None:
             return 0
@@ -544,7 +600,7 @@ class OrderExecutor(OrderSubmissionMixin):
             )
         )
         if since is not None:
-            stmt = stmt.where(Order.created_at >= since)
+            stmt = stmt.where(Order.updated_at >= since)
         orders = list((await self.db.execute(stmt)).scalars().all())
         for order in orders:
             await self._emit_ledger_for_terminal(order)
@@ -624,8 +680,7 @@ class OrderExecutor(OrderSubmissionMixin):
         await self.db.commit()
         await self.db.refresh(order)
 
-        # Ledger emission for terminal transitions the trade stream may have
-        # missed (idempotent with the stream path — portfolio-ledger.md)
+        # Ledger emission for terminal transitions the trade stream may have missed (idempotent with the stream path — portfolio-ledger.md).
         await self._publish_ledger_events_for_sync(order, old_status)
 
         # Record sync metric
@@ -734,8 +789,12 @@ class OrderExecutor(OrderSubmissionMixin):
 
         # Process results
         for (order, _), alpaca_order in zip(orders_with_ids, alpaca_results, strict=False):
-            # Skip if fetch failed (exception returned)
             if isinstance(alpaca_order, BaseException):
+                logger.warning(
+                    "broker fetch failed during bulk sync for order %s: %s",
+                    order.client_order_id,
+                    alpaca_order,
+                )
                 continue
             if not alpaca_order:
                 continue
@@ -759,8 +818,7 @@ class OrderExecutor(OrderSubmissionMixin):
 
         await self.db.commit()
 
-        # Ledger emission for terminal transitions discovered via sync
-        # (idempotent with the stream path — portfolio-ledger.md)
+        # Ledger emission for terminal transitions discovered via sync (idempotent with the stream path — portfolio-ledger.md).
         for order, old_status in status_transitions:
             await self._publish_ledger_events_for_sync(order, old_status)
 
@@ -942,9 +1000,7 @@ class OrderExecutor(OrderSubmissionMixin):
             filled_qty=Decimal("0"),
             parent_order_id=parent_order.id,
             bracket_type=bracket_type,  # BracketType is IntEnum, no conversion needed
-            # Inherit the parent's ledger identity so a stop-loss/take-profit fill
-            # observed only via REST sync or crash recovery is still re-emitted —
-            # those emitters skip orders with no sleeve_id/account_id.
+            # Inherit the parent's ledger identity so a stop-loss/take-profit fill seen only via REST sync or crash recovery is still re-emitted (those emitters skip orders with no sleeve_id/account_id).
             sleeve_id=parent_order.sleeve_id,
             account_id=parent_order.account_id,
         )
@@ -1124,10 +1180,8 @@ class OrderExecutor(OrderSubmissionMixin):
                     logger.warning(
                         f"Failed to cancel sibling bracket {sibling.alpaca_order_id}: {e}"
                     )
-                    # Continue anyway - mark as cancelled locally
-                    # The periodic sync will correct if needed
+                    # Mark cancelled locally anyway; the periodic sync corrects it if needed.
 
-            # Update local state
             sibling.status = ORDER_STATUS_CANCELLED
             sibling.canceled_at = now
             sibling_metadata = sibling.metadata_
@@ -1220,30 +1274,6 @@ class OrderExecutor(OrderSubmissionMixin):
         await self.db.commit()
         return cancelled_count
 
-    async def _get_bracket_orders(
-        self,
-        parent_order_id: UUID,
-    ) -> tuple[Order | None, Order | None]:
-        """Get bracket orders for a parent order.
-
-        Returns:
-            Tuple of (stop_loss_order, take_profit_order)
-        """
-        stmt = select(Order).where(Order.parent_order_id == parent_order_id)
-        result = await self.db.execute(stmt)
-        bracket_orders = result.scalars().all()
-
-        sl_order: Order | None = None
-        tp_order: Order | None = None
-
-        for order in bracket_orders:
-            if order.bracket_type == BracketType.STOP_LOSS:
-                sl_order = order
-            elif order.bracket_type == BracketType.TAKE_PROFIT:
-                tp_order = order
-
-        return sl_order, tp_order
-
     async def _get_order_by_id(self, tenant_id: UUID, order_id: UUID) -> Order | None:
         """Get order ensuring tenant isolation."""
         stmt = select(Order).where(Order.id == order_id).where(Order.tenant_id == tenant_id)
@@ -1308,23 +1338,25 @@ async def create_order_executor(
     ``await executor.aclose()`` when done so the DB session is returned to the
     pool (trading-hardening 13A).
 
-    When ``session_id``/``tenant_id`` are given (the manual order path), the
-    Alpaca client is built from the *session's own* per-tenant credentials —
-    never the platform/env default (trading-hardening 2A). Raises ``ValueError``
-    if those credentials can't be resolved.
+    The DB session is bound to ``tenant_id`` for Postgres RLS on every
+    transaction; ``tenant_id`` is required. When ``session_id`` is given
+    (the manual order path), the Alpaca client is built from the *session's own*
+    per-tenant credentials — never the platform/env default (trading-hardening
+    2A). Raises ``ValueError`` if those credentials can't be resolved.
     """
     from llamatrade_alpaca import get_trading_client
-    from llamatrade_db import get_session_maker, set_tenant_guc
+    from llamatrade_db.session import bind_tenant_guc, get_session_maker
 
     from src.credentials import resolve_session_credentials
     from src.providers import build_trading_client
     from src.risk.risk_manager import get_risk_manager
 
+    if tenant_id is None:
+        raise ValueError("create_order_executor requires a tenant_id (RLS scope)")
     db = get_session_maker()()
-    if tenant_id is not None:
-        await set_tenant_guc(db, tenant_id)
+    bind_tenant_guc(db, tenant_id)
     owns_alpaca = False
-    if session_id is not None and tenant_id is not None:
+    if session_id is not None:
         creds = await resolve_session_credentials(db, session_id, tenant_id)
         if creds is None:
             await db.close()
@@ -1340,13 +1372,11 @@ async def create_order_executor(
         db=db,
         alpaca_client=alpaca,
         risk_manager=get_risk_manager(),
-        # Own short sessions per alert (webhook fetch/delivery) so a long-lived
-        # runner never shares its DB session across concurrent alerts (GAP 14).
-        alert_service=AlertService(session_maker=get_session_maker()),
+        # Own short sessions per alert (webhook fetch/delivery) so a long-lived runner never shares its DB session across concurrent alerts (GAP 14).
+        alert_service=AlertService(),
         event_publisher=get_trading_event_publisher(),
         owns_alpaca=owns_alpaca,
-        # Money-path audit trail: order submit/fill/cancel are recorded to the
-        # audit log (GAP 14). Own short sessions, like the alert service.
+        # Money-path audit trail: order submit/fill/cancel are recorded to the audit log (GAP 14); own short sessions like the alert service.
         audit_service=AuditService(session_maker=get_session_maker()),
     )
     return executor

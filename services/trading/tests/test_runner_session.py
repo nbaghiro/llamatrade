@@ -4,8 +4,12 @@ Verifies the two properties the old per-symbol path lacked:
   1. bar synchronization — the strategy evaluates once per period, only after every
      subscribed symbol has produced that period's bar;
   2. cross-symbol conditions — a condition on one symbol drives allocation of another.
+
+It also covers the session health counters (degraded evaluations, sub-notional skips) the
+runner reports as metric deltas on both loops.
 """
 
+import asyncio
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock
@@ -17,6 +21,7 @@ from llamatrade_alpaca import MockBarStream, MockTradeStream
 from llamatrade_alpaca import StreamBar as BarData
 from llamatrade_runtime import StrategySession
 
+from src.runner import runner as runner_module
 from src.runner.runner import RunnerConfig, StrategyRunner
 
 # RSI(SPY) switch: rising SPY -> RSI high -> hold TLT (cross-symbol condition).
@@ -134,6 +139,100 @@ class _FiniteStream:
     async def stream(self) -> AsyncIterator[BarData]:
         for bar in self._bars:
             yield bar
+
+
+class _CountingSession(StrategySession):
+    """Session whose health counters the test sets directly."""
+
+    degraded = 0
+    skipped = 0
+
+    @property
+    def degraded_eval_count(self) -> int:
+        return self.degraded
+
+    @property
+    def sub_notional_skip_count(self) -> int:
+        return self.skipped
+
+
+def _record_calls(monkeypatch: pytest.MonkeyPatch) -> tuple[list[int], list[int]]:
+    degraded: list[int] = []
+    skipped: list[int] = []
+    monkeypatch.setattr(runner_module, "record_degraded_evals", degraded.append)
+    monkeypatch.setattr(runner_module, "record_sub_notional_skips", skipped.append)
+    return degraded, skipped
+
+
+async def test_hand_rolled_loop_reports_session_counter_deltas(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session = _CountingSession(SWITCH)
+    runner, _ = _runner(session)
+    degraded, skipped = _record_calls(monkeypatch)
+    session.degraded = 5
+    session.skipped = 2
+
+    base = datetime(2024, 1, 1, 14, 30, tzinfo=UTC)
+    for i in range(40):
+        ts = base + timedelta(days=i)
+        await runner._process_bar(_bar("SPY", ts, 100.0 + i))
+        await runner._process_bar(_bar("TLT", ts, 50.0))
+
+    assert degraded == [5]
+    assert skipped == [2]
+
+
+async def test_runtime_loop_counters_are_drained_once_by_the_periodic_tick(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The runtime loop has no per-evaluation runner hook, so the equity-sync tick drains it."""
+    session = _CountingSession(SWITCH)
+    runner, _ = _runner(session)
+    degraded, skipped = _record_calls(monkeypatch)
+    base = datetime(2024, 1, 1, 14, 30, tzinfo=UTC)
+    bars: list[BarData] = []
+    for i in range(40):
+        ts = base + timedelta(days=i)
+        bars.append(_bar("SPY", ts, 100.0 + i))
+        bars.append(_bar("TLT", ts, 50.0))
+    runner.bar_stream = _FiniteStream(bars)
+    runner._running = True
+    await runner._run_via_runtime()
+    session.degraded = 3
+    session.skipped = 1
+
+    sleeps = 0
+
+    async def _sleep(_seconds: float) -> None:
+        nonlocal sleeps
+        sleeps += 1
+        if sleeps > 1:
+            runner._running = False
+
+    monkeypatch.setattr(asyncio, "sleep", _sleep)
+    await runner._equity_sync_loop()
+
+    assert degraded == [3]
+    assert skipped == [1]
+
+
+async def test_a_session_counter_that_stops_rising_reports_nothing_further(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session = _CountingSession(SWITCH)
+    runner, _ = _runner(session)
+    degraded, skipped = _record_calls(monkeypatch)
+
+    session.degraded = 2
+    session.skipped = 1
+    runner._drain_session_counters()
+    runner._drain_session_counters()
+    session.degraded = 6
+    runner._drain_session_counters()
+
+    assert degraded == [2, 4]
+    assert skipped == [1]
 
 
 async def test_runtime_loop_drives_the_same_submit_path() -> None:

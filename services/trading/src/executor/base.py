@@ -7,7 +7,6 @@ This module holds the order-submission helpers shared by order executors
 import logging
 import time
 from dataclasses import dataclass
-from datetime import UTC, datetime
 from uuid import UUID
 
 from llamatrade_alpaca import Order as AlpacaOrder
@@ -37,8 +36,7 @@ from src.services.alert_service import AlertService
 
 logger = logging.getLogger(__name__)
 
-# Alpaca's 16 raw order statuses collapsed to our normalized 8-state OrderStatus.
-# Kept exhaustive vs llamatrade_alpaca.OrderStatus by test_base_executor.
+# Alpaca's 16 raw order statuses collapsed to our normalized 8-state OrderStatus (kept exhaustive vs llamatrade_alpaca.OrderStatus by test_base_executor).
 _ALPACA_STATUS_MAP: dict[str, OrderStatus.ValueType] = {
     "new": ORDER_STATUS_SUBMITTED,
     "accepted": ORDER_STATUS_ACCEPTED,
@@ -290,10 +288,3 @@ class OrderSubmissionMixin:
             logger.warning("Unknown Alpaca order status %r; defaulting to PENDING", alpaca_status)
             return ORDER_STATUS_PENDING
         return mapped
-
-    def _get_current_utc_time(self) -> datetime:
-        """Get current UTC time.
-
-        Extracted as a method for easier testing.
-        """
-        return datetime.now(UTC)

@@ -9,7 +9,7 @@ from uuid import UUID
 from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from llamatrade_db import get_db
+from llamatrade_db import get_db, tenant_session
 from llamatrade_db.models.audit import AuditEventType, AuditLog
 from llamatrade_db.models.trading import Order
 
@@ -28,8 +28,7 @@ class AuditService:
         session_maker: async_sessionmaker[AsyncSession] | None = None,
     ):
         self.db = db
-        # Long-lived callers pass a session_maker so each audit write opens its
-        # own short session; request-scoped callers/tests pass ``db``.
+        # Long-lived callers pass a session_maker so each audit write opens its own short session scoped to the record's tenant for RLS; request-scoped callers/tests pass ``db``.
         self._session_maker = session_maker
 
     async def log_signal(
@@ -442,7 +441,7 @@ class AuditService:
             source=source,
         )
         if self._session_maker is not None:
-            async with self._session_maker() as db:
+            async with tenant_session(tenant_id, session_maker=self._session_maker) as db:
                 db.add(log)
                 await db.commit()
             return
