@@ -225,6 +225,19 @@ if [[ "$RUN_TESTS" == "true" && "$RUN_BACKEND" == "true" ]]; then
         print_error "Proto tests failed"
         FAILED+=("Proto tests")
     fi
+
+    # Shared-lib suites: CI's Test Backend runs these, so drift here only ever
+    # surfaced remotely before this step existed. Docker-gated integration
+    # tests inside them self-skip without a broker.
+    for lib in telemetry events dsl runtime alpaca common db; do
+        print_step "libs/${lib} tests"
+        if (cd "libs/${lib}" && pytest tests -q --no-cov); then
+            print_success "libs/${lib} tests passed"
+        else
+            print_error "libs/${lib} tests failed"
+            FAILED+=("libs/${lib} tests")
+        fi
+    done
 fi
 
 # FRONTEND TESTS
