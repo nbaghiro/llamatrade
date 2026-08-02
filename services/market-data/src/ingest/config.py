@@ -35,6 +35,9 @@ class IngestConfig:
     backfill_interval_s: float = 24 * 3600
     gap_repair_interval_s: float = 3600
     corporate_action_interval_s: float = 24 * 3600
+    # How often the derived universe is recomputed from live sessions. A newly
+    # started session waits at most this long for its symbols to be streamed.
+    universe_refresh_interval_s: float = 60.0
     # Trailing window the corporate-action job re-pulls each night (days)
     corporate_action_window_days: int = 10
 
@@ -43,10 +46,16 @@ class IngestConfig:
         def _int(name: str, default: int) -> int:
             return int(os.getenv(name, str(default)))
 
+        def _float(name: str, default: float) -> float:
+            return float(os.getenv(name, str(default)))
+
         return cls(
             daily_lookback_days=_int("MARKET_DATA_DAILY_LOOKBACK_DAYS", cls.daily_lookback_days),
             minute_lookback_days=_int("MARKET_DATA_MINUTE_LOOKBACK_DAYS", cls.minute_lookback_days),
             max_concurrency=_int("MARKET_DATA_INGEST_CONCURRENCY", cls.max_concurrency),
+            universe_refresh_interval_s=_float(
+                "MARKET_DATA_UNIVERSE_REFRESH_INTERVAL_S", cls.universe_refresh_interval_s
+            ),
         )
 
     def lookback_days(self, timeframe: str) -> int:

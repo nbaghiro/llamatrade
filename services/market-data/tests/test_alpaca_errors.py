@@ -10,7 +10,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 
-from llamatrade_alpaca import MarketDataClient, TradingClient
+from llamatrade_alpaca import MarketDataClient
 
 from src.models import (
     Timeframe,
@@ -21,16 +21,6 @@ from src.models import (
 def client():
     """Create a fresh Alpaca market data client for each test."""
     return MarketDataClient(
-        api_key="test-key",
-        api_secret="test-secret",
-        paper=True,
-    )
-
-
-@pytest.fixture
-def trading_client():
-    """Create a fresh Alpaca trading client for clock API tests."""
-    return TradingClient(
         api_key="test-key",
         api_secret="test-secret",
         paper=True,
@@ -209,27 +199,6 @@ class TestMalformedResponseHandling:
             )
 
             assert result == []
-
-
-@pytest.mark.skip(reason="Clock API is tested in libs/alpaca/tests/test_trading_client.py")
-class TestClockAPIErrors:
-    """Tests for market clock API error handling.
-
-    Note: get_clock() is now in TradingClient, not MarketDataClient.
-    These tests are covered by the lib's test suite in libs/alpaca/tests/.
-    """
-
-    async def test_clock_api_connection_error(self, trading_client):
-        """Verify clock API connection errors propagate."""
-        pass
-
-    async def test_clock_api_invalid_response(self, trading_client):
-        """Verify clock API handles invalid response."""
-        pass
-
-    async def test_clock_api_success(self, trading_client):
-        """Verify clock API returns correct data on success."""
-        pass
 
 
 class TestMultiSymbolErrors:

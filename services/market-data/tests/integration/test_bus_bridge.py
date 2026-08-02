@@ -1,7 +1,7 @@
 """Integration test: a bar published to the bus reaches a subscribed client.
 
 End-to-end of the consolidated fan-out: BarEvents -> BusBridge -> StreamManager
--> per-client queue. Real Redis; real StreamManager (no mocks).
+-> per-client queue. Real Kafka; real StreamManager (no mocks).
 """
 
 from __future__ import annotations

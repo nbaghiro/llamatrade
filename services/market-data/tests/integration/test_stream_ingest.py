@@ -1,22 +1,41 @@
 """Integration test: stream write-through lands in the store AND the bus.
 
-Real Timescale + real Redis EventBus; only the inbound bar payloads are
+Real Timescale + real Kafka EventBus; only the inbound bar payloads are
 synthetic (as they would arrive from the Alpaca WS).
 """
 
 from __future__ import annotations
 
+import asyncio
 from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from llamatrade_events import BARS
+from llamatrade_events import BARS, CURSOR_BEGIN, EventBus
 from llamatrade_proto.generated import market_data_pb2
 
 from src.ingest.stream import BarIngestor
 from src.store.repository import BarStore
 
 pytestmark = pytest.mark.integration
+
+
+async def _drain(bus: EventBus, stream: str, n: int, *, timeout: float = 30.0) -> list[bytes]:
+    """Tail up to ``n`` raw values from ``stream`` (from the start), bounded by ``timeout``."""
+    agen = bus.tail_raw(stream, from_cursor=CURSOR_BEGIN)
+    out: list[bytes] = []
+
+    async def pull() -> None:
+        async for _cursor, value in agen:
+            out.append(value)
+            if len(out) >= n:
+                break
+
+    try:
+        await asyncio.wait_for(pull(), timeout)
+    finally:
+        await agen.aclose()
+    return out
 
 
 def _bar_payload(minute: int) -> dict[str, object]:
@@ -47,13 +66,9 @@ async def test_bars_land_in_store_and_bus(bar_store: BarStore, event_bus) -> Non
     assert stored[-1].close == 104
 
     # Bus side: 5 raw Bar protos published to the BARS channel, parseable back.
-    transport = event_bus.transport
-    client = await transport._client()
-    entries = await client.xrange(transport.key(BARS.key()))
-    assert len(entries) == 5
-    _id, raw = entries[0]
-    value = raw[b"v"] if b"v" in raw else raw["v"]
-    bar = market_data_pb2.Bar.FromString(value)
+    raws = await _drain(event_bus, BARS.key(), 5)
+    assert len(raws) == 5
+    bar = market_data_pb2.Bar.FromString(raws[0])
     assert bar.symbol == "AAPL"
     assert float(bar.close.value) == 100.0
 

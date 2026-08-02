@@ -12,18 +12,15 @@ from datetime import UTC, datetime, timedelta
 from llamatrade_telemetry import get_metrics
 
 from src.metrics import (
-    record_alpaca_stream_message,
     record_bar_series_gaps,
     record_bar_staleness,
     record_cache_operation,
+    record_ingest_universe_refresh_failure,
+    record_ingest_universe_size,
     record_missing_symbol,
     record_quote_staleness,
-    record_stream_message,
     record_stream_message_lag,
     record_trade_staleness,
-    update_circuit_breaker_metrics,
-    update_rate_limiter_metrics,
-    update_stream_metrics,
 )
 from src.models import Bar
 
@@ -115,98 +112,6 @@ class TestRecordCacheOperation:
             )
             is not None
         )
-
-
-class TestUpdateStreamMetrics:
-    """Stream gauges map onto the shared marketdata gauges."""
-
-    def test_updates_all_gauges(self) -> None:
-        update_stream_metrics(connections=5, trade_subs=10, quote_subs=15, bar_subs=8)
-        text = _exposition()
-        assert _sample(text, "llamatrade_marketdata_stream_connections") == 5.0
-        assert _sample(text, "llamatrade_marketdata_stream_subscriptions", type="trades") == 10.0
-        assert _sample(text, "llamatrade_marketdata_stream_subscriptions", type="quotes") == 15.0
-        assert _sample(text, "llamatrade_marketdata_stream_subscriptions", type="bars") == 8.0
-
-    def test_updates_zero_values(self) -> None:
-        update_stream_metrics(connections=0, trade_subs=0, quote_subs=0, bar_subs=0)
-        assert _sample(_exposition(), "llamatrade_marketdata_stream_connections") == 0.0
-
-
-class TestRecordStreamMessage:
-    """Client-facing stream message counter is service-specific."""
-
-    def test_increments_per_type(self) -> None:
-        before = _sample(_exposition(), "llamatrade_marketdata_stream_messages_total", type="trade")
-        record_stream_message("trade")
-        after = _sample(_exposition(), "llamatrade_marketdata_stream_messages_total", type="trade")
-        assert after == (before or 0.0) + 1.0
-
-    def test_records_quote_and_bar(self) -> None:
-        record_stream_message("quote")
-        record_stream_message("bar")
-        text = _exposition()
-        assert (
-            _sample(text, "llamatrade_marketdata_stream_messages_total", type="quote") is not None
-        )
-        assert _sample(text, "llamatrade_marketdata_stream_messages_total", type="bar") is not None
-
-
-class TestRecordAlpacaStreamMessage:
-    """Upstream Alpaca stream message counter is service-specific."""
-
-    def test_records_trade(self) -> None:
-        before = _sample(
-            _exposition(), "llamatrade_marketdata_stream_alpaca_messages_total", type="trade"
-        )
-        record_alpaca_stream_message("trade")
-        after = _sample(
-            _exposition(), "llamatrade_marketdata_stream_alpaca_messages_total", type="trade"
-        )
-        assert after == (before or 0.0) + 1.0
-
-    def test_records_error(self) -> None:
-        record_alpaca_stream_message("error")
-        assert (
-            _sample(
-                _exposition(),
-                "llamatrade_marketdata_stream_alpaca_messages_total",
-                type="error",
-            )
-            is not None
-        )
-
-
-class TestUpdateRateLimiterMetrics:
-    """Rate-limiter tokens map onto the shared marketdata gauge."""
-
-    def test_updates_tokens(self) -> None:
-        update_rate_limiter_metrics(100.5)
-        assert _sample(_exposition(), "llamatrade_marketdata_rate_limit_tokens_available") == 100.5
-
-    def test_updates_zero_tokens(self) -> None:
-        update_rate_limiter_metrics(0)
-        assert _sample(_exposition(), "llamatrade_marketdata_rate_limit_tokens_available") == 0.0
-
-
-class TestUpdateCircuitBreakerMetrics:
-    """Circuit-breaker state maps closed/half_open/open -> 0/1/2 (unknown -> -1)."""
-
-    def test_closed_state(self) -> None:
-        update_circuit_breaker_metrics("closed")
-        assert _sample(_exposition(), "llamatrade_marketdata_circuit_breaker_state") == 0.0
-
-    def test_half_open_state(self) -> None:
-        update_circuit_breaker_metrics("half_open")
-        assert _sample(_exposition(), "llamatrade_marketdata_circuit_breaker_state") == 1.0
-
-    def test_open_state(self) -> None:
-        update_circuit_breaker_metrics("open")
-        assert _sample(_exposition(), "llamatrade_marketdata_circuit_breaker_state") == 2.0
-
-    def test_unknown_state(self) -> None:
-        update_circuit_breaker_metrics("unknown")
-        assert _sample(_exposition(), "llamatrade_marketdata_circuit_breaker_state") == -1.0
 
 
 class TestNoDuplicateAlpacaMetrics:
@@ -373,3 +278,30 @@ class TestRecordMissingSymbol:
         record_missing_symbol()
         after = _sample(_exposition(), "llamatrade_marketdata_missing_symbol_errors_total")
         assert after == (before or 0.0) + 1.0
+
+
+class TestIngestUniverseMetrics:
+    """The derived ingest universe exposes its size and its refresh failures."""
+
+    def test_size_gauge_is_set_per_kind(self) -> None:
+        record_ingest_universe_size(baseline=3, live=5, total=7)
+        text = _exposition()
+        assert _sample(text, "llamatrade_marketdata_ingest_universe_symbols", kind="baseline") == 3
+        assert _sample(text, "llamatrade_marketdata_ingest_universe_symbols", kind="live") == 5
+        assert _sample(text, "llamatrade_marketdata_ingest_universe_symbols", kind="total") == 7
+
+    def test_size_gauge_follows_the_latest_value(self) -> None:
+        record_ingest_universe_size(baseline=1, live=1, total=2)
+        record_ingest_universe_size(baseline=1, live=0, total=1)
+        text = _exposition()
+        assert _sample(text, "llamatrade_marketdata_ingest_universe_symbols", kind="live") == 0
+        assert _sample(text, "llamatrade_marketdata_ingest_universe_symbols", kind="total") == 1
+
+    def test_refresh_failures_counted_per_reason(self) -> None:
+        name = "llamatrade_marketdata_ingest_universe_refresh_failures_total"
+        before = _sample(_exposition(), name, reason="query")
+        record_ingest_universe_refresh_failure("query")
+        record_ingest_universe_refresh_failure("subscribe")
+        text = _exposition()
+        assert _sample(text, name, reason="query") == (before or 0.0) + 1.0
+        assert _sample(text, name, reason="subscribe") is not None

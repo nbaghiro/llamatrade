@@ -1,5 +1,6 @@
 """Market data service: Timescale store first, Redis cache + Alpaca fallback."""
 
+import asyncio
 import logging
 from datetime import UTC, datetime, timedelta
 
@@ -12,6 +13,7 @@ from src.cache import (
     MarketDataCache,
     get_cache,
 )
+from src.ingest.config import adjustment_for
 from src.models import Bar, Quote, Snapshot, Timeframe, Trade
 from src.store.intervals import subtract
 from src.store.models import (
@@ -45,6 +47,13 @@ _TF_DURATION = {
 
 def _utcnow() -> datetime:
     return datetime.now(UTC)
+
+
+# In-flight single-symbol snapshot fills, keyed by symbol. Process-wide (not on
+# the per-request service instance) so concurrent misses across requests coalesce
+# onto one upstream call. Guarded by asyncio's single-threaded scheduling: the
+# check-and-insert below never awaits between the read and the write.
+_snapshot_inflight: dict[str, asyncio.Future[Snapshot | None]] = {}
 
 
 def _bar_row_to_bar(row: BarRow) -> Bar:
@@ -138,8 +147,16 @@ class MarketDataService:
         fetched: list[Bar] = []
         for gap_start, gap_end in gaps:
             try:
+                # Daily bars must be split-adjusted to match the stored (and labeled)
+                # adjustment; intraday stays raw. Without this the gap fetch defaults to
+                # raw and persists unadjusted daily bars mislabeled as split.
                 bars = await self._alpaca.get_bars(
-                    symbol=symbol, timeframe=timeframe, start=gap_start, end=gap_end, limit=limit
+                    symbol=symbol,
+                    timeframe=timeframe,
+                    start=gap_start,
+                    end=gap_end,
+                    limit=limit,
+                    adjustment=adjustment_for(tf),
                 )
             except Exception:
                 # Serve stored bars if the live gap fetch fails (creds/outage) rather than 500 the whole read.
@@ -163,7 +180,9 @@ class MarketDataService:
                     )
 
         merged = _dedupe_sorted_by_time([_bar_row_to_bar(r) for r in stored] + fetched)
-        return merged[:limit] if limit else merged
+        # Keep the MOST RECENT limit bars: the list is time-ascending and callers
+        # (indicators, charts) need the window closest to `end`.
+        return merged[-limit:] if limit else merged
 
     async def _get_bars_via_cache(
         self,
@@ -214,12 +233,15 @@ class MarketDataService:
         # single-symbol path.
         tf = timeframe.value
         if self._store is not None and not refresh and tf in _STORE_READABLE_TIMEFRAMES:
-            store_result: dict[str, list[Bar]] = {}
-            for symbol in symbols:
-                store_result[symbol] = await self.get_bars(
-                    symbol, timeframe, start, end, limit, refresh
-                )
-            return store_result
+            # Read symbols concurrently (bounded) — each is an independent store read +
+            # targeted gap fill; serializing would cost N round-trips for N symbols.
+            sem = asyncio.Semaphore(8)
+
+            async def _read(sym: str) -> tuple[str, list[Bar]]:
+                async with sem:
+                    return sym, await self.get_bars(sym, timeframe, start, end, limit, refresh)
+
+            return dict(await asyncio.gather(*(_read(s) for s in symbols)))
 
         result: dict[str, list[Bar]] = {}
         symbols_to_fetch: list[str] = []
@@ -319,6 +341,35 @@ class MarketDataService:
             if cached:
                 return MarketDataCache.deserialize_model(cached, Snapshot)
 
+        return await self._get_snapshot_single_flight(symbol)
+
+    async def _get_snapshot_single_flight(self, symbol: str) -> Snapshot | None:
+        """Coalesce concurrent cache misses for one symbol into a single fill.
+
+        The 15s snapshot TTL means a burst of live risk-check reads all miss at
+        once; without coalescing each would hit Alpaca. The first caller runs the
+        fill and the rest await its result.
+        """
+        existing = _snapshot_inflight.get(symbol)
+        if existing is not None:
+            return await existing
+
+        loop = asyncio.get_running_loop()
+        future: asyncio.Future[Snapshot | None] = loop.create_future()
+        _snapshot_inflight[symbol] = future
+        try:
+            snapshot = await self._fill_snapshot(symbol)
+        except Exception as exc:
+            future.set_exception(exc)
+            raise
+        else:
+            future.set_result(snapshot)
+            return snapshot
+        finally:
+            _snapshot_inflight.pop(symbol, None)
+
+    async def _fill_snapshot(self, symbol: str) -> Snapshot | None:
+        """Fetch a snapshot from Alpaca (store fallback) and write it to the cache."""
         # Fetch from Alpaca; fall back to the durable store on failure/absence.
         snapshot: Snapshot | None = None
         try:

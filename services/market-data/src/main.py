@@ -26,8 +26,10 @@ from llamatrade_alpaca import (
     init_market_data_stream as init_alpaca_stream,
 )
 from llamatrade_common import AuthMiddleware, HealthChecker, check_redis
+from llamatrade_common.health import check_kafka
 from llamatrade_db import close_db, get_pool_stats
-from llamatrade_events import EventBus, RedisStreamsTransport
+from llamatrade_db.session import verify_rls_enforcement
+from llamatrade_events import EventBus, KafkaTransport
 from llamatrade_telemetry import init_telemetry
 from llamatrade_telemetry.config import TelemetrySettings
 
@@ -65,12 +67,21 @@ _stream_connected = False
 # Bus-mode fan-out handles (set in lifespan, closed on shutdown)
 _event_bus: EventBus | None = None
 _bus_bridge: BusBridge | None = None
+# The shared Kafka transport in bus mode; answers the Kafka health probe without
+# opening a second broker connection.
+_kafka_transport: KafkaTransport | None = None
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     """Application lifespan handler."""
     global _stream_connected
+
+    # Fail-closed RLS guard on the shared llamatrade_db role (dev-tolerant,
+    # prod-strict). The dedicated bar store is a separate, non-tenant-scoped
+    # TimescaleDB (MARKET_DATA_DB_URL), so RLS does not apply there; this asserts
+    # the platform DB role the ingest universe reads through.
+    await verify_rls_enforcement()
 
     cache = await init_cache()
     if cache:
@@ -79,10 +90,11 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
         logger.warning("Redis cache unavailable - service will operate without caching")
 
     # Live bar fan-out: bus mode (EventBus, serving holds no Alpaca conn) or legacy direct-Alpaca.
-    global _event_bus, _bus_bridge
+    global _event_bus, _bus_bridge, _kafka_transport
     stream_manager = get_stream_manager()
     if _bars_from_bus():
-        _event_bus = EventBus(RedisStreamsTransport(os.getenv("REDIS_URL")))
+        _kafka_transport = KafkaTransport()
+        _event_bus = EventBus(_kafka_transport)
         _bus_bridge = BusBridge(_event_bus, stream_manager)
         await _bus_bridge.start()
         _stream_connected = True
@@ -100,17 +112,19 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
             )
             _stream_connected = False
 
-    try:
-        from llamatrade_proto.generated.market_data_connect import MarketDataServiceASGIApplication
+    # The Connect app is the whole service surface, so a failed import or mount
+    # must crash startup rather than degrade to a health-only server.
+    from llamatrade_proto.generated.market_data_connect import (
+        MarketDataService,
+        MarketDataServiceASGIApplication,
+    )
 
-        from src.grpc.servicer import MarketDataServicer
+    from src.grpc.servicer import MarketDataServicer
 
-        servicer = MarketDataServicer()
-        connect_app = MarketDataServiceASGIApplication(servicer)
-        app.mount("/", cast(ASGIApp, connect_app))
-        logger.info("Connect ASGI application mounted successfully")
-    except ImportError as e:
-        logger.warning("Connect dependencies not available: %s", e)
+    servicer = MarketDataServicer()
+    connect_app = MarketDataServiceASGIApplication(cast(MarketDataService, servicer))
+    app.mount("/", cast(ASGIApp, connect_app))
+    logger.info("Connect ASGI application mounted successfully")
 
     yield
 
@@ -119,6 +133,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
         await _bus_bridge.stop()
     if _event_bus is not None:
         await _event_bus.close()
+    _kafka_transport = None
     await close_stream_bridge()
     await close_alpaca_stream()
     await close_all_clients()
@@ -170,7 +185,25 @@ async def _check_live_bars() -> bool:
     return alpaca_stream.connected if alpaca_stream else False
 
 
+async def _check_kafka() -> bool:
+    """Kafka health answered from the shared transport (no second broker connection).
+
+    Bus mode holds a live ``KafkaTransport`` whose ``is_connected`` answers the
+    probe; the serving role only *tails* bars (an own-group reader the transport
+    does not track), so a running bus bridge is treated as connected too. Legacy
+    direct-Alpaca mode holds no transport and falls back to an authenticated probe.
+    """
+    transport = _kafka_transport
+    if transport is None:
+        return await check_kafka()
+    if _bus_bridge is not None and _bus_bridge.running:
+        return True
+    return await check_kafka(is_alive=transport.is_connected)
+
+
 _health = HealthChecker(SERVICE_NAME, SERVICE_VERSION)
+# Redis backs the market-data cache only; Kafka is the event backbone (bars).
 _health.add_check("redis", lambda: check_redis(os.getenv("REDIS_URL", "")), critical=False)
+_health.add_check("kafka", _check_kafka, critical=False)
 _health.add_check("live_bars", _check_live_bars, critical=False)
 app.include_router(_health.create_router())

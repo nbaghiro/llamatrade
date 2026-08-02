@@ -8,11 +8,14 @@ environments.
 
 from __future__ import annotations
 
+import os
 from collections.abc import AsyncIterator, Iterator
 
 import pytest
 import pytest_asyncio
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
+from llamatrade_events import EventBus
 
 from src.store.migrate import run_migrations
 from src.store.repository import BarStore
@@ -68,31 +71,38 @@ async def bar_store(timescale_engine) -> AsyncIterator[BarStore]:
 
 
 @pytest.fixture(scope="session")
-def redis_url() -> Iterator[str]:
-    """Start a throwaway Redis and yield its URL, or skip."""
-    redis_mod = pytest.importorskip("testcontainers.redis")
-    container = redis_mod.RedisContainer("redis:7-alpine")
+def kafka_bootstrap() -> Iterator[str]:
+    """A Kafka bootstrap server: a provided broker (CI) or a throwaway container.
+
+    Prefers ``KAFKA_BOOTSTRAP_SERVERS`` (the CI service container); otherwise
+    spins a throwaway ``KafkaContainer`` via testcontainers, skipping when
+    neither is available.
+    """
+    provided = os.getenv("KAFKA_BOOTSTRAP_SERVERS")
+    if provided:
+        yield provided
+        return
+    kafka_mod = pytest.importorskip("testcontainers.kafka")
     try:
+        container = kafka_mod.KafkaContainer()
         container.start()
     except Exception as exc:
-        pytest.skip(f"Redis container unavailable: {exc}")
+        pytest.skip(f"Kafka container unavailable: {exc}")
     try:
-        host = container.get_container_host_ip()
-        port = container.get_exposed_port(6379)
-        yield f"redis://{host}:{port}/0"
+        yield container.get_bootstrap_server()
     finally:
         container.stop()
 
 
 @pytest_asyncio.fixture
-async def event_bus(redis_url: str):
-    """A real EventBus (Redis Streams transport) on a throwaway Redis, flushed per test."""
-    from llamatrade_events import EventBus, RedisStreamsTransport
+async def event_bus(
+    kafka_bootstrap: str, request: pytest.FixtureRequest
+) -> AsyncIterator[EventBus]:
+    """A real EventBus (Kafka transport) on a throwaway broker, isolated per test by namespace."""
+    from llamatrade_events.transport.kafka import KafkaTransport
 
-    transport = RedisStreamsTransport(redis_url)
-    client = await transport._client()
-    await client.flushdb()
-    bus = EventBus(transport)
+    namespace = f"itest{abs(hash(request.node.nodeid)) % 1_000_000}"
+    bus = EventBus(KafkaTransport(kafka_bootstrap, namespace=namespace))
     try:
         yield bus
     finally:

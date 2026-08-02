@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import asyncio
+import heapq
 import logging
+import os
 import re
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Iterator
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, cast
@@ -20,6 +22,8 @@ type AnyContext = RequestContext[object, object]
 
 from llamatrade_alpaca import AlpacaCredentials, Asset, get_trading_client_async
 from llamatrade_common import current_context
+from llamatrade_common.connect import handle_service_errors
+from llamatrade_proto.timestamps import from_proto_timestamp, to_proto_timestamp
 
 from src import metrics as md_metrics
 from src.market_calendar import MarketState, market_status
@@ -35,12 +39,44 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# Symbol validation pattern: 1-5 uppercase letters (standard US stocks)
-# Also allows crypto pairs like BTC/USD
-SYMBOL_PATTERN = re.compile(r"^[A-Z]{1,5}(/[A-Z]{3,4})?$")
+# Equities (incl. single-letter class shares like BRK.B) plus crypto pairs like BTC/USD.
+SYMBOL_PATTERN = re.compile(r"^[A-Z]{1,5}(\.[A-Z])?(/[A-Z]{3,4})?$")
 
 # Nil UUID for detecting missing context
 _NIL_UUID = UUID("00000000-0000-0000-0000-000000000000")
+
+# Request bounds: an unbounded symbol fan-out or bar limit lets one request fan a
+# huge upstream fetch (a strategy may declare tens of thousands of symbols; the
+# backtest asks for up to 100k bars/symbol) and monopolize the shared read path.
+# The bar ceiling must cover the backtest's per-symbol window (BACKTEST_MAX_BARS_
+# PER_SYMBOL, default 100000); an over-ceiling request is rejected, not truncated,
+# so a caller never backtests on silently-cut history.
+_DEFAULT_BARS_LIMIT = 1000
+_MAX_SYMBOLS_PER_REQUEST = int(os.getenv("MARKET_DATA_MAX_SYMBOLS_PER_REQUEST", "100"))
+_MAX_BARS_LIMIT = int(os.getenv("MARKET_DATA_MAX_BARS_LIMIT", "100000"))
+
+
+def _resolve_bars_limit(requested: int) -> int:
+    """Resolve a per-symbol bar limit: default when unset, reject when over the ceiling.
+
+    A non-positive request maps to the default. A request above ``_MAX_BARS_LIMIT``
+    is rejected with ``RESOURCE_EXHAUSTED`` (matching the symbol-count bound) rather
+    than silently clamped, so truncated history is never served as if complete.
+    """
+    if requested <= 0:
+        return _DEFAULT_BARS_LIMIT
+    if requested > _MAX_BARS_LIMIT:
+        raise ConnectError(
+            Code.RESOURCE_EXHAUSTED,
+            f"Bar limit too large: {requested} requested, at most "
+            f"{_MAX_BARS_LIMIT} allowed per symbol",
+        )
+    return requested
+
+
+def _tag_symbol(symbol: str, bars: list[Bar]) -> Iterator[tuple[str, Bar]]:
+    """Pair each bar with its symbol, binding ``symbol`` eagerly for the k-way merge."""
+    return ((symbol, bar) for bar in bars)
 
 
 @dataclass
@@ -120,6 +156,13 @@ def _validate_symbols(symbols: list[str]) -> list[str]:
     if not symbols:
         raise ConnectError(Code.INVALID_ARGUMENT, "At least one symbol is required")
 
+    if len(symbols) > _MAX_SYMBOLS_PER_REQUEST:
+        raise ConnectError(
+            Code.RESOURCE_EXHAUSTED,
+            f"Too many symbols: {len(symbols)} requested, at most "
+            f"{_MAX_SYMBOLS_PER_REQUEST} allowed per request",
+        )
+
     return [_validate_symbol(s) for s in symbols]
 
 
@@ -166,6 +209,7 @@ class MarketDataServicer:
         """Initialize the servicer."""
         self._init_timeframe_map()
 
+    @handle_service_errors
     async def get_historical_bars(
         self,
         request: market_data_pb2.GetHistoricalBarsRequest,
@@ -183,54 +227,46 @@ class MarketDataServicer:
             extra={"symbol": symbol, **tenant_ctx.log_context()},
         )
 
-        try:
-            service = await get_market_data_service()
+        service = await get_market_data_service()
 
-            start = datetime.fromtimestamp(request.start.seconds, tz=UTC)
-            end = (
-                datetime.fromtimestamp(request.end.seconds, tz=UTC)
-                if request.HasField("end")
-                else None
-            )
-            timeframe = self._TIMEFRAME_MAP.get(request.timeframe, Timeframe.DAY_1)
+        start = from_proto_timestamp(request.start)
+        end = from_proto_timestamp(request.end) if request.HasField("end") else None
+        timeframe = self._TIMEFRAME_MAP.get(request.timeframe, Timeframe.DAY_1)
 
-            limit = 1000
-            if request.HasField("pagination"):
-                limit = min(request.pagination.page_size, 10000)
+        limit = _DEFAULT_BARS_LIMIT
+        if request.HasField("pagination"):
+            limit = _resolve_bars_limit(request.pagination.page_size)
 
-            bars = await service.get_bars(
-                symbol=symbol,
-                timeframe=timeframe,
-                start=start,
-                end=end,
-                limit=limit,
-            )
+        bars = await service.get_bars(
+            symbol=symbol,
+            timeframe=timeframe,
+            start=start,
+            end=end,
+            limit=limit,
+        )
 
-            # Data-quality telemetry on the served series.
-            if bars:
-                md_metrics.record_bar_staleness(bars)
-                md_metrics.record_bar_series_gaps(timeframe.value, bars)
-            else:
-                md_metrics.record_missing_symbol()
+        # Data-quality telemetry on the served series.
+        if bars:
+            md_metrics.record_bar_staleness(bars)
+            md_metrics.record_bar_series_gaps(timeframe.value, bars)
+        else:
+            md_metrics.record_missing_symbol()
 
-            proto_bars = [self._bar_to_proto(symbol, bar) for bar in bars]
+        proto_bars = [self._bar_to_proto(symbol, bar) for bar in bars]
 
-            return market_data_pb2.GetHistoricalBarsResponse(
-                bars=proto_bars,
-                pagination=common_pb2.PaginationResponse(
-                    total_items=len(proto_bars),
-                    total_pages=1,
-                    current_page=1,
-                    page_size=len(proto_bars),
-                    has_next=False,
-                    has_previous=False,
-                ),
-            )
+        return market_data_pb2.GetHistoricalBarsResponse(
+            bars=proto_bars,
+            pagination=common_pb2.PaginationResponse(
+                total_items=len(proto_bars),
+                total_pages=1,
+                current_page=1,
+                page_size=len(proto_bars),
+                has_next=False,
+                has_previous=False,
+            ),
+        )
 
-        except Exception as e:
-            logger.error("get_historical_bars error: %s", e, exc_info=True)
-            raise ConnectError(Code.INTERNAL, f"Failed to fetch historical bars: {e}") from e
-
+    @handle_service_errors
     async def get_multi_bars(
         self,
         request: market_data_pb2.GetMultiBarsRequest,
@@ -248,47 +284,36 @@ class MarketDataServicer:
             extra={"symbols": symbols, "count": len(symbols), **tenant_ctx.log_context()},
         )
 
-        try:
-            service = await get_market_data_service()
+        service = await get_market_data_service()
 
-            start = datetime.fromtimestamp(request.start.seconds, tz=UTC)
-            end = (
-                datetime.fromtimestamp(request.end.seconds, tz=UTC)
-                if request.HasField("end")
-                else None
-            )
-            timeframe = self._TIMEFRAME_MAP.get(request.timeframe, Timeframe.DAY_1)
-            limit = request.limit if request.limit > 0 else 1000
+        start = from_proto_timestamp(request.start)
+        end = from_proto_timestamp(request.end) if request.HasField("end") else None
+        timeframe = self._TIMEFRAME_MAP.get(request.timeframe, Timeframe.DAY_1)
+        limit = _resolve_bars_limit(request.limit)
 
-            multi_bars = await service.get_multi_bars(
-                symbols=symbols,
-                timeframe=timeframe,
-                start=start,
-                end=end,
-                limit=limit,
-            )
+        multi_bars = await service.get_multi_bars(
+            symbols=symbols,
+            timeframe=timeframe,
+            start=start,
+            end=end,
+            limit=limit,
+        )
 
-            # Data-quality telemetry per requested symbol.
-            for requested in symbols:
-                symbol_bars = multi_bars.get(requested) or []
-                if symbol_bars:
-                    md_metrics.record_bar_staleness(symbol_bars)
-                    md_metrics.record_bar_series_gaps(timeframe.value, symbol_bars)
-                else:
-                    md_metrics.record_missing_symbol()
+        # Data-quality telemetry per requested symbol.
+        for requested in symbols:
+            symbol_bars = multi_bars.get(requested) or []
+            if symbol_bars:
+                md_metrics.record_bar_staleness(symbol_bars)
+                md_metrics.record_bar_series_gaps(timeframe.value, symbol_bars)
+            else:
+                md_metrics.record_missing_symbol()
 
-            bars_map = {
-                symbol: market_data_pb2.BarList(
-                    bars=[self._bar_to_proto(symbol, bar) for bar in bars]
-                )
-                for symbol, bars in multi_bars.items()
-            }
+        bars_map = {
+            symbol: market_data_pb2.BarList(bars=[self._bar_to_proto(symbol, bar) for bar in bars])
+            for symbol, bars in multi_bars.items()
+        }
 
-            return market_data_pb2.GetMultiBarsResponse(bars=bars_map)
-
-        except Exception as e:
-            logger.error("get_multi_bars error: %s", e, exc_info=True)
-            raise ConnectError(Code.INTERNAL, f"Failed to fetch multi bars: {e}") from e
+        return market_data_pb2.GetMultiBarsResponse(bars=bars_map)
 
     async def stream_historical_bars(
         self,
@@ -312,14 +337,10 @@ class MarketDataServicer:
         try:
             service = await get_market_data_service()
 
-            start = datetime.fromtimestamp(request.start.seconds, tz=UTC)
-            end = (
-                datetime.fromtimestamp(request.end.seconds, tz=UTC)
-                if request.HasField("end")
-                else None
-            )
+            start = from_proto_timestamp(request.start)
+            end = from_proto_timestamp(request.end) if request.HasField("end") else None
             timeframe = self._TIMEFRAME_MAP.get(request.timeframe, Timeframe.DAY_1)
-            limit = request.limit if request.limit > 0 else 1000
+            limit = _resolve_bars_limit(request.limit)
 
             multi_bars = await service.get_multi_bars(
                 symbols=symbols,
@@ -336,18 +357,22 @@ class MarketDataServicer:
                     md_metrics.record_bar_series_gaps(timeframe.value, symbol_bars)
                 else:
                     md_metrics.record_missing_symbol()
+        except ConnectError:
+            raise
         except Exception as e:
             logger.error("stream_historical_bars error: %s", e, exc_info=True)
-            raise ConnectError(Code.INTERNAL, f"Failed to fetch historical bars: {e}") from e
+            raise ConnectError(Code.INTERNAL, "Failed to fetch historical bars") from e
 
-        # Stream in timestamp order so the consumer can process chronologically.
-        ordered = sorted(
-            ((symbol, bar) for symbol, bars in multi_bars.items() for bar in bars),
-            key=lambda sb: sb[1].timestamp,
+        # Stream in timestamp order via a lazy k-way merge of the per-symbol series
+        # (each already time-ascending), avoiding a whole-dataset flatten+sort on the loop.
+        merged = heapq.merge(
+            *(_tag_symbol(symbol, bars) for symbol, bars in multi_bars.items()),
+            key=lambda pair: pair[1].timestamp,
         )
-        for symbol, bar in ordered:
+        for symbol, bar in merged:
             yield self._bar_to_proto(symbol, bar)
 
+    @handle_service_errors
     async def get_snapshot(
         self,
         request: market_data_pb2.GetSnapshotRequest,
@@ -363,24 +388,18 @@ class MarketDataServicer:
             extra={"symbol": symbol, **tenant_ctx.log_context()},
         )
 
-        try:
-            service = await get_market_data_service()
-            snapshot = await service.get_snapshot(symbol)
+        service = await get_market_data_service()
+        snapshot = await service.get_snapshot(symbol)
 
-            if snapshot is None:
-                md_metrics.record_missing_symbol()
-                raise ConnectError(Code.NOT_FOUND, f"Snapshot not found for symbol: {symbol}")
+        if snapshot is None:
+            md_metrics.record_missing_symbol()
+            raise ConnectError(Code.NOT_FOUND, f"Snapshot not found for symbol: {symbol}")
 
-            self._record_snapshot_staleness(snapshot)
+        self._record_snapshot_staleness(snapshot)
 
-            return self._to_proto_snapshot(symbol, snapshot)
+        return self._to_proto_snapshot(symbol, snapshot)
 
-        except ConnectError:
-            raise
-        except Exception as e:
-            logger.error("get_snapshot error: %s", e, exc_info=True)
-            raise ConnectError(Code.INTERNAL, f"Failed to fetch snapshot: {e}") from e
-
+    @handle_service_errors
     async def get_snapshots(
         self,
         request: market_data_pb2.GetSnapshotsRequest,
@@ -398,26 +417,22 @@ class MarketDataServicer:
             extra={"symbols": symbols, "count": len(symbols), **tenant_ctx.log_context()},
         )
 
-        try:
-            service = await get_market_data_service()
-            snapshots_data = await service.get_multi_snapshots(symbols)
+        service = await get_market_data_service()
+        snapshots_data = await service.get_multi_snapshots(symbols)
 
-            # Data-quality telemetry: record absent requested symbols as missing.
-            for requested in symbols:
-                if requested not in snapshots_data:
-                    md_metrics.record_missing_symbol()
+        # Data-quality telemetry: record absent requested symbols as missing.
+        for requested in symbols:
+            if requested not in snapshots_data:
+                md_metrics.record_missing_symbol()
 
-            proto_snapshots: dict[str, market_data_pb2.Snapshot] = {}
-            for symbol, snapshot in snapshots_data.items():
-                self._record_snapshot_staleness(snapshot)
-                proto_snapshots[symbol] = self._to_proto_snapshot(symbol, snapshot)
+        proto_snapshots: dict[str, market_data_pb2.Snapshot] = {}
+        for symbol, snapshot in snapshots_data.items():
+            self._record_snapshot_staleness(snapshot)
+            proto_snapshots[symbol] = self._to_proto_snapshot(symbol, snapshot)
 
-            return market_data_pb2.GetSnapshotsResponse(snapshots=proto_snapshots)
+        return market_data_pb2.GetSnapshotsResponse(snapshots=proto_snapshots)
 
-        except Exception as e:
-            logger.error("get_snapshots error: %s", e, exc_info=True)
-            raise ConnectError(Code.INTERNAL, f"Failed to fetch snapshots: {e}") from e
-
+    @handle_service_errors
     async def get_assets(
         self,
         request: market_data_pb2.GetAssetsRequest,
@@ -435,21 +450,16 @@ class MarketDataServicer:
             extra={"symbols": symbols, "count": len(symbols), **tenant_ctx.log_context()},
         )
 
-        try:
-            service = await get_asset_service()
-            assets = await service.get_assets(symbols)
+        service = await get_asset_service()
+        assets = await service.get_assets(symbols)
 
-            for requested in symbols:
-                if requested not in assets:
-                    md_metrics.record_missing_symbol()
+        for requested in symbols:
+            if requested not in assets:
+                md_metrics.record_missing_symbol()
 
-            return market_data_pb2.GetAssetsResponse(
-                assets={symbol: self._asset_to_proto(asset) for symbol, asset in assets.items()}
-            )
-
-        except Exception as e:
-            logger.error("get_assets error: %s", e, exc_info=True)
-            raise ConnectError(Code.INTERNAL, f"Failed to fetch assets: {e}") from e
+        return market_data_pb2.GetAssetsResponse(
+            assets={symbol: self._asset_to_proto(asset) for symbol, asset in assets.items()}
+        )
 
     @staticmethod
     def _asset_to_proto(asset: Asset) -> market_data_pb2.Asset:
@@ -492,7 +502,7 @@ class MarketDataServicer:
 
     async def _alpaca_market_status(self) -> market_data_pb2.GetMarketStatusResponse:
         """Market status via the Alpaca clock endpoint (trading API)."""
-        from llamatrade_proto.generated import common_pb2, market_data_pb2
+        from llamatrade_proto.generated import market_data_pb2
 
         trading_client = await get_trading_client_async()
         clock = await trading_client.get_clock()
@@ -518,19 +528,13 @@ class MarketDataServicer:
 
         return market_data_pb2.GetMarketStatusResponse(
             status=status,
-            next_open=common_pb2.Timestamp(
-                seconds=int(clock.next_open.timestamp()),
-                nanos=clock.next_open.microsecond * 1000,
-            ),
-            next_close=common_pb2.Timestamp(
-                seconds=int(clock.next_close.timestamp()),
-                nanos=clock.next_close.microsecond * 1000,
-            ),
+            next_open=to_proto_timestamp(clock.next_open),
+            next_close=to_proto_timestamp(clock.next_close),
         )
 
     def _calendar_market_status(self) -> market_data_pb2.GetMarketStatusResponse:
         """Market status derived from the server-side NYSE calendar."""
-        from llamatrade_proto.generated import common_pb2, market_data_pb2
+        from llamatrade_proto.generated import market_data_pb2
 
         cal_to_proto = {
             MarketState.OPEN: market_data_pb2.MARKET_STATUS_OPEN,
@@ -542,14 +546,8 @@ class MarketDataServicer:
 
         return market_data_pb2.GetMarketStatusResponse(
             status=cal_to_proto[result.state],
-            next_open=common_pb2.Timestamp(
-                seconds=int(result.next_open.timestamp()),
-                nanos=result.next_open.microsecond * 1000,
-            ),
-            next_close=common_pb2.Timestamp(
-                seconds=int(result.next_close.timestamp()),
-                nanos=result.next_close.microsecond * 1000,
-            ),
+            next_open=to_proto_timestamp(result.next_open),
+            next_close=to_proto_timestamp(result.next_close),
         )
 
     async def stream_bars(
@@ -746,9 +744,7 @@ class MarketDataServicer:
             proto_snapshot.latest_quote.CopyFrom(
                 market_data_pb2.Quote(
                     symbol=symbol,
-                    timestamp=common_pb2.Timestamp(
-                        seconds=int(snapshot.latest_quote.timestamp.timestamp())
-                    ),
+                    timestamp=to_proto_timestamp(snapshot.latest_quote.timestamp),
                     bid_price=common_pb2.Decimal(value=str(snapshot.latest_quote.bid_price)),
                     bid_size=snapshot.latest_quote.bid_size,
                     ask_price=common_pb2.Decimal(value=str(snapshot.latest_quote.ask_price)),
@@ -759,9 +755,7 @@ class MarketDataServicer:
             proto_snapshot.latest_trade.CopyFrom(
                 market_data_pb2.Trade(
                     symbol=symbol,
-                    timestamp=common_pb2.Timestamp(
-                        seconds=int(snapshot.latest_trade.timestamp.timestamp())
-                    ),
+                    timestamp=to_proto_timestamp(snapshot.latest_trade.timestamp),
                     price=common_pb2.Decimal(value=str(snapshot.latest_trade.price)),
                     size=snapshot.latest_trade.size,
                     exchange=snapshot.latest_trade.exchange or "",
@@ -788,10 +782,7 @@ class MarketDataServicer:
 
         proto_bar = market_data_pb2.Bar(
             symbol=symbol,
-            timestamp=common_pb2.Timestamp(
-                seconds=int(bar.timestamp.timestamp()),
-                nanos=bar.timestamp.microsecond * 1000,
-            ),
+            timestamp=to_proto_timestamp(bar.timestamp),
             open=common_pb2.Decimal(value=str(bar.open)),
             high=common_pb2.Decimal(value=str(bar.high)),
             low=common_pb2.Decimal(value=str(bar.low)),

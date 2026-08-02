@@ -10,10 +10,12 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import Callable, Iterable
 from datetime import datetime, timedelta
 
 from src.ingest._types import AlpacaBars
 from src.ingest.config import adjustment_for
+from src.metrics import record_targeted_backfill
 from src.models import Timeframe
 from src.store.models import bar_row_from_alpaca
 from src.store.repository import BarStore
@@ -92,3 +94,56 @@ class BackfillController:
 
         results = await asyncio.gather(*(_one(s) for s in symbols))
         return dict(results)
+
+
+class TargetedBackfill:
+    """Catch-up backfill for symbols that just entered the ingest universe.
+
+    A symbol added by a universe refresh is streamed from the next bar on, but it
+    has no history in the store until the next daily backfill pass (hourly gap
+    repair only narrows the hole). The refresh that added it schedules a pass here
+    instead.
+
+    The pass runs on its own task, so the refresh loop never waits on Alpaca, and
+    only one pass is in flight at a time: symbols added while a pass runs are
+    folded into the next one. Failures are contained and counted — one unfetchable
+    symbol must not stop universe refreshes.
+    """
+
+    def __init__(self, controller: BackfillController, now: Callable[[], datetime]) -> None:
+        self._controller = controller
+        self._now = now
+        self._queued: set[str] = set()
+        self._task: asyncio.Task[None] | None = None
+
+    def schedule(self, symbols: Iterable[str]) -> None:
+        """Queue ``symbols`` for a catch-up pass; a no-op when nothing was added."""
+        added = set(symbols)
+        if not added:
+            return
+        self._queued |= added
+        if self._task is None or self._task.done():
+            self._task = asyncio.create_task(self._drain())
+
+    async def _drain(self) -> None:
+        while self._queued:
+            symbols = sorted(self._queued)
+            self._queued.clear()
+            try:
+                await self._controller.run(symbols, self._now())
+            except Exception:
+                record_targeted_backfill("error")
+                logger.exception("Targeted backfill failed for %s", symbols)
+            else:
+                record_targeted_backfill("ok")
+                logger.info("Targeted backfill completed for %s", symbols)
+
+    async def aclose(self) -> None:
+        """Cancel an in-flight pass (shutdown)."""
+        task = self._task
+        self._task = None
+        self._queued.clear()
+        if task is None or task.done():
+            return
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)

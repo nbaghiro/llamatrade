@@ -42,6 +42,12 @@ class TestIngestConfig:
     def test_from_env_overrides(self, monkeypatch) -> None:
         monkeypatch.setenv("MARKET_DATA_MINUTE_LOOKBACK_DAYS", "7")
         monkeypatch.setenv("MARKET_DATA_INGEST_CONCURRENCY", "8")
+        monkeypatch.setenv("MARKET_DATA_UNIVERSE_REFRESH_INTERVAL_S", "5.5")
         cfg = IngestConfig.from_env()
         assert cfg.minute_lookback_days == 7
         assert cfg.max_concurrency == 8
+        assert cfg.universe_refresh_interval_s == 5.5
+
+    def test_universe_refresh_interval_defaults_to_a_minute(self, monkeypatch) -> None:
+        monkeypatch.delenv("MARKET_DATA_UNIVERSE_REFRESH_INTERVAL_S", raising=False)
+        assert IngestConfig.from_env().universe_refresh_interval_s == 60.0

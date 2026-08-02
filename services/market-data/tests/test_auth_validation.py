@@ -100,6 +100,8 @@ class TestSymbolValidation:
             ("TSLA", "TSLA"),
             ("A", "A"),  # Single letter
             ("GOOGL", "GOOGL"),  # 5 letters
+            ("BRK.B", "BRK.B"),  # Single-letter class share
+            ("BF.B", "BF.B"),  # Class share
             (" AAPL ", "AAPL"),  # Whitespace stripped
         ],
     )

@@ -228,15 +228,20 @@ class TestGetHistoricalBars:
             assert call_kwargs["limit"] == 500
 
     async def test_get_historical_bars_error(self, servicer, mock_context):
-        """Test error handling in historical bars retrieval."""
+        """An internal failure surfaces as INTERNAL without leaking exception text."""
+        from connectrpc.code import Code
+
         mock_client = MagicMock()
         mock_client.get_bars = AsyncMock(side_effect=Exception("API error"))
 
         with patch("src.grpc.servicer.get_market_data_service", return_value=mock_client):
             request = create_mock_historical_bars_request(symbol="AAPL")
 
-            with pytest.raises(ConnectError, match="Failed to fetch historical bars"):
+            with pytest.raises(ConnectError) as exc_info:
                 await servicer.get_historical_bars(request, mock_context)
+
+        assert exc_info.value.code == Code.INTERNAL
+        assert "API error" not in str(exc_info.value)
 
 
 # === GetMultiBars Tests ===
@@ -275,18 +280,23 @@ class TestGetMultiBars:
             assert call_kwargs["limit"] == 500
 
     async def test_get_multi_bars_error(self, servicer, mock_context):
-        """Test error handling in multi-bars retrieval."""
+        """An internal failure surfaces as INTERNAL without leaking exception text."""
+        from connectrpc.code import Code
+
         mock_client = MagicMock()
         mock_client.get_multi_bars = AsyncMock(side_effect=Exception("API error"))
 
         with patch("src.grpc.servicer.get_market_data_service", return_value=mock_client):
             request = create_mock_multi_bars_request(symbols=["AAPL"])
 
-            with pytest.raises(ConnectError, match="Failed to fetch multi bars"):
+            with pytest.raises(ConnectError) as exc_info:
                 await servicer.get_multi_bars(request, mock_context)
 
+        assert exc_info.value.code == Code.INTERNAL
+        assert "API error" not in str(exc_info.value)
 
-# === StreamHistoricalBars Tests (13B) ===
+
+# === StreamHistoricalBars Tests ===
 
 
 class TestStreamHistoricalBars:
@@ -307,15 +317,98 @@ class TestStreamHistoricalBars:
             mock_client.get_multi_bars.assert_called_once()
 
     async def test_stream_historical_bars_error(self, servicer, mock_context):
-        """A fetch failure surfaces as ConnectError before any bar is yielded."""
+        """A fetch failure surfaces as INTERNAL before any bar is yielded, without leaking."""
+        from connectrpc.code import Code
+
         mock_client = MagicMock()
         mock_client.get_multi_bars = AsyncMock(side_effect=Exception("API error"))
 
         with patch("src.grpc.servicer.get_market_data_service", return_value=mock_client):
             request = create_mock_multi_bars_request(symbols=["AAPL"])
 
-            with pytest.raises(ConnectError, match="Failed to fetch historical bars"):
+            with pytest.raises(ConnectError) as exc_info:
                 _ = [bar async for bar in servicer.stream_historical_bars(request, mock_context)]
+
+        assert exc_info.value.code == Code.INTERNAL
+        assert "API error" not in str(exc_info.value)
+
+    async def test_stream_orders_bars_across_symbols_by_timestamp(self, servicer, mock_context):
+        """Multiple symbols merge into one globally time-ascending stream while
+        each symbol stays chronological (the k-way merge replaces the whole-set sort)."""
+
+        def _bar(second: int) -> Bar:
+            return Bar(
+                timestamp=datetime(2024, 1, 15, 14, 0, second, tzinfo=UTC),
+                open=1.0,
+                high=1.0,
+                low=1.0,
+                close=1.0,
+                volume=1,
+                vwap=1.0,
+                trade_count=1,
+            )
+
+        # AAPL at t0,t2 and GOOGL at t1,t3 — each per-symbol list already ascending.
+        multi = {"AAPL": [_bar(0), _bar(2)], "GOOGL": [_bar(1), _bar(3)]}
+        mock_client = MagicMock()
+        mock_client.get_multi_bars = AsyncMock(return_value=multi)
+
+        with patch("src.grpc.servicer.get_market_data_service", return_value=mock_client):
+            request = create_mock_multi_bars_request(symbols=["AAPL", "GOOGL"])
+            bars = [bar async for bar in servicer.stream_historical_bars(request, mock_context)]
+
+        seconds = [b.timestamp.seconds for b in bars]
+        assert seconds == sorted(seconds)
+        assert [b.symbol for b in bars] == ["AAPL", "GOOGL", "AAPL", "GOOGL"]
+
+
+class TestRequestBounds:
+    """Symbol-count and per-symbol bar-limit bounds on the read path."""
+
+    async def test_too_many_symbols_rejected(self, servicer, mock_context):
+        """A request over the symbol cap is rejected before any upstream fetch."""
+        from connectrpc.code import Code
+
+        from src.grpc.servicer import _MAX_SYMBOLS_PER_REQUEST
+
+        symbols = [
+            chr(65 + i // 26) + chr(65 + i % 26) for i in range(_MAX_SYMBOLS_PER_REQUEST + 1)
+        ]
+        request = create_mock_multi_bars_request(symbols=symbols)
+
+        with pytest.raises(ConnectError) as exc_info:
+            await servicer.get_multi_bars(request, mock_context)
+        assert exc_info.value.code == Code.RESOURCE_EXHAUSTED
+
+    async def test_bar_limit_over_ceiling_rejected(self, servicer, mock_context, sample_bar):
+        """An over-ceiling limit is rejected (not silently truncated to the ceiling)."""
+        from connectrpc.code import Code
+
+        from src.grpc.servicer import _MAX_BARS_LIMIT
+
+        mock_client = MagicMock()
+        mock_client.get_multi_bars = AsyncMock(return_value={"AAPL": [sample_bar]})
+
+        with patch("src.grpc.servicer.get_market_data_service", return_value=mock_client):
+            request = create_mock_multi_bars_request(symbols=["AAPL"], limit=_MAX_BARS_LIMIT + 1)
+            with pytest.raises(ConnectError) as exc_info:
+                await servicer.get_multi_bars(request, mock_context)
+
+        assert exc_info.value.code == Code.RESOURCE_EXHAUSTED
+        mock_client.get_multi_bars.assert_not_called()
+
+    async def test_bar_limit_at_ceiling_honored(self, servicer, mock_context, sample_bar):
+        """A request at the ceiling (the backtest's per-symbol window) is served in full."""
+        from src.grpc.servicer import _MAX_BARS_LIMIT
+
+        mock_client = MagicMock()
+        mock_client.get_multi_bars = AsyncMock(return_value={"AAPL": [sample_bar]})
+
+        with patch("src.grpc.servicer.get_market_data_service", return_value=mock_client):
+            request = create_mock_multi_bars_request(symbols=["AAPL"], limit=_MAX_BARS_LIMIT)
+            await servicer.get_multi_bars(request, mock_context)
+
+        assert mock_client.get_multi_bars.call_args.kwargs["limit"] == _MAX_BARS_LIMIT
 
 
 # === GetSnapshot Tests ===
@@ -354,15 +447,20 @@ class TestGetSnapshot:
             assert "ZZZZZ" in str(exc_info.value)
 
     async def test_get_snapshot_error(self, servicer, mock_context):
-        """Test error handling in snapshot retrieval."""
+        """An internal failure surfaces as INTERNAL without leaking exception text."""
+        from connectrpc.code import Code
+
         mock_client = MagicMock()
         mock_client.get_snapshot = AsyncMock(side_effect=Exception("API error"))
 
         with patch("src.grpc.servicer.get_market_data_service", return_value=mock_client):
             request = MockGetSnapshotRequest(symbol="AAPL")
 
-            with pytest.raises(ConnectError, match="Failed to fetch snapshot"):
+            with pytest.raises(ConnectError) as exc_info:
                 await servicer.get_snapshot(request, mock_context)
+
+        assert exc_info.value.code == Code.INTERNAL
+        assert "API error" not in str(exc_info.value)
 
 
 # === GetSnapshots Tests ===
@@ -386,15 +484,20 @@ class TestGetSnapshots:
             mock_client.get_multi_snapshots.assert_called_once_with(["AAPL", "GOOGL"])
 
     async def test_get_snapshots_error(self, servicer, mock_context):
-        """Test error handling in snapshots retrieval."""
+        """An internal failure surfaces as INTERNAL without leaking exception text."""
+        from connectrpc.code import Code
+
         mock_client = MagicMock()
         mock_client.get_multi_snapshots = AsyncMock(side_effect=Exception("API error"))
 
         with patch("src.grpc.servicer.get_market_data_service", return_value=mock_client):
             request = MockGetSnapshotsRequest(symbols=["AAPL"])
 
-            with pytest.raises(ConnectError, match="Failed to fetch snapshots"):
+            with pytest.raises(ConnectError) as exc_info:
                 await servicer.get_snapshots(request, mock_context)
+
+        assert exc_info.value.code == Code.INTERNAL
+        assert "API error" not in str(exc_info.value)
 
 
 # === GetAssets Tests ===
@@ -446,15 +549,20 @@ class TestGetAssets:
             assert "NOPE" not in response.assets
 
     async def test_get_assets_error(self, servicer, mock_context):
-        """Errors surface as a Connect INTERNAL error."""
+        """Errors surface as INTERNAL without leaking exception text."""
+        from connectrpc.code import Code
+
         mock_service = MagicMock()
         mock_service.get_assets = AsyncMock(side_effect=Exception("API error"))
 
         with patch("src.grpc.servicer.get_asset_service", return_value=mock_service):
             request = MockGetAssetsRequest(symbols=["XLE"])
 
-            with pytest.raises(ConnectError, match="Failed to fetch assets"):
+            with pytest.raises(ConnectError) as exc_info:
                 await servicer.get_assets(request, mock_context)
+
+        assert exc_info.value.code == Code.INTERNAL
+        assert "API error" not in str(exc_info.value)
 
 
 # === GetMarketStatus Tests ===

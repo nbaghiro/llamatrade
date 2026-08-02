@@ -15,7 +15,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import TYPE_CHECKING, cast
 
-from llamatrade_events import BarEvents, EventBus
+from llamatrade_events import BarEvents, EventBus, OutgoingRecord
 
 from src.store.models import BarRow
 from src.store.repository import BarStore
@@ -47,6 +47,7 @@ class BarIngestor:
 
     def __init__(self, store: BarStore, event_bus: EventBus, *, max_buffer: int = 1000) -> None:
         self._store = store
+        self._bus = event_bus
         self._bars = BarEvents(bus=event_bus)
         self._max_buffer = max_buffer
         self._buffer: list[BarRow] = []
@@ -71,8 +72,13 @@ class BarIngestor:
         rows = self._buffer
         self._buffer = []
         await self._store.upsert_bars(rows, "1Min")
-        for row in rows:
-            await self._bars.publish(bar_row_to_proto(row))
+        # One produce round trip for the whole flush instead of one per bar;
+        # keyed by symbol, so publishing in buffer order preserves per-symbol order.
+        records = [
+            OutgoingRecord(value=proto.SerializeToString(), key=proto.symbol)
+            for proto in (bar_row_to_proto(row) for row in rows)
+        ]
+        await self._bus.publish_many_raw(self._bars.stream, records)
         logger.debug("Flushed %d live bars to store + bus", len(rows))
         return len(rows)
 

@@ -234,6 +234,33 @@ class TestGetSnapshot:
         assert result.symbol == sample_snapshot.symbol
         mock_alpaca_client.get_snapshot.assert_called_once()
 
+    @pytest.mark.asyncio
+    async def test_concurrent_misses_coalesce_to_one_fetch(
+        self, mock_alpaca_client, sample_snapshot
+    ):
+        """Concurrent cache misses for one symbol coalesce into a single upstream call."""
+        import asyncio
+
+        gate = asyncio.Event()
+        calls = 0
+
+        async def slow_snapshot(*, symbol: str) -> Snapshot:
+            nonlocal calls
+            calls += 1
+            await gate.wait()
+            return sample_snapshot
+
+        mock_alpaca_client.get_snapshot = slow_snapshot
+        service = MarketDataService(alpaca=mock_alpaca_client, cache=None)
+
+        tasks = [asyncio.create_task(service.get_snapshot(symbol="AAPL")) for _ in range(5)]
+        await asyncio.sleep(0.01)  # let every task register on the in-flight fill
+        gate.set()
+        results = await asyncio.gather(*tasks)
+
+        assert calls == 1
+        assert all(r is sample_snapshot for r in results)
+
 
 class TestGetMultiSnapshots:
     """Tests for get_multi_snapshots method."""
@@ -275,6 +302,49 @@ class TestGetMultiSnapshots:
 
         # Should use mget (batch) instead of individual get calls
         mock_redis.mget.assert_called_once()
+
+
+class TestStoreLimitSemantics:
+    """Tests for limit truncation on the store-first read path."""
+
+    @pytest.mark.asyncio
+    async def test_limit_keeps_most_recent_bars(self, mock_alpaca_client):
+        """A limit smaller than the merged range keeps the bars closest to `end`."""
+        from decimal import Decimal
+
+        from src.store.models import BarRow
+
+        start = datetime(2024, 1, 1, tzinfo=UTC)
+        end = datetime(2024, 1, 6, tzinfo=UTC)
+        rows = [
+            BarRow(
+                symbol="AAPL",
+                time=datetime(2024, 1, day, tzinfo=UTC),
+                open=Decimal(100 + day),
+                high=Decimal(101 + day),
+                low=Decimal(99 + day),
+                close=Decimal(100 + day),
+                volume=1000,
+            )
+            for day in range(1, 6)
+        ]
+        store = AsyncMock()
+        store.select_bars.return_value = rows
+        # Fully covered range -> no Alpaca gap fetches.
+        store.covered_interval.return_value = (rows[0].time, rows[-1].time)
+
+        service = MarketDataService(alpaca=mock_alpaca_client, cache=None, store=store)
+
+        result = await service.get_bars(
+            symbol="AAPL",
+            timeframe=Timeframe.DAY_1,
+            start=start,
+            end=end,
+            limit=2,
+        )
+
+        assert [b.timestamp for b in result] == [rows[-2].time, rows[-1].time]
+        mock_alpaca_client.get_bars.assert_not_called()
 
 
 class TestSymbolNormalization:

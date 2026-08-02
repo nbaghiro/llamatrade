@@ -16,18 +16,20 @@ from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime, timedelta
 
 from llamatrade_alpaca import (
+    MarketDataStreamClient,
     close_all_clients,
     close_market_data_stream,
     get_market_data_client_async,
     init_market_data_stream,
 )
-from llamatrade_events import EventBus, RedisStreamsTransport
+from llamatrade_events import EventBus, get_default_transport
 
-from src.ingest.backfill import BackfillController
+from src.ingest.backfill import BackfillController, TargetedBackfill
 from src.ingest.config import BACKFILL_TIMEFRAMES, IngestConfig, get_universe
 from src.ingest.corporate_actions import CorporateActionRefresher
 from src.ingest.gaps import GapRepairer
 from src.ingest.stream import BarIngestor
+from src.ingest.universe import IngestUniverse
 from src.store.config import close_engine
 from src.store.repository import BarStore
 
@@ -55,16 +57,19 @@ async def _periodic(
 
 async def run() -> None:
     config = IngestConfig.from_env()
-    universe = get_universe()
-    if not universe:
+    universe = IngestUniverse(get_universe())
+    # Derive the live symbols before the first backfill so new sessions are covered
+    # by history too, not only by the stream.
+    await universe.refresh()
+    if not universe.symbols:
         logger.warning(
-            "MARKET_DATA_UNIVERSE is empty — ingestor has nothing to sync. "
-            "Set it to a comma-separated symbol list."
+            "Ingest universe is empty — no MARKET_DATA_UNIVERSE baseline and no live "
+            "sessions. Set MARKET_DATA_UNIVERSE to a comma-separated symbol list."
         )
 
     store = BarStore()
     alpaca = await get_market_data_client_async()
-    bus = EventBus(RedisStreamsTransport(os.getenv("REDIS_URL")))
+    bus = EventBus(get_default_transport())
 
     controller = BackfillController(
         store,
@@ -87,6 +92,7 @@ async def run() -> None:
         store, alpaca, window_days=config.corporate_action_window_days
     )
     ingestor = BarIngestor(store, bus)
+    targeted = TargetedBackfill(controller, _now)
 
     stop = asyncio.Event()
     _install_signal_handlers(stop)
@@ -94,27 +100,76 @@ async def run() -> None:
     tasks: list[asyncio.Task[None]] = []
 
     # 1. Initial backfill so the store is useful immediately.
-    if universe:
-        logger.info("Initial backfill of %d symbols", len(universe))
-        await controller.run(universe, _now())
+    if universe.symbols:
+        logger.info("Initial backfill of %d symbols", len(universe.symbols))
+        await controller.run(list(universe.symbols), _now())
 
     # 2. Real-time stream write-through (minute bars).
     stream = await init_market_data_stream()
-    if stream is not None and universe:
+    if stream is not None:
         ingestor.attach(stream)
-        await stream.subscribe(bars=universe)
-        tasks.append(asyncio.create_task(stream.run()))
+        universe.attach(stream)
+        if universe.symbols:
+            await stream.subscribe(bars=list(universe.symbols))
+
+        async def _supervise_stream(md_stream: MarketDataStreamClient | None) -> None:
+            """Keep the singleton Alpaca stream alive: ``run()`` returns when the
+            client exhausts its reconnect attempts, which would otherwise silently
+            end all real-time write-through until a manual restart. Re-establish a
+            fresh connection and re-subscribe instead."""
+            restart_delay_s = 15.0
+            while not stop.is_set():
+                if md_stream is None:
+                    await asyncio.sleep(restart_delay_s)
+                    md_stream = await init_market_data_stream()
+                    if md_stream is None:
+                        logger.warning("market-data stream re-init failed; retrying")
+                        continue
+                    ingestor.attach(md_stream)
+                    universe.attach(md_stream)
+                    if universe.symbols:
+                        await md_stream.subscribe(bars=list(universe.symbols))
+                    logger.info("market-data stream re-established")
+                try:
+                    await md_stream.run()
+                except asyncio.CancelledError:
+                    raise
+                except Exception:
+                    logger.exception("market-data stream loop crashed")
+                if stop.is_set():
+                    break
+                logger.error("market-data stream ended (reconnects exhausted); re-establishing")
+                await close_market_data_stream()
+                universe.attach(None)
+                md_stream = None
+
+        tasks.append(asyncio.create_task(_supervise_stream(stream)))
         tasks.append(asyncio.create_task(ingestor.run_flush_loop(stop_event=stop)))
-        logger.info("Streaming minute bars for %d symbols", len(universe))
+        logger.info("Streaming minute bars for %d symbols", len(universe.symbols))
     else:
         logger.warning("Alpaca stream unavailable — running backfill/repair loops only")
 
-    # 3. Periodic maintenance loops.
+    # 3. Periodic maintenance loops. Each reads the universe at call time, so a
+    # session started since the last pass is picked up without a restart.
+    async def _refresh_universe() -> None:
+        change = await universe.refresh()
+        targeted.schedule(change.added)
+
+    tasks.append(
+        asyncio.create_task(
+            _periodic(
+                "universe-refresh",
+                _refresh_universe,
+                config.universe_refresh_interval_s,
+                stop,
+            )
+        )
+    )
     tasks.append(
         asyncio.create_task(
             _periodic(
                 "backfill",
-                lambda: controller.run(universe, _now()),
+                lambda: controller.run(list(universe.symbols), _now()),
                 config.backfill_interval_s,
                 stop,
             )
@@ -124,7 +179,7 @@ async def run() -> None:
         asyncio.create_task(
             _periodic(
                 "gap-repair",
-                lambda: gap_repairer.repair(universe, "1Min", _now()),
+                lambda: gap_repairer.repair(list(universe.symbols), "1Min", _now()),
                 config.gap_repair_interval_s,
                 stop,
             )
@@ -134,7 +189,7 @@ async def run() -> None:
         asyncio.create_task(
             _periodic(
                 "corporate-actions",
-                lambda: refresher.refresh(universe, _now()),
+                lambda: refresher.refresh(list(universe.symbols), _now()),
                 config.corporate_action_interval_s,
                 stop,
             )
@@ -148,6 +203,7 @@ async def run() -> None:
     for task in tasks:
         task.cancel()
     await asyncio.gather(*tasks, return_exceptions=True)
+    await targeted.aclose()
     await close_market_data_stream()
     await close_all_clients()
     await bus.close()

@@ -1,459 +1,267 @@
-"""Tests for gRPC streaming in market-data service."""
+"""Tests for Connect streaming in the market-data service.
+
+Drives the real servicer stream methods against a fresh StreamManager: the
+generator is consumed in a task, data is injected via manager broadcasts, and
+cancellation exercises the cleanup path.
+"""
 
 import asyncio
-from datetime import UTC, datetime
-from unittest.mock import MagicMock, patch
+import contextlib
+from collections.abc import AsyncIterator, Callable
+from typing import cast
 
 import pytest
+from connectrpc.request import RequestContext
+
+from llamatrade_proto.generated import market_data_pb2
 
 from src.grpc.servicer import MarketDataServicer
+from src.models import BarData, QuoteData, TradeData
 from src.streaming.manager import StreamManager, StreamMessage, StreamType
 
 
-class MockServicerContext:
-    """Mock gRPC servicer context for testing."""
+def _ctx() -> RequestContext[object, object]:
+    """A stand-in Connect context: the servicer only uses it for identity (id())."""
+    return cast(RequestContext[object, object], object())
 
-    def __init__(self):
-        self._cancelled = False
-        self._code = None
-        self._details = None
 
-    def cancelled(self):
-        return self._cancelled
+_TS = "2026-01-05T15:00:00+00:00"
+_TS_SECONDS = 1767625200
 
-    def cancel(self):
-        self._cancelled = True
+_BAR: BarData = {
+    "timestamp": _TS,
+    "open": 150.0,
+    "high": 151.0,
+    "low": 149.0,
+    "close": 150.5,
+    "volume": 1000,
+}
+_QUOTE: QuoteData = {
+    "timestamp": _TS,
+    "bid_price": 150.0,
+    "bid_size": 100,
+    "ask_price": 150.1,
+    "ask_size": 200,
+}
+_TRADE: TradeData = {
+    "timestamp": _TS,
+    "price": 150.25,
+    "size": 100,
+    "exchange": "NASDAQ",
+}
 
-    async def abort(self, code, details):
-        self._code = code
-        self._details = details
-        raise Exception(f"Aborted: {code} - {details}")
+
+async def _wait_until(condition: Callable[[], bool], timeout: float = 1.0) -> None:
+    async def poll() -> None:
+        while not condition():
+            await asyncio.sleep(0.005)
+
+    await asyncio.wait_for(poll(), timeout=timeout)
+
+
+async def _consume[T](stream: AsyncIterator[T], out: list[T]) -> None:
+    async for item in stream:
+        out.append(item)
+
+
+async def _cancel(task: asyncio.Task[None]) -> None:
+    task.cancel()
+    with contextlib.suppress(asyncio.CancelledError, TimeoutError):
+        await asyncio.wait_for(task, timeout=1.0)
 
 
 @pytest.fixture
-def servicer():
-    """Create a MarketDataServicer instance."""
+def manager(monkeypatch: pytest.MonkeyPatch) -> StreamManager:
+    """A fresh StreamManager wired into the servicer module."""
+    fresh = StreamManager()
+    monkeypatch.setattr("src.grpc.servicer.get_stream_manager", lambda: fresh)
+    return fresh
+
+
+@pytest.fixture
+def servicer() -> MarketDataServicer:
     return MarketDataServicer()
 
 
-@pytest.fixture
-def context():
-    """Create a mock gRPC context."""
-    return MockServicerContext()
-
-
-@pytest.fixture
-def stream_manager():
-    """Create a fresh StreamManager for each test."""
-    return StreamManager()
-
-
-@pytest.mark.skip(reason="Streaming tests require refactoring - servicer uses 30s queue timeout")
 class TestStreamBars:
-    """Tests for StreamBars gRPC method."""
+    async def test_subscribes_normalized_symbols_and_yields_bars(
+        self, servicer: MarketDataServicer, manager: StreamManager
+    ) -> None:
+        request = market_data_pb2.StreamBarsRequest(symbols=["aapl", "tsla"])
+        out: list[market_data_pb2.Bar] = []
+        task = asyncio.create_task(_consume(servicer.stream_bars(request, _ctx()), out))
 
-    async def test_stream_bars_subscribes_to_symbols(self, servicer, context):
-        """Test that StreamBars subscribes to requested symbols."""
-        mock_manager = StreamManager()
-        subscribed_correctly = False
+        try:
+            await _wait_until(lambda: manager.connection_count == 1)
+            assert manager.subscribed_symbols["bars"] == {"AAPL", "TSLA"}
 
-        with patch("src.grpc.servicer.get_stream_manager", return_value=mock_manager):
-            mock_request = MagicMock()
-            mock_request.symbols = ["AAPL", "TSLA"]
+            await manager.broadcast_bar("AAPL", _BAR)
+            await _wait_until(lambda: len(out) == 1)
 
-            async def check_and_cancel():
-                nonlocal subscribed_correctly
-                # Wait for subscription to happen
-                for _ in range(50):  # Up to 500ms
-                    await asyncio.sleep(0.01)
-                    if mock_manager.connection_count > 0:
-                        # Check subscriptions while stream is active
-                        subs = mock_manager.subscribed_symbols["bars"]
-                        if "AAPL" in subs and "TSLA" in subs:
-                            subscribed_correctly = True
-                            break
-                context.cancel()
+            bar = out[0]
+            assert bar.symbol == "AAPL"
+            assert bar.timestamp.seconds == _TS_SECONDS
+            assert bar.open.value == "150.0"
+            assert bar.close.value == "150.5"
+            assert bar.volume == 1000
+        finally:
+            await _cancel(task)
 
-            asyncio.create_task(check_and_cancel())
+    async def test_cancel_disconnects_and_unsubscribes(
+        self, servicer: MarketDataServicer, manager: StreamManager
+    ) -> None:
+        request = market_data_pb2.StreamBarsRequest(symbols=["AAPL"])
+        out: list[market_data_pb2.Bar] = []
+        task = asyncio.create_task(_consume(servicer.stream_bars(request, _ctx()), out))
 
-            async for _ in servicer.StreamBars(mock_request, context):
+        await _wait_until(lambda: manager.connection_count == 1)
+        await _cancel(task)
+
+        assert manager.connection_count == 0
+        assert "AAPL" not in manager.subscribed_symbols["bars"]
+
+    async def test_invalid_symbol_rejected_before_connecting(
+        self, servicer: MarketDataServicer, manager: StreamManager
+    ) -> None:
+        from connectrpc.errors import ConnectError
+
+        request = market_data_pb2.StreamBarsRequest(symbols=["not a symbol"])
+        with pytest.raises(ConnectError):
+            async for _ in servicer.stream_bars(request, _ctx()):
                 pass
 
-            # Verify symbols were normalized to uppercase and subscribed
-            assert subscribed_correctly, "Symbols were not properly subscribed"
-
-    async def test_stream_bars_yields_bar_messages(self, servicer, context):
-        """Test that StreamBars yields bar data from queue."""
-        mock_manager = StreamManager()
-
-        with patch("src.grpc.servicer.get_stream_manager", return_value=mock_manager):
-            mock_request = MagicMock()
-            mock_request.symbols = ["AAPL"]
-
-            results = []
-
-            async def produce_and_cancel():
-                # Wait for subscription
-                for _ in range(50):
-                    await asyncio.sleep(0.01)
-                    if mock_manager._queues:
-                        break
-
-                # Get the queue and send data
-                if mock_manager._queues:
-                    queue = list(mock_manager._queues.values())[0]
-                    await queue.put(
-                        StreamMessage(
-                            stream_type=StreamType.BAR,
-                            symbol="AAPL",
-                            data={
-                                "timestamp": datetime.now(UTC),
-                                "open": 150.0,
-                                "high": 151.0,
-                                "low": 149.0,
-                                "close": 150.5,
-                                "volume": 1000,
-                            },
-                        )
-                    )
-
-                await asyncio.sleep(0.05)
-                context.cancel()
-
-            asyncio.create_task(produce_and_cancel())
-
-            async for bar in servicer.StreamBars(mock_request, context):
-                results.append(bar)
-
-            assert len(results) == 1
-            assert results[0].symbol == "AAPL"
-
-    async def test_stream_bars_disconnects_on_cancel(self, servicer, context):
-        """Test that StreamBars disconnects when cancelled."""
-        mock_manager = StreamManager()
-
-        with patch("src.grpc.servicer.get_stream_manager", return_value=mock_manager):
-            mock_request = MagicMock()
-            mock_request.symbols = ["AAPL"]
-
-            context.cancel()
-
-            async for _ in servicer.StreamBars(mock_request, context):
-                pass
-
-            # Should have disconnected
-            assert mock_manager.connection_count == 0
+        assert manager.connection_count == 0
 
 
-@pytest.mark.skip(reason="Streaming tests require refactoring - servicer uses 30s queue timeout")
 class TestStreamQuotes:
-    """Tests for StreamQuotes gRPC method."""
+    async def test_subscribes_and_yields_quotes(
+        self, servicer: MarketDataServicer, manager: StreamManager
+    ) -> None:
+        request = market_data_pb2.StreamQuotesRequest(symbols=["AAPL"])
+        out: list[market_data_pb2.Quote] = []
+        task = asyncio.create_task(_consume(servicer.stream_quotes(request, _ctx()), out))
 
-    async def test_stream_quotes_subscribes_to_symbols(self, servicer, context):
-        """Test that StreamQuotes subscribes to requested symbols."""
-        mock_manager = StreamManager()
-        subscribed_correctly = False
+        try:
+            await _wait_until(lambda: manager.connection_count == 1)
+            assert manager.subscribed_symbols["quotes"] == {"AAPL"}
 
-        with patch("src.grpc.servicer.get_stream_manager", return_value=mock_manager):
-            mock_request = MagicMock()
-            mock_request.symbols = ["AAPL", "GOOGL"]
+            await manager.broadcast_quote("AAPL", _QUOTE)
+            await _wait_until(lambda: len(out) == 1)
 
-            async def check_and_cancel():
-                nonlocal subscribed_correctly
-                for _ in range(50):
-                    await asyncio.sleep(0.01)
-                    if mock_manager.connection_count > 0:
-                        subs = mock_manager.subscribed_symbols["quotes"]
-                        if "AAPL" in subs and "GOOGL" in subs:
-                            subscribed_correctly = True
-                            break
-                context.cancel()
+            quote = out[0]
+            assert quote.symbol == "AAPL"
+            assert quote.bid_price.value == "150.0"
+            assert quote.ask_price.value == "150.1"
+            assert quote.bid_size == 100
+            assert quote.ask_size == 200
+        finally:
+            await _cancel(task)
 
-            asyncio.create_task(check_and_cancel())
-
-            async for _ in servicer.StreamQuotes(mock_request, context):
-                pass
-
-            assert subscribed_correctly, "Symbols were not properly subscribed"
-
-    async def test_stream_quotes_yields_quote_messages(self, servicer, context):
-        """Test that StreamQuotes yields quote data from queue."""
-        mock_manager = StreamManager()
-
-        with patch("src.grpc.servicer.get_stream_manager", return_value=mock_manager):
-            mock_request = MagicMock()
-            mock_request.symbols = ["AAPL"]
-
-            results = []
-
-            async def produce_and_cancel():
-                for _ in range(50):
-                    await asyncio.sleep(0.01)
-                    if mock_manager._queues:
-                        break
-
-                if mock_manager._queues:
-                    queue = list(mock_manager._queues.values())[0]
-                    await queue.put(
-                        StreamMessage(
-                            stream_type=StreamType.QUOTE,
-                            symbol="AAPL",
-                            data={
-                                "timestamp": datetime.now(UTC),
-                                "bid_price": 150.0,
-                                "bid_size": 100,
-                                "ask_price": 150.1,
-                                "ask_size": 200,
-                            },
-                        )
-                    )
-
-                await asyncio.sleep(0.05)
-                context.cancel()
-
-            asyncio.create_task(produce_and_cancel())
-
-            async for quote in servicer.StreamQuotes(mock_request, context):
-                results.append(quote)
-
-            assert len(results) == 1
-            assert results[0].symbol == "AAPL"
+        assert manager.connection_count == 0
+        assert "AAPL" not in manager.subscribed_symbols["quotes"]
 
 
-@pytest.mark.skip(reason="Streaming tests require refactoring - servicer uses 30s queue timeout")
 class TestStreamTrades:
-    """Tests for StreamTrades gRPC method."""
+    async def test_subscribes_and_yields_trades(
+        self, servicer: MarketDataServicer, manager: StreamManager
+    ) -> None:
+        request = market_data_pb2.StreamTradesRequest(symbols=["AAPL"])
+        out: list[market_data_pb2.Trade] = []
+        task = asyncio.create_task(_consume(servicer.stream_trades(request, _ctx()), out))
 
-    async def test_stream_trades_subscribes_to_symbols(self, servicer, context):
-        """Test that StreamTrades subscribes to requested symbols."""
-        mock_manager = StreamManager()
-        subscribed_correctly = False
+        try:
+            await _wait_until(lambda: manager.connection_count == 1)
+            assert manager.subscribed_symbols["trades"] == {"AAPL"}
 
-        with patch("src.grpc.servicer.get_stream_manager", return_value=mock_manager):
-            mock_request = MagicMock()
-            mock_request.symbols = ["AAPL", "MSFT"]
+            await manager.broadcast_trade("AAPL", _TRADE)
+            await _wait_until(lambda: len(out) == 1)
 
-            async def check_and_cancel():
-                nonlocal subscribed_correctly
-                for _ in range(50):
-                    await asyncio.sleep(0.01)
-                    if mock_manager.connection_count > 0:
-                        subs = mock_manager.subscribed_symbols["trades"]
-                        if "AAPL" in subs and "MSFT" in subs:
-                            subscribed_correctly = True
-                            break
-                context.cancel()
+            trade = out[0]
+            assert trade.symbol == "AAPL"
+            assert trade.price.value == "150.25"
+            assert trade.size == 100
+            assert trade.exchange == "NASDAQ"
+        finally:
+            await _cancel(task)
 
-            asyncio.create_task(check_and_cancel())
+    async def test_ignores_non_trade_messages(
+        self, servicer: MarketDataServicer, manager: StreamManager
+    ) -> None:
+        request = market_data_pb2.StreamTradesRequest(symbols=["AAPL"])
+        out: list[market_data_pb2.Trade] = []
+        task = asyncio.create_task(_consume(servicer.stream_trades(request, _ctx()), out))
 
-            async for _ in servicer.StreamTrades(mock_request, context):
-                pass
+        try:
+            await _wait_until(lambda: manager.connection_count == 1)
 
-            assert subscribed_correctly, "Symbols were not properly subscribed"
+            # A bar lands on this client's queue first; the servicer must skip it.
+            queue = next(iter(manager._queues.values()))
+            queue.put_nowait(StreamMessage(stream_type=StreamType.BAR, symbol="AAPL", data=_BAR))
+            await manager.broadcast_trade("AAPL", _TRADE)
 
-    async def test_stream_trades_yields_trade_messages(self, servicer, context):
-        """Test that StreamTrades yields trade data from queue."""
-        mock_manager = StreamManager()
-
-        with patch("src.grpc.servicer.get_stream_manager", return_value=mock_manager):
-            mock_request = MagicMock()
-            mock_request.symbols = ["AAPL"]
-
-            results = []
-
-            async def produce_and_cancel():
-                for _ in range(50):
-                    await asyncio.sleep(0.01)
-                    if mock_manager._queues:
-                        break
-
-                if mock_manager._queues:
-                    queue = list(mock_manager._queues.values())[0]
-                    await queue.put(
-                        StreamMessage(
-                            stream_type=StreamType.TRADE,
-                            symbol="AAPL",
-                            data={
-                                "timestamp": datetime.now(UTC),
-                                "price": 150.25,
-                                "size": 100,
-                                "exchange": "NASDAQ",
-                            },
-                        )
-                    )
-
-                await asyncio.sleep(0.05)
-                context.cancel()
-
-            asyncio.create_task(produce_and_cancel())
-
-            async for trade in servicer.StreamTrades(mock_request, context):
-                results.append(trade)
-
-            assert len(results) == 1
-            assert results[0].symbol == "AAPL"
-
-    async def test_stream_trades_ignores_other_message_types(self, servicer, context):
-        """Test that StreamTrades ignores non-trade messages."""
-        mock_manager = StreamManager()
-
-        with patch("src.grpc.servicer.get_stream_manager", return_value=mock_manager):
-            mock_request = MagicMock()
-            mock_request.symbols = ["AAPL"]
-
-            results = []
-
-            async def produce_and_cancel():
-                for _ in range(50):
-                    await asyncio.sleep(0.01)
-                    if mock_manager._queues:
-                        break
-
-                if mock_manager._queues:
-                    queue = list(mock_manager._queues.values())[0]
-
-                    # Send a BAR message (should be ignored)
-                    await queue.put(
-                        StreamMessage(
-                            stream_type=StreamType.BAR,
-                            symbol="AAPL",
-                            data={
-                                "timestamp": datetime.now(UTC),
-                                "open": 150.0,
-                                "high": 151.0,
-                                "low": 149.0,
-                                "close": 150.5,
-                                "volume": 1000,
-                            },
-                        )
-                    )
-
-                    # Send a TRADE message (should be yielded)
-                    await queue.put(
-                        StreamMessage(
-                            stream_type=StreamType.TRADE,
-                            symbol="AAPL",
-                            data={
-                                "timestamp": datetime.now(UTC),
-                                "price": 150.25,
-                                "size": 100,
-                                "exchange": "NASDAQ",
-                            },
-                        )
-                    )
-
-                await asyncio.sleep(0.05)
-                context.cancel()
-
-            asyncio.create_task(produce_and_cancel())
-
-            async for trade in servicer.StreamTrades(mock_request, context):
-                results.append(trade)
-
-            # Only the trade should be yielded, not the bar
-            assert len(results) == 1
-            assert results[0].symbol == "AAPL"
+            await _wait_until(lambda: len(out) == 1)
+            assert out[0].price.value == "150.25"
+        finally:
+            await _cancel(task)
 
 
-@pytest.mark.skip(reason="Streaming tests require refactoring - servicer uses 30s queue timeout")
-class TestStreamingCleanup:
-    """Tests for streaming cleanup behavior."""
-
-    async def test_stream_cleanup_on_cancel(self, servicer, context):
-        """Test that streams clean up on cancellation."""
-        mock_manager = StreamManager()
-        was_subscribed = False
-
-        with patch("src.grpc.servicer.get_stream_manager", return_value=mock_manager):
-            mock_request = MagicMock()
-            mock_request.symbols = ["AAPL"]
-
-            async def check_and_cancel():
-                nonlocal was_subscribed
-                for _ in range(50):
-                    await asyncio.sleep(0.01)
-                    if mock_manager.connection_count == 1:
-                        was_subscribed = True
-                        break
-                context.cancel()
-
-            asyncio.create_task(check_and_cancel())
-
-            async for _ in servicer.StreamBars(mock_request, context):
-                pass
-
-            # After cancellation, should be cleaned up
-            assert was_subscribed, "Stream was never active"
-            assert mock_manager.connection_count == 0
-            assert "AAPL" not in mock_manager.subscribed_symbols["bars"]
-
-    async def test_multiple_streams_independent(self, servicer, context):
-        """Test that multiple streams are independent."""
-        mock_manager = StreamManager()
-        both_connected = False
-
-        with patch("src.grpc.servicer.get_stream_manager", return_value=mock_manager):
-            # Start two streams
-            mock_request1 = MagicMock()
-            mock_request1.symbols = ["AAPL"]
-
-            mock_request2 = MagicMock()
-            mock_request2.symbols = ["GOOGL"]
-
-            context2 = MockServicerContext()
-
-            async def check_and_cancel():
-                nonlocal both_connected
-                for _ in range(50):
-                    await asyncio.sleep(0.01)
-                    if mock_manager.connection_count == 2:
-                        both_connected = True
-                        break
-                context.cancel()
-                context2.cancel()
-
-            asyncio.create_task(check_and_cancel())
-
-            # Run both streams concurrently
-            await asyncio.gather(
-                self._consume_stream(servicer.StreamBars(mock_request1, context)),
-                self._consume_stream(servicer.StreamBars(mock_request2, context2)),
-                return_exceptions=True,
+class TestMultipleStreams:
+    async def test_streams_are_independent_and_clean_up_separately(
+        self, servicer: MarketDataServicer, manager: StreamManager
+    ) -> None:
+        out_a: list[market_data_pb2.Bar] = []
+        out_b: list[market_data_pb2.Bar] = []
+        task_a = asyncio.create_task(
+            _consume(
+                servicer.stream_bars(market_data_pb2.StreamBarsRequest(symbols=["AAPL"]), _ctx()),
+                out_a,
             )
+        )
+        task_b = asyncio.create_task(
+            _consume(
+                servicer.stream_bars(market_data_pb2.StreamBarsRequest(symbols=["GOOGL"]), _ctx()),
+                out_b,
+            )
+        )
 
-            assert both_connected, "Both streams should have been connected"
+        try:
+            await _wait_until(lambda: manager.connection_count == 2)
+            assert manager.subscribed_symbols["bars"] == {"AAPL", "GOOGL"}
 
-    @staticmethod
-    async def _consume_stream(stream):
-        """Helper to consume an async generator."""
-        async for _ in stream:
-            pass
+            await manager.broadcast_bar("AAPL", _BAR)
+            await _wait_until(lambda: len(out_a) == 1)
+            assert out_b == []  # only the AAPL subscriber received it
+
+            await _cancel(task_a)
+            assert manager.connection_count == 1
+            assert manager.subscribed_symbols["bars"] == {"GOOGL"}
+        finally:
+            await _cancel(task_a)
+            await _cancel(task_b)
+
+        assert manager.connection_count == 0
 
 
 class TestStreamManagerIntegration:
     """Integration tests for StreamManager with gRPC streaming."""
 
-    async def test_full_flow_with_stream_manager(self, stream_manager):
+    async def test_full_flow_with_stream_manager(self) -> None:
         """Test the full flow from connection to message delivery."""
-        # Connect client
+        stream_manager = StreamManager()
+
         queue = await stream_manager.connect(1)
         assert stream_manager.connection_count == 1
 
-        # Subscribe to trades
         await stream_manager.subscribe(1, trades=["AAPL"], quotes=[], bars=[])
         assert "AAPL" in stream_manager.subscribed_symbols["trades"]
 
-        # Broadcast trade data
-        trade_data = {"price": 150.0, "size": 100}
-        await stream_manager.broadcast_trade("AAPL", trade_data)
+        await stream_manager.broadcast_trade("AAPL", _TRADE)
 
-        # Verify message received
         message = queue.get_nowait()
         assert message.stream_type == StreamType.TRADE
         assert message.symbol == "AAPL"
-        assert message.data == trade_data
+        assert message.data == _TRADE
 
-        # Disconnect
         await stream_manager.disconnect(1)
         assert stream_manager.connection_count == 0
         assert "AAPL" not in stream_manager.subscribed_symbols["trades"]

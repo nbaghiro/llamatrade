@@ -10,10 +10,10 @@ they are unit-testable without Redis.
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
 from decimal import Decimal
 
 from llamatrade_proto.generated import common_pb2, market_data_pb2
+from llamatrade_proto.timestamps import from_proto_timestamp, to_proto_timestamp
 
 from src.models import BarData
 from src.store.models import BarRow
@@ -31,10 +31,7 @@ def bar_row_to_proto(row: BarRow) -> market_data_pb2.Bar:
     """
     bar = market_data_pb2.Bar(
         symbol=row.symbol,
-        timestamp=common_pb2.Timestamp(
-            seconds=int(row.time.timestamp()),
-            nanos=row.time.microsecond * 1000,
-        ),
+        timestamp=to_proto_timestamp(row.time),
         open=_decimal(row.open),
         high=_decimal(row.high),
         low=_decimal(row.low),
@@ -54,7 +51,7 @@ def proto_to_bar_data(bar: market_data_pb2.Bar) -> BarData:
     The symbol is delivered separately to ``broadcast_bar``; ``BarData`` itself
     only carries the OHLCV + timestamp the client wire needs.
     """
-    ts = datetime.fromtimestamp(bar.timestamp.seconds + bar.timestamp.nanos / 1_000_000_000, tz=UTC)
+    ts = from_proto_timestamp(bar.timestamp)
     return BarData(
         open=float(bar.open.value) if bar.HasField("open") else 0.0,
         high=float(bar.high.value) if bar.HasField("high") else 0.0,

@@ -21,7 +21,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 
-from llamatrade_telemetry import counter, metrics
+from llamatrade_telemetry import counter, gauge, metrics
 from llamatrade_telemetry.instrumentation.cache import CACHE_OP_DURATION
 from llamatrade_telemetry.instrumentation.cache import (
     record_cache_operation as _record_cache_operation,
@@ -33,21 +33,25 @@ from src.models import Bar
 # ``marketdata`` cache.
 _CACHE = "marketdata"
 
-# Service-specific stream fan-out counters — no shared-catalog equivalent (they
-# count messages relayed to / received from this service), so registered locally.
-_STREAM_MESSAGES_TOTAL = counter(
-    "llamatrade_marketdata_stream_messages_total",
-    ["type"],
-    "Stream messages relayed to clients by type (trade/quote/bar)",
-)
-_STREAM_ALPACA_MESSAGES_TOTAL = counter(
-    "llamatrade_marketdata_stream_alpaca_messages_total",
-    ["type"],
-    "Messages received from the upstream Alpaca stream by type",
+# Symbol counts are aggregate only — per-symbol labels are forbidden (cardinality
+# contract); the ingest logs name the symbols that entered or left the universe.
+_INGEST_UNIVERSE_SYMBOLS = gauge(
+    "llamatrade_marketdata_ingest_universe_symbols",
+    ["kind"],
+    "Symbols in the ingest universe by origin (baseline / live / total)",
 )
 
-# Circuit-breaker state mapping (closed/half_open/open -> 0/1/2; unknown -> -1).
-_CIRCUIT_BREAKER_STATES: dict[str, int] = {"closed": 0, "half_open": 1, "open": 2}
+_INGEST_UNIVERSE_REFRESH_FAILURES = counter(
+    "llamatrade_marketdata_ingest_universe_refresh_failures_total",
+    ["reason"],
+    "Ingest-universe refreshes that left the subscription set unchanged",
+)
+
+_INGEST_TARGETED_BACKFILLS = counter(
+    "llamatrade_marketdata_ingest_targeted_backfills_total",
+    ["outcome"],
+    "Catch-up backfill passes for symbols that just entered the ingest universe",
+)
 
 # Nominal bar duration per timeframe. Used only to spot *interior* holes in a
 # served bar series (a missing bar => an inter-bar gap wider than one step). A
@@ -75,62 +79,6 @@ def record_cache_operation(operation: str, result: str, latency: float) -> None:
     """
     _record_cache_operation(_CACHE, operation, result)
     CACHE_OP_DURATION.labels(cache=_CACHE, op=operation).observe(latency)
-
-
-def update_stream_metrics(
-    connections: int,
-    trade_subs: int,
-    quote_subs: int,
-    bar_subs: int,
-) -> None:
-    """Update streaming gauges.
-
-    Args:
-        connections: Number of active upstream connections.
-        trade_subs: Number of trade subscriptions.
-        quote_subs: Number of quote subscriptions.
-        bar_subs: Number of bar subscriptions.
-    """
-    metrics.marketdata.stream_connections.set(connections)
-    metrics.marketdata.stream_subscriptions.labels(type="trades").set(trade_subs)
-    metrics.marketdata.stream_subscriptions.labels(type="quotes").set(quote_subs)
-    metrics.marketdata.stream_subscriptions.labels(type="bars").set(bar_subs)
-
-
-def record_stream_message(msg_type: str) -> None:
-    """Record a stream message relayed to clients.
-
-    Args:
-        msg_type: Type of message (trade, quote, bar).
-    """
-    _STREAM_MESSAGES_TOTAL.labels(type=msg_type).inc()
-
-
-def record_alpaca_stream_message(msg_type: str) -> None:
-    """Record a message received from the upstream Alpaca stream.
-
-    Args:
-        msg_type: Type of message (trade, quote, bar, error).
-    """
-    _STREAM_ALPACA_MESSAGES_TOTAL.labels(type=msg_type).inc()
-
-
-def update_rate_limiter_metrics(available_tokens: float) -> None:
-    """Update the rate-limiter token gauge.
-
-    Args:
-        available_tokens: Number of available tokens.
-    """
-    metrics.marketdata.rate_limit_tokens.set(available_tokens)
-
-
-def update_circuit_breaker_metrics(state: str) -> None:
-    """Update the circuit-breaker state gauge.
-
-    Args:
-        state: Circuit state (closed, half_open, open); unknown maps to -1.
-    """
-    metrics.marketdata.circuit_breaker_state.set(_CIRCUIT_BREAKER_STATES.get(state, -1))
 
 
 # Interior-gap detection tolerance (fraction of a step) and the upper bound
@@ -218,3 +166,21 @@ def record_bar_series_gaps(timeframe: str, bars: list[Bar]) -> None:
 def record_missing_symbol() -> None:
     """Record that a requested symbol returned no data / was not found."""
     metrics.marketdata.missing_symbol()
+
+
+def record_ingest_universe_size(*, baseline: int, live: int, total: int) -> None:
+    """Set the ingest-universe gauge for the configured baseline, the live-derived
+    symbols, and the union the ingestor actually streams."""
+    _INGEST_UNIVERSE_SYMBOLS.labels(kind="baseline").set(baseline)
+    _INGEST_UNIVERSE_SYMBOLS.labels(kind="live").set(live)
+    _INGEST_UNIVERSE_SYMBOLS.labels(kind="total").set(total)
+
+
+def record_ingest_universe_refresh_failure(reason: str) -> None:
+    """Count a refresh that kept the previous set (``query`` or ``subscribe``)."""
+    _INGEST_UNIVERSE_REFRESH_FAILURES.labels(reason=reason).inc()
+
+
+def record_targeted_backfill(outcome: str) -> None:
+    """Count a catch-up backfill pass for newly added symbols (``ok`` or ``error``)."""
+    _INGEST_TARGETED_BACKFILLS.labels(outcome=outcome).inc()
