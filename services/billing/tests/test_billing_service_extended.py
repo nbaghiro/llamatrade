@@ -9,7 +9,11 @@ import pytest
 
 from llamatrade_proto.generated import billing_pb2
 
-from src.services.billing_service import DEFAULT_PLANS, BillingService
+from src.services.billing_service import (
+    DEFAULT_PLANS,
+    BillingService,
+    stripe_status_to_proto,
+)
 
 # === Test Fixtures ===
 
@@ -47,6 +51,35 @@ def billing_service(mock_db: MagicMock, mock_stripe: MagicMock) -> BillingServic
 @pytest.fixture
 def test_tenant_id() -> UUID:
     return uuid4()
+
+
+# === stripe_status_to_proto Tests ===
+
+
+class TestStripeStatusToProto:
+    """Tests for the Stripe-status to proto-status converter."""
+
+    @pytest.mark.parametrize(
+        ("stripe_status", "expected"),
+        [
+            ("active", billing_pb2.SUBSCRIPTION_STATUS_ACTIVE),
+            ("ACTIVE", billing_pb2.SUBSCRIPTION_STATUS_ACTIVE),
+            ("past_due", billing_pb2.SUBSCRIPTION_STATUS_PAST_DUE),
+            ("canceled", billing_pb2.SUBSCRIPTION_STATUS_CANCELED),
+            ("cancelled", billing_pb2.SUBSCRIPTION_STATUS_CANCELED),
+            ("trialing", billing_pb2.SUBSCRIPTION_STATUS_TRIALING),
+            ("paused", billing_pb2.SUBSCRIPTION_STATUS_PAUSED),
+            ("incomplete", billing_pb2.SUBSCRIPTION_STATUS_PAST_DUE),
+            ("incomplete_expired", billing_pb2.SUBSCRIPTION_STATUS_CANCELED),
+            ("unpaid", billing_pb2.SUBSCRIPTION_STATUS_PAST_DUE),
+        ],
+    )
+    def test_known_statuses_map(self, stripe_status: str, expected: int) -> None:
+        assert stripe_status_to_proto(stripe_status) == expected
+
+    def test_unknown_status_returns_none(self) -> None:
+        """An unrecognized status returns None (never UNSPECIFIED or active)."""
+        assert stripe_status_to_proto("brand_new_status") is None
 
 
 # === list_plans Tests ===

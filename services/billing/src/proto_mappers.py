@@ -3,10 +3,10 @@
 Proto is the single source of truth for the read/wire shape (decision 1A): these
 functions map the persisted ``Plan``/``Subscription``/``PaymentMethod``/``Invoice``
 rows straight to the generated proto messages in one pass, with no intermediate
-Pydantic layer. Money is kept as ``Decimal`` end-to-end (5A) — every amount is
+Pydantic layer. Money is kept as ``Decimal`` end-to-end — every amount is
 emitted as a proto ``Money`` carrying the Decimal's string form, never via float.
 
-Proto field names are authoritative (7A): DB ``billing_cycle`` → proto ``interval``,
+Proto field names are authoritative: DB ``billing_cycle`` → proto ``interval``,
 DB ``amount_due`` → proto ``amount``, and the plan slug (``Plan.name``) is the
 plan identity exposed on the wire (proto ``Plan.id`` / ``Subscription.plan_id``),
 matching the slug callers pass back to CreateSubscription.
@@ -16,18 +16,14 @@ libs/db/.../_enum_types.py), so a row's enum field is already the proto int and 
 assigned straight through — no string conversion on read.
 """
 
-from datetime import datetime
 from decimal import Decimal
 from typing import cast
 
 from llamatrade_db.models import Invoice, PaymentMethod, Plan, Subscription
 from llamatrade_proto.generated import billing_pb2, common_pb2
+from llamatrade_proto.timestamps import to_proto_timestamp
 
 _USD = "USD"
-
-
-def _ts(value: datetime) -> common_pb2.Timestamp:
-    return common_pb2.Timestamp(seconds=int(value.timestamp()))
 
 
 def _money(amount: Decimal, currency: str = _USD) -> common_pb2.Money:
@@ -97,19 +93,19 @@ def subscription_to_proto(sub: Subscription) -> billing_pb2.Subscription:
         status=sub.status,
         interval=sub.billing_cycle,
         current_price=_money(current_price),
-        current_period_start=_ts(sub.current_period_start),
-        current_period_end=_ts(sub.current_period_end),
+        current_period_start=to_proto_timestamp(sub.current_period_start),
+        current_period_end=to_proto_timestamp(sub.current_period_end),
         is_trial=sub.trial_end is not None,
         cancel_at_period_end=sub.cancel_at_period_end,
         stripe_subscription_id=sub.stripe_subscription_id or "",
         stripe_customer_id=sub.stripe_customer_id or "",
-        created_at=_ts(sub.created_at),
-        updated_at=_ts(sub.updated_at),
+        created_at=to_proto_timestamp(sub.created_at),
+        updated_at=to_proto_timestamp(sub.updated_at),
     )
     if sub.trial_end is not None:
-        proto.trial_end.CopyFrom(_ts(sub.trial_end))
+        proto.trial_end.CopyFrom(to_proto_timestamp(sub.trial_end))
     if sub.canceled_at is not None:
-        proto.canceled_at.CopyFrom(_ts(sub.canceled_at))
+        proto.canceled_at.CopyFrom(to_proto_timestamp(sub.canceled_at))
     return proto
 
 
@@ -123,7 +119,7 @@ def payment_method_to_proto(pm: PaymentMethod) -> billing_pb2.PaymentMethod:
         card_last4=pm.card_last4 or "",
         card_exp_month=pm.card_exp_month or 0,
         card_exp_year=pm.card_exp_year or 0,
-        created_at=_ts(pm.created_at),
+        created_at=to_proto_timestamp(pm.created_at),
     )
 
 
@@ -149,14 +145,14 @@ def invoice_to_proto(inv: Invoice) -> billing_pb2.Invoice:
         amount_paid=_money(inv.amount_paid, currency),
         amount_remaining=_money(inv.amount_due - inv.amount_paid, currency),
         status=cast("billing_pb2.InvoiceStatus.ValueType", inv.status),
-        period_start=_ts(inv.period_start),
-        period_end=_ts(inv.period_end),
+        period_start=to_proto_timestamp(inv.period_start),
+        period_end=to_proto_timestamp(inv.period_end),
         pdf_url=inv.invoice_pdf or "",
         stripe_invoice_id=inv.stripe_invoice_id,
         items=items,
     )
     if inv.due_date is not None:
-        proto.due_date.CopyFrom(_ts(inv.due_date))
+        proto.due_date.CopyFrom(to_proto_timestamp(inv.due_date))
     if inv.paid_at is not None:
-        proto.paid_at.CopyFrom(_ts(inv.paid_at))
+        proto.paid_at.CopyFrom(to_proto_timestamp(inv.paid_at))
     return proto

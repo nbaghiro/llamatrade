@@ -89,6 +89,10 @@ class StripeClient:
             stripe.api_key = self.api_key
         else:
             logger.warning("STRIPE_SECRET_KEY not set")
+        # Point the SDK at a self-hosted/mock Stripe (e.g. stripe-mock) when set.
+        api_base = os.getenv("STRIPE_API_BASE", "")
+        if api_base:
+            stripe.api_base = api_base
 
     def _timestamp_to_datetime(self, ts: int | None) -> datetime | None:
         """Convert Unix timestamp to datetime."""

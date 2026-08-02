@@ -12,6 +12,7 @@ from sqlalchemy.orm import selectinload
 
 from llamatrade_db import get_db
 from llamatrade_db.models import Plan, Subscription
+from llamatrade_db.plan_limits import FREE_TIER_LIMITS
 from llamatrade_proto.generated import billing_pb2
 from llamatrade_proto.generated.billing_pb2 import SubscriptionStatus
 
@@ -21,8 +22,15 @@ from src.stripe.client import StripeClient, StripeError, get_stripe_client
 logger = logging.getLogger(__name__)
 
 
-def stripe_status_to_proto(status: str) -> SubscriptionStatus.ValueType:
-    """Convert Stripe subscription status string to proto ValueType."""
+def stripe_status_to_proto(status: str) -> SubscriptionStatus.ValueType | None:
+    """Convert a Stripe subscription status string to a proto status.
+
+    Returns ``None`` for an unrecognized status. Every currently-documented
+    Stripe status is mapped, so ``None`` signals a new/unknown value the caller
+    must not act on: it keeps the stored status unchanged rather than defaulting
+    to a live one. Storing ``SUBSCRIPTION_STATUS_UNSPECIFIED`` is not an option
+    (the enum bridge rejects it on write).
+    """
     mapping: dict[str, int] = {
         "active": billing_pb2.SUBSCRIPTION_STATUS_ACTIVE,
         "past_due": billing_pb2.SUBSCRIPTION_STATUS_PAST_DUE,
@@ -34,7 +42,9 @@ def stripe_status_to_proto(status: str) -> SubscriptionStatus.ValueType:
         "incomplete_expired": billing_pb2.SUBSCRIPTION_STATUS_CANCELED,
         "unpaid": billing_pb2.SUBSCRIPTION_STATUS_PAST_DUE,
     }
-    result = mapping.get(status.lower()) or billing_pb2.SUBSCRIPTION_STATUS_UNSPECIFIED
+    result = mapping.get(status.lower())
+    if result is None:
+        return None
     return cast(SubscriptionStatus.ValueType, result)
 
 
@@ -56,8 +66,9 @@ DEFAULT_PLANS = [
             "priority_support": False,
         },
         limits={
-            "backtests_per_month": 5,
-            "live_strategies": 0,
+            # Enforcement keys come from the shared fallback so a tenant with no
+            # subscription and a tenant on the free plan get identical limits.
+            **FREE_TIER_LIMITS,
             "api_calls_per_day": 1000,
         },
         trial_days=0,
@@ -240,11 +251,21 @@ class BillingService:
             logger.error(f"Failed to create Stripe subscription: {e}")
             raise ValueError(f"Payment failed: {e.message}")
 
+        status_value = stripe_status_to_proto(stripe_sub.status)
+        if status_value is None:
+            logger.warning(
+                "Unknown Stripe subscription status %r on create for %s; "
+                "storing past_due pending review",
+                stripe_sub.status,
+                stripe_sub.id,
+            )
+            status_value = billing_pb2.SUBSCRIPTION_STATUS_PAST_DUE
+
         # Create subscription record in database (status stored as proto int).
         subscription = Subscription(
             tenant_id=tenant_id,
             plan_id=plan_db.id,
-            status=stripe_status_to_proto(stripe_sub.status),
+            status=status_value,
             billing_cycle=request.billing_cycle,
             stripe_subscription_id=stripe_sub.id,
             stripe_customer_id=customer_id,
@@ -355,7 +376,15 @@ class BillingService:
 
         # Update local record
         subscription.plan_id = new_plan_db.id
-        subscription.status = stripe_status_to_proto(stripe_sub.status)
+        new_status = stripe_status_to_proto(stripe_sub.status)
+        if new_status is not None:
+            subscription.status = new_status
+        else:
+            logger.warning(
+                "Unknown Stripe subscription status %r on update for %s; keeping stored status",
+                stripe_sub.status,
+                subscription.stripe_subscription_id,
+            )
         subscription.current_period_start = stripe_sub.current_period_start
         subscription.current_period_end = stripe_sub.current_period_end
 

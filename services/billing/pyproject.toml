@@ -9,6 +9,7 @@ dependencies = [
     "pydantic>=2.5.0",
     "stripe>=15.0.0,<16",
     "llamatrade-common",
+    "llamatrade-events",
     "llamatrade-db",
     "llamatrade-proto",
 ]

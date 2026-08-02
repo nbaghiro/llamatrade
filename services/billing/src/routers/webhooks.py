@@ -13,18 +13,27 @@ The webhook endpoint in the Stripe dashboard must be configured on the same
 API generation, or payloads will not match these shapes.
 """
 
+from __future__ import annotations
+
 import json
 import logging
-import os
+from collections import OrderedDict
 from datetime import UTC, datetime
+from typing import TYPE_CHECKING
 
 import stripe
 from fastapi import APIRouter, Depends, HTTPException, Request, status
+from sqlalchemy.exc import InterfaceError, OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession
 from stripe import Event, Invoice, PaymentMethod, StripeObject, Subscription
 
+if TYPE_CHECKING:
+    from llamatrade_db.models import Subscription as DbSubscription
+
+from llamatrade_common.utils import require_secret
 from llamatrade_db import get_db
-from llamatrade_proto.generated import billing_pb2
+from llamatrade_events.catalog.notifications import NotificationEvent, shared_notification_events
+from llamatrade_proto.generated import billing_pb2, events_pb2
 from llamatrade_telemetry import metrics
 
 from src.services.billing_service import stripe_status_to_proto
@@ -36,7 +45,33 @@ INVOICE_STATUS_PAID = 3
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
-STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET", "")
+# Handler failures worth a Stripe retry (infra outages), vs. permanent logic errors.
+_TRANSIENT_ERRORS: tuple[type[BaseException], ...] = (
+    OperationalError,
+    InterfaceError,
+    ConnectionError,
+    TimeoutError,
+)
+
+# Best-effort in-process event dedup; cross-replica duplicates ride the natural
+# per-row guards (stripe_invoice_id / stripe_payment_method_id existence checks).
+_SEEN_EVENTS_MAX = 4096
+_seen_event_ids: OrderedDict[str, None] = OrderedDict()
+
+
+def _event_seen(event_id: str) -> bool:
+    if event_id in _seen_event_ids:
+        _seen_event_ids.move_to_end(event_id)
+        return True
+    return False
+
+
+def _mark_event_seen(event_id: str) -> None:
+    _seen_event_ids[event_id] = None
+    _seen_event_ids.move_to_end(event_id)
+    while len(_seen_event_ids) > _SEEN_EVENTS_MAX:
+        _seen_event_ids.popitem(last=False)
+
 
 # Stripe event types this service dispatches; everything else is a no-op.
 _HANDLED_EVENT_TYPES = frozenset(
@@ -44,6 +79,7 @@ _HANDLED_EVENT_TYPES = frozenset(
         "customer.subscription.created",
         "customer.subscription.updated",
         "customer.subscription.deleted",
+        "customer.subscription.trial_will_end",
         "invoice.paid",
         "invoice.payment_failed",
         "payment_method.attached",
@@ -91,12 +127,39 @@ def _invoice_subscription_id(invoice: Invoice) -> str | None:
     return sub if isinstance(sub, str) else sub.id
 
 
+def _apply_stripe_status(local_sub: DbSubscription, subscription: Subscription) -> None:
+    """Set the local status from the Stripe status, unchanged on an unknown value.
+
+    An unrecognized Stripe status leaves the stored status as-is (logged) rather
+    than storing UNSPECIFIED or defaulting to a live status.
+    """
+    new_status = stripe_status_to_proto(subscription.status)
+    if new_status is not None:
+        local_sub.status = new_status
+    else:
+        logger.warning(
+            "Unknown Stripe subscription status %r for %s; keeping stored status",
+            subscription.status,
+            subscription.id,
+        )
+
+
 @router.post("/stripe")
 async def handle_stripe_webhook(
     request: Request,
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, bool]:
     """Handle Stripe webhook events."""
+    # Fail closed in production/staging: no secret means no verifiable webhooks.
+    try:
+        webhook_secret = require_secret("STRIPE_WEBHOOK_SECRET", dev_default="")
+    except RuntimeError:
+        logger.error("STRIPE_WEBHOOK_SECRET is not set; refusing to process webhooks")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Webhook secret not configured",
+        )
+
     payload = await request.body()
     sig_header = request.headers.get("stripe-signature")
 
@@ -106,7 +169,7 @@ async def handle_stripe_webhook(
             detail="Missing stripe-signature header",
         )
 
-    if not STRIPE_WEBHOOK_SECRET:
+    if not webhook_secret:
         logger.warning("STRIPE_WEBHOOK_SECRET not configured, skipping signature verification")
         # In development, parse the unverified payload into a typed Event so
         # the same dispatch path runs as in production.
@@ -124,7 +187,7 @@ async def handle_stripe_webhook(
             event = stripe_client.verify_webhook_signature(
                 payload=payload,
                 sig_header=sig_header,
-                webhook_secret=STRIPE_WEBHOOK_SECRET,
+                webhook_secret=webhook_secret,
             )
         except StripeError as e:
             metrics.billing.webhook_signature_failure()
@@ -146,6 +209,12 @@ async def handle_stripe_webhook(
         logger.debug(f"Unhandled webhook event type: {event_type}")
         return {"received": True}
 
+    event_id = str(getattr(event, "id", "") or "")
+    if event_id and _event_seen(event_id):
+        metrics.billing.webhook_duplicate()
+        logger.info(f"Duplicate Stripe webhook {event_id} ({event_type}); skipping")
+        return {"received": True}
+
     metrics.billing.webhook_received(event_type=event_type)
 
     # Handle different event types
@@ -157,6 +226,8 @@ async def handle_stripe_webhook(
                 await _handle_subscription_updated(db, _payload_as(Subscription, event))
             elif event_type == "customer.subscription.deleted":
                 await _handle_subscription_deleted(db, _payload_as(Subscription, event))
+            elif event_type == "customer.subscription.trial_will_end":
+                await _handle_trial_will_end(db, _payload_as(Subscription, event))
             elif event_type == "invoice.paid":
                 await _handle_invoice_paid(db, _payload_as(Invoice, event))
             elif event_type == "invoice.payment_failed":
@@ -165,11 +236,37 @@ async def handle_stripe_webhook(
                 await _handle_payment_method_attached(db, _payload_as(PaymentMethod, event))
             elif event_type == "payment_method.detached":
                 await _handle_payment_method_detached(db, _payload_as(PaymentMethod, event))
+    except _TRANSIENT_ERRORS as e:
+        # 500 so Stripe redelivers; the event is not marked seen.
+        logger.error(f"Transient error processing webhook {event_type}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Transient error processing webhook",
+        )
     except Exception as e:
+        # Permanent/logic failure: 200 so Stripe doesn't retry a poison event.
         logger.error(f"Error processing webhook {event_type}: {e}")
-        # Don't raise — return 200 so Stripe doesn't retry; failed events are checked via logs.
+    else:
+        if event_id:
+            _mark_event_seen(event_id)
 
     return {"received": True}
+
+
+async def _notify_billing(
+    tenant_id: object,
+    category: events_pb2.NotificationCategory.ValueType,
+    *,
+    reason: str = "",
+    amount: str = "",
+    dedup_parts: tuple[str, ...],
+) -> None:
+    """Fire-and-forget billing notification; Stripe redelivery collapses on the id."""
+    await shared_notification_events().publish_safe(
+        NotificationEvent(category=category, reason=reason, amount=amount),
+        tenant_id=str(tenant_id),
+        dedup_parts=dedup_parts,
+    )
 
 
 async def _handle_subscription_created(db: AsyncSession, subscription: Subscription) -> None:
@@ -187,7 +284,7 @@ async def _handle_subscription_created(db: AsyncSession, subscription: Subscript
     local_sub = result.scalar_one_or_none()
 
     if local_sub:
-        local_sub.status = stripe_status_to_proto(subscription.status)
+        _apply_stripe_status(local_sub, subscription)
         period_start, period_end = _subscription_period(subscription)
         if period_start is not None:
             local_sub.current_period_start = period_start
@@ -216,7 +313,7 @@ async def _handle_subscription_updated(db: AsyncSession, subscription: Subscript
     local_sub = result.scalar_one_or_none()
 
     if local_sub:
-        local_sub.status = stripe_status_to_proto(subscription.status)
+        _apply_stripe_status(local_sub, subscription)
         local_sub.cancel_at_period_end = subscription.cancel_at_period_end
         period_start, period_end = _subscription_period(subscription)
         if period_start is not None:
@@ -227,6 +324,22 @@ async def _handle_subscription_updated(db: AsyncSession, subscription: Subscript
         if canceled_at is not None:
             local_sub.canceled_at = canceled_at
         await db.commit()
+        reason = (
+            "cancels at period end"
+            if subscription.cancel_at_period_end
+            else f"status: {subscription.status}"
+        )
+        await _notify_billing(
+            local_sub.tenant_id,
+            events_pb2.NOTIFICATION_CATEGORY_SUBSCRIPTION_UPDATED,
+            reason=reason,
+            dedup_parts=(
+                str(subscription.id),
+                "updated",
+                str(subscription.status),
+                str(subscription.cancel_at_period_end),
+            ),
+        )
 
 
 async def _handle_subscription_deleted(db: AsyncSession, subscription: Subscription) -> None:
@@ -246,6 +359,11 @@ async def _handle_subscription_deleted(db: AsyncSession, subscription: Subscript
         local_sub.status = billing_pb2.SUBSCRIPTION_STATUS_CANCELED
         local_sub.canceled_at = datetime.now(UTC)
         await db.commit()
+        await _notify_billing(
+            local_sub.tenant_id,
+            events_pb2.NOTIFICATION_CATEGORY_SUBSCRIPTION_CANCELED,
+            dedup_parts=(str(subscription.id), "deleted"),
+        )
 
 
 async def _handle_invoice_paid(db: AsyncSession, invoice: Invoice) -> None:
@@ -308,6 +426,13 @@ async def _handle_invoice_paid(db: AsyncSession, invoice: Invoice) -> None:
         db.add(new_invoice)
 
     await db.commit()
+    await _notify_billing(
+        subscription.tenant_id,
+        events_pb2.NOTIFICATION_CATEGORY_PAYMENT_SUCCEEDED,
+        reason=f"invoice {invoice.number or invoice.id} ({plan_name})",
+        amount=str(Decimal(invoice.amount_paid) / 100),
+        dedup_parts=(str(invoice.id), "paid"),
+    )
 
 
 async def _handle_payment_failed(db: AsyncSession, invoice: Invoice) -> None:
@@ -338,6 +463,34 @@ async def _handle_payment_failed(db: AsyncSession, invoice: Invoice) -> None:
     if subscription:
         subscription.status = billing_pb2.SUBSCRIPTION_STATUS_PAST_DUE
         await db.commit()
+        await _notify_billing(
+            subscription.tenant_id,
+            events_pb2.NOTIFICATION_CATEGORY_PAYMENT_FAILED,
+            reason=f"plan {plan_name}",
+            dedup_parts=(str(invoice.id), "failed"),
+        )
+
+
+async def _handle_trial_will_end(db: AsyncSession, subscription: Subscription) -> None:
+    """Handle customer.subscription.trial_will_end (fires ~3 days before)."""
+    from sqlalchemy import select
+
+    from llamatrade_db.models import Subscription as DbSubscription
+
+    result = await db.execute(
+        select(DbSubscription).where(DbSubscription.stripe_subscription_id == subscription.id)
+    )
+    local_sub = result.scalar_one_or_none()
+    if local_sub is None:
+        logger.warning(f"No subscription found for trial_will_end: {subscription.id}")
+        return
+    trial_end = _ts(subscription.trial_end)
+    await _notify_billing(
+        local_sub.tenant_id,
+        events_pb2.NOTIFICATION_CATEGORY_TRIAL_ENDING,
+        reason=f"trial ends {trial_end.date().isoformat()}" if trial_end else "trial ending soon",
+        dedup_parts=(str(subscription.id), "trial_will_end"),
+    )
 
 
 async def _handle_payment_method_attached(db: AsyncSession, payment_method: PaymentMethod) -> None:

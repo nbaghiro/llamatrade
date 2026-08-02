@@ -16,7 +16,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from starlette.types import ASGIApp
 
 from llamatrade_common import AuthMiddleware, HealthChecker
-from llamatrade_db import close_db, get_pool_stats, init_db
+from llamatrade_common.health import cached_engine_check
+from llamatrade_db import close_db, get_engine, get_pool_stats
+from llamatrade_db.session import verify_rls_enforcement
 from llamatrade_telemetry import init_telemetry
 
 from src.routers import webhooks
@@ -32,24 +34,22 @@ CORS_ORIGINS = os.getenv(
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     """Application lifespan handler."""
-    # Startup
-    try:
-        await init_db()
-    except Exception as e:
-        logger.warning("Database initialization failed (non-critical): %s", e)
+    # Fail closed (prod/staging) if the DB role can bypass RLS.
+    await verify_rls_enforcement()
 
-    # Mount Connect ASGI app
-    try:
-        from llamatrade_proto.generated.billing_connect import BillingServiceASGIApplication
+    # Mount Connect ASGI app (mandatory: an import failure must fail startup).
+    from llamatrade_proto.generated.billing_connect import (
+        BillingService,
+        BillingServiceASGIApplication,
+    )
 
-        from src.grpc.servicer import BillingServicer
+    from src.grpc.servicer import BillingServicer
 
-        servicer = BillingServicer()
-        connect_app = BillingServiceASGIApplication(servicer)
-        app.mount("/", cast(ASGIApp, connect_app))
-        logger.info("Connect ASGI application mounted successfully")
-    except ImportError as e:
-        logger.warning("Connect dependencies not available: %s", e)
+    servicer = BillingServicer()
+    # Decorated handlers return Coroutine, not the CoroutineType the protocol declares.
+    connect_app = BillingServiceASGIApplication(cast(BillingService, servicer))
+    app.mount("/", cast(ASGIApp, connect_app))
+    logger.info("Connect ASGI application mounted successfully")
 
     yield
 
@@ -86,4 +86,8 @@ init_telemetry(app, service="billing", pool_stats_provider=get_pool_stats)
 app.include_router(webhooks.router, prefix="/webhooks", tags=["Webhooks"])
 
 
-app.include_router(HealthChecker("billing", "0.1.0").create_router())
+_check_database = cached_engine_check(get_engine)
+
+_health = HealthChecker("billing", "0.1.0")
+_health.add_check("database", lambda: _check_database())
+app.include_router(_health.create_router())

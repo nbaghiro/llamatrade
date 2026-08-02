@@ -15,11 +15,12 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 # Type alias for generic request context (accepts any request/response types)
 type AnyContext = RequestContext[object, object]
 
-from llamatrade_common import current_context
-from llamatrade_common.connect import resolve_identity_connect
+from llamatrade_common import current_context, pagination_response, resolve_pagination
+from llamatrade_common.connect import handle_service_errors, parse_uuid, resolve_identity_connect
 from llamatrade_db import get_session_maker, system_session, tenant_session
 from llamatrade_db.models import Invoice
 from llamatrade_proto.generated import billing_pb2, common_pb2
+from llamatrade_proto.timestamps import to_proto_timestamp
 
 from src.proto_mappers import (
     invoice_to_proto,
@@ -56,6 +57,7 @@ class BillingServicer:
             self._session_maker = get_session_maker()
         return self._session_maker
 
+    @handle_service_errors
     async def get_subscription(
         self,
         request: billing_pb2.GetSubscriptionRequest,
@@ -78,6 +80,7 @@ class BillingServicer:
                 subscription=subscription_to_proto(subscription),
             )
 
+    @handle_service_errors
     async def create_subscription(
         self,
         request: billing_pb2.CreateSubscriptionRequest,
@@ -98,25 +101,23 @@ class BillingServicer:
             payment_method_id=request.payment_method_id if request.payment_method_id else "",
         )
 
-        try:
-            async with tenant_session(tenant_id, self._maker()) as db:
-                stripe_client = get_stripe_client()
-                service = BillingService(db, stripe_client)
+        async with tenant_session(tenant_id, self._maker()) as db:
+            stripe_client = get_stripe_client()
+            service = BillingService(db, stripe_client)
 
-                email = _customer_email(tenant_id)
+            email = _customer_email(tenant_id)
 
-                subscription = await service.create_subscription(
-                    tenant_id=tenant_id,
-                    email=email,
-                    request=create_request,
-                )
+            subscription = await service.create_subscription(
+                tenant_id=tenant_id,
+                email=email,
+                request=create_request,
+            )
 
-                return billing_pb2.CreateSubscriptionResponse(
-                    subscription=subscription_to_proto(subscription),
-                )
-        except ValueError as e:
-            raise ConnectError(Code.INVALID_ARGUMENT, str(e))
+            return billing_pb2.CreateSubscriptionResponse(
+                subscription=subscription_to_proto(subscription),
+            )
 
+    @handle_service_errors
     async def update_subscription(
         self,
         request: billing_pb2.UpdateSubscriptionRequest,
@@ -127,21 +128,19 @@ class BillingServicer:
 
         tenant_id, _ = resolve_identity_connect(request.context)
 
-        try:
-            async with tenant_session(tenant_id, self._maker()) as db:
-                stripe_client = get_stripe_client()
-                service = BillingService(db, stripe_client)
-                subscription = await service.update_subscription(
-                    tenant_id=tenant_id,
-                    plan_id=request.plan_id,
-                )
+        async with tenant_session(tenant_id, self._maker()) as db:
+            stripe_client = get_stripe_client()
+            service = BillingService(db, stripe_client)
+            subscription = await service.update_subscription(
+                tenant_id=tenant_id,
+                plan_id=request.plan_id,
+            )
 
-                return billing_pb2.UpdateSubscriptionResponse(
-                    subscription=subscription_to_proto(subscription),
-                )
-        except ValueError as e:
-            raise ConnectError(Code.INVALID_ARGUMENT, str(e))
+            return billing_pb2.UpdateSubscriptionResponse(
+                subscription=subscription_to_proto(subscription),
+            )
 
+    @handle_service_errors
     async def cancel_subscription(
         self,
         request: billing_pb2.CancelSubscriptionRequest,
@@ -152,21 +151,19 @@ class BillingServicer:
 
         tenant_id, _ = resolve_identity_connect(request.context)
 
-        try:
-            async with tenant_session(tenant_id, self._maker()) as db:
-                stripe_client = get_stripe_client()
-                service = BillingService(db, stripe_client)
-                subscription = await service.cancel_subscription(
-                    tenant_id=tenant_id,
-                    at_period_end=not request.cancel_immediately,
-                )
+        async with tenant_session(tenant_id, self._maker()) as db:
+            stripe_client = get_stripe_client()
+            service = BillingService(db, stripe_client)
+            subscription = await service.cancel_subscription(
+                tenant_id=tenant_id,
+                at_period_end=not request.cancel_immediately,
+            )
 
-                return billing_pb2.CancelSubscriptionResponse(
-                    subscription=subscription_to_proto(subscription),
-                )
-        except ValueError as e:
-            raise ConnectError(Code.INVALID_ARGUMENT, str(e))
+            return billing_pb2.CancelSubscriptionResponse(
+                subscription=subscription_to_proto(subscription),
+            )
 
+    @handle_service_errors
     async def resume_subscription(
         self,
         request: billing_pb2.ResumeSubscriptionRequest,
@@ -177,18 +174,16 @@ class BillingServicer:
 
         tenant_id, _ = resolve_identity_connect(request.context)
 
-        try:
-            async with tenant_session(tenant_id, self._maker()) as db:
-                stripe_client = get_stripe_client()
-                service = BillingService(db, stripe_client)
-                subscription = await service.reactivate_subscription(tenant_id)
+        async with tenant_session(tenant_id, self._maker()) as db:
+            stripe_client = get_stripe_client()
+            service = BillingService(db, stripe_client)
+            subscription = await service.reactivate_subscription(tenant_id)
 
-                return billing_pb2.ResumeSubscriptionResponse(
-                    subscription=subscription_to_proto(subscription),
-                )
-        except ValueError as e:
-            raise ConnectError(Code.INVALID_ARGUMENT, str(e))
+            return billing_pb2.ResumeSubscriptionResponse(
+                subscription=subscription_to_proto(subscription),
+            )
 
+    @handle_service_errors
     async def get_usage(
         self,
         request: billing_pb2.GetUsageRequest,
@@ -287,8 +282,8 @@ class BillingServicer:
                 market_data_requests=0,
                 storage_bytes=0,
                 api_calls=api_calls,
-                period_start=common_pb2.Timestamp(seconds=int(period_start.timestamp())),
-                period_end=common_pb2.Timestamp(seconds=int(period_end.timestamp())),
+                period_start=to_proto_timestamp(period_start),
+                period_end=to_proto_timestamp(period_end),
             ),
         )
 
@@ -322,6 +317,7 @@ class BillingServicer:
             period_id = period_start.strftime("%Y-%m")
         return period_start, period_end, period_id
 
+    @handle_service_errors
     async def list_invoices(
         self,
         request: billing_pb2.ListInvoicesRequest,
@@ -329,8 +325,7 @@ class BillingServicer:
     ) -> billing_pb2.ListInvoicesResponse:
         """List a tenant's invoices, newest first."""
         tenant_id, _ = resolve_identity_connect(request.context)
-        page = request.pagination.page or 1
-        page_size = request.pagination.page_size or 20
+        page, page_size = resolve_pagination(request.pagination)
 
         async with tenant_session(tenant_id, self._maker()) as db:
             total = (
@@ -352,19 +347,12 @@ class BillingServicer:
                 .all()
             )
 
-        total_pages = (total + page_size - 1) // page_size if total else 1
         return billing_pb2.ListInvoicesResponse(
             invoices=[invoice_to_proto(inv) for inv in rows],
-            pagination=common_pb2.PaginationResponse(
-                total_items=total,
-                total_pages=total_pages,
-                current_page=page,
-                page_size=page_size,
-                has_next=page < total_pages,
-                has_previous=page > 1,
-            ),
+            pagination=common_pb2.PaginationResponse(**pagination_response(total, page, page_size)),
         )
 
+    @handle_service_errors
     async def get_invoice(
         self,
         request: billing_pb2.GetInvoiceRequest,
@@ -391,6 +379,7 @@ class BillingServicer:
 
         return billing_pb2.GetInvoiceResponse(invoice=invoice_to_proto(invoice))
 
+    @handle_service_errors
     async def list_plans(
         self,
         request: billing_pb2.ListPlansRequest,
@@ -399,7 +388,9 @@ class BillingServicer:
         """List available plans (global catalog — not tenant-scoped)."""
         from src.services.billing_service import BillingService
 
-        async with system_session(self._maker()) as db:
+        async with system_session(
+            self._maker(), reason="billing list_plans: global plan catalog"
+        ) as db:
             stripe_client = get_stripe_client()
             service = BillingService(db, stripe_client)
             plans = await service.list_plans()
@@ -408,6 +399,7 @@ class BillingServicer:
                 plans=[plan_to_proto(p) for p in plans],
             )
 
+    @handle_service_errors
     async def list_payment_methods(
         self,
         request: billing_pb2.ListPaymentMethodsRequest,
@@ -429,6 +421,7 @@ class BillingServicer:
                 payment_methods=[payment_method_to_proto(pm) for pm in methods],
             )
 
+    @handle_service_errors
     async def create_setup_intent(
         self,
         request: billing_pb2.CreateSetupIntentRequest,
@@ -444,13 +437,15 @@ class BillingServicer:
         try:
             result = await stripe_client.create_setup_intent(customer_id)
         except StripeError as e:
-            raise ConnectError(Code.INTERNAL, f"Stripe setup intent failed: {e.message}")
+            logger.error("Stripe setup intent failed (code=%s): %s", e.code, e.message)
+            raise ConnectError(Code.INTERNAL, "Failed to create setup intent. Please try again.")
 
         return billing_pb2.CreateSetupIntentResponse(
             client_secret=result.client_secret,
             customer_id=result.customer_id,
         )
 
+    @handle_service_errors
     async def add_payment_method(
         self,
         request: billing_pb2.AddPaymentMethodRequest,
@@ -463,23 +458,21 @@ class BillingServicer:
         tenant_id, _ = resolve_identity_connect(request.context)
         email = _customer_email(tenant_id)
 
-        try:
-            async with tenant_session(tenant_id, self._maker()) as db:
-                stripe_client = get_stripe_client()
-                billing_service = BillingService(db, stripe_client)
-                service = PaymentMethodService(db, stripe_client, billing_service)
-                payment_method = await service.attach_payment_method(
-                    tenant_id=tenant_id,
-                    email=email,
-                    payment_method_id=request.setup_intent_id,
-                )
+        async with tenant_session(tenant_id, self._maker()) as db:
+            stripe_client = get_stripe_client()
+            billing_service = BillingService(db, stripe_client)
+            service = PaymentMethodService(db, stripe_client, billing_service)
+            payment_method = await service.attach_payment_method(
+                tenant_id=tenant_id,
+                email=email,
+                payment_method_id=request.setup_intent_id,
+            )
 
-                return billing_pb2.AddPaymentMethodResponse(
-                    payment_method=payment_method_to_proto(payment_method),
-                )
-        except ValueError as e:
-            raise ConnectError(Code.INVALID_ARGUMENT, str(e))
+            return billing_pb2.AddPaymentMethodResponse(
+                payment_method=payment_method_to_proto(payment_method),
+            )
 
+    @handle_service_errors
     async def remove_payment_method(
         self,
         request: billing_pb2.RemovePaymentMethodRequest,
@@ -490,22 +483,20 @@ class BillingServicer:
         from src.services.payment_method_service import PaymentMethodService
 
         tenant_id, _ = resolve_identity_connect(request.context)
-        payment_method_id = UUID(request.payment_method_id)
+        payment_method_id = parse_uuid(request.payment_method_id, "payment_method_id")
 
-        try:
-            async with tenant_session(tenant_id, self._maker()) as db:
-                stripe_client = get_stripe_client()
-                billing_service = BillingService(db, stripe_client)
-                service = PaymentMethodService(db, stripe_client, billing_service)
-                success = await service.delete_payment_method(tenant_id, payment_method_id)
+        async with tenant_session(tenant_id, self._maker()) as db:
+            stripe_client = get_stripe_client()
+            billing_service = BillingService(db, stripe_client)
+            service = PaymentMethodService(db, stripe_client, billing_service)
+            success = await service.delete_payment_method(tenant_id, payment_method_id)
 
-                if not success:
-                    raise ConnectError(Code.NOT_FOUND, "Payment method not found")
+            if not success:
+                raise ConnectError(Code.NOT_FOUND, "Payment method not found")
 
-                return billing_pb2.RemovePaymentMethodResponse(success=True)
-        except ValueError as e:
-            raise ConnectError(Code.INVALID_ARGUMENT, str(e))
+            return billing_pb2.RemovePaymentMethodResponse(success=True)
 
+    @handle_service_errors
     async def create_checkout_session(
         self,
         request: billing_pb2.CreateCheckoutSessionRequest,
@@ -543,13 +534,17 @@ class BillingServicer:
                     trial_days=plan.trial_days,
                 )
             except StripeError as e:
-                raise ConnectError(Code.INTERNAL, f"Stripe checkout failed: {e.message}")
+                logger.error("Stripe checkout failed (code=%s): %s", e.code, e.message)
+                raise ConnectError(
+                    Code.INTERNAL, "Failed to create checkout session. Please try again."
+                )
 
             return billing_pb2.CreateCheckoutSessionResponse(
                 checkout_url=result.url,
                 session_id=result.session_id,
             )
 
+    @handle_service_errors
     async def create_portal_session(
         self,
         request: billing_pb2.CreatePortalSessionRequest,
@@ -565,6 +560,7 @@ class BillingServicer:
         try:
             portal_url = await stripe_client.create_portal_session(customer_id, request.return_url)
         except StripeError as e:
-            raise ConnectError(Code.INTERNAL, f"Stripe portal failed: {e.message}")
+            logger.error("Stripe portal failed (code=%s): %s", e.code, e.message)
+            raise ConnectError(Code.INTERNAL, "Failed to create portal session. Please try again.")
 
         return billing_pb2.CreatePortalSessionResponse(portal_url=portal_url)

@@ -125,6 +125,20 @@ class TestHandleSubscriptionCreated:
         # Should not commit if subscription not found
         mock_db.commit.assert_not_called()
 
+    async def test_unknown_status_keeps_stored_status(self) -> None:
+        """An unrecognized Stripe status leaves the stored status unchanged."""
+        mock_sub = MagicMock()
+        mock_sub.status = billing_pb2.SUBSCRIPTION_STATUS_ACTIVE
+
+        mock_db = AsyncMock()
+        mock_db.execute.return_value = MagicMock(scalar_one_or_none=lambda: mock_sub)
+
+        await _handle_subscription_created(mock_db, _stripe_subscription(status="brand_new_status"))
+
+        # Status untouched; other fields (period) still update and it still commits.
+        assert mock_sub.status == billing_pb2.SUBSCRIPTION_STATUS_ACTIVE
+        mock_db.commit.assert_called()
+
 
 class TestHandleSubscriptionUpdated:
     """Tests for _handle_subscription_updated."""
@@ -142,6 +156,22 @@ class TestHandleSubscriptionUpdated:
         )
 
         assert mock_subscription.status == billing_pb2.SUBSCRIPTION_STATUS_PAST_DUE
+        assert mock_subscription.cancel_at_period_end is True
+        mock_db.commit.assert_called()
+
+    async def test_unknown_status_keeps_stored_status(self) -> None:
+        """An unrecognized Stripe status leaves the stored status unchanged."""
+        mock_subscription = MagicMock()
+        mock_subscription.status = billing_pb2.SUBSCRIPTION_STATUS_ACTIVE
+
+        mock_db = AsyncMock()
+        mock_db.execute.return_value = MagicMock(scalar_one_or_none=lambda: mock_subscription)
+
+        await _handle_subscription_updated(
+            mock_db, _stripe_subscription(status="brand_new_status", cancel_at_period_end=True)
+        )
+
+        assert mock_subscription.status == billing_pb2.SUBSCRIPTION_STATUS_ACTIVE
         assert mock_subscription.cancel_at_period_end is True
         mock_db.commit.assert_called()
 
