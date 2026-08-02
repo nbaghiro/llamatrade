@@ -15,6 +15,7 @@ from decimal import Decimal
 from llamatrade_common.auth import mint_service_token
 from llamatrade_proto.generated import common_pb2, market_data_pb2
 from llamatrade_proto.generated.market_data_connect import MarketDataServiceClient
+from llamatrade_proto.timestamps import to_proto_timestamp
 
 logger = logging.getLogger(__name__)
 
@@ -123,8 +124,8 @@ class MarketDataClient:
             response = await client.get_historical_bars(
                 market_data_pb2.GetHistoricalBarsRequest(
                     symbol=symbol.upper(),
-                    start=common_pb2.Timestamp(seconds=int(start.timestamp())),
-                    end=common_pb2.Timestamp(seconds=int(end.timestamp())),
+                    start=to_proto_timestamp(start),
+                    end=to_proto_timestamp(end),
                     timeframe=market_data_pb2.TIMEFRAME_1DAY,
                     adjust_for_splits=True,
                     pagination=common_pb2.PaginationRequest(page=1, page_size=1000),

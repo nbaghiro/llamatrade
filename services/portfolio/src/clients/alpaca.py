@@ -1,8 +1,9 @@
-"""Broker-truth adapter for reconciliation (read-only).
+"""Broker-truth adapters for reconciliation and the corporate-action feed (read-only).
 
 Resolves an account's stored Alpaca credentials and reads its aggregate
-positions via ``llamatrade_alpaca`` — never by talking to Alpaca directly. The
-reconciliation task compares this broker truth against the ledger projection.
+positions (and announced corporate actions) via ``llamatrade_alpaca`` — never by
+talking to Alpaca directly. The reconciliation task compares this broker truth
+against the ledger projection.
 
 The pure ``positions_to_qty_map`` translation is unit-tested; the credential
 resolution + HTTP call is the thin IO shell (exercised by the integration suite).
@@ -18,14 +19,18 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from llamatrade_alpaca import TradingClient
-from llamatrade_common.utils import decrypt_value
+from llamatrade_alpaca import AlpacaCredentials as AlpacaApiCredentials
+from llamatrade_alpaca import CorporateActionDateType, TradingClient
+from llamatrade_common.utils import async_decrypt_value
 from llamatrade_db.models.auth import AlpacaCredentials
 
 from src.ports import BrokerHolding, BrokerSnapshot, BrokerUnavailableError
 
 if TYPE_CHECKING:
-    from llamatrade_alpaca.models.trading import Position
+    from collections.abc import Iterable
+    from datetime import date
+
+    from llamatrade_alpaca.models.trading import CorporateAnnouncement, Position
     from llamatrade_db.models.ledger import Account
 
 logger = logging.getLogger(__name__)
@@ -97,9 +102,7 @@ class AlpacaBrokerPositions:
     async def positions(self, tenant_id: UUID, account: Account) -> dict[str, Decimal]:
         client = await self._client_for(tenant_id, account)
         if client is None:
-            # No usable credentials → broker truth is UNKNOWN, not empty. Raising
-            # (vs. returning {}) keeps reconciliation from reading every ledger
-            # holding as MISSING_AT_BROKER and freezing every sleeve.
+            # No usable credentials → broker truth is UNKNOWN, not empty; raising (vs returning {}) keeps reconciliation from reading every ledger holding as MISSING_AT_BROKER and freezing every sleeve.
             raise BrokerUnavailableError(f"no active Alpaca credentials for account {account.id}")
         try:
             broker_positions = await client.get_positions()
@@ -129,30 +132,97 @@ class AlpacaBrokerPositions:
         return BrokerSnapshot(
             cash=Decimal(str(broker_account.cash)),
             holdings=positions_to_holdings(broker_positions),
+            broker_account_id=broker_account.id,
         )
 
     async def _client_for(self, tenant_id: UUID, account: Account) -> TradingClient | None:
-        creds = await self._resolve_credentials(tenant_id, account.credentials_id)
-        if creds is None:
-            logger.warning(
-                "no active Alpaca credentials for account %s (credentials_id=%s); "
-                "skipping broker read",
-                account.id,
-                account.credentials_id,
-            )
-            return None
+        return await trading_client_for(self._db, tenant_id, account)
+
+
+async def resolve_credentials(
+    db: AsyncSession, tenant_id: UUID, credentials_id: UUID
+) -> AlpacaCredentials | None:
+    """The account's active Alpaca credential row, scoped to its tenant."""
+    return await db.scalar(
+        select(AlpacaCredentials)
+        .where(AlpacaCredentials.id == credentials_id)
+        .where(AlpacaCredentials.tenant_id == tenant_id)  # tenant isolation
+        .where(AlpacaCredentials.is_active.is_(True))
+    )
+
+
+async def trading_client_for(
+    db: AsyncSession, tenant_id: UUID, account: Account
+) -> TradingClient | None:
+    """Build a TradingClient on the account's stored keys, or None if unusable.
+
+    The single credential-resolution path for every broker read this service
+    makes (reconciliation, onboarding backfill, corporate-action detection).
+    """
+    creds = await resolve_credentials(db, tenant_id, account.credentials_id)
+    if creds is None:
+        logger.warning(
+            "no active Alpaca credentials for account %s (credentials_id=%s); skipping broker read",
+            account.id,
+            account.credentials_id,
+        )
+        return None
+    # Mirrors trading's credential resolution: OAuth rows carry a bearer token, not a key/secret pair.
+    if creds.auth_type == "oauth":
         return TradingClient(
-            api_key=decrypt_value(creds.api_key_encrypted or ""),
-            api_secret=decrypt_value(creds.api_secret_encrypted or ""),
+            credentials=AlpacaApiCredentials(
+                access_token=await async_decrypt_value(creds.access_token_encrypted or "")
+            ),
             paper=creds.is_paper,
         )
+    return TradingClient(
+        api_key=await async_decrypt_value(creds.api_key_encrypted or ""),
+        api_secret=await async_decrypt_value(creds.api_secret_encrypted or ""),
+        paper=creds.is_paper,
+    )
 
-    async def _resolve_credentials(
-        self, tenant_id: UUID, credentials_id: UUID
-    ) -> AlpacaCredentials | None:
-        return await self._db.scalar(
-            select(AlpacaCredentials)
-            .where(AlpacaCredentials.id == credentials_id)
-            .where(AlpacaCredentials.tenant_id == tenant_id)  # tenant isolation
-            .where(AlpacaCredentials.is_active.is_(True))
-        )
+
+class AlpacaCorporateAnnouncements:
+    """Announced corporate actions for an account's held symbols (read-only).
+
+    Queries one symbol at a time so the response stays scoped to what the
+    account actually holds, and de-duplicates by announcement id (a symbol can
+    appear in several of an issuer's announcements). The window filters on the
+    payable date by default: by then the broker has already moved the shares or
+    cash, so a proposal describes something that really happened.
+    """
+
+    def __init__(
+        self,
+        db: AsyncSession,
+        *,
+        date_type: CorporateActionDateType = CorporateActionDateType.PAYABLE_DATE,
+    ) -> None:
+        self._db = db
+        self._date_type = date_type
+
+    async def announcements(
+        self,
+        tenant_id: UUID,
+        account: Account,
+        symbols: Iterable[str],
+        *,
+        since: date,
+        until: date,
+    ) -> list[CorporateAnnouncement]:
+        wanted = sorted({s.upper() for s in symbols if s})
+        if not wanted:
+            return []
+        client = await trading_client_for(self._db, tenant_id, account)
+        if client is None:
+            raise BrokerUnavailableError(f"no active Alpaca credentials for account {account.id}")
+        found: dict[str, CorporateAnnouncement] = {}
+        try:
+            for symbol in wanted:
+                for announcement in await client.get_corporate_announcements(
+                    since=since, until=until, symbol=symbol, date_type=self._date_type
+                ):
+                    found.setdefault(announcement.id, announcement)
+        finally:
+            await client.close()
+        return list(found.values())

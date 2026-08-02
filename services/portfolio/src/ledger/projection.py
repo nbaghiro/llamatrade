@@ -13,9 +13,9 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable, Iterable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from decimal import Decimal
-from typing import Any, Protocol
+from typing import Any, Protocol, cast
 
 from llamatrade_db.models.ledger import LedgerEventType
 
@@ -25,6 +25,9 @@ from src.ledger.sizing import Lot, select_lots_fifo
 logger = logging.getLogger(__name__)
 
 ZERO = Decimal("0")
+
+# Terminal coids tracked FIFO-bounded: the guard only needs ones recent enough for a late ORDER_SUBMITTED to race, so oldest fall out (caps fold cost + checkpoint size). See ``_apply_reservation``.
+_TERMINAL_TRACKED = 4096
 
 # Called when an event can't be applied during fold: (event_id, exception).
 PoisonHandler = Callable[[str | None, Exception], None]
@@ -58,8 +61,7 @@ class SleeveProjection:
 
     cash: Decimal = ZERO
     realized_pnl: Decimal = ZERO
-    # Cash earmarked for open buy orders (reservation lifecycle, §4).
-    # Free cash = cash − reserved.
+    # Cash earmarked for open buy orders (reservation lifecycle, §4); free cash = cash − reserved.
     reserved: Decimal = ZERO
     positions: dict[str, PositionState] = field(default_factory=dict)
 
@@ -69,9 +71,7 @@ class AccountProjection:
     """Derived state of an account (all its sleeves)."""
 
     sleeves: dict[str, SleeveProjection] = field(default_factory=dict)
-    # Count of poison events skipped while folding this projection. > 0 means the
-    # balances are INCOMPLETE — read paths surface it (metric + warning) so a
-    # degraded projection is never served as if it were whole.
+    # Count of poison events skipped while folding; > 0 means balances are INCOMPLETE — read paths surface it (metric + warning) so a degraded projection is never served as whole.
     poison_events: int = 0
 
     @property
@@ -98,6 +98,28 @@ def _coerce(event_type: str | LedgerEventType) -> LedgerEventType:
     return event_type if isinstance(event_type, LedgerEventType) else LedgerEventType(event_type)
 
 
+@dataclass
+class ReservationState:
+    """Reservation-lifecycle fold state, carried alongside the projection.
+
+    ``pending`` maps an open reservation's ``client_order_id`` to its
+    ``(sleeve_id, amount)``. ``terminal`` is an insertion-ordered set (``dict``
+    keys) of the most recent ``client_order_id``s that reached a terminal order
+    event, so a late ``ORDER_SUBMITTED`` (reservation racing its own fill) can
+    never earmark cash that has no future release. It is bounded FIFO to
+    ``_TERMINAL_TRACKED`` entries — the guard only needs recent coids — so it
+    can't grow O(all orders ever). Both are part of the incremental checkpoint
+    (see ``LedgerProjector``).
+    """
+
+    pending: dict[str, tuple[str, Decimal]] = field(default_factory=dict)
+    terminal: dict[str, None] = field(default_factory=dict)
+
+    def copy(self) -> ReservationState:
+        """Independent copy for checkpointing (entries are immutable)."""
+        return ReservationState(pending=dict(self.pending), terminal=dict(self.terminal))
+
+
 def fold(
     events: Iterable[LedgerEventLike], *, on_error: PoisonHandler | None = None
 ) -> AccountProjection:
@@ -112,20 +134,18 @@ def fold(
     the projection untouched.
     """
     acc = AccountProjection()
-    # Open cash reservations: client_order_id -> (sleeve_id, amount)
-    pending_reservations: dict[str, tuple[str, Decimal]] = {}
-    fold_into(acc, pending_reservations, events, on_error=on_error)
+    fold_into(acc, ReservationState(), events, on_error=on_error)
     return acc
 
 
 def fold_into(
     acc: AccountProjection,
-    pending: dict[str, tuple[str, Decimal]],
+    reservations: ReservationState,
     events: Iterable[LedgerEventLike],
     *,
     on_error: PoisonHandler | None = None,
 ) -> int:
-    """Apply ``events`` onto an existing projection + reservation map IN PLACE.
+    """Apply ``events`` onto an existing projection + reservation state IN PLACE.
 
     Shared by the full :func:`fold` and the incremental (checkpoint + delta) path
     in :class:`LedgerProjector`, so a fold resumed from a checkpoint is IDENTICAL
@@ -146,9 +166,8 @@ def fold_into(
             postings = build_postings(event_type, ev.data)
             if postings:
                 assert_balanced(postings)  # conservation checksum — fail before mutating
-            # Reservation lifecycle (no postings of its own); applied only once
-            # the economic postings above have validated.
-            _apply_reservation(acc, pending, event_type, ev.data)
+            # Reservation lifecycle (no postings of its own); applied only after the economic postings above validated.
+            _apply_reservation(acc, reservations, event_type, ev.data)
             for p in postings:
                 if p.sleeve_id is None:
                     continue  # EXTERNAL — account boundary, not a sleeve balance
@@ -182,69 +201,233 @@ _RESERVATION_RELEASES = {
 
 def _apply_reservation(
     acc: AccountProjection,
-    pending: dict[str, tuple[str, Decimal]],
+    reservations: ReservationState,
     event_type: LedgerEventType,
     data: dict[str, Any],
 ) -> None:
     """Track the §4 cash-reservation lifecycle (reserve → release/consume).
 
     ``reserved`` is derived state, not a posting bucket — reservations don't
-    move value, they only earmark it, so conservation is untouched.
+    move value, they only earmark it, so conservation is untouched. A submission
+    arriving after its order's terminal event is a no-op: the release already
+    happened, so honoring it would understate free cash forever.
     """
     client_order_id = data.get("client_order_id")
     if client_order_id is None:
         return
+    coid = str(client_order_id)
 
     if event_type is LedgerEventType.ORDER_SUBMITTED and "reserved" in data:
+        if coid in reservations.terminal:
+            return
         sleeve_id = data.get("sleeve_id")
         if sleeve_id is None:
             return
         amount = Decimal(str(data["reserved"]))
         acc.sleeve(str(sleeve_id)).reserved += amount
-        pending[str(client_order_id)] = (str(sleeve_id), amount)
+        reservations.pending[coid] = (str(sleeve_id), amount)
     elif event_type in _RESERVATION_RELEASES:
-        entry = pending.pop(str(client_order_id), None)
+        reservations.terminal[coid] = None
+        if len(reservations.terminal) > _TERMINAL_TRACKED:
+            # FIFO eviction: drop the oldest tracked coid (guard only needs recent ones), keeping the set bounded in fold cost and row size.
+            del reservations.terminal[next(iter(reservations.terminal))]
+        entry = reservations.pending.pop(coid, None)
         if entry is not None:
             acc.sleeve(entry[0]).reserved -= entry[1]
+
+
+def _lot_seq(event: LedgerEventLike, index: int) -> int:
+    """FIFO ordering key: the ledger sequence when present, else stream position."""
+    seq = getattr(event, "sequence", None)
+    if seq is None:
+        return index
+    try:
+        return int(seq)
+    except TypeError, ValueError:
+        return index
+
+
+def _rebase_split(lots: list[Lot], qty_delta: Decimal) -> list[Lot]:
+    """Re-base one symbol's lots across a split: qty scales, cost is untouched.
+
+    A split changes how many shares carry a position, not what the position
+    cost, so each lot keeps its own cost basis exactly (nothing is rounded, so
+    no drift is possible) and only the share counts scale by
+    ``new_total / old_total`` — per-unit cost therefore divides by the ratio.
+    Reverse splits are the same arithmetic with a ratio below one, so fractional
+    resulting quantities are kept as Decimal rather than rounded. The newest lot
+    absorbs any division remainder, so the lot quantities still sum exactly to
+    the post-split position the balance fold reports.
+    """
+    old_total = sum((lot.qty for lot in lots), ZERO)
+    new_total = old_total + qty_delta
+    if old_total <= ZERO or new_total <= ZERO:
+        return []
+    rebased: list[Lot] = []
+    allocated = ZERO
+    for lot in lots[:-1]:
+        qty = lot.qty * new_total / old_total
+        allocated += qty
+        rebased.append(replace(lot, qty=qty))
+    rebased.append(replace(lots[-1], qty=new_total - allocated))
+    return rebased
+
+
+# FIFO lot book for a whole account (sleeve_id -> symbol -> open lots); folded incrementally alongside the projection so fill ingestion resolves a sell's cost basis in O(delta), not a full history fold.
+AccountLotBook = dict[str, dict[str, list[Lot]]]
+
+
+def copy_lot_book(book: AccountLotBook) -> AccountLotBook:
+    """A private copy of a lot book (``Lot`` is frozen, so lists are shallow-copied)."""
+    return {
+        sleeve_id: {symbol: list(lots) for symbol, lots in symbols.items()}
+        for sleeve_id, symbols in book.items()
+    }
+
+
+def _apply_split(book: AccountLotBook, data: dict[str, Any]) -> None:
+    """Apply a ``SPLIT_APPLIED`` payload to the event's sleeve lots for that symbol."""
+    sleeve_id = str(data["sleeve_id"])
+    symbol = str(data["symbol"])
+    lots = book.get(sleeve_id, {}).get(symbol)
+    if not lots:
+        logger.warning("split of %s has no tracked lots to re-base", symbol)
+        return
+    book[sleeve_id][symbol] = _rebase_split(lots, Decimal(str(data["qty_delta"])))
+
+
+def _apply_rename(book: AccountLotBook, data: dict[str, Any], seq: int) -> None:
+    """Carry the event sleeve's lots across a ``SYMBOL_CHANGED``, one lot to one lot.
+
+    Each lot keeps its own basis and its original acquisition order, so FIFO
+    after a rename still consumes the oldest shares first. A rename of a holding
+    whose lots are not in the stream falls back to the payload's own qty and
+    cost basis, which is all the basis information that event carries.
+    """
+    sleeve_book = book.setdefault(str(data["sleeve_id"]), {})
+    carried = sleeve_book.pop(str(data["old_symbol"]), [])
+    if not carried:
+        qty = Decimal(str(data["qty"]))
+        if qty == ZERO:
+            return
+        carried = [Lot(qty=qty, cost_basis=Decimal(str(data["cost_basis"])), opened_seq=seq)]
+    new_symbol = str(data["new_symbol"])
+    sleeve_book[new_symbol] = sorted(
+        sleeve_book.get(new_symbol, []) + carried, key=lambda lot: lot.opened_seq
+    )
+
+
+def _apply_sleeve_close(book: AccountLotBook, data: dict[str, Any], seq: int) -> None:
+    """Carry a closing sleeve's lots across a ``SLEEVE_CLOSED``.
+
+    The closing (source) sleeve is emptied — its lots move to the re-home target
+    sleeve, which re-opens each carried lot with its own basis and original
+    acquisition order, so FIFO after the close still consumes the oldest shares
+    first. Newer ``SLEEVE_CLOSED`` events carry a per-lot ``lots`` list; older
+    ones carry only the aggregate ``positions``, so those fall back to one
+    blended lot per symbol (the prior behavior).
+    """
+    source = data.get("sleeve_id")
+    if source is not None:
+        book[str(source)] = {}  # the source sleeve holds nothing after its close
+    target = data.get("to_position_sleeve_id")
+    if target is None:
+        return
+    target_book = book.setdefault(str(target), {})
+    lots = data.get("lots")
+    if lots:
+        for entry in cast("list[dict[str, Any]]", lots):
+            sym = str(entry["symbol"])
+            lot = Lot(
+                qty=Decimal(str(entry["qty"])),
+                cost_basis=Decimal(str(entry["cost_basis"])),
+                opened_seq=int(entry["opened_seq"]),
+            )
+            target_book[sym] = sorted(
+                target_book.get(sym, []) + [lot], key=lambda lot: lot.opened_seq
+            )
+        return
+    for entry in cast("list[dict[str, Any]]", data.get("positions") or []):
+        qty = Decimal(str(entry["qty"]))
+        if qty == ZERO:
+            continue
+        sym = str(entry["symbol"])
+        lot = Lot(qty=qty, cost_basis=Decimal(str(entry["cost_basis"])), opened_seq=seq)
+        target_book[sym] = sorted(target_book.get(sym, []) + [lot], key=lambda lot: lot.opened_seq)
+
+
+def fold_lots_into(book: AccountLotBook, events: Iterable[LedgerEventLike]) -> int:
+    """Fold an event stream into the account's per-(sleeve, symbol) FIFO lot book IN PLACE.
+
+    Shared by the full :func:`open_lots` and the incremental (checkpoint + delta)
+    lot resolution in :class:`LedgerProjector`, so a lot fold resumed from a
+    checkpoint is IDENTICAL to a fold from zero: a lot's ``opened_seq`` is the
+    absolute event ``sequence`` (not the stream position), so FIFO order does not
+    depend on where the fold started. Returns the highest event ``sequence`` seen
+    (0 if none carry one) so the projector can advance its checkpoint.
+
+    Buys (positive POSITION postings) open lots; sells consume them FIFO. A split
+    re-bases, a rename carries lots to the new symbol, a sleeve close carries them
+    to the target sleeve — all keyed on the event type, because their legs carry
+    no per-lot detail. A sell exceeding the open lots (drift, external trades)
+    clears them rather than raising, and an event the balance fold skips as poison
+    is skipped here too, so lots and balances derive from the same events.
+    """
+    max_sequence = 0
+    for index, ev in enumerate(events):
+        seq_val = getattr(ev, "sequence", None)
+        if seq_val is not None:
+            try:
+                max_sequence = max(max_sequence, int(seq_val))
+            except TypeError, ValueError:
+                pass
+        try:
+            event_type = _coerce(ev.event_type)
+            seq = _lot_seq(ev, index)
+            if event_type is LedgerEventType.SPLIT_APPLIED:
+                _apply_split(book, ev.data)
+                continue
+            if event_type is LedgerEventType.SYMBOL_CHANGED:
+                _apply_rename(book, ev.data, seq)
+                continue
+            if event_type is LedgerEventType.SLEEVE_CLOSED:
+                _apply_sleeve_close(book, ev.data, seq)
+                continue
+            for p in build_postings(event_type, ev.data):
+                if (
+                    p.bucket is not Bucket.POSITION
+                    or p.sleeve_id is None
+                    or p.symbol is None
+                    or p.qty is None
+                    or p.qty == ZERO
+                ):
+                    continue
+                sleeve_book = book.setdefault(p.sleeve_id, {})
+                lots = sleeve_book.setdefault(p.symbol, [])
+                if p.qty > ZERO:
+                    lots.append(Lot(qty=p.qty, cost_basis=p.amount, opened_seq=seq))
+                elif -p.qty >= sum((lot.qty for lot in lots), ZERO):
+                    sleeve_book[p.symbol] = []
+                else:
+                    sleeve_book[p.symbol] = select_lots_fifo(lots, -p.qty).remaining_lots
+        except (KeyError, TypeError, ValueError, ArithmeticError) as exc:
+            logger.warning("skipping unreadable ledger event while folding lots: %s", exc)
+    return max_sequence
 
 
 def open_lots(events: Iterable[LedgerEventLike], sleeve_id: str, symbol: str) -> list[Lot]:
     """Fold the event stream into the open FIFO lots of one (sleeve, symbol).
 
-    Buys (positive POSITION postings) open lots in event order; sells consume
-    them FIFO. Used at fill ingestion to resolve the cost basis of a sell when
-    the publisher didn't supply one — the resolved value is then written into
-    the event data, so the log stays self-contained and replayable.
-
-    A sell exceeding the open lots (abnormal: drift, external trades) clears
-    them all rather than raising — reconciliation surfaces the discrepancy.
+    A thin wrapper over :func:`fold_lots_into`: it folds the whole account lot
+    book from zero and returns the requested (sleeve, symbol) slice, so the full
+    fold and the projector's incremental fold share one implementation. Used at
+    fill ingestion to resolve the cost basis of a sell when the publisher didn't
+    supply one — the resolved value is then written into the event data, so the
+    log stays self-contained and replayable.
     """
-    lots: list[Lot] = []
-    for index, ev in enumerate(events):
-        postings = build_postings(_coerce(ev.event_type), ev.data)
-        for p in postings:
-            if (
-                p.bucket is not Bucket.POSITION
-                or p.sleeve_id != sleeve_id
-                or p.symbol != symbol
-                or p.qty is None
-                or p.qty == ZERO
-            ):
-                continue
-            if p.qty > ZERO:
-                seq = getattr(ev, "sequence", None)
-                lots.append(
-                    Lot(
-                        qty=p.qty, cost_basis=p.amount, opened_seq=seq if seq is not None else index
-                    )
-                )
-            else:
-                sell_qty = -p.qty
-                if sell_qty >= sum((lot.qty for lot in lots), ZERO):
-                    lots = []
-                else:
-                    lots = select_lots_fifo(lots, sell_qty).remaining_lots
-    return lots
+    book: AccountLotBook = {}
+    fold_lots_into(book, events)
+    return book.get(sleeve_id, {}).get(symbol, [])
 
 
 @dataclass

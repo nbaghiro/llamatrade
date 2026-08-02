@@ -53,16 +53,17 @@ async def test_apply_split_fans_across_holders_and_is_idempotent() -> None:
     svc = CorporateActionService(store := _FakeStore(proj))
 
     n = await svc.apply_split(
-        tenant_id=TENANT, account_id=ACCOUNT, symbol="SPY", ratio=Decimal("2")
+        tenant_id=TENANT, account_id=ACCOUNT, symbol="SPY", ratio=Decimal("2"), external_id="ca-1"
     )
     assert n == 2
     deltas = {d["sleeve_id"]: d["qty_delta"] for _, _, d in store.appended.values()}
     assert deltas[str(s1)] == "10"  # qty * (ratio - 1) for a 2-for-1
     assert deltas[str(s2)] == "5"
 
-    # Re-applying the same split maps to the same deterministic event ids → deduped.
+    # Re-applying the same split (same external_id) maps to the same deterministic
+    # event ids → deduped.
     n2 = await svc.apply_split(
-        tenant_id=TENANT, account_id=ACCOUNT, symbol="SPY", ratio=Decimal("2")
+        tenant_id=TENANT, account_id=ACCOUNT, symbol="SPY", ratio=Decimal("2"), external_id="ca-1"
     )
     assert n2 == 2
     assert len(store.appended) == 2
@@ -79,14 +80,22 @@ async def test_apply_symbol_change_carries_qty_and_cost() -> None:
     # No holders of the old symbol → nothing appended.
     assert (
         await svc.apply_symbol_change(
-            tenant_id=TENANT, account_id=ACCOUNT, old_symbol="FB", new_symbol="META"
+            tenant_id=TENANT,
+            account_id=ACCOUNT,
+            old_symbol="FB",
+            new_symbol="META",
+            external_id="ca-r0",
         )
         == 0
     )
 
     assert (
         await svc.apply_symbol_change(
-            tenant_id=TENANT, account_id=ACCOUNT, old_symbol="META", new_symbol="METX"
+            tenant_id=TENANT,
+            account_id=ACCOUNT,
+            old_symbol="META",
+            new_symbol="METX",
+            external_id="ca-r1",
         )
         == 1
     )

@@ -170,3 +170,25 @@ def sample_transaction() -> MagicMock:
     tx.description = "Buy 100 AAPL"
     tx.transaction_date = datetime.now(UTC)
     return tx
+
+
+@pytest.fixture(autouse=True)
+def _fake_ledger_alert_stream(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Point the alert dispatcher singleton at an in-memory stream.
+
+    Unit tests must never open a broker connection; incident publishes land on
+    a FakeTransport and are simply discarded unless a test injects its own.
+    """
+    from llamatrade_events import EventBus
+    from llamatrade_events.catalog.notifications import NotificationEvents
+    from llamatrade_events.testing import FakeTransport
+
+    import src.alerts as alerts_module
+
+    monkeypatch.setattr(
+        alerts_module,
+        "_dispatcher",
+        alerts_module.LedgerAlertDispatcher(
+            events=NotificationEvents(bus=EventBus(FakeTransport()))
+        ),
+    )

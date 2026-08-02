@@ -445,20 +445,20 @@ async def test_advisory_lock_enforces_single_active_consumer(
 ) -> None:
     """The fill-consumer advisory lock admits exactly one active consumer; a
     second pod gets None (read-only standby) until the holder releases (failover)."""
-    from src.tasks.fill_ingestion import acquire_fill_consumer_lock, release_fill_consumer_lock
+    from src.tasks.fill_ingestion import acquire_ledger_writer_lock, release_ledger_writer_lock
 
-    first = await acquire_fill_consumer_lock(session_factory)
+    first = await acquire_ledger_writer_lock(session_factory)
     assert first is not None
     try:
-        second = await acquire_fill_consumer_lock(session_factory)
+        second = await acquire_ledger_writer_lock(session_factory)
         assert second is None  # single active consumer
     finally:
-        await release_fill_consumer_lock(first)
+        await release_ledger_writer_lock(first)
 
     # After the holder releases (e.g. its pod died), a standby can take over.
-    third = await acquire_fill_consumer_lock(session_factory)
+    third = await acquire_ledger_writer_lock(session_factory)
     assert third is not None
-    await release_fill_consumer_lock(third)
+    await release_ledger_writer_lock(third)
 
 
 async def test_incremental_projection_matches_full_fold(

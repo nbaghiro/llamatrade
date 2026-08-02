@@ -25,7 +25,6 @@ service drives it from the Redis Streams consumer group
 
 from __future__ import annotations
 
-import hashlib
 import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, replace
@@ -37,13 +36,12 @@ from uuid import UUID
 from llamatrade_db.models.ledger import LedgerEventType
 from llamatrade_events import LedgerFill, LedgerReservation
 
+from src.ledger.ids import deterministic_event_id
 from src.ledger.sizing import Lot, select_lots_fifo
 
 logger = logging.getLogger(__name__)
 
-# Non-fill order lifecycle stages trading publishes on the same stream
-# (reservation addendum, portfolio-ledger.md). Recorded for the reservation
-# lifecycle; they carry no economic postings of their own.
+# Non-fill order lifecycle stages trading publishes on the same stream (reservation addendum, portfolio-ledger.md); recorded for the reservation lifecycle, they carry no economic postings.
 LIFECYCLE_EVENT_TYPES: dict[str, LedgerEventType] = {
     "order_submitted": LedgerEventType.ORDER_SUBMITTED,
     "order_cancelled": LedgerEventType.ORDER_CANCELLED,
@@ -108,8 +106,7 @@ def fill_to_append(fill: LedgerFill) -> LedgerAppend:
         # Carried in data so the fill releases its cash reservation (§4)
         "client_order_id": client_order_id,
     }
-    # Proto3 can't distinguish unset from empty: an empty scalar means "absent",
-    # so the FIFO-enrichment trigger (no cost_basis) is preserved.
+    # Proto3 can't distinguish unset from empty: an empty scalar means "absent", preserving the FIFO-enrichment trigger (no cost_basis).
     for name, value in (
         ("fees", fill.fees),
         ("cost_basis", fill.cost_basis),
@@ -233,7 +230,7 @@ def _parse_ts(raw: object) -> datetime:
 
 def _event_id_from_client_order_id(client_order_id: str) -> UUID:
     """Deterministic, idempotent ledger event id derived from the broker order id."""
-    return UUID(bytes=hashlib.sha256(client_order_id.encode()).digest()[:16])
+    return deterministic_event_id(client_order_id)
 
 
 FillHandler = Callable[[LedgerAppend], Awaitable[None]]

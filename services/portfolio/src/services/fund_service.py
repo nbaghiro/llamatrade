@@ -16,10 +16,23 @@ from llamatrade_db.models.ledger import Sleeve, SleeveType
 from llamatrade_telemetry import metrics
 
 from src.ledger import funds
+from src.ledger.ids import deterministic_event_id
+from src.ledger.invariants import assert_write_invariants
 from src.ledger.projection import AccountProjection
 from src.ports import LedgerStore, SleeveRepository
 
 ZERO = Decimal("0")
+
+
+def _fund_event_id(account_id: UUID, op: str, request_id: str, index: int) -> UUID:
+    """Deterministic ledger event id for an idempotent fund op (client ``request_id``).
+
+    A retried request (lost response, double click) derives the same id, so the
+    writer dedups it — matching the deterministic-id pattern used for fills and
+    drift. Empty ``request_id`` yields no id (the caller falls back to a fresh
+    uuid, so an un-keyed op is not idempotent).
+    """
+    return deterministic_event_id(f"{account_id}:{op}:{request_id}:{index}")
 
 
 @dataclass(frozen=True)
@@ -37,19 +50,26 @@ class FundService:
         self._repo = repo
         self._store = store
 
-    async def deposit(self, *, tenant_id: UUID, account_id: UUID, amount: Decimal) -> SleeveView:
+    async def deposit(
+        self, *, tenant_id: UUID, account_id: UUID, amount: Decimal, request_id: str = ""
+    ) -> SleeveView:
         """Deposit external cash into the Unallocated sleeve."""
         unalloc = await self._require_unallocated(tenant_id, account_id)
         await self._append_all(
             tenant_id,
             account_id,
             funds.plan_deposit(unallocated_sleeve_id=unalloc.id, amount=amount),
+            op="deposit",
+            request_id=request_id,
         )
         proj = await self._store.project_account(tenant_id, account_id)
+        assert_write_invariants(proj, str(unalloc.id))
         self._record_capital(proj, unalloc.id)
         return SleeveView(unalloc, proj.sleeve(str(unalloc.id)).cash)
 
-    async def withdraw(self, *, tenant_id: UUID, account_id: UUID, amount: Decimal) -> SleeveView:
+    async def withdraw(
+        self, *, tenant_id: UUID, account_id: UUID, amount: Decimal, request_id: str = ""
+    ) -> SleeveView:
         """Withdraw external cash from the Unallocated sleeve's free cash."""
         unalloc = await self._require_unallocated(tenant_id, account_id)
         free = await self._free_cash(tenant_id, account_id, unalloc.id)
@@ -57,21 +77,29 @@ class FundService:
             tenant_id,
             account_id,
             funds.plan_withdraw(sleeve_id=unalloc.id, amount=amount, free_cash=free),
+            op="withdraw",
+            request_id=request_id,
         )
         proj = await self._store.project_account(tenant_id, account_id)
+        assert_write_invariants(proj, str(unalloc.id))
         self._record_capital(proj, unalloc.id)
         return SleeveView(unalloc, proj.sleeve(str(unalloc.id)).cash)
 
     async def allocate(
-        self, *, tenant_id: UUID, account_id: UUID, to_sleeve_id: UUID, amount: Decimal
+        self,
+        *,
+        tenant_id: UUID,
+        account_id: UUID,
+        to_sleeve_id: UUID,
+        amount: Decimal,
+        request_id: str = "",
     ) -> SleeveView:
         """Allocate cash from Unallocated into an existing sleeve."""
         unalloc = await self._require_unallocated(tenant_id, account_id)
         to_sleeve = await self._require_sleeve(tenant_id, account_id, to_sleeve_id)
         free = await self._free_cash(tenant_id, account_id, unalloc.id)
         if free < amount:
-            # Under-capitalized: the planner will reject this with a FundError; the
-            # gauge records the attempt before the exception propagates.
+            # Under-capitalized: the planner rejects this with a FundError; the gauge records the attempt before the exception propagates.
             metrics.ledger.capital_insufficient()
         await self._append_all(
             tenant_id,
@@ -82,8 +110,11 @@ class FundService:
                 amount=amount,
                 from_free_cash=free,
             ),
+            op="allocate",
+            request_id=request_id,
         )
         proj = await self._store.project_account(tenant_id, account_id)
+        assert_write_invariants(proj, str(unalloc.id), str(to_sleeve_id))
         self._record_capital(proj, unalloc.id)
         return SleeveView(to_sleeve, proj.sleeve(str(to_sleeve_id)).cash)
 
@@ -95,6 +126,7 @@ class FundService:
         from_sleeve_id: UUID,
         to_sleeve_id: UUID,
         amount: Decimal,
+        request_id: str = "",
     ) -> tuple[SleeveView, SleeveView]:
         """Move cash sleeve→sleeve. Only liquid transfers are supported: raising
         cash by selling the source sleeve's lots needs the trading arm to execute
@@ -118,11 +150,11 @@ class FundService:
             account_id=account_id,
             event_type=plan.transfer.event_type,
             data=dict(plan.transfer.data),
+            event_id=_fund_event_id(account_id, "transfer", request_id, 0) if request_id else None,
         )
         proj = await self._store.project_account(tenant_id, account_id)
-        # Best-effort capital telemetry: a transfer doesn't require resolving the
-        # Unallocated sleeve, so never let a missing one turn a good transfer into
-        # a failure — just skip the gauge update.
+        assert_write_invariants(proj, str(from_sleeve_id), str(to_sleeve_id))
+        # Best-effort capital telemetry: a transfer doesn't need the Unallocated sleeve, so a missing one just skips the gauge update rather than failing a good transfer.
         unalloc = await self._repo.get_sleeve_by_type(tenant_id, account_id, SleeveType.UNALLOCATED)
         if unalloc is not None:
             self._record_capital(proj, unalloc.id)
@@ -144,22 +176,29 @@ class FundService:
         return sleeve
 
     async def _free_cash(self, tenant_id: UUID, account_id: UUID, sleeve_id: UUID) -> Decimal:
-        # Free cash = balance − reserved (cash earmarked for open buy orders).
-        # Affordability checks (withdraw/allocate/transfer) must never spend
-        # reserved funds, or a concurrent open order could overdraw the account.
+        # Free cash = balance − reserved (cash earmarked for open buy orders); affordability checks must never spend reserved funds, or a concurrent open order could overdraw the account.
         proj = await self._store.project_account(tenant_id, account_id)
         s = proj.sleeve(str(sleeve_id))
         return s.cash - s.reserved
 
     async def _append_all(
-        self, tenant_id: UUID, account_id: UUID, events: list[funds.PlannedFundEvent]
+        self,
+        tenant_id: UUID,
+        account_id: UUID,
+        events: list[funds.PlannedFundEvent],
+        *,
+        op: str,
+        request_id: str,
     ) -> None:
-        for ev in events:
+        for index, ev in enumerate(events):
             await self._store.append(
                 tenant_id=tenant_id,
                 account_id=account_id,
                 event_type=ev.event_type,
                 data=dict(ev.data),
+                event_id=(
+                    _fund_event_id(account_id, op, request_id, index) if request_id else None
+                ),
             )
 
     def _record_capital(self, projection: AccountProjection, unallocated_sleeve_id: UUID) -> None:

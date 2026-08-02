@@ -6,18 +6,45 @@ message → append, with ack/drop/retry verdicts. The DB persistence
 integration suite.
 """
 
-from typing import Any, cast
+from typing import cast
 from uuid import UUID, uuid4
 
+import pytest
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from llamatrade_db.models.ledger import LedgerEventType
-from llamatrade_events import LedgerFill, LedgerReservation
+from llamatrade_events import (
+    EventBus,
+    LedgerFill,
+    LedgerReservation,
+    derive_event_id,
+    encode_envelope,
+    make_envelope,
+)
+from llamatrade_proto.generated import events_pb2
 
 from src.ledger.ingestion import FillQuarantineError, LedgerAppend
 from src.tasks.fill_ingestion import (
     LEDGER_FILLS_DLQ_STREAM,
+    LEDGER_FILLS_STREAM,
+    PORTFOLIO_LEDGER_GROUP,
     _dead_letter,
+    handle_ledger_entry,
     process_stream_entry,
 )
+
+
+def _raw_fill(**overrides: str) -> bytes:
+    """A wire-encoded envelope wrapping a LedgerFill (what the consumer receives)."""
+    fill = _fill(**overrides)
+    return encode_envelope(
+        make_envelope(
+            events_pb2.EVENT_TYPE_LEDGER_FILL,
+            fill,
+            event_id=derive_event_id(fill.client_order_id),
+        )
+    )
+
 
 TENANT = str(uuid4())
 ACCOUNT = str(uuid4())
@@ -142,24 +169,44 @@ async def test_quarantined_fill_is_dropped_not_retried() -> None:
 
 
 class _FakeBus:
-    """Records publish_raw calls (the DLQ park)."""
+    """Records publish_raw (DLQ park), ack (offset commit), and pause/resume calls."""
 
     def __init__(self) -> None:
-        self.published: list[tuple[str, bytes, int]] = []
+        self.published: list[tuple[str, bytes, str | None]] = []
+        self.acked: list[str] = []
+        self.paused: list[tuple[str, str, str]] = []
+        self.resumed: list[tuple[str, str, str]] = []
 
     async def publish_raw(
-        self, stream: str, value: bytes, *, maxlen: int, key: str | None = None
+        self, stream: str, value: bytes, *, key: str | None = None, maxlen: int | None = None
     ) -> str:
-        self.published.append((stream, value, maxlen))
+        self.published.append((stream, value, key))
         return "0-1"
+
+    async def ack(self, stream: str, group: str, cursor: str) -> None:
+        self.acked.append(cursor)
+
+    async def pause_partition(self, stream: str, group: str, cursor: str) -> None:
+        self.paused.append((stream, group, cursor))
+
+    async def resume_partition(self, stream: str, group: str, cursor: str) -> None:
+        self.resumed.append((stream, group, cursor))
 
 
 async def test_dead_letter_parks_unrecordable_entry() -> None:
     """An unrecordable raw entry is parked on the DLQ stream (recoverable)."""
     bus = _FakeBus()
-    await _dead_letter(cast(Any, bus), b"corrupt-bytes")
+    await _dead_letter(cast(EventBus, bus), b"corrupt-bytes")
     assert bus.published[0][0] == LEDGER_FILLS_DLQ_STREAM
     assert bus.published[0][1] == b"corrupt-bytes"
+    assert bus.published[0][2] is None  # undecodable → no recoverable account key
+
+
+async def test_dead_letter_parks_with_account_key() -> None:
+    """A decodable entry parks keyed by account so replay preserves per-account order."""
+    bus = _FakeBus()
+    await _dead_letter(cast(EventBus, bus), b"payload", key="acct-9")
+    assert bus.published[0] == (LEDGER_FILLS_DLQ_STREAM, b"payload", "acct-9")
 
 
 async def test_dead_letter_swallows_publish_failure() -> None:
@@ -167,9 +214,76 @@ async def test_dead_letter_swallows_publish_failure() -> None:
 
     class _BadBus:
         async def publish_raw(self, *args: object, **kwargs: object) -> str:
-            raise RuntimeError("redis down")
+            raise RuntimeError("broker down")
 
-    await _dead_letter(cast(Any, _BadBus()), b"x")  # must not raise
+    await _dead_letter(cast(EventBus, _BadBus()), b"x")  # must not raise
+
+
+# --- handle_ledger_entry: per-entry decode → persist → ack (in-place retry) ----
+
+
+async def test_handle_entry_success_acks() -> None:
+    rec = _Recorder()
+    bus = _FakeBus()
+    await handle_ledger_entry(cast(EventBus, bus), rec, "0:0", _raw_fill())
+    assert len(rec.appends) == 1
+    assert bus.acked == ["0:0"]  # committed
+    assert bus.published == []  # nothing dead-lettered
+    assert bus.paused == []  # no retry → no partition pause
+
+
+async def test_handle_entry_retries_in_place_then_acks(monkeypatch: pytest.MonkeyPatch) -> None:
+    import src.tasks.fill_ingestion as fi
+
+    monkeypatch.setattr(fi, "_RETRY_BASE_DELAY_SECONDS", 0.0)
+    monkeypatch.setattr(fi, "_RETRY_MAX_DELAY_SECONDS", 0.0)
+    rec = _FlakyRecorder(failures=2)  # two transient DB hiccups, then success
+    bus = _FakeBus()
+    await handle_ledger_entry(cast(EventBus, bus), rec, "0:0", _raw_fill())
+    # Retried in place until it landed (Kafka won't redeliver to a live consumer),
+    # then committed exactly once — never dead-lettered a real fill.
+    assert len(rec.appends) == 1
+    assert bus.acked == ["0:0"]
+    assert bus.published == []
+
+
+async def test_handle_entry_retry_pauses_partition_until_success(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The retried entry's partition is paused once (not per attempt) and resumed
+    after the fill lands, so the fetcher stops prefetching the stalled partition."""
+    import src.tasks.fill_ingestion as fi
+
+    monkeypatch.setattr(fi, "_RETRY_BASE_DELAY_SECONDS", 0.0)
+    monkeypatch.setattr(fi, "_RETRY_MAX_DELAY_SECONDS", 0.0)
+    rec = _FlakyRecorder(failures=3)
+    bus = _FakeBus()
+    await handle_ledger_entry(cast(EventBus, bus), rec, "2:7", _raw_fill())
+    assert bus.paused == [(LEDGER_FILLS_STREAM, PORTFOLIO_LEDGER_GROUP, "2:7")]
+    assert bus.resumed == [(LEDGER_FILLS_STREAM, PORTFOLIO_LEDGER_GROUP, "2:7")]
+    assert bus.acked == ["2:7"]
+    assert len(rec.appends) == 1
+
+
+async def test_handle_entry_poison_deadletters_and_acks() -> None:
+    rec = _Recorder()
+    bus = _FakeBus()
+    await handle_ledger_entry(cast(EventBus, bus), rec, "0:0", b"\xffnot-an-envelope")
+    assert rec.appends == []
+    assert bus.published[0][0] == LEDGER_FILLS_DLQ_STREAM  # parked
+    assert bus.published[0][2] is None  # undecodable → parked unkeyed
+    assert bus.acked == ["0:0"]  # acked so it can't wedge the partition
+
+
+async def test_handle_entry_quarantine_deadletters_and_acks() -> None:
+    async def _quarantine(_append: LedgerAppend) -> None:
+        raise FillQuarantineError("no open lots to cover the sell")
+
+    bus = _FakeBus()
+    await handle_ledger_entry(cast(EventBus, bus), _quarantine, "0:0", _raw_fill(side="sell"))
+    assert bus.published[0][0] == LEDGER_FILLS_DLQ_STREAM  # parked, not lost
+    assert bus.published[0][2] == ACCOUNT  # keyed by account for ordered replay
+    assert bus.acked == ["0:0"]
 
 
 async def test_routes_lifecycle_events() -> None:
@@ -295,3 +409,83 @@ async def test_reroute_noop_when_no_unmanaged_sleeve() -> None:
     result = await _reroute_if_sleeve_closed(db, append)
 
     assert result.sleeve_id == closed.id  # left untouched for reconciliation
+
+
+# --------------------------------------------------------------------------- #
+# Ledger-writer lease
+# --------------------------------------------------------------------------- #
+
+
+class _FakeLeaseSession:
+    """An AsyncSession stand-in whose advisory-lock probe is scripted."""
+
+    def __init__(self, *, held: bool, raises: bool = False) -> None:
+        self.held = held
+        self.raises = raises
+        self.probes = 0
+        self.closed = False
+        self.unlocked = False
+
+    async def scalar(self, statement: object, params: object = None) -> object:
+        text = str(statement)
+        if "pg_advisory_unlock" in text:
+            self.unlocked = True
+            if self.raises:
+                raise RuntimeError("connection is closed")
+            return True
+        self.probes += 1
+        if self.raises:
+            raise RuntimeError("connection is closed")
+        return self.held
+
+    async def close(self) -> None:
+        self.closed = True
+
+
+async def test_lease_reports_leadership_while_the_lock_is_held() -> None:
+    from src.tasks.fill_ingestion import LedgerWriterLease
+
+    session = _FakeLeaseSession(held=True)
+    lease = LedgerWriterLease(cast(AsyncSession, session))
+
+    assert await lease.is_leader() is True
+    assert await lease.is_leader() is True
+    assert session.probes == 2  # asked every time, never cached as "still mine"
+    assert lease.lost.is_set() is False
+
+
+async def test_lease_latches_the_loss_and_wakes_the_sweeps() -> None:
+    """Once the lock is gone the lease stays lost and stops probing a dead
+    connection; ``lost`` is what pulls the sweeps out of their interval sleeps."""
+    from src.tasks.fill_ingestion import LedgerWriterLease
+
+    session = _FakeLeaseSession(held=False)
+    lease = LedgerWriterLease(cast(AsyncSession, session))
+
+    assert await lease.is_leader() is False
+    assert lease.lost.is_set() is True
+    assert await lease.is_leader() is False
+    assert session.probes == 1  # latched — no second round trip
+
+
+async def test_lease_treats_a_torn_connection_as_lost_leadership() -> None:
+    from src.tasks.fill_ingestion import LedgerWriterLease
+
+    session = _FakeLeaseSession(held=True, raises=True)
+    lease = LedgerWriterLease(cast(AsyncSession, session))
+
+    assert await lease.is_leader() is False
+    assert lease.lost.is_set() is True
+
+
+async def test_releasing_the_writer_lock_absorbs_a_torn_connection() -> None:
+    """Shutdown still has a Kafka client and a pool to close, so the unlock on a
+    dead connection must warn rather than raise."""
+    from src.tasks.fill_ingestion import release_ledger_writer_lock
+
+    session = _FakeLeaseSession(held=True, raises=True)
+
+    await release_ledger_writer_lock(cast(AsyncSession, session))
+
+    assert session.unlocked is True
+    assert session.closed is True

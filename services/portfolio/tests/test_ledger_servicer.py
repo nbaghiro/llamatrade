@@ -1,22 +1,31 @@
 """LedgerServicer proto-mapping tests — pure, no DB/network.
 
-Covers the servicer's real logic (request/response proto translation). The thin
+Covers the servicer's real logic (request/response proto translation) and the
+degraded-projection read surfacing with the DB layers mocked. The thin
 handler-over-DB orchestration is exercised by the integration suite.
 """
 
+import contextlib
 from decimal import Decimal
+from typing import Any, cast
+from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
+import pytest
+
+from llamatrade_common import TenantContext, reset_context, set_context
 from llamatrade_db.models.ledger import Account, Sleeve, SleeveStatus, SleeveType
 from llamatrade_proto.generated import common_pb2, ledger_pb2
 
 from src.grpc.ledger_servicer import (
+    LedgerServicer,
     _account_to_proto,
     _amount,
     _dec,
     _sleeve_to_proto,
     _view_to_proto,
 )
+from src.ledger.projection import AccountProjection
 from src.services.fund_service import SleeveView
 
 ZERO = Decimal("0")
@@ -128,3 +137,140 @@ def test_close_sleeve_handler_is_bound_on_the_asgi_app() -> None:
     servicer = LedgerServicer()
     assert callable(servicer.close_sleeve)
     LedgerServiceASGIApplication(servicer)  # raises if close_sleeve isn't bound
+
+
+# --------------------------------------------------------------------------- #
+# Degraded-projection surfacing on reads
+# --------------------------------------------------------------------------- #
+
+
+@contextlib.asynccontextmanager
+async def _fake_tenant_session(tenant_id, maker):
+    yield MagicMock()
+
+
+def _projection(poison_events: int) -> AccountProjection:
+    projection = AccountProjection()
+    projection.poison_events = poison_events
+    return projection
+
+
+async def _call_get_sleeve(poison_events: int) -> list[tuple[Any, int]]:
+    """Run get_sleeve with fully-mocked DB layers; return record_projection_read calls."""
+    sleeve = _sleeve(SleeveType.MANUAL)
+    servicer = LedgerServicer()
+    servicer._session_factory = MagicMock()
+    surfaced: list[tuple[Any, int]] = []
+
+    repo = MagicMock()
+    repo.get_sleeve = AsyncMock(return_value=sleeve)
+    projector = MagicMock()
+    projector.project_account = AsyncMock(return_value=_projection(poison_events))
+
+    token = set_context(TenantContext(tenant_id=sleeve.tenant_id, user_id=uuid4()))
+    try:
+        with (
+            patch("src.grpc.ledger_servicer.tenant_session", _fake_tenant_session),
+            patch("src.grpc.ledger_servicer.SqlSleeveRepository", return_value=repo),
+            patch("src.grpc.ledger_servicer.LedgerProjector", return_value=projector),
+            patch(
+                "src.grpc.ledger_servicer.record_projection_read",
+                side_effect=lambda a, p: surfaced.append((a, p)),
+            ),
+        ):
+            request = ledger_pb2.GetSleeveRequest(
+                context=common_pb2.TenantContext(tenant_id=str(sleeve.tenant_id)),
+                sleeve_id=str(sleeve.id),
+            )
+            response = await servicer.get_sleeve(request, cast(Any, None))
+            assert response.sleeve.id == str(sleeve.id)  # degraded is still served
+    finally:
+        reset_context(token)
+    return surfaced
+
+
+@pytest.mark.asyncio
+async def test_get_sleeve_surfaces_degraded_projection() -> None:
+    surfaced = await _call_get_sleeve(poison_events=3)
+    assert len(surfaced) == 1
+    assert surfaced[0][1] == 3
+
+
+@pytest.mark.asyncio
+async def test_get_sleeve_clean_projection_reports_zero() -> None:
+    surfaced = await _call_get_sleeve(poison_events=0)
+    # Wiring is unconditional; the metrics helper no-ops at zero poison events.
+    assert len(surfaced) == 1
+    assert surfaced[0][1] == 0
+
+
+@pytest.mark.asyncio
+async def test_list_sleeves_surfaces_degraded_projection() -> None:
+    sleeve = _sleeve(SleeveType.MANUAL)
+    account_id = sleeve.account_id
+    servicer = LedgerServicer()
+    servicer._session_factory = MagicMock()
+    surfaced: list[tuple[Any, int]] = []
+
+    repo = MagicMock()
+    repo.list_sleeves = AsyncMock(return_value=[sleeve])
+    projector = MagicMock()
+    projector.project_account = AsyncMock(return_value=_projection(1))
+
+    token = set_context(TenantContext(tenant_id=sleeve.tenant_id, user_id=uuid4()))
+    try:
+        with (
+            patch("src.grpc.ledger_servicer.tenant_session", _fake_tenant_session),
+            patch("src.grpc.ledger_servicer.SqlSleeveRepository", return_value=repo),
+            patch("src.grpc.ledger_servicer.LedgerProjector", return_value=projector),
+            patch(
+                "src.grpc.ledger_servicer.record_projection_read",
+                side_effect=lambda a, p: surfaced.append((a, p)),
+            ),
+        ):
+            request = ledger_pb2.ListSleevesRequest(
+                context=common_pb2.TenantContext(tenant_id=str(sleeve.tenant_id)),
+                account_id=str(account_id),
+            )
+            response = await servicer.list_sleeves(request, cast(Any, None))
+            assert len(response.sleeves) == 1  # degraded is still served
+    finally:
+        reset_context(token)
+
+    assert surfaced == [(account_id, 1)]
+
+
+@pytest.mark.asyncio
+async def test_close_sleeve_bad_account_id_is_invalid_argument() -> None:
+    """A malformed account_id is rejected as INVALID_ARGUMENT, not a generic INTERNAL."""
+    from connectrpc.code import Code
+    from connectrpc.errors import ConnectError
+
+    servicer = LedgerServicer()
+    request = ledger_pb2.CloseSleeveRequest(
+        context=common_pb2.TenantContext(tenant_id=str(uuid4()), user_id=str(uuid4())),
+        account_id="not-a-uuid",
+        sleeve_id=str(uuid4()),
+    )
+    with pytest.raises(ConnectError) as exc_info:
+        await servicer.close_sleeve(request, cast(Any, None))
+    assert exc_info.value.code == Code.INVALID_ARGUMENT
+    assert "account_id" in exc_info.value.message
+
+
+@pytest.mark.asyncio
+async def test_apply_corporate_action_bad_account_id_is_invalid_argument() -> None:
+    """A malformed account_id is rejected as INVALID_ARGUMENT, not a generic INTERNAL."""
+    from connectrpc.code import Code
+    from connectrpc.errors import ConnectError
+
+    servicer = LedgerServicer()
+    request = ledger_pb2.ApplyCorporateActionRequest(
+        context=common_pb2.TenantContext(tenant_id=str(uuid4()), user_id=str(uuid4())),
+        account_id="bad",
+        symbol="AAPL",
+        kind=ledger_pb2.CORPORATE_ACTION_KIND_SPLIT,
+    )
+    with pytest.raises(ConnectError) as exc_info:
+        await servicer.apply_corporate_action(request, cast(Any, None))
+    assert exc_info.value.code == Code.INVALID_ARGUMENT

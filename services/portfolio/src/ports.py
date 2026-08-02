@@ -19,6 +19,7 @@ if TYPE_CHECKING:
     from llamatrade_db.models.ledger import Account, LedgerEventType, Sleeve, SleeveType
 
     from src.ledger.projection import AccountProjection
+    from src.ledger.sizing import Lot
 
 
 @runtime_checkable
@@ -48,9 +49,17 @@ class SleeveRepository(Protocol):
         self, tenant_id: UUID, credentials_id: UUID
     ) -> Account | None: ...
 
+    async def get_account_by_broker_id(
+        self, tenant_id: UUID, broker_account_id: str
+    ) -> Account | None: ...
+
     async def get_account(self, tenant_id: UUID, account_id: UUID) -> Account | None: ...
 
     async def add_account(self, account: Account) -> None: ...
+
+    async def set_account_credentials(self, account: Account, credentials_id: UUID) -> None: ...
+
+    async def set_account_broker_id(self, account: Account, broker_account_id: str) -> None: ...
 
     async def get_sleeve(self, tenant_id: UUID, sleeve_id: UUID) -> Sleeve | None: ...
 
@@ -87,9 +96,24 @@ class LedgerStore(Protocol):
         sleeve_id: UUID | None = None,
         event_id: UUID | None = None,
         occurred_at: datetime | None = None,
-    ) -> Any: ...
+    ) -> tuple[Any, bool]:
+        """Append an event; returns ``(event, inserted)`` (``inserted`` False on dedup)."""
+        ...
 
     async def project_account(self, tenant_id: UUID, account_id: UUID) -> AccountProjection: ...
+
+
+class LotReader(Protocol):
+    """Reads the open FIFO lots of one ``(sleeve, symbol)`` from the event log.
+
+    Lets the sleeve-close path carry per-lot granularity into Unmanaged without
+    widening the append/project store. The SQL adapter folds ``open_lots``; tests
+    fold their in-memory log.
+    """
+
+    async def open_lots(
+        self, tenant_id: UUID, account_id: UUID, sleeve_id: UUID, symbol: str
+    ) -> list[Lot]: ...
 
 
 class BrokerUnavailableError(Exception):
@@ -131,10 +155,25 @@ class BrokerHolding:
 
 @dataclass(frozen=True)
 class BrokerSnapshot:
-    """Point-in-time broker truth used to backfill a newly onboarded account."""
+    """Point-in-time broker truth used to backfill a newly onboarded account.
+
+    ``broker_account_id`` is the broker's own account id; it keys the ledger
+    account to the broker rather than to a credential row. ``None`` when the
+    adapter could not read it, in which case identity falls back to credentials.
+    """
 
     cash: Decimal
     holdings: list[BrokerHolding]
+    broker_account_id: str | None = None
+
+
+@dataclass(frozen=True)
+class DuplicateBrokerAccounts:
+    """Accounts in one tenant that claim the same broker account (operator alert)."""
+
+    tenant_id: UUID
+    broker_account_id: str
+    account_ids: tuple[UUID, ...]
 
 
 class BrokerSnapshotProvider(Protocol):

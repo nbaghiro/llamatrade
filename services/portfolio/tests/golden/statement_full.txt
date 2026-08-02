@@ -1,0 +1,151 @@
+==============================================================================================================
+LEDGER STATEMENT
+==============================================================================================================
+Account             22222222-2222-2222-2222-222222222222
+Tenant              11111111-1111-1111-1111-111111111111
+Broker account      PA3EXAMPLE01
+Base currency       USD
+Period              2026-03-01 through 2026-03-31 (UTC)
+Events              14 in period, 14 through period end
+Generated           2026-04-01T12:00:00+00:00
+
+--------------------------------------------------------------------------------------------------------------
+OPENING BALANCES  as of 2026-03-01
+--------------------------------------------------------------------------------------------------------------
+Sleeve                   Type         Status               Cash       Reserved     Positions@cost
+Unallocated              unallocated  active               0.00           0.00               0.00
+Momentum US              strategy     active               0.00           0.00               0.00
+Value Tilt               strategy     closed               0.00           0.00               0.00
+Unmanaged                unmanaged    active               0.00           0.00               0.00
+TOTAL                                                      0.00           0.00               0.00
+
+--------------------------------------------------------------------------------------------------------------
+ACTIVITY
+--------------------------------------------------------------------------------------------------------------
+
+2026-03-02
+  Time     Sleeve             Event      Detail                                   Amount     Realized Event id
+  09:30:00 Unallocated        DEPOSIT    external cash in                     100,000.00            - aa000001
+  09:45:00 Momentum US        ALLOCATE   from Unallocated                      40,000.00            - ab000002
+  09:46:00 Value Tilt         ALLOCATE   from Unallocated                      25,000.00            - ac000003
+  Cash after 2026-03-02
+           Unallocated                                                         35,000.00
+           Momentum US                                                         40,000.00
+           Value Tilt                                                          25,000.00
+           Unmanaged                                                                0.00
+
+2026-03-03
+  Time     Sleeve             Event      Detail                                   Amount     Realized Event id
+  14:30:00 Momentum US        RESERVE    buy SPY order mom-buy-1               24,000.00            - d2c51757
+  14:32:00 Momentum US        BUY        50 SPY @ 480.00                      -24,000.00            - cd366dbd
+  15:10:00 Value Tilt         RESERVE    buy AAPL order val-buy-1              10,000.00            - 2745baeb
+  15:40:00 Value Tilt         CANCEL     order val-buy-1                      -10,000.00            - 9b03ed0f
+  Cash after 2026-03-03
+           Unallocated                                                         35,000.00
+           Momentum US                                                         16,000.00
+           Value Tilt                                                          25,000.00
+           Unmanaged                                                                0.00
+
+2026-03-05
+  Time     Sleeve             Event      Detail                                   Amount     Realized Event id
+  10:05:00 Momentum US        BUY        20 SPY @ 500.00                      -10,000.00            - 35f53e1d
+  15:55:00 Momentum US        SELL       30 SPY @ 520.00 fees 1.50             15,598.50     1,198.50 c6c1ff42
+  Cash after 2026-03-05
+           Unallocated                                                         35,000.00
+           Momentum US                                                         21,598.50
+           Value Tilt                                                          25,000.00
+           Unmanaged                                                                0.00
+
+2026-03-06
+  Time     Sleeve             Event      Detail                                   Amount     Realized Event id
+  00:05:00 Momentum US        SPLIT      SPY +40 shares                                -            - e18a4094
+  12:00:00 Momentum US        DIVIDEND   cash dividend                             36.00        36.00 8508d9e2
+  Cash after 2026-03-06
+           Unallocated                                                         35,000.00
+           Momentum US                                                         21,634.50
+           Value Tilt                                                          25,000.00
+           Unmanaged                                                                0.00
+
+2026-03-09
+  Time     Sleeve             Event      Detail                                   Amount     Realized Event id
+  08:15:00 Unmanaged          ADOPT      10 TSLA @ 200.00 (drift)                      -            - ad000004
+  08:20:00 Value Tilt         FREEZE     qty_mismatch: AAPL ledger=0 b...              -            - ae000005
+  16:00:00 Value Tilt         CLOSE      cash -> Unallocated                  -25,000.00            - e99df733
+  Cash after 2026-03-09
+           Unallocated                                                         60,000.00
+           Momentum US                                                         21,634.50
+           Value Tilt                                                               0.00
+           Unmanaged                                                                0.00
+
+--------------------------------------------------------------------------------------------------------------
+CLOSING BALANCES  as of 2026-03-31
+--------------------------------------------------------------------------------------------------------------
+Sleeve                   Type         Status               Cash       Reserved     Positions@cost
+Unallocated              unallocated  active          60,000.00           0.00               0.00
+Momentum US              strategy     active          21,634.50           0.00          19,600.00
+Value Tilt               strategy     closed               0.00           0.00               0.00
+Unmanaged                unmanaged    active               0.00           0.00           2,000.00
+TOTAL                                                 81,634.50           0.00          21,600.00
+
+Unallocated  [unallocated / active]
+  Cash                             60,000.00
+  Reserved                              0.00
+  Free cash                        60,000.00
+  Realized P&L (period)                 0.00
+  Realized P&L (to date)                0.00
+  Positions: none
+
+Momentum US  [strategy / active]
+  Cash                             21,634.50
+  Reserved                              0.00
+  Free cash                        21,634.50
+  Realized P&L (period)             1,234.50
+  Realized P&L (to date)            1,234.50
+  Positions
+    Symbol                 Qty        Cost basis        Avg cost
+    SPY                     80         19,600.00          245.00
+      lot 1                 40          9,600.00          240.00
+      lot 2                 40         10,000.00          250.00
+
+Value Tilt  [strategy / closed]
+  Cash                                  0.00
+  Reserved                              0.00
+  Free cash                             0.00
+  Realized P&L (period)                 0.00
+  Realized P&L (to date)                0.00
+  Positions: none
+
+Unmanaged  [unmanaged / active]
+  Cash                                  0.00
+  Reserved                              0.00
+  Free cash                             0.00
+  Realized P&L (period)                 0.00
+  Realized P&L (to date)                0.00
+  Positions
+    Symbol                 Qty        Cost basis        Avg cost
+    TSLA                    10          2,000.00          200.00
+      lot 1                 10          2,000.00          200.00
+
+--------------------------------------------------------------------------------------------------------------
+ACCOUNT TOTALS  as of 2026-03-31
+--------------------------------------------------------------------------------------------------------------
+Cash (all sleeves)                                             81,634.50
+Reserved cash                                                       0.00
+Free cash                                                      81,634.50
+Positions at cost                                              21,600.00
+Equity at cost                                                103,234.50
+Realized P&L (period)                                           1,234.50
+Realized P&L (to date)                                          1,234.50
+
+--------------------------------------------------------------------------------------------------------------
+INVARIANTS
+--------------------------------------------------------------------------------------------------------------
+Net external funding into the account                         102,000.00
+Realized P&L (to date)                                          1,234.50
+Expected equity at cost (funding + realized)                  103,234.50
+Actual equity at cost (cash + positions)                      103,234.50
+Difference                                                          0.00
+Sleeve conservation                                                   OK
+Projection completeness                                               OK
+Sleeve state checks                                                   OK
+==============================================================================================================

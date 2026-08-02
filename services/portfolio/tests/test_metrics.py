@@ -12,6 +12,7 @@ Counters are global and accumulate across tests, so each assertion measures the
 from __future__ import annotations
 
 import re
+from uuid import uuid4
 
 from llamatrade_telemetry import get_metrics
 
@@ -20,6 +21,8 @@ from src.metrics import (
     record_drift,
     record_drift_action,
     record_ingest,
+    record_projection_read,
+    set_reconcile_stale_accounts,
 )
 
 
@@ -101,11 +104,49 @@ def test_stream_pending_gauge_sets_consumer_lag_entries() -> None:
     assert _sample(get_metrics().decode(), name, labels) == 0.0
 
 
+def test_reconcile_stale_accounts_gauge_tracks_count() -> None:
+    name = "llamatrade_ledger_reconcile_stale_accounts"
+
+    set_reconcile_stale_accounts(3)
+    assert _sample(get_metrics().decode(), name, "") == 3.0
+
+    set_reconcile_stale_accounts(0)
+    assert _sample(get_metrics().decode(), name, "") == 0.0
+
+
+def test_projection_read_with_poison_events_increments_and_warns(caplog) -> None:
+    """A degraded projection served on a read is counted and names the account."""
+    name = "llamatrade_ledger_incomplete_projection_reads_total"
+    account_id = uuid4()
+    before = _sample(get_metrics().decode(), name, "")
+
+    with caplog.at_level("WARNING", logger="src.metrics"):
+        record_projection_read(account_id, poison_events=2)
+
+    assert _sample(get_metrics().decode(), name, "") == before + 1.0
+    assert any(str(account_id) in r.message and "INCOMPLETE" in r.message for r in caplog.records)
+
+
+def test_projection_read_clean_is_noop(caplog) -> None:
+    name = "llamatrade_ledger_incomplete_projection_reads_total"
+    record_projection_read(uuid4(), poison_events=1)  # ensure the series exists
+    before = _sample(get_metrics().decode(), name, "")
+    caplog.clear()
+
+    with caplog.at_level("WARNING", logger="src.metrics"):
+        record_projection_read(uuid4(), poison_events=0)
+
+    assert _sample(get_metrics().decode(), name, "") == before
+    assert not caplog.records
+
+
 def test_no_forbidden_labels_on_ledger_series() -> None:
     """The migrated series must not carry high-cardinality labels."""
     record_ingest("success")
     record_drift("dust")
     record_drift_action("observed")
+    record_projection_read(uuid4(), poison_events=1)
+    set_reconcile_stale_accounts(1)
     LEDGER_STREAM_PENDING.set(1)
 
     text = get_metrics().decode()

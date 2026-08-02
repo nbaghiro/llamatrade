@@ -8,6 +8,7 @@ shadow reconciliation drift classification.
 from dataclasses import dataclass
 from decimal import Decimal
 from typing import Any, cast
+from uuid import UUID
 
 import pytest
 
@@ -15,13 +16,16 @@ from llamatrade_db.models.ledger import LedgerEventType
 from llamatrade_events import LedgerFill, LedgerReservation
 
 from src.ledger.backfill import BrokerPosition, plan_backfill
+from src.ledger.corporate import PlannedCorporateEvent, plan_split, plan_symbol_change
 from src.ledger.ingestion import (
     FillQuarantineError,
+    LedgerAppend,
     append_from_message,
     enrich_sell_fill,
     fill_to_append,
     needs_cost_basis,
 )
+from src.ledger.invariants import check_sleeve_invariants
 from src.ledger.postings import (
     Bucket,
     Posting,
@@ -29,9 +33,16 @@ from src.ledger.postings import (
     assert_balanced,
     build_postings,
 )
-from src.ledger.projection import AccountProjection, fold, fold_into, holding_history, open_lots
+from src.ledger.projection import (
+    AccountProjection,
+    ReservationState,
+    fold,
+    fold_into,
+    holding_history,
+    open_lots,
+)
 from src.ledger.reconciliation import DriftKind, reconcile
-from src.ledger.sizing import Lot
+from src.ledger.sizing import Lot, select_lots_fifo
 
 # Sleeve ids used across the scenario
 U = "unallocated"
@@ -376,6 +387,237 @@ class TestOpenLots:
         assert open_lots(events, A, "SPY")[0].opened_seq == 7
 
 
+_TENANT = "11111111-1111-1111-1111-111111111111"
+_ACCOUNT = "22222222-2222-2222-2222-222222222222"
+# Sleeve the corporate-action tests hold positions in (planners emit UUID ids).
+_SLEEVE = "33333333-3333-3333-3333-333333333333"
+
+
+def _split_ev(sleeve: str, qty_delta: str, symbol: str = "SPY") -> Ev:
+    return Ev(
+        LedgerEventType.SPLIT_APPLIED,
+        {"sleeve_id": sleeve, "symbol": symbol, "qty_delta": qty_delta},
+    )
+
+
+def _rename_ev(sleeve: str, old: str, new: str, qty: str, cost_basis: str) -> Ev:
+    return Ev(
+        LedgerEventType.SYMBOL_CHANGED,
+        {
+            "sleeve_id": sleeve,
+            "old_symbol": old,
+            "new_symbol": new,
+            "qty": qty,
+            "cost_basis": cost_basis,
+        },
+    )
+
+
+def _planned(planned: PlannedCorporateEvent) -> Ev:
+    """A planner's event as the fold sees it."""
+    return Ev(planned.event_type, dict(planned.data))
+
+
+def _sell_fill(symbol: str, qty: str, price: str) -> LedgerAppend:
+    return fill_to_append(
+        LedgerFill(
+            tenant_id=_TENANT,
+            account_id=_ACCOUNT,
+            sleeve_id=_SLEEVE,
+            client_order_id=f"lt-{symbol}-{qty}",
+            symbol=symbol,
+            side="sell",
+            qty=qty,
+            price=price,
+        )
+    )
+
+
+class TestSplitLots:
+    """A split re-bases the lots it finds; it never opens a zero-cost lot."""
+
+    def _two_lots(self) -> list[Ev]:
+        """100 shares at $10 then 50 at $20: 150 shares carrying $2,000 of cost."""
+        return [_buy(_SLEEVE, "100", "10"), _buy(_SLEEVE, "50", "20")]
+
+    def test_forward_split_scales_qty_and_keeps_each_lot_cost(self) -> None:
+        lots = open_lots([*self._two_lots(), _split_ev(_SLEEVE, "150")], _SLEEVE, "SPY")
+        assert [(lot.qty, lot.cost_basis) for lot in lots] == [
+            (D("200"), D("1000")),
+            (D("100"), D("1000")),
+        ]
+        # Per-unit cost is divided by the ratio: $10 -> $5 and $20 -> $10.
+        assert [lot.cost_basis / lot.qty for lot in lots] == [D("5"), D("10")]
+
+    def test_total_lot_cost_is_unchanged_by_the_split(self) -> None:
+        before = open_lots(self._two_lots(), _SLEEVE, "SPY")
+        after = open_lots([*self._two_lots(), _split_ev(_SLEEVE, "150")], _SLEEVE, "SPY")
+        assert sum((lot.cost_basis for lot in after), D("0")) == D("2000")
+        assert sum((lot.cost_basis for lot in after), D("0")) == sum(
+            (lot.cost_basis for lot in before), D("0")
+        )
+
+    def test_lots_reconcile_with_the_folded_position(self) -> None:
+        events = [*self._two_lots(), _split_ev(_SLEEVE, "150")]
+        pos = fold(events).sleeve(_SLEEVE).positions["SPY"]
+        lots = open_lots(events, _SLEEVE, "SPY")
+        assert sum((lot.qty for lot in lots), D("0")) == pos.qty == D("300")
+        assert sum((lot.cost_basis for lot in lots), D("0")) == pos.cost_basis == D("2000")
+
+    def test_sell_after_a_split_realizes_the_rebased_basis(self) -> None:
+        lots = open_lots([*self._two_lots(), _split_ev(_SLEEVE, "150")], _SLEEVE, "SPY")
+        enriched = enrich_sell_fill(_sell_fill("SPY", "250", "8"), lots)
+        # 200 shares from the $5 lot ($1,000) + 50 from the $10 lot ($500).
+        assert enriched.data["cost_basis"] == "1500"
+        assert enriched.data["realized_pnl"] == "500"  # 250 x $8 - $1,500
+        assert_balanced(build_postings(enriched.event_type, enriched.data))
+
+    def test_split_preserves_fifo_order(self) -> None:
+        events = [_buy(_SLEEVE, "10", "1"), _buy(_SLEEVE, "10", "3"), _split_ev(_SLEEVE, "20")]
+        lots = open_lots(events, _SLEEVE, "SPY")
+        assert [lot.opened_seq for lot in lots] == [0, 1]
+        enriched = enrich_sell_fill(_sell_fill("SPY", "20", "5"), lots)
+        # The oldest lot (20 shares at $0.50) is consumed whole, not blended.
+        assert enriched.data["cost_basis"] == "10"
+        remaining = select_lots_fifo(lots, D("20")).remaining_lots
+        assert [(lot.qty, lot.cost_basis) for lot in remaining] == [(D("20"), D("30"))]
+
+    def test_reverse_split_keeps_fractional_quantities(self) -> None:
+        planned = plan_split(
+            symbol="SPY", ratio=D("0.1"), holders={UUID(_SLEEVE): D("25")}, external_id="ca-rev"
+        )[0]
+        lots = open_lots([_buy(_SLEEVE, "25", "40"), _planned(planned)], _SLEEVE, "SPY")
+        assert [(lot.qty, lot.cost_basis) for lot in lots] == [(D("2.5"), D("1000"))]
+        assert lots[0].cost_basis / lots[0].qty == D("400")
+
+    def test_uneven_split_conserves_qty_and_cost_across_lots(self) -> None:
+        planned = plan_split(
+            symbol="SPY", ratio=D("1.5"), holders={UUID(_SLEEVE): D("31")}, external_id="ca-uneven"
+        )[0]
+        events = [
+            _buy(_SLEEVE, "7", "10"),
+            _buy(_SLEEVE, "11", "20"),
+            _buy(_SLEEVE, "13", "30"),
+            _planned(planned),
+        ]
+        lots = open_lots(events, _SLEEVE, "SPY")
+        pos = fold(events).sleeve(_SLEEVE).positions["SPY"]
+        assert [lot.qty for lot in lots] == [D("10.5"), D("16.5"), D("19.5")]
+        assert sum((lot.qty for lot in lots), D("0")) == pos.qty == D("46.5")
+        assert sum((lot.cost_basis for lot in lots), D("0")) == pos.cost_basis == D("680")
+
+    def test_split_without_tracked_lots_opens_no_zero_cost_lot(self) -> None:
+        assert open_lots([_split_ev(_SLEEVE, "40")], _SLEEVE, "SPY") == []
+
+    def test_split_of_another_sleeve_leaves_these_lots_alone(self) -> None:
+        events = [_buy(_SLEEVE, "10", "10"), _split_ev(A, "10")]
+        assert [(lot.qty, lot.cost_basis) for lot in open_lots(events, _SLEEVE, "SPY")] == [
+            (D("10"), D("100"))
+        ]
+
+    def test_sleeve_invariants_stay_green_across_a_split(self) -> None:
+        events = [
+            Ev(LedgerEventType.FUNDS_DEPOSITED, {"sleeve_id": _SLEEVE, "amount": "5000"}),
+            *self._two_lots(),
+            _split_ev(_SLEEVE, "150"),
+        ]
+        assert check_sleeve_invariants(fold(events).sleeve(_SLEEVE)) == []
+
+
+class TestSymbolChangeLots:
+    """A rename carries every lot across with its own basis and acquisition order."""
+
+    def _renamed(self) -> list[Ev]:
+        """10 FB at $200 and 5 at $100, then FB renamed to META."""
+        rename = plan_symbol_change(
+            old_symbol="FB",
+            new_symbol="META",
+            holders={UUID(_SLEEVE): (D("15"), D("2500"))},
+            external_id="ca-rename",
+        )[0]
+        return [
+            _buy(_SLEEVE, "10", "200", symbol="FB"),
+            _buy(_SLEEVE, "5", "100", symbol="FB"),
+            _planned(rename),
+        ]
+
+    def test_each_lot_keeps_its_own_basis_and_order(self) -> None:
+        lots = open_lots(self._renamed(), _SLEEVE, "META")
+        assert [(lot.qty, lot.cost_basis) for lot in lots] == [
+            (D("10"), D("2000")),
+            (D("5"), D("500")),
+        ]
+        assert [lot.opened_seq for lot in lots] == [0, 1]
+
+    def test_the_old_symbol_keeps_no_lots(self) -> None:
+        assert open_lots(self._renamed(), _SLEEVE, "FB") == []
+
+    def test_total_cost_and_qty_are_conserved_by_the_rename(self) -> None:
+        events = self._renamed()
+        lots = open_lots(events, _SLEEVE, "META")
+        pos = fold(events).sleeve(_SLEEVE).positions["META"]
+        assert sum((lot.cost_basis for lot in lots), D("0")) == pos.cost_basis == D("2500")
+        assert sum((lot.qty for lot in lots), D("0")) == pos.qty == D("15")
+
+    def test_sell_after_a_rename_realizes_the_oldest_lot(self) -> None:
+        enriched = enrich_sell_fill(
+            _sell_fill("META", "10", "250"), open_lots(self._renamed(), _SLEEVE, "META")
+        )
+        # The $200 lot, not a 15-share blend of $166.66... per share.
+        assert enriched.data["cost_basis"] == "2000"
+        assert enriched.data["realized_pnl"] == "500"
+
+    def test_chained_renames_keep_the_lots(self) -> None:
+        events = [*self._renamed(), _rename_ev(_SLEEVE, "META", "MTA", "15", "2500")]
+        assert [(lot.qty, lot.cost_basis) for lot in open_lots(events, _SLEEVE, "MTA")] == [
+            (D("10"), D("2000")),
+            (D("5"), D("500")),
+        ]
+
+    def test_rename_without_tracked_lots_falls_back_to_the_payload(self) -> None:
+        rename = _rename_ev(_SLEEVE, "FB", "META", "15", "2500")
+        assert [(lot.qty, lot.cost_basis) for lot in open_lots([rename], _SLEEVE, "META")] == [
+            (D("15"), D("2500"))
+        ]
+
+    def test_rename_of_another_sleeve_is_ignored(self) -> None:
+        events = [
+            _buy(_SLEEVE, "10", "200", symbol="FB"),
+            _rename_ev(A, "FB", "META", "10", "2000"),
+        ]
+        assert [(lot.qty, lot.cost_basis) for lot in open_lots(events, _SLEEVE, "FB")] == [
+            (D("10"), D("2000"))
+        ]
+
+    def test_split_after_a_rename_rebases_the_carried_lots(self) -> None:
+        events = [*self._renamed(), _split_ev(_SLEEVE, "15", symbol="META")]
+        assert [(lot.qty, lot.cost_basis) for lot in open_lots(events, _SLEEVE, "META")] == [
+            (D("20"), D("2000")),
+            (D("10"), D("500")),
+        ]
+
+
+def test_corporate_action_replay_is_deterministic() -> None:
+    """Lots and balances are identical however often (or from where) they refold."""
+    events = [
+        Ev(LedgerEventType.FUNDS_DEPOSITED, {"sleeve_id": _SLEEVE, "amount": "10000"}),
+        _buy(_SLEEVE, "100", "10"),
+        _buy(_SLEEVE, "50", "20"),
+        _split_ev(_SLEEVE, "150"),
+        _rename_ev(_SLEEVE, "SPY", "SPYX", "300", "2000"),
+    ]
+    assert open_lots(events, _SLEEVE, "SPYX") == open_lots(events, _SLEEVE, "SPYX")
+
+    full = fold(events)
+    assert full == fold(events)
+    for k in range(len(events) + 1):
+        base = AccountProjection()
+        reservations = ReservationState()
+        fold_into(base, reservations, events[:k])
+        fold_into(base, reservations, events[k:])
+        assert base == full, f"checkpoint at index {k} diverged from the full fold"
+
+
 class TestSellEnrichment:
     def _sell_append(self, qty: str = "60", **extra: str):
         fields = {
@@ -479,6 +721,53 @@ class TestReservationProjection:
         acc = fold([*_scenario(), self._submitted(), other])
         assert acc.sleeve(A).reserved == D("24000")
         assert acc.sleeve(B).reserved == D("1000")
+
+
+class TestLateReservation:
+    """An ORDER_SUBMITTED reservation racing its own terminal event."""
+
+    def _submitted(self, coid: str = "lt-r1") -> Ev:
+        return Ev(
+            LedgerEventType.ORDER_SUBMITTED,
+            {"sleeve_id": A, "client_order_id": coid, "reserved": "24000"},
+        )
+
+    def _fill(self, coid: str = "lt-r1") -> Ev:
+        return Ev(
+            LedgerEventType.ORDER_FILLED,
+            {
+                "sleeve_id": A,
+                "symbol": "SPY",
+                "side": "buy",
+                "qty": "50",
+                "price": "480",
+                "client_order_id": coid,
+            },
+        )
+
+    def test_submit_then_fill_leaves_reserved_zero(self) -> None:
+        acc = fold([*_scenario(), self._submitted(), self._fill()])
+        assert acc.sleeve(A).reserved == D("0")
+
+    def test_late_submit_after_fill_is_noop_and_matches_submit_first(self) -> None:
+        ordered = fold([*_scenario(), self._submitted(), self._fill()])
+        late = fold([*_scenario(), self._fill(), self._submitted()])
+        assert late.sleeve(A).reserved == D("0")
+        assert late == ordered
+
+    def test_late_submit_after_cancel_is_noop(self) -> None:
+        cancel = Ev(LedgerEventType.ORDER_CANCELLED, {"sleeve_id": A, "client_order_id": "lt-r1"})
+        acc = fold([*_scenario(), cancel, self._submitted()])
+        assert acc.sleeve(A).reserved == D("0")
+
+    def test_late_submit_after_reject_is_noop(self) -> None:
+        reject = Ev(LedgerEventType.ORDER_REJECTED, {"sleeve_id": A, "client_order_id": "lt-r1"})
+        acc = fold([*_scenario(), reject, self._submitted()])
+        assert acc.sleeve(A).reserved == D("0")
+
+    def test_unseen_order_reservation_still_earmarks(self) -> None:
+        acc = fold([*_scenario(), self._fill(coid="lt-other"), self._submitted(coid="lt-new")])
+        assert acc.sleeve(A).reserved == D("24000")
 
 
 class TestPayloadRouting:
@@ -620,15 +909,33 @@ def test_fold_split_invariance() -> None:
                 "cost_basis": "3000",
             },
         ),
+        # Late reservation: the fill for o3 lands BEFORE its submission, so
+        # the reservation must fold as a no-op — including across any split.
+        Ev(
+            LedgerEventType.ORDER_FILLED,
+            {
+                "sleeve_id": s,
+                "client_order_id": "o3",
+                "symbol": "SPYX",
+                "side": "buy",
+                "qty": "1",
+                "price": "50",
+            },
+        ),
+        Ev(
+            LedgerEventType.ORDER_SUBMITTED,
+            {"sleeve_id": s, "client_order_id": "o3", "reserved": "50"},
+        ),
     ]
     full = fold(events)
     # The projection reports its own incompleteness (read-path signal): the
     # ORDER_FILLED with no side/qty/price was skipped as poison.
     assert full.poison_events == 1
     assert not full.is_complete
+    assert full.sleeves[s].reserved == Decimal("0")  # late o3 reservation was a no-op
     for k in range(len(events) + 1):
         base = AccountProjection()
-        pending: dict[str, tuple[str, Decimal]] = {}
-        fold_into(base, pending, events[:k], on_error=None)
-        fold_into(base, pending, events[k:], on_error=None)
+        reservations = ReservationState()
+        fold_into(base, reservations, events[:k], on_error=None)
+        fold_into(base, reservations, events[k:], on_error=None)
         assert base == full, f"checkpoint split at index {k} diverged from full fold"

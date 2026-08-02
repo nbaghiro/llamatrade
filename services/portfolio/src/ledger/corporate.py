@@ -19,8 +19,19 @@ from uuid import UUID
 
 from llamatrade_db.models.ledger import LedgerEventType
 
+from src.ledger.ids import deterministic_event_id
+
 ZERO = Decimal("0")
 _CENTS = Decimal("0.01")
+
+
+def event_id(dedup_key: str) -> UUID:
+    """Deterministic ledger event id for a planner dedup key (idempotency).
+
+    The detection feed derives the same ids to tell an already-applied action
+    from a still-pending one, so both sides must agree on this derivation.
+    """
+    return deterministic_event_id(dedup_key)
 
 
 @dataclass(frozen=True)
@@ -32,9 +43,14 @@ class PlannedCorporateEvent:
     data: dict[str, str]
     dedup_key: str
 
+    @property
+    def event_id(self) -> UUID:
+        """The deterministic ledger event id this planned event would be appended under."""
+        return event_id(self.dedup_key)
+
 
 def plan_split(
-    *, symbol: str, ratio: Decimal, holders: dict[UUID, Decimal]
+    *, symbol: str, ratio: Decimal, holders: dict[UUID, Decimal], external_id: str = ""
 ) -> list[PlannedCorporateEvent]:
     """Fan a stock split across every sleeve holding ``symbol``.
 
@@ -42,9 +58,18 @@ def plan_split(
     reverse split). Each holding sleeve gets a ``SPLIT_APPLIED`` event whose
     ``qty_delta = qty × (ratio − 1)`` (positive forward, negative reverse). Cost
     basis is preserved (zero-dollar leg). Sleeves with no position are skipped.
+
+    ``external_id`` (the announcement id) is part of the dedup key, exactly as
+    dividends carry ``pay_id``: two distinct splits on one symbol at the same
+    ratio (e.g. a second 2-for-1) must key differently, or the second is a
+    silent no-op that leaves the sleeve at the wrong quantity. It is required —
+    an empty value would let a manual ``ApplyCorporateAction`` collide two
+    distinct splits into one dedup key.
     """
     if ratio <= ZERO:
         raise ValueError(f"split ratio must be positive, got {ratio}")
+    if not external_id:
+        raise ValueError("split external_id is required (the announcement id) to key the dedup")
     events: list[PlannedCorporateEvent] = []
     for sleeve_id, qty in holders.items():
         if qty == ZERO:
@@ -61,20 +86,29 @@ def plan_split(
                     "symbol": symbol,
                     "qty_delta": str(qty_delta),
                 },
-                dedup_key=f"split:{symbol}:{ratio}:{sleeve_id}",
+                dedup_key=f"split:{symbol}:{external_id}:{ratio}:{sleeve_id}",
             )
         )
     return events
 
 
 def plan_symbol_change(
-    *, old_symbol: str, new_symbol: str, holders: dict[UUID, tuple[Decimal, Decimal]]
+    *,
+    old_symbol: str,
+    new_symbol: str,
+    holders: dict[UUID, tuple[Decimal, Decimal]],
+    external_id: str = "",
 ) -> list[PlannedCorporateEvent]:
     """Fan a ticker rename across every sleeve holding ``old_symbol``.
 
     ``holders`` maps sleeve -> ``(qty, cost_basis)``; each holding sleeve gets a
     ``SYMBOL_CHANGED`` event carrying qty + cost basis across to ``new_symbol``.
+    ``external_id`` (the announcement id) is part of the dedup key so two renames
+    of the same pair cannot collide into one silent no-op; it is required for the
+    same reason splits require it.
     """
+    if not external_id:
+        raise ValueError("rename external_id is required (the announcement id) to key the dedup")
     events: list[PlannedCorporateEvent] = []
     for sleeve_id, (qty, cost_basis) in holders.items():
         if qty == ZERO:
@@ -90,7 +124,7 @@ def plan_symbol_change(
                     "qty": str(qty),
                     "cost_basis": str(cost_basis),
                 },
-                dedup_key=f"rename:{old_symbol}:{new_symbol}:{sleeve_id}",
+                dedup_key=f"rename:{old_symbol}:{new_symbol}:{external_id}:{sleeve_id}",
             )
         )
     return events

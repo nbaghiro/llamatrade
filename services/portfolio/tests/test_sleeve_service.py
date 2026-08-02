@@ -1,8 +1,11 @@
 """SleeveService tests with an in-memory fake repository — no DB, no network."""
 
+import logging
 from decimal import Decimal
 from typing import Any, cast
 from uuid import UUID, uuid4
+
+import pytest
 
 from llamatrade_db.models.ledger import Account, Sleeve, SleeveStatus, SleeveType
 
@@ -31,10 +34,28 @@ class FakeSleeveRepository:
             None,
         )
 
+    async def get_account_by_broker_id(
+        self, tenant_id: UUID, broker_account_id: str
+    ) -> Account | None:
+        return next(
+            (
+                a
+                for a in self.accounts
+                if a.tenant_id == tenant_id and a.alpaca_account_id == broker_account_id
+            ),
+            None,
+        )
+
     async def add_account(self, account: Account) -> None:
         if account.id is None:
             account.id = uuid4()
         self.accounts.append(account)
+
+    async def set_account_credentials(self, account: Account, credentials_id: UUID) -> None:
+        account.credentials_id = credentials_id
+
+    async def set_account_broker_id(self, account: Account, broker_account_id: str) -> None:
+        account.alpaca_account_id = broker_account_id
 
     async def get_sleeve(self, tenant_id: UUID, sleeve_id: UUID) -> Sleeve | None:
         return next(
@@ -97,6 +118,112 @@ async def test_separate_credentials_get_separate_accounts() -> None:
     a2 = await svc.get_or_create_account(TENANT, uuid4())
     assert a1.id != a2.id
     assert len(repo.accounts) == 2
+
+
+async def test_new_account_records_the_broker_account_id() -> None:
+    repo = FakeSleeveRepository()
+    svc = SleeveService(cast(Any, repo))
+    account = await svc.get_or_create_account(TENANT, CREDS, "broker-1")
+    assert account.alpaca_account_id == "broker-1"
+
+
+async def test_re_added_credentials_reuse_the_existing_account() -> None:
+    """Deleting and re-adding broker keys must not fork a second book."""
+    repo = FakeSleeveRepository()
+    svc = SleeveService(cast(Any, repo))
+    original = await svc.get_or_create_account(TENANT, CREDS, "broker-1")
+
+    new_creds = uuid4()
+    relinked = await svc.get_or_create_account(TENANT, new_creds, "broker-1")
+
+    assert relinked.id == original.id
+    assert relinked.credentials_id == new_creds  # re-pointed at the new credential row
+    assert relinked.alpaca_account_id == "broker-1"
+    assert len(repo.accounts) == 1
+
+
+async def test_re_link_keeps_the_sleeves_of_the_existing_account() -> None:
+    repo = FakeSleeveRepository()
+    svc = SleeveService(cast(Any, repo))
+    original = await svc.get_or_create_account(TENANT, CREDS, "broker-1")
+    before = await svc.ensure_base_sleeves(original)
+
+    relinked = await svc.get_or_create_account(TENANT, uuid4(), "broker-1")
+    after = await svc.ensure_base_sleeves(relinked)
+
+    assert {t: s.id for t, s in after.items()} == {t: s.id for t, s in before.items()}
+    assert len(repo.sleeves) == 3
+
+
+async def test_different_broker_accounts_stay_separate() -> None:
+    repo = FakeSleeveRepository()
+    svc = SleeveService(cast(Any, repo))
+    a1 = await svc.get_or_create_account(TENANT, CREDS, "broker-1")
+    a2 = await svc.get_or_create_account(TENANT, uuid4(), "broker-2")
+
+    assert a1.id != a2.id
+    assert len(repo.accounts) == 2
+
+
+async def test_same_broker_account_in_another_tenant_is_a_new_account() -> None:
+    repo = FakeSleeveRepository()
+    svc = SleeveService(cast(Any, repo))
+    a1 = await svc.get_or_create_account(TENANT, CREDS, "broker-1")
+    a2 = await svc.get_or_create_account(uuid4(), uuid4(), "broker-1")
+
+    assert a1.id != a2.id
+    assert len(repo.accounts) == 2
+
+
+async def test_broker_account_id_is_backfilled_on_next_touch() -> None:
+    """An account booked before the broker id was recorded adopts it lazily."""
+    repo = FakeSleeveRepository()
+    svc = SleeveService(cast(Any, repo))
+    account = await svc.get_or_create_account(TENANT, CREDS)
+    assert account.alpaca_account_id is None
+
+    again = await svc.get_or_create_account(TENANT, CREDS, "broker-1")
+
+    assert again.id == account.id
+    assert again.alpaca_account_id == "broker-1"
+    assert len(repo.accounts) == 1
+
+
+async def test_backfill_is_skipped_when_another_account_claims_the_broker_id(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Pre-existing duplicates are reported for an operator, never merged."""
+    repo = FakeSleeveRepository()
+    svc = SleeveService(cast(Any, repo))
+    booked = await svc.get_or_create_account(TENANT, CREDS, "broker-1")
+    legacy_creds = uuid4()
+    legacy = await svc.get_or_create_account(TENANT, legacy_creds)
+
+    with caplog.at_level(logging.ERROR):
+        again = await svc.get_or_create_account(TENANT, legacy_creds, "broker-1")
+
+    assert again.id == legacy.id
+    assert legacy.alpaca_account_id is None  # not merged, not re-keyed
+    assert booked.alpaca_account_id == "broker-1"
+    assert len(repo.accounts) == 2
+    assert "duplicate ledger accounts" in caplog.text
+
+
+async def test_credentials_reporting_a_different_broker_account_is_not_re_keyed(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """The book stays keyed to the broker account it was built from."""
+    repo = FakeSleeveRepository()
+    svc = SleeveService(cast(Any, repo))
+    account = await svc.get_or_create_account(TENANT, CREDS, "broker-1")
+
+    with caplog.at_level(logging.ERROR):
+        again = await svc.get_or_create_account(TENANT, CREDS, "broker-2")
+
+    assert again.id == account.id
+    assert again.alpaca_account_id == "broker-1"
+    assert "booked against broker account broker-1" in caplog.text
+    assert "now report broker-2" in caplog.text
 
 
 async def test_ensure_base_sleeves_creates_three_singletons() -> None:

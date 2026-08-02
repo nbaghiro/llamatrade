@@ -1,4 +1,4 @@
-"""Wiring for fill ingestion over the Redis Streams consumer group.
+"""Wiring for fill ingestion over the Kafka ledger-fills consumer group.
 
 The pure translation (``fill_to_append`` / ``reservation_to_append``, routed by
 ``append_from_message``) lives in ``src.ledger.ingestion``. This module parses
@@ -15,13 +15,19 @@ session factory; ``process_stream_entry`` decides ack/drop/retry per entry;
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
-from typing import Literal, cast
+from typing import Literal
+from uuid import UUID
 
-from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from llamatrade_db import tenant_session
+from llamatrade_db import (
+    advisory_unlock,
+    holds_advisory_lock,
+    tenant_session,
+    try_advisory_lock,
+)
 from llamatrade_db.models.ledger import LedgerEventType
 from llamatrade_events import (
     CURSOR_BEGIN,
@@ -31,7 +37,9 @@ from llamatrade_events import (
     LedgerReservation,
     decode_envelope,
 )
+from llamatrade_telemetry import counter, gauge
 
+from src.ledger.ids import deterministic_event_id
 from src.ledger.ingestion import (
     FillHandler,
     FillQuarantineError,
@@ -40,58 +48,61 @@ from src.ledger.ingestion import (
     enrich_sell_fill,
     needs_cost_basis,
 )
-from src.ledger.projection import LedgerEventLike, open_lots
+from src.ledger.projector import LedgerProjector
 from src.ledger.writer import LedgerWriter
 
 logger = logging.getLogger(__name__)
 
-# One global durable stream — the trading publisher XADDs every fill/lifecycle
-# payload to it, and this service consumes via a consumer group. Entries are the
-# §1a payload as flat fields (no JSON envelope). Run a SINGLE active consumer in
-# the group: per-account ordering (buy-before-sell for FIFO cost basis) relies
-# on it; a replacement pod takes over pending entries via XAUTOCLAIM.
+# One durable topic keyed by ``account_id``, consumed via a Kafka group: Kafka assigns each account's partition to exactly one member, so per-account ordering (buy-before-sell for FIFO cost basis) holds while the fold runs N-way parallel across accounts; the coordinator handles failover.
 LEDGER_FILLS_STREAM = "ledger:fills"
 PORTFOLIO_LEDGER_GROUP = "portfolio-ledger"
-# Unrecordable entries (undecodable bytes / quarantined fills) are parked here
-# instead of being silently lost — recoverable for operator review.
+# Unrecordable entries (undecodable bytes / quarantined fills) are parked here instead of silently lost — recoverable for operator review.
 LEDGER_FILLS_DLQ_STREAM = "ledger:fills:dlq"
-_DLQ_MAXLEN = 10_000
 
 
-async def _dead_letter(bus: EventBus, raw: bytes) -> None:
-    """Park an unrecordable raw stream entry on the DLQ (best-effort).
+async def _dead_letter(bus: EventBus, raw: bytes, *, key: str | None = None) -> None:
+    """Park an unrecordable raw entry on the DLQ topic (best-effort).
 
-    Dropping a poison/quarantined entry keeps the single FIFO consumer alive, but
-    losing it outright is worse than a recoverable parking spot. A DLQ publish
-    failure must not wedge the consumer, so it's swallowed (logged).
+    ``key`` is the fill's ``account_id`` when the entry decoded — keying the DLQ
+    like the main topic keeps per-account order through park → replay; only
+    undecodable bytes park unkeyed. A DLQ publish failure must not wedge the
+    consumer, so it's swallowed (logged).
     """
     try:
-        await bus.publish_raw(LEDGER_FILLS_DLQ_STREAM, raw, maxlen=_DLQ_MAXLEN)
+        await bus.publish_raw(LEDGER_FILLS_DLQ_STREAM, raw, key=key)
     except Exception:
         logger.exception("failed to dead-letter ledger entry to %s", LEDGER_FILLS_DLQ_STREAM)
 
 
-# Process-wide advisory-lock id for the single active fill consumer. Per-account
-# FIFO (buy-before-sell for cost basis) requires exactly one consumer; a second
-# pod that loses the lock serves reads only. A stable bigint ("ledger" in hex).
-_FILL_CONSUMER_LOCK_KEY = 0x6C6564676572
+# Process-wide advisory-lock id electing the single ledger-WRITER pod (reconciliation drift + equity-snapshot loops); replicas would otherwise double-write drift events and duplicate equity-curve points. A stable bigint ("ledger" in hex).
+_LEDGER_WRITER_LOCK_KEY = 0x6C6564676572
 
 
-async def acquire_fill_consumer_lock(
+LEDGER_WRITER_ACTIVE = gauge(
+    "llamatrade_ledger_writer_active",
+    (),
+    "Whether this pod currently holds the ledger-writer election lock (1/0)",
+)
+LEDGER_WRITER_FENCED = counter(
+    "llamatrade_ledger_writer_fenced_total",
+    (),
+    "Sweep passes refused because the writer lock was lost mid-leadership",
+)
+
+
+async def acquire_ledger_writer_lock(
     session_factory: async_sessionmaker[AsyncSession],
 ) -> AsyncSession | None:
-    """Try to become the single active fill consumer via a Postgres advisory lock.
+    """Try to become the single ledger-writer pod via a Postgres advisory lock.
 
-    Returns the holding session if acquired (keep it open for the lock's lifetime;
-    release with :func:`release_fill_consumer_lock`), else None — another pod holds
-    it and this one should not ingest. Failover is via the consumer group's
-    XAUTOCLAIM once the active pod dies and its lock releases on connection close.
+    Gates the reconciliation and equity-snapshot loops only (fill ingestion runs
+    on every pod as a Kafka consumer-group member). Returns the holding session if
+    acquired (keep it open for the lock's lifetime; release with
+    :func:`release_ledger_writer_lock`), else None — another pod holds it.
     """
     db = session_factory()
     try:
-        got = await db.scalar(
-            text("SELECT pg_try_advisory_lock(:k)"), {"k": _FILL_CONSUMER_LOCK_KEY}
-        )
+        got = await try_advisory_lock(db, _LEDGER_WRITER_LOCK_KEY)
     except Exception:
         await db.close()
         raise
@@ -101,12 +112,74 @@ async def acquire_fill_consumer_lock(
     return None
 
 
-async def release_fill_consumer_lock(db: AsyncSession) -> None:
-    """Release the fill-consumer advisory lock and close the holding session."""
+async def release_ledger_writer_lock(db: AsyncSession) -> None:
+    """Release the ledger-writer advisory lock and close the holding session.
+
+    A torn connection is absorbed (warned, never raised): the lock died with the
+    backend anyway, and shutdown still has a Kafka client and a pool to close.
+    """
     try:
-        await db.scalar(text("SELECT pg_advisory_unlock(:k)"), {"k": _FILL_CONSUMER_LOCK_KEY})
+        await advisory_unlock(db, _LEDGER_WRITER_LOCK_KEY)
+    except Exception:
+        logger.warning("could not release the ledger-writer advisory lock", exc_info=True)
     finally:
-        await db.close()
+        with contextlib.suppress(Exception):
+            await db.close()
+
+
+class LedgerWriterLease:
+    """Leadership handle over the ledger-writer lock, probed on its own connection.
+
+    Election is not a one-shot: a leader whose backend dies (failover, a
+    server-side timeout) reconnects through the pre-pinging pool and looks
+    healthy while holding nothing. Every sweep asks :meth:`is_leader` before it
+    writes, so a torn leader fences itself instead of sweeping alongside its
+    successor. Losing leadership latches — :attr:`lost` wakes the sweeps out of
+    their interval sleeps so the pod re-enters election promptly.
+    """
+
+    def __init__(self, db: AsyncSession) -> None:
+        self._db = db
+        self._probe = asyncio.Lock()
+        self.lost = asyncio.Event()
+
+    @property
+    def db(self) -> AsyncSession:
+        """The connection holding the lock (tests inspect its backend)."""
+        return self._db
+
+    async def is_leader(self) -> bool:
+        """Whether this pod still holds the writer lock, asked on the lock's connection.
+
+        Serialized: the sweeps share one lease connection and an ``AsyncSession``
+        is not safe for concurrent use.
+        """
+        if self.lost.is_set():
+            return False
+        async with self._probe:
+            if self.lost.is_set():
+                return False
+            held = await holds_advisory_lock(self._db, _LEDGER_WRITER_LOCK_KEY)
+            if not held:
+                self.lost.set()
+                LEDGER_WRITER_FENCED.inc()
+                logger.warning(
+                    "lost the ledger-writer lock; stopping sweeps and re-entering election"
+                )
+        return held
+
+    async def release(self) -> None:
+        """Release the lock and close its connection (never raises)."""
+        self.lost.set()
+        await release_ledger_writer_lock(self._db)
+
+
+async def acquire_ledger_writer_lease(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> LedgerWriterLease | None:
+    """Stand for election; the lease is None when another pod holds the lock."""
+    db = await acquire_ledger_writer_lock(session_factory)
+    return LedgerWriterLease(db) if db is not None else None
 
 
 async def persist_append(db: AsyncSession, append: LedgerAppend) -> None:
@@ -115,18 +188,17 @@ async def persist_append(db: AsyncSession, append: LedgerAppend) -> None:
     A fill whose target sleeve was already closed (a stray/late fill) is
     re-homed to the account's Unmanaged sleeve so it can't resurrect a retired
     sleeve. Sells without a publisher-resolved ``cost_basis`` are then enriched
-    here via FIFO against the (possibly re-homed) sleeve's open lots, so the
-    persisted event is self-contained (portfolio-ledger.md, amendment 3A).
+    here via FIFO against the (possibly re-homed) sleeve's open lots, resolved
+    incrementally from the projection checkpoint + the delta since it (O(delta),
+    not the account's full history), so the persisted event is self-contained
+    (portfolio-ledger.md, amendment 3A).
     """
     append = await _reroute_if_sleeve_closed(db, append)
     writer = LedgerWriter(db)
     if needs_cost_basis(append):
-        # ORM rows duck-type the kernel protocol; cast bridges Mapped descriptors
-        events = cast(
-            "list[LedgerEventLike]",
-            await writer.read_account_events(append.tenant_id, append.account_id),
+        lots = await LedgerProjector(db).open_lots_incremental(
+            append.tenant_id, append.account_id, append.sleeve_id, str(append.data["symbol"])
         )
-        lots = open_lots(events, str(append.sleeve_id), str(append.data["symbol"]))
         append = enrich_sell_fill(append, lots)
     await writer.append(
         tenant_id=append.tenant_id,
@@ -152,17 +224,16 @@ async def _freeze_if_invariant_violated(db: AsyncSession, append: LedgerAppend) 
     already-FROZEN sleeve is left alone, and the freeze event id derives from the
     triggering fill so a re-ingested fill never double-freezes.
     """
-    import hashlib
-    from uuid import UUID
-
     from llamatrade_db.models.ledger import SleeveStatus
     from llamatrade_telemetry import metrics
 
     from src.ledger.invariants import check_sleeve_invariants
-    from src.ledger.projector import LedgerProjector
     from src.repositories import SqlSleeveRepository
 
-    projection = await LedgerProjector(db).project_account(append.tenant_id, append.account_id)
+    # Read-only incremental fold (seeded from the committed checkpoint; this session's delta sees the just-appended fill) instead of folding full history per fill; never persists or seeds the shared cache from this uncommitted session.
+    projection = await LedgerProjector(db).project_account_incremental(
+        append.tenant_id, append.account_id, persist=False
+    )
     violations = check_sleeve_invariants(projection.sleeve(str(append.sleeve_id)))
     if not violations:
         return
@@ -174,9 +245,7 @@ async def _freeze_if_invariant_violated(db: AsyncSession, append: LedgerAppend) 
 
     await repo.set_sleeve_status(sleeve, SleeveStatus.FROZEN.value)
     reason = "; ".join(f"{v.kind}({v.detail})" for v in violations)
-    freeze_event_id = UUID(
-        bytes=hashlib.sha256(f"{append.event_id}:invariant_freeze".encode()).digest()[:16]
-    )
+    freeze_event_id = deterministic_event_id(f"{append.event_id}:invariant_freeze")
     await LedgerWriter(db).append(
         tenant_id=append.tenant_id,
         account_id=append.account_id,
@@ -192,6 +261,22 @@ async def _freeze_if_invariant_violated(db: AsyncSession, append: LedgerAppend) 
         append.account_id,
         reason,
     )
+    from src.alerts import LedgerIncident, get_ledger_alert_dispatcher
+
+    try:
+        await get_ledger_alert_dispatcher().dispatch(
+            append.tenant_id,
+            LedgerIncident(
+                kind="sleeve_frozen",
+                message=f"Sleeve frozen after an invariant violation: {reason}",
+                context={
+                    "sleeve_id": str(append.sleeve_id),
+                    "account_id": str(append.account_id),
+                },
+            ),
+        )
+    except Exception:
+        logger.exception("sleeve-freeze alert dispatch failed; the freeze stands")
 
 
 async def _reroute_if_sleeve_closed(db: AsyncSession, append: LedgerAppend) -> LedgerAppend:
@@ -263,16 +348,38 @@ async def _interruptible_sleep(
         pass
 
 
+async def _dispatch_quarantine_alert(message: LedgerFill | LedgerReservation, detail: str) -> None:
+    """Tell the tenant a fill was parked; a quarantine only an operator sees is invisible money."""
+    from src.alerts import LedgerIncident, get_ledger_alert_dispatcher
+
+    tenant_raw = getattr(message, "tenant_id", "")
+    try:
+        tenant_id = UUID(str(tenant_raw))
+    except ValueError, TypeError:
+        return
+    try:
+        await get_ledger_alert_dispatcher().dispatch(
+            tenant_id,
+            LedgerIncident(
+                kind="fill_quarantined",
+                message=f"A fill could not be recorded and was parked for review: {detail}",
+                context={"client_order_id": str(getattr(message, "client_order_id", ""))},
+            ),
+        )
+    except Exception:
+        logger.exception("quarantine alert dispatch failed; the drop verdict stands")
+
+
 async def process_stream_entry(
     handler: FillHandler, message: LedgerFill | LedgerReservation
 ) -> Literal["ack", "drop", "retry"]:
     """Process one parsed ledger message; the verdict drives acking.
 
-    - ``ack``: persisted (or deduped) — remove from the pending list.
+    - ``ack``: persisted (or deduped) — commit past it.
     - ``drop``: poison payload (translation failed) or a quarantined fill (a
       sell with no resolvable cost basis) — ack anyway after alerting, or it
-      would redeliver forever and wedge the single-consumer FIFO ingestion.
-    - ``retry``: transient persistence failure — leave pending so the group
+      would redeliver forever and wedge its partition.
+    - ``retry``: transient persistence failure — leave uncommitted so it
       redelivers (idempotent at the writer, so a half-applied retry is safe).
     """
     from src.metrics import record_ingest
@@ -286,15 +393,14 @@ async def process_stream_entry(
     try:
         await handler(append)
     except FillQuarantineError as e:
-        # A balanced-but-wrong record (or an infinite retry) is worse than a
-        # surfaced, recoverable drop. Log at ERROR with the order id so the fill
-        # is identifiable for reconciliation / manual review.
+        # A balanced-but-wrong record (or an infinite retry) is worse than a surfaced, recoverable drop; log at ERROR with the order id so the fill is identifiable for reconciliation.
         logger.error(
             "quarantining unrecordable ledger fill (client_order_id=%s): %s",
             getattr(message, "client_order_id", "?"),
             e,
         )
         record_ingest("quarantine")
+        await _dispatch_quarantine_alert(message, str(e))
         return "drop"
     except Exception:
         logger.exception("transient failure persisting ledger stream entry; leaving pending")
@@ -304,51 +410,88 @@ async def process_stream_entry(
     return "ack"
 
 
+# In-place retry backoff for a transient persistence failure. On Kafka an
+# uncommitted offset is NOT redelivered to a live consumer (only on
+# restart/rebalance), so a fill is retried here until it lands — which is what
+# "never skip a fill" requires. Handling is sequential, so the retry stalls
+# EVERY partition assigned to this pod, not just the account's: the record's
+# partition is paused so the fetcher stops prefetching it, and the transport's
+# max_poll_interval_ms is raised so a long DB outage can't evict the member and
+# trigger a rebalance storm. The writer is idempotent, so a re-run is safe.
+_RETRY_BASE_DELAY_SECONDS = 0.5
+_RETRY_MAX_DELAY_SECONDS = 30.0
+
+
+async def handle_ledger_entry(bus: EventBus, handler: FillHandler, cursor: str, raw: bytes) -> None:
+    """Decode + persist one consumed entry, then ack (commit) it.
+
+    Poison/undecodable and quarantined entries are dead-lettered (keyed by
+    account where recoverable) and acked so one bad entry can't wedge the
+    partition. A transient failure is retried in place (idempotent writer) with
+    backoff until it succeeds — the ledger self-heals when the DB recovers
+    rather than dead-lettering a real fill. The retry blocks this pod's whole
+    assignment (handling is sequential); the entry's own partition is paused for
+    the duration and resumed once it lands.
+    """
+    from src.metrics import record_ingest
+
+    message = _decode_message(raw)
+    if message is None:
+        # Undecodable / unknown-type entry: poison, not transient — dead-letter unkeyed (no recoverable account) and ack so it can't wedge the partition.
+        await _dead_letter(bus, raw)
+        record_ingest("poison")
+        await bus.ack(LEDGER_FILLS_STREAM, PORTFOLIO_LEDGER_GROUP, cursor)
+        return
+
+    attempt = 0
+    paused = False
+    try:
+        while True:
+            verdict = await process_stream_entry(handler, message)
+            if verdict != "retry":
+                break
+            if not paused:
+                await bus.pause_partition(LEDGER_FILLS_STREAM, PORTFOLIO_LEDGER_GROUP, cursor)
+                paused = True
+            attempt += 1
+            delay = min(_RETRY_BASE_DELAY_SECONDS * (2 ** (attempt - 1)), _RETRY_MAX_DELAY_SECONDS)
+            await asyncio.sleep(delay)
+    finally:
+        if paused:
+            await bus.resume_partition(LEDGER_FILLS_STREAM, PORTFOLIO_LEDGER_GROUP, cursor)
+
+    if verdict == "drop":
+        # Translation poison or a quarantined fill — park it keyed by account (preserving per-account replay order) before acking so it's recoverable rather than silently lost.
+        await _dead_letter(bus, raw, key=message.account_id or None)
+    await bus.ack(LEDGER_FILLS_STREAM, PORTFOLIO_LEDGER_GROUP, cursor)
+
+
 async def consume_fill_stream(
     fills: FillEvents,
     handler: FillHandler,
     *,
     consumer_name: str,
-) -> None:  # pragma: no cover - IO loop, logic covered via process_stream_entry
-    """Durably consume the global fill stream via the consumer group.
+) -> None:  # pragma: no cover - IO loop, per-entry logic covered via handle_ledger_entry
+    """Consume the ledger fill topic as a Kafka consumer-group member.
 
-    Decodes each entry to its ``LedgerFill`` / ``LedgerReservation`` and drives
-    the translation. Consumes the RAW bytes (``consume_raw``) so a corrupt /
-    unknown-type entry is dropped (acked) instead of crash-looping the single
-    ledger consumer. Manual ack (not the lib's ``StreamConsumer``): a transient
-    failure is left pending and redelivers indefinitely — the ledger self-heals
-    when the DB recovers, rather than dead-lettering a fill. ``group_start`` =
-    begin so a fresh group never misses a published fill (writer dedupes).
-    Runs until cancelled (the lifespan cancels it on shutdown); a dead pod's
-    pending entries are reclaimed via the transport's XAUTOCLAIM pass.
+    Kafka assigns each account's partition to one member, so per-account order
+    (buy-before-sell for FIFO cost basis) holds while the fold runs N-way parallel
+    across accounts; the group coordinator handles failover. Consumes RAW bytes
+    (``consume_raw``) so a corrupt entry is handled in ``handle_ledger_entry``
+    rather than crashing the loop. ``group_start`` = begin so a fresh group never
+    misses a published fill (the writer dedupes redelivery). Runs until cancelled.
     """
     logger.info(
-        "ledger fill stream consumer started (stream=%s group=%s consumer=%s)",
+        "ledger fill consumer started (stream=%s group=%s consumer=%s)",
         LEDGER_FILLS_STREAM,
         PORTFOLIO_LEDGER_GROUP,
         consumer_name,
     )
-    from src.metrics import record_ingest
-
     bus = fills.bus
-    async for entry_id, raw in bus.consume_raw(
+    async for cursor, raw in bus.consume_raw(
         LEDGER_FILLS_STREAM, PORTFOLIO_LEDGER_GROUP, consumer_name, group_start_id=CURSOR_BEGIN
     ):
-        message = _decode_message(raw)
-        if message is None:
-            # Undecodable / unknown-type entry: poison, not transient — dead-letter
-            # for review and drop so one bad entry can't wedge the FIFO consumer.
-            await _dead_letter(bus, raw)
-            record_ingest("poison")
-            await bus.ack(LEDGER_FILLS_STREAM, PORTFOLIO_LEDGER_GROUP, entry_id)
-            continue
-        verdict = await process_stream_entry(handler, message)
-        if verdict == "drop":
-            # Translation poison or a quarantined fill — park it before acking so
-            # it's recoverable rather than silently lost.
-            await _dead_letter(bus, raw)
-        if verdict in ("ack", "drop"):
-            await bus.ack(LEDGER_FILLS_STREAM, PORTFOLIO_LEDGER_GROUP, entry_id)
+        await handle_ledger_entry(bus, handler, cursor, raw)
 
 
 def _decode_message(raw: bytes) -> LedgerFill | LedgerReservation | None:
@@ -364,14 +507,13 @@ LAG_SAMPLE_INTERVAL_SECONDS = 30.0
 
 
 class FillLagTracker:
-    """Tracks the fill-stream backlog so the health probe can fail on a stall.
+    """Tracks the fill consumer-group lag so the health probe can fail on a stall.
 
-    The active consumer holds an advisory lock for its whole life, so a *hung*
-    (not crashed) consumer keeps the lock and silently stops draining — only the
-    growing pending count reveals it. When the backlog stays above ``threshold``
+    A *hung* (not crashed) group member silently stops draining its partitions —
+    only the growing lag reveals it. When the backlog stays above ``threshold``
     for ``sustained_samples`` consecutive samples, :attr:`is_backlogged` trips so
-    the liveness probe can fail and let K8s recycle the pod (releasing the lock
-    to a standby).
+    the liveness probe can fail and let K8s recycle the pod (Kafka then reassigns
+    its partitions to a healthy member).
     """
 
     def __init__(self, *, threshold: int = 1000, sustained_samples: int = 3) -> None:
@@ -396,12 +538,12 @@ async def monitor_stream_lag(
     interval_seconds: float = LAG_SAMPLE_INTERVAL_SECONDS,
     tracker: FillLagTracker | None = None,
 ) -> None:  # pragma: no cover - timing shell over pending_count
-    """Sample the consumer group's pending-entry count into a gauge (and tracker).
+    """Sample the consumer group's uncommitted-entry count into a gauge (and tracker).
 
-    The pending list (PEL) is the lag signal: sustained growth means the
-    consumer is down or stuck, and it must alert before MAXLEN trimming could
-    drop unacked entries. The optional ``tracker`` lets the health probe see a
-    sustained backlog and fail liveness for a hung active consumer.
+    Consumer-group lag is the signal: sustained growth means the group is down
+    or stuck and fills are accumulating unbooked. The optional ``tracker`` lets
+    the health probe see a sustained backlog and fail liveness for a hung group
+    member.
     """
     from llamatrade_telemetry import metrics
 

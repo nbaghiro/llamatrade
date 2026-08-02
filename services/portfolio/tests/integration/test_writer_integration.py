@@ -34,7 +34,7 @@ async def test_append_is_idempotent_on_event_id(
     data = {"sleeve_id": str(uuid4()), "amount": "1000"}
 
     async with session_factory() as s:
-        first = await LedgerWriter(s).append(
+        first, first_inserted = await LedgerWriter(s).append(
             tenant_id=TENANT,
             account_id=ACCOUNT,
             event_type=LedgerEventType.FUNDS_DEPOSITED,
@@ -43,9 +43,10 @@ async def test_append_is_idempotent_on_event_id(
         )
         await s.commit()
         first_seq = first.sequence
+        assert first_inserted is True  # first append inserted the row
 
     async with session_factory() as s:
-        again = await LedgerWriter(s).append(
+        again, again_inserted = await LedgerWriter(s).append(
             tenant_id=TENANT,
             account_id=ACCOUNT,
             event_type=LedgerEventType.FUNDS_DEPOSITED,
@@ -54,6 +55,7 @@ async def test_append_is_idempotent_on_event_id(
         )
         await s.commit()
         assert again.sequence == first_seq  # returned the existing row
+        assert again_inserted is False  # deduped, not inserted
         assert await _event_count(s) == 1  # no duplicate inserted
 
 
@@ -65,7 +67,7 @@ async def test_sequence_is_monotonic(
     async with session_factory() as s:
         writer = LedgerWriter(s)
         for _ in range(3):
-            ev = await writer.append(
+            ev, _inserted = await writer.append(
                 tenant_id=TENANT,
                 account_id=ACCOUNT,
                 event_type=LedgerEventType.FUNDS_DEPOSITED,

@@ -17,19 +17,27 @@ from __future__ import annotations
 import asyncio
 import logging
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from decimal import Decimal
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from llamatrade_db import system_session, tenant_session
-from llamatrade_db.models.ledger import Account, LedgerEvent, SleeveSnapshot
+from llamatrade_db.models.ledger import (
+    SNAPSHOT_DAY_EXPRESSION,
+    Account,
+    LedgerEvent,
+    SleeveSnapshot,
+)
 
 from src.ledger.performance import account_pnl
 from src.ledger.projection import AccountProjection
 from src.ledger.projector import LedgerProjector
 from src.ports import PriceProvider
+from src.tasks.supervisor import LeadershipProbe
 
 logger = logging.getLogger(__name__)
 
@@ -98,20 +106,51 @@ async def _latest_sequence(db: AsyncSession, account_id: UUID) -> int:
     return int(seq) if seq is not None else 0
 
 
-def _add_snapshot_rows(db: AsyncSession, tenant_id: UUID, values: list[SnapshotValue]) -> None:
-    """Stage one ``SleeveSnapshot`` row per computed value. The caller commits."""
-    for v in values:
-        db.add(
-            SleeveSnapshot(
-                tenant_id=tenant_id,
-                sleeve_id=UUID(v.sleeve_id),
-                as_of_sequence=v.as_of_sequence,
-                cash_balance=v.cash_balance,
-                reserved_cash=v.reserved_cash,
-                equity=v.equity,
-                lots=v.lots,
-            )
-        )
+async def _add_snapshot_rows(
+    db: AsyncSession, tenant_id: UUID, values: list[SnapshotValue]
+) -> None:
+    """Insert one ``SleeveSnapshot`` per computed value. The caller commits.
+
+    ``(sleeve_id, as_of_sequence, UTC day)`` is unique: a repeat within a day at
+    one ledger sequence — a re-mark, a re-run, a leader fenced a moment too late —
+    is not a second curve point but a fresher mark of the same one. On conflict
+    the row is UPDATED when the incoming ``created_at`` is newer, so the day's
+    LAST mark wins (equity-curve freshness) rather than the first.
+    """
+    if not values:
+        return
+    now = datetime.now(UTC)
+    rows = [
+        {
+            "tenant_id": tenant_id,
+            "sleeve_id": UUID(v.sleeve_id),
+            "as_of_sequence": v.as_of_sequence,
+            "cash_balance": v.cash_balance,
+            "reserved_cash": v.reserved_cash,
+            "equity": v.equity,
+            "lots": v.lots,
+            "created_at": now,
+        }
+        for v in values
+    ]
+    stmt = pg_insert(SleeveSnapshot).values(rows)
+    stmt = stmt.on_conflict_do_update(
+        index_elements=[
+            SleeveSnapshot.sleeve_id,
+            SleeveSnapshot.as_of_sequence,
+            text(SNAPSHOT_DAY_EXPRESSION),
+        ],
+        set_={
+            "cash_balance": stmt.excluded.cash_balance,
+            "reserved_cash": stmt.excluded.reserved_cash,
+            "equity": stmt.excluded.equity,
+            "lots": stmt.excluded.lots,
+            "created_at": stmt.excluded.created_at,
+            "updated_at": func.now(),
+        },
+        where=SleeveSnapshot.created_at < stmt.excluded.created_at,
+    )
+    await db.execute(stmt)
 
 
 async def snapshot_account(
@@ -134,13 +173,15 @@ async def snapshot_account(
             logger.exception("equity snapshot price fetch failed for account %s", account.id)
     sequence = await _latest_sequence(db, account.id)
     values = compute_snapshot_values(projection, prices, sequence)
-    _add_snapshot_rows(db, account.tenant_id, values)
+    await _add_snapshot_rows(db, account.tenant_id, values)
     return len(values)
 
 
 async def run_snapshot_pass(
     session_factory: async_sessionmaker[AsyncSession],
     prices_provider: PriceProvider,
+    *,
+    is_leader: LeadershipProbe | None = None,
 ) -> int:
     """One snapshot pass over all accounts, fetching prices in a SINGLE batch.
 
@@ -148,11 +189,16 @@ async def run_snapshot_pass(
     one ``get_prices`` call (vs. one per account); then persists each account's
     sleeve snapshots in its own transaction so one failure is isolated. Returns
     the total rows written.
+
+    ``is_leader`` fences the write half: leadership is re-checked immediately
+    before the first commit, after the read-and-price phase that dominates the
+    pass, so a leader torn mid-pass abandons its writes instead of duplicating
+    the successor's.
     """
     plans: list[tuple[Account, AccountProjection, int]] = []
     symbols: set[str] = set()
     # Cross-tenant sweep: enumerate + project every account under the RLS bypass.
-    async with system_session(session_factory) as db:
+    async with system_session(session_factory, reason="equity snapshot pass") as db:
         projector = LedgerProjector(db)
         for account in await _load_accounts(db):
             try:
@@ -170,6 +216,10 @@ async def run_snapshot_pass(
         logger.exception("equity snapshot price fetch failed; skipping priced sleeves this pass")
         prices = {}
 
+    if is_leader is not None and not await is_leader():
+        logger.warning("no longer the ledger writer; discarding this equity-snapshot pass")
+        return 0
+
     total = 0
     for account, projection, sequence in plans:
         values = compute_snapshot_values(projection, prices, sequence)
@@ -177,7 +227,7 @@ async def run_snapshot_pass(
             continue
         async with tenant_session(account.tenant_id, session_factory) as db:
             try:
-                _add_snapshot_rows(db, account.tenant_id, values)
+                await _add_snapshot_rows(db, account.tenant_id, values)
                 await db.commit()
                 total += len(values)
             except Exception:
@@ -197,16 +247,21 @@ async def snapshot_loop(
     *,
     stop_event: asyncio.Event,
     interval_seconds: float = DEFAULT_SNAPSHOT_INTERVAL_SECONDS,
+    is_leader: LeadershipProbe | None = None,
 ) -> None:  # pragma: no cover - scheduler shell, logic covered via snapshot_account
     """Write equity snapshots for every account until ``stop_event`` is set.
 
     Each account gets its own short transaction so one failure never aborts the
-    pass; a bad pass never kills the loop.
+    pass; a bad pass never kills the loop. The loop returns as soon as
+    ``is_leader`` says this pod no longer holds the writer lock, so the caller
+    can re-enter election instead of sweeping against the new leader.
     """
     logger.info("ledger equity-snapshot loop started (interval=%ss)", interval_seconds)
     while not stop_event.is_set():
+        if is_leader is not None and not await is_leader():
+            break
         try:
-            n = await run_snapshot_pass(session_factory, prices_provider)
+            n = await run_snapshot_pass(session_factory, prices_provider, is_leader=is_leader)
             logger.debug("equity-snapshot pass wrote %d rows", n)
         except Exception:
             logger.exception("equity-snapshot pass errored")

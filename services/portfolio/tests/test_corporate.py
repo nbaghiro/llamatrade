@@ -64,7 +64,9 @@ def test_plan_split_forward_doubles_qty_preserves_cost() -> None:
         {"sleeve_id": str(sleeve), "symbol": "AAPL", "side": "buy", "qty": "100", "price": "50"},
     )
     events = [buy]
-    split = plan_split(symbol="AAPL", ratio=Decimal("2"), holders={sleeve: Decimal("100")})
+    split = plan_split(
+        symbol="AAPL", ratio=Decimal("2"), holders={sleeve: Decimal("100")}, external_id="ca-1"
+    )
     assert len(split) == 1
     events.append(_ev(split[0].event_type, split[0].data))
 
@@ -81,7 +83,9 @@ def test_plan_split_reverse_halves_qty() -> None:
             {"sleeve_id": str(sleeve), "symbol": "X", "side": "buy", "qty": "100", "price": "10"},
         )
     ]
-    split = plan_split(symbol="X", ratio=Decimal("0.5"), holders={sleeve: Decimal("100")})
+    split = plan_split(
+        symbol="X", ratio=Decimal("0.5"), holders={sleeve: Decimal("100")}, external_id="ca-2"
+    )
     events.append(_ev(split[0].event_type, split[0].data))
     pos = fold(cast(Any, events)).sleeve(str(sleeve)).positions["X"]
     assert pos.qty == Decimal("50")
@@ -89,9 +93,21 @@ def test_plan_split_reverse_halves_qty() -> None:
 
 
 def test_plan_split_skips_empty_sleeves_and_rejects_bad_ratio() -> None:
-    assert plan_split(symbol="A", ratio=Decimal("2"), holders={uuid4(): ZERO}) == []
+    assert (
+        plan_split(symbol="A", ratio=Decimal("2"), holders={uuid4(): ZERO}, external_id="x") == []
+    )
     with pytest.raises(ValueError, match="ratio must be positive"):
         plan_split(symbol="A", ratio=ZERO, holders={uuid4(): Decimal("1")})
+
+
+def test_plan_split_and_rename_require_external_id() -> None:
+    """An empty external_id would let two distinct actions collide on one dedup key."""
+    with pytest.raises(ValueError, match="external_id is required"):
+        plan_split(symbol="A", ratio=Decimal("2"), holders={uuid4(): Decimal("1")})
+    with pytest.raises(ValueError, match="external_id is required"):
+        plan_symbol_change(
+            old_symbol="FB", new_symbol="META", holders={uuid4(): (Decimal("1"), Decimal("2"))}
+        )
 
 
 # --------------------------------------------------------- symbol change (fold)
@@ -109,6 +125,7 @@ def test_plan_symbol_change_moves_lot() -> None:
         old_symbol="FB",
         new_symbol="META",
         holders={sleeve: (Decimal("10"), Decimal("2000"))},
+        external_id="ca-3",
     )
     events.append(_ev(rename[0].event_type, rename[0].data))
     proj = fold(cast(Any, events)).sleeve(str(sleeve))

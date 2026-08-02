@@ -25,13 +25,14 @@ from uuid import UUID
 
 from llamatrade_db.models.ledger import LedgerEventType, Sleeve, SleeveStatus, SleeveType
 
+from src.ledger.invariants import assert_write_invariants
 from src.ledger.lifecycle import (
     RehomedPosition,
     SleeveCloseError,
     close_event_id,
     plan_sleeve_close,
 )
-from src.ports import LedgerStore, SleeveRepository
+from src.ports import LedgerStore, LotReader, SleeveRepository
 
 ZERO = Decimal("0")
 
@@ -52,9 +53,13 @@ class CloseResult:
 class SleeveLifecycleService:
     """Close (re-home + retire) sleeves against the ledger."""
 
-    def __init__(self, repo: SleeveRepository, store: LedgerStore) -> None:
+    def __init__(
+        self, repo: SleeveRepository, store: LedgerStore, lots: LotReader | None = None
+    ) -> None:
         self._repo = repo
         self._store = store
+        # Optional lot reader: when present the close carries each position's individual lots to Unmanaged (per-lot granularity); otherwise it re-homes one blended lot per symbol.
+        self._lots = lots
 
     async def close_sleeve(
         self,
@@ -83,10 +88,7 @@ class SleeveLifecycleService:
         proj = await self._store.project_account(tenant_id, account_id)
         s = proj.sleeve(str(sleeve_id))
 
-        # A clean close needs no money committed to open orders. With the
-        # decoupled stop orchestration the runner halts first, so reservations
-        # settle to zero; if one is still open, refuse so the caller retries
-        # once it reaches a terminal state.
+        # A clean close needs no money committed to open orders: the runner halts first so reservations settle to zero; if one is still open, refuse so the caller retries once it reaches a terminal state.
         if s.reserved != ZERO:
             raise SleeveCloseError(
                 f"sleeve {sleeve_id} has {s.reserved} reserved for in-flight orders; "
@@ -102,11 +104,18 @@ class SleeveLifecycleService:
                 f"account {account_id} is missing base sleeves; bootstrap it first"
             )
 
-        positions = [
-            RehomedPosition(symbol=symbol, qty=pos.qty, cost_basis=pos.cost_basis)
-            for symbol, pos in s.positions.items()
-            if pos.qty != ZERO
-        ]
+        positions = []
+        for symbol, pos in s.positions.items():
+            if pos.qty == ZERO:
+                continue
+            lots = (
+                tuple(await self._lots.open_lots(tenant_id, account_id, sleeve_id, symbol))
+                if self._lots is not None
+                else ()
+            )
+            positions.append(
+                RehomedPosition(symbol=symbol, qty=pos.qty, cost_basis=pos.cost_basis, lots=lots)
+            )
         # reserved == 0 here, so the full balance is free cash.
         plan = plan_sleeve_close(
             from_sleeve_id=sleeve_id,
@@ -125,6 +134,9 @@ class SleeveLifecycleService:
             event_id=close_event_id(sleeve_id),
         )
         await self._repo.set_sleeve_status(sleeve, SleeveStatus.CLOSED.value)
+        # Re-home is balanced, so this is defense-in-depth: refuse (roll back) a close that somehow drove a touched sleeve or the account negative.
+        proj = await self._store.project_account(tenant_id, account_id)
+        assert_write_invariants(proj, str(sleeve_id), str(unmanaged.id), str(unallocated.id))
         return CloseResult(
             sleeve=sleeve,
             rehomed_positions=plan.positions,

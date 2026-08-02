@@ -11,6 +11,7 @@ Run them with: ``pytest -m integration`` (or the repo's ``ci-local.sh --integrat
 
 from __future__ import annotations
 
+import os
 from collections.abc import AsyncIterator, Iterator
 
 import pytest
@@ -21,6 +22,31 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 pytestmark = pytest.mark.integration
 
 POSTGRES_IMAGE = "postgres:16-alpine"
+
+
+@pytest.fixture(scope="session")
+def kafka_bootstrap() -> Iterator[str]:
+    """Bootstrap servers for a real Kafka broker (env-provided or a throwaway container).
+
+    Honors ``KAFKA_BOOTSTRAP_SERVERS`` when set (CI points it at a shared broker);
+    otherwise spins a throwaway ``KafkaContainer``. Skips — rather than fails —
+    when Docker / the container image is unavailable, so the fast suite stays green.
+    """
+    env_bootstrap = os.getenv("KAFKA_BOOTSTRAP_SERVERS")
+    if env_bootstrap:
+        yield env_bootstrap
+        return
+
+    kafka_mod = pytest.importorskip("testcontainers.kafka")
+    try:
+        container = kafka_mod.KafkaContainer()
+        container.start()
+    except Exception as exc:  # Docker down / image pull blocked
+        pytest.skip(f"Kafka container unavailable: {exc}")
+    try:
+        yield container.get_bootstrap_server()
+    finally:
+        container.stop()
 
 
 @pytest.fixture(scope="session")

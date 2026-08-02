@@ -6,15 +6,22 @@ never aborts the pass.
 """
 
 import asyncio
+import logging
 from decimal import Decimal
-from uuid import uuid4
+from uuid import UUID, uuid4
+
+import pytest
 
 from llamatrade_db.models.ledger import Account
 
 from src.ledger.projection import AccountProjection, PositionState
 from src.ledger.reconciliation import Drift, DriftKind, cash_drift, ledger_cash
 from src.ports import BrokerUnavailableError
-from src.tasks.reconciliation import run_reconciliation_pass
+from src.tasks.reconciliation import (
+    AccountReconResult,
+    run_reconciliation_pass,
+    update_staleness,
+)
 
 TENANT = uuid4()
 
@@ -57,17 +64,18 @@ class FakeBroker:
 class FakeProjector:
     """Returns a preset drift list per call, recording the broker positions/cash seen."""
 
-    def __init__(self, drifts: list[Drift]) -> None:
+    def __init__(self, drifts: list[Drift], cash_drift: Decimal | None = None) -> None:
         self._drifts = drifts
+        self._cash_drift = cash_drift
         self.seen: list = []
         self.cash_seen: list = []
 
     async def reconcile_account(
         self, tenant_id, account_id, broker_positions, broker_cash=None
-    ) -> list[Drift]:
+    ) -> tuple[list[Drift], Decimal | None]:
         self.seen.append((account_id, broker_positions))
         self.cash_seen.append(broker_cash)
-        return self._drifts
+        return self._drifts, self._cash_drift
 
 
 async def test_pass_clean_account_is_ok() -> None:
@@ -209,6 +217,89 @@ async def test_pass_empty_accounts_returns_empty() -> None:
         projector=FakeProjector([]), broker=FakeBroker({}), accounts=[]
     )
     assert results == []
+
+
+def _result(
+    account_id: UUID, *, error: str | None = None, skipped: bool = False
+) -> AccountReconResult:
+    return AccountReconResult(account_id=account_id, drifts=[], error=error, skipped=skipped)
+
+
+def test_staleness_success_resets_clock_and_reports_none_stale() -> None:
+    account_id = uuid4()
+    last_success: dict[UUID, float] = {account_id: 0.0}
+
+    stale = update_staleness(
+        [_result(account_id)], last_success, interval_seconds=300.0, now=10_000.0
+    )
+
+    assert stale == []
+    assert last_success[account_id] == 10_000.0
+
+
+def test_staleness_first_sighting_starts_clock() -> None:
+    account_id = uuid4()
+    last_success: dict[UUID, float] = {}
+
+    stale = update_staleness(
+        [_result(account_id, error="boom")], last_success, interval_seconds=300.0, now=50.0
+    )
+
+    assert stale == []  # the clock starts now; not yet stale
+    assert last_success[account_id] == 50.0
+
+
+def test_staleness_skip_and_error_leave_clock_running() -> None:
+    skipped_id, errored_id = uuid4(), uuid4()
+    last_success: dict[UUID, float] = {skipped_id: 100.0, errored_id: 200.0}
+
+    update_staleness(
+        [_result(skipped_id, skipped=True), _result(errored_id, error="boom")],
+        last_success,
+        interval_seconds=300.0,
+        now=500.0,
+    )
+
+    assert last_success[skipped_id] == 100.0
+    assert last_success[errored_id] == 200.0
+
+
+def test_staleness_flags_account_beyond_three_intervals(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    account_id = uuid4()
+    last_success: dict[UUID, float] = {account_id: 0.0}
+
+    with caplog.at_level(logging.WARNING, logger="src.tasks.reconciliation"):
+        stale = update_staleness(
+            [_result(account_id, skipped=True)], last_success, interval_seconds=300.0, now=901.0
+        )
+
+    assert stale == [account_id]
+    assert str(account_id) in caplog.text  # the account is named, not just counted
+
+
+def test_staleness_within_three_intervals_not_flagged() -> None:
+    account_id = uuid4()
+    last_success: dict[UUID, float] = {account_id: 0.0}
+
+    stale = update_staleness(
+        [_result(account_id, skipped=True)], last_success, interval_seconds=300.0, now=899.0
+    )
+
+    assert stale == []
+
+
+def test_staleness_prunes_vanished_accounts() -> None:
+    gone_id, present_id = uuid4(), uuid4()
+    last_success: dict[UUID, float] = {gone_id: 0.0, present_id: 0.0}
+
+    stale = update_staleness(
+        [_result(present_id)], last_success, interval_seconds=300.0, now=10_000.0
+    )
+
+    assert gone_id not in last_success  # deleted account no longer counts as stale
+    assert stale == []
 
 
 class _DriftRecorder:

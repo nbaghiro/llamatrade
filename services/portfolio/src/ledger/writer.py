@@ -47,10 +47,13 @@ class LedgerWriter:
         sleeve_id: UUID | None = None,
         event_id: UUID | None = None,
         occurred_at: datetime | None = None,
-    ) -> LedgerEvent:
+    ) -> tuple[LedgerEvent, bool]:
         """Append one event. Idempotent on ``event_id``; balance-checked.
 
-        Returns the persisted (or pre-existing) :class:`LedgerEvent`.
+        Returns ``(event, inserted)``: the persisted (or pre-existing)
+        :class:`LedgerEvent`, and whether this call inserted it (``False`` means a
+        re-delivery deduped against an existing row). Callers that need to know a
+        write was a no-op (drift adoption reporting) read the flag.
 
         The insert is a single ``INSERT ... ON CONFLICT (event_id) DO NOTHING``:
         the happy path is one atomic round-trip, and a re-delivered event (same
@@ -82,14 +85,14 @@ class LedgerWriter:
             inserted = (await self.db.execute(stmt)).scalars().first()
 
         if inserted is not None:
-            return inserted
+            return inserted, True
 
         # Conflict: the event already exists (idempotent re-delivery / dual path).
         logger.debug("ledger append deduped (existing event_id=%s)", event_id)
         existing = await self.db.scalar(select(LedgerEvent).where(LedgerEvent.event_id == event_id))
         if existing is None:  # pragma: no cover - ON CONFLICT guarantees it exists
             raise RuntimeError(f"event {event_id} conflicted on insert but is absent")
-        return existing
+        return existing, False
 
     async def read_account_events(self, tenant_id: UUID, account_id: UUID) -> list[LedgerEvent]:
         """Read an account's events in ledger order (for projection folding)."""

@@ -177,3 +177,50 @@ async def test_list_transactions_labels_allocation_with_strategy() -> None:
     assert Decimal(txns[0].amount.value) == Decimal("15000")
     assert txns[0].description == "Momentum Rotation"
     svc._sleeve_names.assert_awaited_once_with({strategy_sleeve})
+
+
+async def test_projections_surface_degraded_account(monkeypatch) -> None:
+    """A poison-degraded projection is served, but the read is surfaced."""
+    from src.services import portfolio_read_service
+
+    surfaced: list[tuple[object, int]] = []
+    monkeypatch.setattr(
+        portfolio_read_service,
+        "record_projection_read",
+        lambda account_id, poison_events: surfaced.append((account_id, poison_events)),
+    )
+
+    svc = _svc()
+    account = SimpleNamespace(id=uuid4(), tenant_id=TENANT)
+    degraded = _proj("100", "AAPL", "1", "100")
+    degraded.poison_events = 2
+    svc._accounts = AsyncMock(return_value=[account])
+    svc._projector = cast(Any, SimpleNamespace(project_account=AsyncMock(return_value=degraded)))
+
+    positions = await svc.list_positions(TENANT)
+
+    assert len(positions) == 1  # degraded is still served, never blocked
+    assert surfaced == [(account.id, 2)]
+
+
+async def test_projections_clean_account_not_surfaced(monkeypatch) -> None:
+    from src.services import portfolio_read_service
+
+    surfaced: list[tuple[object, int]] = []
+    monkeypatch.setattr(
+        portfolio_read_service,
+        "record_projection_read",
+        lambda account_id, poison_events: surfaced.append((account_id, poison_events)),
+    )
+
+    svc = _svc()
+    account = SimpleNamespace(id=uuid4(), tenant_id=TENANT)
+    svc._accounts = AsyncMock(return_value=[account])
+    svc._projector = cast(
+        Any,
+        SimpleNamespace(project_account=AsyncMock(return_value=_proj("100", "AAPL", "1", "100"))),
+    )
+
+    await svc.list_positions(TENANT)
+
+    assert surfaced == [(account.id, 0)]  # helper no-ops at zero poison events

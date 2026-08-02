@@ -3,7 +3,7 @@
 Derives per-strategy performance from the strategy **sleeve** projection (current
 value, positions, realized P&L) and its ``SleeveSnapshot`` equity series (returns,
 risk metrics), mapping the results straight to proto (``src.proto_mappers``) —
-proto is the canonical read shape (1A) and money stays ``Decimal`` (5A).
+proto is the canonical read shape and money stays ``Decimal``.
 
 Strategy identity (name/mode/status/started_at) comes from ``StrategyExecution``;
 ``execution.mode``/``status`` are already proto-int (TypeDecorator) so they flow
@@ -39,6 +39,7 @@ from src.proto_mappers import (
     period_returns_to_proto,
     strategy_summary_to_proto,
 )
+from src.services.read_context import AccountProjectionCache, LedgerReadBase, PriceCache
 from src.services.strategy_performance_service import (
     BookTotals,
     EquityCurveResult,
@@ -79,13 +80,20 @@ def _to_daily(series: list[tuple[datetime, Decimal]]) -> list[tuple[date, Decima
     return [(d, by_day[d][1]) for d in sorted(by_day)]
 
 
-class StrategyPerformanceReadService:
+class StrategyPerformanceReadService(LedgerReadBase):
     """Per-strategy performance derived from the ledger sleeve + snapshots."""
 
-    def __init__(self, db: AsyncSession, market_data: PriceProvider | None = None) -> None:
+    def __init__(
+        self,
+        db: AsyncSession,
+        market_data: PriceProvider | None = None,
+        projections: AccountProjectionCache | None = None,
+        prices: PriceCache | None = None,
+    ) -> None:
+        super().__init__(LedgerProjector(db), projections)
         self.db = db
         self.market_data = market_data
-        self._projector = LedgerProjector(db)
+        self._price_cache = prices or PriceCache(market_data)
 
     async def list_strategy_performance(
         self,
@@ -115,6 +123,18 @@ class StrategyPerformanceReadService:
             .limit(page_size)
         )
         executions = (await self.db.execute(stmt)).unique().scalars().all()
+
+        # Pre-warm the shared caches: fold each distinct account once and price the union of held symbols in one fetch, so per-strategy summaries hit the cache instead of folding/fetching per strategy.
+        symbols: set[str] = set()
+        for execution in executions:
+            if execution.sleeve_id is None or execution.account_id is None:
+                continue
+            projection = await self._project(tenant_id, execution.account_id)
+            sleeve = projection.sleeves.get(str(execution.sleeve_id))
+            if sleeve is not None:
+                symbols.update(sleeve.positions)
+        if symbols:
+            await self._price_cache.get(sorted(symbols))
 
         total_allocated = ZERO
         total_current = ZERO
@@ -253,14 +273,12 @@ class StrategyPerformanceReadService:
     ) -> tuple[SleeveProjection | None, dict[str, Decimal]]:
         if execution.sleeve_id is None or execution.account_id is None:
             return None, {}
-        projection = await self._projector.project_account(tenant_id, execution.account_id)
+        projection = await self._project(tenant_id, execution.account_id)
         sleeve = projection.sleeves.get(str(execution.sleeve_id))
         if sleeve is None:
             return None, {}
         symbols = sorted(sleeve.positions)
-        prices: dict[str, Decimal] = {}
-        if symbols and self.market_data is not None:
-            prices = await self.market_data.get_prices(symbols)
+        prices = await self._price_cache.get(symbols) if symbols else {}
         return sleeve, prices
 
     async def _summary(
@@ -274,8 +292,7 @@ class StrategyPerformanceReadService:
             current_value: Decimal | None = marked.equity
             positions_count = sum(1 for p in sleeve.positions.values() if p.qty != ZERO)
         else:
-            # Unfunded execution: no sleeve to mark; live value/position count are
-            # not tracked off-ledger.
+            # Unfunded execution: no sleeve to mark; live value/position count are not tracked off-ledger.
             current_value = None
             positions_count = 0
 
@@ -304,8 +321,7 @@ class StrategyPerformanceReadService:
         sleeve: SleeveProjection | None,
     ) -> portfolio_pb2.StrategyLiveMetrics:
         series = await self._sleeve_series(tenant_id, execution.sleeve_id, None, None)
-        # Collapse to a daily grid so sqrt(252) annualization is correct on the
-        # ~hourly snapshot cadence (matches the account read path).
+        # Collapse to a daily grid so sqrt(252) annualization is correct on the ~hourly snapshot cadence (matches the account read path).
         equities = np.array([float(e) for _, e in _to_daily(series)], dtype=np.float64)
         # Numpy is CPU-bound — run it off the event loop (see portfolio_read_service).
         m = (
@@ -350,7 +366,13 @@ class StrategyPerformanceReadService:
         start_time: datetime | None,
         end_time: datetime | None,
     ) -> list[tuple[datetime, Decimal]]:
-        """The sleeve's equity time series from its snapshots (oldest-first)."""
+        """The sleeve's equity time series from its snapshots (oldest-first).
+
+        One point per ledger sequence, keeping the latest row written at that
+        sequence — the same last-write-wins collapse the account curve applies
+        per day. Repeats at one sequence are not curve movement, and counting
+        them inflates period returns, volatility and Sharpe.
+        """
         if sleeve_id is None:
             return []
         stmt = (
@@ -359,16 +381,19 @@ class StrategyPerformanceReadService:
             .where(SleeveSnapshot.sleeve_id == sleeve_id)
             .order_by(SleeveSnapshot.created_at)
         )
+        # Filter the window in SQL rather than scanning every row in Python.
+        if start_time is not None:
+            stmt = stmt.where(SleeveSnapshot.created_at >= start_time)
+        if end_time is not None:
+            stmt = stmt.where(SleeveSnapshot.created_at <= end_time)
         rows = (await self.db.scalars(stmt)).all()
-        out: list[tuple[datetime, Decimal]] = []
+        by_sequence: dict[int, tuple[datetime, Decimal]] = {}
         for snap in rows:
             ts: datetime = snap.created_at
-            if start_time and ts < start_time:
-                continue
-            if end_time and ts > end_time:
-                continue
-            out.append((ts, snap.equity))
-        return out
+            previous = by_sequence.get(snap.as_of_sequence)
+            if previous is None or ts >= previous[0]:
+                by_sequence[snap.as_of_sequence] = (ts, snap.equity)
+        return [by_sequence[seq] for seq in sorted(by_sequence)]
 
     def _period_returns(
         self, series: list[tuple[datetime, Decimal]]

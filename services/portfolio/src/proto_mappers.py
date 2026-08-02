@@ -3,10 +3,10 @@
 Proto is the single source of truth for the read/wire shape (decision 1A): these
 functions map the ledger read-model views and the strategy-performance compute
 results straight to the generated proto messages, with no intermediate Pydantic
-layer and money kept as ``Decimal`` end-to-end (5A) — emitted as
+layer and money kept as ``Decimal`` end-to-end — emitted as
 ``common_pb2.Decimal(value=str(value))``.
 
-Proto field names are authoritative (7A): the ledger ``TransactionView`` carries
+Proto field names are authoritative: the ledger ``TransactionView`` carries
 ``qty``/``occurred_at`` but the proto ``Transaction`` carries ``quantity``/
 ``timestamp``, and the mapper resolves that here. Transaction types are a STRING
 taxonomy on the read-model but an int ``TransactionType`` enum on the proto, so
@@ -24,6 +24,7 @@ from typing import TYPE_CHECKING
 from uuid import UUID
 
 from llamatrade_proto.generated import common_pb2, portfolio_pb2, trading_pb2
+from llamatrade_proto.timestamps import to_proto_timestamp
 
 from src.ledger.analytics import EquityMetrics
 from src.ledger.read_model import PositionView, SummaryView, TradeStats, TransactionView
@@ -33,7 +34,7 @@ if TYPE_CHECKING:
 
 _ZERO = Decimal("0")
 
-# Read-model transaction label (string taxonomy) -> proto TransactionType (5A).
+# Read-model transaction label (string taxonomy) -> proto TransactionType.
 TXN_TYPE_TO_PROTO: dict[str, portfolio_pb2.TransactionType.ValueType] = {
     "buy": portfolio_pb2.TRANSACTION_TYPE_BUY,
     "sell": portfolio_pb2.TRANSACTION_TYPE_SELL,
@@ -61,10 +62,6 @@ _PERIOD_RETURN_KEYS = (
 def _dec(value: Decimal | float | int | str) -> common_pb2.Decimal:
     """Proto Decimal via str, so DB Decimals keep scale and floats avoid drift."""
     return common_pb2.Decimal(value=str(value))
-
-
-def _ts(value: datetime) -> common_pb2.Timestamp:
-    return common_pb2.Timestamp(seconds=int(value.timestamp()))
 
 
 def position_view_to_proto(view: PositionView) -> trading_pb2.Position:
@@ -109,7 +106,7 @@ def transaction_view_to_proto(
         amount=_dec(view.amount),
         fees=_dec(view.fees),
         description=description,
-        timestamp=_ts(occurred),
+        timestamp=to_proto_timestamp(occurred),
     )
 
 
@@ -131,7 +128,9 @@ def equity_point_to_proto(
     benchmark_value: Decimal | None = None,
 ) -> portfolio_pb2.StrategyEquityPoint:
     """Map one equity-curve point; nullable stats are set only when computed."""
-    point = portfolio_pb2.StrategyEquityPoint(timestamp=_ts(timestamp), equity=_dec(equity))
+    point = portfolio_pb2.StrategyEquityPoint(
+        timestamp=to_proto_timestamp(timestamp), equity=_dec(equity)
+    )
     if return_percent is not None:
         point.return_percent.CopyFrom(_dec(return_percent))
     if drawdown is not None:
@@ -188,10 +187,10 @@ def strategy_summary_to_proto(
         current_value=_dec(current_value if current_value is not None else _ZERO),
         positions_count=positions_count,
         returns=returns,
-        updated_at=_ts(updated_at),
+        updated_at=to_proto_timestamp(updated_at),
     )
     if started_at is not None:
-        summary.started_at.CopyFrom(_ts(started_at))
+        summary.started_at.CopyFrom(to_proto_timestamp(started_at))
     return summary
 
 
@@ -234,7 +233,7 @@ def live_metrics_to_proto(
         metrics.current_equity.CopyFrom(_dec(current_equity))
     if peak_equity is not None:
         metrics.peak_equity.CopyFrom(_dec(peak_equity))
-    metrics.calculated_at.CopyFrom(_ts(datetime.now(UTC)))
+    metrics.calculated_at.CopyFrom(to_proto_timestamp(datetime.now(UTC)))
     return metrics
 
 
@@ -273,5 +272,5 @@ def summary_view_to_proto(
         total_return_percent=_dec(total_return_percent),
         day_return=_dec(day_return),
         day_return_percent=_dec(day_return_percent),
-        updated_at=_ts(datetime.now(UTC)),
+        updated_at=to_proto_timestamp(datetime.now(UTC)),
     )

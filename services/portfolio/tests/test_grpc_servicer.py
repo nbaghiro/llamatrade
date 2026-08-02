@@ -517,3 +517,83 @@ async def test_sync_portfolio_triggers_reconciliation(monkeypatch) -> None:
 
     recon_mock.assert_awaited_once()
     assert resp.transactions_recorded == 2
+
+
+async def test_internal_error_is_withheld_from_client() -> None:
+    """A database error surfaces as INTERNAL with no SQL/table text leaked."""
+    from connectrpc.code import Code
+    from connectrpc.errors import ConnectError
+    from sqlalchemy.exc import SQLAlchemyError
+
+    from llamatrade_proto.generated import common_pb2, portfolio_pb2
+
+    from src.grpc.servicer import PortfolioServicer
+
+    tenant_id = uuid4()
+    reader = MagicMock()
+    reader.list_positions = AsyncMock(
+        side_effect=SQLAlchemyError("relation secret_ledger_table does not exist")
+    )
+    servicer = PortfolioServicer()
+    servicer._session_factory = cast(Any, lambda: _Session())
+    servicer._reader = MagicMock(return_value=reader)
+
+    with pytest.raises(ConnectError) as exc_info:
+        await servicer.get_asset_allocation(
+            portfolio_pb2.GetAssetAllocationRequest(
+                context=common_pb2.TenantContext(tenant_id=str(tenant_id), user_id=str(uuid4())),
+            ),
+            MagicMock(),
+        )
+
+    assert exc_info.value.code == Code.INTERNAL
+    assert "secret_ledger_table" not in exc_info.value.message
+
+
+async def test_connect_error_passes_through_unchanged() -> None:
+    """A NOT_FOUND raised inside the handler is not swallowed into INTERNAL."""
+    from connectrpc.code import Code
+    from connectrpc.errors import ConnectError
+
+    from llamatrade_proto.generated import common_pb2, portfolio_pb2
+
+    from src.grpc.servicer import PortfolioServicer
+
+    reader = MagicMock()
+    reader.get_strategy_performance = AsyncMock(return_value=None)
+    servicer = PortfolioServicer()
+    servicer._session_factory = cast(Any, lambda: _Session())
+    servicer._strategy_perf_reader = MagicMock(return_value=reader)
+
+    with pytest.raises(ConnectError) as exc_info:
+        await servicer.get_strategy_performance(
+            portfolio_pb2.GetStrategyPerformanceRequest(
+                context=common_pb2.TenantContext(tenant_id=str(uuid4()), user_id=str(uuid4())),
+                execution_id=str(uuid4()),
+            ),
+            MagicMock(),
+        )
+
+    assert exc_info.value.code == Code.NOT_FOUND
+
+
+async def test_get_strategy_performance_bad_execution_id_is_invalid_argument() -> None:
+    """A malformed execution_id is rejected as INVALID_ARGUMENT, not INTERNAL."""
+    from connectrpc.code import Code
+    from connectrpc.errors import ConnectError
+
+    from llamatrade_proto.generated import common_pb2, portfolio_pb2
+
+    from src.grpc.servicer import PortfolioServicer
+
+    servicer = PortfolioServicer()
+    with pytest.raises(ConnectError) as exc_info:
+        await servicer.get_strategy_performance(
+            portfolio_pb2.GetStrategyPerformanceRequest(
+                context=common_pb2.TenantContext(tenant_id=str(uuid4()), user_id=str(uuid4())),
+                execution_id="not-a-uuid",
+            ),
+            MagicMock(),
+        )
+
+    assert exc_info.value.code == Code.INVALID_ARGUMENT

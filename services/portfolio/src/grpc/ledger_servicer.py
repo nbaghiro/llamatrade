@@ -10,22 +10,25 @@ from __future__ import annotations
 import logging
 from decimal import Decimal
 from typing import TYPE_CHECKING, cast
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from connectrpc.code import Code
 from connectrpc.errors import ConnectError
 from connectrpc.request import RequestContext
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from llamatrade_common.connect import resolve_identity_connect
+from llamatrade_common.connect import parse_uuid, resolve_identity_connect
 from llamatrade_db import get_session_maker, tenant_session
 from llamatrade_proto.generated import common_pb2, ledger_pb2
 
+from src.alerts import LedgerIncident, get_ledger_alert_dispatcher
 from src.ledger.funds import FundError
+from src.ledger.invariants import LedgerInvariantError
 from src.ledger.lifecycle import SleeveCloseError
 from src.ledger.projection import HoldingHistoryEntry
 from src.ledger.projector import LedgerProjector
-from src.repositories import SqlLedgerStore, SqlSleeveRepository
+from src.metrics import record_projection_read
+from src.repositories import SqlLedgerStore, SqlSleeveRepository, lock_account_for_write
 from src.services.corporate_action_service import CorporateActionService
 from src.services.fund_service import FundService, SleeveView
 from src.services.sleeve_lifecycle_service import SleeveLifecycleService
@@ -37,6 +40,19 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 type AnyContext = RequestContext[object, object]
+
+
+def _internal_error(operation: str, exc: Exception) -> ConnectError:
+    """A client-safe INTERNAL error: a fixed message plus a logged correlation id.
+
+    The exception text (SQL, bound account/amount/tenant parameters, hostnames)
+    is logged, never returned; the client gets a reference it can quote so an
+    operator can find the log line.
+    """
+    correlation_id = uuid4()
+    logger.error("%s failed (ref=%s): %s", operation, correlation_id, exc, exc_info=True)
+    return ConnectError(Code.INTERNAL, f"{operation} failed; reference {correlation_id}")
+
 
 _TYPE_TO_PROTO = {
     "strategy": ledger_pb2.SLEEVE_TYPE_STRATEGY,
@@ -78,8 +94,7 @@ def _sleeve_to_proto(
         allocated_capital=_dec(sleeve.allocated_capital),
         cash=ledger_pb2.SleeveCash(
             balance=_dec(cash),
-            # All cash state is projected from the event log; default to 0 when a
-            # caller builds the proto without the projected reservation total.
+            # Cash state is projected from the event log; default to 0 when a caller builds the proto without the projected reservation total.
             reserved=_dec(reserved if reserved is not None else 0),
             unsettled=_dec(0),  # settlement tracking not modeled yet
         ),
@@ -117,12 +132,15 @@ class LedgerServicer:
     ) -> ledger_pb2.GetOrCreateAccountResponse:
         """Resolve (lazily creating) the Account for a broker credential set.
 
-        Idempotent: also ensures the singleton base sleeves exist. First-time
-        creation seeds the ledger from current broker state (cash →
-        Unallocated, pre-existing positions → Unmanaged) so the
-        ``Σ sleeves == broker`` invariant holds from day one. Backfill is
-        best-effort: a broker outage logs and proceeds — re-onboarding is
-        idempotent and reconciliation surfaces the gap until then.
+        Idempotent: also ensures the singleton base sleeves exist. Creation runs
+        through onboarding, which reads the broker first so the account is keyed
+        to the broker account (re-added credentials adopt the existing book) and
+        seeds the ledger from current broker state (cash → Unallocated,
+        pre-existing positions → Unmanaged) so the ``Σ sleeves == broker``
+        invariant holds from day one. Onboarding also runs for an account whose
+        broker id was never recorded, filling it from that same snapshot.
+        Backfill is best-effort: a broker outage logs and proceeds — re-onboarding
+        is idempotent and reconciliation surfaces the gap until then.
         """
         tenant_id, _ = resolve_identity_connect(request.context)
         try:
@@ -133,13 +151,16 @@ class LedgerServicer:
             async with tenant_session(tenant_id, self._maker()) as db:
                 repo = SqlSleeveRepository(db)
                 sleeves = SleeveService(repo)
-                existed = (
-                    await repo.get_account_by_credentials(tenant_id, credentials_id) is not None
-                )
-                account = await sleeves.get_or_create_account(tenant_id, credentials_id)
+                existing = await repo.get_account_by_credentials(tenant_id, credentials_id)
+                account = existing
+                if existing is None or existing.alpaca_account_id is None:
+                    account = (
+                        await self._backfill_account(db, sleeves, tenant_id, credentials_id)
+                        or existing
+                    )
+                if account is None:
+                    account = await sleeves.get_or_create_account(tenant_id, credentials_id)
                 base = await sleeves.ensure_base_sleeves(account)
-                if not existed:
-                    await self._backfill_account(db, sleeves, tenant_id, credentials_id)
                 projection = await LedgerProjector(db).project_account(tenant_id, account.id)
                 await db.commit()
                 return ledger_pb2.GetOrCreateAccountResponse(
@@ -152,14 +173,13 @@ class LedgerServicer:
         except ConnectError:
             raise
         except Exception as e:
-            logger.error("get_or_create_account error: %s", e, exc_info=True)
-            raise ConnectError(Code.INTERNAL, f"account bootstrap failed: {e}") from e
+            raise _internal_error("account bootstrap", e) from e
 
     @staticmethod
     async def _backfill_account(
         db: AsyncSession, sleeves: SleeveService, tenant_id: UUID, credentials_id: UUID
-    ) -> None:
-        """Seed a newly created account from broker state (best-effort)."""
+    ) -> Account | None:
+        """Resolve + seed the account from broker state; None if the broker read failed."""
         from src.clients.alpaca import AlpacaBrokerPositions
         from src.services.onboarding_service import AccountOnboardingService
 
@@ -167,51 +187,62 @@ class LedgerServicer:
             onboarding = AccountOnboardingService(
                 sleeves, SqlLedgerStore(db), AlpacaBrokerPositions(db)
             )
-            await onboarding.onboard(tenant_id, credentials_id)
+            return await onboarding.onboard(tenant_id, credentials_id)
         except Exception:
             logger.exception(
                 "broker backfill failed for credentials %s — account created unseeded; "
                 "reconciliation will surface the gap until re-onboarded",
                 credentials_id,
             )
+            return None
 
     async def deposit_funds(
         self, request: ledger_pb2.DepositFundsRequest, ctx: AnyContext
     ) -> ledger_pb2.DepositFundsResponse:
         tenant_id, _ = resolve_identity_connect(request.context)
-        account_id = UUID(request.account_id)
+        account_id = parse_uuid(request.account_id, "account_id")
         try:
             async with tenant_session(tenant_id, self._maker()) as db:
+                await lock_account_for_write(db, account_id)
                 fund = FundService(SqlSleeveRepository(db), SqlLedgerStore(db))
                 view = await fund.deposit(
-                    tenant_id=tenant_id, account_id=account_id, amount=_amount(request.amount)
+                    tenant_id=tenant_id,
+                    account_id=account_id,
+                    amount=_amount(request.amount),
+                    request_id=request.request_id,
                 )
                 await db.commit()
                 return ledger_pb2.DepositFundsResponse(unallocated=_view_to_proto(view))
         except FundError as e:
             raise ConnectError(Code.INVALID_ARGUMENT, str(e)) from e
+        except ConnectError:
+            raise
         except Exception as e:
-            logger.error("deposit_funds error: %s", e, exc_info=True)
-            raise ConnectError(Code.INTERNAL, f"deposit failed: {e}") from e
+            raise _internal_error("deposit", e) from e
 
     async def withdraw_funds(
         self, request: ledger_pb2.WithdrawFundsRequest, ctx: AnyContext
     ) -> ledger_pb2.WithdrawFundsResponse:
         tenant_id, _ = resolve_identity_connect(request.context)
-        account_id = UUID(request.account_id)
+        account_id = parse_uuid(request.account_id, "account_id")
         try:
             async with tenant_session(tenant_id, self._maker()) as db:
+                await lock_account_for_write(db, account_id)
                 fund = FundService(SqlSleeveRepository(db), SqlLedgerStore(db))
                 view = await fund.withdraw(
-                    tenant_id=tenant_id, account_id=account_id, amount=_amount(request.amount)
+                    tenant_id=tenant_id,
+                    account_id=account_id,
+                    amount=_amount(request.amount),
+                    request_id=request.request_id,
                 )
                 await db.commit()
                 return ledger_pb2.WithdrawFundsResponse(unallocated=_view_to_proto(view))
         except FundError as e:
             raise ConnectError(Code.INVALID_ARGUMENT, str(e)) from e
+        except ConnectError:
+            raise
         except Exception as e:
-            logger.error("withdraw_funds error: %s", e, exc_info=True)
-            raise ConnectError(Code.INTERNAL, f"withdraw failed: {e}") from e
+            raise _internal_error("withdraw", e) from e
 
     async def allocate_capital(
         self, request: ledger_pb2.AllocateCapitalRequest, ctx: AnyContext
@@ -223,13 +254,14 @@ class LedgerServicer:
         funded in the same transaction (portfolio-ledger.md).
         """
         tenant_id, _ = resolve_identity_connect(request.context)
-        account_id = UUID(request.account_id)
+        account_id = parse_uuid(request.account_id, "account_id")
         if not request.to_sleeve_id and not request.strategy_execution_id:
             raise ConnectError(
                 Code.INVALID_ARGUMENT, "to_sleeve_id or strategy_execution_id required"
             )
         try:
             async with tenant_session(tenant_id, self._maker()) as db:
+                await lock_account_for_write(db, account_id)
                 repo = SqlSleeveRepository(db)
                 to_sleeve_id = await self._resolve_allocation_target(repo, request, tenant_id)
                 fund = FundService(repo, SqlLedgerStore(db))
@@ -238,6 +270,7 @@ class LedgerServicer:
                     account_id=account_id,
                     to_sleeve_id=to_sleeve_id,
                     amount=_amount(request.amount),
+                    request_id=request.request_id,
                 )
                 await db.commit()
                 return ledger_pb2.AllocateCapitalResponse(sleeve=_view_to_proto(view))
@@ -246,8 +279,7 @@ class LedgerServicer:
         except ConnectError:
             raise
         except Exception as e:
-            logger.error("allocate_capital error: %s", e, exc_info=True)
-            raise ConnectError(Code.INTERNAL, f"allocate failed: {e}") from e
+            raise _internal_error("allocate", e) from e
 
     @staticmethod
     async def _resolve_allocation_target(
@@ -255,9 +287,9 @@ class LedgerServicer:
     ) -> UUID:
         """The sleeve to fund: the given one, or an opened strategy sleeve."""
         if request.to_sleeve_id:
-            return UUID(request.to_sleeve_id)
+            return parse_uuid(request.to_sleeve_id, "to_sleeve_id")
         sleeves = SleeveService(repo)
-        account = await repo.get_account(tenant_id, UUID(request.account_id))
+        account = await repo.get_account(tenant_id, parse_uuid(request.account_id, "account_id"))
         if account is None:
             raise ConnectError(Code.NOT_FOUND, f"account {request.account_id} not found")
         sleeve = await sleeves.get_or_create_strategy_sleeve(
@@ -272,16 +304,18 @@ class LedgerServicer:
         self, request: ledger_pb2.TransferCapitalRequest, ctx: AnyContext
     ) -> ledger_pb2.TransferCapitalResponse:
         tenant_id, _ = resolve_identity_connect(request.context)
-        account_id = UUID(request.account_id)
+        account_id = parse_uuid(request.account_id, "account_id")
         try:
             async with tenant_session(tenant_id, self._maker()) as db:
+                await lock_account_for_write(db, account_id)
                 fund = FundService(SqlSleeveRepository(db), SqlLedgerStore(db))
                 from_view, to_view = await fund.transfer(
                     tenant_id=tenant_id,
                     account_id=account_id,
-                    from_sleeve_id=UUID(request.from_sleeve_id),
-                    to_sleeve_id=UUID(request.to_sleeve_id),
+                    from_sleeve_id=parse_uuid(request.from_sleeve_id, "from_sleeve_id"),
+                    to_sleeve_id=parse_uuid(request.to_sleeve_id, "to_sleeve_id"),
                     amount=_amount(request.amount),
+                    request_id=request.request_id,
                 )
                 await db.commit()
                 return ledger_pb2.TransferCapitalResponse(
@@ -289,9 +323,10 @@ class LedgerServicer:
                 )
         except FundError as e:
             raise ConnectError(Code.INVALID_ARGUMENT, str(e)) from e
+        except ConnectError:
+            raise
         except Exception as e:
-            logger.error("transfer_capital error: %s", e, exc_info=True)
-            raise ConnectError(Code.INTERNAL, f"transfer failed: {e}") from e
+            raise _internal_error("transfer", e) from e
 
     async def close_sleeve(
         self, request: ledger_pb2.CloseSleeveRequest, ctx: AnyContext
@@ -302,14 +337,16 @@ class LedgerServicer:
         its strategy is archived (the ledger owns sleeve lifecycle).
         """
         tenant_id, _ = resolve_identity_connect(request.context)
-        account_id = UUID(request.account_id)
+        account_id = parse_uuid(request.account_id, "account_id")
+        sleeve_id = parse_uuid(request.sleeve_id, "sleeve_id")
         try:
             async with tenant_session(tenant_id, self._maker()) as db:
-                lifecycle = SleeveLifecycleService(SqlSleeveRepository(db), SqlLedgerStore(db))
+                store = SqlLedgerStore(db)
+                lifecycle = SleeveLifecycleService(SqlSleeveRepository(db), store, store)
                 result = await lifecycle.close_sleeve(
                     tenant_id=tenant_id,
                     account_id=account_id,
-                    sleeve_id=UUID(request.sleeve_id),
+                    sleeve_id=sleeve_id,
                     reason=request.reason or None,
                 )
                 projection = await LedgerProjector(db).project_account(tenant_id, account_id)
@@ -330,11 +367,12 @@ class LedgerServicer:
                 )
         except SleeveCloseError as e:
             raise ConnectError(Code.FAILED_PRECONDITION, str(e)) from e
+        except LedgerInvariantError as e:
+            raise _internal_error("close sleeve", e) from e
         except ConnectError:
             raise
         except Exception as e:
-            logger.error("close_sleeve error: %s", e, exc_info=True)
-            raise ConnectError(Code.INTERNAL, f"close sleeve failed: {e}") from e
+            raise _internal_error("close sleeve", e) from e
 
     async def apply_corporate_action(
         self, request: ledger_pb2.ApplyCorporateActionRequest, ctx: AnyContext
@@ -344,8 +382,8 @@ class LedgerServicer:
         Operator/feed-triggered. Idempotent (deterministic event ids), so a
         re-submitted action is a no-op.
         """
-        tenant_id, _ = resolve_identity_connect(request.context)
-        account_id = UUID(request.account_id)
+        tenant_id, user_id = resolve_identity_connect(request.context)
+        account_id = parse_uuid(request.account_id, "account_id")
         try:
             async with tenant_session(tenant_id, self._maker()) as db:
                 svc = CorporateActionService(SqlLedgerStore(db))
@@ -356,6 +394,7 @@ class LedgerServicer:
                         account_id=account_id,
                         symbol=request.symbol,
                         ratio=_amount(request.ratio),
+                        external_id=request.external_id,
                     )
                 elif kind == ledger_pb2.CORPORATE_ACTION_KIND_SYMBOL_CHANGE:
                     n = await svc.apply_symbol_change(
@@ -363,6 +402,7 @@ class LedgerServicer:
                         account_id=account_id,
                         old_symbol=request.symbol,
                         new_symbol=request.new_symbol,
+                        external_id=request.external_id,
                     )
                 elif kind == ledger_pb2.CORPORATE_ACTION_KIND_DIVIDEND:
                     n = await svc.apply_dividend(
@@ -375,24 +415,41 @@ class LedgerServicer:
                 else:
                     raise ConnectError(Code.INVALID_ARGUMENT, "unspecified corporate action kind")
                 await db.commit()
-                return ledger_pb2.ApplyCorporateActionResponse(events_appended=n)
+            if n:
+                await get_ledger_alert_dispatcher().dispatch(
+                    tenant_id,
+                    LedgerIncident(
+                        kind="corporate_action_applied",
+                        message=(
+                            f"{ledger_pb2.CorporateActionKind.Name(kind)} on {request.symbol} "
+                            f"applied across {n} event(s)"
+                        ),
+                        context={
+                            "account_id": str(account_id),
+                            "symbol": request.symbol,
+                            "external_id": request.external_id,
+                            "user_id": str(user_id),
+                        },
+                    ),
+                )
+            return ledger_pb2.ApplyCorporateActionResponse(events_appended=n)
         except ValueError as e:
             raise ConnectError(Code.INVALID_ARGUMENT, str(e)) from e
         except ConnectError:
             raise
         except Exception as e:
-            logger.error("apply_corporate_action error: %s", e, exc_info=True)
-            raise ConnectError(Code.INTERNAL, f"apply corporate action failed: {e}") from e
+            raise _internal_error("apply corporate action", e) from e
 
     async def list_sleeves(
         self, request: ledger_pb2.ListSleevesRequest, ctx: AnyContext
     ) -> ledger_pb2.ListSleevesResponse:
         tenant_id, _ = resolve_identity_connect(request.context)
-        account_id = UUID(request.account_id)
+        account_id = parse_uuid(request.account_id, "account_id")
         try:
             async with tenant_session(tenant_id, self._maker()) as db:
                 repo = SqlSleeveRepository(db)
                 projection = await LedgerProjector(db).project_account(tenant_id, account_id)
+                record_projection_read(account_id, projection.poison_events)
                 rows = await repo.list_sleeves(tenant_id, account_id)
                 sleeves = [
                     _sleeve_to_proto(
@@ -404,21 +461,24 @@ class LedgerServicer:
                     for s in rows
                 ]
                 return ledger_pb2.ListSleevesResponse(sleeves=sleeves)
+        except ConnectError:
+            raise
         except Exception as e:
-            logger.error("list_sleeves error: %s", e, exc_info=True)
-            raise ConnectError(Code.INTERNAL, f"list sleeves failed: {e}") from e
+            raise _internal_error("list sleeves", e) from e
 
     async def get_sleeve(
         self, request: ledger_pb2.GetSleeveRequest, ctx: AnyContext
     ) -> ledger_pb2.GetSleeveResponse:
         tenant_id, _ = resolve_identity_connect(request.context)
+        sleeve_id = parse_uuid(request.sleeve_id, "sleeve_id")
         try:
             async with tenant_session(tenant_id, self._maker()) as db:
                 repo = SqlSleeveRepository(db)
-                sleeve = await repo.get_sleeve(tenant_id, UUID(request.sleeve_id))
+                sleeve = await repo.get_sleeve(tenant_id, sleeve_id)
                 if sleeve is None:
                     raise ConnectError(Code.NOT_FOUND, f"sleeve {request.sleeve_id} not found")
                 projection = await LedgerProjector(db).project_account(tenant_id, sleeve.account_id)
+                record_projection_read(sleeve.account_id, projection.poison_events)
                 sleeve_proj = projection.sleeve(str(sleeve.id))
                 lots = [
                     ledger_pb2.Lot(
@@ -445,14 +505,13 @@ class LedgerServicer:
         except ConnectError:
             raise
         except Exception as e:
-            logger.error("get_sleeve error: %s", e, exc_info=True)
-            raise ConnectError(Code.INTERNAL, f"get sleeve failed: {e}") from e
+            raise _internal_error("get sleeve", e) from e
 
     async def get_holding_history(
         self, request: ledger_pb2.GetHoldingHistoryRequest, ctx: AnyContext
     ) -> ledger_pb2.GetHoldingHistoryResponse:
         tenant_id, _ = resolve_identity_connect(request.context)
-        account_id = UUID(request.account_id)
+        account_id = parse_uuid(request.account_id, "account_id")
         try:
             async with tenant_session(tenant_id, self._maker()) as db:
                 raw = cast(
@@ -474,6 +533,7 @@ class LedgerServicer:
                     for e in raw
                 ]
                 return ledger_pb2.GetHoldingHistoryResponse(entries=entries)
+        except ConnectError:
+            raise
         except Exception as e:
-            logger.error("get_holding_history error: %s", e, exc_info=True)
-            raise ConnectError(Code.INTERNAL, f"holding history failed: {e}") from e
+            raise _internal_error("holding history", e) from e

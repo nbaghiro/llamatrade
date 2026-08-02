@@ -16,6 +16,7 @@ from decimal import Decimal
 from uuid import UUID
 
 from src.ledger import corporate
+from src.ledger.invariants import assert_write_invariants
 from src.ports import LedgerStore
 
 
@@ -31,7 +32,13 @@ class CorporateActionService:
         self._store = store
 
     async def apply_split(
-        self, *, tenant_id: UUID, account_id: UUID, symbol: str, ratio: Decimal
+        self,
+        *,
+        tenant_id: UUID,
+        account_id: UUID,
+        symbol: str,
+        ratio: Decimal,
+        external_id: str = "",
     ) -> int:
         proj = await self._store.project_account(tenant_id, account_id)
         holders = {
@@ -39,11 +46,19 @@ class CorporateActionService:
             for sid, s in proj.sleeves.items()
             if symbol in s.positions and s.positions[symbol].qty != corporate.ZERO
         }
-        events = corporate.plan_split(symbol=symbol, ratio=ratio, holders=holders)
+        events = corporate.plan_split(
+            symbol=symbol, ratio=ratio, holders=holders, external_id=external_id
+        )
         return await self._append_all(tenant_id, account_id, events)
 
     async def apply_symbol_change(
-        self, *, tenant_id: UUID, account_id: UUID, old_symbol: str, new_symbol: str
+        self,
+        *,
+        tenant_id: UUID,
+        account_id: UUID,
+        old_symbol: str,
+        new_symbol: str,
+        external_id: str = "",
     ) -> int:
         proj = await self._store.project_account(tenant_id, account_id)
         holders = {
@@ -52,7 +67,10 @@ class CorporateActionService:
             if old_symbol in s.positions and s.positions[old_symbol].qty != corporate.ZERO
         }
         events = corporate.plan_symbol_change(
-            old_symbol=old_symbol, new_symbol=new_symbol, holders=holders
+            old_symbol=old_symbol,
+            new_symbol=new_symbol,
+            holders=holders,
+            external_id=external_id,
         )
         return await self._append_all(tenant_id, account_id, events)
 
@@ -73,6 +91,7 @@ class CorporateActionService:
     async def _append_all(
         self, tenant_id: UUID, account_id: UUID, events: list[corporate.PlannedCorporateEvent]
     ) -> int:
+        touched: set[str] = set()
         for ev in events:
             await self._store.append(
                 tenant_id=tenant_id,
@@ -82,4 +101,8 @@ class CorporateActionService:
                 sleeve_id=ev.sleeve_id,
                 event_id=_event_id(ev.dedup_key),
             )
+            touched.add(str(ev.sleeve_id))
+        if touched:
+            proj = await self._store.project_account(tenant_id, account_id)
+            assert_write_invariants(proj, *sorted(touched))
         return len(events)

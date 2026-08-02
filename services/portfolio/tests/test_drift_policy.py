@@ -19,10 +19,11 @@ from llamatrade_db.models.ledger import (
     SleeveType,
 )
 
+from src.alerts import LedgerIncident
 from src.ledger.projection import AccountProjection, fold
 from src.ledger.reconciliation import Drift, DriftKind
 from src.ports import BrokerHolding, BrokerSnapshot
-from src.tasks.drift_policy import apply_drift_action
+from src.tasks.drift_policy import SqlOrderActivityLookup, apply_drift_action
 
 TENANT = uuid4()
 D = Decimal
@@ -82,12 +83,13 @@ class FakeStore:
         event_id=None,
         occurred_at=None,
     ):
+        existing = next((e for e in self.events if e.event_id == event_id), None)
+        if existing is not None:
+            return existing, False  # ON CONFLICT DO NOTHING: deduped, not inserted
         ev = SimpleNamespace(event_id=event_id, event_type=event_type, data=data)
-        if any(e.event_id == event_id for e in self.events):
-            return None
         self.events.append(ev)
         self.appended.append(ev)
-        return ev
+        return ev, True
 
     async def project_account(self, tenant_id, account_id) -> AccountProjection:
         return fold(self.events)
@@ -260,6 +262,181 @@ async def test_qty_mismatch_freezes_holding_sleeves(account: Account) -> None:
     freeze_events = [e for e in store.appended if e.event_type is LedgerEventType.SLEEVE_FROZEN]
     assert len(freeze_events) == 1
     assert freeze_events[0].data["sleeve_id"] == str(holder.id)
+
+
+class FakeOrderActivity:
+    """``OrderActivityLookup`` returning a preset answer, recording calls."""
+
+    def __init__(self, *, active: bool) -> None:
+        self._active = active
+        self.calls: list[tuple[Any, Any, str]] = []
+
+    async def has_recent_activity(self, tenant_id: Any, account_id: Any, symbol: str) -> bool:
+        self.calls.append((tenant_id, account_id, symbol))
+        return self._active
+
+
+class FakeAlertSink:
+    """``AlertSink`` recording every dispatched incident."""
+
+    def __init__(self, *, fail: bool = False) -> None:
+        self.dispatched: list[tuple[Any, LedgerIncident]] = []
+        self._fail = fail
+
+    async def dispatch(self, tenant_id: Any, incident: LedgerIncident) -> None:
+        self.dispatched.append((tenant_id, incident))
+        if self._fail:
+            raise RuntimeError("webhook pathway down")
+
+
+async def test_adoption_deferred_while_order_activity_in_flight(account: Account) -> None:
+    """A broker-only holding whose fill may still be in flight is NOT adopted this
+    pass — adopting now would double-count once the fill folds."""
+    repo = FakeRepo([_sleeve(account, SleeveType.UNMANAGED, "Unmanaged")])
+    store = FakeStore()
+    broker = FakeBroker([BrokerHolding(symbol="SPY", qty=D("10"), avg_price=D("480"))])
+    orders = FakeOrderActivity(active=True)
+
+    action = await apply_drift_action(
+        repo=cast(Any, repo),
+        store=store,
+        broker=broker,
+        account=account,
+        drift=_drift(DriftKind.MISSING_IN_LEDGER),
+        orders=orders,
+    )
+
+    assert action == "deferred"
+    assert store.appended == []
+    assert orders.calls == [(TENANT, account.id, "SPY")]
+
+
+async def test_adoption_proceeds_when_no_order_activity(account: Account) -> None:
+    repo = FakeRepo([_sleeve(account, SleeveType.UNMANAGED, "Unmanaged")])
+    store = FakeStore()
+    broker = FakeBroker([BrokerHolding(symbol="SPY", qty=D("10"), avg_price=D("480"))])
+    orders = FakeOrderActivity(active=False)
+
+    action = await apply_drift_action(
+        repo=cast(Any, repo),
+        store=store,
+        broker=broker,
+        account=account,
+        drift=_drift(DriftKind.MISSING_IN_LEDGER),
+        orders=orders,
+    )
+
+    assert action == "adopted"
+    assert orders.calls == [(TENANT, account.id, "SPY")]
+
+
+async def test_freeze_does_not_consult_order_activity(account: Account) -> None:
+    holder = _sleeve(account, SleeveType.STRATEGY, "Strategy A")
+    repo = FakeRepo([holder])
+    store = FakeStore(
+        [
+            SimpleNamespace(
+                event_id=uuid4(),
+                event_type=LedgerEventType.ORDER_FILLED,
+                data={
+                    "sleeve_id": str(holder.id),
+                    "symbol": "SPY",
+                    "side": "buy",
+                    "qty": "60",
+                    "price": "480",
+                },
+            )
+        ]
+    )
+    orders = FakeOrderActivity(active=True)
+
+    action = await apply_drift_action(
+        repo=cast(Any, repo),
+        store=store,
+        broker=FakeBroker([]),
+        account=account,
+        drift=_drift(DriftKind.QTY_MISMATCH, ledger="60", broker="59"),
+        orders=orders,
+    )
+
+    assert action == "froze:1"
+    assert orders.calls == []
+
+
+class _ScalarDB:
+    """AsyncSession stand-in returning a preset ``scalar`` result."""
+
+    def __init__(self, value: Any) -> None:
+        self._value = value
+
+    async def scalar(self, *args: object, **kwargs: object) -> Any:
+        return self._value
+
+
+async def test_sql_order_activity_lookup_truthiness() -> None:
+    hit = SqlOrderActivityLookup(cast(Any, _ScalarDB(uuid4())))
+    miss = SqlOrderActivityLookup(cast(Any, _ScalarDB(None)))
+    assert await hit.has_recent_activity(TENANT, uuid4(), "SPY") is True
+    assert await miss.has_recent_activity(TENANT, uuid4(), "SPY") is False
+
+
+def _holder_store(holder: Sleeve) -> FakeStore:
+    return FakeStore(
+        [
+            SimpleNamespace(
+                event_id=uuid4(),
+                event_type=LedgerEventType.ORDER_FILLED,
+                data={
+                    "sleeve_id": str(holder.id),
+                    "symbol": "SPY",
+                    "side": "buy",
+                    "qty": "60",
+                    "price": "480",
+                },
+            )
+        ]
+    )
+
+
+async def test_freeze_dispatches_sleeve_frozen_alert(account: Account) -> None:
+    holder = _sleeve(account, SleeveType.STRATEGY, "Strategy A")
+    alerts = FakeAlertSink()
+
+    action = await apply_drift_action(
+        repo=cast(Any, FakeRepo([holder])),
+        store=_holder_store(holder),
+        broker=FakeBroker([]),
+        account=account,
+        drift=_drift(DriftKind.QTY_MISMATCH, ledger="60", broker="59"),
+        alerts=alerts,
+    )
+
+    assert action == "froze:1"
+    assert len(alerts.dispatched) == 1
+    tenant_id, incident = alerts.dispatched[0]
+    assert tenant_id == TENANT
+    assert incident.kind == "sleeve_frozen"
+    assert incident.context["sleeve_id"] == str(holder.id)
+    assert incident.context["symbol"] == "SPY"
+    assert incident.context["drift_kind"] == "qty_mismatch"
+
+
+async def test_alert_sink_failure_never_blocks_freeze(account: Account) -> None:
+    holder = _sleeve(account, SleeveType.STRATEGY, "Strategy A")
+    repo = FakeRepo([holder])
+    alerts = FakeAlertSink(fail=True)
+
+    action = await apply_drift_action(
+        repo=cast(Any, repo),
+        store=_holder_store(holder),
+        broker=FakeBroker([]),
+        account=account,
+        drift=_drift(DriftKind.QTY_MISMATCH, ledger="60", broker="59"),
+        alerts=alerts,
+    )
+
+    assert action == "froze:1"  # the freeze completed despite the sink raising
+    assert holder.status == SleeveStatus.FROZEN.value
 
 
 async def test_already_frozen_sleeve_not_refrozen(account: Account) -> None:

@@ -11,9 +11,11 @@ enumerates exactly what moved, so the log stays replayable (mirrors how
 from __future__ import annotations
 
 import hashlib
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from decimal import Decimal
 from uuid import UUID
+
+from src.ledger.sizing import Lot
 
 ZERO = Decimal("0")
 
@@ -24,11 +26,18 @@ class SleeveCloseError(ValueError):
 
 @dataclass(frozen=True)
 class RehomedPosition:
-    """One open position moved out of a closing sleeve, at cost."""
+    """One open position moved out of a closing sleeve, at cost.
+
+    ``lots`` carries the position's individual FIFO lots (each with its own basis
+    and original acquisition sequence) so the re-home to Unmanaged preserves
+    per-lot granularity instead of collapsing to one blended-basis lot; empty
+    when the caller has no lot detail (the close then re-homes one blended lot).
+    """
 
     symbol: str
     qty: Decimal
     cost_basis: Decimal  # total cost of ``qty`` (carried across unchanged)
+    lots: tuple[Lot, ...] = field(default_factory=tuple)
 
 
 @dataclass(frozen=True)
@@ -72,6 +81,19 @@ def plan_sleeve_close(
         ],
         "cash": str(cash),
     }
+    # Per-lot detail (when supplied) so the re-home to Unmanaged keeps each lot's basis and acquisition order; the aggregate ``positions`` above still drives the balanced postings.
+    lots = [
+        {
+            "symbol": p.symbol,
+            "qty": str(lot.qty),
+            "cost_basis": str(lot.cost_basis),
+            "opened_seq": str(lot.opened_seq),
+        }
+        for p in nonzero
+        for lot in p.lots
+    ]
+    if lots:
+        event_data["lots"] = lots
     if reason:
         event_data["reason"] = reason
     return ClosePlan(event_data=event_data, positions=nonzero, cash=cash)

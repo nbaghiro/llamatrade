@@ -1,7 +1,10 @@
 """Equity-snapshot pure-core tests."""
 
 from decimal import Decimal
+from types import SimpleNamespace
 from typing import Any, cast
+
+from sqlalchemy.dialects import postgresql
 
 from src.ledger.projection import AccountProjection, PositionState, SleeveProjection
 from src.tasks.equity_snapshot import compute_snapshot_values, projection_symbols
@@ -46,7 +49,7 @@ def test_compute_skips_sleeve_when_held_symbol_unpriced() -> None:
 
 
 async def test_snapshot_account_persists_rows() -> None:
-    """The DB writer builds one SleeveSnapshot per non-empty sleeve."""
+    """The DB writer inserts one SleeveSnapshot per non-empty sleeve, idempotently."""
     from types import SimpleNamespace
     from unittest.mock import AsyncMock, MagicMock
     from uuid import uuid4
@@ -65,14 +68,58 @@ async def test_snapshot_account_persists_rows() -> None:
     projector = SimpleNamespace(project_account=AsyncMock(return_value=proj))
     prices = SimpleNamespace(get_prices=AsyncMock(return_value={"AAPL": Decimal("200")}))
     db = MagicMock()
-    db.add = MagicMock()
+    db.execute = AsyncMock()
     db.scalar = AsyncMock(return_value=7)  # latest sequence
     account = SimpleNamespace(id=account_id, tenant_id=tenant)
 
     n = await snapshot_account(db, cast(Any, projector), cast(Any, prices), cast(Any, account))
     assert n == 1
-    added = db.add.call_args[0][0]
-    assert isinstance(added, SleeveSnapshot)
-    assert added.equity == Decimal("3000")  # 1000 + 10*200
-    assert added.as_of_sequence == 7
-    assert added.sleeve_id == sleeve_id
+    compiled = db.execute.call_args[0][0].compile(dialect=postgresql.dialect())
+    sql = str(compiled)
+    assert SleeveSnapshot.__tablename__ in sql
+    # A repeat at the same ledger sequence within a day is not a second point but a
+    # fresher mark: on conflict the row is UPDATED when the incoming created_at is
+    # newer (last-mark-of-day wins), not dropped.
+    assert "ON CONFLICT" in sql and "DO UPDATE" in sql
+    assert compiled.params["equity_m0"] == Decimal("3000")  # 1000 + 10*200
+    assert compiled.params["as_of_sequence_m0"] == 7
+    assert compiled.params["sleeve_id_m0"] == sleeve_id
+
+
+async def test_snapshot_pass_discards_its_writes_when_leadership_is_lost() -> None:
+    """The fence sits between the read/price phase and the first commit.
+
+    A leader torn mid-pass must not commit work it started as leader — the peer
+    that took the lock is already sweeping, and both landing points at the same
+    ledger sequence is exactly the duplicate the election exists to prevent.
+    """
+    from unittest.mock import AsyncMock, MagicMock, patch
+    from uuid import uuid4
+
+    from src.tasks.equity_snapshot import run_snapshot_pass
+
+    account = SimpleNamespace(id=uuid4(), tenant_id=uuid4())
+    proj = AccountProjection()
+    proj.sleeve(str(uuid4())).cash = Decimal("1000")
+
+    async def not_leader() -> bool:
+        return False
+
+    with (
+        patch("src.tasks.equity_snapshot.system_session") as system,
+        patch("src.tasks.equity_snapshot.tenant_session") as tenant,
+        patch("src.tasks.equity_snapshot._load_accounts", AsyncMock(return_value=[account])),
+        patch("src.tasks.equity_snapshot._latest_sequence", AsyncMock(return_value=4)),
+        patch("src.tasks.equity_snapshot.LedgerProjector") as projector,
+    ):
+        system.return_value.__aenter__ = AsyncMock(return_value=MagicMock())
+        system.return_value.__aexit__ = AsyncMock(return_value=False)
+        projector.return_value.project_account = AsyncMock(return_value=proj)
+        prices = SimpleNamespace(get_prices=AsyncMock(return_value={}))
+
+        written = await run_snapshot_pass(
+            cast(Any, MagicMock()), cast(Any, prices), is_leader=not_leader
+        )
+
+    assert written == 0
+    tenant.assert_not_called()  # no transaction was even opened

@@ -168,3 +168,58 @@ def test_to_daily_collapses_intraday_to_last_per_day() -> None:
     daily = _to_daily(series)
     assert [eq for _, eq in daily] == [Decimal("110"), Decimal("120")]
     assert [d.day for d, _ in daily] == [5, 6]
+
+
+async def test_sleeve_series_keeps_one_point_per_ledger_sequence() -> None:
+    """Duplicate snapshots at one sequence are not curve movement.
+
+    Rows repeated at the same ``as_of_sequence`` (a pre-038 database, or a
+    writer handover) would otherwise show up as extra points and inflate period
+    returns, volatility and Sharpe. The latest row at each sequence wins, the
+    way the account curve keeps the latest row per sleeve per day.
+    """
+    svc = _svc()
+    sleeve_id = uuid4()
+    base = datetime(2026, 1, 5, 10, tzinfo=UTC)
+    snapshots = [
+        SimpleNamespace(created_at=base, as_of_sequence=7, equity=Decimal("100")),
+        SimpleNamespace(
+            created_at=base + timedelta(hours=1), as_of_sequence=7, equity=Decimal("1")
+        ),
+        SimpleNamespace(
+            created_at=base + timedelta(hours=2), as_of_sequence=9, equity=Decimal("120")
+        ),
+    ]
+    svc.db.scalars = AsyncMock(return_value=SimpleNamespace(all=lambda: snapshots))
+
+    series = await svc._sleeve_series(TENANT, sleeve_id, None, None)
+
+    assert [eq for _, eq in series] == [Decimal("1"), Decimal("120")]
+    assert [ts for ts, _ in series] == [base + timedelta(hours=1), base + timedelta(hours=2)]
+
+
+async def test_sleeve_series_honors_the_time_window() -> None:
+    svc = _svc()
+    base = datetime(2026, 1, 5, 10, tzinfo=UTC)
+    start = base + timedelta(days=1)
+    # Filtering moved to SQL, so the fake cannot drop rows itself: it returns only
+    # the in-window snapshot (what the DB would yield), and we separately assert the
+    # emitted statement carries the window bound.
+    captured: dict[str, str] = {}
+
+    async def _scalars(stmt: Any) -> SimpleNamespace:
+        captured["sql"] = str(stmt.compile(compile_kwargs={"literal_binds": True}))
+        return SimpleNamespace(
+            all=lambda: [
+                SimpleNamespace(
+                    created_at=base + timedelta(days=2), as_of_sequence=9, equity=Decimal("120")
+                )
+            ]
+        )
+
+    svc.db.scalars = _scalars
+
+    series = await svc._sleeve_series(TENANT, uuid4(), start, None)
+
+    assert [eq for _, eq in series] == [Decimal("120")]
+    assert "created_at >=" in captured["sql"]

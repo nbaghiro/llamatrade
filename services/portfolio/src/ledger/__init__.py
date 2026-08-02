@@ -28,6 +28,7 @@ from src.ledger.funds import (
     plan_transfer,
     plan_withdraw,
 )
+from src.ledger.ids import deterministic_event_id
 from src.ledger.ingestion import (
     LedgerAppend,
     fill_to_append,
@@ -94,6 +95,8 @@ __all__ = [
     "reconcile",
     # writer
     "LedgerWriter",
+    # ids
+    "deterministic_event_id",
     # ingestion
     "LedgerAppend",
     "fill_to_append",

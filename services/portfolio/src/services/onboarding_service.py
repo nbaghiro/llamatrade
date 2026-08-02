@@ -19,7 +19,7 @@ from uuid import UUID
 from llamatrade_db.models.ledger import Account, SleeveType
 
 from src.ledger import backfill
-from src.ports import BrokerSnapshotProvider, LedgerStore
+from src.ports import BrokerSnapshotProvider, DuplicateBrokerAccounts, LedgerStore
 from src.services.sleeve_service import SleeveService
 
 logger = logging.getLogger(__name__)
@@ -29,6 +29,23 @@ def _backfill_event_id(account_id: UUID, dedup_key: str) -> UUID:
     """Deterministic, idempotent event id for a backfill seed event."""
     digest = hashlib.sha256(f"{account_id}:{dedup_key}".encode()).digest()
     return UUID(bytes=digest[:16])
+
+
+def report_duplicate_broker_accounts(duplicates: list[DuplicateBrokerAccounts]) -> int:
+    """Log accounts that share a broker account within a tenant; returns the count.
+
+    Reporting only. Merging two event logs changes the book of record and must be
+    an attended operation, so nothing here mutates.
+    """
+    for duplicate in duplicates:
+        logger.error(
+            "duplicate ledger accounts for broker account %s in tenant %s: %s; "
+            "tenant-level reads double-count these until an operator merges them",
+            duplicate.broker_account_id,
+            duplicate.tenant_id,
+            ", ".join(str(account_id) for account_id in duplicate.account_ids),
+        )
+    return len(duplicates)
 
 
 class AccountOnboardingService:
@@ -45,16 +62,32 @@ class AccountOnboardingService:
         self._broker = broker
 
     async def onboard(self, tenant_id: UUID, credentials_id: UUID) -> Account:
-        """Create the account + base sleeves and backfill broker cash/positions.
+        """Resolve the account + base sleeves and seed a new book from broker state.
 
-        Idempotent: re-running returns the same account and appends no duplicate
-        seed events (the writer dedups on the deterministic ``event_id``)."""
-        account = await self._sleeves.get_or_create_account(tenant_id, credentials_id)
+        The broker is read before the account is resolved: the same snapshot both
+        supplies the broker account id that identifies the ledger book and seeds
+        the backfill, so re-added credentials adopt the existing book instead of
+        forking a second one. An account that resolved to an existing book (by
+        credentials or by broker account) is not seeded — its positions are
+        already in the log, and a book that has traded since genesis would import
+        its current holdings a second time. Such a call still records a missing
+        broker account id from the snapshot in hand.
+
+        Idempotent: re-running returns the same account and appends no seed
+        events beyond the first pass."""
+        # The adapter resolves the broker from the account's credentials, so an unsaved row carries everything needed to read a not-yet-booked account.
+        probe = Account(tenant_id=tenant_id, credentials_id=credentials_id)
+        snapshot = await self._broker.snapshot(tenant_id, probe)
+
+        account, created = await self._sleeves.resolve_account(
+            tenant_id, credentials_id, snapshot.broker_account_id
+        )
         base = await self._sleeves.ensure_base_sleeves(account)
+        if not created:
+            return account
         unallocated = base[SleeveType.UNALLOCATED]
         unmanaged = base[SleeveType.UNMANAGED]
 
-        snapshot = await self._broker.snapshot(tenant_id, account)
         planned = backfill.plan_backfill(
             broker_cash=snapshot.cash,
             broker_positions=[

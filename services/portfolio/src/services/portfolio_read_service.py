@@ -3,7 +3,7 @@
 Reads derive from folding the event log (a tenant may own several accounts, one
 per broker credential set; every read aggregates across all of them) and map the
 read-model views straight to proto (``src.proto_mappers``) — proto is the
-canonical read shape (1A) and money stays ``Decimal`` end-to-end (5A). Balances/
+canonical read shape and money stays ``Decimal`` end-to-end. Balances/
 positions come from the projection; the performance curve from ``SleeveSnapshot``
 rows.
 """
@@ -26,8 +26,10 @@ from src.ledger import read_model
 from src.ledger.analytics import benchmark_metrics, equity_metrics
 from src.ledger.projection import AccountProjection
 from src.ledger.projector import LedgerProjector
+from src.metrics import record_projection_read
 from src.ports import PriceProvider
 from src.proto_mappers import TXN_TYPE_TO_PROTO, transaction_view_to_proto
+from src.services.read_context import AccountProjectionCache, LedgerReadBase, PriceCache
 
 
 def _dec(value: Decimal | float | int) -> common_pb2.Decimal:
@@ -62,7 +64,7 @@ def _performance_metrics_proto(
     )
 
 
-class PortfolioReadService:
+class PortfolioReadService(LedgerReadBase):
     """Portfolio/performance/transaction reads derived from the ledger."""
 
     def __init__(
@@ -70,11 +72,14 @@ class PortfolioReadService:
         db: AsyncSession,
         market_data: PriceProvider | None = None,
         benchmark_symbol: str = "SPY",
+        projections: AccountProjectionCache | None = None,
+        prices: PriceCache | None = None,
     ) -> None:
+        super().__init__(LedgerProjector(db), projections)
         self.db = db
         self.market_data = market_data
         self._benchmark_symbol = benchmark_symbol
-        self._projector = LedgerProjector(db)
+        self._price_cache = prices or PriceCache(market_data)
 
     async def get_summary(self, tenant_id: UUID) -> read_model.SummaryView:
         projections = await self._projections(tenant_id)
@@ -147,8 +152,7 @@ class PortfolioReadService:
 
         dates = [d for d, _ in series]
         equities = np.array([e for _, e in series], dtype=np.float64)
-        # Numpy is CPU-bound; keep it off the event loop so concurrent reads
-        # don't stall on a large series.
+        # Numpy is CPU-bound; keep it off the event loop so concurrent reads don't stall on a large series.
         m = await asyncio.to_thread(equity_metrics, equities)
 
         beta, alpha, benchmark_return = 0.0, 0.0, 0.0
@@ -204,18 +208,21 @@ class PortfolioReadService:
         return list(result.all())
 
     async def _projections(self, tenant_id: UUID) -> list[AccountProjection]:
-        return [
-            await self._projector.project_account(tenant_id, a.id)
-            for a in await self._accounts(tenant_id)
-        ]
+        projections: list[AccountProjection] = []
+        for account in await self._accounts(tenant_id):
+            projection = await self._project(tenant_id, account.id)
+            # Degraded (poison-skipped) projections are served, never silently.
+            record_projection_read(account.id, projection.poison_events)
+            projections.append(projection)
+        return projections
 
     async def _prices(self, projections: list[AccountProjection]) -> dict[str, Decimal]:
         symbols = sorted(
             {sym for proj in projections for s in proj.sleeves.values() for sym in s.positions}
         )
-        if not symbols or self.market_data is None:
+        if not symbols:
             return {}
-        return await self.market_data.get_prices(symbols)
+        return await self._price_cache.get(symbols)
 
     async def _daily_equity_series(
         self, tenant_id: UUID, start_date: date, end_date: date
