@@ -145,7 +145,10 @@ class TestConventions:
         await QueueDepthSampler(broker=FakeBroker({"backtest": 3})).sample_once()
 
         labels = _labels_of(_exposition(), METRIC, queue="backtest")
-        assert labels == {'queue="backtest"'}
+        # The OTel exporter may append otel_scope_* labels; only ours matter.
+        assert {part for part in labels if not part.startswith("otel_scope_")} == {
+            'queue="backtest"'
+        }
 
 
 class TestSamplingLoop:
