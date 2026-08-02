@@ -44,6 +44,8 @@ class FakeTransport:
         self.pause_calls: list[tuple[str, str, Cursor]] = []
         self.resume_calls: list[tuple[str, str, Cursor]] = []
         self.paused: set[tuple[str, str]] = set()
+        # Failure injection: length() raises the mapped error for that stream.
+        self.length_errors: dict[str, Exception] = {}
         self.closed = False
 
     # -- helpers for assertions --
@@ -56,6 +58,9 @@ class FakeTransport:
         return list(self._streams.get(stream, []))
 
     async def length(self, stream: str) -> int:
+        error = self.length_errors.get(stream)
+        if error is not None:
+            raise error
         return len(self._streams.get(stream, []))
 
     async def purge(self, stream: str, *, up_to_cursor: Cursor | None = None) -> None:

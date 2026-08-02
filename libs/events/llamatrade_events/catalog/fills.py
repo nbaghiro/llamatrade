@@ -20,7 +20,7 @@ from typing import cast
 from llamatrade_events.bus import EventBus
 from llamatrade_events.channels import LEDGER_FILLS
 from llamatrade_events.codec import EventEnvelope, make_envelope, parse_payload, register_payload
-from llamatrade_events.consumer import StreamConsumer
+from llamatrade_events.consumer import RetryPolicy, StreamConsumer
 from llamatrade_events.idempotency import DedupStore, derive_event_id
 from llamatrade_events.transport.base import CURSOR_BEGIN, Cursor
 from llamatrade_events.transport.factory import get_default_transport
@@ -75,11 +75,14 @@ class FillEvents:
         group: str = PORTFOLIO_GROUP,
         dedup: DedupStore | None = None,
         group_start: str = CURSOR_BEGIN,
+        policy: RetryPolicy | None = None,
     ) -> StreamConsumer:
         """A durable consumer for the ledger stream (handler gets the envelope).
 
         Defaults to ``group_start=CURSOR_BEGIN`` (never miss a fill: a fresh group
         replays the retained stream — safe given the writer's event-id dedupe).
+        ``policy`` selects the retry policy (portfolio passes ``RetryForever``:
+        a fill must never dead-letter on a transient failure).
         """
         return StreamConsumer(
             self._bus,
@@ -88,6 +91,7 @@ class FillEvents:
             consumer_name=consumer_name,
             dedup=dedup,
             group_start=group_start,
+            policy=policy,
         )
 
     @staticmethod

@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
+import time
+from collections.abc import Callable
 
 import pytest
 from conftest import FakeTransport, PublishRecord, metric_value
@@ -15,7 +18,13 @@ from llamatrade_events.codec import (
     make_envelope,
     parse_payload,
 )
-from llamatrade_events.consumer import PoisonError, StreamConsumer
+from llamatrade_events.consumer import (
+    DlqDepthSampler,
+    ErrorDisposition,
+    PoisonError,
+    RetryForever,
+    StreamConsumer,
+)
 from llamatrade_events.idempotency import InMemoryDedupStore, derive_event_id
 from llamatrade_events.transport.base import CURSOR_NEW
 from llamatrade_proto.generated import events_pb2
@@ -400,3 +409,340 @@ async def test_unexpected_lag_sample_error_propagates(
 
     with pytest.raises(ValueError):
         await consumer.run(handler)
+
+
+# --- RetryForever policy (money-path streams) ---
+
+
+class _QuarantineRecorder:
+    def __init__(self) -> None:
+        self.calls: list[tuple[bytes, EventEnvelope | None, BaseException]] = []
+
+    async def __call__(self, raw: bytes, env: EventEnvelope | None, exc: BaseException) -> None:
+        self.calls.append((raw, env, exc))
+
+
+def _transient_only(_exc: BaseException) -> ErrorDisposition:
+    return "transient"
+
+
+def _forever(
+    quarantine: _QuarantineRecorder,
+    classify: Callable[[BaseException], ErrorDisposition] = _transient_only,
+) -> RetryForever:
+    return RetryForever(
+        classify=classify, quarantine=quarantine, base_delay_seconds=0.0, max_delay_seconds=0.0
+    )
+
+
+async def test_forever_transient_retries_in_place_until_success(
+    bus: EventBus, transport: FakeTransport
+) -> None:
+    """A transient failure never dead-letters: the entry retries in place (its
+    partition paused meanwhile) and acks exactly once when the handler lands."""
+    await bus.publish_envelope(STREAM, _fill_env("f1"), maxlen=100)
+    quarantine = _QuarantineRecorder()
+    consumer = StreamConsumer(bus, STREAM, GROUP, consumer_name="c1", policy=_forever(quarantine))
+
+    failures = 3
+    handled: list[str] = []
+
+    async def flaky(env: EventEnvelope) -> None:
+        nonlocal failures
+        if failures > 0:
+            failures -= 1
+            raise ConnectionError("db hiccup")
+        handled.append(parse_payload(env).client_order_id)
+
+    before_err = _outcome_count(STREAM, GROUP, "error")
+    before_ok = _outcome_count(STREAM, GROUP, "ok")
+    await consumer.run(flaky)
+
+    assert handled == ["f1"]
+    assert transport.entries(STREAM + ":dlq") == []  # NEVER dead-lettered
+    assert quarantine.calls == []
+    assert await bus.pending(STREAM, GROUP) == 0  # acked after success
+    assert len(transport.pause_calls) == 1  # paused once, not per attempt
+    assert len(transport.resume_calls) == 1
+    assert _outcome_count(STREAM, GROUP, "error") == before_err + 3
+    assert _outcome_count(STREAM, GROUP, "ok") == before_ok + 1
+
+
+async def test_forever_backoff_grows_exponentially_to_the_cap(
+    bus: EventBus, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from llamatrade_events import consumer as consumer_mod
+
+    await bus.publish_envelope(STREAM, _fill_env("f2"), maxlen=100)
+    quarantine = _QuarantineRecorder()
+    policy = RetryForever(
+        classify=_transient_only,
+        quarantine=quarantine,
+        base_delay_seconds=0.5,
+        max_delay_seconds=2.0,
+    )
+    consumer = StreamConsumer(bus, STREAM, GROUP, consumer_name="c1", policy=policy)
+
+    delays: list[float] = []
+
+    async def fake_sleep(seconds: float) -> None:
+        delays.append(seconds)
+
+    monkeypatch.setattr(consumer_mod.asyncio, "sleep", fake_sleep)
+
+    failures = 4
+
+    async def flaky(_: EventEnvelope) -> None:
+        nonlocal failures
+        if failures > 0:
+            failures -= 1
+            raise ConnectionError("still down")
+
+    await consumer.run(flaky)
+    assert delays == [0.5, 1.0, 2.0, 2.0]  # doubles, then capped
+
+
+async def test_forever_poison_error_goes_to_quarantine_not_dlq(
+    bus: EventBus, transport: FakeTransport
+) -> None:
+    await bus.publish_envelope(STREAM, _fill_env("p9"), maxlen=100)
+    quarantine = _QuarantineRecorder()
+    consumer = StreamConsumer(bus, STREAM, GROUP, consumer_name="c1", policy=_forever(quarantine))
+
+    async def handler(_: EventEnvelope) -> None:
+        raise PoisonError("structurally wrong")
+
+    before = _outcome_count(STREAM, GROUP, "poison")
+    await consumer.run(handler)
+
+    assert transport.entries(STREAM + ":dlq") == []  # lib DLQ not used
+    assert len(quarantine.calls) == 1
+    _raw, env, exc = quarantine.calls[0]
+    assert env is not None and parse_payload(env).client_order_id == "p9"
+    assert isinstance(exc, PoisonError)
+    assert await bus.pending(STREAM, GROUP) == 0  # acked past it
+    assert _outcome_count(STREAM, GROUP, "poison") == before + 1
+
+
+async def test_forever_classifier_can_declare_poison(
+    bus: EventBus, transport: FakeTransport
+) -> None:
+    await bus.publish_envelope(STREAM, _fill_env("p10"), maxlen=100)
+    quarantine = _QuarantineRecorder()
+
+    def classify(exc: BaseException) -> ErrorDisposition:
+        return "poison" if isinstance(exc, ValueError) else "transient"
+
+    consumer = StreamConsumer(
+        bus, STREAM, GROUP, consumer_name="c1", policy=_forever(quarantine, classify)
+    )
+
+    attempts = 0
+
+    async def handler(_: EventEnvelope) -> None:
+        nonlocal attempts
+        attempts += 1
+        raise ValueError("bad payload")
+
+    await consumer.run(handler)
+
+    assert attempts == 1  # classified poison → no retry
+    assert len(quarantine.calls) == 1
+    assert transport.entries(STREAM + ":dlq") == []
+    assert await bus.pending(STREAM, GROUP) == 0
+
+
+async def test_forever_undecodable_bytes_quarantined_with_no_envelope(
+    bus: EventBus, transport: FakeTransport
+) -> None:
+    garbage = b"\xff\xfe not an envelope"
+    await bus.publish_raw(STREAM, garbage, maxlen=100)
+    quarantine = _QuarantineRecorder()
+    consumer = StreamConsumer(bus, STREAM, GROUP, consumer_name="c1", policy=_forever(quarantine))
+
+    handled = 0
+
+    async def handler(_: EventEnvelope) -> None:
+        nonlocal handled
+        handled += 1
+
+    before = _outcome_count(STREAM, GROUP, "poison")
+    await consumer.run(handler)
+
+    assert handled == 0
+    assert quarantine.calls[0][0] == garbage
+    assert quarantine.calls[0][1] is None  # undecodable → no envelope
+    assert transport.entries(STREAM + ":dlq") == []
+    assert await bus.pending(STREAM, GROUP) == 0
+    assert _outcome_count(STREAM, GROUP, "poison") == before + 1
+
+
+async def test_forever_quarantine_failure_still_acks(
+    bus: EventBus, transport: FakeTransport, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A failing quarantine handler must not wedge the partition: logged, acked."""
+    await bus.publish_envelope(STREAM, _fill_env("q1"), maxlen=100)
+
+    async def broken_quarantine(raw: bytes, env: EventEnvelope | None, exc: BaseException) -> None:
+        raise RuntimeError("dlq broker down")
+
+    policy = RetryForever(
+        classify=_transient_only,
+        quarantine=broken_quarantine,
+        base_delay_seconds=0.0,
+        max_delay_seconds=0.0,
+    )
+    consumer = StreamConsumer(bus, STREAM, GROUP, consumer_name="c1", policy=policy)
+
+    async def handler(_: EventEnvelope) -> None:
+        raise PoisonError("unrecordable")
+
+    with caplog.at_level(logging.ERROR, logger="llamatrade_events.consumer"):
+        await consumer.run(handler)
+
+    assert await bus.pending(STREAM, GROUP) == 0  # acked anyway
+    assert "Quarantine handler failed" in caplog.text
+
+
+async def test_forever_dedup_skips_and_marks(bus: EventBus) -> None:
+    env = _fill_env("fd1")
+    await bus.publish_envelope(STREAM, env, maxlen=100)
+    dedup = InMemoryDedupStore()
+    await dedup.mark(env.id)
+    quarantine = _QuarantineRecorder()
+    consumer = StreamConsumer(
+        bus, STREAM, GROUP, consumer_name="c1", dedup=dedup, policy=_forever(quarantine)
+    )
+
+    called = 0
+
+    async def handler(_: EventEnvelope) -> None:
+        nonlocal called
+        called += 1
+
+    await consumer.run(handler)
+    assert called == 0
+    assert await bus.pending(STREAM, GROUP) == 0
+
+
+async def test_forever_preserves_producer_trace_context(bus: EventBus) -> None:
+    """The CONSUMER span + context extraction hold under the forever policy."""
+    from opentelemetry import trace as _trace
+    from opentelemetry.sdk.resources import Resource
+
+    from llamatrade_telemetry import tracing
+    from llamatrade_telemetry.config import TelemetrySettings
+
+    tracing.reset_for_testing()
+    tracing.configure_tracing(
+        Resource.create({"service.name": "evt"}),
+        TelemetrySettings(OTEL_TRACES_SAMPLER="always_on"),
+    )
+    seen: dict[str, int] = {}
+
+    async def handler(_env: EventEnvelope) -> None:
+        seen["trace_id"] = _trace.get_current_span().get_span_context().trace_id
+
+    with tracing.span("producer") as producer:
+        producer_trace = producer.get_span_context().trace_id
+        await bus.publish_envelope(STREAM, _fill_env("ftrace"), maxlen=100)
+
+    quarantine = _QuarantineRecorder()
+    consumer = StreamConsumer(bus, STREAM, GROUP, consumer_name="c1", policy=_forever(quarantine))
+    await consumer.run(handler)
+
+    assert seen["trace_id"] == producer_trace
+
+
+# --- DLQ depth sampler ---
+
+DLQ_DEPTH = "llamatrade_events_dlq_depth"
+
+
+async def _eventually(predicate: Callable[[], bool], timeout: float = 5.0) -> None:
+    deadline = time.monotonic() + timeout
+    while not predicate():
+        if time.monotonic() > deadline:
+            raise AssertionError("condition not met within timeout")
+        await asyncio.sleep(0.005)
+
+
+async def test_dlq_sampler_sets_gauge_per_stream(bus: EventBus, transport: FakeTransport) -> None:
+    for i in range(3):
+        await transport.publish("ledger:fills:dlq", f"p{i}".encode())
+    await transport.publish("notifications:dlq", b"n0")
+    sampler = DlqDepthSampler(bus, ["ledger:fills:dlq", "notifications:dlq"])
+
+    await sampler.sample_once()
+
+    # labels are the bounded stream_label of each DLQ stream name
+    assert metric_value(DLQ_DEPTH, stream="ledger:fills") == 3.0
+    assert metric_value(DLQ_DEPTH, stream="notifications:dlq") == 1.0
+
+
+async def test_dlq_sampler_tracks_depth_down_and_up(
+    bus: EventBus, transport: FakeTransport
+) -> None:
+    """The gauge is set, not incremented: a drained DLQ reads zero again."""
+    await transport.publish("ledger:fills:dlq", b"parked")
+    sampler = DlqDepthSampler(bus, ["ledger:fills:dlq"])
+
+    await sampler.sample_once()
+    assert metric_value(DLQ_DEPTH, stream="ledger:fills") == 1.0
+
+    await transport.purge("ledger:fills:dlq")
+    await sampler.sample_once()
+    assert metric_value(DLQ_DEPTH, stream="ledger:fills") == 0.0
+
+
+async def test_dlq_sampler_survives_a_depth_failure(
+    bus: EventBus, transport: FakeTransport, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A failing depth call is logged and skipped; the other streams still sample."""
+    await transport.publish("orders:audit:dlq", b"x")
+    transport.length_errors["ledger:fills:dlq"] = RuntimeError("depth read failed")
+    sampler = DlqDepthSampler(bus, ["ledger:fills:dlq", "orders:audit:dlq"])
+
+    with caplog.at_level(logging.WARNING, logger="llamatrade_events.consumer"):
+        await sampler.sample_once()  # must not raise
+
+    assert metric_value(DLQ_DEPTH, stream="orders:audit") == 1.0
+    assert "RuntimeError" in caplog.text
+
+
+async def test_dlq_sampler_run_samples_immediately_and_stops(
+    bus: EventBus, transport: FakeTransport
+) -> None:
+    stream = "backtest:progress:dlq"
+    await transport.publish(stream, b"x")
+    stop = asyncio.Event()
+    sampler = DlqDepthSampler(bus, [stream], interval_seconds=0.01)
+    task = asyncio.create_task(sampler.run(stop_event=stop))
+
+    await _eventually(lambda: metric_value(DLQ_DEPTH, stream="backtest:progress") == 1.0)
+    await transport.publish(stream, b"y")
+    await _eventually(lambda: metric_value(DLQ_DEPTH, stream="backtest:progress") == 2.0)
+
+    stop.set()
+    await asyncio.wait_for(task, timeout=5.0)
+
+
+async def test_dlq_sampler_run_keeps_sampling_past_a_failure(
+    bus: EventBus, transport: FakeTransport
+) -> None:
+    """The loop outlives a depth-call exception and recovers once the fault clears."""
+    stream = "market:bars:dlq"
+    transport.length_errors[stream] = RuntimeError("broker blip")
+    stop = asyncio.Event()
+    sampler = DlqDepthSampler(bus, [stream], interval_seconds=0.01)
+    task = asyncio.create_task(sampler.run(stop_event=stop))
+
+    await asyncio.sleep(0.05)  # a few failing samples
+    assert not task.done()
+
+    del transport.length_errors[stream]
+    await transport.publish(stream, b"x")
+    await _eventually(lambda: metric_value(DLQ_DEPTH, stream="market:bars") == 1.0)
+
+    stop.set()
+    await asyncio.wait_for(task, timeout=5.0)

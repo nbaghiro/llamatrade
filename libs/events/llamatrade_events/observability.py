@@ -29,6 +29,11 @@ EVENTS_PUBLISHED_TOTAL = counter(
     ["stream"],
     "Events published to the bus",
 )
+EVENTS_PUBLISH_FAILURES_TOTAL = counter(
+    "llamatrade_events_publish_failures_total",
+    ["stream"],
+    "Publish attempts that raised before the broker confirmed the record(s)",
+)
 EVENTS_RECONNECTS_TOTAL = counter(
     "llamatrade_events_reconnects_total",
     ["stream", "mode"],  # mode: tail / consume
@@ -56,6 +61,11 @@ EVENTS_CONSUMER_LAG = gauge(
     "llamatrade_events_consumer_lag",
     ["stream", "group"],
     "Uncommitted entries per consumer group (Kafka consumer lag)",
+)
+EVENTS_DLQ_DEPTH = gauge(
+    "llamatrade_events_dlq_depth",
+    ["stream"],
+    "Entries currently parked on a dead-letter stream",
 )
 
 # --- gRPC fan-out ---

@@ -54,7 +54,17 @@ from llamatrade_events.codec import (
     parse_payload,
     register_payload,
 )
-from llamatrade_events.consumer import PoisonError, StreamConsumer
+from llamatrade_events.consumer import (
+    BoundedRetry,
+    DlqDepthSampler,
+    ErrorClassifier,
+    ErrorDisposition,
+    PoisonError,
+    QuarantineHandler,
+    RetryForever,
+    RetryPolicy,
+    StreamConsumer,
+)
 from llamatrade_events.fanout import StreamFanout
 from llamatrade_events.idempotency import (
     DedupStore,
@@ -115,6 +125,13 @@ __all__ = [
     "UnknownEventTypeError",
     "get_default_transport",
     # runtime
+    "BoundedRetry",
+    "DlqDepthSampler",
+    "ErrorClassifier",
+    "ErrorDisposition",
+    "QuarantineHandler",
+    "RetryForever",
+    "RetryPolicy",
     "StreamConsumer",
     "StreamFanout",
     # codec / idempotency

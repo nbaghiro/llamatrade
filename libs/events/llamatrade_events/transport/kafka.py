@@ -42,6 +42,7 @@ from llamatrade_events.channels import resolve_topic
 from llamatrade_events.observability import (
     EVENTS_BROKEN_CREDENTIALS_TOTAL,
     EVENTS_CLIENT_START_FAILURES_TOTAL,
+    EVENTS_PUBLISH_FAILURES_TOTAL,
     EVENTS_PUBLISHED_TOTAL,
     EVENTS_RECONNECTS_TOTAL,
     stream_label,
@@ -476,15 +477,19 @@ class KafkaTransport:
     ) -> Cursor:
         # maxlen is advisory on Kafka (retention is topic config); ignored here.
         del maxlen
-        producer = await self._producer_ready()
-        future = await producer.send(
-            self.topic(stream), value=value, key=key.encode() if key else None
-        )
-        # Money path (a solo ledger fill): flush so the record leaves now instead
-        # of waiting out the producer's linger. The linger stays in place to batch
-        # bursts through publish_many (bars); a solo publish must not pay for it.
-        await producer.flush()
-        metadata = await future
+        try:
+            producer = await self._producer_ready()
+            future = await producer.send(
+                self.topic(stream), value=value, key=key.encode() if key else None
+            )
+            # Money path (a solo ledger fill): flush so the record leaves now instead
+            # of waiting out the producer's linger. The linger stays in place to batch
+            # bursts through publish_many (bars); a solo publish must not pay for it.
+            await producer.flush()
+            metadata = await future
+        except Exception:
+            EVENTS_PUBLISH_FAILURES_TOTAL.labels(stream=stream_label(stream)).inc()
+            raise
         EVENTS_PUBLISHED_TOTAL.labels(stream=stream_label(stream)).inc()
         return _cursor(metadata.partition, metadata.offset)
 
@@ -499,16 +504,21 @@ class KafkaTransport:
         del maxlen
         if not records:
             return []
-        producer = await self._producer_ready()
-        topic = self.topic(stream)
-        # send() only appends to the per-partition accumulator, so awaiting the
-        # returned futures together lets one produce request carry the whole
-        # batch. Enqueuing in call order keeps per-key order within a partition.
-        futures = [
-            await producer.send(topic, value=r.value, key=r.key.encode() if r.key else None)
-            for r in records
-        ]
-        metadata: list[RecordMetadata] = await asyncio.gather(*futures)
+        try:
+            producer = await self._producer_ready()
+            topic = self.topic(stream)
+            # send() only appends to the per-partition accumulator, so awaiting the
+            # returned futures together lets one produce request carry the whole
+            # batch. Enqueuing in call order keeps per-key order within a partition.
+            futures = [
+                await producer.send(topic, value=r.value, key=r.key.encode() if r.key else None)
+                for r in records
+            ]
+            metadata: list[RecordMetadata] = await asyncio.gather(*futures)
+        except Exception:
+            # No record in the batch was confirmed; count them all as failed.
+            EVENTS_PUBLISH_FAILURES_TOTAL.labels(stream=stream_label(stream)).inc(len(records))
+            raise
         EVENTS_PUBLISHED_TOTAL.labels(stream=stream_label(stream)).inc(len(records))
         return [_cursor(m.partition, m.offset) for m in metadata]
 

@@ -37,6 +37,8 @@ from llamatrade_events.transport.kafka import (
 
 BROKEN_CREDENTIALS = "llamatrade_events_broken_credentials_total"
 START_FAILURES = "llamatrade_events_client_start_failures_total"
+PUBLISHED = "llamatrade_events_published_total"
+PUBLISH_FAILURES = "llamatrade_events_publish_failures_total"
 
 # --- pure logic (no broker) ---
 
@@ -87,6 +89,8 @@ class _FakeBroker:
         # Each new consumer pops a fail-after count: raise KafkaError after that
         # many deliveries (0 = fail before the first). Empty = never fail.
         self.fail_plan: list[int] = []
+        # When set, every producer send raises it (publish-failure paths).
+        self.send_error: Exception | None = None
         # How many further consumer starts must fail before one succeeds.
         self.start_failures = 0
         # Stop-path hooks: aiokafka's spurious cancellation, and a stop that
@@ -129,6 +133,8 @@ class _FakeProducer:
     async def send(
         self, topic: str, value: bytes, key: bytes | None = None
     ) -> asyncio.Future[_FakeRecord]:
+        if self._broker.send_error is not None:
+            raise self._broker.send_error
         rec = self._broker.append(topic, key, value)
         fut: asyncio.Future[_FakeRecord] = asyncio.get_running_loop().create_future()
         fut.set_result(rec)
@@ -396,6 +402,55 @@ async def test_publish_many_records_without_keys(broker: _FakeBroker) -> None:
     cursors = await t.publish_many("market:bars:1m", [OutgoingRecord(b"x"), OutgoingRecord(b"y")])
     assert cursors == ["0:0", "0:1"]
     assert [r.key for r in broker.logs["lt.market.bars.1m"]] == [None, None]
+
+
+# --- publish failure accounting ---
+
+
+async def test_publish_failure_counts_and_reraises(broker: _FakeBroker) -> None:
+    t = KafkaTransport()
+    await t.publish("ledger:fills", b"seed", key="acctA")  # producer is up
+    broker.send_error = KafkaError("injected send failure")
+    failures_before = metric_value(PUBLISH_FAILURES, stream="ledger:fills")
+    published_before = metric_value(PUBLISHED, stream="ledger:fills")
+
+    with pytest.raises(KafkaError, match="injected send failure"):
+        await t.publish("ledger:fills", b"x", key="acctA")
+
+    assert metric_value(PUBLISH_FAILURES, stream="ledger:fills") == failures_before + 1
+    # a failed publish never counts as published
+    assert metric_value(PUBLISHED, stream="ledger:fills") == published_before
+
+
+async def test_publish_many_failure_counts_every_record(broker: _FakeBroker) -> None:
+    """A batch raises as a unit: none of its records were confirmed, so all count."""
+    t = KafkaTransport()
+    await t.publish("market:bars:1m", b"seed", key="AAPL")
+    broker.send_error = KafkaError("injected send failure")
+    failures_before = metric_value(PUBLISH_FAILURES, stream="market:bars")
+    published_before = metric_value(PUBLISHED, stream="market:bars")
+
+    with pytest.raises(KafkaError, match="injected send failure"):
+        await t.publish_many(
+            "market:bars:1m", [OutgoingRecord(b"a", "AAPL"), OutgoingRecord(b"b", "AAPL")]
+        )
+
+    assert metric_value(PUBLISH_FAILURES, stream="market:bars") == failures_before + 2
+    assert metric_value(PUBLISHED, stream="market:bars") == published_before
+
+
+async def test_a_failed_producer_start_counts_as_a_publish_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A publish that dies building its producer still failed to publish."""
+    _stalled_producers(monkeypatch, stall_start=True)
+    t = KafkaTransport(client_start_timeout_seconds=0.05)
+    before = metric_value(PUBLISH_FAILURES, stream="ledger:fills")
+
+    with pytest.raises(TransportAuthError):
+        await asyncio.wait_for(t.publish("ledger:fills", b"x", key="acctA"), timeout=5.0)
+
+    assert metric_value(PUBLISH_FAILURES, stream="ledger:fills") == before + 1
 
 
 # --- producer batching config ---
