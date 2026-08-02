@@ -12,10 +12,10 @@ from collections.abc import Awaitable, Callable, Iterator
 import grpc
 import grpc.aio
 import pytest
-from llamatrade_telemetry import get_metrics, init_telemetry, registry, tracing
-from llamatrade_telemetry.config import TelemetrySettings
 
 from llamatrade_proto.interceptors.telemetry import TelemetryClientInterceptor
+from llamatrade_telemetry import get_metrics, init_telemetry, registry, tracing
+from llamatrade_telemetry.config import TelemetrySettings
 
 
 @pytest.fixture(scope="module", autouse=True)
