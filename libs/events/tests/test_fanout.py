@@ -3,21 +3,12 @@
 from __future__ import annotations
 
 import asyncio
-import re
 from collections.abc import AsyncIterator
 
 import pytest
+from conftest import metric_value
 
 from llamatrade_events.fanout import StreamFanout
-from llamatrade_telemetry import get_metrics
-
-
-def _metric_value(name: str, **labels: str) -> float:
-    """Read a single metric value from the Prometheus exposition (0.0 if absent)."""
-    label_str = ",".join(f'{k}="{v}"' for k, v in sorted(labels.items()))
-    pattern = re.compile(rf"^{re.escape(name)}\{{{re.escape(label_str)}\}} (.+)$", re.M)
-    match = pattern.search(get_metrics().decode())
-    return float(match.group(1)) if match else 0.0
 
 
 async def test_routes_by_key_and_broadcasts_to_wildcard() -> None:
@@ -111,12 +102,12 @@ async def test_duplicate_client_id_raises() -> None:
 async def test_drop_on_full_increments_named_metric() -> None:
     fo: StreamFanout[str] = StreamFanout(name="bars-test", queue_max=1)
     await fo.connect(1)
-    before = _metric_value("llamatrade_events_fanout_dropped_total", fanout="bars-test")
+    before = metric_value("llamatrade_events_fanout_dropped_total", fanout="bars-test")
 
     await fo.broadcast("K", "first")
     await fo.broadcast("K", "second")  # queue full → dropped
 
-    after = _metric_value("llamatrade_events_fanout_dropped_total", fanout="bars-test")
+    after = metric_value("llamatrade_events_fanout_dropped_total", fanout="bars-test")
     assert after == before + 1
 
 
@@ -128,8 +119,8 @@ async def test_clients_gauge_tracks_connect_and_disconnect() -> None:
 
     await fo.connect(1)
     await fo.connect(2)
-    assert _metric_value("llamatrade_events_fanout_clients", fanout="orders-test") == 2
+    assert metric_value("llamatrade_events_fanout_clients", fanout="orders-test") == 2
     await fo.disconnect(1)
-    assert _metric_value("llamatrade_events_fanout_clients", fanout="orders-test") == 1
+    assert metric_value("llamatrade_events_fanout_clients", fanout="orders-test") == 1
     await fo.disconnect(2)
-    assert _metric_value("llamatrade_events_fanout_clients", fanout="orders-test") == 0
+    assert metric_value("llamatrade_events_fanout_clients", fanout="orders-test") == 0
