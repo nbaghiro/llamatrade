@@ -1,5 +1,6 @@
 """Base HTTP client for Alpaca APIs."""
 
+import hashlib
 import logging
 from typing import Any, Self
 
@@ -7,7 +8,13 @@ import httpx
 
 from .config import AlpacaCredentials
 from .errors import AuthenticationError
-from .resilience import CircuitBreaker, RateLimiter, parse_alpaca_error
+from .resilience import (
+    CircuitBreaker,
+    RateLimiter,
+    RateLimiterLike,
+    parse_alpaca_error,
+    select_rate_limiter,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -61,7 +68,12 @@ class AlpacaClientBase:
         self.paper = paper
         self.base_url = self.BASE_URL_PAPER if paper else self.BASE_URL_LIVE
 
-        self._rate_limiter = rate_limiter
+        # Shared (Redis) limiter when configured via env, else the local bucket.
+        self._rate_limiter: RateLimiterLike | None = (
+            select_rate_limiter(rate_limiter, scope=self._rate_limit_scope())
+            if rate_limiter is not None
+            else None
+        )
         self._circuit_breaker = circuit_breaker
 
         self._client = httpx.AsyncClient(
@@ -69,6 +81,11 @@ class AlpacaClientBase:
             headers=self.credentials.to_headers(),
             timeout=timeout,
         )
+
+    def _rate_limit_scope(self) -> str:
+        """Per-credential scope for the shared rate limit (key hashed, not stored raw)."""
+        key = self.credentials.api_key
+        return hashlib.sha256(key.encode()).hexdigest()[:16] if key else "anonymous"
 
     async def close(self) -> None:
         """Close the HTTP client."""

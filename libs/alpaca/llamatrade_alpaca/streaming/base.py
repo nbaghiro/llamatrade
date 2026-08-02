@@ -19,7 +19,7 @@ import asyncio
 import json
 import logging
 import random
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 import websockets
@@ -77,6 +77,8 @@ class AlpacaWebSocketBase(abc.ABC):
         self._running = False
         self._authenticated = False
         self._reconnect_attempts = 0
+        # Injectable for tests (fake clock); production uses the real sleep.
+        self._sleep: Callable[[float], Awaitable[None]] = asyncio.sleep
 
     # ------------------------------------------------------------------ state
 
@@ -185,7 +187,7 @@ class AlpacaWebSocketBase(abc.ABC):
             f"Reconnecting to {self.url} in {delay:.2f}s "
             f"(attempt {self._reconnect_attempts}/{self.max_reconnect_attempts})"
         )
-        await asyncio.sleep(delay)
+        await self._sleep(delay)
 
         if await self.connect():
             await self._resubscribe()

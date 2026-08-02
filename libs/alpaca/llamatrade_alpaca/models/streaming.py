@@ -17,7 +17,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
 from enum import Enum
-from typing import Literal, TypedDict
+from typing import Literal, NotRequired, TypedDict
 
 # Market data stream payloads
 
@@ -50,6 +50,8 @@ class BarData(TypedDict):
     close: float
     volume: int
     timestamp: str | datetime  # ISO string or datetime from Alpaca
+    vwap: NotRequired[float]
+    trade_count: NotRequired[int]
 
 
 # Union of all market data stream payload types

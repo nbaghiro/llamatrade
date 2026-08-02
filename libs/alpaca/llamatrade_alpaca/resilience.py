@@ -5,13 +5,14 @@ Provides rate limiting, retry with exponential backoff, and circuit breaker patt
 
 import asyncio
 import logging
+import os
 import random
 import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from enum import StrEnum
 from functools import wraps
-from typing import ParamSpec, TypeVar
+from typing import ParamSpec, Protocol, TypeVar, cast
 
 import httpx
 
@@ -101,6 +102,115 @@ class RateLimiter:
     def available_tokens(self) -> float:
         """Get current available tokens (approximate)."""
         return self._tokens
+
+
+# === Shared (Cluster-Wide) Rate Limiter ===
+
+
+class RateLimiterLike(Protocol):
+    """Anything a client can rate-limit through (local bucket or shared limiter)."""
+
+    async def acquire(self, timeout: float | None = None) -> bool: ...
+
+
+class RedisClientLike(Protocol):
+    """Minimal async Redis surface the shared limiter needs."""
+
+    async def incr(self, name: str) -> int: ...
+    async def expire(self, name: str, seconds: int) -> bool: ...
+
+
+class RedisRateLimiter:
+    """Cluster-wide fixed-window rate limiter over Redis (INCR + EXPIRE).
+
+    Trade-off: one atomic INCR per acquire, but a fixed window can admit up to
+    2x the limit across a window boundary — accepted for simplicity over a
+    sliding-window Lua script.
+
+    Fails OPEN to the local in-process bucket on any Redis error.
+    """
+
+    def __init__(
+        self,
+        redis: RedisClientLike,
+        fallback: RateLimiter,
+        limit: int = 200,
+        window_s: int = 60,
+        scope: str = "default",
+        key_prefix: str = "alpaca:ratelimit",
+        time_fn: Callable[[], float] = time.time,
+        sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
+    ) -> None:
+        self.limit = limit
+        self.window_s = window_s
+        self.scope = scope
+        self._redis = redis
+        self._fallback = fallback
+        self._key_prefix = key_prefix
+        self._time = time_fn
+        self._sleep = sleep
+
+    def _key(self, window: int) -> str:
+        return f"{self._key_prefix}:{self.scope}:{window}"
+
+    async def acquire(self, timeout: float | None = None) -> bool:
+        """Acquire a slot in the shared window, waiting for the next window if full.
+
+        Returns:
+            True if a slot was acquired, False if the wait would exceed ``timeout``.
+        """
+        start = self._time()
+        while True:
+            now = self._time()
+            window = int(now // self.window_s)
+            try:
+                count = await self._redis.incr(self._key(window))
+                if count == 1:
+                    await self._redis.expire(self._key(window), self.window_s * 2)
+            except Exception:
+                logger.warning(
+                    "Shared rate limiter Redis error; failing open to local bucket",
+                    exc_info=True,
+                )
+                remaining = None if timeout is None else max(0.0, timeout - (now - start))
+                return await self._fallback.acquire(timeout=remaining)
+
+            if count <= self.limit:
+                return True
+
+            wait = (window + 1) * self.window_s - now
+            if timeout is not None and (now - start) + wait > timeout:
+                return False
+            await self._sleep(wait)
+
+
+def _shared_limiter_url() -> str | None:
+    url = os.getenv("ALPACA_RATE_LIMIT_REDIS_URL")
+    if url:
+        return url
+    if os.getenv("ALPACA_SHARED_RATE_LIMIT", "").lower() in ("1", "true", "yes"):
+        return os.getenv("REDIS_URL") or None
+    return None
+
+
+def select_rate_limiter(local: RateLimiter, scope: str) -> RateLimiterLike:
+    """The cluster-shared limiter when configured via env, else the local bucket.
+
+    N replicas each holding a full in-process bucket multiply the Alpaca
+    budget; the shared limiter enforces one budget per credential scope. Falls
+    back to ``local`` when Redis is unconfigured or the client cannot be built.
+    """
+    url = _shared_limiter_url()
+    if url is None:
+        return local
+    try:
+        import redis.asyncio as redis_asyncio
+
+        client = cast(RedisClientLike, redis_asyncio.Redis.from_url(url))
+    except Exception:
+        logger.warning("Shared rate limiter unavailable; using in-process bucket", exc_info=True)
+        return local
+    return RedisRateLimiter(redis=client, fallback=local, limit=local.capacity, scope=scope)
 
 
 # === Circuit Breaker ===
@@ -221,9 +331,6 @@ class RetryConfig:
     max_delay: float = 30.0  # seconds
     exponential_base: float = 2.0
     jitter: bool = True
-
-    # HTTP status codes to retry
-    retryable_status_codes: tuple[int, ...] = (429, 500, 502, 503, 504)
 
     # Exception types to retry
     retryable_exceptions: tuple[type[Exception], ...] = (

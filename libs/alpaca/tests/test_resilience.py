@@ -1,5 +1,8 @@
 """Tests for resilience module."""
 
+import asyncio
+import logging
+import time
 from unittest.mock import MagicMock
 
 import httpx
@@ -16,11 +19,13 @@ from llamatrade_alpaca.resilience import (
     CircuitBreaker,
     CircuitState,
     RateLimiter,
+    RedisRateLimiter,
     RetryConfig,
     create_market_data_resilience,
     create_trading_resilience,
     parse_alpaca_error,
     retry_with_backoff,
+    select_rate_limiter,
 )
 
 
@@ -47,6 +52,54 @@ class TestRateLimiter:
         assert limiter.available_tokens == 5.0
         await limiter.acquire()
         assert limiter.available_tokens == 4.0
+
+
+class TestRateLimiterTiming:
+    """Time-based RateLimiter behavior (fake clock via _last_refill rewind)."""
+
+    async def test_refill_over_elapsed_time(self) -> None:
+        limiter = RateLimiter(capacity=10, refill_rate=2.0)
+        for _ in range(10):
+            assert await limiter.acquire() is True
+        assert limiter.available_tokens < 1
+
+        limiter._last_refill -= 2.5  # simulate 2.5s elapsed -> 5 tokens back
+        assert await limiter.acquire() is True
+        assert limiter.available_tokens == pytest.approx(4.0, abs=0.1)
+
+    async def test_refill_caps_at_capacity(self) -> None:
+        limiter = RateLimiter(capacity=10, refill_rate=2.0)
+        await limiter.acquire()
+
+        limiter._last_refill -= 1000.0
+        assert await limiter.acquire() is True
+        assert limiter.available_tokens == pytest.approx(9.0, abs=0.1)
+
+    async def test_concurrent_acquires_block_until_refill(self) -> None:
+        limiter = RateLimiter(capacity=2, refill_rate=100.0)
+        for _ in range(2):
+            assert await limiter.acquire() is True
+
+        start = time.monotonic()
+        results = await asyncio.gather(
+            limiter.acquire(timeout=2.0),
+            limiter.acquire(timeout=2.0),
+        )
+        elapsed = time.monotonic() - start
+
+        assert results == [True, True]
+        # Two extra tokens at 100/s means the waiters really blocked (~20ms).
+        assert elapsed >= 0.015
+        assert limiter.available_tokens < 1
+
+    async def test_acquire_timeout_returns_false_without_blocking(self) -> None:
+        limiter = RateLimiter(capacity=1, refill_rate=0.001)
+        assert await limiter.acquire() is True
+
+        start = time.monotonic()
+        assert await limiter.acquire(timeout=0.05) is False
+        # The needed wait (~1000s) exceeds the timeout, so it returns immediately.
+        assert time.monotonic() - start < 0.05
 
 
 class TestCircuitBreaker:
@@ -126,6 +179,66 @@ class TestCircuitBreaker:
         cb.reset()
         assert cb.state == CircuitState.CLOSED
         assert cb.is_open is False
+
+
+async def _fail() -> None:
+    raise AlpacaServerError("boom")
+
+
+async def _ok() -> str:
+    return "ok"
+
+
+class TestCircuitBreakerHalfOpen:
+    """OPEN -> HALF_OPEN -> CLOSED/OPEN transitions with an injected clock."""
+
+    async def _open(self, cb: CircuitBreaker) -> None:
+        for _ in range(cb.failure_threshold):
+            with pytest.raises(AlpacaServerError):
+                await cb.call(_fail)
+        assert cb.state == CircuitState.OPEN
+
+    async def test_open_transitions_to_half_open_after_reset_timeout(self) -> None:
+        cb = CircuitBreaker(failure_threshold=1, reset_timeout=60.0)
+        await self._open(cb)
+
+        with pytest.raises(CircuitOpenError):
+            await cb.call(_ok)
+
+        cb._last_failure_time -= 60.0  # rewind: reset_timeout has now elapsed
+        states_during_probe: list[CircuitState] = []
+
+        async def probe() -> str:
+            states_during_probe.append(cb.state)
+            return "ok"
+
+        assert await cb.call(probe) == "ok"
+        assert states_during_probe == [CircuitState.HALF_OPEN]
+
+    async def test_half_open_success_closes_and_resets_failures(self) -> None:
+        cb = CircuitBreaker(failure_threshold=2, reset_timeout=30.0)
+        await self._open(cb)
+
+        cb._last_failure_time -= 30.0
+        assert await cb.call(_ok) == "ok"
+        assert cb.state == CircuitState.CLOSED
+
+        # Failure count was reset: one failure does not re-open a threshold-2 breaker.
+        with pytest.raises(AlpacaServerError):
+            await cb.call(_fail)
+        assert cb.state == CircuitState.CLOSED
+
+    async def test_half_open_failure_reopens(self) -> None:
+        cb = CircuitBreaker(failure_threshold=3, reset_timeout=30.0)
+        await self._open(cb)
+
+        cb._last_failure_time -= 30.0
+        with pytest.raises(AlpacaServerError):
+            await cb.call(_fail)
+
+        assert cb.state == CircuitState.OPEN
+        with pytest.raises(CircuitOpenError):
+            await cb.call(_ok)
 
 
 class TestRetryConfig:
@@ -289,3 +402,196 @@ class TestFactoryFunctions:
         assert isinstance(circuit_breaker, CircuitBreaker)
         assert circuit_breaker.failure_threshold == 3  # Stricter for trading
         assert circuit_breaker.reset_timeout == 30.0  # Faster recovery
+
+
+# === Shared (Redis) Rate Limiter ===
+
+
+class FakeRedis:
+    """In-memory INCR/EXPIRE fake matching the RedisClientLike protocol."""
+
+    def __init__(self, fail: bool = False) -> None:
+        self.counts: dict[str, int] = {}
+        self.ttls: dict[str, int] = {}
+        self.fail = fail
+
+    async def incr(self, name: str) -> int:
+        if self.fail:
+            raise ConnectionError("redis down")
+        self.counts[name] = self.counts.get(name, 0) + 1
+        return self.counts[name]
+
+    async def expire(self, name: str, seconds: int) -> bool:
+        if self.fail:
+            raise ConnectionError("redis down")
+        self.ttls[name] = seconds
+        return True
+
+
+class FakeClock:
+    """Wall clock + sleep pair where sleeping advances the clock (no real waits)."""
+
+    def __init__(self, now: float = 1200.0) -> None:
+        self.now = now
+        self.sleeps: list[float] = []
+
+    def time(self) -> float:
+        return self.now
+
+    async def sleep(self, delay: float) -> None:
+        self.sleeps.append(delay)
+        self.now += delay
+
+
+def _shared_limiter(
+    redis: FakeRedis, clock: FakeClock, limit: int = 3, fallback: RateLimiter | None = None
+) -> RedisRateLimiter:
+    return RedisRateLimiter(
+        redis=redis,
+        fallback=fallback or RateLimiter(capacity=5, refill_rate=1.0),
+        limit=limit,
+        window_s=60,
+        scope="cred1",
+        time_fn=clock.time,
+        sleep=clock.sleep,
+    )
+
+
+class TestRedisRateLimiter:
+    """Cluster-wide fixed-window limiter behavior."""
+
+    async def test_enforces_window_limit(self) -> None:
+        redis = FakeRedis()
+        clock = FakeClock(now=1200.0)
+        limiter = _shared_limiter(redis, clock, limit=3)
+
+        for _ in range(3):
+            assert await limiter.acquire(timeout=0.0) is True
+        assert await limiter.acquire(timeout=1.0) is False
+        assert clock.sleeps == []  # over-timeout waits return immediately
+
+    async def test_sets_expiry_on_first_increment_of_window(self) -> None:
+        redis = FakeRedis()
+        clock = FakeClock(now=1200.0)
+        limiter = _shared_limiter(redis, clock, limit=3)
+
+        await limiter.acquire()
+        key = "alpaca:ratelimit:cred1:20"
+        assert redis.counts == {key: 1}
+        assert redis.ttls == {key: 120}
+
+    async def test_waits_into_next_window_when_allowed(self) -> None:
+        redis = FakeRedis()
+        clock = FakeClock(now=1200.0)
+        limiter = _shared_limiter(redis, clock, limit=3)
+
+        for _ in range(3):
+            await limiter.acquire()
+        assert await limiter.acquire(timeout=90.0) is True
+
+        # Slept exactly to the window boundary, then counted in the new window.
+        assert clock.sleeps == [pytest.approx(60.0)]
+        assert redis.counts["alpaca:ratelimit:cred1:21"] == 1
+
+    async def test_windows_are_scoped_per_credential(self) -> None:
+        redis = FakeRedis()
+        clock = FakeClock(now=1200.0)
+        a = _shared_limiter(redis, clock, limit=1)
+        b = RedisRateLimiter(
+            redis=redis,
+            fallback=RateLimiter(capacity=5, refill_rate=1.0),
+            limit=1,
+            window_s=60,
+            scope="cred2",
+            time_fn=clock.time,
+            sleep=clock.sleep,
+        )
+
+        assert await a.acquire(timeout=0.0) is True
+        assert await b.acquire(timeout=0.0) is True  # separate budget
+        assert await a.acquire(timeout=0.0) is False
+
+    async def test_redis_error_fails_open_to_local_bucket(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        fallback = RateLimiter(capacity=5, refill_rate=1.0)
+        limiter = _shared_limiter(FakeRedis(fail=True), FakeClock(), fallback=fallback)
+
+        with caplog.at_level(logging.WARNING, logger="llamatrade_alpaca.resilience"):
+            assert await limiter.acquire() is True
+
+        assert "failing open" in caplog.text
+        assert fallback.available_tokens == pytest.approx(4.0, abs=0.1)
+
+    async def test_fail_open_respects_remaining_timeout(self) -> None:
+        fallback = RateLimiter(capacity=1, refill_rate=0.001)
+        await fallback.acquire()  # drain the local bucket
+        limiter = _shared_limiter(FakeRedis(fail=True), FakeClock(), fallback=fallback)
+
+        start = time.monotonic()
+        assert await limiter.acquire(timeout=0.05) is False
+        assert time.monotonic() - start < 0.05
+
+
+class TestSharedLimiterSelection:
+    """Env-driven selection between the local bucket and the shared limiter."""
+
+    @pytest.fixture(autouse=True)
+    def clean_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        for var in ("ALPACA_RATE_LIMIT_REDIS_URL", "ALPACA_SHARED_RATE_LIMIT", "REDIS_URL"):
+            monkeypatch.delenv(var, raising=False)
+
+    def test_defaults_to_local_bucket(self) -> None:
+        local = RateLimiter(capacity=200)
+        assert select_rate_limiter(local, scope="s") is local
+
+    def test_dedicated_url_selects_shared_limiter(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("ALPACA_RATE_LIMIT_REDIS_URL", "redis://localhost:6399/0")
+        local = RateLimiter(capacity=200)
+
+        limiter = select_rate_limiter(local, scope="cred-hash")
+
+        assert isinstance(limiter, RedisRateLimiter)
+        assert limiter.limit == 200
+        assert limiter.scope == "cred-hash"
+
+    def test_redis_url_with_flag_selects_shared_limiter(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("REDIS_URL", "redis://localhost:6399/0")
+        monkeypatch.setenv("ALPACA_SHARED_RATE_LIMIT", "true")
+
+        limiter = select_rate_limiter(RateLimiter(capacity=200), scope="s")
+        assert isinstance(limiter, RedisRateLimiter)
+
+    def test_redis_url_without_flag_stays_local(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("REDIS_URL", "redis://localhost:6399/0")
+        local = RateLimiter(capacity=200)
+        assert select_rate_limiter(local, scope="s") is local
+
+    def test_flag_without_url_stays_local(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("ALPACA_SHARED_RATE_LIMIT", "true")
+        local = RateLimiter(capacity=200)
+        assert select_rate_limiter(local, scope="s") is local
+
+    async def test_client_base_uses_shared_limiter_when_configured(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from llamatrade_alpaca import MarketDataClient
+
+        monkeypatch.setenv("ALPACA_RATE_LIMIT_REDIS_URL", "redis://localhost:6399/0")
+        client = MarketDataClient(api_key="key-a", api_secret="secret")
+        try:
+            assert isinstance(client._rate_limiter, RedisRateLimiter)
+            assert client._rate_limiter.scope != "key-a"  # hashed, not the raw key
+        finally:
+            await client.close()
+
+    async def test_client_base_defaults_to_local_bucket(self) -> None:
+        from llamatrade_alpaca import MarketDataClient
+
+        client = MarketDataClient(api_key="key-a", api_secret="secret")
+        try:
+            assert isinstance(client._rate_limiter, RateLimiter)
+        finally:
+            await client.close()

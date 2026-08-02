@@ -76,7 +76,22 @@ class MarketDataClient(AlpacaClientBase):
 
     # Historical Bars
 
+    # Alpaca caps a single bars response at 10000 rows; larger requests paginate.
+    PAGE_LIMIT = 10_000
+    # Defensive ceiling on pagination depth (1M bars) against a runaway token loop.
+    MAX_PAGES = 100
+
     @retry_with_backoff(RetryConfig())
+    async def _get_bars_page(
+        self, symbol: str, params: dict[str, str | int]
+    ) -> tuple[list[Bar], str | None]:
+        """Fetch one bars page; retried per page so a mid-pagination failure
+        does not refetch earlier pages."""
+        response = await self._get(f"/stocks/{symbol}/bars", params=params)
+        data = response.json()
+        bars = [parse_bar(bar) for bar in data.get("bars", [])]
+        return bars, data.get("next_page_token")
+
     async def get_bars(
         self,
         symbol: str,
@@ -86,14 +101,17 @@ class MarketDataClient(AlpacaClientBase):
         limit: int = 1000,
         adjustment: str = "raw",
     ) -> list[Bar]:
-        """Get historical bars for a symbol.
+        """Get historical bars for a symbol, following pagination.
+
+        Pages are fetched (each within the rate limiter/circuit breaker) until
+        ``limit`` bars are collected or Alpaca stops returning a page token.
 
         Args:
             symbol: Stock symbol (e.g., "AAPL")
             timeframe: Bar timeframe (e.g., Timeframe.DAY_1)
             start: Start datetime
             end: End datetime (optional, defaults to now)
-            limit: Maximum bars to return (default 1000, max 10000)
+            limit: Maximum bars to return (default 1000)
             adjustment: Price adjustment ("raw", "split", "dividend", "all")
 
         Returns:
@@ -103,19 +121,39 @@ class MarketDataClient(AlpacaClientBase):
             SymbolNotFoundError: If symbol is invalid
             AlpacaError: On API errors
         """
-        params: dict[str, str | int] = {
+        if limit <= 0:
+            return []
+
+        symbol = symbol.upper()
+        base_params: dict[str, str | int] = {
             "timeframe": timeframe.value,
             "start": start.isoformat(),
-            "limit": limit,
             "adjustment": adjustment,
         }
         if end:
-            params["end"] = end.isoformat()
+            base_params["end"] = end.isoformat()
 
+        bars: list[Bar] = []
+        page_token: str | None = None
         async with time_alpaca_call("get_bars"):
-            response = await self._get(f"/stocks/{symbol.upper()}/bars", params=params)
-            data = response.json()
-            return [parse_bar(bar) for bar in data.get("bars", [])]
+            for _ in range(self.MAX_PAGES):
+                params = dict(base_params)
+                params["limit"] = min(limit - len(bars), self.PAGE_LIMIT)
+                if page_token:
+                    params["page_token"] = page_token
+                page, page_token = await self._get_bars_page(symbol, params)
+                bars.extend(page)
+                if len(bars) >= limit or not page_token:
+                    break
+            else:
+                logger.warning(
+                    "get_bars(%s) stopped after %d pages with a next_page_token still "
+                    "pending; returning %d bars",
+                    symbol,
+                    self.MAX_PAGES,
+                    len(bars),
+                )
+        return bars[:limit]
 
     @retry_with_backoff(RetryConfig())
     async def get_multi_bars(

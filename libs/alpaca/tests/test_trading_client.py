@@ -1,13 +1,21 @@
 """Tests for TradingClient."""
 
+from datetime import date
 from decimal import Decimal
+from unittest.mock import AsyncMock, patch
 
+import httpx
 import pytest
 import respx
 from httpx import Response
 
 from llamatrade_alpaca import (
     Account,
+    AuthenticationError,
+    CircuitOpenError,
+    CorporateActionDateType,
+    CorporateActionType,
+    InvalidRequestError,
     MarketClock,
     Order,
     OrderNotFoundError,
@@ -469,4 +477,268 @@ class TestGetClock:
         assert isinstance(clock, MarketClock)
         assert clock.is_open is True
 
+        await trading_client.close()
+
+
+_CLOCK_JSON = {
+    "timestamp": "2024-01-15T14:30:00Z",
+    "is_open": True,
+    "next_open": "2024-01-16T14:30:00Z",
+    "next_close": "2024-01-15T21:00:00Z",
+}
+_CLOCK_URL = "https://paper-api.alpaca.markets/v2/clock"
+
+
+class TestGetClockErrors:
+    """Error mapping and retry/circuit behavior for get_clock."""
+
+    @pytest.mark.asyncio
+    @respx.mock
+    async def test_auth_error_maps_and_does_not_retry(self, trading_client: TradingClient) -> None:
+        route = respx.get(_CLOCK_URL).mock(
+            return_value=Response(401, json={"message": "unauthorized"})
+        )
+
+        with pytest.raises(AuthenticationError):
+            await trading_client.get_clock()
+
+        assert route.call_count == 1
+        await trading_client.close()
+
+    @pytest.mark.asyncio
+    @respx.mock
+    async def test_invalid_request_maps_and_does_not_retry(
+        self, trading_client: TradingClient
+    ) -> None:
+        route = respx.get(_CLOCK_URL).mock(return_value=Response(400, json={"message": "bad"}))
+
+        with pytest.raises(InvalidRequestError):
+            await trading_client.get_clock()
+
+        assert route.call_count == 1
+        await trading_client.close()
+
+    @pytest.mark.asyncio
+    @respx.mock
+    async def test_server_error_retried_then_recovers(self, trading_client: TradingClient) -> None:
+        route = respx.get(_CLOCK_URL)
+        route.side_effect = [
+            Response(500, json={"message": "boom"}),
+            Response(502, json={"message": "boom"}),
+            Response(200, json=_CLOCK_JSON),
+        ]
+
+        with patch("asyncio.sleep", new=AsyncMock()):
+            clock = await trading_client.get_clock()
+
+        assert clock.is_open is True
+        assert route.call_count == 3
+        await trading_client.close()
+
+    @pytest.mark.asyncio
+    @respx.mock
+    async def test_persistent_server_errors_open_circuit(
+        self, trading_client: TradingClient
+    ) -> None:
+        route = respx.get(_CLOCK_URL).mock(return_value=Response(500, json={"message": "down"}))
+
+        # Trading breaker threshold is 3: three real attempts, then the circuit
+        # opens and the final retry surfaces CircuitOpenError.
+        with patch("asyncio.sleep", new=AsyncMock()):
+            with pytest.raises(CircuitOpenError):
+                await trading_client.get_clock()
+
+        assert route.call_count == 3
+        await trading_client.close()
+
+    @pytest.mark.asyncio
+    @respx.mock
+    async def test_connection_error_retried_then_recovers(
+        self, trading_client: TradingClient
+    ) -> None:
+        route = respx.get(_CLOCK_URL)
+        route.side_effect = [
+            httpx.ConnectError("refused"),
+            httpx.ConnectError("refused"),
+            Response(200, json=_CLOCK_JSON),
+        ]
+
+        with patch("asyncio.sleep", new=AsyncMock()):
+            clock = await trading_client.get_clock()
+
+        assert isinstance(clock, MarketClock)
+        assert route.call_count == 3
+        await trading_client.close()
+
+    @pytest.mark.asyncio
+    @respx.mock
+    async def test_malformed_response_raises_without_retry(
+        self, trading_client: TradingClient
+    ) -> None:
+        route = respx.get(_CLOCK_URL).mock(return_value=Response(200, json={}))
+
+        with pytest.raises(KeyError):
+            await trading_client.get_clock()
+
+        assert route.call_count == 1
+        await trading_client.close()
+
+
+_ANNOUNCEMENTS_URL = "https://paper-api.alpaca.markets/v2/corporate_actions/announcements"
+
+
+class TestGetCorporateAnnouncements:
+    """Tests for get_corporate_announcements."""
+
+    @pytest.mark.asyncio
+    @respx.mock
+    async def test_returns_parsed_announcements(self, trading_client: TradingClient) -> None:
+        route = respx.get(_ANNOUNCEMENTS_URL).mock(
+            return_value=Response(
+                200,
+                json=[
+                    {
+                        "id": "ann-1",
+                        "corporate_action_id": "F1",
+                        "ca_type": "dividend",
+                        "ca_sub_type": "cash",
+                        "initiating_symbol": "AAPL",
+                        "target_symbol": "AAPL",
+                        "ex_date": "2024-02-09",
+                        "payable_date": "2024-02-15",
+                        "cash": "0.24",
+                    },
+                    {
+                        "id": "ann-2",
+                        "corporate_action_id": "S1",
+                        "ca_type": "split",
+                        "ca_sub_type": "stock_split",
+                        "initiating_symbol": "NVDA",
+                        "target_symbol": "NVDA",
+                        "ex_date": "2024-06-10",
+                        "old_rate": "1",
+                        "new_rate": "10",
+                    },
+                ],
+            )
+        )
+
+        announcements = await trading_client.get_corporate_announcements(
+            since=date(2024, 4, 1), until=date(2024, 6, 30)
+        )
+
+        assert [a.id for a in announcements] == ["ann-1", "ann-2"]
+        assert announcements[0].ca_type == CorporateActionType.DIVIDEND
+        assert announcements[0].cash == Decimal("0.24")
+        assert announcements[1].new_rate == Decimal("10")
+        assert route.call_count == 1
+        await trading_client.close()
+
+    @pytest.mark.asyncio
+    @respx.mock
+    async def test_sends_window_and_filter_params(self, trading_client: TradingClient) -> None:
+        route = respx.get(_ANNOUNCEMENTS_URL).mock(return_value=Response(200, json=[]))
+
+        await trading_client.get_corporate_announcements(
+            since=date(2024, 1, 1),
+            until=date(2024, 1, 31),
+            ca_types=[CorporateActionType.DIVIDEND, CorporateActionType.SPLIT],
+            symbol="aapl",
+            date_type=CorporateActionDateType.PAYABLE_DATE,
+        )
+
+        params = route.calls[0].request.url.params
+        assert params["ca_types"] == "dividend,split"
+        assert params["since"] == "2024-01-01"
+        assert params["until"] == "2024-01-31"
+        assert params["symbol"] == "AAPL"
+        assert params["date_type"] == "payable_date"
+        await trading_client.close()
+
+    @pytest.mark.asyncio
+    @respx.mock
+    async def test_defaults_to_all_types_and_omits_optional_filters(
+        self, trading_client: TradingClient
+    ) -> None:
+        route = respx.get(_ANNOUNCEMENTS_URL).mock(return_value=Response(200, json=[]))
+
+        assert (
+            await trading_client.get_corporate_announcements(
+                since=date(2024, 1, 1), until=date(2024, 1, 2)
+            )
+            == []
+        )
+
+        params = route.calls[0].request.url.params
+        assert params["ca_types"] == "dividend,merger,spinoff,split"
+        assert "symbol" not in params
+        assert "date_type" not in params
+        await trading_client.close()
+
+    @pytest.mark.asyncio
+    @respx.mock
+    async def test_window_over_90_days_rejected_without_call(
+        self, trading_client: TradingClient
+    ) -> None:
+        route = respx.get(_ANNOUNCEMENTS_URL).mock(return_value=Response(200, json=[]))
+
+        with pytest.raises(InvalidRequestError):
+            await trading_client.get_corporate_announcements(
+                since=date(2024, 1, 1), until=date(2024, 5, 1)
+            )
+
+        assert route.call_count == 0
+        await trading_client.close()
+
+    @pytest.mark.asyncio
+    @respx.mock
+    async def test_inverted_window_rejected(self, trading_client: TradingClient) -> None:
+        with pytest.raises(InvalidRequestError):
+            await trading_client.get_corporate_announcements(
+                since=date(2024, 2, 1), until=date(2024, 1, 1)
+            )
+        await trading_client.close()
+
+    @pytest.mark.asyncio
+    @respx.mock
+    async def test_empty_ca_types_rejected(self, trading_client: TradingClient) -> None:
+        with pytest.raises(InvalidRequestError):
+            await trading_client.get_corporate_announcements(
+                since=date(2024, 1, 1), until=date(2024, 1, 2), ca_types=[]
+            )
+        await trading_client.close()
+
+    @pytest.mark.asyncio
+    @respx.mock
+    async def test_server_error_retried_then_recovers(self, trading_client: TradingClient) -> None:
+        route = respx.get(_ANNOUNCEMENTS_URL)
+        route.side_effect = [
+            Response(500, json={"message": "boom"}),
+            Response(200, json=[]),
+        ]
+
+        with patch("asyncio.sleep", new=AsyncMock()):
+            assert (
+                await trading_client.get_corporate_announcements(
+                    since=date(2024, 1, 1), until=date(2024, 1, 2)
+                )
+                == []
+            )
+
+        assert route.call_count == 2
+        await trading_client.close()
+
+    @pytest.mark.asyncio
+    @respx.mock
+    async def test_auth_error_maps_and_does_not_retry(self, trading_client: TradingClient) -> None:
+        route = respx.get(_ANNOUNCEMENTS_URL).mock(
+            return_value=Response(401, json={"message": "unauthorized"})
+        )
+
+        with pytest.raises(AuthenticationError):
+            await trading_client.get_corporate_announcements(
+                since=date(2024, 1, 1), until=date(2024, 1, 2)
+            )
+
+        assert route.call_count == 1
         await trading_client.close()

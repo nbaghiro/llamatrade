@@ -1,10 +1,13 @@
 """Tests for trading models."""
 
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from decimal import Decimal
+
+import pytest
 
 from llamatrade_alpaca import (
     Account,
+    CorporateActionType,
     MarketClock,
     Order,
     OrderSide,
@@ -15,6 +18,8 @@ from llamatrade_alpaca import (
     TimeInForce,
     parse_account,
     parse_clock,
+    parse_corporate_announcement,
+    parse_date,
     parse_order,
     parse_position,
 )
@@ -276,3 +281,137 @@ class TestModels:
             next_close=now,
         )
         assert clock.is_open is True
+
+
+class TestParseCorporateAnnouncement:
+    """Tests for parse_corporate_announcement (dividend / split / symbol change)."""
+
+    def test_parse_cash_dividend(self) -> None:
+        """A cash dividend carries the per-share amount and payable date."""
+        announcement = parse_corporate_announcement(
+            {
+                "id": "be3c368a-4c7c-4384-808e-f02c9f5a8afe",
+                "corporate_action_id": "F58982",
+                "ca_type": "dividend",
+                "ca_sub_type": "cash",
+                "initiating_symbol": "MLLAX",
+                "initiating_original_cusip": "55275E101",
+                "target_symbol": "MLLAX",
+                "target_original_cusip": "55275E101",
+                "declaration_date": "2021-01-05",
+                "ex_date": "2021-01-12",
+                "record_date": "2021-01-13",
+                "payable_date": "2021-01-14",
+                "cash": "0.018",
+                "old_rate": "1",
+                "new_rate": "1",
+            }
+        )
+
+        assert announcement.ca_type == CorporateActionType.DIVIDEND
+        assert announcement.ca_sub_type == "cash"
+        assert announcement.initiating_symbol == "MLLAX"
+        assert announcement.cash == Decimal("0.018")
+        assert announcement.payable_date == date(2021, 1, 14)
+        assert announcement.ex_date == date(2021, 1, 12)
+        assert announcement.old_rate == Decimal("1")
+        assert announcement.new_rate == Decimal("1")
+
+    def test_parse_forward_split(self) -> None:
+        """A split carries old/new rates; the ratio is new/old."""
+        announcement = parse_corporate_announcement(
+            {
+                "id": "split-1",
+                "corporate_action_id": "S1",
+                "ca_type": "split",
+                "ca_sub_type": "stock_split",
+                "initiating_symbol": "AAPL",
+                "target_symbol": "AAPL",
+                "ex_date": "2020-08-31",
+                "payable_date": "2020-08-28",
+                "old_rate": "1",
+                "new_rate": "4",
+            }
+        )
+
+        assert announcement.ca_type == CorporateActionType.SPLIT
+        assert announcement.old_rate == Decimal("1")
+        assert announcement.new_rate == Decimal("4")
+        assert announcement.cash is None
+        assert announcement.declaration_date is None
+        assert announcement.record_date is None
+
+    def test_parse_reverse_split(self) -> None:
+        announcement = parse_corporate_announcement(
+            {
+                "id": "split-2",
+                "ca_type": "split",
+                "ca_sub_type": "reverse_split",
+                "initiating_symbol": "XYZ",
+                "target_symbol": "XYZ",
+                "ex_date": "2024-03-01",
+                "old_rate": "10",
+                "new_rate": "1",
+            }
+        )
+
+        assert announcement.corporate_action_id == ""
+        assert announcement.old_rate == Decimal("10")
+        assert announcement.new_rate == Decimal("1")
+
+    def test_parse_symbol_change(self) -> None:
+        """A 1:1 action whose target symbol differs is a ticker rename."""
+        announcement = parse_corporate_announcement(
+            {
+                "id": "merge-1",
+                "corporate_action_id": "M1",
+                "ca_type": "merger",
+                "ca_sub_type": "merger_completion",
+                "initiating_symbol": "FB",
+                "target_symbol": "META",
+                "ex_date": "2022-06-09",
+                "old_rate": "1",
+                "new_rate": "1",
+            }
+        )
+
+        assert announcement.ca_type == CorporateActionType.MERGER
+        assert announcement.initiating_symbol == "FB"
+        assert announcement.target_symbol == "META"
+
+    def test_parse_tolerates_null_and_malformed_optionals(self) -> None:
+        """Null/blank/unparseable optional fields degrade to None, not an exception."""
+        announcement = parse_corporate_announcement(
+            {
+                "id": "spin-1",
+                "corporate_action_id": None,
+                "ca_type": "SPINOFF",
+                "ca_sub_type": None,
+                "initiating_symbol": "PARENT",
+                "target_symbol": None,
+                "declaration_date": "",
+                "ex_date": "not-a-date",
+                "cash": "",
+                "old_rate": "oops",
+                "new_rate": None,
+            }
+        )
+
+        assert announcement.ca_type == CorporateActionType.SPINOFF
+        assert announcement.ca_sub_type == ""
+        assert announcement.target_symbol == ""
+        assert announcement.declaration_date is None
+        assert announcement.ex_date is None
+        assert announcement.cash is None
+        assert announcement.old_rate is None
+        assert announcement.new_rate is None
+
+    def test_parse_unknown_type_raises(self) -> None:
+        """An unknown ca_type is a contract break — fail loudly rather than guess."""
+        with pytest.raises(ValueError):
+            parse_corporate_announcement({"id": "x", "ca_type": "teleportation"})
+
+    def test_parse_date_helper(self) -> None:
+        assert parse_date("2024-01-15") == date(2024, 1, 15)
+        assert parse_date("") is None
+        assert parse_date("15/01/2024") is None

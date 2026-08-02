@@ -109,6 +109,178 @@ class TestGetBars:
 
         await market_client.close()
 
+    @pytest.mark.asyncio
+    @respx.mock
+    async def test_get_bars_single_page_makes_one_request(
+        self, market_client: MarketDataClient
+    ) -> None:
+        """A response without next_page_token is served from a single request."""
+        from datetime import datetime
+
+        route = respx.get(f"{BASE_URL}/stocks/AAPL/bars").mock(
+            return_value=Response(
+                200,
+                json={"bars": [_bar_json("2024-01-15T09:30:00Z", 150.0)], "next_page_token": None},
+            )
+        )
+
+        bars = await market_client.get_bars(
+            symbol="AAPL",
+            timeframe=Timeframe.MINUTE_1,
+            start=datetime(2024, 1, 15),
+        )
+
+        assert len(bars) == 1
+        assert route.call_count == 1
+        assert "page_token" not in str(route.calls[0].request.url)
+
+        await market_client.close()
+
+
+def _bar_json(timestamp: str, close: float) -> dict[str, str | float | int]:
+    """Minimal Alpaca bar payload."""
+    return {"t": timestamp, "o": close, "h": close, "l": close, "c": close, "v": 100}
+
+
+class TestGetBarsPagination:
+    """Tests for get_bars next_page_token pagination."""
+
+    @pytest.mark.asyncio
+    @respx.mock
+    async def test_pages_concatenated_in_order(self, market_client: MarketDataClient) -> None:
+        """All pages are fetched and concatenated in Alpaca's order."""
+        from datetime import datetime
+
+        route = respx.get(f"{BASE_URL}/stocks/AAPL/bars").mock(
+            side_effect=[
+                Response(
+                    200,
+                    json={
+                        "bars": [
+                            _bar_json("2024-01-15T09:30:00Z", 1.0),
+                            _bar_json("2024-01-15T09:31:00Z", 2.0),
+                        ],
+                        "next_page_token": "tok1",
+                    },
+                ),
+                Response(
+                    200,
+                    json={
+                        "bars": [
+                            _bar_json("2024-01-15T09:32:00Z", 3.0),
+                            _bar_json("2024-01-15T09:33:00Z", 4.0),
+                        ],
+                        "next_page_token": None,
+                    },
+                ),
+            ]
+        )
+
+        bars = await market_client.get_bars(
+            symbol="AAPL",
+            timeframe=Timeframe.MINUTE_1,
+            start=datetime(2024, 1, 15),
+            limit=10,
+        )
+
+        assert [b.close for b in bars] == [1.0, 2.0, 3.0, 4.0]
+        assert route.call_count == 2
+        assert "page_token=tok1" in str(route.calls[1].request.url)
+
+        await market_client.close()
+
+    @pytest.mark.asyncio
+    @respx.mock
+    async def test_stops_at_requested_limit(self, market_client: MarketDataClient) -> None:
+        """Pagination stops once the requested limit is satisfied."""
+        from datetime import datetime
+
+        route = respx.get(f"{BASE_URL}/stocks/AAPL/bars").mock(
+            side_effect=[
+                Response(
+                    200,
+                    json={
+                        "bars": [
+                            _bar_json("2024-01-15T09:30:00Z", 1.0),
+                            _bar_json("2024-01-15T09:31:00Z", 2.0),
+                        ],
+                        "next_page_token": "tok1",
+                    },
+                ),
+                Response(
+                    200,
+                    json={
+                        "bars": [
+                            _bar_json("2024-01-15T09:32:00Z", 3.0),
+                            _bar_json("2024-01-15T09:33:00Z", 4.0),
+                        ],
+                        "next_page_token": "tok2",
+                    },
+                ),
+            ]
+        )
+
+        bars = await market_client.get_bars(
+            symbol="AAPL",
+            timeframe=Timeframe.MINUTE_1,
+            start=datetime(2024, 1, 15),
+            limit=3,
+        )
+
+        assert [b.close for b in bars] == [1.0, 2.0, 3.0]
+        assert route.call_count == 2
+        # The second page requests only the remaining bar.
+        assert "limit=1" in str(route.calls[1].request.url)
+
+        await market_client.close()
+
+    @pytest.mark.asyncio
+    @respx.mock
+    async def test_page_cap_stops_runaway_pagination(
+        self, market_client: MarketDataClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A never-ending token stream is cut off at MAX_PAGES."""
+        from datetime import datetime
+
+        monkeypatch.setattr(MarketDataClient, "MAX_PAGES", 3)
+        route = respx.get(f"{BASE_URL}/stocks/AAPL/bars").mock(
+            return_value=Response(
+                200,
+                json={
+                    "bars": [_bar_json("2024-01-15T09:30:00Z", 1.0)],
+                    "next_page_token": "tok",
+                },
+            )
+        )
+
+        bars = await market_client.get_bars(
+            symbol="AAPL",
+            timeframe=Timeframe.MINUTE_1,
+            start=datetime(2024, 1, 15),
+            limit=100,
+        )
+
+        assert len(bars) == 3
+        assert route.call_count == 3
+
+        await market_client.close()
+
+    @pytest.mark.asyncio
+    async def test_nonpositive_limit_returns_empty(self, market_client: MarketDataClient) -> None:
+        """A non-positive limit short-circuits without any request."""
+        from datetime import datetime
+
+        bars = await market_client.get_bars(
+            symbol="AAPL",
+            timeframe=Timeframe.DAY_1,
+            start=datetime(2024, 1, 15),
+            limit=0,
+        )
+
+        assert bars == []
+
+        await market_client.close()
+
 
 class TestGetMultiBars:
     """Tests for get_multi_bars method."""

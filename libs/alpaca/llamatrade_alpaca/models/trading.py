@@ -1,7 +1,7 @@
 """Trading models for Alpaca API."""
 
-from datetime import datetime
-from decimal import Decimal
+from datetime import date, datetime
+from decimal import Decimal, InvalidOperation
 from enum import StrEnum
 from typing import Any
 
@@ -126,6 +126,9 @@ class Account(BaseModel):
     trading_blocked: bool = False
     transfers_blocked: bool = False
     account_blocked: bool = False
+    # Alpaca reports buying-power multiplier as a string: "1" = cash account,
+    # "2"/"4" = margin. The ledger models margin-account settlement only.
+    multiplier: str = "2"
 
 
 class MarketClock(BaseModel):
@@ -269,4 +272,97 @@ def parse_asset(data: dict[str, Any]) -> Asset:
         status=data["status"],
         tradable=bool(data.get("tradable", False)),
         fractionable=bool(data.get("fractionable", False)),
+    )
+
+
+class CorporateActionType(StrEnum):
+    """Top-level corporate-action category (``ca_type``)."""
+
+    DIVIDEND = "dividend"
+    MERGER = "merger"
+    SPINOFF = "spinoff"
+    SPLIT = "split"
+
+
+class CorporateActionDateType(StrEnum):
+    """Which announcement date the ``since``/``until`` filter applies to."""
+
+    DECLARATION_DATE = "declaration_date"
+    EX_DATE = "ex_date"
+    RECORD_DATE = "record_date"
+    PAYABLE_DATE = "payable_date"
+
+
+class CorporateAnnouncement(BaseModel):
+    """One announced corporate action from ``/v2/corporate_actions/announcements``.
+
+    ``ca_sub_type`` stays a raw string: Alpaca's documented sub-type vocabulary
+    (cash/stock, merger_update/merger_completion, spinoff, stock_split/unit_split/
+    reverse_split/recapitalization) is open-ended in practice, and a strict enum
+    would make an unseen sub-type fail the whole fetch. Consumers route on
+    ``ca_type`` plus the rate/symbol fields, which are closed.
+    """
+
+    id: str = Field(description="Announcement ID")
+    corporate_action_id: str = Field(default="", description="Issuer-side action ID")
+    ca_type: CorporateActionType
+    ca_sub_type: str = ""
+    initiating_symbol: str = ""
+    initiating_original_cusip: str = ""
+    target_symbol: str = ""
+    target_original_cusip: str = ""
+    declaration_date: date | None = None
+    ex_date: date | None = None
+    record_date: date | None = None
+    payable_date: date | None = None
+    cash: Decimal | None = Field(default=None, description="Cash paid per share")
+    old_rate: Decimal | None = Field(default=None, description="Shares held before the action")
+    new_rate: Decimal | None = Field(default=None, description="Shares held after the action")
+
+
+def parse_date(value: str) -> date | None:
+    """Parse an Alpaca ``YYYY-MM-DD`` date field, or None if absent/malformed."""
+    if not value:
+        return None
+    try:
+        return date.fromisoformat(value)
+    except ValueError:
+        return None
+
+
+def _parse_decimal(value: object) -> Decimal | None:
+    """Parse an Alpaca numeric string field, or None if absent/malformed."""
+    if value is None or value == "":
+        return None
+    try:
+        return Decimal(str(value))
+    except InvalidOperation:
+        return None
+
+
+def parse_corporate_announcement(data: dict[str, Any]) -> CorporateAnnouncement:
+    """Parse Alpaca announcement JSON to a CorporateAnnouncement model.
+
+    Args:
+        data: Raw announcement data from Alpaca API
+
+    Returns:
+        CorporateAnnouncement model instance
+    """
+    return CorporateAnnouncement(
+        id=str(data["id"]),
+        corporate_action_id=str(data.get("corporate_action_id") or ""),
+        ca_type=CorporateActionType(str(data["ca_type"]).lower()),
+        ca_sub_type=str(data.get("ca_sub_type") or ""),
+        initiating_symbol=str(data.get("initiating_symbol") or ""),
+        initiating_original_cusip=str(data.get("initiating_original_cusip") or ""),
+        target_symbol=str(data.get("target_symbol") or ""),
+        target_original_cusip=str(data.get("target_original_cusip") or ""),
+        declaration_date=parse_date(str(data.get("declaration_date") or "")),
+        ex_date=parse_date(str(data.get("ex_date") or "")),
+        record_date=parse_date(str(data.get("record_date") or "")),
+        payable_date=parse_date(str(data.get("payable_date") or "")),
+        cash=_parse_decimal(data.get("cash")),
+        old_rate=_parse_decimal(data.get("old_rate")),
+        new_rate=_parse_decimal(data.get("new_rate")),
     )

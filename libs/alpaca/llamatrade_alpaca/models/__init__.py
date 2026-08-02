@@ -28,6 +28,9 @@ from .streaming import (
 from .trading import (
     Account,
     Asset,
+    CorporateActionDateType,
+    CorporateActionType,
+    CorporateAnnouncement,
     MarketClock,
     Order,
     OrderSide,
@@ -39,6 +42,8 @@ from .trading import (
     parse_account,
     parse_asset,
     parse_clock,
+    parse_corporate_announcement,
+    parse_date,
     parse_order,
     parse_position,
 )
@@ -81,4 +86,10 @@ __all__ = [
     "parse_clock",
     "parse_order",
     "parse_position",
+    # Corporate actions
+    "CorporateActionDateType",
+    "CorporateActionType",
+    "CorporateAnnouncement",
+    "parse_corporate_announcement",
+    "parse_date",
 ]

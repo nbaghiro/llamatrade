@@ -12,16 +12,21 @@ Example:
 """
 
 import logging
+from collections.abc import Sequence
+from datetime import date
 from decimal import Decimal
 from typing import Any, Literal, cast
 
 from ..client_base import AlpacaClientBase
 from ..config import AlpacaCredentials, AlpacaUrls
-from ..errors import OrderNotFoundError, PositionNotFoundError
+from ..errors import InvalidRequestError, OrderNotFoundError, PositionNotFoundError
 from ..metrics import time_alpaca_call
 from ..models import (
     Account,
     Asset,
+    CorporateActionDateType,
+    CorporateActionType,
+    CorporateAnnouncement,
     MarketClock,
     Order,
     OrderSide,
@@ -31,12 +36,17 @@ from ..models import (
     parse_account,
     parse_asset,
     parse_clock,
+    parse_corporate_announcement,
     parse_order,
     parse_position,
 )
 from ..resilience import RetryConfig, create_trading_resilience, retry_with_backoff
 
 logger = logging.getLogger(__name__)
+
+# Alpaca rejects an announcements window wider than 90 days.
+MAX_ANNOUNCEMENT_WINDOW_DAYS = 90
+ALL_CORPORATE_ACTION_TYPES: tuple[CorporateActionType, ...] = tuple(CorporateActionType)
 
 
 class TradingClient(AlpacaClientBase):
@@ -391,6 +401,62 @@ class TradingClient(AlpacaClientBase):
                 order_data = cast(dict[str, Any], body) if isinstance(body, dict) else item
                 orders.append(parse_order(order_data))
             return orders
+
+    # Corporate actions
+
+    @retry_with_backoff(RetryConfig())
+    async def get_corporate_announcements(
+        self,
+        *,
+        since: date,
+        until: date,
+        ca_types: Sequence[CorporateActionType | str] = ALL_CORPORATE_ACTION_TYPES,
+        symbol: str | None = None,
+        cusip: str | None = None,
+        date_type: CorporateActionDateType | str | None = None,
+    ) -> list[CorporateAnnouncement]:
+        """Get announced corporate actions (dividends, splits, mergers, spinoffs).
+
+        Args:
+            since: Start of the announcement window (inclusive)
+            until: End of the announcement window (inclusive, <= 90 days after since)
+            ca_types: Action categories to include (defaults to all four)
+            symbol: Restrict to announcements initiated by this symbol
+            cusip: Restrict to announcements initiated by this CUSIP
+            date_type: Which announcement date the window filters on
+                (declaration/ex/record/payable; Alpaca's default when omitted)
+
+        Returns:
+            Announcements matching the filter (empty list when none)
+
+        Raises:
+            InvalidRequestError: If the window is inverted or wider than 90 days
+            AlpacaError: On API errors
+        """
+        if until < since:
+            raise InvalidRequestError(f"until {until} precedes since {since}")
+        if (until - since).days > MAX_ANNOUNCEMENT_WINDOW_DAYS:
+            raise InvalidRequestError(
+                f"announcement window {since}..{until} exceeds {MAX_ANNOUNCEMENT_WINDOW_DAYS} days"
+            )
+        if not ca_types:
+            raise InvalidRequestError("ca_types must name at least one corporate-action type")
+
+        params: dict[str, str] = {
+            "ca_types": ",".join(str(t) for t in ca_types),
+            "since": since.isoformat(),
+            "until": until.isoformat(),
+        }
+        if symbol:
+            params["symbol"] = symbol.upper()
+        if cusip:
+            params["cusip"] = cusip
+        if date_type:
+            params["date_type"] = str(date_type)
+
+        async with time_alpaca_call("get_corporate_announcements"):
+            response = await self._get("/corporate_actions/announcements", params=params)
+            return [parse_corporate_announcement(item) for item in response.json()]
 
     # Market Clock
 

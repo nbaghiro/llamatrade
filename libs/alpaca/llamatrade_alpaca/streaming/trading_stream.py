@@ -269,10 +269,6 @@ class MockTradeStream:
         self._subscribed = True
         return True
 
-    def add_event(self, event: TradeEvent) -> None:
-        """Queue an event to be emitted by ``stream()``."""
-        self._event_queue.put_nowait(event)
-
     def add_fill(
         self,
         order_id: str,

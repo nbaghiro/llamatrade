@@ -290,7 +290,7 @@ class MarketDataStreamClient(_DataStreamClient):
 
     def _parse_bar(self, data: dict[str, Any]) -> BarData | None:
         try:
-            return BarData(
+            bar = BarData(
                 open=float(data.get("o", 0)),
                 high=float(data.get("h", 0)),
                 low=float(data.get("l", 0)),
@@ -298,6 +298,11 @@ class MarketDataStreamClient(_DataStreamClient):
                 volume=int(data.get("v", 0)),
                 timestamp=str(data.get("t", "")),
             )
+            if "vw" in data:
+                bar["vwap"] = float(data["vw"])
+            if "n" in data:
+                bar["trade_count"] = int(data["n"])
+            return bar
         except Exception as e:
             logger.error(f"Failed to parse bar: {e}")
             return None
