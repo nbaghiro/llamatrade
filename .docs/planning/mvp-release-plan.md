@@ -136,8 +136,8 @@ ledger → portfolio) with **no real money**. This is the heart of the beta.
   exposure (make secrets write-only, validate keys against Alpaca on entry). (M)
 - **Trading UI built from scratch**: session start/stop, credential + strategy picker,
   live order/position/fill stream, sleeve funding flow. (L)
-- Wire the frontend to `StartSession` + **Redis-Streams subscriptions** for live
-  order/position updates. (M)
+- Wire the frontend to `StartSession` + the **Kafka-backed order/position streams**
+  (Connect server-side streams) for live updates. (M)
 - Portfolio reads are served fully from the ledger read model (sleeve/lot/event state);
   no legacy dual-read path or feature flag remains. (M)
 - Onboarding nudge + disclosures: "history begins at onboarding; performance metrics

@@ -271,7 +271,7 @@ Grounded in the official docs. The cross-platform **table-stakes set** — indic
 
 | | Count | Items |
 |---|---|---|
-| ✅ We have | 14 of ~24 | SMA, EMA, RSI, MACD, Stoch, CCI, Williams %R, ADX, BBands, ATR, OBV, MFI, VWAP, Donchian, Keltner (+ stddev, momentum) |
+| ✅ We have | 15 of ~24 | SMA, EMA, RSI, MACD, Stoch, CCI, Williams %R, ADX, BBands, ATR, OBV, MFI, VWAP, Donchian, Keltner (+ stddev, momentum) |
 | ❌ Missing from table-stakes | ~9 | WMA/Hull/KAMA (MA variants), Stochastic RSI, Aroon, ROC, Ultimate Oscillator, Chaikin A/D & CMF, Parabolic SAR, Ichimoku, pivot points |
 
 On the **allocation** side, Composer (the closest product analog — also a declarative weights-based strategy builder) exposes equal, specified, inverse-volatility, and market-cap weight blocks plus threshold/rank filters; Portfolio Visualizer's tactical models cover relative-strength rotation, dual momentum, target-vol, and risk-parity style optimization. Our six usable methods (market-cap excluded) match Composer's surface and go beyond it with real **ERC risk-parity** and **minimum-variance** optimizers; the remaining gap vs Portfolio Visualizer is **dual momentum and volatility targeting**.

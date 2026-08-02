@@ -5,8 +5,9 @@
 > conform to this document. If you add a metric/span/log, add it here first.
 
 > **Not yet:** trading, market-data, and portfolio still keep a per-service
-> `metrics.py`; those collapse into the domain namespaces (§5). Scrape infra
-> (Prometheus/Grafana/Collector/Alertmanager) is still to stand up (§9–§10).
+> `metrics.py`; those collapse into the domain namespaces (§5). The scrape infra
+> (Prometheus / Grafana / OTel Collector / Alertmanager) is stood up in compose
+> and k8s (§9); dashboards-as-code beyond the Platform/RED board remain (§10).
 
 ---
 
@@ -24,8 +25,8 @@
 3. **OTel-native, Prometheus-exposed.** Instruments are created through the
    OpenTelemetry API; a `PrometheusMetricReader` exposes them at `/metrics` for
    scraping. Traces export via OTLP. This gives us distributed tracing across the
-   9-service `signal → risk → order → fill → ledger` path (we have none today)
-   without giving up Prometheus dashboards.
+   9-service `signal → risk → order → fill → ledger` path (the collector is wired
+   in compose and k8s) without giving up Prometheus dashboards.
 4. **Three signals, three jobs** (see §3). Metrics answer *aggregate* questions,
    logs answer *drill-down*, traces answer *why was this one request slow*.
 5. **Cardinality is sacred** (see §4). `tenant_id`/`session_id` never become
@@ -47,7 +48,7 @@
 | Logging | JSON everywhere, with `trace_id` / `span_id` |
 | Tracing | OTel spans + W3C propagation across services (no-op without a collector) |
 | Events | `llamatrade_events_*` counters/gauges via the telemetry registry; W3C trace propagated through the envelope |
-| Scraping | each service exposes `/metrics`; Prometheus / Grafana / OTel Collector / Alertmanager are still to stand up (§9–§10) |
+| Scraping | each service exposes `/metrics`; Prometheus scrapes all nine (plus workers), Grafana / OTel Collector / Alertmanager run in compose and k8s (§9) |
 | Frontend | `apps/web/src/telemetry/`: web-vitals, RPC latency, JS errors, trace propagation |
 | Workers | Celery task / queue instrumentation |
 
@@ -110,7 +111,7 @@ in tests.
 | `transport` | `http`, `connect`, `grpc` | inbound/outbound |
 | `method` | HTTP verb or RPC method name | RPC method names are bounded by the proto |
 | `route` | normalized path / RPC | path params collapsed (existing `_get_endpoint`) |
-| `operation` | dependency op (`select`, `xadd`, `submit_order`…) | |
+| `operation` | dependency op (`select`, `publish`, `submit_order`…) | |
 | `target` | dependency (`postgres`, `redis`, `alpaca`, `stripe`, peer service) | |
 | `status` / `status_code` / `status_class` | `ok`/`error`, code, `2xx`… | |
 | `result` | `hit`/`miss`/`error`, `success`/`failure`, `passed`/`failed` | |
@@ -254,12 +255,16 @@ logs, and traces come from `llamatrade_telemetry`, and the event system from
 - `llamatrade_db_pool_acquire_wait_seconds`
 - `llamatrade_db_pool_exhausted_total`
 - `llamatrade_db_transactions_total{result}` · `llamatrade_db_errors_total{type}`
+- `llamatrade_db_rls_bypass_total{operation}` (`set_rls_bypass`/`system_session` —
+  one increment per RLS system-bypass activation, alongside the audit log line
+  that carries the caller, reason and tenant scope; identifiers stay off the
+  metric)
 
 **Cache / Redis:**
 - `llamatrade_cache_operations_total{cache,op,result}` (folds hits/misses)
 - `llamatrade_cache_op_duration_seconds{cache,op}`
 
-**Events (`llamatrade_events`, Redis Streams):** defined in the lib's
+**Events (`llamatrade_events`, Kafka):** defined in the lib's
 `observability.py` through `llamatrade_telemetry` (`counter`/`gauge`), so they
 share the naming + label validation. Labelled by the stream's logical prefix only
 (`stream_label`, bounded cardinality):
@@ -267,8 +272,15 @@ share the naming + label validation. Labelled by the stream's logical prefix onl
 - `llamatrade_events_consumed_total{stream,group,outcome}` (outcome:
   `ok`/`deduped`/`error`/`dlq`/`poison`)
 - `llamatrade_events_reconnects_total{stream,mode}` (mode: `tail`/`consume`)
-- `llamatrade_events_consumer_lag{stream,group}` (gauge — delivered-but-unacked
-  PEL depth; the single event-lag metric)
+- `llamatrade_events_client_start_failures_total{kind,reason}` (kind:
+  `producer`/`consumer`/`probe`/`admin`; reason: `start_timeout`/`liveness_timeout`
+  — a client that did not connect or prove its session live within the start
+  budget, which is how a rejected OAUTHBEARER token surfaces at all)
+- `llamatrade_events_broken_credentials_total{stream,mode}` (a reader past the
+  consecutive-start-failure threshold; readers keep retrying, so this is the only
+  signal that a credential or broker grant is permanently broken)
+- `llamatrade_events_consumer_lag{stream,group}` (gauge — uncommitted
+  entries per consumer group, i.e. Kafka consumer lag; the single event-lag metric)
 - `llamatrade_events_fanout_dropped_total{fanout}` ·
   `llamatrade_events_fanout_clients{fanout}` (gauge) — gRPC fan-out backpressure
   drops / connected clients
@@ -287,6 +299,13 @@ share the naming + label validation. Labelled by the stream's logical prefix onl
 
 ### Tier 1 — Per-domain business metrics
 
+> Catalog reconcile pass (pending): several counters in this tier are landing across concurrent
+> service changes (the ledger-durability publish counter, and any new counters the trading,
+> portfolio, market-data, backtest, agent and strategy rounds add). At consolidation, walk each
+> `services/*/src/metrics.py` and `libs/*/*/metrics.py`, confirm every emitted metric appears here
+> under its exact exported name, and confirm every alert expression in
+> `infrastructure/observability/prometheus/alerts.yml` references a name that exists.
+
 **Trading** (`metrics.trading.*`) — the crown jewels
 - `order_submissions_total{side,type,status}` · `order_submission_latency_seconds` (signal→Alpaca)
 - `order_fill_latency_seconds` (submit→fill) · `order_slippage_bps{side}` · `fills_total{side,fill_type}`
@@ -300,14 +319,25 @@ share the naming + label validation. Labelled by the stream's logical prefix onl
 - reconciliation: `position_reconciliation_total{result}`,
   `position_drift_detected_total{drift_type}`, `position_drift_quantity_pct{}` (bounded)
 - `idempotent_replay_total` (validates crash recovery: ~0 steady-state, >0 after deploy)
+- session lifecycle: `llamatrade_trading_evaluation_stalls_total` (one per episode
+  where the all-symbols evaluation gate stayed shut past the staleness window, so
+  the rate reads as sessions that went blind rather than how long they stayed
+  blind), `llamatrade_trading_symbol_halts_total{reason}` (reason:
+  `unknown`/`inactive`/`not_tradable` — subscribed symbols the broker stopped
+  listing as active and tradable)
 - circuit breaker: `circuit_breaker_state` (gauge 0/1/2), `circuit_breaker_triggered_total{reason}`
+- ledger emission: `ledger_events_published_total{kind,status}` — publish failures are the
+  `status="failure"` series (no separate counter), and the `LedgerPublishFailures` alert
+  matches that expression.
 
 **Ledger / portfolio** (`metrics.ledger.*`) — integrity is everything
 - `events_ingested_total{result}` (existing) · `event_append_latency_seconds`
 - `projection_fold_duration_seconds`
 - `reconciliation_drift_total{kind}` + `drift_actions_total{action}` (existing)
-- `ledger_vs_broker_mismatch_dollars` (gauge, should be ~0) · `sleeves_frozen_total`
-- `fill_dlq_depth` (gauge, `llamatrade_ledger_fill_dlq_depth` — un-booked fills parked on `ledger:fills:dlq`, sampled by the lag monitor)
+- `ledger_vs_broker_mismatch_dollars` (gauge, should be ~0) · `ledger_vs_broker_cash_mismatch_dollars`
+  (gauge, sleeve cash vs broker cash, should be ~0; alerted by `LedgerCashVsBrokerMismatch`) ·
+  `sleeves_frozen_total` (alerted by `LedgerSleeveFrozen` — a freeze is an integrity incident)
+- `fill_dlq_depth` (gauge, `llamatrade_ledger_fill_dlq_depth` — un-booked fills parked on `ledger:fills:dlq`, sampled by the lag monitor; alerted by `LedgerFillDLQBacklog`)
 - `capital_allocated_dollars` / `capital_unallocated_dollars` (gauge),
   `capital_insufficient_events_total`
 - per-strategy realized/unrealized P&L + Sharpe/Sortino/maxDD → **ledger/Postgres**,
@@ -321,6 +351,15 @@ share the naming + label validation. Labelled by the stream's logical prefix onl
   `client_queue_dropped_total` (backpressure loss)
 - data quality: `data_staleness_seconds{data_type}` (bounded), `data_gaps_detected_total`,
   `missing_symbol_errors_total`
+- ingest universe (declared in the service, so listed under its full name):
+  `llamatrade_marketdata_ingest_universe_symbols{kind}` (gauge, kind:
+  `baseline`/`live`/`total` — the derived set the singleton ingestor streams),
+  `llamatrade_marketdata_ingest_universe_refresh_failures_total{reason}` (reason:
+  `query`/`subscribe` — a refresh that kept the previous set),
+  `llamatrade_marketdata_ingest_targeted_backfills_total{outcome}` (outcome:
+  `ok`/`error` — catch-up passes for symbols that just entered the universe).
+  Symbol counts are aggregate only; per-symbol labels are forbidden and the
+  ingest logs name the symbols that entered or left.
 
 **Strategy / DSL / compiler** (`metrics.strategy.*`)
 - `strategies_total{status}` (gauge) · `versions_minted_total`
@@ -348,12 +387,20 @@ share the naming + label validation. Labelled by the stream's logical prefix onl
 - `bcrypt_hash_duration_seconds`
 - `credential_decryption_failures_total` · `api_key_validation_failures_total{reason}`
 - `cross_tenant_access_attempts_total` (**security alarm**)
+- guard backends (Redis; declared in `ratelimit.py` / `revocation.py`, so listed under their full
+  names): `llamatrade_auth_ratelimit_backend_errors_total`,
+  `llamatrade_auth_revocation_backend_errors_total` (a sustained increase means the guard is
+  degraded; alerted by `AuthRateLimitBackendErrors` / `AuthRevocationBackendErrors`)
 
 **Notification** (`metrics.notification.*`)
-- `alerts_total{type}` (gauge) · `alerts_triggered_total{type}` · `alerts_cooldown_skipped_total`
-- `alert_eval_latency_seconds`
-- `deliveries_total{channel}` · `delivery_failures_total{channel,error}` · `delivery_latency_seconds{channel}`
-- `unread_backlog` (gauge — alert-fatigue signal)
+- `alerts_triggered_total{type}` · `alerts_cooldown_skipped_total`
+- `deliveries_total{channel}` · `delivery_failures_total{channel,reason}` · `delivery_latency_seconds{channel}`
+- `alert_eval_latency_seconds` and `unread_backlog` (gauge) are declared but not yet emitted
+- The delivery consumer's health rides the generic events series:
+  `llamatrade_events_consumed_total{stream="notifications",group="notification-delivery"}` for
+  outcomes and `llamatrade_events_consumer_lag{stream="notifications"}` for backlog; webhook
+  auto-disables surface as `delivery_failures_total{channel="webhook"}` plus the tenant-facing
+  WEBHOOK_DISABLED notification itself
 
 **Agent / LLM** (`metrics.agent.*`) — net-new for the final product
 - `llm_requests_total{model,result}` · `llm_latency_seconds{model}` · `llm_ttft_seconds{model}`
@@ -409,7 +456,7 @@ trace_id, span_id, location, exception, extra`.
 - **Key spans (the money path):** `connect.SubmitOrder` → `risk.check` →
   `alpaca.submit_order` → (async) `trade_stream.fill` → `eventbus.publish ledger:fills`
   → `ledger.ingest` → `ledger.project`. EventBus carries `traceparent` in the
-  stream entry so the async fill→ledger hop stays in one trace via span links.
+  event envelope so the async fill→ledger hop stays in one trace via span links.
 - **Span attributes:** `tenant_id`, `session_id`, `client_order_id`, `symbol`,
   `sleeve_id` (high-cardinality is fine on spans).
 - **Sampling:** parent-based ratio (default 10%), with always-sample for errors;
@@ -428,8 +475,9 @@ trace_id, span_id, location, exception, extra`.
   `PrometheusRule` for SLO/burn-rate alerts, collector as a Deployment/DaemonSet.
 - **GCP:** OTLP → Cloud Trace; Prometheus → Managed Service for Prometheus, or keep
   self-hosted Prometheus + Grafana. Existing Terraform uptime checks stay.
-- **Dashboards-as-code:** one folder per domain (Platform/RED, Trading, Ledger,
-  Market Data, Backtest, Billing, Auth-Security, Notification, Agent, SLOs).
+- **Dashboards-as-code:** Platform/RED ships today; the remaining domain folders
+  (Trading, Ledger, Market Data, Backtest, Billing, Auth-Security, Notification,
+  Agent, SLOs) are listed under Remaining work.
 
 ---
 
@@ -437,8 +485,8 @@ trace_id, span_id, location, exception, extra`.
 
 - Collapse the per-service `metrics.py` in trading / market-data / portfolio into
   the `metrics.<domain>.*` namespaces (§5), then delete them.
-- Stand up the scrape infra (§9): Prometheus / Grafana / OTel Collector /
-  Alertmanager (compose + k8s) and the dashboards-as-code.
+- Build out the dashboards-as-code beyond Platform/RED (the scrape infra itself —
+  Prometheus / Grafana / OTel Collector / Alertmanager — runs in compose and k8s).
 - Keep `libs/telemetry` at ≥80% coverage as domains are added.
 
 ---

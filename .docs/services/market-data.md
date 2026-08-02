@@ -64,6 +64,8 @@ This service is **read-only** with respect to Alpaca (market data + clock); it n
 
 The gRPC servicer's unary handlers route through `MarketDataService`, so the public gRPC path and direct in-process callers share the same store-first read logic (with the Redis-cache path as fallback).
 
+In bus mode (`MARKET_DATA_BARS_FROM_BUS`), the serving pod does not open its own Alpaca WebSocket: a separate ingest role (`src/ingest/main.py`) publishes live bars onto the `lt.market.bars.1m` Kafka topic, and a `BusBridge` (`src/streaming/bus_bridge.py`) tails that topic and feeds the same `StreamManager` fan-out.
+
 ---
 
 ## Directory Structure
@@ -165,8 +167,10 @@ Feed: **IEX** only (`/v2/iex`). SIP/paid feed is not used.
 | `LOG_LEVEL` | `INFO` | logging |
 | `GRPC_PORT` | `8840` (compose) | service port |
 | `ALPACA_API_KEY` / `ALPACA_API_SECRET` | — | read by `llamatrade_alpaca` (env fallback) |
+| `KAFKA_BOOTSTRAP_SERVERS` | `localhost:9092` | bars topic transport (`llamatrade_events`) |
+| `MARKET_DATA_BARS_FROM_BUS` | off | serve live bars from the Kafka bars topic (`BusBridge`) instead of a direct Alpaca stream |
 
-`/health` reports overall status plus non-critical `redis` and `alpaca_stream` dependency health.
+`/health` reports overall status plus three non-critical checks: `redis` (cache backend), `kafka` (answered from the shared transport, or a running bus bridge, without opening a second broker connection), and `live_bars` (bus-bridge state in bus mode, otherwise Alpaca stream connectivity).
 
 ---
 
@@ -177,13 +181,13 @@ Feed: **IEX** only (`/v2/iex`). SIP/paid feed is not used.
 - **`llamatrade_common`** — observability (logging/metrics/tracing).
 - **TimescaleDB** — durable bar store + continuous aggregates (primary historical read path; `MARKET_DATA_DB_URL`).
 - **Redis** — cache path when the store is not configured (optional at runtime).
-- **Consumers:** the frontend (charts/quotes) and the **backtest** service (historical bars over gRPC, via `StreamHistoricalBars`).
+- **Consumers:** the frontend (charts/quotes), the **backtest** service (historical bars over gRPC, via `StreamHistoricalBars`), and the **notification** service's price-alert market loop (tails the `lt.market.bars.1m` Kafka topic; leader-elected, one pod).
 
 ---
 
 ## Testing
 
-`services/market-data/tests/`: `test_grpc_servicer.py`, `test_grpc_streaming.py`, `test_market_data_service.py`, `test_cache.py`, `test_stream_bridge.py`, `test_stream_manager.py`, `test_streaming_integration.py`, `test_alpaca_errors.py`, `test_auth_validation.py`, `test_metrics.py`, `test_health.py`.
+`services/market-data/tests/`: `test_grpc_servicer.py`, `test_grpc_streaming.py`, `test_market_data_service.py`, `test_asset_service.py`, `test_cache.py`, `test_stream_bridge.py`, `test_stream_manager.py`, `test_streaming_integration.py`, `test_bus_bridge_supervision.py`, `test_alpaca_errors.py`, `test_auth_validation.py`, `test_metrics.py`, `test_health.py`, plus `unit/` and `integration/` subtrees and shared `fakes.py`.
 
 ---
 
@@ -193,7 +197,5 @@ Feed: **IEX** only (`/v2/iex`). SIP/paid feed is not used.
 - **Corporate actions & split/dividend adjustment** — surfaced for accurate long-range historical data and backtests.
 - **Bar pagination beyond Alpaca's `limit`** — large historical windows (used by backtest) are paged transparently.
 - **Asset listing / tradability metadata** — Alpaca `/assets` is exposed for symbol search and universe selection.
-- **Additional asset classes** — covers IEX stocks, crypto symbols, and options.
-- **News feed** — the Alpaca news API is surfaced for product use.
 
 Rate limiting and circuit-breaking for Alpaca REST are provided by the shared `llamatrade_alpaca` library.

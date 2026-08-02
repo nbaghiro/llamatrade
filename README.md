@@ -49,7 +49,7 @@
 ║             sleeves · lots · double-entry events · per-strategy P&L              ║
 ╚══════════════════════════════════════════════════════════════════════════════════╝
                                           │
-  Postgres (RLS)   ·   Redis (queues · fills · progress)   ·   Alpaca (WS + REST)   
+  Postgres (RLS)  ·  Kafka (fills · progress · bars)  ·  Redis (cache · Celery)  ·  Alpaca (WS + REST)
 ```
 
 ## Tech Stack
@@ -59,7 +59,7 @@
 | **Frontend**       | React 18, TypeScript, Vite, Tailwind CSS, Zustand     |
 | **Backend**        | Python 3.14+, FastAPI, SQLAlchemy, Pydantic           |
 | **API Protocol**   | gRPC + Connect (HTTP/1.1 JSON for browser, HTTP/2 S2S)|
-| **Database**       | PostgreSQL 16, Redis 7                                |
+| **Data & Events**  | PostgreSQL 16, Redis 7, Kafka                         |
 | **Infrastructure** | Docker, Kubernetes (GKE), Terraform                   |
 | **CI/CD**          | GitHub Actions                                        |
 
@@ -138,10 +138,9 @@ llamatrade/
 ├── libs/
 │   ├── alpaca/              # Alpaca REST + WebSocket clients
 │   ├── common/              # Middleware, auth, shared models
-│   ├── compiler/            # Strategy compiler
 │   ├── db/                  # SQLAlchemy models, migrations, RLS
 │   ├── dsl/                 # Strategy DSL parser
-│   ├── events/              # Redis Streams event bus
+│   ├── events/              # Kafka event bus
 │   ├── proto/               # Protocol Buffers + generated Connect code
 │   ├── runtime/             # Shared strategy runtime (backtest + live)
 │   └── telemetry/           # OpenTelemetry + Prometheus
@@ -177,13 +176,13 @@ make help
 | MACD              | Momentum       | MACD line + signal line crossover  |
 | Bollinger Bounce  | Mean Reversion | Trade bounces off bands            |
 | Donchian Breakout | Trend          | Turtle trading channel breakout    |
-| Dual Momentum     | Momentum       | Relative + absolute momentum       |
-| Pairs Trading     | Arbitrage      | Cointegrated pairs spread trading  |
+
+The full template library (~80 strategies) is served by the strategy service (`ListTemplates`).
 
 ## Deployment
 
 ```bash
-# Deploy to staging (auto on merge to main)
+# Deploy to staging (manual: workflow_dispatch in GitHub Actions, or directly)
 make deploy-staging
 
 # Deploy to production (manual)

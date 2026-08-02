@@ -88,7 +88,7 @@ The Agent Service is LlamaTrade's AI Strategy Agent (Copilot). It lets users gen
      └─ (fire-and-forget) extract memory facts from the user message
 ```
 
-Write actions resume via `ConfirmToolCall(approved=true)`, which executes the gated tool and streams a plain-language summary.
+Write actions resume via `ConfirmToolCall(approved=true)`, which executes the gated tool and streams a plain-language summary. When a turn parks on a proposal, the service also publishes a `CONFIRMATION_PENDING` notification (`shared_notification_events().publish_safe`, deduped per confirmation id) as a durable pointer that survives a dropped stream.
 
 ---
 
@@ -99,8 +99,7 @@ services/agent/
 ├── src/
 │   ├── main.py                    # FastAPI app, Connect mount, health check
 │   ├── grpc/
-│   │   ├── servicer.py            # AgentServicer - 10 RPC methods
-│   │   └── error_handler.py       # @handle_service_errors, parse_uuid
+│   │   └── servicer.py            # AgentServicer - 10 RPC methods
 │   ├── services/
 │   │   ├── agent_service.py       # Core orchestration + tool loop + streaming
 │   │   ├── conversation_service.py# Session/message CRUD (DB)
@@ -247,6 +246,8 @@ After each turn, `AgentService` fire-and-forgets `extract_facts_heuristic` (rege
 | `AGENT_LLM_MODEL`    | No       | provider default     | Chat model override                |
 | `GOOGLE_API_KEY` / `ANTHROPIC_API_KEY` | Conditionally | - | Credentials for the selected provider |
 | `CORS_ORIGINS`       | No       | localhost origins    | Allowed CORS origins               |
+| `KAFKA_BOOTSTRAP_SERVERS` | Yes | -                  | Notification publishing via `llamatrade_events` |
+| `REDIS_URL`          | No       | unset (limiter off)  | Per-tenant LLM rate limiter        |
 
 ### Port Assignment
 
@@ -303,7 +304,7 @@ GET /health
 
 ## Error Handling
 
-- Connect RPCs use `@handle_service_errors` + `parse_uuid` (`grpc/error_handler.py`); typical codes: `INVALID_ARGUMENT` (bad/empty input), `NOT_FOUND` (session/artifact), `PERMISSION_DENIED` (forged tenant), `INTERNAL` (unexpected).
+- Connect RPCs use `@handle_service_errors` + `parse_uuid` (from `llamatrade_common.connect`); typical codes: `INVALID_ARGUMENT` (bad/empty input), `NOT_FOUND` (session/artifact), `PERMISSION_DENIED` (forged tenant), `INTERNAL` (unexpected).
 - Streaming RPCs (`StreamMessage`, `ConfirmToolCall`) surface errors as an `ERROR` stream event rather than aborting; unexpected exceptions are logged and reported as `Internal error: <type>`.
 - History load failures degrade to empty history rather than failing the turn.
 
@@ -311,7 +312,6 @@ GET /health
 
 ## Known Gaps
 
-- **No Kubernetes manifest yet** — there is no `infrastructure/k8s/base/agent/` deployment, so the agent is not part of the staging deploy loop.
 - **Memory extraction is regex-only** — `extraction_service.py` uses heuristic patterns; there is no LLM-based extraction or semantic memory search wired in.
 - **Confirmation covers `run_backtest` only** — it is the sole registered write tool today; strategy/portfolio mutation tools are not registered.
 

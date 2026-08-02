@@ -206,9 +206,10 @@ apps/web/src/
 ├── services/             # gRPC client, API services
 ├── store/                # Zustand stores
 ├── types/                # TypeScript type definitions
-├── data/                 # Demo/mock data
-└── generated/            # Proto-generated (gitignored, run `make proto`)
+└── data/                 # Demo/mock data
 ```
+
+Proto-generated TypeScript lives in `apps/core/src/proto/` (gitignored, run `make proto`), imported as `@llamatrade/core/proto/*_pb`.
 
 **Required Patterns:**
 - Functional components only (no class components)
@@ -216,7 +217,7 @@ apps/web/src/
 - API calls via axios instance in `services/api.ts`
 - TypeScript strict mode — no `any` without justification
 - Tailwind CSS for styling (no CSS files in components)
-- **Enums:** Import from proto-generated code (`../generated/proto/*_pb`). Use numeric enum values. Add display helpers in `types/` files for UI labels.
+- **Enums:** Import from proto-generated code (`@llamatrade/core/proto/*_pb`). Use numeric enum values. Add display helpers in `types/` files for UI labels.
 
 **Naming:**
 - Components: `PascalCase` files matching component name
@@ -229,8 +230,10 @@ apps/web/src/
 - `libs/common`: Middleware, shared models, utilities — import as `llamatrade_common`
 - `libs/db`: SQLAlchemy models, database config — import as `llamatrade_db`
 - `libs/dsl`: Strategy language — parser, validator, serializer, and static AST analysis/compilation (indicator extraction, required symbols, history window) — import as `llamatrade_dsl`
+- `libs/events`: Kafka event bus — channel catalog, proto envelopes, durable consumers, DLQ — import as `llamatrade_events`
 - `libs/runtime`: Strategy execution core (backtest + live) — the `StrategySession` evaluation engine (indicators, conditions, weights, sizing) and the `StrategyRuntime` loop + adapters — import as `llamatrade_runtime`
 - `libs/proto`: Protobuf definitions + generated Connect code — import as `llamatrade_proto`
+- `libs/telemetry`: OpenTelemetry-native metrics/logs/traces + Prometheus bridge — import as `llamatrade_telemetry`
 - Changes to libs affect ALL services — test thoroughly
 
 ---
@@ -268,9 +271,7 @@ ruff check --fix services/ libs/
 npm run lint:fix            # Frontend
 ```
 
-**Note:** Proto-generated files are gitignored. After cloning or pulling proto changes, run `make proto` to regenerate:
-- Python: `libs/proto/llamatrade_proto/generated/`
-- TypeScript: `apps/web/src/generated/proto/`
+**Note:** The generated Python code (`libs/proto/llamatrade_proto/generated/`) is tracked in git. Only the TypeScript output (`apps/core/src/proto/`) is gitignored — run `make proto` after cloning or changing protos to regenerate it (this also refreshes the tracked Python output).
 
 ---
 
@@ -308,7 +309,7 @@ All operations MUST be tenant-scoped:
 2. Resolve identity at the Connect boundary via `resolve_identity` / `resolve_identity_connect` (from `llamatrade_common.auth`), which the fail-closed `AuthMiddleware` populates — never trust the wire `TenantContext`
 3. Pass `ctx.tenant_id` to all service methods
 4. Filter ALL database queries by `tenant_id`
-5. Service-to-service calls: propagate via `X-Tenant-ID` header
+5. Service-to-service calls: authenticate with an internal service JWT (`mint_service_token`, attached by the gRPC client interceptor); tenant identity rides in the request-body context and is validated by `resolve_identity` on the callee; there is no trusted tenant header
 
 Never allow cross-tenant data access. When in doubt, add tenant filtering.
 

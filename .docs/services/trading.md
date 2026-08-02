@@ -37,7 +37,7 @@ The trading service is responsible for:
 ╭────────────────────────────────────────────────────────────────────────────────────────╮
 │                                     gRPC Servicer                                      │
 ├────────────────────────────────────────────────────────────────────────────────────────┤
-│ SubmitOrder ───────────► submit order after 6-layer risk checks                        │
+│ SubmitOrder ───────────► submit order after 7-layer risk checks                        │
 │ CancelOrder ───────────► cancel a pending / submitted order                            │
 │ GetOrder ──────────────► get order by id                                               │
 │ ListOrders ────────────► list orders with status filter                                │
@@ -54,7 +54,7 @@ The trading service is responsible for:
 │ LiveSessionService ────► runs the 4-loop strategy runner per session                   │
 │ OrderExecutor ─────────► deterministic client_order_id · exactly-once                  │
 │ PositionService ───────► local position cache (fills = source of truth)                │
-│ RiskManager ───────────► 6-layer validation + circuit breaker                          │
+│ RiskManager ───────────► 7-layer validation + circuit breaker                          │
 │ StrategySession ───────► strategy DSL → weights → target weights                       │
 ╰────────────────────────────────────────────────────────────────────────────────────────╯
                                              │
@@ -86,7 +86,7 @@ The trading service is responsible for:
 
                       terminal fills ═════════════════════════►
                       ╔════════════════════════════════════════════════╗
-                      ║   ledger:fills  (global; key lt:ledger:fills)  ║
+                      ║  ledger:fills (Kafka lt.ledger.fills, by acct) ║
                       ╠════════════════════════════════════════════════╣
                       ║ portfolio LEDGER  ·  :8860                     ║
                       ║ the book of record (append-only, double-entry) ║
@@ -111,11 +111,12 @@ The trading service is responsible for:
                                               │ per order
                                               ▼
                  ╭──────────────────────────────────────────────────────────╮
-                 │      RiskManager.check_order()  —  6-layer pipeline      │
+                 │      RiskManager.check_order()  ·  7-layer pipeline      │
                  ├──────────────────────────────────────────────────────────┤
-                 │ max order value ($5,000)   ·   allowed-symbols whitelist │
-                 │ max position size ($10,000) ·  daily-loss limit ($1,000) │
-                 │ order rate limit (10 / min) +  circuit breaker (halt)    │
+                 │ market hours (closed → reject) · max order value ($5,000)│
+                 │ sleeve gate (status + cash) · allowed-symbols whitelist  │
+                 │ max position size ($10,000) · daily-loss limit ($1,000)  │
+                 │ order rate limit (10 / min) + circuit breaker (halt)     │
                  ╰──────────────────────────────────────────────────────────╯
                                                │
                              ┌─────────────────┴────────────────────────────┐
@@ -154,7 +155,7 @@ The trading service is responsible for:
             ║                    fills in  →  book of record                    ║
             ╠═══════════════════════════════════════════════════════════════════╣
             ║ fills update local positions; TERMINAL fills publish one proto    ║
-            ║ LedgerFill to the global ledger:fills stream (lt:ledger:fills) →  ║
+            ║ LedgerFill to the ledger:fills Kafka topic (lt.ledger.fills) →    ║
             ║ the portfolio LEDGER (per-sleeve P&L). See portfolio-ledger.md.   ║
             ╚═══════════════════════════════════════════════════════════════════╝
 ```
@@ -186,36 +187,49 @@ closing the "crash before publish" window. See the
 ```
 services/trading/
 ├── src/
-│   ├── main.py                    # FastAPI app, lifespan, health check, rehydration loop
+│   ├── main.py                    # FastAPI app, lifespan, health checks, rehydration loop
 │   ├── models.py                  # Pydantic schemas + enum conversion helpers
+│   ├── attribution.py             # Order ledger attribution (RPC submission + recovery emission)
 │   ├── credentials.py             # Per-tenant/session Alpaca credential resolution
 │   ├── recovery.py                # Boot + periodic runner rehydration (advisory locks)
 │   ├── ledger_events.py           # LedgerFill / LedgerReservation message builders
-│   ├── providers.py              # DI factory for executor/services/publisher singletons
+│   ├── metrics.py                 # Service-local facade over llamatrade_telemetry
+│   ├── proto_mappers.py           # Canonical DB-row → proto mappers for trading reads
+│   ├── providers.py               # DI factory for executor/services/publisher singletons
 │   ├── circuit_breaker.py         # Broker-failure circuit breaker
+│   ├── symbol_status.py           # Broker symbol lifecycle (tradability checks)
 │   ├── grpc/
 │   │   └── servicer.py            # gRPC/Connect service implementation (resolve_identity)
 │   ├── executor/
-│   │   ├── base.py               # Shared Alpaca submit/sync mixin (via llamatrade_alpaca)
+│   │   ├── base.py                # Shared Alpaca submit/sync mixin (via llamatrade_alpaca)
 │   │   └── order_executor.py      # Order submission, deterministic ids, ledger emission
 │   ├── risk/
-│   │   └── risk_manager.py        # 6-layer risk checks + sleeve-aware ledger gate
+│   │   └── risk_manager.py        # 7-layer risk checks + sleeve-aware ledger gate
 │   ├── runner/
-│   │   ├── runner.py             # Per-session live strategy runner (concurrent loops)
-│   │   └── runtime_adapters.py    # Shared llamatrade_runtime adapter (opt-in loop)
+│   │   ├── runner.py              # Per-session live strategy runner (concurrent loops)
+│   │   ├── runtime_adapters.py    # Shared llamatrade_runtime adapter (opt-in loop)
+│   │   ├── service_bar_stream.py  # Live bar stream backed by the market-data fan-out
+│   │   ├── warmup.py              # Indicator-history preload from the market-data store
+│   │   └── intent_capture.py      # Per-evaluation order-intent capture (JSON lines)
 │   ├── services/
 │   │   ├── live_session_service.py # Start/stop/rehydrate runners
 │   │   ├── position_service.py    # Local position cache, P&L
 │   │   ├── session_service.py     # TradingSession CRUD
 │   │   ├── audit_service.py       # Money-path audit log
-│   │   └── alert_service.py       # Reconciliation / halt alerts
+│   │   └── alert_service.py       # Notification-stream publisher facade (alerts)
 │   ├── streaming/
-│   │   ├── publisher.py          # Redis Streams publisher (orders, positions, ledger)
+│   │   ├── publisher.py           # Kafka event publisher (orders, positions, ledger)
 │   │   └── subscriber.py          # UI stream tail-reader
-│   └── clients/
-│       ├── market_data.py         # HTTP client for market-data service
-│       └── portfolio_client.py    # LedgerClient wrapper (sleeve state / free cash)
+│   ├── clients/
+│   │   ├── market_data.py         # HTTP client for market-data service
+│   │   └── portfolio_client.py    # LedgerClient wrapper (sleeve state / free cash)
+│   ├── tools/
+│   │   └── parity_diff.py         # Operator tool: diff two live-loop intent captures
+│   └── utils/
+│       ├── cache.py               # Async TTL cache
+│       └── trading_hours.py       # Market hours checker
 └── tests/
+    ├── integration/               # Real-Postgres tests (testcontainers)
     └── test_*.py                  # Test suite
 ```
 
@@ -229,7 +243,8 @@ services/trading/
 | **LiveSessionService**  | `services/live_session_service.py` | Start/stop/rehydrate per-session strategy runners   |
 | **OrderExecutor**       | `executor/order_executor.py`   | Submit orders, sync with Alpaca, deterministic ids, ledger emission |
 | **PositionService**     | `services/position_service.py` | Local position tracking, P&L calculation                |
-| **RiskManager**         | `risk/risk_manager.py`         | 6-layer validation + sleeve-aware ledger gate + daily P&L |
+| **RiskManager**         | `risk/risk_manager.py`         | 7-layer validation + sleeve-aware ledger gate + daily P&L |
+| **AlertService**        | `services/alert_service.py`    | Maps trading alerts to notification categories, publishes to the notification stream |
 | **`llamatrade_alpaca`** | `libs/alpaca`                  | Shared Alpaca REST + WebSocket clients (the only Alpaca entry point) |
 | **MarketDataClient**    | `clients/market_data.py`       | HTTP client for market-data service                     |
 
@@ -280,21 +295,23 @@ services/trading/
 
 ### Risk Check Pipeline
 
-`RiskManager.check_order()` validates against 6 layers (`risk/risk_manager.py`):
+`RiskManager.check_order()` validates against 7 layers (`risk/risk_manager.py`):
 
 | #   | Check                 | Rule                            | Default   |
 | --- | --------------------- | ------------------------------- | --------- |
-| 1   | **Max Order Value**   | qty × price ≤ limit             | $5,000    |
-| 2   | **Sleeve gate** *(when `sleeve_id` present)* | sleeve status must be `ACTIVE` (a `FROZEN` or `CLOSED` sleeve rejects **all** orders); buys must fit the sleeve's **free cash** (read from the portfolio ledger via `LedgerClient`) | — |
-| 3   | **Allowed Symbols**   | symbol in whitelist             | All       |
-| 4   | **Max Position Size** | (current + new) × price ≤ limit | $10,000   |
-| 5   | **Daily Loss Limit**  | daily_pnl > -limit              | $1,000    |
-| 6   | **Order Rate Limit**  | orders in last 60s < limit      | 10/minute |
+| 1   | **Market Hours**      | market must be open (`TradingHoursChecker`); skipped when `allow_outside_market_hours` is set. A closed market rejects immediately without evaluating the remaining layers | Enforced  |
+| 2   | **Max Order Value**   | qty × price ≤ limit             | $5,000    |
+| 3   | **Sleeve gate** *(when `sleeve_id` present)* | sleeve status must be `ACTIVE` (a `FROZEN` or `CLOSED` sleeve rejects **all** orders); buys must fit the sleeve's **free cash** and sells must not exceed the sleeve's open holdings of the symbol (read from the portfolio ledger via `LedgerClient`) | — |
+| 4   | **Allowed Symbols**   | symbol in whitelist             | All       |
+| 5   | **Max Position Size** | (current + new) × price ≤ limit | $10,000   |
+| 6   | **Daily Loss Limit**  | daily_pnl > -limit              | $1,000    |
+| 7   | **Order Rate Limit**  | orders in last 60s < limit      | 10/minute |
 
+Layers 5-7 need database access and a `session_id`; without them they are skipped.
 Returns: `RiskCheckResult(passed: bool, violations: list[str])`. A broker-failure
 **circuit breaker** can additionally halt submission independently of these checks.
 
-**Sleeve gate (layer 2)** is the ledger integration point and is **fail-safe**: if
+**Sleeve gate (layer 3)** is the ledger integration point and is **fail-safe**: if
 the sleeve's state can't be fetched, the order is rejected rather than allowed
 through. Unattributed/manual orders (no `sleeve_id`) skip this layer and degrade to
 account-level behavior.
@@ -305,10 +322,11 @@ Can be configured at session or tenant level:
 
 ```python
 class RiskLimits(BaseModel):
-    max_position_size: float | None   # Max $ per position
-    max_daily_loss: float | None      # Max daily loss before halt
-    max_order_value: float | None     # Max $ per order
-    allowed_symbols: list[str] | None # Symbol whitelist
+    max_position_size: Decimal | None   # Max $ per position
+    max_daily_loss: Decimal | None      # Max daily loss before halt
+    max_order_value: Decimal | None     # Max $ per order
+    allowed_symbols: list[str] | None   # Symbol whitelist
+    allow_outside_market_hours: bool    # Bypass layer 1 (paper trading/testing only)
 ```
 
 ### Daily P&L Tracking
@@ -429,68 +447,42 @@ Unrealized P&L = SUM(unrealized_pl) from open positions only
 
 ### Pydantic Schemas (`models.py`)
 
+Enums are proto-defined (`trading_pb2.OrderSide` / `OrderType` / `TimeInForce` / `OrderStatus`, `common_pb2.ExecutionMode` / `ExecutionStatus`), used as integer values with `*_to_str()` helpers only at the Alpaca boundary. Money and quantities are `Decimal`, never float. Responses are proto messages; the Pydantic layer covers requests and internal DTOs only:
+
 ```python
-class OrderSide(StrEnum):
-    BUY = "buy"
-    SELL = "sell"
-
-class OrderType(StrEnum):
-    MARKET = "market"
-    LIMIT = "limit"
-    STOP = "stop"
-    STOP_LIMIT = "stop_limit"
-    TRAILING_STOP = "trailing_stop"
-
-class OrderStatus(StrEnum):
-    PENDING = "pending"
-    SUBMITTED = "submitted"
-    ACCEPTED = "accepted"
-    PARTIAL = "partial"
-    FILLED = "filled"
-    CANCELLED = "cancelled"
-    REJECTED = "rejected"
-    EXPIRED = "expired"
-
-class TimeInForce(StrEnum):
-    DAY = "day"      # Cancel at end of day
-    GTC = "gtc"      # Good til cancelled
-    IOC = "ioc"      # Immediate or cancel
-    FOK = "fok"      # Fill or kill
-
 class OrderCreate(BaseModel):
     symbol: str
-    side: OrderSide
-    qty: float = Field(..., gt=0)
-    order_type: OrderType = OrderType.MARKET
-    limit_price: float | None = None
-    stop_price: float | None = None
-    time_in_force: TimeInForce = TimeInForce.DAY
+    side: OrderSide.ValueType
+    qty: Decimal = Field(..., gt=0)
+    order_type: OrderType.ValueType = ORDER_TYPE_MARKET
+    limit_price: Decimal | None = None
+    stop_price: Decimal | None = None
+    trail_percent: Decimal | None = None
+    time_in_force: TimeInForce.ValueType = TIME_IN_FORCE_DAY
     extended_hours: bool = False
+    # Bracket order fields (stop-loss/take-profit)
+    stop_loss_price: Decimal | None = None
+    take_profit_price: Decimal | None = None
+    bracket_time_in_force: TimeInForce.ValueType = TIME_IN_FORCE_GTC
+    # Ledger attribution, fixed at origination (portfolio-ledger.md)
+    sleeve_id: UUID | None = None
+    account_id: UUID | None = None
+    # Reference price used to size the cash reservation (never sent to the broker)
+    est_price: Decimal | None = None
+    # model_validator rejects orders missing the price their type requires
 
-class OrderResponse(BaseModel):
+class SessionResponse(BaseModel):
     id: UUID
-    alpaca_order_id: str | None = None
-    symbol: str
-    side: OrderSide
-    qty: float
-    order_type: OrderType
-    limit_price: float | None = None
-    stop_price: float | None = None
-    status: OrderStatus
-    filled_qty: float = 0
-    filled_avg_price: float | None = None
-    submitted_at: datetime
-    filled_at: datetime | None = None
+    tenant_id: UUID
+    strategy_id: UUID
+    mode: ExecutionMode.ValueType
+    status: ExecutionStatus.ValueType
+    started_at: datetime
+    stopped_at: datetime | None = None
+    ...
 
-class PositionResponse(BaseModel):
-    symbol: str
-    qty: float
-    side: str                    # "long" | "short"
-    cost_basis: float
-    market_value: float
-    unrealized_pnl: float
-    unrealized_pnl_percent: float
-    current_price: float
+class RiskLimits(BaseModel): ...      # per-session risk configuration
+class RiskCheckResult(BaseModel): ... # pass/fail + reason
 ```
 
 ### Database Models (`libs/db`)
@@ -599,18 +591,55 @@ APCA-API-SECRET-KEY: <api_secret>
 
 ### Services That Call Trading
 
-| Service      | Use Case                    | Method                         |
-| ------------ | --------------------------- | ------------------------------ |
-| **Frontend** | Order placement, monitoring | All RPCs                       |
-| **Strategy** | Automated order execution   | `SubmitOrder`, `ClosePosition` |
-| **Backtest** | Simulated order execution   | Similar interface              |
+| Service      | Use Case                    | Method   |
+| ------------ | --------------------------- | -------- |
+| **Frontend** | Order placement, monitoring | All RPCs |
+
+No other service calls trading. Strategy never calls it: sessions are started via trading's own `StartSession` RPC, trading reads the funded `StrategyExecution` (sleeve/account identity) from the shared DB, and the ledger decouples the rest (the risk check blocks orders on non-ACTIVE sleeves). Backtest simulates execution internally via `llamatrade_runtime` and never touches this service.
 
 ### Services That Trading Calls
 
-| Service         | Use Case                | Method                             |
-| --------------- | ----------------------- | ---------------------------------- |
-| **Market-Data** | Current prices for risk | HTTP `GET /quotes/{symbol}/latest` |
-| **Alpaca**      | Order execution         | REST API                           |
+| Service         | Use Case                                   | Method                             |
+| --------------- | ------------------------------------------ | ---------------------------------- |
+| **Market-Data** | Current prices for risk                    | HTTP `GET /quotes/{symbol}/latest` |
+| **Portfolio**   | Sleeve state / free cash, Manual-sleeve resolution | `LedgerClient` (gRPC)      |
+| **Alpaca**      | Order execution                            | `llamatrade_alpaca` REST + WS      |
+
+Trading produces to three Kafka topic families: order/position UI events (`lt.trading.orders` / `lt.trading.positions`, keyed by session), ledger fill/reservation events (`lt.ledger.fills`, keyed by account), and notification events (`lt.notifications`, keyed by tenant, published by the `AlertService` facade below).
+
+---
+
+## Alerts (Notification Stream)
+
+`services/alert_service.py` is a thin publisher facade over the platform notification stream, not a local alert engine. Each `on_*` hook (order filled/rejected, stop-loss/take-profit hit, position opened/closed/drift, reconciliation drift, sleeve frozen, risk breach, daily-loss and drawdown limits, strategy/session lifecycle, connection loss, circuit breaker) builds a proto `NotificationEvent` with machine-readable fields and publishes it to the `notifications` channel (Kafka topic `lt.notifications`, keyed by `tenant_id`). Delivery (in-app row, email, webhooks) is the notification service's job; publishes go through `publish_safe` (5s ceiling), are fire-and-forget, and never raise into the trading path.
+
+`CATEGORY_BY_ALERT_TYPE` maps each `AlertType` to a proto `NotificationCategory` (the `events_pb2.NOTIFICATION_CATEGORY_*` constants). Most map 1:1 to a same-named category; the three risk-related types collapse onto the single `RISK_BREACH` category:
+
+| `AlertType`                 | `NotificationCategory`      |
+| --------------------------- | --------------------------- |
+| `ORDER_FILLED`              | `ORDER_FILLED`              |
+| `ORDER_REJECTED`            | `ORDER_REJECTED`            |
+| `POSITION_OPENED`           | `POSITION_OPENED`           |
+| `POSITION_CLOSED`           | `POSITION_CLOSED`           |
+| `POSITION_DRIFT`            | `POSITION_DRIFT`            |
+| `RECONCILIATION_DRIFT`      | `RECONCILIATION_DRIFT`      |
+| `SLEEVE_FROZEN`             | `SLEEVE_FROZEN`             |
+| `STOP_LOSS_HIT`             | `STOP_LOSS_HIT`             |
+| `TAKE_PROFIT_HIT`           | `TAKE_PROFIT_HIT`           |
+| `RISK_BREACH`               | `RISK_BREACH`               |
+| `DAILY_LOSS_LIMIT`          | `RISK_BREACH`               |
+| `DRAWDOWN_LIMIT`            | `RISK_BREACH`               |
+| `STRATEGY_ERROR`            | `STRATEGY_ERROR`            |
+| `EVALUATION_STALLED`        | `EVALUATION_STALLED`        |
+| `SYMBOL_NOT_TRADABLE`       | `SYMBOL_NOT_TRADABLE`       |
+| `SESSION_STARTED`           | `SESSION_STARTED`           |
+| `SESSION_STOPPED`           | `SESSION_STOPPED`           |
+| `SESSION_ERROR`             | `SESSION_ERROR`             |
+| `CONNECTION_LOST`           | `CONNECTION_LOST`           |
+| `CIRCUIT_BREAKER_TRIGGERED` | `CIRCUIT_BREAKER_TRIGGERED` |
+| `CIRCUIT_BREAKER_RESET`     | `CIRCUIT_BREAKER_RESET`     |
+
+An alert with `CRITICAL` priority publishes `NOTIFICATION_SEVERITY_CRITICAL`; every other priority publishes `NOTIFICATION_SEVERITY_UNSPECIFIED`. Three types that can re-report one logical episode (`EVALUATION_STALLED`, `SYMBOL_NOT_TRADABLE`, `SLEEVE_FROZEN`) publish under a deterministic event id derived from alert type, session, symbol, and sleeve, so repeats dedup platform-wide; all other types get a fresh occurrence id per publish.
 
 ---
 
@@ -630,6 +659,9 @@ DATABASE_URL=postgresql+asyncpg://user:pass@localhost:5432/llamatrade
 # Market-Data service for price enrichment
 MARKET_DATA_URL=http://localhost:8840
 
+# Kafka (order/position UI events + ledger fills + notifications)
+KAFKA_BOOTSTRAP_SERVERS=localhost:9092
+
 # CORS configuration
 CORS_ORIGINS=http://localhost:8800,http://localhost:3000
 
@@ -646,15 +678,36 @@ LOG_LEVEL=INFO
 
 ## Health Check
 
-**Endpoint:** `GET /health`
+**Endpoint:** `GET /health` (shared `HealthChecker` from `llamatrade_common`, wired in `main.py`)
+
+Two component checks run concurrently:
+
+| Component  | Critical | Criteria                                                                                                        |
+| ---------- | -------- | --------------------------------------------------------------------------------------------------------------- |
+| `database` | yes      | `SELECT 1` on the shared engine (`cached_engine_check`, result cached 10s so kubelet probes stay cheap)          |
+| `kafka`    | no       | `is_connected` on the trading event publisher's shared transport, so the probe opens no second broker connection |
+
+Overall status: `healthy` when every check passes, `degraded` (HTTP 200) when only a
+non-critical check fails, `unhealthy` (HTTP 503) when a critical check fails. Kafka is
+non-critical so session reads and order submission stay available while the event
+backbone recovers.
 
 ```json
 {
   "status": "healthy",
+  "timestamp": "2026-07-31T00:00:00Z",
   "service": "trading",
-  "version": "0.1.0"
+  "version": "0.1.0",
+  "checks": {
+    "database": { "healthy": true, "latency_ms": 1.2, "critical": true },
+    "kafka": { "healthy": true, "latency_ms": 0.1, "critical": false }
+  }
 }
 ```
+
+A failing check adds a `message` field (exception text or `"Check timed out after 5.0s"`).
+`GET /health/live` always returns 200 while the process runs; `GET /health/ready`
+returns 503 unless all critical dependencies are healthy.
 
 ---
 
@@ -699,7 +752,7 @@ LOG_LEVEL=INFO
 
 3. **OrderExecutor.submit_order()** is called
    - Calls `RiskManager.check_order()`
-   - Risk checks: order value, position size, daily loss, rate limit
+   - Risk checks: market hours, order value, sleeve gate, allowed symbols, position size, daily loss, rate limit
 
 4. **Risk Check Passes**
    - Creates `Order` record in database (status=pending)
@@ -743,7 +796,7 @@ LOG_LEVEL=INFO
 The trading service provides a production-ready order execution engine with:
 
 1. **Order Execution**: Full order lifecycle from submission to fill
-2. **Risk Controls**: 6-layer validation pipeline before every order
+2. **Risk Controls**: 7-layer validation pipeline before every order
 3. **Position Tracking**: Local database tracking with real-time P&L
 4. **Alpaca Integration**: Paper and live trading via `llamatrade_alpaca`
 5. **Real-Time Streaming**: gRPC streaming for order and position updates
@@ -861,7 +914,13 @@ short-circuit (idempotent replay).
 ```
 tests/
 ├── conftest.py                    # Shared fixtures
-├── test_alert_service.py          # Reconciliation / halt alert tests
+├── integration/                   # Real-Postgres tests (testcontainers)
+│   ├── conftest.py                # Throwaway Postgres per module, trading tables only
+│   ├── test_order_constraints.py  # client_order_id uniqueness at the DB level
+│   └── test_session_lock_failover.py # Advisory-lock session leases across DB failover
+├── test_account_preflight.py      # Cash accounts refused, margin accounts pass
+├── test_alert_service.py          # Notification-stream publisher tests
+├── test_attribution.py            # Order-attribution resolution + emission backfill tests
 ├── test_audit_service.py          # Audit logging tests
 ├── test_auth_isolation.py         # Per-RPC tenant-isolation tests
 ├── test_base_executor.py          # Base Alpaca submit/sync mixin tests
@@ -869,7 +928,11 @@ tests/
 ├── test_cache.py                  # Cache layer tests
 ├── test_circuit_breaker.py        # Circuit breaker tests
 ├── test_concurrency.py            # Concurrent execution tests
+├── test_deterministic_ids.py      # Deterministic order-id property tests
+├── test_dual_path_emission.py     # Stream + REST-sync ledger emission dedup tests
+├── test_factory_tenant_scope.py   # Tenant scoping of gRPC-path service factories
 ├── test_fill_handling.py          # Order fill tests
+├── test_forming_bars.py           # One-minute stream → strategy-period bar folding tests
 ├── test_grpc_servicer.py          # gRPC endpoint tests
 ├── test_grpc_servicer_sessions.py # Session-lifecycle RPC tests
 ├── test_health.py                 # Health check tests
@@ -879,19 +942,27 @@ tests/
 ├── test_metrics.py                # Prometheus metrics tests
 ├── test_order_executor.py         # Order executor tests
 ├── test_order_validation.py       # OrderCreate type↔price validation tests
+├── test_parity_capture.py         # Intent capture + parity diff tool tests
 ├── test_position_service.py       # Position service tests
+├── test_proto_mappers.py          # DB-row → proto mapper round-trip tests
 ├── test_providers.py              # DI factory / singleton tests
 ├── test_recovery.py               # Crash-recovery / rehydration tests
 ├── test_rehydration.py            # Runner rehydration tests
+├── test_reservation_release.py    # Reservation release on reject/expiry tests
 ├── test_risk_manager.py           # Risk manager tests
+├── test_risk_public_gate.py       # Sleeve risk-gate wiring tests
 ├── test_runner.py                 # Strategy runner tests
 ├── test_runner_session.py         # Runner-session integration tests
 ├── test_runtime_adapters.py       # Shared runtime adapter tests
+├── test_service_bar_stream.py     # Market-data-backed live bar stream tests
+├── test_session_lease.py          # Per-session ownership lease tests
 ├── test_session_service.py        # Session service tests
 ├── test_sleeve_execution.py       # Sleeve-attributed execution tests
 ├── test_streaming.py              # Streaming tests
 ├── test_streaming_endpoints.py    # Streaming endpoint tests
-└── test_trading_hours.py          # Market hours tests
+├── test_symbol_lifecycle.py       # Symbol tradability lifecycle tests
+├── test_trading_hours.py          # Market hours tests
+└── test_warmup.py                 # Indicator-history warmup tests
 ```
 
 ### Running Tests
@@ -913,7 +984,7 @@ pytest tests/test_order_executor.py::test_submit_order_success
 ### Key Test Scenarios
 
 - **Order submission**: Happy path, risk violations, Alpaca errors
-- **Risk checks**: Each of the 5 risk checks individually
+- **Risk checks**: Each of the 7 risk-check layers individually
 - **Position tracking**: Open, close, P&L calculation
 - **Streaming**: Order updates, position updates
 - **Circuit breaker**: Broker failure handling
@@ -926,11 +997,11 @@ pytest tests/test_order_executor.py::test_submit_order_success
 
 - **gRPC/Connect Endpoints**: SubmitOrder, CancelOrder, GetOrder, ListOrders, GetPosition, ListPositions, ClosePosition
 - **Order Executor**: Order submission pipeline with Alpaca integration
-- **Risk Manager**: 6-layer validation pipeline
+- **Risk Manager**: 7-layer validation pipeline
 - **Position Service**: Local position tracking with P&L
 - **Alpaca Client**: REST client for paper/live trading
 - **Market Data Client**: HTTP client for price fetching
-- **Health Check**: Standard `/health` endpoint
+- **Health Check**: `/health` with database and Kafka component checks, plus `/health/live` and `/health/ready` probes
 - **Prometheus Metrics**: `/metrics` endpoint
 - **Real-Time Streaming**: `StreamOrderUpdates` and `StreamPositionUpdates` deliver order and position changes over gRPC
 - **Alpaca WebSocket**: Real-time order/trade updates from Alpaca

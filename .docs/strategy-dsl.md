@@ -82,7 +82,7 @@ This says: *every trading day, if SPY's 50-day average is above its 200-day aver
        ╭─────────────────────────────────────────────╮
        │                    PARSER                   │
        ├─────────────────────────────────────────────┤
-       │ libs/dsl/parser.py                          │
+       │ libs/dsl/…/parser.py                          │
        │ hand-written recursive-descent              │
        │ + regex tokenizer · tracks source locations │
        ╰─────────────────────────────────────────────╯
@@ -91,7 +91,7 @@ This says: *every trading day, if SPY's 50-day average is above its 200-day aver
    ╔══════════════════════════╤═════════════════════════╗
    ║                        AST                         ║
    ╠════════════════════════════════════════════════════╣
-   ║ libs/dsl/ast.py                                    ║
+   ║ libs/dsl/…/ast.py                                    ║
    ║ typed, frozen dataclasses · single source of truth ║
    ╚══════════════════════════╧═════════════════════════╝
                               │
@@ -108,7 +108,7 @@ This says: *every trading day, if SPY's 50-day average is above its 200-day aver
 │ ValidationResult │          │ Stored in PostgreSQL · StrategyVersion │
 ├──────────────────┤          ├────────────────────────────────────────┤
 │ pass / fail      │          │ config_sexpr — the DSL string (truth)  │
-└──────────────────┘          │ symbols · timeframe  (derived)         │
+└──────────────────┘          │ symbols · rebalance  (derived)         │
                               └────────────────────────────────────────┘
                                                    │
                        ╭───────────────────────────────────────────────╮
@@ -135,9 +135,9 @@ This says: *every trading day, if SPY's 50-day average is above its 200-day aver
                          └───────────────────────┘  └─────────────────────────────┘
 ```
 
-**Parser** (`libs/dsl/parser.py`) — a hand-written recursive-descent parser fronted by a regex tokenizer. (Note: this is *not* a Lark/EBNF grammar; the EBNF below is descriptive, not the implementation.) Every node records a `SourceLocation` (line, column, character offsets) for precise error messages.
+**Parser** (`libs/dsl/llamatrade_dsl/parser.py`) — a hand-written recursive-descent parser fronted by a regex tokenizer. (Note: this is *not* a Lark/EBNF grammar; the EBNF below is descriptive, not the implementation.) Every node records a `SourceLocation` (line, column, character offsets) for precise error messages.
 
-**Validator** (`libs/dsl/validator.py`) — checks semantic correctness (valid methods/indicators, weight sums, positive parameters, etc.).
+**Validator** (`libs/dsl/llamatrade_dsl/validator.py`) — checks semantic correctness (valid methods/indicators, weight sums, positive parameters, etc.).
 
 **Compiler** (`libs/runtime`) — extracts the required indicators, computes them with NumPy, and evaluates the tree into target weights. There is a **single** bar-by-bar engine (`CompiledStrategy`), wrapped by `StrategySession`. Backtest and live evaluate that same engine, so a backtest predicts live's decisions by construction; the loop that drives it and the exact parity differences are in [execution-runtime.md](execution-runtime.md). See [Execution Pipeline](#execution-pipeline).
 
@@ -160,7 +160,7 @@ Everything is either an atom (number, string, symbol) or a parenthesized list. T
 |------|--------|----------|-------|
 | Number | integer or decimal, optional minus | `14`, `0.5`, `-2.5` | **No `%` suffix** — `30` is the number thirty |
 | String | double-quoted | `"My Strategy"`, `"US Equities"` | Used for `strategy`/`group` names |
-| Symbol (ticker) | starts with a letter | `SPY`, `AAPL`, `BRK-B`, `BTC-USD` | May contain letters, digits, `_`, `-` |
+| Symbol (ticker) | letter-led for assets | `SPY`, `AAPL`, `BRK-B`, `BTC-USD` | Tokenizer also admits `_`/`$` leads; the validator requires asset symbols to start with a letter |
 | Keyword | colon-prefixed | `:rebalance`, `:method`, `:weight`, `:high` | Named parameters and options |
 
 > **Symbol scope.** Any letter-led ticker *parses* — including crypto/forex-style symbols like `BTC-USD`. But the platform currently trades **only US equities & ETFs** (Alpaca `/stocks/*` endpoints); non-equity symbols have **no market-data or execution path** and will not resolve at run time.
@@ -210,7 +210,7 @@ The terminal node and the only thing that actually receives weight.
 ```
 
 - `<symbol>` — the ticker (required).
-- `:weight` — explicit percentage. **Only valid when the parent `weight` block uses `:method specified`.** Under any other method, supplying `:weight` is a validation error (the method computes the weight).
+- `:weight` — explicit percentage. Valid at the strategy root, directly inside a `group`, and under `:method specified` (in each case sibling declared weights must sum to ~100). Under a **non-`specified`** `weight` method, supplying `:weight` is a validation error (the method computes the weight).
 
 ```lisp
 (asset VTI)
@@ -230,7 +230,7 @@ Takes its children and assigns each a fraction of the capital flowing into the b
 |-----------|----------|-------------|
 | `:method` | Yes | Allocation method — see [Weight Methods](#weight-methods) |
 | `:lookback` | No | Historical window (days) for dynamic methods. Must be > 0 |
-| `:top` | No | Keep only the top N children by the method's ranking metric, then allocate among those N. Must be > 0 |
+| `:top` | No | Keep only the top N children by ranking, then allocate among those N. Must be > 0. **Only valid with `:method momentum`** |
 
 ```lisp
 ;; Manual weights — must sum to ~100% within the block
@@ -258,7 +258,7 @@ A named container. **Transparent by default** — capital flows straight through
   <child-blocks>...)
 ```
 
-- `:weight` — like `asset`, honored **only** when the parent `weight` is `:method specified`. Lets a whole subtree carry a specified weight.
+- `:weight` — like `asset`: valid at the strategy root, inside a `group`, or under `:method specified`; rejected under a non-`specified` `weight` method. Lets a whole subtree carry a specified weight.
 
 ```lisp
 (group "US Equities" :weight 60
@@ -273,12 +273,12 @@ The only branching construct. Evaluates a condition against current market data;
 ```lisp
 (if <condition>
   <then-block>
-  [(else <else-block>)])
+  (else <else-block>))
 ```
 
 - `<then-block>` is a **single** block. To allocate across several things in a branch, wrap them in a `weight`.
 - The else clause **must** be wrapped in `(else ...)` — bare juxtaposition is not allowed.
-- If `else` is omitted and the condition is false, the subtree contributes nothing.
+- `else` is **mandatory** — the validator rejects an else-less `if`, because a false branch would silently rescale the remaining siblings to 100%.
 
 ```lisp
 ;; Nested regimes: oversold → risk-on, overbought → risk-off, else neutral
@@ -551,7 +551,7 @@ Parameters are optional; if omitted, these defaults apply (source: `compute_indi
 | `obv` | none | | `momentum` | period 10 |
 | `vwap` | none | | | |
 
-The default `:output` for multi-output indicators is: `macd` → `:line`, `bbands` → `:middle`, `adx` → `:value`, `stoch` → `:k`.
+The default `:output` for multi-output indicators is: `macd` → `:line`, `bbands` → `:middle`, `adx` → `:value`, `stoch` → `:k`, `keltner` → `:middle`, `donchian` → `:upper`.
 
 ---
 
@@ -586,7 +586,7 @@ block         = asset | weight | group | if | filter
 asset         = "(" "asset" SYMBOL (":weight" NUMBER)? ")"
 weight        = "(" "weight" ":method" METHOD (":lookback" NUMBER)? (":top" NUMBER)? block+ ")"
 group         = "(" "group" STRING (":weight" NUMBER)? block+ ")"
-if            = "(" "if" condition block ("(" "else" block ")")? ")"
+if            = "(" "if" condition block ("(" "else" block ")")? ")"   (* parses without else; the validator rejects it *)
 filter        = "(" "filter" ":by" CRITERIA ":select" "(" DIRECTION NUMBER ")" (":lookback" NUMBER)? block+ ")"
 
 condition     = comparison | crossover | logical
@@ -712,7 +712,7 @@ A strategy is persisted on `StrategyVersion` (see `libs/db`) as a **single DSL s
 - the **visual block tree** client-side via `fromDSLString(dsl_code)`;
 - the **AST** via `parse()` at execution time.
 
-The only other stored columns are `symbols` (GIN-indexed) and `timeframe` — indexed projections recomputed from the DSL on every write for querying, never edited independently.
+The only other stored columns are `symbols` (GIN-indexed) and `rebalance` — indexed projections recomputed from the DSL on every write for querying, never edited independently.
 
 ### JSON IR structure
 
@@ -749,17 +749,21 @@ Note the exact key names that downstream code depends on:
 
 ## Validation Rules
 
-`validate()` (source: `libs/dsl/validator.py`) returns a `ValidationResult` with a `valid` flag and a list of errors (each with message, path, and source location; misspelled indicator/method names get "did you mean" suggestions). Enforced rules:
+`validate()` (source: `libs/dsl/llamatrade_dsl/validator.py`) returns a `ValidationResult` with a `valid` flag and a list of errors (each with message, path, and source location; misspelled indicator/method names get "did you mean" suggestions). Enforced rules:
 
 1. **Strategy** has a non-empty name and ≥ 1 child block.
 2. **Weight `:method specified`** — every direct `asset`/`group` child must have a `:weight`, and they must sum to ~100% (tolerance 0.01).
 3. **Weight non-`specified`** — children must **not** have `:weight` (the method computes it).
-4. **Weight method** is one of the seven parseable methods, but `market-cap` is then **rejected** (needs fundamental data) — leaving six usable; `:lookback`/`:top`, if present, must be > 0; `:top` must not exceed the child count.
+4. **Weight method** is one of the seven parseable methods, but `market-cap` is then **rejected** (needs fundamental data) — leaving six usable; `:lookback`/`:top`, if present, must be > 0; `:top` must not exceed the child count and is only honored by `:method momentum`.
 5. **Asset** has a non-empty symbol starting with a letter; `:weight`, if present, > 0.
 6. **Filter** — `:by` is valid, `:select_count` > 0 and ≤ available assets, `:lookback` (if present) > 0, ≥ 1 child.
 7. **Logical ops** — `not` takes exactly 1 operand; `and`/`or` take ≥ 2.
 8. **Indicators** — name in the supported set; parameters > 0.
 9. **Metrics** — name valid; period (if present) > 0.
+10. **If** — the `else` branch is mandatory (see Block Types).
+11. **Declared weights at the root or in a `group`** — when direct children carry `:weight`, the siblings must sum to ~100.
+12. **Crossover operands** — a `crosses-above`/`crosses-below` operand may not be a metric (metrics are scalar, not series).
+13. **Nesting depth** — the parser enforces a hard cap (150 levels) and reports exceeding it as a parse error, so a pathological payload cannot stack-overflow.
 
 The frontend runs an additional set of *structural* checks (no orphan blocks, no empty groups, duplicate-asset warnings) before saving; those are UI conveniences and do not replace backend validation.
 

@@ -43,7 +43,8 @@ The backtest engine is the **shared strategy runtime** (`llamatrade_runtime`) �
 │ Strategy DB   ───────►  strategy version (S-expression config) via shared DB │
 │ Market Data   ──gRPC──►  historical OHLCV bars (StreamHistoricalBars)         │
 │ PostgreSQL    ────────►  backtest + result rows (tenant-scoped, RLS)          │
-│ Redis         ────────►  Celery broker · progress pub/sub · dataset lock      │
+│ Kafka         ────────►  progress topic (lt.backtest.progress, tail-replay)   │
+│ Redis         ────────►  Celery broker · cancel flag · dataset lock           │
 │ Object store  ────────►  content-addressed Parquet bar snapshots (dataset/)   │
 └──────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -98,9 +99,10 @@ services/backtest/
 │   ├── main.py                     # FastAPI app, Connect mount, AuthMiddleware, /health
 │   ├── models.py                   # request schemas + VALID_TIMEFRAMES
 │   ├── convert.py                  # numeric coercion helpers (safe_float)
-│   ├── progress.py                 # BacktestProgressReporter / ProgressSubscriber (Redis pub/sub)
+│   ├── progress.py                 # BacktestProgressReporter / ProgressSubscriber (Kafka topic)
 │   ├── proto_mappers.py            # DB rows ↔ proto messages
 │   ├── celery_app.py               # Celery config, task routes, beat schedule
+│   ├── queue_metrics.py            # Celery queue-depth sampling from the API process
 │   ├── grpc/
 │   │   └── servicer.py             # BacktestServicer — 7 RPCs
 │   ├── services/
@@ -115,7 +117,7 @@ services/backtest/
 │   │   └── prepare.py              # prepare_dataset (fetch · gap-fill · snapshot · single-flight)
 │   └── workers/
 │       └── celery_tasks.py         # run_backtest_task, reap_stale_backtests_task
-└── tests/
+└── tests/                          # 22 test modules (service, servicer, dataset, progress, reaper, queue metrics, e2e lifecycle)
 ```
 
 The strategy execution core (runtime loop, portfolio, simulated execution, bar feed, metrics) lives in the shared **`llamatrade_runtime`** library, not in this service.
@@ -134,7 +136,7 @@ The strategy execution core (runtime loop, portfolio, simulated execution, bar f
 | **metrics** | `llamatrade_runtime/metrics.py` | Sharpe, Sortino, drawdown, returns, trade stats |
 | **BenchmarkCalculator** | `engine/benchmarks.py` | SPY buy & hold, alpha, beta, information ratio |
 | **prepare_dataset** | `dataset/prepare.py` | warm/materialize content-addressed bar snapshot |
-| **BacktestProgressReporter / ProgressSubscriber** | `progress.py` | publish/tail progress over Redis pub/sub |
+| **BacktestProgressReporter / ProgressSubscriber** | `progress.py` | publish/tail progress over the Kafka progress topic |
 | **Celery tasks** | `workers/celery_tasks.py` | `run_backtest_task`, `reap_stale_backtests_task` |
 
 ---
@@ -221,13 +223,17 @@ To avoid silently misleading results, `RunBacktest` rejects config the engine do
 
 ### Plan quota
 
-`RunBacktest` enforces a per-tenant monthly quota (`backtests_per_month` from the tenant's plan; free-tier default 10) via `llamatrade_db.plan_limits.enforce_plan_limit`, returning `RESOURCE_EXHAUSTED` when the quota is exceeded.
+`RunBacktest` enforces a per-tenant monthly quota (`backtests_per_month` from the tenant's plan; free-tier default 10) via `llamatrade_db.plan_limits.enforce_plan_limit`, returning `RESOURCE_EXHAUSTED` when the quota is exceeded. A rejected run also publishes a `PLAN_LIMIT_REACHED` notification (deduped per limit value).
+
+### Notifications
+
+Terminal states publish onto the `lt.notifications` Kafka topic through `notify_backtest_terminal` (fire-and-forget `publish_safe`, deduped per backtest id + outcome): `BACKTEST_COMPLETED` on success, `BACKTEST_FAILED` on market-data errors, run failures, retry exhaustion, and reaper-failed runs. Both backtest categories are in-app only by default (no email).
 
 ---
 
 ## API Reference
 
-The service is **Connect/gRPC only** — there is no REST/JSON API and no WebSocket endpoint. Progress is delivered by the `StreamBacktestProgress` server-stream (backed by Redis pub/sub), not a WebSocket.
+The service is **Connect/gRPC only** — there is no REST/JSON API and no WebSocket endpoint. Progress is delivered by the `StreamBacktestProgress` server-stream (backed by the Kafka progress topic `lt.backtest.progress`), not a WebSocket.
 
 | RPC | Description |
 | --- | --- |
@@ -265,13 +271,19 @@ Benchmark bars are taken from the combined fetch (no extra data call) and restri
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `DATABASE_URL` | required | PostgreSQL connection string |
-| `REDIS_URL` | `redis://localhost:6379/0` | Celery broker/backend, progress pub/sub, dataset lock |
+| `REDIS_URL` | `redis://localhost:6379/0` | Celery broker/backend, cancel flag, dataset lock |
+| `KAFKA_BOOTSTRAP_SERVERS` | `localhost:9092` | progress topic transport (`llamatrade_events`) |
 | `MARKET_DATA_GRPC_TARGET` | `market-data:8840` | market-data service address |
 | `BACKTEST_DATASET_DIR` | — | on-disk Parquet snapshot dir (in-memory store when unset) |
 | `BACKTEST_MAX_BARS_PER_SYMBOL` | `100000` | per-symbol bar cap for the fetch |
 | `BACKTEST_TASK_SOFT_TIME_LIMIT` | `1800` | Celery soft time limit (s) |
 | `BACKTEST_TASK_TIME_LIMIT` | `3600` | Celery hard time limit (s) |
 | `BACKTEST_REAPER_INTERVAL` | `300` | reaper beat interval (s) |
+| `BACKTEST_REAPER_RUNNING_GRACE` | `300` | extra grace past the task hard limit before a RUNNING row is reaped (s) |
+| `BACKTEST_REAPER_PENDING_REQUEUE` | `300` | age before a PENDING row is re-enqueued (s) |
+| `BACKTEST_REAPER_PENDING_FAIL` | `3600` | age before a PENDING row is failed by the reaper (s) |
+| `BACKTEST_QUEUE_DEPTH_INTERVAL` | `10` | Celery queue-depth sample interval (s) |
+| `BACKTEST_DATASET_VINTAGE_WINDOW_DAYS` | `10` | dataset snapshot vintage window (days) |
 | `BACKTEST_TRADES_PREVIEW` | `500` | max trades inlined by `GetBacktest` |
 | `BACKTEST_MAX_TRADES_PAGE_SIZE` | `200` | max page size for `GetBacktestTrades` |
 | `CORS_ORIGINS` | localhost set | allowed CORS origins |

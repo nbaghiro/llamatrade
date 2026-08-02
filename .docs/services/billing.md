@@ -129,7 +129,7 @@ services/billing/
 │   ├── test_grpc_servicer_extended.py
 │   ├── test_billing_service_extended.py
 │   ├── test_payment_method_extended.py
-│   ├── test_webhooks.py            # Webhook handler tests
+│   ├── test_webhook_router.py      # Webhook endpoint tests
 │   └── test_webhook_handlers.py
 ├── pyproject.toml
 └── Dockerfile
@@ -278,12 +278,15 @@ SQLAlchemy `Plan` rows defined in `billing_service.py` (not Pydantic):
 | Event Type                      | Action                           |
 | ------------------------------- | -------------------------------- |
 | `customer.subscription.created` | Create local subscription record |
-| `customer.subscription.updated` | Sync status, period dates        |
-| `customer.subscription.deleted` | Mark subscription as cancelled   |
-| `invoice.paid`                  | Log successful payment           |
-| `invoice.payment_failed`        | Update subscription to past_due  |
+| `customer.subscription.updated` | Sync status, period dates; emits `SUBSCRIPTION_UPDATED` notification |
+| `customer.subscription.deleted` | Mark subscription as cancelled; emits `SUBSCRIPTION_CANCELED` notification |
+| `customer.subscription.trial_will_end` | Emits `TRIAL_ENDING` notification |
+| `invoice.paid`                  | Log successful payment; emits `PAYMENT_SUCCEEDED` notification |
+| `invoice.payment_failed`        | Update subscription to past_due; emits `PAYMENT_FAILED` notification |
 | `payment_method.attached`       | Sync payment method              |
 | `payment_method.detached`       | Remove from local DB             |
+
+Notifications go out through `_notify_billing`, a fire-and-forget `publish_safe` onto the `lt.notifications` Kafka topic; dedup ids are derived from the Stripe object id plus event kind, so Stripe redelivery collapses to one notification.
 
 ### Webhook Signature Verification
 
@@ -314,6 +317,7 @@ def verify_webhook_signature(
 | `STRIPE_WEBHOOK_SECRET` | Yes      | -       | Webhook signing secret       |
 | `JWT_SECRET`            | Yes      | -       | For token validation         |
 | `BILLING_PORT`          | No       | `8880`  | Service port                 |
+| `KAFKA_BOOTSTRAP_SERVERS` | Yes    | -       | Notification publishing via `llamatrade_events` |
 
 ### Port Assignment
 
@@ -484,7 +488,7 @@ tests/
 ├── test_grpc_servicer_extended.py  # Extended gRPC scenarios
 ├── test_billing_service_extended.py # Edge cases
 ├── test_payment_method_extended.py  # Payment method scenarios
-├── test_webhooks.py                # Webhook endpoint tests
+├── test_webhook_router.py          # Webhook endpoint tests
 └── test_webhook_handlers.py        # Webhook processing tests
 ```
 
