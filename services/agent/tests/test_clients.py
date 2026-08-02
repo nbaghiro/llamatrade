@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from uuid import uuid4
 
+from opentelemetry.sdk.trace import TracerProvider
+
 from llamatrade_common.auth import verify_credential
 
 from src.tools.clients import tenant_headers
@@ -25,3 +27,12 @@ def test_tenant_headers_carry_identity_and_verifiable_service_token() -> None:
     ctx = verify_credential(auth.split(" ", 1)[1])
     assert ctx is not None
     assert ctx.is_service
+
+
+def test_tenant_headers_inject_traceparent_under_active_span() -> None:
+    """S2S headers carry W3C trace context so callee spans join the caller's trace."""
+    tracer = TracerProvider().get_tracer("test")
+    with tracer.start_as_current_span("caller"):
+        headers = tenant_headers(str(uuid4()), str(uuid4()))
+    assert "traceparent" in headers
+    assert headers["Authorization"].startswith("Bearer ")

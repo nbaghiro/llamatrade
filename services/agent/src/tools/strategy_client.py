@@ -10,6 +10,8 @@ from uuid import UUID
 import httpx
 
 from llamatrade_common.auth import mint_service_token
+from llamatrade_telemetry import inject_headers
+from llamatrade_telemetry.instrumentation.dependency import time_dependency
 
 logger = logging.getLogger(__name__)
 
@@ -90,14 +92,17 @@ class StrategyClient:
 
             # Make Connect RPC request. The Strategy service is fail-closed, so
             # attach a service token; it reads tenant/user from the body context.
-            response = await client.post(
-                url,
-                json=payload,
-                headers={
-                    "Content-Type": "application/json",
-                    "Authorization": f"Bearer {mint_service_token(service_name='agent')}",
-                },
-            )
+            with time_dependency("strategy", "create_strategy"):
+                response = await client.post(
+                    url,
+                    json=payload,
+                    headers=inject_headers(
+                        {
+                            "Content-Type": "application/json",
+                            "Authorization": f"Bearer {mint_service_token(service_name='agent')}",
+                        }
+                    ),
+                )
 
             if response.status_code == 200:
                 data = response.json()

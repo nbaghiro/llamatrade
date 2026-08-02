@@ -8,6 +8,7 @@ from uuid import uuid4
 import pytest
 
 from llamatrade_common.auth import verify_credential
+from tests.conftest import metric_value
 
 from src.tools.strategy_client import StrategyClient
 
@@ -30,6 +31,12 @@ async def test_create_strategy_attaches_verifiable_service_token() -> None:
     mock_http.post = AsyncMock(return_value=_mock_response(200, {"strategy": {"id": strategy_id}}))
     client._client = mock_http
 
+    before = metric_value(
+        "llamatrade_dependency_requests_total",
+        target="strategy",
+        operation="create_strategy",
+        status="success",
+    )
     result = await client.create_strategy(
         tenant_id=uuid4(),
         user_id=uuid4(),
@@ -38,6 +45,15 @@ async def test_create_strategy_attaches_verifiable_service_token() -> None:
     )
 
     assert result == {"id": strategy_id}
+    assert (
+        metric_value(
+            "llamatrade_dependency_requests_total",
+            target="strategy",
+            operation="create_strategy",
+            status="success",
+        )
+        == before + 1
+    )
 
     _, kwargs = mock_http.post.call_args
     auth = kwargs["headers"]["Authorization"]

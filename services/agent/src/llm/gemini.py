@@ -20,6 +20,7 @@ from collections.abc import AsyncIterator
 from typing import TYPE_CHECKING, Any
 
 from llamatrade_telemetry import metrics
+from llamatrade_telemetry.instrumentation.dependency import time_dependency
 
 from src.llm.client import (
     LLMClient,
@@ -222,7 +223,7 @@ class GeminiClient(LLMClient):
 
         model = self.config.model
         try:
-            with metrics.agent.llm_latency.time(model=model):
+            with metrics.agent.llm_latency.time(model=model), time_dependency("gemini", "complete"):
                 response = await client.aio.models.generate_content(
                     model=model, contents=contents, config=config
                 )

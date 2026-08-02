@@ -14,6 +14,8 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from tests.conftest import metric_value
+
 from src.llm.anthropic import AnthropicClient
 from src.llm.client import LLMConfig, Message, StreamEvent, StreamEventType, ToolCall
 from src.llm.gemini import GeminiClient
@@ -128,8 +130,23 @@ class TestAnthropicComplete:
         )
         client = _anthropic_client_with(sdk)
 
+        before = metric_value(
+            "llamatrade_dependency_requests_total",
+            target="anthropic",
+            operation="complete",
+            status="success",
+        )
         response = await client.complete(
             [Message(role="user", content="validate this")], tools=TOOL_DEFS
+        )
+        assert (
+            metric_value(
+                "llamatrade_dependency_requests_total",
+                target="anthropic",
+                operation="complete",
+                status="success",
+            )
+            == before + 1
         )
 
         assert response.content == "Validating now."
@@ -390,8 +407,23 @@ class TestGeminiComplete:
         )
         client = _gemini_client_with(sdk)
 
+        before = metric_value(
+            "llamatrade_dependency_requests_total",
+            target="gemini",
+            operation="complete",
+            status="success",
+        )
         response = await client.complete(
             [Message(role="user", content="validate")], tools=TOOL_DEFS
+        )
+        assert (
+            metric_value(
+                "llamatrade_dependency_requests_total",
+                target="gemini",
+                operation="complete",
+                status="success",
+            )
+            == before + 1
         )
 
         assert response.content == "Checking."

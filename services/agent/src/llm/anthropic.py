@@ -13,6 +13,7 @@ from collections.abc import AsyncIterator
 from typing import Any
 
 from llamatrade_telemetry import metrics
+from llamatrade_telemetry.instrumentation.dependency import time_dependency
 
 from src.llm.client import (
     LLMClient,
@@ -191,7 +192,10 @@ class AnthropicClient(LLMClient):
 
         model = self.config.model
         try:
-            with metrics.agent.llm_latency.time(model=model):
+            with (
+                metrics.agent.llm_latency.time(model=model),
+                time_dependency("anthropic", "complete"),
+            ):
                 response = await client.messages.create(**kwargs)
 
             # Extract content and tool calls

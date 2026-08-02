@@ -10,6 +10,7 @@ import os
 from typing import TYPE_CHECKING
 
 from llamatrade_common.auth import mint_service_token
+from llamatrade_telemetry import inject_headers
 
 if TYPE_CHECKING:
     from llamatrade_proto.generated.backtest_connect import BacktestServiceClient
@@ -65,8 +66,10 @@ def tenant_headers(tenant_id: str, user_id: str) -> dict[str, str]:
     callee servicers read); the service token authenticates past their
     fail-closed auth middleware.
     """
-    return {
-        "X-Tenant-ID": tenant_id,
-        "X-User-ID": user_id,
-        "Authorization": f"Bearer {mint_service_token(service_name='agent')}",
-    }
+    return inject_headers(
+        {
+            "X-Tenant-ID": tenant_id,
+            "X-User-ID": user_id,
+            "Authorization": f"Bearer {mint_service_token(service_name='agent')}",
+        }
+    )
