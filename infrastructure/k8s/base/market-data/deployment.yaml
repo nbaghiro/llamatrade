@@ -17,6 +17,7 @@ spec:
         app: market-data
         tier: backend
     spec:
+      serviceAccountName: market-data
       containers:
         - name: market-data
           image: gcr.io/llamatrade/market-data:latest
@@ -33,6 +34,19 @@ spec:
                 secretKeyRef:
                   name: alpaca-credentials
                   key: api_secret
+            # AuthMiddleware requires JWT_SECRET, which also verifies the
+            # internal service tokens its callers send; AUTH_JWT_PUBLIC_KEY
+            # verifies the RS256 user tokens auth issues.
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: jwt-secret
+                  key: secret
+            - name: AUTH_JWT_PUBLIC_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: auth-jwt-keys
+                  key: public_key
             - name: REDIS_URL
               valueFrom:
                 configMapKeyRef:
@@ -43,6 +57,22 @@ spec:
                 configMapKeyRef:
                   name: llamatrade-config
                   key: LOG_LEVEL
+            - name: KAFKA_BOOTSTRAP_SERVERS
+              valueFrom:
+                configMapKeyRef:
+                  name: kafka-config
+                  key: KAFKA_BOOTSTRAP_SERVERS
+            - name: KAFKA_SECURITY_PROTOCOL
+              valueFrom:
+                configMapKeyRef:
+                  name: kafka-config
+                  key: KAFKA_SECURITY_PROTOCOL
+            # Serves reads mostly from the Timescale store, so the app-DB pool is
+            # modest against 8 replicas. Budget in configmap.yaml.
+            - name: DB_POOL_SIZE
+              value: "3"
+            - name: DB_MAX_OVERFLOW
+              value: "3"
           envFrom:
             - configMapRef:
                 name: llamatrade-config
@@ -55,16 +85,28 @@ spec:
               memory: "512Mi"
           livenessProbe:
             httpGet:
-              path: /health
+              path: /health/live
               port: 8840
             initialDelaySeconds: 10
             periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
           readinessProbe:
             httpGet:
-              path: /health
+              path: /health/ready
               port: 8840
             initialDelaySeconds: 5
             periodSeconds: 5
+            timeoutSeconds: 5
+            failureThreshold: 3
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: market-data
+  namespace: llamatrade
+  annotations:
+    iam.gke.io/gcp-service-account: llamatrade-market-data@llamatrade.iam.gserviceaccount.com
 ---
 apiVersion: v1
 kind: Service

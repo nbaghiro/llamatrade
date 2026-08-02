@@ -6,6 +6,18 @@ namespace: llamatrade-staging
 resources:
   - ../../base
   - managed-cert.yaml
+  # Queue-driven backtest worker autoscaling. Uncomment once KEDA is installed
+  # in the cluster and the ScaledObject's serverAddress points at Prometheus.
+  # kustomize does not rewrite CRD name references, so scaleTargetRef.name also
+  # needs the namePrefix below.
+  # - ../../base/backtest/autoscaler
+  # Secret Manager sync. Uncomment once External Secrets Operator is installed
+  # and the store's project and cluster placeholders are filled. Until then the
+  # operator creates the Secrets by hand, unprefixed (see the deploy workflow).
+  # kustomize does not rewrite CRD name references, so each ExternalSecret's
+  # secretStoreRef.name and the store's serviceAccountRef also need the
+  # namePrefix below.
+  # - ../../base/external-secrets
 
 namePrefix: staging-
 
@@ -22,6 +34,14 @@ patches:
     target:
       kind: Deployment
       labelSelector: "tier=backend"
+
+  # HPAs would scale right back above the replicas:1 patch — floor them at 1 too.
+  - patch: |-
+      - op: replace
+        path: /spec/minReplicas
+        value: 1
+    target:
+      kind: HorizontalPodAutoscaler
 
   # Reduce resource limits for staging
   - patch: |-

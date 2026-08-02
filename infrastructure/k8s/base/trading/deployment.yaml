@@ -17,6 +17,7 @@ spec:
         app: trading
         tier: backend
     spec:
+      serviceAccountName: trading
       containers:
         - name: trading
           image: gcr.io/llamatrade/trading:latest
@@ -38,6 +39,25 @@ spec:
                 secretKeyRef:
                   name: alpaca-credentials
                   key: api_secret
+            # AuthMiddleware requires JWT_SECRET (it also signs the service
+            # tokens this service sends to the ledger and market-data);
+            # AUTH_JWT_PUBLIC_KEY verifies the RS256 user tokens auth issues.
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: jwt-secret
+                  key: secret
+            - name: AUTH_JWT_PUBLIC_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: auth-jwt-keys
+                  key: public_key
+            # Decrypts the stored per-tenant broker credentials.
+            - name: ENCRYPTION_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: encryption-key
+                  key: key
             - name: REDIS_URL
               valueFrom:
                 configMapKeyRef:
@@ -48,6 +68,29 @@ spec:
                 configMapKeyRef:
                   name: llamatrade-config
                   key: LOG_LEVEL
+            - name: KAFKA_BOOTSTRAP_SERVERS
+              valueFrom:
+                configMapKeyRef:
+                  name: kafka-config
+                  key: KAFKA_BOOTSTRAP_SERVERS
+            - name: KAFKA_SECURITY_PROTOCOL
+              valueFrom:
+                configMapKeyRef:
+                  name: kafka-config
+                  key: KAFKA_SECURITY_PROTOCOL
+            # No service calls the TradingService RPCs: the browser reaches them
+            # with user tokens (which this allowlist does not gate), and no mesh
+            # service holds a Connect client to trading. The list therefore names
+            # a principal nothing mints, so every inbound service token is
+            # rejected, closing the arbitrary-tenant vector on the order path.
+            # Add a real svc name here only when an internal caller is introduced.
+            - name: AUTH_ACCEPTED_SERVICES
+              value: "__none__"
+            # Pool override: order path is DB-active. Budget in configmap.yaml.
+            - name: DB_POOL_SIZE
+              value: "5"
+            - name: DB_MAX_OVERFLOW
+              value: "5"
           envFrom:
             - configMapRef:
                 name: llamatrade-config
@@ -60,16 +103,28 @@ spec:
               memory: "512Mi"
           livenessProbe:
             httpGet:
-              path: /health
+              path: /health/live
               port: 8850
             initialDelaySeconds: 10
             periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
           readinessProbe:
             httpGet:
-              path: /health
+              path: /health/ready
               port: 8850
             initialDelaySeconds: 5
             periodSeconds: 5
+            timeoutSeconds: 5
+            failureThreshold: 3
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: trading
+  namespace: llamatrade
+  annotations:
+    iam.gke.io/gcp-service-account: llamatrade-trading@llamatrade.iam.gserviceaccount.com
 ---
 apiVersion: v1
 kind: Service

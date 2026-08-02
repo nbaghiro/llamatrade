@@ -1,0 +1,42 @@
+# Queue-driven autoscaling for the backtest workers. Requires KEDA
+# (keda.sh/v1alpha1 CRDs) and a Prometheus that scrapes the backtest API pods.
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: backtest-worker
+  namespace: llamatrade
+  labels:
+    app: backtest-worker
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: backtest-worker
+  minReplicaCount: 1
+  maxReplicaCount: 10
+  pollingInterval: 30
+  triggers:
+    - type: prometheus
+      # Point serverAddress at the cluster's Prometheus query endpoint.
+      metadata:
+        serverAddress: http://prometheus.observability.svc.cluster.local:9090
+        # Every backtest API replica samples the same broker list; max() dedupes.
+        query: max(llamatrade_celery_queue_depth{queue="backtest"})
+        # Queued runs per worker replica: desired = ceil(queued / 2).
+        threshold: "2"
+  advanced:
+    horizontalPodAutoscalerConfig:
+      behavior:
+        scaleUp:
+          stabilizationWindowSeconds: 0
+          policies:
+            - type: Pods
+              value: 4
+              periodSeconds: 60
+        scaleDown:
+          # A backtest can run for the full hard task limit, so drain slowly.
+          stabilizationWindowSeconds: 1800
+          policies:
+            - type: Pods
+              value: 1
+              periodSeconds: 300

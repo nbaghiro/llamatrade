@@ -3,15 +3,19 @@ kind: Kustomization
 
 namespace: llamatrade
 
+# Secret objects are deliberately absent: nothing in this build creates a
+# Secret. The workloads reference them by name only, and the values come from
+# base/external-secrets (Secret Manager sync) or, until that is enabled, from
+# Secrets the operator creates by hand in the target namespace.
 resources:
   # Namespace and shared config
   - namespace.yaml
   - configmap.yaml
-  - secrets.yaml
   - network-policy.yaml
 
   # Infrastructure
   - redis/deployment.yaml
+  - timescale/statefulset.yaml
   - observability/otel-collector.yaml
 
   # Backend services
@@ -20,6 +24,7 @@ resources:
   - backtest/deployment.yaml
   - backtest/worker.yaml
   - market-data/deployment.yaml
+  - market-data/ingestor.yaml
   - trading/deployment.yaml
   - portfolio/deployment.yaml
   - notification/deployment.yaml

@@ -1,0 +1,20 @@
+# Secret Manager -> Kubernetes Secret sync for the platform namespace. Referenced
+# from the overlay of each cluster that has External Secrets Operator installed;
+# not part of the default kustomization, so a cluster without the
+# external-secrets.io CRDs still applies cleanly.
+#
+# This is the sanctioned way to create the Secrets the workloads reference. No
+# Secret object is committed anywhere in the tree, so until an overlay enables
+# this the operator creates those Secrets by hand in the target namespace.
+#
+# Each ExternalSecret's target.name is the unprefixed Secret name the
+# deployments reference. kustomize does not rewrite CRD fields, so an overlay
+# namePrefix renames the ExternalSecret objects but not the Secrets they
+# generate, and the secretKeyRefs keep matching.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - serviceaccount.yaml
+  - secret-store.yaml
+  - external-secrets.yaml

@@ -1,0 +1,8 @@
+# Opt-in autoscaling for the backtest workers. Referenced from the overlay of
+# each cluster that has KEDA installed; not part of the default kustomization,
+# so a cluster without the keda.sh CRDs still applies cleanly.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - scaledobject.yaml

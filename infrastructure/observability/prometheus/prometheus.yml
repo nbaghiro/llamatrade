@@ -56,9 +56,8 @@ scrape_configs:
     static_configs:
       - targets: ["notification:8870"]
   - job_name: billing
-    # Billing exposes gRPC on 8880 and HTTP (incl. /metrics) on 8881.
     static_configs:
-      - targets: ["billing:8881"]
+      - targets: ["billing:8880"]
   - job_name: agent
     static_configs:
       - targets: ["agent:8890"]

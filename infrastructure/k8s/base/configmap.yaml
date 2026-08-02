@@ -12,17 +12,47 @@ data:
   TRADING_GRPC_TARGET: "trading:8850"
   PORTFOLIO_GRPC_TARGET: "portfolio:8860"
   NOTIFICATION_GRPC_TARGET: "notification:8870"
+  APP_BASE_URL: "https://app.llamatrade.ai"
   BILLING_GRPC_TARGET: "billing:8880"
   AGENT_GRPC_TARGET: "agent:8890"
   # Billing also exposes HTTP on 8881 for Stripe webhooks
   BILLING_HTTP_URL: "http://billing:8881"
   # AI copilot LLM provider (gemini | anthropic)
   AGENT_LLM_PROVIDER: "gemini"
-  # OpenTelemetry OTLP export target (the in-cluster collector)
-  OTEL_EXPORTER_OTLP_ENDPOINT: "http://otel-collector:4317"
+  # OpenTelemetry OTLP export target (the in-cluster collector, OTLP/HTTP)
+  OTEL_EXPORTER_OTLP_ENDPOINT: "http://otel-collector:4318"
   # Common settings
   LOG_LEVEL: "INFO"
   ENVIRONMENT: "production"
+  # Per-pod SQLAlchemy connection pool (llamatrade_db.get_engine). Each pod holds
+  # its own pool, so the platform draws (DB_POOL_SIZE + DB_MAX_OVERFLOW) x pods
+  # against a single Cloud SQL instance with no external pooler. This block is the
+  # global default; DB-heavy and high-fan-out services override it in their own
+  # deployment env (values below are per pod):
+  #
+  #   service          pool+overflow   HPA max pods   worst-case conns
+  #   default (this)   3 + 2  = 5      -              -
+  #   portfolio        5 + 5  = 10     5              50
+  #   trading          5 + 5  = 10     10             100
+  #   auth             5 + 5  = 10     2 (no HPA)     20
+  #   market-data      3 + 3  = 6      8              48
+  #   backtest (API)   2 + 2  = 4      20             80
+  #   notification     2 + 2  = 4      2 (no HPA)     8
+  #   strategy         3 + 2  = 5      5              25
+  #   agent            3 + 2  = 5      5              25
+  #   billing          3 + 2  = 5      2 (no HPA)     10
+  #   backtest worker  inherits 5      1 x concurrency ~20
+  #   beat + ingestor + migrate job                  ~15
+  #
+  # Worst-case total at HPA maxima is ~400 connections. The Cloud SQL instance
+  # must be provisioned with max_connections above that plus a reserve for admin
+  # and monitoring sessions; the production tier (db-custom-2-7680) is set to 500
+  # via infrastructure/terraform (var.db_max_connections). Watch the
+  # llamatrade_db_connections_* / llamatrade_db_pool_exhausted_total metrics
+  # (DBPoolExhausted / DBPoolNearExhaustion alerts); if they climb, move to
+  # PgBouncer in transaction mode rather than growing these numbers.
+  DB_POOL_SIZE: "3"
+  DB_MAX_OVERFLOW: "2"
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -31,3 +61,15 @@ metadata:
   namespace: llamatrade
 data:
   REDIS_URL: "redis://redis:6379"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kafka-config
+  namespace: llamatrade
+data:
+  # Bootstrap address is templated — the deploy pipeline fills it from the
+  # Managed Kafka cluster (terraform output kafka_bootstrap_address).
+  KAFKA_BOOTSTRAP_SERVERS: "KAFKA_BOOTSTRAP_ADDRESS_PLACEHOLDER"
+  # SASL_SSL/OAUTHBEARER via Workload Identity in GCP (PLAINTEXT only locally).
+  KAFKA_SECURITY_PROTOCOL: "SASL_SSL"

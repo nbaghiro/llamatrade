@@ -3,7 +3,7 @@
 # the default kustomization — apply explicitly where the operator is installed:
 #   kubectl apply -f infrastructure/k8s/base/observability/prometheusrule.yaml
 # Keep the rule expressions in sync with the dev alerts.yml (same SLOs,
-# .docs/telemetry.md §2).
+# .docs/telemetry.md §2, plus the two integrity rules that are not SLOs).
 apiVersion: monitoring.coreos.com/v1
 kind: PrometheusRule
 metadata:
@@ -141,3 +141,95 @@ spec:
           annotations:
             summary: "DB pool > 90% utilized on {{ $labels.job }}"
             description: "{{ $labels.job }} DB pool > 90% utilized for 5m — approaching exhaustion."
+    - name: rls_bypass
+      rules:
+        - alert: RLSBypassRateSpike
+          expr: |
+            (
+              sum by (job, operation) (rate(llamatrade_db_rls_bypass_total[5m]))
+                >
+              3 * sum by (job, operation) (rate(llamatrade_db_rls_bypass_total[1h] offset 1h))
+            )
+            and
+            sum by (job, operation) (rate(llamatrade_db_rls_bypass_total[5m])) > 0.2
+          for: 15m
+          labels:
+            severity: ticket
+            area: tenant_isolation
+          annotations:
+            summary: "RLS bypass rate spike on {{ $labels.job }} ({{ $labels.operation }})"
+            description: "RLS system bypass running >3x its preceding-hour baseline — check the rls_bypass audit lines for the caller."
+    - name: eventbus_credentials
+      rules:
+        - alert: EventBusBrokenCredentials
+          expr: |
+            sum by (job, stream, mode) (
+              increase(llamatrade_events_broken_credentials_total[10m])
+            ) > 0
+          for: 1m
+          labels:
+            severity: page
+            area: event_backbone
+          annotations:
+            summary: "Event-backbone credentials broken on {{ $labels.stream }} ({{ $labels.mode }})"
+            description: "A reader has failed to start enough consecutive times to rule out a transient fault — check Workload Identity and the Managed Kafka IAM grant."
+    - name: ledger_cash_integrity
+      rules:
+        - alert: LedgerCashVsBrokerMismatch
+          expr: abs(llamatrade_ledger_vs_broker_cash_mismatch_dollars) > 1
+          for: 5m
+          labels:
+            severity: page
+            slo: ledger_reconciliation
+          annotations:
+            summary: "Ledger vs broker cash mismatch"
+            description: "Ledger sleeve cash vs broker cash differs by ${{ $value }} (should be ~0); strategies size against it."
+        - alert: LedgerSleeveFrozen
+          expr: sum(increase(llamatrade_ledger_sleeves_frozen_total[10m])) > 0
+          for: 1m
+          labels:
+            severity: page
+            slo: ledger_reconciliation
+          annotations:
+            summary: "Ledger froze a sleeve on irreconcilable drift"
+            description: "{{ $value }} sleeve freeze(s) in 10m — sizing is halted on the affected account; see the ledger freeze log lines."
+    - name: ledger_durability
+      rules:
+        - alert: LedgerPublishFailures
+          expr: sum(increase(llamatrade_trading_ledger_events_published_total{status="failure"}[10m])) > 0
+          for: 5m
+          labels:
+            severity: page
+            area: ledger_durability
+          annotations:
+            summary: "Trading is failing to publish ledger events"
+            description: "{{ $value }} publish failure(s) in 10m for 5m — terminal fills/releases may not be booked; the book diverges until the drain catches up."
+        - alert: LedgerFillDLQBacklog
+          expr: llamatrade_ledger_fill_dlq_depth > 0
+          for: 15m
+          labels:
+            severity: ticket
+            area: ledger_durability
+          annotations:
+            summary: "Un-booked fills parked on the ledger DLQ"
+            description: "{{ $value }} fill(s) on ledger:fills:dlq for 15m — fix the root cause then replay by cursor (dlq_replay) rather than purge."
+    - name: auth_guards
+      rules:
+        - alert: AuthRateLimitBackendErrors
+          expr: sum by (job) (increase(llamatrade_auth_ratelimit_backend_errors_total[10m])) > 0
+          for: 10m
+          labels:
+            severity: ticket
+            area: auth_guards
+          annotations:
+            summary: "Auth rate-limit backend errors on {{ $labels.job }}"
+            description: "Redis-backed rate limiter erroring for 10m — brute-force protection degraded and fail-closed login rejects; check Redis."
+        - alert: AuthRevocationBackendErrors
+          expr: sum by (job) (increase(llamatrade_auth_revocation_backend_errors_total[10m])) > 0
+          for: 10m
+          labels:
+            severity: ticket
+            area: auth_guards
+          annotations:
+            summary: "Auth revocation backend errors on {{ $labels.job }}"
+            description: "Redis-backed revocation check erroring for 10m — a revoked token may keep working until it expires; check Redis."

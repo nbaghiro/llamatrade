@@ -17,6 +17,7 @@ spec:
         app: auth
         tier: backend
     spec:
+      serviceAccountName: auth
       containers:
         - name: auth
           image: gcr.io/llamatrade/auth:latest
@@ -34,11 +35,41 @@ spec:
                 secretKeyRef:
                   name: jwt-secret
                   key: secret
+            # Auth is the only signer of user tokens, so it mounts both halves
+            # of the RS256 pair; every other service gets the public half only.
+            - name: AUTH_JWT_PRIVATE_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: auth-jwt-keys
+                  key: private_key
+            - name: AUTH_JWT_PUBLIC_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: auth-jwt-keys
+                  key: public_key
             - name: ENCRYPTION_KEY
               valueFrom:
                 secretKeyRef:
                   name: encryption-key
                   key: key
+            # Explicit pool sizes override the configmap default (budget in configmap.yaml).
+            - name: DB_POOL_SIZE
+              value: "5"
+            - name: DB_MAX_OVERFLOW
+              value: "5"
+            - name: KAFKA_BOOTSTRAP_SERVERS
+              valueFrom:
+                configMapKeyRef:
+                  name: kafka-config
+                  key: KAFKA_BOOTSTRAP_SERVERS
+            - name: KAFKA_SECURITY_PROTOCOL
+              valueFrom:
+                configMapKeyRef:
+                  name: kafka-config
+                  key: KAFKA_SECURITY_PROTOCOL
+          envFrom:
+            - configMapRef:
+                name: llamatrade-config
           resources:
             requests:
               cpu: "100m"
@@ -48,16 +79,20 @@ spec:
               memory: "512Mi"
           livenessProbe:
             httpGet:
-              path: /health
+              path: /health/live
               port: 8810
             initialDelaySeconds: 10
             periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
           readinessProbe:
             httpGet:
-              path: /health
+              path: /health/ready
               port: 8810
             initialDelaySeconds: 5
             periodSeconds: 5
+            timeoutSeconds: 5
+            failureThreshold: 3
 ---
 apiVersion: v1
 kind: Service
@@ -72,3 +107,11 @@ spec:
       targetPort: 8810
       name: grpc
   type: ClusterIP
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: auth
+  namespace: llamatrade
+  annotations:
+    iam.gke.io/gcp-service-account: llamatrade-auth@llamatrade.iam.gserviceaccount.com

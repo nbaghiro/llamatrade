@@ -17,6 +17,7 @@ spec:
         app: billing
         tier: backend
     spec:
+      serviceAccountName: billing
       containers:
         - name: billing
           image: gcr.io/llamatrade/billing:latest
@@ -31,6 +32,19 @@ spec:
                 secretKeyRef:
                   name: db-credentials
                   key: url
+            # AuthMiddleware requires JWT_SECRET, which also verifies the
+            # internal service tokens its callers send; AUTH_JWT_PUBLIC_KEY
+            # verifies the RS256 user tokens auth issues.
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: jwt-secret
+                  key: secret
+            - name: AUTH_JWT_PUBLIC_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: auth-jwt-keys
+                  key: public_key
             - name: STRIPE_SECRET_KEY
               valueFrom:
                 secretKeyRef:
@@ -46,6 +60,16 @@ spec:
                 configMapKeyRef:
                   name: llamatrade-config
                   key: LOG_LEVEL
+            - name: KAFKA_BOOTSTRAP_SERVERS
+              valueFrom:
+                configMapKeyRef:
+                  name: kafka-config
+                  key: KAFKA_BOOTSTRAP_SERVERS
+            - name: KAFKA_SECURITY_PROTOCOL
+              valueFrom:
+                configMapKeyRef:
+                  name: kafka-config
+                  key: KAFKA_SECURITY_PROTOCOL
           envFrom:
             - configMapRef:
                 name: llamatrade-config
@@ -58,16 +82,20 @@ spec:
               memory: "512Mi"
           livenessProbe:
             httpGet:
-              path: /health
-              port: 8881
+              path: /health/live
+              port: 8880
             initialDelaySeconds: 10
             periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
           readinessProbe:
             httpGet:
-              path: /health
-              port: 8881
+              path: /health/ready
+              port: 8880
             initialDelaySeconds: 5
             periodSeconds: 5
+            timeoutSeconds: 5
+            failureThreshold: 3
 ---
 apiVersion: v1
 kind: Service
@@ -85,3 +113,11 @@ spec:
       targetPort: 8881
       name: http
   type: ClusterIP
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: billing
+  namespace: llamatrade
+  annotations:
+    iam.gke.io/gcp-service-account: llamatrade-billing@llamatrade.iam.gserviceaccount.com

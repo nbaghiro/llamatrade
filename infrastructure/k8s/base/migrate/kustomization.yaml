@@ -1,0 +1,13 @@
+# Render-only kustomization for the migration Job. No overlay references it: a
+# completed Job's spec is immutable, so the deploy workflows delete the previous
+# Job and apply this file through sed (image tag, and the staging name prefix)
+# rather than through kustomize. CI builds this directory so the manifest still
+# gets parsed on every change instead of rotting unrendered.
+#
+# Deliberately no `namespace:` here — the workflows pass `kubectl apply -n <ns>`,
+# which conflicts with a namespace baked into the object.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - job.yaml

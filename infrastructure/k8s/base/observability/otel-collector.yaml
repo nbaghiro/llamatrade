@@ -1,6 +1,6 @@
 # In-cluster OpenTelemetry Collector — the OTLP export target the services point
-# at via OTEL_EXPORTER_OTLP_ENDPOINT. Receives OTLP, batches, and (by default)
-# logs; wire a real trace/metric backend by adding exporters to the pipeline.
+# at via OTEL_EXPORTER_OTLP_ENDPOINT. Receives OTLP, batches, logs (debug), and
+# forwards traces via otlphttp to the gateway named by OTEL_GATEWAY_OTLP_ENDPOINT.
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -20,12 +20,16 @@ data:
     exporters:
       debug:
         verbosity: normal
+      # Forwards to the trace backend gateway; endpoint comes from the
+      # OTEL_GATEWAY_OTLP_ENDPOINT env on the Deployment below.
+      otlphttp:
+        endpoint: ${env:OTEL_GATEWAY_OTLP_ENDPOINT}
     service:
       pipelines:
         traces:
           receivers: [otlp]
           processors: [batch]
-          exporters: [debug]
+          exporters: [debug, otlphttp]
         metrics:
           receivers: [otlp]
           processors: [batch]
@@ -55,6 +59,13 @@ spec:
           image: otel/opentelemetry-collector-contrib:0.111.0
           args:
             - --config=/etc/otel/config.yaml
+          env:
+            # Where the otlphttp exporter forwards traces. Point this at the
+            # environment's collector gateway / trace backend (Tempo, Cloud
+            # Trace gateway, ...); the default targets an in-cluster gateway
+            # Service named otel-gateway in the observability namespace.
+            - name: OTEL_GATEWAY_OTLP_ENDPOINT
+              value: "http://otel-gateway.observability.svc.cluster.local:4318"
           ports:
             - containerPort: 4317
             - containerPort: 4318

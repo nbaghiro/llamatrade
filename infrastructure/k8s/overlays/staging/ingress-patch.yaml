@@ -1,5 +1,5 @@
 # Staging overrides for the base frontend Ingress: host, static IP, and TLS cert.
-# The base rules (all service routes, incl. agent) carry through unchanged.
+# The base rule (frontend SPA; services are fronted directly) carries through unchanged.
 - op: replace
   path: /spec/rules/0/host
   value: staging.llamatrade.com

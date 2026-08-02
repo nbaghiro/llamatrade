@@ -17,6 +17,7 @@ spec:
         app: portfolio
         tier: backend
     spec:
+      serviceAccountName: portfolio
       containers:
         - name: portfolio
           image: gcr.io/llamatrade/portfolio:latest
@@ -28,16 +29,51 @@ spec:
                 secretKeyRef:
                   name: db-credentials
                   key: url
-            - name: REDIS_URL
+            # AuthMiddleware requires JWT_SECRET (it also signs the service
+            # tokens this service sends to market-data); AUTH_JWT_PUBLIC_KEY
+            # verifies the RS256 user tokens auth issues.
+            - name: JWT_SECRET
               valueFrom:
-                configMapKeyRef:
-                  name: redis-config
-                  key: REDIS_URL
+                secretKeyRef:
+                  name: jwt-secret
+                  key: secret
+            - name: AUTH_JWT_PUBLIC_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: auth-jwt-keys
+                  key: public_key
+            # Decrypts the stored per-tenant broker credentials.
+            - name: ENCRYPTION_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: encryption-key
+                  key: key
             - name: LOG_LEVEL
               valueFrom:
                 configMapKeyRef:
                   name: llamatrade-config
                   key: LOG_LEVEL
+            - name: KAFKA_BOOTSTRAP_SERVERS
+              valueFrom:
+                configMapKeyRef:
+                  name: kafka-config
+                  key: KAFKA_BOOTSTRAP_SERVERS
+            - name: KAFKA_SECURITY_PROTOCOL
+              valueFrom:
+                configMapKeyRef:
+                  name: kafka-config
+                  key: KAFKA_SECURITY_PROTOCOL
+            # Only these service principals may present a service token to the
+            # ledger/portfolio RPCs (resolve_identity allowlist): strategy, trading
+            # and agent call LedgerService/PortfolioService; a token from any other
+            # svc is rejected. User tokens are unaffected.
+            - name: AUTH_ACCEPTED_SERVICES
+              value: "strategy,trading,agent"
+            # Pool override: ledger folds are DB-heavy. Budget in configmap.yaml.
+            - name: DB_POOL_SIZE
+              value: "5"
+            - name: DB_MAX_OVERFLOW
+              value: "5"
           envFrom:
             - configMapRef:
                 name: llamatrade-config
@@ -50,16 +86,28 @@ spec:
               memory: "512Mi"
           livenessProbe:
             httpGet:
-              path: /health
+              path: /health/live
               port: 8860
             initialDelaySeconds: 10
             periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
           readinessProbe:
             httpGet:
-              path: /health
+              path: /health/ready
               port: 8860
             initialDelaySeconds: 5
             periodSeconds: 5
+            timeoutSeconds: 5
+            failureThreshold: 3
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: portfolio
+  namespace: llamatrade
+  annotations:
+    iam.gke.io/gcp-service-account: llamatrade-portfolio@llamatrade.iam.gserviceaccount.com
 ---
 apiVersion: v1
 kind: Service

@@ -22,6 +22,8 @@ services:
       - ../../libs/common/llamatrade_common:/app/libs/common/llamatrade_common:cached
       - ../../libs/db/llamatrade_db:/app/libs/db/llamatrade_db:cached
       - ../../libs/proto/llamatrade_proto:/app/libs/proto/llamatrade_proto:cached
+    environment:
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
     command: uvicorn src.main:app --host 0.0.0.0 --port 8810 --reload --reload-dir /app/src
 
   strategy:
@@ -33,6 +35,8 @@ services:
       - ../../libs/common/llamatrade_common:/app/libs/common/llamatrade_common:cached
       - ../../libs/db/llamatrade_db:/app/libs/db/llamatrade_db:cached
       - ../../libs/proto/llamatrade_proto:/app/libs/proto/llamatrade_proto:cached
+    environment:
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
     command: uvicorn src.main:app --host 0.0.0.0 --port 8820 --reload --reload-dir /app/src
 
   backtest:
@@ -44,6 +48,8 @@ services:
       - ../../libs/common/llamatrade_common:/app/libs/common/llamatrade_common:cached
       - ../../libs/db/llamatrade_db:/app/libs/db/llamatrade_db:cached
       - ../../libs/proto/llamatrade_proto:/app/libs/proto/llamatrade_proto:cached
+    environment:
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
     command: uvicorn src.main:app --host 0.0.0.0 --port 8830 --reload --reload-dir /app/src
 
   backtest-worker:
@@ -55,6 +61,8 @@ services:
       - ../../libs/common/llamatrade_common:/app/libs/common/llamatrade_common:cached
       - ../../libs/db/llamatrade_db:/app/libs/db/llamatrade_db:cached
       - ../../libs/proto/llamatrade_proto:/app/libs/proto/llamatrade_proto:cached
+    environment:
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
     command: celery -A src.celery_app:celery_app worker --queues backtest --loglevel info
 
   # Embedded beat scheduler + maintenance-queue worker: runs the periodic
@@ -68,6 +76,8 @@ services:
       - ../../libs/common/llamatrade_common:/app/libs/common/llamatrade_common:cached
       - ../../libs/db/llamatrade_db:/app/libs/db/llamatrade_db:cached
       - ../../libs/proto/llamatrade_proto:/app/libs/proto/llamatrade_proto:cached
+    environment:
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
     command: celery -A src.celery_app:celery_app worker -B --queues backtest_maintenance --concurrency 1 --loglevel info
 
   market-data:
@@ -80,6 +90,8 @@ services:
       - ../../libs/db/llamatrade_db:/app/libs/db/llamatrade_db:cached
       - ../../libs/proto/llamatrade_proto:/app/libs/proto/llamatrade_proto:cached
       - ../../libs/alpaca/llamatrade_alpaca:/app/libs/alpaca/llamatrade_alpaca:cached
+    environment:
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
     command: uvicorn src.main:app --host 0.0.0.0 --port 8840 --reload --reload-dir /app/src
 
   market-data-migrate:
@@ -101,6 +113,8 @@ services:
       - ../../libs/db/llamatrade_db:/app/libs/db/llamatrade_db:cached
       - ../../libs/proto/llamatrade_proto:/app/libs/proto/llamatrade_proto:cached
       - ../../libs/alpaca/llamatrade_alpaca:/app/libs/alpaca/llamatrade_alpaca:cached
+    environment:
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
     command: python -m src.ingest.main
 
   trading:
@@ -112,6 +126,8 @@ services:
       - ../../libs/common/llamatrade_common:/app/libs/common/llamatrade_common:cached
       - ../../libs/db/llamatrade_db:/app/libs/db/llamatrade_db:cached
       - ../../libs/proto/llamatrade_proto:/app/libs/proto/llamatrade_proto:cached
+    environment:
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
     command: uvicorn src.main:app --host 0.0.0.0 --port 8850 --reload --reload-dir /app/src
 
   portfolio:
@@ -123,6 +139,8 @@ services:
       - ../../libs/common/llamatrade_common:/app/libs/common/llamatrade_common:cached
       - ../../libs/db/llamatrade_db:/app/libs/db/llamatrade_db:cached
       - ../../libs/proto/llamatrade_proto:/app/libs/proto/llamatrade_proto:cached
+    environment:
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
     command: uvicorn src.main:app --host 0.0.0.0 --port 8860 --reload --reload-dir /app/src
 
   notification:
@@ -134,7 +152,20 @@ services:
       - ../../libs/common/llamatrade_common:/app/libs/common/llamatrade_common:cached
       - ../../libs/db/llamatrade_db:/app/libs/db/llamatrade_db:cached
       - ../../libs/proto/llamatrade_proto:/app/libs/proto/llamatrade_proto:cached
+      - ../../libs/dsl/llamatrade_dsl:/app/libs/dsl/llamatrade_dsl:cached
+      - ../../libs/runtime/llamatrade_runtime:/app/libs/runtime/llamatrade_runtime:cached
+      - ../../libs/events/llamatrade_events:/app/libs/events/llamatrade_events:cached
+    environment:
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
     command: uvicorn src.main:app --host 0.0.0.0 --port 8870 --reload --reload-dir /app/src
+
+  # stripe-mock: a real-shaped Stripe API for local/e2e. Billing points its SDK
+  # here (STRIPE_API_BASE) so checkout/subscribe run without real Stripe keys.
+  stripe-mock:
+    image: stripe/stripe-mock:latest
+    container_name: llamatrade-stripe-mock
+    ports:
+      - "12111:12111"
 
   billing:
     build:
@@ -145,6 +176,13 @@ services:
       - ../../libs/common/llamatrade_common:/app/libs/common/llamatrade_common:cached
       - ../../libs/db/llamatrade_db:/app/libs/db/llamatrade_db:cached
       - ../../libs/proto/llamatrade_proto:/app/libs/proto/llamatrade_proto:cached
+    environment:
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
+      STRIPE_SECRET_KEY: sk_test_mock
+      STRIPE_API_BASE: http://stripe-mock:12111
+    depends_on:
+      stripe-mock:
+        condition: service_started
     command: uvicorn src.main:app --host 0.0.0.0 --port 8880 --reload --reload-dir /app/src
 
   agent:
@@ -157,13 +195,14 @@ services:
       - ../../libs/db/llamatrade_db:/app/libs/db/llamatrade_db:cached
       - ../../libs/proto/llamatrade_proto:/app/libs/proto/llamatrade_proto:cached
       - ../../libs/dsl/llamatrade_dsl:/app/libs/dsl/llamatrade_dsl:cached
+    environment:
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
     command: uvicorn src.main:app --host 0.0.0.0 --port 8890 --reload --reload-dir /app/src
 
   # ===================
   # Single-origin reverse proxy (Caddy) — dev upstreams
   # ===================
-  # In dev the web app is the Vite dev server on :8802 (not the nginx prod
-  # image), so repoint WEB_UPSTREAM. Web serves the marketing page at "/" now.
+  # In dev the web app is the Vite dev server on :8802, so repoint WEB_UPSTREAM.
   proxy:
     environment:
       WEB_UPSTREAM: web:8802
@@ -178,31 +217,20 @@ services:
       context: ../..
       dockerfile: apps/web/Dockerfile.dev
     volumes:
-      # Mount the app at its in-container workspace path (WORKDIR is
-      # /app/apps/web). Vite sees index.html, vite.config.ts, tsconfig* and all
-      # of src (incl. the Monolith design system now under src/components) for
-      # hot-reload. The anonymous node_modules volumes preserve the image's
-      # workspace-linked install instead of the host's.
+      # Mount app + @llamatrade/core source for hot-reload; anonymous node_modules volumes keep the image's workspace install.
       - ../../apps/web:/app/apps/web:cached
+      - ../../apps/core:/app/apps/core:cached
       - /app/node_modules
       - /app/apps/web/node_modules
-    # The single origin is the Caddy proxy on host :8800; the web dev server is
-    # NOT published to the host. !override replaces the base file's port list
-    # with an empty one (Compose would otherwise concatenate). The proxy reaches
-    # it in-network on :8802.
+      - /app/apps/core/node_modules
+    # !override empties the base port list (Compose would otherwise concatenate); the web dev server is reached only via the proxy on :8802.
     ports: !override []
     environment:
-      # Agent's host port is remapped to 8990 (see docker-compose.yml). The
-      # browser talks to the agent directly, so point it at the remapped port.
+      # Browser talks to the agent directly; its host port is remapped to 8990 (see docker-compose.yml).
       VITE_AGENT_URL: http://localhost:8990
     command: npm run dev -- --host 0.0.0.0 --port 8802
 
-  # ===================
-  # Observability stack (dev) — scrapes every service's /metrics and receives
-  # OTLP traces. See infrastructure/observability/README.md. Services export
-  # traces only when OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318 is
-  # set in their environment; metrics scraping needs no service-side config.
-  # ===================
+  # Observability stack (dev): scrapes /metrics and receives OTLP traces. See infrastructure/observability/README.md.
   prometheus:
     image: prom/prometheus:v3.1.0
     container_name: llamatrade-prometheus

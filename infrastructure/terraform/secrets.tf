@@ -24,6 +24,35 @@ resource "random_password" "jwt_secret" {
   special = true
 }
 
+# RS256 user-token PEM pair. Terraform declares the containers only: generating
+# the key here would persist the private half in state, so an operator uploads
+# both versions out of band (placeholder, same as the Alpaca/Stripe entries).
+resource "google_secret_manager_secret" "auth_jwt_private_key" {
+  secret_id = "auth-jwt-private-key"
+
+  replication {
+    auto {}
+  }
+
+  labels = {
+    environment = var.environment
+    service     = "auth"
+  }
+}
+
+resource "google_secret_manager_secret" "auth_jwt_public_key" {
+  secret_id = "auth-jwt-public-key"
+
+  replication {
+    auto {}
+  }
+
+  labels = {
+    environment = var.environment
+    service     = "auth"
+  }
+}
+
 # Encryption Key
 resource "google_secret_manager_secret" "encryption_key" {
   secret_id = "encryption-key"
@@ -103,6 +132,32 @@ resource "google_secret_manager_secret" "stripe_webhook_secret" {
 }
 
 # SMTP credentials (placeholder)
+resource "google_secret_manager_secret" "smtp_host" {
+  secret_id = "smtp-host"
+
+  replication {
+    auto {}
+  }
+
+  labels = {
+    environment = var.environment
+    service     = "notification"
+  }
+}
+
+resource "google_secret_manager_secret" "smtp_user" {
+  secret_id = "smtp-user"
+
+  replication {
+    auto {}
+  }
+
+  labels = {
+    environment = var.environment
+    service     = "notification"
+  }
+}
+
 resource "google_secret_manager_secret" "smtp_password" {
   secret_id = "smtp-password"
 
@@ -113,6 +168,61 @@ resource "google_secret_manager_secret" "smtp_password" {
   labels = {
     environment = var.environment
     service     = "notification"
+  }
+}
+
+# AI copilot LLM provider keys (placeholder)
+resource "google_secret_manager_secret" "agent_google_api_key" {
+  secret_id = "agent-google-api-key"
+
+  replication {
+    auto {}
+  }
+
+  labels = {
+    environment = var.environment
+    service     = "agent"
+  }
+}
+
+resource "google_secret_manager_secret" "agent_anthropic_api_key" {
+  secret_id = "agent-anthropic-api-key"
+
+  replication {
+    auto {}
+  }
+
+  labels = {
+    environment = var.environment
+    service     = "agent"
+  }
+}
+
+# Timescale (market-data bars) credentials. The hypertable runs as an in-cluster
+# StatefulSet, so both values are set out of band (placeholder).
+resource "google_secret_manager_secret" "timescale_password" {
+  secret_id = "timescale-password"
+
+  replication {
+    auto {}
+  }
+
+  labels = {
+    environment = var.environment
+    service     = "market-data"
+  }
+}
+
+resource "google_secret_manager_secret" "timescale_url" {
+  secret_id = "timescale-url"
+
+  replication {
+    auto {}
+  }
+
+  labels = {
+    environment = var.environment
+    service     = "market-data"
   }
 }
 
@@ -154,7 +264,47 @@ resource "google_secret_manager_secret_version" "redis_url" {
   secret_data = "redis://${google_redis_instance.main.host}:${google_redis_instance.main.port}"
 }
 
+# External Secrets Operator reads Secret Manager on behalf of the cluster and
+# projects each entry into the Kubernetes Secrets the workloads reference
+# (infrastructure/k8s/base/external-secrets). The operator authenticates by
+# impersonating the KSA named in the SecretStore, so the bindings follow the
+# Managed Kafka pattern in kafka.tf: one GCP SA, the accessor role, and one
+# Workload Identity binding per namespace/KSA pair.
+resource "google_service_account" "external_secrets" {
+  account_id   = "llamatrade-external-secrets"
+  display_name = "LlamaTrade External Secrets Operator"
+  description  = "Workload Identity SA for External Secrets Operator to read Secret Manager"
+}
+
+# Project-level accessor: the operator syncs every secret above, so per-secret
+# grants would enumerate the same set. Matches the style in iam.tf.
+resource "google_project_iam_member" "external_secrets_accessor" {
+  project = var.project_id
+  role    = "roles/secretmanager.secretAccessor"
+  member  = "serviceAccount:${google_service_account.external_secrets.email}"
+}
+
+# The base and production overlays use namespace llamatrade with unprefixed SA names.
+resource "google_service_account_iam_member" "external_secrets_workload_identity" {
+  service_account_id = google_service_account.external_secrets.name
+  role               = "roles/iam.workloadIdentityUser"
+  member             = "serviceAccount:${var.project_id}.svc.id.goog[llamatrade/external-secrets]"
+}
+
+# The staging overlay runs in namespace llamatrade-staging with a staging- prefix
+# on every resource name.
+resource "google_service_account_iam_member" "external_secrets_workload_identity_staging" {
+  service_account_id = google_service_account.external_secrets.name
+  role               = "roles/iam.workloadIdentityUser"
+  member             = "serviceAccount:${var.project_id}.svc.id.goog[llamatrade-staging/staging-external-secrets]"
+}
+
 # Outputs
+output "external_secrets_service_account_email" {
+  description = "External Secrets Operator SA email (for the KSA iam.gke.io annotation)"
+  value       = google_service_account.external_secrets.email
+}
+
 output "jwt_secret_name" {
   description = "JWT secret name in Secret Manager"
   value       = google_secret_manager_secret.jwt_secret.secret_id

@@ -8,6 +8,13 @@
 #   - EventBus consumer lag                    backlog should drain
 #   - DB pool exhaustion                       target 0
 #
+# Plus two integrity rules that are not SLOs: an unexplained RLS-bypass spike and
+# a broken event-backbone credential.
+#
+# Severity is the routing label, not a description: `page` is the critical
+# channel, `ticket` the warning channel. Both values are already wired in
+# Alertmanager, so new rules reuse them.
+#
 # PromQL references the actual llamatrade_* metric names. The `job` label
 # (set by prometheus.yml scrape_configs) is the per-service dimension since the
 # metrics themselves carry no `service` label.
@@ -203,3 +210,161 @@ groups:
           description: >
             {{ $labels.job }} is using {{ $value | humanizePercentage }} of its
             DB connection pool for 5m. Approaching exhaustion.
+
+  # ---------------------------------------------------------------------------
+  # Tenant isolation: the RLS system bypass has a small, known set of callers
+  # (identity authority, server-owned sweeps, global catalog reads), so its rate
+  # is roughly flat. A step change means a new caller or a request path that
+  # started taking the bypass — the audit log line names which.
+  # ---------------------------------------------------------------------------
+  - name: rls_bypass
+    rules:
+      - alert: RLSBypassRateSpike
+        expr: |
+          (
+            sum by (job, operation) (rate(llamatrade_db_rls_bypass_total[5m]))
+              >
+            3 * sum by (job, operation) (rate(llamatrade_db_rls_bypass_total[1h] offset 1h))
+          )
+          and
+          sum by (job, operation) (rate(llamatrade_db_rls_bypass_total[5m])) > 0.2
+        for: 15m
+        labels:
+          severity: ticket
+          area: tenant_isolation
+        annotations:
+          summary: "RLS bypass rate spike on {{ $labels.job }} ({{ $labels.operation }})"
+          description: >
+            {{ $labels.job }} is taking the RLS system bypass via
+            {{ $labels.operation }} at {{ $value }}/s, more than 3x its baseline
+            of the preceding hour, for 15m. Find the caller on the `rls_bypass`
+            audit log lines and confirm it is a server-owned sweep, not a
+            request path that lost its tenant scope.
+
+  # ---------------------------------------------------------------------------
+  # Event backbone credentials: readers retry forever, so a permanently rejected
+  # OAUTHBEARER token or a revoked broker grant is otherwise silent — the stream
+  # simply stops moving. This counter only advances past the consecutive-failure
+  # threshold, so any increase is real.
+  # ---------------------------------------------------------------------------
+  - name: eventbus_credentials
+    rules:
+      - alert: EventBusBrokenCredentials
+        expr: |
+          sum by (job, stream, mode) (
+            increase(llamatrade_events_broken_credentials_total[10m])
+          ) > 0
+        for: 1m
+        labels:
+          severity: page
+          area: event_backbone
+        annotations:
+          summary: "Event-backbone credentials broken on {{ $labels.stream }} ({{ $labels.mode }})"
+          description: >
+            {{ $labels.job }} has failed to start its {{ $labels.mode }} reader on
+            {{ $labels.stream }} enough consecutive times to rule out a transient
+            fault. The reader is still retrying and the stream is not moving:
+            check the Workload Identity binding and the Managed Kafka IAM grant.
+
+  # ---------------------------------------------------------------------------
+  # Ledger cash integrity: the position-drift dollar gauge is alerted above
+  # (SLO 4); these cover cash drift and the freeze action that answers it. A
+  # sleeve freezes only on irreconcilable drift, so any increment is an incident.
+  # ---------------------------------------------------------------------------
+  - name: ledger_cash_integrity
+    rules:
+      - alert: LedgerCashVsBrokerMismatch
+        expr: abs(llamatrade_ledger_vs_broker_cash_mismatch_dollars) > 1
+        for: 5m
+        labels:
+          severity: page
+          slo: ledger_reconciliation
+        annotations:
+          summary: "Ledger vs broker cash mismatch"
+          description: >
+            Ledger sleeve cash vs broker cash differs by ${{ $value }} (should be
+            ~0). Strategies size against this cash, so investigate before trading
+            continues.
+
+      - alert: LedgerSleeveFrozen
+        expr: sum(increase(llamatrade_ledger_sleeves_frozen_total[10m])) > 0
+        for: 1m
+        labels:
+          severity: page
+          slo: ledger_reconciliation
+        annotations:
+          summary: "Ledger froze a sleeve on irreconcilable drift"
+          description: >
+            {{ $value }} sleeve freeze(s) in 10m. A freeze halts sizing on the
+            affected account (cash drift past the threshold, or a position
+            mismatch); find the account on the ledger freeze log lines.
+
+  # ---------------------------------------------------------------------------
+  # Ledger publish durability: fill and reservation events reach the ledger over
+  # the bus best-effort, with a windowed compensating drain and no outbox. A
+  # sustained publish-failure stream means terminal fills are not being booked;
+  # DLQ entries are un-booked fills awaiting manual replay.
+  # ---------------------------------------------------------------------------
+  - name: ledger_durability
+    rules:
+      - alert: LedgerPublishFailures
+        expr: sum(increase(llamatrade_trading_ledger_events_published_total{status="failure"}[10m])) > 0
+        for: 5m
+        labels:
+          severity: page
+          area: ledger_durability
+        annotations:
+          summary: "Trading is failing to publish ledger events"
+          description: >
+            {{ $value }} ledger publish failure(s) in 10m, for 5m. Terminal fills
+            and reservation releases may not be reaching the ledger; the book
+            diverges until the compensating drain or a restart reconciliation
+            catches up.
+
+      - alert: LedgerFillDLQBacklog
+        expr: llamatrade_ledger_fill_dlq_depth > 0
+        for: 15m
+        labels:
+          severity: ticket
+          area: ledger_durability
+        annotations:
+          summary: "Un-booked fills parked on the ledger DLQ"
+          description: >
+            {{ $value }} fill(s) parked on ledger:fills:dlq for 15m, un-booked.
+            Fix the root cause, then replay by cursor (dlq_replay) so the entries
+            are booked rather than purged.
+
+  # ---------------------------------------------------------------------------
+  # Auth guard backends: rate limiting, token revocation and single-use handoff
+  # are Redis-backed and were defined without alerts. A sustained backend-error
+  # stream means those guards are degraded (fail-closed login surfaces reject;
+  # revocation can miss a revoked token for its TTL). Transient blips are
+  # expected, so these gate on a 10m window rather than paging.
+  # ---------------------------------------------------------------------------
+  - name: auth_guards
+    rules:
+      - alert: AuthRateLimitBackendErrors
+        expr: sum by (job) (increase(llamatrade_auth_ratelimit_backend_errors_total[10m])) > 0
+        for: 10m
+        labels:
+          severity: ticket
+          area: auth_guards
+        annotations:
+          summary: "Auth rate-limit backend errors on {{ $labels.job }}"
+          description: >
+            The Redis-backed rate limiter has errored for 10m. Brute-force
+            protection is degraded and the fail-closed login surfaces reject while
+            it is down; check Redis reachability.
+
+      - alert: AuthRevocationBackendErrors
+        expr: sum by (job) (increase(llamatrade_auth_revocation_backend_errors_total[10m])) > 0
+        for: 10m
+        labels:
+          severity: ticket
+          area: auth_guards
+        annotations:
+          summary: "Auth revocation backend errors on {{ $labels.job }}"
+          description: >
+            The Redis-backed revocation check has errored for 10m. A logged-out or
+            operator-revoked token may keep working until it expires; check Redis
+            reachability.

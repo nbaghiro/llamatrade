@@ -7,6 +7,13 @@ resources:
   - ../../base
   - pdb.yaml
   - managed-cert.yaml
+  # Queue-driven backtest worker autoscaling. Uncomment once KEDA is installed
+  # in the cluster and the ScaledObject's serverAddress points at Prometheus.
+  # - ../../base/backtest/autoscaler
+  # Secret Manager sync. Uncomment once External Secrets Operator is installed
+  # and the store's project and cluster placeholders are filled. Until then the
+  # operator creates the Secrets by hand (see the deploy workflow).
+  # - ../../base/external-secrets
 
 commonLabels:
   environment: production

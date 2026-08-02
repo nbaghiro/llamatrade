@@ -17,6 +17,10 @@ spec:
         app: backtest-worker
         tier: backend
     spec:
+      serviceAccountName: backtest
+      # Celery warm-shutdown budget: SIGTERM stops fetching and the pod exits as
+      # soon as the in-flight run finishes, bounded by the hard task time limit.
+      terminationGracePeriodSeconds: 3660
       containers:
         - name: worker
           image: gcr.io/llamatrade/backtest:latest
@@ -27,6 +31,10 @@ spec:
             - worker
             - --queues
             - backtest
+            # Pinned to the 2-CPU limit below: a backtest is CPU-bound, so
+            # oversubscribing the pod only thrashes and inflates run time.
+            - --concurrency
+            - "2"
             - --loglevel
             - info
           env:
@@ -35,11 +43,29 @@ spec:
                 secretKeyRef:
                   name: db-credentials
                   key: url
+            # Runs backtests through the market-data client, which signs an
+            # internal service token per call. No verify key: the worker serves
+            # no inbound requests, so it never validates a user token.
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: jwt-secret
+                  key: secret
             - name: REDIS_URL
               valueFrom:
                 configMapKeyRef:
                   name: redis-config
                   key: REDIS_URL
+            - name: KAFKA_BOOTSTRAP_SERVERS
+              valueFrom:
+                configMapKeyRef:
+                  name: kafka-config
+                  key: KAFKA_BOOTSTRAP_SERVERS
+            - name: KAFKA_SECURITY_PROTOCOL
+              valueFrom:
+                configMapKeyRef:
+                  name: kafka-config
+                  key: KAFKA_SECURITY_PROTOCOL
           envFrom:
             - configMapRef:
                 name: llamatrade-config
@@ -73,6 +99,7 @@ spec:
         app: backtest-beat
         tier: backend
     spec:
+      serviceAccountName: backtest
       containers:
         - name: beat
           image: gcr.io/llamatrade/backtest:latest
@@ -99,6 +126,16 @@ spec:
                 configMapKeyRef:
                   name: redis-config
                   key: REDIS_URL
+            - name: KAFKA_BOOTSTRAP_SERVERS
+              valueFrom:
+                configMapKeyRef:
+                  name: kafka-config
+                  key: KAFKA_BOOTSTRAP_SERVERS
+            - name: KAFKA_SECURITY_PROTOCOL
+              valueFrom:
+                configMapKeyRef:
+                  name: kafka-config
+                  key: KAFKA_SECURITY_PROTOCOL
           envFrom:
             - configMapRef:
                 name: llamatrade-config

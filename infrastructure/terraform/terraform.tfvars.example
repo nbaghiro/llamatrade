@@ -11,6 +11,10 @@ region      = "us-central1"
 # Database configuration
 db_tier       = "db-f1-micro"  # For production: "db-custom-2-7680" or higher
 db_ha_enabled = false          # Enable for production
+# Postgres connection ceiling. Must cover the per-pod pool budget at HPA maxima
+# (see infrastructure/k8s/base/configmap.yaml; worst case ~400). Set to 500 with
+# the production tier; leave commented (null) on db-f1-micro, which cannot honor it.
+# db_max_connections = 500
 
 # Redis configuration
 redis_memory_size_gb = 1       # GB of memory
@@ -27,3 +31,8 @@ enable_cdn = true
 
 # GKE
 gke_release_channel = "REGULAR"  # RAPID, REGULAR, or STABLE
+
+# Managed Kafka (event backbone)
+kafka_vcpu_count         = 3            # Minimum 3
+kafka_memory_bytes       = 12884901888 # 12 GiB (1-8 GiB per vCPU)
+kafka_replication_factor = 3            # Must be <= broker count

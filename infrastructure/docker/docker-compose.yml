@@ -54,18 +54,52 @@ services:
       timeout: 5s
       retries: 5
 
+  # Kafka-API broker for local dev (GCP uses Managed Service for Apache Kafka).
+  # Single-binary Redpanda in KRaft mode, PLAINTEXT. Two listeners: the external
+  # one advertises localhost:9092 for host processes (make dev-local, rpk,
+  # KAFKA_BOOTSTRAP_SERVERS in .env.example); the internal one advertises
+  # redpanda:29092 for in-network containers (KAFKA_BOOTSTRAP_SERVERS).
+  redpanda:
+    image: redpandadata/redpanda:v24.2.7
+    container_name: llamatrade-redpanda
+    command:
+      - redpanda
+      - start
+      - --kafka-addr=internal://0.0.0.0:29092,external://0.0.0.0:9092
+      - --advertise-kafka-addr=internal://redpanda:29092,external://localhost:9092
+      - --mode=dev-container
+      - --smp=1
+      - --default-log-level=info
+    volumes:
+      - llamatrade_redpanda_data:/var/lib/redpanda/data
+    ports:
+      - "9092:9092"
+    healthcheck:
+      test: ["CMD-SHELL", "rpk cluster health | grep -q 'Healthy:.*true'"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   # ===================
   # Backend Services
   # ===================
   auth:
     build:
-      context: ../../services/auth
-      dockerfile: Dockerfile
+      context: ../..
+      dockerfile: services/auth/Dockerfile
     container_name: llamatrade-auth
     environment:
+      APP_BASE_URL: ${APP_BASE_URL:-http://localhost:8800}
+      KAFKA_BOOTSTRAP_SERVERS: redpanda:29092
       DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/llamatrade
       REDIS_URL: redis://redis:6379
       JWT_SECRET: ${JWT_SECRET:-dev-secret-change-in-production}
+      # RS256 user-token pair (auth signs; the Connect services verify with the
+      # public half). Empty falls back to HS256 over JWT_SECRET, so the stack
+      # runs with no keys. Generate and export with `make gen-jwt-keys`; see
+      # .docs/runbooks/jwt-key-provisioning.md.
+      AUTH_JWT_PRIVATE_KEY: ${AUTH_JWT_PRIVATE_KEY:-}
+      AUTH_JWT_PUBLIC_KEY: ${AUTH_JWT_PUBLIC_KEY:-}
       ENCRYPTION_KEY: ${ENCRYPTION_KEY:-dev-encryption-key-change-me}
       GRPC_PORT: "8810"
       # Per-service pool sizing. Each service holds its own pool, so the sum of
@@ -84,12 +118,15 @@ services:
 
   strategy:
     build:
-      context: ../../services/strategy
-      dockerfile: Dockerfile
+      context: ../..
+      dockerfile: services/strategy/Dockerfile
     container_name: llamatrade-strategy
     environment:
+      KAFKA_BOOTSTRAP_SERVERS: redpanda:29092
       DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/llamatrade
       REDIS_URL: redis://redis:6379
+      # Verifies RS256 user tokens; empty -> HS256 fallback (see auth).
+      AUTH_JWT_PUBLIC_KEY: ${AUTH_JWT_PUBLIC_KEY:-}
       GRPC_PORT: "8820"
       DB_POOL_SIZE: "5"
       DB_MAX_OVERFLOW: "5"
@@ -101,12 +138,15 @@ services:
 
   backtest:
     build:
-      context: ../../services/backtest
-      dockerfile: Dockerfile
+      context: ../..
+      dockerfile: services/backtest/Dockerfile
     container_name: llamatrade-backtest
     environment:
       DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/llamatrade
       REDIS_URL: redis://redis:6379
+      KAFKA_BOOTSTRAP_SERVERS: redpanda:29092
+      # Verifies RS256 user tokens; empty -> HS256 fallback (see auth).
+      AUTH_JWT_PUBLIC_KEY: ${AUTH_JWT_PUBLIC_KEY:-}
       GRPC_PORT: "8830"
       MARKET_DATA_GRPC_TARGET: market-data:8840
       DB_POOL_SIZE: "5"
@@ -116,18 +156,21 @@ services:
         condition: service_completed_successfully
       redis:
         condition: service_healthy
+      redpanda:
+        condition: service_healthy
     ports:
       - "8830:8830"
 
   backtest-worker:
     build:
-      context: ../../services/backtest
-      dockerfile: Dockerfile
+      context: ../..
+      dockerfile: services/backtest/Dockerfile
     container_name: llamatrade-backtest-worker
     command: celery -A src.celery_app:celery_app worker --queues backtest --loglevel info
     environment:
       DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/llamatrade
       REDIS_URL: redis://redis:6379
+      KAFKA_BOOTSTRAP_SERVERS: redpanda:29092
       MARKET_DATA_GRPC_TARGET: market-data:8840
       DB_POOL_SIZE: "5"
       DB_MAX_OVERFLOW: "5"
@@ -136,16 +179,19 @@ services:
         condition: service_completed_successfully
       redis:
         condition: service_healthy
+      redpanda:
+        condition: service_healthy
 
   # Embedded beat scheduler + maintenance-queue worker: runs the periodic
   # reaper (1A) that recovers orphaned RUNNING/PENDING runs. Single instance.
   backtest-beat:
     build:
-      context: ../../services/backtest
-      dockerfile: Dockerfile
+      context: ../..
+      dockerfile: services/backtest/Dockerfile
     container_name: llamatrade-backtest-beat
     command: celery -A src.celery_app:celery_app worker -B --queues backtest_maintenance --concurrency 1 --loglevel info
     environment:
+      KAFKA_BOOTSTRAP_SERVERS: redpanda:29092
       DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/llamatrade
       REDIS_URL: redis://redis:6379
       MARKET_DATA_GRPC_TARGET: market-data:8840
@@ -180,8 +226,8 @@ services:
   # One-shot: create hypertables, continuous aggregates, retention/compression.
   market-data-migrate:
     build:
-      context: ../../services/market-data
-      dockerfile: Dockerfile
+      context: ../..
+      dockerfile: services/market-data/Dockerfile
     container_name: llamatrade-market-data-migrate
     command: python -m src.store.migrate
     environment:
@@ -194,13 +240,16 @@ services:
   # Serving (api) role — reads the store, falls back to Alpaca, fans out live bars.
   market-data:
     build:
-      context: ../../services/market-data
-      dockerfile: Dockerfile
+      context: ../..
+      dockerfile: services/market-data/Dockerfile
     container_name: llamatrade-market-data
     environment:
       ALPACA_API_KEY: ${ALPACA_API_KEY:-}
       ALPACA_API_SECRET: ${ALPACA_API_SECRET:-}
       REDIS_URL: redis://redis:6379
+      KAFKA_BOOTSTRAP_SERVERS: redpanda:29092
+      # Verifies RS256 user tokens; empty -> HS256 fallback (see auth).
+      AUTH_JWT_PUBLIC_KEY: ${AUTH_JWT_PUBLIC_KEY:-}
       GRPC_PORT: "8840"
       # This stack runs the ingestor, so serve live bars off the internal bus.
       MARKET_DATA_BARS_FROM_BUS: "true"
@@ -212,6 +261,8 @@ services:
         condition: service_healthy
       market-data-migrate:
         condition: service_completed_successfully
+      redpanda:
+        condition: service_healthy
     ports:
       - "8840:8840"
 
@@ -220,14 +271,15 @@ services:
   # command; runs as a singleton (do not scale this replica).
   market-data-ingestor:
     build:
-      context: ../../services/market-data
-      dockerfile: Dockerfile
+      context: ../..
+      dockerfile: services/market-data/Dockerfile
     container_name: llamatrade-market-data-ingestor
     command: python -m src.ingest.main
     environment:
       ALPACA_API_KEY: ${ALPACA_API_KEY:-}
       ALPACA_API_SECRET: ${ALPACA_API_SECRET:-}
       REDIS_URL: redis://redis:6379
+      KAFKA_BOOTSTRAP_SERVERS: redpanda:29092
       MARKET_DATA_DB_URL: postgresql+asyncpg://postgres:postgres@timescaledb:5432/market_data
       MARKET_DATA_DB_POOL_SIZE: "5"
       MARKET_DATA_DB_MAX_OVERFLOW: "5"
@@ -241,19 +293,24 @@ services:
         condition: service_completed_successfully
       redis:
         condition: service_healthy
+      redpanda:
+        condition: service_healthy
 
   trading:
     build:
-      context: ../../services/trading
-      dockerfile: Dockerfile
+      context: ../..
+      dockerfile: services/trading/Dockerfile
     container_name: llamatrade-trading
     environment:
       DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/llamatrade
       ALPACA_API_KEY: ${ALPACA_API_KEY:-}
       ALPACA_API_SECRET: ${ALPACA_API_SECRET:-}
       REDIS_URL: redis://redis:6379
+      KAFKA_BOOTSTRAP_SERVERS: redpanda:29092
       # Must match auth's: auth encrypts broker credentials, live sessions decrypt them.
       ENCRYPTION_KEY: ${ENCRYPTION_KEY:-dev-encryption-key-change-me}
+      # Verifies RS256 user tokens; empty -> HS256 fallback (see auth).
+      AUTH_JWT_PUBLIC_KEY: ${AUTH_JWT_PUBLIC_KEY:-}
       GRPC_PORT: "8850"
       # Busiest DB user (orders/positions/risk) — gets the largest slice.
       DB_POOL_SIZE: "8"
@@ -263,39 +320,51 @@ services:
         condition: service_completed_successfully
       redis:
         condition: service_healthy
+      redpanda:
+        condition: service_healthy
     ports:
       - "8850:8850"
 
   portfolio:
     build:
-      context: ../../services/portfolio
-      dockerfile: Dockerfile
+      context: ../..
+      dockerfile: services/portfolio/Dockerfile
     container_name: llamatrade-portfolio
     environment:
       DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/llamatrade
       REDIS_URL: redis://redis:6379
+      KAFKA_BOOTSTRAP_SERVERS: redpanda:29092
       # Must match auth's: auth encrypts broker credentials, reconciliation decrypts them.
       ENCRYPTION_KEY: ${ENCRYPTION_KEY:-dev-encryption-key-change-me}
+      # Verifies RS256 user tokens; empty -> HS256 fallback (see auth).
+      AUTH_JWT_PUBLIC_KEY: ${AUTH_JWT_PUBLIC_KEY:-}
       GRPC_PORT: "8860"
       DB_POOL_SIZE: "5"
       DB_MAX_OVERFLOW: "5"
     depends_on:
       db-migrate:
         condition: service_completed_successfully
+      redpanda:
+        condition: service_healthy
     ports:
       - "8860:8860"
 
   notification:
     build:
-      context: ../../services/notification
-      dockerfile: Dockerfile
+      context: ../..
+      dockerfile: services/notification/Dockerfile
     container_name: llamatrade-notification
     environment:
       DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/llamatrade
       REDIS_URL: redis://redis:6379
-      SMTP_HOST: ${SMTP_HOST:-}
+      KAFKA_BOOTSTRAP_SERVERS: redpanda:29092
+      SMTP_HOST: ${SMTP_HOST:-mailpit}
+      SMTP_PORT: ${SMTP_PORT:-1025}
       SMTP_USER: ${SMTP_USER:-}
       SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      FROM_EMAIL: ${FROM_EMAIL:-noreply@llamatrade.com}
+      # Verifies RS256 user tokens; empty -> HS256 fallback (see auth).
+      AUTH_JWT_PUBLIC_KEY: ${AUTH_JWT_PUBLIC_KEY:-}
       GRPC_PORT: "8870"
       DB_POOL_SIZE: "2"
       DB_MAX_OVERFLOW: "2"
@@ -304,18 +373,33 @@ services:
         condition: service_completed_successfully
       redis:
         condition: service_healthy
+      redpanda:
+        condition: service_healthy
+      mailpit:
+        condition: service_started
     ports:
       - "8870:8870"
 
+  # Local mail catcher: SMTP on 1025, browse captured mail on http://localhost:8025.
+  mailpit:
+    image: axllent/mailpit:v1.20
+    container_name: llamatrade-mailpit
+    ports:
+      - "1025:1025"
+      - "8025:8025"
+
   billing:
     build:
-      context: ../../services/billing
-      dockerfile: Dockerfile
+      context: ../..
+      dockerfile: services/billing/Dockerfile
     container_name: llamatrade-billing
     environment:
+      KAFKA_BOOTSTRAP_SERVERS: redpanda:29092
       DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/llamatrade
       STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
       STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
+      # Verifies RS256 user tokens; empty -> HS256 fallback (see auth).
+      AUTH_JWT_PUBLIC_KEY: ${AUTH_JWT_PUBLIC_KEY:-}
       GRPC_PORT: "8880"
       # HTTP port for Stripe webhooks only (different from gRPC port)
       HTTP_PORT: "8881"
@@ -342,8 +426,11 @@ services:
     env_file:
       - ../../.env
     environment:
+      KAFKA_BOOTSTRAP_SERVERS: redpanda:29092
       DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/llamatrade
       REDIS_URL: redis://redis:6379
+      # Verifies RS256 user tokens; empty -> HS256 fallback (see auth).
+      AUTH_JWT_PUBLIC_KEY: ${AUTH_JWT_PUBLIC_KEY:-}
       GRPC_PORT: "8890"
       # Provider selection is config-driven and defaults to Google Gemini.
       AGENT_LLM_PROVIDER: ${AGENT_LLM_PROVIDER:-google}
@@ -396,8 +483,10 @@ services:
   # routes to it internally (nginx on :80 here; Vite :8802 in the dev override).
   web:
     build:
-      context: ../../apps/web
-      dockerfile: Dockerfile
+      # Repo-root context: the web Dockerfile copies the workspace lockfile,
+      # apps/core and libs/proto for the @llamatrade/core proto build.
+      context: ../..
+      dockerfile: apps/web/Dockerfile
     container_name: llamatrade-web
     depends_on:
       - auth
@@ -406,6 +495,7 @@ volumes:
   llamatrade_postgres_data:
   llamatrade_redis_data:
   llamatrade_timescale_data:
+  llamatrade_redpanda_data:
 
 networks:
   default:

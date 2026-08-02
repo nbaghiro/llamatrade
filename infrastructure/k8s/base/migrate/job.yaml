@@ -2,6 +2,9 @@
 # part of the kustomize base, since a completed Job's spec is immutable). The
 # workflow deletes any prior Job, sets the sha-tagged image, applies, and waits
 # for completion so services never roll against an un-migrated schema.
+#
+# kustomization.yaml in this directory exists so CI still renders the file.
+# It needs no auth secret: alembic only reads DATABASE_URL.
 apiVersion: batch/v1
 kind: Job
 metadata:

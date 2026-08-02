@@ -28,6 +28,7 @@ resource "google_project_service" "services" {
     "secretmanager.googleapis.com",
     "artifactregistry.googleapis.com",
     "cloudbuild.googleapis.com",
+    "managedkafka.googleapis.com",
   ])
   service = each.key
 }

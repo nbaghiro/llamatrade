@@ -26,6 +26,19 @@ variable "db_tier" {
   default     = "db-f1-micro"
 }
 
+variable "db_max_connections" {
+  description = <<-EOT
+    Postgres max_connections for the Cloud SQL instance. Must cover the sum of
+    every pod's (DB_POOL_SIZE + DB_MAX_OVERFLOW) at HPA maxima plus a reserve for
+    admin and monitoring sessions; see the budget in
+    infrastructure/k8s/base/configmap.yaml (worst case ~400). Leave null to keep
+    the tier default. Set to 500 for the production tier (db-custom-2-7680); a
+    smaller tier (db-f1-micro) cannot honor a large value.
+  EOT
+  type        = number
+  default     = null
+}
+
 variable "db_ha_enabled" {
   description = "Enable high availability for Cloud SQL"
   type        = bool
@@ -66,6 +79,25 @@ variable "gke_release_channel" {
   description = "GKE release channel (RAPID, REGULAR, STABLE)"
   type        = string
   default     = "REGULAR"
+}
+
+# Managed Service for Apache Kafka (the event backbone)
+variable "kafka_vcpu_count" {
+  description = "Managed Kafka cluster vCPU count (minimum 3)"
+  type        = number
+  default     = 3
+}
+
+variable "kafka_memory_bytes" {
+  description = "Managed Kafka cluster memory in bytes (1-8 GiB per vCPU)"
+  type        = number
+  default     = 12884901888 # 12 GiB (4 GiB per vCPU at 3 vCPUs)
+}
+
+variable "kafka_replication_factor" {
+  description = "Topic replication factor (must be <= broker count)"
+  type        = number
+  default     = 3
 }
 
 # Environment-specific defaults

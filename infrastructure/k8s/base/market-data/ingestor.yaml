@@ -1,0 +1,78 @@
+# Ingest (writer) role — single Alpaca consumer; backfills + streams into the
+# Timescale store and republishes live bars on the bus. Same image as the
+# market-data API, different command; singleton (Recreate, never scaled).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: market-data-ingestor
+  namespace: llamatrade
+  labels:
+    app: market-data-ingestor
+    tier: backend
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: market-data-ingestor
+  template:
+    metadata:
+      labels:
+        app: market-data-ingestor
+        tier: backend
+    spec:
+      serviceAccountName: market-data
+      containers:
+        - name: ingestor
+          image: gcr.io/llamatrade/market-data:latest
+          command:
+            - python
+            - -m
+            - src.ingest.main
+          env:
+            - name: ALPACA_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: alpaca-credentials
+                  key: api_key
+            - name: ALPACA_API_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: alpaca-credentials
+                  key: api_secret
+            - name: REDIS_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: redis-config
+                  key: REDIS_URL
+            - name: MARKET_DATA_DB_URL
+              valueFrom:
+                secretKeyRef:
+                  name: timescale-credentials
+                  key: url
+            - name: LOG_LEVEL
+              valueFrom:
+                configMapKeyRef:
+                  name: llamatrade-config
+                  key: LOG_LEVEL
+            - name: KAFKA_BOOTSTRAP_SERVERS
+              valueFrom:
+                configMapKeyRef:
+                  name: kafka-config
+                  key: KAFKA_BOOTSTRAP_SERVERS
+            - name: KAFKA_SECURITY_PROTOCOL
+              valueFrom:
+                configMapKeyRef:
+                  name: kafka-config
+                  key: KAFKA_SECURITY_PROTOCOL
+          envFrom:
+            - configMapRef:
+                name: llamatrade-config
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "256Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"

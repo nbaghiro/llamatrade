@@ -7,6 +7,16 @@ resource "google_sql_database_instance" "main" {
   settings {
     tier = var.db_tier
 
+    # Connection ceiling for the per-pod SQLAlchemy pools (no external pooler).
+    # Budgeted in infrastructure/k8s/base/configmap.yaml; null keeps the tier default.
+    dynamic "database_flags" {
+      for_each = var.db_max_connections == null ? [] : [var.db_max_connections]
+      content {
+        name  = "max_connections"
+        value = tostring(database_flags.value)
+      }
+    }
+
     ip_configuration {
       ipv4_enabled    = false
       private_network = google_compute_network.main.id
