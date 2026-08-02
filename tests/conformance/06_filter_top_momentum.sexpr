@@ -1,0 +1,9 @@
+(strategy "Sector Rotation"
+  :rebalance monthly
+  (filter :by momentum :select (top 3) :lookback 126
+    (weight :method equal
+      (asset XLK)
+      (asset XLF)
+      (asset XLE)
+      (asset XLV)
+      (asset XLI))))

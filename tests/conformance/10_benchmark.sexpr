@@ -1,0 +1,6 @@
+(strategy "Benchmarked Core"
+  :rebalance monthly
+  :benchmark SPY
+  (weight :method equal
+    (asset VTI)
+    (asset VXUS)))

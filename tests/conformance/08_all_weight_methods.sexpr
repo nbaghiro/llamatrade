@@ -1,0 +1,20 @@
+(strategy "Methods Tour"
+  :rebalance quarterly
+  (weight :method specified
+    (group "Min Variance" :weight 25
+      (weight :method min-variance :lookback 252
+        (asset SPY)
+        (asset TLT)))
+    (group "Market Cap" :weight 25
+      (weight :method market-cap
+        (asset AAPL)
+        (asset MSFT)))
+    (group "Risk Parity" :weight 25
+      (weight :method risk-parity :lookback 126
+        (asset GLD)
+        (asset IEF)))
+    (group "Momentum" :weight 25
+      (weight :method momentum :lookback 90 :top 2
+        (asset XLK)
+        (asset XLF)
+        (asset XLE)))))

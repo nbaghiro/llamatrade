@@ -1,0 +1,17 @@
+{
+  "children": [
+    {
+      "children": [
+        {
+          "symbol": "SPY",
+          "type": "asset"
+        }
+      ],
+      "method": "equal",
+      "type": "weight"
+    }
+  ],
+  "name": "Alpha \"Prime\" \\ Core",
+  "rebalance": "daily",
+  "type": "strategy"
+}

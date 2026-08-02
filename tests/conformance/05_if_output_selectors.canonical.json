@@ -1,0 +1,96 @@
+{
+  "children": [
+    {
+      "children": [
+        {
+          "condition": {
+            "left": {
+              "name": "macd",
+              "output": "signal",
+              "params": [
+                12,
+                26,
+                9
+              ],
+              "symbol": "SPY",
+              "type": "indicator"
+            },
+            "operator": ">",
+            "right": {
+              "type": "numeric",
+              "value": 0.0
+            },
+            "type": "comparison"
+          },
+          "else_block": {
+            "children": [
+              {
+                "symbol": "SHY",
+                "type": "asset"
+              }
+            ],
+            "method": "equal",
+            "type": "weight"
+          },
+          "then": {
+            "children": [
+              {
+                "symbol": "SPY",
+                "type": "asset"
+              }
+            ],
+            "method": "equal",
+            "type": "weight"
+          },
+          "type": "if"
+        },
+        {
+          "condition": {
+            "left": {
+              "symbol": "QQQ",
+              "type": "price"
+            },
+            "operator": "<",
+            "right": {
+              "name": "bbands",
+              "output": "lower",
+              "params": [
+                20,
+                2
+              ],
+              "symbol": "QQQ",
+              "type": "indicator"
+            },
+            "type": "comparison"
+          },
+          "else_block": {
+            "children": [
+              {
+                "symbol": "BIL",
+                "type": "asset"
+              }
+            ],
+            "method": "equal",
+            "type": "weight"
+          },
+          "then": {
+            "children": [
+              {
+                "symbol": "QQQ",
+                "type": "asset"
+              }
+            ],
+            "method": "equal",
+            "type": "weight"
+          },
+          "type": "if"
+        }
+      ],
+      "method": "equal",
+      "type": "weight"
+    }
+  ],
+  "name": "Output Selectors",
+  "rebalance": "daily",
+  "type": "strategy"
+}

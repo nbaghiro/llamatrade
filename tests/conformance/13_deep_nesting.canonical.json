@@ -1,0 +1,95 @@
+{
+  "children": [
+    {
+      "children": [
+        {
+          "children": [
+            {
+              "condition": {
+                "left": {
+                  "name": "return",
+                  "period": 30,
+                  "symbol": "SPY",
+                  "type": "metric"
+                },
+                "operator": "<",
+                "right": {
+                  "type": "numeric",
+                  "value": 0.0
+                },
+                "type": "comparison"
+              },
+              "else_block": {
+                "by": "momentum",
+                "children": [
+                  {
+                    "children": [
+                      {
+                        "symbol": "XLK",
+                        "type": "asset"
+                      },
+                      {
+                        "symbol": "XLY",
+                        "type": "asset"
+                      },
+                      {
+                        "symbol": "XLC",
+                        "type": "asset"
+                      }
+                    ],
+                    "method": "equal",
+                    "type": "weight"
+                  }
+                ],
+                "lookback": 63,
+                "select_count": 2,
+                "select_direction": "top",
+                "type": "filter"
+              },
+              "then": {
+                "children": [
+                  {
+                    "symbol": "GLD",
+                    "type": "asset"
+                  },
+                  {
+                    "symbol": "TLT",
+                    "type": "asset"
+                  }
+                ],
+                "method": "equal",
+                "type": "weight"
+              },
+              "type": "if"
+            }
+          ],
+          "name": "Risk Sleeve",
+          "type": "group",
+          "weight": 70.0
+        },
+        {
+          "children": [
+            {
+              "children": [
+                {
+                  "symbol": "BIL",
+                  "type": "asset"
+                }
+              ],
+              "method": "equal",
+              "type": "weight"
+            }
+          ],
+          "name": "Stable Sleeve",
+          "type": "group",
+          "weight": 30.0
+        }
+      ],
+      "method": "specified",
+      "type": "weight"
+    }
+  ],
+  "name": "Layered Regimes",
+  "rebalance": "daily",
+  "type": "strategy"
+}

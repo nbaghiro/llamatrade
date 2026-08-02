@@ -1,0 +1,35 @@
+{
+  "children": [
+    {
+      "children": [
+        {
+          "symbol": "XLK",
+          "type": "asset"
+        },
+        {
+          "symbol": "XLV",
+          "type": "asset"
+        },
+        {
+          "symbol": "XLF",
+          "type": "asset"
+        },
+        {
+          "symbol": "XLE",
+          "type": "asset"
+        },
+        {
+          "symbol": "XLU",
+          "type": "asset"
+        }
+      ],
+      "lookback": 126,
+      "method": "momentum",
+      "top": 3,
+      "type": "weight"
+    }
+  ],
+  "name": "Momentum Picks",
+  "rebalance": "monthly",
+  "type": "strategy"
+}

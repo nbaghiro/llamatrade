@@ -1,0 +1,75 @@
+{
+  "comparison_ops": [
+    "!=",
+    "<",
+    "<=",
+    "=",
+    ">",
+    ">="
+  ],
+  "crossover_ops": [
+    "crosses-above",
+    "crosses-below"
+  ],
+  "filter_criteria": [
+    "momentum",
+    "volatility",
+    "volume"
+  ],
+  "indicators": [
+    "adx",
+    "atr",
+    "bbands",
+    "cci",
+    "donchian",
+    "ema",
+    "keltner",
+    "macd",
+    "mfi",
+    "momentum",
+    "obv",
+    "rsi",
+    "sma",
+    "stddev",
+    "stoch",
+    "vwap",
+    "williams-r"
+  ],
+  "logical_ops": [
+    "and",
+    "not",
+    "or"
+  ],
+  "metrics": [
+    "drawdown",
+    "return",
+    "volatility"
+  ],
+  "price_fields": [
+    "close",
+    "high",
+    "low",
+    "open",
+    "volume"
+  ],
+  "rebalance_frequencies": [
+    "annually",
+    "daily",
+    "monthly",
+    "quarterly",
+    "weekly"
+  ],
+  "select_directions": [
+    "bottom",
+    "top"
+  ],
+  "weight_methods": [
+    "equal",
+    "inverse-volatility",
+    "market-cap",
+    "min-variance",
+    "momentum",
+    "risk-parity",
+    "specified"
+  ]
+}

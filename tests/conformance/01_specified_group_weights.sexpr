@@ -1,0 +1,9 @@
+(strategy "Core Allocation"
+  :rebalance monthly
+  (weight :method specified
+    (group "US Equities" :weight 60
+      (weight :method equal
+        (asset VTI)
+        (asset VXF)))
+    (asset BND :weight 27.5)
+    (asset GLD :weight 12.5)))

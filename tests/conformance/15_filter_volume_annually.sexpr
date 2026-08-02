@@ -1,0 +1,7 @@
+(strategy "Liquid Leaders"
+  :rebalance annually
+  (filter :by volume :select (top 2) :lookback 252
+    (weight :method equal
+      (asset AAPL)
+      (asset MSFT)
+      (asset NVDA))))

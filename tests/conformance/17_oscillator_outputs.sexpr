@@ -1,0 +1,20 @@
+(strategy "Oscillator Outputs"
+  :rebalance daily
+  :benchmark SPY
+  (weight :method equal
+    (if (> (stoch SPY 14 3 3 :k) 80)
+      (asset SHY)
+      (else
+        (asset SPY)))
+    (if (< (stoch QQQ 14 3 3 :d) 20)
+      (asset QQQ))
+    (if (< (williams-r IWM 14) -80)
+      (asset IWM))
+    (if (> (cci GLD 20) 100)
+      (asset GLD))
+    (if (< (mfi XLE 14) 30)
+      (asset XLE))
+    (if (> (obv XLK) 0)
+      (asset XLK))
+    (if (> (price VTI) (vwap VTI))
+      (asset VTI))))

@@ -1,0 +1,105 @@
+{
+  "children": [
+    {
+      "children": [
+        {
+          "children": [
+            {
+              "children": [
+                {
+                  "symbol": "SPY",
+                  "type": "asset"
+                },
+                {
+                  "symbol": "TLT",
+                  "type": "asset"
+                }
+              ],
+              "lookback": 252,
+              "method": "min-variance",
+              "type": "weight"
+            }
+          ],
+          "name": "Min Variance",
+          "type": "group",
+          "weight": 25.0
+        },
+        {
+          "children": [
+            {
+              "children": [
+                {
+                  "symbol": "AAPL",
+                  "type": "asset"
+                },
+                {
+                  "symbol": "MSFT",
+                  "type": "asset"
+                }
+              ],
+              "method": "market-cap",
+              "type": "weight"
+            }
+          ],
+          "name": "Market Cap",
+          "type": "group",
+          "weight": 25.0
+        },
+        {
+          "children": [
+            {
+              "children": [
+                {
+                  "symbol": "GLD",
+                  "type": "asset"
+                },
+                {
+                  "symbol": "IEF",
+                  "type": "asset"
+                }
+              ],
+              "lookback": 126,
+              "method": "risk-parity",
+              "type": "weight"
+            }
+          ],
+          "name": "Risk Parity",
+          "type": "group",
+          "weight": 25.0
+        },
+        {
+          "children": [
+            {
+              "children": [
+                {
+                  "symbol": "XLK",
+                  "type": "asset"
+                },
+                {
+                  "symbol": "XLF",
+                  "type": "asset"
+                },
+                {
+                  "symbol": "XLE",
+                  "type": "asset"
+                }
+              ],
+              "lookback": 90,
+              "method": "momentum",
+              "top": 2,
+              "type": "weight"
+            }
+          ],
+          "name": "Momentum",
+          "type": "group",
+          "weight": 25.0
+        }
+      ],
+      "method": "specified",
+      "type": "weight"
+    }
+  ],
+  "name": "Methods Tour",
+  "rebalance": "quarterly",
+  "type": "strategy"
+}

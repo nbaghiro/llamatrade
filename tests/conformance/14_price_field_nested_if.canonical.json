@@ -1,0 +1,78 @@
+{
+  "children": [
+    {
+      "condition": {
+        "left": {
+          "field": "high",
+          "symbol": "SPY",
+          "type": "price"
+        },
+        "operator": ">",
+        "right": {
+          "type": "numeric",
+          "value": 500.0
+        },
+        "type": "comparison"
+      },
+      "else_block": {
+        "children": [
+          {
+            "condition": {
+              "left": {
+                "name": "rsi",
+                "params": [
+                  14
+                ],
+                "symbol": "QQQ",
+                "type": "indicator"
+              },
+              "operator": "<=",
+              "right": {
+                "type": "numeric",
+                "value": 30.0
+              },
+              "type": "comparison"
+            },
+            "else_block": {
+              "children": [
+                {
+                  "symbol": "BIL",
+                  "type": "asset"
+                }
+              ],
+              "method": "equal",
+              "type": "weight"
+            },
+            "then": {
+              "children": [
+                {
+                  "symbol": "QQQ",
+                  "type": "asset"
+                }
+              ],
+              "method": "equal",
+              "type": "weight"
+            },
+            "type": "if"
+          }
+        ],
+        "method": "equal",
+        "type": "weight"
+      },
+      "then": {
+        "children": [
+          {
+            "symbol": "SPY",
+            "type": "asset"
+          }
+        ],
+        "method": "equal",
+        "type": "weight"
+      },
+      "type": "if"
+    }
+  ],
+  "name": "Price Field Ladder",
+  "rebalance": "daily",
+  "type": "strategy"
+}

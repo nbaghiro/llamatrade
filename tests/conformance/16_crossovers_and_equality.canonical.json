@@ -1,0 +1,144 @@
+{
+  "benchmark": "QQQ",
+  "children": [
+    {
+      "children": [
+        {
+          "condition": {
+            "direction": "above",
+            "fast": {
+              "name": "sma",
+              "params": [
+                50
+              ],
+              "symbol": "SPY",
+              "type": "indicator"
+            },
+            "slow": {
+              "name": "sma",
+              "params": [
+                200
+              ],
+              "symbol": "SPY",
+              "type": "indicator"
+            },
+            "type": "crossover"
+          },
+          "else_block": {
+            "children": [
+              {
+                "symbol": "BND",
+                "type": "asset"
+              }
+            ],
+            "method": "equal",
+            "type": "weight"
+          },
+          "then": {
+            "children": [
+              {
+                "symbol": "SPY",
+                "type": "asset"
+              }
+            ],
+            "method": "equal",
+            "type": "weight"
+          },
+          "type": "if"
+        },
+        {
+          "condition": {
+            "direction": "below",
+            "fast": {
+              "name": "ema",
+              "params": [
+                12
+              ],
+              "symbol": "QQQ",
+              "type": "indicator"
+            },
+            "slow": {
+              "name": "ema",
+              "params": [
+                26
+              ],
+              "symbol": "QQQ",
+              "type": "indicator"
+            },
+            "type": "crossover"
+          },
+          "then": {
+            "children": [
+              {
+                "symbol": "SHY",
+                "type": "asset"
+              }
+            ],
+            "method": "equal",
+            "type": "weight"
+          },
+          "type": "if"
+        },
+        {
+          "condition": {
+            "left": {
+              "name": "rsi",
+              "params": [
+                14
+              ],
+              "symbol": "IWM",
+              "type": "indicator"
+            },
+            "operator": "=",
+            "right": {
+              "type": "numeric",
+              "value": 50.0
+            },
+            "type": "comparison"
+          },
+          "then": {
+            "children": [
+              {
+                "symbol": "IWM",
+                "type": "asset"
+              }
+            ],
+            "method": "equal",
+            "type": "weight"
+          },
+          "type": "if"
+        },
+        {
+          "condition": {
+            "left": {
+              "symbol": "GLD",
+              "type": "price"
+            },
+            "operator": "!=",
+            "right": {
+              "type": "numeric",
+              "value": 0.0
+            },
+            "type": "comparison"
+          },
+          "then": {
+            "children": [
+              {
+                "symbol": "GLD",
+                "type": "asset"
+              }
+            ],
+            "method": "equal",
+            "type": "weight"
+          },
+          "type": "if"
+        }
+      ],
+      "method": "equal",
+      "type": "weight"
+    }
+  ],
+  "name": "Crossovers And Equality",
+  "rebalance": "weekly",
+  "type": "strategy"
+}

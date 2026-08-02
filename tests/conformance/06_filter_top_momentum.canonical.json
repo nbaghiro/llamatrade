@@ -1,0 +1,42 @@
+{
+  "children": [
+    {
+      "by": "momentum",
+      "children": [
+        {
+          "children": [
+            {
+              "symbol": "XLK",
+              "type": "asset"
+            },
+            {
+              "symbol": "XLF",
+              "type": "asset"
+            },
+            {
+              "symbol": "XLE",
+              "type": "asset"
+            },
+            {
+              "symbol": "XLV",
+              "type": "asset"
+            },
+            {
+              "symbol": "XLI",
+              "type": "asset"
+            }
+          ],
+          "method": "equal",
+          "type": "weight"
+        }
+      ],
+      "lookback": 126,
+      "select_count": 3,
+      "select_direction": "top",
+      "type": "filter"
+    }
+  ],
+  "name": "Sector Rotation",
+  "rebalance": "monthly",
+  "type": "strategy"
+}

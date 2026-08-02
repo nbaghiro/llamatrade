@@ -1,0 +1,12 @@
+(strategy "Calm Harbor"
+  :rebalance weekly
+  (if (> (volatility SPY 21) 25)
+    (filter :by volatility :select (bottom 2) :lookback 21
+      (weight :method equal
+        (asset XLP)
+        (asset XLU)
+        (asset XLV)
+        (asset GLD)))
+    (else
+      (weight :method equal
+        (asset SPY)))))

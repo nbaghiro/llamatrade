@@ -1,0 +1,9 @@
+(strategy "Nested Weights"
+  :rebalance weekly
+  (weight :method equal
+    (weight :method inverse-volatility :lookback 63
+      (asset SPY)
+      (asset TLT))
+    (weight :method risk-parity :lookback 126
+      (asset GLD)
+      (asset DBC))))

@@ -1,0 +1,8 @@
+(strategy "Momentum Picks"
+  :rebalance monthly
+  (weight :method momentum :lookback 126 :top 3
+    (asset XLK)
+    (asset XLV)
+    (asset XLF)
+    (asset XLE)
+    (asset XLU)))

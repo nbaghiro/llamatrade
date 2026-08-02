@@ -1,0 +1,19 @@
+(strategy "Crossovers And Equality"
+  :rebalance weekly
+  :benchmark QQQ
+  (weight :method equal
+    (if (crosses-above (sma SPY 50) (sma SPY 200))
+      (weight :method equal
+        (asset SPY))
+      (else
+        (weight :method equal
+          (asset BND))))
+    (if (crosses-below (ema QQQ 12) (ema QQQ 26))
+      (weight :method equal
+        (asset SHY)))
+    (if (= (rsi IWM 14) 50)
+      (weight :method equal
+        (asset IWM)))
+    (if (!= (price GLD) 0)
+      (weight :method equal
+        (asset GLD)))))

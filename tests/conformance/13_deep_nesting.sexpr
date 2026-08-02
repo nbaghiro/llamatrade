@@ -1,0 +1,17 @@
+(strategy "Layered Regimes"
+  :rebalance daily
+  (weight :method specified
+    (group "Risk Sleeve" :weight 70
+      (if (< (return SPY 30) 0)
+        (weight :method equal
+          (asset GLD)
+          (asset TLT))
+        (else
+          (filter :by momentum :select (top 2) :lookback 63
+            (weight :method equal
+              (asset XLK)
+              (asset XLY)
+              (asset XLC))))))
+    (group "Stable Sleeve" :weight 30
+      (weight :method equal
+        (asset BIL)))))

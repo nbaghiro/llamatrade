@@ -1,0 +1,8 @@
+(strategy "Drawdown Guard"
+  :rebalance daily
+  (if (>= (drawdown SPY) 10)
+    (weight :method specified
+      (asset BIL :weight 100))
+    (else
+      (weight :method specified
+        (asset SPY :weight 100)))))

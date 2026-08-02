@@ -1,0 +1,15 @@
+(strategy "Output Selectors"
+  :rebalance daily
+  (weight :method equal
+    (if (> (macd SPY 12 26 9 :signal) 0)
+      (weight :method equal
+        (asset SPY))
+      (else
+        (weight :method equal
+          (asset SHY))))
+    (if (< (price QQQ) (bbands QQQ 20 2 :lower))
+      (weight :method equal
+        (asset QQQ))
+      (else
+        (weight :method equal
+          (asset BIL))))))

@@ -1,0 +1,58 @@
+{
+  "children": [
+    {
+      "condition": {
+        "left": {
+          "name": "sma",
+          "params": [
+            50
+          ],
+          "symbol": "SPY",
+          "type": "indicator"
+        },
+        "operator": ">",
+        "right": {
+          "name": "sma",
+          "params": [
+            200
+          ],
+          "symbol": "SPY",
+          "type": "indicator"
+        },
+        "type": "comparison"
+      },
+      "else_block": {
+        "children": [
+          {
+            "symbol": "BND",
+            "type": "asset"
+          },
+          {
+            "symbol": "SHY",
+            "type": "asset"
+          }
+        ],
+        "method": "equal",
+        "type": "weight"
+      },
+      "then": {
+        "children": [
+          {
+            "symbol": "QQQ",
+            "type": "asset"
+          },
+          {
+            "symbol": "SPY",
+            "type": "asset"
+          }
+        ],
+        "method": "equal",
+        "type": "weight"
+      },
+      "type": "if"
+    }
+  ],
+  "name": "Trend Switch",
+  "rebalance": "daily",
+  "type": "strategy"
+}

@@ -1,0 +1,40 @@
+{
+  "benchmark": "QQQ",
+  "children": [
+    {
+      "children": [
+        {
+          "symbol": "VTI",
+          "type": "asset",
+          "weight": 30.0
+        },
+        {
+          "symbol": "TLT",
+          "type": "asset",
+          "weight": 40.0
+        },
+        {
+          "symbol": "IEF",
+          "type": "asset",
+          "weight": 15.0
+        },
+        {
+          "symbol": "GLD",
+          "type": "asset",
+          "weight": 7.5
+        },
+        {
+          "symbol": "DBC",
+          "type": "asset",
+          "weight": 7.5
+        }
+      ],
+      "method": "specified",
+      "type": "weight"
+    }
+  ],
+  "description": "Ray's \"all weather\" mix",
+  "name": "All Weather",
+  "rebalance": "quarterly",
+  "type": "strategy"
+}

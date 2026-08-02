@@ -1,0 +1,10 @@
+(strategy "All Weather"
+  :rebalance quarterly
+  :benchmark QQQ
+  :description "Ray's \"all weather\" mix"
+  (weight :method specified
+    (asset VTI :weight 30)
+    (asset TLT :weight 40)
+    (asset IEF :weight 15)
+    (asset GLD :weight 7.5)
+    (asset DBC :weight 7.5)))

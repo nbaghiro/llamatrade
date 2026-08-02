@@ -1,0 +1,44 @@
+{
+  "children": [
+    {
+      "children": [
+        {
+          "children": [
+            {
+              "children": [
+                {
+                  "symbol": "VTI",
+                  "type": "asset"
+                },
+                {
+                  "symbol": "VXF",
+                  "type": "asset"
+                }
+              ],
+              "method": "equal",
+              "type": "weight"
+            }
+          ],
+          "name": "US Equities",
+          "type": "group",
+          "weight": 60.0
+        },
+        {
+          "symbol": "BND",
+          "type": "asset",
+          "weight": 27.5
+        },
+        {
+          "symbol": "GLD",
+          "type": "asset",
+          "weight": 12.5
+        }
+      ],
+      "method": "specified",
+      "type": "weight"
+    }
+  ],
+  "name": "Core Allocation",
+  "rebalance": "monthly",
+  "type": "strategy"
+}

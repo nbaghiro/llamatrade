@@ -1,0 +1,34 @@
+{
+  "children": [
+    {
+      "by": "volume",
+      "children": [
+        {
+          "children": [
+            {
+              "symbol": "AAPL",
+              "type": "asset"
+            },
+            {
+              "symbol": "MSFT",
+              "type": "asset"
+            },
+            {
+              "symbol": "NVDA",
+              "type": "asset"
+            }
+          ],
+          "method": "equal",
+          "type": "weight"
+        }
+      ],
+      "lookback": 252,
+      "select_count": 2,
+      "select_direction": "top",
+      "type": "filter"
+    }
+  ],
+  "name": "Liquid Leaders",
+  "rebalance": "annually",
+  "type": "strategy"
+}

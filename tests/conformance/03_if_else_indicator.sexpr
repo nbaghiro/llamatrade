@@ -1,0 +1,10 @@
+(strategy "Trend Switch"
+  :rebalance daily
+  (if (> (sma SPY 50) (sma SPY 200))
+    (weight :method equal
+      (asset QQQ)
+      (asset SPY))
+    (else
+      (weight :method equal
+        (asset BND)
+        (asset SHY)))))

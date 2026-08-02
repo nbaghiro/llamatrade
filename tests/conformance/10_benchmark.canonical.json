@@ -1,0 +1,22 @@
+{
+  "benchmark": "SPY",
+  "children": [
+    {
+      "children": [
+        {
+          "symbol": "VTI",
+          "type": "asset"
+        },
+        {
+          "symbol": "VXUS",
+          "type": "asset"
+        }
+      ],
+      "method": "equal",
+      "type": "weight"
+    }
+  ],
+  "name": "Benchmarked Core",
+  "rebalance": "monthly",
+  "type": "strategy"
+}

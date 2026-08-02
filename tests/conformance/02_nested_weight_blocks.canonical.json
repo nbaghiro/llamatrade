@@ -1,0 +1,43 @@
+{
+  "children": [
+    {
+      "children": [
+        {
+          "children": [
+            {
+              "symbol": "SPY",
+              "type": "asset"
+            },
+            {
+              "symbol": "TLT",
+              "type": "asset"
+            }
+          ],
+          "lookback": 63,
+          "method": "inverse-volatility",
+          "type": "weight"
+        },
+        {
+          "children": [
+            {
+              "symbol": "GLD",
+              "type": "asset"
+            },
+            {
+              "symbol": "DBC",
+              "type": "asset"
+            }
+          ],
+          "lookback": 126,
+          "method": "risk-parity",
+          "type": "weight"
+        }
+      ],
+      "method": "equal",
+      "type": "weight"
+    }
+  ],
+  "name": "Nested Weights",
+  "rebalance": "weekly",
+  "type": "strategy"
+}

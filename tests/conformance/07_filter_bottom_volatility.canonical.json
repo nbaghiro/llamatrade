@@ -1,0 +1,65 @@
+{
+  "children": [
+    {
+      "condition": {
+        "left": {
+          "name": "volatility",
+          "period": 21,
+          "symbol": "SPY",
+          "type": "metric"
+        },
+        "operator": ">",
+        "right": {
+          "type": "numeric",
+          "value": 25.0
+        },
+        "type": "comparison"
+      },
+      "else_block": {
+        "children": [
+          {
+            "symbol": "SPY",
+            "type": "asset"
+          }
+        ],
+        "method": "equal",
+        "type": "weight"
+      },
+      "then": {
+        "by": "volatility",
+        "children": [
+          {
+            "children": [
+              {
+                "symbol": "XLP",
+                "type": "asset"
+              },
+              {
+                "symbol": "XLU",
+                "type": "asset"
+              },
+              {
+                "symbol": "XLV",
+                "type": "asset"
+              },
+              {
+                "symbol": "GLD",
+                "type": "asset"
+              }
+            ],
+            "method": "equal",
+            "type": "weight"
+          }
+        ],
+        "lookback": 21,
+        "select_count": 2,
+        "select_direction": "bottom",
+        "type": "filter"
+      },
+      "type": "if"
+    }
+  ],
+  "name": "Calm Harbor",
+  "rebalance": "weekly",
+  "type": "strategy"
+}

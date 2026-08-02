@@ -1,0 +1,45 @@
+{
+  "children": [
+    {
+      "condition": {
+        "left": {
+          "name": "drawdown",
+          "symbol": "SPY",
+          "type": "metric"
+        },
+        "operator": ">=",
+        "right": {
+          "type": "numeric",
+          "value": 10.0
+        },
+        "type": "comparison"
+      },
+      "else_block": {
+        "children": [
+          {
+            "symbol": "SPY",
+            "type": "asset",
+            "weight": 100.0
+          }
+        ],
+        "method": "specified",
+        "type": "weight"
+      },
+      "then": {
+        "children": [
+          {
+            "symbol": "BIL",
+            "type": "asset",
+            "weight": 100.0
+          }
+        ],
+        "method": "specified",
+        "type": "weight"
+      },
+      "type": "if"
+    }
+  ],
+  "name": "Drawdown Guard",
+  "rebalance": "daily",
+  "type": "strategy"
+}

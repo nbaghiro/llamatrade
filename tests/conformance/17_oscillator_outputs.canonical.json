@@ -1,0 +1,179 @@
+{
+  "benchmark": "SPY",
+  "children": [
+    {
+      "children": [
+        {
+          "condition": {
+            "left": {
+              "name": "stoch",
+              "output": "k",
+              "params": [
+                14,
+                3,
+                3
+              ],
+              "symbol": "SPY",
+              "type": "indicator"
+            },
+            "operator": ">",
+            "right": {
+              "type": "numeric",
+              "value": 80.0
+            },
+            "type": "comparison"
+          },
+          "else_block": {
+            "symbol": "SPY",
+            "type": "asset"
+          },
+          "then": {
+            "symbol": "SHY",
+            "type": "asset"
+          },
+          "type": "if"
+        },
+        {
+          "condition": {
+            "left": {
+              "name": "stoch",
+              "output": "d",
+              "params": [
+                14,
+                3,
+                3
+              ],
+              "symbol": "QQQ",
+              "type": "indicator"
+            },
+            "operator": "<",
+            "right": {
+              "type": "numeric",
+              "value": 20.0
+            },
+            "type": "comparison"
+          },
+          "then": {
+            "symbol": "QQQ",
+            "type": "asset"
+          },
+          "type": "if"
+        },
+        {
+          "condition": {
+            "left": {
+              "name": "williams-r",
+              "params": [
+                14
+              ],
+              "symbol": "IWM",
+              "type": "indicator"
+            },
+            "operator": "<",
+            "right": {
+              "type": "numeric",
+              "value": -80.0
+            },
+            "type": "comparison"
+          },
+          "then": {
+            "symbol": "IWM",
+            "type": "asset"
+          },
+          "type": "if"
+        },
+        {
+          "condition": {
+            "left": {
+              "name": "cci",
+              "params": [
+                20
+              ],
+              "symbol": "GLD",
+              "type": "indicator"
+            },
+            "operator": ">",
+            "right": {
+              "type": "numeric",
+              "value": 100.0
+            },
+            "type": "comparison"
+          },
+          "then": {
+            "symbol": "GLD",
+            "type": "asset"
+          },
+          "type": "if"
+        },
+        {
+          "condition": {
+            "left": {
+              "name": "mfi",
+              "params": [
+                14
+              ],
+              "symbol": "XLE",
+              "type": "indicator"
+            },
+            "operator": "<",
+            "right": {
+              "type": "numeric",
+              "value": 30.0
+            },
+            "type": "comparison"
+          },
+          "then": {
+            "symbol": "XLE",
+            "type": "asset"
+          },
+          "type": "if"
+        },
+        {
+          "condition": {
+            "left": {
+              "name": "obv",
+              "symbol": "XLK",
+              "type": "indicator"
+            },
+            "operator": ">",
+            "right": {
+              "type": "numeric",
+              "value": 0.0
+            },
+            "type": "comparison"
+          },
+          "then": {
+            "symbol": "XLK",
+            "type": "asset"
+          },
+          "type": "if"
+        },
+        {
+          "condition": {
+            "left": {
+              "symbol": "VTI",
+              "type": "price"
+            },
+            "operator": ">",
+            "right": {
+              "name": "vwap",
+              "symbol": "VTI",
+              "type": "indicator"
+            },
+            "type": "comparison"
+          },
+          "then": {
+            "symbol": "VTI",
+            "type": "asset"
+          },
+          "type": "if"
+        }
+      ],
+      "method": "equal",
+      "type": "weight"
+    }
+  ],
+  "name": "Oscillator Outputs",
+  "rebalance": "daily",
+  "type": "strategy"
+}

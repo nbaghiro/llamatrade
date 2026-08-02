@@ -1,0 +1,13 @@
+(strategy "Price Field Ladder"
+  :rebalance daily
+  (if (> (price SPY :high) 500)
+    (weight :method equal
+      (asset SPY))
+    (else
+      (weight :method equal
+        (if (<= (rsi QQQ 14) 30)
+          (weight :method equal
+            (asset QQQ))
+          (else
+            (weight :method equal
+              (asset BIL))))))))

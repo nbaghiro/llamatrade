@@ -1,0 +1,4 @@
+(strategy "Alpha \"Prime\" \\ Core"
+  :rebalance daily
+  (weight :method equal
+    (asset SPY)))
