@@ -15,8 +15,9 @@ dependencies = [
     "PyJWT>=2.8.0",
     "cryptography>=41.0.0",
     "llamatrade-alpaca",
-    "llamatrade-common",
+    "llamatrade-common[gcp-kms]",
     "llamatrade-db",
+    "llamatrade-events",
     "llamatrade-proto",
 ]
 
@@ -26,6 +27,7 @@ dev = [
     "pytest-asyncio>=0.21.0",
     "pytest-cov>=4.1.0",
     "httpx>=0.26.0",
+    "testcontainers[postgres]>=4.0.0",
     "ruff>=0.1.0",
 ]
 

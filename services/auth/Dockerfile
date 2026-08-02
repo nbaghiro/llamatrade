@@ -17,9 +17,10 @@ COPY libs/common /app/libs/common
 COPY libs/db /app/libs/db
 COPY libs/proto /app/libs/proto
 COPY libs/alpaca /app/libs/alpaca
+COPY libs/events /app/libs/events
 
 # Install shared libraries (telemetry first — common/db depend on it)
-RUN pip install --no-cache-dir /app/libs/telemetry /app/libs/common /app/libs/db /app/libs/proto /app/libs/alpaca
+RUN pip install --no-cache-dir /app/libs/telemetry /app/libs/common /app/libs/db /app/libs/proto /app/libs/alpaca /app/libs/events
 
 # Copy service files and install
 COPY services/auth/pyproject.toml services/auth/README.md /app/
@@ -50,13 +51,13 @@ USER appuser
 # Environment variables
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
-    PORT=8001
+    PORT=8810
 
-EXPOSE 8001
+EXPOSE 8810
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8001/health')" || exit 1
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8810/health')" || exit 1
 
 # Run the application
-CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8001"]
+CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8810"]

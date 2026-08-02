@@ -16,7 +16,8 @@ class AlpacaCredentialsCreate(BaseModel):
 
 
 class AlpacaCredentialsResponse(BaseModel):
-    """Response with decrypted Alpaca credentials."""
+    """Credential response: full values on create (for immediate use); on get the
+    stored key prefix and an empty secret (credentials are write-only after create)."""
 
     id: UUID
     name: str

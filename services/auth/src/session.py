@@ -2,10 +2,14 @@
 
 Single source used by both the Connect servicer (login/register) and the OAuth
 routes so every path issues identical sessions and creates users the same way.
+
+Importing this module resolves the user-token signing key, so a
+production/staging auth service without the RS256 keypair fails at startup.
 """
 
 from __future__ import annotations
 
+import asyncio
 import os
 import re
 import secrets
@@ -19,15 +23,30 @@ import jwt
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from llamatrade_common.utils import require_secret
+from llamatrade_common.auth import user_token_signing_key, user_token_verification_key
 from llamatrade_db.models.auth import Tenant, User
+from llamatrade_telemetry import metrics
 
-JWT_SECRET = require_secret("JWT_SECRET", "dev-secret-change-in-production")
-JWT_ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
+SIGNING_KEY, SIGNING_ALGORITHM = user_token_signing_key()
+VERIFY_KEY, VERIFY_ALGORITHM = user_token_verification_key()
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "30"))
 REFRESH_TOKEN_EXPIRE_DAYS = int(os.getenv("REFRESH_TOKEN_EXPIRE_DAYS", "7"))
 _HANDOFF_PURPOSE = "alpaca_oauth_handoff"
-_HANDOFF_TTL_SECONDS = 120
+HANDOFF_TTL_SECONDS = 120
+
+_MIN_PASSWORD_LENGTH = 8
+
+
+class PasswordPolicyError(ValueError):
+    """Password fails the strength policy."""
+
+
+def validate_password_strength(password: str) -> None:
+    """Raise ``PasswordPolicyError`` when the password fails the policy."""
+    if len(password) < _MIN_PASSWORD_LENGTH:
+        raise PasswordPolicyError(f"password must be at least {_MIN_PASSWORD_LENGTH} characters")
+    if not (any(c.isalpha() for c in password) and any(c.isdigit() for c in password)):
+        raise PasswordPolicyError("password must contain at least one letter and one digit")
 
 
 @dataclass
@@ -41,7 +60,10 @@ class AccessRefresh:
 
 
 def mint_access_refresh(user: User) -> AccessRefresh:
-    """Mint the access + refresh JWTs for a user (the canonical login session)."""
+    """Mint the access + refresh JWTs for a user (the canonical login session).
+
+    Each token carries a unique ``jti`` so it can be individually revoked.
+    """
     now = datetime.now(UTC)
     access_expire = now + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     refresh_expire = now + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
@@ -52,22 +74,24 @@ def mint_access_refresh(user: User) -> AccessRefresh:
             "email": user.email,
             "roles": [user.role],
             "type": "access",
+            "jti": uuid4().hex,
             "iat": now,
             "exp": access_expire,
         },
-        JWT_SECRET,
-        algorithm=JWT_ALGORITHM,
+        SIGNING_KEY,
+        algorithm=SIGNING_ALGORITHM,
     )
     refresh = jwt.encode(
         {
             "sub": str(user.id),
             "tenant_id": str(user.tenant_id),
             "type": "refresh",
+            "jti": uuid4().hex,
             "iat": now,
             "exp": refresh_expire,
         },
-        JWT_SECRET,
-        algorithm=JWT_ALGORITHM,
+        SIGNING_KEY,
+        algorithm=SIGNING_ALGORITHM,
     )
     return AccessRefresh(access, refresh, access_expire, refresh_expire)
 
@@ -94,11 +118,14 @@ async def create_tenant_and_user(
     tenant_name: str,
     first_name: str | None = None,
     last_name: str | None = None,
-) -> User:
+) -> tuple[User, Tenant]:
     """Create a tenant + its first (admin) user; ``flush`` but do not commit.
 
-    Raises ``ValueError("email_taken")`` if the email already exists.
+    Raises ``PasswordPolicyError`` for a weak password and
+    ``ValueError("email_taken")`` if the email already exists.
     """
+    validate_password_strength(password)
+
     existing = await db.scalar(select(User).where(User.email == email))
     if existing is not None:
         raise ValueError("email_taken")
@@ -109,7 +136,10 @@ async def create_tenant_and_user(
     db.add(tenant)
     await db.flush()
 
-    password_hash = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
+    with metrics.auth.bcrypt_hash_duration.time():
+        password_hash = (
+            await asyncio.to_thread(bcrypt.hashpw, password.encode(), bcrypt.gensalt())
+        ).decode()
     user = User(
         id=uuid4(),
         tenant_id=tenant.id,
@@ -122,7 +152,15 @@ async def create_tenant_and_user(
     )
     db.add(user)
     await db.flush()
-    return user
+    return user, tenant
+
+
+@dataclass
+class Handoff:
+    """Verified contents of a one-time handoff token."""
+
+    user_id: str
+    jti: str
 
 
 def mint_handoff(user_id: str) -> str:
@@ -132,21 +170,24 @@ def mint_handoff(user_id: str) -> str:
         {
             "purpose": _HANDOFF_PURPOSE,
             "sub": user_id,
+            "jti": uuid4().hex,
             "iat": now,
-            "exp": now + _HANDOFF_TTL_SECONDS,
+            "exp": now + HANDOFF_TTL_SECONDS,
         },
-        JWT_SECRET,
-        algorithm=JWT_ALGORITHM,
+        SIGNING_KEY,
+        algorithm=SIGNING_ALGORITHM,
     )
 
 
-def verify_handoff(token: str) -> str | None:
-    """Return the user id from a valid handoff token, or None."""
+def verify_handoff(token: str) -> Handoff | None:
+    """Return the verified handoff claims, or None."""
     try:
-        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        payload = jwt.decode(token, VERIFY_KEY, algorithms=[VERIFY_ALGORITHM])
     except jwt.InvalidTokenError:
         return None
     if payload.get("purpose") != _HANDOFF_PURPOSE:
         return None
     sub = payload.get("sub")
-    return str(sub) if sub else None
+    if not sub:
+        return None
+    return Handoff(user_id=str(sub), jti=str(payload.get("jti", "")))

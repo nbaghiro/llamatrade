@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
-import os
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
+import bcrypt
 import jwt
 from connectrpc.code import Code
 from connectrpc.errors import ConnectError
@@ -16,41 +17,40 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 # Type alias for generic request context (accepts any request/response types)
 type AnyContext = RequestContext[object, object]
 
-from llamatrade_common import current_context
-from llamatrade_common.utils import require_secret, verify_api_key
+from llamatrade_common import RateLimiter, RevocationStore, current_context
+from llamatrade_common.auth import user_token_verification_key
+from llamatrade_common.utils import verify_api_key
 from llamatrade_db import get_session_maker, set_rls_bypass
-from llamatrade_proto.generated import auth_pb2, common_pb2
+from llamatrade_events.catalog.notifications import NotificationEvent, shared_notification_events
+from llamatrade_proto.generated import auth_pb2, common_pb2, events_pb2
 from llamatrade_telemetry import metrics
 
-from src.session import mint_access_refresh
+from src.client_ip import trusted_client_ip
+from src.redis_client import get_redis
+from src.services.tokens import (
+    PURPOSE_EMAIL_VERIFY,
+    PURPOSE_PASSWORD_RESET,
+    consume_token,
+    issue_token,
+)
+from src.session import (
+    PasswordPolicyError,
+    create_tenant_and_user,
+    mint_access_refresh,
+    validate_password_strength,
+)
 
 if TYPE_CHECKING:
     from llamatrade_db.models import User
 
 logger = logging.getLogger(__name__)
 
-JWT_SECRET = require_secret("JWT_SECRET", "dev-secret-change-in-production")
+# Pinned to the configured key material: RS256 public key when set, else HS256.
+VERIFY_KEY, VERIFY_ALGORITHM = user_token_verification_key()
 
-_MIN_PASSWORD_LENGTH = 8
-
-
-def _validate_password_strength(password: str) -> None:
-    """Reject weak passwords; raises ConnectError(INVALID_ARGUMENT) on failure."""
-    if len(password) < _MIN_PASSWORD_LENGTH:
-        raise ConnectError(
-            Code.INVALID_ARGUMENT,
-            f"password must be at least {_MIN_PASSWORD_LENGTH} characters",
-        )
-    if not (any(c.isalpha() for c in password) and any(c.isdigit() for c in password)):
-        raise ConnectError(
-            Code.INVALID_ARGUMENT,
-            "password must contain at least one letter and one digit",
-        )
-
-
-JWT_ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
-ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "30"))
-REFRESH_TOKEN_EXPIRE_DAYS = int(os.getenv("REFRESH_TOKEN_EXPIRE_DAYS", "7"))
+# Precomputed hash checked when the user lookup misses, so a miss and a wrong
+# password take comparable time (no user-enumeration timing oracle).
+_DUMMY_PASSWORD_HASH: bytes = bcrypt.hashpw(b"llamatrade-timing-pad", bcrypt.gensalt())
 
 
 def _mask_key(api_key: str) -> str:
@@ -77,6 +77,27 @@ def _user_to_proto(user: User) -> auth_pb2.User:
     )
 
 
+async def _notify_security(
+    tenant_id: object,
+    user_id: object,
+    category: events_pb2.NotificationCategory.ValueType,
+    *,
+    reason: str = "",
+    link: str = "",
+    dedup_parts: tuple[str, ...],
+) -> None:
+    """Fire-and-forget security notification (welcome, password change, lockout)."""
+    event = NotificationEvent(category=category, reason=reason)
+    if link:
+        event.extra["link"] = link
+    await shared_notification_events().publish_safe(
+        event,
+        tenant_id=str(tenant_id),
+        user_id=str(user_id),
+        dedup_parts=dedup_parts,
+    )
+
+
 class AuthServicer:
     """Connect servicer for the Auth service.
 
@@ -87,6 +108,41 @@ class AuthServicer:
     def __init__(self) -> None:
         """Initialize the servicer."""
         self._session_maker: async_sessionmaker[AsyncSession] | None = None
+        redis = get_redis()
+        # Brute-force protection must not be disabled by a Redis outage, so the
+        # limiter fails closed (a Redis error refuses rather than allows).
+        self._rate_limiter: RateLimiter | None = (
+            RateLimiter(redis, fail_closed=True) if redis is not None else None
+        )
+        self._revocation: RevocationStore | None = (
+            RevocationStore(redis) if redis is not None else None
+        )
+
+    def _client_ip(self, ctx: AnyContext) -> str | None:
+        """Client IP from a trusted ``x-forwarded-for`` position (see ``trusted_client_ip``)."""
+        return trusted_client_ip(ctx.request_headers().get("x-forwarded-for", ""))
+
+    async def _enforce_rate_limit(self, key: str, rules: tuple[tuple[int, int], ...]) -> None:
+        """Apply ``(limit, window_seconds)`` rules; RESOURCE_EXHAUSTED when any trips."""
+        if self._rate_limiter is None:
+            return
+        for limit, window in rules:
+            if not await self._rate_limiter.check_and_count(key, limit, window):
+                raise ConnectError(Code.RESOURCE_EXHAUSTED, "Too many attempts; try again later")
+
+    async def _enforce_credential_rate_limits(
+        self, action: str, email: str, ip: str | None, rules: tuple[tuple[int, int], ...]
+    ) -> None:
+        """Enforce the per-email bucket (always) and the per-IP bucket (when a
+        trusted client IP is present) for a credential-taking RPC.
+
+        The email bucket is first-class: a rotated or spoofed source IP cannot
+        lift the per-target-email limit, which is the guard that actually bounds
+        a credential-stuffing run against a known account.
+        """
+        await self._enforce_rate_limit(f"{action}:email:{email.lower()}", rules)
+        if ip is not None:
+            await self._enforce_rate_limit(f"{action}:ip:{ip}", rules)
 
     async def _get_db(self) -> AsyncSession:
         """DB session for the identity authority.
@@ -100,7 +156,7 @@ class AuthServicer:
             self._session_maker = get_session_maker()
         assert self._session_maker is not None
         session: AsyncSession = self._session_maker()
-        await set_rls_bypass(session)
+        await set_rls_bypass(session, reason="auth identity authority: pre- and cross-tenant reads")
         return session
 
     def _get_auth_token(self, ctx: AnyContext) -> str:
@@ -113,6 +169,40 @@ class AuthServicer:
             )
         return auth_header[7:]  # Remove "Bearer " prefix
 
+    def _authenticated_principal(self, ctx: AnyContext) -> tuple[str, str]:
+        """Verified ``(tenant_id, user_id)`` for the calling user.
+
+        Trusts the principal ``AuthMiddleware`` already verified (via
+        ``current_context``), which is only ever an access-token or service
+        principal. Falls back to decoding the bearer only when no middleware ran
+        (unit tests calling the servicer directly), and then accepts only an
+        access token so a refresh token can never authorize a user RPC.
+        """
+        caller = current_context()
+        if caller is not None:
+            if caller.is_service:
+                raise ConnectError(Code.UNAUTHENTICATED, "A user token is required")
+            return str(caller.tenant_id), str(caller.user_id)
+
+        token = self._get_auth_token(ctx)
+        try:
+            payload = jwt.decode(token, VERIFY_KEY, algorithms=[VERIFY_ALGORITHM])
+        except jwt.ExpiredSignatureError:
+            metrics.auth.token_validation_failure(reason="expired")
+            raise ConnectError(Code.UNAUTHENTICATED, "Token expired")
+        except jwt.InvalidTokenError:
+            metrics.auth.token_validation_failure(reason="invalid_sig")
+            raise ConnectError(Code.UNAUTHENTICATED, "Invalid token")
+        if payload.get("type", "access") != "access":
+            metrics.auth.token_validation_failure(reason="wrong_type")
+            raise ConnectError(Code.UNAUTHENTICATED, "An access token is required")
+        tenant_id = payload.get("tenant_id")
+        user_id = payload.get("sub")
+        if not tenant_id or not user_id:
+            metrics.auth.token_validation_failure(reason="missing_tenant")
+            raise ConnectError(Code.UNAUTHENTICATED, "Invalid token: missing user or tenant ID")
+        return str(tenant_id), str(user_id)
+
     async def validate_token(
         self,
         request: auth_pb2.ValidateTokenRequest,
@@ -123,7 +213,7 @@ class AuthServicer:
             token = request.token
 
             try:
-                payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+                payload = jwt.decode(token, VERIFY_KEY, algorithms=[VERIFY_ALGORITHM])
             except jwt.ExpiredSignatureError:
                 metrics.auth.token_validation_failure(reason="expired")
                 return auth_pb2.ValidateTokenResponse(valid=False)
@@ -136,6 +226,12 @@ class AuthServicer:
             roles = payload.get("roles", [])
             token_type = payload.get("type", "access")
             exp = payload.get("exp")
+
+            # Only a user access token is valid here; a refresh (or any other)
+            # token must never report valid, mirroring decode_token_claims.
+            if token_type != "access":
+                metrics.auth.token_validation_failure(reason="wrong_type")
+                return auth_pb2.ValidateTokenResponse(valid=False)
 
             if not tenant_id or not user_id:
                 metrics.auth.token_validation_failure(reason="missing_tenant")
@@ -232,7 +328,7 @@ class AuthServicer:
         refresh_token = request.refresh_token
 
         try:
-            payload = jwt.decode(refresh_token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+            payload = jwt.decode(refresh_token, VERIFY_KEY, algorithms=[VERIFY_ALGORITHM])
         except jwt.ExpiredSignatureError:
             metrics.auth.token_validation_failure(reason="expired")
             raise ConnectError(Code.UNAUTHENTICATED, "Refresh token expired")
@@ -244,6 +340,12 @@ class AuthServicer:
             raise ConnectError(Code.INVALID_ARGUMENT, "Token is not a refresh token")
 
         user_id = payload.get("sub")
+        if not user_id:
+            raise ConnectError(Code.UNAUTHENTICATED, "Invalid refresh token: missing user ID")
+
+        if self._revocation is not None and await self._revocation.is_revoked(payload):
+            metrics.auth.token_validation_failure(reason="revoked")
+            raise ConnectError(Code.UNAUTHENTICATED, "Refresh token has been revoked")
 
         # Verify user still exists and is active
         async with await self._get_db() as db:
@@ -255,7 +357,7 @@ class AuthServicer:
 
             result = await db.execute(
                 select(User).where(
-                    User.id == UUID(user_id),
+                    User.id == UUID(str(user_id)),
                     User.is_active.is_(True),
                 )
             )
@@ -264,40 +366,24 @@ class AuthServicer:
             if not user:
                 raise ConnectError(Code.UNAUTHENTICATED, "User not found or inactive")
 
-            now = datetime.now(UTC)
-            access_expire = now + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-            refresh_expire = now + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
+            # Rotation: the presented refresh token is single-use, revoked before minting.
+            jti = payload.get("jti")
+            exp = payload.get("exp")
+            if self._revocation is not None and jti and exp:
+                await self._revocation.revoke_token(str(jti), int(exp))
 
-            access_payload = {
-                "sub": str(user.id),
-                "tenant_id": str(user.tenant_id),
-                "email": str(user.email),
-                "roles": [user.role],
-                "type": "access",
-                "iat": now,
-                "exp": access_expire,
-            }
-            new_access_token = jwt.encode(access_payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
+            tokens = mint_access_refresh(user)
             metrics.auth.token_issued(type="access")
-
-            refresh_payload = {
-                "sub": str(user.id),
-                "tenant_id": str(user.tenant_id),
-                "type": "refresh",
-                "iat": now,
-                "exp": refresh_expire,
-            }
-            new_refresh_token = jwt.encode(refresh_payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
             metrics.auth.token_issued(type="refresh")
 
             return auth_pb2.RefreshTokenResponse(
-                access_token=new_access_token,
-                refresh_token=new_refresh_token,
+                access_token=tokens.access_token,
+                refresh_token=tokens.refresh_token,
                 access_token_expires_at=common_pb2.Timestamp(
-                    seconds=int(access_expire.timestamp())
+                    seconds=int(tokens.access_expires_at.timestamp())
                 ),
                 refresh_token_expires_at=common_pb2.Timestamp(
-                    seconds=int(refresh_expire.timestamp())
+                    seconds=int(tokens.refresh_expires_at.timestamp())
                 ),
             )
 
@@ -388,55 +474,46 @@ class AuthServicer:
         ctx: AnyContext,
     ) -> auth_pb2.RegisterResponse:
         """Register a new user and tenant."""
-        from uuid import uuid4
-
-        import bcrypt
-        from sqlalchemy import select
-
-        from llamatrade_db.models import Tenant, User
+        # Signup abuse guard: the per-email bucket always applies, plus a per-IP
+        # bucket when a trusted client IP is present.
+        await self._enforce_credential_rate_limits(
+            "register", request.email, self._client_ip(ctx), rules=((5, 60), (20, 3600))
+        )
 
         async with await self._get_db() as db:
-            import re
-            import secrets
-
-            result = await db.execute(select(User).where(User.email == request.email))
-            existing_user = result.scalar_one_or_none()
-
-            if existing_user:
+            try:
+                user, tenant = await create_tenant_and_user(
+                    db,
+                    email=request.email,
+                    password=request.password,
+                    tenant_name=request.tenant_name,
+                    first_name=request.first_name or None,
+                    last_name=request.last_name or None,
+                )
+            except PasswordPolicyError as e:
+                raise ConnectError(Code.INVALID_ARGUMENT, str(e))
+            except ValueError:
                 raise ConnectError(Code.ALREADY_EXISTS, "Email already registered")
-
-            _validate_password_strength(request.password)
-
-            # Generate a unique slug from tenant name
-            base_slug = re.sub(r"[^a-z0-9]+", "-", request.tenant_name.lower()).strip("-")
-            slug = f"{base_slug}-{secrets.token_hex(4)}"
-
-            tenant = Tenant(
-                id=uuid4(),
-                name=request.tenant_name,
-                slug=slug,
-                is_active=True,
-            )
-            db.add(tenant)
-            await db.flush()
-
-            with metrics.auth.bcrypt_hash_duration.time():
-                password_hash = bcrypt.hashpw(request.password.encode(), bcrypt.gensalt()).decode()
-
-            user = User(
-                id=uuid4(),
-                tenant_id=tenant.id,
-                email=request.email,
-                password_hash=password_hash,
-                first_name=request.first_name or None,
-                last_name=request.last_name or None,
-                role="admin",  # First user is admin
-                is_active=True,
-            )
-            db.add(user)
             await db.commit()
 
             metrics.auth.registration()
+            await _notify_security(
+                tenant.id,
+                user.id,
+                events_pb2.NOTIFICATION_CATEGORY_WELCOME,
+                dedup_parts=(str(user.id), "welcome"),
+            )
+            issued = await issue_token(
+                db, tenant_id=tenant.id, user_id=user.id, purpose=PURPOSE_EMAIL_VERIFY
+            )
+            await db.commit()
+            await _notify_security(
+                tenant.id,
+                user.id,
+                events_pb2.NOTIFICATION_CATEGORY_EMAIL_VERIFICATION,
+                link=issued.link,
+                dedup_parts=(str(user.id), "verify", issued.token[:8]),
+            )
 
             return auth_pb2.RegisterResponse(
                 user=_user_to_proto(user),
@@ -449,26 +526,69 @@ class AuthServicer:
                 ),
             )
 
+    async def _notify_lockout(self, email: str) -> None:
+        """Tell the real account owner their sign-in is being rate limited.
+
+        Deduped per hour so a stuffing run produces one email, not thousands;
+        a lockout on a nonexistent email notifies nobody.
+        """
+        from sqlalchemy import select
+
+        from llamatrade_db.models import User
+
+        try:
+            async with await self._get_db() as db:
+                result = await db.execute(select(User).where(User.email == email))
+                user = result.scalar_one_or_none()
+        except Exception:
+            return
+        if user is None:
+            return
+        hour_bucket = datetime.now(UTC).strftime("%Y%m%d%H")
+        await _notify_security(
+            user.tenant_id,
+            user.id,
+            events_pb2.NOTIFICATION_CATEGORY_ACCOUNT_LOCKED,
+            dedup_parts=(str(user.id), "lockout", hour_bucket),
+        )
+
     async def login(
         self,
         request: auth_pb2.LoginRequest,
         ctx: AnyContext,
     ) -> auth_pb2.LoginResponse:
         """Login with email and password."""
-        import bcrypt
         from sqlalchemy import select
 
         from llamatrade_db.models import User
+
+        # Credential-stuffing guard: the per-email bucket always applies (so a
+        # rotated source IP cannot escape it), plus a per-IP bucket when a
+        # trusted client IP is present; the wider window escalates a sustained
+        # burst into a lockout.
+        try:
+            await self._enforce_credential_rate_limits(
+                "login", request.email, self._client_ip(ctx), rules=((10, 60), (30, 900))
+            )
+        except ConnectError as limit_error:
+            if limit_error.code == Code.RESOURCE_EXHAUSTED:
+                await self._notify_lockout(request.email)
+            raise
 
         async with await self._get_db() as db:
             result = await db.execute(select(User).where(User.email == request.email))
             user = result.scalar_one_or_none()
 
             if not user:
+                # Burn a bcrypt check so a miss is not distinguishable by timing.
+                await asyncio.to_thread(
+                    bcrypt.checkpw, request.password.encode(), _DUMMY_PASSWORD_HASH
+                )
                 metrics.auth.login_failure(reason="user_not_found")
                 raise ConnectError(Code.UNAUTHENTICATED, "Invalid email or password")
 
-            if not bcrypt.checkpw(
+            if not await asyncio.to_thread(
+                bcrypt.checkpw,
                 request.password.encode(),
                 user.password_hash.encode(),
             ):
@@ -510,26 +630,11 @@ class AuthServicer:
         """
         from uuid import UUID
 
-        import bcrypt
         from sqlalchemy import select
 
         from llamatrade_db.models import User
 
-        token = self._get_auth_token(ctx)
-
-        try:
-            payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
-        except jwt.ExpiredSignatureError:
-            metrics.auth.token_validation_failure(reason="expired")
-            raise ConnectError(Code.UNAUTHENTICATED, "Token expired")
-        except jwt.InvalidTokenError:
-            metrics.auth.token_validation_failure(reason="invalid_sig")
-            raise ConnectError(Code.UNAUTHENTICATED, "Invalid token")
-
-        user_id = payload.get("sub")
-        if not user_id:
-            metrics.auth.token_validation_failure(reason="missing_tenant")
-            raise ConnectError(Code.UNAUTHENTICATED, "Invalid token: missing user ID")
+        _, user_id = self._authenticated_principal(ctx)
 
         async with await self._get_db() as db:
             result = await db.execute(select(User).where(User.id == UUID(user_id)))
@@ -538,24 +643,182 @@ class AuthServicer:
             if not user:
                 raise ConnectError(Code.NOT_FOUND, "User not found")
 
-            if not bcrypt.checkpw(
+            if not await asyncio.to_thread(
+                bcrypt.checkpw,
                 request.current_password.encode(),
                 user.password_hash.encode(),
             ):
                 raise ConnectError(Code.INVALID_ARGUMENT, "Current password is incorrect")
 
-            _validate_password_strength(request.new_password)
+            try:
+                validate_password_strength(request.new_password)
+            except PasswordPolicyError as e:
+                raise ConnectError(Code.INVALID_ARGUMENT, str(e))
 
             with metrics.auth.bcrypt_hash_duration.time():
-                user.password_hash = bcrypt.hashpw(
-                    request.new_password.encode(), bcrypt.gensalt()
+                user.password_hash = (
+                    await asyncio.to_thread(
+                        bcrypt.hashpw, request.new_password.encode(), bcrypt.gensalt()
+                    )
                 ).decode()
             await db.commit()
+
+            # Every session issued before the change (including this one) is dead.
+            if self._revocation is not None:
+                await self._revocation.revoke_all_for_user(
+                    str(user.id), int(datetime.now(UTC).timestamp())
+                )
+
+            await _notify_security(
+                user.tenant_id,
+                user.id,
+                events_pb2.NOTIFICATION_CATEGORY_PASSWORD_CHANGED,
+                dedup_parts=(str(user.id), "pwchange", str(int(datetime.now(UTC).timestamp()))),
+            )
 
             return auth_pb2.ChangePasswordResponse(
                 success=True,
                 message="Password changed successfully",
             )
+
+    async def request_password_reset(
+        self,
+        request: auth_pb2.RequestPasswordResetRequest,
+        ctx: AnyContext,
+    ) -> auth_pb2.RequestPasswordResetResponse:
+        """Issue a reset token; the response never reveals account existence."""
+        from sqlalchemy import select
+
+        from llamatrade_db.models import User
+
+        await self._enforce_credential_rate_limits(
+            "pwreset", request.email, self._client_ip(ctx), rules=((5, 60), (20, 3600))
+        )
+        async with await self._get_db() as db:
+            result = await db.execute(select(User).where(User.email == request.email))
+            user = result.scalar_one_or_none()
+            if user is not None and user.is_active:
+                issued = await issue_token(
+                    db,
+                    tenant_id=user.tenant_id,
+                    user_id=user.id,
+                    purpose=PURPOSE_PASSWORD_RESET,
+                )
+                await db.commit()
+                await _notify_security(
+                    user.tenant_id,
+                    user.id,
+                    events_pb2.NOTIFICATION_CATEGORY_PASSWORD_RESET,
+                    link=issued.link,
+                    dedup_parts=(str(user.id), "reset", issued.token[:8]),
+                )
+        return auth_pb2.RequestPasswordResetResponse(
+            success=True,
+            message="If that email has an account, a reset link is on its way.",
+        )
+
+    async def reset_password(
+        self,
+        request: auth_pb2.ResetPasswordRequest,
+        ctx: AnyContext,
+    ) -> auth_pb2.ResetPasswordResponse:
+        """Redeem a reset token: set the password and kill every session."""
+        from sqlalchemy import select
+
+        from llamatrade_db.models import User
+
+        try:
+            validate_password_strength(request.new_password)
+        except PasswordPolicyError as e:
+            raise ConnectError(Code.INVALID_ARGUMENT, str(e))
+
+        async with await self._get_db() as db:
+            token = await consume_token(db, token=request.token, purpose=PURPOSE_PASSWORD_RESET)
+            if token is None:
+                raise ConnectError(Code.INVALID_ARGUMENT, "Invalid or expired reset link")
+            result = await db.execute(select(User).where(User.id == token.user_id))
+            user = result.scalar_one_or_none()
+            if user is None or not user.is_active:
+                raise ConnectError(Code.INVALID_ARGUMENT, "Invalid or expired reset link")
+            with metrics.auth.bcrypt_hash_duration.time():
+                user.password_hash = (
+                    await asyncio.to_thread(
+                        bcrypt.hashpw, request.new_password.encode(), bcrypt.gensalt()
+                    )
+                ).decode()
+            await db.commit()
+
+            if self._revocation is not None:
+                await self._revocation.revoke_all_for_user(
+                    str(user.id), int(datetime.now(UTC).timestamp())
+                )
+            await _notify_security(
+                user.tenant_id,
+                user.id,
+                events_pb2.NOTIFICATION_CATEGORY_PASSWORD_CHANGED,
+                dedup_parts=(str(user.id), "pwreset", str(int(datetime.now(UTC).timestamp()))),
+            )
+        return auth_pb2.ResetPasswordResponse(
+            success=True, message="Password reset; sign in with your new password."
+        )
+
+    async def verify_email(
+        self,
+        request: auth_pb2.VerifyEmailRequest,
+        ctx: AnyContext,
+    ) -> auth_pb2.VerifyEmailResponse:
+        """Redeem a verification token and mark the account verified."""
+        from sqlalchemy import select
+
+        from llamatrade_db.models import User
+
+        async with await self._get_db() as db:
+            token = await consume_token(db, token=request.token, purpose=PURPOSE_EMAIL_VERIFY)
+            if token is None:
+                raise ConnectError(Code.INVALID_ARGUMENT, "Invalid or expired verification link")
+            result = await db.execute(select(User).where(User.id == token.user_id))
+            user = result.scalar_one_or_none()
+            if user is None:
+                raise ConnectError(Code.INVALID_ARGUMENT, "Invalid or expired verification link")
+            user.is_verified = True
+            await db.commit()
+        return auth_pb2.VerifyEmailResponse(success=True, message="Email verified.")
+
+    async def resend_verification(
+        self,
+        request: auth_pb2.ResendVerificationRequest,
+        ctx: AnyContext,
+    ) -> auth_pb2.ResendVerificationResponse:
+        """Re-send the verification email; uniform response, rate limited."""
+        from sqlalchemy import select
+
+        from llamatrade_db.models import User
+
+        await self._enforce_credential_rate_limits(
+            "verify", request.email, self._client_ip(ctx), rules=((5, 60), (20, 3600))
+        )
+        async with await self._get_db() as db:
+            result = await db.execute(select(User).where(User.email == request.email))
+            user = result.scalar_one_or_none()
+            if user is not None and user.is_active and not user.is_verified:
+                issued = await issue_token(
+                    db,
+                    tenant_id=user.tenant_id,
+                    user_id=user.id,
+                    purpose=PURPOSE_EMAIL_VERIFY,
+                )
+                await db.commit()
+                await _notify_security(
+                    user.tenant_id,
+                    user.id,
+                    events_pb2.NOTIFICATION_CATEGORY_EMAIL_VERIFICATION,
+                    link=issued.link,
+                    dedup_parts=(str(user.id), "verify", issued.token[:8]),
+                )
+        return auth_pb2.ResendVerificationResponse(
+            success=True,
+            message="If that account needs verification, an email is on its way.",
+        )
 
     async def get_current_user(
         self,
@@ -569,22 +832,7 @@ class AuthServicer:
 
         from llamatrade_db.models import Tenant, User
 
-        token = self._get_auth_token(ctx)
-
-        try:
-            payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
-        except jwt.ExpiredSignatureError:
-            metrics.auth.token_validation_failure(reason="expired")
-            raise ConnectError(Code.UNAUTHENTICATED, "Token expired")
-        except jwt.InvalidTokenError:
-            metrics.auth.token_validation_failure(reason="invalid_sig")
-            raise ConnectError(Code.UNAUTHENTICATED, "Invalid token")
-
-        user_id = payload.get("sub")
-        tenant_id = payload.get("tenant_id")
-        if not user_id or not tenant_id:
-            metrics.auth.token_validation_failure(reason="missing_tenant")
-            raise ConnectError(Code.UNAUTHENTICATED, "Invalid token: missing user or tenant ID")
+        tenant_id, user_id = self._authenticated_principal(ctx)
 
         async with await self._get_db() as db:
             user_result = await db.execute(select(User).where(User.id == UUID(user_id)))
@@ -615,14 +863,11 @@ class AuthServicer:
         request: auth_pb2.LogoutRequest,
         ctx: AnyContext,
     ) -> auth_pb2.LogoutResponse:
-        """Logout and invalidate the current token.
-
-        In a production system, this would add the token to a blocklist.
-        """
+        """Logout: revoke the presented access token (and its refresh, if supplied)."""
         token = self._get_auth_token(ctx)
 
         try:
-            jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+            payload = jwt.decode(token, VERIFY_KEY, algorithms=[VERIFY_ALGORITHM])
         except jwt.ExpiredSignatureError:
             # Token already expired, logout is successful
             return auth_pb2.LogoutResponse(success=True)
@@ -630,11 +875,33 @@ class AuthServicer:
             metrics.auth.token_validation_failure(reason="invalid_sig")
             raise ConnectError(Code.UNAUTHENTICATED, "Invalid token")
 
-        # JWTs are stateless, so there is nothing to invalidate server-side yet.
-        # TODO: Implement token blocklist in Redis
+        if self._revocation is not None:
+            jti = payload.get("jti")
+            exp = payload.get("exp")
+            if jti and exp:
+                await self._revocation.revoke_token(str(jti), int(exp))
+            # The paired refresh token rides an extra header (LogoutRequest is empty).
+            refresh = ctx.request_headers().get("x-refresh-token", "")
+            if refresh:
+                await self._revoke_refresh_token(refresh)
 
         logger.info("User logged out successfully")
         return auth_pb2.LogoutResponse(success=True)
+
+    async def _revoke_refresh_token(self, refresh_token: str) -> None:
+        """Revoke a supplied refresh token's jti; invalid tokens are ignored."""
+        if self._revocation is None:
+            return
+        try:
+            payload = jwt.decode(refresh_token, VERIFY_KEY, algorithms=[VERIFY_ALGORITHM])
+        except jwt.InvalidTokenError:
+            return
+        if payload.get("type") != "refresh":
+            return
+        jti = payload.get("jti")
+        exp = payload.get("exp")
+        if jti and exp:
+            await self._revocation.revoke_token(str(jti), int(exp))
 
     async def check_permission(
         self,
@@ -706,20 +973,7 @@ class AuthServicer:
         from src.models import AlpacaCredentialsCreate
         from src.services.tenant_service import TenantService
 
-        token = self._get_auth_token(ctx)
-        try:
-            payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
-        except jwt.ExpiredSignatureError:
-            metrics.auth.token_validation_failure(reason="expired")
-            raise ConnectError(Code.UNAUTHENTICATED, "Token expired")
-        except jwt.InvalidTokenError:
-            metrics.auth.token_validation_failure(reason="invalid_sig")
-            raise ConnectError(Code.UNAUTHENTICATED, "Invalid token")
-
-        tenant_id = payload.get("tenant_id")
-        if not tenant_id:
-            metrics.auth.token_validation_failure(reason="missing_tenant")
-            raise ConnectError(Code.UNAUTHENTICATED, "Invalid token: missing tenant ID")
+        tenant_id, _ = self._authenticated_principal(ctx)
 
         async with await self._get_db() as db:
             service = TenantService(db)
@@ -757,20 +1011,7 @@ class AuthServicer:
 
         from src.services.tenant_service import TenantService
 
-        token = self._get_auth_token(ctx)
-        try:
-            payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
-        except jwt.ExpiredSignatureError:
-            metrics.auth.token_validation_failure(reason="expired")
-            raise ConnectError(Code.UNAUTHENTICATED, "Token expired")
-        except jwt.InvalidTokenError:
-            metrics.auth.token_validation_failure(reason="invalid_sig")
-            raise ConnectError(Code.UNAUTHENTICATED, "Invalid token")
-
-        tenant_id = payload.get("tenant_id")
-        if not tenant_id:
-            metrics.auth.token_validation_failure(reason="missing_tenant")
-            raise ConnectError(Code.UNAUTHENTICATED, "Invalid token: missing tenant ID")
+        tenant_id, _ = self._authenticated_principal(ctx)
 
         async with await self._get_db() as db:
             service = TenantService(db)
@@ -808,20 +1049,7 @@ class AuthServicer:
 
         from src.services.tenant_service import TenantService
 
-        token = self._get_auth_token(ctx)
-        try:
-            payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
-        except jwt.ExpiredSignatureError:
-            metrics.auth.token_validation_failure(reason="expired")
-            raise ConnectError(Code.UNAUTHENTICATED, "Token expired")
-        except jwt.InvalidTokenError:
-            metrics.auth.token_validation_failure(reason="invalid_sig")
-            raise ConnectError(Code.UNAUTHENTICATED, "Invalid token")
-
-        tenant_id = payload.get("tenant_id")
-        if not tenant_id:
-            metrics.auth.token_validation_failure(reason="missing_tenant")
-            raise ConnectError(Code.UNAUTHENTICATED, "Invalid token: missing tenant ID")
+        tenant_id, _ = self._authenticated_principal(ctx)
 
         async with await self._get_db() as db:
             service = TenantService(db)
@@ -846,32 +1074,22 @@ class AuthServicer:
         request: auth_pb2.DeleteAlpacaCredentialsRequest,
         ctx: AnyContext,
     ) -> auth_pb2.DeleteAlpacaCredentialsResponse:
-        """Delete Alpaca credentials (soft delete)."""
+        """Delete Alpaca credentials (soft delete), refusing while dependents exist."""
         from uuid import UUID
 
-        from src.services.tenant_service import TenantService
+        from src.services.tenant_service import CredentialsInUseError, TenantService
 
-        token = self._get_auth_token(ctx)
-        try:
-            payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
-        except jwt.ExpiredSignatureError:
-            metrics.auth.token_validation_failure(reason="expired")
-            raise ConnectError(Code.UNAUTHENTICATED, "Token expired")
-        except jwt.InvalidTokenError:
-            metrics.auth.token_validation_failure(reason="invalid_sig")
-            raise ConnectError(Code.UNAUTHENTICATED, "Invalid token")
-
-        tenant_id = payload.get("tenant_id")
-        if not tenant_id:
-            metrics.auth.token_validation_failure(reason="missing_tenant")
-            raise ConnectError(Code.UNAUTHENTICATED, "Invalid token: missing tenant ID")
+        tenant_id, _ = self._authenticated_principal(ctx)
 
         async with await self._get_db() as db:
             service = TenantService(db)
-            deleted = await service.delete_alpaca_credentials(
-                credentials_id=UUID(request.credentials_id),
-                tenant_id=UUID(tenant_id),
-            )
+            try:
+                deleted = await service.delete_alpaca_credentials(
+                    credentials_id=UUID(request.credentials_id),
+                    tenant_id=UUID(tenant_id),
+                )
+            except CredentialsInUseError as e:
+                raise ConnectError(Code.FAILED_PRECONDITION, str(e)) from e
 
             if not deleted:
                 raise ConnectError(
@@ -890,15 +1108,13 @@ class AuthServicer:
         from llamatrade_alpaca import AlpacaCredentials, TradingClient
         from llamatrade_alpaca.errors import AuthenticationError
 
-        token = self._get_auth_token(ctx)
-        try:
-            jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
-        except jwt.ExpiredSignatureError:
-            metrics.auth.token_validation_failure(reason="expired")
-            raise ConnectError(Code.UNAUTHENTICATED, "Token expired")
-        except jwt.InvalidTokenError:
-            metrics.auth.token_validation_failure(reason="invalid_sig")
-            raise ConnectError(Code.UNAUTHENTICATED, "Invalid token")
+        tenant_id, _ = self._authenticated_principal(ctx)
+
+        # Broker probes are expensive: keyed per authenticated tenant.
+        await self._enforce_rate_limit(
+            f"alpaca_validate:{tenant_id or 'unknown'}",
+            rules=((10, 60),),
+        )
 
         if not request.api_key or not request.api_secret:
             return auth_pb2.ValidateAlpacaCredentialsResponse(

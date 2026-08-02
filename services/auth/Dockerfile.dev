@@ -15,10 +15,11 @@ COPY libs/common /app/libs/common
 COPY libs/db /app/libs/db
 COPY libs/telemetry /app/libs/telemetry
 COPY libs/proto /app/libs/proto
+COPY libs/events /app/libs/events
 COPY libs/alpaca /app/libs/alpaca
 
 # Install shared libraries (editable for hot-reload)
-RUN pip install --no-cache-dir -e /app/libs/telemetry -e /app/libs/common -e /app/libs/db -e /app/libs/proto -e /app/libs/alpaca
+RUN pip install --no-cache-dir -e /app/libs/telemetry -e /app/libs/common -e /app/libs/db -e /app/libs/proto -e /app/libs/alpaca -e /app/libs/events
 
 # Copy service dependencies
 COPY services/auth/pyproject.toml services/auth/README.md ./

@@ -21,11 +21,11 @@ import os
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, ConfigDict
 from pydantic.alias_generators import to_camel
-from sqlalchemy import select
+from sqlalchemy import delete, select
 
 from llamatrade_alpaca import AlpacaCredentials as AlpacaAuth
 from llamatrade_alpaca import (
@@ -34,8 +34,8 @@ from llamatrade_alpaca import (
     build_authorize_url,
     exchange_code,
 )
-from llamatrade_common import current_context
-from llamatrade_common.utils import encrypt_value
+from llamatrade_common import RateLimiter, consume_once, current_context
+from llamatrade_common.utils import async_encrypt_value
 from llamatrade_db import get_session_maker, set_rls_bypass
 from llamatrade_db.models.auth import (
     AlpacaCredentials,
@@ -44,8 +44,12 @@ from llamatrade_db.models.auth import (
     User,
 )
 
+from src.client_ip import trusted_client_ip
 from src.oauth_state import mint_state, verify_state
+from src.redis_client import get_redis
 from src.session import (
+    HANDOFF_TTL_SECONDS,
+    PasswordPolicyError,
     create_tenant_and_user,
     mint_access_refresh,
     mint_handoff,
@@ -56,6 +60,29 @@ from src.session import (
 router = APIRouter()
 
 _PROVIDER = "alpaca"
+
+
+def _client_ip(request: Request) -> str | None:
+    """Client IP from a trusted ``x-forwarded-for`` position (see ``trusted_client_ip``)."""
+    return trusted_client_ip(request.headers.get("x-forwarded-for", ""))
+
+
+async def _enforce_oauth_rate_limit(
+    request: Request, name: str, rules: tuple[tuple[int, int], ...]
+) -> None:
+    """Fail-closed brute-force guard for the public OAuth routes, keyed per client IP.
+
+    A no-op without Redis (unit tests, minimal deploys); a Redis outage refuses
+    rather than allows so token/ticket guessing stays throttled.
+    """
+    redis = get_redis()
+    if redis is None:
+        return
+    limiter = RateLimiter(redis, fail_closed=True)
+    key = f"{name}:{_client_ip(request) or 'unknown'}"
+    for limit, window in rules:
+        if not await limiter.check_and_count(key, limit, window):
+            raise HTTPException(status_code=429, detail="Too many attempts; try again later")
 
 
 def _web_app_url() -> str:
@@ -169,16 +196,17 @@ async def _persist_link(
 ) -> None:
     """Store the OAuth trading credential + the login identity for this account."""
     db = get_session_maker()()
-    await set_rls_bypass(db)  # auth is the identity authority (pre-/cross-tenant)
+    # auth is the identity authority (pre-/cross-tenant)
+    await set_rls_bypass(db, reason="auth oauth link: store credential and identity")
     try:
         db.add(
             AlpacaCredentials(
                 tenant_id=tenant_id,
                 name="Alpaca (OAuth)",
                 auth_type="oauth",
-                access_token_encrypted=encrypt_value(token.access_token),
+                access_token_encrypted=await async_encrypt_value(token.access_token),
                 refresh_token_encrypted=(
-                    encrypt_value(token.refresh_token) if token.refresh_token else None
+                    await async_encrypt_value(token.refresh_token) if token.refresh_token else None
                 ),
                 token_expires_at=_token_expiry(token.expires_in),
                 alpaca_account_id=account_id,
@@ -215,7 +243,7 @@ async def _handle_auth_callback(
 ) -> RedirectResponse:
     """Log the user in if the Alpaca account is linked, else stage a signup."""
     db = get_session_maker()()
-    await set_rls_bypass(db)
+    await set_rls_bypass(db, reason="auth oauth callback: resolve identity or stage signup")
     try:
         identity = await db.scalar(
             select(OAuthIdentity).where(
@@ -232,9 +260,9 @@ async def _handle_auth_callback(
         pending = OAuthPendingSignup(
             provider=_PROVIDER,
             provider_account_id=account_id,
-            access_token_encrypted=encrypt_value(token.access_token),
+            access_token_encrypted=await async_encrypt_value(token.access_token),
             refresh_token_encrypted=(
-                encrypt_value(token.refresh_token) if token.refresh_token else None
+                await async_encrypt_value(token.refresh_token) if token.refresh_token else None
             ),
             token_expires_at=_token_expiry(token.expires_in),
             is_paper=True,
@@ -261,15 +289,22 @@ class ExchangeRequest(BaseModel):
 
 
 @router.post("/oauth/alpaca/exchange")
-async def alpaca_oauth_exchange(body: ExchangeRequest) -> dict[str, object]:
+async def alpaca_oauth_exchange(body: ExchangeRequest, request: Request) -> dict[str, object]:
     """Exchange a one-time login handoff for a session (tokens + user)."""
-    user_id = verify_handoff(body.handoff)
-    if user_id is None:
+    await _enforce_oauth_rate_limit(request, "oauth_exchange", ((10, 60), (30, 900)))
+    handoff = verify_handoff(body.handoff)
+    if handoff is None or not handoff.jti:
         raise HTTPException(status_code=400, detail="invalid or expired handoff")
+    # Single-use: a Redis outage fails open (the 120s TTL still bounds replay).
+    redis = get_redis()
+    if redis is not None and not await consume_once(
+        redis, f"llamatrade:auth:oauth:handoff:{handoff.jti}", HANDOFF_TTL_SECONDS
+    ):
+        raise HTTPException(status_code=401, detail="handoff already used")
     db = get_session_maker()()
-    await set_rls_bypass(db)
+    await set_rls_bypass(db, reason="auth oauth exchange: redeem login handoff")
     try:
-        user = await db.scalar(select(User).where(User.id == UUID(user_id)))
+        user = await db.scalar(select(User).where(User.id == UUID(handoff.user_id)))
         if user is None or not user.is_active:
             raise HTTPException(status_code=401, detail="account not available")
         user.last_login = datetime.now(UTC)
@@ -290,19 +325,36 @@ class CompleteSignupRequest(BaseModel):
 
 
 @router.post("/oauth/alpaca/complete-signup")
-async def alpaca_oauth_complete_signup(body: CompleteSignupRequest) -> dict[str, object]:
+async def alpaca_oauth_complete_signup(
+    body: CompleteSignupRequest, request: Request
+) -> dict[str, object]:
     """Finish sign-up-with-Alpaca: create the account and store the connection."""
-    db = get_session_maker()()
-    await set_rls_bypass(db)
+    await _enforce_oauth_rate_limit(request, "oauth_signup", ((5, 60), (20, 3600)))
     try:
-        pending = await db.scalar(
-            select(OAuthPendingSignup).where(OAuthPendingSignup.id == UUID(body.ticket))
+        ticket_id = UUID(body.ticket)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="invalid signup ticket") from None
+
+    db = get_session_maker()()
+    await set_rls_bypass(db, reason="auth oauth signup: create tenant and user from ticket")
+    try:
+        # Single-use, race-safe: atomically claim the ticket row; a concurrent
+        # (or replayed) request finds nothing and gets 410. Rolls back with the
+        # transaction, so a failed signup does not burn the ticket.
+        result = await db.execute(
+            delete(OAuthPendingSignup)
+            .where(OAuthPendingSignup.id == ticket_id)
+            .returning(OAuthPendingSignup)
+            .execution_options(synchronize_session=False)
         )
-        if pending is None or pending.expires_at < datetime.now(UTC):
-            raise HTTPException(status_code=400, detail="invalid or expired signup ticket")
+        pending = result.scalar_one_or_none()
+        if pending is None:
+            raise HTTPException(status_code=410, detail="invalid or already used signup ticket")
+        if pending.expires_at < datetime.now(UTC):
+            raise HTTPException(status_code=410, detail="signup ticket expired")
 
         try:
-            user = await create_tenant_and_user(
+            user, _ = await create_tenant_and_user(
                 db,
                 email=body.email,
                 password=body.password,
@@ -310,6 +362,8 @@ async def alpaca_oauth_complete_signup(body: CompleteSignupRequest) -> dict[str,
                 first_name=body.first_name or None,
                 last_name=body.last_name or None,
             )
+        except PasswordPolicyError as e:
+            raise HTTPException(status_code=400, detail=str(e)) from None
         except ValueError:
             raise HTTPException(status_code=409, detail="Email already registered") from None
 
@@ -334,7 +388,6 @@ async def alpaca_oauth_complete_signup(body: CompleteSignupRequest) -> dict[str,
                 provider_account_id=pending.provider_account_id,
             )
         )
-        await db.delete(pending)
         await db.commit()
         return _session_payload(user)
     finally:

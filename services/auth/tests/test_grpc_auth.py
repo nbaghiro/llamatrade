@@ -7,7 +7,7 @@ import os
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import UUID, uuid4
 
 import bcrypt
@@ -153,6 +153,9 @@ class MockAsyncSession:
         result.scalars.return_value.all.return_value = rows
         return result
 
+    async def scalar(self, query: object) -> object | None:
+        return self._query_result
+
     async def flush(self) -> None:
         pass
 
@@ -180,6 +183,39 @@ class MockAsyncSession:
         pass
 
 
+class FakeRateLimiter:
+    """Records check_and_count calls and returns a fixed decision."""
+
+    def __init__(self, allowed: bool = True) -> None:
+        self.allowed = allowed
+        self.calls: list[tuple[str, int, int]] = []
+
+    async def check_and_count(self, key: str, limit: int, window_seconds: int) -> bool:
+        self.calls.append((key, limit, window_seconds))
+        return self.allowed
+
+
+class FakeRevocationStore:
+    """In-memory revocation store mirroring llamatrade_common.RevocationStore."""
+
+    def __init__(self) -> None:
+        self.revoked_jtis: dict[str, int] = {}
+        self.user_cutoffs: dict[str, int] = {}
+
+    async def revoke_token(self, jti: str, exp: int) -> None:
+        self.revoked_jtis[jti] = exp
+
+    async def revoke_all_for_user(self, user_id: str, now: int) -> None:
+        self.user_cutoffs[user_id] = now
+
+    async def is_revoked(self, claims: dict[str, object]) -> bool:
+        if str(claims.get("jti", "")) in self.revoked_jtis:
+            return True
+        cutoff = self.user_cutoffs.get(str(claims.get("sub")))
+        iat = claims.get("iat")
+        return cutoff is not None and isinstance(iat, int | float) and iat < cutoff
+
+
 # ===================
 # Fixtures
 # ===================
@@ -193,7 +229,7 @@ def mock_db() -> MockAsyncSession:
 
 @pytest.fixture
 def auth_servicer(mock_db: MockAsyncSession) -> AuthServicer:
-    """Create AuthServicer with mocked database."""
+    """Create AuthServicer with mocked database and Redis features off."""
     from src.grpc.servicer import AuthServicer
 
     servicer = AuthServicer()
@@ -202,6 +238,8 @@ def auth_servicer(mock_db: MockAsyncSession) -> AuthServicer:
         return mock_db
 
     servicer._get_db = mock_get_db
+    servicer._rate_limiter = None
+    servicer._revocation = None
     return servicer
 
 
@@ -221,7 +259,11 @@ def auth_context(context: MockRequestContext) -> MockRequestContext:
 
 
 def create_test_token(
-    user_id: str, tenant_id: str, token_type: str = "access", expired: bool = False
+    user_id: str,
+    tenant_id: str,
+    token_type: str = "access",
+    expired: bool = False,
+    jti: str | None = None,
 ) -> str:
     """Create a test JWT token."""
     now = datetime.now(UTC)
@@ -230,7 +272,7 @@ def create_test_token(
     else:
         exp = now + timedelta(hours=1)
 
-    payload = {
+    payload: dict[str, object] = {
         "sub": user_id,
         "tenant_id": tenant_id,
         "email": "test@example.com",
@@ -239,6 +281,8 @@ def create_test_token(
         "iat": now,
         "exp": exp,
     }
+    if jti is not None:
+        payload["jti"] = jti
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
 
 
@@ -324,6 +368,46 @@ class TestRegister:
             await auth_servicer.register(request, context)
 
         assert "INVALID_ARGUMENT" in str(exc_info.value.code)
+
+    async def test_register_matches_oauth_signup_user_shape(
+        self,
+        auth_servicer: AuthServicer,
+        mock_db: MockAsyncSession,
+        context: MockRequestContext,
+    ) -> None:
+        """Register delegates to create_tenant_and_user: both paths produce
+        equivalent user rows."""
+        import bcrypt as bcrypt_mod
+
+        from llamatrade_proto.generated import auth_pb2
+
+        from src.session import create_tenant_and_user
+
+        mock_db._query_result = None
+        request = auth_pb2.RegisterRequest(
+            tenant_name="Acme",
+            email="rpc@example.com",
+            password="SecurePass123",
+            first_name="Ada",
+            last_name="Lovelace",
+        )
+        await auth_servicer.register(request, context)
+        rpc_user = mock_db._users["rpc@example.com"]
+
+        oauth_db = MockAsyncSession()
+        oauth_user, _ = await create_tenant_and_user(
+            oauth_db,
+            email="oauth@example.com",
+            password="SecurePass123",
+            tenant_name="Acme",
+            first_name="Ada",
+            last_name="Lovelace",
+        )
+
+        for field in ("role", "is_active", "first_name", "last_name"):
+            assert getattr(rpc_user, field) == getattr(oauth_user, field)
+        assert bcrypt_mod.checkpw(b"SecurePass123", rpc_user.password_hash.encode())
+        assert bcrypt_mod.checkpw(b"SecurePass123", oauth_user.password_hash.encode())
 
 
 # ===================
@@ -476,10 +560,10 @@ class TestValidateToken:
 
         assert response.valid is False
 
-    async def test_validate_refresh_token(
+    async def test_validate_refresh_token_rejected(
         self, auth_servicer: AuthServicer, context: MockRequestContext
     ) -> None:
-        """Test validation of refresh token."""
+        """A refresh token is not a valid access credential: the type gate rejects it."""
         from llamatrade_proto.generated import auth_pb2
 
         user_id = str(uuid4())
@@ -489,8 +573,7 @@ class TestValidateToken:
         request = auth_pb2.ValidateTokenRequest(token=token)
         response = await auth_servicer.validate_token(request, context)
 
-        assert response.valid is True
-        assert response.token_type == "refresh"
+        assert response.valid is False
 
 
 # ===================
@@ -1171,3 +1254,633 @@ def test_mask_key_returns_only_a_prefix() -> None:
 
     assert _mask_key("PKABCDEFGH123456") == "PKABCDEF…"
     assert _mask_key("") == ""
+
+
+# ===================
+# Rate Limiting Tests
+# ===================
+
+
+class TestRateLimiting:
+    """RESOURCE_EXHAUSTED on limit; key selection per IP else per identifier."""
+
+    async def test_login_blocked_returns_resource_exhausted(
+        self,
+        auth_servicer: AuthServicer,
+        mock_db: MockAsyncSession,
+        context: MockRequestContext,
+    ) -> None:
+        from connectrpc.code import Code
+
+        from llamatrade_proto.generated import auth_pb2
+
+        auth_servicer._rate_limiter = FakeRateLimiter(allowed=False)
+        mock_db._query_result = MockUser()
+
+        request = auth_pb2.LoginRequest(email="test@example.com", password="Test123!")
+
+        with pytest.raises(ConnectError) as exc_info:
+            await auth_servicer.login(request, context)
+
+        assert exc_info.value.code == Code.RESOURCE_EXHAUSTED
+
+    async def test_login_email_bucket_applies_without_forwarded_ip(
+        self,
+        auth_servicer: AuthServicer,
+        mock_db: MockAsyncSession,
+        context: MockRequestContext,
+    ) -> None:
+        """With no trusted client IP, only the (case-folded) email bucket is enforced."""
+        from llamatrade_proto.generated import auth_pb2
+
+        limiter = FakeRateLimiter(allowed=True)
+        auth_servicer._rate_limiter = limiter
+        user = MockUser(email="test@example.com", password="Test123!")
+        mock_db._query_result = user
+
+        request = auth_pb2.LoginRequest(email="Test@Example.com", password="Test123!")
+        await auth_servicer.login(request, context)
+
+        assert [c[0] for c in limiter.calls] == [
+            "login:email:test@example.com",
+            "login:email:test@example.com",
+        ]
+        assert [(c[1], c[2]) for c in limiter.calls] == [(10, 60), (30, 900)]
+
+    async def test_login_enforces_email_and_ip_buckets(
+        self,
+        auth_servicer: AuthServicer,
+        mock_db: MockAsyncSession,
+    ) -> None:
+        """Both the email bucket and the trusted-IP bucket are enforced."""
+        from llamatrade_proto.generated import auth_pb2
+
+        limiter = FakeRateLimiter(allowed=True)
+        auth_servicer._rate_limiter = limiter
+        user = MockUser(email="test@example.com", password="Test123!")
+        mock_db._query_result = user
+
+        # GCP topology: <real-client>, <lb>; the trusted client IP is 1.2.3.4.
+        context = MockRequestContext(headers={"x-forwarded-for": "1.2.3.4, 10.0.0.1"})
+        request = auth_pb2.LoginRequest(email="test@example.com", password="Test123!")
+        await auth_servicer.login(request, context)
+
+        keys = [c[0] for c in limiter.calls]
+        assert keys.count("login:email:test@example.com") == 2
+        assert keys.count("login:ip:1.2.3.4") == 2
+
+    async def test_login_ip_bucket_ignores_spoofed_leftmost_xff(
+        self,
+        auth_servicer: AuthServicer,
+        mock_db: MockAsyncSession,
+    ) -> None:
+        """A client-supplied leftmost XFF hop cannot rotate the limiter key; the
+        IP bucket reads the trusted (LB-appended) position instead."""
+        from llamatrade_proto.generated import auth_pb2
+
+        limiter = FakeRateLimiter(allowed=True)
+        auth_servicer._rate_limiter = limiter
+        user = MockUser(email="test@example.com", password="Test123!")
+        mock_db._query_result = user
+
+        # Attacker stuffs 9.9.9.9; LB appends the real client 1.2.3.4 then its own IP.
+        context = MockRequestContext(headers={"x-forwarded-for": "9.9.9.9, 1.2.3.4, 10.0.0.1"})
+        request = auth_pb2.LoginRequest(email="test@example.com", password="Test123!")
+        await auth_servicer.login(request, context)
+
+        ip_keys = [c[0] for c in limiter.calls if c[0].startswith("login:ip:")]
+        assert ip_keys and all(k == "login:ip:1.2.3.4" for k in ip_keys)
+        assert not any("9.9.9.9" in c[0] for c in limiter.calls)
+
+    async def test_login_email_bucket_limits_regardless_of_ip(
+        self,
+        auth_servicer: AuthServicer,
+        mock_db: MockAsyncSession,
+    ) -> None:
+        """The email bucket blocks even when the (rotated) IP bucket would allow, so
+        a spoofed/rotated source IP cannot escape the per-target-email limit."""
+        from connectrpc.code import Code
+
+        from llamatrade_proto.generated import auth_pb2
+
+        class EmailBlockingLimiter(FakeRateLimiter):
+            async def check_and_count(self, key: str, limit: int, window_seconds: int) -> bool:
+                await super().check_and_count(key, limit, window_seconds)
+                return not key.startswith("login:email:")
+
+        auth_servicer._rate_limiter = EmailBlockingLimiter()
+        mock_db._query_result = MockUser()
+
+        context = MockRequestContext(headers={"x-forwarded-for": "5.5.5.5, 10.0.0.1"})
+        request = auth_pb2.LoginRequest(email="victim@example.com", password="Test123!")
+
+        with pytest.raises(ConnectError) as exc_info:
+            await auth_servicer.login(request, context)
+
+        assert exc_info.value.code == Code.RESOURCE_EXHAUSTED
+
+    async def test_login_escalating_window_blocks_after_burst(
+        self,
+        auth_servicer: AuthServicer,
+        mock_db: MockAsyncSession,
+        context: MockRequestContext,
+    ) -> None:
+        from connectrpc.code import Code
+
+        from llamatrade_proto.generated import auth_pb2
+
+        class BurstLimiter(FakeRateLimiter):
+            async def check_and_count(self, key: str, limit: int, window_seconds: int) -> bool:
+                await super().check_and_count(key, limit, window_seconds)
+                return window_seconds != 900  # only the wide lockout window trips
+
+        auth_servicer._rate_limiter = BurstLimiter()
+        mock_db._query_result = MockUser()
+        request = auth_pb2.LoginRequest(email="test@example.com", password="Test123!")
+
+        with pytest.raises(ConnectError) as exc_info:
+            await auth_servicer.login(request, context)
+
+        assert exc_info.value.code == Code.RESOURCE_EXHAUSTED
+
+    async def test_register_blocked_returns_resource_exhausted(
+        self,
+        auth_servicer: AuthServicer,
+        context: MockRequestContext,
+    ) -> None:
+        from connectrpc.code import Code
+
+        from llamatrade_proto.generated import auth_pb2
+
+        auth_servicer._rate_limiter = FakeRateLimiter(allowed=False)
+        request = auth_pb2.RegisterRequest(
+            tenant_name="T", email="new@example.com", password="SecurePass123"
+        )
+
+        with pytest.raises(ConnectError) as exc_info:
+            await auth_servicer.register(request, context)
+
+        assert exc_info.value.code == Code.RESOURCE_EXHAUSTED
+
+    async def test_validate_alpaca_credentials_blocked(
+        self,
+        auth_servicer: AuthServicer,
+        auth_context: MockRequestContext,
+    ) -> None:
+        from connectrpc.code import Code
+
+        from llamatrade_proto.generated import auth_pb2
+
+        limiter = FakeRateLimiter(allowed=False)
+        auth_servicer._rate_limiter = limiter
+        request = auth_pb2.ValidateAlpacaCredentialsRequest(
+            api_key="PK", api_secret="sk", is_paper=True
+        )
+
+        with pytest.raises(ConnectError) as exc_info:
+            await auth_servicer.validate_alpaca_credentials(request, auth_context)
+
+        assert exc_info.value.code == Code.RESOURCE_EXHAUSTED
+        assert limiter.calls[0][0].startswith("alpaca_validate:")
+
+    async def test_no_limiter_configured_allows_login(
+        self,
+        auth_servicer: AuthServicer,
+        mock_db: MockAsyncSession,
+        context: MockRequestContext,
+    ) -> None:
+        from llamatrade_proto.generated import auth_pb2
+
+        assert auth_servicer._rate_limiter is None
+        user = MockUser(email="test@example.com", password="Test123!")
+        mock_db._query_result = user
+
+        request = auth_pb2.LoginRequest(email="test@example.com", password="Test123!")
+        response = await auth_servicer.login(request, context)
+        assert response.access_token
+
+
+# ===================
+# Login Timing Oracle Tests
+# ===================
+
+
+class TestLoginTimingOracle:
+    """A user-lookup miss burns a bcrypt check so timing matches wrong-password."""
+
+    async def test_dummy_hash_checked_on_user_miss(
+        self,
+        auth_servicer: AuthServicer,
+        mock_db: MockAsyncSession,
+        context: MockRequestContext,
+    ) -> None:
+        from llamatrade_proto.generated import auth_pb2
+
+        mock_db._query_result = None
+        request = auth_pb2.LoginRequest(email="ghost@example.com", password="Whatever1")
+
+        with patch("src.grpc.servicer.bcrypt.checkpw", return_value=False) as checkpw:
+            with pytest.raises(ConnectError) as exc_info:
+                await auth_servicer.login(request, context)
+
+        assert checkpw.call_count == 1
+        from src.grpc.servicer import _DUMMY_PASSWORD_HASH
+
+        assert checkpw.call_args.args == (b"Whatever1", _DUMMY_PASSWORD_HASH)
+        assert "UNAUTHENTICATED" in str(exc_info.value.code)
+
+    async def test_wrong_password_checks_real_hash_once(
+        self,
+        auth_servicer: AuthServicer,
+        mock_db: MockAsyncSession,
+        context: MockRequestContext,
+    ) -> None:
+        from llamatrade_proto.generated import auth_pb2
+
+        user = MockUser(email="test@example.com", password="CorrectPass123!")
+        mock_db._query_result = user
+        request = auth_pb2.LoginRequest(email="test@example.com", password="WrongPass1")
+
+        with patch("src.grpc.servicer.bcrypt.checkpw", return_value=False) as checkpw:
+            with pytest.raises(ConnectError):
+                await auth_servicer.login(request, context)
+
+        assert checkpw.call_count == 1
+
+
+# ===================
+# Token Revocation Tests
+# ===================
+
+
+class TestRefreshRotation:
+    """Refresh tokens are single-use: the presented jti is revoked on rotation."""
+
+    async def test_refresh_revokes_used_jti(
+        self,
+        auth_servicer: AuthServicer,
+        mock_db: MockAsyncSession,
+        context: MockRequestContext,
+    ) -> None:
+        from llamatrade_proto.generated import auth_pb2
+
+        store = FakeRevocationStore()
+        auth_servicer._revocation = store
+        user = MockUser()
+        mock_db._query_result = user
+        token = create_test_token(
+            str(user.id), str(user.tenant_id), token_type="refresh", jti="refresh-jti-1"
+        )
+
+        response = await auth_servicer.refresh_token(
+            auth_pb2.RefreshTokenRequest(refresh_token=token), context
+        )
+
+        assert response.access_token
+        assert "refresh-jti-1" in store.revoked_jtis
+        new_refresh = jwt.decode(response.refresh_token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        assert new_refresh["jti"] and new_refresh["jti"] != "refresh-jti-1"
+
+    async def test_double_refresh_rejected(
+        self,
+        auth_servicer: AuthServicer,
+        mock_db: MockAsyncSession,
+        context: MockRequestContext,
+    ) -> None:
+        from llamatrade_proto.generated import auth_pb2
+
+        store = FakeRevocationStore()
+        auth_servicer._revocation = store
+        user = MockUser()
+        mock_db._query_result = user
+        token = create_test_token(
+            str(user.id), str(user.tenant_id), token_type="refresh", jti="refresh-jti-2"
+        )
+        request = auth_pb2.RefreshTokenRequest(refresh_token=token)
+
+        await auth_servicer.refresh_token(request, context)
+
+        with pytest.raises(ConnectError) as exc_info:
+            await auth_servicer.refresh_token(request, context)
+
+        assert "UNAUTHENTICATED" in str(exc_info.value.code)
+
+    async def test_refresh_rejected_after_revoke_all(
+        self,
+        auth_servicer: AuthServicer,
+        mock_db: MockAsyncSession,
+        context: MockRequestContext,
+    ) -> None:
+        from llamatrade_proto.generated import auth_pb2
+
+        store = FakeRevocationStore()
+        auth_servicer._revocation = store
+        user = MockUser()
+        mock_db._query_result = user
+        token = create_test_token(
+            str(user.id), str(user.tenant_id), token_type="refresh", jti="refresh-jti-3"
+        )
+        await store.revoke_all_for_user(str(user.id), int(datetime.now(UTC).timestamp()) + 60)
+
+        with pytest.raises(ConnectError) as exc_info:
+            await auth_servicer.refresh_token(
+                auth_pb2.RefreshTokenRequest(refresh_token=token), context
+            )
+
+        assert "UNAUTHENTICATED" in str(exc_info.value.code)
+
+
+class TestLogoutRevocation:
+    """Logout denylists the presented access jti (and the refresh, if supplied)."""
+
+    async def test_logout_revokes_access_jti(self, auth_servicer: AuthServicer) -> None:
+        from llamatrade_proto.generated import auth_pb2
+
+        store = FakeRevocationStore()
+        auth_servicer._revocation = store
+        user = MockUser()
+        token = create_test_token(str(user.id), str(user.tenant_id), jti="access-jti-1")
+        context = MockRequestContext(headers={"authorization": f"Bearer {token}"})
+
+        response = await auth_servicer.logout(auth_pb2.LogoutRequest(), context)
+
+        assert response.success is True
+        assert "access-jti-1" in store.revoked_jtis
+
+    async def test_logout_revokes_supplied_refresh_jti(self, auth_servicer: AuthServicer) -> None:
+        from llamatrade_proto.generated import auth_pb2
+
+        store = FakeRevocationStore()
+        auth_servicer._revocation = store
+        user = MockUser()
+        access = create_test_token(str(user.id), str(user.tenant_id), jti="access-jti-2")
+        refresh = create_test_token(
+            str(user.id), str(user.tenant_id), token_type="refresh", jti="refresh-jti-4"
+        )
+        context = MockRequestContext(
+            headers={"authorization": f"Bearer {access}", "x-refresh-token": refresh}
+        )
+
+        await auth_servicer.logout(auth_pb2.LogoutRequest(), context)
+
+        assert "access-jti-2" in store.revoked_jtis
+        assert "refresh-jti-4" in store.revoked_jtis
+
+    async def test_logout_ignores_invalid_refresh_header(self, auth_servicer: AuthServicer) -> None:
+        from llamatrade_proto.generated import auth_pb2
+
+        store = FakeRevocationStore()
+        auth_servicer._revocation = store
+        user = MockUser()
+        access = create_test_token(str(user.id), str(user.tenant_id), jti="access-jti-3")
+        context = MockRequestContext(
+            headers={"authorization": f"Bearer {access}", "x-refresh-token": "garbage"}
+        )
+
+        response = await auth_servicer.logout(auth_pb2.LogoutRequest(), context)
+
+        assert response.success is True
+        assert set(store.revoked_jtis) == {"access-jti-3"}
+
+    async def test_logout_expired_token_still_succeeds(self, auth_servicer: AuthServicer) -> None:
+        from llamatrade_proto.generated import auth_pb2
+
+        store = FakeRevocationStore()
+        auth_servicer._revocation = store
+        user = MockUser()
+        token = create_test_token(str(user.id), str(user.tenant_id), expired=True, jti="j")
+        context = MockRequestContext(headers={"authorization": f"Bearer {token}"})
+
+        response = await auth_servicer.logout(auth_pb2.LogoutRequest(), context)
+
+        assert response.success is True
+        assert store.revoked_jtis == {}
+
+
+class TestChangePasswordRevocation:
+    """A password change revokes every session issued before it."""
+
+    async def test_change_password_revokes_all_user_tokens(
+        self, auth_servicer: AuthServicer, mock_db: MockAsyncSession
+    ) -> None:
+        from llamatrade_proto.generated import auth_pb2
+
+        store = FakeRevocationStore()
+        auth_servicer._revocation = store
+        user = MockUser(password="OldPass123!")
+        token = create_test_token(str(user.id), str(user.tenant_id))
+        context = MockRequestContext(headers={"authorization": f"Bearer {token}"})
+        mock_db._query_result = user
+
+        response = await auth_servicer.change_password(
+            auth_pb2.ChangePasswordRequest(
+                current_password="OldPass123!", new_password="NewPass456!"
+            ),
+            context,
+        )
+
+        assert response.success is True
+        assert str(user.id) in store.user_cutoffs
+
+    async def test_failed_change_does_not_revoke(
+        self, auth_servicer: AuthServicer, mock_db: MockAsyncSession
+    ) -> None:
+        from llamatrade_proto.generated import auth_pb2
+
+        store = FakeRevocationStore()
+        auth_servicer._revocation = store
+        user = MockUser(password="CorrectPass123!")
+        token = create_test_token(str(user.id), str(user.tenant_id))
+        context = MockRequestContext(headers={"authorization": f"Bearer {token}"})
+        mock_db._query_result = user
+
+        with pytest.raises(ConnectError):
+            await auth_servicer.change_password(
+                auth_pb2.ChangePasswordRequest(
+                    current_password="WrongPass123!", new_password="NewPass456!"
+                ),
+                context,
+            )
+
+        assert store.user_cutoffs == {}
+
+
+# ===================
+# Asymmetric verification
+# ===================
+
+
+def _rsa_pair() -> tuple[str, str]:
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.asymmetric import rsa
+
+    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    private_pem = key.private_bytes(
+        serialization.Encoding.PEM,
+        serialization.PrivateFormat.PKCS8,
+        serialization.NoEncryption(),
+    ).decode()
+    public_pem = (
+        key.public_key()
+        .public_bytes(serialization.Encoding.PEM, serialization.PublicFormat.SubjectPublicKeyInfo)
+        .decode()
+    )
+    return private_pem, public_pem
+
+
+class TestAsymmetricVerification:
+    """Servicer token verification is pinned to the configured key material."""
+
+    @pytest.fixture
+    def rs256_keys(self, monkeypatch: pytest.MonkeyPatch) -> tuple[str, str]:
+        import src.grpc.servicer as servicer_module
+
+        private_pem, public_pem = _rsa_pair()
+        monkeypatch.setattr(servicer_module, "VERIFY_KEY", public_pem)
+        monkeypatch.setattr(servicer_module, "VERIFY_ALGORITHM", "RS256")
+        return private_pem, public_pem
+
+    async def test_validate_token_accepts_rs256_when_pinned(
+        self, auth_servicer: AuthServicer, rs256_keys: tuple[str, str]
+    ) -> None:
+        from llamatrade_proto.generated import auth_pb2
+
+        private_pem, _ = rs256_keys
+        now = datetime.now(UTC)
+        token = jwt.encode(
+            {
+                "sub": str(uuid4()),
+                "tenant_id": str(uuid4()),
+                "type": "access",
+                "roles": ["admin"],
+                "iat": now,
+                "exp": now + timedelta(hours=1),
+            },
+            private_pem,
+            algorithm="RS256",
+        )
+
+        response = await auth_servicer.validate_token(
+            auth_pb2.ValidateTokenRequest(token=token), MockRequestContext()
+        )
+        assert response.valid is True
+
+    async def test_validate_token_rejects_hs256_when_rs256_pinned(
+        self, auth_servicer: AuthServicer, rs256_keys: tuple[str, str]
+    ) -> None:
+        from llamatrade_proto.generated import auth_pb2
+
+        token = create_test_token(str(uuid4()), str(uuid4()))
+        response = await auth_servicer.validate_token(
+            auth_pb2.ValidateTokenRequest(token=token), MockRequestContext()
+        )
+        assert response.valid is False
+
+    async def test_validate_token_rejects_service_token(self, auth_servicer: AuthServicer) -> None:
+        """A service token (aud=llamatrade-internal) can never pass as a user token."""
+        from llamatrade_common import mint_service_token
+        from llamatrade_proto.generated import auth_pb2
+
+        token = mint_service_token(secret=JWT_SECRET)
+        response = await auth_servicer.validate_token(
+            auth_pb2.ValidateTokenRequest(token=token), MockRequestContext()
+        )
+        assert response.valid is False
+
+    async def test_change_password_rejects_service_token(self, auth_servicer: AuthServicer) -> None:
+        from llamatrade_common import mint_service_token
+        from llamatrade_proto.generated import auth_pb2
+
+        token = mint_service_token(secret=JWT_SECRET)
+        context = MockRequestContext(headers={"authorization": f"Bearer {token}"})
+        with pytest.raises(ConnectError):
+            await auth_servicer.change_password(
+                auth_pb2.ChangePasswordRequest(
+                    current_password="OldPass123!", new_password="NewPass456!"
+                ),
+                context,
+            )
+
+
+# ===================
+# DeleteAlpacaCredentials Tests
+# ===================
+
+
+class TestDeleteAlpacaCredentials:
+    """Tests for the delete_alpaca_credentials RPC (dependency guard)."""
+
+    @staticmethod
+    def _request(credentials_id: UUID) -> object:
+        from llamatrade_proto.generated import auth_pb2
+
+        return auth_pb2.DeleteAlpacaCredentialsRequest(credentials_id=str(credentials_id))
+
+    async def test_delete_success(
+        self, auth_servicer: AuthServicer, auth_context: MockRequestContext
+    ) -> None:
+        with patch(
+            "src.services.tenant_service.TenantService.delete_alpaca_credentials",
+            new=AsyncMock(return_value=True),
+        ):
+            response = await auth_servicer.delete_alpaca_credentials(
+                self._request(uuid4()), auth_context
+            )
+
+        assert response.success is True
+
+    async def test_delete_missing_credentials_is_not_found(
+        self, auth_servicer: AuthServicer, auth_context: MockRequestContext
+    ) -> None:
+        from connectrpc.code import Code
+
+        with patch(
+            "src.services.tenant_service.TenantService.delete_alpaca_credentials",
+            new=AsyncMock(return_value=False),
+        ):
+            with pytest.raises(ConnectError) as exc_info:
+                await auth_servicer.delete_alpaca_credentials(self._request(uuid4()), auth_context)
+
+        assert exc_info.value.code == Code.NOT_FOUND
+
+    async def test_delete_with_dependents_is_failed_precondition(
+        self, auth_servicer: AuthServicer, auth_context: MockRequestContext
+    ) -> None:
+        """Dependents map to FAILED_PRECONDITION with every blocking id in the message."""
+        from connectrpc.code import Code
+
+        from llamatrade_db.credential_dependents import CredentialDependents
+
+        from src.services.tenant_service import CredentialsInUseError
+
+        session_id, sleeve_id, execution_id = uuid4(), uuid4(), uuid4()
+        error = CredentialsInUseError(
+            CredentialDependents(
+                session_ids=(session_id,),
+                sleeve_ids=(sleeve_id,),
+                strategy_execution_ids=(execution_id,),
+            )
+        )
+
+        with patch(
+            "src.services.tenant_service.TenantService.delete_alpaca_credentials",
+            new=AsyncMock(side_effect=error),
+        ):
+            with pytest.raises(ConnectError) as exc_info:
+                await auth_servicer.delete_alpaca_credentials(self._request(uuid4()), auth_context)
+
+        assert exc_info.value.code == Code.FAILED_PRECONDITION
+        message = str(exc_info.value)
+        assert str(session_id) in message
+        assert str(sleeve_id) in message
+        assert str(execution_id) in message
+
+    async def test_delete_requires_a_token(self, auth_servicer: AuthServicer) -> None:
+        from connectrpc.code import Code
+
+        with pytest.raises(ConnectError) as exc_info:
+            await auth_servicer.delete_alpaca_credentials(
+                self._request(uuid4()), MockRequestContext()
+            )
+
+        assert exc_info.value.code == Code.UNAUTHENTICATED
