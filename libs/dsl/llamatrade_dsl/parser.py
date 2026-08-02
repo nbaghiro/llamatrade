@@ -98,6 +98,11 @@ class Tokenizer:
                 self.tokens.append((kind, value, start, line, column))
 
 
+# Paren nesting bounds parser recursion, so capping it here keeps a hostile
+# deeply-nested payload from raising RecursionError out of the recursive descent.
+_MAX_NESTING = 150
+
+
 class Parser:
     """Recursive descent parser for allocation-based strategy DSL."""
 
@@ -106,6 +111,17 @@ class Parser:
         self.tokenizer = Tokenizer(source)
         self.tokens = list(self.tokenizer.tokens)
         self.pos = 0
+        self._check_nesting()
+
+    def _check_nesting(self) -> None:
+        depth = 0
+        for kind, _value, start, line, col in self.tokens:
+            if kind == "LPAREN":
+                depth += 1
+                if depth > _MAX_NESTING:
+                    raise ParseError(f"Nesting exceeds {_MAX_NESTING} levels", start, line, col)
+            elif kind == "RPAREN":
+                depth = max(0, depth - 1)
 
     def _start_location(self) -> tuple[int, int, int]:
         """Capture start position for location tracking.
@@ -489,7 +505,6 @@ class Parser:
         if tok is None:
             raise ParseError("Expected condition operator")
 
-        # Get operator
         if tok[0] == "OPERATOR":
             op = tok[1]
             self.pos += 1

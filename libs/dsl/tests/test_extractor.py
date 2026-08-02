@@ -204,6 +204,32 @@ class TestExtractIndicators:
         params_set = {i.params for i in indicators}
         assert params_set == {(50,), (200,)}
 
+    def test_extract_partial_param_indicators_do_not_crash(self) -> None:
+        """A reference that omits later params (accepted by the parser) must extract.
+
+        ``(macd SPY 12)`` and ``(stoch SPY 14 3)`` used to raise IndexError out of the
+        warm-up derivation. The remaining periods are padded from the defaults, so the
+        derived ``required_bars`` covers the full warm-up.
+        """
+        sexpr = """
+        (strategy "Partial"
+            :benchmark SPY
+            :rebalance daily
+            (if (and
+                    (> (macd SPY 12) 0)
+                    (> (stoch SPY 14 3) 20))
+                (asset SPY :weight 100)
+                (else (asset TLT :weight 100))))
+        """
+        strategy = parse(sexpr)
+        indicators = extract_indicators(strategy)
+
+        by_type = {i.indicator_type: i for i in indicators}
+        # MACD signal seeds at slow+signal-2 = 26+9-2 = 33 -> needs 34 bars.
+        assert by_type["macd"].required_bars == 34
+        # Stoch %D seeds at k+smooth+d-3 = 14+3+3-3 = 17 -> needs 18 bars.
+        assert by_type["stoch"].required_bars == 18
+
     def test_extract_from_simple_strategy_no_indicators(self) -> None:
         """Test extracting from strategy with no indicators."""
         sexpr = """

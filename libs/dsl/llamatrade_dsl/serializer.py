@@ -87,15 +87,22 @@ def _serialize_block(block: Block, pretty: bool, indent: int) -> str:
             raise TypeError(f"Cannot serialize: {type(block)}")
 
 
+def _format_weight(weight: float) -> str:
+    """Format a weight without a trailing decimal for whole numbers."""
+    return str(int(weight)) if weight == int(weight) else str(weight)
+
+
 def _serialize_group(group: Group, pretty: bool, indent: int) -> str:
     """Serialize a Group block."""
+    weight_attr = "" if group.weight is None else f" :weight {_format_weight(group.weight)}"
+
     if not pretty:
         children = " ".join(_serialize_block(c, False, 0) for c in group.children)
-        return f'(group "{_escape_string(group.name)}" {children})'
+        return f'(group "{_escape_string(group.name)}"{weight_attr} {children})'
 
     ind = " " * indent
 
-    lines = [f'{ind}(group "{_escape_string(group.name)}"']
+    lines = [f'{ind}(group "{_escape_string(group.name)}"{weight_attr}']
     for child in group.children:
         lines.append(_serialize_block(child, True, indent + 2))
     lines.append(f"{ind})")
@@ -130,12 +137,7 @@ def _serialize_asset(asset: Asset, pretty: bool, indent: int) -> str:
     ind = " " * indent if pretty else ""
 
     if asset.weight is not None:
-        # Format weight nicely (no decimal if whole number)
-        if asset.weight == int(asset.weight):
-            weight_str = str(int(asset.weight))
-        else:
-            weight_str = str(asset.weight)
-        return f"{ind}(asset {asset.symbol} :weight {weight_str})"
+        return f"{ind}(asset {asset.symbol} :weight {_format_weight(asset.weight)})"
 
     return f"{ind}(asset {asset.symbol})"
 

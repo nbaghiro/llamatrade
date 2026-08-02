@@ -35,6 +35,38 @@ if TYPE_CHECKING:
     pass  # ValidationError is defined later
 
 
+def _common_branch_weight(block: Block) -> float | None:
+    """The :weight a block contributes under method: specified.
+
+    An if contributes only when every branch resolves to the same declared
+    weight, since the taken branch is unknowable statically.
+    """
+    if isinstance(block, (Asset, Group)):
+        return block.weight
+    if isinstance(block, If):
+        if block.else_block is None:
+            return None
+        then_weight = _common_branch_weight(block.then_block)
+        else_weight = _common_branch_weight(block.else_block)
+        if then_weight is None or else_weight is None:
+            return None
+        return then_weight if abs(then_weight - else_weight) <= 0.01 else None
+    return None
+
+
+def _declared_sibling_weight(block: Block) -> float | None:
+    """The weight a sibling declares for itself, treated as a share by _evaluate_children.
+
+    An if contributes only when its branches resolve to the same declared weight (the taken
+    branch is unknowable statically), matching :func:`_common_branch_weight`.
+    """
+    if isinstance(block, (Asset, Group)):
+        return block.weight
+    if isinstance(block, If):
+        return _common_branch_weight(block)
+    return None
+
+
 def _empty_str_list() -> list[str]:
     """Factory for empty string list."""
     return []
@@ -114,24 +146,20 @@ class ValidationError:
     def __str__(self) -> str:
         parts: list[str] = []
 
-        # Add location if available
         if self.line is not None:
             if self.column is not None:
                 parts.append(f"line {self.line}, column {self.column}")
             else:
                 parts.append(f"line {self.line}")
 
-        # Add path if available
         if self.path:
             parts.append(self.path)
 
-        # Build message
         if parts:
             result = f"{': '.join(parts)}: {self.message}"
         else:
             result = self.message
 
-        # Add suggestions
         if self.suggestions:
             result += f" (did you mean: {', '.join(self.suggestions[:3])}?)"
 
@@ -183,6 +211,9 @@ class Validator:
         for i, child in enumerate(strategy.children):
             self._validate_block(child, f"{path}.children[{i}]")
 
+        # Root-level declared weights act as shares; enforce they sum to 100.
+        self._check_declared_weight_sum(strategy.children, path)
+
     def _validate_block(self, block: Block, path: str) -> None:
         """Validate any block type."""
         match block:
@@ -215,6 +246,26 @@ class Validator:
 
         for i, child in enumerate(group.children):
             self._validate_block(child, f"{path}.children[{i}]")
+
+        # A group's declared child weights act as shares; enforce they sum to 100.
+        self._check_declared_weight_sum(group.children, path)
+
+    def _check_declared_weight_sum(self, children: list[Block], path: str) -> None:
+        """When every sibling declares a weight, the weights act as shares and must sum to 100.
+
+        Applied at the strategy root, inside a group, and inside method: specified — anywhere
+        ``_scaled_merge`` would otherwise renormalize a non-100 total and silently rescale it
+        (so ``SPY 60 / BND 30`` no longer evaluates to 66.7/33.3, and a ``60 / 60`` typo is
+        rejected rather than collapsed to 50/50).
+        """
+        if not children:
+            return
+        weights = [_declared_sibling_weight(c) for c in children]
+        if any(w is None for w in weights):
+            return
+        total = sum(w for w in weights if w is not None)
+        if abs(total - 100.0) > 0.01:
+            self._error(f"Weights must sum to 100%, got {total}%", f"{path}.children")
 
     def _validate_weight(self, weight: Weight, path: str) -> None:
         """Validate a weight block."""
@@ -261,6 +312,16 @@ class Validator:
 
         # Validate top N selection
         if weight.top is not None:
+            # The runtime applies :top only in momentum weighting; accepting it
+            # elsewhere would silently allocate to every child.
+            if weight.method != "momentum":
+                self._error(
+                    f"Only :method momentum honors :top; remove :top or use "
+                    f"method: momentum instead of {weight.method}",
+                    f"{path}.top",
+                    line=line,
+                    column=col,
+                )
             if weight.top <= 0:
                 self._error("Top selection must be a positive integer", f"{path}.top")
             if weight.top > len(weight.children):
@@ -270,9 +331,8 @@ class Validator:
                     f"{path}.top",
                 )
 
-        # For specified method, validate weights sum to ~100
+        # For specified method, every child must declare a weight and they must sum to 100.
         if weight.method == "specified":
-            total_weight = 0.0
             for i, child in enumerate(weight.children):
                 if isinstance(child, Asset):
                     if child.weight is None:
@@ -280,23 +340,23 @@ class Validator:
                             "Asset must have :weight when parent uses method: specified",
                             f"{path}.children[{i}]",
                         )
-                    else:
-                        total_weight += child.weight
                 elif isinstance(child, Group):
                     if child.weight is None:
                         self._error(
                             "Group must have :weight when parent uses method: specified",
                             f"{path}.children[{i}]",
                         )
-                    else:
-                        total_weight += child.weight
+                elif isinstance(child, If):
+                    if _common_branch_weight(child) is None:
+                        self._error(
+                            "Every branch of an if under method: specified must declare "
+                            "the same :weight",
+                            f"{path}.children[{i}]",
+                        )
 
-            # Allow some tolerance for rounding
-            if weight.children and abs(total_weight - 100.0) > 0.01:
-                self._error(
-                    f"Weights must sum to 100%, got {total_weight}%",
-                    f"{path}.children",
-                )
+            # When every child declares a weight, they must sum to 100 (shared with the
+            # root/group check); a missing weight is already reported per-child above.
+            self._check_declared_weight_sum(weight.children, path)
 
         # For non-specified methods, assets and groups should NOT have weights
         else:
@@ -340,9 +400,19 @@ class Validator:
         # Validate then block
         self._validate_block(if_block.then_block, f"{path}.then")
 
-        # Validate else block if present
+        # An else is mandatory: an else-less if evaluates to nothing on a false condition,
+        # which drops its share and silently scales the remaining siblings to 100% (a 60%
+        # sleeve with a conditional hedge becomes 100% the moment the hedge switches off).
+        # Require an explicit else so the false case allocates (e.g. a cash-proxy holding).
         if if_block.else_block is not None:
             self._validate_block(if_block.else_block, f"{path}.else")
+        else:
+            self._error(
+                "An if must have an else branch; without one the branch can evaluate to "
+                "nothing and the remaining allocation silently scales to 100%. Add an else "
+                "(e.g. a cash-proxy holding) for the false case.",
+                f"{path}.else",
+            )
 
     def _validate_filter(self, filter_block: Filter, path: str) -> None:
         """Validate a filter block."""
@@ -431,6 +501,15 @@ class Validator:
                 f"Invalid crossover direction: {cross.direction}. Must be 'above' or 'below'",
                 f"{path}.direction",
             )
+
+        # Metrics have no previous value at runtime, so a metric crossover can never fire.
+        for side, operand in (("fast", cross.fast), ("slow", cross.slow)):
+            if isinstance(operand, Metric):
+                self._error(
+                    f"Crossover cannot use metric '{operand.name}': crossovers need a "
+                    "previous value and metrics have none; use a comparison instead",
+                    f"{path}.{side}",
+                )
 
         self._validate_value(cross.fast, f"{path}.fast")
         self._validate_value(cross.slow, f"{path}.slow")

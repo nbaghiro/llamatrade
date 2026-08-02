@@ -25,6 +25,7 @@ from llamatrade_dsl.ast import (
     Filter,
     Group,
     If,
+    Indicator,
     Metric,
     Strategy,
     Value,
@@ -41,6 +42,13 @@ _FILTER_LOOKBACK = 90
 _WINDOW_BUFFER = 10
 
 _VOL_METHODS = {"inverse-volatility", "risk-parity", "min-variance"}
+
+# Cumulative indicators (obv, vwap) have no lookback but read the entire retained series,
+# so their value shifts as unrelated bars roll off a bounded window. Treat a reference to
+# one as an unbounded read so it gets the full window, like a period-less metric.
+# Accepted tradeoff: this forces the full ~2000-bar retention and O(N*window) recompute even
+# for an otherwise-short strategy (an incremental cumulative update would remove it).
+_CUMULATIVE_INDICATORS = frozenset({"obv", "vwap"})
 
 # Hard cap on retained history when a strategy reads unbounded history (a period-less
 # metric). ~8 years of daily bars. Without it, history grows forever and the per-bar
@@ -101,14 +109,17 @@ def _walk_children(children: Sequence[Block], acc: list[int]) -> bool:
 def _walk_block(block: Block, acc: list[int]) -> bool:
     """Collect lookbacks into ``acc``; return True if an unbounded read is found."""
     if isinstance(block, Weight):
+        # Momentum ranks by trailing_return, which reads bars[-(lookback+1)]; +1 so the
+        # warm-up and window cover the base bar (kept consistent with the return metric).
         if block.method == "momentum":
-            acc.append(block.lookback or _MOMENTUM_LOOKBACK)
+            acc.append((block.lookback or _MOMENTUM_LOOKBACK) + 1)
         elif block.method in _VOL_METHODS:
             acc.append(block.lookback or _VOL_LOOKBACK)
         return _walk_children(block.children, acc)
 
     if isinstance(block, Filter):
-        acc.append(block.lookback or _FILTER_LOOKBACK)
+        # :by momentum reads bars[-(lookback+1)]; +1 (harmless headroom for volatility/volume).
+        acc.append((block.lookback or _FILTER_LOOKBACK) + 1)
         return _walk_children(block.children, acc)
 
     if isinstance(block, Group | Strategy):
@@ -138,9 +149,14 @@ def _walk_condition(condition: Condition, acc: list[int]) -> bool:
 
 
 def _walk_value(value: Value, acc: list[int]) -> bool:
-    # Indicator lookbacks are already covered by min_bars; only metrics can be unbounded.
+    # Indicator warm-ups are already covered by min_bars, except the cumulative ones, which
+    # read the whole retained series and so count as unbounded.
+    if isinstance(value, Indicator):
+        return value.name in _CUMULATIVE_INDICATORS
     if isinstance(value, Metric):
         if value.period is None:
             return True  # reads the entire history
-        acc.append(value.period)
+        # (return SYM N) reads bars[-(N+1)]..[-1], so it needs N+1 bars; drawdown/volatility
+        # slice bars[-N:] and need N (the extra bar is harmless headroom).
+        acc.append(value.period + 1 if value.name == "return" else value.period)
     return False

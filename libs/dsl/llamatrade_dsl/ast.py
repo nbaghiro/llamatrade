@@ -449,7 +449,7 @@ INDICATORS: frozenset[str] = frozenset(
         "cci",
         "obv",
         "vwap",
-        # Additional indicators (sync with extractor.py INDICATOR_LOOKBACKS)
+        # Additional indicators (sync with analysis.py INDICATOR_DEFAULT_PERIODS)
         "mfi",
         "williams-r",
         "keltner",

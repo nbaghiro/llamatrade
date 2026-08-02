@@ -213,6 +213,52 @@ class TestValidateWeight:
         assert not result.valid
         assert any("at least one child" in str(e) for e in result.errors)
 
+    def test_valid_momentum_with_top(self):
+        strategy = Strategy(
+            name="Test",
+            children=[
+                Weight(
+                    method="momentum",
+                    lookback=90,
+                    top=2,
+                    children=[Asset(symbol="XLK"), Asset(symbol="XLF"), Asset(symbol="XLE")],
+                )
+            ],
+        )
+        result = validate(strategy)
+        assert result.valid
+
+    def test_top_rejected_on_equal_method(self):
+        strategy = Strategy(
+            name="Test",
+            children=[
+                Weight(
+                    method="equal",
+                    top=2,
+                    children=[Asset(symbol="XLK"), Asset(symbol="XLF"), Asset(symbol="XLE")],
+                )
+            ],
+        )
+        result = validate(strategy)
+        assert not result.valid
+        assert any("Only :method momentum honors :top" in str(e) for e in result.errors)
+
+    def test_top_rejected_on_inverse_volatility_method(self):
+        strategy = Strategy(
+            name="Test",
+            children=[
+                Weight(
+                    method="inverse-volatility",
+                    lookback=60,
+                    top=1,
+                    children=[Asset(symbol="SPY"), Asset(symbol="TLT")],
+                )
+            ],
+        )
+        result = validate(strategy)
+        assert not result.valid
+        assert any("Only :method momentum honors :top" in str(e) for e in result.errors)
+
 
 class TestValidateGroup:
     """Test group block validation."""
@@ -375,6 +421,7 @@ class TestValidateConditions:
                         right=Indicator(name="sma", symbol="SPY", params=(200,)),
                     ),
                     then_block=Asset(symbol="VTI", weight=100),
+                    else_block=Asset(symbol="TLT", weight=100),
                 )
             ],
         )
@@ -420,6 +467,87 @@ class TestValidateConditions:
         result = validate(strategy)
         assert not result.valid
         assert any("must be positive" in str(e) for e in result.errors)
+
+    def test_crossover_valid_with_indicators(self):
+        from llamatrade_dsl import If
+
+        strategy = Strategy(
+            name="Test",
+            children=[
+                If(
+                    condition=Crossover(
+                        direction="above",
+                        fast=Indicator(name="sma", symbol="SPY", params=(50,)),
+                        slow=Indicator(name="sma", symbol="SPY", params=(200,)),
+                    ),
+                    then_block=Asset(symbol="VTI", weight=100),
+                    else_block=Asset(symbol="TLT", weight=100),
+                )
+            ],
+        )
+        result = validate(strategy)
+        assert result.valid
+
+    def test_crossover_rejects_metric_fast_operand(self):
+        from llamatrade_dsl import If
+
+        strategy = Strategy(
+            name="Test",
+            children=[
+                If(
+                    condition=Crossover(
+                        direction="above",
+                        fast=Metric(name="drawdown", symbol="SPY"),
+                        slow=NumericLiteral(value=10),
+                    ),
+                    then_block=Asset(symbol="VTI", weight=100),
+                )
+            ],
+        )
+        result = validate(strategy)
+        assert not result.valid
+        assert any("use a comparison instead" in str(e) for e in result.errors)
+
+    def test_crossover_rejects_metric_slow_operand(self):
+        from llamatrade_dsl import If
+
+        strategy = Strategy(
+            name="Test",
+            children=[
+                If(
+                    condition=Crossover(
+                        direction="below",
+                        fast=Indicator(name="sma", symbol="SPY", params=(50,)),
+                        slow=Metric(name="volatility", symbol="SPY", period=30),
+                    ),
+                    then_block=Asset(symbol="VTI", weight=100),
+                )
+            ],
+        )
+        result = validate(strategy)
+        assert not result.valid
+        assert any("Crossover cannot use metric 'volatility'" in str(e) for e in result.errors)
+
+    def test_crossover_rejects_metric_in_both_operands(self):
+        from llamatrade_dsl import If
+
+        strategy = Strategy(
+            name="Test",
+            children=[
+                If(
+                    condition=Crossover(
+                        direction="above",
+                        fast=Metric(name="return", symbol="SPY", period=30),
+                        slow=Metric(name="return", symbol="QQQ", period=30),
+                    ),
+                    then_block=Asset(symbol="VTI", weight=100),
+                )
+            ],
+        )
+        result = validate(strategy)
+        assert not result.valid
+        metric_errors = [e for e in result.errors if "Crossover cannot use metric" in str(e)]
+        assert len(metric_errors) == 2
 
 
 class TestValidateStrategyAlias:
@@ -675,3 +803,126 @@ class TestValidatorRejectPaths:
         result = validate(self._wrap_condition(cond))
         assert not result.valid
         assert any("metric symbol is required" in str(e).lower() for e in result.errors)
+
+
+class TestValidateElseRequired:
+    """An if must have an else so it always allocates (never evaluates to nothing)."""
+
+    @staticmethod
+    def _rsi_gt_70() -> Comparison:
+        return Comparison(
+            operator=">",
+            left=Indicator(name="rsi", symbol="SPY", params=(14,)),
+            right=NumericLiteral(value=70),
+        )
+
+    def test_if_without_else_is_rejected(self):
+        strategy = Strategy(
+            name="T",
+            children=[If(condition=self._rsi_gt_70(), then_block=Asset(symbol="TLT", weight=100))],
+        )
+        result = validate(strategy)
+        assert not result.valid
+        assert any("must have an else" in str(e) for e in result.errors)
+
+    def test_if_with_else_is_valid(self):
+        strategy = Strategy(
+            name="T",
+            children=[
+                If(
+                    condition=self._rsi_gt_70(),
+                    then_block=Asset(symbol="TLT", weight=100),
+                    else_block=Asset(symbol="SPY", weight=100),
+                )
+            ],
+        )
+        result = validate(strategy)
+        assert result.valid
+
+    def test_nested_else_less_if_is_rejected(self):
+        # An if whose else is itself an else-less if can still evaluate to nothing.
+        strategy = Strategy(
+            name="T",
+            children=[
+                If(
+                    condition=self._rsi_gt_70(),
+                    then_block=Asset(symbol="TLT", weight=100),
+                    else_block=If(
+                        condition=self._rsi_gt_70(),
+                        then_block=Asset(symbol="SPY", weight=100),
+                    ),
+                )
+            ],
+        )
+        result = validate(strategy)
+        assert not result.valid
+        assert any("must have an else" in str(e) for e in result.errors)
+
+
+class TestValidateDeclaredWeightSum:
+    """Declared sibling weights act as shares and must sum to 100 at root, group, and specified."""
+
+    def test_root_declared_weights_must_sum_to_100(self):
+        # SPY 60 / BND 30 would otherwise renormalize to 66.7/33.3, dropping the intended cash.
+        strategy = Strategy(
+            name="T",
+            children=[Asset(symbol="SPY", weight=60), Asset(symbol="BND", weight=30)],
+        )
+        result = validate(strategy)
+        assert not result.valid
+        assert any("sum to 100%" in str(e) for e in result.errors)
+
+    def test_root_declared_weights_summing_to_100_are_valid(self):
+        strategy = Strategy(
+            name="T",
+            children=[Asset(symbol="SPY", weight=60), Asset(symbol="BND", weight=40)],
+        )
+        result = validate(strategy)
+        assert result.valid
+
+    def test_root_typo_double_weight_is_rejected(self):
+        # A 60 / 60 typo must be rejected rather than silently collapsed to 50/50.
+        strategy = Strategy(
+            name="T",
+            children=[Asset(symbol="SPY", weight=60), Asset(symbol="BND", weight=60)],
+        )
+        result = validate(strategy)
+        assert not result.valid
+        assert any("sum to 100%" in str(e) for e in result.errors)
+
+    def test_root_without_declared_weights_splits_equally_and_is_valid(self):
+        # No declared weights -> equal split, so the sum rule does not apply.
+        strategy = Strategy(
+            name="T",
+            children=[Asset(symbol="SPY"), Asset(symbol="BND")],
+        )
+        result = validate(strategy)
+        assert result.valid
+
+    def test_group_declared_weights_must_sum_to_100(self):
+        strategy = Strategy(
+            name="T",
+            children=[
+                Group(
+                    name="Mix",
+                    children=[Asset(symbol="SPY", weight=70), Asset(symbol="BND", weight=20)],
+                )
+            ],
+        )
+        result = validate(strategy)
+        assert not result.valid
+        assert any("sum to 100%" in str(e) for e in result.errors)
+
+    def test_single_weight_block_child_is_not_subject_to_the_sum_rule(self):
+        # The root's only child is a weight block (no declared weight) -> rule skipped.
+        strategy = Strategy(
+            name="T",
+            children=[
+                Weight(
+                    method="specified",
+                    children=[Asset(symbol="SPY", weight=60), Asset(symbol="BND", weight=40)],
+                )
+            ],
+        )
+        result = validate(strategy)
+        assert result.valid

@@ -47,68 +47,75 @@ class IndicatorSpec:
         return f"{self.indicator_type}({self.symbol}, {self.source}, {self.params}){field_suffix}"
 
 
-# Lookback requirements for each indicator type
-INDICATOR_LOOKBACKS: dict[str, int] = {
-    "sma": 0,
-    "ema": 2,
-    "rsi": 1,
-    "macd": 0,
-    "bbands": 0,
-    "atr": 1,
-    "adx": 1,
-    "stoch": 0,
-    "cci": 0,
-    "williams-r": 0,
-    "obv": 1,
-    "mfi": 1,
-    "vwap": 1,
-    "keltner": 0,
-    "donchian": 0,
-    "stddev": 0,
-    "momentum": 0,
+# Default parameters per indicator, used when a reference omits them. One entry per
+# vocabulary indicator (asserted by the vocabulary-parity test); the values mirror the
+# library's own inline defaults so the derived warm-up matches what actually gets computed.
+INDICATOR_DEFAULT_PERIODS: dict[str, tuple[int | float, ...]] = {
+    "sma": (20,),
+    "ema": (20,),
+    "rsi": (14,),
+    "macd": (12, 26, 9),
+    "bbands": (20, 2.0),
+    "atr": (14,),
+    "adx": (14,),
+    "stoch": (14, 3, 3),
+    "cci": (20,),
+    "williams-r": (14,),
+    "obv": (),
+    "mfi": (14,),
+    "vwap": (),
+    "keltner": (20, 2.0),
+    "donchian": (20,),
+    "stddev": (20,),
+    "momentum": (10,),
 }
 
 
 def _calculate_required_bars(indicator_type: str, params: tuple[int | float, ...]) -> int:
-    """Calculate minimum bars required for an indicator."""
-    base_warmup = INDICATOR_LOOKBACKS.get(indicator_type, 0)
+    """Bars needed before the indicator's slowest output is first defined.
 
-    if indicator_type in ("sma", "ema", "rsi", "atr", "adx", "cci", "mfi", "stddev", "momentum"):
-        if params:
-            return int(params[0]) + base_warmup
-        return 14 + base_warmup
+    This is ``first_non_nan_index + 1`` for that output, derived from the library's true
+    warm-up rather than the nominal period, so the retained-history window and the warm-up
+    gate always cover it. Understating it leaves any condition that reads the indicator
+    permanently NaN — ADX, for instance, is only defined at ``2 * period`` bars, and the
+    MACD signal / Stochastic %D / Keltner / momentum outputs warm up later than their
+    period alone implies.
+    """
+    # Pad partial params from the defaults so a reference that omits later params (e.g.
+    # (macd SPY 12) or (stoch SPY 14 3)) reads its remaining periods positionally, matching
+    # compute_indicator. The default tuples align with compute_indicator's argument order.
+    defaults = INDICATOR_DEFAULT_PERIODS.get(indicator_type, (14,))
+    params = params + defaults[len(params) :]
+
+    def period(index: int) -> int:
+        return int(params[index])
+
+    if indicator_type == "adx":
+        # ADX seeds at index 2*period-1 (Wilder average of DX, itself Wilder-smoothed).
+        return 2 * period(0)
 
     if indicator_type == "macd":
-        if len(params) >= 3:
-            return int(max(params[0], params[1], params[2])) + base_warmup
-        return 26 + base_warmup
-
-    if indicator_type == "bbands":
-        if params:
-            return int(params[0]) + base_warmup
-        return 20 + base_warmup
+        # Signal line seeds at slow+signal-2 (an EMA of the slow-warming MACD line).
+        return period(1) + period(2) - 1
 
     if indicator_type == "stoch":
-        if params:
-            return int(params[0]) + base_warmup
-        return 14 + base_warmup
+        # %D = SMA(SMA(raw %K, smooth), d), first defined at k+smooth+d-3.
+        return period(0) + period(2) + period(1) - 2
 
-    if indicator_type in ("williams-r", "donchian"):
-        if params:
-            return int(params[0]) + base_warmup
-        return 14 + base_warmup
+    if indicator_type == "ema":
+        # First defined at index period-1; +2 headroom keeps EMA-of-EMA chains warm.
+        return period(0) + 2
 
-    if indicator_type == "keltner":
-        if params:
-            return int(params[0]) + base_warmup
-        return 20 + base_warmup
+    if indicator_type in ("rsi", "atr", "mfi", "momentum", "keltner"):
+        # First defined at index period (needs a prior bar, an ATR seed, or a diff).
+        return period(0) + 1
 
     if indicator_type in ("obv", "vwap"):
-        return 1 + base_warmup
+        # Cumulative from bar 0; one bar yields a value (the full window is read at eval time).
+        return 1
 
-    if params:
-        return int(params[0]) + base_warmup
-    return 14 + base_warmup
+    # sma, bbands, cci, williams-r, donchian, stddev: first defined at index period-1.
+    return period(0)
 
 
 def _generate_output_key(
