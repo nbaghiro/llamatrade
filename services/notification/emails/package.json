@@ -1,0 +1,23 @@
+{
+  "name": "@llamatrade/emails",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Transactional email templates: authored in React Email, rendered to static shells consumed by the notification service.",
+  "type": "module",
+  "scripts": {
+    "build": "tsx src/render.tsx",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@react-email/components": "^0.0.36",
+    "@react-email/render": "^1.0.6",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.1.2",
+    "@types/react": "^18.2.43",
+    "tsx": "^4.19.0",
+    "typescript": "^5.3.3"
+  }
+}

@@ -11,6 +11,10 @@ dependencies = [
     "aiosmtplib>=3.0.0",
     "llamatrade-common",
     "llamatrade-db",
+    "llamatrade-events",
+    "llamatrade-proto",
+    "llamatrade-runtime",
+    "llamatrade-telemetry",
 ]
 
 [project.optional-dependencies]
@@ -20,6 +24,7 @@ dev = [
     "pytest-cov>=4.1.0",
     "httpx>=0.26.0",
     "ruff>=0.1.0",
+    "testcontainers[postgres]>=4.0.0",
 ]
 
 [build-system]
@@ -33,6 +38,9 @@ packages = ["src"]
 asyncio_mode = "auto"
 testpaths = ["tests"]
 pythonpath = ["."]
+markers = [
+    "integration: requires Docker (real Postgres via testcontainers)",
+]
 
 [tool.ruff]
 line-length = 100

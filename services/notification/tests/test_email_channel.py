@@ -1,135 +1,75 @@
-"""Tests for EmailChannel to improve coverage."""
+"""Email channel: SMTP send, auth gating, unconfigured behavior."""
 
-import os
-from unittest.mock import patch
+from __future__ import annotations
 
+from unittest.mock import AsyncMock, patch
+
+import aiosmtplib
 import pytest
-
-from src.channels.email import EmailChannel
-
-# === Test Fixtures ===
 
 
 @pytest.fixture
-def email_channel() -> EmailChannel:
-    """Create an EmailChannel instance."""
+def smtp_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("SMTP_HOST", "mail.test")
+    monkeypatch.setenv("SMTP_PORT", "1025")
+    monkeypatch.setenv("SMTP_USER", "")
+    monkeypatch.setenv("SMTP_PASSWORD", "")
+    monkeypatch.setenv("FROM_EMAIL", "noreply@test")
+
+
+def _channel() -> object:
+    from src.channels.email import EmailChannel
+
     return EmailChannel()
 
 
-# === EmailChannel Initialization Tests ===
+async def test_unconfigured_reports_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("SMTP_HOST", raising=False)
+    channel = _channel()
+    assert not channel.is_configured
+    assert await channel.send("a@b.test", "s", "b") is False
 
 
-class TestEmailChannelInit:
-    """Tests for EmailChannel initialization."""
-
-    def test_default_smtp_host(self, email_channel: EmailChannel) -> None:
-        """Test default SMTP host."""
-        assert email_channel.smtp_host == "smtp.gmail.com"
-
-    def test_default_smtp_port(self, email_channel: EmailChannel) -> None:
-        """Test default SMTP port."""
-        assert email_channel.smtp_port == 587
-
-    def test_default_from_email(self, email_channel: EmailChannel) -> None:
-        """Test default from email."""
-        assert email_channel.from_email == "noreply@llamatrade.com"
-
-    def test_smtp_user_default_empty(self, email_channel: EmailChannel) -> None:
-        """Test SMTP user defaults to empty string."""
-        # Without env var, should be empty
-        assert email_channel.smtp_user == "" or email_channel.smtp_user is not None
-
-    def test_smtp_password_default_empty(self, email_channel: EmailChannel) -> None:
-        """Test SMTP password defaults to empty string."""
-        assert email_channel.smtp_password == "" or email_channel.smtp_password is not None
-
-    def test_custom_env_vars(self) -> None:
-        """Test initialization with custom environment variables."""
-        with patch.dict(
-            os.environ,
-            {
-                "SMTP_HOST": "custom.smtp.host",
-                "SMTP_PORT": "465",
-                "SMTP_USER": "testuser",
-                "SMTP_PASSWORD": "testpass",
-                "FROM_EMAIL": "custom@example.com",
-            },
-        ):
-            channel = EmailChannel()
-
-            assert channel.smtp_host == "custom.smtp.host"
-            assert channel.smtp_port == 465
-            assert channel.smtp_user == "testuser"
-            assert channel.smtp_password == "testpass"
-            assert channel.from_email == "custom@example.com"
+async def test_send_success(smtp_env: None) -> None:
+    with patch("aiosmtplib.send", new_callable=AsyncMock) as send:
+        channel = _channel()
+        ok = await channel.send("user@test", "Subject", "Body")
+    assert ok
+    message = send.call_args.args[0]
+    assert message["To"] == "user@test"
+    assert message["From"] == "noreply@test"
+    assert message["Subject"] == "Subject"
+    assert send.call_args.kwargs["hostname"] == "mail.test"
+    assert send.call_args.kwargs["port"] == 1025
+    # No credentials -> no auth, no forced STARTTLS (mailpit-compatible).
+    assert send.call_args.kwargs["username"] is None
+    assert send.call_args.kwargs["start_tls"] is None
 
 
-# === EmailChannel.send Tests ===
+async def test_send_with_credentials_uses_tls(
+    smtp_env: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("SMTP_USER", "u")
+    monkeypatch.setenv("SMTP_PASSWORD", "p")
+    with patch("aiosmtplib.send", new_callable=AsyncMock) as send:
+        ok = await _channel().send("user@test", "S", "B")
+    assert ok
+    assert send.call_args.kwargs["username"] == "u"
+    assert send.call_args.kwargs["start_tls"] is True
 
 
-class TestEmailChannelSend:
-    """Tests for EmailChannel.send method."""
+async def test_smtp_error_reports_failure(smtp_env: None) -> None:
+    with patch(
+        "aiosmtplib.send",
+        new_callable=AsyncMock,
+        side_effect=aiosmtplib.SMTPException("boom"),
+    ):
+        ok = await _channel().send("user@test", "S", "B")
+    assert ok is False
 
-    async def test_send_returns_true(self, email_channel: EmailChannel) -> None:
-        """Test send returns True (stub implementation)."""
-        result = await email_channel.send(
-            to="recipient@example.com",
-            subject="Test Subject",
-            body="Test body content",
-        )
 
-        assert result is True
-
-    async def test_send_with_html_body(self, email_channel: EmailChannel) -> None:
-        """Test send with HTML body."""
-        result = await email_channel.send(
-            to="recipient@example.com",
-            subject="HTML Test",
-            body="Plain text body",
-            html_body="<html><body><h1>HTML Content</h1></body></html>",
-        )
-
-        assert result is True
-
-    async def test_send_without_html_body(self, email_channel: EmailChannel) -> None:
-        """Test send without HTML body (None)."""
-        result = await email_channel.send(
-            to="recipient@example.com",
-            subject="Plain Text Only",
-            body="This is plain text only",
-            html_body=None,
-        )
-
-        assert result is True
-
-    async def test_send_empty_subject(self, email_channel: EmailChannel) -> None:
-        """Test send with empty subject."""
-        result = await email_channel.send(
-            to="recipient@example.com",
-            subject="",
-            body="Body with empty subject",
-        )
-
-        assert result is True
-
-    async def test_send_long_body(self, email_channel: EmailChannel) -> None:
-        """Test send with long body content."""
-        long_body = "This is a test. " * 1000
-
-        result = await email_channel.send(
-            to="recipient@example.com",
-            subject="Long Email",
-            body=long_body,
-        )
-
-        assert result is True
-
-    async def test_send_multiple_recipients_string(self, email_channel: EmailChannel) -> None:
-        """Test send with comma-separated recipients."""
-        result = await email_channel.send(
-            to="user1@example.com, user2@example.com",
-            subject="Multiple Recipients",
-            body="Test body",
-        )
-
-        assert result is True
+async def test_html_alternative_attached(smtp_env: None) -> None:
+    with patch("aiosmtplib.send", new_callable=AsyncMock) as send:
+        await _channel().send("user@test", "S", "plain", html_body="<b>rich</b>")
+    message = send.call_args.args[0]
+    assert message.get_content_type() == "multipart/alternative"

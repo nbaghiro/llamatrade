@@ -1,546 +1,458 @@
-"""Notification gRPC servicer implementation."""
+"""Notification Connect servicer implementation."""
 
 from __future__ import annotations
 
-import logging
-from datetime import UTC, datetime
-from typing import TYPE_CHECKING, Any, NoReturn
-from uuid import UUID, uuid4
+from connectrpc.code import Code
+from connectrpc.errors import ConnectError
+from connectrpc.request import RequestContext
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-import grpc.aio
+from llamatrade_common.connect import handle_service_errors, resolve_identity_connect
+from llamatrade_db import get_session_maker, tenant_session
+from llamatrade_db.models.notification import Alert, Notification, Webhook
+from llamatrade_proto.generated import common_pb2, events_pb2, notification_pb2
+from llamatrade_proto.timestamps import to_proto_timestamp
 
-from llamatrade_common import AuthError, paginate, resolve_identity
-
-if TYPE_CHECKING:
-    from llamatrade_proto.generated import notification_pb2
-
-logger = logging.getLogger(__name__)
-
-# Map the transport-neutral AuthError codes to gRPC status codes.
-_AUTH_CODE_TO_GRPC = {
-    "unauthenticated": grpc.StatusCode.UNAUTHENTICATED,
-    "permission_denied": grpc.StatusCode.PERMISSION_DENIED,
-    "invalid_argument": grpc.StatusCode.INVALID_ARGUMENT,
-}
-
-
-def _identity(request_context: Any) -> tuple[UUID, UUID]:
-    """Verified ``(tenant_id, user_id)`` from the authenticated principal (raises AuthError)."""
-    return resolve_identity(request_context.tenant_id or None, request_context.user_id or None)
-
-
-async def _abort_auth(context: grpc.aio.ServicerContext[Any, Any], err: AuthError) -> NoReturn:
-    """Abort with the gRPC status code for an auth failure (never returns)."""
-    await context.abort(
-        _AUTH_CODE_TO_GRPC.get(err.code, grpc.StatusCode.UNAUTHENTICATED), err.message
-    )
+from src.channels.email import EmailChannel
+from src.channels.webhook import WebhookChannel
+from src.email_render import build_html
+from src.pipeline import email_recipients
+from src.services.notification_service import (
+    ChannelPrefState,
+    NotFoundError,
+    NotificationService,
+    WebhookValidationError,
+)
+from src.templates import Rendered
 
 
 class NotificationServicer:
-    """gRPC servicer for the Notification service.
+    """Connect servicer for the Notification service.
 
-    Implements the NotificationService defined in notification.proto.
-
-    Note: This is a stub implementation. The notification service
-    is currently in early development with stubbed functionality.
+    Serves the persisted notification tables; the durable consumer in
+    src/tasks/consumer.py is the only writer of notification rows. Alert RPCs
+    are served by the price-alert engine (src/alerts/).
     """
 
-    def __init__(self) -> None:
-        """Initialize the servicer."""
-        # In-memory storage for stubs
-        self._notifications: dict[str, list[dict[str, Any]]] = {}
-        self._alerts: dict[str, list[dict[str, Any]]] = {}
-        self._channels: dict[str, list[dict[str, Any]]] = {}
+    def __init__(
+        self,
+        session_maker: async_sessionmaker[AsyncSession] | None = None,
+        *,
+        email: EmailChannel | None = None,
+        webhook: WebhookChannel | None = None,
+    ) -> None:
+        self._maker = session_maker or get_session_maker()
+        self._email = email or EmailChannel()
+        self._webhook = webhook or WebhookChannel()
 
-    async def ListNotifications(
+    # --- notifications ---
+
+    @handle_service_errors
+    async def list_notifications(
         self,
         request: notification_pb2.ListNotificationsRequest,
-        context: grpc.aio.ServicerContext[Any, Any],
+        ctx: RequestContext[object, object],
     ) -> notification_pb2.ListNotificationsResponse:
-        """List notifications for a user."""
-        from llamatrade_proto.generated import common_pb2, notification_pb2
+        tenant_id, _ = resolve_identity_connect(request.context)
+        page = request.pagination.page if request.HasField("pagination") else 1
+        page_size = request.pagination.page_size if request.HasField("pagination") else 20
+        page, page_size = max(page, 1), min(max(page_size, 1), 100)
 
-        try:
-            verified_tenant, verified_user = _identity(request.context)
-            tenant_id, user_id = str(verified_tenant), str(verified_user)
-
-            # Get notifications from stub storage
-            key = f"{tenant_id}:{user_id}"
-            notifications = self._notifications.get(key, [])
-
-            # Filter by unread_only
-            if request.unread_only:
-                notifications = [n for n in notifications if not n.get("is_read", False)]
-
-            # Count unread
-            unread_count = sum(
-                1 for n in self._notifications.get(key, []) if not n.get("is_read", False)
+        async with tenant_session(tenant_id, self._maker) as db:
+            result = await NotificationService(db).list_notifications(
+                tenant_id, unread_only=request.unread_only, page=page, page_size=page_size
             )
 
-            # Paginate
-            page = request.pagination.page if request.HasField("pagination") else 1
-            page_size = request.pagination.page_size if request.HasField("pagination") else 20
-            result = paginate(notifications, page=page, page_size=page_size)
+        total_pages = (result.total + page_size - 1) // page_size if result.total else 0
+        return notification_pb2.ListNotificationsResponse(
+            notifications=[_to_proto_notification(n) for n in result.items],
+            pagination=common_pb2.PaginationResponse(
+                total_items=result.total,
+                total_pages=total_pages,
+                current_page=page,
+                page_size=page_size,
+                has_next=page < total_pages,
+                has_previous=page > 1,
+            ),
+            unread_count=result.unread_count,
+        )
 
-            return notification_pb2.ListNotificationsResponse(
-                notifications=[self._to_proto_notification(n) for n in result["items"]],
-                pagination=common_pb2.PaginationResponse(
-                    total_items=result["total"],
-                    total_pages=result["total_pages"],
-                    current_page=result["page"],
-                    page_size=result["page_size"],
-                    has_next=result["page"] < result["total_pages"],
-                    has_previous=result["page"] > 1,
-                ),
-                unread_count=unread_count,
-            )
-
-        except AuthError as e:
-            await _abort_auth(context, e)
-        except Exception as e:
-            logger.error("ListNotifications error: %s", e, exc_info=True)
-            await context.abort(
-                grpc.StatusCode.INTERNAL,
-                f"Failed to list notifications: {e}",
-            )
-
-    async def MarkAsRead(
+    @handle_service_errors
+    async def mark_as_read(
         self,
         request: notification_pb2.MarkAsReadRequest,
-        context: grpc.aio.ServicerContext[Any, Any],
+        ctx: RequestContext[object, object],
     ) -> notification_pb2.MarkAsReadResponse:
-        """Mark notification(s) as read."""
-        from llamatrade_proto.generated import notification_pb2
-
+        tenant_id, _ = resolve_identity_connect(request.context)
+        if not request.mark_all and not request.notification_id:
+            raise ConnectError(Code.INVALID_ARGUMENT, "notification_id or mark_all is required")
         try:
-            verified_tenant, verified_user = _identity(request.context)
-            tenant_id, user_id = str(verified_tenant), str(verified_user)
-            key = f"{tenant_id}:{user_id}"
-
-            marked_count = 0
-            notifications = self._notifications.get(key, [])
-
-            if request.mark_all:
-                # Mark all as read
-                for n in notifications:
-                    if not n.get("is_read", False):
-                        n["is_read"] = True
-                        n["read_at"] = datetime.now(UTC).isoformat()
-                        marked_count += 1
-            else:
-                # Mark specific notification
-                for n in notifications:
-                    if n.get("id") == request.notification_id:
-                        if not n.get("is_read", False):
-                            n["is_read"] = True
-                            n["read_at"] = datetime.now(UTC).isoformat()
-                            marked_count = 1
-                        break
-
-            return notification_pb2.MarkAsReadResponse(marked_count=marked_count)
-
-        except AuthError as e:
-            await _abort_auth(context, e)
-        except Exception as e:
-            logger.error("MarkAsRead error: %s", e, exc_info=True)
-            await context.abort(
-                grpc.StatusCode.INTERNAL,
-                f"Failed to mark as read: {e}",
-            )
-
-    async def ListAlerts(
-        self,
-        request: notification_pb2.ListAlertsRequest,
-        context: grpc.aio.ServicerContext[Any, Any],
-    ) -> notification_pb2.ListAlertsResponse:
-        """List alerts for a user."""
-        from llamatrade_proto.generated import notification_pb2
-
-        try:
-            verified_tenant, verified_user = _identity(request.context)
-            tenant_id, user_id = str(verified_tenant), str(verified_user)
-            key = f"{tenant_id}:{user_id}"
-
-            alerts = self._alerts.get(key, [])
-
-            # Filter by active_only
-            if request.active_only:
-                alerts = [a for a in alerts if a.get("is_active", True)]
-
-            return notification_pb2.ListAlertsResponse(
-                alerts=[self._to_proto_alert(a) for a in alerts],
-            )
-
-        except AuthError as e:
-            await _abort_auth(context, e)
-        except Exception as e:
-            logger.error("ListAlerts error: %s", e, exc_info=True)
-            await context.abort(
-                grpc.StatusCode.INTERNAL,
-                f"Failed to list alerts: {e}",
-            )
-
-    async def CreateAlert(
-        self,
-        request: notification_pb2.CreateAlertRequest,
-        context: grpc.aio.ServicerContext[Any, Any],
-    ) -> notification_pb2.CreateAlertResponse:
-        """Create a new alert."""
-        from llamatrade_proto.generated import notification_pb2
-
-        try:
-            verified_tenant, verified_user = _identity(request.context)
-            tenant_id, user_id = str(verified_tenant), str(verified_user)
-            key = f"{tenant_id}:{user_id}"
-
-            # Create alert
-            alert_id = str(uuid4())
-            now = datetime.now(UTC)
-
-            alert = {
-                "id": alert_id,
-                "tenant_id": tenant_id,
-                "user_id": user_id,
-                "name": request.name,
-                "description": request.description,
-                "is_active": True,
-                "condition": {
-                    "type": request.condition.type,
-                    "symbol": request.condition.symbol,
-                    "threshold": request.condition.threshold.value
-                    if request.condition.HasField("threshold")
-                    else None,
-                    "strategy_id": request.condition.strategy_id,
-                },
-                "channels": list(request.channels),
-                "cooldown_minutes": request.cooldown_minutes,
-                "times_triggered": 0,
-                "last_triggered_at": None,
-                "created_at": now.isoformat(),
-                "updated_at": now.isoformat(),
-            }
-
-            # Store alert
-            if key not in self._alerts:
-                self._alerts[key] = []
-            self._alerts[key].append(alert)
-
-            return notification_pb2.CreateAlertResponse(
-                alert=self._to_proto_alert(alert),
-            )
-
-        except AuthError as e:
-            await _abort_auth(context, e)
-        except Exception as e:
-            logger.error("CreateAlert error: %s", e, exc_info=True)
-            await context.abort(
-                grpc.StatusCode.INTERNAL,
-                f"Failed to create alert: {e}",
-            )
-
-    async def DeleteAlert(
-        self,
-        request: notification_pb2.DeleteAlertRequest,
-        context: grpc.aio.ServicerContext[Any, Any],
-    ) -> notification_pb2.DeleteAlertResponse:
-        """Delete an alert."""
-        from llamatrade_proto.generated import notification_pb2
-
-        try:
-            verified_tenant, verified_user = _identity(request.context)
-            tenant_id, user_id = str(verified_tenant), str(verified_user)
-            key = f"{tenant_id}:{user_id}"
-
-            alerts = self._alerts.get(key, [])
-            original_count = len(alerts)
-            self._alerts[key] = [a for a in alerts if a.get("id") != request.alert_id]
-
-            success = len(self._alerts[key]) < original_count
-
-            if not success:
-                await context.abort(
-                    grpc.StatusCode.NOT_FOUND,
-                    f"Alert not found: {request.alert_id}",
+            async with tenant_session(tenant_id, self._maker) as db:
+                marked = await NotificationService(db).mark_as_read(
+                    tenant_id,
+                    notification_id=request.notification_id,
+                    mark_all=request.mark_all,
                 )
+                await db.commit()
+        except ValueError as e:
+            raise ConnectError(Code.INVALID_ARGUMENT, "notification_id must be a UUID") from e
+        return notification_pb2.MarkAsReadResponse(marked_count=marked)
 
-            return notification_pb2.DeleteAlertResponse(success=True)
+    # --- webhooks ---
 
-        except grpc.aio.AioRpcError:
-            raise
-        except AuthError as e:
-            await _abort_auth(context, e)
-        except Exception as e:
-            logger.error("DeleteAlert error: %s", e, exc_info=True)
-            await context.abort(
-                grpc.StatusCode.INTERNAL,
-                f"Failed to delete alert: {e}",
-            )
-
-    async def ToggleAlert(
+    @handle_service_errors
+    async def list_webhooks(
         self,
-        request: notification_pb2.ToggleAlertRequest,
-        context: grpc.aio.ServicerContext[Any, Any],
-    ) -> notification_pb2.ToggleAlertResponse:
-        """Toggle alert active status."""
-        from llamatrade_proto.generated import notification_pb2
+        request: notification_pb2.ListWebhooksRequest,
+        ctx: RequestContext[object, object],
+    ) -> notification_pb2.ListWebhooksResponse:
+        tenant_id, _ = resolve_identity_connect(request.context)
+        async with tenant_session(tenant_id, self._maker) as db:
+            webhooks = await NotificationService(db).list_webhooks(tenant_id)
+            protos = [_to_proto_webhook(w) for w in webhooks]
+        return notification_pb2.ListWebhooksResponse(webhooks=protos)
 
+    @handle_service_errors
+    async def create_webhook(
+        self,
+        request: notification_pb2.CreateWebhookRequest,
+        ctx: RequestContext[object, object],
+    ) -> notification_pb2.CreateWebhookResponse:
+        tenant_id, user_id = resolve_identity_connect(request.context)
         try:
-            verified_tenant, verified_user = _identity(request.context)
-            tenant_id, user_id = str(verified_tenant), str(verified_user)
-            key = f"{tenant_id}:{user_id}"
-
-            alerts = self._alerts.get(key, [])
-            alert = None
-
-            for a in alerts:
-                if a.get("id") == request.alert_id:
-                    a["is_active"] = request.is_active
-                    a["updated_at"] = datetime.now(UTC).isoformat()
-                    alert = a
-                    break
-
-            if not alert:
-                await context.abort(
-                    grpc.StatusCode.NOT_FOUND,
-                    f"Alert not found: {request.alert_id}",
+            async with tenant_session(tenant_id, self._maker) as db:
+                webhook, secret = await NotificationService(db).create_webhook(
+                    tenant_id,
+                    user_id,
+                    name=request.name,
+                    url=request.url,
+                    events=list(request.events),
                 )
+                await db.commit()
+                await db.refresh(webhook)
+                proto = _to_proto_webhook(webhook)
+        except WebhookValidationError as e:
+            raise ConnectError(Code.INVALID_ARGUMENT, str(e)) from e
+        return notification_pb2.CreateWebhookResponse(webhook=proto, secret=secret)
 
-            return notification_pb2.ToggleAlertResponse(
-                alert=self._to_proto_alert(alert),
-            )
+    @handle_service_errors
+    async def update_webhook(
+        self,
+        request: notification_pb2.UpdateWebhookRequest,
+        ctx: RequestContext[object, object],
+    ) -> notification_pb2.UpdateWebhookResponse:
+        tenant_id, _ = resolve_identity_connect(request.context)
+        try:
+            async with tenant_session(tenant_id, self._maker) as db:
+                webhook = await NotificationService(db).update_webhook(
+                    tenant_id,
+                    webhook_id=request.webhook_id,
+                    name=request.name,
+                    url=request.url,
+                    events=list(request.events),
+                    is_active=request.is_active,
+                )
+                await db.commit()
+                await db.refresh(webhook)
+                proto = _to_proto_webhook(webhook)
+        except WebhookValidationError as e:
+            raise ConnectError(Code.INVALID_ARGUMENT, str(e)) from e
+        except NotFoundError as e:
+            raise ConnectError(Code.NOT_FOUND, str(e)) from e
+        return notification_pb2.UpdateWebhookResponse(webhook=proto)
 
-        except grpc.aio.AioRpcError:
-            raise
-        except AuthError as e:
-            await _abort_auth(context, e)
-        except Exception as e:
-            logger.error("ToggleAlert error: %s", e, exc_info=True)
-            await context.abort(
-                grpc.StatusCode.INTERNAL,
-                f"Failed to toggle alert: {e}",
-            )
+    @handle_service_errors
+    async def delete_webhook(
+        self,
+        request: notification_pb2.DeleteWebhookRequest,
+        ctx: RequestContext[object, object],
+    ) -> notification_pb2.DeleteWebhookResponse:
+        tenant_id, _ = resolve_identity_connect(request.context)
+        try:
+            async with tenant_session(tenant_id, self._maker) as db:
+                await NotificationService(db).delete_webhook(
+                    tenant_id, webhook_id=request.webhook_id
+                )
+                await db.commit()
+        except WebhookValidationError as e:
+            raise ConnectError(Code.INVALID_ARGUMENT, str(e)) from e
+        except NotFoundError as e:
+            raise ConnectError(Code.NOT_FOUND, str(e)) from e
+        return notification_pb2.DeleteWebhookResponse(success=True)
 
-    async def ListChannels(
+    @handle_service_errors
+    async def test_webhook(
+        self,
+        request: notification_pb2.TestWebhookRequest,
+        ctx: RequestContext[object, object],
+    ) -> notification_pb2.TestWebhookResponse:
+        tenant_id, _ = resolve_identity_connect(request.context)
+        try:
+            async with tenant_session(tenant_id, self._maker) as db:
+                webhook = await NotificationService(db).get_webhook(tenant_id, request.webhook_id)
+                url, secret = webhook.url, webhook.secret
+                headers = dict(webhook.headers) if webhook.headers else None
+        except WebhookValidationError as e:
+            raise ConnectError(Code.INVALID_ARGUMENT, str(e)) from e
+        except NotFoundError as e:
+            raise ConnectError(Code.NOT_FOUND, str(e)) from e
+        result = await self._webhook.send(
+            url,
+            {"category": 0, "title": "Test notification", "message": "LlamaTrade webhook test."},
+            secret=secret,
+            headers=headers,
+        )
+        return notification_pb2.TestWebhookResponse(
+            success=result.ok,
+            status_code=result.status_code or 0,
+            message="delivered" if result.ok else (result.error or f"http_{result.status_code}"),
+        )
+
+    # --- preferences and channels ---
+
+    @handle_service_errors
+    async def get_preferences(
+        self,
+        request: notification_pb2.GetPreferencesRequest,
+        ctx: RequestContext[object, object],
+    ) -> notification_pb2.GetPreferencesResponse:
+        tenant_id, _ = resolve_identity_connect(request.context)
+        async with tenant_session(tenant_id, self._maker) as db:
+            states = await NotificationService(db).get_preferences(tenant_id)
+        return notification_pb2.GetPreferencesResponse(
+            preferences=[_to_proto_pref(s) for s in states]
+        )
+
+    @handle_service_errors
+    async def update_preferences(
+        self,
+        request: notification_pb2.UpdatePreferencesRequest,
+        ctx: RequestContext[object, object],
+    ) -> notification_pb2.UpdatePreferencesResponse:
+        tenant_id, user_id = resolve_identity_connect(request.context)
+        states = [
+            ChannelPrefState(channel=p.channel, enabled=p.enabled, categories=list(p.categories))
+            for p in request.preferences
+        ]
+        async with tenant_session(tenant_id, self._maker) as db:
+            updated = await NotificationService(db).update_preferences(tenant_id, user_id, states)
+            await db.commit()
+        return notification_pb2.UpdatePreferencesResponse(
+            preferences=[_to_proto_pref(s) for s in updated]
+        )
+
+    @handle_service_errors
+    async def list_channels(
         self,
         request: notification_pb2.ListChannelsRequest,
-        context: grpc.aio.ServicerContext[Any, Any],
+        ctx: RequestContext[object, object],
     ) -> notification_pb2.ListChannelsResponse:
-        """List notification channels for a user."""
-        from llamatrade_proto.generated import notification_pb2
+        tenant_id, _ = resolve_identity_connect(request.context)
+        async with tenant_session(tenant_id, self._maker) as db:
+            states = await NotificationService(db).get_preferences(tenant_id)
+        return notification_pb2.ListChannelsResponse(
+            channels=[_to_proto_channel(tenant_id, s) for s in states]
+        )
 
-        try:
-            verified_tenant, verified_user = _identity(request.context)
-            tenant_id, user_id = str(verified_tenant), str(verified_user)
-            key = f"{tenant_id}:{user_id}"
-
-            channels: list[dict[str, Any]] = self._channels.get(key, [])
-
-            # Return default channels if none configured
-            if not channels:
-                channels = [
-                    {
-                        "id": str(uuid4()),
-                        "tenant_id": tenant_id,
-                        "user_id": user_id,
-                        "type": notification_pb2.CHANNEL_TYPE_EMAIL,
-                        "is_enabled": False,
-                        "is_verified": False,
-                        "config": {},
-                        "created_at": datetime.now(UTC).isoformat(),
-                        "updated_at": datetime.now(UTC).isoformat(),
-                    }
-                ]
-
-            return notification_pb2.ListChannelsResponse(
-                channels=[self._to_proto_channel(c) for c in channels],
-            )
-
-        except AuthError as e:
-            await _abort_auth(context, e)
-        except Exception as e:
-            logger.error("ListChannels error: %s", e, exc_info=True)
-            await context.abort(
-                grpc.StatusCode.INTERNAL,
-                f"Failed to list channels: {e}",
-            )
-
-    async def UpdateChannel(
+    @handle_service_errors
+    async def update_channel(
         self,
         request: notification_pb2.UpdateChannelRequest,
-        context: grpc.aio.ServicerContext[Any, Any],
+        ctx: RequestContext[object, object],
     ) -> notification_pb2.UpdateChannelResponse:
-        """Update a notification channel."""
-        from llamatrade_proto.generated import notification_pb2
+        tenant_id, user_id = resolve_identity_connect(request.context)
+        state = ChannelPrefState(channel=request.type, enabled=request.is_enabled, categories=[])
+        async with tenant_session(tenant_id, self._maker) as db:
+            updated = await NotificationService(db).update_preferences(tenant_id, user_id, [state])
+            await db.commit()
+        current = next((s for s in updated if s.channel == request.type), state)
+        return notification_pb2.UpdateChannelResponse(channel=_to_proto_channel(tenant_id, current))
 
-        try:
-            verified_tenant, verified_user = _identity(request.context)
-            tenant_id, user_id = str(verified_tenant), str(verified_user)
-            key = f"{tenant_id}:{user_id}"
-
-            channels = self._channels.get(key, [])
-            channel = None
-
-            # Find existing channel of this type
-            for c in channels:
-                if c.get("type") == request.type:
-                    c["is_enabled"] = request.is_enabled
-                    c["config"] = dict(request.config)
-                    c["updated_at"] = datetime.now(UTC).isoformat()
-                    channel = c
-                    break
-
-            # Create new channel if not found
-            if not channel:
-                channel = {
-                    "id": str(uuid4()),
-                    "tenant_id": tenant_id,
-                    "user_id": user_id,
-                    "type": request.type,
-                    "is_enabled": request.is_enabled,
-                    "is_verified": False,
-                    "config": dict(request.config),
-                    "created_at": datetime.now(UTC).isoformat(),
-                    "updated_at": datetime.now(UTC).isoformat(),
-                }
-                if key not in self._channels:
-                    self._channels[key] = []
-                self._channels[key].append(channel)
-
-            return notification_pb2.UpdateChannelResponse(
-                channel=self._to_proto_channel(channel),
-            )
-
-        except AuthError as e:
-            await _abort_auth(context, e)
-        except Exception as e:
-            logger.error("UpdateChannel error: %s", e, exc_info=True)
-            await context.abort(
-                grpc.StatusCode.INTERNAL,
-                f"Failed to update channel: {e}",
-            )
-
-    async def TestChannel(
+    @handle_service_errors
+    async def test_channel(
         self,
         request: notification_pb2.TestChannelRequest,
-        context: grpc.aio.ServicerContext[Any, Any],
+        ctx: RequestContext[object, object],
     ) -> notification_pb2.TestChannelResponse:
-        """Test a notification channel."""
-        from llamatrade_proto.generated import notification_pb2
-
-        try:
-            # Stub implementation - always succeeds
+        tenant_id, _ = resolve_identity_connect(request.context)
+        if request.type != notification_pb2.CHANNEL_TYPE_EMAIL:
             return notification_pb2.TestChannelResponse(
-                success=True,
-                message="Test notification sent successfully (stub)",
+                success=False, message="only email supports channel tests; use TestWebhook"
             )
-
-        except Exception as e:
-            logger.error("TestChannel error: %s", e, exc_info=True)
-            await context.abort(
-                grpc.StatusCode.INTERNAL,
-                f"Failed to test channel: {e}",
+        async with tenant_session(tenant_id, self._maker) as db:
+            recipients = await email_recipients(db, tenant_id)
+        if not recipients:
+            return notification_pb2.TestChannelResponse(
+                success=False, message="no email destination configured"
             )
-
-    # Helper methods
-
-    def _to_proto_notification(self, n: dict[str, Any]) -> notification_pb2.Notification:
-        """Convert notification dict to proto Notification."""
-        from llamatrade_proto.generated import common_pb2, notification_pb2
-
-        created_at = n.get("created_at")
-        if isinstance(created_at, str):
-            created_at = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
-
-        read_at = n.get("read_at")
-        if isinstance(read_at, str):
-            read_at = datetime.fromisoformat(read_at.replace("Z", "+00:00"))
-
-        return notification_pb2.Notification(
-            id=n.get("id", ""),
-            tenant_id=n.get("tenant_id", ""),
-            user_id=n.get("user_id", ""),
-            type=n.get("type", notification_pb2.NOTIFICATION_TYPE_INFO),
-            title=n.get("title", ""),
-            message=n.get("message", ""),
-            is_read=n.get("is_read", False),
-            metadata=n.get("metadata", {}),
-            created_at=common_pb2.Timestamp(seconds=int(created_at.timestamp()))
-            if created_at
-            else None,
-            read_at=common_pb2.Timestamp(seconds=int(read_at.timestamp())) if read_at else None,
+        test_rendered = Rendered(title="Test notification", message="Email delivery is working.")
+        ok = await self._email.send(
+            recipients[0],
+            test_rendered.subject,
+            test_rendered.message,
+            html_body=build_html(test_rendered, events_pb2.NOTIFICATION_SEVERITY_INFO),
+        )
+        return notification_pb2.TestChannelResponse(
+            success=ok, message="delivered" if ok else "smtp send failed"
         )
 
-    def _to_proto_alert(self, a: dict[str, Any]) -> notification_pb2.Alert:
-        """Convert alert dict to proto Alert."""
-        from llamatrade_proto.generated import common_pb2, notification_pb2
+    # --- price alerts ---
 
-        condition = a.get("condition", {})
+    @handle_service_errors
+    async def list_alerts(
+        self,
+        request: notification_pb2.ListAlertsRequest,
+        ctx: RequestContext[object, object],
+    ) -> notification_pb2.ListAlertsResponse:
+        tenant_id, _ = resolve_identity_connect(request.context)
+        async with tenant_session(tenant_id, self._maker) as db:
+            alerts = await NotificationService(db).list_alerts(
+                tenant_id, active_only=request.active_only
+            )
+            protos = [_to_proto_alert(a) for a in alerts]
+        return notification_pb2.ListAlertsResponse(alerts=protos)
 
-        created_at = a.get("created_at")
-        if isinstance(created_at, str):
-            created_at = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
+    @handle_service_errors
+    async def create_alert(
+        self,
+        request: notification_pb2.CreateAlertRequest,
+        ctx: RequestContext[object, object],
+    ) -> notification_pb2.CreateAlertResponse:
+        tenant_id, user_id = resolve_identity_connect(request.context)
+        try:
+            async with tenant_session(tenant_id, self._maker) as db:
+                alert = await NotificationService(db).create_alert(
+                    tenant_id,
+                    user_id,
+                    name=request.name,
+                    description=request.description,
+                    condition_type=request.condition.type,
+                    symbol=request.condition.symbol,
+                    threshold=request.condition.threshold.value,
+                    strategy_id=request.condition.strategy_id,
+                    channels=list(request.channels),
+                    cooldown_minutes=request.cooldown_minutes,
+                )
+                await db.commit()
+                await db.refresh(alert)
+                proto = _to_proto_alert(alert)
+        except WebhookValidationError as e:
+            raise ConnectError(Code.INVALID_ARGUMENT, str(e)) from e
+        return notification_pb2.CreateAlertResponse(alert=proto)
 
-        updated_at = a.get("updated_at")
-        if isinstance(updated_at, str):
-            updated_at = datetime.fromisoformat(updated_at.replace("Z", "+00:00"))
+    @handle_service_errors
+    async def delete_alert(
+        self,
+        request: notification_pb2.DeleteAlertRequest,
+        ctx: RequestContext[object, object],
+    ) -> notification_pb2.DeleteAlertResponse:
+        tenant_id, _ = resolve_identity_connect(request.context)
+        try:
+            async with tenant_session(tenant_id, self._maker) as db:
+                await NotificationService(db).delete_alert(tenant_id, alert_id=request.alert_id)
+                await db.commit()
+        except WebhookValidationError as e:
+            raise ConnectError(Code.INVALID_ARGUMENT, str(e)) from e
+        except NotFoundError as e:
+            raise ConnectError(Code.NOT_FOUND, str(e)) from e
+        return notification_pb2.DeleteAlertResponse(success=True)
 
-        last_triggered = a.get("last_triggered_at")
-        if isinstance(last_triggered, str):
-            last_triggered = datetime.fromisoformat(last_triggered.replace("Z", "+00:00"))
+    @handle_service_errors
+    async def toggle_alert(
+        self,
+        request: notification_pb2.ToggleAlertRequest,
+        ctx: RequestContext[object, object],
+    ) -> notification_pb2.ToggleAlertResponse:
+        tenant_id, _ = resolve_identity_connect(request.context)
+        try:
+            async with tenant_session(tenant_id, self._maker) as db:
+                alert = await NotificationService(db).toggle_alert(
+                    tenant_id, alert_id=request.alert_id, is_active=request.is_active
+                )
+                await db.commit()
+                await db.refresh(alert)
+                proto = _to_proto_alert(alert)
+        except WebhookValidationError as e:
+            raise ConnectError(Code.INVALID_ARGUMENT, str(e)) from e
+        except NotFoundError as e:
+            raise ConnectError(Code.NOT_FOUND, str(e)) from e
+        return notification_pb2.ToggleAlertResponse(alert=proto)
 
-        return notification_pb2.Alert(
-            id=a.get("id", ""),
-            tenant_id=a.get("tenant_id", ""),
-            user_id=a.get("user_id", ""),
-            name=a.get("name", ""),
-            description=a.get("description", ""),
-            is_active=a.get("is_active", True),
-            condition=notification_pb2.AlertCondition(
-                type=condition.get("type", notification_pb2.ALERT_CONDITION_TYPE_UNSPECIFIED),
-                symbol=condition.get("symbol", ""),
-                threshold=common_pb2.Decimal(value=str(condition.get("threshold", 0)))
-                if condition.get("threshold")
-                else None,
-                strategy_id=condition.get("strategy_id", ""),
-            ),
-            channels=a.get("channels", []),
-            cooldown_minutes=a.get("cooldown_minutes", 0),
-            times_triggered=a.get("times_triggered", 0),
-            last_triggered_at=common_pb2.Timestamp(seconds=int(last_triggered.timestamp()))
-            if last_triggered
-            else None,
-            created_at=common_pb2.Timestamp(seconds=int(created_at.timestamp()))
-            if created_at
-            else None,
-            updated_at=common_pb2.Timestamp(seconds=int(updated_at.timestamp()))
-            if updated_at
-            else None,
-        )
 
-    def _to_proto_channel(self, c: dict[str, Any]) -> notification_pb2.Channel:
-        """Convert channel dict to proto Channel."""
-        from llamatrade_proto.generated import common_pb2, notification_pb2
+def _to_proto_notification(row: Notification) -> notification_pb2.Notification:
+    metadata = {str(k): str(v) for k, v in (row.data or {}).items()}
+    metadata["category"] = str(row.category)
+    metadata["severity"] = str(row.severity)
+    proto = notification_pb2.Notification(
+        id=str(row.id),
+        tenant_id=str(row.tenant_id),
+        user_id=str(row.user_id) if row.user_id else "",
+        type=row.notification_type,
+        title=row.title,
+        message=row.message,
+        is_read=row.read_at is not None,
+        metadata=metadata,
+        created_at=to_proto_timestamp(row.created_at),
+    )
+    if row.read_at is not None:
+        proto.read_at.CopyFrom(to_proto_timestamp(row.read_at))
+    return proto
 
-        created_at = c.get("created_at")
-        if isinstance(created_at, str):
-            created_at = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
 
-        updated_at = c.get("updated_at")
-        if isinstance(updated_at, str):
-            updated_at = datetime.fromisoformat(updated_at.replace("Z", "+00:00"))
+def _to_proto_webhook(row: Webhook) -> notification_pb2.Webhook:
+    proto = notification_pb2.Webhook(
+        id=str(row.id),
+        tenant_id=str(row.tenant_id),
+        name=row.name,
+        url=row.url,
+        events=[events_pb2.NotificationCategory.ValueType(int(e)) for e in (row.events or [])],
+        is_active=row.is_active,
+        failure_count=row.failure_count,
+        last_status_code=row.last_status_code or 0,
+        created_at=to_proto_timestamp(row.created_at),
+        updated_at=to_proto_timestamp(row.updated_at),
+    )
+    if row.last_triggered_at is not None:
+        proto.last_triggered_at.CopyFrom(to_proto_timestamp(row.last_triggered_at))
+    return proto
 
-        return notification_pb2.Channel(
-            id=c.get("id", ""),
-            tenant_id=c.get("tenant_id", ""),
-            user_id=c.get("user_id", ""),
-            type=c.get("type", notification_pb2.CHANNEL_TYPE_EMAIL),
-            is_enabled=c.get("is_enabled", False),
-            is_verified=c.get("is_verified", False),
-            config=c.get("config", {}),
-            created_at=common_pb2.Timestamp(seconds=int(created_at.timestamp()))
-            if created_at
-            else None,
-            updated_at=common_pb2.Timestamp(seconds=int(updated_at.timestamp()))
-            if updated_at
-            else None,
-        )
+
+def _to_proto_alert(row: Alert) -> notification_pb2.Alert:
+    condition = row.condition or {}
+    proto = notification_pb2.Alert(
+        id=str(row.id),
+        tenant_id=str(row.tenant_id),
+        user_id=str(row.created_by),
+        name=row.name,
+        description=str(condition.get("description", "")),
+        is_active=row.status == notification_pb2.ALERT_STATUS_ACTIVE,
+        condition=notification_pb2.AlertCondition(
+            type=row.alert_type,
+            symbol=row.symbol or "",
+            threshold=common_pb2.Decimal(value=str(condition.get("threshold", "0"))),
+            strategy_id=str(condition.get("strategy_id", "")),
+        ),
+        channels=[notification_pb2.ChannelType.ValueType(int(c)) for c in (row.channels or [])],
+        cooldown_minutes=row.cooldown_minutes,
+        times_triggered=row.trigger_count,
+        created_at=to_proto_timestamp(row.created_at),
+        updated_at=to_proto_timestamp(row.updated_at),
+    )
+    if row.last_triggered_at is not None:
+        proto.last_triggered_at.CopyFrom(to_proto_timestamp(row.last_triggered_at))
+    return proto
+
+
+def _to_proto_pref(state: ChannelPrefState) -> notification_pb2.ChannelPreference:
+    return notification_pb2.ChannelPreference(
+        channel=state.channel, enabled=state.enabled, categories=state.categories
+    )
+
+
+def _to_proto_channel(tenant_id: object, state: ChannelPrefState) -> notification_pb2.Channel:
+    return notification_pb2.Channel(
+        tenant_id=str(tenant_id),
+        type=state.channel,
+        is_enabled=state.enabled,
+        is_verified=state.channel == notification_pb2.CHANNEL_TYPE_EMAIL,
+    )

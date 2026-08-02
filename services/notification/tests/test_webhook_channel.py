@@ -1,262 +1,131 @@
-"""Tests for WebhookChannel to improve coverage."""
+"""Webhook channel contract: sign-what-you-send, transient-only retry.
 
-from typing import Any
-from unittest.mock import AsyncMock, patch
+These tests capture the actual wire request through ``httpx.MockTransport``
+and verify the HMAC against the raw transmitted body — the receiver's
+perspective, not the sender's bookkeeping.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import hmac
 
 import httpx
 import pytest
 
-from src.channels.webhook import WebhookChannel
+from src.channels.webhook import SIGNATURE_HEADER, WebhookChannel, encode_payload, sign_payload
 
-# === Test Fixtures ===
-
-
-@pytest.fixture
-def webhook_channel() -> WebhookChannel:
-    """Create a WebhookChannel instance."""
-    return WebhookChannel()
+PAYLOAD: dict[str, object] = {"category": 1, "title": "T", "message": "M"}
 
 
-# === WebhookChannel.send Tests ===
+class _Capture:
+    def __init__(self, responses: list[httpx.Response]) -> None:
+        self.requests: list[httpx.Request] = []
+        self._responses = responses
+
+    def __call__(self, request: httpx.Request) -> httpx.Response:
+        self.requests.append(request)
+        index = min(len(self.requests) - 1, len(self._responses) - 1)
+        return self._responses[index]
 
 
-class TestWebhookChannelSend:
-    """Tests for WebhookChannel.send method."""
+def _channel(capture: _Capture) -> WebhookChannel:
+    return WebhookChannel(transport=httpx.MockTransport(capture))
 
-    async def test_send_success(self, webhook_channel: WebhookChannel) -> None:
-        """Test successful webhook send."""
-        mock_response = AsyncMock()
-        mock_response.status_code = 200
 
-        with patch("httpx.AsyncClient") as mock_client_class:
-            mock_client = AsyncMock()
-            mock_client.post = AsyncMock(return_value=mock_response)
-            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-            mock_client.__aexit__ = AsyncMock(return_value=None)
-            mock_client_class.return_value = mock_client
+async def test_signature_verifies_against_transmitted_bytes() -> None:
+    capture = _Capture([httpx.Response(200)])
+    result = await _channel(capture).send("https://example.test/hook", PAYLOAD, secret="s3cret")
 
-            result = await webhook_channel.send(
-                url="https://example.com/webhook",
-                payload={"event": "test", "data": "value"},
-            )
+    assert result.ok
+    request = capture.requests[0]
+    expected = hmac.new(b"s3cret", request.content, hashlib.sha256).hexdigest()
+    assert request.headers[SIGNATURE_HEADER] == f"sha256={expected}"
 
-            assert result is True
-            mock_client.post.assert_called_once()
 
-    async def test_send_with_custom_headers(self, webhook_channel: WebhookChannel) -> None:
-        """Test send with custom headers."""
-        mock_response = AsyncMock()
-        mock_response.status_code = 200
+def test_encode_sign_round_trip() -> None:
+    body = encode_payload(PAYLOAD)
+    assert sign_payload("k", body) == hmac.new(b"k", body, hashlib.sha256).hexdigest()
 
-        with patch("httpx.AsyncClient") as mock_client_class:
-            mock_client = AsyncMock()
-            mock_client.post = AsyncMock(return_value=mock_response)
-            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-            mock_client.__aexit__ = AsyncMock(return_value=None)
-            mock_client_class.return_value = mock_client
 
-            result = await webhook_channel.send(
-                url="https://example.com/webhook",
-                payload={"event": "test"},
-                headers={"Authorization": "Bearer token123"},
-            )
+async def test_no_secret_no_signature_header() -> None:
+    capture = _Capture([httpx.Response(200)])
+    await _channel(capture).send("https://example.test/hook", PAYLOAD)
+    assert SIGNATURE_HEADER not in capture.requests[0].headers
 
-            assert result is True
-            # Verify headers were passed
-            call_kwargs = mock_client.post.call_args.kwargs
-            assert "Authorization" in call_kwargs["headers"]
 
-    async def test_send_with_signature(self, webhook_channel: WebhookChannel) -> None:
-        """Test send with HMAC signature."""
-        mock_response = AsyncMock()
-        mock_response.status_code = 200
+async def test_custom_headers_included() -> None:
+    capture = _Capture([httpx.Response(200)])
+    await _channel(capture).send("https://example.test/hook", PAYLOAD, headers={"X-Custom": "yes"})
+    assert capture.requests[0].headers["X-Custom"] == "yes"
+    assert capture.requests[0].headers["Content-Type"] == "application/json"
 
-        with patch("httpx.AsyncClient") as mock_client_class:
-            mock_client = AsyncMock()
-            mock_client.post = AsyncMock(return_value=mock_response)
-            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-            mock_client.__aexit__ = AsyncMock(return_value=None)
-            mock_client_class.return_value = mock_client
 
-            payload: dict[str, Any] = {"event": "signed_event", "value": 123}
-            secret = "my_webhook_secret"
+async def test_4xx_is_permanent_no_retry() -> None:
+    capture = _Capture([httpx.Response(404)])
+    result = await _channel(capture).send("https://example.test/hook", PAYLOAD)
+    assert not result.ok
+    assert result.status_code == 404
+    assert len(capture.requests) == 1
 
-            result = await webhook_channel.send(
-                url="https://example.com/webhook",
-                payload=payload,
-                secret=secret,
-            )
 
-            assert result is True
-            # Verify signature header was added
-            call_kwargs = mock_client.post.call_args.kwargs
-            assert "X-Signature" in call_kwargs["headers"]
-            assert call_kwargs["headers"]["X-Signature"].startswith("sha256=")
+async def test_5xx_retries_then_succeeds() -> None:
+    capture = _Capture([httpx.Response(500), httpx.Response(200)])
+    result = await _channel(capture).send("https://example.test/hook", PAYLOAD)
+    assert result.ok
+    assert len(capture.requests) == 2
 
-    async def test_send_signature_correct(self, webhook_channel: WebhookChannel) -> None:
-        """Test that HMAC signature is correctly calculated."""
-        mock_response = AsyncMock()
-        mock_response.status_code = 200
 
-        with patch("httpx.AsyncClient") as mock_client_class:
-            mock_client = AsyncMock()
-            mock_client.post = AsyncMock(return_value=mock_response)
-            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-            mock_client.__aexit__ = AsyncMock(return_value=None)
-            mock_client_class.return_value = mock_client
+async def test_5xx_exhausts_attempts() -> None:
+    capture = _Capture([httpx.Response(503)])
+    result = await _channel(capture).send("https://example.test/hook", PAYLOAD)
+    assert not result.ok
+    assert result.status_code == 503
+    assert len(capture.requests) == 3
 
-            payload: dict[str, str | int | float | bool | list[str] | None] = {"test": "data"}
-            secret = "secret123"
 
-            result = await webhook_channel.send(
-                url="https://example.com/webhook",
-                payload=payload,
-                secret=secret,
-            )
+async def test_timeout_retries() -> None:
+    calls = 0
 
-            assert result is True
-            # Verify post was called with headers containing signature
-            mock_client.post.assert_called_once()
-            call_kwargs = mock_client.post.call_args.kwargs
-            assert "X-Signature" in call_kwargs["headers"]
-            assert call_kwargs["headers"]["X-Signature"].startswith("sha256=")
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        raise httpx.ConnectTimeout("boom")
 
-    async def test_send_failure_status_code(self, webhook_channel: WebhookChannel) -> None:
-        """Test send returns False on error status code."""
-        mock_response = AsyncMock()
-        mock_response.status_code = 500
+    channel = WebhookChannel(transport=httpx.MockTransport(handler))
+    result = await channel.send("https://example.test/hook", PAYLOAD)
+    assert not result.ok
+    assert result.error == "ConnectTimeout"
+    assert calls == 3
 
-        with patch("httpx.AsyncClient") as mock_client_class:
-            mock_client = AsyncMock()
-            mock_client.post = AsyncMock(return_value=mock_response)
-            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-            mock_client.__aexit__ = AsyncMock(return_value=None)
-            mock_client_class.return_value = mock_client
 
-            result = await webhook_channel.send(
-                url="https://example.com/webhook",
-                payload={"event": "test"},
-            )
+async def test_connect_error_retries() -> None:
+    calls = 0
 
-            assert result is False
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        raise httpx.ConnectError("refused")
 
-    async def test_send_4xx_status_code(self, webhook_channel: WebhookChannel) -> None:
-        """Test send returns False on 4xx status code."""
-        mock_response = AsyncMock()
-        mock_response.status_code = 400
+    channel = WebhookChannel(transport=httpx.MockTransport(handler))
+    result = await channel.send("https://example.test/hook", PAYLOAD)
+    assert not result.ok
+    assert result.error == "ConnectError"
+    assert calls == 3
 
-        with patch("httpx.AsyncClient") as mock_client_class:
-            mock_client = AsyncMock()
-            mock_client.post = AsyncMock(return_value=mock_response)
-            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-            mock_client.__aexit__ = AsyncMock(return_value=None)
-            mock_client_class.return_value = mock_client
 
-            result = await webhook_channel.send(
-                url="https://example.com/webhook",
-                payload={"event": "test"},
-            )
+async def test_identical_payload_signs_identically() -> None:
+    signatures = []
+    for _ in range(2):
+        capture = _Capture([httpx.Response(200)])
+        await _channel(capture).send("https://example.test/hook", dict(PAYLOAD), secret="k")
+        signatures.append(capture.requests[0].headers[SIGNATURE_HEADER])
+    assert signatures[0] == signatures[1]
 
-            assert result is False
 
-    async def test_send_exception_returns_false(self, webhook_channel: WebhookChannel) -> None:
-        """Test send returns False on exception."""
-        with patch("httpx.AsyncClient") as mock_client_class:
-            mock_client = AsyncMock()
-            mock_client.post = AsyncMock(side_effect=httpx.ConnectError("Connection failed"))
-            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-            mock_client.__aexit__ = AsyncMock(return_value=None)
-            mock_client_class.return_value = mock_client
-
-            result = await webhook_channel.send(
-                url="https://example.com/webhook",
-                payload={"event": "test"},
-            )
-
-            assert result is False
-
-    async def test_send_timeout_returns_false(self, webhook_channel: WebhookChannel) -> None:
-        """Test send returns False on timeout."""
-        with patch("httpx.AsyncClient") as mock_client_class:
-            mock_client = AsyncMock()
-            mock_client.post = AsyncMock(side_effect=httpx.TimeoutException("Timeout"))
-            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-            mock_client.__aexit__ = AsyncMock(return_value=None)
-            mock_client_class.return_value = mock_client
-
-            result = await webhook_channel.send(
-                url="https://example.com/webhook",
-                payload={"event": "test"},
-            )
-
-            assert result is False
-
-    async def test_send_content_type_header(self, webhook_channel: WebhookChannel) -> None:
-        """Test that Content-Type header is set correctly."""
-        mock_response = AsyncMock()
-        mock_response.status_code = 200
-
-        with patch("httpx.AsyncClient") as mock_client_class:
-            mock_client = AsyncMock()
-            mock_client.post = AsyncMock(return_value=mock_response)
-            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-            mock_client.__aexit__ = AsyncMock(return_value=None)
-            mock_client_class.return_value = mock_client
-
-            await webhook_channel.send(
-                url="https://example.com/webhook",
-                payload={"test": "data"},
-            )
-
-            # Verify post was called with Content-Type header
-            mock_client.post.assert_called_once()
-            call_kwargs = mock_client.post.call_args.kwargs
-            assert call_kwargs["headers"]["Content-Type"] == "application/json"
-
-    async def test_send_status_codes_boundary(self, webhook_channel: WebhookChannel) -> None:
-        """Test boundary status codes (399 vs 400)."""
-        # 399 should return True (< 400)
-        mock_response_399 = AsyncMock()
-        mock_response_399.status_code = 399
-
-        with patch("httpx.AsyncClient") as mock_client_class:
-            mock_client = AsyncMock()
-            mock_client.post = AsyncMock(return_value=mock_response_399)
-            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-            mock_client.__aexit__ = AsyncMock(return_value=None)
-            mock_client_class.return_value = mock_client
-
-            result = await webhook_channel.send(
-                url="https://example.com/webhook",
-                payload={"test": "data"},
-            )
-
-            assert result is True
-
-    async def test_send_various_payload_types(self, webhook_channel: WebhookChannel) -> None:
-        """Test send with various payload value types."""
-        mock_response = AsyncMock()
-        mock_response.status_code = 200
-
-        with patch("httpx.AsyncClient") as mock_client_class:
-            mock_client = AsyncMock()
-            mock_client.post = AsyncMock(return_value=mock_response)
-            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-            mock_client.__aexit__ = AsyncMock(return_value=None)
-            mock_client_class.return_value = mock_client
-
-            payload: dict[str, Any] = {
-                "string_val": "test",
-                "int_val": 42,
-                "float_val": 3.14,
-                "bool_val": True,
-                "list_val": ["a", "b", "c"],
-                "null_val": None,
-            }
-
-            result = await webhook_channel.send(
-                url="https://example.com/webhook",
-                payload=payload,
-            )
-
-            assert result is True
+@pytest.mark.parametrize("status", [200, 201, 204, 399])
+async def test_success_statuses(status: int) -> None:
+    capture = _Capture([httpx.Response(status)])
+    result = await _channel(capture).send("https://example.test/hook", PAYLOAD)
+    assert result.ok
+    assert result.status_code == status
