@@ -389,12 +389,13 @@ class TestStreamMessageLagWiring:
 
     @classmethod
     def _lag_count(cls) -> float | None:
+        # Head match tolerates the otel_scope_* labels some exporter versions append.
         name = "llamatrade_marketdata_stream_message_lag_seconds_count"
         for line in cls._exposition().splitlines():
             if line.startswith("#"):
                 continue
             head, _, value = line.rpartition(" ")
-            if head == name:
+            if head == name or head.startswith(name + "{"):
                 return float(value)
         return None
 
