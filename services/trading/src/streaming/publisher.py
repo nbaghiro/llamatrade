@@ -15,6 +15,8 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from uuid import UUID
 
+from opentelemetry.trace import SpanKind
+
 from llamatrade_events import EventBus as EventsBus
 from llamatrade_events import (
     FillEvents,
@@ -27,6 +29,7 @@ from llamatrade_events import (
 )
 from llamatrade_proto.generated import common_pb2, trading_pb2
 from llamatrade_proto.timestamps import to_proto_timestamp
+from llamatrade_telemetry import span
 
 logger = logging.getLogger(__name__)
 
@@ -409,11 +412,22 @@ class TradingEventPublisher:
         kind = message.event_type if is_reservation else "order_filled"
         try:
             fills = self._get_fills()
-            entry_id = (
-                await fills.publish_reservation(message)
-                if is_reservation
-                else await fills.publish_fill(message)
-            )
+            # PRODUCER span so the envelope carries real trace context (the trade-stream / REST-sync publish paths have no active span).
+            with span(
+                "publish ledger:fills",
+                kind=SpanKind.PRODUCER,
+                attributes={
+                    "messaging.system": "kafka",
+                    "ledger.event_kind": kind,
+                    "order.client_order_id": message.client_order_id,
+                    "account.id": message.account_id,
+                },
+            ):
+                entry_id = (
+                    await fills.publish_reservation(message)
+                    if is_reservation
+                    else await fills.publish_fill(message)
+                )
         except Exception:
             record_ledger_publish(kind, "failure")
             raise

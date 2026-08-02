@@ -83,9 +83,6 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# Unified telemetry: RED middleware, /metrics endpoint, JSON logging, tracing, DB connection-pool gauges.
-init_telemetry(app, service="trading", version="0.1.0", pool_stats_provider=get_pool_stats)
-
 # Authentication (fail-closed for non-public paths); added before CORS so CORS stays outermost and still handles preflight + headers on 401 responses.
 app.add_middleware(AuthMiddleware)
 
@@ -97,6 +94,9 @@ app.add_middleware(
     allow_headers=["*"],
     expose_headers=["*"],
 )
+
+# Unified telemetry: RED middleware, /metrics endpoint, JSON logging, tracing, DB connection-pool gauges.
+init_telemetry(app, service="trading", version="0.1.0", pool_stats_provider=get_pool_stats)
 
 
 _check_database = cached_engine_check(get_engine)
