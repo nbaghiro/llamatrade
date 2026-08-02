@@ -32,7 +32,7 @@ libs/proto/
 │   ├── interceptors/            # gRPC interceptors
 │   │   ├── auth.py              # AuthInterceptor, ClientAuthInterceptor, ServiceAuthClientInterceptor
 │   │   ├── logging.py           # LoggingInterceptor, ClientLoggingInterceptor
-│   │   └── telemetry.py         # TelemetryClientInterceptor, TelemetryServerInterceptor
+│   │   └── telemetry.py         # TelemetryClientInterceptor (client-side only)
 │   │
 │   └── server/                  # Server utilities
 │       ├── base.py              # GRPCServer

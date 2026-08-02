@@ -4,6 +4,7 @@ from decimal import Decimal
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from opentelemetry.sdk.trace import TracerProvider
 
 from llamatrade_proto.clients.ledger import (
     LedgerClient,
@@ -272,6 +273,38 @@ class TestSleeveQueries:
         assert lot.qty == Decimal("83")
         assert lot.cost_basis == Decimal("39840")
         assert lot.is_open is True
+
+
+class TestTracePropagation:
+    """_headers carries W3C trace context alongside the service token."""
+
+    @pytest.mark.asyncio
+    async def test_traceparent_header_present_under_active_span(self) -> None:
+        client = LedgerClient()
+        mock_client = MagicMock()
+        mock_client.list_sleeves = AsyncMock(return_value=ledger_pb2.ListSleevesResponse())
+        client._client = mock_client
+
+        tracer = TracerProvider().get_tracer("test")
+        with tracer.start_as_current_span("caller"):
+            await client.list_sleeves(TENANT, USER, "account-1")
+
+        headers = mock_client.list_sleeves.call_args.kwargs["headers"]
+        assert headers["Authorization"].startswith("Bearer ")
+        assert "traceparent" in headers
+
+    @pytest.mark.asyncio
+    async def test_no_traceparent_without_active_span(self) -> None:
+        client = LedgerClient()
+        mock_client = MagicMock()
+        mock_client.list_sleeves = AsyncMock(return_value=ledger_pb2.ListSleevesResponse())
+        client._client = mock_client
+
+        await client.list_sleeves(TENANT, USER, "account-1")
+
+        headers = mock_client.list_sleeves.call_args.kwargs["headers"]
+        assert headers["Authorization"].startswith("Bearer ")
+        assert "traceparent" not in headers
 
 
 class TestHoldingHistory:

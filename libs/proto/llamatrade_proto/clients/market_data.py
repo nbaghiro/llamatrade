@@ -20,6 +20,7 @@ from decimal import Decimal
 from typing import TYPE_CHECKING
 
 from llamatrade_proto.generated.market_data_connect import MarketDataServiceClient
+from llamatrade_telemetry import inject_headers
 
 if TYPE_CHECKING:
     from llamatrade_proto.generated import market_data_pb2
@@ -150,7 +151,9 @@ class MarketDataClient:
         # dependency; the helper is always present in a running service.
         from llamatrade_common.auth import mint_service_token
 
-        return {"Authorization": f"Bearer {mint_service_token(service_name=self._service_name)}"}
+        return inject_headers(
+            {"Authorization": f"Bearer {mint_service_token(service_name=self._service_name)}"}
+        )
 
     async def close(self) -> None:
         if self._client is not None:

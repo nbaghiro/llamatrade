@@ -1,13 +1,11 @@
-"""Telemetry interceptors: W3C trace propagation + metrics for ``grpc.aio`` calls.
+"""Client-side telemetry interceptor: W3C trace propagation + metrics for ``grpc.aio``.
 
-These close the cross-service tracing gap for native gRPC peer calls (Connect
-RPCs are handled by the HTTP middleware). The client injects the current
-``traceparent`` into outgoing metadata and opens a CLIENT span; the server
-extracts it and opens a SERVER span as its child — so a single trace follows a
-request across the ``signal → order → fill → ledger`` path. Both record
-``llamatrade_grpc_requests_total`` via the shared telemetry recorder.
+The client injects the current ``traceparent`` into outgoing metadata, opens a
+CLIENT span, and records ``llamatrade_grpc_requests_total`` via the shared
+telemetry recorder. There is no server-side interceptor: inbound extraction is
+the HTTP middleware's job, since every service serves Connect under ASGI.
 
-Unary-unary is wrapped (the dominant peer shape); streaming handlers pass through.
+Unary-unary is wrapped (the dominant peer shape); streaming calls pass through.
 """
 
 from __future__ import annotations
