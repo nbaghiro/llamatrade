@@ -61,7 +61,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
 
     from src.alerts.market_loop import run_market_loop
     from src.delivery import DeliveryDispatcher
-    from src.tasks.consumer import run_notification_consumer
+    from src.tasks.consumer import run_dlq_sampler, run_notification_consumer
 
     stop_event = asyncio.Event()
     events = NotificationEvents()
@@ -88,10 +88,21 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
         )
     )
 
+    # DLQ depth gauge: samples notifications:dlq for the EventBusDLQBacklog alert.
+    dlq_task = asyncio.create_task(
+        supervise(
+            lambda: run_dlq_sampler(events, stop_event=stop_event),
+            name="notification-dlq-sampler",
+            stop_event=stop_event,
+        )
+    )
+
     yield
 
     stop_event.set()
-    _, pending = await asyncio.wait({consumer_task, market_task}, timeout=SHUTDOWN_GRACE_SECONDS)
+    _, pending = await asyncio.wait(
+        {consumer_task, market_task, dlq_task}, timeout=SHUTDOWN_GRACE_SECONDS
+    )
     for task in pending:
         task.cancel()
     await events.close()

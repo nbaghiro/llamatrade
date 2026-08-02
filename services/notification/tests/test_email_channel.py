@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, patch
 
 import aiosmtplib
 import pytest
+from metrics_util import metric_value
 
 
 @pytest.fixture
@@ -31,10 +32,22 @@ async def test_unconfigured_reports_failure(monkeypatch: pytest.MonkeyPatch) -> 
 
 
 async def test_send_success(smtp_env: None) -> None:
+    before = metric_value(
+        "llamatrade_dependency_requests_total", target="smtp", operation="send", status="success"
+    )
     with patch("aiosmtplib.send", new_callable=AsyncMock) as send:
         channel = _channel()
         ok = await channel.send("user@test", "Subject", "Body")
     assert ok
+    assert (
+        metric_value(
+            "llamatrade_dependency_requests_total",
+            target="smtp",
+            operation="send",
+            status="success",
+        )
+        == before + 1
+    )
     message = send.call_args.args[0]
     assert message["To"] == "user@test"
     assert message["From"] == "noreply@test"
@@ -59,6 +72,9 @@ async def test_send_with_credentials_uses_tls(
 
 
 async def test_smtp_error_reports_failure(smtp_env: None) -> None:
+    before = metric_value(
+        "llamatrade_dependency_requests_total", target="smtp", operation="send", status="error"
+    )
     with patch(
         "aiosmtplib.send",
         new_callable=AsyncMock,
@@ -66,6 +82,12 @@ async def test_smtp_error_reports_failure(smtp_env: None) -> None:
     ):
         ok = await _channel().send("user@test", "S", "B")
     assert ok is False
+    assert (
+        metric_value(
+            "llamatrade_dependency_requests_total", target="smtp", operation="send", status="error"
+        )
+        == before + 1
+    )
 
 
 async def test_html_alternative_attached(smtp_env: None) -> None:

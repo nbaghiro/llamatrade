@@ -16,6 +16,7 @@ from email.message import EmailMessage
 import aiosmtplib
 
 from llamatrade_telemetry import metrics
+from llamatrade_telemetry.instrumentation.dependency import time_dependency
 
 logger = logging.getLogger(__name__)
 
@@ -58,15 +59,16 @@ class EmailChannel:
 
         start = time.perf_counter()
         try:
-            await aiosmtplib.send(
-                message,
-                hostname=self.smtp_host,
-                port=self.smtp_port,
-                username=self.smtp_user or None,
-                password=self.smtp_password or None,
-                start_tls=bool(self.smtp_user) or None,
-                timeout=_TIMEOUT,
-            )
+            with time_dependency("smtp", "send"):
+                await aiosmtplib.send(
+                    message,
+                    hostname=self.smtp_host,
+                    port=self.smtp_port,
+                    username=self.smtp_user or None,
+                    password=self.smtp_password or None,
+                    start_tls=bool(self.smtp_user) or None,
+                    timeout=_TIMEOUT,
+                )
         except (aiosmtplib.SMTPException, OSError) as e:
             logger.warning("email delivery to %s failed: %s", to, e)
             metrics.notification.delivery_failed(channel=_CHANNEL, reason=type(e).__name__)

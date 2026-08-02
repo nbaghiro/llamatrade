@@ -12,6 +12,7 @@ import hmac
 
 import httpx
 import pytest
+from metrics_util import metric_value
 
 from src.channels.webhook import SIGNATURE_HEADER, WebhookChannel, encode_payload, sign_payload
 
@@ -121,6 +122,24 @@ async def test_identical_payload_signs_identically() -> None:
         await _channel(capture).send("https://example.test/hook", dict(PAYLOAD), secret="k")
         signatures.append(capture.requests[0].headers[SIGNATURE_HEADER])
     assert signatures[0] == signatures[1]
+
+
+async def test_send_records_dependency_metric() -> None:
+    before = metric_value(
+        "llamatrade_dependency_requests_total", target="webhook", operation="send", status="success"
+    )
+    capture = _Capture([httpx.Response(200)])
+    result = await _channel(capture).send("https://example.test/hook", PAYLOAD)
+    assert result.ok
+    assert (
+        metric_value(
+            "llamatrade_dependency_requests_total",
+            target="webhook",
+            operation="send",
+            status="success",
+        )
+        == before + 1
+    )
 
 
 @pytest.mark.parametrize("status", [200, 201, 204, 399])

@@ -18,6 +18,7 @@ from dataclasses import dataclass
 import httpx
 
 from llamatrade_telemetry import metrics
+from llamatrade_telemetry.instrumentation.dependency import time_dependency
 
 _CHANNEL = "webhook"
 _TIMEOUT = 10.0
@@ -91,7 +92,8 @@ class WebhookChannel:
         async with httpx.AsyncClient(timeout=self._timeout, transport=self._transport) as client:
             for attempt in range(_ATTEMPTS):
                 try:
-                    response = await client.post(url, content=body, headers=headers)
+                    with time_dependency("webhook", "send"):
+                        response = await client.post(url, content=body, headers=headers)
                 except (httpx.TimeoutException, httpx.ConnectError) as e:
                     last = WebhookResult(ok=False, status_code=None, error=type(e).__name__)
                 except httpx.HTTPError as e:

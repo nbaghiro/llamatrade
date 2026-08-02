@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 import pytest
+from metrics_util import metric_value
 
 from src.channels.sms import SMSChannel, SMSProvider, SMSResult
 
@@ -144,6 +145,47 @@ class TestSMSChannelSend:
 
                 assert result.success is True
                 assert result.message_sid == "SM123456"
+
+    @pytest.mark.asyncio
+    async def test_send_records_dependency_metric(self) -> None:
+        """A successful Twilio post records a llamatrade_dependency series for sms."""
+        with patch.dict(
+            "os.environ",
+            {
+                "TWILIO_ACCOUNT_SID": "AC123",
+                "TWILIO_AUTH_TOKEN": "token",
+                "TWILIO_PHONE_NUMBER": "+15551234567",
+            },
+        ):
+            channel = SMSChannel()
+
+            before = metric_value(
+                "llamatrade_dependency_requests_total",
+                target="sms",
+                operation="send",
+                status="success",
+            )
+            with patch("httpx.AsyncClient") as mock_client:
+                mock_response = MagicMock()
+                mock_response.status_code = 201
+                mock_response.json.return_value = {"sid": "SM123456"}
+
+                mock_client_instance = AsyncMock()
+                mock_client_instance.post.return_value = mock_response
+                mock_client.return_value.__aenter__.return_value = mock_client_instance
+
+                result = await channel.send("+1234567890", "Test message")
+
+            assert result.success is True
+            assert (
+                metric_value(
+                    "llamatrade_dependency_requests_total",
+                    target="sms",
+                    operation="send",
+                    status="success",
+                )
+                == before + 1
+            )
 
     @pytest.mark.asyncio
     async def test_send_api_error(self) -> None:

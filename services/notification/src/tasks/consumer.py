@@ -13,11 +13,15 @@ import os
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from llamatrade_events import NOTIFICATIONS, DlqDepthSampler
 from llamatrade_events.catalog.notifications import NotificationEvents
 
 from src.alerts.matcher import EventAlertMatcher
 from src.delivery import DeliveryDispatcher
 from src.pipeline import AlertMatcher, make_notification_handler
+
+# Mirrors StreamConsumer's default dlq_suffix for the notifications stream.
+NOTIFICATIONS_DLQ_STREAM = NOTIFICATIONS.key() + ":dlq"
 
 
 async def run_notification_consumer(
@@ -35,3 +39,8 @@ async def run_notification_consumer(
     )
     consumer = events.consumer(consumer_name=os.getenv("HOSTNAME", "notification-0"))
     await consumer.run(handler, stop_event=stop_event)
+
+
+async def run_dlq_sampler(events: NotificationEvents, *, stop_event: asyncio.Event) -> None:
+    """Sample the notifications dead-letter depth into the events DLQ gauge."""
+    await DlqDepthSampler(events.bus, [NOTIFICATIONS_DLQ_STREAM]).run(stop_event=stop_event)

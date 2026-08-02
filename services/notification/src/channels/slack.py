@@ -10,6 +10,7 @@ from typing import Any
 import httpx
 
 from llamatrade_telemetry import metrics
+from llamatrade_telemetry.instrumentation.dependency import time_dependency
 
 logger = logging.getLogger(__name__)
 
@@ -169,11 +170,12 @@ class SlackChannel:
         start = time.perf_counter()
         try:
             async with httpx.AsyncClient() as client:
-                response = await client.post(
-                    self.webhook_url,
-                    json=payload,
-                    timeout=30.0,
-                )
+                with time_dependency("slack", "send"):
+                    response = await client.post(
+                        self.webhook_url,
+                        json=payload,
+                        timeout=30.0,
+                    )
 
                 if response.status_code == 200 and response.text == "ok":
                     logger.info("Slack message sent successfully")

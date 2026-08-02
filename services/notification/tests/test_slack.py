@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, patch
 
 import httpx
 import pytest
+from metrics_util import metric_value
 
 from src.channels.slack import (
     SlackAttachment,
@@ -144,6 +145,39 @@ class TestSlackChannelSend:
             result = await channel.send("Hello, Slack!")
 
             assert result.success is True
+
+    @pytest.mark.asyncio
+    async def test_send_records_dependency_metric(self) -> None:
+        """A successful post records a llamatrade_dependency series for slack."""
+        channel = SlackChannel(webhook_url="https://hooks.slack.com/test")
+
+        mock_response = AsyncMock()
+        mock_response.status_code = 200
+        mock_response.text = "ok"
+
+        before = metric_value(
+            "llamatrade_dependency_requests_total",
+            target="slack",
+            operation="send",
+            status="success",
+        )
+        with patch("httpx.AsyncClient") as mock_client:
+            mock_client.return_value.__aenter__.return_value.post = AsyncMock(
+                return_value=mock_response
+            )
+
+            result = await channel.send("Hello, Slack!")
+
+        assert result.success is True
+        assert (
+            metric_value(
+                "llamatrade_dependency_requests_total",
+                target="slack",
+                operation="send",
+                status="success",
+            )
+            == before + 1
+        )
 
     @pytest.mark.asyncio
     async def test_send_with_channel_override(self) -> None:

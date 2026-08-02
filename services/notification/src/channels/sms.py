@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 
 from llamatrade_telemetry import metrics
+from llamatrade_telemetry.instrumentation.dependency import time_dependency
 
 logger = logging.getLogger(__name__)
 
@@ -140,16 +141,17 @@ class SMSChannel:
         start = time.perf_counter()
         try:
             async with httpx.AsyncClient() as client:
-                response = await client.post(
-                    url,
-                    auth=(self.twilio_account_sid, self.twilio_auth_token),
-                    data={
-                        "To": to,
-                        "From": sender,
-                        "Body": message,
-                    },
-                    timeout=30.0,
-                )
+                with time_dependency("sms", "send"):
+                    response = await client.post(
+                        url,
+                        auth=(self.twilio_account_sid, self.twilio_auth_token),
+                        data={
+                            "To": to,
+                            "From": sender,
+                            "Body": message,
+                        },
+                        timeout=30.0,
+                    )
 
                 if response.status_code == 201:
                     data = response.json()
