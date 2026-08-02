@@ -52,8 +52,8 @@ jobs:
           .venv/bin/pip install --upgrade pip
           # Install all libs (needed for type checking). Order matters: local
           # packages are not on PyPI, so each must be installed before its dependents
-          # (telemetry/dsl are leaves; common/alpaca need telemetry; proto needs
-          # common; db/events need proto; runtime needs dsl).
+          # (telemetry/dsl are leaves; common/proto/alpaca need telemetry;
+          # db/events need proto; runtime needs dsl).
           .venv/bin/pip install -e libs/telemetry
           .venv/bin/pip install -e libs/dsl
           .venv/bin/pip install -e libs/common

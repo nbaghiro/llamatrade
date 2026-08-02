@@ -1563,7 +1563,6 @@ dependencies = [
     { name = "connect-python" },
     { name = "grpcio" },
     { name = "grpcio-tools" },
-    { name = "llamatrade-common" },
     { name = "llamatrade-telemetry" },
     { name = "protobuf" },
 ]
@@ -1571,6 +1570,7 @@ dependencies = [
 [package.optional-dependencies]
 dev = [
     { name = "grpcio-testing" },
+    { name = "llamatrade-common" },
     { name = "mypy-protobuf" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
@@ -1583,7 +1583,7 @@ requires-dist = [
     { name = "grpcio", specifier = ">=1.60.0" },
     { name = "grpcio-testing", marker = "extra == 'dev'", specifier = ">=1.60.0" },
     { name = "grpcio-tools", specifier = ">=1.60.0" },
-    { name = "llamatrade-common", editable = "libs/common" },
+    { name = "llamatrade-common", marker = "extra == 'dev'", editable = "libs/common" },
     { name = "llamatrade-telemetry", editable = "libs/telemetry" },
     { name = "mypy-protobuf", marker = "extra == 'dev'", specifier = ">=3.5.0" },
     { name = "protobuf", specifier = ">=4.25.0" },

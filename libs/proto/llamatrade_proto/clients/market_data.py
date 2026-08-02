@@ -19,7 +19,6 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from typing import TYPE_CHECKING
 
-from llamatrade_common.auth import mint_service_token
 from llamatrade_proto.generated.market_data_connect import MarketDataServiceClient
 
 if TYPE_CHECKING:
@@ -147,6 +146,10 @@ class MarketDataClient:
 
     def _headers(self) -> dict[str, str]:
         """Internal service token so the call clears market-data's fail-closed auth."""
+        # Lazy import: keeps llamatrade_proto free of a hard llamatrade_common
+        # dependency; the helper is always present in a running service.
+        from llamatrade_common.auth import mint_service_token
+
         return {"Authorization": f"Bearer {mint_service_token(service_name=self._service_name)}"}
 
     async def close(self) -> None:

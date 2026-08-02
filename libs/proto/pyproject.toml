@@ -9,13 +9,15 @@ dependencies = [
     "grpcio>=1.60.0",
     "grpcio-tools>=1.60.0",
     "protobuf>=4.25.0",
-    "llamatrade-common",
     "llamatrade-telemetry",
 ]
 
 [project.optional-dependencies]
+# llamatrade-common is a soft runtime dependency: the S2S clients lazy-import
+# mint_service_token, so it is only required where those calls actually run.
 dev = [
     "grpcio-testing>=1.60.0",
+    "llamatrade-common",
     "mypy-protobuf>=3.5.0",
     "pytest>=8.0.0",
     "pytest-asyncio>=0.23.0",
