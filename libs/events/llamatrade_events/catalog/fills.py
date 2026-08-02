@@ -1,8 +1,9 @@
 """Ledger fill + reservation events — trading → portfolio (durable consumer group).
 
-One global stream (``ledger:fills``); per-account FIFO is preserved by global
-order, and payloads carry ``account_id`` (portfolio-ledger.md). Two payload types ride
-the same stream, discriminated by ``EventType``:
+One global stream (``ledger:fills``) partitioned by ``account_id``: per-account
+FIFO is preserved by the partition key while the fold runs N-way parallel across
+accounts (portfolio-ledger.md). Two payload types ride the same stream,
+discriminated by ``EventType``:
 
 - ``LedgerFill`` — a terminal fill (idempotency seed: ``client_order_id``).
 - ``LedgerReservation`` — cash reservation lifecycle (seed:
@@ -22,6 +23,7 @@ from llamatrade_events.codec import EventEnvelope, make_envelope, parse_payload,
 from llamatrade_events.consumer import StreamConsumer
 from llamatrade_events.idempotency import DedupStore, derive_event_id
 from llamatrade_events.transport.base import CURSOR_BEGIN, Cursor
+from llamatrade_events.transport.factory import get_default_transport
 from llamatrade_proto.generated import events_pb2
 
 LedgerFill = events_pb2.LedgerFill
@@ -38,16 +40,12 @@ class FillEvents:
     """Durable trading→portfolio ledger stream (produce + consumer factory)."""
 
     def __init__(self, *, bus: EventBus | None = None) -> None:
-        self._bus = bus or EventBus()
+        self._bus = bus or EventBus(get_default_transport())
         self._stream = LEDGER_FILLS.key()
 
     @property
     def bus(self) -> EventBus:
         return self._bus
-
-    @property
-    def stream(self) -> str:
-        return self._stream
 
     async def publish_fill(self, fill: LedgerFill, *, event_id: str | None = None) -> Cursor:
         env = make_envelope(
@@ -56,7 +54,7 @@ class FillEvents:
             event_id=event_id or derive_event_id(fill.client_order_id),
             tenant_id=fill.tenant_id,
         )
-        return await self._bus.publish_envelope(self._stream, env, maxlen=LEDGER_FILLS.maxlen)
+        return await self._bus.publish_envelope(self._stream, env, key=str(fill.account_id))
 
     async def publish_reservation(
         self, reservation: LedgerReservation, *, event_id: str | None = None
@@ -68,7 +66,7 @@ class FillEvents:
             or derive_event_id(reservation.client_order_id, reservation.event_type),
             tenant_id=reservation.tenant_id,
         )
-        return await self._bus.publish_envelope(self._stream, env, maxlen=LEDGER_FILLS.maxlen)
+        return await self._bus.publish_envelope(self._stream, env, key=str(reservation.account_id))
 
     def consumer(
         self,
@@ -77,7 +75,6 @@ class FillEvents:
         group: str = PORTFOLIO_GROUP,
         dedup: DedupStore | None = None,
         group_start: str = CURSOR_BEGIN,
-        claim_min_idle_ms: int = 60_000,
     ) -> StreamConsumer:
         """A durable consumer for the ledger stream (handler gets the envelope).
 
@@ -91,7 +88,6 @@ class FillEvents:
             consumer_name=consumer_name,
             dedup=dedup,
             group_start=group_start,
-            claim_min_idle_ms=claim_min_idle_ms,
         )
 
     @staticmethod

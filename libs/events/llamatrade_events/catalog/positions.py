@@ -53,6 +53,7 @@ class PositionEvents(EnvelopeTailChannel[trading_pb2.PositionUpdate]):
             POSITIONS.key(session_id=session_id),
             event_type_for(update.event_type),
             update,
+            key=str(session_id),
             tenant_id=tenant_id,
             user_id=user_id,
             event_id=event_id,

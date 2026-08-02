@@ -13,6 +13,7 @@ from collections.abc import AsyncIterator
 from llamatrade_events.bus import EventBus
 from llamatrade_events.channels import BARS
 from llamatrade_events.transport.base import CURSOR_NEW, Cursor
+from llamatrade_events.transport.factory import get_default_transport
 from llamatrade_proto.generated import market_data_pb2
 
 Bar = market_data_pb2.Bar
@@ -22,7 +23,7 @@ class BarEvents:
     """The global live-bar stream (raw ``Bar`` payload, no envelope)."""
 
     def __init__(self, *, bus: EventBus | None = None) -> None:
-        self._bus = bus or EventBus()
+        self._bus = bus or EventBus(get_default_transport())
         self._stream = BARS.key()
 
     @property
@@ -30,9 +31,7 @@ class BarEvents:
         return self._stream
 
     async def publish(self, bar: Bar) -> Cursor:
-        return await self._bus.publish_raw(
-            self._stream, bar.SerializeToString(), maxlen=BARS.maxlen
-        )
+        return await self._bus.publish_raw(self._stream, bar.SerializeToString(), key=bar.symbol)
 
     async def tail(self, *, from_cursor: Cursor = CURSOR_NEW) -> AsyncIterator[tuple[Cursor, Bar]]:
         async for cursor, value in self._bus.tail_raw(self._stream, from_cursor=from_cursor):

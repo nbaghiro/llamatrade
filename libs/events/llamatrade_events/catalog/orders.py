@@ -61,6 +61,7 @@ class OrderEvents(EnvelopeTailChannel[trading_pb2.OrderUpdate]):
             ORDERS.key(session_id=session_id),
             event_type_for(update.event_type),
             update,
+            key=str(session_id),
             tenant_id=tenant_id,
             user_id=user_id,
             event_id=event_id,

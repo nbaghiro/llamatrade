@@ -4,8 +4,8 @@ Layers, bottom to top:
 
 - **proto** (``events.proto``) is the source of truth for event data: the
   ``EventEnvelope`` and the ``EventType`` discriminator.
-- **transport** (:class:`EventTransport`) moves opaque bytes; the Redis Streams
-  adapter is the default, and the seam is what makes a Kafka swap a one-file job.
+- **transport** (:class:`EventTransport`) moves opaque bytes; :class:`KafkaTransport`
+  is the backend, behind a narrow seam that keeps every layer above backend-neutral.
 - **codec** turns a domain proto ⇄ envelope ⇄ bytes (registry keyed by EventType).
 - **bus** (:class:`EventBus`) ties codec to transport: publish / tail / consume.
 - **catalog** is the typed, public produce/consume surface services call directly
@@ -27,16 +27,20 @@ from llamatrade_events.catalog import (
     FillEvents,
     LedgerFill,
     LedgerReservation,
+    NotificationEvent,
+    NotificationEvents,
     OrderEvents,
     OrderUpdate,
     PositionEvents,
     PositionUpdate,
     ProgressEvents,
+    shared_notification_events,
 )
 from llamatrade_events.channels import (
     BACKTEST_PROGRESS,
     BARS,
     LEDGER_FILLS,
+    NOTIFICATIONS,
     ORDERS,
     POSITIONS,
     Channel,
@@ -62,7 +66,9 @@ from llamatrade_events.transport import (
     CURSOR_NEW,
     Cursor,
     EventTransport,
-    RedisStreamsTransport,
+    KafkaTransport,
+    OutgoingRecord,
+    get_default_transport,
 )
 from llamatrade_proto.generated import events_pb2
 
@@ -77,6 +83,7 @@ __all__ = [
     "CURSOR_BEGIN",
     "CURSOR_NEW",
     "LEDGER_FILLS",
+    "NOTIFICATIONS",
     "ORDERS",
     "POSITIONS",
     # catalog
@@ -93,16 +100,20 @@ __all__ = [
     "EventType",
     "FillEvents",
     "InMemoryDedupStore",
+    "KafkaTransport",
     "LedgerFill",
     "LedgerReservation",
+    "NotificationEvent",
+    "NotificationEvents",
     "OrderEvents",
     "OrderUpdate",
+    "OutgoingRecord",
     "PoisonError",
     "PositionEvents",
     "PositionUpdate",
     "ProgressEvents",
-    "RedisStreamsTransport",
     "UnknownEventTypeError",
+    "get_default_transport",
     # runtime
     "StreamConsumer",
     "StreamFanout",
@@ -113,4 +124,5 @@ __all__ = [
     "make_envelope",
     "parse_payload",
     "register_payload",
+    "shared_notification_events",
 ]

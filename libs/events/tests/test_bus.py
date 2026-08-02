@@ -6,7 +6,7 @@ from conftest import FakeTransport
 
 from llamatrade_events.bus import EventBus
 from llamatrade_events.codec import make_envelope
-from llamatrade_events.transport.base import CURSOR_BEGIN
+from llamatrade_events.transport.base import CURSOR_BEGIN, OutgoingRecord
 from llamatrade_proto.generated import events_pb2, trading_pb2
 
 ORDER_FILLED = events_pb2.EVENT_TYPE_ORDER_FILLED
@@ -36,6 +36,22 @@ async def test_publish_and_tail_raw(bus: EventBus) -> None:
     await bus.publish_raw("market:bars:1m", b"\x01\x02", maxlen=10)
     got = [v async for _, v in bus.tail_raw("market:bars:1m", from_cursor=CURSOR_BEGIN)]
     assert got == [b"\x01\x02"]
+
+
+async def test_publish_many_raw_batches_and_preserves_order(
+    bus: EventBus, transport: FakeTransport
+) -> None:
+    records = [
+        OutgoingRecord(b"b0", "AAPL"),
+        OutgoingRecord(b"b1", "MSFT"),
+        OutgoingRecord(b"b2", "AAPL"),
+    ]
+    cursors = await bus.publish_many_raw("market:bars:1m", records)
+    assert cursors == ["1", "2", "3"]  # one cursor per record, in input order
+    got = [v async for _, v in bus.tail_raw("market:bars:1m", from_cursor=CURSOR_BEGIN)]
+    assert got == [b"b0", b"b1", b"b2"]
+    # keys ride through to the transport for per-key partitioning
+    assert [r.key for r in transport.records] == ["AAPL", "MSFT", "AAPL"]
 
 
 async def test_consume_ack_and_pending(bus: EventBus) -> None:
@@ -84,7 +100,7 @@ async def test_close_delegates_to_transport(bus: EventBus, transport: FakeTransp
     assert transport.closed is True
 
 
-def test_default_transport_is_redis() -> None:
-    from llamatrade_events.transport.redis_streams import RedisStreamsTransport
+def test_default_transport_is_kafka() -> None:
+    from llamatrade_events.transport.kafka import KafkaTransport
 
-    assert isinstance(EventBus().transport, RedisStreamsTransport)
+    assert isinstance(EventBus().transport, KafkaTransport)

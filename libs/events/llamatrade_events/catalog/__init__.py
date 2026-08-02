@@ -21,20 +21,30 @@ from llamatrade_events.catalog.fills import (
     LedgerFill,
     LedgerReservation,
 )
+from llamatrade_events.catalog.notifications import (
+    NOTIFICATION_GROUP,
+    NotificationEvent,
+    NotificationEvents,
+    shared_notification_events,
+)
 from llamatrade_events.catalog.orders import OrderEvents, OrderUpdate
 from llamatrade_events.catalog.positions import PositionEvents, PositionUpdate
 from llamatrade_events.catalog.progress import BacktestProgressUpdate, ProgressEvents
 
 __all__ = [
+    "NOTIFICATION_GROUP",
     "PORTFOLIO_GROUP",
     "BacktestProgressUpdate",
     "BarEvents",
     "FillEvents",
     "LedgerFill",
     "LedgerReservation",
+    "NotificationEvent",
+    "NotificationEvents",
     "OrderEvents",
     "OrderUpdate",
     "PositionEvents",
     "PositionUpdate",
     "ProgressEvents",
+    "shared_notification_events",
 ]

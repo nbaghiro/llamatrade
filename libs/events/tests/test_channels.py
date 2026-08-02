@@ -6,10 +6,12 @@ from llamatrade_events.channels import (
     BACKTEST_PROGRESS,
     BARS,
     LEDGER_FILLS,
+    NOTIFICATIONS,
     ORDERS,
     POSITIONS,
     Channel,
     Delivery,
+    resolve_topic,
 )
 
 
@@ -41,10 +43,11 @@ def test_delivery_and_envelope_policy() -> None:
     assert LEDGER_FILLS.enveloped is True
 
 
-def test_retention_bounds() -> None:
-    assert LEDGER_FILLS.maxlen == 10_000
-    assert BARS.maxlen == 50_000
-    assert BACKTEST_PROGRESS.maxlen == 256
+def test_kafka_topics() -> None:
+    # Retention/partitions live in Terraform; code declares only the topic base.
+    assert LEDGER_FILLS.kafka_topic == "ledger.fills"
+    assert BARS.kafka_topic == "market.bars.1m"
+    assert BACKTEST_PROGRESS.kafka_topic == "backtest.progress"
 
 
 def test_channel_is_frozen() -> None:
@@ -52,6 +55,15 @@ def test_channel_is_frozen() -> None:
 
     import pytest
 
-    c = Channel("x:{a}", maxlen=10)
+    c = Channel("x:{a}", kafka_topic="x")
     with pytest.raises(dataclasses.FrozenInstanceError):
-        setattr(c, "maxlen", 20)
+        setattr(c, "kafka_topic", "y")
+
+
+def test_notifications_channel_facts() -> None:
+    assert NOTIFICATIONS.key() == "notifications"
+    assert NOTIFICATIONS.kafka_topic == "notifications"
+    assert NOTIFICATIONS.delivery is Delivery.CONSUME
+    assert NOTIFICATIONS.enveloped is True
+    assert resolve_topic("notifications") == ("notifications", None)
+    assert resolve_topic("notifications:dlq") == ("notifications.dlq", None)

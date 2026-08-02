@@ -40,6 +40,7 @@ class ProgressEvents(EnvelopeTailChannel[backtest_pb2.BacktestProgressUpdate]):
             BACKTEST_PROGRESS.key(backtest_id=backtest_id),
             events_pb2.EVENT_TYPE_BACKTEST_PROGRESS,
             update,
+            key=str(backtest_id),
             tenant_id=tenant_id,
             event_id=event_id,
         )

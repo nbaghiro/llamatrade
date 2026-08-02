@@ -5,7 +5,8 @@ description = "The unified event library for LlamaTrade: proto envelope, pluggab
 readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [
-    "redis>=5.0.0",
+    "aiokafka[lz4]>=0.11.0",
+    "google-auth>=2.0.0",
     "protobuf>=4.25.0",
     "llamatrade-proto",
     "llamatrade-telemetry",
@@ -18,7 +19,7 @@ dev = [
     "pytest-cov>=4.1.0",
 ]
 integration = [
-    "testcontainers[redis]>=4.0.0",
+    "testcontainers[kafka]>=4.0.0",
     "pytest-timeout>=2.2.0",
 ]
 
@@ -34,7 +35,7 @@ asyncio_mode = "auto"
 testpaths = ["tests"]
 addopts = "--cov=llamatrade_events --cov-report=term-missing --cov-fail-under=80"
 markers = [
-    "integration: requires a real Redis via Docker (deselect with -m 'not integration')",
+    "integration: requires a real Kafka via Docker (deselect with -m 'not integration')",
 ]
 
 [tool.coverage.run]
@@ -51,11 +52,9 @@ exclude_lines = [
 ]
 
 [tool.ruff]
+extend = "../../pyproject.toml"
 line-length = 100
 target-version = "py314"
-
-[tool.ruff.lint]
-select = ["E", "F", "I", "N", "W", "UP"]
 
 [tool.pyright]
 venvPath = "../.."

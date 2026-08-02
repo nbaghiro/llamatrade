@@ -17,6 +17,7 @@ from llamatrade_events.bus import EventBus
 from llamatrade_events.channels import Channel
 from llamatrade_events.codec import make_envelope, parse_payload
 from llamatrade_events.transport.base import CURSOR_NEW, Cursor
+from llamatrade_events.transport.factory import get_default_transport
 
 MsgT = TypeVar("MsgT", bound=Message)
 
@@ -26,7 +27,7 @@ class EnvelopeTailChannel(Generic[MsgT]):
 
     def __init__(self, channel: Channel, *, bus: EventBus | None = None) -> None:
         self._channel = channel
-        self._bus = bus or EventBus()
+        self._bus = bus or EventBus(get_default_transport())
 
     @property
     def bus(self) -> EventBus:
@@ -38,6 +39,7 @@ class EnvelopeTailChannel(Generic[MsgT]):
         event_type: int,
         payload: MsgT,
         *,
+        key: str | None = None,
         tenant_id: str = "",
         user_id: str = "",
         event_id: str | None = None,
@@ -51,7 +53,7 @@ class EnvelopeTailChannel(Generic[MsgT]):
             user_id=user_id,
             metadata=metadata,
         )
-        return await self._bus.publish_envelope(stream, env, maxlen=self._channel.maxlen)
+        return await self._bus.publish_envelope(stream, env, key=key)
 
     async def _tail(
         self, stream: str, *, from_cursor: Cursor = CURSOR_NEW

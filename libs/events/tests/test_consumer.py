@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-import re
+import logging
 
 import pytest
-from conftest import FakeTransport
+from conftest import FakeTransport, PublishRecord, metric_value
 
 from llamatrade_events import observability
 from llamatrade_events.bus import EventBus
@@ -19,22 +19,14 @@ from llamatrade_events.consumer import PoisonError, StreamConsumer
 from llamatrade_events.idempotency import InMemoryDedupStore, derive_event_id
 from llamatrade_events.transport.base import CURSOR_NEW
 from llamatrade_proto.generated import events_pb2
-from llamatrade_telemetry import get_metrics
 
 STREAM = "ledger:fills"
 GROUP = "portfolio-ledger"
-
-
-def _metric_value(name: str, **labels: str) -> float:
-    """Read a single metric value from the Prometheus exposition (0.0 if absent)."""
-    label_str = ",".join(f'{k}="{v}"' for k, v in sorted(labels.items()))
-    pattern = re.compile(rf"^{re.escape(name)}\{{{re.escape(label_str)}\}} (.+)$", re.M)
-    match = pattern.search(get_metrics().decode())
-    return float(match.group(1)) if match else 0.0
+ACCOUNT = "acct-1"
 
 
 def _outcome_count(stream: str, group: str, outcome: str) -> float:
-    return _metric_value(
+    return metric_value(
         "llamatrade_events_consumed_total",
         stream=observability.stream_label(stream),
         group=group,
@@ -42,12 +34,18 @@ def _outcome_count(stream: str, group: str, outcome: str) -> float:
     )
 
 
+def _dlq_records(transport: FakeTransport) -> list[PublishRecord]:
+    return [r for r in transport.records if r.stream == STREAM + ":dlq"]
+
+
 # Importing llamatrade_events above ran the package __init__, which imports the
 # catalog and registers LedgerFill for EVENT_TYPE_LEDGER_FILL.
 
 
 def _fill_env(client_order_id: str) -> EventEnvelope:
-    fill = events_pb2.LedgerFill(client_order_id=client_order_id, tenant_id="t1")
+    fill = events_pb2.LedgerFill(
+        client_order_id=client_order_id, tenant_id="t1", account_id=ACCOUNT
+    )
     return make_envelope(
         events_pb2.EVENT_TYPE_LEDGER_FILL, fill, event_id=derive_event_id(client_order_id)
     )
@@ -138,12 +136,13 @@ async def test_poison_message_goes_to_dlq(bus: EventBus, transport: FakeTranspor
         attempts += 1
         raise RuntimeError("nope")
 
-    # Each run() redelivers the unacked entry (FakeTransport mimics XAUTOCLAIM).
+    # Each run() redelivers the unacked entry (FakeTransport mimics reclaim).
     for _ in range(3):
         await consumer.run(boom)
 
     assert attempts == 3
     assert len(transport.entries(STREAM + ":dlq")) == 1  # dead-lettered
+    assert _dlq_records(transport)[0].key == ACCOUNT  # keyed like the source stream
     assert await bus.pending(STREAM, GROUP) == 0  # acked off the live stream
 
 
@@ -190,6 +189,7 @@ async def test_undecodable_bytes_dead_lettered_as_raw(
     dlq = transport.entries(STREAM + ":dlq")
     assert len(dlq) == 1
     assert dlq[0][1] == garbage  # raw bytes preserved
+    assert _dlq_records(transport)[0].key is None  # undecodable → no recoverable key
     assert await bus.pending(STREAM, GROUP) == 0  # acked off the live stream
     assert _outcome_count(STREAM, GROUP, "poison") == before + 1
 
@@ -215,6 +215,7 @@ async def test_poison_error_dead_letters_immediately(
 
     assert attempts == 1  # no redelivery despite max_attempts=5
     assert len(transport.entries(STREAM + ":dlq")) == 1
+    assert _dlq_records(transport)[0].key == ACCOUNT  # per-account order survives the park
     assert await bus.pending(STREAM, GROUP) == 0
     assert _outcome_count(STREAM, GROUP, "poison") == before + 1
 
@@ -234,6 +235,7 @@ async def test_unknown_event_type_routed_to_dlq(bus: EventBus, transport: FakeTr
 
     await consumer.run(handler)
     assert len(transport.entries(STREAM + ":dlq")) == 1
+    assert _dlq_records(transport)[0].key is None  # unparseable payload → unkeyed
     assert await bus.pending(STREAM, GROUP) == 0
 
 
@@ -319,7 +321,7 @@ async def test_lag_gauge_sampled_after_handling(bus: EventBus) -> None:
         return None
 
     await consumer.run(handler)
-    lag = _metric_value(
+    lag = metric_value(
         "llamatrade_events_consumer_lag",
         stream=observability.stream_label(STREAM),
         group=GROUP,
@@ -354,3 +356,47 @@ async def test_lag_sampling_is_throttled(bus: EventBus, monkeypatch: pytest.Monk
 
     await consumer.run(handler)
     assert probes == 1  # first entry sampled; second within interval skipped
+
+
+async def test_lag_sample_transport_failure_does_not_stop_the_loop(
+    bus: EventBus, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A broker blip while sampling lag is logged at debug and skipped — the gauge
+    is observability and the fill → ledger projection must keep consuming."""
+    await bus.publish_envelope(STREAM, _fill_env("lagfail"), maxlen=100)
+    consumer = StreamConsumer(bus, STREAM, GROUP, consumer_name="c1")
+
+    async def failing_pending(stream: str, group: str) -> int:
+        raise ConnectionResetError("broker went away")
+
+    monkeypatch.setattr(bus, "pending", failing_pending)
+    handled: list[str] = []
+
+    async def handler(env: EventEnvelope) -> None:
+        handled.append(parse_payload(env).client_order_id)
+
+    with caplog.at_level(logging.DEBUG, logger="llamatrade_events.consumer"):
+        await consumer.run(handler)
+
+    assert handled == ["lagfail"]
+    assert "ConnectionResetError" in caplog.text
+
+
+async def test_unexpected_lag_sample_error_propagates(
+    bus: EventBus, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Only the transport's own failure types are contained; a bug in the sampling
+    path surfaces rather than hiding behind the gauge."""
+    await bus.publish_envelope(STREAM, _fill_env("lagbug"), maxlen=100)
+    consumer = StreamConsumer(bus, STREAM, GROUP, consumer_name="c1")
+
+    async def buggy_pending(stream: str, group: str) -> int:
+        raise ValueError("programming error")
+
+    monkeypatch.setattr(bus, "pending", buggy_pending)
+
+    async def handler(_: EventEnvelope) -> None:
+        return None
+
+    with pytest.raises(ValueError):
+        await consumer.run(handler)

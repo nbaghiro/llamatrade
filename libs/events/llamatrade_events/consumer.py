@@ -23,13 +23,14 @@ from opentelemetry import context as _otel_context
 from opentelemetry.trace import SpanKind
 
 from llamatrade_events.bus import EventBus
-from llamatrade_events.codec import EventEnvelope, decode_envelope
+from llamatrade_events.codec import EventEnvelope, decode_envelope, parse_payload
 from llamatrade_events.idempotency import DedupStore
 from llamatrade_events.observability import (
     EVENTS_CONSUMED_TOTAL,
     EVENTS_CONSUMER_LAG,
     stream_label,
 )
+from llamatrade_events.transport import TRANSPORT_ERRORS
 from llamatrade_events.transport.base import CURSOR_BEGIN, Cursor
 from llamatrade_telemetry import extract_context
 from llamatrade_telemetry import span as trace_span
@@ -38,15 +39,30 @@ logger = logging.getLogger(__name__)
 
 Handler = Callable[[EventEnvelope], Awaitable[None]]
 
-# Sample the lag gauge at most this often (an XPENDING round-trip), rather than
-# once per message — keeps the consume loop's Redis overhead bounded.
+# Sample the lag gauge at most this often (a lag round-trip), rather than once per
+# message — keeps the consume loop's transport overhead bounded.
 LAG_SAMPLE_INTERVAL_SECONDS = 5.0
-DLQ_MAXLEN = 10_000
 
 
 class PoisonError(Exception):
     """A handler raises this to declare an entry permanently unprocessable —
     the consumer dead-letters it immediately, with no retries."""
+
+
+def _dlq_key(env: EventEnvelope) -> str | None:
+    """The DLQ partition key: the payload's ``account_id``, when it carries one.
+
+    Keying the DLQ like the source stream keeps per-account order through
+    park → replay; payloads without an ``account_id`` publish unkeyed.
+    """
+    try:
+        payload = parse_payload(env)
+    except Exception:
+        return None
+    account_id: object = getattr(payload, "account_id", None)
+    if isinstance(account_id, str) and account_id:
+        return account_id
+    return None
 
 
 class StreamConsumer:
@@ -63,7 +79,6 @@ class StreamConsumer:
         max_attempts: int = 5,
         dlq_suffix: str = ":dlq",
         group_start: Cursor = CURSOR_BEGIN,
-        claim_min_idle_ms: int = 60_000,
     ) -> None:
         self._bus = bus
         self._stream = stream
@@ -76,7 +91,6 @@ class StreamConsumer:
         # first starts after the producer never misses entries (safe with an
         # idempotent handler / dedup). Has no effect once the group exists.
         self._group_start = group_start
-        self._claim_min_idle_ms = claim_min_idle_ms
         self._attempts: dict[str, int] = {}
         self._last_lag_sample = 0.0
 
@@ -96,7 +110,7 @@ class StreamConsumer:
             with trace_span(
                 f"consume {stream_label(self._stream)}",
                 kind=SpanKind.CONSUMER,
-                attributes={"event.id": env.id, "messaging.system": "redis_streams"},
+                attributes={"event.id": env.id, "messaging.system": "kafka"},
             ):
                 await handler(env)
         finally:
@@ -119,7 +133,8 @@ class StreamConsumer:
         try:
             env = decode_envelope(raw)
         except Exception:
-            await self._bus.publish_raw(self._dlq_stream, raw, maxlen=DLQ_MAXLEN)
+            # Undecodable bytes carry no recoverable partition key → unkeyed.
+            await self._bus.publish_raw(self._dlq_stream, raw)
             await self._bus.ack(self._stream, self._group, cursor)
             self._record("poison")
             logger.error("Dead-lettered undecodable entry %s on %s", cursor, self._stream)
@@ -149,15 +164,16 @@ class StreamConsumer:
         if attempts >= self._max_attempts:
             await self._dead_letter(cursor, env, outcome="dlq", attempts=attempts)
         else:
-            # Don't ack → the entry redelivers (XAUTOCLAIM / rebalance).
+            # Don't ack → the entry redelivers (uncommitted offset / rebalance).
             self._record("error")
             logger.warning("Handler failed for event %s (attempt %d)", env.id, attempts)
 
     async def _dead_letter(
         self, cursor: str, env: EventEnvelope, *, outcome: str, attempts: int | None = None
     ) -> None:
-        """Move a poison entry to the DLQ and ack so it stops blocking the group."""
-        await self._bus.publish_envelope(self._dlq_stream, env, maxlen=DLQ_MAXLEN)
+        """Move a poison entry to the DLQ (keyed like the source) and ack so it
+        stops blocking the group."""
+        await self._bus.publish_envelope(self._dlq_stream, env, key=_dlq_key(env))
         await self._bus.ack(self._stream, self._group, cursor)
         self._attempts.pop(env.id, None)
         self._record(outcome)
@@ -175,8 +191,16 @@ class StreamConsumer:
         self._last_lag_sample = now
         try:
             lag = await self._bus.pending(self._stream, self._group)
-            EVENTS_CONSUMER_LAG.labels(stream=stream_label(self._stream), group=self._group).set(
-                lag
+        except TRANSPORT_ERRORS as exc:
+            # The gauge is observability; a broker blip must not stop consuming.
+            # Anything outside the transport's own failure types is a bug here
+            # and propagates.
+            logger.debug(
+                "lag sample on %s/%s failed (%s: %s)",
+                self._stream,
+                self._group,
+                type(exc).__name__,
+                exc,
             )
-        except Exception:
-            pass  # lag is observability, never fail the loop
+            return
+        EVENTS_CONSUMER_LAG.labels(stream=stream_label(self._stream), group=self._group).set(lag)

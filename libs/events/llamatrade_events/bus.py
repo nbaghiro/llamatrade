@@ -6,11 +6,11 @@ The catalog and consumer sit on top of this; nothing here knows the backend.
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Sequence
 
 from llamatrade_events.codec import EventEnvelope, decode_envelope, encode_envelope
-from llamatrade_events.transport.base import CURSOR_NEW, Cursor, EventTransport
-from llamatrade_events.transport.redis_streams import RedisStreamsTransport
+from llamatrade_events.transport.base import CURSOR_NEW, Cursor, EventTransport, OutgoingRecord
+from llamatrade_events.transport.factory import get_default_transport
 from llamatrade_telemetry import inject_context
 
 
@@ -18,7 +18,7 @@ class EventBus:
     """Publish/consume the EventEnvelope over a swappable transport."""
 
     def __init__(self, transport: EventTransport | None = None) -> None:
-        self._transport: EventTransport = transport or RedisStreamsTransport()
+        self._transport: EventTransport = transport or get_default_transport()
 
     @property
     def transport(self) -> EventTransport:
@@ -27,7 +27,12 @@ class EventBus:
     # ---- publish ----
 
     async def publish_envelope(
-        self, stream: str, envelope: EventEnvelope, *, maxlen: int, key: str | None = None
+        self,
+        stream: str,
+        envelope: EventEnvelope,
+        *,
+        key: str | None = None,
+        maxlen: int | None = None,
     ) -> Cursor:
         # Carry the current trace context in the envelope so a consumer can link
         # its processing span to the producer (e.g. fill → ledger projection).
@@ -40,10 +45,19 @@ class EventBus:
         )
 
     async def publish_raw(
-        self, stream: str, value: bytes, *, maxlen: int, key: str | None = None
+        self, stream: str, value: bytes, *, key: str | None = None, maxlen: int | None = None
     ) -> Cursor:
         """For raw (un-enveloped) channels like the high-volume bar stream."""
         return await self._transport.publish(stream, value, key=key, maxlen=maxlen)
+
+    async def publish_many_raw(
+        self, stream: str, records: Sequence[OutgoingRecord], *, maxlen: int | None = None
+    ) -> list[Cursor]:
+        """Batch counterpart of :meth:`publish_raw` for callers that already hold
+        a batch (a bar flush, a DLQ replay): one produce round trip for the whole
+        batch instead of one per record. Per-key order is preserved. The
+        single-record path is unchanged, so the money path is untouched."""
+        return await self._transport.publish_many(stream, records, maxlen=maxlen)
 
     # ---- tail (independent fan-out) ----
 
@@ -92,6 +106,14 @@ class EventBus:
     async def ack(self, stream: str, group: str, cursor: Cursor) -> None:
         await self._transport.ack(stream, group, cursor)
 
+    async def pause_partition(self, stream: str, group: str, cursor: Cursor) -> None:
+        """Stop fetching the cursor's partition during a long in-place retry."""
+        await self._transport.pause_partition(stream, group, cursor)
+
+    async def resume_partition(self, stream: str, group: str, cursor: Cursor) -> None:
+        """Undo :meth:`pause_partition` for the cursor's partition."""
+        await self._transport.resume_partition(stream, group, cursor)
+
     async def pending(self, stream: str, group: str) -> int:
         return await self._transport.pending(stream, group)
 
@@ -99,9 +121,9 @@ class EventBus:
         """Number of entries currently in ``stream``."""
         return await self._transport.length(stream)
 
-    async def purge(self, stream: str) -> None:
-        """Remove all entries from ``stream``."""
-        await self._transport.purge(stream)
+    async def purge(self, stream: str, *, up_to_cursor: Cursor | None = None) -> None:
+        """Remove entries from ``stream``; bounded to ``up_to_cursor`` when given."""
+        await self._transport.purge(stream, up_to_cursor=up_to_cursor)
 
     async def close(self) -> None:
         await self._transport.close()

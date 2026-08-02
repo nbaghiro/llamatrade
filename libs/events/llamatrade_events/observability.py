@@ -34,6 +34,17 @@ EVENTS_RECONNECTS_TOTAL = counter(
     ["stream", "mode"],  # mode: tail / consume
     "Transport-error reconnects in bus readers",
 )
+EVENTS_CLIENT_START_FAILURES_TOTAL = counter(
+    "llamatrade_events_client_start_failures_total",
+    # kind: producer / consumer / probe / admin; reason: start_timeout / liveness_timeout
+    ["kind", "reason"],
+    "Transport clients that did not connect or prove liveness within their start budget",
+)
+EVENTS_BROKEN_CREDENTIALS_TOTAL = counter(
+    "llamatrade_events_broken_credentials_total",
+    ["stream", "mode"],  # mode: tail / consume
+    "Reader start failures past the consecutive-failure threshold (credentials look broken)",
+)
 
 # --- durable consumer group ---
 EVENTS_CONSUMED_TOTAL = counter(
@@ -44,7 +55,7 @@ EVENTS_CONSUMED_TOTAL = counter(
 EVENTS_CONSUMER_LAG = gauge(
     "llamatrade_events_consumer_lag",
     ["stream", "group"],
-    "Delivered-but-unacked entries per consumer group (PEL depth)",
+    "Uncommitted entries per consumer group (Kafka consumer lag)",
 )
 
 # --- gRPC fan-out ---
