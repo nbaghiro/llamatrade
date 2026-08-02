@@ -23,6 +23,12 @@ from src.routers.oauth import (
 from src.session import mint_handoff
 
 
+@pytest.fixture(autouse=True)
+def _no_redis_limiter(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The OAuth limiter is a no-op in unit tests; limiter tests patch in a fake."""
+    monkeypatch.setattr("src.routers.oauth.get_redis", lambda: None)
+
+
 def _req() -> Request:
     """Minimal ASGI request; the OAuth rate limiter reads only x-forwarded-for."""
     return Request({"type": "http", "headers": []})
