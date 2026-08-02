@@ -8,6 +8,12 @@ on:
         required: false
         default: 'Manual deployment'
 
+# One deploy per environment at a time; queued runs wait instead of interleaving
+# image pushes, migrations and rollouts.
+concurrency:
+  group: ${{ github.workflow }}-staging
+  cancel-in-progress: false
+
 env:
   PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
   GKE_CLUSTER: llamatrade-staging
@@ -59,22 +65,67 @@ jobs:
           docker build -f apps/web/Dockerfile -t ${REGISTRY_PATH}/web:${{ github.sha }} .
           docker push ${REGISTRY_PATH}/web:${{ github.sha }}
 
-      - name: Apply manifests
+      - name: Resolve Kafka bootstrap address
+        # The base ConfigMap ships a placeholder; fill it from the Managed Kafka
+        # cluster before applying. Fails loudly if the terraform output is empty.
         run: |
-          # Namespace, config, secrets, deployments, services, HPAs, ingress.
+          terraform -chdir=infrastructure/terraform init -input=false
+          KAFKA_BOOTSTRAP="$(terraform -chdir=infrastructure/terraform output -raw kafka_bootstrap_address)"
+          if [ -z "$KAFKA_BOOTSTRAP" ]; then
+            echo "::error::terraform output kafka_bootstrap_address is empty"
+            exit 1
+          fi
+          sed -i "s|KAFKA_BOOTSTRAP_ADDRESS_PLACEHOLDER|${KAFKA_BOOTSTRAP}|" infrastructure/k8s/base/configmap.yaml
+
+      - name: Apply manifests
+        # OPERATOR NOTE, one-time transition. The manifests no longer ship any
+        # Secret object, so this apply neither creates nor overwrites secret
+        # values; it only references them by name. Previously the committed
+        # placeholders were part of the build, and the overlay's `staging-`
+        # namePrefix renamed both the Secrets and the deployments' secretKeyRefs,
+        # so the live cluster holds them as staging-db-credentials and so on.
+        # With the placeholders gone, kustomize has nothing to rename and the
+        # references resolve unprefixed.
+        #
+        # Before the next deploy, in namespace llamatrade-staging, either enable
+        # ../../base/external-secrets in the overlay (its ExternalSecret targets
+        # are already the unprefixed names) or copy each existing Secret to its
+        # unprefixed name by hand, for example:
+        #   kubectl get secret staging-db-credentials -n llamatrade-staging -o json \
+        #     | jq '.metadata.name = "db-credentials"
+        #           | del(.metadata.namespace, .metadata.uid, .metadata.resourceVersion,
+        #                 .metadata.creationTimestamp, .metadata.ownerReferences, .metadata.labels)' \
+        #     | kubectl apply -n llamatrade-staging -f -
+        # Required names and keys: db-credentials/url, jwt-secret/secret,
+        # encryption-key/key, alpaca-credentials/{api_key,api_secret},
+        # stripe-credentials/{secret_key,webhook_secret},
+        # smtp-credentials/{host,user,password}, timescale-credentials/{password,url},
+        # agent-credentials/{google_api_key,anthropic_api_key}.
+        #
+        # auth-jwt-keys/{private_key,public_key} is new and has no predecessor to
+        # copy: generate an RSA pair and create it, otherwise every pod that
+        # mounts it stays in CreateContainerConfigError.
+        #   openssl genrsa -out jwt.pem 2048
+        #   openssl rsa -in jwt.pem -pubout -out jwt.pub
+        #   kubectl create secret generic auth-jwt-keys -n llamatrade-staging \
+        #     --from-file=private_key=jwt.pem --from-file=public_key=jwt.pub
+        # Existing user sessions do not survive the switch from HS256 to RS256;
+        # clients re-login.
+        run: |
+          # Namespace, config, deployments, services, HPAs, ingress.
           kubectl apply -k infrastructure/k8s/overlays/staging
 
       - name: Run database migrations
         run: |
           REGISTRY_PATH="${REGISTRY}/${PROJECT_ID}/llamatrade"
           NS=llamatrade-staging
-          # A completed Job's spec is immutable — delete, then apply this build's
-          # image, and block rollout until the schema is migrated. The staging
-          # name prefix maps db-migrate/db-credentials -> staging-*.
+          # A completed Job's spec is immutable, so delete, then apply this
+          # build's image, and block rollout until the schema is migrated. Only
+          # the Job name takes the staging prefix; db-credentials is referenced
+          # unprefixed, matching the deployments in this overlay.
           kubectl delete job staging-db-migrate -n $NS --ignore-not-found
           sed -e "s|gcr.io/llamatrade/migrate:latest|${REGISTRY_PATH}/migrate:${{ github.sha }}|" \
               -e "s|name: db-migrate|name: staging-db-migrate|" \
-              -e "s|name: db-credentials|name: staging-db-credentials|" \
               infrastructure/k8s/base/migrate/job.yaml | kubectl apply -n $NS -f -
           kubectl wait --for=condition=complete job/staging-db-migrate -n $NS --timeout=300s \
             || { kubectl logs job/staging-db-migrate -n $NS; exit 1; }

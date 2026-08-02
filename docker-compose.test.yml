@@ -29,6 +29,27 @@ services:
       retries: 5
     command: redis-server --maxmemory 100mb --maxmemory-policy allkeys-lru
 
+  # Kafka-API broker for integration tests. Single-binary Redpanda (KRaft),
+  # PLAINTEXT. One external listener advertising localhost:9093 (host-remapped
+  # from 9092 to avoid clashing with the dev-compose Redpanda on 9092).
+  redpanda-test:
+    image: redpandadata/redpanda:v24.2.7
+    command:
+      - redpanda
+      - start
+      - --kafka-addr=external://0.0.0.0:9092
+      - --advertise-kafka-addr=external://localhost:9093
+      - --mode=dev-container
+      - --smp=1
+      - --default-log-level=warn
+    ports:
+      - "9093:9092"
+    healthcheck:
+      test: ["CMD-SHELL", "rpk cluster health | grep -q 'Healthy:.*true'"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
   stripe-mock:
     image: stripe/stripe-mock:latest
     ports:

@@ -40,7 +40,7 @@ forced-separate = ["src"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
-testpaths = ["services/*/tests", "tests/integration"]
+testpaths = ["services/*/tests"]
 addopts = "--cov --cov-report=term-missing"
 markers = [
     "integration: requires real database (deselect with '-m not integration')",

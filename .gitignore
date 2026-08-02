@@ -82,3 +82,6 @@ Thumbs.db
 *.key
 credentials.json
 secrets/
+
+# Generated email preview gallery (services/notification/tools/preview_emails.py)
+services/notification/tools/email_preview.html

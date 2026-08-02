@@ -101,6 +101,25 @@ jobs:
         image: redis:7-alpine
         ports:
           - 6379:6379
+      redpanda:
+        # Kafka-API broker (single-binary Redpanda, KRaft). Pinned to the tag the
+        # dev compose uses. GitHub service containers can't override the image
+        # command, but the default entrypoint starts Redpanda advertising
+        # 127.0.0.1:9092, which the host-side test process reaches at localhost:9092.
+        image: redpandadata/redpanda:v24.2.7
+        ports:
+          - 9092:9092
+        options: >-
+          --health-cmd "rpk cluster health | grep -q 'Healthy:.*true'"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
+    # Point the Kafka transport at the Redpanda service (PLAINTEXT). The env-aware
+    # integration fixtures use this broker directly instead of a testcontainer.
+    env:
+      KAFKA_BOOTSTRAP_SERVERS: localhost:9092
+      KAFKA_SECURITY_PROTOCOL: PLAINTEXT
 
     steps:
       - uses: actions/checkout@v4
@@ -124,13 +143,24 @@ jobs:
       - name: Install coverage tools
         run: pip install pytest-cov coverage
 
+      - name: Run DSL lib tests (>=80% gate)
+        # The package's addopts enforce the coverage gate.
+        run: cd libs/dsl && pytest tests -v
+
+      - name: Run runtime lib tests (>=80% gate)
+        # TA-Lib golden-oracle tests skip unless the `golden` extra and the C
+        # library are present; the rest of the suite runs and gates coverage.
+        run: cd libs/runtime && pytest tests -v
+
       - name: Run auth tests with coverage
         env:
           DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/test
           REDIS_URL: redis://localhost:6379
         run: |
           pip install -e services/auth[dev]
-          cd services/auth && pytest tests -v --cov=src --cov-report=term-missing
+          # Ratchet floor: below the 80 target, gate at the current level so
+          # coverage can only move up. Raise toward 80 as the suite grows.
+          cd services/auth && pytest tests -v --cov=src --cov-report=term-missing --cov-fail-under=70
           pip uninstall -y llamatrade-auth
 
       - name: Run strategy tests with coverage (>=80% gate)
@@ -147,7 +177,8 @@ jobs:
           REDIS_URL: redis://localhost:6379
         run: |
           pip install -e services/agent[dev]
-          cd services/agent && pytest tests -v --cov=src --cov-report=term-missing
+          # Ratchet floor, same policy as auth.
+          cd services/agent && pytest tests -v --cov=src --cov-report=term-missing --cov-fail-under=60
 
       - name: Run backtest tests with coverage (>=80% gate)
         env:
@@ -179,15 +210,43 @@ jobs:
           pip install -e services/trading[dev]
           cd services/trading && pytest tests -v --cov=src --cov-report=term-missing --cov-fail-under=80
 
+      - name: Run events lib tests (unit + real-Kafka integration, >=80% gate)
+        # The [integration] extra pulls testcontainers for local runs; here the
+        # env-aware `bootstrap` fixture uses the Redpanda service (KAFKA_BOOTSTRAP_SERVERS)
+        # instead. The package's addopts enforce the >=80% coverage gate.
+        run: |
+          pip install -e "libs/events[dev,integration]"
+          cd libs/events && pytest tests -v
+
+      - name: Run market-data tests with coverage (unit + Kafka/Timescale integration)
+        # Kafka integration uses the Redpanda service via the env-aware fixture;
+        # Timescale integration uses testcontainers over the ubuntu-latest Docker
+        # daemon (same pattern as the portfolio step).
+        env:
+          REDIS_URL: redis://localhost:6379
+        run: |
+          pip install -e "services/market-data[dev,integration]"
+          cd services/market-data && pytest tests -v --cov=src --cov-report=term-missing
+
+      - name: Run notification tests with coverage
+        # Real implementation (consumer pipeline, delivery, price alerts):
+        # unit tests plus testcontainers-backed integration, gated at 80%.
+        env:
+          DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/test
+          REDIS_URL: redis://localhost:6379
+        run: |
+          pip install -e services/notification[dev]
+          cd services/notification && pytest tests -v --cov=src --cov-report=term-missing --cov-fail-under=80
+
   test-e2e:
     name: E2E (live mesh, simulated)
     runs-on: ubuntu-latest
     needs: lint-python
-    # Opt-in gate: push-to-main + manual dispatch only, NOT every PR. A live-mesh
-    # job is heavier and more exposed to seed/timing flake than the unit suites,
-    # so we prove it's reliably green before it can block a PR. To promote later:
-    # add `pull_request` coverage (drop the `if`) and/or add `test-e2e` to the
-    # `build` job's `needs:` so images don't ship on a red e2e.
+    # Runs on push-to-main + manual dispatch, NOT every PR. A live-mesh job is
+    # heavier and more exposed to seed/timing flake than the unit suites, so it
+    # is scoped to main until it has proven reliably green on PR traffic. The
+    # `build` job needs this one, so a red e2e blocks image build on main.
+    # Remaining promotion step: add `pull_request` coverage by dropping the `if`.
     if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
     services:
       postgres:
@@ -227,13 +286,57 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
+      redpanda:
+        # The Kafka broker the live mesh uses: the portfolio consumer reads fills
+        # and the e2e suite's fill publisher writes them. Default entrypoint starts
+        # Redpanda advertising 127.0.0.1:9092 (reachable at localhost:9092); the
+        # image command can't be overridden in a service container.
+        image: redpandadata/redpanda:v24.2.7
+        ports:
+          - 9092:9092
+        options: >-
+          --health-cmd "rpk cluster health | grep -q 'Healthy:.*true'"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+      stripe-mock:
+        # Real-shaped Stripe API for the billing flow; billing points its SDK here
+        # (STRIPE_API_BASE) so checkout/subscribe run without live keys.
+        image: stripe/stripe-mock:latest
+        ports:
+          - 12111:12111
+      mailpit:
+        # SMTP catcher for the notification email channel + auth reset flows;
+        # the suite asserts through its REST API on 8025.
+        image: axllent/mailpit:v1.20
+        ports:
+          - 1025:1025
+          - 8025:8025
     env:
       # Standard container ports (the local split stack uses 5442/6389/5443; CI
-      # uses defaults). The harness freezes REDIS_URL at import and the honcho
-      # mesh inherits this whole block, so seed + services + harness all agree.
+      # uses defaults). The e2e client reads REDIS_URL/targets at import and the
+      # honcho mesh inherits this whole block, so seed + services + suite all agree.
       DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/llamatrade
       REDIS_URL: redis://localhost:6379
       MARKET_DATA_DB_URL: postgresql+asyncpg://postgres:postgres@localhost:5433/market_data
+      # The mesh (portfolio consumer) reads KAFKA_BOOTSTRAP_SERVERS; the suite's
+      # fill publisher reads E2E_KAFKA_BOOTSTRAP. Both point at the Redpanda service.
+      KAFKA_BOOTSTRAP_SERVERS: localhost:9092
+      KAFKA_SECURITY_PROTOCOL: PLAINTEXT
+      E2E_KAFKA_BOOTSTRAP: localhost:9092
+      # Notification email channel + auth reset links land in mailpit.
+      SMTP_HOST: localhost
+      SMTP_PORT: "1025"
+      FROM_EMAIL: noreply@llamatrade.test
+      APP_BASE_URL: http://localhost:8800
+      E2E_MAILPIT_URL: http://localhost:8025
+      # Service-to-service targets default to docker-compose hostnames, which do
+      # not resolve in the honcho mesh; point every hop at the local ports.
+      PORTFOLIO_GRPC_TARGET: localhost:8860
+      MARKET_DATA_GRPC_TARGET: localhost:8840
+      STRATEGY_GRPC_TARGET: localhost:8820
+      TRADING_GRPC_TARGET: localhost:8850
+      AUTH_GRPC_TARGET: localhost:8810
       JWT_SECRET: e2e-ci-secret
       # Must be identical for seed (encrypts the demo paper credential) and the
       # trading service (decrypts it). Plain string — not a Fernet key.
@@ -242,6 +345,14 @@ jobs:
       # suffice; --live-alpaca is intentionally not run in CI.
       ALPACA_API_KEY: e2e-placeholder-key
       ALPACA_API_SECRET: e2e-placeholder-secret
+      # Billing points at the stripe-mock service (real-shaped Stripe API) so the
+      # checkout/subscribe tests run without live Stripe keys.
+      STRIPE_SECRET_KEY: sk_test_mock
+      STRIPE_API_BASE: http://localhost:12111
+      # The agent runs on 8890 in the honcho mesh (the docker stack remaps 8990);
+      # deterministic agent tests need no LLM key, and chat is gated off in CI.
+      E2E_AGENT_URL: http://localhost:8890
+      AGENT_LLM_PROVIDER: google
     steps:
       - uses: actions/checkout@v4
 
@@ -252,10 +363,10 @@ jobs:
 
       - name: Install libs + services into .venv
         # Mirrors the lint-python install (dependency order matters: local
-        # packages aren't on PyPI). Only the services the two legs touch are
-        # installed — agent/notification/billing are not exercised. honcho runs
-        # the mesh; the Procfile hardcodes .venv/bin/uvicorn, so a .venv is
-        # required. Committed Python protos come from the checkout (no proto gen).
+        # packages aren't on PyPI). Installs the services the suite exercises.
+        # honcho runs the mesh; the
+        # Procfile hardcodes .venv/bin/uvicorn, so a .venv is required. Committed
+        # Python protos come from the checkout (no proto gen).
         run: |
           python -m venv .venv
           .venv/bin/pip install --upgrade pip
@@ -273,6 +384,9 @@ jobs:
           .venv/bin/pip install -e services/market-data
           .venv/bin/pip install -e services/portfolio
           .venv/bin/pip install -e services/trading
+          .venv/bin/pip install -e services/billing
+          .venv/bin/pip install -e services/agent
+          .venv/bin/pip install -e services/notification
           .venv/bin/pip install honcho pytest pytest-asyncio pytest-cov
 
       - name: Migrate Postgres (ledger + service tables)
@@ -301,7 +415,7 @@ jobs:
         run: |
           set -e
           .venv/bin/honcho start -f Procfile.dev \
-            auth strategy backtest trading portfolio market-data \
+            auth strategy backtest trading portfolio market-data billing agent notification \
             > /tmp/mesh.log 2>&1 &
           ( cd services/backtest && PYTHONPATH="$PWD" ../../.venv/bin/celery \
               -A src.celery_app:celery_app worker --queues backtest \
@@ -311,7 +425,7 @@ jobs:
           up=""
           for _ in $(seq 1 60); do
             ok=1
-            for p in 8810 8820 8830 8840 8850 8860; do
+            for p in 8810 8820 8830 8840 8850 8860 8870 8880 8890; do
               curl -sf "http://localhost:$p/health" >/dev/null 2>&1 || ok=0
             done
             if [ "$ok" = 1 ]; then up=1; break; fi
@@ -399,10 +513,186 @@ jobs:
       - name: Run tests
         run: npm test -- --run --passWithNoTests
 
+  conformance-corpus:
+    name: DSL Conformance Corpus (fresh)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install DSL lib
+        run: pip install -e libs/dsl
+
+      - name: Regenerate canonical corpus and verify it is committed
+        # The Python DSL is the authority (G50); the committed tests/conformance/*.canonical.json
+        # must match its output so the libs/dsl and frontend test suites verify the same truth.
+        run: |
+          python scripts/generate_conformance_corpus.py
+          git diff --exit-code -- tests/conformance/
+
+  emails-drift:
+    name: Email Shells (typecheck + drift)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install email package deps
+        # Standalone package (its own node_modules + lockfile, NOT in the root
+        # workspace), so install into it directly rather than via root npm ci.
+        run: npm install --prefix services/notification/emails
+
+      - name: Type check email templates
+        run: npm run typecheck --prefix services/notification/emails
+
+      - name: Render shells and verify they are committed
+        # The React templates are the authority; the committed HTML shells in
+        # src/email_html/ must match a fresh render, so a template edit can never
+        # ship without regenerated shells (same guard as the proto/corpus drift).
+        run: |
+          npm run build --prefix services/notification/emails
+          git diff --exit-code services/notification/src/email_html/
+
+  conformance-servicers:
+    name: Servicer Binding Conformance
+    runs-on: ubuntu-latest
+    needs: lint-python
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install libs + every service
+        # libs/proto's binding-conformance test instantiates each service's real
+        # servicer against its generated ASGI app, one subprocess per service, so
+        # every service (and its import-time deps) must be importable. The
+        # incremental install-and-uninstall of test-backend cannot guarantee all
+        # nine at once, so this runs in a dedicated job. Order matters: local
+        # packages are not on PyPI, so each is installed before its dependents.
+        run: |
+          pip install -e libs/telemetry
+          pip install -e libs/proto[dev]
+          pip install -e libs/dsl
+          pip install -e libs/common
+          pip install -e libs/db
+          pip install -e libs/runtime
+          pip install -e libs/alpaca
+          pip install -e libs/events
+          pip install -e services/agent
+          pip install -e services/auth
+          pip install -e services/backtest[dev]
+          pip install -e services/billing
+          pip install -e services/market-data
+          pip install -e services/notification
+          pip install -e services/portfolio
+          pip install -e services/strategy
+          pip install -e services/trading
+
+      - name: Run proto lib tests (timestamps + servicer-binding conformance)
+        # Gates the F1 class of drift (a servicer whose method names do not match
+        # the generated snake_case bindings resolves zero endpoints at dispatch).
+        run: cd libs/proto && pytest tests -v
+
+  proto:
+    name: Proto (lint + breaking)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Full history so buf breaking can diff against the local main branch.
+          fetch-depth: 0
+
+      - name: Set up buf
+        uses: bufbuild/buf-setup-action@v1
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Ensure local main ref for buf breaking
+        run: git fetch --no-tags --force origin +refs/heads/main:refs/heads/main
+
+      - name: Lint protos
+        run: make proto-lint
+
+      - name: Check for breaking changes vs main
+        run: make proto-breaking
+
+  kustomize-build:
+    name: Kustomize Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build base and overlays
+        run: |
+          kubectl kustomize infrastructure/k8s/base > /dev/null
+          kubectl kustomize infrastructure/k8s/overlays/staging > /dev/null
+          kubectl kustomize infrastructure/k8s/overlays/production > /dev/null
+
+      - name: Build opt-in kustomizations
+        # No overlay references these, so they would rot unrendered: the first
+        # two need CRDs that are not installed, and migrate is applied through
+        # sed by the deploy workflows. Building them keeps them syntactically live.
+        run: |
+          kubectl kustomize infrastructure/k8s/base/backtest/autoscaler > /dev/null
+          kubectl kustomize infrastructure/k8s/base/external-secrets > /dev/null
+          kubectl kustomize infrastructure/k8s/base/migrate > /dev/null
+
+      - name: Assert no Secret objects are committed
+        # Secret values belong in Secret Manager (base/external-secrets) or in
+        # Secrets the operator creates by hand. A rendered `kind: Secret` means
+        # a placeholder is back in the build and every deploy would overwrite
+        # the live values.
+        run: |
+          for target in base overlays/staging overlays/production; do
+            if kubectl kustomize "infrastructure/k8s/$target" \
+              | grep -E '^kind: Secret$' > /dev/null; then
+              echo "::error::infrastructure/k8s/$target renders a Secret object"
+              exit 1
+            fi
+          done
+
+  docker-build:
+    name: Docker Build
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        service:
+          - agent
+          - auth
+          - backtest
+          - billing
+          - market-data
+          - notification
+          - portfolio
+          - strategy
+          - trading
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build image (no push)
+        run: docker build -f services/${{ matrix.service }}/Dockerfile -t ${{ matrix.service }}:ci .
+
   build:
     name: Build Images
     runs-on: ubuntu-latest
-    needs: [test-backend, test-frontend]
+    # test-e2e runs on the same ref this job is gated to, so its failure fails
+    # the build instead of shipping images over a red live-mesh run.
+    needs: [test-backend, test-frontend, test-e2e]
     if: github.ref == 'refs/heads/main'
     steps:
       - uses: actions/checkout@v4
@@ -411,7 +701,6 @@ jobs:
         uses: docker/setup-buildx-action@v3
 
       - name: Build images
+        # Service images build in the docker-build matrix; only web remains here.
         run: |
-          docker build -f services/auth/Dockerfile -t auth:latest .
-          docker build -f services/strategy/Dockerfile -t strategy:latest .
           docker build -f apps/web/Dockerfile -t web:latest .

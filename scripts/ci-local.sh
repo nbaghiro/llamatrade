@@ -200,6 +200,31 @@ if [[ "$RUN_TESTS" == "true" && "$RUN_BACKEND" == "true" ]]; then
         FAILED+=("Strategy tests")
     fi
     pip uninstall -y llamatrade-strategy -q 2>/dev/null || true
+
+    # Test notification service (stateless unit tests, no DB/broker needed)
+    print_step "Testing notification service"
+    pip install -e "services/notification[dev]" -q
+    if (cd services/notification && pytest tests -v); then
+        print_success "Notification tests passed"
+    else
+        print_error "Notification tests failed"
+        FAILED+=("Notification tests")
+    fi
+    pip uninstall -y llamatrade-notification -q 2>/dev/null || true
+
+    # Proto lib tests, including the servicer-binding conformance guard (the F1
+    # class: a servicer whose methods do not match the generated snake_case
+    # bindings resolves zero endpoints). The conformance test instantiates every
+    # service's real servicer, so all workspace packages must be present; uv sync
+    # restores them after the per-service install/uninstall cycles above.
+    print_step "Proto lib tests (servicer-binding conformance)"
+    uv sync --all-packages --all-extras --quiet
+    if (cd libs/proto && pytest tests -v); then
+        print_success "Proto tests passed"
+    else
+        print_error "Proto tests failed"
+        FAILED+=("Proto tests")
+    fi
 fi
 
 # FRONTEND TESTS
@@ -220,24 +245,39 @@ if [[ "$RUN_TESTS" == "true" && "$RUN_INTEGRATION" == "true" ]]; then
     print_header "Integration Tests"
 
     # Ensure testcontainers dependencies are installed
-    pip install -q "testcontainers[postgres,redis]>=4.0.0" pytest-xdist pytest-timeout
+    pip install -q "testcontainers[postgres,kafka]>=4.0.0" pytest-xdist pytest-timeout
 
-    # Run integration tests (services against real DB)
-    print_step "Service integration tests"
-    if pytest tests/integration/services -v -m integration --timeout=60 2>/dev/null; then
-        print_success "Service integration tests passed"
+    # Per-service integration suites against real Postgres/Timescale/Kafka
+    print_step "Portfolio integration tests (ledger, RLS, Kafka fills)"
+    if (cd services/portfolio && pytest tests/integration -v --timeout=180); then
+        print_success "Portfolio integration tests passed"
     else
-        print_error "Service integration tests failed"
-        FAILED+=("Service integration tests")
+        print_error "Portfolio integration tests failed"
+        FAILED+=("Portfolio integration tests")
     fi
 
-    # Run security tests (tenant isolation - critical)
-    print_step "Security tests (tenant isolation)"
-    if pytest tests/integration/security -v -m security --timeout=60 2>/dev/null; then
-        print_success "Security tests passed"
+    print_step "Market-data integration tests (Timescale, bus)"
+    if (cd services/market-data && pytest tests/integration -v --timeout=180); then
+        print_success "Market-data integration tests passed"
     else
-        print_error "Security tests failed"
-        FAILED+=("Security tests")
+        print_error "Market-data integration tests failed"
+        FAILED+=("Market-data integration tests")
+    fi
+
+    print_step "Events lib Kafka integration tests"
+    if (cd libs/events && pytest tests/test_integration_kafka.py -v --timeout=180); then
+        print_success "Events Kafka integration tests passed"
+    else
+        print_error "Events Kafka integration tests failed"
+        FAILED+=("Events Kafka integration tests")
+    fi
+
+    print_step "Tenant-isolation tests (strategy, real Postgres)"
+    if (cd services/strategy && pytest tests/test_tenant_isolation_db.py -v --timeout=120); then
+        print_success "Tenant-isolation tests passed"
+    else
+        print_error "Tenant-isolation tests failed"
+        FAILED+=("Tenant-isolation tests")
     fi
 fi
 
