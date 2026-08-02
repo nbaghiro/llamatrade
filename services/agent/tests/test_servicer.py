@@ -959,8 +959,11 @@ class TestLlmRateLimit:
         servicer._llm_rate_rules = ((5, 60),)
         return servicer, limiter
 
-    def test_default_servicer_has_no_limiter_without_redis(self) -> None:
+    def test_default_servicer_has_no_limiter_without_redis(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """Without REDIS_URL the limiter is absent and enforcement is a no-op."""
+        monkeypatch.delenv("REDIS_URL", raising=False)
         assert AgentServicer()._rate_limiter is None
 
     @pytest.mark.asyncio
