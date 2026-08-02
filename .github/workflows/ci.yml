@@ -619,6 +619,8 @@ jobs:
           github_token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Ensure local main ref for buf breaking
+        # Skipped on push-to-main: main is the checked-out branch and git refuses the fetch.
+        if: github.ref != 'refs/heads/main'
         run: git fetch --no-tags --force origin +refs/heads/main:refs/heads/main
 
       - name: Lint protos
