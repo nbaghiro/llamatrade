@@ -21,11 +21,12 @@ from llamatrade_db.session import verify_rls_enforcement
 from llamatrade_telemetry import init_telemetry
 
 from src.celery_app import REDIS_URL
-from src.queue_metrics import QueueDepthSampler
+from src.queue_metrics import JobStateSampler, QueueDepthSampler
 
 logger = logging.getLogger(__name__)
 
 queue_depth_sampler = QueueDepthSampler()
+job_state_sampler = JobStateSampler()
 
 # Configuration
 CORS_ORIGINS = os.getenv(
@@ -57,9 +58,11 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     logger.info("Connect ASGI application mounted successfully")
 
     await queue_depth_sampler.start()
+    await job_state_sampler.start()
 
     yield
 
+    await job_state_sampler.stop()
     await queue_depth_sampler.stop()
 
     # Shutdown - dispose the DB connection pool

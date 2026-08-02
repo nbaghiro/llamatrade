@@ -4,6 +4,11 @@ import os
 
 from celery import Celery
 
+# This module is the -A entrypoint, so every Celery process registers here.
+from src.worker_telemetry import register_signals
+
+register_signals()
+
 # Redis URL for broker and result backend
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 

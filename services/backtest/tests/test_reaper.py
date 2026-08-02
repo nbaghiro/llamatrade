@@ -94,7 +94,7 @@ async def test_pending_past_fail_threshold_is_failed():
         counts = await _service(session).reap_stale_backtests(now=NOW)
     assert counts["pending_failed"] == 1
     assert old.status == BACKTEST_STATUS_FAILED
-    task.delay.assert_not_called()
+    task.apply_async.assert_not_called()
 
 
 async def test_pending_in_requeue_window_is_reenqueued():
@@ -105,7 +105,7 @@ async def test_pending_in_requeue_window_is_reenqueued():
         counts = await _service(session).reap_stale_backtests(now=NOW)
     assert counts["pending_requeued"] == 1
     assert pend.status == BACKTEST_STATUS_PENDING
-    task.delay.assert_called_once_with(str(pend.id), str(pend.tenant_id))
+    task.apply_async.assert_called_once_with(args=(str(pend.id), str(pend.tenant_id)), headers={})
 
 
 async def test_nothing_stale_is_noop():

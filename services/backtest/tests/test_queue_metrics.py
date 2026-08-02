@@ -1,22 +1,38 @@
-"""Tests for the Celery queue-depth sampler.
+"""Tests for the API-side samplers: Celery queue depth and DB job states.
 
 Assertions go against the unified telemetry exposition (``get_metrics()``)
 rather than prometheus_client internals, so they verify the real
-``llamatrade_celery_queue_depth`` series the autoscaler consumes.
+``llamatrade_celery_queue_depth`` and ``llamatrade_backtest_jobs`` series
+operators consume.
 """
 
 from __future__ import annotations
 
 import asyncio
+from datetime import UTC, datetime, timedelta
+from unittest.mock import MagicMock
 
 import pytest
+from sqlalchemy.sql.elements import TextClause
 
+from llamatrade_proto.generated.backtest_pb2 import (
+    BACKTEST_STATUS_COMPLETED,
+    BACKTEST_STATUS_FAILED,
+    BACKTEST_STATUS_PENDING,
+    BACKTEST_STATUS_RUNNING,
+)
 from llamatrade_telemetry import conventions, get_metrics
 
 from src.celery_app import EXECUTION_QUEUE, TASK_ROUTES, WORKER_QUEUES
-from src.queue_metrics import QueueDepthSampler, _RedisBroker
+from src.queue_metrics import (
+    JOB_STATE_WINDOW_SECONDS,
+    JobStateSampler,
+    QueueDepthSampler,
+    _RedisBroker,
+)
 
 METRIC = "llamatrade_celery_queue_depth"
+JOBS_METRIC = "llamatrade_backtest_jobs"
 
 
 def _exposition() -> str:
@@ -31,7 +47,7 @@ def _sample(text: str, name: str, **labels: str) -> float | None:
         if line.startswith("#") or not line.startswith(name):
             continue
         head, _, value = line.rpartition(" ")
-        if not head.startswith(name):
+        if head != name and not head.startswith(name + "{"):
             continue
         if "{" in head:
             inner = head[head.index("{") + 1 : head.rindex("}")]
@@ -51,7 +67,7 @@ def _labels_of(text: str, name: str, **labels: str) -> set[str]:
         if line.startswith("#") or not line.startswith(name):
             continue
         head, _, _value = line.rpartition(" ")
-        if "{" not in head:
+        if not head.startswith(name + "{"):
             continue
         inner = head[head.index("{") + 1 : head.rindex("}")]
         line_labels = {part for part in inner.split(",") if part}
@@ -228,3 +244,143 @@ class TestSamplingLoop:
             assert sampler._client() is broker
         finally:
             await sampler.stop()
+
+
+NOW = datetime(2026, 8, 2, 12, 0, tzinfo=UTC)
+
+
+class FakeJobSession:
+    """In-memory stand-in for an AsyncSession seeded with grouped status counts."""
+
+    def __init__(
+        self,
+        rows: list[tuple[int, int]] | None = None,
+        fail_with: Exception | None = None,
+    ) -> None:
+        self.rows = rows or []
+        self.fail_with = fail_with
+        self.statements: list[object] = []
+
+    async def execute(self, stmt: object, params: object | None = None) -> MagicMock:
+        self.statements.append(stmt)
+        if isinstance(stmt, TextClause):
+            return MagicMock()
+        if self.fail_with is not None:
+            raise self.fail_with
+        result = MagicMock()
+        result.all.return_value = self.rows
+        return result
+
+
+class _FakeSessionCM:
+    def __init__(self, session: FakeJobSession) -> None:
+        self._session = session
+
+    async def __aenter__(self) -> FakeJobSession:
+        return self._session
+
+    async def __aexit__(self, *exc: object) -> None:
+        return None
+
+
+def _job_sampler(session: FakeJobSession, **kwargs: float) -> JobStateSampler:
+    return JobStateSampler(session_maker=lambda: _FakeSessionCM(session), **kwargs)
+
+
+class TestJobStateSampler:
+    async def test_publishes_counts_per_state(self) -> None:
+        session = FakeJobSession(
+            rows=[
+                (BACKTEST_STATUS_RUNNING, 3),
+                (BACKTEST_STATUS_PENDING, 1),
+                (BACKTEST_STATUS_COMPLETED, 5),
+                (BACKTEST_STATUS_FAILED, 2),
+            ]
+        )
+        counts = await _job_sampler(session).sample_once(now=NOW)
+
+        assert counts == {"running": 3, "pending": 1, "completed": 5, "failed": 2}
+        text = _exposition()
+        assert _sample(text, JOBS_METRIC, state="running") == 3.0
+        assert _sample(text, JOBS_METRIC, state="pending") == 1.0
+        assert _sample(text, JOBS_METRIC, state="completed") == 5.0
+        assert _sample(text, JOBS_METRIC, state="failed") == 2.0
+
+    async def test_absent_states_publish_zero(self) -> None:
+        await _job_sampler(FakeJobSession(rows=[(BACKTEST_STATUS_RUNNING, 9)])).sample_once()
+        await _job_sampler(FakeJobSession(rows=[])).sample_once()
+
+        text = _exposition()
+        for state in ("running", "pending", "completed", "failed"):
+            assert _sample(text, JOBS_METRIC, state=state) == 0.0
+
+    async def test_rls_bypass_is_bound_before_the_count_query(self) -> None:
+        session = FakeJobSession()
+        await _job_sampler(session).sample_once(now=NOW)
+
+        assert len(session.statements) == 2
+        assert isinstance(session.statements[0], TextClause)
+        assert "set_config" in str(session.statements[0])
+
+    async def test_query_scopes_terminal_states_to_the_window(self) -> None:
+        session = FakeJobSession()
+        await _job_sampler(session).sample_once(now=NOW)
+
+        stmt = session.statements[-1]
+        rendered = str(stmt)
+        assert "backtests" in rendered
+        assert "GROUP BY" in rendered
+
+        flat: list[object] = []
+        for value in stmt.compile().params.values():
+            if isinstance(value, (list, tuple)):
+                flat.extend(value)
+            else:
+                flat.append(value)
+        assert NOW - timedelta(seconds=JOB_STATE_WINDOW_SECONDS) in flat
+        for status in (
+            BACKTEST_STATUS_RUNNING,
+            BACKTEST_STATUS_PENDING,
+            BACKTEST_STATUS_COMPLETED,
+            BACKTEST_STATUS_FAILED,
+        ):
+            assert status in flat
+
+    async def test_db_failure_propagates_and_leaves_gauges_untouched(self) -> None:
+        await _job_sampler(FakeJobSession(rows=[(BACKTEST_STATUS_RUNNING, 7)])).sample_once()
+
+        with pytest.raises(ConnectionError):
+            await _job_sampler(FakeJobSession(fail_with=ConnectionError("db down"))).sample_once()
+
+        assert _sample(_exposition(), JOBS_METRIC, state="running") == 7.0
+
+    async def test_start_stop_lifecycle(self) -> None:
+        sampler = _job_sampler(FakeJobSession(), interval_seconds=60)
+        await sampler.start()
+        try:
+            assert sampler._task is not None
+        finally:
+            await sampler.stop()
+        assert sampler._task is None
+
+
+class TestJobStateConventions:
+    """The gauge must stay scrape-safe: bounded labels, no tenant dimension."""
+
+    def test_name_and_label_key_are_allowed(self) -> None:
+        conventions.validate_metric_name(JOBS_METRIC)
+        conventions.validate_label_keys(["state"])
+
+    async def test_series_carries_only_the_state_label(self) -> None:
+        await _job_sampler(FakeJobSession(rows=[(BACKTEST_STATUS_RUNNING, 4)])).sample_once()
+
+        labels = _labels_of(_exposition(), JOBS_METRIC, state="running")
+        assert {part for part in labels if not part.startswith("otel_scope_")} == {
+            'state="running"'
+        }
+
+    def test_main_wires_both_samplers(self) -> None:
+        from src.main import job_state_sampler, queue_depth_sampler
+
+        assert isinstance(job_state_sampler, JobStateSampler)
+        assert isinstance(queue_depth_sampler, QueueDepthSampler)

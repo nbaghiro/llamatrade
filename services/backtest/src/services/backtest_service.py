@@ -45,7 +45,7 @@ from llamatrade_runtime import (
     build_session,
 )
 from llamatrade_runtime.metrics import resample_daily
-from llamatrade_telemetry import counter, metrics
+from llamatrade_telemetry import counter, inject_headers, metrics
 
 from src.convert import safe_float
 from src.dataset import DatasetSpec, DatasetStore, RedisLike, get_dataset_store, prepare_dataset
@@ -112,6 +112,24 @@ class MarketDataError(Exception):
     """Error fetching market data."""
 
     pass
+
+
+def _enqueue_run_backtest(backtest_id: UUID, tenant_id: UUID) -> str:
+    """Enqueue ``run_backtest_task`` with the current W3C trace context.
+
+    The context rides in the Celery message headers (``apply_async(headers=...)``),
+    which the worker-side ``task_prerun`` hook extracts; with no active span the
+    headers stay empty and the worker span becomes a new root. The task is bound
+    to the redis-configured ``celery_app`` (@celery_app.task), so ``apply_async``
+    routes to our broker in the API process too — not Celery's default app — and
+    still honours eager mode under test.
+    """
+    # Import inline to avoid circular imports; celery types are incomplete.
+    from src.workers import celery_tasks
+
+    run_task = getattr(celery_tasks, "run_backtest_task")
+    result = run_task.apply_async(args=(str(backtest_id), str(tenant_id)), headers=inject_headers())
+    return str(result.id)
 
 
 # Approximate regular-session bars per trading day for intraday timeframes
@@ -1136,9 +1154,6 @@ class BacktestService:
         Returns:
             Celery task ID
         """
-        # Import inline to avoid circular imports; celery types are incomplete.
-        from src.workers import celery_tasks
-
         backtest = await self._get_backtest_by_id(tenant_id, backtest_id)
         if not backtest:
             raise ValueError("Backtest not found")
@@ -1146,13 +1161,9 @@ class BacktestService:
         if backtest.status != BACKTEST_STATUS_PENDING:
             raise ValueError(f"Backtest is {backtest.status}, cannot queue")
 
-        # The task is bound to the redis-configured ``celery_app`` (@celery_app.task),
-        # so ``.delay()`` routes to our broker in the API process too — not Celery's
-        # default app — and still honours eager mode under test.
-        run_task = getattr(celery_tasks, "run_backtest_task")
-        task = run_task.delay(str(backtest_id), str(tenant_id))
+        task_id = _enqueue_run_backtest(backtest_id, tenant_id)
         metrics.backtest.job(state="enqueued")
-        return str(task.id)
+        return task_id
 
     async def fail_backtest(
         self,
@@ -1271,13 +1282,9 @@ class BacktestService:
         # row is never lost if the broker call below fails mid-batch.
         await self.db.commit()
 
-        if to_requeue:
-            from src.workers import celery_tasks
-
-            run_task = getattr(celery_tasks, "run_backtest_task")
-            for bt in to_requeue:
-                run_task.delay(str(bt.id), str(bt.tenant_id))
-                counts["pending_requeued"] += 1
+        for bt in to_requeue:
+            _enqueue_run_backtest(bt.id, bt.tenant_id)
+            counts["pending_requeued"] += 1
 
         for _ in range(counts["running_failed"] + counts["pending_failed"]):
             metrics.backtest.job(state="failed")
