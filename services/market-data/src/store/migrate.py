@@ -17,6 +17,8 @@ from pathlib import Path
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
+from llamatrade_telemetry import configure_logging
+
 from src.store.config import close_engine, get_engine
 
 logger = logging.getLogger(__name__)
@@ -81,7 +83,7 @@ async def run_migrations(engine: AsyncEngine | None = None) -> list[str]:
 
 
 def main() -> None:
-    logging.basicConfig(level=logging.INFO)
+    configure_logging("market-data-migrate")
 
     async def _run() -> None:
         try:

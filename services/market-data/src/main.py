@@ -148,20 +148,6 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-init_telemetry(
-    app,
-    service=SERVICE_NAME,
-    version=SERVICE_VERSION,
-    settings=TelemetrySettings(
-        ENVIRONMENT=ENVIRONMENT,
-        LOG_LEVEL=LOG_LEVEL,
-        LOG_FORMAT="json" if ENVIRONMENT != "development" else "text",
-    ),
-)
-
-# Export DB connection-pool stats (the /metrics endpoint is added above)
-init_telemetry(app, service=SERVICE_NAME, pool_stats_provider=get_pool_stats)
-
 register_error_handlers(app)
 
 # Authentication (fail-closed); added before CORS so CORS stays outermost.
@@ -174,6 +160,18 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
     expose_headers=["*"],
+)
+
+init_telemetry(
+    app,
+    service=SERVICE_NAME,
+    version=SERVICE_VERSION,
+    pool_stats_provider=get_pool_stats,
+    settings=TelemetrySettings(
+        ENVIRONMENT=ENVIRONMENT,
+        LOG_LEVEL=LOG_LEVEL,
+        LOG_FORMAT="json" if ENVIRONMENT != "development" else "text",
+    ),
 )
 
 

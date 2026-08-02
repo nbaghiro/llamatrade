@@ -12,7 +12,7 @@ from dataclasses import dataclass
 
 from llamatrade_alpaca import MarketDataStreamClient
 
-from src.metrics import record_stream_message_lag
+from src.metrics import record_broadcast_circuit_transition, record_stream_message_lag
 from src.models import BarData, QuoteData, TradeData
 from src.streaming.manager import StreamManager
 
@@ -39,7 +39,9 @@ class BroadcastCircuitBreaker:
     def record_success(self) -> None:
         """Record a successful broadcast."""
         self.consecutive_failures = 0
-        self.is_open = False
+        if self.is_open:
+            self.is_open = False
+            record_broadcast_circuit_transition("closed")
         self.total_successes += 1
 
     def record_failure(self) -> bool:
@@ -54,6 +56,7 @@ class BroadcastCircuitBreaker:
 
         if self.consecutive_failures >= CIRCUIT_BREAKER_THRESHOLD and not self.is_open:
             self.is_open = True
+            record_broadcast_circuit_transition("open")
             return True
         return False
 

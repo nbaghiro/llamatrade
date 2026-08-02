@@ -2,36 +2,49 @@
 
 Thin helpers over :mod:`llamatrade_telemetry`. The unified telemetry stack owns
 the OTel instruments and the Prometheus ``/metrics`` exposition; this module only
-adapts the service's call sites to the shared ``metrics.marketdata.*`` namespace,
-the cross-cutting cache instrumentation, and a couple of service-specific stream
-counters.
+adapts the service's call sites to the shared ``metrics.marketdata.*`` namespace
+and a couple of service-specific stream counters.
 
-Notes:
-
-* Alpaca REST request counters/latency are **not** emitted here. Alpaca calls go
-  through ``llamatrade_alpaca``, which is already instrumented
-  (``llamatrade_dependency_*`` with ``target="alpaca"``). Duplicating them here
-  would double-count.
-* Cache operations reuse the cross-cutting cache instrumentation so they share a
-  single ``llamatrade_cache_operations_total`` / ``llamatrade_cache_op_duration_seconds``
-  series across the platform (labelled ``cache="marketdata"``).
+Alpaca REST request counters/latency are **not** emitted here. Alpaca calls go
+through ``llamatrade_alpaca``, which is already instrumented
+(``llamatrade_dependency_*`` with ``target="alpaca"``). Duplicating them here
+would double-count.
 """
 
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 
-from llamatrade_telemetry import counter, gauge, metrics
-from llamatrade_telemetry.instrumentation.cache import CACHE_OP_DURATION
-from llamatrade_telemetry.instrumentation.cache import (
-    record_cache_operation as _record_cache_operation,
-)
+from llamatrade_telemetry import conventions, counter, gauge, histogram, metrics
 
 from src.models import Bar
 
-# Cache series share the platform-wide instrumentation; this service is the
-# ``marketdata`` cache.
-_CACHE = "marketdata"
+# Service-scoped histograms must declare buckets before the registry builds its
+# views; the shared conventions table only ships platform-wide names.
+conventions.HISTOGRAM_BUCKETS.setdefault(
+    "llamatrade_marketdata_bar_publish_lag_seconds", conventions.STALENESS_SECONDS
+)
+conventions.HISTOGRAM_BUCKETS.setdefault(
+    "llamatrade_marketdata_bar_fanout_lag_seconds", conventions.STALENESS_SECONDS
+)
+
+_BAR_PUBLISH_LAG = histogram(
+    "llamatrade_marketdata_bar_publish_lag_seconds",
+    (),
+    "Bar timestamp -> internal-bus publish lag (ingest write-through)",
+)
+
+_BAR_FANOUT_LAG = histogram(
+    "llamatrade_marketdata_bar_fanout_lag_seconds",
+    (),
+    "Bar timestamp -> StreamManager fan-out lag (bus-mode serving)",
+)
+
+_BROADCAST_CB_TRANSITIONS = counter(
+    "llamatrade_marketdata_broadcast_circuit_breaker_transitions_total",
+    ["state"],
+    "Broadcast circuit-breaker state transitions (open / closed)",
+)
 
 # Symbol counts are aggregate only — per-symbol labels are forbidden (cardinality
 # contract); the ingest logs name the symbols that entered or left the universe.
@@ -67,18 +80,6 @@ _TIMEFRAME_STEP: dict[str, timedelta] = {
     "1Week": timedelta(weeks=1),
     "1Month": timedelta(days=31),
 }
-
-
-def record_cache_operation(operation: str, result: str, latency: float) -> None:
-    """Record a cache operation.
-
-    Args:
-        operation: Type of operation (get, set, delete).
-        result: Result (hit, miss, error).
-        latency: Operation duration in seconds.
-    """
-    _record_cache_operation(_CACHE, operation, result)
-    CACHE_OP_DURATION.labels(cache=_CACHE, op=operation).observe(latency)
 
 
 # Interior-gap detection tolerance (fraction of a step) and the upper bound
@@ -135,6 +136,36 @@ def record_stream_message_lag(timestamp: str | datetime) -> None:
     """
     lag = (datetime.now(UTC) - _to_utc(timestamp)).total_seconds()
     metrics.marketdata.stream_message_lag.observe(max(lag, 0.0))
+
+
+def record_stream_reconnect() -> None:
+    """Count an Alpaca market-data stream reconnect attempt."""
+    metrics.marketdata.stream_reconnect()
+
+
+def record_bar_publish_lag(timestamp: str | datetime) -> None:
+    """Observe bar timestamp -> now when a live bar is republished on the bus.
+
+    Includes the inherent minute-bar aggregation delay plus buffer/flush time;
+    negative lag (clock skew) is clamped to zero.
+    """
+    lag = (datetime.now(UTC) - _to_utc(timestamp)).total_seconds()
+    _BAR_PUBLISH_LAG.observe(max(lag, 0.0))
+
+
+def record_bar_fanout_lag(timestamp: str | datetime) -> None:
+    """Observe bar timestamp -> now when a bus-sourced bar is handed to fan-out.
+
+    End-to-end lag in bus mode (Alpaca bar -> ingest -> bus -> serving fan-out);
+    negative lag (clock skew) is clamped to zero.
+    """
+    lag = (datetime.now(UTC) - _to_utc(timestamp)).total_seconds()
+    _BAR_FANOUT_LAG.observe(max(lag, 0.0))
+
+
+def record_broadcast_circuit_transition(state: str) -> None:
+    """Count a broadcast circuit-breaker transition (``open`` or ``closed``)."""
+    _BROADCAST_CB_TRANSITIONS.labels(state=state).inc()
 
 
 def record_bar_series_gaps(timeframe: str, bars: list[Bar]) -> None:

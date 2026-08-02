@@ -2,7 +2,7 @@
 
 These assert against the unified telemetry exposition (``get_metrics().decode()``)
 rather than prometheus_client internals, so they verify the real
-``llamatrade_marketdata_*`` / ``llamatrade_cache_*`` series the service emits.
+``llamatrade_marketdata_*`` series the service emits.
 """
 
 from __future__ import annotations
@@ -12,17 +12,21 @@ from datetime import UTC, datetime, timedelta
 from llamatrade_telemetry import get_metrics
 
 from src.metrics import (
+    record_bar_fanout_lag,
+    record_bar_publish_lag,
     record_bar_series_gaps,
     record_bar_staleness,
-    record_cache_operation,
+    record_broadcast_circuit_transition,
     record_ingest_universe_refresh_failure,
     record_ingest_universe_size,
     record_missing_symbol,
     record_quote_staleness,
     record_stream_message_lag,
+    record_stream_reconnect,
     record_trade_staleness,
 )
 from src.models import Bar
+from src.streaming.bridge import CIRCUIT_BREAKER_THRESHOLD, BroadcastCircuitBreaker
 
 
 def _exposition() -> str:
@@ -51,67 +55,6 @@ def _sample(text: str, name: str, **labels: str) -> float | None:
             continue
         return float(value)
     return None
-
-
-class TestRecordCacheOperation:
-    """Cache ops route through the cross-cutting cache instrumentation."""
-
-    def test_records_cache_hit(self) -> None:
-        before = _sample(
-            _exposition(),
-            "llamatrade_cache_operations_total",
-            cache="marketdata",
-            op="get",
-            result="hit",
-        )
-        record_cache_operation("get", "hit", 0.001)
-        after = _sample(
-            _exposition(),
-            "llamatrade_cache_operations_total",
-            cache="marketdata",
-            op="get",
-            result="hit",
-        )
-        assert after == (before or 0.0) + 1.0
-
-    def test_records_cache_miss_and_error(self) -> None:
-        record_cache_operation("get", "miss", 0.002)
-        record_cache_operation("delete", "error", 0.01)
-        text = _exposition()
-        assert (
-            _sample(
-                text,
-                "llamatrade_cache_operations_total",
-                cache="marketdata",
-                op="get",
-                result="miss",
-            )
-            is not None
-        )
-        assert (
-            _sample(
-                text,
-                "llamatrade_cache_operations_total",
-                cache="marketdata",
-                op="delete",
-                result="error",
-            )
-            is not None
-        )
-
-    def test_records_latency_histogram(self) -> None:
-        record_cache_operation("set", "hit", 0.003)
-        text = _exposition()
-        # The duration histogram exposes a labelled count series.
-        assert (
-            _sample(
-                text,
-                "llamatrade_cache_op_duration_seconds_count",
-                cache="marketdata",
-                op="set",
-            )
-            is not None
-        )
 
 
 class TestNoDuplicateAlpacaMetrics:
@@ -229,6 +172,84 @@ class TestRecordStreamMessageLag:
             _sample(_exposition(), "llamatrade_marketdata_stream_message_lag_seconds_count")
             is not None
         )
+
+
+class TestRecordStreamReconnect:
+    """The reconnect hook facade increments the domain counter."""
+
+    def test_increments(self) -> None:
+        name = "llamatrade_marketdata_stream_reconnects_total"
+        before = _sample(_exposition(), name)
+        record_stream_reconnect()
+        after = _sample(_exposition(), name)
+        assert after == (before or 0.0) + 1.0
+
+
+class TestRecordBarPublishLag:
+    """Ingest-side bar timestamp -> bus publish lag lands in its histogram."""
+
+    def test_lag_observed(self) -> None:
+        name = "llamatrade_marketdata_bar_publish_lag_seconds_count"
+        before = _sample(_exposition(), name)
+        record_bar_publish_lag(datetime.now(UTC) - timedelta(seconds=65))
+        after = _sample(_exposition(), name)
+        assert after == (before or 0.0) + 1.0
+
+    def test_future_timestamp_clamped_to_zero(self) -> None:
+        name = "llamatrade_marketdata_bar_publish_lag_seconds_sum"
+        before = _sample(_exposition(), name)
+        record_bar_publish_lag(datetime.now(UTC) + timedelta(seconds=30))
+        after = _sample(_exposition(), name)
+        assert (after or 0.0) >= (before or 0.0)
+
+
+class TestRecordBarFanoutLag:
+    """Serving-side bar timestamp -> fan-out lag lands in its histogram."""
+
+    def test_lag_observed_from_iso_string(self) -> None:
+        name = "llamatrade_marketdata_bar_fanout_lag_seconds_count"
+        before = _sample(_exposition(), name)
+        record_bar_fanout_lag((datetime.now(UTC) - timedelta(seconds=70)).isoformat())
+        after = _sample(_exposition(), name)
+        assert after == (before or 0.0) + 1.0
+
+    def test_future_timestamp_clamped_to_zero(self) -> None:
+        name = "llamatrade_marketdata_bar_fanout_lag_seconds_sum"
+        before = _sample(_exposition(), name)
+        record_bar_fanout_lag(datetime.now(UTC) + timedelta(seconds=30))
+        after = _sample(_exposition(), name)
+        assert (after or 0.0) >= (before or 0.0)
+
+
+class TestBroadcastCircuitTransitions:
+    """Breaker open/close transitions are counted, once per transition."""
+
+    NAME = "llamatrade_marketdata_broadcast_circuit_breaker_transitions_total"
+
+    def test_facade_counts_per_state(self) -> None:
+        before = _sample(_exposition(), self.NAME, state="open")
+        record_broadcast_circuit_transition("open")
+        after = _sample(_exposition(), self.NAME, state="open")
+        assert after == (before or 0.0) + 1.0
+
+    def test_breaker_open_and_close_each_count_once(self) -> None:
+        open_before = _sample(_exposition(), self.NAME, state="open")
+        closed_before = _sample(_exposition(), self.NAME, state="closed")
+
+        cb = BroadcastCircuitBreaker()
+        for _ in range(CIRCUIT_BREAKER_THRESHOLD):
+            cb.record_failure()
+        assert cb.is_open
+        # Further failures while open must not re-count the transition.
+        cb.record_failure()
+        cb.record_success()
+        assert not cb.is_open
+        # Successes while closed must not count a close transition.
+        cb.record_success()
+
+        text = _exposition()
+        assert _sample(text, self.NAME, state="open") == (open_before or 0.0) + 1.0
+        assert _sample(text, self.NAME, state="closed") == (closed_before or 0.0) + 1.0
 
 
 class TestRecordBarSeriesGaps:

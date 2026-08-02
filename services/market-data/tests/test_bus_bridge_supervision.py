@@ -10,6 +10,7 @@ from typing import cast
 from llamatrade_events import BarEvents, EventBus
 from llamatrade_events.testing import FakeTransport
 from llamatrade_proto.generated import common_pb2, market_data_pb2
+from tests.test_metrics import _exposition, _sample
 
 from src.streaming.bus_bridge import BusBridge
 from src.streaming.manager import StreamManager
@@ -63,6 +64,33 @@ async def test_bridge_restarts_tail_after_crash() -> None:
 
     assert message.symbol == "AAPL"
     assert bars.calls == 2  # crashed once; the supervised restart delivered the bar
+
+
+async def test_bridge_records_fanout_lag_on_hand_off() -> None:
+    manager = StreamManager()
+    queue = await manager.connect(client_id=1)
+    await manager.subscribe(1, trades=[], quotes=[], bars=["AAPL"])
+
+    class _OneBar:
+        stream = "market:bars:1m"
+
+        async def tail(
+            self, *, from_cursor: str = "$"
+        ) -> AsyncIterator[tuple[str, market_data_pb2.Bar]]:
+            yield "0:0", _bar("AAPL")
+
+    bridge = BusBridge(EventBus(FakeTransport()), manager)
+    bridge._bars = cast(BarEvents, _OneBar())
+
+    name = "llamatrade_marketdata_bar_fanout_lag_seconds_count"
+    before = _sample(_exposition(), name)
+    await bridge.start()
+    try:
+        await asyncio.wait_for(queue.get(), timeout=3.0)
+    finally:
+        await bridge.stop()
+
+    assert _sample(_exposition(), name) == (before or 0.0) + 1.0
 
 
 async def test_bridge_clean_completion_ends_supervision() -> None:

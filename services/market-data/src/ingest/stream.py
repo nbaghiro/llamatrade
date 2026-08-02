@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING, cast
 
 from llamatrade_events import BarEvents, EventBus, OutgoingRecord
 
+from src.metrics import record_bar_publish_lag
 from src.store.models import BarRow
 from src.store.repository import BarStore
 from src.streaming.bar_events import bar_row_to_proto
@@ -79,6 +80,8 @@ class BarIngestor:
             for proto in (bar_row_to_proto(row) for row in rows)
         ]
         await self._bus.publish_many_raw(self._bars.stream, records)
+        for row in rows:
+            record_bar_publish_lag(row.time)
         logger.debug("Flushed %d live bars to store + bus", len(rows))
         return len(rows)
 

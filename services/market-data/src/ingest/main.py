@@ -12,8 +12,15 @@ import asyncio
 import logging
 import os
 import signal
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Iterator
+from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
+
+import uvicorn
+from starlette.applications import Starlette
+from starlette.requests import Request
+from starlette.responses import JSONResponse
+from starlette.routing import Route
 
 from llamatrade_alpaca import (
     MarketDataStreamClient,
@@ -23,6 +30,7 @@ from llamatrade_alpaca import (
     init_market_data_stream,
 )
 from llamatrade_events import EventBus, get_default_transport
+from llamatrade_telemetry import init_telemetry
 
 from src.ingest.backfill import BackfillController, TargetedBackfill
 from src.ingest.config import BACKFILL_TIMEFRAMES, IngestConfig, get_universe
@@ -30,10 +38,15 @@ from src.ingest.corporate_actions import CorporateActionRefresher
 from src.ingest.gaps import GapRepairer
 from src.ingest.stream import BarIngestor
 from src.ingest.universe import IngestUniverse
+from src.metrics import record_stream_reconnect
 from src.store.config import close_engine
 from src.store.repository import BarStore
 
 logger = logging.getLogger(__name__)
+
+SERVICE_NAME = "market-data-ingest"
+SERVICE_VERSION = "0.1.0"
+DEFAULT_ADMIN_PORT = 8841
 
 
 def _now() -> datetime:
@@ -55,7 +68,79 @@ async def _periodic(
             pass
 
 
+def _build_admin_app(loops_alive: Callable[[], bool]) -> Starlette:
+    """Ops surface for the ingest process; ``init_telemetry`` adds ``/metrics``.
+
+    Args:
+        loops_alive: reports whether the supervised ingest loop tasks are alive.
+    """
+
+    async def health(request: Request) -> JSONResponse:
+        alive = loops_alive()
+        return JSONResponse(
+            {
+                "status": "healthy" if alive else "unhealthy",
+                "timestamp": _now().isoformat(),
+                "service": SERVICE_NAME,
+                "version": SERVICE_VERSION,
+                "checks": {"ingest_loops": {"healthy": alive, "critical": True}},
+            },
+            status_code=200 if alive else 503,
+        )
+
+    return Starlette(routes=[Route("/health", health, methods=["GET"])])
+
+
+class _AdminServer(uvicorn.Server):
+    """Uvicorn server that leaves signal handling to the supervisor's handlers."""
+
+    @contextmanager
+    def capture_signals(self) -> Iterator[None]:
+        yield
+
+
+def _build_admin_server(app: Starlette) -> uvicorn.Server:
+    port = int(os.getenv("MARKET_DATA_INGEST_PORT", str(DEFAULT_ADMIN_PORT)))
+    config = uvicorn.Config(app, host="0.0.0.0", port=port, log_level="warning", lifespan="off")
+    return _AdminServer(config)
+
+
+async def _serve_admin(server: uvicorn.Server, stop: asyncio.Event) -> None:
+    """Serve ``/metrics`` + ``/health`` until ``stop`` is set, then exit cleanly."""
+
+    async def _stopper() -> None:
+        await stop.wait()
+        server.should_exit = True
+
+    stopper = asyncio.create_task(_stopper())
+    try:
+        await server.serve()
+    except asyncio.CancelledError:
+        raise
+    except Exception:
+        logger.exception("Ingest admin server failed; /metrics and /health are down")
+    finally:
+        stopper.cancel()
+        await asyncio.gather(stopper, return_exceptions=True)
+
+
+def _install_reconnect_hook(stream: MarketDataStreamClient) -> None:
+    """Install the reconnect-metric hook on the shared stream client (13A); the
+    singleton factory takes no hook arguments."""
+    setattr(stream, "_on_reconnect", record_stream_reconnect)
+
+
 async def run() -> None:
+    stop = asyncio.Event()
+    _install_signal_handlers(stop)
+    tasks: list[asyncio.Task[None]] = []
+
+    # Telemetry + the admin port come up first so /metrics and /health cover the
+    # initial backfill too. A task that ends before stop is set has crashed.
+    admin_app = _build_admin_app(lambda: all(not t.done() for t in tasks))
+    init_telemetry(admin_app, service=SERVICE_NAME, version=SERVICE_VERSION)
+    admin_task = asyncio.create_task(_serve_admin(_build_admin_server(admin_app), stop))
+
     config = IngestConfig.from_env()
     universe = IngestUniverse(get_universe())
     # Derive the live symbols before the first backfill so new sessions are covered
@@ -94,11 +179,6 @@ async def run() -> None:
     ingestor = BarIngestor(store, bus)
     targeted = TargetedBackfill(controller, _now)
 
-    stop = asyncio.Event()
-    _install_signal_handlers(stop)
-
-    tasks: list[asyncio.Task[None]] = []
-
     # 1. Initial backfill so the store is useful immediately.
     if universe.symbols:
         logger.info("Initial backfill of %d symbols", len(universe.symbols))
@@ -107,6 +187,7 @@ async def run() -> None:
     # 2. Real-time stream write-through (minute bars).
     stream = await init_market_data_stream()
     if stream is not None:
+        _install_reconnect_hook(stream)
         ingestor.attach(stream)
         universe.attach(stream)
         if universe.symbols:
@@ -125,6 +206,7 @@ async def run() -> None:
                     if md_stream is None:
                         logger.warning("market-data stream re-init failed; retrying")
                         continue
+                    _install_reconnect_hook(md_stream)
                     ingestor.attach(md_stream)
                     universe.attach(md_stream)
                     if universe.symbols:
@@ -208,6 +290,11 @@ async def run() -> None:
     await close_all_clients()
     await bus.close()
     await close_engine()
+    try:
+        await asyncio.wait_for(admin_task, timeout=5.0)
+    except TimeoutError:
+        admin_task.cancel()
+        await asyncio.gather(admin_task, return_exceptions=True)
 
 
 def _install_signal_handlers(stop: asyncio.Event) -> None:
@@ -220,7 +307,6 @@ def _install_signal_handlers(stop: asyncio.Event) -> None:
 
 
 def main() -> None:
-    logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
     asyncio.run(run())
 
 

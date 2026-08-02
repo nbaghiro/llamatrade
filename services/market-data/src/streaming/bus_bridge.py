@@ -19,6 +19,7 @@ import time
 
 from llamatrade_events import BarEvents, EventBus
 
+from src.metrics import record_bar_fanout_lag
 from src.streaming.bar_events import proto_to_bar_data
 from src.streaming.manager import StreamManager
 
@@ -85,7 +86,9 @@ class BusBridge:
             if not self._running:
                 break
             try:
-                await self._manager.broadcast_bar(bar.symbol, proto_to_bar_data(bar))
+                data = proto_to_bar_data(bar)
+                record_bar_fanout_lag(data["timestamp"])
+                await self._manager.broadcast_bar(bar.symbol, data)
             except Exception:
                 logger.exception("Failed to route bar event for %s", bar.symbol)
 

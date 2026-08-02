@@ -6,6 +6,9 @@ import asyncio
 from collections.abc import Callable, Iterable
 
 import pytest
+from httpx import ASGITransport, AsyncClient
+
+from llamatrade_telemetry import init_telemetry
 
 from src.ingest import main as ingest_main
 from src.ingest.universe import IngestUniverse
@@ -141,6 +144,19 @@ class FakeSymbolSource:
         return self.symbols
 
 
+class FakeAdminServer:
+    """Stand-in for the uvicorn admin server (no port binding)."""
+
+    def __init__(self) -> None:
+        self.should_exit = False
+        self.serving = asyncio.Event()
+
+    async def serve(self) -> None:
+        self.serving.set()
+        while not self.should_exit:
+            await _REAL_SLEEP(0.005)
+
+
 class SupervisorHarness:
     """Patches every collaborator of run() and captures its internal stop event."""
 
@@ -155,6 +171,8 @@ class SupervisorHarness:
         self.ingestor = FakeIngestor()
         self.bus = FakeBus()
         self.live_symbols = FakeSymbolSource()
+        self.admin_server = FakeAdminServer()
+        self.telemetry_apps: list[object] = []
 
         def fake_universe(baseline: Iterable[str]) -> IngestUniverse:
             return IngestUniverse(baseline, source=self.live_symbols)
@@ -178,7 +196,12 @@ class SupervisorHarness:
         async def fast_sleep(delay: float) -> None:
             await _REAL_SLEEP(0)
 
+        def fake_init_telemetry(app: object, *, service: str, version: str) -> None:
+            self.telemetry_apps.append(app)
+
         mp = monkeypatch
+        mp.setattr(ingest_main, "init_telemetry", fake_init_telemetry)
+        mp.setattr(ingest_main, "_build_admin_server", lambda app: self.admin_server)
         mp.setattr(ingest_main, "get_universe", lambda: ["AAPL"])
         mp.setattr(ingest_main, "IngestUniverse", fake_universe)
         mp.setattr(ingest_main, "BarStore", lambda: object())
@@ -337,3 +360,70 @@ class TestDerivedUniverse:
 
         harness.stop()
         await asyncio.wait_for(run_task, timeout=2.0)
+
+
+class TestAdminServer:
+    async def test_starts_with_telemetry_and_stops_gracefully(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        stream = FakeStream(run_forever=True)
+        harness = SupervisorHarness(monkeypatch, streams=[stream])
+
+        run_task = asyncio.create_task(ingest_main.run())
+        await _wait_until(lambda: harness.admin_server.serving.is_set())
+        # init_telemetry received the admin app so /metrics + middleware are wired.
+        assert len(harness.telemetry_apps) == 1
+        assert harness.telemetry_apps[0] is not None
+
+        harness.stop()
+        await asyncio.wait_for(run_task, timeout=2.0)
+        assert harness.admin_server.should_exit is True
+
+    async def test_reconnect_hook_installed_on_initial_and_reestablished_streams(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        stream1 = FakeStream(run_forever=False)  # run() returns: reconnects exhausted
+        stream2 = FakeStream(run_forever=True)
+        harness = SupervisorHarness(monkeypatch, streams=[stream1, stream2])
+
+        run_task = asyncio.create_task(ingest_main.run())
+        await _wait_until(lambda: bool(stream2.subscribed))
+
+        assert getattr(stream1, "_on_reconnect") is ingest_main.record_stream_reconnect
+        assert getattr(stream2, "_on_reconnect") is ingest_main.record_stream_reconnect
+
+        harness.stop()
+        await asyncio.wait_for(run_task, timeout=2.0)
+
+
+class TestAdminApp:
+    async def test_serves_metrics_and_healthy_health(self) -> None:
+        app = ingest_main._build_admin_app(lambda: True)
+        init_telemetry(app, service=ingest_main.SERVICE_NAME, version="test")
+        # Instruments are lazy; record one so the exposition carries a real series.
+        ingest_main.record_stream_reconnect()
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            metrics_resp = await client.get("/metrics")
+            assert metrics_resp.status_code == 200
+            assert "llamatrade_marketdata_stream_reconnects" in metrics_resp.text
+
+            health_resp = await client.get("/health")
+            assert health_resp.status_code == 200
+            body = health_resp.json()
+            assert body["status"] == "healthy"
+            assert body["service"] == "market-data-ingest"
+            assert body["checks"]["ingest_loops"]["healthy"] is True
+
+    async def test_health_unhealthy_when_ingest_loops_dead(self) -> None:
+        app = ingest_main._build_admin_app(lambda: False)
+        init_telemetry(app, service=ingest_main.SERVICE_NAME, version="test")
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.get("/health")
+            assert resp.status_code == 503
+            body = resp.json()
+            assert body["status"] == "unhealthy"
+            assert body["checks"]["ingest_loops"]["healthy"] is False
