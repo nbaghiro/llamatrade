@@ -20,28 +20,49 @@ The pieces:
   interceptor that uses it lives in ``llamatrade_proto`` (it needs grpc); this
   module stays grpc-free.
 
-Tokens are HS256 over ``JWT_SECRET`` (the same secret the auth service signs
-with). User access tokens carry ``type=access`` + ``tenant_id``/``sub``; service
-tokens carry ``type=service``.
+Token signing:
+
+- **User tokens** (``type=access``/``refresh`` + ``tenant_id``/``sub``, minted
+  only by the auth service) are RS256 over the ``AUTH_JWT_PRIVATE_KEY`` /
+  ``AUTH_JWT_PUBLIC_KEY`` PEM pair when configured — required in
+  production/staging, where the auth service fails closed at startup — and fall
+  back to HS256 over ``JWT_SECRET`` for zero-config dev/test.
+- **Service tokens** (``mint_service_token``; ``type=service`` + ``svc`` +
+  ``aud=llamatrade-internal``) stay HS256 over ``JWT_SECRET``: every service
+  mints them locally for short-lived S2S calls, so they need the shared secret,
+  not the auth service's private key.
+
+Verification pins the algorithm to the configured key material, never to the
+token header: with a public key configured, user tokens are accepted only as
+RS256 and HS256 is reserved for service tokens (``type`` + ``aud`` checked), so
+a service token can never authenticate as a user or vice versa, and
+alg-confusion (an HS256 token where RS256 is pinned, or the public key replayed
+as an HMAC secret) fails.
 """
 
 from __future__ import annotations
 
+import os
 import time
-from collections.abc import Awaitable, Callable, MutableMapping
+from collections.abc import Awaitable, Callable, Collection, Mapping, MutableMapping
 from contextvars import ContextVar, Token
 from typing import Any
 from uuid import UUID
 
 import jwt
 from pydantic import BaseModel, ConfigDict, Field
+from redis.asyncio import Redis
 
-from llamatrade_common.utils import require_secret
+from llamatrade_common.revocation import RevocationStore
+from llamatrade_common.utils import is_production_environment, require_secret
+from llamatrade_telemetry import metrics
 
 _NIL_UUID = UUID("00000000-0000-0000-0000-000000000000")
 _DEFAULT_SECRET = "dev-secret-change-in-production"
 _DEFAULT_ALGORITHM = "HS256"
+_ASYMMETRIC_ALGORITHM = "RS256"
 _SERVICE_SUBJECT = "llamatrade-service"
+SERVICE_AUDIENCE = "llamatrade-internal"
 
 # ASGI scope/message aliases (kept loose — ASGI dicts are heterogeneous).
 Scope = MutableMapping[str, Any]
@@ -55,8 +76,9 @@ class TenantContext(BaseModel):
     """Verified request identity (the in-process auth context).
 
     For a *user* token, ``tenant_id``/``user_id`` are the authoritative principal.
-    For a *service* token, ``is_service`` is True and the principal is carried on
-    the wire by the calling service (which already authenticated the user).
+    For a *service* token, ``is_service`` is True, ``svc`` names the minting
+    service, and the principal is carried on the wire by the calling service
+    (which already authenticated the user).
     """
 
     tenant_id: UUID
@@ -64,6 +86,7 @@ class TenantContext(BaseModel):
     email: str = ""
     roles: list[str] = Field(default_factory=list)
     is_service: bool = False
+    svc: str = ""
 
     model_config = ConfigDict(frozen=True)
 
@@ -100,6 +123,38 @@ class AuthError(Exception):
         super().__init__(message)
 
 
+def user_token_signing_key() -> tuple[str, str]:
+    """``(key, algorithm)`` the auth service signs user tokens with.
+
+    RS256 over ``AUTH_JWT_PRIVATE_KEY`` when the PEM pair is configured, HS256
+    over ``JWT_SECRET`` otherwise. Production/staging refuse to run without the
+    pair, and a half-configured pair is always an error (fail closed).
+    """
+    private_pem = os.environ.get("AUTH_JWT_PRIVATE_KEY")
+    public_pem = os.environ.get("AUTH_JWT_PUBLIC_KEY")
+    if bool(private_pem) != bool(public_pem):
+        raise RuntimeError(
+            "AUTH_JWT_PRIVATE_KEY and AUTH_JWT_PUBLIC_KEY must be configured together"
+        )
+    if not private_pem and is_production_environment():
+        raise RuntimeError(
+            "AUTH_JWT_PRIVATE_KEY/AUTH_JWT_PUBLIC_KEY must be set in production/staging; "
+            "user tokens must be asymmetrically signed"
+        )
+    if private_pem:
+        return private_pem, _ASYMMETRIC_ALGORITHM
+    return require_secret("JWT_SECRET", _DEFAULT_SECRET), _DEFAULT_ALGORITHM
+
+
+def user_token_verification_key() -> tuple[str, str]:
+    """``(key, algorithm)`` for verifying user tokens: the RS256 public key when
+    configured, else the shared HS256 secret."""
+    public_pem = os.environ.get("AUTH_JWT_PUBLIC_KEY")
+    if public_pem:
+        return public_pem, _ASYMMETRIC_ALGORITHM
+    return require_secret("JWT_SECRET", _DEFAULT_SECRET), _DEFAULT_ALGORITHM
+
+
 def mint_service_token(
     *,
     service_name: str = "internal",
@@ -114,32 +169,90 @@ def mint_service_token(
         "sub": _SERVICE_SUBJECT,
         "type": "service",
         "svc": service_name,
+        "aud": SERVICE_AUDIENCE,
         "iat": now,
         "exp": now + ttl_seconds,
     }
     return jwt.encode(payload, secret, algorithm=algorithm)
 
 
-def verify_credential(
+def _decode(token: str, key: str, algorithm: str) -> dict[str, object] | None:
+    """``jwt.decode`` pinned to one algorithm; ``aud`` is matrix-checked by the caller."""
+    try:
+        claims: dict[str, object] = jwt.decode(
+            token, key, algorithms=[algorithm], options={"verify_aud": False}
+        )
+    except jwt.PyJWTError:
+        return None
+    return claims
+
+
+def _acceptable_user_claims(claims: Mapping[str, object]) -> bool:
+    """A user token is never service-typed and never carries the internal audience."""
+    return claims.get("type") != "service" and claims.get("aud") != SERVICE_AUDIENCE
+
+
+def decode_token_claims(
     token: str,
     *,
     secret: str | None = None,
-    algorithm: str = _DEFAULT_ALGORITHM,
-) -> TenantContext | None:
-    """Verify a bearer token and return its ``TenantContext``, or None if invalid.
+    algorithm: str | None = None,
+    public_key: str | None = None,
+) -> dict[str, object] | None:
+    """Verified claims of a bearer token (user or internal service), or None.
 
-    Accepts user access tokens (``type=access``) and internal service tokens
-    (``type=service``). Refresh tokens and malformed/expired tokens return None.
+    The acceptable algorithm is pinned by the configured key material, never by
+    the token header. With a public key (``public_key`` param or
+    ``AUTH_JWT_PUBLIC_KEY``), user tokens must be RS256 over it; HS256 stays
+    accepted only for service tokens (``type=service`` +
+    ``aud=llamatrade-internal``) over the shared secret. Without one, everything
+    is HS256 over the shared secret and the type/audience matrix still forbids
+    cross-acceptance.
     """
-    secret = secret or require_secret("JWT_SECRET", _DEFAULT_SECRET)
+    public_pem = public_key or os.environ.get("AUTH_JWT_PUBLIC_KEY") or None
     try:
-        payload = jwt.decode(token, secret, algorithms=[algorithm])
-    except jwt.InvalidTokenError:
+        header_alg = jwt.get_unverified_header(token).get("alg")
+    except jwt.PyJWTError:
         return None
 
+    if public_pem is not None and header_alg == _ASYMMETRIC_ALGORITHM:
+        claims = _decode(token, public_pem, _ASYMMETRIC_ALGORITHM)
+        if claims is None or not _acceptable_user_claims(claims):
+            return None
+        return claims
+
+    hmac_algorithm = algorithm or _DEFAULT_ALGORITHM
+    if header_alg != hmac_algorithm:
+        return None
+    hmac_secret = secret or require_secret("JWT_SECRET", _DEFAULT_SECRET)
+    claims = _decode(token, hmac_secret, hmac_algorithm)
+    if claims is None:
+        return None
+    if claims.get("type") == "service":
+        return claims if claims.get("aud") == SERVICE_AUDIENCE else None
+    if public_pem is not None:
+        # User tokens must be asymmetric once a public key is configured.
+        return None
+    return claims if _acceptable_user_claims(claims) else None
+
+
+def context_from_claims(payload: Mapping[str, object]) -> TenantContext | None:
+    """``TenantContext`` for verified claims, or None if they can't authenticate.
+
+    Accepts user access tokens (``type=access``) and internal service tokens
+    (``type=service`` + the internal audience). Refresh (or any other) tokens
+    return None.
+    """
     token_type = payload.get("type", "access")
     if token_type == "service":
-        return TenantContext(tenant_id=_NIL_UUID, user_id=_NIL_UUID, is_service=True)
+        if payload.get("aud") != SERVICE_AUDIENCE:
+            return None
+        return TenantContext(
+            tenant_id=_NIL_UUID,
+            user_id=_NIL_UUID,
+            is_service=True,
+            svc=str(payload.get("svc", "") or ""),
+        )
     if token_type != "access":
         # Refresh (or any non-access) token cannot authenticate an API call.
         return None
@@ -148,27 +261,53 @@ def verify_credential(
     user_id = payload.get("sub")
     if not tenant_id or not user_id:
         return None
+    roles_raw = payload.get("roles") or []
     try:
         return TenantContext(
             tenant_id=UUID(str(tenant_id)),
             user_id=UUID(str(user_id)),
             email=str(payload.get("email", "") or ""),
-            roles=list(payload.get("roles", []) or []),
+            roles=[str(role) for role in roles_raw] if isinstance(roles_raw, list) else [],
         )
     except ValueError, TypeError:
         return None
 
 
+def verify_credential(
+    token: str,
+    *,
+    secret: str | None = None,
+    algorithm: str | None = None,
+    public_key: str | None = None,
+) -> TenantContext | None:
+    """Verify a bearer token and return its ``TenantContext``, or None if invalid."""
+    claims = decode_token_claims(token, secret=secret, algorithm=algorithm, public_key=public_key)
+    return context_from_claims(claims) if claims is not None else None
+
+
+def _accepted_services_from_env() -> frozenset[str] | None:
+    """The ``AUTH_ACCEPTED_SERVICES`` allowlist, or None when unset (accept any)."""
+    raw = os.environ.get("AUTH_ACCEPTED_SERVICES")
+    if not raw:
+        return None
+    names = frozenset(name.strip() for name in raw.split(",") if name.strip())
+    return names or None
+
+
 def resolve_identity(
     wire_tenant_id: str | None,
     wire_user_id: str | None,
+    *,
+    accepted_services: Collection[str] | None = None,
 ) -> tuple[UUID, UUID]:
     """Trusted ``(tenant_id, user_id)`` for a servicer call.
 
     - **user** context → the token identity is authoritative; if the wire
       ``tenant_id`` is present and differs, reject (cross-tenant guard).
     - **service** context → trust the wire identity (the caller already
-      authenticated the user and forwards the tenant).
+      authenticated the user and forwards the tenant). When an allowlist is
+      configured (``accepted_services`` argument, else ``AUTH_ACCEPTED_SERVICES``),
+      a service token whose ``svc`` is not listed is rejected; unset accepts any.
     - **no** context → trust the wire identity. In production the fail-closed
       ``AuthMiddleware`` guarantees a context exists, so this branch is only hit
       by unit tests that call servicers directly.
@@ -176,6 +315,15 @@ def resolve_identity(
     Raises ``AuthError`` on a missing/mismatched/invalid context.
     """
     ctx = _context.get()
+    if ctx is not None and ctx.is_service:
+        allowed = (
+            accepted_services if accepted_services is not None else _accepted_services_from_env()
+        )
+        if allowed is not None and ctx.svc not in allowed:
+            raise AuthError(
+                "permission_denied",
+                f"service {ctx.svc or '<unknown>'} is not in the accepted-services allowlist",
+            )
     if ctx is not None and not ctx.is_service:
         if wire_tenant_id:
             try:
@@ -183,9 +331,20 @@ def resolve_identity(
             except (ValueError, TypeError, AttributeError) as e:
                 raise AuthError("invalid_argument", f"invalid tenant_id in context: {e}") from e
             if wire_tid != ctx.tenant_id:
+                metrics.auth.cross_tenant_access_attempt()
                 raise AuthError(
                     "permission_denied",
                     "tenant_id in request does not match the authenticated principal",
+                )
+        if wire_user_id:
+            try:
+                wire_uid = UUID(str(wire_user_id))
+            except (ValueError, TypeError, AttributeError) as e:
+                raise AuthError("invalid_argument", f"invalid user_id in context: {e}") from e
+            if wire_uid != ctx.user_id:
+                raise AuthError(
+                    "permission_denied",
+                    "user_id in request does not match the authenticated principal",
                 )
         return ctx.tenant_id, ctx.user_id
 
@@ -219,17 +378,37 @@ class AuthMiddleware:
         *,
         jwt_secret: str | None = None,
         jwt_algorithm: str = _DEFAULT_ALGORITHM,
+        jwt_public_key: str | None = None,
         public_paths: list[str] | None = None,
         public_suffixes: list[str] | None = None,
+        redis_client: Redis | None = None,
     ) -> None:
         self.app = app
         self._secret = jwt_secret or require_secret("JWT_SECRET", _DEFAULT_SECRET)
         self._algorithm = jwt_algorithm
+        # RS256 pin for user tokens; HS256 stays for service tokens (module docstring).
+        self._public_key = jwt_public_key or os.environ.get("AUTH_JWT_PUBLIC_KEY") or None
         self._public_paths = set(public_paths or ["/health", "/metrics", "/docs", "/openapi.json"])
         self._public_suffixes = tuple(public_suffixes or ())
+        # Revocation checking needs Redis. When a client is not supplied, build one
+        # from REDIS_URL so the secure default does not hinge on each call site
+        # passing one; only its absence (no client, no URL) disables the check.
+        if redis_client is None:
+            redis_client = self._default_redis_client()
+        self._revocation = RevocationStore(redis_client) if redis_client is not None else None
+        if self._revocation is None and is_production_environment():
+            raise RuntimeError(
+                "token revocation is disabled (no Redis client and REDIS_URL is unset); "
+                "refusing to start in production/staging without revocation enforcement"
+            )
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-        if scope.get("type") != "http":
+        scope_type = scope.get("type")
+        if scope_type == "websocket":
+            # No websocket auth exists here; reject rather than bypass the fail-closed edge.
+            await send({"type": "websocket.close", "code": 1008})
+            return
+        if scope_type != "http":
             await self.app(scope, receive, send)
             return
 
@@ -241,12 +420,26 @@ class AuthMiddleware:
             return
 
         token = self._bearer_token(scope)
-        ctx = (
-            verify_credential(token, secret=self._secret, algorithm=self._algorithm)
+        claims = (
+            decode_token_claims(
+                token,
+                secret=self._secret,
+                algorithm=self._algorithm,
+                public_key=self._public_key,
+            )
             if token
             else None
         )
+        ctx = context_from_claims(claims) if claims is not None else None
         if ctx is None:
+            await self._reject(send)
+            return
+        if (
+            self._revocation is not None
+            and claims is not None
+            and not ctx.is_service
+            and await self._revocation.is_revoked(claims)
+        ):
             await self._reject(send)
             return
 
@@ -255,6 +448,18 @@ class AuthMiddleware:
             await self.app(scope, receive, send)
         finally:
             _context.reset(reset)
+
+    @staticmethod
+    def _default_redis_client() -> Redis | None:
+        """Build a Redis client from ``REDIS_URL`` for revocation, or None if unset.
+
+        ``from_url`` is lazy (no connection until the first command), so this is
+        safe at construction; a Redis outage still fails open inside ``is_revoked``.
+        """
+        url = os.environ.get("REDIS_URL")
+        if not url:
+            return None
+        return Redis.from_url(url)
 
     def _is_public(self, path: str) -> bool:
         if path in self._public_paths or path.startswith("/health/"):

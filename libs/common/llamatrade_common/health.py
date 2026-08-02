@@ -7,15 +7,22 @@ dependency health checking for databases, caches, and external services.
 from __future__ import annotations
 
 import asyncio
+import inspect
 import logging
+import os
+import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import StrEnum
-from typing import TypedDict
+from typing import TYPE_CHECKING, TypedDict
 
 from fastapi import APIRouter, Response
 from pydantic import BaseModel
+
+if TYPE_CHECKING:
+    from aiokafka.abc import AbstractTokenProvider
+    from sqlalchemy.ext.asyncio import AsyncEngine
 
 
 class CheckDetails(TypedDict, total=False):
@@ -141,8 +148,6 @@ class HealthChecker:
 
     async def _run_check(self, check: DependencyCheck) -> CheckResult:
         """Run a single health check with timeout."""
-        import time
-
         start = time.perf_counter()
 
         try:
@@ -283,6 +288,49 @@ class HealthChecker:
 # Common Health Check Functions
 
 
+def cached_engine_check(
+    engine_provider: Callable[[], AsyncEngine],
+    *,
+    ttl_seconds: float = 10.0,
+) -> Callable[[], Awaitable[bool]]:
+    """Build a ``SELECT 1`` probe over a service's shared engine.
+
+    The engine is resolved per call, so the check can be registered before the
+    pool exists. Results are cached for ``ttl_seconds`` so frequent kubelet
+    probes do not each take a connection out of the pool. Any failure is logged
+    and reported as unhealthy rather than raised.
+
+    Args:
+        engine_provider: Returns the shared engine (e.g. ``llamatrade_db.get_engine``)
+        ttl_seconds: How long a result is reused before the engine is probed again
+
+    Returns:
+        An async callable suitable for :meth:`HealthChecker.add_check`
+    """
+    from sqlalchemy import text
+
+    statement = text("SELECT 1")
+    cache: tuple[float, bool] | None = None
+
+    async def check_database() -> bool:
+        """SELECT 1 on the service's shared engine, cached briefly so probes stay cheap."""
+        nonlocal cache
+        now = time.monotonic()
+        if cache is not None and now - cache[0] < ttl_seconds:
+            return cache[1]
+        try:
+            async with engine_provider().connect() as conn:
+                await conn.execute(statement)
+            healthy = True
+        except Exception:
+            logger.warning("Database readiness check failed", exc_info=True)
+            healthy = False
+        cache = (now, healthy)
+        return healthy
+
+    return check_database
+
+
 async def check_postgres(database_url: str) -> bool:
     """Check PostgreSQL connection.
 
@@ -334,22 +382,109 @@ async def check_redis(redis_url: str) -> bool:
         return False
 
 
-async def check_http_endpoint(url: str, timeout: float = 5.0) -> bool:
-    """Check an HTTP endpoint.
+_KAFKA_SASL_MECHANISM = "OAUTHBEARER"
+
+
+class _KafkaSecurityConfig(TypedDict, total=False):
+    """SASL kwargs shared with the aiokafka client (empty for PLAINTEXT).
+
+    A TypedDict (not ``dict[str, object]``) so ``**``-spreading it into the typed
+    ``AIOKafkaProducer`` constructor stays type-checked, matching the events
+    transport's ``_SecurityConfig``.
+    """
+
+    security_protocol: str
+    sasl_mechanism: str
+    sasl_oauth_token_provider: AbstractTokenProvider
+
+
+def _kafka_security_kwargs(token_provider: AbstractTokenProvider | None) -> _KafkaSecurityConfig:
+    """SASL kwargs matching the events transport (empty for PLAINTEXT).
+
+    Mirrors ``KafkaTransport._security_kwargs`` from ``KAFKA_SECURITY_PROTOCOL`` so
+    an in-cluster probe speaks the cluster's protocol instead of a plaintext
+    handshake against a TLS/SASL listener (which never completes and burns the
+    whole timeout). The OAUTHBEARER token provider is optional so the reader can
+    stay free of ``google.auth``; a caller with a live transport passes its own.
+    """
+    protocol = os.getenv("KAFKA_SECURITY_PROTOCOL", "PLAINTEXT").upper()
+    if protocol == "PLAINTEXT":
+        return {}
+    kwargs: _KafkaSecurityConfig = {
+        "security_protocol": protocol,
+        "sasl_mechanism": _KAFKA_SASL_MECHANISM,
+    }
+    if token_provider is not None:
+        kwargs["sasl_oauth_token_provider"] = token_provider
+    return kwargs
+
+
+async def check_kafka(
+    bootstrap_servers: str | None = None,
+    *,
+    timeout: float = 2.0,
+    is_alive: Callable[[], bool | Awaitable[bool]] | None = None,
+    token_provider: AbstractTokenProvider | None = None,
+) -> bool:
+    """Check Kafka broker connectivity (the event backbone).
+
+    Prefer ``is_alive``: a service holding a live shared ``KafkaTransport`` passes
+    a callable reporting whether that transport's producer/consumer is connected,
+    so the probe opens no second broker connection. Without it a short-lived
+    producer is started under ``timeout`` using the same SASL kwargs the events
+    transport uses (``KAFKA_SECURITY_PROTOCOL`` plus ``token_provider``), so the
+    handshake matches the cluster instead of stalling.
+
+    ``aiokafka`` is not a dependency of llamatrade-common; it is imported lazily,
+    so only Kafka-using services (which get it via llamatrade-events) should
+    register this check.
+
+    Wire ``is_alive`` only for a role that holds a producer or a group consumer;
+    a tail-only role tracks no client, so ``KafkaTransport.is_connected`` reports
+    permanently ``False`` and would make this check permanently red.
 
     Args:
-        url: URL to check
-        timeout: Request timeout
+        bootstrap_servers: Broker list; defaults to ``KAFKA_BOOTSTRAP_SERVERS``.
+        timeout: Seconds to wait for the connection before failing.
+        is_alive: Optional liveness probe answered from the shared transport;
+            wire it only for a producer/group-consumer role (not tail-only).
+        token_provider: SASL/OAUTHBEARER token provider for the fallback probe.
 
     Returns:
-        True if endpoint returns 2xx
+        True if the shared transport reports live, or a probe producer connects
+        within the timeout.
     """
-    try:
-        import httpx
+    if is_alive is not None:
+        try:
+            outcome = is_alive()
+            alive = await outcome if inspect.isawaitable(outcome) else outcome
+            return bool(alive)
+        except Exception as e:
+            logger.warning("Kafka health check (transport liveness) failed: %s", e)
+            return False
 
-        async with httpx.AsyncClient() as client:
-            response = await client.get(url, timeout=timeout)
-            return bool(200 <= response.status_code < 300)
+    try:
+        from aiokafka import AIOKafkaProducer
+    except ImportError as e:
+        raise ImportError(
+            "check_kafka requires aiokafka (shipped with llamatrade-events); "
+            "register this check only in Kafka-using services"
+        ) from e
+
+    servers = bootstrap_servers or os.getenv("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092")
+    producer = AIOKafkaProducer(
+        bootstrap_servers=servers,
+        request_timeout_ms=int(timeout * 1000),
+        **_kafka_security_kwargs(token_provider),
+    )
+    try:
+        await asyncio.wait_for(producer.start(), timeout=timeout)
+        return True
     except Exception as e:
-        logger.warning("HTTP health check failed for %s: %s", url, e)
+        logger.warning("Kafka health check failed: %s", e)
         return False
+    finally:
+        try:
+            await producer.stop()
+        except Exception:
+            logger.debug("Kafka health probe close failed", exc_info=True)

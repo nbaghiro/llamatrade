@@ -1,23 +1,20 @@
 """Tests for utility functions."""
 
+import hashlib
+from collections.abc import Generator
 from datetime import UTC
 
 import pytest
 
 from llamatrade_common.utils import (
-    calculate_pnl,
-    chunks,
     decrypt_value,
     encrypt_value,
-    format_currency,
-    format_percent,
-    generate_api_key,
     generate_uuid,
-    normalize_symbol,
     paginate,
+    pagination_response,
     require_secret,
+    resolve_pagination,
     utc_now,
-    validate_symbol,
     verify_api_key,
 )
 
@@ -49,29 +46,21 @@ class TestUtcNow:
         assert now.tzinfo == UTC
 
 
-class TestAPIKeyGeneration:
-    """Tests for API key generation and verification."""
+class TestVerifyAPIKey:
+    """Tests for constant-time API-key verification."""
 
-    def test_generate_api_key_default_prefix(self):
-        """Test generating API key with default prefix."""
-        key, key_hash = generate_api_key()
-        assert key.startswith("lt_")
-        assert len(key_hash) == 64  # SHA256 hex digest
-
-    def test_generate_api_key_custom_prefix(self):
-        """Test generating API key with custom prefix."""
-        key, key_hash = generate_api_key(prefix="test")
-        assert key.startswith("test_")
+    @staticmethod
+    def _hash(key: str) -> str:
+        return hashlib.sha256(key.encode()).hexdigest()
 
     def test_verify_api_key_valid(self):
-        """Test verifying a valid API key."""
-        key, key_hash = generate_api_key()
-        assert verify_api_key(key, key_hash) is True
+        """A key matching its stored hash verifies."""
+        key = "lt_some-example-key"
+        assert verify_api_key(key, self._hash(key)) is True
 
     def test_verify_api_key_invalid(self):
-        """Test verifying an invalid API key."""
-        key, key_hash = generate_api_key()
-        assert verify_api_key("wrong_key", key_hash) is False
+        """A key that does not match the stored hash fails."""
+        assert verify_api_key("wrong_key", self._hash("lt_some-example-key")) is False
 
 
 class TestEncryption:
@@ -113,6 +102,90 @@ class TestEncryption:
         assert first != second
         assert decrypt_value(first, key) == value
         assert decrypt_value(second, key) == value
+
+
+class TestDerivedKeyCache:
+    """PBKDF2 derivations are cached per (key, salt) — hot-path decrypts are cheap."""
+
+    @pytest.fixture
+    def kdf_calls(self, monkeypatch: pytest.MonkeyPatch) -> Generator[list[int]]:
+        """Count PBKDF2HMAC constructions inside a cleared cache window."""
+        from cryptography.hazmat.primitives import hashes
+        from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+
+        from llamatrade_common import utils
+
+        calls: list[int] = []
+
+        def counting_kdf(
+            *, algorithm: hashes.HashAlgorithm, length: int, salt: bytes, iterations: int
+        ) -> PBKDF2HMAC:
+            calls.append(1)
+            return PBKDF2HMAC(algorithm=algorithm, length=length, salt=salt, iterations=iterations)
+
+        monkeypatch.setattr(utils, "PBKDF2HMAC", counting_kdf)
+        utils._derive_fernet_key.cache_clear()
+        yield calls
+        utils._derive_fernet_key.cache_clear()
+
+    def test_decrypts_of_same_envelope_derive_once(self, kdf_calls: list[int]) -> None:
+        encrypted = encrypt_value("v", "k")
+        assert decrypt_value(encrypted, "k") == "v"
+        assert decrypt_value(encrypted, "k") == "v"
+        assert len(kdf_calls) == 1
+
+    def test_distinct_salts_derive_separately(self, kdf_calls: list[int]) -> None:
+        first = encrypt_value("v", "k")
+        second = encrypt_value("v", "k")
+        assert decrypt_value(first, "k") == "v"
+        assert decrypt_value(second, "k") == "v"
+        assert len(kdf_calls) == 2
+
+    def test_distinct_keys_derive_separately(self, kdf_calls: list[int]) -> None:
+        from llamatrade_common import utils
+
+        salt = b"0123456789abcdef"
+        utils._derive_fernet_key("key-a", salt)
+        utils._derive_fernet_key("key-b", salt)
+        utils._derive_fernet_key("key-a", salt)
+        assert len(kdf_calls) == 2
+
+
+class TestCipherSelection:
+    """The envelope cipher is a config choice (KMS seam)."""
+
+    def test_default_is_local_fernet(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from llamatrade_common.utils import LocalFernetCipher, get_cipher
+
+        monkeypatch.delenv("CREDENTIAL_CIPHER", raising=False)
+        assert isinstance(get_cipher(), LocalFernetCipher)
+
+    def test_explicit_name_wins(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from llamatrade_common.utils import GcpKmsCipher, get_cipher
+
+        monkeypatch.delenv("ENVIRONMENT", raising=False)
+        assert isinstance(get_cipher("gcp-kms"), GcpKmsCipher)
+
+    def test_env_selects_cipher_for_module_functions(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("CREDENTIAL_CIPHER", "gcp-kms")
+        monkeypatch.delenv("KMS_KEY_NAME", raising=False)
+        monkeypatch.delenv("ENVIRONMENT", raising=False)
+        with pytest.raises(RuntimeError, match="KMS_KEY_NAME"):
+            encrypt_value("v")
+        with pytest.raises(RuntimeError, match="KMS_KEY_NAME"):
+            decrypt_value("anything")
+
+    def test_unknown_cipher_rejected(self) -> None:
+        from llamatrade_common.utils import get_cipher
+
+        with pytest.raises(ValueError, match="unknown credential cipher"):
+            get_cipher("vault")
+
+    def test_local_cipher_round_trips(self) -> None:
+        from llamatrade_common.utils import LocalFernetCipher
+
+        cipher = LocalFernetCipher()
+        assert cipher.decrypt_value(cipher.encrypt_value("s", "k"), "k") == "s"
 
 
 class TestRequireSecret:
@@ -184,126 +257,73 @@ class TestPaginate:
         assert result["items"] == []
 
 
-class TestFormatCurrency:
-    """Tests for currency formatting."""
+class _PageReq:
+    """Stand-in for the proto ``PaginationRequest`` (int fields, default 0)."""
 
-    def test_format_usd(self):
-        """Test formatting USD."""
-        assert format_currency(1234.56) == "$1,234.56"
-        assert format_currency(1234.56, "USD") == "$1,234.56"
-
-    def test_format_other_currency(self):
-        """Test formatting other currencies."""
-        assert format_currency(1234.56, "EUR") == "1,234.56 EUR"
-
-    def test_format_large_number(self):
-        """Test formatting large numbers."""
-        assert format_currency(1234567.89) == "$1,234,567.89"
-
-    def test_format_small_number(self):
-        """Test formatting small numbers."""
-        assert format_currency(0.01) == "$0.01"
+    def __init__(self, page: int = 0, page_size: int = 0) -> None:
+        self.page = page
+        self.page_size = page_size
 
 
-class TestFormatPercent:
-    """Tests for percentage formatting."""
+class TestResolvePagination:
+    """Tests for the request-side pagination resolver."""
 
-    def test_format_percent_default_decimals(self):
-        """Test formatting percentage with default decimals."""
-        assert format_percent(0.1234) == "12.34%"
+    def test_none_uses_defaults(self):
+        assert resolve_pagination(None) == (1, 20)
 
-    def test_format_percent_custom_decimals(self):
-        """Test formatting percentage with custom decimals."""
-        assert format_percent(0.12345, decimals=1) == "12.3%"
-        assert format_percent(0.12345, decimals=4) == "12.3450%"
+    def test_none_honours_custom_default_size(self):
+        assert resolve_pagination(None, default_page_size=50) == (1, 50)
 
-    def test_format_percent_negative(self):
-        """Test formatting negative percentage."""
-        assert format_percent(-0.05) == "-5.00%"
+    def test_unset_fields_treated_as_unset(self):
+        assert resolve_pagination(_PageReq(page=0, page_size=0)) == (1, 20)
 
+    def test_explicit_values_pass_through(self):
+        assert resolve_pagination(_PageReq(page=3, page_size=25)) == (3, 25)
 
-class TestCalculatePnl:
-    """Tests for P&L calculation."""
+    def test_page_floors_at_one(self):
+        assert resolve_pagination(_PageReq(page=-5, page_size=10)) == (1, 10)
 
-    def test_calculate_profit(self):
-        """Test calculating profit."""
-        pnl, pnl_pct = calculate_pnl(cost_basis=100, current_value=120)
+    def test_page_size_never_zero(self):
+        """A client-supplied page_size of 0 must not survive to a divisor."""
+        _, page_size = resolve_pagination(_PageReq(page=1, page_size=0))
+        assert page_size == 20
 
-        assert pnl == 20
-        assert pnl_pct == 20.0
+    def test_negative_page_size_falls_back_to_default(self):
+        assert resolve_pagination(_PageReq(page=1, page_size=-1)) == (1, 20)
 
-    def test_calculate_loss(self):
-        """Test calculating loss."""
-        pnl, pnl_pct = calculate_pnl(cost_basis=100, current_value=80)
+    def test_page_size_clamped_to_max(self):
+        assert resolve_pagination(_PageReq(page=1, page_size=100_000)) == (1, 100)
 
-        assert pnl == -20
-        assert pnl_pct == -20.0
-
-    def test_calculate_zero_cost_basis(self):
-        """Test with zero cost basis."""
-        pnl, pnl_pct = calculate_pnl(cost_basis=0, current_value=100)
-
-        assert pnl == 100
-        assert pnl_pct == 0  # Avoid division by zero
+    def test_max_page_size_is_configurable(self):
+        assert resolve_pagination(_PageReq(page=1, page_size=5000), max_page_size=500) == (1, 500)
 
 
-class TestValidateSymbol:
-    """Tests for symbol validation."""
+class TestPaginationResponse:
+    """Tests for the response-side pagination metadata builder."""
 
-    def test_valid_symbols(self):
-        """Test valid stock symbols."""
-        assert validate_symbol("AAPL") is True
-        assert validate_symbol("A") is True
-        assert validate_symbol("GOOGL") is True
+    def test_first_page_of_many(self):
+        meta = pagination_response(total=25, page=1, page_size=10)
+        assert meta == {
+            "total_items": 25,
+            "total_pages": 3,
+            "current_page": 1,
+            "page_size": 10,
+            "has_next": True,
+            "has_previous": False,
+        }
 
-    def test_invalid_symbols(self):
-        """Test invalid stock symbols."""
-        assert validate_symbol("") is False
-        assert validate_symbol("aapl") is False  # lowercase
-        assert validate_symbol("TOOLONG") is False  # > 5 chars
-        assert validate_symbol("AA1") is False  # contains number
-        assert validate_symbol("AA-B") is False  # contains hyphen
+    def test_last_page(self):
+        meta = pagination_response(total=25, page=3, page_size=10)
+        assert meta["has_next"] is False
+        assert meta["has_previous"] is True
 
+    def test_empty_result_has_one_page(self):
+        meta = pagination_response(total=0, page=1, page_size=10)
+        assert meta["total_pages"] == 1
+        assert meta["has_next"] is False
+        assert meta["has_previous"] is False
 
-class TestNormalizeSymbol:
-    """Tests for symbol normalization."""
-
-    def test_normalize_lowercase(self):
-        """Test normalizing lowercase symbol."""
-        assert normalize_symbol("aapl") == "AAPL"
-
-    def test_normalize_mixed_case(self):
-        """Test normalizing mixed case symbol."""
-        assert normalize_symbol("AaPl") == "AAPL"
-
-    def test_normalize_with_whitespace(self):
-        """Test normalizing symbol with whitespace."""
-        assert normalize_symbol("  AAPL  ") == "AAPL"
-
-
-class TestChunks:
-    """Tests for chunks generator."""
-
-    def test_chunks_even_split(self):
-        """Test chunking list that splits evenly."""
-        result = list(chunks([1, 2, 3, 4, 5, 6], 2))
-
-        assert result == [[1, 2], [3, 4], [5, 6]]
-
-    def test_chunks_uneven_split(self):
-        """Test chunking list that doesn't split evenly."""
-        result = list(chunks([1, 2, 3, 4, 5], 2))
-
-        assert result == [[1, 2], [3, 4], [5]]
-
-    def test_chunks_larger_than_list(self):
-        """Test chunk size larger than list."""
-        result = list(chunks([1, 2, 3], 10))
-
-        assert result == [[1, 2, 3]]
-
-    def test_chunks_empty_list(self):
-        """Test chunking empty list."""
-        result = list(chunks([], 5))
-
-        assert result == []
+    def test_zero_page_size_does_not_divide_by_zero(self):
+        meta = pagination_response(total=5, page=1, page_size=0)
+        assert meta["page_size"] == 1
+        assert meta["total_pages"] == 5
