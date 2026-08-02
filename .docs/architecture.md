@@ -147,12 +147,6 @@ We considered three alternatives:
 
 We should also be clear about what we did not adopt: there is no CQRS framework, no projection database, and no saga orchestrator. The log is one Postgres table, projections are pure functions, and the write path is a single insert with a conflict clause. The pattern has established lineage in unified-managed-account overlay systems, fintech ledger engineering, and hedge-fund shadow accounting; we use the ordinary core of it.
 
-*What if the log itself is corrupted, for example by a bad deploy writing wrong-but-balanced events?* Balance checks cannot catch semantically wrong events. That is why reconciliation against the broker (below) is a first-class subsystem: the broker is an independent record we continuously compare against, and that comparison catches what the checksum cannot.
-
-*What if a user deletes their broker credentials and connects new ones?* Accounts carry the broker's own account id, learned at genesis and unique per tenant, and account resolution matches on it before creating anything, so a re-link re-points the existing book at the new credentials instead of minting a duplicate whose backfill would double-count. Pre-existing duplicates are reported by a startup sweep for operator resolution and never merged automatically, because merging two event logs is not a job to run unattended.
-
-*What if support has to explain a balance to a user?* Every balance is a fold of events, and an operator statement tool renders any account into a readable statement: opening balances, day-grouped activity with running per-sleeve cash, closing lots with realized P&L, and the conservation identity checked at the bottom, all computed through the same fold the ledger uses, so the statement cannot disagree with the book.
-
 ### Ownership boundary: trading executes, portfolio accounts
 
 Trading (8850) owns broker submission, order-time risk checks, the deterministic `client_order_id`, and a thin durable order-intent table. It does no accounting; it reports broker facts. Portfolio (8860) owns the ledger, all projections, reconciliation, and fund operations, and hosts a second Connect service (`LedgerService`) in the same process for sleeve reads and capital operations. The strategy service orchestrates lifecycle: it funds a sleeve when an execution starts and closes the sleeve when it stops.
@@ -179,10 +173,6 @@ Delivery is at-least-once throughout, and effective-once behavior is built on to
 
 We considered exactly-once machinery instead, for example a transactional outbox on the trading side. An outbox would remove the republish drain, at the cost of coupling order-state commits to publish semantics and adding a relay process. Since deduplication has to exist anyway (the broker's own stream can redeliver), the outbox would be additional complexity rather than a replacement. This is the best-understood part of the design.
 
-*What if two submitters race the same order?* Both derive the same `client_order_id`. The order-intent table's unique constraint rejects the second insert before any broker call, and a duplicate that still reached Alpaca would hit its per-account uniqueness; a concurrency test asserts that five identical simultaneous submits produce exactly one broker order, with the losers surfacing as errors rather than a second fill.
-
-*What if a trading pod crashes mid-order?* The intent row commits before the broker call, so on restart a stranded-order sweep probes Alpaca by `client_order_id`: an order the broker already has is adopted onto the existing row, one it never received is marked rejected, and a resubmit of the same signal re-derives the same id and never places a second order. One residual gap in this sweep, a lost-response-but-accepted order that gets marked rejected and so drops out of it, is tracked under Findings from the implementation read (item 5).
-
 ### Ordered fill ingestion, partitioned by account
 
 FIFO cost basis is only correct when an account's buys are applied before the sells that consume them, so the hard requirement on fill ingestion is per-account ordering. Kafka provides this directly. Fills are keyed by `account_id`, ordering is guaranteed within a partition, and the `portfolio-ledger` consumer group therefore processes accounts in parallel while each account remains serial. Offsets are committed only after the ledger write succeeds.
@@ -199,15 +189,7 @@ The design history is worth keeping in the record. The first version was a singl
 
 The advisory lock was not removed; its scope narrowed. Reconciliation and equity-snapshot sweeps remain single-writer by lock election, because they are periodic, have no throughput problem, and double-running them corrupts the equity-curve series (drift events are protected by their deterministic ids; equity snapshot rows carry no idempotency key).
 
-*What if the database fails over while a lock is held?* Advisory locks release with their connections, and a chaos suite now exercises this against real Postgres death and restart. It confirmed that re-election works, and also showed where the earlier assumptions were wrong: election is one-shot with no fencing token, so a torn leader that reconnects keeps sweeping alongside the new one until it notices. On the trading side a lease sweep on every pod (about every thirty seconds) detects a lost session lease and stops the local runner, so two runners overlap for at most that window and the deterministic `client_order_id` prevents a duplicate order within it. On the sweep side the exposure is real: drift events survive double-running through their deterministic ids, but equity snapshots do not, and a managed idle-in-transaction timeout can revoke a lease silently with no failover at all. Fencing the periodic sweep writers is the open item in the register; until it lands, that window is documented rather than closed.
-
 One deliberate deviation should be flagged. The events library once shipped a generic durable consumer with a retry-counting DLQ policy, and the money path never used it, because a policy of N retries followed by DLQ is wrong for fills, where transient database failure must redeliver indefinitely. The generic consumer was deleted rather than left as unused surface area once it was clear no production path wanted its policy. This is recorded here because the retry-forever choice can look like a bug on first reading, and is deliberate.
-
-*What if a partition's consumer stalls or dies?* The rebalance reassigns its partitions to the surviving members, uncommitted offsets are redelivered, and the writer deduplicates. Consumer-group lag is the alerting signal.
-
-*What if we sized the partitions wrong?* This is the genuine one-way door: partition count on a keyed topic is a decide-once setting, because growing it later remaps keys and breaks per-account ordering across the boundary. `lt.ledger.fills` is provisioned at 24 partitions against a present of tens of accounts, but that number deserves an actual account-growth estimate before it becomes permanent (see Open questions). The consumer group also caps parallelism at the partition count, and portfolio autoscales to at most five pods today, so only a fraction of the twenty-four partitions are worked in parallel; the headroom is for account growth, not current throughput.
-
-*What if a fill sits unconsumed for a long time?* Retention is time-based and long, an operational replay window rather than a length trim, so the failure class the v1 stream had, where a stalled consumer's pending entries could be trimmed away and the fill lost into reconciliation-driven mis-attribution, no longer exists. Postgres, not Kafka, remains the permanent audit store; if a longer archive is ever wanted, the plan is a topic-to-GCS sink rather than longer broker retention.
 
 ### Reconciliation, drift policy, and freezing
 
@@ -220,17 +202,7 @@ A background pass (lock-holder only, bounded concurrency, per-account sessions a
 
 One defensive decision here deserves explicit sign-off: a broker read failure is treated as unknown, never as empty. Reconciling against an empty broker response would classify every holding as missing at the broker and freeze every sleeve on the account. When credentials are missing or Alpaca is down, the account is skipped and retried. The skip cannot stay silent: a per-account staleness gauge alerts when an account has not reconciled within its interval. The broker adapter resolves both key-and-secret and OAuth credentials through the same resolution path trading uses, so the credential type cannot cause the skip.
 
-*What if reconciliation runs while one of our own fills is in flight?* The broker already shows the position while the ledger has not folded the fill yet, so naive adoption would double-count, and the invariant check would then freeze the sleeve over the system's own timing. Adoption therefore defers whenever the symbol has open or recently terminal orders on the account, and the drift is retried on the next pass once the fill has folded.
-
-*What if a dividend arrives?* A nightly poll reads the broker's corporate-announcements feed for held symbols and routes splits, renames, and dividends to the pro-rata attribution planners. The feed proposes and an operator applies; deterministic proposal ids make re-polling idempotent, and an already-applied action is never proposed again. Until the operator applies, the cash still surfaces as drift, which is the honest intermediate state.
-
-*What if the user deletes the credentials a funded sleeve depends on?* Deletion is refused while live sessions or funded sleeves depend on the credentials: the delete call returns failed-precondition with the dependent execution ids, so the client can offer stop-and-close instead of leaving trading to hard-fail and reconciliation to go stale.
-
 Sleeve lifecycle is designed for decoupled convergence rather than coordination. When a strategy stops: the strategy service closes the sleeve (positions are re-homed to Unmanaged at cost, with no P&L since a re-home is not a sale; free cash moves to Unallocated; the close refuses while reserved cash is nonzero); trading's risk gate independently blocks non-active sleeves; the runner stops itself on its next equity sync when it sees the sleeve closed; and a stray late fill for a closed sleeve is re-routed to Unmanaged at ingestion. That is four independent mechanisms, with no strategy-to-trading RPC and no distributed transaction. If the close fails, the sleeve id remains on the execution row as a marker and a leader-elected sweeper retries, so capital is never permanently trapped.
-
-*What if a stop races an order still in flight?* Stop does not cancel broker orders, and the sleeve close refuses while any cash is reserved, so a stop during a rebalance waits for the in-flight orders to reach terminal state before the sleeve can close. An order that fills after the runner is gone is still reconciled: its intent row is squared by the next REST sync and its ledger fill by the republish drain, so the money lands and is attributed even with no runner listening.
-
-*What if a sleeve freezes while the runner holds open orders?* New orders reject at the risk gate the moment the sleeve is frozen, but orders already at the broker still fill and their fills still post to the ledger, because the fill path does not re-check sleeve status; the freeze stops new risk, not the settlement of what was already committed. Only a closed sleeve stops the runner itself.
 
 ### What we deliberately did not build yet
 
@@ -245,6 +217,36 @@ Three weaknesses were found while preparing this document for review, and each w
 1. Out-of-order reservations. The `order_submitted` reservation publishes after the broker call returns, while the fill publishes from a separate task consuming `trade_updates`, so a fast market fill can reach the topic before its reservation. The projection therefore treats a reservation that arrives for an already-terminal order as a no-op: the terminal fill has already settled the cash side, and earmarking after the fact would understate free cash with no future release. This is a pure-function rule in the fold, so it holds identically on replay. The alternative, reserving before the broker call and releasing on submit failure, was rejected because it adds a failure mode to submission itself.
 2. Bounded restart cost. Projection checkpoints are persisted keyed by ledger sequence, and both recovery and FIFO cost-basis enrichment seed from them, so a restart or a basis-less sell costs the delta since the last checkpoint rather than the account's full history. The checkpoints were already deterministic (the fold is a pure function of the log), so persisting them changed storage, not semantics.
 3. Incident visibility. Sleeve freezes and quarantined fills are delivered to the affected tenant through the notification service (in-app, email, and any configured webhook), in addition to the operator-facing logs and metrics. An invariant violation on a user's money that only an operator can see was not an acceptable state for a beta with external users. Aggregate DLQ growth stays an operator signal on metrics rather than a tenant notification, because backlog depth is not attributable to one tenant.
+
+### What-if questions
+
+*What if the log itself is corrupted, for example by a bad deploy writing wrong-but-balanced events?* Balance checks cannot catch semantically wrong events. That is why reconciliation against the broker (below) is a first-class subsystem: the broker is an independent record we continuously compare against, and that comparison catches what the checksum cannot.
+
+*What if a user deletes their broker credentials and connects new ones?* Accounts carry the broker's own account id, learned at genesis and unique per tenant, and account resolution matches on it before creating anything, so a re-link re-points the existing book at the new credentials instead of minting a duplicate whose backfill would double-count. Pre-existing duplicates are reported by a startup sweep for operator resolution and never merged automatically, because merging two event logs is not a job to run unattended.
+
+*What if support has to explain a balance to a user?* Every balance is a fold of events, and an operator statement tool renders any account into a readable statement: opening balances, day-grouped activity with running per-sleeve cash, closing lots with realized P&L, and the conservation identity checked at the bottom, all computed through the same fold the ledger uses, so the statement cannot disagree with the book.
+
+*What if two submitters race the same order?* Both derive the same `client_order_id`. The order-intent table's unique constraint rejects the second insert before any broker call, and a duplicate that still reached Alpaca would hit its per-account uniqueness; a concurrency test asserts that five identical simultaneous submits produce exactly one broker order, with the losers surfacing as errors rather than a second fill.
+
+*What if a trading pod crashes mid-order?* The intent row commits before the broker call, so on restart a stranded-order sweep probes Alpaca by `client_order_id`: an order the broker already has is adopted onto the existing row, one it never received is marked rejected, and a resubmit of the same signal re-derives the same id and never places a second order. One residual gap in this sweep, a lost-response-but-accepted order that gets marked rejected and so drops out of it, is tracked under Findings from the implementation read (item 5).
+
+*What if the database fails over while a lock is held?* Advisory locks release with their connections, and a chaos suite now exercises this against real Postgres death and restart. It confirmed that re-election works, and also showed where the earlier assumptions were wrong: election is one-shot with no fencing token, so a torn leader that reconnects keeps sweeping alongside the new one until it notices. On the trading side a lease sweep on every pod (about every thirty seconds) detects a lost session lease and stops the local runner, so two runners overlap for at most that window and the deterministic `client_order_id` prevents a duplicate order within it. On the sweep side the exposure is real: drift events survive double-running through their deterministic ids, but equity snapshots do not, and a managed idle-in-transaction timeout can revoke a lease silently with no failover at all. Fencing the periodic sweep writers is the open item in the register; until it lands, that window is documented rather than closed.
+
+*What if a partition's consumer stalls or dies?* The rebalance reassigns its partitions to the surviving members, uncommitted offsets are redelivered, and the writer deduplicates. Consumer-group lag is the alerting signal.
+
+*What if we sized the partitions wrong?* This is the genuine one-way door: partition count on a keyed topic is a decide-once setting, because growing it later remaps keys and breaks per-account ordering across the boundary. `lt.ledger.fills` is provisioned at 24 partitions against a present of tens of accounts, but that number deserves an actual account-growth estimate before it becomes permanent (see Open questions). The consumer group also caps parallelism at the partition count, and portfolio autoscales to at most five pods today, so only a fraction of the twenty-four partitions are worked in parallel; the headroom is for account growth, not current throughput.
+
+*What if a fill sits unconsumed for a long time?* Retention is time-based and long, an operational replay window rather than a length trim, so the failure class the v1 stream had, where a stalled consumer's pending entries could be trimmed away and the fill lost into reconciliation-driven mis-attribution, no longer exists. Postgres, not Kafka, remains the permanent audit store; if a longer archive is ever wanted, the plan is a topic-to-GCS sink rather than longer broker retention.
+
+*What if reconciliation runs while one of our own fills is in flight?* The broker already shows the position while the ledger has not folded the fill yet, so naive adoption would double-count, and the invariant check would then freeze the sleeve over the system's own timing. Adoption therefore defers whenever the symbol has open or recently terminal orders on the account, and the drift is retried on the next pass once the fill has folded.
+
+*What if a dividend arrives?* A nightly poll reads the broker's corporate-announcements feed for held symbols and routes splits, renames, and dividends to the pro-rata attribution planners. The feed proposes and an operator applies; deterministic proposal ids make re-polling idempotent, and an already-applied action is never proposed again. Until the operator applies, the cash still surfaces as drift, which is the honest intermediate state.
+
+*What if the user deletes the credentials a funded sleeve depends on?* Deletion is refused while live sessions or funded sleeves depend on the credentials: the delete call returns failed-precondition with the dependent execution ids, so the client can offer stop-and-close instead of leaving trading to hard-fail and reconciliation to go stale.
+
+*What if a stop races an order still in flight?* Stop does not cancel broker orders, and the sleeve close refuses while any cash is reserved, so a stop during a rebalance waits for the in-flight orders to reach terminal state before the sleeve can close. An order that fills after the runner is gone is still reconciled: its intent row is squared by the next REST sync and its ledger fill by the republish drain, so the money lands and is attributed even with no runner listening.
+
+*What if a sleeve freezes while the runner holds open orders?* New orders reject at the risk gate the moment the sleeve is frozen, but orders already at the broker still fill and their fills still post to the ledger, because the fill path does not re-check sleeve status; the freeze stops new risk, not the settlement of what was already committed. Only a closed sleeve stops the runner itself.
 
 ---
 
@@ -267,15 +269,13 @@ Adding a new indicator family touches one vocabulary module, from which the AST 
 
 `StrategySession` is the unification point: one compiled strategy fed all symbols' bars together, so that cross-symbol conditions (hold TLT when RSI(SPY) is above 70) evaluate correctly; one portfolio-level rebalance clock that never fires twice in a calendar day; one sizing routine that sorts sells before buys so a rebalance funds itself, supports drift-band and binary modes, and never sells more than is held. Backtest and live both call the same `evaluate(bars, holdings, equity)`, so a backtest predicts live decisions by construction. This replaced two divergent per-service adapters. The live one evaluated per symbol and genuinely broke multi-symbol strategies, rebalancing one leg per period, before the consolidation. Both old adapters are deleted rather than deprecated.
 
-*What if a sleeve shrinks until its orders fall below the broker minimum?* Feasibility is checked when capital is allocated, not per order, so a shrunken sleeve could otherwise emit orders the broker rejects. The sizing routine therefore skips intended orders below a configurable notional floor, counts the skips into a session metric, and re-fits the buy side so a skipped sell does not strand the buys it would have funded.
-
 We used to have a vectorized backtest path (numpy over the whole series at once) and removed it deliberately. A vectorized engine is a second implementation of the language semantics, and any drift between it and the live evaluator produces backtests that are confidently wrong, which is the worst failure mode a trading product can have. We chose fidelity over throughput. The cost is a hot loop that recomputes indicators over accumulated history every bar, which we bound with a static analysis that caps retained history at the largest window the strategy can read (a hard cap of roughly eight trading years for period-less metrics, which is a documented approximation). A ten-year daily backtest runs in seconds. This trade would not survive tick-level simulation, which is out of scope. If vectorization is ever proposed again, the bar we would hold it to is byte-identical decision sequences against the session engine across a golden strategy corpus, enforced in CI permanently.
 
 The loop was unified second, not first. The backtest drives `StrategyRuntime.run()` end to end, and the live runner drives `StrategyRuntime.stream()`. The swap away from the earlier hand-rolled live loop was gated on a paper-trading parity run, with the flip criterion being identical order intents over a soak window, and the hand-rolled loop was deleted once the flag flipped, so there is exactly one loop to maintain. The four adapter seams (bar feed, execution, portfolio view, observer) are plain Protocols, and the live implementations translate "fills arrive asynchronously from the broker" and "equity comes from the sleeve, not local marks" into the same interface the simulator satisfies synchronously.
 
 Parity deliberately ends in a few documented places. Live evaluates only when every subscribed symbol has the current period's bar, so a halted symbol stalls the rebalance; backtests fill at bar close with slippage while live gets real partial fills; daily backtest bars are split-adjusted while the live stream is raw; and a daily-lookback indicator warms from preloaded daily history at session start. The resolution gap that used to follow (indicators updating on raw one-minute bars) was closed structurally: the live feed folds the intraday stream into a forming daily bar and evaluates indicators at daily resolution, so live indicator semantics match backtest by construction, with parity tests holding bars, indicator series, and orders equal over the same folded data. What remains open is timing within the day: live decides on the first complete snapshot of the day, a close-so-far reading the parity tests pin, while aligning the decision to the session close is a trade-timing product change we have deliberately not made yet.
 
-On the halted-symbol case: no evaluation happens that period and positions stay put, which is safe but silent. A reviewer could reasonably argue for evaluating with a stale bar after a timeout. We would want that behind a per-strategy opt-in, because trading on a stale price is a worse default than doing nothing. *What if the symbol never comes back?* Session start refuses symbols that are not active and tradable at the broker. In operation, a gate that has not opened past a staleness window raises a per-tenant alert once per episode, and a delisting found by the periodic asset check marks the session degraded and puts a forced-close decision in front of the user rather than acting on their money automatically. A delisted symbol still holds the gate shut until that decision is made; evaluating around it is a product decision we have deliberately not automated.
+On the halted-symbol case: no evaluation happens that period and positions stay put, which is safe but silent. A reviewer could reasonably argue for evaluating with a stale bar after a timeout. We would want that behind a per-strategy opt-in, because trading on a stale price is a worse default than doing nothing.
 
 Inside evaluation, a condition over NaN or missing data is fail-safe false, but counted, propagated to the session, and emitted as a live metric (`degraded_eval_count`), because a stale indicator that presents as a legitimate no-signal is a common way for a strategy to fail with no visible sign. The alternatives were to throw and halt the strategy, or to return false silently; we rejected both.
 
@@ -290,6 +290,16 @@ The client orchestrates the two-phase deploy (create execution, start execution,
 ### The second implementation problem
 
 The web builder contains an independent TypeScript implementation of the language (parser, emitter, validator) so the visual editor and the code pane can round-trip locally with block ids stable across reparses. It is roughly three thousand lines mirroring eighteen hundred lines of Python, and before the two were pinned together it had drifted in small ways, dropping `:benchmark` on emit and accepting keywords the Python parser rejects. Drift is now contained by a shared conformance corpus (S-expression in, canonical JSON out) that both CI lanes run, so a divergence fails the build in whichever implementation introduced it. We scoped it deliberately small; a grammar formalization or a WASM-shared parser would both be over-engineering at the current rate of language change.
+
+### What-if questions
+
+*What if a sleeve shrinks until its orders fall below the broker minimum?* Feasibility is checked when capital is allocated, not per order, so a shrunken sleeve could otherwise emit orders the broker rejects. The sizing routine therefore skips intended orders below a configurable notional floor, counts the skips into a session metric, and re-fits the buy side so a skipped sell does not strand the buys it would have funded.
+
+*What if the symbol never comes back?* Session start refuses symbols that are not active and tradable at the broker. In operation, a gate that has not opened past a staleness window raises a per-tenant alert once per episode, and a delisting found by the periodic asset check marks the session degraded and puts a forced-close decision in front of the user rather than acting on their money automatically. A delisted symbol still holds the gate shut until that decision is made; evaluating around it is a product decision we have deliberately not automated.
+
+*What if a strategy needs more history than a symbol has?* Warm-up is not special-cased: until the accumulated history covers an indicator's window, conditions over the missing values evaluate fail-safe false and are counted as degraded evaluations, so a young symbol simply does not trade until its history supports the strategy's windows, and the degraded count makes the quiet period visible rather than silent.
+
+*What if a user edits a strategy while an execution is running?* Versions are immutable and the execution pins one, so the edit mints a new version without touching the running session; the new definition takes effect only through an explicit redeploy, and archiving is refused while an execution runs, so the pinned version cannot be pulled out from under the runner.
 
 ---
 
@@ -309,9 +319,15 @@ The decisions worth defending:
 
 The Redis-to-Kafka migration is worth keeping in the record. Redis Streams was the right first choice: partitioned ordering, long retention, and replay at scale were things launch volumes did not need, and Kafka is an entire operational subsystem. What kept it cheap to reverse was that the transport interface was designed against Kafka's shape from the beginning: the publish call always carried a partition key (Redis dropped it), cursors were opaque strings, and the claim-idle parameter was documented as ignored where failover is automatic. The migration was therefore one new transport file, threading keys the producers already had, and cutting over per stream, lowest-stakes first, with the ledger last behind the dual-run parity gate described under Ordered fill ingestion. The Redis transport, the advisory-lock fill consumer, and the per-stream Redis tests were deleted rather than kept as fallback, because a half-retired transport means maintaining two. What Kafka bought, concretely: the single-writer ledger fold became parallel by account, the length-trim loss window became time-based retention, and money events stopped sharing a Redis instance with caches. Redis keeps what it is suited for here: the market-data cache, the Celery broker, and the backtest locks and flags.
 
+### What-if questions
+
 *What if thousands of browsers tail the per-session topics?* Order and position topics are low-volume, so per-viewer ephemeral groups stay cheap, and the high-volume bars topic fans out through market-data's stream manager rather than through per-browser consumers. The design holds until viewer counts justify a dedicated fan-out tier, which is a scaling addition rather than a contract change.
 
 *What if the broker dies?* UI streams degrade; ephemeral groups reattach and re-seek. Backtest progress degrades to logging after repeated publish failures rather than failing runs, since progress is advisory and results are not (see Backtesting). Order submission proceeds, and ledger publishes fail soft (logged, never raised) because the republish drain and the REST-sync recovery converge the ledger afterward, while ledger consumption never gives up, since uncommitted offsets simply redeliver. Notification publishes take the same posture: fire-and-forget, never raised into the producing path, with the durable consumer converging delivery afterward. This asymmetry, in which money publishes never block trading and money consumption never quits, is a property of the emission and consumption design rather than the transport, and it survived the transport swap unchanged. A Redis outage now touches only caches, Celery, and the backtest locks.
+
+*What if a consumer receives an event it cannot process?* The answer differs by stream on purpose. The notification consumer retries a bounded number of times and then dead-letters the event, undecodable bytes included, so one bad event never stalls a tenant's feed. The fills fold retries transient failures indefinitely, because giving up on money is not an option, and quarantines events that are structurally wrong, with the quarantine surfaced to the affected tenant as a notification rather than left as an operator-only signal.
+
+*What if a consumer has to replay from the beginning?* Retention is long enough to make replay an operational tool rather than an emergency, and every durable consumer is idempotent against redelivery: notifications deduplicate on a unique event id and ledger writes on deterministic event ids, so a replay converges to the same state instead of double-applying.
 
 ---
 
@@ -320,8 +336,6 @@ The Redis-to-Kafka migration is worth keeping in the record. Redis Streams was t
 One library, `llamatrade_alpaca`, owns every byte to and from Alpaca. On the REST side it provides clients with a token-bucket rate limiter, a circuit breaker, and retry with backoff, composed in a fixed order (limiter, then breaker, then HTTP, then typed error mapping, with auth failures classified before retryable ones). On the WebSocket side it provides clients with shared reconnect and backoff and two deliberately different delivery models: callback fan-out for the multiplexing ingest daemon, and an async-generator for single consumers that own their backpressure, such as the live trading fill stream. Mock stream clients are first-class exports so every consumer's tests run without the network. Services are forbidden from bypassing the library, by convention and review, and the absence of any other HTTP client pointed at Alpaca is checked when the question comes up.
 
 The market-data service is one image with two roles. The serving role handles Connect RPCs and uses Alpaca REST only, for gap fills and snapshots. The ingest role is the platform's sole Alpaca WebSocket consumer; it writes minute bars to a dedicated TimescaleDB and republishes them onto the bars topic for the serving role to fan out. The split exists because Alpaca allows one data stream per credential, the write path must be a singleton, and the read path must scale horizontally; separating them means scaling one never multiplies the other. The ingest role deploys as a single-replica Recreate workload; a second instance would be wasteful rather than incorrect, since the writes are idempotent upserts, so a leader lock was judged unnecessary.
-
-*What if a strategy trades a symbol outside the ingest universe?* Live sessions hold their own per-tenant streams today, so they are unaffected, and the ingest universe is no longer static: it is the union of the configured baseline and the symbols of running live sessions, refreshed on an interval, with the baseline never dropped and a failed refresh keeping the current subscriptions. That derivation is the precondition for ever serving live sessions from the shared fan-out.
 
 Storage decisions: raw unadjusted minute bars in a hypertable with 90-day retention; split-adjusted daily bars kept forever; intermediate timeframes as continuous aggregates that can never be written directly (a whitelist makes it a hard error); quotes, snapshots, and the market clock never persisted, only cached with short TTLs. Adjustment discipline lives in exactly one function (daily bars are split-adjusted, intraday bars are raw). A previous bug, raw bars written under a split-adjusted label, is the reason this is centralized.
 
@@ -333,6 +347,16 @@ Some boundaries worth knowing:
 - The bars client follows Alpaca's `next_page_token`, so long ranges paginate rather than truncating, and range limits mean the most recent N bars.
 - A slow bar-stream subscriber gets drops rather than backpressure (bounded per-client queues), which is the right behavior for market data and would be wrong anywhere else.
 - IEX, the free feed covering roughly three percent of consolidated volume, is the data quality we actually ship; SIP is a paid upgrade decision for later (see Accepted limitations), and user-facing accuracy claims reflect that.
+
+### What-if questions
+
+*What if a strategy trades a symbol outside the ingest universe?* Live sessions hold their own per-tenant streams today, so they are unaffected, and the ingest universe is no longer static: it is the union of the configured baseline and the symbols of running live sessions, refreshed on an interval, with the baseline never dropped and a failed refresh keeping the current subscriptions. That derivation is the precondition for ever serving live sessions from the shared fan-out.
+
+*What if Alpaca is down?* The posture is uniform degradation: reads serve stored bars, the cache path covers a store outage, the server-side NYSE calendar covers the clock API, and a missing snapshot is synthesized from the last two stored daily bars so positions mark to the last close instead of cost.
+
+*What if the ingest role crashes during market hours?* The stream client reconnects with backoff, writes are idempotent upserts, and a targeted backfill repairs the window the outage covered; interior holes are the gap-repairer's job either way, so a bounded outage costs freshness, not stored data. The role is single-replica by design, and its restart window is the availability trade we accepted for a singleton writer.
+
+*What if the bars topic is unavailable?* Ingest keeps writing to the store and logs the failed publishes, so history stays intact while live fan-out stalls; REST reads are unaffected, and live trading sessions are also unaffected because they hold their own per-tenant streams. The cost is chart freshness, and fan-out resumes when the topic returns because the read path never depended on it.
 
 ---
 
@@ -352,15 +376,19 @@ Four properties of the identity plane are worth stating explicitly, because each
 - Revocation is supported and inexpensive. The middleware checks a Redis denylist; logout and password change insert the outstanding token ids, and refresh tokens rotate on every use with the replaced token invalidated. Access tokens last thirty minutes, so the denylist stays small and the check stays one Redis read.
 - Broker credentials are envelope-encrypted at rest, behind a per-value cipher seam. The deployed default derives a per-credential key from a service secret (PBKDF2 with a random salt), so a database dump alone does not yield the secrets. A Cloud KMS cipher, in which a per-credential data key is KMS-wrapped and unwrapping requires the calling service's identity, is built and tested behind the same seam but is not yet enabled: no key is provisioned and the configuration selects the local cipher, so turning on KMS is a hardening step still to take before real money. Key derivation no longer runs on hot paths; a stored key-prefix column serves the display case that previously forced a decrypt per list call.
 
-*What if an operator legitimately needs cross-tenant access?* `system_session` exists for exactly that, and an escape hatch that left no trace would gradually undermine defense in depth; every bypass therefore emits a structured audit line (caller, reason, tenant scope) and increments a counter metric, so the hatch stays observable.
-
 Two constraints on future multi-user tenants are enforced rather than assumed: `resolve_identity` rejects a wire `user_id` that disagrees with the token, and per-user authorization remains deliberately unbuilt, which is safe while tenants are single-user; the roles work is scheduled with the self-serve signup milestone that ends that assumption.
+
+Beneath all this sits one shared Alembic chain (linear, CI-guarded), proto-int to Postgres-enum bridges with a parity test that has already caught a real silent enum divergence, and Decimal end to end for money. Proto carries decimals as strings, and floats survive only at the numpy, vendor-wire, metrics, and JSON edges, each documented.
+
+### What-if questions
+
+*What if a request carries a forged tenant id?* Identity is resolved only from the verified token at the Connect boundary; the tenant context on the wire is never trusted, the middleware fails closed when verification fails, and row-level security under a non-bypass role is the second wall if application code mishandles the result. A forged id therefore has to defeat the signature, the middleware, and the database policy together.
+
+*What if an operator legitimately needs cross-tenant access?* `system_session` exists for exactly that, and an escape hatch that left no trace would gradually undermine defense in depth; every bypass therefore emits a structured audit line (caller, reason, tenant scope) and increments a counter metric, so the hatch stays observable.
 
 *What if Redis is down for auth?* The two Redis-backed guards fail in opposite directions on purpose. The login and registration rate limiters fail closed, so an outage refuses new logins rather than lifting the brute-force ceiling; the revocation denylist fails open, so already-issued tokens keep working until their natural expiry. The pod stays serving because the Redis check is non-critical, so an outage locks out new sessions while briefly un-revoking old ones, and the middleware refuses to start at all if revocation is unconfigured in production.
 
 *What if service clocks skew?* Token verification uses no leeway, and service tokens live five minutes and refresh a minute early, so more than about four minutes of skew between a caller and a callee makes every service-to-service call fail closed. It is a bounded, self-announcing failure rather than a silent one, but it is a real operational constraint on the fleet's clocks.
-
-Beneath all this sits one shared Alembic chain (linear, CI-guarded), proto-int to Postgres-enum bridges with a parity test that has already caught a real silent enum divergence, and Decimal end to end for money. Proto carries decimals as strings, and floats survive only at the numpy, vendor-wire, metrics, and JSON edges, each documented.
 
 ---
 
@@ -377,9 +405,23 @@ The design is mostly about failure modes rather than the happy path.
 
 Progress streams to the UI over a replayable event topic, tailed from run start so a late-joining browser sees the history. Status is published, never inferred from percentages, since failed runs also reach 100%. Publish failures degrade to logging after repeated consecutive errors rather than failing the run, since progress is advisory and results are not.
 
-The remaining edges have answers. Two identical backtests racing the dataset lock resolve with the loser polling the store, plus a timeout fallback that materializes anyway rather than deadlocking on a dead producer. A worker dying mid-run is covered by acks-late redelivery or the reaper, and idempotent result-writing makes the duplicate harmless. The parser enforces a nesting-depth limit and reports it as an ordinary validation error, so a pathological payload cannot produce a 500. A janitor evicts dataset snapshots by last access, so the store stays bounded. A one-minute backtest timeframe is accepted while the rebalance gate still fires at most daily; the semantics are deliberate (intraday data, daily decisions) and are stated in the product documentation.
+A janitor evicts dataset snapshots by last access, so the store stays bounded. A one-minute backtest timeframe is accepted while the rebalance gate still fires at most daily; the semantics are deliberate (intraday data, daily decisions) and are stated in the product documentation.
 
-*What if a burst of submissions arrives?* The queue depth is sampled per routed queue in the API process, and a KEDA scaler for the worker deployment ships in the manifests behind an operator opt-in, with conservative scale-down and a termination grace sized to the task time limit so a scale-down never kills a mid-flight run. The opt-in is deliberate: the scaler needs KEDA and an in-cluster Prometheus, neither of which is provisioned yet, so until they are, a burst still queues and the gauge is the operator's signal. *What if the janitor evicts a dataset another run is about to read?* Snapshot writes are atomic replaces and a reader that misses falls back to a rebuild, so an eviction race costs a refetch, never a wrong result.
+### What-if questions
+
+*What if two identical backtests race the dataset lock?* The loser polls the store for the winner's snapshot, and a timeout fallback materializes anyway rather than deadlocking on a dead producer, so the race costs a duplicate fetch at worst.
+
+*What if a worker dies mid-run?* Acks-late redelivery or the reaper covers it, and idempotent result-writing makes the duplicate execution harmless: the unique one-result-per-backtest constraint means the second writer loses.
+
+*What if a pathological strategy payload arrives?* The parser enforces a nesting-depth limit and reports it as an ordinary validation error, so a hostile or degenerate payload cannot produce a 500 or wedge a worker.
+
+*What if a burst of submissions arrives?* The queue depth is sampled per routed queue in the API process, and a KEDA scaler for the worker deployment ships in the manifests behind an operator opt-in, with conservative scale-down and a termination grace sized to the task time limit so a scale-down never kills a mid-flight run. The opt-in is deliberate: the scaler needs KEDA and an in-cluster Prometheus, neither of which is provisioned yet, so until they are, a burst still queues and the gauge is the operator's signal.
+
+*What if the janitor evicts a dataset another run is about to read?* Snapshot writes are atomic replaces and a reader that misses falls back to a rebuild, so an eviction race costs a refetch, never a wrong result.
+
+*What if market data fails mid-run?* Only typed market-data failures retry; everything else is terminal, so a vendor outage delays runs rather than failing them, and a warm dataset does not touch market data at all, which keeps backtest load independent of market-data capacity.
+
+*What if a cancel lands at the same moment a run completes?* The terminal write is guarded (`UPDATE ... WHERE status = RUNNING`), so exactly one of the two wins: a completed cancel discards the result, and a completed run makes the cancel a no-op. There is no state where both apply.
 
 ---
 
@@ -395,6 +437,12 @@ The remaining edges have answers. Two identical backtests racing the dataset loc
 
 **The copilot** is architecturally a client, not an authority. It generates DSL, and everything it produces flows through the same validator, versioning, and execution gates as a human edit, so the agent can propose but cannot deploy something the platform would reject from a person. Side-effecting tools are draft-and-confirm: a proposed backtest halts the stream until the user approves, and approved calls execute with tool chaining disabled so one approval cannot cascade. The confirmation round-trip executes the server-persisted proposal keyed by its confirmation id, not arguments echoed by the client, so a hostile client cannot swap what was approved for something else. Memory extraction is regex-based by design, with no LLM on the write path, for cost and injection-surface control; pgvector is provisioned but unused until retrieval needs it.
 
+### What-if questions
+
+*What if Stripe is down?* Trading does not notice: plan limits are read from the shared database rather than asked of the billing service, and a lapsed subscription is enforced at the next start rather than against a running session, so a billing outage cannot stop a live strategy.
+
+*What if a tenant's webhook endpoint hangs or fails?* Delivery is isolated in the notification service with timeouts, so no money-path task ever waits on a tenant's endpoint; 4xx responses are not retried, transient failures are, and a persistently failing endpoint is disabled automatically with the disable surfaced to the tenant as a notification of its own.
+
 ---
 
 ## Build, deploy, and environments
@@ -407,7 +455,11 @@ Terraform and the cluster agree with each other. Secrets flow from Secret Manage
 
 The dev compose stack remains the reference description of the topology (two Postgres instances, Timescale, Redis, a Kafka broker, the collector), and the CI end-to-end job boots the real mesh from it. CI also lints strictly (pinned ruff and pyright, a no-suppressions gate) and runs per-service tests with 80% coverage gates on the money-adjacent services. Where compose and the manifests describe the same workload, the ports and roles are kept aligned deliberately, because the failure mode of this layer is precisely two topology descriptions diverging until neither can be trusted.
 
-*What if a migration has to be undone under load?* There is no rollback machinery, and treating Alembic downgrades as an operational plan would be dishonest; the documented convention is forward-only expand-and-contract, with downgrades reserved for local development. *What if two deploys run concurrently?* A per-environment concurrency group on the deploy workflows queues them, so two runs cannot interleave image pushes and rollouts.
+### What-if questions
+
+*What if a migration has to be undone under load?* There is no rollback machinery, and treating Alembic downgrades as an operational plan would be dishonest; the documented convention is forward-only expand-and-contract, with downgrades reserved for local development.
+
+*What if two deploys run concurrently?* A per-environment concurrency group on the deploy workflows queues them, so two runs cannot interleave image pushes and rollouts.
 
 ---
 
