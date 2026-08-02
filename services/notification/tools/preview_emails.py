@@ -30,9 +30,12 @@ from src.templates import render
 # send path fills __LOGO_URL__ from EMAIL_ASSET_BASE_URL against a served host).
 os.environ["EMAIL_ASSET_BASE_URL"] = "https://preview.local"
 _LOGO_URL = "https://preview.local/logo-monolith.png"
-_LOGO_DATA_URI = "data:image/png;base64," + base64.b64encode(
-    (Path(__file__).resolve().parents[3] / "apps/web/public/logo-monolith.png").read_bytes()
-).decode()
+_LOGO_DATA_URI = (
+    "data:image/png;base64,"
+    + base64.b64encode(
+        (Path(__file__).resolve().parents[3] / "apps/web/public/logo-monolith.png").read_bytes()
+    ).decode()
+)
 
 _SEVERITY_NAME = {
     e.NOTIFICATION_SEVERITY_INFO: "info",
@@ -93,9 +96,7 @@ def build_gallery() -> str:
         severity = effective_severity(category, e.NOTIFICATION_SEVERITY_UNSPECIFIED)
         rendered = render(_demo_event(category))
         body = build_html(rendered, severity).replace(_LOGO_URL, _LOGO_DATA_URI)
-        cards.append(
-            _card(label, _SEVERITY_NAME.get(severity, "info"), rendered.subject, body)
-        )
+        cards.append(_card(label, _SEVERITY_NAME.get(severity, "info"), rendered.subject, body))
     return _PAGE.replace("__COUNT__", str(len(cards))).replace("__CARDS__", "\n".join(cards))
 
 
