@@ -580,12 +580,10 @@ class TestBacktestServiceTimeframe:
         assert "Invalid timeframe" in str(exc_info.value)
 
     @pytest.mark.asyncio
-    async def test_create_backtest_uses_strategy_timeframe(
+    async def test_create_backtest_defaults_to_daily_when_not_provided(
         self, mock_db, mock_strategy, mock_strategy_version
     ):
-        """Test that strategy timeframe is used when not provided."""
-        mock_strategy_version.timeframe = "4H"
-
+        """Timeframe is a backtest-run parameter; it defaults to daily when not provided."""
         mock_db.execute.side_effect = [
             MagicMock(scalar_one_or_none=MagicMock(return_value=mock_strategy)),
             MagicMock(scalar_one_or_none=MagicMock(return_value=mock_strategy_version)),
@@ -619,7 +617,7 @@ class TestBacktestServiceTimeframe:
         )
 
         assert added_backtest is not None
-        assert added_backtest.config["timeframe"] == "4H"
+        assert added_backtest.config["timeframe"] == "1D"
 
 
 class TestBacktestServiceBenchmark:
@@ -1040,7 +1038,7 @@ class TestZeroVsNullSemantics:
         # Flat SPY → benchmark return is exactly 0.0 and must NOT be NULL
         assert stored.benchmark_return is not None
         assert float(stored.benchmark_return) == pytest.approx(0.0)
-        # run_backtest returns the persisted BacktestResult row directly (1A).
+        # run_backtest returns the persisted BacktestResult row directly.
         assert response is stored
         assert float(response.benchmark_return) == pytest.approx(0.0)
 
@@ -1084,6 +1082,96 @@ class TestZeroVsNullSemantics:
         assert all(d >= "2024-01-05" for d in curve_dates)
         # One point per day
         assert len({d[:10] for d in curve_dates}) == len(curve_dates)
+
+
+class TestSessionHealthReporting:
+    """Degraded evaluations and sub-notional skips: no result column, so log + counters."""
+
+    @staticmethod
+    def _session(degraded: int, skipped: int):
+        from llamatrade_runtime import StrategySession
+
+        class _HealthSession(StrategySession):
+            @property
+            def degraded_eval_count(self) -> int:
+                return degraded
+
+            @property
+            def sub_notional_skip_count(self) -> int:
+                return skipped
+
+        return _HealthSession('(strategy "Test" :rebalance daily (asset AAPL :weight 100))')
+
+    def test_nonzero_counts_are_counted_and_warned(self, monkeypatch, caplog):
+        from src.services import backtest_service as module
+
+        degraded = MagicMock()
+        skipped = MagicMock()
+        monkeypatch.setattr(module, "DEGRADED_EVALS_TOTAL", degraded)
+        monkeypatch.setattr(module, "SUB_NOTIONAL_SKIPS_TOTAL", skipped)
+
+        with caplog.at_level("INFO", logger=module.__name__):
+            module._report_session_health(TEST_BACKTEST_ID, self._session(7, 3))
+
+        degraded.inc.assert_called_once_with(7)
+        skipped.inc.assert_called_once_with(3)
+        record = caplog.records[-1]
+        assert record.levelname == "WARNING"
+        assert "degraded_evals=7 sub_notional_skips=3" in record.getMessage()
+
+    def test_a_clean_run_reports_zeroes_at_info(self, monkeypatch, caplog):
+        from src.services import backtest_service as module
+
+        degraded = MagicMock()
+        skipped = MagicMock()
+        monkeypatch.setattr(module, "DEGRADED_EVALS_TOTAL", degraded)
+        monkeypatch.setattr(module, "SUB_NOTIONAL_SKIPS_TOTAL", skipped)
+
+        with caplog.at_level("INFO", logger=module.__name__):
+            module._report_session_health(TEST_BACKTEST_ID, self._session(0, 0))
+
+        degraded.inc.assert_called_once_with(0)
+        assert caplog.records[-1].levelname == "INFO"
+
+    @pytest.mark.asyncio
+    async def test_a_finished_run_reports_the_session_it_drove(
+        self, mock_db, mock_backtest, mock_strategy_version, monkeypatch, caplog
+    ):
+        """The report is wired into the run path, not just callable."""
+        from src.services import backtest_service as module
+
+        monkeypatch.setattr(
+            "src.services.backtest_service.CancellationFlag.make_should_abort",
+            lambda self, backtest_id, check_interval=1.0: lambda: False,
+        )
+        reported: list[object] = []
+        monkeypatch.setattr(
+            module,
+            "_report_session_health",
+            lambda backtest_id, session: reported.append(session),
+        )
+        mock_backtest.status = BACKTEST_STATUS_PENDING
+        mock_db.execute.side_effect = [
+            MagicMock(scalar_one_or_none=MagicMock(return_value=mock_backtest)),
+            MagicMock(scalar_one_or_none=MagicMock(return_value=mock_strategy_version)),
+            MagicMock(rowcount=1),
+        ]
+
+        async def fake_refresh(obj):
+            obj.id = uuid4()
+            obj.created_at = datetime.now(UTC)
+
+        mock_db.refresh = AsyncMock(side_effect=fake_refresh)
+        mock_market_client = AsyncMock()
+        mock_market_client.fetch_bars.return_value = TestZeroVsNullSemantics._flat_bars(
+            {"AAPL": 150.0, "SPY": 400.0}
+        )
+
+        service = BacktestService(mock_db, market_data_client=mock_market_client)
+        await service.run_backtest(TEST_BACKTEST_ID, TEST_TENANT_ID, publish_progress=False)
+
+        assert len(reported) == 1
+        assert reported[0].degraded_eval_count == 0
 
 
 class TestEquityCurveCap:
@@ -1296,7 +1384,7 @@ class TestStreamingFetch:
 
 
 class TestGetBacktestTradesService:
-    """Service-layer pagination for trades (14B)."""
+    """Service-layer pagination for trades."""
 
     @staticmethod
     def _trades(n: int) -> list[dict[str, object]]:

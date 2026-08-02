@@ -56,6 +56,50 @@ class TestDatasetSpec:
         spec = DatasetSpec.create(["SPY"], "1D", date(2024, 1, 1), date(2025, 1, 1))
         assert spec.object_key == f"1D/{spec.dataset_hash}.parquet"
 
+    def test_adjustment_and_vintage_change_the_hash(self) -> None:
+        base = DatasetSpec.create(["SPY"], "1D", date(2024, 1, 1), date(2025, 1, 1))
+        adjusted = DatasetSpec.create(
+            ["SPY"], "1D", date(2024, 1, 1), date(2025, 1, 1), adjustment="split"
+        )
+        versioned = DatasetSpec.create(
+            ["SPY"], "1D", date(2024, 1, 1), date(2025, 1, 1), data_version="2024-07-29"
+        )
+        assert base.dataset_hash != adjusted.dataset_hash
+        assert base.dataset_hash != versioned.dataset_hash
+        assert adjusted.dataset_hash != versioned.dataset_hash
+
+
+class TestDatasetVintage:
+    """Clamp / adjustment / vintage the service applies before building a spec (F37)."""
+
+    def test_last_closed_session_is_prior_day(self) -> None:
+        from src.services.backtest_service import _last_closed_session
+
+        now = datetime(2024, 3, 10, 14, 0, tzinfo=UTC)
+        assert _last_closed_session(now) == date(2024, 3, 9)
+
+    def test_adjustment_is_split_for_daily_raw_otherwise(self) -> None:
+        from src.services.backtest_service import _dataset_adjustment
+
+        assert _dataset_adjustment("1D") == "split"
+        assert _dataset_adjustment("1d") == "split"
+        assert _dataset_adjustment("1H") == "raw"
+        assert _dataset_adjustment("5Min") == "raw"
+
+    def test_vintage_empty_for_closed_history(self) -> None:
+        from src.services.backtest_service import _dataset_vintage
+
+        now = datetime(2024, 3, 10, 12, 0, tzinfo=UTC)
+        # Ends well before the self-heal window: stable key, warm-hit reuse.
+        assert _dataset_vintage(date(2024, 1, 1), now, window_days=10) == ""
+
+    def test_vintage_tags_datasets_in_self_heal_window(self) -> None:
+        from src.services.backtest_service import _dataset_vintage
+
+        now = datetime(2024, 3, 10, 12, 0, tzinfo=UTC)
+        # Ends inside the 10-day self-heal window: tagged with the materialization date.
+        assert _dataset_vintage(date(2024, 3, 8), now, window_days=10) == "2024-03-10"
+
 
 class TestLocalDatasetStore:
     def test_round_trip_preserves_bars(self, tmp_path: object) -> None:

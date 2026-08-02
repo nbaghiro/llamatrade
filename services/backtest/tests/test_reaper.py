@@ -1,4 +1,4 @@
-"""Reaper tests (1A): recovery of orphaned RUNNING/PENDING backtests.
+"""Reaper tests: recovery of orphaned RUNNING/PENDING backtests.
 
 A hard-killed worker (OOM, pod eviction, hard time limit) never runs the
 ``run_backtest`` exception handlers, so its row is stranded in RUNNING forever;
@@ -123,7 +123,7 @@ async def test_completed_rows_are_never_touched():
 
 
 async def test_reaper_task_invokes_service(monkeypatch):
-    """The Celery task drives one reaper pass through the service layer (10A)."""
+    """The Celery task drives one reaper pass through the service layer."""
     from contextlib import asynccontextmanager
 
     from src.workers import celery_tasks
@@ -136,7 +136,7 @@ async def test_reaper_task_invokes_service(monkeypatch):
     )
 
     @asynccontextmanager
-    async def fake_scope():
+    async def fake_scope(*, tenant_id=None, system_reason=None):
         yield AsyncMock()
 
     monkeypatch.setattr(celery_tasks, "_session_scope", fake_scope)

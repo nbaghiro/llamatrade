@@ -16,7 +16,6 @@ from datetime import UTC, date, datetime
 from unittest.mock import AsyncMock, MagicMock
 from uuid import UUID, uuid4
 
-import grpc.aio
 import pytest
 
 from llamatrade_proto.generated import backtest_pb2, common_pb2
@@ -35,33 +34,20 @@ TEST_STRATEGY_ID = UUID("33333333-3333-3333-3333-333333333333")
 pytestmark = pytest.mark.asyncio
 
 
-class MockServicerContext:
-    """Mock gRPC servicer context that raises on abort."""
+def _ctx() -> MagicMock:
+    """Placeholder Connect request context.
 
-    def __init__(self) -> None:
-        self.code = None
-        self.details = None
-
-    async def abort(self, code, details: str) -> None:
-        self.code = code
-        self.details = details
-        raise grpc.aio.AioRpcError(
-            code=code,
-            initial_metadata=None,
-            trailing_metadata=None,
-            details=details,
-            debug_error_string=None,
-        )
-
-    def cancelled(self) -> bool:
-        return False
+    The servicer resolves identity from ``request.context`` and signals errors by
+    raising ConnectError, so the handler never touches its second argument.
+    """
+    return MagicMock()
 
 
 class FakeStore:
     """In-memory backtest store shared by all fake DB sessions."""
 
     def __init__(self, cancel_on_finalize: bool = False) -> None:
-        # When True, the conditional terminal UPDATE reports 0 rows (3A): a
+        # When True, the conditional terminal UPDATE reports 0 rows: a
         # concurrent CancelBacktest committed CANCELLED first, so the run must
         # discard its result rather than overwrite the cancel.
         self.cancel_on_finalize = cancel_on_finalize
@@ -267,7 +253,7 @@ def patch_worker_dependencies(monkeypatch, store: FakeStore, market_client) -> N
     from src.workers import celery_tasks
 
     @asynccontextmanager
-    async def fake_session_scope():
+    async def fake_session_scope(*, tenant_id=None, system_reason=None):
         yield store.make_session()
 
     monkeypatch.setattr(celery_tasks, "_session_scope", fake_session_scope)
@@ -281,10 +267,9 @@ class TestE2ELifecycle:
         self, servicer, store, eager_celery, quiet_progress, monkeypatch
     ):
         patch_worker_dependencies(monkeypatch, store, make_fake_market_client())
-        context = MockServicerContext()
 
         # 1. RunBacktest creates the backtest AND triggers execution
-        run_response = await servicer.run_backtest(make_run_request(), context)
+        run_response = await servicer.run_backtest(make_run_request(), _ctx())
         backtest_id = run_response.backtest.id
         assert backtest_id
 
@@ -304,7 +289,7 @@ class TestE2ELifecycle:
                 ),
                 backtest_id=str(store.backtest.id),
             ),
-            MockServicerContext(),
+            _ctx(),
         )
 
         backtest_msg = get_response.backtest
@@ -325,9 +310,8 @@ class TestE2ELifecycle:
         self, servicer, store, eager_celery, quiet_progress, monkeypatch
     ):
         patch_worker_dependencies(monkeypatch, store, make_fake_market_client(fail=True))
-        context = MockServicerContext()
 
-        await servicer.run_backtest(make_run_request(), context)
+        await servicer.run_backtest(make_run_request(), _ctx())
 
         assert store.backtest is not None
         assert store.backtest.status == BACKTEST_STATUS_FAILED
@@ -355,7 +339,7 @@ class TestE2ELifecycle:
         monkeypatch.setattr(servicer_mod, "tenant_session", fake_tenant_session)
         patch_worker_dependencies(monkeypatch, store, make_fake_market_client())
 
-        await servicer.run_backtest(make_run_request(), MockServicerContext())
+        await servicer.run_backtest(make_run_request(), _ctx())
 
         assert store.backtest is not None
         assert store.backtest.status == backtest_pb2.BACKTEST_STATUS_CANCELLED
@@ -390,7 +374,7 @@ class TestE2ELifecycle:
                 ),
                 backtest_id=str(store.backtest.id),
             ),
-            MockServicerContext(),
+            _ctx(),
         )
 
         assert not get_response.backtest.HasField("results")

@@ -68,17 +68,6 @@ def _progress_entry(
 class TestProgressPublisher:
     """Tests for ProgressPublisher (streams transport)."""
 
-    def test_init_default_url(self):
-        """Defaults to the module's env-derived REDIS_URL (CI overrides it)."""
-        from src.progress import REDIS_URL
-
-        publisher = ProgressPublisher()
-        assert publisher.redis_url == REDIS_URL
-
-    def test_init_custom_url(self):
-        publisher = ProgressPublisher(redis_url="redis://custom:6379/1")
-        assert publisher.redis_url == "redis://custom:6379/1"
-
     @pytest.mark.asyncio
     async def test_publish_writes_to_stream(self):
         events = _StubEvents()
@@ -121,16 +110,6 @@ class TestProgressPublisher:
 
 class TestProgressSubscriber:
     """Tests for ProgressSubscriber (streams tail)."""
-
-    def test_init_default_url(self):
-        from src.progress import REDIS_URL
-
-        subscriber = ProgressSubscriber()
-        assert subscriber.redis_url == REDIS_URL
-
-    def test_init_custom_url(self):
-        subscriber = ProgressSubscriber(redis_url="redis://custom:6379/1")
-        assert subscriber.redis_url == "redis://custom:6379/1"
 
     @pytest.mark.asyncio
     async def test_close_without_connection(self):

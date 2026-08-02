@@ -19,6 +19,7 @@ import redis.asyncio as aioredis
 from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
+from llamatrade_db import bind_tenant_guc, set_rls_bypass
 from llamatrade_db.models.backtest import Backtest
 from llamatrade_proto.generated.backtest_pb2 import (
     BACKTEST_STATUS_FAILED,
@@ -73,12 +74,28 @@ def _create_redis() -> aioredis.Redis:
 
 
 @asynccontextmanager
-async def _session_scope() -> AsyncGenerator[AsyncSession]:
-    """Provide a database session with engine lifecycle management."""
+async def _session_scope(
+    *, tenant_id: UUID | None = None, system_reason: str | None = None
+) -> AsyncGenerator[AsyncSession]:
+    """Provide a database session with engine lifecycle management and a bound RLS scope.
+
+    Each task runs in its own event loop (``asyncio.run``), so a per-call engine keeps
+    the connection pool owned by that loop. Exactly one RLS scope is bound before the
+    session is used: a tenant GUC re-applied on every transaction for tenant-scoped work
+    (``run_backtest`` commits several times, and a one-shot GUC would clear on the first
+    commit), or the transaction-local system bypass for the cross-tenant reaper. Under
+    the fail-closed RLS role, a write with no bound scope is rejected by the row policies.
+    """
     engine = create_async_engine(DATABASE_URL)
     factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
     try:
         async with factory() as session:
+            if tenant_id is not None:
+                bind_tenant_guc(session, tenant_id)
+            elif system_reason is not None:
+                # The reaper reads and writes in one transaction before its single
+                # commit, so the transaction-local bypass covers the whole pass.
+                await set_rls_bypass(session, reason=system_reason)
             yield session
     finally:
         await engine.dispose()
@@ -86,7 +103,8 @@ async def _session_scope() -> AsyncGenerator[AsyncSession]:
 
 async def _execute_backtest(backtest_id: str, tenant_id: str) -> dict[str, str | float | int]:
     """Run a backtest through the service layer."""
-    async with _session_scope() as db:
+    tenant_uuid = UUID(tenant_id)
+    async with _session_scope(tenant_id=tenant_uuid) as db:
         redis_client = _create_redis()
         try:
             async with BacktestService(
@@ -94,7 +112,7 @@ async def _execute_backtest(backtest_id: str, tenant_id: str) -> dict[str, str |
                 market_data_client=_create_market_data_client(),
                 redis=cast(RedisLike, redis_client),
             ) as service:
-                result = await service.run_backtest(UUID(backtest_id), UUID(tenant_id))
+                result = await service.run_backtest(UUID(backtest_id), tenant_uuid)
                 return {
                     "status": "completed",
                     "backtest_id": backtest_id,
@@ -106,8 +124,12 @@ async def _execute_backtest(backtest_id: str, tenant_id: str) -> dict[str, str |
 
 
 async def _reap_stale_backtests() -> dict[str, int]:
-    """Run one reaper pass through the service layer."""
-    async with _session_scope() as db:
+    """Run one reaper pass through the service layer.
+
+    The reaper recovers orphaned runs across every tenant, so it takes the audited
+    system bypass rather than a single-tenant GUC.
+    """
+    async with _session_scope(system_reason="backtest reaper: cross-tenant orphan recovery") as db:
         async with BacktestService(db, market_data_client=_create_market_data_client()) as service:
             return await service.reap_stale_backtests()
 
@@ -118,7 +140,7 @@ async def _reset_to_pending(backtest_id: str, tenant_id: str) -> None:
     The service marks the row FAILED before a MarketDataError propagates;
     without this reset, run_backtest would refuse the retry with "cannot run".
     """
-    async with _session_scope() as db:
+    async with _session_scope(tenant_id=UUID(tenant_id)) as db:
         await db.execute(
             update(Backtest)
             .where(
@@ -178,7 +200,7 @@ def run_backtest_task(
 
 @celery_app.task
 def reap_stale_backtests_task() -> dict[str, int]:
-    """Periodic reaper for orphaned RUNNING/PENDING backtests (1A).
+    """Periodic reaper for orphaned RUNNING/PENDING backtests.
 
     Scheduled via Celery beat and routed to the maintenance queue so it is not
     starved behind long-running backtests on the main queue. Returns recovery
@@ -187,3 +209,21 @@ def reap_stale_backtests_task() -> dict[str, int]:
     counts = _run_async(_reap_stale_backtests())
     logger.info(f"Reaper pass complete: {counts}")
     return counts
+
+
+@celery_app.task
+def evict_stale_datasets_task() -> int:
+    """Periodic janitor for on-disk dataset snapshots (maintenance queue).
+
+    A raced reader rebuilds on miss, so eviction only ever costs a refetch.
+    """
+    from src.dataset.store import LocalDatasetStore, get_dataset_store
+
+    store = get_dataset_store()
+    if not isinstance(store, LocalDatasetStore):
+        return 0
+    max_age = float(os.getenv("BACKTEST_DATASET_TTL_SECONDS", str(7 * 24 * 3600)))
+    removed = store.evict_stale(max_age)
+    if removed:
+        logger.info(f"Dataset janitor removed {removed} stale snapshots")
+    return removed

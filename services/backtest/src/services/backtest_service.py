@@ -5,7 +5,7 @@ import os
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from types import TracebackType
-from typing import TYPE_CHECKING, Any, Protocol, cast
+from typing import TYPE_CHECKING, Any, Protocol, TypedDict, cast
 from uuid import UUID
 
 if TYPE_CHECKING:
@@ -18,6 +18,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from llamatrade_db import get_db
 from llamatrade_db.models.backtest import Backtest, BacktestResult
 from llamatrade_db.models.strategy import Strategy, StrategyVersion
+from llamatrade_events.catalog.notifications import NotificationEvent, shared_notification_events
+from llamatrade_proto.generated import common_pb2, events_pb2
 from llamatrade_proto.generated.backtest_pb2 import (
     BACKTEST_STATUS_CANCELLED,
     BACKTEST_STATUS_COMPLETED,
@@ -37,11 +39,13 @@ from llamatrade_runtime import (
     Portfolio,
     RuntimeCancelled,
     SimulatedExecution,
+    SizingMode,
     StrategyRuntime,
+    StrategySession,
     build_session,
 )
 from llamatrade_runtime.metrics import resample_daily
-from llamatrade_telemetry import metrics
+from llamatrade_telemetry import counter, metrics
 
 from src.convert import safe_float
 from src.dataset import DatasetSpec, DatasetStore, RedisLike, get_dataset_store, prepare_dataset
@@ -52,14 +56,14 @@ from src.models import VALID_TIMEFRAMES
 from src.progress import BacktestProgressReporter, CancellationFlag
 
 MARKET_DATA_GRPC_TARGET = os.getenv("MARKET_DATA_GRPC_TARGET", "market-data:8840")
-# Max bars per symbol requested in the single batched GetMultiBars call (16B).
+# Max bars per symbol requested in the single batched GetMultiBars call.
 # Set well above realistic backtest windows; the server applies its own cap too.
 MARKET_DATA_MAX_BARS_PER_SYMBOL = int(os.getenv("BACKTEST_MAX_BARS_PER_SYMBOL", "100000"))
 
-# Max page size accepted by GetBacktestTrades (14B); larger requests are clamped.
+# Max page size accepted by GetBacktestTrades; larger requests are clamped.
 MAX_TRADES_PAGE_SIZE = int(os.getenv("BACKTEST_MAX_TRADES_PAGE_SIZE", "200"))
 
-# --- Reaper thresholds (1A) ---------------------------------------------------
+# --- Reaper thresholds ---------------------------------------------------
 # A RUNNING row whose worker was lost (OOM, eviction, hard kill) never runs the
 # run_backtest except handlers, so it is stranded forever. We only reap RUNNING
 # rows whose started_at predates the hard time limit by a safe grace, so a
@@ -73,7 +77,35 @@ _REAPER_RUNNING_GRACE_SECONDS = int(os.getenv("BACKTEST_REAPER_RUNNING_GRACE", "
 _REAPER_PENDING_REQUEUE_SECONDS = int(os.getenv("BACKTEST_REAPER_PENDING_REQUEUE", "300"))
 _REAPER_PENDING_FAIL_SECONDS = int(os.getenv("BACKTEST_REAPER_PENDING_FAIL", "3600"))
 
+# Session health counters. The result row has no column for either, so a finished run
+# reports them here and on its completion log line.
+DEGRADED_EVALS_TOTAL = counter(
+    "llamatrade_backtest_strategy_degraded_evals_total",
+    (),
+    "Strategy conditions a run could not evaluate (NaN/missing data) and treated as False",
+)
+SUB_NOTIONAL_SKIPS_TOTAL = counter(
+    "llamatrade_backtest_strategy_sub_notional_skips_total",
+    (),
+    "Intended orders a run skipped for falling under the minimum order notional",
+)
+
 logger = logging.getLogger(__name__)
+
+
+async def notify_backtest_terminal(backtest: Backtest, *, failed: bool, reason: str = "") -> None:
+    """Publish the terminal-state notification for a run (fire-and-forget)."""
+    category = (
+        events_pb2.NOTIFICATION_CATEGORY_BACKTEST_FAILED
+        if failed
+        else events_pb2.NOTIFICATION_CATEGORY_BACKTEST_COMPLETED
+    )
+    await shared_notification_events().publish_safe(
+        NotificationEvent(category=category, backtest_id=str(backtest.id), reason=reason),
+        tenant_id=str(backtest.tenant_id),
+        user_id=str(backtest.created_by) if backtest.created_by else "",
+        dedup_parts=(str(backtest.id), "failed" if failed else "completed"),
+    )
 
 
 class MarketDataError(Exception):
@@ -134,6 +166,27 @@ def _to_compiler_bars(bars: dict[str, list[BarData]]) -> dict[str, list[Bar]]:
     }
 
 
+def _report_session_health(backtest_id: UUID, session: StrategySession) -> None:
+    """Surface a finished run's degraded evaluations and sub-notional skips.
+
+    Both are silent inside the engine: conditions that could not be evaluated turn into
+    "no signal" and orders under the notional floor disappear, so a run that traded far
+    less than expected looks like a strategy decision. The counts have nowhere to live on
+    the result row, so they go to the log line (with the run id) and to fleet counters.
+    """
+    degraded = session.degraded_eval_count
+    skipped = session.sub_notional_skip_count
+    DEGRADED_EVALS_TOTAL.inc(degraded)
+    SUB_NOTIONAL_SKIPS_TOTAL.inc(skipped)
+    log = logger.warning if degraded or skipped else logger.info
+    log(
+        "Backtest %s finished: degraded_evals=%d sub_notional_skips=%d",
+        backtest_id,
+        degraded,
+        skipped,
+    )
+
+
 class _RuntimeProgressObserver(NullObserver):
     """Bridge runtime tick events to the buffered progress reporter."""
 
@@ -142,6 +195,70 @@ class _RuntimeProgressObserver(NullObserver):
 
     def on_tick(self, index: int, total: int | None, date: datetime, equity: float) -> None:
         self._on_bar(index, total or 0, date)
+
+
+# Trailing window (days) that market-data re-pulls each night for corporate actions.
+# A dataset ending inside it can be silently restated, so its snapshot is versioned.
+_DATASET_VINTAGE_WINDOW_DAYS = int(os.getenv("BACKTEST_DATASET_VINTAGE_WINDOW_DAYS", "10"))
+
+
+def _last_closed_session(now: datetime) -> date:
+    """Most recent session known fully closed (conservative: the prior UTC day).
+
+    Clamps a dataset's ``end`` so the currently-forming bar is never snapshotted as a
+    close and reused by a later run. A market calendar would be tighter, but "yesterday
+    UTC" is safe for daily bars and never includes today's partial bar.
+    """
+    return (now - timedelta(days=1)).date()
+
+
+def _dataset_adjustment(timeframe: str) -> str:
+    """Price adjustment market-data serves: split-adjusted daily, raw intraday.
+
+    Mirrors the market-data ``adjustment_for`` mapping so the dataset key labels what
+    the stored bars actually are, rather than the old always-"raw" default.
+    """
+    return "split" if timeframe in ("1D", "1d") else "raw"
+
+
+def _dataset_vintage(
+    end: date, now: datetime, window_days: int = _DATASET_VINTAGE_WINDOW_DAYS
+) -> str:
+    """A cache-busting vintage for datasets that overlap the corporate-action self-heal window.
+
+    Market-data re-pulls a trailing window of adjusted daily bars nightly, rewriting the
+    same (symbol, date) with no key change. A dataset whose ``end`` falls in that window can
+    be restated, so it is tagged with the materialization date and re-fetched on a later run;
+    closed history older than the window keeps a stable key and reuses its warm snapshot.
+    """
+    if end >= (now - timedelta(days=window_days)).date():
+        return now.date().isoformat()
+    return ""
+
+
+class _SizingOverrides(TypedDict, total=False):
+    """build_session sizing kwargs; an absent key keeps the engine default."""
+
+    sizing_mode: SizingMode
+    drift_tolerance: float
+    min_order_notional: float
+
+
+def _sizing_overrides(config: dict[str, object]) -> _SizingOverrides:
+    """Map stored proto sizing config to build_session kwargs; unset fields keep defaults."""
+    overrides: _SizingOverrides = {}
+    mode = int(cast(int, config.get("sizing_mode", 0)) or 0)
+    if mode == common_pb2.SIZING_MODE_BINARY:
+        overrides["sizing_mode"] = SizingMode.BINARY
+    elif mode == common_pb2.SIZING_MODE_DRIFT:
+        overrides["sizing_mode"] = SizingMode.DRIFT
+    drift_tolerance = config.get("drift_tolerance")
+    if drift_tolerance is not None:
+        overrides["drift_tolerance"] = float(cast(float, drift_tolerance))
+    min_order_notional = config.get("min_order_notional")
+    if min_order_notional is not None:
+        overrides["min_order_notional"] = float(cast(float, min_order_notional))
+    return overrides
 
 
 def warmup_padding_days(timeframe: str, min_bars: int) -> int:
@@ -218,7 +335,7 @@ class ProtoMarketDataClient:
         start_date: date,
         end_date: date,
     ) -> dict[str, list[dict[str, object]]]:
-        """Fetch historical bars for all symbols in a single batched RPC (16B).
+        """Fetch historical bars for all symbols in a single batched RPC.
 
         The market-data service fans out across symbols server-side, so one
         ``GetMultiBars`` call replaces N per-symbol round-trips. A symbol with no
@@ -257,7 +374,7 @@ class ProtoMarketDataClient:
 
         try:
             client = await self._get_client()
-            # Consume the server-streamed bars incrementally (13B): each bar is
+            # Consume the server-streamed bars incrementally: each bar is
             # converted and appended, so we never buffer the whole response as a
             # single list before building the engine's input. The stream arrives
             # in timestamp order, so each symbol's list stays chronological.
@@ -378,6 +495,9 @@ class BacktestService:
         timeframe: str | None = None,
         benchmark_symbol: str | None = "SPY",
         include_benchmark: bool = True,
+        sizing_mode: int = 0,
+        drift_tolerance: float | None = None,
+        min_order_notional: float | None = None,
     ) -> Backtest:
         """Create a new backtest job.
 
@@ -396,9 +516,17 @@ class BacktestService:
             timeframe: Data timeframe (uses strategy timeframe if None)
             benchmark_symbol: Symbol for benchmark comparison (default: SPY)
             include_benchmark: Whether to calculate benchmark comparison
+            sizing_mode: SizingMode proto value (0 = unset, keeps engine default)
+            drift_tolerance: DRIFT-mode band (None keeps engine default)
+            min_order_notional: dollar floor under which an order is skipped (None keeps default)
         """
         if end_date <= start_date:
             raise ValueError("End date must be after start date")
+
+        if drift_tolerance is not None and drift_tolerance < 0:
+            raise ValueError("drift_tolerance must be non-negative")
+        if min_order_notional is not None and min_order_notional < 0:
+            raise ValueError("min_order_notional must be non-negative")
 
         # Validate timeframe if provided
         if timeframe and timeframe not in VALID_TIMEFRAMES:
@@ -432,8 +560,8 @@ class BacktestService:
         if not actual_symbols:
             raise ValueError("No symbols specified")
 
-        # Determine timeframe: explicit > strategy > default
-        actual_timeframe = timeframe or strategy_ver.timeframe or "1D"
+        # Backtest bar granularity is a run parameter: explicit request value, else daily.
+        actual_timeframe = timeframe or "1D"
 
         backtest = Backtest(
             tenant_id=tenant_id,
@@ -447,6 +575,10 @@ class BacktestService:
                 "timeframe": actual_timeframe,
                 "benchmark_symbol": benchmark_symbol,
                 "include_benchmark": include_benchmark,
+                # Sizing overrides (unset keys fall back to engine defaults at run time).
+                "sizing_mode": sizing_mode,
+                "drift_tolerance": drift_tolerance,
+                "min_order_notional": min_order_notional,
             },
             symbols=actual_symbols,
             start_date=start_date,
@@ -527,7 +659,7 @@ class BacktestService:
         """Return one page of a completed backtest's raw trade records plus the total.
 
         Tenant-scoped via ``get_result_rows``. Pagination bounds the response size
-        so a pathological trade count never bloats a single read (14B). Raw trade
+        so a pathological trade count never bloats a single read. Raw trade
         dicts are mapped to proto by the servicer.
         """
         rows = await self.get_result_rows(backtest_id, tenant_id)
@@ -616,6 +748,7 @@ class BacktestService:
             if reporter:
                 await reporter.publish_phase(f"Failed: {e}", 100, status=BACKTEST_STATUS_FAILED)
                 await reporter.close()
+            await notify_backtest_terminal(backtest, failed=True, reason=f"market data error: {e}")
             # Propagate typed so the Celery task can distinguish transient
             # market-data failures (retryable) from terminal errors
             raise
@@ -629,6 +762,7 @@ class BacktestService:
             if reporter:
                 await reporter.publish_phase(f"Failed: {e}", 100, status=BACKTEST_STATUS_FAILED)
                 await reporter.close()
+            await notify_backtest_terminal(backtest, failed=True, reason=str(e))
             raise
 
     async def _run_backtest_inner(
@@ -664,8 +798,11 @@ class BacktestService:
         if not config_sexpr:
             raise ValueError("Strategy has no S-expression config")
 
-        # Build the shared strategy session (multi-symbol: all bars per date at once)
-        session, required_symbols, min_bars = build_session(config_sexpr)
+        # Build the shared strategy session (multi-symbol: all bars per date at once).
+        # Sizing overrides ride in the stored config; unset fields keep engine defaults.
+        session, required_symbols, min_bars = build_session(
+            config_sexpr, **_sizing_overrides(config)
+        )
 
         if reporter:
             await reporter.publish_phase("Strategy compiled", 20)
@@ -688,10 +825,21 @@ class BacktestService:
         padding_days = warmup_padding_days(timeframe, min_bars)
         fetch_start = backtest.start_date - timedelta(days=padding_days)
 
+        # Clamp the fetch end to the last closed session so a forming bar is never
+        # snapshotted as a close; label the real adjustment and add a vintage so a
+        # corporate-action restatement cannot be served stale from the cache.
+        now = datetime.now(UTC)
+        dataset_end = min(backtest.end_date, _last_closed_session(now))
+
         # Materialize a complete, content-addressed snapshot (coalescing concurrent runs over
         # overlapping assets), then the sim reads pure warm data — no Alpaca in the loop.
         dataset_spec = DatasetSpec.create(
-            symbols_to_fetch, timeframe, fetch_start, backtest.end_date
+            symbols_to_fetch,
+            timeframe,
+            fetch_start,
+            dataset_end,
+            adjustment=_dataset_adjustment(timeframe),
+            data_version=_dataset_vintage(dataset_end, now),
         )
         all_bars = await prepare_dataset(
             dataset_spec, self._fetch_bars, self._dataset_store, self._redis
@@ -723,6 +871,19 @@ class BacktestService:
             reporter.set_total_bars(total_bars)
             await reporter.publish_phase("Running simulation", 40)
 
+        # Convert to the runtime's Bar representation once, extract the windowed
+        # benchmark bars the post-sim comparison needs, then drop the dict dataset so
+        # the heavy simulation phase holds a single copy of the strategy bars rather
+        # than the BarData dicts and the Bar objects at the same time.
+        compiler_bars = _to_compiler_bars(bars)
+        window_start = datetime.combine(backtest.start_date, datetime.min.time(), tzinfo=UTC)
+        benchmark_bars_list: list[BarData] = []
+        if include_benchmark and benchmark_symbol:
+            benchmark_bars_list = [
+                b for b in all_bars.get(benchmark_symbol, []) if b["timestamp"] >= window_start
+            ]
+        del all_bars, bars
+
         portfolio = Portfolio(float(backtest.initial_capital))
         execution = SimulatedExecution(
             commission_rate=safe_float(config.get("commission", 0)),
@@ -739,12 +900,14 @@ class BacktestService:
         runtime = StrategyRuntime(session, portfolio, execution, observer=observer)
         result = await runtime.run(
             HistoricalBarFeed(
-                _to_compiler_bars(bars),
-                datetime.combine(backtest.start_date, datetime.min.time(), tzinfo=UTC),
+                compiler_bars,
+                window_start,
                 datetime.combine(backtest.end_date, datetime.max.time(), tzinfo=UTC),
             ),
             should_abort=should_abort,
         )
+
+        _report_session_health(backtest_id, session)
 
         # Flush pending progress updates
         if reporter:
@@ -764,16 +927,9 @@ class BacktestService:
                 await reporter.publish_phase("Calculating benchmark comparison", 90)
 
             try:
-                # Use benchmark bars from the combined fetch (no duplicate
-                # API call), restricted to the backtest window so warm-up
-                # padding does not distort the comparison.
-                window_start = datetime.combine(
-                    backtest.start_date, datetime.min.time(), tzinfo=UTC
-                )
-                benchmark_bars_list = [
-                    b for b in all_bars.get(benchmark_symbol, []) if b["timestamp"] >= window_start
-                ]
-
+                # Benchmark bars were pulled in the combined fetch (no duplicate API
+                # call) and windowed to the backtest range above, before the dict
+                # dataset was released.
                 if benchmark_bars_list:
                     # Convert to BenchmarkBarData format
                     benchmark_bars: list[BenchmarkBarData] = []
@@ -885,7 +1041,7 @@ class BacktestService:
         )
         self.db.add(backtest_result)
 
-        # Finalize atomically (3A): only complete if the row is still RUNNING.
+        # Finalize atomically: only complete if the row is still RUNNING.
         # A CancelBacktest that committed CANCELLED between the refresh above and
         # here would otherwise be clobbered by an unconditional COMPLETED write.
         completed_at = datetime.now(UTC)
@@ -914,6 +1070,7 @@ class BacktestService:
             await reporter.close()
 
         metrics.backtest.job(state="completed")
+        await notify_backtest_terminal(backtest, failed=False)
 
         return backtest_result
 
@@ -1005,7 +1162,7 @@ class BacktestService:
     ) -> bool:
         """Mark a backtest FAILED.
 
-        Compensating action (2A): ``create_backtest`` commits the PENDING row
+        Compensating action: ``create_backtest`` commits the PENDING row
         before the Celery enqueue, so a failed enqueue would strand a zombie
         PENDING row. Failing it here keeps the DB state consistent with the
         error the caller receives.
@@ -1039,7 +1196,7 @@ class BacktestService:
         }
 
     async def reap_stale_backtests(self, now: datetime | None = None) -> dict[str, int]:
-        """Recover orphaned backtests; the only automatic recovery path (1A).
+        """Recover orphaned backtests; the only automatic recovery path.
 
         - **Stale RUNNING** (started_at older than the hard time limit + grace):
           the worker was lost before its except handlers could run, so the row
@@ -1084,6 +1241,7 @@ class BacktestService:
             bt.error_message = "Backtest worker was lost; run reaped after exceeding the time limit"
             bt.completed_at = now
             counts["running_failed"] += 1
+            await notify_backtest_terminal(bt, failed=True, reason=bt.error_message or "")
 
         # 2) Orphaned PENDING -> re-drive (requeue window) or FAIL (too old).
         pending_rows = (
@@ -1105,6 +1263,7 @@ class BacktestService:
                 bt.error_message = "Backtest was never picked up by a worker; failed by reaper"
                 bt.completed_at = now
                 counts["pending_failed"] += 1
+                await notify_backtest_terminal(bt, failed=True, reason=bt.error_message or "")
             else:
                 to_requeue.append(bt)
 

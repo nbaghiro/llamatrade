@@ -6,7 +6,8 @@ data failures (including the PENDING reset between attempts), and terminal
 failure handling. Tasks run in eager mode via .apply().
 """
 
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
+from uuid import UUID
 
 import pytest
 
@@ -15,6 +16,63 @@ from src.workers import celery_tasks
 
 BACKTEST_ID = "44444444-4444-4444-4444-444444444444"
 TENANT_ID = "11111111-1111-1111-1111-111111111111"
+
+
+class _FakeSessionCM:
+    """Async context manager standing in for ``sessionmaker()``."""
+
+    def __init__(self, session: object) -> None:
+        self._session = session
+
+    async def __aenter__(self) -> object:
+        return self._session
+
+    async def __aexit__(self, *args: object) -> None:
+        return None
+
+
+def _patch_engine(monkeypatch) -> tuple[MagicMock, MagicMock, AsyncMock]:
+    """Stub the per-call engine/sessionmaker so _session_scope needs no real DB.
+
+    Returns (session, bind_tenant_guc mock, set_rls_bypass mock) so tests can assert
+    which RLS scope the worker binds.
+    """
+    session = MagicMock()
+    engine = MagicMock()
+    engine.dispose = AsyncMock()
+    monkeypatch.setattr(celery_tasks, "create_async_engine", lambda *a, **k: engine)
+    monkeypatch.setattr(
+        celery_tasks, "async_sessionmaker", lambda *a, **k: lambda: _FakeSessionCM(session)
+    )
+    bind = MagicMock()
+    bypass = AsyncMock()
+    monkeypatch.setattr(celery_tasks, "bind_tenant_guc", bind)
+    monkeypatch.setattr(celery_tasks, "set_rls_bypass", bypass)
+    return session, bind, bypass
+
+
+class TestSessionScopeRlsBinding:
+    """The worker session must bind an RLS scope, or migration 039's policies reject its writes."""
+
+    @pytest.mark.asyncio
+    async def test_tenant_scope_binds_tenant_guc(self, monkeypatch):
+        session, bind, bypass = _patch_engine(monkeypatch)
+
+        async with celery_tasks._session_scope(tenant_id=UUID(TENANT_ID)) as db:
+            assert db is session
+
+        bind.assert_called_once_with(session, UUID(TENANT_ID))
+        bypass.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_system_scope_applies_audited_bypass(self, monkeypatch):
+        session, bind, bypass = _patch_engine(monkeypatch)
+
+        async with celery_tasks._session_scope(system_reason="reaper") as db:
+            assert db is session
+
+        bypass.assert_awaited_once_with(session, reason="reaper")
+        bind.assert_not_called()
 
 
 @pytest.fixture
@@ -109,7 +167,7 @@ class TestExecuteBacktest:
         fake_client = AsyncMock()
 
         @asynccontextmanager
-        async def fake_scope():
+        async def fake_scope(*, tenant_id=None, system_reason=None):
             yield fake_session
 
         fake_redis = AsyncMock()
@@ -135,7 +193,7 @@ class TestExecuteBacktest:
             async def run_backtest(self, backtest_id, tenant_id):
                 from unittest.mock import MagicMock
 
-                # run_backtest returns the persisted BacktestResult row (1A).
+                # run_backtest returns the persisted BacktestResult row.
                 response = MagicMock()
                 response.total_return = 0.05
                 response.total_trades = 2

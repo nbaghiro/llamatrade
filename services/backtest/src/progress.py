@@ -1,6 +1,6 @@
 """Progress tracking and publishing for backtests.
 
-Tenant-isolation invariant (4A): the Redis progress streams and the cancellation
+Tenant-isolation invariant: the Redis progress streams and the cancellation
 flag are keyed by ``backtest_id`` ONLY — they carry no tenant scope of their own.
 A backtest_id is an unguessable UUIDv4, but that is not an authorization boundary.
 Every caller MUST verify tenant ownership of the backtest (via a tenant-scoped DB
@@ -19,8 +19,9 @@ from typing import cast
 
 import redis.asyncio as aioredis
 
-from llamatrade_events import CURSOR_BEGIN, EventBus, ProgressEvents, RedisStreamsTransport
-from llamatrade_proto.generated import backtest_pb2, common_pb2
+from llamatrade_events import CURSOR_BEGIN, EventBus, ProgressEvents, get_default_transport
+from llamatrade_proto.generated import backtest_pb2
+from llamatrade_proto.timestamps import to_proto_timestamp
 from llamatrade_telemetry import metrics
 
 logger = logging.getLogger(__name__)
@@ -81,20 +82,24 @@ class ProgressTracker:
             return False
 
 
+# Cap warning-log volume during a sustained broker outage; the metric keeps counting.
+_PUBLISH_FAILURE_LOG_LIMIT = 5
+
+
 class ProgressPublisher:
-    """Publishes progress updates to a bounded, replayable Redis Stream.
+    """Publishes progress updates to a bounded, replayable progress topic.
 
     The wire payload is the ``BacktestProgressUpdate`` proto on the events lib's
     ``BACKTEST_PROGRESS`` channel; that channel owns the stream key and retention.
     """
 
-    def __init__(self, redis_url: str | None = None, progress_events: ProgressEvents | None = None):
-        self.redis_url = redis_url or REDIS_URL
+    def __init__(self, progress_events: ProgressEvents | None = None):
         self._events: ProgressEvents | None = progress_events
+        self._consecutive_failures = 0
 
     def _get_events(self) -> ProgressEvents:
         if self._events is None:
-            self._events = ProgressEvents(bus=EventBus(RedisStreamsTransport(self.redis_url)))
+            self._events = ProgressEvents(bus=EventBus(get_default_transport()))
         return self._events
 
     async def publish(
@@ -121,14 +126,23 @@ class ProgressPublisher:
             status=status_value,
             progress_percent=int(progress),
             message=message,
-            timestamp=common_pb2.Timestamp(seconds=int(datetime.now(UTC).timestamp())),
+            timestamp=to_proto_timestamp(datetime.now(UTC)),
         )
         try:
             await self._get_events().publish(backtest_id, update)
         except Exception:
-            # Record for observability, then re-raise (caller maps it to a FAILED run).
+            # Progress is advisory and results are not: count the failure, log,
+            # and keep the run alive. Repeated failures stay visible via the metric.
             metrics.backtest.progress_publish_failure()
-            raise
+            self._consecutive_failures += 1
+            if self._consecutive_failures <= _PUBLISH_FAILURE_LOG_LIMIT:
+                logger.warning(
+                    "progress publish failed for backtest %s (failure %d)",
+                    backtest_id,
+                    self._consecutive_failures,
+                )
+        else:
+            self._consecutive_failures = 0
 
     async def close(self) -> None:
         """Close the progress channel, if created."""
@@ -140,13 +154,12 @@ class ProgressPublisher:
 class ProgressSubscriber:
     """Tail-reads progress updates from the backtest's Redis Stream."""
 
-    def __init__(self, redis_url: str | None = None, progress_events: ProgressEvents | None = None):
-        self.redis_url = redis_url or REDIS_URL
+    def __init__(self, progress_events: ProgressEvents | None = None):
         self._events: ProgressEvents | None = progress_events
 
     def _get_events(self) -> ProgressEvents:
         if self._events is None:
-            self._events = ProgressEvents(bus=EventBus(RedisStreamsTransport(self.redis_url)))
+            self._events = ProgressEvents(bus=EventBus(get_default_transport()))
         return self._events
 
     async def tail(
@@ -213,7 +226,6 @@ class BacktestProgressReporter:
         total_bars: int = 0,
         simulation_start_pct: float = 40.0,
         simulation_end_pct: float = 90.0,
-        redis_url: str | None = None,
     ):
         """Initialize the progress reporter.
 
@@ -222,13 +234,12 @@ class BacktestProgressReporter:
             total_bars: Expected total number of bars to process.
             simulation_start_pct: Progress percentage when simulation starts.
             simulation_end_pct: Progress percentage when simulation ends.
-            redis_url: Redis URL for publishing.
         """
         self.backtest_id = backtest_id
         self.total_bars = total_bars
         self.simulation_start_pct = simulation_start_pct
         self.simulation_end_pct = simulation_end_pct
-        self._publisher = ProgressPublisher(redis_url)
+        self._publisher = ProgressPublisher()
         self._tracker: ProgressTracker | None = ProgressTracker(total_items=total_bars)
         self._pending_updates: list[tuple[float, str]] = []
         self._lock = threading.Lock()  # Thread-safe access to _pending_updates

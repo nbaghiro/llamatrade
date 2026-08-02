@@ -2,22 +2,23 @@
 
 Proto is the single source of truth for the read/wire shape (decision 1A): these
 functions map the persisted ``Backtest``/``BacktestResult`` rows straight to the
-generated proto messages in one pass, with no intermediate Pydantic layer (13A)
-and money kept as ``Decimal`` end-to-end (5A). Proto field names are authoritative
-(7A) — e.g. DB ``annual_return`` → proto ``annualized_return``.
+generated proto messages in one pass, with no intermediate Pydantic layer
+and money kept as ``Decimal`` end-to-end. Proto field names are authoritative
+ — e.g. DB ``annual_return`` → proto ``annualized_return``.
 
 JSONB blobs (``equity_curve``, ``trades``) are parsed directly into proto here;
 they are trusted (written by this service on completion), so they are not
 re-validated through Pydantic on read.
 """
 
-from datetime import datetime
+from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any
 
 from llamatrade_db.models.backtest import Backtest, BacktestResult
 from llamatrade_proto.generated import backtest_pb2, common_pb2
 from llamatrade_proto.generated.trading_pb2 import ORDER_SIDE_BUY
+from llamatrade_proto.timestamps import to_proto_timestamp
 
 # Scale for computed (divided) statistics, to keep Decimal strings bounded.
 _COMPUTED_SCALE = Decimal("0.00000001")
@@ -46,7 +47,11 @@ def _to_decimal(value: object) -> Decimal:
 
 
 def _ts(value: datetime) -> common_pb2.Timestamp:
-    return common_pb2.Timestamp(seconds=int(value.timestamp()))
+    # Persisted datetimes are UTC; date-only values arrive as naive midnight. Anchor
+    # naive inputs at UTC so encoding never assumes the process's local zone.
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=UTC)
+    return to_proto_timestamp(value)
 
 
 def backtest_run_to_proto(b: Backtest) -> backtest_pb2.BacktestRun:
@@ -211,7 +216,7 @@ def backtest_results_to_proto(
     """Map the persisted Backtest + BacktestResult rows to a proto BacktestResults.
 
     Trades are capped at ``trades_preview``; the full log is paged via
-    GetBacktestTrades (14B).
+    GetBacktestTrades.
     """
     initial_capital = b.initial_capital
     raw_trades: list[dict[str, Any]] = r.trades or []

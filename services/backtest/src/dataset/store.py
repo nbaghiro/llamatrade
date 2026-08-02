@@ -8,6 +8,7 @@ single-node; a bucket-backed store sits behind the same `DatasetStore` seam.
 
 import os
 import tempfile
+import time
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Protocol, cast
@@ -115,6 +116,31 @@ class LocalDatasetStore:
         except BaseException:
             Path(tmp).unlink(missing_ok=True)
             raise
+
+    def evict_stale(self, max_age_seconds: float) -> int:
+        """Delete snapshots untouched for ``max_age_seconds``; returns the count removed.
+
+        A raced reader falls back to a rebuild on miss, so eviction can never
+        produce a wrong result, only a refetch.
+        """
+        cutoff = time.time() - max_age_seconds
+        removed = 0
+        if not self._root.exists():
+            return removed
+        for path in self._root.rglob("*.parquet"):
+            try:
+                if path.stat().st_mtime < cutoff:
+                    path.unlink(missing_ok=True)
+                    removed += 1
+            except OSError:
+                continue
+        for tmp in self._root.rglob("*.parquet.tmp"):
+            try:
+                if tmp.stat().st_mtime < cutoff:
+                    tmp.unlink(missing_ok=True)
+            except OSError:
+                continue
+        return removed
 
 
 class InMemoryDatasetStore:

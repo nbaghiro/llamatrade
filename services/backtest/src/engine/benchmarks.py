@@ -66,6 +66,23 @@ def align_daily_returns(
     )
 
 
+def _annualize_return(returns: np.ndarray) -> float:
+    """Geometrically annualize a daily return series to 252 trading days.
+
+    Matches the ``annual_return`` convention (compounding), so alpha is not compared
+    against an arithmetically-scaled benchmark. A compounded growth factor of zero or
+    below (a full wipeout) clamps to -100% rather than raising on a fractional power of
+    a non-positive base.
+    """
+    n = len(returns)
+    if n == 0:
+        return 0.0
+    growth = float(np.prod(1.0 + returns))
+    if growth <= 0:
+        return -1.0
+    return growth ** (252.0 / n) - 1.0
+
+
 class BenchmarkCalculator:
     """Calculate benchmark returns and relative metrics."""
 
@@ -139,9 +156,11 @@ class BenchmarkCalculator:
 
         rf = risk_free_rate if risk_free_rate is not None else self.risk_free_rate
 
-        # Calculate beta
-        covariance = np.cov(strategy_returns, benchmark_returns)[0, 1]
-        variance = np.var(benchmark_returns)
+        # Beta from a single covariance matrix so numerator and denominator share ddof=1;
+        # separate var/cov with mismatched ddof would inflate beta by n/(n-1).
+        cov = np.cov(strategy_returns, benchmark_returns)
+        covariance = float(cov[0, 1])
+        variance = float(cov[1, 1])
 
         if variance <= 0:
             # A flat benchmark has no variance: beta (and thus alpha) are
@@ -150,9 +169,9 @@ class BenchmarkCalculator:
 
         beta = covariance / variance
 
-        # Calculate alpha (annualized)
-        strategy_annual = np.mean(strategy_returns) * 252
-        benchmark_annual = np.mean(benchmark_returns) * 252
+        # Alpha annualized geometrically to match the displayed annual_return (compounding).
+        strategy_annual = _annualize_return(strategy_returns)
+        benchmark_annual = _annualize_return(benchmark_returns)
 
         alpha = strategy_annual - (rf + beta * (benchmark_annual - rf))
 
@@ -170,7 +189,7 @@ class BenchmarkCalculator:
 
         Returns ``None`` when IR is undefined — fewer than two joined points, or
         zero tracking error (a 0/0 when the strategy perfectly tracks the
-        benchmark) — rather than a misleading 0.0 (8A).
+        benchmark) — rather than a misleading 0.0.
 
         Args:
             strategy_returns: Daily strategy returns

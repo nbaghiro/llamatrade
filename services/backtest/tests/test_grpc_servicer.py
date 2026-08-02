@@ -177,6 +177,48 @@ class TestRunBacktest:
                 assert response.backtest.id == str(TEST_BACKTEST_ID)
                 assert response.backtest.status == backtest_pb2.BACKTEST_STATUS_PENDING
 
+    async def test_run_backtest_threads_sizing_config(self, backtest_servicer, rpc_context):
+        """Sizing proto fields reach create_backtest; unset ones stay None (engine default)."""
+        from llamatrade_proto.generated import backtest_pb2, common_pb2
+
+        mock_service = MagicMock()
+        mock_service.create_backtest = AsyncMock(return_value=make_mock_backtest())
+        mock_service.queue_backtest = AsyncMock(return_value="task-id")
+
+        mock_db = MagicMock()
+        mock_db.scalar = AsyncMock(return_value=0)
+
+        with patch("src.grpc.servicer.tenant_session", create_mock_get_db(mock_db)):
+            with patch(
+                "src.grpc.servicer.BacktestService",
+                new=create_mock_service_class(mock_service),
+            ):
+                request = backtest_pb2.RunBacktestRequest(
+                    context=common_pb2.TenantContext(
+                        tenant_id=str(TEST_TENANT_ID), user_id=str(TEST_USER_ID)
+                    ),
+                    config=backtest_pb2.BacktestConfig(
+                        strategy_id=str(TEST_STRATEGY_ID),
+                        start_date=common_pb2.Timestamp(
+                            seconds=int(datetime(2024, 1, 1).timestamp())
+                        ),
+                        end_date=common_pb2.Timestamp(
+                            seconds=int(datetime(2024, 6, 30).timestamp())
+                        ),
+                        initial_capital=common_pb2.Decimal(value="100000"),
+                        sizing_mode=common_pb2.SIZING_MODE_BINARY,
+                        drift_tolerance=common_pb2.Decimal(value="0.1"),
+                    ),
+                )
+
+                await backtest_servicer.run_backtest(request, rpc_context)
+
+        kwargs = mock_service.create_backtest.await_args.kwargs
+        assert kwargs["sizing_mode"] == common_pb2.SIZING_MODE_BINARY
+        assert kwargs["drift_tolerance"] == 0.1
+        # min_order_notional was not set on the request, so it threads through as None.
+        assert kwargs["min_order_notional"] is None
+
     async def test_run_backtest_over_plan_limit(self, backtest_servicer, rpc_context):
         """Reject with RESOURCE_EXHAUSTED when the monthly backtest quota is used up."""
         from llamatrade_proto.generated import backtest_pb2, common_pb2
@@ -404,6 +446,35 @@ class TestGetBacktest:
                     await backtest_servicer.get_backtest(request, rpc_context)
 
                 assert exc_info.value.code == Code.NOT_FOUND
+
+    async def test_get_backtest_internal_error_does_not_leak(self, backtest_servicer, rpc_context):
+        """An unexpected internal error surfaces as INTERNAL without leaking its text."""
+        from llamatrade_proto.generated import backtest_pb2, common_pb2
+
+        mock_service = MagicMock()
+        mock_service.get_backtest = AsyncMock(side_effect=RuntimeError("secret table backtests"))
+
+        mock_db = MagicMock()
+        mock_db.scalar = AsyncMock(return_value=0)
+
+        with patch("src.grpc.servicer.tenant_session", create_mock_get_db(mock_db)):
+            with patch(
+                "src.grpc.servicer.BacktestService",
+                new=create_mock_service_class(mock_service),
+            ):
+                request = backtest_pb2.GetBacktestRequest(
+                    context=common_pb2.TenantContext(
+                        tenant_id=str(TEST_TENANT_ID),
+                        user_id=str(TEST_USER_ID),
+                    ),
+                    backtest_id=str(TEST_BACKTEST_ID),
+                )
+
+                with pytest.raises(ConnectError) as exc_info:
+                    await backtest_servicer.get_backtest(request, rpc_context)
+
+                assert exc_info.value.code == Code.INTERNAL
+                assert "secret table backtests" not in str(exc_info.value)
 
 
 class TestListBacktests:
@@ -735,7 +806,7 @@ class TestStreamBacktestProgress:
 
 
 class TestGetBacktestTrades:
-    """Tests for the paginated GetBacktestTrades RPC (14B)."""
+    """Tests for the paginated GetBacktestTrades RPC."""
 
     async def test_get_backtest_trades_paginated(self, backtest_servicer, rpc_context):
         """Returns a page of trades with correct pagination metadata."""

@@ -24,6 +24,11 @@ class DatasetSpec:
     fetch_start: date
     end: date
     adjustment: str = "raw"
+    # Cache-busting vintage. Empty for closed history (stable key, warm-hit reuse);
+    # set to the materialization date when `end` falls inside the corporate-action
+    # self-heal window, since the same bars can be restated there with no other key
+    # change (a split would otherwise replay pre-split prices from the cache).
+    data_version: str = ""
 
     @classmethod
     def create(
@@ -33,6 +38,7 @@ class DatasetSpec:
         fetch_start: date,
         end: date,
         adjustment: str = "raw",
+        data_version: str = "",
     ) -> DatasetSpec:
         """Build a spec with symbols normalized (sorted + deduped) so order never affects the hash."""
         return cls(
@@ -41,6 +47,7 @@ class DatasetSpec:
             fetch_start=fetch_start,
             end=end,
             adjustment=adjustment,
+            data_version=data_version,
         )
 
     @property
@@ -53,6 +60,7 @@ class DatasetSpec:
                 "fetch_start": self.fetch_start.isoformat(),
                 "end": self.end.isoformat(),
                 "adjustment": self.adjustment,
+                "data_version": self.data_version,
             },
             sort_keys=True,
             separators=(",", ":"),

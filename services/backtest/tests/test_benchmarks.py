@@ -52,6 +52,21 @@ class TestBenchmarkCalculator:
         assert isinstance(beta, float)
         assert beta > 1.0  # Strategy is more volatile than benchmark
 
+    def test_beta_is_one_for_identical_series(self, calculator):
+        """A series identical to the benchmark has beta exactly 1.0.
+
+        With a ddof mismatch (cov ddof=1 over var ddof=0) this reported n/(n-1):
+        1.5 over three points, 1.05 over twenty. Shared ddof=1 makes it exact.
+        """
+        benchmark_returns = np.array([0.01, -0.02, 0.03])
+        strategy_returns = benchmark_returns.copy()
+
+        alpha, beta = calculator.calculate_alpha_beta(strategy_returns, benchmark_returns)
+
+        assert beta == pytest.approx(1.0)
+        # Identical series, so alpha reduces to (1 - beta) * (benchmark - rf) == 0.
+        assert alpha == pytest.approx(0.0, abs=1e-12)
+
     def test_alpha_beta_insufficient_data(self, calculator):
         """Test alpha/beta with insufficient data."""
         strategy_returns = np.array([0.01])
@@ -59,12 +74,12 @@ class TestBenchmarkCalculator:
 
         alpha, beta = calculator.calculate_alpha_beta(strategy_returns, benchmark_returns)
 
-        # Undefined with <2 points: None, not a misleading 0.0 (8A)
+        # Undefined with <2 points: None, not a misleading 0.0
         assert alpha is None
         assert beta is None
 
     def test_alpha_beta_none_for_flat_benchmark(self, calculator):
-        """A zero-variance benchmark makes beta a 0/0 — undefined, so None (8A)."""
+        """A zero-variance benchmark makes beta a 0/0 — undefined, so None."""
         benchmark_returns = np.array([0.0, 0.0, 0.0, 0.0, 0.0])
         strategy_returns = np.array([0.01, -0.005, 0.008, -0.003, 0.012])
 
@@ -102,5 +117,5 @@ class TestBenchmarkCalculator:
 
         ir = calculator.calculate_information_ratio(strategy_returns, benchmark_returns)
 
-        # Undefined with <2 points: None, not a misleading 0.0 (8A)
+        # Undefined with <2 points: None, not a misleading 0.0
         assert ir is None
