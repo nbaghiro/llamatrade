@@ -7,6 +7,7 @@ import pytest
 
 from llamatrade_db.plan_limits import (
     FREE_TIER_LIMITS,
+    UNLIMITED,
     PlanLimitExceededError,
     enforce_plan_limit,
     get_plan_limit,
@@ -19,6 +20,18 @@ async def test_get_plan_limit_from_active_plan() -> None:
     db = AsyncMock()
     db.scalar = AsyncMock(return_value={"live_strategies": 5})
     assert await get_plan_limit(db, uuid4(), "live_strategies") == 5
+
+
+async def test_null_limit_means_unlimited() -> None:
+    db = AsyncMock()
+    db.scalar = AsyncMock(return_value={"backtests_per_month": None})
+    assert await get_plan_limit(db, uuid4(), "backtests_per_month") == UNLIMITED
+
+
+async def test_enforce_never_raises_on_unlimited() -> None:
+    db = AsyncMock()
+    db.scalar = AsyncMock(return_value={"backtests_per_month": None})
+    await enforce_plan_limit(db, uuid4(), "backtests_per_month", 10_000_000)
 
 
 async def test_get_plan_limit_free_tier_without_subscription() -> None:

@@ -56,8 +56,13 @@ class Backtest(Base, UUIDPrimaryKeyMixin, TenantMixin, TimestampMixin):
     )
 
 
-class BacktestResult(Base, UUIDPrimaryKeyMixin, TimestampMixin):
-    """Backtest execution results and metrics."""
+class BacktestResult(Base, UUIDPrimaryKeyMixin, TenantMixin, TimestampMixin):
+    """Backtest execution results and metrics.
+
+    ``tenant_id`` mirrors the parent backtest so the results carry the same RLS
+    tenant scope as their inputs. Writers do not set it: a DB trigger copies it
+    from ``backtests`` on insert (see migration 039).
+    """
 
     __tablename__ = "backtest_results"
 

@@ -194,29 +194,53 @@ class _ProtoEnumType(TypeDecorator[T], Generic[T]):
 
     Generic over T which should be the proto enum's ValueType.
     This ensures pyright knows the correct return type when reading from DB.
+
+    A value with no mapping (the ``*_UNSPECIFIED`` sentinel, a proto value the
+    DB enum never learned, or a DB label the map dropped) raises instead of
+    resolving to an arbitrary member: a mis-stored status is indistinguishable
+    from a real one once written.
     """
 
-    cache_ok = True
     _int_to_str: dict[int, StrEnum]
     _str_to_int: dict[StrEnum, int]
     _str_enum: type[StrEnum]
+
+    def __init_subclass__(cls, **kwargs: object) -> None:
+        """Give every subclass its own ``cache_ok``.
+
+        SQLAlchemy reads ``cache_ok`` from ``type(self).__dict__`` and does not
+        follow the MRO, so an inherited flag reads as unset and drops statement
+        caching for every query touching a bridged column.
+        """
+        super().__init_subclass__(**kwargs)
+        if "cache_ok" not in cls.__dict__:
+            cls.cache_ok = True
+
+    @classmethod
+    def _known_labels(cls) -> list[str]:
+        return [member.value for member in cls._str_enum]
 
     def _convert_to_db_value(self, value: int | str | StrEnum | None) -> str | None:
         """Convert any value type to the PostgreSQL enum string."""
         if value is None:
             return None
-        if isinstance(value, self._str_enum):
-            return value.value  # Return the string value
         if isinstance(value, str):
-            # Already a string, ensure lowercase
-            return value.lower()
-        # Integer value - convert via mapping
+            label = value.lower()
+            try:
+                return self._str_enum(label).value
+            except ValueError:
+                raise ValueError(
+                    f"{type(self).__name__}: {label!r} is not a valid label; "
+                    f"known labels: {self._known_labels()}"
+                ) from None
         int_val = int(value)
         enum_member = self._int_to_str.get(int_val)
-        if enum_member is not None:
-            return enum_member.value
-        # Fallback to first enum member
-        return next(iter(self._str_enum)).value
+        if enum_member is None:
+            raise ValueError(
+                f"{type(self).__name__}: proto value {int_val} has no database mapping; "
+                f"mapped proto values: {sorted(self._int_to_str)}"
+            )
+        return enum_member.value
 
     def process_bind_param(self, value: T | None, dialect: Dialect) -> str | None:
         """Convert proto ValueType to PostgreSQL enum string value."""
@@ -228,12 +252,20 @@ class _ProtoEnumType(TypeDecorator[T], Generic[T]):
             return None
         # StrEnum subclasses str; normalize both to the raw string value
         str_value = value.value if isinstance(value, StrEnum) else value
-        # Find the enum member with this value
-        for member in self._str_enum:
-            if member.value == str_value:
-                # Cast to T since we know the mapping produces valid proto values
-                return cast(T, self._str_to_int.get(member, 0))
-        return cast(T, 0)
+        try:
+            member = self._str_enum(str_value)
+        except ValueError:
+            raise ValueError(
+                f"{type(self).__name__}: database label {str_value!r} is unknown; "
+                f"known labels: {self._known_labels()}"
+            ) from None
+        int_value = self._str_to_int.get(member)
+        if int_value is None:
+            raise ValueError(
+                f"{type(self).__name__}: database label {str_value!r} has no proto mapping; "
+                f"mapped labels: {sorted(self._str_to_int)}"
+            )
+        return cast(T, int_value)
 
     def coerce_compared_value(self, op: object, value: object) -> TypeDecorator[T] | None:
         """Ensure comparison values are coerced through this TypeDecorator."""

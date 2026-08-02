@@ -14,7 +14,17 @@ from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, Numeric, String, Text
+from sqlalchemy import (
+    Boolean,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    Numeric,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -49,8 +59,8 @@ class TradingSession(Base, UUIDPrimaryKeyMixin, TenantMixin, TimestampMixin):
         ExecutionModeType(), nullable=False
     )
     status: Mapped[common_pb2.ExecutionStatus.ValueType] = mapped_column(
-        SessionStatusType(), default=3, nullable=False
-    )  # STOPPED=3
+        SessionStatusType(), default=common_pb2.EXECUTION_STATUS_STOPPED, nullable=False
+    )
     config: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
     symbols: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -74,6 +84,9 @@ class Order(Base, UUIDPrimaryKeyMixin, TenantMixin, TimestampMixin):
 
     __tablename__ = "orders"
     __table_args__ = (
+        # The submission idempotency key (and the ledger event_id seed) — the DB
+        # must reject a duplicate row even if the app-level dedup check races.
+        UniqueConstraint("client_order_id", name="uq_orders_client_order_id"),
         Index("ix_orders_tenant_status", "tenant_id", "status"),
         Index("ix_orders_session", "session_id"),
         Index("ix_orders_symbol", "symbol"),

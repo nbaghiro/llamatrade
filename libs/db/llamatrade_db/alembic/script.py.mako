@@ -4,6 +4,9 @@ Revision ID: ${up_revision}
 Revises: ${down_revision | comma,n}
 Create Date: ${create_date}
 
+Migrations are forward-only in operation and follow expand-and-contract: add the
+new shape, migrate readers, drop the old shape in a later release. ``downgrade``
+is for local development only, not an operational rollback tool.
 """
 from typing import Sequence, Union
 

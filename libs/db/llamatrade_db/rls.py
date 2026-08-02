@@ -13,7 +13,9 @@ Two access modes:
 - **system** — ``app.rls_bypass`` = ``'on'`` → policies pass unconditionally, for
   trusted, non-request background sweeps that legitimately span tenants (equity
   snapshot, reconciliation). Set only by server code via
-  :func:`llamatrade_db.system_session`; never influenced by request input.
+  :func:`llamatrade_db.system_session`; never influenced by request input. Every
+  activation emits an audit log line (caller, reason, tenant scope) and
+  increments ``llamatrade_db_rls_bypass_total``.
 
 ``FORCE ROW LEVEL SECURITY`` makes the policy apply to the table *owner* too;
 without it, the owning role (which migrations run as) silently bypasses RLS. Note
@@ -37,7 +39,7 @@ logger = logging.getLogger(__name__)
 TENANT_GUC = "app.current_tenant"
 BYPASS_GUC = "app.rls_bypass"
 
-_PROD_ENVIRONMENTS = {"production", "staging"}
+PROD_ENVIRONMENTS = frozenset({"production", "staging"})
 
 # A row is visible when a trusted system bypass is active, or the row's tenant
 # matches the transaction-local tenant GUC. ``NULLIF(..., '')`` maps an unset or
@@ -55,6 +57,7 @@ LEDGER_RLS_TABLES: tuple[str, ...] = (
     "ledger_lots",
     "ledger_events",
     "ledger_sleeve_snapshots",
+    "ledger_projection_checkpoints",
 )
 
 # Every tenant-scoped table platform-wide (carries ``tenant_id`` via
@@ -72,12 +75,14 @@ RLS_TABLES: tuple[str, ...] = (
     "alpaca_credentials",
     "oauth_identities",
     "api_keys",
+    "auth_tokens",
     # audit / risk
     "audit_logs",
     "risk_configs",
     "daily_pnl",
     # backtest
     "backtests",
+    "backtest_results",
     # billing
     "subscriptions",
     "usage_records",
@@ -89,10 +94,12 @@ RLS_TABLES: tuple[str, ...] = (
     "ledger_lots",
     "ledger_events",
     "ledger_sleeve_snapshots",
+    "ledger_projection_checkpoints",
     # notification
     "alerts",
     "notifications",
     "notification_channels",
+    "notification_deliveries",
     "webhooks",
     # strategy
     "strategies",
@@ -102,6 +109,19 @@ RLS_TABLES: tuple[str, ...] = (
     "trading_sessions",
     "orders",
     "positions",
+)
+
+# Model tables that intentionally carry no ``tenant_id`` and therefore no RLS
+# policy, each with the reason it is safe. ``test_rls`` asserts these are the
+# ONLY non-tenant tables, so a new child-keyed table holding tenant data cannot
+# slip through unclassified (the parity check is otherwise blind to a table
+# without a ``tenant_id`` column).
+RLS_EXEMPT_TABLES: frozenset[str] = frozenset(
+    {
+        "tenants",  # the tenant root itself; RLS would be self-referential
+        "plans",  # global subscription-plan catalog, shared across tenants
+        "oauth_pending_signups",  # pre-tenant signup staging; no tenant exists yet
+    }
 )
 
 
@@ -126,7 +146,7 @@ async def assert_rls_capable(conn: AsyncConnection) -> None:
         f"DB role '{row.role}' bypasses RLS (superuser/BYPASSRLS); tenant row-level "
         "security is INERT. Connect as a NOSUPERUSER NOBYPASSRLS app role."
     )
-    if os.getenv("ENVIRONMENT", "development").lower() in _PROD_ENVIRONMENTS:
+    if os.getenv("ENVIRONMENT", "development").lower() in PROD_ENVIRONMENTS:
         raise RuntimeError(message)
     logger.warning(message)
 

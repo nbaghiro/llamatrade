@@ -7,6 +7,8 @@ a DB enum drifts from its proto counterpart — the exact regression that let
 ``alert_condition_type`` silently drop ``RECONCILIATION_DRIFT``/``SLEEVE_FROZEN``.
 """
 
+import re
+from pathlib import Path
 from typing import cast
 
 import pytest
@@ -76,6 +78,64 @@ def test_proto_enum_fully_mapped(
     assert len(list(type_decorator._str_enum)) == len(proto_values)
     # _str_to_int is the exact inverse of _int_to_str.
     assert type_decorator._str_to_int == {v: k for k, v in type_decorator._int_to_str.items()}
+
+
+# PostgreSQL label sets, read from the migrations that own them. A proto value
+# mapped to a label the DB type never gained fails on INSERT in production and
+# nowhere else, so the third side of the triangle (proto <-> StrEnum <-> PG) is
+# checked here too.
+_VERSIONS_DIR = Path(__file__).resolve().parents[1] / "llamatrade_db" / "alembic" / "versions"
+_ADJACENT_LITERALS_RE = re.compile(r'"\s*\n\s*"')
+_CREATE_TYPE_RE = re.compile(r"CREATE TYPE (\w+) AS ENUM\s*\(([^)]*)\)", re.S)
+_ADD_VALUE_RE = re.compile(r"ALTER TYPE (\w+) ADD VALUE (?:IF NOT EXISTS )?'([^']+)'")
+_LABEL_RE = re.compile(r"'([^']+)'")
+
+
+def _postgres_enum_labels() -> dict[str, list[str]]:
+    """Every ``CREATE TYPE ... AS ENUM`` / ``ADD VALUE`` label, keyed by type name."""
+    labels: dict[str, list[str]] = {}
+    for path in sorted(_VERSIONS_DIR.glob("*.py")):
+        # Migrations split long DDL over adjacent string literals; rejoin them.
+        text = _ADJACENT_LITERALS_RE.sub("", path.read_text())
+        for name, body in _CREATE_TYPE_RE.findall(text):
+            labels.setdefault(name, []).extend(_LABEL_RE.findall(body))
+        for name, value in _ADD_VALUE_RE.findall(text):
+            labels.setdefault(name, []).append(value)
+    return labels
+
+
+_PG_ENUM_LABELS = _postgres_enum_labels()
+
+
+def test_migration_enum_labels_are_discovered() -> None:
+    """Guard the guard — a broken parser must not make every label test vacuous."""
+    assert len(_PG_ENUM_LABELS) > 20
+    assert _PG_ENUM_LABELS["order_side"] == ["buy", "sell"]
+
+
+@pytest.mark.parametrize(
+    "type_decorator,_proto", PROTO_ENUM_CASES, ids=lambda c: getattr(c, "__name__", "")
+)
+def test_db_labels_match_postgres_enum(
+    type_decorator: type[et._ProtoEnumType[int]], _proto: EnumTypeWrapper
+) -> None:
+    """The StrEnum's labels must be exactly the PostgreSQL type's labels."""
+    pg_type = type_decorator.impl.name
+    assert pg_type in _PG_ENUM_LABELS, f"no migration defines PostgreSQL type {pg_type!r}"
+    assert {member.value for member in type_decorator._str_enum} == set(_PG_ENUM_LABELS[pg_type])
+
+
+def test_session_status_labels_match_postgres_enum() -> None:
+    """SessionStatusType is not in PROTO_ENUM_CASES (subset mapping) but still bridges a type."""
+    assert {member.value for member in et._SessionStatus} == set(_PG_ENUM_LABELS["session_status"])
+    assert "pending" not in _PG_ENUM_LABELS["session_status"]
+
+
+def test_memory_fact_category_labels_match_postgres_enum() -> None:
+    """The one non-proto-backed bridged enum is held to the same rule."""
+    assert {member.value for member in et.MemoryFactCategory} == set(
+        _PG_ENUM_LABELS["memory_fact_category"]
+    )
 
 
 LEDGER_ENUM_CASES: list[tuple[type, EnumTypeWrapper, str]] = [

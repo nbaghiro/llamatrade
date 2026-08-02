@@ -6,6 +6,7 @@ subscription falls back to the free tier.
 
 from __future__ import annotations
 
+import sys
 from uuid import UUID
 
 from sqlalchemy import select
@@ -22,6 +23,9 @@ _ENTITLED_STATUSES = (
 
 # Limits applied when a tenant has no active subscription.
 FREE_TIER_LIMITS: dict[str, int] = {"live_strategies": 1, "backtests_per_month": 10}
+
+# Plans encode an unlimited resource as null in their limits JSON.
+UNLIMITED: int = sys.maxsize
 
 
 class PlanLimitExceededError(Exception):
@@ -46,7 +50,8 @@ async def get_plan_limit(db: AsyncSession, tenant_id: UUID, key: str) -> int:
         .limit(1)
     )
     if isinstance(limits, dict) and key in limits:
-        return int(limits[key])
+        raw = limits[key]
+        return UNLIMITED if raw is None else int(raw)
     return FREE_TIER_LIMITS.get(key, 0)
 
 

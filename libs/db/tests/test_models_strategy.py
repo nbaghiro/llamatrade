@@ -128,11 +128,12 @@ class TestStrategyVersion:
         assert "version" in columns
         assert "config_sexpr" in columns
         assert "symbols" in columns
-        assert "timeframe" in columns
+        assert "rebalance" in columns
         assert "changelog" in columns
         # Derived representations are not stored — the DSL string is the source of truth.
         assert "config_json" not in columns
         assert "parameters" not in columns
+        assert "timeframe" not in columns
         assert "created_by" in columns
 
     def test_config_sexpr_not_nullable(self) -> None:

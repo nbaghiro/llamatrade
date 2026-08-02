@@ -55,31 +55,54 @@ class Alert(Base, UUIDPrimaryKeyMixin, TenantMixin, TimestampMixin):
 
 
 class Notification(Base, UUIDPrimaryKeyMixin, TenantMixin, TimestampMixin):
-    """Sent notification record."""
+    """The logical in-app notification row — the durable floor of every flow.
+
+    ``event_id`` is the envelope's deterministic id; the unique index makes the
+    consumer's persist idempotent under redelivery. External-channel attempts
+    live in ``notification_deliveries``, one row per (notification, target).
+    """
 
     __tablename__ = "notifications"
     __table_args__ = (
         Index("ix_notifications_tenant_created", "tenant_id", "created_at"),
         Index("ix_notifications_user", "user_id"),
+        Index("ix_notifications_event_id", "event_id", unique=True),
     )
 
-    user_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
+    event_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    user_id: Mapped[UUID | None] = mapped_column(PG_UUID(as_uuid=True), nullable=True)
     alert_id: Mapped[UUID | None] = mapped_column(PG_UUID(as_uuid=True), nullable=True)
+    category: Mapped[int] = mapped_column(Integer, nullable=False)  # proto NotificationCategory
+    severity: Mapped[int] = mapped_column(Integer, nullable=False)  # proto NotificationSeverity
     notification_type: Mapped[notification_pb2.NotificationType.ValueType] = mapped_column(
         NotificationTypeType(), nullable=False
-    )
-    channel: Mapped[notification_pb2.ChannelType.ValueType] = mapped_column(
-        ChannelTypeType(), nullable=False
     )
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     message: Mapped[str] = mapped_column(Text, nullable=False)
     data: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class NotificationDelivery(Base, UUIDPrimaryKeyMixin, TenantMixin, TimestampMixin):
+    """One external-channel delivery attempt target for a notification."""
+
+    __tablename__ = "notification_deliveries"
+    __table_args__ = (
+        Index("ix_notification_deliveries_notification", "notification_id"),
+        Index("ix_notification_deliveries_tenant_status", "tenant_id", "status"),
+    )
+
+    notification_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
+    channel: Mapped[notification_pb2.ChannelType.ValueType] = mapped_column(
+        ChannelTypeType(), nullable=False
+    )
+    destination: Mapped[str] = mapped_column(Text, nullable=False)
     status: Mapped[int] = mapped_column(
         NotificationStatusType(), default=1, nullable=False
     )  # PENDING=1
-    sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    attempts: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    delivered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class NotificationChannel(Base, UUIDPrimaryKeyMixin, TenantMixin, TimestampMixin):
@@ -113,9 +136,9 @@ class Webhook(Base, UUIDPrimaryKeyMixin, TenantMixin, TimestampMixin):
     secret: Mapped[str | None] = mapped_column(
         String(255), nullable=True
     )  # For signature verification
-    events: Mapped[list[str]] = mapped_column(
+    events: Mapped[list[int]] = mapped_column(
         JSONB, nullable=False, default=list
-    )  # List of event types to send
+    )  # NotificationCategory ints; empty = all categories
     headers: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)  # Custom headers
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     last_triggered_at: Mapped[datetime | None] = mapped_column(

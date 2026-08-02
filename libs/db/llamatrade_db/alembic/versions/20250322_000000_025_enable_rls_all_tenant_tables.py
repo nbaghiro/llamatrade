@@ -42,10 +42,20 @@ depends_on: str | Sequence[str] | None = None
 _ORM_ONLY_TABLES = (AuditLog, DailyPnL, RiskConfig, StrategyExecution)
 
 # ``RLS_TABLES`` is the live constant, so a table added to it by a *later*
-# revision would be enabled here — before it exists. Such tables own their own
-# RLS DDL in the revision that creates them (029 for ``oauth_identities``) and
-# must be listed here so a from-scratch upgrade does not fail at this revision.
-_CREATED_BY_LATER_REVISIONS = frozenset({"oauth_identities"})
+# revision would be enabled here — before it (or its ``tenant_id`` column)
+# exists. Such tables own their own RLS DDL in the revision that provides the
+# tenant column (029 for ``oauth_identities``, 034 for
+# ``ledger_projection_checkpoints``, 039 for ``backtest_results``) and must be
+# listed here so a from-scratch upgrade does not fail at this revision.
+_CREATED_BY_LATER_REVISIONS = frozenset(
+    {
+        "oauth_identities",
+        "ledger_projection_checkpoints",
+        "backtest_results",
+        "notification_deliveries",
+        "auth_tokens",
+    }
+)
 
 
 def _tables() -> tuple[str, ...]:

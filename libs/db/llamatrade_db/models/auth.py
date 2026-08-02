@@ -71,6 +71,8 @@ class AlpacaCredentials(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     auth_type: Mapped[str] = mapped_column(String(20), default="api_key", nullable=False)
     api_key_encrypted: Mapped[str | None] = mapped_column(Text, nullable=True)
     api_secret_encrypted: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Display prefix stored at create so list/get never decrypt; NULL on legacy/oauth rows.
+    api_key_prefix: Mapped[str | None] = mapped_column(String(12), nullable=True)
     access_token_encrypted: Mapped[str | None] = mapped_column(Text, nullable=True)
     refresh_token_encrypted: Mapped[str | None] = mapped_column(Text, nullable=True)
     token_expires_at: Mapped[datetime | None] = mapped_column(
@@ -125,6 +127,26 @@ class OAuthPendingSignup(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     )
     is_paper: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class AuthToken(Base, UUIDPrimaryKeyMixin, TimestampMixin):
+    """Single-use email token (password reset, email verification).
+
+    Only the SHA-256 of the issued token is stored; consumption sets
+    ``used_at`` under a row lock, so a token can never redeem twice.
+    """
+
+    __tablename__ = "auth_tokens"
+    __table_args__ = (Index("ix_auth_tokens_hash", "token_hash", unique=True),)
+
+    tenant_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False, index=True
+    )
+    user_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
+    token_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    purpose: Mapped[str] = mapped_column(String(20), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class APIKey(Base, UUIDPrimaryKeyMixin, TimestampMixin):

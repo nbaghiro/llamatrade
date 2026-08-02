@@ -108,6 +108,12 @@ class TestBacktestResult:
         col = BacktestResult.__table__.columns["backtest_id"]
         assert col.unique is True
 
+    def test_backtest_result_has_tenant_id(self) -> None:
+        """Test BacktestResult carries a non-nullable tenant_id for RLS scope."""
+        columns = BacktestResult.__table__.columns
+        assert "tenant_id" in columns
+        assert columns["tenant_id"].nullable is False
+
     def test_backtest_result_has_backtest_relationship(self) -> None:
         """Test BacktestResult has backtest relationship."""
         assert hasattr(BacktestResult, "backtest")

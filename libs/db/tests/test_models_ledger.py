@@ -1,5 +1,6 @@
 """Tests for llamatrade_db.models.ledger module (Portfolio Ledger, Phase 0)."""
 
+from sqlalchemy import BigInteger, UniqueConstraint
 from sqlalchemy.orm import configure_mappers
 
 from llamatrade_db.models.ledger import (
@@ -8,6 +9,7 @@ from llamatrade_db.models.ledger import (
     LedgerEventType,
     Lot,
     LotSide,
+    ProjectionCheckpoint,
     Sleeve,
     SleeveSnapshot,
     SleeveStatus,
@@ -57,6 +59,20 @@ class TestAccountModel:
 
     def test_credentials_unique(self) -> None:
         assert not Account.__table__.columns["credentials_id"].nullable
+
+    def test_broker_account_id_is_nullable(self) -> None:
+        """Accounts booked before the broker id was recorded carry NULL."""
+        column = Account.__table__.columns["alpaca_account_id"]
+        assert column.nullable
+        assert str(column.type) == "VARCHAR(64)"
+
+    def test_broker_account_id_is_unique_per_tenant(self) -> None:
+        constraint = next(
+            c
+            for c in Account.__table__.constraints
+            if isinstance(c, UniqueConstraint) and c.name == "uq_ledger_accounts_broker"
+        )
+        assert [c.name for c in constraint.columns] == ["tenant_id", "alpaca_account_id"]
 
     def test_has_sleeves_relationship(self) -> None:
         assert hasattr(Account, "sleeves")
@@ -166,6 +182,40 @@ class TestSleeveSnapshotModel:
             "lots",
         ):
             assert name in cols
+
+
+class TestProjectionCheckpointModel:
+    def test_tablename(self) -> None:
+        assert ProjectionCheckpoint.__tablename__ == "ledger_projection_checkpoints"
+
+    def test_required_columns(self) -> None:
+        cols = ProjectionCheckpoint.__table__.columns
+        for name in (
+            "id",
+            "tenant_id",
+            "account_id",
+            "as_of_sequence",
+            "state",
+            "created_at",
+            "updated_at",
+        ):
+            assert name in cols
+
+    def test_state_and_sequence_not_nullable(self) -> None:
+        cols = ProjectionCheckpoint.__table__.columns
+        assert cols["state"].nullable is False
+        assert cols["as_of_sequence"].nullable is False
+
+    def test_unique_per_tenant_account(self) -> None:
+        constraints = {
+            tuple(c.name for c in constraint.columns)
+            for constraint in ProjectionCheckpoint.__table__.constraints
+            if isinstance(constraint, UniqueConstraint)
+        }
+        assert ("tenant_id", "account_id") in constraints
+
+    def test_sequence_is_bigint(self) -> None:
+        assert isinstance(ProjectionCheckpoint.__table__.columns["as_of_sequence"].type, BigInteger)
 
 
 class TestLedgerMapping:

@@ -34,6 +34,7 @@ from sqlalchemy import (
     String,
     UniqueConstraint,
     func,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
@@ -112,15 +113,24 @@ class LedgerEventType(StrEnum):
 
 
 class Account(Base, UUIDPrimaryKeyMixin, TenantMixin, TimestampMixin):
-    """A brokerage account (one per broker credential set) — reconciliation anchor."""
+    """A brokerage account (one per broker account) — reconciliation anchor.
+
+    ``alpaca_account_id`` is the durable identity: a credential set that is
+    deleted and re-added resolves back to this row (``credentials_id`` is
+    re-pointed) instead of forking a second book over the same broker positions.
+    It is nullable for rows created before the broker id was recorded, and
+    Postgres treats NULLs as distinct, so those rows never collide.
+    """
 
     __tablename__ = "ledger_accounts"
     __table_args__ = (
         UniqueConstraint("credentials_id", name="uq_ledger_accounts_credentials"),
+        UniqueConstraint("tenant_id", "alpaca_account_id", name="uq_ledger_accounts_broker"),
         Index("ix_ledger_accounts_tenant_id", "tenant_id"),
     )
 
     credentials_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
+    alpaca_account_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     base_currency: Mapped[str] = mapped_column(String(3), nullable=False, default="USD")
 
     sleeves: Mapped[list[Sleeve]] = relationship("Sleeve", back_populates="account")
@@ -224,13 +234,58 @@ class LedgerEvent(Base, TenantMixin, TimestampMixin):
     )
 
 
+# The calendar-day half of the sleeve-snapshot idempotency key. Immutable (the
+# zone is fixed), so Postgres accepts it in an index; shared with migration 038.
+SNAPSHOT_DAY_EXPRESSION = "((created_at AT TIME ZONE 'UTC')::date)"
+
+
+class ProjectionCheckpoint(Base, UUIDPrimaryKeyMixin, TenantMixin, TimestampMixin):
+    """Persisted incremental-projection checkpoint for one account.
+
+    ``state`` is the serialized fold state (projection + reservation state) as of
+    ``as_of_sequence``; a restarted process seeds from it and folds only the
+    delta instead of replaying the account's full history. Derived data — a row
+    may be deleted at any time (the next projection re-folds from zero).
+    """
+
+    __tablename__ = "ledger_projection_checkpoints"
+    __table_args__ = (
+        UniqueConstraint(
+            "tenant_id", "account_id", name="uq_ledger_projection_checkpoints_account"
+        ),
+        Index("ix_ledger_projection_checkpoints_tenant_id", "tenant_id"),
+    )
+
+    account_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
+    as_of_sequence: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    state: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+
+
 class SleeveSnapshot(Base, UUIDPrimaryKeyMixin, TenantMixin, TimestampMixin):
-    """Materialized sleeve state at a ledger sequence, to avoid full replays."""
+    """Materialized sleeve state at a ledger sequence, to avoid full replays.
+
+    ``(sleeve_id, as_of_sequence, UTC day)`` is the idempotency key: these rows
+    are also the equity curve the read layer serves, and a second row for one
+    sleeve at one ledger sequence on one day is a duplicate point that skews
+    period returns, volatility and Sharpe. The unique index makes a repeated
+    write a no-op at the database.
+
+    The day is part of the key because a sleeve's ledger sequence only advances
+    when it trades: a held position is re-marked every pass at an unchanged
+    sequence, and those daily marks are the curve. Keying on the pair alone
+    would collapse an idle sleeve's whole history to one point.
+    """
 
     __tablename__ = "ledger_sleeve_snapshots"
     __table_args__ = (
         Index("ix_ledger_sleeve_snapshots_tenant_id", "tenant_id"),
-        Index("ix_ledger_sleeve_snapshots_sleeve_seq", "sleeve_id", "as_of_sequence"),
+        Index(
+            "ix_ledger_sleeve_snapshots_sleeve_seq",
+            "sleeve_id",
+            "as_of_sequence",
+            text(SNAPSHOT_DAY_EXPRESSION),
+            unique=True,
+        ),
     )
 
     sleeve_id: Mapped[UUID] = mapped_column(

@@ -5,6 +5,7 @@ from llamatrade_db.models.trading import (
     Position,
     TradingSession,
 )
+from llamatrade_proto.generated import common_pb2
 
 
 class TestTradingSession:
@@ -32,6 +33,14 @@ class TestTradingSession:
         assert "last_heartbeat" in columns
         assert "error_message" in columns
         assert "created_by" in columns
+
+    def test_trading_session_status_defaults_to_stopped(self) -> None:
+        """A session created without an explicit status is stopped, not paused —
+        a 'paused' default reads as a live session waiting to resume."""
+        col = TradingSession.__table__.columns["status"]
+        assert col.default is not None
+        assert col.default.arg == common_pb2.EXECUTION_STATUS_STOPPED
+        assert col.default.arg != common_pb2.EXECUTION_STATUS_PAUSED
 
     def test_trading_session_name_not_nullable(self) -> None:
         """Test name column is not nullable."""

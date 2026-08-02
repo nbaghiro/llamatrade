@@ -17,6 +17,7 @@ from llamatrade_db.models.audit import (
 from llamatrade_db.models.auth import (
     AlpacaCredentials,
     APIKey,
+    AuthToken,
     OAuthIdentity,
     OAuthPendingSignup,
     Tenant,
@@ -39,19 +40,20 @@ from llamatrade_db.models.ledger import (
     LedgerEventType,
     Lot,
     LotSide,
+    ProjectionCheckpoint,
     Sleeve,
     SleeveSnapshot,
     SleeveStatus,
     SleeveType,
 )
 
-# NOTE: Enum constants should be imported directly from llamatrade_proto.generated.*_pb2
-# e.g., from llamatrade_proto.generated.trading_pb2 import ORDER_SIDE_BUY
+# Enum constants come from llamatrade_proto.generated.*_pb2, not here.
 # Market-data bars/quotes/trades live in the market-data service's Timescale store, not here.
 from llamatrade_db.models.notification import (
     Alert,
     Notification,
     NotificationChannel,
+    NotificationDelivery,
     Webhook,
 )
 from llamatrade_db.models.strategy import (
@@ -85,6 +87,7 @@ __all__ = [
     "OAuthIdentity",
     "OAuthPendingSignup",
     "APIKey",
+    "AuthToken",
     # Strategy
     "Strategy",
     "StrategyVersion",
@@ -101,6 +104,7 @@ __all__ = [
     "Sleeve",
     "Lot",
     "LedgerEvent",
+    "ProjectionCheckpoint",
     "SleeveSnapshot",
     "SleeveType",
     "SleeveStatus",
@@ -110,6 +114,7 @@ __all__ = [
     "Alert",
     "Notification",
     "NotificationChannel",
+    "NotificationDelivery",
     "Webhook",
     # Billing
     "Plan",

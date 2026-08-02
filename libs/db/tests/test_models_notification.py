@@ -4,6 +4,7 @@ from llamatrade_db.models.notification import (
     Alert,
     Notification,
     NotificationChannel,
+    NotificationDelivery,
     Webhook,
 )
 
@@ -68,14 +69,13 @@ class TestNotification:
         assert "user_id" in columns
         assert "alert_id" in columns
         assert "notification_type" in columns
-        assert "channel" in columns
+        assert "event_id" in columns
+        assert "category" in columns
+        assert "severity" in columns
         assert "title" in columns
         assert "message" in columns
         assert "data" in columns
-        assert "status" in columns
-        assert "sent_at" in columns
         assert "read_at" in columns
-        assert "error_message" in columns
 
     def test_notification_title_not_nullable(self) -> None:
         """Test title column is not nullable."""
@@ -87,10 +87,14 @@ class TestNotification:
         col = Notification.__table__.columns["message"]
         assert col.nullable is False
 
-    def test_notification_channel_not_nullable(self) -> None:
-        """Test channel column is not nullable."""
-        col = Notification.__table__.columns["channel"]
-        assert col.nullable is False
+    def test_notification_event_id_unique(self) -> None:
+        """Test event_id has a unique index (redelivery dedup)."""
+        idx = {i.name: i for i in Notification.__table__.indexes}
+        assert idx["ix_notifications_event_id"].unique is True
+
+    def test_notification_user_id_nullable(self) -> None:
+        """Test user_id is nullable (tenant-scoped rows leave it null)."""
+        assert Notification.__table__.columns["user_id"].nullable is True
 
 
 class TestNotificationChannel:
@@ -165,3 +169,29 @@ class TestWebhook:
         """Test failure_count has default value."""
         col = Webhook.__table__.columns["failure_count"]
         assert col.default is not None
+
+
+class TestNotificationDelivery:
+    """Tests for NotificationDelivery model."""
+
+    def test_delivery_tablename(self) -> None:
+        assert NotificationDelivery.__tablename__ == "notification_deliveries"
+
+    def test_delivery_has_required_columns(self) -> None:
+        columns = NotificationDelivery.__table__.columns
+        for name in (
+            "id",
+            "tenant_id",
+            "notification_id",
+            "channel",
+            "destination",
+            "status",
+            "attempts",
+            "last_error",
+            "delivered_at",
+        ):
+            assert name in columns
+
+    def test_delivery_status_defaults_pending(self) -> None:
+        col = NotificationDelivery.__table__.columns["status"]
+        assert col.default is not None and col.default.arg == 1

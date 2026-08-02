@@ -6,6 +6,7 @@ import pkgutil
 from llamatrade_db.rls import (
     BYPASS_GUC,
     LEDGER_RLS_TABLES,
+    RLS_EXEMPT_TABLES,
     RLS_TABLES,
     TENANT_GUC,
     disable_rls_statements,
@@ -13,12 +14,8 @@ from llamatrade_db.rls import (
 )
 
 
-def test_rls_tables_match_tenant_scoped_metadata() -> None:
-    """RLS_TABLES must cover EXACTLY every tenant-scoped table.
-
-    Fails if a new ``tenant_id`` table is added without RLS coverage (or a table
-    is dropped), so the platform-wide RLS migration can never silently miss one.
-    """
+def _model_tables() -> tuple[set[str], set[str]]:
+    """(tenant_scoped, non_tenant_scoped) table names across the real models."""
     import llamatrade_db.models as models_pkg
 
     for mod in pkgutil.iter_modules(models_pkg.__path__):
@@ -27,15 +24,43 @@ def test_rls_tables_match_tenant_scoped_metadata() -> None:
 
     # Only real model classes (test suites register throwaway models on the same
     # shared Base.metadata, so filter by defining module).
-    tenant_tables = {
-        mapper.class_.__tablename__
-        for mapper in Base.registry.mappers
-        if mapper.class_.__module__.startswith("llamatrade_db.models")
-        and "tenant_id" in mapper.class_.__table__.columns
-    }
+    tenant: set[str] = set()
+    non_tenant: set[str] = set()
+    for mapper in Base.registry.mappers:
+        cls = mapper.class_
+        if not cls.__module__.startswith("llamatrade_db.models"):
+            continue
+        if "tenant_id" in cls.__table__.columns:
+            tenant.add(cls.__tablename__)
+        else:
+            non_tenant.add(cls.__tablename__)
+    return tenant, non_tenant
+
+
+def test_rls_tables_match_tenant_scoped_metadata() -> None:
+    """RLS_TABLES must cover EXACTLY every tenant-scoped table.
+
+    Fails if a new ``tenant_id`` table is added without RLS coverage (or a table
+    is dropped), so the platform-wide RLS migration can never silently miss one.
+    """
+    tenant_tables, _ = _model_tables()
     assert set(RLS_TABLES) == tenant_tables
     assert len(RLS_TABLES) == len(set(RLS_TABLES))  # no duplicates
     assert set(LEDGER_RLS_TABLES) <= set(RLS_TABLES)
+
+
+def test_non_tenant_tables_are_declared_exemptions() -> None:
+    """Every table WITHOUT a tenant_id must be a documented RLS exemption.
+
+    A child-keyed table holding tenant data (e.g. ``backtest_results`` before
+    039) has no ``tenant_id`` column, so the metadata parity check above cannot
+    see it. This asserts the exempt set is EXACTLY the non-tenant tables, so a
+    new such table forces a conscious choice: give it a ``tenant_id`` (moving it
+    under RLS) or record it in ``RLS_EXEMPT_TABLES`` with a reason.
+    """
+    _, non_tenant_tables = _model_tables()
+    assert non_tenant_tables == set(RLS_EXEMPT_TABLES)
+    assert set(RLS_TABLES).isdisjoint(RLS_EXEMPT_TABLES)
 
 
 def test_gucs_are_namespaced() -> None:
@@ -72,4 +97,5 @@ def test_ledger_tables_cover_every_tenant_scoped_ledger_table() -> None:
         "ledger_lots",
         "ledger_events",
         "ledger_sleeve_snapshots",
+        "ledger_projection_checkpoints",
     )

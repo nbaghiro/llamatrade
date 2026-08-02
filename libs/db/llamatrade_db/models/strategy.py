@@ -93,8 +93,9 @@ class StrategyVersion(Base, UUIDPrimaryKeyMixin, TenantMixin, TimestampMixin):
     """Immutable version snapshot of a strategy.
 
     ``config_sexpr`` (the DSL string) is the single source of truth; the JSON IR and visual tree
-    are derived from it on demand. ``symbols``/``timeframe`` are indexed projections recomputed
-    from it on write. tenant_id is defense-in-depth isolation (already scoped via strategy_id).
+    are derived from it on demand. ``symbols``/``rebalance`` are projections recomputed from it on
+    write (for list display/filtering). tenant_id is defense-in-depth isolation (already scoped via
+    strategy_id).
     """
 
     __tablename__ = "strategy_versions"
@@ -116,7 +117,7 @@ class StrategyVersion(Base, UUIDPrimaryKeyMixin, TenantMixin, TimestampMixin):
 
     # Projections derived from the DSL on write, for efficient filtering (symbols is GIN-indexed).
     symbols: Mapped[list[str]] = mapped_column(JSONB, nullable=False)
-    timeframe: Mapped[str] = mapped_column(String(10), nullable=False)
+    rebalance: Mapped[str] = mapped_column(String(20), nullable=False, default="daily")
 
     changelog: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_by: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)

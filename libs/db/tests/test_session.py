@@ -142,6 +142,50 @@ class TestGetEngine:
             await close_db()
 
 
+class TestConnectServerSettings:
+    """Tests for the connect-time Postgres GUCs applied to every connection."""
+
+    def test_default_bounds_idle_in_transaction(self) -> None:
+        """The default caps idle-in-transaction above the ledger 60s window."""
+        from llamatrade_db.session import _connect_server_settings
+
+        with patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("DB_IDLE_IN_TRANSACTION_TIMEOUT_MS", None)
+            os.environ.pop("DB_TRANSACTION_TIMEOUT_MS", None)
+            settings = _connect_server_settings()
+
+        assert settings["idle_in_transaction_session_timeout"] == "120000"
+        assert "transaction_timeout" not in settings
+
+    def test_env_overrides_and_enables_transaction_timeout(self) -> None:
+        """Both timeouts are configurable; transaction_timeout is opt-in."""
+        from llamatrade_db.session import _connect_server_settings
+
+        with patch.dict(
+            os.environ,
+            {
+                "DB_IDLE_IN_TRANSACTION_TIMEOUT_MS": "45000",
+                "DB_TRANSACTION_TIMEOUT_MS": "200000",
+            },
+        ):
+            settings = _connect_server_settings()
+
+        assert settings["idle_in_transaction_session_timeout"] == "45000"
+        assert settings["transaction_timeout"] == "200000"
+
+    def test_transaction_timeout_zero_is_omitted(self) -> None:
+        """A zero/empty transaction_timeout is dropped, not sent to Postgres."""
+        from llamatrade_db.session import _connect_server_settings
+
+        with patch.dict(os.environ, {"DB_TRANSACTION_TIMEOUT_MS": "0"}):
+            settings = _connect_server_settings()
+        assert "transaction_timeout" not in settings
+
+        with patch.dict(os.environ, {"DB_TRANSACTION_TIMEOUT_MS": "   "}):
+            settings = _connect_server_settings()
+        assert "transaction_timeout" not in settings
+
+
 class TestGetSessionMaker:
     """Tests for get_session_maker function."""
 
@@ -249,8 +293,7 @@ class TestGetDb:
                 session_ref = session
                 break
 
-            # Session should be closed after the generator exits
-            # (We can't easily test this without more complex mocking)
+            # The generator yielded a session before exiting.
             assert session_ref is not None
         finally:
             await close_db()
