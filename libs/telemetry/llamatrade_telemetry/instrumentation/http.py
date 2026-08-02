@@ -40,6 +40,16 @@ HTTP_REQUESTS_IN_PROGRESS = registry.up_down_counter(
     ["transport", "method", "route"],
     "Inbound requests currently being processed",
 )
+HTTP_STREAMS_TOTAL = registry.counter(
+    "llamatrade_http_streams_total",
+    ["transport", "method", "route"],
+    "Streaming responses started (multi-chunk bodies excluded from the latency histogram)",
+)
+HTTP_STREAMS_ACTIVE = registry.up_down_counter(
+    "llamatrade_http_streams_active",
+    ["transport", "method", "route"],
+    "Streaming responses currently open",
+)
 
 
 def _headers(scope: Scope) -> dict[str, str]:
@@ -112,8 +122,12 @@ class TelemetryMiddleware:
                 response_headers["X-Response-Time"] = f"{perf_counter() - start:.3f}s"
             elif message["type"] == "http.response.body" and message.get("more_body"):
                 # Multi-chunk body => a streaming RPC. Its lifetime is unbounded,
-                # so it must not pollute the unary latency histogram.
-                is_streaming = True
+                # so it must not pollute the unary latency histogram; count it
+                # once here and track it as active until completion.
+                if not is_streaming:
+                    is_streaming = True
+                    HTTP_STREAMS_TOTAL.labels(**labels).inc()
+                    HTTP_STREAMS_ACTIVE.labels(**labels).inc()
             await send(message)
 
         parent = extract_context(headers)
@@ -147,6 +161,8 @@ class TelemetryMiddleware:
             # duration would otherwise land in +Inf and skew p99).
             if not is_streaming:
                 HTTP_REQUEST_DURATION.labels(**labels).observe(duration)
+            else:
+                HTTP_STREAMS_ACTIVE.labels(**labels).dec()
             HTTP_REQUESTS_IN_PROGRESS.labels(**labels).dec()
             logger.info("HTTP %s %s %d %.3fs", method, path, status_code, duration)
             clear_request_context()

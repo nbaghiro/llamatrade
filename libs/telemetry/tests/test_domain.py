@@ -33,7 +33,6 @@ def test_trading_domain() -> None:
     t.active_runners.set(3)
     t.bar_stream_connected.set(1)
     t.trade_stream_connected.set(1)
-    t.circuit_breaker_state.set(0)
     out = scrape()
     assert "llamatrade_trading_order_submissions_total" in out
     assert "llamatrade_trading_active_runners 3.0" in out
@@ -63,10 +62,6 @@ def test_marketdata_domain() -> None:
     m.missing_symbol()
     m.stream_message_lag.observe(0.01)
     m.data_staleness.labels(data_type="bars").observe(5.0)
-    m.stream_connections.set(1)
-    m.stream_subscriptions.labels(type="trade").set(10)
-    m.rate_limit_tokens.set(180)
-    m.circuit_breaker_state.set(0)
     assert "llamatrade_marketdata_cache_operations_total" in scrape()
 
 
@@ -90,8 +85,6 @@ def test_backtest_domain() -> None:
     b.progress_publish_failure()
     b.cache_op(tier="redis", result="hit")
     b.execution_duration.observe(30)
-    b.bar_throughput.observe(50000)
-    b.queue_depth.set(2)
     assert "llamatrade_backtest_jobs_total" in scrape()
 
 

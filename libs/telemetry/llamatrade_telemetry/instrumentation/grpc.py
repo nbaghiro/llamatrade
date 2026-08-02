@@ -25,11 +25,6 @@ GRPC_STREAM_MESSAGES_TOTAL = registry.counter(
     ["method", "direction"],
     "Messages sent/received over streaming RPCs",
 )
-GRPC_STREAM_DURATION = registry.histogram(
-    "llamatrade_grpc_stream_duration_seconds",
-    ["method"],
-    "Streaming RPC lifetime",
-)
 
 
 def record_grpc_request(method: str, status: str) -> None:

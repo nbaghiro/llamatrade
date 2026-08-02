@@ -35,6 +35,14 @@ def app() -> FastAPI:
 
         return StreamingResponse(gen(), media_type="text/plain")
 
+    @application.get("/stream-counted")
+    async def stream_counted() -> StreamingResponse:
+        async def gen() -> AsyncIterator[bytes]:
+            for i in range(3):
+                yield f"chunk{i}".encode()
+
+        return StreamingResponse(gen(), media_type="text/plain")
+
     init_telemetry(application, service="mw", version="0.0.0")
     return application
 
@@ -103,3 +111,29 @@ async def test_streaming_skips_duration_histogram(app: FastAPI) -> None:
     assert 'llamatrade_http_requests_total{method="GET",route="/stream"' in out
     # ...but its (unbounded) duration is NOT in the latency histogram.
     assert 'llamatrade_http_request_duration_seconds_count{method="GET",route="/stream"' not in out
+
+
+async def test_streaming_counted_and_active_returns_to_zero(app: FastAPI) -> None:
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://t") as client:
+        assert (await client.get("/stream-counted")).status_code == 200
+        assert (await client.get("/stream-counted")).status_code == 200
+    out = scrape()
+    assert (
+        'llamatrade_http_streams_total{method="GET",route="/stream-counted",transport="http"} 2.0'
+        in out
+    )
+    # Both streams completed, so the active gauge is back to zero.
+    assert (
+        'llamatrade_http_streams_active{method="GET",route="/stream-counted",transport="http"} 0.0'
+        in out
+    )
+
+
+async def test_unary_response_not_counted_as_stream(app: FastAPI) -> None:
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://t") as client:
+        assert (await client.get("/ok")).status_code == 200
+    out = scrape()
+    assert 'llamatrade_http_streams_total{method="GET",route="/ok"' not in out
+    assert 'llamatrade_http_streams_active{method="GET",route="/ok"' not in out

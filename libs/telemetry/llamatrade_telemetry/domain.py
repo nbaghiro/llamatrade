@@ -102,9 +102,6 @@ class TradingMetrics:
         self.trade_stream_connected = registry.gauge(
             "llamatrade_trading_trade_stream_connected", (), "Trade stream connected (1/0)"
         )
-        self.circuit_breaker_state = registry.gauge(
-            "llamatrade_trading_circuit_breaker_state", (), "CB state 0=closed 1=half 2=open"
-        )
 
     def order_submitted(self, side: str, type: str, status: str) -> None:
         self._order_submissions.labels(side=side, type=type, status=status).inc()
@@ -256,18 +253,6 @@ class MarketDataMetrics:
         self.data_staleness = registry.histogram(
             "llamatrade_marketdata_data_staleness_seconds", ["data_type"], "Age of served data"
         )
-        self.stream_connections = registry.gauge(
-            "llamatrade_marketdata_stream_connections", (), "Active upstream connections"
-        )
-        self.stream_subscriptions = registry.gauge(
-            "llamatrade_marketdata_stream_subscriptions", ["type"], "Subscriptions by type"
-        )
-        self.rate_limit_tokens = registry.gauge(
-            "llamatrade_marketdata_rate_limit_tokens_available", (), "Rate-limiter tokens"
-        )
-        self.circuit_breaker_state = registry.gauge(
-            "llamatrade_marketdata_circuit_breaker_state", (), "CB state 0/1/2"
-        )
 
     def cache_op(self, data_type: str, result: str) -> None:
         self._cache_ops.labels(data_type=data_type, result=result).inc()
@@ -344,12 +329,6 @@ class BacktestMetrics:
         )
         self.execution_duration = registry.histogram(
             "llamatrade_backtest_execution_duration_seconds", (), "Wall-clock job duration"
-        )
-        self.bar_throughput = registry.histogram(
-            "llamatrade_backtest_bar_throughput_bars_per_second", (), "Simulation throughput"
-        )
-        self.queue_depth = registry.gauge(
-            "llamatrade_backtest_queue_depth", (), "Pending backtest jobs"
         )
 
     def job(self, state: str) -> None:

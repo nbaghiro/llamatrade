@@ -1,8 +1,10 @@
-"""Database metrics: query timing + connection-pool gauges.
+"""Database metrics: query timing, connection-pool gauges, RLS-bypass count.
 
 The pool gauges are sampled at scrape time from a provider callback (the model
 ``llamatrade_db.get_pool_stats`` already supports), so they always reflect live
-counts without a background sampler.
+counts without a background sampler. ``DB_RLS_BYPASS`` is incremented by
+``llamatrade_db.session`` alongside its audit log line; the per-use detail
+(caller, reason, tenant scope) stays on the log, never on a metric label.
 """
 
 from __future__ import annotations
@@ -21,15 +23,15 @@ DB_QUERY_DURATION = registry.histogram(
     ["operation", "table"],
     "Database query duration",
 )
-DB_POOL_ACQUIRE_WAIT = registry.histogram(
-    "llamatrade_db_pool_acquire_wait_seconds",
-    (),
-    "Time spent waiting to acquire a pooled connection",
-)
 DB_POOL_EXHAUSTED = registry.counter(
     "llamatrade_db_pool_exhausted_total",
     (),
     "Times a connection could not be acquired before timeout",
+)
+DB_RLS_BYPASS = registry.counter(
+    "llamatrade_db_rls_bypass_total",
+    ["operation"],
+    "RLS system-bypass activations by entry point",
 )
 
 
