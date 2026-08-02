@@ -23,6 +23,7 @@ from .errors import (
     InvalidRequestError,
     SymbolNotFoundError,
 )
+from .metrics import record_circuit_transition, record_rate_limit_throttle, record_retry_attempt
 
 logger = logging.getLogger(__name__)
 
@@ -66,6 +67,7 @@ class RateLimiter:
             True if token acquired, False if timeout
         """
         start_time = time.monotonic()
+        waited = False
 
         async with self._lock:
             while True:
@@ -73,6 +75,8 @@ class RateLimiter:
 
                 if self._tokens >= 1:
                     self._tokens -= 1
+                    if waited:
+                        record_rate_limit_throttle("local", "waited", time.monotonic() - start_time)
                     return True
 
                 # Calculate wait time until next token
@@ -82,8 +86,10 @@ class RateLimiter:
                 if timeout is not None:
                     elapsed = time.monotonic() - start_time
                     if elapsed + wait_time > timeout:
+                        record_rate_limit_throttle("local", "refused")
                         return False
 
+                waited = True
                 # Release lock while waiting
                 self._lock.release()
                 try:
@@ -160,6 +166,7 @@ class RedisRateLimiter:
             True if a slot was acquired, False if the wait would exceed ``timeout``.
         """
         start = self._time()
+        waited = False
         while True:
             now = self._time()
             window = int(now // self.window_s)
@@ -176,11 +183,15 @@ class RedisRateLimiter:
                 return await self._fallback.acquire(timeout=remaining)
 
             if count <= self.limit:
+                if waited:
+                    record_rate_limit_throttle("shared", "waited", now - start)
                 return True
 
             wait = (window + 1) * self.window_s - now
             if timeout is not None and (now - start) + wait > timeout:
+                record_rate_limit_throttle("shared", "refused")
                 return False
+            waited = True
             await self._sleep(wait)
 
 
@@ -289,6 +300,7 @@ class CircuitBreaker:
             if elapsed >= self.reset_timeout:
                 logger.info("Circuit breaker transitioning to half-open")
                 self._state = CircuitState.HALF_OPEN
+                record_circuit_transition(CircuitState.HALF_OPEN.value)
 
     async def _on_success(self) -> None:
         """Handle successful call."""
@@ -296,6 +308,7 @@ class CircuitBreaker:
             if self._state == CircuitState.HALF_OPEN:
                 logger.info("Circuit breaker closing (service recovered)")
                 self._state = CircuitState.CLOSED
+                record_circuit_transition(CircuitState.CLOSED.value)
             self._failure_count = 0
 
     async def _on_failure(self, error: Exception) -> None:
@@ -307,10 +320,14 @@ class CircuitBreaker:
             if self._state == CircuitState.HALF_OPEN:
                 logger.warning("Circuit breaker opening (half-open test failed)")
                 self._state = CircuitState.OPEN
+                record_circuit_transition(CircuitState.OPEN.value)
 
-            elif self._failure_count >= self.failure_threshold:
+            elif (
+                self._state == CircuitState.CLOSED and self._failure_count >= self.failure_threshold
+            ):
                 logger.warning(f"Circuit breaker opening after {self._failure_count} failures")
                 self._state = CircuitState.OPEN
+                record_circuit_transition(CircuitState.OPEN.value)
 
     def reset(self) -> None:
         """Manually reset circuit breaker to closed state."""
@@ -361,6 +378,19 @@ class RetryConfig:
         return delay
 
 
+def _retry_reason(error: Exception) -> str:
+    """Bounded classification of a retryable error for the retry-attempt metric."""
+    if isinstance(error, AlpacaRateLimitError):
+        return "rate_limit"
+    if isinstance(error, AlpacaServerError):
+        return "server_error"
+    if isinstance(error, httpx.TimeoutException):
+        return "timeout"
+    if isinstance(error, httpx.ConnectError):
+        return "connect"
+    return "other"
+
+
 def retry_with_backoff(
     config: RetryConfig | None = None,
 ) -> Callable[[Callable[P, Awaitable[T]]], Callable[P, Awaitable[T]]]:
@@ -393,6 +423,7 @@ def retry_with_backoff(
 
                     if attempt < config.max_retries:
                         delay = config.calculate_delay(attempt)
+                        record_retry_attempt(_retry_reason(e))
                         logger.warning(
                             f"Retrying {func.__name__} after {delay:.2f}s "
                             f"(attempt {attempt + 1}/{config.max_retries + 1}): {e}"
